@@ -85,9 +85,9 @@ remains is operator activation (runbook in that dir's README):
   `haku-selfhosted` → "Generate environment key") and `sops`
   `cluster/k8s/haku/agent-worker/environment-key.sops.yaml` to the real value
   (placeholder today, encrypted to the cluster/Flux age key).
-- **Finalize the worker env** in that `deployment.yaml`: `HAKU_GIT_HOST` and the
-  literal `HAKU_DUCKTAPE_REPO_URL` (adjust if ducktape isn't public / not on the
-  same host as haku-state — `entrypoint.sh` threads a single `.netrc` machine line).
+- **Confirm `HAKU_GIT_HOST`** in that `deployment.yaml` (the haku-state Forgejo
+  host). `HAKU_DUCKTAPE_REPO_URL` is settled — the public GitHub repo, cloned
+  anonymously, so the single `.netrc` for haku-state is all the auth needed.
 - **Activate + validate**: flip `suspend: false` on the Kustomization and watch
   the Deployment — first systemd-PID1 pod in the cluster, so confirm it boots
   unprivileged (cgroup-v2 delegation, writable `/run`) and tune the pod

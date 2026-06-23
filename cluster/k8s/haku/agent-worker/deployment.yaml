@@ -74,9 +74,8 @@ spec:
             - name: HAKU_GIT_HOST
               value: git.allegedly.works
             # ducktape clone (read-only: haku/base + run.md, the live manual).
-            # TODO(operator): set the real URL. If ducktape is NOT on HAKU_GIT_HOST
-            # and is not public, entrypoint.sh's single-.netrc-host model needs a
-            # second credential/machine line.
+            # Public GitHub repo — cloned anonymously over HTTPS, so the single
+            # .netrc entry (HAKU_GIT_HOST, for haku-state) is all the git auth needed.
             - name: HAKU_DUCKTAPE_REPO_URL
               value: https://github.com/agentydragon/ducktape
           resources:

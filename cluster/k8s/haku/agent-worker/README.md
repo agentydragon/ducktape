@@ -24,9 +24,9 @@ environment key exists. Nothing deploys until the operator activates it.
    value, created only via the Console — never the API.
 2. **Set the secret**: `sops cluster/k8s/haku/agent-worker/environment-key.sops.yaml`
    and replace the placeholder `environment_key` with the generated value.
-3. **Confirm the env wiring** in `deployment.yaml`: `ANTHROPIC_ENVIRONMENT_ID`,
-   `HAKU_GIT_HOST`, and `HAKU_DUCKTAPE_REPO_URL` (the last is a literal — adjust
-   if ducktape isn't public / not on `HAKU_GIT_HOST`).
+3. **Confirm the env wiring** in `deployment.yaml`: `ANTHROPIC_ENVIRONMENT_ID`
+   and `HAKU_GIT_HOST` (the haku-state Forgejo host). `HAKU_DUCKTAPE_REPO_URL` is
+   the public GitHub repo, cloned anonymously.
 4. **Activate**: set `suspend: false` in `flux-kustomization.yaml`, commit, push.
    Watch the Deployment — being the first systemd container here, verify it boots
    unprivileged (cgroup-v2 delegation, writable `/run`); tune the pod
