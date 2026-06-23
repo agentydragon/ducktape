@@ -4,31 +4,31 @@ metadata:
     name: haku-environment-key
     namespace: haku-sandbox
     annotations:
-        description: 'Anthropic Managed Agents environment key (sk-ant-oat01-…) for the haku-selfhosted environment''s work queue. PLACEHOLDER — operator: generate in the Console (Environments → haku-selfhosted → Generate environment key) and `sops` this file to the real value before un-suspending the worker. Scoped to one environment''s queue; it cannot reach the control plane.'
+        description: Anthropic Managed Agents environment key (sk-ant-oat01-…) for the haku-selfhosted environment's work queue. Scoped to one environment's work queue; it cannot reach the control plane.
 type: Opaque
 stringData:
-    environment_key: ENC[AES256_GCM,data:oeHx+1O02JqEtS2dfIEmnjqpc2v/GN79q7mfJYpi,iv:KKFBNqg8P8Fr8TDfTJzHFh4U8VnT02q7T2L6p05liMY=,tag:jEDpF03vWHvX+7o+DRRt6A==,type:str]
+    environment_key: ENC[AES256_GCM,data:uCdDbIQfDsRFJ+0w/kd9eQ6frI3rpVhAgFzvCKM18UASHUQ4vUSVhkH9tnY5Zn4asCxXm4qPU10OaMgRQToppYQpGO/o8FRWU2+Wk5rPEsNMCLc79IbP0DUMivcdpz+b+iUCrgpvNsHGPn57,iv:tXx/on8ZNzUdLCiAvLrqD643ygjYhjJfPzA7BJ5G+ho=,tag:yTPy5n1UrfWWFVaKr+AsNA==,type:str]
 sops:
     age:
         - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
           enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBFSnBUV0JzTlRZT0swRGZj
-            WHRkMGMrSFNGQitVL1FHTTN4T3dDQUU5WUc0ClBjMUluRDZoL0ZMRGY0QWFQOWRm
-            QWE1QThuYzdZUVdCYW9aK2Q0Z3BlcHMKLS0tIE43NFA4U2kvVEZEa2d0VUdVdFJq
-            OG1yTDI2YVJET1FUWW1pdjRqY0xoK2cKDKcCD8PO8x0aPxt78TwBg8GvPgBwuban
-            9xLVKKyP1wA5BmB6s8ZkW1k+KBELv52qrR5ASWQb36WRBWJFzgbvbA==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBzVGg3bFRkYlkrZjRwZHZa
+            SmtxZmNPK201Y1FCVDRQRFppS2ZyVEorODBFCmx4UENFeGpxeDZuTjJwcUlMN2xs
+            d1BaOUFYNFNuVVl4UjlmcGVqK1cwU0UKLS0tIFk2MXdjdC9YbmJxY2NPZUE2L2Z2
+            TnJFc3FmVkc1TElqUDVzVFI5N1ZqUmMKKWHgEe6IgXjEegvjiHF51SWMHKyjYF2X
+            Px+b2e1jvFHz0+ZZfpAE0Bqn+HPBtXUlvC6unc0MdGwdmyxda027UA==
             -----END AGE ENCRYPTED FILE-----
         - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
           enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBWUk1zK0dIbHg4Uzh5SXp4
-            SlNBVkVzU1lWY0JnUVpRTnNwNXZETjdHWEU4CkthQVpJVUJITTBtYTNMeHZFZjhn
-            WWdFdXVYb2srdGh5dlQzWnlrVTcxajQKLS0tIGhoQVo2UjVCdnplUVJqN1dOa0JF
-            dTJ0OTFGU0lYNW1jWjdpdDZ3MnhzdFEKHtaWjscgTldtko5J2kC1NfN+sCy5+8iR
-            R793Yh46uxv92guQPN0cjrFhuCE8lvUMW6aecf8bNuYK8tjFuwg2Vg==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBNN0VaMWdtN1dJekZiZFFC
+            SndLenVJZVNCVGk3T1MwdGNxeDROR0dDWHdzCmUyVkRGK1oyVGZscmlTTEkyWnFm
+            VDM1L2J3RG0raW1JQUNGaHFueEZlRzAKLS0tIGtZRXM0M0NhTkpkd3Y1dDVMaVVG
+            Vk8xTmVuQkFZZE4raFAxNWt2K0RmencKgXme+AXQwcxYFcMSIWMrGCHGnTeC8zio
+            C9TfEKRAiKU5YEBy6S8f+Psj9W7M567rfoWK1M+KIgWo//pOrsCIYQ==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2026-06-23T06:12:22Z"
-    mac: ENC[AES256_GCM,data:fm4tUbrXZQ9aEDFcHHyrdApbsy6XofpvE/zhohYTvmYpNiEb3fz82vAsQLVgKYqN56cyQSrGh8Ye+LjSflKFjpjrgtHvrwMUR1YpKgvog6nk4FbPF+rOide0ZdyA6lvmDRztOLlo2RuE//MGzTaEx7tF7+QRR14Qvj6FLGoaFDo=,iv:lyyJi7C9hvxvqB5MWjFJJkCr3xK4sPic7x6qAA5pMP8=,tag:rfot8dnmfDptHES4hoZ7RQ==,type:str]
+    lastmodified: "2026-06-23T08:50:24Z"
+    mac: ENC[AES256_GCM,data:QAbiXqFo+KKoS4LA8+VwGX5cfpB2ziEyii6y1ALJtsAvzL7qHE0peLkH5b06vZ0icMHf7+J860PJv16imnTTLBCKVcQbmkM+5Y6/LHi+GMUtnLXpRkqqJrpaJG+Tdv0T2JzZZpubWpHXqXBZZtd6kN/+i4Bzu0FvbRFob2caF7U=,iv:tiCuazyjEuyGhBStSPHiTAQb0LBmFd81QByatthnhbw=,tag:T5wAUhUxkPz1oVdhcisnOQ==,type:str]
     encrypted_regex: ^(data|stringData)$
     version: 3.12.1
