@@ -85,9 +85,6 @@ remains is operator activation (runbook in that dir's README):
   `haku-selfhosted` → "Generate environment key") and `sops`
   `cluster/k8s/haku/agent-worker/environment-key.sops.yaml` to the real value
   (placeholder today, encrypted to the cluster/Flux age key).
-- **Confirm `HAKU_GIT_HOST`** in that `deployment.yaml` (the haku-state Forgejo
-  host). `HAKU_DUCKTAPE_REPO_URL` is settled — the public GitHub repo, cloned
-  anonymously, so the single `.netrc` for haku-state is all the auth needed.
 - **Activate + validate**: flip `suspend: false` on the Kustomization and watch
   the Deployment — first systemd-PID1 pod in the cluster, so confirm it boots
   unprivileged (cgroup-v2 delegation, writable `/run`) and tune the pod
@@ -108,6 +105,11 @@ Settled (not blockers):
 - **SOPS identity** — the in-cluster worker needs no `SOPS_AGE_KEY`: it uses its
   `haku-worker` ServiceAccount for `kubectl` and reads creds from k8s secrets
   (only the web home decrypts the public-`kubeapi` JWT via SOPS).
+- **Git sources** — haku-state on the in-cluster Forgejo
+  (`git.allegedly.works/haku/haku-state`, single `.netrc` via `HAKU_GIT_HOST` +
+  the `haku-state-git-write` creds); ducktape on public GitHub (anonymous,
+  read-only) — it isn't mirrored to the cluster Forgejo yet (that migration is
+  the "Cluster Forgejo repos" item above).
 
 ## Later (post-v0)
 

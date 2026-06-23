@@ -69,8 +69,9 @@ spec:
                 secretKeyRef:
                   name: haku-state-git-write
                   key: password
-            # Forgejo host for the .netrc machine line; must match the host in
-            # HAKU_STATE_REPO_URL. TODO(operator): confirm.
+            # In-cluster Forgejo host for the haku-state .netrc machine line
+            # (haku-state is git.allegedly.works/haku/haku-state). ducktape is on
+            # public GitHub (below), not the cluster Forgejo, so it needs no creds.
             - name: HAKU_GIT_HOST
               value: git.allegedly.works
             # ducktape clone (read-only: haku/base + run.md, the live manual).
