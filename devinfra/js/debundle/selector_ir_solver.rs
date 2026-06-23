@@ -51,6 +51,7 @@ ascent! {
     relation source_match_candidate(String, usize, String); // selector key, owner, matched binding
     relation ast_kind(u32, String); // AST node, node kind tag
     relation ast_child(u32, u32, u32); // parent, child index, child
+    relation ast_child_count(u32, u32); // node, number of direct AST children
     relation ast_string_literal(u32, String); // node, value
     relation ast_string_wildcard(u32, String); // needle node, wildcard token
     relation ast_number_literal(u32, String); // node, value
@@ -209,6 +210,7 @@ ascent! {
 
     relation required_statement_ordinal_for_owner(usize, usize, usize);
     relation required_ast_kind(usize, usize, String);
+    relation required_ast_child_count(usize, usize, u32);
     relation required_ast_child_parent(usize, usize, u32, u32);
     relation required_ast_child_child(usize, usize, u32, u32);
     relation required_ast_string_literal(usize, usize, String);
@@ -226,6 +228,10 @@ ascent! {
         required_ast_kind(constraint, var, node_kind),
         ast_kind(node, actual),
         if actual == node_kind;
+    node_constraint_support(*constraint, *var, *node) <--
+        required_ast_child_count(constraint, var, count),
+        ast_child_count(node, actual),
+        if actual == count;
     node_constraint_support(*constraint, *var, *parent) <--
         required_ast_child_parent(constraint, var, index, child),
         ast_child(parent, actual_index, actual_child),
@@ -420,6 +426,9 @@ pub fn solve(
     for (parent, index, child) in &fact_index.ast_children {
         ascent.ast_child.push((*parent, *index, *child));
     }
+    for (node, count) in &fact_index.ast_child_counts {
+        ascent.ast_child_count.push((*node, *count));
+    }
     for (node, value) in &fact_index.ast_string_literals {
         ascent.ast_string_literal.push((*node, value.clone()));
     }
@@ -550,6 +559,9 @@ pub fn solve(
                 constraint.variable.0,
                 node_kind.clone(),
             )),
+            NodeUnaryConstraintKind::ChildCount { count } => ascent
+                .required_ast_child_count
+                .push((constraint.id, constraint.variable.0, *count)),
             NodeUnaryConstraintKind::ChildParent { index, child } => {
                 ascent.required_ast_child_parent.push((
                     constraint.id,
@@ -1304,6 +1316,13 @@ impl ProgramSupport {
                         .unsupported_atoms
                         .push("unsupported constant-only ast_kind assertion".to_string()),
                 },
+                SelectorAtom::AstChildCount { node, count } => match node {
+                    NodeTerm::Var { id } => support
+                        .add_node_unary(*id, NodeUnaryConstraintKind::ChildCount { count: *count }),
+                    NodeTerm::Const { .. } => support
+                        .unsupported_atoms
+                        .push("unsupported constant-only ast_child_count assertion".to_string()),
+                },
                 SelectorAtom::AstChild {
                     parent,
                     index,
@@ -1835,6 +1854,7 @@ struct NodeUnaryConstraint {
 #[derive(Debug, Clone)]
 enum NodeUnaryConstraintKind {
     Kind { node_kind: String },
+    ChildCount { count: u32 },
     ChildParent { index: u32, child: u32 },
     ChildChild { parent: u32, index: u32 },
     StringLiteral { value: String },
@@ -1945,6 +1965,7 @@ fn atom_kind(atom: &SelectorAtom) -> &'static str {
         SelectorAtom::OwnerAliasesOwner { .. } => "owner_aliases_owner",
         SelectorAtom::AstKind { .. } => "ast_kind",
         SelectorAtom::AstChild { .. } => "ast_child",
+        SelectorAtom::AstChildCount { .. } => "ast_child_count",
         SelectorAtom::AstStringLiteral { .. } => "ast_string_literal",
         SelectorAtom::AstNumberLiteral { .. } => "ast_number_literal",
         SelectorAtom::AstBoolLiteral { .. } => "ast_bool_literal",
@@ -1989,6 +2010,7 @@ struct FactIndex {
     source_match_candidates: Vec<(String, OwnerId, String)>,
     ast_kinds: Vec<(u32, String)>,
     ast_children: Vec<(u32, u32, u32)>,
+    ast_child_counts: Vec<(u32, u32)>,
     ast_string_literals: Vec<(u32, String)>,
     ast_string_wildcards: Vec<(u32, String)>,
     ast_number_literals: Vec<(u32, String)>,
@@ -2215,6 +2237,12 @@ impl FactIndex {
                 }
             }
         }
+        let mut child_counts: BTreeMap<u32, u32> =
+            index.all_nodes.iter().map(|node| (*node, 0)).collect();
+        for (parent, _child_index, _child) in &index.ast_children {
+            *child_counts.entry(*parent).or_insert(0) += 1;
+        }
+        index.ast_child_counts = child_counts.into_iter().collect();
         index
     }
 
@@ -2537,6 +2565,118 @@ mod tests {
                     chunk_id: ChunkId(0),
                     node: 11,
                     value: "a".to_string(),
+                },
+                SelectorFact::AstTopLevel {
+                    chunk_id: ChunkId(0),
+                    node: 20,
+                    statement_ordinal: StatementOrdinal(2),
+                },
+                SelectorFact::AstChild {
+                    chunk_id: ChunkId(0),
+                    parent: 20,
+                    index: 0,
+                    child: 21,
+                },
+                SelectorFact::AstIdentifierName {
+                    chunk_id: ChunkId(0),
+                    node: 21,
+                    value: "b".to_string(),
+                },
+            ],
+        };
+
+        let result = solve(&program, &facts).unwrap();
+
+        assert_eq!(
+            result.outcome_for(target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(2),
+                    statement_ordinal: StatementOrdinal(2),
+                    binding: Some("b".to_string()),
+                    provenance: Vec::new(),
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn ast_child_count_prunes_structural_overmatches() {
+        let mut program = SelectorProgram::default();
+        let target_owner = program.add_variable(VariableDomain::Owner, Some("@Target".to_string()));
+        let ordinal = program.add_variable(
+            VariableDomain::StatementOrdinal,
+            Some("target.ordinal".to_string()),
+        );
+        let root = program.add_variable(VariableDomain::AstNode, Some("target.root".to_string()));
+        let binding_node =
+            program.add_variable(VariableDomain::AstNode, Some("target.binding".to_string()));
+        let target = program.add_target(
+            ChunkId(0),
+            target_owner,
+            "runtime/target",
+            ClaimKind::Binding {
+                export_name: Some("Target".to_string()),
+            },
+            ClaimOrigin::MemberSelector,
+        );
+        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+            owner: OwnerTerm::Var { id: target_owner },
+            binding: StringTerm::Const {
+                value: "b".to_string(),
+            },
+        });
+        program.add_atom(SelectorAtom::OwnerStatementOrdinal {
+            owner: OwnerTerm::Var { id: target_owner },
+            ordinal: selector_ir::OrdinalTerm::Var { id: ordinal },
+        });
+        program.add_atom(SelectorAtom::AstTopLevel {
+            node: selector_ir::NodeTerm::Var { id: root },
+            ordinal: selector_ir::OrdinalTerm::Var { id: ordinal },
+        });
+        program.add_atom(SelectorAtom::AstChildCount {
+            node: selector_ir::NodeTerm::Var { id: root },
+            count: 1,
+        });
+        program.add_atom(SelectorAtom::AstChild {
+            parent: selector_ir::NodeTerm::Var { id: root },
+            index: 0,
+            child: selector_ir::NodeTerm::Var { id: binding_node },
+        });
+        program.add_atom(SelectorAtom::AstIdentifierName {
+            node: selector_ir::NodeTerm::Var { id: binding_node },
+            value: StringTerm::Const {
+                value: "b".to_string(),
+            },
+        });
+        let facts = SelectorFactStore {
+            facts: vec![
+                owner(1, 1, "var_decl"),
+                declared(1, "b"),
+                owner(2, 2, "var_decl"),
+                declared(2, "b"),
+                SelectorFact::AstTopLevel {
+                    chunk_id: ChunkId(0),
+                    node: 10,
+                    statement_ordinal: StatementOrdinal(1),
+                },
+                SelectorFact::AstChild {
+                    chunk_id: ChunkId(0),
+                    parent: 10,
+                    index: 0,
+                    child: 11,
+                },
+                SelectorFact::AstChild {
+                    chunk_id: ChunkId(0),
+                    parent: 10,
+                    index: 1,
+                    child: 12,
+                },
+                SelectorFact::AstIdentifierName {
+                    chunk_id: ChunkId(0),
+                    node: 11,
+                    value: "b".to_string(),
                 },
                 SelectorFact::AstTopLevel {
                     chunk_id: ChunkId(0),

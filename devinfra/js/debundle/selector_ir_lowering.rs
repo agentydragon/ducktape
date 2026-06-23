@@ -8,11 +8,23 @@ use std::error::Error;
 use std::fmt;
 
 use analysis::{ChunkId, StatementKind};
+use chunk_facts::{ChunkFacts, NodeId};
 use selector_ir::{
-    ClaimKind, ClaimOrigin, OwnerTerm, RelationalPrimitive, SelectorAtom, SelectorProgram,
-    SelectorTargetId, SelectorVariableId, StringTerm, VariableDomain,
+    ClaimKind, ClaimOrigin, NodeTerm, OrdinalTerm, OwnerTerm, RelationalPrimitive, SelectorAtom,
+    SelectorProgram, SelectorTargetId, SelectorVariableId, StringTerm, VariableDomain,
 };
-use spec::{BindingSelector, BindingSourceKind, CrossRefRelation, MemberSelectorSpec};
+use source_match_holes::{
+    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD,
+    CLASS_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD,
+    OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
+    STRING_LITERAL_REGEX_PREDICATE, hole_name_for,
+};
+use spec::{
+    AnonymousStatementSelector, BindingSelector, BindingSourceKind, CrossRefRelation,
+    MemberSelectorSpec, SourceMatchIdentifierMode,
+};
+use swc_ecma_ast::{BindingIdent, Ident, Module, PropName};
+use swc_ecma_visit::{Visit, VisitWith};
 
 /// Context shared by every member selector lowered for one logical module.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -196,6 +208,7 @@ impl MemberSelectorProgramBuilder {
                     owner: owner_term(owner),
                     selector_key: const_str(&source_match::selector_key(selector)),
                 });
+                self.try_lower_native_exact_source_match(logical_module, owner, selector)?;
                 Ok(())
             }
             MemberSelectorSpec::CrossRef(target) => {
@@ -309,6 +322,162 @@ impl MemberSelectorProgramBuilder {
         Ok(())
     }
 
+    fn try_lower_native_exact_source_match(
+        &mut self,
+        logical_module: &str,
+        owner: SelectorVariableId,
+        selector: &AnonymousStatementSelector,
+    ) -> Result<bool, SelectorIrLoweringError> {
+        if selector.identifiers != SourceMatchIdentifierMode::Exact
+            || selector.target_binding.is_some()
+            || selector.target_statement.is_some()
+            || selector.target_statements.is_some()
+            || !selector.wildcard_string_literals.is_empty()
+        {
+            return Ok(false);
+        }
+        let Ok(parsed) = js_ast::with_swc_globals(|| {
+            js_ast::parse_js_module_ast(
+                &format!("<selector ir source_match in {logical_module}>"),
+                &selector.match_source,
+            )
+        }) else {
+            return Ok(false);
+        };
+        if parsed.body.len() != 1 || source_match_contains_hole_syntax(&parsed) {
+            return Ok(false);
+        }
+        let Ok(facts) =
+            chunk_facts::extract_facts_needle(&parsed.body, &selector.wildcard_string_literals)
+        else {
+            return Ok(false);
+        };
+        if !facts.str_wildcard.is_empty() || !facts.super_class.is_empty() {
+            return Ok(false);
+        }
+        let [(root_node, _ordinal)] = facts.top_level.as_slice() else {
+            return Ok(false);
+        };
+
+        let ordinal = self.program.add_variable(
+            VariableDomain::StatementOrdinal,
+            Some(format!("{logical_module}::source_match.ordinal")),
+        );
+        let mut node_vars = BTreeMap::<NodeId, SelectorVariableId>::new();
+        for (node, _kind) in &facts.node_kind {
+            node_vars.insert(
+                *node,
+                self.program.add_variable(
+                    VariableDomain::AstNode,
+                    Some(format!("{logical_module}::source_match.node{node}")),
+                ),
+            );
+        }
+        let Some(root) = node_vars.get(root_node).copied() else {
+            return Ok(false);
+        };
+        self.program.add_atom(SelectorAtom::OwnerStatementOrdinal {
+            owner: owner_term(owner),
+            ordinal: ordinal_term(ordinal),
+        });
+        self.program.add_atom(SelectorAtom::AstTopLevel {
+            node: node_term(root),
+            ordinal: ordinal_term(ordinal),
+        });
+        self.lower_native_ast_facts(&facts, &node_vars);
+        Ok(true)
+    }
+
+    fn lower_native_ast_facts(
+        &mut self,
+        facts: &ChunkFacts,
+        node_vars: &BTreeMap<NodeId, SelectorVariableId>,
+    ) {
+        let mut child_counts: BTreeMap<NodeId, u32> =
+            facts.node_kind.iter().map(|(node, _)| (*node, 0)).collect();
+        for (parent, _index, _child) in &facts.child {
+            *child_counts.entry(*parent).or_insert(0) += 1;
+        }
+        for (node, kind) in &facts.node_kind {
+            let Some(node_var) = node_vars.get(node).copied() else {
+                continue;
+            };
+            self.program.add_atom(SelectorAtom::AstKind {
+                node: node_term(node_var),
+                node_kind: *kind,
+            });
+            self.program.add_atom(SelectorAtom::AstChildCount {
+                node: node_term(node_var),
+                count: child_counts.get(node).copied().unwrap_or(0),
+            });
+        }
+        for (parent, index, child) in &facts.child {
+            let (Some(parent), Some(child)) = (node_vars.get(parent), node_vars.get(child)) else {
+                continue;
+            };
+            self.program.add_atom(SelectorAtom::AstChild {
+                parent: node_term(*parent),
+                index: *index,
+                child: node_term(*child),
+            });
+        }
+        for (node, value) in &facts.str_lit {
+            self.add_ast_string_label(node_vars, *node, value, |node, value| {
+                SelectorAtom::AstStringLiteral { node, value }
+            });
+        }
+        for (node, value) in &facts.num_lit {
+            self.add_ast_string_label(node_vars, *node, value, |node, value| {
+                SelectorAtom::AstNumberLiteral { node, value }
+            });
+        }
+        for (node, value) in &facts.bool_lit {
+            if let Some(node) = node_vars.get(node).copied() {
+                self.program.add_atom(SelectorAtom::AstBoolLiteral {
+                    node: node_term(node),
+                    value: *value,
+                });
+            }
+        }
+        for (node, value) in &facts.ident_name {
+            self.add_ast_string_label(node_vars, *node, value, |node, value| {
+                SelectorAtom::AstIdentifierName { node, value }
+            });
+        }
+        for (node, value) in &facts.prop_name {
+            self.add_ast_string_label(node_vars, *node, value, |node, value| {
+                SelectorAtom::AstPropertyName { node, value }
+            });
+        }
+        for (node, value) in &facts.operator {
+            self.add_ast_string_label(node_vars, *node, value, |node, value| {
+                SelectorAtom::AstOperator { node, value }
+            });
+        }
+        for (node, pattern, flags) in &facts.regex {
+            if let Some(node) = node_vars.get(node).copied() {
+                self.program.add_atom(SelectorAtom::AstRegexLiteral {
+                    node: node_term(node),
+                    pattern: const_str(pattern),
+                    flags: const_str(flags),
+                });
+            }
+        }
+    }
+
+    fn add_ast_string_label(
+        &mut self,
+        node_vars: &BTreeMap<NodeId, SelectorVariableId>,
+        node: NodeId,
+        value: &str,
+        make_atom: fn(NodeTerm, StringTerm) -> SelectorAtom,
+    ) {
+        if let Some(node) = node_vars.get(&node).copied() {
+            self.program
+                .add_atom(make_atom(node_term(node), const_str(value)));
+        }
+    }
+
     fn add_kind_atom(&mut self, owner: SelectorVariableId, kind: Option<BindingSourceKind>) {
         if let Some(kind) = kind {
             self.program.add_atom(SelectorAtom::OwnerKind {
@@ -321,6 +490,14 @@ impl MemberSelectorProgramBuilder {
 
 fn owner_term(owner: SelectorVariableId) -> OwnerTerm {
     OwnerTerm::Var { id: owner }
+}
+
+fn node_term(node: SelectorVariableId) -> NodeTerm {
+    NodeTerm::Var { id: node }
+}
+
+fn ordinal_term(ordinal: SelectorVariableId) -> OrdinalTerm {
+    OrdinalTerm::Var { id: ordinal }
 }
 
 fn const_str(value: &str) -> StringTerm {
@@ -338,6 +515,60 @@ fn optional_index(index: Option<usize>) -> Result<Option<u32>, SelectorIrLowerin
             })
         })
         .transpose()
+}
+
+fn source_match_contains_hole_syntax(module: &Module) -> bool {
+    let mut visitor = SourceMatchHoleSyntaxVisitor::default();
+    module.visit_with(&mut visitor);
+    visitor.found
+}
+
+#[derive(Default)]
+struct SourceMatchHoleSyntaxVisitor {
+    found: bool,
+}
+
+impl SourceMatchHoleSyntaxVisitor {
+    fn inspect_name(&mut self, name: &str) {
+        if selector_hole_name(name) {
+            self.found = true;
+        }
+    }
+}
+
+impl Visit for SourceMatchHoleSyntaxVisitor {
+    fn visit_ident(&mut self, ident: &Ident) {
+        self.inspect_name(ident.sym.as_ref());
+    }
+
+    fn visit_binding_ident(&mut self, ident: &BindingIdent) {
+        self.inspect_name(ident.id.sym.as_ref());
+    }
+
+    fn visit_prop_name(&mut self, name: &PropName) {
+        if let PropName::Ident(ident) = name {
+            self.inspect_name(ident.sym.as_ref());
+        }
+        name.visit_children_with(self);
+    }
+}
+
+fn selector_hole_name(name: &str) -> bool {
+    name == STRING_LITERAL_REGEX_PREDICATE
+        || [
+            ANYTHING_HOLE_KEYWORD,
+            EXPR_HOLE_KEYWORD,
+            STMT_HOLE_KEYWORD,
+            STMT_LIST_HOLE_KEYWORD,
+            CLASS_REST_HOLE_KEYWORD,
+            CASE_REST_HOLE_KEYWORD,
+            DECLARATORS_HOLE_KEYWORD,
+            ARGS_HOLE_KEYWORD,
+            OBJECT_PROPS_HOLE_KEYWORD,
+            ARRAY_ELEMENTS_HOLE_KEYWORD,
+        ]
+        .iter()
+        .any(|keyword| hole_name_for(name, keyword).is_some())
 }
 
 fn selector_origin(selector: &MemberSelectorSpec) -> ClaimOrigin {
@@ -517,6 +748,61 @@ mod tests {
     #[test]
     fn lowers_source_match_candidate_constraint() {
         let selector = AnonymousStatementSelector::exact("const a = 1;");
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector.clone()),
+        )
+        .unwrap();
+
+        let target_owner = lowered.program.targets[lowered.target.0].owner;
+        assert!(matches!(
+            lowered.program.atoms.iter().find(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
+            Some(SelectorAtom::SourceMatchCandidate {
+                owner: OwnerTerm::Var { id },
+                selector_key: StringTerm::Const { value },
+            }) if *id == target_owner && value == &source_match::selector_key(&selector)
+        ));
+        assert!(
+            lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::OwnerStatementOrdinal { .. }))
+        );
+        assert!(
+            lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::AstTopLevel { .. }))
+        );
+        assert!(
+            lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::AstKind { .. }))
+        );
+        assert!(
+            lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::AstChildCount { .. }))
+        );
+        assert!(
+            lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::AstChild { .. }))
+        );
+    }
+
+    #[test]
+    fn source_match_with_hole_syntax_stays_oracle_only() {
+        let selector = AnonymousStatementSelector::exact("const a = ANYTHING;");
         let lowered = lower_member_selector(
             &context(),
             "Widget",

@@ -165,6 +165,10 @@ pub enum SelectorAtom {
         index: u32,
         child: NodeTerm,
     },
+    AstChildCount {
+        node: NodeTerm,
+        count: u32,
+    },
     AstStringLiteral {
         node: NodeTerm,
         value: StringTerm,
@@ -391,6 +395,9 @@ impl SelectorProgram {
             SelectorAtom::AstChild { parent, child, .. } => {
                 self.validate_node_term(parent, "ast_child.parent")?;
                 self.validate_node_term(child, "ast_child.child")
+            }
+            SelectorAtom::AstChildCount { node, .. } => {
+                self.validate_node_term(node, "ast_child_count.node")
             }
             SelectorAtom::AstStringLiteral { node, value }
             | SelectorAtom::AstNumberLiteral { node, value }
