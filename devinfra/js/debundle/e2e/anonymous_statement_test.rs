@@ -1055,6 +1055,38 @@ export { runtimeFormat };
 }
 
 #[test]
+fn exact_native_source_match_skips_legacy_resolver_timing() {
+    let fixture = run_fixture_with_env(
+        FixtureOpts::new(
+            r#"function runtimeFormat(value) {
+  return value.trim().toUpperCase();
+}
+console.log(runtimeFormat(" ok "));
+export { runtimeFormat };
+"#,
+            vec![logical_module(
+                "format",
+                &[Member::source_exact_target(
+                    "formatValue",
+                    "runtimeFormat",
+                    r#"function runtimeFormat(value) {
+  return value.trim().toUpperCase();
+}"#,
+                )],
+            )],
+        ),
+        &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
+    );
+
+    assert_entry_output(&fixture, "OK\n");
+    assert!(
+        !fixture.stderr.contains("[debundle source_match]"),
+        "native exact source_match should not call the legacy resolver\nstderr:\n{}",
+        fixture.stderr,
+    );
+}
+
+#[test]
 fn source_match_timing_preview_can_be_disabled() {
     let fixture = run_fixture_with_env(
         FixtureOpts::new(
