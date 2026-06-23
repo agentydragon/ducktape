@@ -332,7 +332,6 @@ impl MemberSelectorProgramBuilder {
         if selector.identifiers != SourceMatchIdentifierMode::Exact
             || selector.target_statement.is_some()
             || selector.target_statements.is_some()
-            || !selector.wildcard_string_literals.is_empty()
         {
             return Ok(false);
         }
@@ -352,7 +351,7 @@ impl MemberSelectorProgramBuilder {
         else {
             return Ok(false);
         };
-        if !facts.str_wildcard.is_empty() || !facts.super_class.is_empty() {
+        if !facts.super_class.is_empty() {
             return Ok(false);
         }
         let [(root_node, _ordinal)] = facts.top_level.as_slice() else {
@@ -390,15 +389,32 @@ impl MemberSelectorProgramBuilder {
                 binding: const_str(target_binding),
             });
         }
-        self.lower_native_ast_facts(&facts, &node_vars);
+        self.lower_native_ast_facts(logical_module, &facts, &node_vars);
         Ok(true)
     }
 
     fn lower_native_ast_facts(
         &mut self,
+        logical_module: &str,
         facts: &ChunkFacts,
         node_vars: &BTreeMap<NodeId, SelectorVariableId>,
     ) {
+        let mut wildcard_string_vars = BTreeMap::<String, SelectorVariableId>::new();
+        for (_node, token) in &facts.str_wildcard {
+            wildcard_string_vars
+                .entry(token.clone())
+                .or_insert_with(|| {
+                    self.program.add_variable(
+                        VariableDomain::String,
+                        Some(format!("{logical_module}::source_match.string.{token}")),
+                    )
+                });
+        }
+        let wildcard_string_by_node: BTreeMap<NodeId, SelectorVariableId> = facts
+            .str_wildcard
+            .iter()
+            .filter_map(|(node, token)| wildcard_string_vars.get(token).map(|var| (*node, *var)))
+            .collect();
         let mut child_counts: BTreeMap<NodeId, u32> =
             facts.node_kind.iter().map(|(node, _)| (*node, 0)).collect();
         for (parent, _index, _child) in &facts.child {
@@ -428,9 +444,18 @@ impl MemberSelectorProgramBuilder {
             });
         }
         for (node, value) in &facts.str_lit {
-            self.add_ast_string_label(node_vars, *node, value, |node, value| {
-                SelectorAtom::AstStringLiteral { node, value }
-            });
+            if let Some(wildcard_string_var) = wildcard_string_by_node.get(node).copied() {
+                if let Some(node) = node_vars.get(node).copied() {
+                    self.program.add_atom(SelectorAtom::AstStringLiteral {
+                        node: node_term(node),
+                        value: string_term(wildcard_string_var),
+                    });
+                }
+            } else {
+                self.add_ast_string_label(node_vars, *node, value, |node, value| {
+                    SelectorAtom::AstStringLiteral { node, value }
+                });
+            }
         }
         for (node, value) in &facts.num_lit {
             self.add_ast_string_label(node_vars, *node, value, |node, value| {
@@ -504,6 +529,10 @@ fn node_term(node: SelectorVariableId) -> NodeTerm {
 
 fn ordinal_term(ordinal: SelectorVariableId) -> OrdinalTerm {
     OrdinalTerm::Var { id: ordinal }
+}
+
+fn string_term(string: SelectorVariableId) -> StringTerm {
+    StringTerm::Var { id: string }
 }
 
 fn const_str(value: &str) -> StringTerm {
@@ -803,6 +832,44 @@ mod tests {
                 .iter()
                 .any(|atom| matches!(atom, SelectorAtom::AstChild { .. }))
         );
+    }
+
+    #[test]
+    fn exact_source_match_wildcard_strings_lower_to_shared_string_var() {
+        let mut selector =
+            AnonymousStatementSelector::exact("const pair = [\"__VALUE__\", \"__VALUE__\"];");
+        selector
+            .wildcard_string_literals
+            .insert("__VALUE__".to_string());
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        let mut string_vars = lowered.program.atoms.iter().filter_map(|atom| match atom {
+            SelectorAtom::AstStringLiteral {
+                value: StringTerm::Var { id },
+                ..
+            } => Some(*id),
+            _ => None,
+        });
+        let first = string_vars.next().expect("first wildcard string atom");
+        let second = string_vars.next().expect("second wildcard string atom");
+        assert_eq!(first, second);
+        assert!(string_vars.next().is_none());
+        assert!(matches!(
+            lowered.program.variables[first.0].domain,
+            VariableDomain::String
+        ));
     }
 
     #[test]
