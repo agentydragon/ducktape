@@ -213,6 +213,8 @@ ascent! {
     relation required_ast_child_count(usize, usize, u32);
     relation required_ast_child_parent(usize, usize, u32, u32);
     relation required_ast_child_child(usize, usize, u32, u32);
+    relation required_ast_super_class_class(usize, usize, u32);
+    relation required_ast_super_class_super(usize, usize, u32);
     relation required_ast_string_literal(usize, usize, String);
     relation required_ast_number_literal(usize, usize, String);
     relation required_ast_bool_literal(usize, usize, bool);
@@ -242,6 +244,14 @@ ascent! {
         ast_child(actual_parent, actual_index, child),
         if actual_parent == parent,
         if actual_index == index;
+    node_constraint_support(*constraint, *var, *class_node) <--
+        required_ast_super_class_class(constraint, var, super_class),
+        ast_super_class(class_node, actual_super_class),
+        if actual_super_class == super_class;
+    node_constraint_support(*constraint, *var, *super_class) <--
+        required_ast_super_class_super(constraint, var, class_node),
+        ast_super_class(actual_class_node, super_class),
+        if actual_class_node == class_node;
     node_constraint_support(*constraint, *var, *node) <--
         required_ast_string_literal(constraint, var, value),
         ast_string_literal(node, actual),
@@ -294,6 +304,7 @@ ascent! {
     relation required_intrinsic_alias(usize, usize, usize, String);
     relation required_owner_statement_ordinal_var(usize, usize, usize);
     relation required_ast_child(usize, usize, usize, u32);
+    relation required_ast_super_class(usize, usize, usize);
     relation required_ast_top_level(usize, usize, usize);
     relation required_owner_top_level_root(usize, usize, usize);
     relation required_ast_string_literal_var(usize, usize, usize);
@@ -333,6 +344,9 @@ ascent! {
         required_ast_child(constraint, parent_var, child_var, index),
         ast_child(parent, actual_index, child),
         if actual_index == index;
+    node_node_constraint_edge(*constraint, *class_var, *class_node, *super_var, *super_class) <--
+        required_ast_super_class(constraint, class_var, super_var),
+        ast_super_class(class_node, super_class);
 
     relation node_ordinal_constraint_edge(usize, usize, u32, usize, usize);
     node_ordinal_constraint_edge(*constraint, *node_var, *node, *ordinal_var, *ordinal) <--
@@ -584,6 +598,20 @@ pub fn solve(
                     *index,
                 ));
             }
+            NodeUnaryConstraintKind::SuperClassClass { super_class } => {
+                ascent.required_ast_super_class_class.push((
+                    constraint.id,
+                    constraint.variable.0,
+                    *super_class,
+                ));
+            }
+            NodeUnaryConstraintKind::SuperClassSuper { class_node } => {
+                ascent.required_ast_super_class_super.push((
+                    constraint.id,
+                    constraint.variable.0,
+                    *class_node,
+                ));
+            }
             NodeUnaryConstraintKind::StringLiteral { value } => {
                 ascent.required_ast_string_literal.push((
                     constraint.id,
@@ -727,6 +755,11 @@ pub fn solve(
                 constraint.left.0,
                 constraint.right.0,
                 index,
+            )),
+            NodeNodeConstraintKind::AstSuperClass => ascent.required_ast_super_class.push((
+                constraint.id,
+                constraint.left.0,
+                constraint.right.0,
             )),
         }
     }
@@ -1405,6 +1438,10 @@ impl ProgramSupport {
                     index,
                     child,
                 } => support.add_ast_child(parent, *index, child),
+                SelectorAtom::AstSuperClass {
+                    class_node,
+                    super_class,
+                } => support.add_ast_super_class(class_node, super_class),
                 SelectorAtom::AstStringLiteral {
                     node,
                     value: StringTerm::Const { value },
@@ -1816,6 +1853,37 @@ impl ProgramSupport {
         }
     }
 
+    fn add_ast_super_class(&mut self, class_node: &NodeTerm, super_class: &NodeTerm) {
+        match (class_node, super_class) {
+            (NodeTerm::Var { id: class_node }, NodeTerm::Var { id: super_class }) => {
+                self.add_node_node(
+                    *class_node,
+                    *super_class,
+                    NodeNodeConstraintKind::AstSuperClass,
+                );
+            }
+            (NodeTerm::Var { id: class_node }, NodeTerm::Const { node: super_class }) => {
+                self.add_node_unary(
+                    *class_node,
+                    NodeUnaryConstraintKind::SuperClassClass {
+                        super_class: *super_class,
+                    },
+                );
+            }
+            (NodeTerm::Const { node: class_node }, NodeTerm::Var { id: super_class }) => {
+                self.add_node_unary(
+                    *super_class,
+                    NodeUnaryConstraintKind::SuperClassSuper {
+                        class_node: *class_node,
+                    },
+                );
+            }
+            _ => self
+                .unsupported_atoms
+                .push("unsupported constant-only ast_super_class assertion".to_string()),
+        }
+    }
+
     fn add_node_label(
         &mut self,
         node: &NodeTerm,
@@ -1960,6 +2028,8 @@ enum NodeUnaryConstraintKind {
     ChildCount { count: u32 },
     ChildParent { index: u32, child: u32 },
     ChildChild { parent: u32, index: u32 },
+    SuperClassClass { super_class: u32 },
+    SuperClassSuper { class_node: u32 },
     StringLiteral { value: String },
     NumberLiteral { value: String },
     BoolLiteral { value: bool },
@@ -2034,6 +2104,7 @@ struct NodeNodeConstraint {
 #[derive(Debug, Clone, Copy)]
 enum NodeNodeConstraintKind {
     AstChild { index: u32 },
+    AstSuperClass,
 }
 
 #[derive(Debug, Clone)]
@@ -2081,6 +2152,7 @@ fn atom_kind(atom: &SelectorAtom) -> &'static str {
         SelectorAtom::OwnerAliasesOwner { .. } => "owner_aliases_owner",
         SelectorAtom::AstKind { .. } => "ast_kind",
         SelectorAtom::AstChild { .. } => "ast_child",
+        SelectorAtom::AstSuperClass { .. } => "ast_super_class",
         SelectorAtom::AstChildCount { .. } => "ast_child_count",
         SelectorAtom::AstStringLiteral { .. } => "ast_string_literal",
         SelectorAtom::AstNumberLiteral { .. } => "ast_number_literal",

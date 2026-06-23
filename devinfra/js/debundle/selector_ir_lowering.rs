@@ -351,9 +351,6 @@ impl MemberSelectorProgramBuilder {
         else {
             return Ok(false);
         };
-        if !facts.super_class.is_empty() {
-            return Ok(false);
-        }
         let [(root_node, _ordinal)] = facts.top_level.as_slice() else {
             return Ok(false);
         };
@@ -441,6 +438,17 @@ impl MemberSelectorProgramBuilder {
                 parent: node_term(*parent),
                 index: *index,
                 child: node_term(*child),
+            });
+        }
+        for (class_node, super_class) in &facts.super_class {
+            let (Some(class_node), Some(super_class)) =
+                (node_vars.get(class_node), node_vars.get(super_class))
+            else {
+                continue;
+            };
+            self.program.add_atom(SelectorAtom::AstSuperClass {
+                class_node: node_term(*class_node),
+                super_class: node_term(*super_class),
             });
         }
         for (node, value) in &facts.str_lit {
@@ -831,6 +839,32 @@ mod tests {
                 .atoms
                 .iter()
                 .any(|atom| matches!(atom, SelectorAtom::AstChild { .. }))
+        );
+    }
+
+    #[test]
+    fn exact_source_match_with_superclass_lowers_to_native_ast_constraint() {
+        let selector = AnonymousStatementSelector::exact("class Widget extends BaseWidget {}");
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(
+            lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::AstSuperClass { .. }))
         );
     }
 

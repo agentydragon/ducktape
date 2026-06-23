@@ -165,6 +165,10 @@ pub enum SelectorAtom {
         index: u32,
         child: NodeTerm,
     },
+    AstSuperClass {
+        class_node: NodeTerm,
+        super_class: NodeTerm,
+    },
     AstChildCount {
         node: NodeTerm,
         count: u32,
@@ -395,6 +399,13 @@ impl SelectorProgram {
             SelectorAtom::AstChild { parent, child, .. } => {
                 self.validate_node_term(parent, "ast_child.parent")?;
                 self.validate_node_term(child, "ast_child.child")
+            }
+            SelectorAtom::AstSuperClass {
+                class_node,
+                super_class,
+            } => {
+                self.validate_node_term(class_node, "ast_super_class.class_node")?;
+                self.validate_node_term(super_class, "ast_super_class.super_class")
             }
             SelectorAtom::AstChildCount { node, .. } => {
                 self.validate_node_term(node, "ast_child_count.node")
