@@ -450,11 +450,10 @@ fn member_matches_declarator_hole(
 }
 
 /// Parse a selector's `match_source` to its top-level statements (any count),
-/// **fail-closed** on an unsupported selector construct: a misplaced `ANYTHING`
-/// hole (e.g. an object property *key*) or an unsupported/reserved hole keyword
-/// (`ANYTHING_FUTURE`, …) errors here — before any match is attempted — so the
-/// diagnostic names the bad construct rather than a generic "did not match"
-/// (mirrors the deleted matcher's selector capability gate).
+/// **fail-closed** on an unsupported selector construct: for example, a misplaced
+/// `ANYTHING` hole in an object property *key* errors here before any match is
+/// attempted, so the diagnostic names the bad construct rather than a generic
+/// "did not match" (mirrors the deleted matcher's selector capability gate).
 fn parse_needles(
     request_id: &str,
     selector: &AnonymousStatementSelector,

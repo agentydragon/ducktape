@@ -46,7 +46,7 @@ pub(crate) fn is_anything_stmt_hole(stmt: &Stmt) -> bool {
 /// The name of a statement-list hole (`STMT_LIST` / `STMT_LIST_*;`) if
 /// `stmt` is one.
 pub(crate) fn statement_list_hole_name(stmt: &Stmt) -> Option<&str> {
-    hole_name_for(statement_hole_name(stmt)?, STMT_LIST_HOLE_KEYWORD)
+    labeled_hole_name_for(statement_hole_name(stmt)?, STMT_LIST_HOLE_KEYWORD)
 }
 
 /// The name of a top-level statement-list hole (`STMT_LIST` /
@@ -67,7 +67,7 @@ pub(crate) fn declarator_list_hole_name(declarator: &VarDeclarator) -> Option<&s
     let Pat::Ident(ident) = &declarator.name else {
         return None;
     };
-    hole_name_for(ident.id.sym.as_ref(), DECLARATORS_HOLE_KEYWORD)
+    labeled_hole_name_for(ident.id.sym.as_ref(), DECLARATORS_HOLE_KEYWORD)
         .or_else(|| anything_hole_name(ident.id.sym.as_ref()))
 }
 
@@ -96,16 +96,15 @@ pub(crate) fn object_pat_prop_list_hole_name(prop: &ObjectPatProp) -> Option<&st
         return None;
     }
     let name = assign.key.id.sym.as_ref();
-    hole_name_for(name, OBJECT_PROPS_HOLE_KEYWORD).or_else(|| anything_hole_name(name))
+    labeled_hole_name_for(name, OBJECT_PROPS_HOLE_KEYWORD).or_else(|| anything_hole_name(name))
 }
 
 pub(crate) fn anything_hole_name(name: &str) -> Option<&str> {
-    (name == ANYTHING_HOLE_KEYWORD).then_some(name)
+    hole_name_for(name, ANYTHING_HOLE_KEYWORD)
 }
 
-pub(crate) fn unsupported_selector_hole_name(name: &str) -> Option<&str> {
-    let rest = name.strip_prefix(ANYTHING_HOLE_KEYWORD)?;
-    rest.starts_with('_').then_some(name)
+pub(crate) fn unsupported_selector_hole_name(_name: &str) -> Option<&str> {
+    None
 }
 
 pub(crate) fn is_anything_class_rest_hole(member: &ClassMember) -> bool {
@@ -116,13 +115,16 @@ pub(crate) fn is_anything_class_rest_hole(member: &ClassMember) -> bool {
 }
 
 pub(crate) fn prop_name_is_anything(prop_name: &PropName) -> bool {
-    matches!(prop_name, PropName::Ident(ident) if ident.sym.as_ref() == ANYTHING_HOLE_KEYWORD)
+    matches!(
+        prop_name,
+        PropName::Ident(ident) if hole_name_for(ident.sym.as_ref(), ANYTHING_HOLE_KEYWORD).is_some()
+    )
 }
 
 pub(crate) fn binding_ident_is_anything(ident: &BindingIdent) -> bool {
-    ident.id.sym.as_ref() == ANYTHING_HOLE_KEYWORD
+    hole_name_for(ident.id.sym.as_ref(), ANYTHING_HOLE_KEYWORD).is_some()
 }
 
 pub(crate) fn ident_is_anything(ident: &Ident) -> bool {
-    ident.sym.as_ref() == ANYTHING_HOLE_KEYWORD
+    hole_name_for(ident.sym.as_ref(), ANYTHING_HOLE_KEYWORD).is_some()
 }

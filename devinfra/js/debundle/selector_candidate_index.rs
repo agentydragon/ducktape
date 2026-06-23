@@ -15,7 +15,7 @@ use rustc_hash::FxHashMap;
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD,
     DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD,
-    STMT_LIST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, hole_name_for,
+    STMT_LIST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, hole_name_for, labeled_hole_name_for,
 };
 use spec::{AnonymousStatementSelector, BindingSourceKind, SourceMatchIdentifierMode};
 use swc_ecma_ast::*;
@@ -812,7 +812,7 @@ fn module_item_list_hole_name(item: &ModuleItem) -> Option<&str> {
     let Expr::Ident(ident) = expr.expr.as_ref() else {
         return None;
     };
-    hole_name_for(ident.sym.as_ref(), STMT_LIST_HOLE_KEYWORD)
+    labeled_hole_name_for(ident.sym.as_ref(), STMT_LIST_HOLE_KEYWORD)
 }
 
 fn declarator_list_hole_name(declarator: &VarDeclarator) -> Option<&str> {
@@ -820,7 +820,7 @@ fn declarator_list_hole_name(declarator: &VarDeclarator) -> Option<&str> {
         return None;
     };
     let name = ident.id.sym.as_ref();
-    hole_name_for(name, DECLARATORS_HOLE_KEYWORD)
+    labeled_hole_name_for(name, DECLARATORS_HOLE_KEYWORD)
         .or_else(|| hole_name_for(name, ANYTHING_HOLE_KEYWORD))
 }
 
@@ -831,7 +831,7 @@ fn object_property_list_hole_name(prop: &PropOrSpread) -> Option<&str> {
     match prop.as_ref() {
         Prop::Shorthand(ident) => {
             let name = ident.sym.as_ref();
-            hole_name_for(name, OBJECT_PROPS_HOLE_KEYWORD)
+            labeled_hole_name_for(name, OBJECT_PROPS_HOLE_KEYWORD)
                 .or_else(|| hole_name_for(name, ANYTHING_HOLE_KEYWORD))
         }
         _ => None,
@@ -849,7 +849,7 @@ fn class_rest_hole_name(member: &ClassMember) -> Option<&str> {
         return None;
     };
     let name = ident.sym.as_ref();
-    hole_name_for(name, CLASS_REST_HOLE_KEYWORD)
+    labeled_hole_name_for(name, CLASS_REST_HOLE_KEYWORD)
         .or_else(|| hole_name_for(name, ANYTHING_HOLE_KEYWORD))
 }
 
@@ -860,7 +860,7 @@ fn case_rest_hole_name(case: &SwitchCase) -> Option<&str> {
     let Some(Expr::Ident(ident)) = case.test.as_deref() else {
         return None;
     };
-    hole_name_for(ident.sym.as_ref(), CASE_REST_HOLE_KEYWORD)
+    labeled_hole_name_for(ident.sym.as_ref(), CASE_REST_HOLE_KEYWORD)
 }
 
 fn string_literal_regex_pattern_call(call: &CallExpr) -> bool {
@@ -935,7 +935,8 @@ fn object_pat_key_label(prop: &ObjectPatProp) -> Option<String> {
     match prop {
         ObjectPatProp::KeyValue(kv) => prop_name_label(&kv.key),
         ObjectPatProp::Assign(assign)
-            if hole_name_for(assign.key.id.sym.as_ref(), OBJECT_PROPS_HOLE_KEYWORD).is_none()
+            if labeled_hole_name_for(assign.key.id.sym.as_ref(), OBJECT_PROPS_HOLE_KEYWORD)
+                .is_none()
                 && hole_name_for(assign.key.id.sym.as_ref(), ANYTHING_HOLE_KEYWORD).is_none() =>
         {
             Some(assign.key.id.sym.to_string())

@@ -74,9 +74,9 @@ The orchestrator or project adapter provides:
    declarator-list, and class-rest positions. In object literal or
    destructuring-heavy selectors, pin only enough stable anchors to identify the
    target uniquely, and no more; put `ANYTHING` or `OBJECT_PROPS_*` between them
-   instead of spelling unrelated generated structure. Use typed or named holes
+   instead of spelling unrelated generated structure. Use typed holes or readability labels
    (`EXPR`, `STMT`, `ARGS`, `STMT_LIST`, `OBJECT_PROPS`, `CLASS_REST`, or
-   `DECLARATORS`) when the role, list behavior, or equality constraint makes
+   `DECLARATORS`) when the role, list behavior, or label makes
    diagnostics/readability better. For one selected declarator inside a wider
    comma-list declaration, write a single-declarator `source_match` with
    `target_binding` and optional adjacent top-level context instead of spelling

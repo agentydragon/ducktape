@@ -33,8 +33,9 @@ Default to this ladder when writing or repairing selectors:
 2. Add anonymous `ANYTHING` holes where the hole name would not carry useful
    signal. Use typed holes (`EXPR`, `STMT`, `ARGS`, `STMT_LIST`,
    `OBJECT_PROPS`, `CLASS_REST`, `CASE_REST`, or `DECLARATORS`) when the
-   syntactic role, a typed list hole, or a named/equality hole makes the
-   selector easier to read or diagnose.
+   syntactic role, typed list behavior, or a readability label makes the
+   selector easier to read or diagnose. Hole suffixes are cosmetic labels, not
+   equality constraints.
 3. Keep exact literals, property names, object keys, operators, and ordering
    when they carry the stable signal.
 4. Avoid exact long bodies/subexpressions unless they are the stable signal
@@ -476,23 +477,17 @@ anonymous_statements:
         }
 ```
 
-Single-node holes have two forms. The **bare keyword** is an anonymous
-wildcard: every occurrence matches independently, so there's no need to mint a
-unique name per throwaway placeholder. The **named form** `KEYWORD_name` binds
-for cross-occurrence equality — the same name must match the same candidate
-subtree/statement everywhere it appears. So `EXPR` is the identifier
-expression that matches one arbitrary expression subtree, and `EXPR_left`
-matches one too but forces every `EXPR_left` to be the same subtree; `STMT` and
-`STMT_setup` are the single-statement equivalents. For example, `foo(EXPR)`
-matches both `foo(123)` and `foo(456)`, and `bar(EXPR, EXPR)` matches
-`bar(1, 2)` (the two holes are independent), whereas `bar(EXPR_x, EXPR_x)` only
-matches a call whose two arguments are identical. These are still structural
+Single-node holes may be bare (`EXPR`) or suffixed with a readability label
+(`EXPR_left`). Labels are comments, not bindings: every `EXPR`, `STMT`, or
+`ANYTHING` occurrence matches independently, even when two occurrences have the
+same suffix. `EXPR` matches one arbitrary expression subtree; `STMT` matches one
+arbitrary statement. For example, `foo(EXPR)` matches both `foo(123)` and
+`foo(456)`, and both `bar(EXPR, EXPR)` and `bar(EXPR_value, EXPR_value)` match
+`bar(1, 2)` because the two holes are independent. These are still structural
 selectors: surrounding syntax is exact after the identifier policy is applied,
-and ambiguous matches are rejected rather than resolved by source order.
-Reserved future selector spellings fail before matching with an explicit
-`unsupported selector capability` diagnostic. For example, `ANYTHING_FUTURE`
-is rejected early instead of falling through to a generic no-match report.
-Unknown `source_match` fields use the same diagnostic class.
+and ambiguous matches are rejected rather than resolved by source order. Unknown
+`source_match` fields fail before matching with an explicit `unsupported
+selector capability` diagnostic.
 
 `ANYTHING` is universal anonymous sugar for positions where raw JavaScript can
 parse a plain identifier and the matcher already has a typed hole for that AST
@@ -525,9 +520,10 @@ const config = {
 };
 ```
 
-Keep the typed spelling when the role is not obvious from nearby syntax, when
-you need a named equality hole such as `EXPR_value`, or when you need typed
-list-hole forms such as `ARGS`, `STMT_LIST`, or `OBJECT_PROPS_GENERATED`.
+Keep the typed spelling when the role is not obvious from nearby syntax, or
+when you need typed list-hole forms such as `ARGS`, `STMT_LIST`, or
+`OBJECT_PROPS_GENERATED`. Use labels only to make a selector easier to read;
+they do not impose equality.
 `{ key: ANYTHING }` wildcards the value expression; `{ ANYTHING: value }` is
 rejected because object property keys are exact anchors, not wildcard
 positions.
@@ -582,13 +578,12 @@ absorbed sequence for cross-occurrence equality.
   ```
 
 - `CLASS_REST;` as a class field (no initializer) matches a run of class
-  members — "this class by these members, ignore the rest". `CLASS_REST` is an
-  exact token (not a prefix).
+  members — "this class by these members, ignore the rest".
 - `case CASE_REST:` as an empty switch case (no body) matches a run of
   `case`/`default` clauses — "this switch by these discriminating cases,
-  ignore the rest". `CASE_REST` is an exact token (not a prefix), and a
-  `default:` clause is never a hole. Use it to pin a many-arm `switch` by the
-  one or two cases that discriminate it without spelling every arm:
+  ignore the rest". A `default:` clause is never a hole. Use it to pin a
+  many-arm `switch` by the one or two cases that discriminate it without
+  spelling every arm:
 
   ```js
   switch (ANYTHING) {

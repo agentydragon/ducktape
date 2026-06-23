@@ -327,6 +327,48 @@ fn selector_fact_store_for_chunk(
     Ok(store)
 }
 
+fn source_match_candidate_statement_ordinals(
+    owner_graph: &analysis::OwnerGraph,
+) -> BTreeMap<String, Option<StatementOrdinal>> {
+    let mut by_binding = BTreeMap::new();
+    for node in owner_graph.iter_nodes() {
+        for binding in &node.declared {
+            by_binding
+                .entry(binding.0.as_str().to_string())
+                .and_modify(|existing| {
+                    if *existing != Some(node.statement_ordinal) {
+                        *existing = None;
+                    }
+                })
+                .or_insert(Some(node.statement_ordinal));
+        }
+    }
+    by_binding
+}
+
+fn source_match_candidate_statement_ordinal(
+    by_binding: &BTreeMap<String, Option<StatementOrdinal>>,
+    request_id: &str,
+    export_name: &str,
+    candidate: &source_match::MemberBindingMatch,
+) -> Result<StatementOrdinal> {
+    match by_binding.get(&candidate.binding.binding_name) {
+        Some(Some(statement_ordinal)) => Ok(*statement_ordinal),
+        Some(None) => Err(anyhow!(
+            "logical_module {request_id}: source_match candidate for member `{export_name}` \
+             matched binding `{}` but that binding is declared by multiple owner-graph nodes",
+            candidate.binding.binding_name,
+        )),
+        None => Err(anyhow!(
+            "logical_module {request_id}: source_match candidate for member `{export_name}` \
+             matched binding `{}` at body index {}, but that binding does not appear in the \
+             owner graph",
+            candidate.binding.binding_name,
+            candidate.body_idx,
+        )),
+    }
+}
+
 #[derive(Debug, Clone)]
 struct SourceMatchDiagnostic {
     module_id: String,
@@ -1045,6 +1087,8 @@ impl ChunkPlanBuilder {
             Result<Vec<source_match::MemberBindingGroupMatch>, String>,
         >::new();
         let mut pending_constraints = Vec::<(String, String, spec::MemberSelectorSpec)>::new();
+        let source_match_ordinal_by_binding =
+            source_match_candidate_statement_ordinals(owner_graph);
         let mut facts =
             selector_fact_store_for_chunk(chunk_id_interned, owner_graph, module, import_sources)?;
         for (index, request) in explicit_requests.iter().enumerate() {
@@ -1129,15 +1173,16 @@ impl ChunkPlanBuilder {
                     match candidates {
                         Ok(candidates) => {
                             for candidate in &candidates {
+                                let statement_ordinal = source_match_candidate_statement_ordinal(
+                                    &source_match_ordinal_by_binding,
+                                    &request.id,
+                                    &member.export_name,
+                                    candidate,
+                                )?;
                                 facts.push(SelectorFact::SourceMatchCandidate {
                                     chunk_id: chunk_id_interned,
                                     selector_key: selector_key.clone(),
-                                    statement_ordinal: StatementOrdinal(
-                                        js_ast::statement_ordinal_for_body_index(
-                                            &module.body,
-                                            candidate.body_idx,
-                                        ),
-                                    ),
+                                    statement_ordinal,
                                     binding: candidate.binding.binding_name.clone(),
                                 });
                             }

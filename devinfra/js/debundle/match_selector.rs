@@ -32,7 +32,7 @@ use serde::Serialize;
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD,
     DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD,
-    STMT_LIST_HOLE_KEYWORD,
+    STMT_LIST_HOLE_KEYWORD, hole_name_for, labeled_hole_name_for,
 };
 use spec::{SourceMatch, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
@@ -489,15 +489,19 @@ fn object_pat_prop_binds_name(prop: &ObjectPatProp, name: &str) -> bool {
 /// Whether an identifier name is one of the selector hole keywords, so we never
 /// "drop" a hole the relaxer (or the input) already wrote.
 fn is_hole_keyword(name: &str) -> bool {
-    name == ANYTHING_HOLE_KEYWORD
-        || name == EXPR_HOLE_KEYWORD
-        || name == STMT_HOLE_KEYWORD
-        || name == STMT_LIST_HOLE_KEYWORD
-        || name == ARGS_HOLE_KEYWORD
-        || name == OBJECT_PROPS_HOLE_KEYWORD
-        || name == CLASS_REST_HOLE_KEYWORD
-        || name == CASE_REST_HOLE_KEYWORD
-        || name == DECLARATORS_HOLE_KEYWORD
+    hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
+        || hole_name_for(name, EXPR_HOLE_KEYWORD).is_some()
+        || hole_name_for(name, STMT_HOLE_KEYWORD).is_some()
+        || [
+            STMT_LIST_HOLE_KEYWORD,
+            ARGS_HOLE_KEYWORD,
+            OBJECT_PROPS_HOLE_KEYWORD,
+            CLASS_REST_HOLE_KEYWORD,
+            CASE_REST_HOLE_KEYWORD,
+            DECLARATORS_HOLE_KEYWORD,
+        ]
+        .iter()
+        .any(|keyword| labeled_hole_name_for(name, keyword).is_some())
 }
 
 fn object_props_hole() -> PropOrSpread {

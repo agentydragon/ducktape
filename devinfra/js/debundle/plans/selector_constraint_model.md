@@ -444,9 +444,9 @@ The current `source_match` hole vocabulary maps four ways; only the first is a t
   `STMT_LIST` / `ARGS` / `OBJECT_PROPS` / a single `CLASS_REST` / `CASE_REST` /
   `DECLARATORS` ("ignore the rest") — **vanish**: a CQ asserts only what it requires, so
   you simply do not mention those children/args/members.
-- **equality** — a named `EXPR_x` repeated (same subtree in two places) → a **shared
-  variable** used twice (a join). (List-hole name suffixes like `STMT_LIST_x` are labels,
-  not equality, so they stay existential.)
+- **readability labels** — `EXPR_*`, `STMT_*`, `ANYTHING_*`, and list-hole
+  suffixes like `STMT_LIST_x` are comments, not equality constraints, so they
+  lower exactly like their bare hole keyword and stay existential.
 - **predicate** — `STR_LITERAL_MATCHING_RE("re")` → a **filter atom**
   `str_matches(node, "re")` (a builtin), not existence.
 - **ordered / positional** — multiple anchored runs implying a subsequence
@@ -456,7 +456,7 @@ The current `source_match` hole vocabulary maps four ways; only the first is a t
   stabilization target, not a default.
 
 So in the clean native form the surviving holes are exactly the existence qualifiers;
-equality and regex become first-class CQ constructs, and order/position is
+regex becomes a first-class CQ construct, and order/position is
 expressible-but-discouraged.
 
 **Fail-closed, never silently weaker.** The lowering is total-or-loud: each construct compiles to
@@ -476,9 +476,8 @@ EDB; nothing is fundamentally inexpressible.
 | -------------------------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------ |
 | `binding: { name }`                                                                          | `name_owner` lookup                                   | owner graph (have it)                                  |
 | structural shape (`class` / `function` / call …)                                             | positive `kind` / `child` / `prop_name` join          | `kind(node,k)`, `child(parent,idx,child)`, `prop_name` |
-| anonymous `EXPR` / `STMT` / `ANYTHING`                                                       | unmentioned position (faithful don't-care)            | —                                                      |
+| `EXPR[_label]` / `STMT[_label]` / `ANYTHING[_label]`                                         | unmentioned position (faithful don't-care)            | —                                                      |
 | run-holes `STMT_LIST` / `ARGS` / `OBJECT_PROPS` / `CLASS_REST` / `CASE_REST` / `DECLARATORS` | absorb = don't-constrain; anchors keep relative order | `child` index column                                   |
-| named `EXPR_x` (cross-occurrence equality)                                                   | one shared variable used twice (a join)               | per-node structural-canonical id                       |
 | `STR_LITERAL_MATCHING_RE("re")`                                                              | filter atom `str_matches(node,"re")`                  | `str_lit(node,value)`                                  |
 | `identifiers: exact`                                                                         | name filter                                           | `name(node,spelling)`                                  |
 | `identifiers: alpha_all`                                                                     | identifier variable + scope                           | `resolves_to` (have it) + alpha-canonical ids          |

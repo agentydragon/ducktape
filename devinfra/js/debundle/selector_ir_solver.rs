@@ -2419,15 +2419,15 @@ impl Error for SelectorIrSolverError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use analysis::ChunkId;
+    use analysis::{AnalysisHints, ChunkId, analyze_chunk, build_owner_graph};
     use selector_ir::{ClaimKind, ClaimOrigin, VariableDomain};
     use selector_ir_lowering::{
         MemberSelectorLoweringContext, MemberSelectorProgramBuilder, lower_member_selector,
     };
     use spec::{
-        BindingSelector, BindingSourceKind, CrossRefRelation, CrossRefTarget, IntrinsicAliasTarget,
-        MakesDecorateCallTarget, MemberOfModuleTarget, MemberSelectorSpec, PassedToCallTarget,
-        ReadsMemberTarget,
+        AnonymousStatementSelector, BindingSelector, BindingSourceKind, CrossRefRelation,
+        CrossRefTarget, IntrinsicAliasTarget, MakesDecorateCallTarget, MemberOfModuleTarget,
+        MemberSelectorSpec, PassedToCallTarget, ReadsMemberTarget,
     };
 
     fn fact_store() -> SelectorFactStore {
@@ -2497,6 +2497,90 @@ mod tests {
             binding: binding.to_string(),
             export_name: None,
         }
+    }
+
+    fn owner_for_binding(facts: &SelectorFactStore, binding: &str) -> OwnerId {
+        facts
+            .facts
+            .iter()
+            .find_map(|fact| match fact {
+                SelectorFact::DeclaredBinding {
+                    owner,
+                    binding: actual,
+                    ..
+                } if actual == binding => Some(*owner),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("binding {binding} should have an owner"))
+    }
+
+    fn statement_ordinal_for_owner(
+        facts: &SelectorFactStore,
+        target_owner: OwnerId,
+    ) -> StatementOrdinal {
+        facts
+            .facts
+            .iter()
+            .find_map(|fact| match fact {
+                SelectorFact::Owner {
+                    owner,
+                    statement_ordinal,
+                    ..
+                } if *owner == target_owner => Some(*statement_ordinal),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("owner {target_owner:?} should have an ordinal"))
+    }
+
+    fn fact_store_from_analyzed_source(source: &str) -> SelectorFactStore {
+        let module = js_ast::with_swc_globals(|| {
+            js_ast::parse_js_module_ast("<selector-ir-solver-test>", source).unwrap()
+        });
+        let analysis = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None);
+        let owner_graph = build_owner_graph(&analysis.facts).unwrap();
+        let mut facts = SelectorFactStore::default();
+        for node in owner_graph.iter_nodes() {
+            facts.push(SelectorFact::Owner {
+                chunk_id: ChunkId(0),
+                owner: node.id,
+                statement_ordinal: node.statement_ordinal,
+                statement_kind: node.kind.to_string(),
+            });
+            for binding in &node.declared {
+                facts.push(SelectorFact::DeclaredBinding {
+                    chunk_id: ChunkId(0),
+                    owner: node.id,
+                    binding: binding.0.as_str().to_string(),
+                    export_name: None,
+                });
+            }
+        }
+        for edge in owner_graph.iter_edges() {
+            if let Some(binding) = edge.reason.binding() {
+                facts.push(SelectorFact::OwnerReferencesBinding {
+                    chunk_id: ChunkId(0),
+                    owner: edge.from,
+                    binding: binding.0.as_str().to_string(),
+                    edge_kind: edge.reason.kind().to_string(),
+                });
+            }
+        }
+        for call in chunk_facts::decorate_call_uses(&module) {
+            facts.push(SelectorFact::DecorateCallUse {
+                chunk_id: ChunkId(0),
+                callee: call.callee,
+                class_anchor: call.class_anchor,
+                member: call.member,
+            });
+        }
+        for alias in chunk_facts::intrinsic_alias_uses(&module) {
+            facts.push(SelectorFact::IntrinsicAliasUse {
+                chunk_id: ChunkId(0),
+                binding: alias.binding,
+                property: alias.property,
+            });
+        }
+        facts
     }
 
     #[test]
@@ -3275,6 +3359,260 @@ mod tests {
             (helper, OwnerId(4)),
             (alias, OwnerId(5)),
             (module_consumer, OwnerId(6)),
+        ] {
+            assert!(
+                matches!(
+                    result.outcome_for(target),
+                    Some(ClaimOutcome::Unique { claim }) if claim.owner == owner
+                ),
+                "target {target:?} should resolve to {owner:?}: {:#?}",
+                result.outcome_for(target)
+            );
+        }
+    }
+
+    #[test]
+    fn solves_intrinsic_alias_chain_when_class_anchor_is_source_match_candidate() {
+        let mut builder = MemberSelectorProgramBuilder::new(MemberSelectorLoweringContext::new(
+            ChunkId(0),
+            "features/widget",
+        ));
+        let define_alias_selector = MemberSelectorSpec::IntrinsicAlias(IntrinsicAliasTarget {
+            property: "defineProperty".to_string(),
+            referenced_by: "applyDecorators".to_string(),
+        });
+        let descriptor_alias_selector = MemberSelectorSpec::IntrinsicAlias(IntrinsicAliasTarget {
+            property: "getOwnPropertyDescriptor".to_string(),
+            referenced_by: "applyDecorators".to_string(),
+        });
+        let helper_selector = MemberSelectorSpec::MakesDecorateCall(MakesDecorateCallTarget {
+            class: "DecoratedClass".to_string(),
+            member: None,
+            kind: None,
+        });
+        let mut class_selector = AnonymousStatementSelector::exact(
+            "const DecoratedClass = class Widget { STMT_LIST; };",
+        );
+        class_selector.target_binding = Some("DecoratedClass".to_string());
+        let class_member_selector = MemberSelectorSpec::SourceMatch(class_selector.clone());
+
+        let define_alias = builder
+            .declare_member_target_in_module(
+                "features/widget",
+                "definePropertyAlias",
+                &define_alias_selector,
+            )
+            .unwrap();
+        let descriptor_alias = builder
+            .declare_member_target_in_module(
+                "features/widget",
+                "descriptorAlias",
+                &descriptor_alias_selector,
+            )
+            .unwrap();
+        let helper = builder
+            .declare_member_target_in_module("features/widget", "applyDecorators", &helper_selector)
+            .unwrap();
+        let class = builder
+            .declare_member_target_in_module(
+                "features/widget",
+                "DecoratedClass",
+                &class_member_selector,
+            )
+            .unwrap();
+        for (export_name, selector) in [
+            ("definePropertyAlias", &define_alias_selector),
+            ("descriptorAlias", &descriptor_alias_selector),
+            ("applyDecorators", &helper_selector),
+            ("DecoratedClass", &class_member_selector),
+        ] {
+            builder
+                .lower_member_constraints_in_module("features/widget", export_name, selector)
+                .unwrap();
+        }
+        let program = builder.into_program().unwrap();
+        let class_owner = program.targets[class.0].owner;
+        let selector_key = program
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                selector_ir::SelectorAtom::SourceMatchCandidate {
+                    owner: selector_ir::OwnerTerm::Var { id },
+                    selector_key: selector_ir::StringTerm::Const { value },
+                } if *id == class_owner => Some(value.clone()),
+                _ => None,
+            })
+            .expect("class source_match should lower to a candidate selector key");
+        let facts = SelectorFactStore {
+            facts: vec![
+                owner(1, 1, "var_decl"),
+                declared(1, "defineAlias"),
+                owner(2, 2, "var_decl"),
+                declared(2, "descriptorAlias"),
+                owner(3, 3, "var_decl"),
+                declared(3, "decorateHelper"),
+                owner(4, 4, "var_decl"),
+                declared(4, "targetClass"),
+                SelectorFact::IntrinsicAliasUse {
+                    chunk_id: ChunkId(0),
+                    binding: "defineAlias".to_string(),
+                    property: "defineProperty".to_string(),
+                },
+                SelectorFact::IntrinsicAliasUse {
+                    chunk_id: ChunkId(0),
+                    binding: "descriptorAlias".to_string(),
+                    property: "getOwnPropertyDescriptor".to_string(),
+                },
+                SelectorFact::OwnerReferencesBinding {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(3),
+                    binding: "defineAlias".to_string(),
+                    edge_kind: "eager_use".to_string(),
+                },
+                SelectorFact::OwnerReferencesBinding {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(3),
+                    binding: "descriptorAlias".to_string(),
+                    edge_kind: "eager_use".to_string(),
+                },
+                SelectorFact::DecorateCallUse {
+                    chunk_id: ChunkId(0),
+                    callee: "decorateHelper".to_string(),
+                    class_anchor: "targetClass".to_string(),
+                    member: None,
+                },
+                SelectorFact::SourceMatchCandidate {
+                    chunk_id: ChunkId(0),
+                    selector_key,
+                    statement_ordinal: StatementOrdinal(4),
+                    binding: "targetClass".to_string(),
+                },
+            ],
+        };
+
+        let result = solve(&program, &facts).unwrap();
+
+        for (target, owner) in [
+            (define_alias, OwnerId(1)),
+            (descriptor_alias, OwnerId(2)),
+            (helper, OwnerId(3)),
+            (class, OwnerId(4)),
+        ] {
+            assert!(
+                matches!(
+                    result.outcome_for(target),
+                    Some(ClaimOutcome::Unique { claim }) if claim.owner == owner
+                ),
+                "target {target:?} should resolve to {owner:?}: {:#?}",
+                result.outcome_for(target)
+            );
+        }
+    }
+
+    #[test]
+    fn solves_intrinsic_alias_chain_from_analyzed_decorate_trio() {
+        let mut builder = MemberSelectorProgramBuilder::new(MemberSelectorLoweringContext::new(
+            ChunkId(0),
+            "features/widget",
+        ));
+        let define_alias_selector = MemberSelectorSpec::IntrinsicAlias(IntrinsicAliasTarget {
+            property: "defineProperty".to_string(),
+            referenced_by: "applyDecorators".to_string(),
+        });
+        let descriptor_alias_selector = MemberSelectorSpec::IntrinsicAlias(IntrinsicAliasTarget {
+            property: "getOwnPropertyDescriptor".to_string(),
+            referenced_by: "applyDecorators".to_string(),
+        });
+        let helper_selector = MemberSelectorSpec::MakesDecorateCall(MakesDecorateCallTarget {
+            class: "DecoratedClass".to_string(),
+            member: None,
+            kind: None,
+        });
+        let mut class_selector = AnonymousStatementSelector::exact(
+            "const DecoratedClass = class Widget { STMT_LIST; };",
+        );
+        class_selector.target_binding = Some("DecoratedClass".to_string());
+        let class_member_selector = MemberSelectorSpec::SourceMatch(class_selector);
+
+        let define_alias = builder
+            .declare_member_target_in_module(
+                "features/widget",
+                "definePropertyAlias",
+                &define_alias_selector,
+            )
+            .unwrap();
+        let descriptor_alias = builder
+            .declare_member_target_in_module(
+                "features/widget",
+                "descriptorAlias",
+                &descriptor_alias_selector,
+            )
+            .unwrap();
+        let helper = builder
+            .declare_member_target_in_module("features/widget", "applyDecorators", &helper_selector)
+            .unwrap();
+        let class = builder
+            .declare_member_target_in_module(
+                "features/widget",
+                "DecoratedClass",
+                &class_member_selector,
+            )
+            .unwrap();
+        for (export_name, selector) in [
+            ("definePropertyAlias", &define_alias_selector),
+            ("descriptorAlias", &descriptor_alias_selector),
+            ("applyDecorators", &helper_selector),
+            ("DecoratedClass", &class_member_selector),
+        ] {
+            builder
+                .lower_member_constraints_in_module("features/widget", export_name, selector)
+                .unwrap();
+        }
+        let program = builder.into_program().unwrap();
+        let class_owner_var = program.targets[class.0].owner;
+        let selector_key = program
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                selector_ir::SelectorAtom::SourceMatchCandidate {
+                    owner: selector_ir::OwnerTerm::Var { id },
+                    selector_key: selector_ir::StringTerm::Const { value },
+                } if *id == class_owner_var => Some(value.clone()),
+                _ => None,
+            })
+            .expect("class source_match should lower to a candidate selector key");
+
+        let mut facts = fact_store_from_analyzed_source(
+            r#"
+var defineAlias = Object.defineProperty,
+  descriptorAlias = Object.getOwnPropertyDescriptor,
+  decorateHelper = (decorators, target, key, kind) => {
+    const desc = kind ? descriptorAlias(target, key) : target;
+    for (const decorator of decorators) decorator(target, key, desc);
+    defineAlias(target, key, desc);
+  };
+const targetClass = class LocalWidget {};
+decorateHelper([tag], targetClass.prototype, "greet", 1);
+"#,
+        );
+        let class_owner = owner_for_binding(&facts, "targetClass");
+        facts.push(SelectorFact::SourceMatchCandidate {
+            chunk_id: ChunkId(0),
+            selector_key,
+            statement_ordinal: statement_ordinal_for_owner(&facts, class_owner),
+            binding: "targetClass".to_string(),
+        });
+
+        let result = solve(&program, &facts).unwrap();
+
+        for (target, owner) in [
+            (define_alias, owner_for_binding(&facts, "defineAlias")),
+            (
+                descriptor_alias,
+                owner_for_binding(&facts, "descriptorAlias"),
+            ),
+            (helper, owner_for_binding(&facts, "decorateHelper")),
+            (class, class_owner),
         ] {
             assert!(
                 matches!(

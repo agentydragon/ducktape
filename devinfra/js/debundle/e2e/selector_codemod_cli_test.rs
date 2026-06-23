@@ -1276,11 +1276,11 @@ fn apply_rewrites_anonymous_typed_holes_to_anything() {
     assert!(rewritten.contains("}, ANYTHING);"), "{rewritten}");
     assert!(
         rewritten.contains("EXPR_VALUE"),
-        "named expression holes should stay readable:\n{rewritten}"
+        "labeled expression holes should stay readable:\n{rewritten}"
     );
     assert!(
         rewritten.contains("OBJECT_PROPS_GENERATED"),
-        "named object-property holes should stay readable:\n{rewritten}"
+        "labeled object-property holes should stay readable:\n{rewritten}"
     );
 }
 

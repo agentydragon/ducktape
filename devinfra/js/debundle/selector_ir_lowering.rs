@@ -17,7 +17,7 @@ use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD,
     CLASS_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD,
     OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
-    STRING_LITERAL_REGEX_PREDICATE, hole_name_for,
+    STRING_LITERAL_REGEX_PREDICATE, hole_name_for, labeled_hole_name_for,
 };
 use spec::{
     AnonymousStatementSelector, BindingSelector, BindingSourceKind, CrossRefRelation,
@@ -590,10 +590,10 @@ impl Visit for SourceMatchHoleSyntaxVisitor {
 
 fn selector_hole_name(name: &str) -> bool {
     name == STRING_LITERAL_REGEX_PREDICATE
+        || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
+        || hole_name_for(name, EXPR_HOLE_KEYWORD).is_some()
+        || hole_name_for(name, STMT_HOLE_KEYWORD).is_some()
         || [
-            ANYTHING_HOLE_KEYWORD,
-            EXPR_HOLE_KEYWORD,
-            STMT_HOLE_KEYWORD,
             STMT_LIST_HOLE_KEYWORD,
             CLASS_REST_HOLE_KEYWORD,
             CASE_REST_HOLE_KEYWORD,
@@ -603,7 +603,7 @@ fn selector_hole_name(name: &str) -> bool {
             ARRAY_ELEMENTS_HOLE_KEYWORD,
         ]
         .iter()
-        .any(|keyword| hole_name_for(name, keyword).is_some())
+        .any(|keyword| labeled_hole_name_for(name, keyword).is_some())
 }
 
 fn selector_origin(selector: &MemberSelectorSpec) -> ClaimOrigin {

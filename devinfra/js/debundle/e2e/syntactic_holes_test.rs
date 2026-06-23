@@ -1,10 +1,10 @@
 //! End-to-end coverage for `source_match` syntactic holes.
 //!
 //! Single-node holes:
-//! - Expression holes (`EXPR` / `EXPR_name`) are selector-local
-//!   identifier expressions; they match one arbitrary expression subtree.
-//! - Statement holes (`STMT` / `STMT_name`) are selector-local bare
-//!   expression statements; they match exactly one statement.
+//! - Expression holes (`EXPR` / `EXPR_label`) are selector-local identifier
+//!   expressions; they match one arbitrary expression subtree.
+//! - Statement holes (`STMT` / `STMT_label`) are selector-local bare expression
+//!   statements; they match exactly one statement.
 //! - `ANYTHING` is anonymous parse-position sugar: in an expression
 //!   position it behaves like `EXPR`, as a bare statement like `STMT`,
 //!   as a non-declarator binding pattern like an anonymous pattern hole,
@@ -12,8 +12,8 @@
 //!   shorthand property like an anonymous property-list hole, and as a
 //!   no-init class field like `CLASS_REST`.
 //!
-//! The bare single-node keyword matches independently at every occurrence;
-//! the named form binds for cross-occurrence equality.
+//! Hole labels are readability-only: every occurrence matches independently,
+//! even when two occurrences use the same suffix.
 //!
 //! List holes (variable-length):
 //! - `ARGS` / `ARGS_name` in a call or `new` argument list absorbs a run
@@ -1782,7 +1782,7 @@ export { Counter };
 #[test]
 fn member_source_match_case_rest_hole_selects_switch_ignoring_other_cases() {
     // Pin the function by one discriminating `case "go":` arm and let the
-    // `case CASE_REST:` holes absorb the surrounding cases. The whole
+    // `case CASE_REST_*:` holes absorb the surrounding cases. The whole
     // function still moves — the holes are only in the selector.
     let fixture = run_fixture(FixtureOpts::new(
         r#"function dispatch(kind) {
@@ -1808,10 +1808,10 @@ export { dispatch };
                 "dispatch",
                 r#"function readable(ANYTHING) {
   switch (ANYTHING) {
-    case CASE_REST:
+    case CASE_REST_BEFORE:
     case "go":
       STMT_LIST_GO;
-    case CASE_REST:
+    case CASE_REST_AFTER:
   }
 }"#,
             )],
@@ -2065,9 +2065,8 @@ export { CatalogCache };
 
 #[test]
 fn anonymous_expr_holes_match_independent_subtrees() {
-    // The bare keyword `EXPR` is anonymous: the two occurrences match
-    // *different* expressions. A named hole `EXPR_X` repeated would
-    // instead force the two arguments to be equal.
+    // Labels are cosmetic: the two `EXPR_VALUE` occurrences match different
+    // expressions, not a shared equality binding.
     let fixture = run_fixture(FixtureOpts::new(
         r#"const actual = Math.max(Number.parseInt("7", 10), [1, 2, 3].length);
 console.log(actual);
@@ -2077,7 +2076,7 @@ export { actual };
             "calc",
             &[Member::source_alpha(
                 "calc_value",
-                r#"const readable = Math.max(EXPR, EXPR);"#,
+                r#"const readable = Math.max(EXPR_VALUE, EXPR_VALUE);"#,
             )],
         )],
     ));
@@ -2454,9 +2453,12 @@ export { total };
 }
 
 #[test]
-fn unsupported_reserved_hole_names_fail_before_generic_no_match() {
-    let universal = run_dry_run_rejection_fixture(FixtureOpts::new(
-        r#"const actual = computeTotal(1, 2);
+fn suffixed_hole_labels_are_cosmetic() {
+    let universal = run_fixture(FixtureOpts::new(
+        r#"function computeTotal(a, b) {
+  return a + b;
+}
+const actual = computeTotal(1, 2);
 console.log(actual);
 export { actual };
 "#,
@@ -2468,25 +2470,9 @@ export { actual };
             )],
         )],
     ));
-    assert!(
-        universal.stderr.contains("unsupported selector capability"),
-        "stderr:\n{}",
-        universal.stderr
-    );
-    assert!(
-        universal.stderr.contains("ANYTHING_FUTURE"),
-        "stderr:\n{}",
-        universal.stderr
-    );
-    assert!(
-        !universal
-            .stderr
-            .contains("did not match any top-level declaration"),
-        "stderr:\n{}",
-        universal.stderr
-    );
+    assert_entry_output(&universal, "3\n");
 
-    let object_gap = run_dry_run_rejection_fixture(FixtureOpts::new(
+    let object_gap = run_fixture(FixtureOpts::new(
         r#"const actual = { stable: 1, generated: 2, other: 3 };
 console.log(actual.stable + actual.other);
 export { actual };
@@ -2499,25 +2485,62 @@ export { actual };
             )],
         )],
     ));
-    assert!(
-        object_gap
-            .stderr
-            .contains("unsupported selector capability"),
-        "stderr:\n{}",
-        object_gap.stderr
-    );
-    assert!(
-        object_gap.stderr.contains("ANYTHING_FUTURE"),
-        "stderr:\n{}",
-        object_gap.stderr
-    );
-    assert!(
-        !object_gap
-            .stderr
-            .contains("did not match any top-level declaration"),
-        "stderr:\n{}",
-        object_gap.stderr
-    );
+    assert_entry_output(&object_gap, "4\n");
+
+    let named_expr = run_fixture(FixtureOpts::new(
+        r#"function computeTotal(a, b) {
+  return a + b;
+}
+const actual = computeTotal(1, 2);
+console.log(actual);
+export { actual };
+"#,
+        vec![logical_module(
+            "calc",
+            &[Member::source_alpha(
+                "total",
+                r#"const readable = computeTotal(EXPR_FUTURE, EXPR);"#,
+            )],
+        )],
+    ));
+    assert_entry_output(&named_expr, "3\n");
+
+    let empty_expr_label = run_fixture(FixtureOpts::new(
+        r#"const actual = Math.min(10, 4);
+console.log(actual);
+export { actual };
+"#,
+        vec![logical_module(
+            "calc_empty_label",
+            &[Member::source_alpha(
+                "total",
+                r#"const readable = Math.min(EXPR_, EXPR);"#,
+            )],
+        )],
+    ));
+    assert_entry_output(&empty_expr_label, "4\n");
+
+    let named_stmt = run_fixture(FixtureOpts::new(
+        r#"function setup() {}
+function actual() {
+  setup();
+  return 1;
+}
+console.log(actual());
+export { actual };
+"#,
+        vec![logical_module(
+            "calc",
+            &[Member::source_alpha(
+                "total",
+                r#"function readable() {
+  STMT_FUTURE;
+  return 1;
+}"#,
+            )],
+        )],
+    ));
+    assert_entry_output(&named_stmt, "1\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -2694,10 +2717,10 @@ export { marker };
 fn case_rest_is_not_expressible_via_anything() {
     // `case CASE_REST:` absorbs surrounding `case`/`default` clauses. There is
     // no `ANYTHING` spelling for a switch-case-list hole: `is_case_rest_hole`
-    // matches only the literal `CASE_REST` test identifier. A bare `ANYTHING`
-    // statement is not a `case` clause, so attempting to use it to skip cases
-    // cannot parse into the case-list-hole shape — the keyword stays load-
-    // bearing. Here the `CASE_REST` form matches the multi-case switch.
+    // matches only the `CASE_REST` keyword family. A bare `ANYTHING` statement is
+    // not a `case` clause, so attempting to use it to skip cases cannot parse
+    // into the case-list-hole shape — the keyword stays load-bearing. Here the
+    // `CASE_REST` form matches the multi-case switch.
     let subject = r#"function dispatch(kind) {
   switch (kind) {
     case "alpha":

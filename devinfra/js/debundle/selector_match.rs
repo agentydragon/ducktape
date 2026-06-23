@@ -36,7 +36,7 @@ use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD,
     CLASS_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD,
     OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
-    STRING_LITERAL_REGEX_PREDICATE, hole_name_for,
+    STRING_LITERAL_REGEX_PREDICATE, hole_name_for, labeled_hole_name_for,
 };
 
 /// A needle construct whose faithful encoding this matcher has not implemented.
@@ -490,33 +490,31 @@ pub fn is_declarator_run_hole(index: &Index, node: NodeId) -> bool {
     is_run_hole_carrier(index, NodeKind::VarDecl, node)
 }
 
-/// `EXPR` (bare or named) or bare `ANYTHING`: a single-node hole in **expression**
-/// position (an `Ident`).
+/// `EXPR[_label]` or `ANYTHING[_label]`: a single-node hole in **expression**
+/// position (an `Ident`). Labels are cosmetic and never bind.
 fn is_expr_single_hole(name: &str) -> bool {
-    hole_name_for(name, EXPR_HOLE_KEYWORD).is_some() || name == ANYTHING_HOLE_KEYWORD
+    hole_name_for(name, EXPR_HOLE_KEYWORD).is_some()
+        || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
 }
 
-/// `STMT` (bare or named, but not the `STMT_LIST` run hole) or bare `ANYTHING`: a
-/// single-node hole in **statement** position (with `STMT_LIST`-wins-first
-/// precedence).
+/// `STMT[_label]` or `ANYTHING[_label]`: a single-node hole in **statement**
+/// position. Labels are cosmetic and never bind.
 fn is_stmt_single_hole(name: &str) -> bool {
-    name == ANYTHING_HOLE_KEYWORD
-        || (hole_name_for(name, STMT_LIST_HOLE_KEYWORD).is_none()
-            && hole_name_for(name, STMT_HOLE_KEYWORD).is_some())
+    hole_name_for(name, STMT_HOLE_KEYWORD).is_some()
+        || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
 }
 
 /// A single-node hole borne by `node`, parse-position polymorphic: an expression
 /// `Ident` (`EXPR`/`ANYTHING`), a binding `BindingIdent` pattern (`ANYTHING` only,
 /// mirroring `is_anything_pat_hole`), or an expression-statement `ExprStmt`
-/// (`STMT`/`ANYTHING`, matching any statement kind). Anonymous match-any
-/// semantics; cross-occurrence equality of *named* single-node holes (`EXPR_x`)
-/// is deferred (the equality-hole rung) and differential-gated.
+/// (`STMT`/`ANYTHING`, matching any statement kind). Suffixed labels are
+/// readability-only and do not bind.
 fn is_single_node_hole(index: &Index, node: NodeId) -> bool {
     match index.kind_of(node) {
         NodeKind::Ident => index.ident_of(node).is_some_and(is_expr_single_hole),
         NodeKind::BindingIdent => index
             .ident_of(node)
-            .is_some_and(|n| n == ANYTHING_HOLE_KEYWORD),
+            .is_some_and(|n| hole_name_for(n, ANYTHING_HOLE_KEYWORD).is_some()),
         NodeKind::ExprStmt => {
             let kids = index.children_of(node);
             kids.len() == 1
@@ -544,7 +542,7 @@ const RUN_HOLE_KEYWORDS: [&str; 7] = [
 fn is_run_hole_keyword(name: &str) -> bool {
     RUN_HOLE_KEYWORDS
         .iter()
-        .any(|kw| hole_name_for(name, kw).is_some())
+        .any(|kw| labeled_hole_name_for(name, kw).is_some())
 }
 
 /// Whether `name` is any hole/placeholder keyword (single-node or run). Used to
@@ -553,26 +551,26 @@ fn is_run_hole_keyword(name: &str) -> bool {
 /// of members, not a real `CLASS_REST`-named property — indexing it would require
 /// a token no real subject carries.
 fn is_hole_keyword(name: &str) -> bool {
-    name == ANYTHING_HOLE_KEYWORD
-        || name == CASE_REST_HOLE_KEYWORD
-        || [
-            EXPR_HOLE_KEYWORD,
-            STMT_HOLE_KEYWORD,
-            STMT_LIST_HOLE_KEYWORD,
-            ARGS_HOLE_KEYWORD,
-            OBJECT_PROPS_HOLE_KEYWORD,
-            ARRAY_ELEMENTS_HOLE_KEYWORD,
-            DECLARATORS_HOLE_KEYWORD,
-            CLASS_REST_HOLE_KEYWORD,
-        ]
-        .iter()
-        .any(|kw| hole_name_for(name, kw).is_some())
+    [
+        ANYTHING_HOLE_KEYWORD,
+        EXPR_HOLE_KEYWORD,
+        STMT_HOLE_KEYWORD,
+        STMT_LIST_HOLE_KEYWORD,
+        ARGS_HOLE_KEYWORD,
+        OBJECT_PROPS_HOLE_KEYWORD,
+        ARRAY_ELEMENTS_HOLE_KEYWORD,
+        DECLARATORS_HOLE_KEYWORD,
+        CLASS_REST_HOLE_KEYWORD,
+        CASE_REST_HOLE_KEYWORD,
+    ]
+    .iter()
+    .any(|kw| labeled_hole_name_for(name, kw).is_some())
 }
 
 fn node_ident_hole(index: &Index, node: NodeId, keyword: &str) -> bool {
     index
         .ident_of(node)
-        .is_some_and(|name| hole_name_for(name, keyword).is_some())
+        .is_some_and(|name| labeled_hole_name_for(name, keyword).is_some())
 }
 
 /// True iff `child` is a variable-length run-hole carrier in a list under a
@@ -625,19 +623,20 @@ fn is_run_hole_carrier(index: &Index, parent_kind: NodeKind, child: NodeId) -> b
                 let kids = index.children_of(child);
                 kids.len() == 1
                     && index.prop_name_of(kids[0]).is_some_and(|name| {
-                        name == CLASS_REST_HOLE_KEYWORD || name == ANYTHING_HOLE_KEYWORD
+                        labeled_hole_name_for(name, CLASS_REST_HOLE_KEYWORD).is_some()
+                            || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
                     })
             }
         }
-        // `case CASE_REST:` — a switch clause, no body, whose sole child is the
-        // (exact) keyword test.
+        // `case CASE_REST[_label]:` — a switch clause, no body, whose sole child
+        // is the keyword test. The optional label is cosmetic.
         NodeKind::Switch => {
             ck == NodeKind::SwitchCase && {
                 let kids = index.children_of(child);
                 kids.len() == 1
-                    && index
-                        .ident_of(kids[0])
-                        .is_some_and(|name| name == CASE_REST_HOLE_KEYWORD)
+                    && index.ident_of(kids[0]).is_some_and(|name| {
+                        labeled_hole_name_for(name, CASE_REST_HOLE_KEYWORD).is_some()
+                    })
             }
         }
         // `const DECLARATORS` / `ANYTHING` — a declarator whose name binding is

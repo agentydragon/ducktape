@@ -1092,6 +1092,8 @@ rust_test(
     crate = ":selector_ir_solver",
     edition = "2024",
     deps = [
+        ":chunk_facts",
+        ":js_ast",
         ":selector_ir",
         ":selector_ir_lowering",
         ":spec",

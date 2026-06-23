@@ -15,7 +15,7 @@ pub(crate) fn validate_anything_holes(items: &[ModuleItem]) -> Result<()> {
          sugar only for expression (`EXPR`), statement (`STMT`), pattern, \
          variable-declarator-list (`DECLARATORS`), object-property-list \
          (`ANYTHING` shorthand or `OBJECT_PROPS`), and class-rest (`CLASS_REST`) holes. \
-         Use typed/named holes when the position needs stronger diagnostics or equality. \
+         Use typed holes when the position needs stronger diagnostics. \
          Object property keys still need exact keys; use `key: ANYTHING` to wildcard a \
          property value or `{{ ANYTHING }}` to skip arbitrary properties.",
         collector.positions.join(", ")

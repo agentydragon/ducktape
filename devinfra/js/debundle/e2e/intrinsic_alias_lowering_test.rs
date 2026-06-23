@@ -279,6 +279,86 @@ fn intrinsic_alias_referenced_by_generic_helper_name_resolves_per_module() {
     assert_entry_output(&fixture, "aA bB\n");
 }
 
+/// **Source-match anchor on a split declarator feeds the joint solver.** Mirrors
+/// the real split-declarator decorate shape without carrying corpus-specific names:
+/// the helper trio lives in one comma-list declaration, and the decorated class is
+/// the second declarator in a later `const` statement. The `source_match` candidate
+/// reports both the original body index and the matched binding (`targetClass`); the
+/// global solver must bridge by the matched binding's owner, not by the first owner
+/// split from that body item (`firstValue`), so `makes_decorate_call` can resolve
+/// the helper and `intrinsic_alias` can resolve its companions in the same pass.
+#[test]
+fn intrinsic_alias_chain_uses_source_match_binding_owner_for_split_declarator_anchor() {
+    let source = r#"var defineAlias = Object.defineProperty,
+  descriptorAlias = Object.getOwnPropertyDescriptor,
+  decorateHelper = (decorators, target, key, kind) => {
+    const desc = kind ? descriptorAlias(target, key) : target;
+    for (const decorator of decorators) decorator(target, key, desc);
+    defineAlias(target, key, desc);
+  };
+const tag = (target, key, desc) => {
+  const original = desc.value;
+  desc.value = function () { return original.call(this) + "!"; };
+};
+const firstValue = 100,
+  targetClass = class LocalWidget {
+    greet() {
+      return "hi";
+    }
+  };
+decorateHelper([tag], targetClass.prototype, "greet", 1);
+console.log(new targetClass().greet(), firstValue);
+export { targetClass };
+"#;
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "model",
+                &[Member::source_alpha_target(
+                    "DecoratedClass",
+                    "DecoratedClass",
+                    r#"const DECLARATORS_BEFORE = null,
+  DecoratedClass = class ReadableWidget {
+    greet() {
+      STMT_LIST;
+    }
+  };"#,
+                )],
+            ),
+            logical_module(
+                "decorate_runtime",
+                &[
+                    Member::makes_decorate_call("applyDecorators", "DecoratedClass", None, None),
+                    Member::intrinsic_alias(
+                        "definePropertyAlias",
+                        "defineProperty",
+                        "applyDecorators",
+                    ),
+                    Member::intrinsic_alias(
+                        "descriptorAlias",
+                        "getOwnPropertyDescriptor",
+                        "applyDecorators",
+                    ),
+                ],
+            ),
+        ],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/decorate_runtime.js",
+        &[
+            "source bindings: decorateHelper, defineAlias, descriptorAlias",
+            "applyDecorators",
+            "definePropertyAlias",
+            "descriptorAlias",
+        ],
+        &["firstValue"],
+    );
+    assert_entry_output(&fixture, "hi! 100\n");
+}
+
 /// **Property narrowing.** One helper reads *both* companions of its trio; the
 /// `property` label narrows to the matching one — `defineProperty` to `p0`,
 /// `getOwnPropertyDescriptor` to `g0` — even though both are referenced by the same
