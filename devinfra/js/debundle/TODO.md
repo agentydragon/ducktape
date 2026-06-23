@@ -3,7 +3,7 @@
 Forward-looking gaps in the Rust debundler. Items are written to be removed
 once closed; this file is not a changelog.
 
-## Current AI-worker priority queue (2026-06-14)
+## Current AI-worker priority queue (2026-06-23)
 
 This queue captures the active debundle tooling program. Treat this file as
 the current priority source of truth; detailed design for the automation-first
@@ -24,39 +24,43 @@ records and scoped backlogs; when a plan's core work is complete, its remaining
 tail should be summarized here instead of leaving the plan looking like a second
 priority queue.
 
-**Current focus (2026-06-23 post-#2443).** PR #2439 landed on `devel` as
-`db25ef639` and closed the first global-solver bridge: `source_match` selectors
-now participate in the Ascent-backed selector solver. PR #2443 then lowered the
-exact single-statement subset onto native AST EDB facts. The remaining P0 is not
-a new solver choice. It is to remove the bridge shape that still feeds the
-solver pre-enumerated `SourceMatchCandidate` rows from `ChunkResolver`, and
-instead lower every supported `source_match` shape directly onto the native AST
-EDB facts already exposed by `chunk_facts.rs` /
-`SelectorFactStore::extend_chunk_facts`.
+**Current focus (2026-06-23 post-#2447).** PRs #2439, #2443, #2446, and
+#2447 moved `source_match` onto the Ascent-backed selector path, lowered the
+exact single-statement AST subset, stopped calling `ChunkResolver` for native
+selectors, and added native class-superclass constraints. The remaining P0 is
+to make every live selector form lower into one declarative Ascent/CSP-style
+constraint program. `SourceMatchCandidate` should shrink to the unsupported
+fallback set and then disappear.
 
 Dispatch work in this order:
 
-1. **Native AST EDB in the solver (P0.1).** Thread the full `ast_*` fact rows
-   through the Ascent rule library as queryable relations, with source spans and
-   fail-closed unsupported reporting.
-2. **`source_match` lowering parity (P0.2).** Compile JS-with-holes selectors,
-   binding groups, anonymous statements, holes, alpha matching, and regex
-   predicates into AST/owner facts. Keep `ChunkResolver` as the oracle until the
-   differential reaches zero. The mismatch-only parity surface is
-   `selector_diagnostics.json` entries with category
-   `source_match_native_diff_mismatch`.
-3. **Delete the candidate oracle (P0.3).** Replace `SourceMatchCandidate`
-   facts with native AST-shape constraints, and make no-match, ambiguous, and
-   duplicate-claim diagnostics projections of the solver result.
-4. **Derived relational predicates (P0.4).** Fold the remaining bridge
+1. **Alpha-all as query structure (P0.1).** Lower `identifiers: alpha_all` to
+   logic variables, equality, disequality / `all_different`, and scope facts.
+   Do not clone the procedural `selector_match::Bindings` matcher inside the
+   solver; alpha-renaming should fall out of the query.
+2. **Core hole predicates (P0.2).** Lower simple `ANYTHING` / `EXPR` / `STMT`
+   holes, regex string predicates, and then ordered run holes (`STMT_LIST`,
+   `OBJECT_PROPS`, `DECLARATORS`, `ARGS`, `CLASS_REST`, `CASE_REST`,
+   `ARRAY_ELEMENTS`) as native constraints. Preserve the fail-closed rule:
+   unsupported constructs stay on the oracle until their faithful encoding is
+   implemented.
+3. **Source-match surface pruning (P0.3).** Remove legacy `source_match`
+   options that no current downstream spec uses before nativeization hardens
+   them into the new IR. Current gaffer-private census: `target_statement`,
+   `target_statements`, and `wildcard_string_literals` are unused; verify and
+   delete Ducktape fixtures/helpers in a focused branch.
+4. **Delete the candidate oracle (P0.4).** Remove `SelectorAtom::SourceMatchCandidate`
+   / `SelectorFact::SourceMatchCandidate` once all retained selector forms lower
+   natively. No-match, ambiguity, unsupported, and duplicate-claim diagnostics
+   should be projections of solver results and categoricity / `all_different`.
+5. **Derived relational predicates (P0.5).** Fold the remaining bridge
    vocabulary (`cross_ref`, `reads_member`, `member_of_module`,
    `passed_to_call`, `makes_decorate_call`, `intrinsic_alias`) into IR atoms or
-   derived predicates over owner/reference + AST facts. Keep bridge tests as
-   parity tests until the bridge passes can be deleted.
+   derived predicates over owner/reference + AST facts.
 
 The minimizer polish tail and automation product flows remain valuable, but
-they should build on this native AST EDB resolver contract rather than harden
-today's candidate-oracle or late-bridge shape.
+they should build on this single constraint-program resolver contract rather
+than harden today's fallback oracle or late-bridge shape.
 
 Prefer dispatching work in this order. Large downstream spec migrations should
 lean on tooling generated from this queue instead of hand-authored YAML.
@@ -73,13 +77,14 @@ parallel dispatch queue.
 - <plans/selector_constraint_model.md> — **active (P0 global resolver).**
   Canonical plan for the selector model, Ascent solver choice, execution
   phases, verification gates, and Gaffer evidence queue. #2439 closed the
-  global-solver admission path for `source_match`; current top priority is
-  replacing the `SourceMatchCandidate` oracle with native AST EDB lowering. The
-  landed bridge primitives (`cross_ref`, `reads_member`, `member_of_module`,
-  `passed_to_call`, `makes_decorate_call`, `intrinsic_alias`) are useful
-  fact/selector vocabulary, but are bridge implementations until they fold into
-  derived predicates. See <debug/2026_06_19_p4_debt_worklist.md> for real-spec
-  evidence.
+  global-solver admission path for `source_match`; #2443/#2446/#2447 moved the
+  exact native subset out of the oracle. Current top priority is alpha-all and
+  hole lowering as one declarative query, plus pruning unused source-match
+  surface before carrying it forward. The landed bridge primitives (`cross_ref`,
+  `reads_member`, `member_of_module`, `passed_to_call`, `makes_decorate_call`,
+  `intrinsic_alias`) are useful fact/selector vocabulary, but are bridge
+  implementations until they fold into derived predicates. See
+  <debug/2026_06_19_p4_debt_worklist.md> for real-spec evidence.
 - <plans/automated_spec_workflows.md> — **active design, downstream of P0.**
   North-star for the inventory/plan/apply/validate CLI surface and the
   synthesize / stabilize / version-port / new-app-bootstrap flows. Foundational
@@ -96,22 +101,28 @@ parallel dispatch queue.
   planner design space + algorithm/analysis backlog behind `debundle modules
 propose`.
 
-### P0 — native AST EDB resolver cutover
+### P0 — single constraint-program resolver cutover
 
 Detailed design and gates live in <plans/selector_constraint_model.md>; keep
 this list as the dispatch summary, not a second plan.
 
-1. **Thread full AST facts into Ascent.** `chunk_facts.rs` already extracts
-   `ast_*` rows and `SelectorFactStore::extend_chunk_facts` already stores
-   them. Make the solver consume those rows as native AST-shape relations.
-2. **Lower `source_match` to those facts.** Replace JS-template matching with
-   IR atoms over AST/owner facts, while differentially checking against
-   `ChunkResolver` until selectors, binding groups, anonymous statements,
-   holes, alpha matching, and regex predicates are byte-for-byte equivalent.
-3. **Retire `SourceMatchCandidate`.** Delete the pre-enumerated candidate
-   oracle once the native lowering is equivalent, and route source-match
-   diagnostics through solver categoricity / `all_different`.
-4. **Fold bridge vocabulary into derived predicates.** Re-express the staged
+1. **Lower alpha-all declaratively.** Represent selector-local identifier
+   bindings/references as variables and constraints over facts, including
+   equality, disequality / `all_different`, and scope. This is the blocker for
+   current gaffer-private payoff: its Tana spec uses `identifiers: alpha_all`
+   for every `source_match`.
+2. **Lower the retained hole vocabulary.** Start with simple single-node holes
+   and regex string predicates, then add ordered run-hole placement for the
+   high-volume families (`STMT_LIST`, `DECLARATORS`, `OBJECT_PROPS`). Each
+   lowering must be faithful or fail closed.
+3. **Prune unused source-match options.** Remove `target_statement`,
+   `target_statements`, and `wildcard_string_literals` unless a fresh downstream
+   census finds real use. Also run a broader vestigial-feature audit before
+   nativeizing more rarely-used spec surface.
+4. **Retire `SourceMatchCandidate`.** Delete the pre-enumerated candidate
+   oracle once all retained selector forms lower natively, and route
+   source-match diagnostics through solver categoricity / `all_different`.
+5. **Fold bridge vocabulary into derived predicates.** Re-express the staged
    relational selectors as solver predicates over owner/reference + AST facts.
    Real-spec Gaffer work should supply missing predicates and diagnostics, not
    another permanent resolver layer.

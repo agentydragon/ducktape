@@ -314,52 +314,12 @@ bindings. An explicit `exports` entry on the same group overrides the adopted
 public name for that selector-local binding. `comments` is keyed by
 selector-local binding name and emits like `members[].comment` after expansion.
 
-When the same source window should export bindings and move adjacent
-side-effect statements, put `target_statement` or `target_statements` on the
-binding group's `source_match`. Binding exports are still controlled by
-`exports` / `adopt_names`, while the selected statement indices are claimed as
-anonymous statements from the same structural match:
-
-```yaml
-binding_groups:
-  - source_match:
-      identifiers: alpha_all
-      target_statements: [1, 2]
-      match: |
-        let recordSlot, replaySlot;
-        true && (replaySlot = "replay");
-        false || (recordSlot = "record");
-    exports:
-      recordSlot: recordBridge
-      replaySlot: replayBridge
-```
-
-Decorator/property setup calls fit the same pattern. Use the class declaration
-as the binding context, keep durable property strings exact, and claim the
-decorator calls by index:
-
-```yaml
-binding_groups:
-  - source_match:
-      identifiers: alpha_all
-      target_statements: [1, 2]
-      match: |
-        class DecoratedModel {
-          CLASS_REST;
-          report() {
-            STMT_LIST;
-          }
-          CLASS_REST;
-        }
-        decorate(["observable"], DecoratedModel.prototype, "state");
-        decorate(["observable"], DecoratedModel.prototype, "title");
-    adopt_names: [DecoratedModel]
-```
-
-Under `alpha_all`, `decorate` and `DecoratedModel` are selector-local names:
-they only require a consistent structural correspondence inside this selector,
-so the runtime helper and class binding may be minified differently. The
-strings `"state"` and `"title"` remain exact anchors.
+Legacy binding-group `target_statement` / `target_statements` support can claim
+adjacent anonymous side-effect statements by source-order index from the same
+structural match. Do not use it for new specs: current downstream specs do not
+exercise it, it is slated for removal, and the single-query resolver should
+model anonymous side effects as their own distinguished selector targets rather
+than as indices into neighboring context.
 
 When a few useful bindings sit inside a larger `var`/`let`/`const` declaration
 list, use declarator-list holes instead of spelling unrelated siblings:
@@ -399,57 +359,22 @@ reject the spec as ambiguous rather than picking by source order.
 Refine the selector with an exact statement, a stable literal/property
 difference, or a deliberately small surrounding context.
 
-When the anonymous statement needs surrounding declarations for a unique
-structural match, include that context and set `target_statement` to the
-zero-based index of the statement to claim:
-
-```yaml
-anonymous_statements:
-  - source_match:
-      identifiers: alpha_all
-      target_statement: 1
-      match: |
-        const selectedLeft = "left",
-          selectedRight = "right";
-        console.log(`${selectedLeft}:${selectedRight}`);
-```
-
-Only the indexed statement is claimed; the surrounding context is used for
-matching and must be claimed separately if it should move with the anonymous
-statement.
-
-Use `target_statements` when one structural selector should claim several
-anonymous statements. It accepts either an explicit zero-based index list, or
-`all` to claim every non-hole top-level statement in the selector:
-
-```yaml
-anonymous_statements:
-  - source_match:
-      identifiers: alpha_all
-      target_statements: [1, 2]
-      match: |
-        const contextValue = "stable";
-        console.log("first side effect");
-        console.log("second side effect");
-
-  - source_match:
-      identifiers: alpha_all
-      target_statements: all
-      match: |
-        console.log("before");
-        STMT_LIST;
-        console.log("after");
-```
+Legacy `target_statement` / `target_statements` can claim one or more
+source-order indices from a larger `source_match` window. Do not introduce new
+uses. Current downstream specs do not use this surface, it is slated for
+removal, and source-order indexing is a weak fit for the solver model. Prefer a
+small selector whose distinguished target is the anonymous statement itself,
+using stable literals/properties or relation atoms to make that target unique.
 
 At top level in an anonymous-statement selector, `STMT_LIST;` absorbs a run of
-module-body statements that should be used only as skipped context. A
-`target_statement` or `target_statements` index must point at a pinned
-statement, not at the `STMT_LIST` hole.
+module-body statements that should be used only as skipped context. Treat
+top-level statement-list holes as a legacy compatibility surface until native
+run-hole lowering defines the retained form.
 
 Do not solve ambiguity with opaque hashes. A selector should be readable
 enough for a reviewer to audit and edit. When an anonymous statement needs
-nearby declarations to be unique, prefer `target_statement` over spreading
-duplicated boilerplate.
+nearby declarations to be unique, prefer a relation-shaped selector or a
+separate small structural selector over source-order indexing.
 
 ## Syntactic holes
 
@@ -560,9 +485,9 @@ absorbed sequence for cross-occurrence equality.
   ```
 
 - `STMT_LIST;` (or `STMT_LIST_name;`) in a block body matches any run of
-  statements, including none. At top level it is supported in
-  `anonymous_statements[].source_match` selectors that use `target_statement`
-  or `target_statements`.
+  statements, including none. Top-level `STMT_LIST` support for anonymous
+  statements is legacy compatibility surface pending native run-hole lowering;
+  avoid new selectors that require source-order indexing.
 - `OBJECT_PROPS` (or `OBJECT_PROPS_name`) in an object literal matches any run
   of key/value properties or spreads. Anonymous `ANYTHING` in the same
   shorthand-property position is equivalent. Use either form to pin only the

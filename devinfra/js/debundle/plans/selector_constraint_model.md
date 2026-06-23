@@ -1,18 +1,19 @@
 # Plan: selectors as one global constraint problem (relational spec model)
 
-**Current state (2026-06-22, after #2439).** Ascent remains the selected
+**Current state (2026-06-23, after #2447).** Ascent remains the selected
 production solver. PR #2439 landed on `devel` as `db25ef639` and closed the
 first global-solver bridge: `source_match` selectors now enter the global
-selector IR/solver instead of bypassing it. That bridge still feeds the solver
-`SourceMatchCandidate` rows enumerated by the fact-based `ChunkResolver`;
-`selector_ir_lowering.rs` lowers `source_match` to that candidate atom, and
-`plan_builder.rs` populates the rows by calling `ChunkResolver` candidate APIs.
+selector IR/solver instead of bypassing it. PR #2443 lowered exact
+single-statement selectors onto native AST facts. PR #2446 stopped asking
+`ChunkResolver` for candidate rows when a selector already lowers natively.
+PR #2447 added native `AstSuperClass` constraints for `class ... extends ...`
+matches.
 
-Full AST facts already exist in `chunk_facts.rs` and are appended by
-`SelectorFactStore::extend_chunk_facts`, but they are not yet the native solve
-path for `source_match`. The remaining P0 is to make Ascent consume those AST
-facts directly, lower `source_match` onto them with zero-differential parity,
-and then delete the candidate oracle.
+The bridge that remains is narrower: unsupported `source_match` shapes still
+lower to `SourceMatchCandidate`, and `plan_builder.rs` still asks
+`ChunkResolver` to enumerate rows for those fallback targets. The remaining P0
+is to lower every retained selector form into one declarative Ascent/CSP-style
+constraint program and then delete the candidate oracle.
 
 **Reframing.** The next architectural goal is not to grow more bridge
 vocabulary. It is to make the global constraint solve native over AST +
@@ -23,6 +24,13 @@ missing language/fact coverage; they should not add more long-lived
 anchor-first bridge architecture. The remaining-work index is
 <../debug/2026_06_19_p4_debt_worklist.md>, and the Gaffer-derived language
 evidence is summarized below.
+
+Put another way: debundle's selector YAML is only an authoring frontend. The
+engine contract should be "compile the spec into one query-shaped constraint
+model, run that model over the JS-derived fact store, and read back the relation
+`readable entity -> minified entity`." Datalog/CSP terminology is about using an
+efficient off-the-shelf solver for that model, not about adding a second
+resolver architecture.
 
 Extends the selector-authoring guidance in <../docs/selectors.md> and the
 `debundle_stabilize` skill — which fix _who_ chooses anchors (an agent, not the
@@ -39,18 +47,17 @@ Notation: `@Name` means "the binding/node pinned elsewhere in the spec as `Name`
 ## Goal
 
 Replace the remaining `SourceMatchCandidate` oracle with a Datalog/Ascent
-selector resolver that resolves every selector the `tana/re` spec depends on
-over an explicit relational model of the program (owner graph + AST facts).
-Parity must be **proven, not asserted**: a corpus-wide differential against the
-current `ChunkResolver` reaches zero disagreements, and the lowering is
-**fail-closed** — each construct compiles to atoms provably faithful to current
-`source_match` semantics, or it errors, never silently under-constraining. The
-design must stay **principled** — one general, faithful encoding per selector
-kind and hole, with no per-selector special cases, silent fallbacks, or hacks to
-force a hard construct through. If any construct, or the model itself, turns out
-not to admit such a faithful, principled encoding, we **abort and rethink the
-design** rather than push on with ugly hacks — an honest dead end beats a matcher
-we cannot trust.
+selector resolver that resolves every retained selector form over an explicit
+relational model of the program (owner graph + AST facts). Parity must be
+**proven, not asserted**: each construct compiles to atoms provably faithful to
+current `source_match` semantics, or it remains an explicit unsupported
+fallback while that construct is being implemented. The design must stay
+**principled** — one general, faithful encoding per selector kind and hole, with
+no per-selector special cases, silent fallbacks, or hacks to force a hard
+construct through. If any retained construct, or the model itself, turns out not
+to admit such a faithful, principled encoding, we **abort and rethink the
+design** rather than push on with ugly hacks — an honest dead end beats a
+matcher we cannot trust.
 
 Operationally, this means the Ducktape-side work leads with the engine contract:
 
@@ -59,8 +66,9 @@ Operationally, this means the Ducktape-side work leads with the engine contract:
 2. one fact store per chunk/component containing AST-shape facts,
    binding-resolution facts, owner/reference facts, and derived-predicate inputs,
    with the solver consuming the AST facts natively rather than candidate rows;
-3. one solve per connected selector component, with `@Name` as a shared logic
-   variable rather than a lookup into already-resolved members;
+3. one logical whole-spec solve, with `@Name` as a shared logic variable rather
+   than a lookup into already-resolved members; the engine may decompose
+   independent connected components internally without changing the model;
 4. one diagnostic/result projection for no-match, ambiguity, duplicate claims,
    unsupported constructs, and "which facts forced uniqueness";
 5. one resolved claim map consumed by the existing atomic-DAG / realizability /
@@ -111,9 +119,9 @@ Then:
   variable wherever one selector references another (`@Name`). That conjunction is
   one big pattern over `G`.
 - **`run` = find the homomorphisms of the whole-spec pattern into `G`, as one
-  solve** — a single CSP instance, not selector-by-selector resolution. (Evaluating a
-  conjunctive query _is_ finding homomorphisms into the structure; a CSP solver and a
-  pattern-matcher are the same thing here.)
+  solve** — a single logical CSP/query instance, not selector-by-selector
+  resolution. (Evaluating a conjunctive query _is_ finding homomorphisms into
+  the structure; a CSP solver and a pattern-matcher are the same thing here.)
 - **Validity = target-categoricity**: projected onto the distinguished variables, the
   solution set is a single tuple. Anchors may match in many places; only the
   **claimed** image must be forced. Per target: 0 solutions → `no-match`; ≥2 distinct
@@ -330,10 +338,13 @@ become roughly 5.
 ## Landing in the debundle binary
 
 This is not a side tool — it is the **resolution layer**: the code that maps
-each spec selector to its node on the chunk. After #2439, the global selector
-solver is on that path, but `source_match` still reaches it through
-`ChunkResolver`-enumerated candidate rows. Native AST EDB lowering makes the
-solver itself responsible for the shape match.
+each readable spec entity to its minified node on the chunk. After #2439, the
+global selector solver is on that path. After #2443/#2446/#2447, exact
+single-statement and superclass `source_match` forms lower to native AST
+constraints and no longer ask `ChunkResolver` for oracle rows. Unsupported
+`source_match` shapes still fall back through `ChunkResolver`-enumerated
+`SourceMatchCandidate` rows; the remaining cutover is to shrink that fallback
+set to zero for every retained selector form.
 
 The reference oracle is named in code: `source_match::SelectorResolver`, the
 trait `ChunkResolver` implements — `(parsed chunk, JS-template selector) →
@@ -355,8 +366,9 @@ EDB:
   `SourceMatchCandidate` oracle.
 
 The cutover is a consumer change: add native AST relations and shape rules to
-the Ascent solver, then delete the candidate-oracle projection once the
-differential is zero.
+the Ascent solver, delete each fallback shape after focused equivalence tests
+and corpus checks pass, then delete the candidate-oracle projection once every
+retained selector form resolves through the solver.
 
 ### It replaces several workflow parts, not just the matcher
 
@@ -451,9 +463,16 @@ The current `source_match` hole vocabulary maps four ways; only the first is a t
   `str_matches(node, "re")` (a builtin), not existence.
 - **ordered / positional** — multiple anchored runs implying a subsequence
   (`CLASS_REST; a(){} CLASS_REST; b(){}` ⇒ `a` before `b`), `DECLARATORS_BEFORE/AFTER`,
-  the `target_statement` index → **sibling-order atoms**, which are **T-variant**.
-  Permitted only via the `where:` escape hatch and flagged by `selector-debt` — a
-  stabilization target, not a default.
+  and any explicit source-order choice → **sibling-order atoms**, which are
+  **T-variant**. Permitted only via the `where:` escape hatch and flagged by
+  `selector-debt` — a stabilization target, not a default.
+
+Legacy `target_statement`, `target_statements`, and `wildcard_string_literals`
+are not current Tana/Gaffer requirements. Do not nativeize them by default:
+verify downstream absence, remove the authoring surface, and keep only a
+documented migration path if another consumer proves it needs them. For
+anonymous side effects, prefer one distinguished target per selector/query
+instead of an index into nearby context.
 
 So in the clean native form the surviving holes are exactly the existence qualifiers;
 regex becomes a first-class CQ construct, and order/position is
@@ -481,7 +500,7 @@ EDB; nothing is fundamentally inexpressible.
 | `STR_LITERAL_MATCHING_RE("re")`                                                              | filter atom `str_matches(node,"re")`                  | `str_lit(node,value)`                                  |
 | `identifiers: exact`                                                                         | name filter                                           | `name(node,spelling)`                                  |
 | `identifiers: alpha_all`                                                                     | identifier variable + scope                           | `resolves_to` (have it) + alpha-canonical ids          |
-| `target_binding` / `target_statement(s)`                                                     | choice of distinguished variable                      | —                                                      |
+| `target_binding`                                                                             | choice of distinguished variable                      | —                                                      |
 | `binding_groups` (adopt_names / exports)                                                     | mechanical per-target expansion (already done)        | —                                                      |
 | ordered / positional anchors                                                                 | child-index compare (`i < j`; adjacency `j == i + 1`) | `child` index column                                   |
 
@@ -500,12 +519,15 @@ Both are guarded twice: the lowering **errors** on any pattern whose faithful en
 implemented (no silent approximation), and the corpus differential flags any lowered query that
 disagrees with the matcher.
 
-**The two are not independent, and the dividing line is the _coupling_, not the hole count.** The
-run-hole routine does two things at once — (A)
-variable-length ordered-subsequence **placement** of the fixed segments around the holes, and (B)
-a **global bijective alpha-binding** constraint threaded through that placement (which is _why_ it
-backtracks — `place_segments` snapshots/restores `MatcherState{replacements, alpha_scopes}`). They
-encode very differently:
+**The two are coupled, and the native encoding must keep that coupling
+declarative.** The run-hole routine does two things at once — (A)
+variable-length ordered-subsequence **placement** of the fixed segments around
+the holes, and (B) a **global bijective alpha-binding** constraint threaded
+through that placement (which is _why_ it backtracks —
+`place_segments` snapshots/restores `MatcherState{replacements, alpha_scopes}`).
+In the endpoint, neither part is a procedural side table: placement choices and
+the identifier equalities/disequalities they induce are facts in the same
+solver model.
 
 - **(A) placement is cleanly Datalog-expressible — backtracking and all.** A list-with-holes is
   `[hole?, seg₁, hole, …, segₖ, hole?]`; "`segᵢ` matches starting at ordinal `p`" is the
@@ -518,26 +540,21 @@ encode very differently:
   `[STMT_LIST, const s = …, STMT_LIST]`, `infra/android.serializeNodeForNativeBridge` is
   `{OBJECT_PROPS, isTag: ANYTHING, OBJECT_PROPS}`. So the earlier "≤1 hole per list" intuition is
   **empirically false**; the chain-join handles interior links regardless.
-- **(B) the alpha bijection coupled with variable placement does _not_ map onto pure set-at-a-time
-  Datalog.** Per _fixed_ placement the bijection is clean (stratified negation: reject
-  `pair(n,s₁),pair(n,s₂),s₁≠s₂` or `pair(n₁,s),pair(n₂,s),n₁≠n₂`). But which pairs a placement
-  induces depends on _where_ segments land, so a global per-placement check must carry the
-  accumulated binding map along the chain — an unbounded value: either materialize combinatorially
-  many placement-tagged binding sets, or model a "binding-map lattice" whose merge can _fail_
-  (a failing merge is not a lattice join). Both leave the fragment Ascent evaluates efficiently.
-  This is the sharpened form of the alpha-scoping risk above.
+- **(B) alpha-all is the same query, not a matcher clone.** A placement induces
+  identifier-pair facts tagged with the placement id. Alpha bijection is then a
+  declarative rejection condition: reject any placement where one selector
+  identifier maps to two source identifiers, where two selector identifiers map
+  to the same source identifier, or where required `resolves_to` / scope facts
+  disagree. In Ascent terms this is ordinary
+  disequality/stratified-negation/all-different over placement-tagged rows. If
+  the row set gets too large, that is a profiling and encoding problem to solve
+  with better indexes or a different off-the-shelf solver, not a reason to
+  reintroduce a procedural `MatcherState` side resolver.
 
-**So we narrow on the coupling axis, not the hole-count axis.** In every corpus run-hole pattern
-the fixed landmarks between holes are structurally distinctive (`const s = ANYTHING && !0, …`, the
-prop name `isTag`, `return …`) and the alpha identifiers they carry are **fresh local
-declarations** or **anonymous `ANYTHING`** that never bind — no identifier's binding is decided by
-a variable-gap placement, so the bijection decomposes per-segment and stays the rung-2 conjunction.
-The principled encoding therefore lowers **placement** fully and keeps "an alpha-bound identifier
-whose binding would be decided by a variable-gap placement" **fail-closed** (loud `Unsupported`).
-The corpus-wide differential is what _proves_ the corpus never needs the forbidden coupling; if it
-ever flags a real selector that does, that is the go-back-to-the-drawing-board signal — pre-resolve
-the binding with scope facts independent of placement, or narrow the _selector_ language upstream so
-the pattern cannot be authored.
+So we narrow on the coupling axis, not the hole-count axis. The faithful
+encoding lowers **placement** and **alpha constraints** together. The only
+fail-closed cases should be forms whose required facts are not modeled yet, not
+forms that would be easier to handle by calling the old matcher.
 
 ## What the matcher cannot do that the query model can
 
@@ -624,40 +641,46 @@ So the vocabulary is proven expressible in the engine we picked — the gap to
 production is native consumption of the AST-facts EDB plus template→atoms
 lowering, not the solver's capability.
 
-## Closed by #2439
+## Closed so far
 
 - `source_match` selectors now enter the global selector IR/solver.
 - The materializer has a single Ascent-backed selector solve path for binding
   pins, staged relational selectors, and `source_match` claims.
+- Exact native `source_match` forms no longer call the legacy candidate oracle.
+- Exact single-statement shape and superclass constraints lower to native AST
+  facts.
 - Ascent remains the production solver choice; do not restart solver selection
   unless profiling proves the in-process path cannot meet the latency/memory
   target.
 
-## Remaining work (native AST EDB cutover)
+## Remaining work (single-model cutover)
 
 This is the detailed P0 queue; <../TODO.md> should only summarize it.
 
-- **G1 — native AST EDB ingestion.** Add Ascent relations and indexes for the
-  AST rows already emitted by `chunk_facts.rs` and imported by
-  `SelectorFactStore::extend_chunk_facts`: node kind, parent/child ordinal,
-  literals, identifier/property names, operators, regex, superclass, top-level
-  statement ordinal, and source-span/diagnostic payloads. Preserve the
-  fail-closed rule: unsupported constructs report `unsupported`, not a partial
-  fact set.
-- **G2 — `source_match` lowering parity.** Lower today's JS-with-holes selectors
-  and binding groups into native AST/owner IR atoms. Keep `ChunkResolver` as the
-  reference until the corpus differential is zero, including alpha matching,
-  run-hole placement, regex literal predicates, anonymous statements, exact
-  identifiers, target bindings, and binding groups. Mismatch-only native/oracle
-  parity rows are emitted as `source_match_native_diff_mismatch` entries in the
-  selector diagnostics report, so the cutover can shrink by selector shape
-  without changing production claims.
-- **G3 — candidate-oracle deletion.** Remove `SelectorAtom::SourceMatchCandidate`
-  / `SelectorFact::SourceMatchCandidate` from the production path after G2
-  parity. No-match, ambiguous, unsupported, and duplicate-claim diagnostics
-  should be projections of the native solver result, not `ChunkResolver`
-  side tables.
-- **G4 — relation/language fold-in.** Re-express `cross_ref`, `reads_member`,
+- **G1 — alpha-all as query constraints.** Lower `identifiers: alpha_all` to
+  identifier occurrence variables, `resolves_to`/scope facts, placement-tagged
+  equality and disequality rows, and `all_different`-style rejection rules. Do
+  not clone `MatcherState` or add a procedural alpha resolver.
+- **G2 — retained hole and predicate lowering.** Lower today's retained
+  JS-with-holes selectors and binding groups into native AST/owner IR atoms:
+  simple existential holes, regex string predicates, run-hole placement
+  (`STMT_LIST`, `ARGS`, `OBJECT_PROPS`, `DECLARATORS`, `CLASS_REST`,
+  `CASE_REST`), anonymous statements as distinguished targets, exact
+  identifiers, target bindings, and binding groups. Each construct either
+  compiles faithfully or reports `unsupported`.
+- **G3 — source-match surface pruning.** Remove unused authoring options before
+  nativeizing them. Current Gaffer/Tana census shows no use of
+  `target_statement`, `target_statements`, or `wildcard_string_literals`; verify
+  absence in a focused branch, delete the YAML/code/docs surface, and slate any
+  other vestigial debundle features that gaffer-private does not use for
+  removal rather than carrying them into the query model.
+- **G4 — candidate-oracle deletion.** Remove
+  `SelectorAtom::SourceMatchCandidate` / `SelectorFact::SourceMatchCandidate`
+  and the `ChunkResolver` pre-enumeration path after G1-G3 cover every retained
+  selector form. No-match, ambiguous, unsupported, and duplicate-claim
+  diagnostics should be projections of the native solver result, not
+  `ChunkResolver` side tables.
+- **G5 — relation/language fold-in.** Re-express `cross_ref`, `reads_member`,
   `member_of_module`, `passed_to_call`, `makes_decorate_call`,
   `intrinsic_alias`, and the Gaffer feature-request vocabulary as IR atoms or
   derived predicates over owner/reference + AST facts. The real-spec conversion
@@ -669,9 +692,11 @@ This is the detailed P0 queue; <../TODO.md> should only summarize it.
 - **Build/test gate**: build the changed debundler library and its consumers;
   run the changed area's tests with `--cache_test_results=no` and lint on for a
   final step.
-- **Resolver parity gate**: while both resolver paths exist, the global solve
-  and the current fact-based/staged resolver agree on every covered resolved
-  target, no-match, ambiguous match, duplicate claim, and unsupported construct.
+- **Resolver parity gate**: while fallback shapes still exist, the native solve
+  and the current fallback resolver agree on every covered resolved target,
+  no-match, ambiguous match, duplicate claim, and unsupported construct.
+  Compatibility checks live in focused tests/corpus gates; production should not
+  grow a permanent dual-resolver diagnostics stream.
 - **Real-spec conversion gate**: after converting a downstream selector from a
   name pin to a structural or relational selector, generated output stays
   byte-identical and the converted selector resolves to the same binding the
@@ -690,6 +715,14 @@ The 2026-06-22 `tana/re/web` stabilization dispatch on Gaffer
 `domains/ai` 17. Workers stopped where the current language required
 neighbor-borrowed context, long exact bodies, positional multi-declarator pins,
 or relation shapes visible in facts but awkward in the selector surface.
+
+The 2026-06-23 current-spec census found 5,583 `source_match` blocks across
+1,751 YAML files in the available `tana/re/web` spec, all using
+`identifiers: alpha_all`. The largest native-lowering blockers are hole forms:
+`ANYTHING`, `STMT_LIST`, `DECLARATORS`, `OBJECT_PROPS`, regex literal
+predicates, class-rest, and args/array-element runs. It found no uses of
+`target_statement`, `target_statements`, or `wildcard_string_literals`, so those
+are removal candidates, not P0 solver work.
 
 Use these as language/synthesis requirements for G5, not as independent
 resolver architecture:
