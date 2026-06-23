@@ -2611,6 +2611,8 @@ mod tests {
         let analysis = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None);
         let owner_graph = build_owner_graph(&analysis.facts).unwrap();
         let mut facts = SelectorFactStore::default();
+        let ast_facts = chunk_facts::extract_facts(&module).unwrap();
+        facts.extend_chunk_facts(ChunkId(0), &ast_facts);
         for node in owner_graph.iter_nodes() {
             facts.push(SelectorFact::Owner {
                 chunk_id: ChunkId(0),
@@ -3149,6 +3151,92 @@ mod tests {
                     provenance: Vec::new(),
                 },
             })
+        );
+    }
+
+    #[test]
+    fn lowered_expr_holes_solve_as_independent_ast_variables() {
+        let selector =
+            AnonymousStatementSelector::exact("const selected = Math.max(EXPR_VALUE, EXPR_VALUE);");
+        let program = lower_member_selector(
+            &MemberSelectorLoweringContext::new(ChunkId(0), "runtime/widgets"),
+            "Selected",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap()
+        .program;
+        assert!(
+            !program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
+            "single-node expression holes should lower to native AST constraints"
+        );
+        let facts = fact_store_from_analyzed_source(
+            r#"
+const selected = Math.max(alpha + 1, beta ? beta.value : "fallback");
+const wrongCallee = Math.min(alpha + 1, beta ? beta.value : "fallback");
+"#,
+        );
+        let expected_owner = owner_for_binding(&facts, "selected");
+
+        let result = solve(&program, &facts).unwrap();
+
+        assert!(
+            matches!(
+                result.outcome_for(SelectorTargetId(0)),
+                Some(ClaimOutcome::Unique { claim }) if claim.owner == expected_owner
+            ),
+            "repeated EXPR_VALUE labels should not impose subtree equality: {:#?}",
+            result.outcome_for(SelectorTargetId(0))
+        );
+    }
+
+    #[test]
+    fn lowered_stmt_hole_solves_against_one_non_expression_statement() {
+        let selector = AnonymousStatementSelector::exact(
+            "function selected(flag) { if (flag) { STMT_BODY; } }",
+        );
+        let program = lower_member_selector(
+            &MemberSelectorLoweringContext::new(ChunkId(0), "runtime/widgets"),
+            "Selected",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap()
+        .program;
+        assert!(
+            !program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
+            "single-node statement holes should lower to native AST constraints"
+        );
+        let facts = fact_store_from_analyzed_source(
+            r#"
+function selected(flag) {
+  if (flag) {
+    return flag ? 1 : 2;
+  }
+}
+function wrongShape(flag) {
+  if (flag) {
+    sideEffect();
+    return flag ? 1 : 2;
+  }
+}
+"#,
+        );
+        let expected_owner = owner_for_binding(&facts, "selected");
+
+        let result = solve(&program, &facts).unwrap();
+
+        assert!(
+            matches!(
+                result.outcome_for(SelectorTargetId(0)),
+                Some(ClaimOutcome::Unique { claim }) if claim.owner == expected_owner
+            ),
+            "STMT_BODY should match one arbitrary statement without pinning ExprStmt: {:#?}",
+            result.outcome_for(SelectorTargetId(0))
         );
     }
 

@@ -3,12 +3,12 @@
 //! Binding selectors, `source_match` selectors, and the current relational
 //! selector primitives lower into one joint program.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
 use analysis::{ChunkId, StatementKind};
-use chunk_facts::{ChunkFacts, NodeId};
+use chunk_facts::{ChunkFacts, NodeId, NodeKind};
 use selector_ir::{
     ClaimKind, ClaimOrigin, NodeTerm, OrdinalTerm, OwnerTerm, RelationalPrimitive, SelectorAtom,
     SelectorProgram, SelectorTargetId, SelectorVariableId, StringTerm, VariableDomain,
@@ -23,8 +23,6 @@ use spec::{
     AnonymousStatementSelector, BindingSelector, BindingSourceKind, CrossRefRelation,
     MemberSelectorSpec, SourceMatchIdentifierMode,
 };
-use swc_ecma_ast::{BindingIdent, Ident, Module, PropName};
-use swc_ecma_visit::{Visit, VisitWith};
 
 /// Context shared by every member selector lowered for one logical module.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -343,7 +341,7 @@ impl MemberSelectorProgramBuilder {
         }) else {
             return Ok(false);
         };
-        if parsed.body.len() != 1 || source_match_contains_hole_syntax(&parsed) {
+        if parsed.body.len() != 1 {
             return Ok(false);
         }
         let Ok(facts) =
@@ -351,6 +349,10 @@ impl MemberSelectorProgramBuilder {
         else {
             return Ok(false);
         };
+        let Some(hole_roots) = native_single_node_hole_roots(&facts) else {
+            return Ok(false);
+        };
+        let skipped_nodes = native_hole_subtree_nodes(&facts, &hole_roots);
         let [(root_node, _ordinal)] = facts.top_level.as_slice() else {
             return Ok(false);
         };
@@ -386,7 +388,7 @@ impl MemberSelectorProgramBuilder {
                 binding: const_str(target_binding),
             });
         }
-        self.lower_native_ast_facts(logical_module, &facts, &node_vars);
+        self.lower_native_ast_facts(logical_module, &facts, &node_vars, &skipped_nodes);
         Ok(true)
     }
 
@@ -395,9 +397,13 @@ impl MemberSelectorProgramBuilder {
         logical_module: &str,
         facts: &ChunkFacts,
         node_vars: &BTreeMap<NodeId, SelectorVariableId>,
+        skipped_nodes: &BTreeSet<NodeId>,
     ) {
         let mut wildcard_string_vars = BTreeMap::<String, SelectorVariableId>::new();
         for (_node, token) in &facts.str_wildcard {
+            if skipped_nodes.contains(_node) {
+                continue;
+            }
             wildcard_string_vars
                 .entry(token.clone())
                 .or_insert_with(|| {
@@ -410,6 +416,7 @@ impl MemberSelectorProgramBuilder {
         let wildcard_string_by_node: BTreeMap<NodeId, SelectorVariableId> = facts
             .str_wildcard
             .iter()
+            .filter(|(node, _token)| !skipped_nodes.contains(node))
             .filter_map(|(node, token)| wildcard_string_vars.get(token).map(|var| (*node, *var)))
             .collect();
         let mut child_counts: BTreeMap<NodeId, u32> =
@@ -418,6 +425,9 @@ impl MemberSelectorProgramBuilder {
             *child_counts.entry(*parent).or_insert(0) += 1;
         }
         for (node, kind) in &facts.node_kind {
+            if skipped_nodes.contains(node) {
+                continue;
+            }
             let Some(node_var) = node_vars.get(node).copied() else {
                 continue;
             };
@@ -431,6 +441,9 @@ impl MemberSelectorProgramBuilder {
             });
         }
         for (parent, index, child) in &facts.child {
+            if skipped_nodes.contains(parent) {
+                continue;
+            }
             let (Some(parent), Some(child)) = (node_vars.get(parent), node_vars.get(child)) else {
                 continue;
             };
@@ -441,6 +454,9 @@ impl MemberSelectorProgramBuilder {
             });
         }
         for (class_node, super_class) in &facts.super_class {
+            if skipped_nodes.contains(class_node) {
+                continue;
+            }
             let (Some(class_node), Some(super_class)) =
                 (node_vars.get(class_node), node_vars.get(super_class))
             else {
@@ -452,6 +468,9 @@ impl MemberSelectorProgramBuilder {
             });
         }
         for (node, value) in &facts.str_lit {
+            if skipped_nodes.contains(node) {
+                continue;
+            }
             if let Some(wildcard_string_var) = wildcard_string_by_node.get(node).copied() {
                 if let Some(node) = node_vars.get(node).copied() {
                     self.program.add_atom(SelectorAtom::AstStringLiteral {
@@ -466,11 +485,17 @@ impl MemberSelectorProgramBuilder {
             }
         }
         for (node, value) in &facts.num_lit {
+            if skipped_nodes.contains(node) {
+                continue;
+            }
             self.add_ast_string_label(node_vars, *node, value, |node, value| {
                 SelectorAtom::AstNumberLiteral { node, value }
             });
         }
         for (node, value) in &facts.bool_lit {
+            if skipped_nodes.contains(node) {
+                continue;
+            }
             if let Some(node) = node_vars.get(node).copied() {
                 self.program.add_atom(SelectorAtom::AstBoolLiteral {
                     node: node_term(node),
@@ -479,21 +504,33 @@ impl MemberSelectorProgramBuilder {
             }
         }
         for (node, value) in &facts.ident_name {
+            if skipped_nodes.contains(node) {
+                continue;
+            }
             self.add_ast_string_label(node_vars, *node, value, |node, value| {
                 SelectorAtom::AstIdentifierName { node, value }
             });
         }
         for (node, value) in &facts.prop_name {
+            if skipped_nodes.contains(node) {
+                continue;
+            }
             self.add_ast_string_label(node_vars, *node, value, |node, value| {
                 SelectorAtom::AstPropertyName { node, value }
             });
         }
         for (node, value) in &facts.operator {
+            if skipped_nodes.contains(node) {
+                continue;
+            }
             self.add_ast_string_label(node_vars, *node, value, |node, value| {
                 SelectorAtom::AstOperator { node, value }
             });
         }
         for (node, pattern, flags) in &facts.regex {
+            if skipped_nodes.contains(node) {
+                continue;
+            }
             if let Some(node) = node_vars.get(node).copied() {
                 self.program.add_atom(SelectorAtom::AstRegexLiteral {
                     node: node_term(node),
@@ -560,42 +597,6 @@ fn optional_index(index: Option<usize>) -> Result<Option<u32>, SelectorIrLowerin
         .transpose()
 }
 
-fn source_match_contains_hole_syntax(module: &Module) -> bool {
-    let mut visitor = SourceMatchHoleSyntaxVisitor::default();
-    module.visit_with(&mut visitor);
-    visitor.found
-}
-
-#[derive(Default)]
-struct SourceMatchHoleSyntaxVisitor {
-    found: bool,
-}
-
-impl SourceMatchHoleSyntaxVisitor {
-    fn inspect_name(&mut self, name: &str) {
-        if selector_hole_name(name) {
-            self.found = true;
-        }
-    }
-}
-
-impl Visit for SourceMatchHoleSyntaxVisitor {
-    fn visit_ident(&mut self, ident: &Ident) {
-        self.inspect_name(ident.sym.as_ref());
-    }
-
-    fn visit_binding_ident(&mut self, ident: &BindingIdent) {
-        self.inspect_name(ident.id.sym.as_ref());
-    }
-
-    fn visit_prop_name(&mut self, name: &PropName) {
-        if let PropName::Ident(ident) = name {
-            self.inspect_name(ident.sym.as_ref());
-        }
-        name.visit_children_with(self);
-    }
-}
-
 fn selector_hole_name(name: &str) -> bool {
     name == STRING_LITERAL_REGEX_PREDICATE
         || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
@@ -612,6 +613,114 @@ fn selector_hole_name(name: &str) -> bool {
         ]
         .iter()
         .any(|keyword| labeled_hole_name_for(name, keyword).is_some())
+}
+
+fn native_single_node_hole_roots(facts: &ChunkFacts) -> Option<BTreeSet<NodeId>> {
+    let node_kind: BTreeMap<NodeId, NodeKind> = facts.node_kind.iter().copied().collect();
+    let mut parent_by_child = BTreeMap::<NodeId, (NodeId, u32)>::new();
+    let mut child_counts = BTreeMap::<NodeId, u32>::new();
+    for (parent, index, child) in &facts.child {
+        parent_by_child.insert(*child, (*parent, *index));
+        *child_counts.entry(*parent).or_insert(0) += 1;
+    }
+
+    let mut roots = BTreeSet::new();
+    for (node, name) in &facts.ident_name {
+        match classify_native_single_node_hole(
+            *node,
+            name,
+            &node_kind,
+            &parent_by_child,
+            &child_counts,
+        )? {
+            HoleClassification::NotHole => {}
+            HoleClassification::Supported { root } => {
+                roots.insert(root);
+            }
+        }
+    }
+    for (_node, name) in &facts.prop_name {
+        if selector_hole_name(name) {
+            return None;
+        }
+    }
+    Some(roots)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HoleClassification {
+    NotHole,
+    Supported { root: NodeId },
+}
+
+fn classify_native_single_node_hole(
+    node: NodeId,
+    name: &str,
+    node_kind: &BTreeMap<NodeId, NodeKind>,
+    parent_by_child: &BTreeMap<NodeId, (NodeId, u32)>,
+    child_counts: &BTreeMap<NodeId, u32>,
+) -> Option<HoleClassification> {
+    let kind = node_kind.get(&node).copied();
+    if kind == Some(NodeKind::Ident)
+        && (hole_name_for(name, STMT_HOLE_KEYWORD).is_some()
+            || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some())
+        && let Some(parent) =
+            expr_stmt_carrier_parent(node, node_kind, parent_by_child, child_counts)
+    {
+        return Some(HoleClassification::Supported { root: parent });
+    }
+
+    if kind == Some(NodeKind::Ident)
+        && (hole_name_for(name, EXPR_HOLE_KEYWORD).is_some()
+            || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some())
+    {
+        return Some(HoleClassification::Supported { root: node });
+    }
+
+    if selector_hole_name(name) {
+        return None;
+    }
+    Some(HoleClassification::NotHole)
+}
+
+fn expr_stmt_carrier_parent(
+    node: NodeId,
+    node_kind: &BTreeMap<NodeId, NodeKind>,
+    parent_by_child: &BTreeMap<NodeId, (NodeId, u32)>,
+    child_counts: &BTreeMap<NodeId, u32>,
+) -> Option<NodeId> {
+    let (parent, index) = parent_by_child.get(&node).copied()?;
+    if index == 0
+        && node_kind.get(&parent) == Some(&NodeKind::ExprStmt)
+        && child_counts.get(&parent).copied().unwrap_or(0) == 1
+    {
+        Some(parent)
+    } else {
+        None
+    }
+}
+
+fn native_hole_subtree_nodes(
+    facts: &ChunkFacts,
+    hole_roots: &BTreeSet<NodeId>,
+) -> BTreeSet<NodeId> {
+    let mut children_by_parent = BTreeMap::<NodeId, Vec<NodeId>>::new();
+    for (parent, _index, child) in &facts.child {
+        children_by_parent.entry(*parent).or_default().push(*child);
+    }
+
+    let mut skipped = hole_roots.clone();
+    let mut stack: Vec<NodeId> = hole_roots.iter().copied().collect();
+    while let Some(node) = stack.pop() {
+        if let Some(children) = children_by_parent.get(&node) {
+            for child in children {
+                if skipped.insert(*child) {
+                    stack.push(*child);
+                }
+            }
+        }
+    }
+    skipped
 }
 
 fn selector_origin(selector: &MemberSelectorSpec) -> ClaimOrigin {
@@ -907,8 +1016,95 @@ mod tests {
     }
 
     #[test]
-    fn source_match_with_hole_syntax_stays_oracle_only() {
-        let selector = AnonymousStatementSelector::exact("const a = ANYTHING;");
+    fn exact_source_match_with_expr_holes_lowers_natively() {
+        let selector =
+            AnonymousStatementSelector::exact("const readable = Math.max(EXPR_VALUE, EXPR_VALUE);");
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| {
+                matches!(
+                    atom,
+                    SelectorAtom::AstIdentifierName {
+                        value: StringTerm::Const { value },
+                        ..
+                    } if value == "EXPR_VALUE"
+                )
+            }),
+            "expression hole labels should not become identifier constraints"
+        );
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::Equal { .. })),
+            "repeated expression hole labels are cosmetic, not equality constraints"
+        );
+    }
+
+    #[test]
+    fn exact_source_match_with_stmt_hole_lowers_natively() {
+        let selector = AnonymousStatementSelector::exact(
+            "function readable(flag) { if (flag) { STMT_BODY; } }",
+        );
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| {
+                matches!(
+                    atom,
+                    SelectorAtom::AstIdentifierName {
+                        value: StringTerm::Const { value },
+                        ..
+                    } if value == "STMT_BODY"
+                )
+            }),
+            "statement hole labels should not become identifier constraints"
+        );
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| {
+                matches!(
+                    atom,
+                    SelectorAtom::AstKind {
+                        node_kind: NodeKind::ExprStmt,
+                        ..
+                    }
+                )
+            }),
+            "statement holes should not constrain the expression-statement carrier shape"
+        );
+    }
+
+    #[test]
+    fn source_match_with_list_hole_syntax_stays_oracle_only() {
+        let selector = AnonymousStatementSelector::exact(
+            "function readable() { head(); STMT_LIST_BODY; tail(); }",
+        );
         let lowered = lower_member_selector(
             &context(),
             "Widget",
