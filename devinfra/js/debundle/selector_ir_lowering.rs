@@ -329,7 +329,6 @@ impl MemberSelectorProgramBuilder {
         selector: &AnonymousStatementSelector,
     ) -> Result<bool, SelectorIrLoweringError> {
         if selector.identifiers != SourceMatchIdentifierMode::Exact
-            || selector.target_binding.is_some()
             || selector.target_statement.is_some()
             || selector.target_statements.is_some()
             || !selector.wildcard_string_literals.is_empty()
@@ -384,6 +383,12 @@ impl MemberSelectorProgramBuilder {
             node: node_term(root),
             ordinal: ordinal_term(ordinal),
         });
+        if let Some(target_binding) = &selector.target_binding {
+            self.program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+                owner: owner_term(owner),
+                binding: const_str(target_binding),
+            });
+        }
         self.lower_native_ast_facts(&facts, &node_vars);
         Ok(true)
     }
@@ -819,6 +824,36 @@ mod tests {
                 selector_key: StringTerm::Const { value },
             } if *id == target_owner && value == &source_match::selector_key(&selector)
         ));
+    }
+
+    #[test]
+    fn exact_source_match_target_binding_adds_owner_binding_constraint() {
+        let mut selector = AnonymousStatementSelector::exact("const a = 1, b = 2;");
+        selector.target_binding = Some("b".to_string());
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        let target_owner = lowered.program.targets[lowered.target.0].owner;
+        assert!(matches!(
+            lowered.program.atoms.iter().find(|atom| {
+                matches!(atom, SelectorAtom::OwnerDeclaresBinding { .. })
+            }),
+            Some(SelectorAtom::OwnerDeclaresBinding {
+                owner: OwnerTerm::Var { id },
+                binding: StringTerm::Const { value },
+            }) if *id == target_owner && value == "b"
+        ));
+        assert!(
+            lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::AstTopLevel { .. }))
+        );
     }
 
     #[test]
