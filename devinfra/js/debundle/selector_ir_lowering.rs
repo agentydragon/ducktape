@@ -204,11 +204,12 @@ impl MemberSelectorProgramBuilder {
         match selector {
             MemberSelectorSpec::Binding(binding) => self.lower_binding_selector(owner, binding),
             MemberSelectorSpec::SourceMatch(selector) => {
-                self.program.add_atom(SelectorAtom::SourceMatchCandidate {
-                    owner: owner_term(owner),
-                    selector_key: const_str(&source_match::selector_key(selector)),
-                });
-                self.try_lower_native_exact_source_match(logical_module, owner, selector)?;
+                if !self.try_lower_native_exact_source_match(logical_module, owner, selector)? {
+                    self.program.add_atom(SelectorAtom::SourceMatchCandidate {
+                        owner: owner_term(owner),
+                        selector_key: const_str(&source_match::selector_key(selector)),
+                    });
+                }
                 Ok(())
             }
             MemberSelectorSpec::CrossRef(target) => {
@@ -751,7 +752,7 @@ mod tests {
     }
 
     #[test]
-    fn lowers_source_match_candidate_constraint() {
+    fn exact_source_match_lowers_to_native_ast_constraints() {
         let selector = AnonymousStatementSelector::exact("const a = 1;");
         let lowered = lower_member_selector(
             &context(),
@@ -760,14 +761,13 @@ mod tests {
         )
         .unwrap();
 
-        let target_owner = lowered.program.targets[lowered.target.0].owner;
-        assert!(matches!(
-            lowered.program.atoms.iter().find(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
-            Some(SelectorAtom::SourceMatchCandidate {
-                owner: OwnerTerm::Var { id },
-                selector_key: StringTerm::Const { value },
-            }) if *id == target_owner && value == &source_match::selector_key(&selector)
-        ));
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
         assert!(
             lowered
                 .program
@@ -833,11 +833,18 @@ mod tests {
         let lowered = lower_member_selector(
             &context(),
             "Widget",
-            &MemberSelectorSpec::SourceMatch(selector),
+            &MemberSelectorSpec::SourceMatch(selector.clone()),
         )
         .unwrap();
 
         let target_owner = lowered.program.targets[lowered.target.0].owner;
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
         assert!(matches!(
             lowered.program.atoms.iter().find(|atom| {
                 matches!(atom, SelectorAtom::OwnerDeclaresBinding { .. })

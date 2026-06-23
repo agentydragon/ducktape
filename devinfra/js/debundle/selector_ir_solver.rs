@@ -14,9 +14,9 @@ use std::fmt;
 use analysis::{OwnerId, StatementOrdinal};
 use ascent::ascent;
 use selector_ir::{
-    ClaimOutcome, NodeTerm, OrdinalTerm, OwnerTerm, ResolvedClaim, SelectorAtom, SelectorFact,
-    SelectorFactStore, SelectorProgram, SelectorProgramError, SelectorTarget, SelectorTargetId,
-    SelectorVariableId, SolverClaim, SolverResult, StringTerm, VariableDomain,
+    ClaimKind, ClaimOutcome, NodeTerm, OrdinalTerm, OwnerTerm, ResolvedClaim, SelectorAtom,
+    SelectorFact, SelectorFactStore, SelectorProgram, SelectorProgramError, SelectorTarget,
+    SelectorTargetId, SelectorVariableId, SolverClaim, SolverResult, StringTerm, VariableDomain,
 };
 
 fn optional_u32_matches(expected: &Option<u32>, actual: u32) -> bool {
@@ -1180,20 +1180,28 @@ fn resolved_claim(
     support: &ProgramSupport,
 ) -> Option<ResolvedClaim> {
     let statement_ordinal = facts.statement_ordinal_by_owner.get(&owner).copied()?;
+    let binding = support.binding_constraint_for(target.owner).or_else(|| {
+        support
+            .source_match_selector_for(target.owner)
+            .and_then(|selector_key| facts.source_match_binding_for_owner(&selector_key, owner))
+            .or_else(|| {
+                facts
+                    .single_binding_for_owner(owner)
+                    .map(ToString::to_string)
+            })
+    });
+    if matches!(
+        target.claim,
+        ClaimKind::Binding { .. } | ClaimKind::BindingGroupMember { .. }
+    ) && binding.is_none()
+    {
+        return None;
+    }
     Some(ResolvedClaim {
         chunk_id: target.chunk_id,
         owner,
         statement_ordinal,
-        binding: support.binding_constraint_for(target.owner).or_else(|| {
-            support
-                .source_match_selector_for(target.owner)
-                .and_then(|selector_key| facts.source_match_binding_for_owner(&selector_key, owner))
-                .or_else(|| {
-                    facts
-                        .single_binding_for_owner(owner)
-                        .map(ToString::to_string)
-                })
-        }),
+        binding,
         provenance: Vec::new(),
     })
 }
@@ -2409,6 +2417,34 @@ mod tests {
             result.outcome_for(SelectorTargetId(0)),
             Some(&ClaimOutcome::NoMatch)
         );
+    }
+
+    #[test]
+    fn binding_claim_without_projectable_binding_is_no_match() {
+        let mut program = SelectorProgram::default();
+        let owner_var = program.add_variable(VariableDomain::Owner, Some("@Target".to_string()));
+        let target = program.add_target(
+            ChunkId(0),
+            owner_var,
+            "runtime/widgets",
+            ClaimKind::Binding {
+                export_name: Some("Target".to_string()),
+            },
+            ClaimOrigin::MemberSelector,
+        );
+        program.add_atom(SelectorAtom::OwnerKind {
+            owner: OwnerTerm::Var { id: owner_var },
+            statement_kind: StringTerm::Const {
+                value: "var_decl".to_string(),
+            },
+        });
+        let facts = SelectorFactStore {
+            facts: vec![owner(1, 1, "var_decl"), declared(1, "a"), declared(1, "b")],
+        };
+
+        let result = solve(&program, &facts).unwrap();
+
+        assert_eq!(result.outcome_for(target), Some(&ClaimOutcome::NoMatch));
     }
 
     #[test]
