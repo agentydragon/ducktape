@@ -90,9 +90,12 @@ full IDs recorded on #2438). The worker is not yet deployed. Remaining:
   `haku-selfhosted` → "Generate environment key"), SOPS-encrypt under
   `cluster/k8s/haku/…` to the **cluster/Flux** age key (not the `haku` key), Flux
   → secret.
-- **Worker image** (CI build) — `bash`/`git`/`kubectl`/`postgresql-client`/`curl`/
-  `fastmcp` + the `ant` CLI. Now that `ant` is packaged in nix (`anthropic-cli`),
-  prefer reusing the `.#agent-haku` closure + `ant` over a hand-rolled apt image.
+- **Worker image** — built: `nix build .#haku-worker-image` (a full-NixOS
+  container, `runtime/managed_agent/nixos.nix`; systemd PID 1, runs unprivileged
+  on cgroup-v2/Talos with `command: ["/init"]`; tools `bash`/`git`/`kubectl`/
+  `postgresql`/`curl`/`jq`/`fastmcp` + `ant`). Remaining: a CI step to
+  `podman import` the rootfs tarball and push it to GHCR (no nix→GHCR automation
+  exists yet), then a Flux digest pin.
 - **Smoke test** — `ant beta:deployments run --deployment-id depl_011DSrUoXuhoDWJoPyDuePqR`,
   watch in the Console.
 

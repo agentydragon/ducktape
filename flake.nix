@@ -414,6 +414,11 @@
           # Build: nix build .#nix-rbe-nixos
           # Load:  docker import result/tarball/*.tar.xz nix-rbe-nixos
           nix-rbe-nixos = self.nixosConfigurations.nix-rbe-worker.config.system.build.tarball;
+          # Full-NixOS container image for the Haku Managed Agents self-hosted
+          # worker (Runtime B, haku/runtime/managed_agent).
+          # Build: nix build .#haku-worker-image
+          # Load:  docker import result/tarball/*.tar.xz haku-worker
+          haku-worker-image = self.nixosConfigurations.haku-worker.config.system.build.tarball;
           # Pre-built UEFI qcow2 VM images for Proxmox deployment.
           # Build: nix build .#wyrm2-image
           # Uses built-in system.build.images.qemu-efi (nixos-generators upstreamed in 25.05+).
@@ -530,6 +535,16 @@
           inherit system;
           modules = [
             ./x/nix_rbe_image/nixos.nix
+          ];
+        };
+
+        # Haku Managed Agents self-hosted worker (Runtime B). anthropic-cli and
+        # fastmcp are ducktape packages, passed in rather than re-derived.
+        haku-worker = nixpkgs.lib.nixosSystem {
+          inherit system;
+          specialArgs = { inherit (ducktapePkgs) anthropic-cli fastmcp; };
+          modules = [
+            ./haku/runtime/managed_agent/nixos.nix
           ];
         };
 
