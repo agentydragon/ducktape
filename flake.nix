@@ -419,6 +419,9 @@
           # Uses built-in system.build.images.qemu-efi (nixos-generators upstreamed in 25.05+).
           wyrm2-image = self.nixosConfigurations.wyrm2.config.system.build.images.qemu-efi;
           bootstrap-image = self.nixosConfigurations.bootstrap.config.system.build.images.qemu-efi;
+          # Firecracker dev VM rootfs (ext4) and kernel (vmlinux).
+          fc-dev-rootfs = self.nixosConfigurations.fc-dev.config.system.build.ext4;
+          fc-dev-kernel = self.nixosConfigurations.fc-dev.config.boot.kernelPackages.kernel;
         };
 
       homeConfigurations = {
@@ -525,6 +528,13 @@
           ];
         };
 
+        # Firecracker dev VM — NixOS rootfs for Bazel development.
+        # Not a real host — produces ext4 image for Firecracker microVMs.
+        fc-dev = nixpkgs.lib.nixosSystem {
+          inherit system;
+          modules = [ ./nix/nixos/hosts/fc_dev ];
+        };
+
         # NixOS-based RBE worker with full Bazel compat (envfs, nix-ld).
         nix-rbe-worker = nixpkgs.lib.nixosSystem {
           inherit system;
@@ -532,7 +542,6 @@
             ./x/nix_rbe_image/nixos.nix
           ];
         };
-
       };
     };
 }
