@@ -1,24 +1,28 @@
 # Plan: selectors as one global constraint problem (relational spec model)
 
-**Current state (2026-06-22).** The hand-rolled matcher is retired: the fact-based
-`ChunkResolver` is the **sole** `source_match` resolver
-(`AstWildcardMatcher` / `AstWildcardResolver` / `DifferentialResolver` deleted).
-Re-homing the existing selector language onto the relational AST-facts substrate
-— proven by a full-corpus differential against the old matcher — is done; that
-parity was the equivalence gate, not new power. The relational bridge primitives
-(`cross_ref`, `reads_member`, `member_of_module`, `passed_to_call`,
-`makes_decorate_call`, `intrinsic_alias`) have landed as staged materializer
-passes.
+**Current state (2026-06-22, after #2439).** Ascent remains the selected
+production solver. PR #2439 landed on `devel` as `db25ef639` and closed the
+first global-solver bridge: `source_match` selectors now enter the global
+selector IR/solver instead of bypassing it. That bridge still feeds the solver
+`SourceMatchCandidate` rows enumerated by the fact-based `ChunkResolver`;
+`selector_ir_lowering.rs` lowers `source_match` to that candidate atom, and
+`plan_builder.rs` populates the rows by calling `ChunkResolver` candidate APIs.
 
-**Reframing.** The next architectural goal is not "do more per-selector
-conversions, then eventually solve globally." It is to make the global
-constraint solve the resolver itself: compile every selector form into one
-selector IR over AST + owner-graph facts, solve shared `@Name` variables and
-`all_different` together, and hand materialization a resolved claim map. Real
-spec conversions are dogfood and evidence for missing language/fact coverage;
-they should not add more long-lived anchor-first bridge architecture. The
-remaining-work index is <../debug/2026_06_19_p4_debt_worklist.md>, and the
-Gaffer-derived language evidence is summarized below.
+Full AST facts already exist in `chunk_facts.rs` and are appended by
+`SelectorFactStore::extend_chunk_facts`, but they are not yet the native solve
+path for `source_match`. The remaining P0 is to make Ascent consume those AST
+facts directly, lower `source_match` onto them with zero-differential parity,
+and then delete the candidate oracle.
+
+**Reframing.** The next architectural goal is not to grow more bridge
+vocabulary. It is to make the global constraint solve native over AST +
+owner/reference facts: compile every selector form into one selector IR, solve
+shared `@Name` variables and `all_different` together, and hand materialization
+a resolved claim map. Real spec conversions are dogfood and evidence for
+missing language/fact coverage; they should not add more long-lived
+anchor-first bridge architecture. The remaining-work index is
+<../debug/2026_06_19_p4_debt_worklist.md>, and the Gaffer-derived language
+evidence is summarized below.
 
 Extends the selector-authoring guidance in <../docs/selectors.md> and the
 `debundle_stabilize` skill — which fix _who_ chooses anchors (an agent, not the
@@ -34,24 +38,27 @@ Notation: `@Name` means "the binding/node pinned elsewhere in the spec as `Name`
 
 ## Goal
 
-Replace the hand-rolled JS↔JS template matcher with a Datalog-based selector resolver that
-resolves every selector the `tana/re` spec depends on, over an explicit relational model of the
-program (owner graph + AST facts) rather than ad-hoc AST walking. Parity must be **proven, not
-asserted**: a corpus-wide differential against the current matcher reaches zero disagreements, and
-the lowering is **fail-closed** — each construct compiles to atoms provably faithful to the
-matcher's semantics, or it errors, never silently under-constraining. The design must stay
-**principled** — one general, faithful encoding per selector kind and hole, with no per-selector
-special cases, silent fallbacks, or hacks to force a hard construct through. If any construct, or
-the model itself, turns out not to admit such a faithful, principled encoding, we **abort and
-rethink the design** rather than push on with ugly hacks — an honest dead end beats a matcher we
-cannot trust.
+Replace the remaining `SourceMatchCandidate` oracle with a Datalog/Ascent
+selector resolver that resolves every selector the `tana/re` spec depends on
+over an explicit relational model of the program (owner graph + AST facts).
+Parity must be **proven, not asserted**: a corpus-wide differential against the
+current `ChunkResolver` reaches zero disagreements, and the lowering is
+**fail-closed** — each construct compiles to atoms provably faithful to current
+`source_match` semantics, or it errors, never silently under-constraining. The
+design must stay **principled** — one general, faithful encoding per selector
+kind and hole, with no per-selector special cases, silent fallbacks, or hacks to
+force a hard construct through. If any construct, or the model itself, turns out
+not to admit such a faithful, principled encoding, we **abort and rethink the
+design** rather than push on with ugly hacks — an honest dead end beats a matcher
+we cannot trust.
 
 Operationally, this means the Ducktape-side work leads with the engine contract:
 
 1. one engine-facing selector IR shared by `run`, `validate`,
    `match-selector`, `selector-debt`, synthesis, and repair;
 2. one fact store per chunk/component containing AST-shape facts,
-   binding-resolution facts, owner/reference facts, and derived-predicate inputs;
+   binding-resolution facts, owner/reference facts, and derived-predicate inputs,
+   with the solver consuming the AST facts natively rather than candidate rows;
 3. one solve per connected selector component, with `@Name` as a shared logic
    variable rather than a lookup into already-resolved members;
 4. one diagnostic/result projection for no-match, ambiguity, duplicate claims,
@@ -215,9 +222,12 @@ str_lit(node, "…").   num_lit(node, 5).   operator(node, "+").
 resolves_to(use, def).   member_of_module(binding, module).
 ```
 
-Most of this already exists as the owner/reference graph; the work is to _expose_ it as
-queryable relations. `resolves_to` is the only genuinely new, genuinely semantic
-relation — the one minification preserves while names churn.
+The AST projection already exists in `chunk_facts.rs` and
+`SelectorFactStore::extend_chunk_facts`; the owner/reference facts already feed
+the selector solver. The open work is to make the Ascent rule library consume
+the AST rows directly instead of only consuming `SourceMatchCandidate` rows
+pre-enumerated by `ChunkResolver`. `resolves_to` remains the genuinely semantic
+edge — the one minification preserves while names churn.
 
 **Derived predicates — a rule library, not engine primitives.** `calls`, `alias`, a
 decorator application, etc. are rules over AST shape + `resolves_to`:
@@ -272,10 +282,12 @@ initial batch resolver.
 class with _exactly_ these members"; "the _only_ class with method m" as a writable
 anchor) — stratified negation / aggregation; categoricity as a _check_ is plain
 counting. Variable-length holes need recursion. Most cases — literal + `resolves_to`
-anchors — are plain positive CQ. New code is the AST→atoms lowering plus the EDB extractor — a
-fail-closed recursive walk (not a `swc_ecma_visit::Visit`, whose no-op defaults would silently skip
-an un-overridden node type): an unmodeled construct raises a loud `Unsupported`, never projecting a
-silently-incomplete fact set that would match wrongly.
+anchors — are plain positive CQ. New code is AST→atoms lowering plus native
+solver ingestion of the existing EDB extractor. That extractor is a fail-closed
+recursive walk (not a `swc_ecma_visit::Visit`, whose no-op defaults would
+silently skip an un-overridden node type): an unmodeled construct raises a loud
+`Unsupported`, never projecting a silently-incomplete fact set that would match
+wrongly.
 
 ## Scale and performance
 
@@ -317,34 +329,44 @@ become roughly 5.
 
 ## Landing in the debundle binary
 
-This is not a side tool — it is the **resolution layer**: the code that maps each spec selector to
-its node on the chunk. The fact-based `ChunkResolver` is that layer behind every caller;
-`binding_resolution.rs` is the shared binding-extraction the resolver reuses.
+This is not a side tool — it is the **resolution layer**: the code that maps
+each spec selector to its node on the chunk. After #2439, the global selector
+solver is on that path, but `source_match` still reaches it through
+`ChunkResolver`-enumerated candidate rows. Native AST EDB lowering makes the
+solver itself responsible for the shape match.
 
-The resolver is named in code: `source_match::SelectorResolver`, the trait `ChunkResolver`
-implements — `(parsed chunk, JS-template selector) → unique {claimed binding | body-index group}`,
-with no-match / ambiguous as the only failure modes.
+The reference oracle is named in code: `source_match::SelectorResolver`, the
+trait `ChunkResolver` implements — `(parsed chunk, JS-template selector) →
+unique {claimed binding | body-index group}`, with no-match / ambiguous as the
+only failure modes.
 
 ### EDB from analysis the pipeline already does
 
-The pipeline already parses the chunk (`js_ast`), computes binding resolution and the
-owner/reference graph (`program_analysis`, `facts/`, `graph/`, emitted as
-`owner_graph.json`), and builds the candidate index. Those _are_ the EDB: `resolves_to`
+The pipeline already parses the chunk (`js_ast`), computes binding resolution
+and the owner/reference graph (`program_analysis`, `facts/`, `graph/`, emitted
+as `owner_graph.json`), and extracts `chunk_facts.rs` AST rows. Those are the
+EDB:
 
-- module membership + ordinal/purity from the owner graph (proven), AST
-  `child`/`kind`/`str_lit`/`prop_name` from the parsed tree (phase 2), label posting lists
-  from the candidate index. EDB construction is a re-projection of existing analysis,
-  slotted after analysis and before materialization.
+- module membership + ordinal/purity from the owner graph;
+- owner/reference rows already consumed by `selector_ir_solver.rs`;
+- AST `kind` / `child` / literal / identifier / property / operator /
+  top-level rows already stored by `SelectorFactStore::extend_chunk_facts`;
+- label posting lists still used by `ChunkResolver` as the current
+  `SourceMatchCandidate` oracle.
+
+The cutover is a consumer change: add native AST relations and shape rules to
+the Ascent solver, then delete the candidate-oracle projection once the
+differential is zero.
 
 ### It replaces several workflow parts, not just the matcher
 
-| Today                                                                       | Becomes                                                                                                                                  |
-| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `lowering/materialize/plan_builder.rs` resolves each selector individually  | one `solve(spec, edb)`; the plan consumes per-target bindings                                                                            |
-| `validate` no-match / ambiguous / duplicate-claim (per-selector + post-hoc) | solver categoricity (no-match / ambiguous) + `all_different` (duplicate-claim) in one keep-going pass                                    |
-| `match_selector.rs` resolves one candidate                                  | single-query solve over the EDB; gains probing of **relational/cross-ref** candidates, not just local shapes                             |
-| `selector_codemod.rs` prove-gate (candidate-index uniqueness)               | solver categoricity; the minimizer's search space grows to relational atoms — it can now _propose_ the cross-ref selectors that now skip |
-| `selector_debt.rs` source-aware near-ambiguous / repeated-body scan         | solver reports per target **which atoms forced uniqueness, tagged invariant/variant**, and the categoricity margin                       |
+| Today                                                                                             | Becomes                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `lowering/materialize/plan_builder.rs` still asks `ChunkResolver` for `SourceMatchCandidate` rows | one native `solve(spec, edb)` over AST + owner/reference facts; the plan consumes per-target bindings                                    |
+| `validate` no-match / ambiguous / duplicate-claim (per-selector + post-hoc)                       | solver categoricity (no-match / ambiguous) + `all_different` (duplicate-claim) in one keep-going pass                                    |
+| `match_selector.rs` resolves one candidate                                                        | single-query solve over the EDB; gains probing of **relational/cross-ref** candidates, not just local shapes                             |
+| `selector_codemod.rs` prove-gate (candidate-index uniqueness)                                     | solver categoricity; the minimizer's search space grows to relational atoms — it can now _propose_ the cross-ref selectors that now skip |
+| `selector_debt.rs` source-aware near-ambiguous / repeated-body scan                               | solver reports per target **which atoms forced uniqueness, tagged invariant/variant**, and the categoricity margin                       |
 
 The cycle/atomic gate (`gate.rs`, `realizability/`, `atomic_units.rs`) and emit run
 **downstream of resolution on the resolved ownership** — unchanged, as are the module
@@ -599,36 +621,46 @@ re-minification-proof identity anchor.
 `selector_query_examples.rs` (`selector_query_examples_test`): cross-ref joins, a disequality
 `all_different`, stratified negation (`!rel`), recursive transitive closure, `count` aggregation
 with a uniqueness guard, and an AST-literal-∧-import-edge join all resolve to the expected owners.
-So the vocabulary is proven expressible in the engine we picked — the gap to production is the
-phase-2 AST-facts EDB and the template→atoms lowering, not the solver's capability.
+So the vocabulary is proven expressible in the engine we picked — the gap to
+production is native consumption of the AST-facts EDB plus template→atoms
+lowering, not the solver's capability.
 
-## Remaining work (global-solve cutover)
+## Closed by #2439
 
-Everything that reproduces the old selector language is done at the current
-bridge layer. The remaining work is to make this model the production resolver:
+- `source_match` selectors now enter the global selector IR/solver.
+- The materializer has a single Ascent-backed selector solve path for binding
+  pins, staged relational selectors, and `source_match` claims.
+- Ascent remains the production solver choice; do not restart solver selection
+  unless profiling proves the in-process path cannot meet the latency/memory
+  target.
 
-- **G1 — IR and fact-store contract.** Specify the normalized selector atom set,
-  target variables, clause-local variables, derived predicates, source spans,
-  and diagnostic payloads. This is the shared contract for `run`, `validate`,
-  `match-selector`, `selector-debt`, synthesis, and repair.
-- **G2 — `source_match` parity lowering.** Lower today's JS-with-holes selectors
-  and binding groups into IR atoms. Keep the fact-based `ChunkResolver` as the
-  oracle until the corpus differential is zero, including alpha matching,
-  run-hole placement, regex literal predicates, anonymous statements, and
-  binding groups.
-- **G3 — shared-variable solve.** Join AST facts, binding-resolution facts, and
-  owner/reference facts into one solve per connected selector component.
-  `@Name` becomes a shared target variable; no-match / ambiguous / unique and
-  `all_different` duplicate claims are result projections.
-- **G4 — materializer cutover.** Replace staged per-selector claiming plus late
-  relational passes with a solver-produced claim map. The owner graph,
-  atomic-DAG, module-DAG, and emit gates stay downstream.
-- **G5 — relation/language fold-in.** Re-express `cross_ref`, `reads_member`,
+## Remaining work (native AST EDB cutover)
+
+This is the detailed P0 queue; <../TODO.md> should only summarize it.
+
+- **G1 — native AST EDB ingestion.** Add Ascent relations and indexes for the
+  AST rows already emitted by `chunk_facts.rs` and imported by
+  `SelectorFactStore::extend_chunk_facts`: node kind, parent/child ordinal,
+  literals, identifier/property names, operators, regex, superclass, top-level
+  statement ordinal, and source-span/diagnostic payloads. Preserve the
+  fail-closed rule: unsupported constructs report `unsupported`, not a partial
+  fact set.
+- **G2 — `source_match` lowering parity.** Lower today's JS-with-holes selectors
+  and binding groups into native AST/owner IR atoms. Keep `ChunkResolver` as the
+  reference until the corpus differential is zero, including alpha matching,
+  run-hole placement, regex literal predicates, anonymous statements, exact
+  identifiers, target bindings, and binding groups.
+- **G3 — candidate-oracle deletion.** Remove `SelectorAtom::SourceMatchCandidate`
+  / `SelectorFact::SourceMatchCandidate` from the production path after G2
+  parity. No-match, ambiguous, unsupported, and duplicate-claim diagnostics
+  should be projections of the native solver result, not `ChunkResolver`
+  side tables.
+- **G4 — relation/language fold-in.** Re-express `cross_ref`, `reads_member`,
   `member_of_module`, `passed_to_call`, `makes_decorate_call`,
   `intrinsic_alias`, and the Gaffer feature-request vocabulary as IR atoms or
-  derived predicates. The real-spec conversion worklist in
-  <../debug/2026_06_19_p4_debt_worklist.md> is evidence and dogfood for this,
-  not a reason to add more permanent bridge passes.
+  derived predicates over owner/reference + AST facts. The real-spec conversion
+  worklist in <../debug/2026_06_19_p4_debt_worklist.md> is evidence and dogfood
+  for this, not a reason to add more permanent bridge passes.
 
 ## Execution contract
 

@@ -8,6 +8,7 @@ use super::super::ordinal::body_index_for_statement_ordinal;
 use super::*;
 use crate::plans::RelationalSelector;
 use analysis::StatementOrdinal;
+use anyhow::anyhow;
 
 #[derive(Debug, Clone)]
 struct DuplicateClaimSite {
@@ -242,8 +243,17 @@ fn selector_fact_store_for_chunk(
     owner_graph: &analysis::OwnerGraph,
     module: &swc_ecma_ast::Module,
     import_sources: &HashMap<String, String>,
-) -> SelectorFactStore {
+) -> Result<SelectorFactStore> {
     let mut store = SelectorFactStore::default();
+    let ast_facts = chunk_facts::extract_facts(module).map_err(|unsupported| {
+        anyhow!(
+            "chunk {:?}: selector AST fact extraction failed at {}; global selector solving needs \
+             a complete AST EDB",
+            chunk_id,
+            unsupported.context,
+        )
+    })?;
+    store.extend_chunk_facts(chunk_id, &ast_facts);
     for node in owner_graph.iter_nodes() {
         store.push(SelectorFact::Owner {
             chunk_id,
@@ -314,7 +324,7 @@ fn selector_fact_store_for_chunk(
             property: alias.property,
         });
     }
-    store
+    Ok(store)
 }
 
 #[derive(Debug, Clone)]
@@ -1036,7 +1046,7 @@ impl ChunkPlanBuilder {
         >::new();
         let mut pending_constraints = Vec::<(String, String, spec::MemberSelectorSpec)>::new();
         let mut facts =
-            selector_fact_store_for_chunk(chunk_id_interned, owner_graph, module, import_sources);
+            selector_fact_store_for_chunk(chunk_id_interned, owner_graph, module, import_sources)?;
         for (index, request) in explicit_requests.iter().enumerate() {
             let group_assignments = source_match_group_assignments(request);
             for (member_index, member) in request.members.iter().enumerate() {

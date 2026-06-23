@@ -24,38 +24,35 @@ records and scoped backlogs; when a plan's core work is complete, its remaining
 tail should be summarized here instead of leaving the plan looking like a second
 priority queue.
 
-**Current focus (2026-06-22 global-solve reframing).** The read-off minimizer
-and fact-based `source_match` resolver are complete enough to stop scaling the
-staged resolver shape. The active frontier is now the **global selector
-constraint solver**: compile every selector in a chunk/spec component into one
-query over the source facts, solve shared `@Name` variables together, enforce
-target categoricity + `all_different` inside the solve, then feed the resolved
-claims to the existing atomic/realizability gate.
+**Current focus (2026-06-22 post-#2439).** PR #2439 landed on `devel` as
+`db25ef639` and closed the first global-solver bridge: `source_match` selectors
+now participate in the Ascent-backed selector solver. The remaining P0 is not a
+new solver choice. It is to remove the bridge shape that still feeds the solver
+pre-enumerated `SourceMatchCandidate` rows from `ChunkResolver`, and instead
+lower `source_match` directly onto the native AST EDB facts already exposed by
+`chunk_facts.rs` / `SelectorFactStore::extend_chunk_facts`.
 
 Dispatch work in this order:
 
-1. **Global selector IR and fact schema (P0.1).** Define the engine-facing
-   atom set for targets, clause-local variables, shape atoms, relational atoms,
-   and derived predicates. This is the contract all authoring syntax lowers to.
-2. **`source_match` lowering parity (P0.2).** Lower today's JS-with-holes
-   selectors into the same IR while keeping the current fact-based resolver as
-   the oracle until a differential reaches zero.
-3. **Shared `@Name` variables (P0.3).** Replace the production-only
-   anchor-first bridge with solver-owned target symbols so relation selectors
-   do not depend on already-resolved members.
-4. **Counting/uniqueness in the solve (P0.4).** Make no-match, ambiguous, and
-   duplicate-claim diagnostics projections of the solver result, not a mix of
-   per-selector checks and post-hoc duplicate detection.
-5. **Materializer integration (P0.5).** Build facts once, solve the selector
-   component once, and let `materialize` consume a resolved claim map. Keep the
-   owner graph, atomic unit, module DAG, and JS realization gates downstream.
-6. **Language/synthesis work as solver vocabulary (P0.6).** Add only language
-   features that lower to the global IR or expose facts it already needs. Use
-   the Gaffer evidence queue in <plans/selector_constraint_model.md>.
+1. **Native AST EDB in the solver (P0.1).** Thread the full `ast_*` fact rows
+   through the Ascent rule library as queryable relations, with source spans and
+   fail-closed unsupported reporting.
+2. **`source_match` lowering parity (P0.2).** Compile JS-with-holes selectors,
+   binding groups, anonymous statements, holes, alpha matching, and regex
+   predicates into AST/owner facts. Keep `ChunkResolver` as the oracle until the
+   differential reaches zero.
+3. **Delete the candidate oracle (P0.3).** Replace `SourceMatchCandidate`
+   facts with native AST-shape constraints, and make no-match, ambiguous, and
+   duplicate-claim diagnostics projections of the solver result.
+4. **Derived relational predicates (P0.4).** Fold the remaining bridge
+   vocabulary (`cross_ref`, `reads_member`, `member_of_module`,
+   `passed_to_call`, `makes_decorate_call`, `intrinsic_alias`) into IR atoms or
+   derived predicates over owner/reference + AST facts. Keep bridge tests as
+   parity tests until the bridge passes can be deleted.
 
 The minimizer polish tail and automation product flows remain valuable, but
-they should build on the global resolver contract rather than harden today's
-per-selector/late-pass shape.
+they should build on this native AST EDB resolver contract rather than harden
+today's candidate-oracle or late-bridge shape.
 
 Prefer dispatching work in this order. Large downstream spec migrations should
 lean on tooling generated from this queue instead of hand-authored YAML.
@@ -71,13 +68,13 @@ parallel dispatch queue.
 
 - <plans/selector_constraint_model.md> — **active (P0 global resolver).**
   Canonical plan for the selector model, Ascent solver choice, execution
-  phases, verification gates, and Gaffer evidence queue. Current top priority:
-  replace per-selector and per-relational-family resolution with one
-  whole-spec/component constraint solve over AST + owner-graph facts. The
+  phases, verification gates, and Gaffer evidence queue. #2439 closed the
+  global-solver admission path for `source_match`; current top priority is
+  replacing the `SourceMatchCandidate` oracle with native AST EDB lowering. The
   landed bridge primitives (`cross_ref`, `reads_member`, `member_of_module`,
   `passed_to_call`, `makes_decorate_call`, `intrinsic_alias`) are useful
   fact/selector vocabulary, but are bridge implementations until they fold into
-  the global IR. See <debug/2026_06_19_p4_debt_worklist.md> for real-spec
+  derived predicates. See <debug/2026_06_19_p4_debt_worklist.md> for real-spec
   evidence.
 - <plans/automated_spec_workflows.md> — **active design, downstream of P0.**
   North-star for the inventory/plan/apply/validate CLI surface and the
@@ -95,42 +92,25 @@ parallel dispatch queue.
   planner design space + algorithm/analysis backlog behind `debundle modules
 propose`.
 
-### P0 — global selector constraint resolver
+### P0 — native AST EDB resolver cutover
 
-1. **Global selector IR and fact schema.** Define the normalized atom/rule
-   representation for shape constraints, relational constraints, target
-   variables, local holes, derived predicates, and selector diagnostics. The IR
-   is the single contract for `run`, `validate`, `match-selector`,
-   `selector-debt`, and synthesis.
-2. **Fact extraction boundary.** Expose the AST facts currently used by
-   `ChunkResolver` and the owner/reference facts currently used by
-   `selector_solve` through one chunk fact store. Preserve the fail-closed rule:
-   unmodeled AST constructs or relations must report `unsupported`, not silently
-   drop facts.
-3. **Lower `source_match` to IR with differential parity.** Compile existing
-   JS-with-holes selectors and binding groups into query atoms. Keep the current
-   resolver as the reference until the corpus differential is zero, including
-   alpha matching, run holes, regex literal predicates, anonymous statements,
-   and binding groups.
-4. **Make `@Name` a solver variable.** Carry spec target symbols through the
-   solve instead of resolving relation anchors from already-claimed members.
-   This removes anchor-first ordering and allows mutually constraining selector
-   clusters.
-5. **Categoricity and `all_different`.** Return per-target no-match /
-   ambiguous / unique outcomes and duplicate claims from one solve result. The
-   keep-going report should become a projection of this result.
-6. **Materializer claim-map integration.** Replace
-   `add_explicit_request`-then-late-pass claiming with "solve selectors, then
-   consume resolved claims." The atomic unit, module DAG, cycle, and JS
-   realization gates stay downstream and unchanged.
-7. **Fold relational bridge passes into derived predicates.** Re-express
-   `cross_ref`, `reads_member`, `member_of_module`, `passed_to_call`,
-   `makes_decorate_call`, and `intrinsic_alias` as selector IR / derived
-   predicates. Keep the existing bridge tests as parity tests until the bridge
-   passes can be deleted.
-8. **Real-spec dogfood as evidence, not architecture.** Continue Gaffer
-   selector stabilization only where it produces language/fact/diagnostic
-   requirements for the global solver or proves the new resolver byte-identical.
+Detailed design and gates live in <plans/selector_constraint_model.md>; keep
+this list as the dispatch summary, not a second plan.
+
+1. **Thread full AST facts into Ascent.** `chunk_facts.rs` already extracts
+   `ast_*` rows and `SelectorFactStore::extend_chunk_facts` already stores
+   them. Make the solver consume those rows as native AST-shape relations.
+2. **Lower `source_match` to those facts.** Replace JS-template matching with
+   IR atoms over AST/owner facts, while differentially checking against
+   `ChunkResolver` until selectors, binding groups, anonymous statements,
+   holes, alpha matching, and regex predicates are byte-for-byte equivalent.
+3. **Retire `SourceMatchCandidate`.** Delete the pre-enumerated candidate
+   oracle once the native lowering is equivalent, and route source-match
+   diagnostics through solver categoricity / `all_different`.
+4. **Fold bridge vocabulary into derived predicates.** Re-express the staged
+   relational selectors as solver predicates over owner/reference + AST facts.
+   Real-spec Gaffer work should supply missing predicates and diagnostics, not
+   another permanent resolver layer.
 
 ### P1 — automation product flows over the solver
 
