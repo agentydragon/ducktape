@@ -648,7 +648,10 @@ This is the detailed P0 queue; <../TODO.md> should only summarize it.
   and binding groups into native AST/owner IR atoms. Keep `ChunkResolver` as the
   reference until the corpus differential is zero, including alpha matching,
   run-hole placement, regex literal predicates, anonymous statements, exact
-  identifiers, target bindings, and binding groups.
+  identifiers, target bindings, and binding groups. Mismatch-only native/oracle
+  parity rows are emitted as `source_match_native_diff_mismatch` entries in the
+  selector diagnostics report, so the cutover can shrink by selector shape
+  without changing production claims.
 - **G3 — candidate-oracle deletion.** Remove `SelectorAtom::SourceMatchCandidate`
   / `SelectorFact::SourceMatchCandidate` from the production path after G2
   parity. No-match, ambiguous, unsupported, and duplicate-claim diagnostics

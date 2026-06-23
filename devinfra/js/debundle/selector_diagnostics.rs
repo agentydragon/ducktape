@@ -28,6 +28,9 @@
 //!   hole);
 //! - `duplicate_claim` — two selectors resolved to the same declaration
 //!   identity in the same chunk.
+//! - `source_match_native_diff_mismatch` — native AST lowering for a
+//!   `source_match` selector resolved differently than the legacy
+//!   `SourceMatchCandidate` oracle.
 //!
 //! The first three categories cover both member / binding-group `source_match`
 //! selectors and `anonymous_statements[].match` selectors;
@@ -77,6 +80,8 @@ pub struct SelectorDiagnosticEntry {
     pub source_match_hash: Option<String>,
     pub source_match_body_hash: Option<String>,
     pub duplicate_claim: Option<DuplicateClaimReport>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_match_native_diff: Option<SourceMatchNativeDiffReport>,
     pub message: String,
     pub recommended_next_action: String,
 }
@@ -105,4 +110,29 @@ pub struct DuplicateClaimSiteReport {
     pub module_id: String,
     pub export_name: Option<String>,
     pub claim_origin: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceMatchNativeDiffReport {
+    pub mismatch_kind: String,
+    pub oracle: SourceMatchNativeDiffOracle,
+    pub native: SourceMatchNativeDiffOutcome,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceMatchNativeDiffOracle {
+    pub body_index: usize,
+    pub statement_ordinal: usize,
+    pub owner_id: Option<usize>,
+    pub binding: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceMatchNativeDiffOutcome {
+    pub kind: String,
+    pub statement_ordinal: Option<usize>,
+    pub owner_id: Option<usize>,
+    pub binding: Option<String>,
+    pub candidate_count: Option<usize>,
+    pub message: Option<String>,
 }

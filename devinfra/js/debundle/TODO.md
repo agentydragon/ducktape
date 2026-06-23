@@ -24,13 +24,15 @@ records and scoped backlogs; when a plan's core work is complete, its remaining
 tail should be summarized here instead of leaving the plan looking like a second
 priority queue.
 
-**Current focus (2026-06-22 post-#2439).** PR #2439 landed on `devel` as
+**Current focus (2026-06-23 post-#2443).** PR #2439 landed on `devel` as
 `db25ef639` and closed the first global-solver bridge: `source_match` selectors
-now participate in the Ascent-backed selector solver. The remaining P0 is not a
-new solver choice. It is to remove the bridge shape that still feeds the solver
-pre-enumerated `SourceMatchCandidate` rows from `ChunkResolver`, and instead
-lower `source_match` directly onto the native AST EDB facts already exposed by
-`chunk_facts.rs` / `SelectorFactStore::extend_chunk_facts`.
+now participate in the Ascent-backed selector solver. PR #2443 then lowered the
+exact single-statement subset onto native AST EDB facts. The remaining P0 is not
+a new solver choice. It is to remove the bridge shape that still feeds the
+solver pre-enumerated `SourceMatchCandidate` rows from `ChunkResolver`, and
+instead lower every supported `source_match` shape directly onto the native AST
+EDB facts already exposed by `chunk_facts.rs` /
+`SelectorFactStore::extend_chunk_facts`.
 
 Dispatch work in this order:
 
@@ -40,7 +42,9 @@ Dispatch work in this order:
 2. **`source_match` lowering parity (P0.2).** Compile JS-with-holes selectors,
    binding groups, anonymous statements, holes, alpha matching, and regex
    predicates into AST/owner facts. Keep `ChunkResolver` as the oracle until the
-   differential reaches zero.
+   differential reaches zero. The mismatch-only parity surface is
+   `selector_diagnostics.json` entries with category
+   `source_match_native_diff_mismatch`.
 3. **Delete the candidate oracle (P0.3).** Replace `SourceMatchCandidate`
    facts with native AST-shape constraints, and make no-match, ambiguous, and
    duplicate-claim diagnostics projections of the solver result.

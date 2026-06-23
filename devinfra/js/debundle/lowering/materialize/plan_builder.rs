@@ -25,6 +25,28 @@ struct DuplicateBindingClaim {
     duplicate: DuplicateClaimSite,
 }
 
+#[derive(Debug, Clone)]
+struct SourceMatchDifferentialTarget {
+    target: SelectorTargetId,
+    request_id: String,
+    module_path: String,
+    export_name: String,
+    claim_origin: String,
+    selector: spec::AnonymousStatementSelector,
+    selector_key: String,
+}
+
+#[derive(Debug, Clone)]
+struct SourceMatchNativeAstDifferential {
+    module_id: String,
+    module_path: String,
+    export_name: String,
+    claim_origin: String,
+    selector: spec::AnonymousStatementSelector,
+    report: SourceMatchNativeDiffReport,
+    message: String,
+}
+
 impl DuplicateBindingClaim {
     fn render(&self) -> String {
         format!(
@@ -42,9 +64,13 @@ impl DuplicateBindingClaim {
 // `selector_diagnostics` crate so writer and reader cannot drift.
 use selector_diagnostics::{
     DuplicateClaimReport, DuplicateClaimSiteReport, SelectorDiagnosticEntry,
-    SelectorDiagnosticsReport, SelectorNearestCandidate,
+    SelectorDiagnosticsReport, SelectorNearestCandidate, SourceMatchNativeDiffOracle,
+    SourceMatchNativeDiffOutcome, SourceMatchNativeDiffReport,
 };
-use selector_ir::{ClaimOutcome, SelectorFact, SelectorFactStore, SelectorTargetId};
+use selector_ir::{
+    ClaimOutcome, OwnerTerm, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
+    SelectorTargetId, SolverResult, StringTerm,
+};
 use selector_ir_lowering::{MemberSelectorLoweringContext, MemberSelectorProgramBuilder};
 
 impl From<&DuplicateClaimSite> for DuplicateClaimSiteReport {
@@ -367,6 +393,204 @@ fn source_match_candidate_statement_ordinal(
             candidate.body_idx,
         )),
     }
+}
+
+fn collect_source_match_native_ast_differentials(
+    program: &SelectorProgram,
+    result: &SolverResult,
+    facts: &SelectorFactStore,
+    targets: &[SourceMatchDifferentialTarget],
+    candidates_by_target: &BTreeMap<SelectorTargetId, Vec<source_match::MemberBindingMatch>>,
+    errors_by_target: &BTreeMap<SelectorTargetId, String>,
+    ordinal_by_binding: &BTreeMap<String, Option<StatementOrdinal>>,
+) -> Vec<SourceMatchNativeAstDifferential> {
+    let owner_by_ordinal = owner_by_statement_ordinal(facts);
+    targets
+        .iter()
+        .filter_map(|target| {
+            if program_has_source_match_candidate_atom(program, target.target, &target.selector_key)
+                || errors_by_target.contains_key(&target.target)
+            {
+                return None;
+            }
+            let [oracle_candidate] = candidates_by_target
+                .get(&target.target)
+                .map(Vec::as_slice)
+                .unwrap_or_default()
+            else {
+                return None;
+            };
+            let oracle_statement_ordinal = source_match_candidate_statement_ordinal_for_diff(
+                ordinal_by_binding,
+                oracle_candidate,
+            )?;
+            let oracle_owner = owner_by_ordinal.get(&oracle_statement_ordinal).copied();
+            let oracle = SourceMatchNativeDiffOracle {
+                body_index: oracle_candidate.body_idx,
+                statement_ordinal: oracle_statement_ordinal.0,
+                owner_id: oracle_owner.map(|owner| owner.0),
+                binding: oracle_candidate.binding.binding_name.clone(),
+            };
+            let outcome = result.outcome_for(target.target);
+            let native = source_match_native_diff_outcome(outcome);
+            let mismatch_kind =
+                source_match_native_diff_mismatch_kind(outcome, oracle_candidate, &oracle)?;
+            let report = SourceMatchNativeDiffReport {
+                mismatch_kind: mismatch_kind.to_string(),
+                oracle,
+                native,
+            };
+            Some(SourceMatchNativeAstDifferential {
+                module_id: target.request_id.clone(),
+                module_path: target.module_path.clone(),
+                export_name: target.export_name.clone(),
+                claim_origin: target.claim_origin.clone(),
+                selector: target.selector.clone(),
+                message: format!(
+                    "native AST source_match resolution diverged from legacy candidate oracle \
+                     for export `{}`: {}",
+                    target.export_name, mismatch_kind,
+                ),
+                report,
+            })
+        })
+        .collect()
+}
+
+fn program_has_source_match_candidate_atom(
+    program: &SelectorProgram,
+    target: SelectorTargetId,
+    selector_key: &str,
+) -> bool {
+    let Some(target_owner) = program.targets.get(target.0).map(|target| target.owner) else {
+        return false;
+    };
+    program.atoms.iter().any(|atom| {
+        matches!(
+            atom,
+            SelectorAtom::SourceMatchCandidate {
+                owner: OwnerTerm::Var { id },
+                selector_key: StringTerm::Const { value },
+            } if *id == target_owner && value == selector_key
+        )
+    })
+}
+
+fn source_match_native_diff_mismatch_kind(
+    outcome: Option<&ClaimOutcome>,
+    oracle_candidate: &source_match::MemberBindingMatch,
+    oracle: &SourceMatchNativeDiffOracle,
+) -> Option<&'static str> {
+    let Some(ClaimOutcome::Unique { claim }) = outcome else {
+        return Some(match outcome {
+            Some(ClaimOutcome::NoMatch) => "native_no_match",
+            Some(ClaimOutcome::Ambiguous { .. }) => "native_ambiguous",
+            Some(ClaimOutcome::Duplicate { .. }) => "native_duplicate",
+            Some(ClaimOutcome::Unsupported { .. }) => "native_unsupported",
+            None => "native_missing_outcome",
+            Some(ClaimOutcome::Unique { .. }) => unreachable!(),
+        });
+    };
+    match claim.binding.as_deref() {
+        Some(binding) if binding != oracle_candidate.binding.binding_name => {
+            return Some("binding_mismatch");
+        }
+        None => return Some("native_missing_binding"),
+        _ => {}
+    }
+    if claim.statement_ordinal.0 != oracle.statement_ordinal {
+        return Some("ordinal_mismatch");
+    }
+    if oracle.owner_id.is_some_and(|owner| claim.owner.0 != owner) {
+        return Some("owner_mismatch");
+    }
+    None
+}
+
+fn source_match_candidate_statement_ordinal_for_diff(
+    by_binding: &BTreeMap<String, Option<StatementOrdinal>>,
+    candidate: &source_match::MemberBindingMatch,
+) -> Option<StatementOrdinal> {
+    by_binding
+        .get(&candidate.binding.binding_name)
+        .and_then(|ordinal| *ordinal)
+}
+
+fn source_match_native_diff_outcome(
+    outcome: Option<&ClaimOutcome>,
+) -> SourceMatchNativeDiffOutcome {
+    match outcome {
+        Some(ClaimOutcome::Unique { claim }) => SourceMatchNativeDiffOutcome {
+            kind: "unique".to_string(),
+            statement_ordinal: Some(claim.statement_ordinal.0),
+            owner_id: Some(claim.owner.0),
+            binding: claim.binding.clone(),
+            candidate_count: None,
+            message: None,
+        },
+        Some(ClaimOutcome::NoMatch) => SourceMatchNativeDiffOutcome {
+            kind: "no_match".to_string(),
+            statement_ordinal: None,
+            owner_id: None,
+            binding: None,
+            candidate_count: None,
+            message: None,
+        },
+        Some(ClaimOutcome::Ambiguous { candidates }) => SourceMatchNativeDiffOutcome {
+            kind: "ambiguous".to_string(),
+            statement_ordinal: None,
+            owner_id: None,
+            binding: None,
+            candidate_count: Some(candidates.len()),
+            message: None,
+        },
+        Some(ClaimOutcome::Duplicate {
+            owner,
+            conflicting_targets,
+        }) => SourceMatchNativeDiffOutcome {
+            kind: "duplicate".to_string(),
+            statement_ordinal: None,
+            owner_id: Some(owner.0),
+            binding: None,
+            candidate_count: Some(conflicting_targets.len()),
+            message: None,
+        },
+        Some(ClaimOutcome::Unsupported { message }) => SourceMatchNativeDiffOutcome {
+            kind: "unsupported".to_string(),
+            statement_ordinal: None,
+            owner_id: None,
+            binding: None,
+            candidate_count: None,
+            message: Some(message.clone()),
+        },
+        None => SourceMatchNativeDiffOutcome {
+            kind: "missing_outcome".to_string(),
+            statement_ordinal: None,
+            owner_id: None,
+            binding: None,
+            candidate_count: None,
+            message: None,
+        },
+    }
+}
+
+fn owner_by_statement_ordinal(facts: &SelectorFactStore) -> BTreeMap<StatementOrdinal, OwnerId> {
+    facts
+        .facts
+        .iter()
+        .filter_map(|fact| {
+            if let SelectorFact::Owner {
+                owner,
+                statement_ordinal,
+                ..
+            } = fact
+            {
+                Some((*statement_ordinal, *owner))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone)]
@@ -803,6 +1027,10 @@ pub(super) struct ChunkPlanBuilder {
     /// canonical plan so later modules in the chunk can still be
     /// checked for independent selector and duplicate-claim failures.
     source_match_diagnostics: Vec<SourceMatchDiagnostic>,
+    /// Native AST lowering results that disagree with the legacy
+    /// `SourceMatchCandidate` oracle. These are non-fatal instrumentation
+    /// entries used while retiring the oracle.
+    source_match_native_ast_differentials: Vec<SourceMatchNativeAstDifferential>,
     /// Anonymous statement selectors that did not resolve. In
     /// keep-going mode, unresolved anonymous statements are omitted
     /// from canonical ownership so later modules in the chunk can
@@ -829,6 +1057,7 @@ impl ChunkPlanBuilder {
             catalogue_index_by_name: HashMap::new(),
             duplicate_binding_claims: Vec::new(),
             source_match_diagnostics: Vec::new(),
+            source_match_native_ast_differentials: Vec::new(),
             anonymous_statement_diagnostics: Vec::new(),
             keep_going,
         }
@@ -1086,6 +1315,7 @@ impl ChunkPlanBuilder {
             SourceMatchGroupCacheKey,
             Result<Vec<source_match::MemberBindingGroupMatch>, String>,
         >::new();
+        let mut source_match_diff_targets = Vec::<SourceMatchDifferentialTarget>::new();
         let mut pending_constraints = Vec::<(String, String, spec::MemberSelectorSpec)>::new();
         let source_match_ordinal_by_binding =
             source_match_candidate_statement_ordinals(owner_graph);
@@ -1119,6 +1349,15 @@ impl ChunkPlanBuilder {
                 }
                 if let Some(source_selector) = &member.source_match {
                     let selector_key = source_match::selector_key(source_selector);
+                    source_match_diff_targets.push(SourceMatchDifferentialTarget {
+                        target,
+                        request_id: request.id.clone(),
+                        module_path: request.target_path.clone(),
+                        export_name: member.export_name.clone(),
+                        claim_origin: member.claim_origin.clone(),
+                        selector: source_selector.clone(),
+                        selector_key: selector_key.clone(),
+                    });
                     let candidates = if let Some(group) = group_assignments.get(&member_index) {
                         let target_binding = source_selector.target_binding.as_deref().with_context(|| {
                             format!(
@@ -1201,6 +1440,17 @@ impl ChunkPlanBuilder {
         }
         let program = builder.into_program()?;
         let result = selector_ir_solver::solve(&program, &facts)?;
+        self.source_match_native_ast_differentials.extend(
+            collect_source_match_native_ast_differentials(
+                &program,
+                &result,
+                &facts,
+                &source_match_diff_targets,
+                &source_match_candidates,
+                &source_match_errors,
+                &source_match_ordinal_by_binding,
+            ),
+        );
 
         for (target, (index, member, group_assignment)) in deferred_targets {
             let request = &explicit_requests[index];
@@ -2674,9 +2924,37 @@ impl ChunkPlanBuilder {
                 source_match_hash: Some(source_match::selector_key(&diagnostic.selector)),
                 source_match_body_hash: Some(source_match::selector_body_key(&diagnostic.selector)),
                 duplicate_claim: None,
+                source_match_native_diff: None,
                 message: diagnostic.message.clone(),
                 recommended_next_action: recommended_source_match_action(&diagnostic.category)
                     .to_string(),
+            });
+        }
+        for diagnostic in &self.source_match_native_ast_differentials {
+            diagnostics.push(SelectorDiagnosticEntry {
+                category: "source_match_native_diff_mismatch".to_string(),
+                module_id: diagnostic.module_id.clone(),
+                module_path: Some(diagnostic.module_path.clone()),
+                export_name: Some(diagnostic.export_name.clone()),
+                selector_kind: source_match_selector_kind(&diagnostic.claim_origin).to_string(),
+                target_binding: diagnostic.selector.target_binding.clone(),
+                claim_origin: Some(diagnostic.claim_origin.clone()),
+                body_indices: vec![diagnostic.report.oracle.body_index],
+                first_mismatch: Some(diagnostic.report.mismatch_kind.clone()),
+                nearest_candidates: Vec::new(),
+                source_match_preview: Some(source_match::source_match_preview(
+                    &diagnostic.selector.match_source,
+                )),
+                source_match_hash: Some(source_match::selector_key(&diagnostic.selector)),
+                source_match_body_hash: Some(source_match::selector_body_key(&diagnostic.selector)),
+                duplicate_claim: None,
+                source_match_native_diff: Some(diagnostic.report.clone()),
+                message: diagnostic.message.clone(),
+                recommended_next_action:
+                    "Compare native AST selector lowering against the legacy source_match oracle, \
+                     then fix the native lowering before retiring SourceMatchCandidate for this \
+                     selector shape."
+                        .to_string(),
             });
         }
         for diagnostic in &self.anonymous_statement_diagnostics {
@@ -2698,6 +2976,7 @@ impl ChunkPlanBuilder {
                 source_match_hash: None,
                 source_match_body_hash: None,
                 duplicate_claim: None,
+                source_match_native_diff: None,
                 message: diagnostic.message.clone(),
                 recommended_next_action: recommended_source_match_action(category).to_string(),
             });
@@ -2723,6 +3002,7 @@ impl ChunkPlanBuilder {
                     existing: DuplicateClaimSiteReport::from(&duplicate.existing),
                     duplicate: DuplicateClaimSiteReport::from(&duplicate.duplicate),
                 }),
+                source_match_native_diff: None,
                 message: duplicate.render(),
                 recommended_next_action: "Move duplicate claims into one logical module, remove the duplicate member, or expose aliases from the same module."
                     .to_string(),
@@ -2789,5 +3069,215 @@ impl ChunkPlanBuilder {
             anonymous_ordinal_assignment: self.anonymous_ordinal_assignment,
             unmatched_spec_claims: self.unmatched_spec_claims,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use selector_ir::{ClaimKind, ClaimOrigin, ResolvedClaim, SolverClaim, VariableDomain};
+
+    fn selector() -> spec::AnonymousStatementSelector {
+        let mut selector = spec::AnonymousStatementSelector::exact("function selected() {}");
+        selector.target_binding = Some("selected".to_string());
+        selector
+    }
+
+    fn program_for_selector(
+        selector_key: &str,
+        include_candidate_atom: bool,
+    ) -> (SelectorProgram, SelectorTargetId) {
+        let mut program = SelectorProgram::default();
+        let owner = program.add_variable(VariableDomain::Owner, Some("@selected".to_string()));
+        let target = program.add_target(
+            analysis::ChunkId(7),
+            owner,
+            "static/app::diagnostics",
+            ClaimKind::Binding {
+                export_name: Some("selected".to_string()),
+            },
+            ClaimOrigin::MemberSelector,
+        );
+        if include_candidate_atom {
+            program.add_atom(SelectorAtom::SourceMatchCandidate {
+                owner: OwnerTerm::Var { id: owner },
+                selector_key: StringTerm::Const {
+                    value: selector_key.to_string(),
+                },
+            });
+        }
+        (program, target)
+    }
+
+    fn diff_target(
+        target: SelectorTargetId,
+        selector: &spec::AnonymousStatementSelector,
+    ) -> SourceMatchDifferentialTarget {
+        SourceMatchDifferentialTarget {
+            target,
+            request_id: "static/app::diagnostics".to_string(),
+            module_path: "diagnostics".to_string(),
+            export_name: "selected".to_string(),
+            claim_origin: "members[]".to_string(),
+            selector: selector.clone(),
+            selector_key: source_match::selector_key(selector),
+        }
+    }
+
+    fn candidate(binding: &str) -> source_match::MemberBindingMatch {
+        source_match::MemberBindingMatch {
+            body_idx: 0,
+            binding: source_match::ResolvedMemberBinding {
+                binding_name: binding.to_string(),
+                kind: None,
+            },
+        }
+    }
+
+    fn facts() -> SelectorFactStore {
+        let mut facts = SelectorFactStore::default();
+        facts.push(SelectorFact::Owner {
+            chunk_id: analysis::ChunkId(7),
+            owner: OwnerId(0),
+            statement_ordinal: StatementOrdinal(0),
+            statement_kind: "fn_decl".to_string(),
+        });
+        facts
+    }
+
+    fn candidates(
+        target: SelectorTargetId,
+        binding: &str,
+    ) -> BTreeMap<SelectorTargetId, Vec<source_match::MemberBindingMatch>> {
+        BTreeMap::from([(target, vec![candidate(binding)])])
+    }
+
+    fn ordinal_by_binding(binding: &str) -> BTreeMap<String, Option<StatementOrdinal>> {
+        BTreeMap::from([(binding.to_string(), Some(StatementOrdinal(0)))])
+    }
+
+    fn unique_result(target: SelectorTargetId, binding: &str) -> SolverResult {
+        SolverResult {
+            claims: vec![SolverClaim {
+                target,
+                outcome: ClaimOutcome::Unique {
+                    claim: ResolvedClaim {
+                        chunk_id: analysis::ChunkId(7),
+                        owner: OwnerId(0),
+                        statement_ordinal: StatementOrdinal(0),
+                        binding: Some(binding.to_string()),
+                        provenance: Vec::new(),
+                    },
+                },
+            }],
+        }
+    }
+
+    fn collect_with(
+        program: &SelectorProgram,
+        target: SelectorTargetId,
+        selector: &spec::AnonymousStatementSelector,
+        result: &SolverResult,
+        candidates: &BTreeMap<SelectorTargetId, Vec<source_match::MemberBindingMatch>>,
+        ordinal_by_binding: &BTreeMap<String, Option<StatementOrdinal>>,
+    ) -> Vec<SourceMatchNativeAstDifferential> {
+        collect_source_match_native_ast_differentials(
+            program,
+            result,
+            &facts(),
+            &[diff_target(target, selector)],
+            candidates,
+            &BTreeMap::new(),
+            ordinal_by_binding,
+        )
+    }
+
+    #[test]
+    fn native_source_match_diff_is_empty_for_matching_unique_resolution() {
+        let selector = selector();
+        let selector_key = source_match::selector_key(&selector);
+        let (program, target) = program_for_selector(&selector_key, false);
+        let result = unique_result(target, "oracleBinding");
+
+        let differentials = collect_with(
+            &program,
+            target,
+            &selector,
+            &result,
+            &candidates(target, "oracleBinding"),
+            &ordinal_by_binding("oracleBinding"),
+        );
+
+        assert!(differentials.is_empty(), "{differentials:#?}");
+    }
+
+    #[test]
+    fn native_source_match_diff_reports_binding_mismatch() {
+        let selector = selector();
+        let selector_key = source_match::selector_key(&selector);
+        let (program, target) = program_for_selector(&selector_key, false);
+        let result = unique_result(target, "nativeBinding");
+
+        let differentials = collect_with(
+            &program,
+            target,
+            &selector,
+            &result,
+            &candidates(target, "oracleBinding"),
+            &ordinal_by_binding("oracleBinding"),
+        );
+
+        assert_eq!(differentials.len(), 1);
+        assert_eq!(differentials[0].report.mismatch_kind, "binding_mismatch");
+        assert_eq!(differentials[0].report.oracle.binding, "oracleBinding");
+        assert_eq!(
+            differentials[0].report.native.binding.as_deref(),
+            Some("nativeBinding")
+        );
+    }
+
+    #[test]
+    fn native_source_match_diff_reports_native_no_match_against_oracle_unique() {
+        let selector = selector();
+        let selector_key = source_match::selector_key(&selector);
+        let (program, target) = program_for_selector(&selector_key, false);
+        let result = SolverResult {
+            claims: vec![SolverClaim {
+                target,
+                outcome: ClaimOutcome::NoMatch,
+            }],
+        };
+
+        let differentials = collect_with(
+            &program,
+            target,
+            &selector,
+            &result,
+            &candidates(target, "oracleBinding"),
+            &ordinal_by_binding("oracleBinding"),
+        );
+
+        assert_eq!(differentials.len(), 1);
+        assert_eq!(differentials[0].report.mismatch_kind, "native_no_match");
+        assert_eq!(differentials[0].report.native.kind, "no_match");
+    }
+
+    #[test]
+    fn native_source_match_diff_skips_oracle_fallback_source_match_candidate_atom() {
+        let selector = selector();
+        let selector_key = source_match::selector_key(&selector);
+        let (program, target) = program_for_selector(&selector_key, true);
+        let result = unique_result(target, "nativeBinding");
+
+        let differentials = collect_with(
+            &program,
+            target,
+            &selector,
+            &result,
+            &candidates(target, "oracleBinding"),
+            &ordinal_by_binding("oracleBinding"),
+        );
+
+        assert!(differentials.is_empty(), "{differentials:#?}");
     }
 }
