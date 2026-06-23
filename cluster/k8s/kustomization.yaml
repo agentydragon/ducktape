@@ -202,6 +202,7 @@ resources:
   - haku/namespace/flux-kustomization.yaml
   - haku/rbac/flux-kustomization.yaml
   - haku/console/flux-kustomization.yaml
+  - haku/agent-worker/flux-kustomization.yaml # suspended; see the dir README to activate
 
   # --- matrix ---
   - matrix/namespace/flux-kustomization.yaml

@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haku-worker
+  namespace: haku-sandbox
+  labels:
+    app.kubernetes.io/name: haku-worker
+  annotations:
+    description: "Anthropic Managed Agents self-hosted worker (Runtime B; ducktape haku/runtime/managed_agent). Long-polls Anthropic's work queue (`ant beta:worker poll`) and runs tool calls in-sandbox. The haku-sandbox perimeter (haku-mitmproxy egress, RBAC, ResourceQuota) is the fence; the worker holds only the environment key, never the org API key."
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-worker
+    spec:
+      serviceAccountName: haku-worker
+      # The worker's `bash` tool runs `kubectl` with this SA's in-cluster token.
+      automountServiceAccountToken: true
+      enableServiceLinks: false
+      # NOTE — full-NixOS image: PID 1 is systemd (`/init`), which MUST run as
+      # root inside the container. The WORKER itself is non-root: the
+      # haku-worker systemd unit runs it as `User=haku` (uid 1000). So, unlike
+      # haku-console (a single runAsNonRoot process), this pod is not
+      # runAsNonRoot and does not drop all caps — systemd needs root +
+      # SETUID/SETGID to drop the worker to `haku`. It is still UNPRIVILEGED
+      # (no privileged, no added caps) and relies on cgroup-v2 (Talos).
+      # This is the FIRST systemd-PID1 pod in the cluster: the securityContext
+      # and the writable /run + cgroup needs below are best-effort and must be
+      # validated on first apply (that's why the Kustomization ships suspended).
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+        # /workspace emptyDir is chowned to the `users` group (gid 100, haku's
+        # primary group) so the non-root worker can write the git clones.
+        fsGroup: 100
+      containers:
+        - name: worker
+          image: ghcr.io/agentydragon/haku-worker:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:haku-worker"}
+          imagePullPolicy: Always
+          command: ["/init"] # boot systemd; the haku-worker unit runs the worker
+          env:
+            - name: ANTHROPIC_ENVIRONMENT_ID
+              value: env_015uqL9WAMSDytQEWWmLG9zF # haku-selfhosted environment (not secret)
+            - name: ANTHROPIC_ENVIRONMENT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: haku-environment-key
+                  key: environment_key
+            # haku-state clone (read+write) + the single git credential the
+            # entrypoint threads into ~/.netrc. Reuses the haku-console secret.
+            - name: HAKU_STATE_REPO_URL
+              valueFrom:
+                secretKeyRef:
+                  name: haku-state-git-write
+                  key: repo_url
+            - name: HAKU_GIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: haku-state-git-write
+                  key: username
+            - name: HAKU_GIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-state-git-write
+                  key: password
+            # Forgejo host for the .netrc machine line; must match the host in
+            # HAKU_STATE_REPO_URL. TODO(operator): confirm.
+            - name: HAKU_GIT_HOST
+              value: git.allegedly.works
+            # ducktape clone (read-only: haku/base + run.md, the live manual).
+            # TODO(operator): set the real URL. If ducktape is NOT on HAKU_GIT_HOST
+            # and is not public, entrypoint.sh's single-.netrc-host model needs a
+            # second credential/machine line.
+            - name: HAKU_DUCKTAPE_REPO_URL
+              value: https://github.com/agentydragon/ducktape
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: workspace # git clones + agent workdir (entrypoint: /workspace)
+              mountPath: /workspace
+            - name: run # systemd PID 1 wants a writable tmpfs /run
+              mountPath: /run
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: workspace
+          emptyDir: {}
+        - name: run
+          emptyDir:
+            medium: Memory
+        - name: tmp
+          emptyDir: {}

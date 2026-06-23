@@ -81,18 +81,21 @@ in
       ExecStart = "${entrypoint}/bin/haku-entrypoint";
       Restart = "always";
       RestartSec = 5;
-      # Base CA bundle for git/curl/ant. In-cluster these traverse
-      # haku-mitmproxy; its CA is layered into the pod's trust by the
-      # inject-haku-mitmproxy Kyverno policy (finalized with the k8s manifests).
-      Environment = "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt";
-      # k8s sets the worker env on the container (envFrom secret/configMap); it
-      # lands in PID 1's (systemd) environment, and ImportEnvironment lifts the
-      # named vars into this unit (systemd >= 254; NixOS 25.11 ships newer).
-      # EnvironmentFile is an optional fallback: mount a secret as an env file.
+      # The worker's env arrives on the CONTAINER (PID 1 = systemd): the operator
+      # sets the ANTHROPIC_*/HAKU_* vars (envFrom secret/configMap), and the
+      # haku-sandbox Kyverno policy (inject-haku-mitmproxy) injects the egress
+      # proxy + its CA bundle (HTTP(S)_PROXY/NO_PROXY, SSL_CERT_FILE=/mitmproxy-ca/…
+      # and the CURL/REQUESTS/NODE variants). ImportEnvironment lifts all of them
+      # from PID 1's environment into this unit (systemd >= 254; NixOS 25.11 ships
+      # newer) — without the proxy/CA imports the worker wouldn't trust the
+      # mitmproxy CA and every proxied HTTPS call would fail. EnvironmentFile is
+      # an optional fallback: mount a secret as an env file.
       ImportEnvironment =
         "ANTHROPIC_ENVIRONMENT_ID ANTHROPIC_ENVIRONMENT_KEY "
         + "HAKU_DUCKTAPE_REPO_URL HAKU_STATE_REPO_URL "
-        + "HAKU_GIT_HOST HAKU_GIT_USERNAME HAKU_GIT_PASSWORD";
+        + "HAKU_GIT_HOST HAKU_GIT_USERNAME HAKU_GIT_PASSWORD "
+        + "HTTP_PROXY HTTPS_PROXY NO_PROXY "
+        + "SSL_CERT_FILE CURL_CA_BUNDLE REQUESTS_CA_BUNDLE NODE_EXTRA_CA_CERTS";
       EnvironmentFile = "-/etc/haku-worker/env";
     };
   };

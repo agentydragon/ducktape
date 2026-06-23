@@ -51,6 +51,8 @@ resources:
   - grocy-mcp-oidc-server-image-policy.yaml
   - haku-console-image-repository.yaml
   - haku-console-image-policy.yaml
+  - haku-worker-image-repository.yaml
+  - haku-worker-image-policy.yaml
   # CLEANUP: remove kubernetes-mcp-server entries when upstream releases
   # the well-known 404 fallback (see third_party/kubernetes-mcp-server-pin.txt).
   - kubernetes-mcp-server-image-repository.yaml

@@ -56,13 +56,16 @@ toolset is `bash/read/write/edit/glob/grep`; Haku reaches Plaid (`psql`),
 Google (`curl`), and the cluster (`kubectl`, in-cluster `haku` SA) through
 `bash`. Tana is a native `mcp_toolset` (Anthropic-side, vault auth).
 
-## k8s wiring — operator-owned (follow-up)
+## k8s wiring
 
-The `haku-worker` Deployment, the `ANTHROPIC_ENVIRONMENT_KEY` secret, and the
-clone/git env live under `cluster/k8s/…/haku/` — see
-<../../plans/managed_agents.md> § "k8s wiring". The worker reuses Haku's existing
-`haku-sandbox` perimeter (`haku` SA + RBAC, `haku-mitmproxy` egress,
-ResourceQuota); none of it relies on agent restraint.
+The `haku-worker` Deployment, its `haku-worker` ServiceAccount (bound to
+`haku-sandbox-admin`), the `ANTHROPIC_ENVIRONMENT_KEY` secret stub, and the
+clone/git env live in <../../../cluster/k8s/haku/agent-worker/README.md> —
+shipped **suspended** (it's the first systemd-PID1 pod in the cluster and needs
+an operator-generated environment key; that dir's README is the activation
+runbook). The worker reuses Haku's `haku-sandbox` perimeter (`haku-sandbox-admin`
+RBAC, `haku-mitmproxy` egress + CA injection, ResourceQuota); none of it relies
+on agent restraint.
 
 ## Bring-up
 
