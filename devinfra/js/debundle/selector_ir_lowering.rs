@@ -379,6 +379,16 @@ impl MemberSelectorProgramBuilder {
         else {
             return Ok(false);
         };
+        if selector.identifiers == SourceMatchIdentifierMode::AlphaAll
+            && !native_alpha_source_match_supported(
+                &facts,
+                &skipped_nodes,
+                &child_list_patterns,
+                selector.target_binding.is_some(),
+            )
+        {
+            return Ok(false);
+        }
         let [(root_node, _ordinal)] = facts.top_level.as_slice() else {
             return Ok(false);
         };
@@ -900,6 +910,87 @@ fn introduces_alpha_scope(kind: NodeKind) -> bool {
     )
 }
 
+fn native_alpha_source_match_supported(
+    facts: &ChunkFacts,
+    skipped_nodes: &BTreeSet<NodeId>,
+    child_list_patterns: &BTreeMap<NodeId, NativeChildListPattern>,
+    has_target_binding: bool,
+) -> bool {
+    let index = AlphaIdentifierIndex::new(facts);
+    let [(root, _ordinal)] = facts.top_level.as_slice() else {
+        return false;
+    };
+
+    if native_alpha_has_explicit_same_name_property(&index, skipped_nodes) {
+        return false;
+    }
+
+    // Alpha variable scopes are modeled for simple single-scope selectors.
+    // Nested function/arrow/catch scopes need a native notion of scoped
+    // alpha-renaming before they can safely avoid the legacy matcher.
+    let scope_count = facts
+        .node_kind
+        .iter()
+        .filter(|(node, kind)| !skipped_nodes.contains(node) && introduces_alpha_scope(*kind))
+        .count();
+    if scope_count > 1 {
+        return false;
+    }
+
+    if facts.node_kind.iter().any(|(node, kind)| {
+        !skipped_nodes.contains(node)
+            && matches!(
+                kind,
+                NodeKind::Seq | NodeKind::Shorthand | NodeKind::AssignProp
+            )
+    }) {
+        return false;
+    }
+
+    let root_kind = index.node_kind.get(root).copied();
+    if has_target_binding && root_kind == Some(NodeKind::VarDecl) {
+        return false;
+    }
+
+    if root_kind == Some(NodeKind::VarDecl) && !skipped_nodes.is_empty() {
+        return false;
+    }
+
+    !child_list_patterns.iter().any(|(parent, _pattern)| {
+        matches!(
+            index.node_kind.get(parent).copied(),
+            Some(NodeKind::Call | NodeKind::New)
+        )
+    })
+}
+
+fn native_alpha_has_explicit_same_name_property(
+    index: &AlphaIdentifierIndex,
+    skipped_nodes: &BTreeSet<NodeId>,
+) -> bool {
+    index.node_kind.iter().any(|(node, kind)| {
+        if skipped_nodes.contains(node)
+            || !matches!(kind, NodeKind::KeyValue | NodeKind::PatKeyValue)
+        {
+            return false;
+        }
+        let Some(children) = index.children_by_parent.get(node) else {
+            return false;
+        };
+        let Some(key) = children.first() else {
+            return false;
+        };
+        let Some(value) = children.get(1) else {
+            return false;
+        };
+        index
+            .prop_name
+            .get(key)
+            .zip(index.ident_name.get(value))
+            .is_some_and(|(key, value)| key == value)
+    })
+}
+
 fn native_target_binding_node(
     facts: &ChunkFacts,
     skipped_nodes: &BTreeSet<NodeId>,
@@ -1044,6 +1135,7 @@ fn child_at(index: &AlphaIdentifierIndex, parent: NodeId, child_index: u32) -> O
 struct AlphaIdentifierIndex {
     node_kind: BTreeMap<NodeId, NodeKind>,
     ident_name: BTreeMap<NodeId, String>,
+    prop_name: BTreeMap<NodeId, String>,
     children_by_parent: BTreeMap<NodeId, Vec<NodeId>>,
     super_class_by_class: BTreeMap<NodeId, NodeId>,
 }
@@ -1071,6 +1163,7 @@ impl AlphaIdentifierIndex {
         Self {
             node_kind: facts.node_kind.iter().copied().collect(),
             ident_name: facts.ident_name.iter().cloned().collect(),
+            prop_name: facts.prop_name.iter().cloned().collect(),
             children_by_parent,
             super_class_by_class: facts.super_class.iter().copied().collect(),
         }
@@ -2209,7 +2302,7 @@ mod tests {
 
     #[test]
     fn alpha_all_source_match_with_target_binding_projects_binding_variable() {
-        let mut selector = AnonymousStatementSelector::exact("const a = b;");
+        let mut selector = AnonymousStatementSelector::exact("function a() { return b; }");
         selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
         selector.target_binding = Some("a".to_string());
         let lowered = lower_member_selector(
@@ -2431,27 +2524,46 @@ mod tests {
     }
 
     #[test]
-    fn alpha_all_source_match_with_argument_run_hole_lowers_natively() {
+    fn alpha_all_source_match_with_argument_run_hole_stays_oracle_only() {
         let mut selector = AnonymousStatementSelector::exact("const a = foo(ARGS, b);");
         selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
         let lowered = lower_member_selector(
             &context(),
             "Widget",
-            &MemberSelectorSpec::SourceMatch(selector),
+            &MemberSelectorSpec::SourceMatch(selector.clone()),
         )
         .unwrap();
 
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
-        assert!(lowered.program.atoms.iter().any(|atom| matches!(
-            atom,
-            SelectorAtom::AstChildListPattern { start_index: 1, .. }
-        )));
+        assert_source_match_oracle_only(&lowered, &selector);
+    }
+
+    #[test]
+    fn alpha_all_source_match_explicit_same_name_property_stays_oracle_only() {
+        let mut selector = AnonymousStatementSelector::exact("function a(x) { return { x: x }; }");
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector.clone()),
+        )
+        .unwrap();
+
+        assert_source_match_oracle_only(&lowered, &selector);
+    }
+
+    #[test]
+    fn alpha_all_source_match_nested_scope_stays_oracle_only() {
+        let mut selector =
+            AnonymousStatementSelector::exact("function a(xs) { return xs.map((x) => x.id); }");
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector.clone()),
+        )
+        .unwrap();
+
+        assert_source_match_oracle_only(&lowered, &selector);
     }
 
     #[test]

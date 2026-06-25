@@ -3777,7 +3777,8 @@ const good = other;
 
     #[test]
     fn solves_lowered_alpha_all_source_match_projects_target_binding() {
-        let mut selector = AnonymousStatementSelector::exact(r#"const second = make("right");"#);
+        let mut selector =
+            AnonymousStatementSelector::exact(r#"function second() { return make("right"); }"#);
         selector.identifiers = spec::SourceMatchIdentifierMode::AlphaAll;
         selector.target_binding = Some("second".to_string());
         let lowered = lower_member_selector(
@@ -3795,7 +3796,12 @@ const good = other;
         );
         let facts = fact_store_from_analyzed_source(
             r#"
-const candidateLeft = make("left"), candidateRight = make("right");
+function candidateLeft() {
+  return make("left");
+}
+function candidateRight() {
+  return make("right");
+}
 "#,
         );
 
@@ -3867,7 +3873,7 @@ const wrongCallee = makeOther("value");
     #[test]
     fn solves_lowered_source_match_string_literal_regex_predicate_natively() {
         let mut selector = AnonymousStatementSelector::exact(
-            r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
+            r#"function readableStyle() { return STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$"); }"#,
         );
         selector.identifiers = spec::SourceMatchIdentifierMode::AlphaAll;
         selector.target_binding = Some("readableStyle".to_string());
@@ -3896,8 +3902,12 @@ const wrongCallee = makeOther("value");
         );
         let facts = fact_store_from_analyzed_source(
             r#"
-const wrongPrefix = "OtherShell-42";
-const targetClassName = "WidgetShell-42";
+function wrongPrefix() {
+  return "OtherShell-42";
+}
+function targetClassName() {
+  return "WidgetShell-42";
+}
 "#,
         );
 
