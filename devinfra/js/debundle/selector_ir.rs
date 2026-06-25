@@ -134,6 +134,10 @@ pub enum SelectorAtom {
         owner: OwnerTerm,
         ordinal: OrdinalTerm,
     },
+    OwnerTopLevelRoot {
+        owner: OwnerTerm,
+        root: NodeTerm,
+    },
     OwnerDeclaresBinding {
         owner: OwnerTerm,
         binding: StringTerm,
@@ -164,6 +168,13 @@ pub enum SelectorAtom {
         parent: NodeTerm,
         index: u32,
         child: NodeTerm,
+    },
+    AstChildListPattern {
+        parent: NodeTerm,
+        start_index: u32,
+        segments: Vec<Vec<NodeTerm>>,
+        anchored_left: bool,
+        anchored_right: bool,
     },
     AstSuperClass {
         class_node: NodeTerm,
@@ -367,6 +378,10 @@ impl SelectorProgram {
                 self.validate_owner_term(owner, "owner_statement_ordinal.owner")?;
                 self.validate_ordinal_term(ordinal, "owner_statement_ordinal.ordinal")
             }
+            SelectorAtom::OwnerTopLevelRoot { owner, root } => {
+                self.validate_owner_term(owner, "owner_top_level_root.owner")?;
+                self.validate_node_term(root, "owner_top_level_root.root")
+            }
             SelectorAtom::OwnerDeclaresBinding { owner, binding } => {
                 self.validate_owner_term(owner, "owner_declares_binding.owner")?;
                 self.validate_string_term(binding, "owner_declares_binding.binding")
@@ -399,6 +414,23 @@ impl SelectorProgram {
             SelectorAtom::AstChild { parent, child, .. } => {
                 self.validate_node_term(parent, "ast_child.parent")?;
                 self.validate_node_term(child, "ast_child.child")
+            }
+            SelectorAtom::AstChildListPattern {
+                parent, segments, ..
+            } => {
+                self.validate_node_term(parent, "ast_child_list_pattern.parent")?;
+                if segments.is_empty() {
+                    return Err(SelectorProgramError::EmptyChildListPattern);
+                }
+                for segment in segments {
+                    if segment.is_empty() {
+                        return Err(SelectorProgramError::EmptyChildListPatternSegment);
+                    }
+                    for child in segment {
+                        self.validate_node_term(child, "ast_child_list_pattern.child")?;
+                    }
+                }
+                Ok(())
             }
             SelectorAtom::AstSuperClass {
                 class_node,
@@ -646,6 +678,8 @@ pub enum SelectorProgramError {
         actual: VariableDomain,
     },
     DegenerateAllDifferent,
+    EmptyChildListPattern,
+    EmptyChildListPatternSegment,
 }
 
 impl fmt::Display for SelectorProgramError {
@@ -681,6 +715,15 @@ impl fmt::Display for SelectorProgramError {
             }
             Self::DegenerateAllDifferent => {
                 write!(f, "all_different requires at least two targets")
+            }
+            Self::EmptyChildListPattern => {
+                write!(
+                    f,
+                    "ast_child_list_pattern requires at least one fixed segment"
+                )
+            }
+            Self::EmptyChildListPatternSegment => {
+                write!(f, "ast_child_list_pattern segments must be non-empty")
             }
         }
     }

@@ -10,7 +10,7 @@ use std::fmt;
 use analysis::{ChunkId, StatementKind};
 use chunk_facts::{ChunkFacts, NodeId, NodeKind};
 use selector_ir::{
-    ClaimKind, ClaimOrigin, NodeTerm, OrdinalTerm, OwnerTerm, RelationalPrimitive, SelectorAtom,
+    ClaimKind, ClaimOrigin, NodeTerm, OwnerTerm, RelationalPrimitive, SelectorAtom,
     SelectorProgram, SelectorTargetId, SelectorVariableId, StringTerm, VariableDomain,
 };
 use source_match_holes::{
@@ -62,6 +62,16 @@ pub struct MemberSelectorProgramBuilder {
     owners_by_export: BTreeMap<(String, String), SelectorVariableId>,
     global_owner_by_export: BTreeMap<String, Option<SelectorVariableId>>,
     targeted_owners: BTreeMap<SelectorVariableId, String>,
+}
+
+struct NativeAstFactLowering<'a> {
+    logical_module: &'a str,
+    facts: &'a ChunkFacts,
+    node_vars: &'a BTreeMap<NodeId, SelectorVariableId>,
+    skipped_nodes: &'a BTreeSet<NodeId>,
+    identifier_mode: SourceMatchIdentifierMode,
+    alpha_identifier_vars: &'a BTreeMap<NodeId, SelectorVariableId>,
+    child_list_patterns: &'a BTreeMap<NodeId, NativeChildListPattern>,
 }
 
 impl MemberSelectorProgramBuilder {
@@ -136,7 +146,7 @@ impl MemberSelectorProgramBuilder {
         self.lower_selector_atoms(logical_module, owner, selector)
     }
 
-    pub fn into_program(self) -> Result<SelectorProgram, SelectorIrLoweringError> {
+    pub fn into_program(mut self) -> Result<SelectorProgram, SelectorIrLoweringError> {
         for ((logical_module, export_name), owner) in &self.owners_by_export {
             if !self.targeted_owners.contains_key(owner) {
                 return Err(SelectorIrLoweringError::DanglingAnchor {
@@ -144,6 +154,18 @@ impl MemberSelectorProgramBuilder {
                     export_name: export_name.clone(),
                 });
             }
+        }
+        let mut unique_target_by_owner = BTreeMap::<SelectorVariableId, SelectorTargetId>::new();
+        for target in &self.program.targets {
+            if self.targeted_owners.contains_key(&target.owner) {
+                unique_target_by_owner
+                    .entry(target.owner)
+                    .or_insert(target.id);
+            }
+        }
+        let all_different_targets = unique_target_by_owner.into_values().collect::<Vec<_>>();
+        if all_different_targets.len() > 1 {
+            self.program.require_all_different(all_different_targets);
         }
         self.program.validate()?;
         Ok(self.program)
@@ -202,7 +224,7 @@ impl MemberSelectorProgramBuilder {
         match selector {
             MemberSelectorSpec::Binding(binding) => self.lower_binding_selector(owner, binding),
             MemberSelectorSpec::SourceMatch(selector) => {
-                if !self.try_lower_native_exact_source_match(logical_module, owner, selector)? {
+                if !self.try_lower_native_source_match(logical_module, owner, selector)? {
                     self.program.add_atom(SelectorAtom::SourceMatchCandidate {
                         owner: owner_term(owner),
                         selector_key: const_str(&source_match::selector_key(selector)),
@@ -321,16 +343,13 @@ impl MemberSelectorProgramBuilder {
         Ok(())
     }
 
-    fn try_lower_native_exact_source_match(
+    fn try_lower_native_source_match(
         &mut self,
         logical_module: &str,
         owner: SelectorVariableId,
         selector: &AnonymousStatementSelector,
     ) -> Result<bool, SelectorIrLoweringError> {
-        if selector.identifiers != SourceMatchIdentifierMode::Exact
-            || selector.target_statement.is_some()
-            || selector.target_statements.is_some()
-        {
+        if selector.target_statement.is_some() || selector.target_statements.is_some() {
             return Ok(false);
         }
         let Ok(parsed) = js_ast::with_swc_globals(|| {
@@ -352,15 +371,26 @@ impl MemberSelectorProgramBuilder {
         let Some(hole_roots) = native_single_node_hole_roots(&facts) else {
             return Ok(false);
         };
-        let skipped_nodes = native_hole_subtree_nodes(&facts, &hole_roots);
+        let mut skipped_nodes = native_hole_subtree_nodes(&facts, &hole_roots);
+        let Some(child_list_patterns) = native_stmt_list_child_patterns(&facts, &mut skipped_nodes)
+        else {
+            return Ok(false);
+        };
         let [(root_node, _ordinal)] = facts.top_level.as_slice() else {
             return Ok(false);
         };
+        let alpha_target_binding_node = match (&selector.target_binding, selector.identifiers) {
+            (Some(target_binding), SourceMatchIdentifierMode::AlphaAll) => {
+                let Some(target_binding_node) =
+                    native_target_binding_node(&facts, &skipped_nodes, target_binding)
+                else {
+                    return Ok(false);
+                };
+                Some(target_binding_node)
+            }
+            _ => None,
+        };
 
-        let ordinal = self.program.add_variable(
-            VariableDomain::StatementOrdinal,
-            Some(format!("{logical_module}::source_match.ordinal")),
-        );
         let mut node_vars = BTreeMap::<NodeId, SelectorVariableId>::new();
         for (node, _kind) in &facts.node_kind {
             node_vars.insert(
@@ -374,31 +404,58 @@ impl MemberSelectorProgramBuilder {
         let Some(root) = node_vars.get(root_node).copied() else {
             return Ok(false);
         };
-        self.program.add_atom(SelectorAtom::OwnerStatementOrdinal {
+        self.program.add_atom(SelectorAtom::OwnerTopLevelRoot {
             owner: owner_term(owner),
-            ordinal: ordinal_term(ordinal),
+            root: node_term(root),
         });
-        self.program.add_atom(SelectorAtom::AstTopLevel {
-            node: node_term(root),
-            ordinal: ordinal_term(ordinal),
-        });
-        if let Some(target_binding) = &selector.target_binding {
-            self.program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-                owner: owner_term(owner),
-                binding: const_str(target_binding),
-            });
+        let alpha_identifier_vars = if selector.identifiers == SourceMatchIdentifierMode::AlphaAll {
+            self.lower_alpha_identifier_variables(logical_module, &facts, &skipped_nodes)
+        } else {
+            BTreeMap::new()
+        };
+        match (&selector.target_binding, selector.identifiers) {
+            (Some(target_binding), SourceMatchIdentifierMode::Exact) => {
+                self.program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+                    owner: owner_term(owner),
+                    binding: const_str(target_binding),
+                });
+            }
+            (Some(_target_binding), SourceMatchIdentifierMode::AlphaAll) => {
+                let target_binding_node = alpha_target_binding_node
+                    .expect("alpha_all target_binding native node was checked before lowering");
+                let target_binding_var = alpha_identifier_vars
+                    .get(&target_binding_node)
+                    .copied()
+                    .expect("alpha_all target_binding node should have an identifier variable");
+                self.program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+                    owner: owner_term(owner),
+                    binding: string_term(target_binding_var),
+                });
+            }
+            (None, _) => {}
         }
-        self.lower_native_ast_facts(logical_module, &facts, &node_vars, &skipped_nodes);
+        self.lower_native_ast_facts(NativeAstFactLowering {
+            logical_module,
+            facts: &facts,
+            node_vars: &node_vars,
+            skipped_nodes: &skipped_nodes,
+            identifier_mode: selector.identifiers,
+            alpha_identifier_vars: &alpha_identifier_vars,
+            child_list_patterns: &child_list_patterns,
+        });
         Ok(true)
     }
 
-    fn lower_native_ast_facts(
-        &mut self,
-        logical_module: &str,
-        facts: &ChunkFacts,
-        node_vars: &BTreeMap<NodeId, SelectorVariableId>,
-        skipped_nodes: &BTreeSet<NodeId>,
-    ) {
+    fn lower_native_ast_facts(&mut self, lowering: NativeAstFactLowering<'_>) {
+        let NativeAstFactLowering {
+            logical_module,
+            facts,
+            node_vars,
+            skipped_nodes,
+            identifier_mode,
+            alpha_identifier_vars,
+            child_list_patterns,
+        } = lowering;
         let mut wildcard_string_vars = BTreeMap::<String, SelectorVariableId>::new();
         for (_node, token) in &facts.str_wildcard {
             if skipped_nodes.contains(_node) {
@@ -435,13 +492,15 @@ impl MemberSelectorProgramBuilder {
                 node: node_term(node_var),
                 node_kind: *kind,
             });
-            self.program.add_atom(SelectorAtom::AstChildCount {
-                node: node_term(node_var),
-                count: child_counts.get(node).copied().unwrap_or(0),
-            });
+            if !child_list_patterns.contains_key(node) {
+                self.program.add_atom(SelectorAtom::AstChildCount {
+                    node: node_term(node_var),
+                    count: child_counts.get(node).copied().unwrap_or(0),
+                });
+            }
         }
         for (parent, index, child) in &facts.child {
-            if skipped_nodes.contains(parent) {
+            if skipped_nodes.contains(parent) || child_list_patterns.contains_key(parent) {
                 continue;
             }
             let (Some(parent), Some(child)) = (node_vars.get(parent), node_vars.get(child)) else {
@@ -451,6 +510,33 @@ impl MemberSelectorProgramBuilder {
                 parent: node_term(*parent),
                 index: *index,
                 child: node_term(*child),
+            });
+        }
+        for (parent, pattern) in child_list_patterns {
+            let Some(parent) = node_vars.get(parent).copied() else {
+                continue;
+            };
+            let segments = pattern
+                .segments
+                .iter()
+                .map(|segment| {
+                    segment
+                        .iter()
+                        .filter_map(|node| node_vars.get(node).copied())
+                        .map(node_term)
+                        .collect::<Vec<_>>()
+                })
+                .filter(|segment| !segment.is_empty())
+                .collect::<Vec<_>>();
+            if segments.is_empty() {
+                continue;
+            }
+            self.program.add_atom(SelectorAtom::AstChildListPattern {
+                parent: node_term(parent),
+                start_index: pattern.start_index,
+                segments,
+                anchored_left: pattern.anchored_left,
+                anchored_right: pattern.anchored_right,
             });
         }
         for (class_node, super_class) in &facts.super_class {
@@ -507,9 +593,25 @@ impl MemberSelectorProgramBuilder {
             if skipped_nodes.contains(node) {
                 continue;
             }
-            self.add_ast_string_label(node_vars, *node, value, |node, value| {
-                SelectorAtom::AstIdentifierName { node, value }
-            });
+            match identifier_mode {
+                SourceMatchIdentifierMode::Exact => {
+                    self.add_ast_string_label(node_vars, *node, value, |node, value| {
+                        SelectorAtom::AstIdentifierName { node, value }
+                    });
+                }
+                SourceMatchIdentifierMode::AlphaAll => {
+                    let (Some(node), Some(identifier)) = (
+                        node_vars.get(node).copied(),
+                        alpha_identifier_vars.get(node).copied(),
+                    ) else {
+                        continue;
+                    };
+                    self.program.add_atom(SelectorAtom::AstIdentifierName {
+                        node: node_term(node),
+                        value: string_term(identifier),
+                    });
+                }
+            }
         }
         for (node, value) in &facts.prop_name {
             if skipped_nodes.contains(node) {
@@ -554,6 +656,158 @@ impl MemberSelectorProgramBuilder {
         }
     }
 
+    fn lower_alpha_identifier_variables(
+        &mut self,
+        logical_module: &str,
+        facts: &ChunkFacts,
+        skipped_nodes: &BTreeSet<NodeId>,
+    ) -> BTreeMap<NodeId, SelectorVariableId> {
+        let [(root, _ordinal)] = facts.top_level.as_slice() else {
+            return BTreeMap::new();
+        };
+        let index = AlphaIdentifierIndex::new(facts);
+        let mut state = AlphaIdentifierState::default();
+        self.lower_alpha_identifier_node(logical_module, &index, skipped_nodes, &mut state, *root)
+    }
+
+    fn lower_alpha_identifier_node(
+        &mut self,
+        logical_module: &str,
+        index: &AlphaIdentifierIndex,
+        skipped_nodes: &BTreeSet<NodeId>,
+        state: &mut AlphaIdentifierState,
+        node: NodeId,
+    ) -> BTreeMap<NodeId, SelectorVariableId> {
+        if skipped_nodes.contains(&node) {
+            return BTreeMap::new();
+        }
+
+        let mut result = BTreeMap::new();
+        let kind = index.node_kind.get(&node).copied();
+        if let (Some(kind), Some(name)) = (kind, index.ident_name.get(&node)) {
+            let identifier = if kind == NodeKind::BindingIdent {
+                self.alpha_binding_identifier(logical_module, state, name)
+            } else {
+                self.alpha_reference_identifier(logical_module, state, name)
+            };
+            result.insert(node, identifier);
+        }
+
+        if kind == Some(NodeKind::Class)
+            && let Some(super_class) = index.super_class_by_class.get(&node).copied()
+        {
+            result.extend(self.lower_alpha_identifier_node(
+                logical_module,
+                index,
+                skipped_nodes,
+                state,
+                super_class,
+            ));
+        }
+
+        let pushes_scope = kind.is_some_and(introduces_alpha_scope);
+        if pushes_scope {
+            state.frames.push(AlphaIdentifierFrame::default());
+        }
+        for child in index.children_by_parent.get(&node).into_iter().flatten() {
+            result.extend(self.lower_alpha_identifier_node(
+                logical_module,
+                index,
+                skipped_nodes,
+                state,
+                *child,
+            ));
+        }
+        if pushes_scope {
+            state.frames.pop();
+        }
+        result
+    }
+
+    fn alpha_binding_identifier(
+        &mut self,
+        logical_module: &str,
+        state: &mut AlphaIdentifierState,
+        name: &str,
+    ) -> SelectorVariableId {
+        if let Some(existing) = state.current_frame().by_name.get(name).copied() {
+            return existing;
+        }
+        let distinct_from = state.current_frame().by_name.values().copied().collect();
+        let identifier = self.new_alpha_identifier_variable(logical_module, state, name);
+        state
+            .current_frame_mut()
+            .by_name
+            .insert(name.to_string(), identifier);
+        self.add_alpha_identifier_inequalities(state, identifier, distinct_from);
+        identifier
+    }
+
+    fn alpha_reference_identifier(
+        &mut self,
+        logical_module: &str,
+        state: &mut AlphaIdentifierState,
+        name: &str,
+    ) -> SelectorVariableId {
+        for frame in state.frames.iter().rev() {
+            if let Some(existing) = frame.by_name.get(name).copied() {
+                return existing;
+            }
+        }
+        let distinct_from = state
+            .frames
+            .iter()
+            .flat_map(|frame| frame.by_name.values().copied())
+            .collect();
+        let identifier = self.new_alpha_identifier_variable(logical_module, state, name);
+        state
+            .current_frame_mut()
+            .by_name
+            .insert(name.to_string(), identifier);
+        self.add_alpha_identifier_inequalities(state, identifier, distinct_from);
+        identifier
+    }
+
+    fn new_alpha_identifier_variable(
+        &mut self,
+        logical_module: &str,
+        state: &mut AlphaIdentifierState,
+        name: &str,
+    ) -> SelectorVariableId {
+        let index = state.next_variable_index;
+        state.next_variable_index += 1;
+        self.program.add_variable(
+            VariableDomain::String,
+            Some(format!(
+                "{logical_module}::source_match.ident.{name}.{index}"
+            )),
+        )
+    }
+
+    fn add_alpha_identifier_inequalities(
+        &mut self,
+        state: &mut AlphaIdentifierState,
+        identifier: SelectorVariableId,
+        distinct_from: Vec<SelectorVariableId>,
+    ) {
+        for other in distinct_from {
+            if identifier == other {
+                continue;
+            }
+            let pair = if identifier < other {
+                (identifier, other)
+            } else {
+                (other, identifier)
+            };
+            if state.not_equal_pairs.insert(pair) {
+                self.program.add_atom(SelectorAtom::NotEqual {
+                    left: pair.0,
+                    right: pair.1,
+                });
+            }
+        }
+    }
+
     fn add_kind_atom(&mut self, owner: SelectorVariableId, kind: Option<BindingSourceKind>) {
         if let Some(kind) = kind {
             self.program.add_atom(SelectorAtom::OwnerKind {
@@ -564,16 +818,213 @@ impl MemberSelectorProgramBuilder {
     }
 }
 
+fn introduces_alpha_scope(kind: NodeKind) -> bool {
+    matches!(
+        kind,
+        NodeKind::Function
+            | NodeKind::AsyncFunction
+            | NodeKind::GeneratorFunction
+            | NodeKind::AsyncGeneratorFunction
+            | NodeKind::Arrow
+            | NodeKind::AsyncArrow
+            | NodeKind::Constructor
+            | NodeKind::Setter
+            | NodeKind::Catch
+    )
+}
+
+fn native_target_binding_node(
+    facts: &ChunkFacts,
+    skipped_nodes: &BTreeSet<NodeId>,
+    target_binding: &str,
+) -> Option<NodeId> {
+    let [(root, _ordinal)] = facts.top_level.as_slice() else {
+        return None;
+    };
+    let index = AlphaIdentifierIndex::new(facts);
+    let declared_nodes = native_declared_binding_nodes(&index, skipped_nodes, *root);
+    let matches = declared_nodes
+        .into_iter()
+        .filter(|node| index.ident_name.get(node).map(String::as_str) == Some(target_binding))
+        .collect::<Vec<_>>();
+    let [node] = matches.as_slice() else {
+        return None;
+    };
+    Some(*node)
+}
+
+fn native_declared_binding_nodes(
+    index: &AlphaIdentifierIndex,
+    skipped_nodes: &BTreeSet<NodeId>,
+    node: NodeId,
+) -> Vec<NodeId> {
+    if skipped_nodes.contains(&node) {
+        return Vec::new();
+    }
+    match index.node_kind.get(&node).copied() {
+        Some(NodeKind::ExportDecl) => child_at(index, node, 0)
+            .into_iter()
+            .flat_map(|child| native_declared_binding_nodes(index, skipped_nodes, child))
+            .collect(),
+        Some(NodeKind::Import) => index
+            .children_by_parent
+            .get(&node)
+            .into_iter()
+            .flatten()
+            .copied()
+            .filter(|child| {
+                !skipped_nodes.contains(child)
+                    && index.node_kind.get(child) == Some(&NodeKind::ImportSpecifier)
+                    && index.ident_name.contains_key(child)
+            })
+            .collect(),
+        Some(NodeKind::FnDecl) | Some(NodeKind::ClassDecl) => child_at(index, node, 0)
+            .filter(|child| {
+                !skipped_nodes.contains(child)
+                    && index.node_kind.get(child) == Some(&NodeKind::Ident)
+                    && index.ident_name.contains_key(child)
+            })
+            .into_iter()
+            .collect(),
+        Some(NodeKind::VarDecl) => index
+            .children_by_parent
+            .get(&node)
+            .into_iter()
+            .flatten()
+            .copied()
+            .filter(|child| {
+                !skipped_nodes.contains(child)
+                    && index.node_kind.get(child) == Some(&NodeKind::VarDeclarator)
+            })
+            .flat_map(|declarator| {
+                child_at(index, declarator, 0)
+                    .into_iter()
+                    .flat_map(|pattern| native_pattern_binding_nodes(index, skipped_nodes, pattern))
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn native_pattern_binding_nodes(
+    index: &AlphaIdentifierIndex,
+    skipped_nodes: &BTreeSet<NodeId>,
+    node: NodeId,
+) -> Vec<NodeId> {
+    if skipped_nodes.contains(&node) {
+        return Vec::new();
+    }
+    match index.node_kind.get(&node).copied() {
+        Some(NodeKind::BindingIdent) | Some(NodeKind::PatAssign)
+            if index.ident_name.contains_key(&node) =>
+        {
+            vec![node]
+        }
+        Some(NodeKind::AssignPat) => child_at(index, node, 0)
+            .into_iter()
+            .flat_map(|child| native_pattern_binding_nodes(index, skipped_nodes, child))
+            .collect(),
+        Some(NodeKind::PatKeyValue) => child_at(index, node, 1)
+            .into_iter()
+            .flat_map(|child| native_pattern_binding_nodes(index, skipped_nodes, child))
+            .collect(),
+        Some(NodeKind::ArrayPat) | Some(NodeKind::ObjectPat) | Some(NodeKind::RestPat) => index
+            .children_by_parent
+            .get(&node)
+            .into_iter()
+            .flatten()
+            .copied()
+            .flat_map(|child| native_pattern_binding_nodes(index, skipped_nodes, child))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn child_at(index: &AlphaIdentifierIndex, parent: NodeId, child_index: u32) -> Option<NodeId> {
+    index
+        .children_by_parent
+        .get(&parent)?
+        .get(child_index as usize)
+        .copied()
+}
+
+struct AlphaIdentifierIndex {
+    node_kind: BTreeMap<NodeId, NodeKind>,
+    ident_name: BTreeMap<NodeId, String>,
+    children_by_parent: BTreeMap<NodeId, Vec<NodeId>>,
+    super_class_by_class: BTreeMap<NodeId, NodeId>,
+}
+
+impl AlphaIdentifierIndex {
+    fn new(facts: &ChunkFacts) -> Self {
+        let mut children_by_parent = BTreeMap::<NodeId, Vec<(u32, NodeId)>>::new();
+        for (parent, index, child) in &facts.child {
+            children_by_parent
+                .entry(*parent)
+                .or_default()
+                .push((*index, *child));
+        }
+        let children_by_parent = children_by_parent
+            .into_iter()
+            .map(|(parent, mut children)| {
+                children.sort();
+                (
+                    parent,
+                    children.into_iter().map(|(_index, child)| child).collect(),
+                )
+            })
+            .collect();
+
+        Self {
+            node_kind: facts.node_kind.iter().copied().collect(),
+            ident_name: facts.ident_name.iter().cloned().collect(),
+            children_by_parent,
+            super_class_by_class: facts.super_class.iter().copied().collect(),
+        }
+    }
+}
+
+struct AlphaIdentifierState {
+    frames: Vec<AlphaIdentifierFrame>,
+    not_equal_pairs: BTreeSet<(SelectorVariableId, SelectorVariableId)>,
+    next_variable_index: usize,
+}
+
+impl Default for AlphaIdentifierState {
+    fn default() -> Self {
+        Self {
+            frames: vec![AlphaIdentifierFrame::default()],
+            not_equal_pairs: BTreeSet::new(),
+            next_variable_index: 0,
+        }
+    }
+}
+
+impl AlphaIdentifierState {
+    fn current_frame(&self) -> &AlphaIdentifierFrame {
+        self.frames
+            .last()
+            .expect("alpha identifier lowering always keeps a root frame")
+    }
+
+    fn current_frame_mut(&mut self) -> &mut AlphaIdentifierFrame {
+        self.frames
+            .last_mut()
+            .expect("alpha identifier lowering always keeps a root frame")
+    }
+}
+
+#[derive(Default)]
+struct AlphaIdentifierFrame {
+    by_name: BTreeMap<String, SelectorVariableId>,
+}
+
 fn owner_term(owner: SelectorVariableId) -> OwnerTerm {
     OwnerTerm::Var { id: owner }
 }
 
 fn node_term(node: SelectorVariableId) -> NodeTerm {
     NodeTerm::Var { id: node }
-}
-
-fn ordinal_term(ordinal: SelectorVariableId) -> OrdinalTerm {
-    OrdinalTerm::Var { id: ordinal }
 }
 
 fn string_term(string: SelectorVariableId) -> StringTerm {
@@ -595,6 +1046,14 @@ fn optional_index(index: Option<usize>) -> Result<Option<u32>, SelectorIrLowerin
             })
         })
         .transpose()
+}
+
+#[derive(Debug)]
+struct NativeChildListPattern {
+    start_index: u32,
+    segments: Vec<Vec<NodeId>>,
+    anchored_left: bool,
+    anchored_right: bool,
 }
 
 fn selector_hole_name(name: &str) -> bool {
@@ -677,6 +1136,10 @@ fn classify_native_single_node_hole(
         return Some(HoleClassification::Supported { root: node });
     }
 
+    if labeled_hole_name_for(name, STMT_LIST_HOLE_KEYWORD).is_some() {
+        return Some(HoleClassification::NotHole);
+    }
+
     if selector_hole_name(name) {
         return None;
     }
@@ -721,6 +1184,134 @@ fn native_hole_subtree_nodes(
         }
     }
     skipped
+}
+
+fn native_stmt_list_child_patterns(
+    facts: &ChunkFacts,
+    skipped_nodes: &mut BTreeSet<NodeId>,
+) -> Option<BTreeMap<NodeId, NativeChildListPattern>> {
+    let node_kind: BTreeMap<NodeId, NodeKind> = facts.node_kind.iter().copied().collect();
+    let ident_name: BTreeMap<NodeId, &str> = facts
+        .ident_name
+        .iter()
+        .map(|(node, name)| (*node, name.as_str()))
+        .collect();
+    let stmt_list_idents = ident_name
+        .iter()
+        .filter_map(|(node, name)| {
+            labeled_hole_name_for(name, STMT_LIST_HOLE_KEYWORD).map(|_| *node)
+        })
+        .collect::<BTreeSet<_>>();
+    if stmt_list_idents.is_empty() {
+        return Some(BTreeMap::new());
+    }
+
+    let mut children_by_parent = BTreeMap::<NodeId, Vec<(u32, NodeId)>>::new();
+    for (parent, index, child) in &facts.child {
+        children_by_parent
+            .entry(*parent)
+            .or_default()
+            .push((*index, *child));
+    }
+    for children in children_by_parent.values_mut() {
+        children.sort_by_key(|(index, _child)| *index);
+    }
+
+    let mut patterns = BTreeMap::new();
+    let mut valid_stmt_list_idents = BTreeSet::new();
+    for (parent, children_with_indices) in &children_by_parent {
+        if !matches!(
+            node_kind.get(parent).copied(),
+            Some(NodeKind::Block | NodeKind::SwitchCase)
+        ) {
+            continue;
+        }
+
+        let children = children_with_indices
+            .iter()
+            .map(|(_index, child)| *child)
+            .collect::<Vec<_>>();
+        let mut hole_positions = BTreeSet::new();
+        for (index, child) in children.iter().enumerate() {
+            if let Some(ident) =
+                stmt_list_carrier_ident(*child, &node_kind, &children_by_parent, &ident_name)
+            {
+                hole_positions.insert(index);
+                valid_stmt_list_idents.insert(ident);
+                skipped_nodes.insert(*child);
+                skipped_nodes.insert(ident);
+            }
+        }
+        if hole_positions.is_empty() {
+            continue;
+        }
+
+        let (segments, anchored_left, anchored_right) =
+            child_list_segments(&children, &hole_positions);
+        if segments.is_empty() {
+            return None;
+        }
+        patterns.insert(
+            *parent,
+            NativeChildListPattern {
+                start_index: 0,
+                segments,
+                anchored_left,
+                anchored_right,
+            },
+        );
+    }
+
+    if valid_stmt_list_idents == stmt_list_idents {
+        Some(patterns)
+    } else {
+        None
+    }
+}
+
+fn stmt_list_carrier_ident(
+    node: NodeId,
+    node_kind: &BTreeMap<NodeId, NodeKind>,
+    children_by_parent: &BTreeMap<NodeId, Vec<(u32, NodeId)>>,
+    ident_name: &BTreeMap<NodeId, &str>,
+) -> Option<NodeId> {
+    if node_kind.get(&node) != Some(&NodeKind::ExprStmt) {
+        return None;
+    }
+    let [(_, ident)] = children_by_parent.get(&node)?.as_slice() else {
+        return None;
+    };
+    if node_kind.get(ident) == Some(&NodeKind::Ident)
+        && ident_name
+            .get(ident)
+            .is_some_and(|name| labeled_hole_name_for(name, STMT_LIST_HOLE_KEYWORD).is_some())
+    {
+        Some(*ident)
+    } else {
+        None
+    }
+}
+
+fn child_list_segments(
+    children: &[NodeId],
+    hole_positions: &BTreeSet<usize>,
+) -> (Vec<Vec<NodeId>>, bool, bool) {
+    let mut segments = Vec::new();
+    let mut index = 0;
+    while index < children.len() {
+        if hole_positions.contains(&index) {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < children.len() && !hole_positions.contains(&index) {
+            index += 1;
+        }
+        segments.push(children[start..index].to_vec());
+    }
+    let anchored_left = !children.is_empty() && !hole_positions.contains(&0);
+    let anchored_right = !children.is_empty() && !hole_positions.contains(&(children.len() - 1));
+    (segments, anchored_left, anchored_right)
 }
 
 fn selector_origin(selector: &MemberSelectorSpec) -> ClaimOrigin {
@@ -919,14 +1510,7 @@ mod tests {
                 .program
                 .atoms
                 .iter()
-                .any(|atom| matches!(atom, SelectorAtom::OwnerStatementOrdinal { .. }))
-        );
-        assert!(
-            lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::AstTopLevel { .. }))
+                .any(|atom| matches!(atom, SelectorAtom::OwnerTopLevelRoot { .. }))
         );
         assert!(
             lowered
@@ -1101,26 +1685,137 @@ mod tests {
     }
 
     #[test]
-    fn source_match_with_list_hole_syntax_stays_oracle_only() {
+    fn alpha_all_source_match_lowers_identifier_names_to_query_variables() {
+        let mut selector = AnonymousStatementSelector::exact("const a = b, c = a;");
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        let identifier_vars = lowered
+            .program
+            .atoms
+            .iter()
+            .filter_map(|atom| match atom {
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Var { id },
+                    ..
+                } => Some(*id),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(identifier_vars.len(), 4);
+        assert_eq!(identifier_vars[0], identifier_vars[3]);
+        assert_ne!(identifier_vars[0], identifier_vars[1]);
+        assert_ne!(identifier_vars[0], identifier_vars[2]);
+        assert_ne!(identifier_vars[1], identifier_vars[2]);
+
+        let not_equal_pairs = lowered
+            .program
+            .atoms
+            .iter()
+            .filter(|atom| matches!(atom, SelectorAtom::NotEqual { .. }))
+            .count();
+        assert_eq!(not_equal_pairs, 3);
+    }
+
+    #[test]
+    fn alpha_all_source_match_keeps_property_names_exact() {
+        let mut selector = AnonymousStatementSelector::exact("const a = object.stableName;");
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstPropertyName {
+                value: StringTerm::Const { value },
+                ..
+            } if value == "stableName"
+        )));
+    }
+
+    #[test]
+    fn alpha_all_source_match_with_target_binding_projects_binding_variable() {
+        let mut selector = AnonymousStatementSelector::exact("const a = b;");
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        selector.target_binding = Some("a".to_string());
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        let target_owner = lowered.program.targets[lowered.target.0].owner;
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::OwnerDeclaresBinding {
+                owner: OwnerTerm::Var { id },
+                binding: StringTerm::Var { .. },
+            } if *id == target_owner
+        )));
+    }
+
+    #[test]
+    fn source_match_with_stmt_list_lowers_to_native_child_list_pattern() {
         let selector = AnonymousStatementSelector::exact(
             "function readable() { head(); STMT_LIST_BODY; tail(); }",
         );
         let lowered = lower_member_selector(
             &context(),
             "Widget",
-            &MemberSelectorSpec::SourceMatch(selector.clone()),
+            &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
 
-        let target_owner = lowered.program.targets[lowered.target.0].owner;
-        assert_eq!(lowered.program.atoms.len(), 1);
-        assert!(matches!(
-            &lowered.program.atoms[0],
-            SelectorAtom::SourceMatchCandidate {
-                owner: OwnerTerm::Var { id },
-                selector_key: StringTerm::Const { value },
-            } if *id == target_owner && value == &source_match::selector_key(&selector)
-        ));
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstChildListPattern {
+                anchored_left: true,
+                anchored_right: true,
+                segments,
+                ..
+            } if segments.len() == 2
+        )));
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value == "STMT_LIST_BODY"
+            )),
+            "STMT_LIST labels are hole syntax, not identifier constraints"
+        );
     }
 
     #[test]
@@ -1156,7 +1851,7 @@ mod tests {
                 .program
                 .atoms
                 .iter()
-                .any(|atom| matches!(atom, SelectorAtom::AstTopLevel { .. }))
+                .any(|atom| matches!(atom, SelectorAtom::OwnerTopLevelRoot { .. }))
         );
     }
 
@@ -1188,6 +1883,7 @@ mod tests {
         let delegator_owner = program.targets[delegator.0].owner;
 
         assert_eq!(program.variables.len(), 2);
+        assert_eq!(program.all_different, vec![vec![anchor, delegator]]);
         assert!(matches!(
             program.atoms.iter().find(|atom| matches!(atom, SelectorAtom::OwnerReferencesOwner { .. })),
             Some(SelectorAtom::OwnerReferencesOwner {
