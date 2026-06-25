@@ -188,6 +188,7 @@ ascent! {
     relation ast_bool_literal(u32, bool); // node, value
     relation ast_identifier_name(u32, String); // node, value
     relation ast_property_name(u32, String); // node, value
+    relation ast_bare_property(u32, String, String, bool); // property node, key, identifier, is_binding
     relation ast_operator(u32, String); // node, operator
     relation ast_regex_literal(u32, String, String); // node, pattern, flags
     relation ast_super_class(u32, u32); // class node, super-class expression node
@@ -369,6 +370,7 @@ ascent! {
     relation required_ast_bool_literal(usize, usize, bool);
     relation required_ast_identifier_name(usize, usize, String);
     relation required_ast_property_name(usize, usize, String);
+    relation required_ast_bare_property(usize, usize, String, String, bool);
     relation required_ast_operator(usize, usize, String);
     relation required_ast_regex_literal(usize, usize, String, String);
     relation required_ast_top_level_ordinal(usize, usize, usize);
@@ -426,6 +428,12 @@ ascent! {
         ast_property_name(node, actual),
         if actual == value;
     node_constraint_support(*constraint, *var, *node) <--
+        required_ast_bare_property(constraint, var, key, identifier, is_binding),
+        ast_bare_property(node, actual_key, actual_identifier, actual_is_binding),
+        if actual_key == key,
+        if actual_identifier == identifier,
+        if actual_is_binding == is_binding;
+    node_constraint_support(*constraint, *var, *node) <--
         required_ast_operator(constraint, var, value),
         ast_operator(node, actual),
         if actual == value;
@@ -462,6 +470,7 @@ ascent! {
     relation required_owner_top_level_root(usize, usize, usize);
     relation required_ast_string_literal_var(usize, usize, usize);
     relation required_ast_identifier_name_var(usize, usize, usize);
+    relation required_ast_bare_property_var(usize, usize, String, usize, bool);
     relation required_owner_declares_binding_var(usize, usize, usize);
 
     relation binary_constraint_edge(usize, usize, usize, usize, usize);
@@ -515,6 +524,11 @@ ascent! {
     node_string_constraint_edge(*constraint, *node_var, *node, *string_var, value.clone()) <--
         required_ast_identifier_name_var(constraint, node_var, string_var),
         ast_identifier_name(node, value);
+    node_string_constraint_edge(*constraint, *node_var, *node, *string_var, value.clone()) <--
+        required_ast_bare_property_var(constraint, node_var, key, string_var, is_binding),
+        ast_bare_property(node, actual_key, value, actual_is_binding),
+        if actual_key == key,
+        if actual_is_binding == is_binding;
 
     relation owner_node_constraint_edge(usize, usize, usize, usize, u32);
     owner_node_constraint_edge(*constraint, *owner_var, *owner, *node_var, *node) <--
@@ -749,6 +763,11 @@ pub fn solve(
     for (node, value) in &fact_index.ast_property_names {
         ascent.ast_property_name.push((*node, value.clone()));
     }
+    for (node, key, identifier, is_binding) in &fact_index.ast_bare_properties {
+        ascent
+            .ast_bare_property
+            .push((*node, key.clone(), identifier.clone(), *is_binding));
+    }
     for (node, value) in &fact_index.ast_operators {
         ascent.ast_operator.push((*node, value.clone()));
     }
@@ -977,6 +996,19 @@ pub fn solve(
                     value.clone(),
                 ));
             }
+            NodeUnaryConstraintKind::BareProperty {
+                key,
+                identifier,
+                is_binding,
+            } => {
+                ascent.required_ast_bare_property.push((
+                    constraint.id,
+                    constraint.variable.0,
+                    key.clone(),
+                    identifier.clone(),
+                    *is_binding,
+                ));
+            }
             NodeUnaryConstraintKind::Operator { value } => {
                 ascent.required_ast_operator.push((
                     constraint.id,
@@ -1110,19 +1142,28 @@ pub fn solve(
         }
     }
     for constraint in &support.node_string_constraints {
-        match constraint.kind {
-            NodeStringConstraintKind::AstStringLiteral => {
+        match &constraint.kind {
+            NodeStringConstraintKind::StringLiteral => {
                 ascent.required_ast_string_literal_var.push((
                     constraint.id,
                     constraint.node.0,
                     constraint.string.0,
                 ));
             }
-            NodeStringConstraintKind::AstIdentifierName => {
+            NodeStringConstraintKind::IdentifierName => {
                 ascent.required_ast_identifier_name_var.push((
                     constraint.id,
                     constraint.node.0,
                     constraint.string.0,
+                ));
+            }
+            NodeStringConstraintKind::BareProperty { key, is_binding } => {
+                ascent.required_ast_bare_property_var.push((
+                    constraint.id,
+                    constraint.node.0,
+                    key.clone(),
+                    constraint.string.0,
+                    *is_binding,
                 ));
             }
         }
@@ -1541,11 +1582,9 @@ impl ProgramSupport {
                 SelectorAtom::AstStringLiteral {
                     node: NodeTerm::Var { id: node },
                     value: StringTerm::Var { id: string },
-                } => support.add_node_string(
-                    *node,
-                    *string,
-                    NodeStringConstraintKind::AstStringLiteral,
-                ),
+                } => {
+                    support.add_node_string(*node, *string, NodeStringConstraintKind::StringLiteral)
+                }
                 SelectorAtom::AstStringLiteralMatchingRegex {
                     node,
                     pattern: StringTerm::Const { value },
@@ -1593,7 +1632,7 @@ impl ProgramSupport {
                 } => support.add_node_string(
                     *node,
                     *string,
-                    NodeStringConstraintKind::AstIdentifierName,
+                    NodeStringConstraintKind::IdentifierName,
                 ),
                 SelectorAtom::AstPropertyName {
                     node,
@@ -1605,6 +1644,12 @@ impl ProgramSupport {
                     },
                     "ast_property_name",
                 ),
+                SelectorAtom::AstBareProperty {
+                    node,
+                    key,
+                    identifier,
+                    is_binding,
+                } => support.add_ast_bare_property(node, key, identifier, *is_binding),
                 SelectorAtom::AstOperator {
                     node,
                     value: StringTerm::Const { value },
@@ -2186,6 +2231,43 @@ impl ProgramSupport {
         }
     }
 
+    fn add_ast_bare_property(
+        &mut self,
+        node: &NodeTerm,
+        key: &StringTerm,
+        identifier: &StringTerm,
+        is_binding: bool,
+    ) {
+        let StringTerm::Const { value: key } = key else {
+            self.unsupported_atoms
+                .push("unsupported variable ast_bare_property.key".to_string());
+            return;
+        };
+        match (node, identifier) {
+            (NodeTerm::Var { id: node }, StringTerm::Var { id: identifier }) => self
+                .add_node_string(
+                    *node,
+                    *identifier,
+                    NodeStringConstraintKind::BareProperty {
+                        key: key.clone(),
+                        is_binding,
+                    },
+                ),
+            (NodeTerm::Var { id: node }, StringTerm::Const { value: identifier }) => self
+                .add_node_unary(
+                    *node,
+                    NodeUnaryConstraintKind::BareProperty {
+                        key: key.clone(),
+                        identifier: identifier.clone(),
+                        is_binding,
+                    },
+                ),
+            (NodeTerm::Const { .. }, _) => self
+                .unsupported_atoms
+                .push("unsupported constant-only ast_bare_property assertion".to_string()),
+        }
+    }
+
     fn add_ast_top_level(&mut self, node: &NodeTerm, ordinal: &OrdinalTerm) {
         match (node, ordinal) {
             (NodeTerm::Var { id: node }, OrdinalTerm::Const { ordinal }) => self.add_node_unary(
@@ -2673,21 +2755,59 @@ struct NodeUnaryConstraint {
 
 #[derive(Debug, Clone)]
 enum NodeUnaryConstraintKind {
-    Kind { node_kind: String },
-    ChildCount { count: u32 },
-    ChildParent { index: u32, child: u32 },
-    ChildChild { parent: u32, index: u32 },
-    SuperClassClass { super_class: u32 },
-    SuperClassSuper { class_node: u32 },
-    StringLiteral { value: String },
-    StringLiteralMatchingRegex { pattern: String },
-    NumberLiteral { value: String },
-    BoolLiteral { value: bool },
-    IdentifierName { value: String },
-    PropertyName { value: String },
-    Operator { value: String },
-    RegexLiteral { pattern: String, flags: String },
-    TopLevelOrdinal { ordinal: StatementOrdinal },
+    Kind {
+        node_kind: String,
+    },
+    ChildCount {
+        count: u32,
+    },
+    ChildParent {
+        index: u32,
+        child: u32,
+    },
+    ChildChild {
+        parent: u32,
+        index: u32,
+    },
+    SuperClassClass {
+        super_class: u32,
+    },
+    SuperClassSuper {
+        class_node: u32,
+    },
+    StringLiteral {
+        value: String,
+    },
+    StringLiteralMatchingRegex {
+        pattern: String,
+    },
+    NumberLiteral {
+        value: String,
+    },
+    BoolLiteral {
+        value: bool,
+    },
+    IdentifierName {
+        value: String,
+    },
+    PropertyName {
+        value: String,
+    },
+    BareProperty {
+        key: String,
+        identifier: String,
+        is_binding: bool,
+    },
+    Operator {
+        value: String,
+    },
+    RegexLiteral {
+        pattern: String,
+        flags: String,
+    },
+    TopLevelOrdinal {
+        ordinal: StatementOrdinal,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -2801,10 +2921,11 @@ struct NodeStringConstraint {
     kind: NodeStringConstraintKind,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum NodeStringConstraintKind {
-    AstStringLiteral,
-    AstIdentifierName,
+    StringLiteral,
+    IdentifierName,
+    BareProperty { key: String, is_binding: bool },
 }
 
 #[derive(Debug, Clone)]
@@ -2863,6 +2984,7 @@ fn atom_kind(atom: &SelectorAtom) -> &'static str {
         SelectorAtom::AstBoolLiteral { .. } => "ast_bool_literal",
         SelectorAtom::AstIdentifierName { .. } => "ast_identifier_name",
         SelectorAtom::AstPropertyName { .. } => "ast_property_name",
+        SelectorAtom::AstBareProperty { .. } => "ast_bare_property",
         SelectorAtom::AstOperator { .. } => "ast_operator",
         SelectorAtom::AstRegexLiteral { .. } => "ast_regex_literal",
         SelectorAtom::AstTopLevel { .. } => "ast_top_level",
@@ -2909,6 +3031,7 @@ struct FactIndex {
     ast_bool_literals: Vec<(u32, bool)>,
     ast_identifier_names: Vec<(u32, String)>,
     ast_property_names: Vec<(u32, String)>,
+    ast_bare_properties: Vec<(u32, String, String, bool)>,
     ast_operators: Vec<(u32, String)>,
     ast_regex_literals: Vec<(u32, String, String)>,
     ast_super_classes: Vec<(u32, u32)>,
@@ -3092,6 +3215,21 @@ impl FactIndex {
                 SelectorFact::AstPropertyName { node, value, .. } => {
                     index.all_nodes.insert(*node);
                     index.ast_property_names.push((*node, value.clone()));
+                }
+                SelectorFact::AstBareProperty {
+                    node,
+                    key,
+                    identifier,
+                    is_binding,
+                    ..
+                } => {
+                    index.all_nodes.insert(*node);
+                    index.ast_bare_properties.push((
+                        *node,
+                        key.clone(),
+                        identifier.clone(),
+                        *is_binding,
+                    ));
                 }
                 SelectorFact::AstOperator { node, value, .. } => {
                     index.all_nodes.insert(*node);
@@ -4115,6 +4253,101 @@ function good() { return good; }
             r#"
 function bad() { return bad; }
 function good() { return other; }
+"#,
+        );
+
+        let result = solve(&lowered.program, &facts).unwrap();
+        let owner = owner_for_binding(&facts, "good");
+
+        assert_eq!(
+            result.outcome_for(lowered.target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner,
+                    statement_ordinal: statement_ordinal_for_owner(&facts, owner),
+                    binding: Some("good".to_string()),
+                    provenance: Vec::new(),
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn solves_alpha_all_source_match_object_shorthand_against_explicit_property() {
+        let mut selector =
+            AnonymousStatementSelector::exact("function selected(stable) { return { stable }; }");
+        selector.identifiers = spec::SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &MemberSelectorLoweringContext::new(ChunkId(0), "runtime/target"),
+            "Target",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        let facts = fact_store_from_analyzed_source(
+            r#"
+function wrongKey(runtimeStable) {
+  return { other: runtimeStable };
+}
+function good(runtimeStable) {
+  return { stable: runtimeStable };
+}
+"#,
+        );
+
+        let result = solve(&lowered.program, &facts).unwrap();
+        let owner = owner_for_binding(&facts, "good");
+
+        assert_eq!(
+            result.outcome_for(lowered.target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner,
+                    statement_ordinal: statement_ordinal_for_owner(&facts, owner),
+                    binding: Some("good".to_string()),
+                    provenance: Vec::new(),
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn solves_alpha_all_source_match_object_pattern_shorthand_against_explicit_property() {
+        let mut selector = AnonymousStatementSelector::exact(
+            "function selected(input) { const { stable } = input; return stable; }",
+        );
+        selector.identifiers = spec::SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &MemberSelectorLoweringContext::new(ChunkId(0), "runtime/target"),
+            "Target",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        let facts = fact_store_from_analyzed_source(
+            r#"
+function wrongKey(input) {
+  const { other: runtimeStable } = input;
+  return runtimeStable;
+}
+function good(input) {
+  const { stable: runtimeStable } = input;
+  return runtimeStable;
+}
 "#,
         );
 

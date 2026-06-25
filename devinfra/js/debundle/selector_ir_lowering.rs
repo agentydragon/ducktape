@@ -73,6 +73,7 @@ struct NativeAstFactLowering<'a> {
     alpha_identifier_vars: &'a BTreeMap<NodeId, SelectorVariableId>,
     exact_identifier_projection_vars: &'a BTreeMap<NodeId, SelectorVariableId>,
     child_list_patterns: &'a BTreeMap<NodeId, NativeChildListPattern>,
+    bare_properties: &'a BTreeMap<NodeId, NativeBarePropertySelector>,
     regex_predicates: &'a NativeRegexPredicateIndex,
 }
 
@@ -414,6 +415,11 @@ impl MemberSelectorProgramBuilder {
         {
             return Ok(false);
         }
+        let bare_properties = if selector.identifiers == SourceMatchIdentifierMode::AlphaAll {
+            native_bare_property_selectors(&facts, &skipped_nodes)
+        } else {
+            BTreeMap::new()
+        };
         let [(root_node, _ordinal)] = facts.top_level.as_slice() else {
             return Ok(false);
         };
@@ -510,6 +516,7 @@ impl MemberSelectorProgramBuilder {
             alpha_identifier_vars: &alpha_identifier_vars,
             exact_identifier_projection_vars: &exact_identifier_projection_vars,
             child_list_patterns: &child_list_patterns,
+            bare_properties: &bare_properties,
             regex_predicates: &regex_predicates,
         });
         Ok(true)
@@ -557,6 +564,11 @@ impl MemberSelectorProgramBuilder {
         {
             return Ok(false);
         }
+        let bare_properties = if selector.identifiers == SourceMatchIdentifierMode::AlphaAll {
+            native_bare_property_selectors(&facts, &skipped_nodes)
+        } else {
+            BTreeMap::new()
+        };
         let [(root_node, _ordinal)] = facts.top_level.as_slice() else {
             return Ok(false);
         };
@@ -639,6 +651,7 @@ impl MemberSelectorProgramBuilder {
             alpha_identifier_vars: &alpha_identifier_vars,
             exact_identifier_projection_vars: &exact_identifier_projection_vars,
             child_list_patterns: &child_list_patterns,
+            bare_properties: &bare_properties,
             regex_predicates: &regex_predicates,
         });
         Ok(true)
@@ -654,11 +667,21 @@ impl MemberSelectorProgramBuilder {
             alpha_identifier_vars,
             exact_identifier_projection_vars,
             child_list_patterns,
+            bare_properties,
             regex_predicates,
         } = lowering;
+        let bare_property_structural_nodes = bare_properties
+            .values()
+            .flat_map(|property| property.structural_skip_nodes.iter().copied())
+            .collect::<BTreeSet<_>>();
+        let structurally_skipped_node = |node: &NodeId| {
+            skipped_nodes.contains(node)
+                || bare_properties.contains_key(node)
+                || bare_property_structural_nodes.contains(node)
+        };
         let mut wildcard_string_vars = BTreeMap::<String, SelectorVariableId>::new();
         for (_node, token) in &facts.str_wildcard {
-            if skipped_nodes.contains(_node) {
+            if structurally_skipped_node(_node) {
                 continue;
             }
             wildcard_string_vars
@@ -673,7 +696,7 @@ impl MemberSelectorProgramBuilder {
         let wildcard_string_by_node: BTreeMap<NodeId, SelectorVariableId> = facts
             .str_wildcard
             .iter()
-            .filter(|(node, _token)| !skipped_nodes.contains(node))
+            .filter(|(node, _token)| !structurally_skipped_node(node))
             .filter_map(|(node, token)| wildcard_string_vars.get(token).map(|var| (*node, *var)))
             .collect();
         let mut child_counts: BTreeMap<NodeId, u32> =
@@ -688,6 +711,22 @@ impl MemberSelectorProgramBuilder {
             let Some(node_var) = node_vars.get(node).copied() else {
                 continue;
             };
+            if let Some(property) = bare_properties.get(node) {
+                let identifier = alpha_identifier_vars
+                    .get(&property.identifier_node)
+                    .copied()
+                    .expect("bare property identifier should have an alpha variable");
+                self.program.add_atom(SelectorAtom::AstBareProperty {
+                    node: node_term(node_var),
+                    key: const_str(&property.key),
+                    identifier: string_term(identifier),
+                    is_binding: property.is_binding,
+                });
+                continue;
+            }
+            if bare_property_structural_nodes.contains(node) {
+                continue;
+            }
             if let Some(pattern) = regex_predicates.pattern_by_call.get(node) {
                 self.program
                     .add_atom(SelectorAtom::AstStringLiteralMatchingRegex {
@@ -709,6 +748,9 @@ impl MemberSelectorProgramBuilder {
         }
         for (parent, index, child) in &facts.child {
             if skipped_nodes.contains(parent) {
+                continue;
+            }
+            if bare_properties.contains_key(parent) {
                 continue;
             }
             if regex_predicates.pattern_by_call.contains_key(parent) {
@@ -757,7 +799,7 @@ impl MemberSelectorProgramBuilder {
             });
         }
         for (class_node, super_class) in &facts.super_class {
-            if skipped_nodes.contains(class_node) {
+            if structurally_skipped_node(class_node) {
                 continue;
             }
             let (Some(class_node), Some(super_class)) =
@@ -771,7 +813,7 @@ impl MemberSelectorProgramBuilder {
             });
         }
         for (node, value) in &facts.str_lit {
-            if skipped_nodes.contains(node) {
+            if structurally_skipped_node(node) {
                 continue;
             }
             if let Some(wildcard_string_var) = wildcard_string_by_node.get(node).copied() {
@@ -788,7 +830,7 @@ impl MemberSelectorProgramBuilder {
             }
         }
         for (node, value) in &facts.num_lit {
-            if skipped_nodes.contains(node) {
+            if structurally_skipped_node(node) {
                 continue;
             }
             self.add_ast_string_label(node_vars, *node, value, |node, value| {
@@ -796,7 +838,7 @@ impl MemberSelectorProgramBuilder {
             });
         }
         for (node, value) in &facts.bool_lit {
-            if skipped_nodes.contains(node) {
+            if structurally_skipped_node(node) {
                 continue;
             }
             if let Some(node) = node_vars.get(node).copied() {
@@ -807,7 +849,7 @@ impl MemberSelectorProgramBuilder {
             }
         }
         for (node, value) in &facts.ident_name {
-            if skipped_nodes.contains(node) {
+            if structurally_skipped_node(node) {
                 continue;
             }
             match identifier_mode {
@@ -840,7 +882,7 @@ impl MemberSelectorProgramBuilder {
             }
         }
         for (node, value) in &facts.prop_name {
-            if skipped_nodes.contains(node) {
+            if structurally_skipped_node(node) {
                 continue;
             }
             self.add_ast_string_label(node_vars, *node, value, |node, value| {
@@ -848,7 +890,7 @@ impl MemberSelectorProgramBuilder {
             });
         }
         for (node, value) in &facts.operator {
-            if skipped_nodes.contains(node) {
+            if structurally_skipped_node(node) {
                 continue;
             }
             self.add_ast_string_label(node_vars, *node, value, |node, value| {
@@ -856,7 +898,7 @@ impl MemberSelectorProgramBuilder {
             });
         }
         for (node, pattern, flags) in &facts.regex {
-            if skipped_nodes.contains(node) {
+            if structurally_skipped_node(node) {
                 continue;
             }
             if let Some(node) = node_vars.get(node).copied() {
@@ -911,7 +953,7 @@ impl MemberSelectorProgramBuilder {
         let mut result = BTreeMap::new();
         let kind = index.node_kind.get(&node).copied();
         if let (Some(kind), Some(name)) = (kind, index.ident_name.get(&node)) {
-            let identifier = if kind == NodeKind::BindingIdent {
+            let identifier = if matches!(kind, NodeKind::BindingIdent | NodeKind::PatAssign) {
                 self.alpha_binding_identifier(logical_module, state, name)
             } else {
                 self.alpha_reference_identifier(logical_module, state, name)
@@ -1063,14 +1105,9 @@ fn native_alpha_source_match_supported(
     facts: &ChunkFacts,
     skipped_nodes: &BTreeSet<NodeId>,
 ) -> bool {
-    let index = AlphaIdentifierIndex::new(facts);
     let [(_root, _ordinal)] = facts.top_level.as_slice() else {
         return false;
     };
-
-    if native_alpha_has_explicit_same_name_property(&index, skipped_nodes) {
-        return false;
-    }
 
     // Alpha variable scopes are modeled for simple single-scope selectors.
     // Nested function/arrow/catch scopes need a native notion of scoped
@@ -1085,43 +1122,12 @@ fn native_alpha_source_match_supported(
     }
 
     if facts.node_kind.iter().any(|(node, kind)| {
-        !skipped_nodes.contains(node)
-            && matches!(
-                kind,
-                NodeKind::Seq | NodeKind::Shorthand | NodeKind::AssignProp
-            )
+        !skipped_nodes.contains(node) && matches!(kind, NodeKind::Seq | NodeKind::AssignProp)
     }) {
         return false;
     }
 
     true
-}
-
-fn native_alpha_has_explicit_same_name_property(
-    index: &AlphaIdentifierIndex,
-    skipped_nodes: &BTreeSet<NodeId>,
-) -> bool {
-    index.node_kind.iter().any(|(node, kind)| {
-        if skipped_nodes.contains(node)
-            || !matches!(kind, NodeKind::KeyValue | NodeKind::PatKeyValue)
-        {
-            return false;
-        }
-        let Some(children) = index.children_by_parent.get(node) else {
-            return false;
-        };
-        let Some(key) = children.first() else {
-            return false;
-        };
-        let Some(value) = children.get(1) else {
-            return false;
-        };
-        index
-            .prop_name
-            .get(key)
-            .zip(index.ident_name.get(value))
-            .is_some_and(|(key, value)| key == value)
-    })
 }
 
 fn native_target_binding_node(
@@ -1372,6 +1378,152 @@ struct NativeChildListPattern {
 struct NativeRegexPredicateIndex {
     pattern_by_call: BTreeMap<NodeId, String>,
     consumed_nodes: BTreeSet<NodeId>,
+}
+
+#[derive(Debug, Clone)]
+struct NativeBarePropertySelector {
+    key: String,
+    identifier_node: NodeId,
+    is_binding: bool,
+    structural_skip_nodes: BTreeSet<NodeId>,
+}
+
+fn native_bare_property_selectors(
+    facts: &ChunkFacts,
+    skipped_nodes: &BTreeSet<NodeId>,
+) -> BTreeMap<NodeId, NativeBarePropertySelector> {
+    let index = AlphaIdentifierIndex::new(facts);
+    let mut result = BTreeMap::new();
+    for (node, kind) in &index.node_kind {
+        if skipped_nodes.contains(node) {
+            continue;
+        }
+        let property = match kind {
+            NodeKind::Shorthand => {
+                let Some(name) = index.ident_name.get(node) else {
+                    continue;
+                };
+                if selector_hole_name(name) {
+                    continue;
+                }
+                NativeBarePropertySelector {
+                    key: name.clone(),
+                    identifier_node: *node,
+                    is_binding: false,
+                    structural_skip_nodes: BTreeSet::new(),
+                }
+            }
+            NodeKind::KeyValue => {
+                let Some(children) = index.children_by_parent.get(node) else {
+                    continue;
+                };
+                let Some((key_node, value_node)) =
+                    children.first().copied().zip(children.get(1).copied())
+                else {
+                    continue;
+                };
+                if skipped_nodes.contains(&key_node) || skipped_nodes.contains(&value_node) {
+                    continue;
+                }
+                if index.node_kind.get(&value_node) != Some(&NodeKind::Ident) {
+                    continue;
+                }
+                let Some(key) = index.prop_name.get(&key_node) else {
+                    continue;
+                };
+                let Some(identifier) = index.ident_name.get(&value_node) else {
+                    continue;
+                };
+                if selector_hole_name(key) || selector_hole_name(identifier) {
+                    continue;
+                }
+                NativeBarePropertySelector {
+                    key: key.clone(),
+                    identifier_node: value_node,
+                    is_binding: false,
+                    structural_skip_nodes: native_bare_property_structural_skip_nodes(
+                        &index,
+                        &[key_node, value_node],
+                    ),
+                }
+            }
+            NodeKind::PatAssign => {
+                if index
+                    .children_by_parent
+                    .get(node)
+                    .is_some_and(|children| !children.is_empty())
+                {
+                    continue;
+                }
+                let Some(name) = index.ident_name.get(node) else {
+                    continue;
+                };
+                if selector_hole_name(name) {
+                    continue;
+                }
+                NativeBarePropertySelector {
+                    key: name.clone(),
+                    identifier_node: *node,
+                    is_binding: true,
+                    structural_skip_nodes: BTreeSet::new(),
+                }
+            }
+            NodeKind::PatKeyValue => {
+                let Some(children) = index.children_by_parent.get(node) else {
+                    continue;
+                };
+                let Some((key_node, value_node)) =
+                    children.first().copied().zip(children.get(1).copied())
+                else {
+                    continue;
+                };
+                if skipped_nodes.contains(&key_node) || skipped_nodes.contains(&value_node) {
+                    continue;
+                }
+                if index.node_kind.get(&value_node) != Some(&NodeKind::BindingIdent) {
+                    continue;
+                }
+                let Some(key) = index.prop_name.get(&key_node) else {
+                    continue;
+                };
+                let Some(identifier) = index.ident_name.get(&value_node) else {
+                    continue;
+                };
+                if selector_hole_name(key) || selector_hole_name(identifier) {
+                    continue;
+                }
+                NativeBarePropertySelector {
+                    key: key.clone(),
+                    identifier_node: value_node,
+                    is_binding: true,
+                    structural_skip_nodes: native_bare_property_structural_skip_nodes(
+                        &index,
+                        &[key_node, value_node],
+                    ),
+                }
+            }
+            _ => continue,
+        };
+        result.insert(*node, property);
+    }
+    result
+}
+
+fn native_bare_property_structural_skip_nodes(
+    index: &AlphaIdentifierIndex,
+    roots: &[NodeId],
+) -> BTreeSet<NodeId> {
+    let mut skipped = BTreeSet::new();
+    let mut stack = roots.to_vec();
+    while let Some(node) = stack.pop() {
+        if !skipped.insert(node) {
+            continue;
+        }
+        if let Some(children) = index.children_by_parent.get(&node) {
+            stack.extend(children.iter().copied());
+        }
+    }
+    skipped
 }
 
 fn native_string_literal_regex_predicates(facts: &ChunkFacts) -> NativeRegexPredicateIndex {
@@ -3046,17 +3198,63 @@ mod tests {
     }
 
     #[test]
-    fn alpha_all_source_match_explicit_same_name_property_stays_oracle_only() {
+    fn alpha_all_source_match_bare_object_property_lowers_natively() {
         let mut selector = AnonymousStatementSelector::exact("function a(x) { return { x: x }; }");
         selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
         let lowered = lower_member_selector(
             &context(),
             "Widget",
-            &MemberSelectorSpec::SourceMatch(selector.clone()),
+            &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
 
-        assert_source_match_oracle_only(&lowered, &selector);
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstBareProperty {
+                key: StringTerm::Const { value },
+                identifier: StringTerm::Var { .. },
+                is_binding: false,
+                ..
+            } if value == "x"
+        )));
+    }
+
+    #[test]
+    fn alpha_all_source_match_bare_object_pattern_property_lowers_natively() {
+        let mut selector = AnonymousStatementSelector::exact(
+            "function a(input) { const { stable } = input; return stable; }",
+        );
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstBareProperty {
+                key: StringTerm::Const { value },
+                identifier: StringTerm::Var { .. },
+                is_binding: true,
+                ..
+            } if value == "stable"
+        )));
     }
 
     #[test]
