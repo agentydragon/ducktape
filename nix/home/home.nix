@@ -76,9 +76,7 @@ in
     ./programs/gemini-cli.nix
     ./gemini_cli.nix
     ./shell/oh-my-posh.nix
-    ./modules/gnome-shell-keybindings.nix
     ./modules/gnome-custom-keybindings.nix
-    ./modules/flameshot-screenshots.nix
     ./modules/attic.nix
     ./modules/atuin.nix
     ./modules/buildbuddy.nix
@@ -86,6 +84,10 @@ in
     ./modules/sops-env.nix
     ./services/activitywatch.nix
     ./opencode
+  ]
+  ++ lib.optionals enableGui [
+    ./modules/gnome-shell-keybindings.nix
+    ./modules/flameshot-screenshots.nix
   ];
   ducktape.sopsEnv = {
     HF_TOKEN = {
@@ -379,19 +381,23 @@ in
 
   fonts.fontconfig.enable = enableGui;
 
-  home.activation.fixMimeApps = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    run ${pkgs.xdg-utils}/bin/xdg-mime default google-chrome.desktop text/html
-    run ${pkgs.xdg-utils}/bin/xdg-mime default org.gnome.Evince.desktop application/pdf
-    run ${pkgs.xdg-utils}/bin/xdg-mime default remote-viewer.desktop application/x-virt-viewer
-  '';
+  home.activation.fixMimeApps = lib.mkIf enableGui (
+    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      run ${pkgs.xdg-utils}/bin/xdg-mime default google-chrome.desktop text/html
+      run ${pkgs.xdg-utils}/bin/xdg-mime default org.gnome.Evince.desktop application/pdf
+      run ${pkgs.xdg-utils}/bin/xdg-mime default remote-viewer.desktop application/x-virt-viewer
+    ''
+  );
 
-  ducktape.gnomeCustomKeybindings.terminal = {
+  ducktape.gnomeCustomKeybindings.terminal = lib.mkIf enableGui {
     name = "Launch Terminal";
     command = "xdg-terminal-exec";
     binding = "<Primary><Alt>t";
   };
 
-  xdg.configFile."xdg-terminals.list".text = "org.gnome.Terminal.desktop\n";
+  xdg.configFile."xdg-terminals.list" = lib.mkIf enableGui {
+    text = "org.gnome.Terminal.desktop\n";
+  };
 
   xdg.dataFile."themes/Ducktape Shell/gnome-shell/gnome-shell.css" = lib.mkIf enableGui {
     text = ''
@@ -416,7 +422,7 @@ in
     '';
   };
 
-  xdg.autostart = {
+  xdg.autostart = lib.mkIf enableGui {
     enable = true;
     entries = [
       (pkgs.writeText "syncthing-gtk.desktop" ''
@@ -432,7 +438,7 @@ in
     ];
   };
 
-  dconf = {
+  dconf = lib.mkIf enableGui {
     enable = true;
     settings = {
       "org/gnome/desktop/wm/preferences" = {
