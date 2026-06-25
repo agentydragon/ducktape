@@ -1,6 +1,6 @@
 """Human-readable CLI rendering — mirrors the GNOME extension popup bars."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from aiquota.models import AllQuotas, ExtraUsage, FetchSuccess, QuotaWindow, SuccessfulProviderFetch
 from aiquota.pace import compute_pace
@@ -8,9 +8,10 @@ from aiquota.render.format import format_age, format_duration, format_pace, form
 from aiquota.render.view_model import ProviderView, to_view
 
 
-def render(quotas: AllQuotas) -> str:
+def render(quotas: AllQuotas, now: datetime | None = None) -> str:
     view = to_view(quotas)
-    return "\n".join(_render_provider(pv, view.fetched_at) for pv in view.providers)
+    render_time = now or datetime.now(UTC)
+    return "\n".join(_render_provider(pv, render_time) for pv in view.providers)
 
 
 def _render_provider(pv: ProviderView, now: datetime) -> str:
@@ -28,7 +29,7 @@ def _render_provider(pv: ProviderView, now: datetime) -> str:
         stale = None
 
     if error and short is None and long is None:
-        return f"{pv.provider}: error — {error}"
+        return _header(pv.provider, error, pv.last_output.fetched_at, now)
 
     if pv.currently_over_plan:
         # Mirror the GNOME popup's text-only active-extra view: while burning,
@@ -37,7 +38,7 @@ def _render_provider(pv: ProviderView, now: datetime) -> str:
         lines.append(_active_windows_line(short, long, stale))
         return "\n".join(lines)
 
-    lines = [_header(pv.provider, error)]
+    lines = [_header(pv.provider, error, pv.last_output.fetched_at, now)]
     if short is not None:
         lines.append(_window_line("5h", short, stale))
     if long is not None:
@@ -70,10 +71,11 @@ def _refreshed_window(w: QuotaWindow | None, now: datetime) -> QuotaWindow | Non
     return w.model_copy(update={"reset_seconds": max(0.0, (w.reset_at - now).total_seconds())})
 
 
-def _header(provider: str, error: str | None) -> str:
+def _header(provider: str, error: str | None, checked_at: datetime, now: datetime) -> str:
     if error is None:
         return provider
-    return f"{provider}  last refresh failed: {error}"
+    checked_age = format_age((now - checked_at).total_seconds())
+    return f"{provider}  check failed {checked_age} ago: {error}"
 
 
 def _format_extra_active(extra: ExtraUsage | None) -> str:

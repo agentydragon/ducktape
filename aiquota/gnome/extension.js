@@ -86,7 +86,8 @@ function formatAge(seconds) {
 // returned nothing usable. `staleAge` is null when no fallback was needed.
 function effectiveState(state) {
   if (state.short != null || state.long != null) {
-    return { short: state.short, long: state.long, extraUsage: state.extraUsage, staleAge: null };
+    const staleAge = state.error && state.lastFetch != null ? Math.max(0, (Date.now() - state.lastFetch) / 1000) : null;
+    return { short: state.short, long: state.long, extraUsage: state.extraUsage, staleAge };
   }
   const snap = state.lastSuccess;
   if (!snap || (snap.short == null && snap.long == null)) {
@@ -101,6 +102,12 @@ function formatFreshness(lastFetch) {
   const ageSeconds = Math.max(0, (Date.now() - lastFetch) / 1000);
   const age = ageSeconds < 60 ? `${Math.round(ageSeconds)}s` : formatDuration(ageSeconds);
   return `${isStaleFetch(lastFetch) ? "stale, " : ""}updated ${age} ago`;
+}
+
+function formatCheckFailure(error, lastCheck) {
+  if (lastCheck == null) return `check failed: ${error}`;
+  const ageSeconds = Math.max(0, (Date.now() - lastCheck) / 1000);
+  return `check failed ${formatAge(ageSeconds)} ago: ${error}`;
 }
 
 // Pure pace computation. See DESIGN.md ("Pace math") for derivation.
@@ -198,6 +205,7 @@ function emptyProviderState() {
     short: null,
     long: null,
     lastFetch: null,
+    lastCheck: null,
     error: null,
     extraUsage: null,
     currentlyOverPlan: false,
@@ -294,16 +302,21 @@ const QuotaIndicator = GObject.registerClass(
           fetchedAt,
         };
       };
-      const provider = (node) => ({
-        short: node?.short ?? null,
-        long: node?.long ?? null,
-        lastFetch: node?.lastFetch != null ? Date.now() : null,
-        error: node?.error ?? null,
-        extraUsage: node?.extraUsage ?? null,
-        currentlyOverPlan: node?.currentlyOverPlan === true,
-        extraStatus: node?.extraStatus ?? "none",
-        lastSuccess: loadLastSuccess(node?.lastSuccess),
-      });
+      const provider = (node) => {
+        const lastFetch = node?.lastFetch != null ? Date.now() : null;
+        const lastCheck = node?.lastCheckAgeSeconds != null ? Date.now() - node.lastCheckAgeSeconds * 1000 : lastFetch;
+        return {
+          short: node?.short ?? null,
+          long: node?.long ?? null,
+          lastFetch,
+          lastCheck,
+          error: node?.error ?? null,
+          extraUsage: node?.extraUsage ?? null,
+          currentlyOverPlan: node?.currentlyOverPlan === true,
+          extraStatus: node?.extraStatus ?? "none",
+          lastSuccess: loadLastSuccess(node?.lastSuccess),
+        };
+      };
       for (const p of this._providers) p.state = provider(data[p.id]);
       this._renderPanel();
       this._renderPopup();
@@ -489,16 +502,19 @@ const QuotaIndicator = GObject.registerClass(
         // data, kind="error" carries the error string.
         const result = pq.last_output?.result ?? {};
         const isSuccess = result.kind === "success";
+        const lastSuccess = this._mapLastSuccess(pq.last_success);
+        const lastCheck = pq.last_output?.fetched_at ? new Date(pq.last_output.fetched_at).getTime() : fetchedAt;
         p.state = {
           short: isSuccess ? this._mapWindow(result.short_window) : null,
           long: isSuccess ? this._mapWindow(result.long_window) : null,
-          lastFetch: fetchedAt,
+          lastFetch: isSuccess ? lastCheck : (lastSuccess?.fetchedAt ?? null),
+          lastCheck,
           error: isSuccess ? null : (result.error ?? null),
           extraUsage: isSuccess ? this._mapExtraUsage(result.extra_usage) : null,
           // Derived policy bits from the Python view model — single source of truth.
           currentlyOverPlan: pq.currently_over_plan === true,
           extraStatus: pq.extra_status ?? "none",
-          lastSuccess: this._mapLastSuccess(pq.last_success),
+          lastSuccess,
         };
       }
     }
@@ -572,21 +588,17 @@ const QuotaIndicator = GObject.registerClass(
       item.label.remove_style_class_name("quota-popup-header-error");
       item.label.remove_style_class_name("quota-popup-header-stale");
 
-      const { short, long, extraUsage } = effectiveState(state);
-      const haveWindows = short != null || long != null;
+      const { extraUsage } = effectiveState(state);
       const parts = [title];
       if (state.error) {
-        // "last refresh failed" makes more sense when stale rows render below;
-        // "error" is the standalone form when no fallback is available either.
-        const prefix = haveWindows ? "last refresh failed" : "error";
-        parts.push(`${prefix}: ${state.error}`);
+        parts.push(formatCheckFailure(state.error, state.lastCheck));
         item.label.add_style_class_name("quota-popup-header-error");
       } else if (isStaleFetch(state.lastFetch)) {
         item.label.add_style_class_name("quota-popup-header-stale");
       }
       const extraStr = formatExtraUsage(extraUsage);
       if (extraStr) parts.push(extraStr);
-      parts.push(formatFreshness(state.lastFetch));
+      if (!state.error) parts.push(formatFreshness(state.lastFetch));
       item.label.set_text(parts.join(" · "));
     }
 
@@ -708,14 +720,22 @@ const QuotaIndicator = GObject.registerClass(
           if (!proc.get_successful()) {
             const stderrText = stderr ?? "";
             console.warn(`[aiquota] ${this._binPath} exited ${exitStatus}: ${stderrText}`);
-            for (const p of this._providers) p.state.error = `aiquota exited ${exitStatus}`;
+            const failedAt = Date.now();
+            for (const p of this._providers) {
+              p.state.error = `aiquota exited ${exitStatus}`;
+              p.state.lastCheck = failedAt;
+            }
           } else {
             const data = JSON.parse(stdout);
             this._loadSubprocessData(data);
           }
         } catch (e) {
           console.error(`[aiquota] refresh ${this._binPath} failed: ${errorMessage(e)}`);
-          for (const p of this._providers) p.state.error = errorMessage(e);
+          const failedAt = Date.now();
+          for (const p of this._providers) {
+            p.state.error = errorMessage(e);
+            p.state.lastCheck = failedAt;
+          }
         }
 
         this._renderPanel();

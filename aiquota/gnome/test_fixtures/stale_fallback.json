@@ -1,16 +1,17 @@
 {
-  "_comment": "Latest fetch for claude errored (HTTP 503) and returned no windows; the prior successful snapshot is 8 minutes old. Popup header shows 'last refresh failed: HTTP 503', the 5h/7d rows render the stale windows tagged '(stale 8m)', and the panel icon takes the 'stale' tint. codex shows normal data alongside; zai is untouched. Exercises the end-to-end stale fallback path added in the quota-error-fallback change.",
+  "_comment": "Latest check for claude failed 2 minutes ago (HTTP 503) and returned no windows; the prior successful snapshot is 1 day old. Popup header shows 'check failed 2m ago: HTTP 503', the 5h/7d rows render the stale windows tagged '(stale 1d0h)', and the panel icon takes the 'stale' tint. codex shows normal data alongside; zai is untouched.",
   "claude": {
     "short": null,
     "long": null,
     "lastFetch": 1,
+    "lastCheckAgeSeconds": 120,
     "error": "HTTP 503 Service Unavailable",
     "extraUsage": null,
     "lastSuccess": {
       "short": { "usedPercent": 35, "resetSeconds": 7920, "windowSeconds": 18000 },
       "long": { "usedPercent": 72, "resetSeconds": 442800, "windowSeconds": 604800 },
       "extraUsage": null,
-      "ageSeconds": 480
+      "ageSeconds": 86400
     }
   },
   "codex": {

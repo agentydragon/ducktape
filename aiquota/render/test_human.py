@@ -26,8 +26,8 @@ def _success(**kw) -> ProviderFetch:
     return ProviderFetch(fetched_at=_FETCHED_AT, result=FetchSuccess(**kw))
 
 
-def _failure(error: str) -> ProviderFetch:
-    return ProviderFetch(fetched_at=_FETCHED_AT, result=FetchError(error=error))
+def _failure(error: str, fetched_at: datetime = _FETCHED_AT) -> ProviderFetch:
+    return ProviderFetch(fetched_at=fetched_at, result=FetchError(error=error))
 
 
 def _pq(
@@ -63,7 +63,8 @@ def test_renders_both_windows_with_reset_and_pace(snapshot: SnapshotAssertion) -
                     ),
                 ),
             ),
-        )
+        ),
+        now=_FETCHED_AT,
     )
     assert out == snapshot
 
@@ -87,7 +88,8 @@ def test_extra_enabled_but_prepaid_has_room_shows_normal_bars(snapshot: Snapshot
                     ),
                 ),
             )
-        )
+        ),
+        now=_FETCHED_AT,
     )
     assert out == snapshot
 
@@ -110,28 +112,29 @@ def test_currently_over_plan_shows_text_only_window_resets_on_one_line(snapshot:
                     ),
                 ),
             )
-        )
+        ),
+        now=_FETCHED_AT,
     )
     assert out == snapshot
 
 
 def test_error_only_when_no_data(snapshot: SnapshotAssertion) -> None:
-    out = human.render(_quotas(_pq("zai", _failure("no api key path configured"))))
+    out = human.render(_quotas(_pq("zai", _failure("no api key path configured"))), now=_FETCHED_AT)
     assert out == snapshot
 
 
 def test_error_with_last_success_falls_back_to_stale_windows() -> None:
-    # Latest fetch errored and returned no windows; the prior successful
-    # snapshot is 8 minutes old. The renderer should show those windows with
-    # a `(stale 8m)` tag and a "last refresh failed" header so the user keeps
-    # seeing real numbers instead of "no data".
+    # Latest check failed and returned no windows; the prior successful
+    # snapshot is 1 day old. The renderer should show those windows with
+    # a `(stale 1d0h)` tag and a failed-check header so the user keeps
+    # seeing real numbers without mistaking them for a fresh update.
     out = human.render(
         _quotas(
             _pq(
                 "claude",
-                last_output=_failure("HTTP 503"),
+                last_output=_failure("HTTP 503", fetched_at=_FETCHED_AT - timedelta(minutes=2)),
                 last_success=SuccessfulProviderFetch(
-                    fetched_at=_FETCHED_AT - timedelta(minutes=8),
+                    fetched_at=_FETCHED_AT - timedelta(days=1),
                     result=FetchSuccess(
                         short_window=QuotaWindow(
                             used_percent=35,
@@ -148,11 +151,12 @@ def test_error_with_last_success_falls_back_to_stale_windows() -> None:
                     ),
                 ),
             )
-        )
+        ),
+        now=_FETCHED_AT,
     )
     lines = out.split("\n")
-    assert lines[0] == "claude  last refresh failed: HTTP 503"
+    assert lines[0] == "claude  check failed 2m ago: HTTP 503"
     assert lines[1].startswith("  5h:  35%  ↻ 2h12m")
-    assert lines[1].endswith("(stale 8m)")
+    assert lines[1].endswith("(stale 1d0h)")
     assert lines[2].startswith("  7d:  72%  ↻ 5d3h")
-    assert lines[2].endswith("(stale 8m)")
+    assert lines[2].endswith("(stale 1d0h)")

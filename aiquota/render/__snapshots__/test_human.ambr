@@ -6,7 +6,7 @@
   '''
 # ---
 # name: test_error_only_when_no_data
-  'zai: error — no api key path configured'
+  'zai  check failed 0s ago: no api key path configured'
 # ---
 # name: test_extra_enabled_but_prepaid_has_room_shows_normal_bars
   '''
