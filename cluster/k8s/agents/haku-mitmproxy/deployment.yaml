@@ -34,7 +34,14 @@ spec:
               mountPath: /mitmproxy-data
       containers:
         - name: mitmproxy
-          image: mitmproxy/mitmproxy:11
+          # >=12.2.3 (mitmproxy#8214): the leaf's AuthorityKeyIdentifier now
+          # copies the CA cert's SubjectKeyIdentifier instead of recomputing it
+          # as SHA-1. cert-manager mints CA SKIs per RFC 7093 (truncated
+          # SHA-256), so on <12.2.3 every intercepted leaf's AKID mismatched the
+          # CA SKI and strict clients rejected the chain ("unable to get local
+          # issuer certificate"). See
+          # cluster/docs/lessons_learned/2026_06_25_mitmproxy_ca_ski_aki_mismatch.md.
+          image: mitmproxy/mitmproxy:12.2.3
           command:
             - mitmweb
             - --listen-host
