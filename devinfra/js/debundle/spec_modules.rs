@@ -175,15 +175,6 @@ pub fn module_claims(module: ModuleFile) -> Result<ModuleClaims> {
             }
         }
     }
-    for group in &module.binding_groups {
-        if group.source_match.target_statement.is_some()
-            || group.source_match.target_statements.is_some()
-        {
-            let mut selector = group.source_match.selector();
-            selector.target_binding = None;
-            claims.anonymous_selectors.insert(selector);
-        }
-    }
     claims.binding_groups = module.binding_groups;
     for statement in module.anonymous_statements {
         claims.anonymous_selectors.insert(statement.selector()?);
@@ -355,47 +346,9 @@ anonymous_statements:
                     match_source: "register(Co);".to_string(),
                     identifiers: spec::SourceMatchIdentifierMode::AlphaAll,
                     target_binding: None,
-                    target_statement: None,
-                    target_statements: None,
                     wildcard_string_literals: BTreeSet::new(),
                 },
             ])
-        );
-    }
-
-    #[test]
-    fn read_module_claims_includes_binding_group_target_statements() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("x.yaml");
-        fs::write(
-            &path,
-            r#"binding_groups:
-  - source_match:
-      identifiers: alpha_all
-      target_statements: [1, 2]
-      match: |
-        let recordSlot, replaySlot;
-        true && (replaySlot = "replay");
-        false || (recordSlot = "record");
-    exports:
-      recordSlot: recordBridge
-      replaySlot: replayBridge
-"#,
-        )
-        .unwrap();
-
-        let claims = read_module_claims(&path).unwrap();
-        assert_eq!(claims.binding_groups.len(), 1);
-        assert_eq!(
-            claims.anonymous_selectors,
-            BTreeSet::from([AnonymousStatementSelector {
-                match_source: "let recordSlot, replaySlot;\ntrue && (replaySlot = \"replay\");\nfalse || (recordSlot = \"record\");\n".to_string(),
-                identifiers: spec::SourceMatchIdentifierMode::AlphaAll,
-                target_binding: None,
-                target_statement: None,
-                target_statements: Some(spec::TargetStatements::Indices(vec![1, 2])),
-                wildcard_string_literals: BTreeSet::new(),
-            }]),
         );
     }
 

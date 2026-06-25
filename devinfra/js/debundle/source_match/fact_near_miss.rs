@@ -1290,8 +1290,6 @@ mod tests {
                 SourceMatchIdentifierMode::Exact
             },
             target_binding: None,
-            target_statement: None,
-            target_statements: None,
             wildcard_string_literals: BTreeSet::new(),
         }
     }

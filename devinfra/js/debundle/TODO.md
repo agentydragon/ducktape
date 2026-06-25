@@ -46,9 +46,9 @@ Dispatch work in this order:
    implemented.
 3. **Source-match surface pruning (P0.3).** Remove legacy `source_match`
    options that no current downstream spec uses before nativeization hardens
-   them into the new IR. Current gaffer-private census: `target_statement`,
-   `target_statements`, and `wildcard_string_literals` are unused; verify and
-   delete Ducktape fixtures/helpers in a focused branch.
+   them into the new IR. `target_statement` / `target_statements` have been
+   removed; the remaining gaffer-private census follow-up is
+   `wildcard_string_literals`.
 4. **Delete the candidate oracle (P0.4).** Remove `SelectorAtom::SourceMatchCandidate`
    / `SelectorFact::SourceMatchCandidate` once all retained selector forms lower
    natively. No-match, ambiguity, unsupported, and duplicate-claim diagnostics
@@ -115,10 +115,9 @@ this list as the dispatch summary, not a second plan.
    and regex string predicates, then add ordered run-hole placement for the
    high-volume families (`STMT_LIST`, `DECLARATORS`, `OBJECT_PROPS`). Each
    lowering must be faithful or fail closed.
-3. **Prune unused source-match options.** Remove `target_statement`,
-   `target_statements`, and `wildcard_string_literals` unless a fresh downstream
-   census finds real use. Also run a broader vestigial-feature audit before
-   nativeizing more rarely-used spec surface.
+3. **Prune unused source-match options.** Finish the
+   `wildcard_string_literals` census/removal decision, and run a broader
+   vestigial-feature audit before nativeizing more rarely-used spec surface.
 4. **Retire `SourceMatchCandidate`.** Delete the pre-enumerated candidate
    oracle once all retained selector forms lower natively, and route
    source-match diagnostics through solver categoricity / `all_different`.

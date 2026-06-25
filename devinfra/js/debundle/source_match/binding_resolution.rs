@@ -48,8 +48,6 @@ pub fn binding_group_member_selectors(
         .map(|(target_binding, export_name)| {
             let mut selector = group.source_match.selector();
             selector.target_binding = Some(target_binding.clone());
-            selector.target_statement = None;
-            selector.target_statements = None;
             let comment = group.comments.get(&target_binding).cloned();
             BindingGroupMemberSelector {
                 export_name,
@@ -58,19 +56,6 @@ pub fn binding_group_member_selectors(
             }
         })
         .collect())
-}
-
-pub fn binding_group_anonymous_statement_selector(
-    group: &BindingGroup,
-) -> Option<AnonymousStatementSelector> {
-    if group.source_match.target_statement.is_none()
-        && group.source_match.target_statements.is_none()
-    {
-        return None;
-    }
-    let mut selector = group.source_match.selector();
-    selector.target_binding = None;
-    Some(selector)
 }
 
 pub(crate) fn effective_binding_group_exports(

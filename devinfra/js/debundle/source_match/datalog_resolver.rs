@@ -592,49 +592,6 @@ fn member_matches_multi(
     Ok(matches)
 }
 
-/// Multi-statement anonymous selector: align the needle statements against the
-/// chunk body, then project each alignment onto the selector's target-statement
-/// indices.
-fn resolve_anonymous_multi(
-    chunk: &ChunkResolver,
-    needles: &[ModuleItem],
-    request_id: &str,
-    selector: &AnonymousStatementSelector,
-) -> Result<Vec<Vec<usize>>> {
-    let target_indices =
-        anonymous_selector_target_statement_indices(request_id, selector, needles)?;
-    let needle_facts = needles
-        .iter()
-        .map(|item| needle_item_facts(item, selector))
-        .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
-    let needle_indices: Vec<_> = needle_facts
-        .iter()
-        .map(selector_match::Index::build)
-        .collect();
-    let alignments = selector_match::match_top_level_sequence_indexed(
-        &needle_indices,
-        &chunk.body_indices,
-        selector_mode(selector),
-    )
-    .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
-    let mut groups = Vec::new();
-    for alignment in alignments {
-        let mut group = Vec::with_capacity(target_indices.len());
-        for &target_idx in &target_indices {
-            let Some(Some(body_idx)) = alignment.get(target_idx) else {
-                bail!(
-                    "datalog resolver: anonymous target statement {target_idx} matched by a \
-                     STMT_LIST hole"
-                );
-            };
-            group.push(*body_idx);
-        }
-        groups.push(group);
-    }
-    Ok(groups)
-}
-
 /// Binding-group branch 2 — a single-statement declarator-hole needle (the
 /// `*-module_*` group, e.g. tooltip's `const DECLARATORS_BEFORE = null, a = …,
 /// DECLARATORS_GAP = null, b = …, DECLARATORS_AFTER = null;`): one plain
@@ -1203,8 +1160,9 @@ impl SelectorResolver for ChunkResolver<'_> {
         selector: &AnonymousStatementSelector,
     ) -> Result<Vec<Vec<usize>>> {
         let needles = parse_needles(request_id, selector)?;
+        anonymous_selector_statement_indices(request_id, selector, &needles)?;
         let [needle] = needles.as_slice() else {
-            return resolve_anonymous_multi(self, &needles, request_id, selector);
+            unreachable!("anonymous selector validation requires one parsed statement")
         };
         let needle_facts = needle_item_facts(needle, selector)
             .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
@@ -1226,8 +1184,6 @@ mod tests {
             match_source: match_source.to_string(),
             identifiers: SourceMatchIdentifierMode::AlphaAll,
             target_binding: target_binding.map(str::to_string),
-            target_statement: None,
-            target_statements: None,
             wildcard_string_literals: BTreeSet::new(),
         }
     }
@@ -1241,8 +1197,6 @@ mod tests {
             match_source: match_source.to_string(),
             identifiers: SourceMatchIdentifierMode::AlphaAll,
             target_binding: None,
-            target_statement: None,
-            target_statements: None,
             wildcard_string_literals: BTreeSet::new(),
         }
     }
@@ -1438,27 +1392,6 @@ mod tests {
                 .resolve_member("test", "M", &selector)
                 .expect("datalog resolves the windowed declarator-hole target");
             assert_eq!(datalog.binding_name, "theTarget");
-        });
-    }
-
-    #[test]
-    fn datalog_resolver_resolves_multi_statement_anonymous() {
-        js_ast::with_swc_globals(|| {
-            // A two-statement target_statements selector matching a contiguous
-            // window inside the chunk body.
-            let chunk = module("x();\nfoo();\nbar();\ny();\n");
-            let selector = AnonymousStatementSelector {
-                match_source: "foo();\nbar();".to_string(),
-                identifiers: SourceMatchIdentifierMode::Exact,
-                target_binding: None,
-                target_statement: None,
-                target_statements: Some(spec::TargetStatements::Indices(vec![0, 1])),
-                wildcard_string_literals: BTreeSet::new(),
-            };
-            let datalog = ChunkResolver::new(&chunk)
-                .resolve_anonymous_groups("test", &selector)
-                .expect("datalog resolves the multi-statement window");
-            assert_eq!(datalog, vec![vec![1, 2]]);
         });
     }
 

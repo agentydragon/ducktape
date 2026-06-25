@@ -314,12 +314,9 @@ bindings. An explicit `exports` entry on the same group overrides the adopted
 public name for that selector-local binding. `comments` is keyed by
 selector-local binding name and emits like `members[].comment` after expansion.
 
-Legacy binding-group `target_statement` / `target_statements` support can claim
-adjacent anonymous side-effect statements by source-order index from the same
-structural match. Do not use it for new specs: current downstream specs do not
-exercise it, it is slated for removal, and the single-query resolver should
-model anonymous side effects as their own distinguished selector targets rather
-than as indices into neighboring context.
+Binding groups claim exported bindings only. Model adjacent anonymous
+side-effect statements as separate `anonymous_statements` entries with their
+own selectors rather than as source-order indices into neighboring context.
 
 When a few useful bindings sit inside a larger `var`/`let`/`const` declaration
 list, use declarator-list holes instead of spelling unrelated siblings:
@@ -359,12 +356,10 @@ reject the spec as ambiguous rather than picking by source order.
 Refine the selector with an exact statement, a stable literal/property
 difference, or a deliberately small surrounding context.
 
-Legacy `target_statement` / `target_statements` can claim one or more
-source-order indices from a larger `source_match` window. Do not introduce new
-uses. Current downstream specs do not use this surface, it is slated for
-removal, and source-order indexing is a weak fit for the solver model. Prefer a
-small selector whose distinguished target is the anonymous statement itself,
-using stable literals/properties or relation atoms to make that target unique.
+An anonymous `source_match` selector claims exactly one pinned top-level
+statement. Prefer a small selector whose distinguished target is the anonymous
+statement itself, using stable literals/properties or relation atoms to make
+that target unique.
 
 At top level in an anonymous-statement selector, `STMT_LIST;` absorbs a run of
 module-body statements that should be used only as skipped context. Treat

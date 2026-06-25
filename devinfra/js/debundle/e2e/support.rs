@@ -66,8 +66,6 @@ impl BindingGroup {
             source_match: FixtureSourceMatch {
                 identifiers: "alpha_all",
                 target_binding: None,
-                target_statement: None,
-                target_statements: None,
                 wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             },
@@ -82,8 +80,6 @@ impl BindingGroup {
             source_match: FixtureSourceMatch {
                 identifiers: "alpha_all",
                 target_binding: None,
-                target_statement: None,
-                target_statements: None,
                 wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             },
@@ -101,8 +97,6 @@ impl BindingGroup {
             source_match: FixtureSourceMatch {
                 identifiers: "alpha_all",
                 target_binding: None,
-                target_statement: None,
-                target_statements: None,
                 wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             },
@@ -120,8 +114,6 @@ impl BindingGroup {
             source_match: FixtureSourceMatch {
                 identifiers: "alpha_all",
                 target_binding: None,
-                target_statement: None,
-                target_statements: None,
                 wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             },
@@ -133,17 +125,6 @@ impl BindingGroup {
 
     pub fn with_comments(mut self, comments: &[(&'static str, &'static str)]) -> Self {
         self.comments = comments.iter().copied().collect();
-        self
-    }
-
-    pub fn with_target_statements(mut self, target_statements: &[usize]) -> Self {
-        self.source_match.target_statements =
-            Some(FixtureTargetStatements::Indices(target_statements.to_vec()));
-        self
-    }
-
-    pub fn with_target_statements_all(mut self) -> Self {
-        self.source_match.target_statements = Some(FixtureTargetStatements::All("all"));
         self
     }
 }
@@ -202,8 +183,6 @@ impl Member {
             source_match: Some(FixtureSourceMatch {
                 identifiers: "alpha_all",
                 target_binding: None,
-                target_statement: None,
-                target_statements: None,
                 wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             }),
@@ -230,8 +209,6 @@ impl Member {
             source_match: Some(FixtureSourceMatch {
                 identifiers: "alpha_all",
                 target_binding: Some(target_binding.into()),
-                target_statement: None,
-                target_statements: None,
                 wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             }),
@@ -258,8 +235,6 @@ impl Member {
             source_match: Some(FixtureSourceMatch {
                 identifiers: "exact",
                 target_binding: Some(target_binding.into()),
-                target_statement: None,
-                target_statements: None,
                 wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             }),
@@ -614,21 +589,10 @@ struct FixtureSourceMatch {
     identifiers: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     target_binding: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    target_statement: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    target_statements: Option<FixtureTargetStatements>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     wildcard_string_literals: Vec<String>,
     #[serde(rename = "match")]
     match_source: String,
-}
-
-#[derive(Clone, Serialize)]
-#[serde(untagged)]
-enum FixtureTargetStatements {
-    Indices(Vec<usize>),
-    All(&'static str),
 }
 
 impl FixtureAnonymousStatement {
@@ -646,8 +610,6 @@ impl FixtureAnonymousStatement {
             source_match: Some(FixtureSourceMatch {
                 identifiers: "alpha_all",
                 target_binding: None,
-                target_statement: None,
-                target_statements: None,
                 wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             }),
@@ -664,65 +626,10 @@ impl FixtureAnonymousStatement {
             source_match: Some(FixtureSourceMatch {
                 identifiers: "alpha_all",
                 target_binding: None,
-                target_statement: None,
-                target_statements: None,
                 wildcard_string_literals: wildcard_string_literals
                     .iter()
                     .map(|literal| (*literal).to_string())
                     .collect(),
-                match_source: match_source.into(),
-            }),
-            comment: None,
-        }
-    }
-
-    fn alpha_all_target_statement(
-        match_source: impl Into<String>,
-        target_statement: usize,
-    ) -> Self {
-        Self {
-            match_source: None,
-            source_match: Some(FixtureSourceMatch {
-                identifiers: "alpha_all",
-                target_binding: None,
-                target_statement: Some(target_statement),
-                target_statements: None,
-                wildcard_string_literals: Vec::new(),
-                match_source: match_source.into(),
-            }),
-            comment: None,
-        }
-    }
-
-    fn alpha_all_target_statements(
-        match_source: impl Into<String>,
-        target_statements: &[usize],
-    ) -> Self {
-        Self {
-            match_source: None,
-            source_match: Some(FixtureSourceMatch {
-                identifiers: "alpha_all",
-                target_binding: None,
-                target_statement: None,
-                target_statements: Some(FixtureTargetStatements::Indices(
-                    target_statements.to_vec(),
-                )),
-                wildcard_string_literals: Vec::new(),
-                match_source: match_source.into(),
-            }),
-            comment: None,
-        }
-    }
-
-    fn alpha_all_target_statements_all(match_source: impl Into<String>) -> Self {
-        Self {
-            match_source: None,
-            source_match: Some(FixtureSourceMatch {
-                identifiers: "alpha_all",
-                target_binding: None,
-                target_statement: None,
-                target_statements: Some(FixtureTargetStatements::All("all")),
-                wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             }),
             comment: None,
@@ -889,58 +796,6 @@ pub fn logical_module_with_anon_alpha(
         members,
         &[],
         vec![FixtureAnonymousStatement::alpha_all(anon_match)],
-        None,
-    )
-}
-
-pub fn logical_module_with_anon_alpha_target_statement(
-    path: &str,
-    members: &[Member],
-    anon_match: &str,
-    target_statement: usize,
-) -> LogicalModuleEntry {
-    logical_module_entry(
-        path,
-        members,
-        &[],
-        vec![FixtureAnonymousStatement::alpha_all_target_statement(
-            anon_match,
-            target_statement,
-        )],
-        None,
-    )
-}
-
-pub fn logical_module_with_anon_alpha_target_statements(
-    path: &str,
-    members: &[Member],
-    anon_match: &str,
-    target_statements: &[usize],
-) -> LogicalModuleEntry {
-    logical_module_entry(
-        path,
-        members,
-        &[],
-        vec![FixtureAnonymousStatement::alpha_all_target_statements(
-            anon_match,
-            target_statements,
-        )],
-        None,
-    )
-}
-
-pub fn logical_module_with_anon_alpha_target_statements_all(
-    path: &str,
-    members: &[Member],
-    anon_match: &str,
-) -> LogicalModuleEntry {
-    logical_module_entry(
-        path,
-        members,
-        &[],
-        vec![FixtureAnonymousStatement::alpha_all_target_statements_all(
-            anon_match,
-        )],
         None,
     )
 }

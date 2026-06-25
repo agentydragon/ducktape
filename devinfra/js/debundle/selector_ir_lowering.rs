@@ -349,9 +349,6 @@ impl MemberSelectorProgramBuilder {
         owner: SelectorVariableId,
         selector: &AnonymousStatementSelector,
     ) -> Result<bool, SelectorIrLoweringError> {
-        if selector.target_statement.is_some() || selector.target_statements.is_some() {
-            return Ok(false);
-        }
         let Ok(parsed) = js_ast::with_swc_globals(|| {
             js_ast::parse_js_module_ast(
                 &format!("<selector ir source_match in {logical_module}>"),

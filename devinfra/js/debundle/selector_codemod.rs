@@ -1379,8 +1379,6 @@ fn prove_synthesized_selector(
             match_source: match_source.to_string(),
             identifiers: SourceMatchIdentifierMode::AlphaAll,
             target_binding: None,
-            target_statement: None,
-            target_statements: None,
             wildcard_string_literals: BTreeSet::new(),
         }
         .selector();
@@ -1426,8 +1424,6 @@ fn prove_synthesized_selector(
         match_source: match_source.to_string(),
         identifiers: SourceMatchIdentifierMode::AlphaAll,
         target_binding: Some(target.export_name.clone()),
-        target_statement: None,
-        target_statements: None,
         wildcard_string_literals: BTreeSet::new(),
     };
     let selector = source_match.selector();
@@ -1590,8 +1586,6 @@ fn matched_binding_candidates(
         match_source: match_source.to_string(),
         identifiers: SourceMatchIdentifierMode::AlphaAll,
         target_binding: Some(export_name.to_string()),
-        target_statement: None,
-        target_statements: None,
         wildcard_string_literals: BTreeSet::new(),
     };
     index

@@ -67,8 +67,6 @@ fn render_selector(module: &Module, anchor: &AnchorSet) -> AnonymousStatementSel
         match_source,
         identifiers: SourceMatchIdentifierMode::AlphaAll,
         target_binding: None,
-        target_statement: None,
-        target_statements: None,
         wildcard_string_literals: BTreeSet::new(),
     }
 }

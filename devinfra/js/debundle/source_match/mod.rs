@@ -17,7 +17,7 @@
 //! - `datalog_resolver` — the fact-based `ChunkResolver` (`SelectorResolver`).
 //! - `fact_near_miss` — fact-based `source_match` debt / near-miss diagnostics.
 //! - `resolver` — the `SelectorResolver` seam trait.
-//! - `anonymous_statement` — anonymous target-statement index resolution.
+//! - `anonymous_statement` — anonymous source-match statement validation.
 //! - `holes` — local hole-keyword dispatch over AST nodes.
 
 pub(crate) use std::collections::{BTreeMap, BTreeSet};
@@ -25,7 +25,7 @@ pub(crate) use std::collections::{BTreeMap, BTreeSet};
 pub(crate) use anyhow::{Context, Result, bail};
 pub(crate) use spec::{
     AnonymousStatementSelector, BindingGroup, BindingGroupAdoptNames, BindingSourceKind,
-    SourceMatch, SourceMatchIdentifierMode, TargetStatements, TargetStatementsAll,
+    SourceMatch, SourceMatchIdentifierMode,
 };
 pub(crate) use swc_ecma_ast::*;
 pub(crate) use swc_ecma_visit::{Visit, VisitWith};
@@ -72,10 +72,7 @@ pub(crate) use timing::{
 };
 
 // Public API: importable at `source_match::<item>` exactly as before the split.
-pub use binding_resolution::{
-    binding_group_anonymous_statement_selector, binding_group_member_selectors,
-    source_match_declared_binding_names,
-};
+pub use binding_resolution::{binding_group_member_selectors, source_match_declared_binding_names};
 pub use datalog_resolver::ChunkResolver;
 pub use fact_near_miss::fact_source_match_body_debt;
 pub(crate) use fact_near_miss::fact_source_match_no_match_hint;

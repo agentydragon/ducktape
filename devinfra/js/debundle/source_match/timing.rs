@@ -102,12 +102,6 @@ fn source_match_timing_selector_details(
     if let Some(target_binding) = selector.target_binding.as_deref() {
         fields.push(format!("target_binding=`{target_binding}`"));
     }
-    if let Some(target_statement) = selector.target_statement {
-        fields.push(format!("target_statement={target_statement}"));
-    }
-    if let Some(target_statements) = &selector.target_statements {
-        fields.push(format!("target_statements={target_statements:?}"));
-    }
     if config.include_preview {
         fields.push(format!(
             "selector={}",
@@ -141,14 +135,6 @@ pub fn selector_key(selector: &AnonymousStatementSelector) -> String {
     if let Some(target_binding) = selector.target_binding.as_deref() {
         state.update(b"target_binding=");
         state.update(target_binding.as_bytes());
-    }
-    state.update(b"\0");
-    if let Some(target_statement) = selector.target_statement {
-        state.update(format!("target_statement={target_statement}").as_bytes());
-    }
-    state.update(b"\0");
-    if let Some(target_statements) = &selector.target_statements {
-        state.update(format!("target_statements={target_statements:?}").as_bytes());
     }
     format!("{:016x}", state.finish())
 }

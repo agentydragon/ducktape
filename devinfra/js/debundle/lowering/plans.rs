@@ -267,14 +267,6 @@ pub(super) fn logical_requests_for_chunk(
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;
-            anonymous_statements.extend(module.binding_groups.iter().filter_map(|group| {
-                source_match::binding_group_anonymous_statement_selector(group).map(|selector| {
-                    AnonymousStatementRequest {
-                        selector,
-                        comment: None,
-                    }
-                })
-            }));
             if catchall_target.as_deref() == Some(target_path.as_str()) {
                 explicit_module_at_catchall = true;
             }

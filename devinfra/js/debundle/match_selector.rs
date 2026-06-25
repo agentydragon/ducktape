@@ -124,8 +124,6 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
             match_source,
             identifiers: config.identifiers,
             target_binding: config.target_binding.clone(),
-            target_statement: None,
-            target_statements: None,
             wildcard_string_literals: BTreeSet::new(),
         }
         .selector();

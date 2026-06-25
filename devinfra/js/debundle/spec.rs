@@ -801,21 +801,11 @@ impl AnonymousStatement {
                 match_source: match_source.clone(),
                 identifiers: SourceMatchIdentifierMode::Exact,
                 target_binding: None,
-                target_statement: None,
-                target_statements: None,
                 wildcard_string_literals: BTreeSet::new(),
             }),
             (None, Some(source_match)) if source_match.target_binding.is_some() => {
                 Err(AnonymousStatementSelectorError {
                     message: "anonymous_statements source_match cannot include `target_binding`",
-                })
-            }
-            (None, Some(source_match))
-                if source_match.target_statement.is_some()
-                    && source_match.target_statements.is_some() =>
-            {
-                Err(AnonymousStatementSelectorError {
-                    message: "anonymous_statements source_match cannot include both `target_statement` and `target_statements`",
                 })
             }
             (None, Some(source_match)) => Ok(source_match.selector()),
@@ -855,21 +845,6 @@ pub struct SourceMatch {
     /// binding from it. Invalid on `anonymous_statements[].source_match`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_binding: Option<String>,
-    /// Zero-based top-level statement index to claim when this source match is
-    /// used as an `anonymous_statements[].source_match`. This lets a selector
-    /// include surrounding declarations as context while moving only the
-    /// intended anonymous statement. Invalid on `members[].selector.source_match`.
-    /// On `binding_groups[].source_match`, the group can claim this statement
-    /// while also exporting bindings from the same matched source window.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target_statement: Option<usize>,
-    /// Top-level statement indices to claim when this source match is used as
-    /// an `anonymous_statements[].source_match` or
-    /// `binding_groups[].source_match`, or `all` to claim every non-hole
-    /// statement in the selector. This is the multi-statement form of
-    /// `target_statement`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target_statements: Option<TargetStatements>,
     /// String-literal placeholder values in `match` that should match any
     /// candidate string literal at the same AST position. Use this for
     /// volatile generated literals while keeping all other strings exact.
@@ -885,10 +860,6 @@ struct SourceMatchWire {
     identifiers: SourceMatchIdentifierMode,
     #[serde(default)]
     target_binding: Option<String>,
-    #[serde(default)]
-    target_statement: Option<usize>,
-    #[serde(default)]
-    target_statements: Option<TargetStatements>,
     #[serde(default)]
     wildcard_string_literals: BTreeSet<String>,
     #[serde(rename = "match")]
@@ -918,8 +889,6 @@ impl<'de> Deserialize<'de> for SourceMatch {
         Ok(Self {
             identifiers: wire.identifiers,
             target_binding: wire.target_binding,
-            target_statement: wire.target_statement,
-            target_statements: wire.target_statements,
             wildcard_string_literals: wire.wildcard_string_literals,
             match_source: wire.match_source,
         })
@@ -932,24 +901,9 @@ impl SourceMatch {
             match_source: self.match_source.clone(),
             identifiers: self.identifiers,
             target_binding: self.target_binding.clone(),
-            target_statement: self.target_statement,
-            target_statements: self.target_statements.clone(),
             wildcard_string_literals: self.wildcard_string_literals.clone(),
         }
     }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
-#[serde(untagged)]
-pub enum TargetStatements {
-    Indices(Vec<usize>),
-    All(TargetStatementsAll),
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
-#[serde(rename_all = "snake_case")]
-pub enum TargetStatementsAll {
-    All,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -957,8 +911,6 @@ pub struct AnonymousStatementSelector {
     pub match_source: String,
     pub identifiers: SourceMatchIdentifierMode,
     pub target_binding: Option<String>,
-    pub target_statement: Option<usize>,
-    pub target_statements: Option<TargetStatements>,
     pub wildcard_string_literals: BTreeSet<String>,
 }
 
@@ -968,8 +920,6 @@ impl AnonymousStatementSelector {
             match_source: match_source.into(),
             identifiers: SourceMatchIdentifierMode::Exact,
             target_binding: None,
-            target_statement: None,
-            target_statements: None,
             wildcard_string_literals: BTreeSet::new(),
         }
     }
@@ -1540,16 +1490,6 @@ impl MemberSelector {
                 Ok(MemberSelectorSpec::Binding(binding.clone()))
             }
             (None, Some(source_match), None, None, None, None, None, None) => {
-                if source_match.target_statement.is_some() {
-                    return Err(MemberSelectorError {
-                        message: "members[].selector.source_match cannot include `target_statement`",
-                    });
-                }
-                if source_match.target_statements.is_some() {
-                    return Err(MemberSelectorError {
-                        message: "members[].selector.source_match cannot include `target_statements`",
-                    });
-                }
                 Ok(MemberSelectorSpec::SourceMatch(source_match.selector()))
             }
             (None, None, Some(cross_ref), None, None, None, None, None) => {

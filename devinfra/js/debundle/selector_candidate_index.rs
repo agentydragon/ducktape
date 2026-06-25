@@ -420,26 +420,6 @@ fn target_item_indices(items: &[ModuleItem], selector: &AnonymousStatementSelect
             })
             .collect();
     }
-    if let Some(target_statement) = selector.target_statement {
-        return (target_statement < items.len())
-            .then_some(target_statement)
-            .into_iter()
-            .collect();
-    }
-    if let Some(target_statements) = &selector.target_statements {
-        return match target_statements {
-            spec::TargetStatements::Indices(indices) => indices
-                .iter()
-                .copied()
-                .filter(|idx| *idx < items.len())
-                .collect(),
-            spec::TargetStatements::All(spec::TargetStatementsAll::All) => items
-                .iter()
-                .enumerate()
-                .filter_map(|(idx, item)| module_item_list_hole_name(item).is_none().then_some(idx))
-                .collect(),
-        };
-    }
     match items {
         [] => Vec::new(),
         [single] if module_item_list_hole_name(single).is_some() => vec![0],
@@ -988,8 +968,6 @@ mod tests {
             match_source: match_source.to_string(),
             identifiers: SourceMatchIdentifierMode::AlphaAll,
             target_binding: None,
-            target_statement: None,
-            target_statements: None,
             wildcard_string_literals: BTreeSet::new(),
         }
     }
