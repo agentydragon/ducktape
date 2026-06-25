@@ -1109,18 +1109,6 @@ fn native_alpha_source_match_supported(
         return false;
     };
 
-    // Alpha variable scopes are modeled for simple single-scope selectors.
-    // Nested function/arrow/catch scopes need a native notion of scoped
-    // alpha-renaming before they can safely avoid the legacy matcher.
-    let scope_count = facts
-        .node_kind
-        .iter()
-        .filter(|(node, kind)| !skipped_nodes.contains(node) && introduces_alpha_scope(*kind))
-        .count();
-    if scope_count > 1 {
-        return false;
-    }
-
     if facts
         .node_kind
         .iter()
@@ -3289,18 +3277,24 @@ mod tests {
     }
 
     #[test]
-    fn alpha_all_source_match_nested_scope_stays_oracle_only() {
+    fn alpha_all_source_match_nested_scope_lowers_natively() {
         let mut selector =
             AnonymousStatementSelector::exact("function a(xs) { return xs.map((x) => x.id); }");
         selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
         let lowered = lower_member_selector(
             &context(),
             "Widget",
-            &MemberSelectorSpec::SourceMatch(selector.clone()),
+            &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
 
-        assert_source_match_oracle_only(&lowered, &selector);
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
     }
 
     #[test]
