@@ -1644,7 +1644,6 @@ fn native_child_list_patterns(
             .map(|(_index, child)| *child)
             .collect::<Vec<_>>();
         let mut hole_positions = BTreeSet::new();
-        let mut allow_all_hole_pattern = false;
         for (index, child) in children.iter().enumerate() {
             if let Some(ident) = native_child_list_carrier_ident(
                 parent_kind,
@@ -1656,9 +1655,6 @@ fn native_child_list_patterns(
             ) {
                 hole_positions.insert(index);
                 valid_child_list_nodes.insert(ident);
-                if matches!(parent_kind, NodeKind::Object | NodeKind::ObjectPat) {
-                    allow_all_hole_pattern = true;
-                }
                 collect_native_child_list_subtree(*child, &children_by_parent, skipped_nodes);
             }
         }
@@ -1682,7 +1678,7 @@ fn native_child_list_patterns(
 
         let (segments, anchored_left, anchored_right) =
             child_list_segments(&children, &hole_positions);
-        if segments.is_empty() && !allow_all_hole_pattern {
+        if segments.is_empty() && !native_all_hole_child_list_pattern_supported(parent_kind) {
             return None;
         }
         patterns.insert(
@@ -1701,6 +1697,23 @@ fn native_child_list_patterns(
     } else {
         None
     }
+}
+
+fn native_all_hole_child_list_pattern_supported(parent_kind: NodeKind) -> bool {
+    matches!(
+        parent_kind,
+        NodeKind::Block
+            | NodeKind::SwitchCase
+            | NodeKind::Array
+            | NodeKind::VarDecl
+            | NodeKind::Class
+            | NodeKind::Object
+            | NodeKind::ObjectPat
+            | NodeKind::Call
+            | NodeKind::New
+            | NodeKind::OptCall
+            | NodeKind::Switch
+    )
 }
 
 fn single_declarator_segment(
@@ -2674,6 +2687,60 @@ mod tests {
     }
 
     #[test]
+    fn source_match_with_all_stmt_list_lowers_natively_without_block_arity() {
+        let selector = AnonymousStatementSelector::exact("function readable() { STMT_LIST_BODY; }");
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value == "STMT_LIST_BODY"
+            )),
+            "STMT_LIST labels are hole syntax, not identifier constraints"
+        );
+        let block_nodes = lowered
+            .program
+            .atoms
+            .iter()
+            .filter_map(|atom| match atom {
+                SelectorAtom::AstKind {
+                    node: NodeTerm::Var { id },
+                    node_kind,
+                } if *node_kind == NodeKind::Block => Some(*id),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(!block_nodes.is_empty());
+        for block_node in block_nodes {
+            assert!(
+                !lowered.program.atoms.iter().any(|atom| matches!(
+                    atom,
+                    SelectorAtom::AstChildCount {
+                        node: NodeTerm::Var { id },
+                        ..
+                    } if *id == block_node
+                )),
+                "bare STMT_LIST block selector must not constrain block child count"
+            );
+        }
+    }
+
+    #[test]
     fn exact_source_match_with_argument_run_holes_lowers_to_native_child_list_pattern() {
         let selector = AnonymousStatementSelector::exact(
             r#"const selectedValue = joinParts("stable", ARGS_BEFORE, importantValue, ARGS_AFTER);"#,
@@ -2722,6 +2789,61 @@ mod tests {
             )),
             "ARGS labels are hole syntax, not identifier constraints"
         );
+    }
+
+    #[test]
+    fn exact_source_match_with_all_argument_run_hole_lowers_natively_without_call_arity() {
+        let selector =
+            AnonymousStatementSelector::exact(r#"const selectedValue = joinParts(ARGS);"#);
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value == "ARGS"
+            )),
+            "ARGS is hole syntax, not an identifier constraint"
+        );
+        let call_nodes = lowered
+            .program
+            .atoms
+            .iter()
+            .filter_map(|atom| match atom {
+                SelectorAtom::AstKind {
+                    node: NodeTerm::Var { id },
+                    node_kind,
+                } if *node_kind == NodeKind::Call => Some(*id),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(!call_nodes.is_empty());
+        for call_node in call_nodes {
+            assert!(
+                !lowered.program.atoms.iter().any(|atom| matches!(
+                    atom,
+                    SelectorAtom::AstChildCount {
+                        node: NodeTerm::Var { id },
+                        ..
+                    } if *id == call_node
+                )),
+                "bare ARGS call selector must not constrain call child count"
+            );
+        }
     }
 
     #[test]
@@ -3162,6 +3284,60 @@ mod tests {
             )),
             "CLASS_REST labels are hole syntax, not property-name constraints"
         );
+    }
+
+    #[test]
+    fn source_match_with_all_class_rest_lowers_natively_without_class_arity() {
+        let selector = AnonymousStatementSelector::exact("class Widget { CLASS_REST; }");
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstPropertyName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value == "CLASS_REST"
+            )),
+            "CLASS_REST is hole syntax, not a property-name constraint"
+        );
+        let class_nodes = lowered
+            .program
+            .atoms
+            .iter()
+            .filter_map(|atom| match atom {
+                SelectorAtom::AstKind {
+                    node: NodeTerm::Var { id },
+                    node_kind,
+                } if *node_kind == NodeKind::Class => Some(*id),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(!class_nodes.is_empty());
+        for class_node in class_nodes {
+            assert!(
+                !lowered.program.atoms.iter().any(|atom| matches!(
+                    atom,
+                    SelectorAtom::AstChildCount {
+                        node: NodeTerm::Var { id },
+                        ..
+                    } if *id == class_node
+                )),
+                "bare CLASS_REST class selector must not constrain class child count"
+            );
+        }
     }
 
     #[test]
