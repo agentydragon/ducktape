@@ -527,8 +527,10 @@ fn native_source_match_no_match_message(
         .unwrap_or_default();
     Some(format!(
         "logical_module {}: members[].selector.source_match for export `{}`{} did not produce a \
-         valid global selector assignment. The selector may have no matching source declaration, \
-         or the joint constraints may reject all otherwise matching declarations. Selector:\n{}",
+         valid global selector assignment for any top-level declaration accepted by the global \
+         selector solver. The selector did not match any top-level declaration under the joint \
+         constraints; it may have no matching source declaration, or the joint constraints may \
+         reject all otherwise matching declarations. Selector:\n{}",
         request.id, member.export_name, target_binding_hint, selector.match_source,
     ))
 }
@@ -639,6 +641,10 @@ fn first_relevant_error_line(message: &str) -> Option<String> {
 fn classify_source_match_failure(message: &str) -> &'static str {
     if message.contains(" is ambiguous") {
         "ambiguous_selector"
+    } else if message.contains("valid global selector assignment")
+        || message.contains("global selector solver")
+    {
+        "selector_resolution_error"
     } else if message.contains("did not match any") {
         "unresolved_selector"
     } else {

@@ -410,7 +410,7 @@ impl MemberSelectorProgramBuilder {
             return Ok(false);
         };
         if selector.identifiers == SourceMatchIdentifierMode::AlphaAll
-            && !native_alpha_source_match_supported(&facts, &skipped_nodes, &child_list_patterns)
+            && !native_alpha_source_match_supported(&facts, &skipped_nodes)
         {
             return Ok(false);
         }
@@ -938,7 +938,6 @@ fn introduces_alpha_scope(kind: NodeKind) -> bool {
 fn native_alpha_source_match_supported(
     facts: &ChunkFacts,
     skipped_nodes: &BTreeSet<NodeId>,
-    child_list_patterns: &BTreeMap<NodeId, NativeChildListPattern>,
 ) -> bool {
     let index = AlphaIdentifierIndex::new(facts);
     let [(_root, _ordinal)] = facts.top_level.as_slice() else {
@@ -946,14 +945,6 @@ fn native_alpha_source_match_supported(
     };
 
     if native_alpha_has_explicit_same_name_property(&index, skipped_nodes) {
-        return false;
-    }
-
-    // Syntactic holes and open child-list patterns still rely on the legacy
-    // matcher's structural semantics. Keep alpha native lowering to complete
-    // no-hole shapes until these constraints are represented directly in the
-    // solver.
-    if !skipped_nodes.is_empty() || !child_list_patterns.is_empty() {
         return false;
     }
 
@@ -979,12 +970,7 @@ fn native_alpha_source_match_supported(
         return false;
     }
 
-    !child_list_patterns.iter().any(|(parent, _pattern)| {
-        matches!(
-            index.node_kind.get(parent).copied(),
-            Some(NodeKind::Call | NodeKind::New)
-        )
-    })
+    true
 }
 
 fn native_alpha_has_explicit_same_name_property(
@@ -2358,33 +2344,62 @@ mod tests {
     }
 
     #[test]
-    fn alpha_all_var_decl_without_target_binding_stays_oracle_only() {
+    fn alpha_all_var_decl_without_target_binding_lowers_natively() {
         let mut selector =
             AnonymousStatementSelector::exact(r#"const readable = { kind: "selected" };"#);
         selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
         let lowered = lower_member_selector(
             &context(),
             "Widget",
-            &MemberSelectorSpec::SourceMatch(selector.clone()),
+            &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
 
-        assert_source_match_oracle_only(&lowered, &selector);
+        let target_owner = lowered.program.targets[lowered.target.0].owner;
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::OwnerDeclaresBinding {
+                owner: OwnerTerm::Var { id },
+                binding: StringTerm::Var { .. },
+            } if *id == target_owner
+        )));
     }
 
     #[test]
-    fn alpha_all_single_declarator_source_match_stays_oracle_only() {
+    fn alpha_all_single_declarator_source_match_lowers_natively() {
         let mut selector =
             AnonymousStatementSelector::exact(r#"const readable = { kind: "selected" };"#);
         selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
         let lowered = lower_member_selector(
             &context(),
             "Widget",
-            &MemberSelectorSpec::SourceMatch(selector.clone()),
+            &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
 
-        assert_source_match_oracle_only(&lowered, &selector);
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstChildListPattern {
+                anchored_left: false,
+                anchored_right: false,
+                segments,
+                ..
+            } if segments.len() == 1
+        )));
     }
 
     #[test]
@@ -2529,17 +2544,33 @@ mod tests {
     }
 
     #[test]
-    fn alpha_all_source_match_with_argument_run_hole_stays_oracle_only() {
+    fn alpha_all_source_match_with_argument_run_hole_lowers_natively() {
         let mut selector = AnonymousStatementSelector::exact("const a = foo(ARGS, b);");
         selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
         let lowered = lower_member_selector(
             &context(),
             "Widget",
-            &MemberSelectorSpec::SourceMatch(selector.clone()),
+            &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
 
-        assert_source_match_oracle_only(&lowered, &selector);
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstChildListPattern {
+                start_index: 1,
+                anchored_left: false,
+                anchored_right: true,
+                segments,
+                ..
+            } if segments.len() == 1
+        )));
     }
 
     #[test]

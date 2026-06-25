@@ -1011,8 +1011,8 @@ export { siblingBinding, runtimeBinding, Existing };
     );
     assert_entry_output(&fixture, "selected other existing\n");
     assert!(
-        fixture.stderr.contains("[debundle source_match]"),
-        "var-declaration target_binding source_match remains on the legacy resolver until open-list constraints are native\nstderr:\n{}",
+        !fixture.stderr.contains("[debundle source_match]"),
+        "var-declaration target_binding source_match should stay on the native global solver path\nstderr:\n{}",
         fixture.stderr,
     );
 }

@@ -424,7 +424,7 @@ export { RuntimeCatalog };
 }
 
 #[test]
-fn repeated_source_match_selectors_reuse_chunk_cache_across_modules() {
+fn repeated_source_match_selectors_use_native_solver_across_modules() {
     let class_selector = r#"class K {
   CLASS_REST;
   label() {
@@ -488,8 +488,8 @@ export { RuntimeCatalog };
         })
         .count();
     assert_eq!(
-        timing_lines, 1,
-        "CLASS_REST selectors should reuse one cached legacy resolution across modules\nstderr:\n{stderr}",
+        timing_lines, 0,
+        "CLASS_REST selectors should stay in the global solver instead of falling back to legacy source_match resolution\nstderr:\n{stderr}",
     );
 }
 
