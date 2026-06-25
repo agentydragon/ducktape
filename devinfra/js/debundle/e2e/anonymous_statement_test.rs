@@ -699,7 +699,7 @@ fn source_match_timing_env_reports_member_selector_resolution() {
     let fixture = run_fixture_with_env(
         FixtureOpts::new(
             r#"function runtimeFormat(value) {
-  return value.trim().toUpperCase();
+  return "OK:" + value.trim().toUpperCase();
 }
 console.log(runtimeFormat(" ok "));
 export { runtimeFormat };
@@ -709,7 +709,7 @@ export { runtimeFormat };
                 &[Member::source_alpha(
                     "formatValue",
                     r#"function formatValue(value) {
-  return value.trim().toUpperCase();
+  return STR_LITERAL_MATCHING_RE("^OK:") + value.trim().toUpperCase();
 }"#,
                 )],
             )],
@@ -717,7 +717,7 @@ export { runtimeFormat };
         &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
     );
 
-    assert_entry_output(&fixture, "OK\n");
+    assert_entry_output(&fixture, "OK:OK\n");
     for required in [
         "[debundle source_match]",
         "request=static/app::format",
@@ -726,7 +726,7 @@ export { runtimeFormat };
         "body_key=",
         "body_indices=[0]",
         "binding=runtimeFormat",
-        "selector=function formatValue(value) { return value.trim().toUpperCase(); }",
+        "selector=function formatValue(value) { return STR_LITERAL_MATCHING_RE(\"^OK:\") + value.trim().toUpperCase(); }",
     ] {
         assert!(
             fixture.stderr.contains(required),
@@ -809,7 +809,7 @@ fn source_match_timing_preview_can_be_disabled() {
     let fixture = run_fixture_with_env(
         FixtureOpts::new(
             r#"function runtimeNormalize(value) {
-  return value.trim().toLowerCase();
+  return "ok:" + value.trim().toLowerCase();
 }
 console.log(runtimeNormalize(" OK "));
 export { runtimeNormalize };
@@ -819,7 +819,7 @@ export { runtimeNormalize };
                 &[Member::source_alpha(
                     "normalizeValue",
                     r#"function normalizeValue(value) {
-  return value.trim().toLowerCase();
+  return STR_LITERAL_MATCHING_RE("^ok:") + value.trim().toLowerCase();
 }"#,
                 )],
             )],
@@ -830,7 +830,7 @@ export { runtimeNormalize };
         ],
     );
 
-    assert_entry_output(&fixture, "ok\n");
+    assert_entry_output(&fixture, "ok:ok\n");
     for required in [
         "[debundle source_match]",
         "request=static/app::normalize",
@@ -846,7 +846,7 @@ export { runtimeNormalize };
         );
     }
     assert!(
-        !fixture.stderr.contains("function normalizeValue"),
+        !fixture.stderr.contains("STR_LITERAL_MATCHING_RE"),
         "timing preview should be hidden when DUCKTAPE_SOURCE_MATCH_TIMING_PREVIEW=0\nstderr:\n{}",
         fixture.stderr,
     );

@@ -376,14 +376,20 @@ impl MemberSelectorProgramBuilder {
         let [(root_node, _ordinal)] = facts.top_level.as_slice() else {
             return Ok(false);
         };
-        let alpha_target_binding_node = match (&selector.target_binding, selector.identifiers) {
+        let alpha_projected_binding_node = match (&selector.target_binding, selector.identifiers) {
             (Some(target_binding), SourceMatchIdentifierMode::AlphaAll) => {
+                if native_declared_binding_count(&facts, &skipped_nodes) != Some(1) {
+                    return Ok(false);
+                }
                 let Some(target_binding_node) =
                     native_target_binding_node(&facts, &skipped_nodes, target_binding)
                 else {
                     return Ok(false);
                 };
                 Some(target_binding_node)
+            }
+            (None, SourceMatchIdentifierMode::AlphaAll) => {
+                native_single_declared_binding_node(&facts, &skipped_nodes)
             }
             _ => None,
         };
@@ -418,16 +424,30 @@ impl MemberSelectorProgramBuilder {
                 });
             }
             (Some(_target_binding), SourceMatchIdentifierMode::AlphaAll) => {
-                let target_binding_node = alpha_target_binding_node
+                let projected_binding_node = alpha_projected_binding_node
                     .expect("alpha_all target_binding native node was checked before lowering");
-                let target_binding_var = alpha_identifier_vars
-                    .get(&target_binding_node)
+                let projected_binding_var = alpha_identifier_vars
+                    .get(&projected_binding_node)
                     .copied()
-                    .expect("alpha_all target_binding node should have an identifier variable");
+                    .expect("alpha_all projected binding node should have an identifier variable");
                 self.program.add_atom(SelectorAtom::OwnerDeclaresBinding {
                     owner: owner_term(owner),
-                    binding: string_term(target_binding_var),
+                    binding: string_term(projected_binding_var),
                 });
+            }
+            (None, SourceMatchIdentifierMode::AlphaAll) => {
+                if let Some(projected_binding_node) = alpha_projected_binding_node {
+                    let projected_binding_var = alpha_identifier_vars
+                        .get(&projected_binding_node)
+                        .copied()
+                        .expect(
+                            "alpha_all projected binding node should have an identifier variable",
+                        );
+                    self.program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+                        owner: owner_term(owner),
+                        binding: string_term(projected_binding_var),
+                    });
+                }
             }
             (None, _) => {}
         }
@@ -856,6 +876,32 @@ fn native_target_binding_node(
     Some(*node)
 }
 
+fn native_single_declared_binding_node(
+    facts: &ChunkFacts,
+    skipped_nodes: &BTreeSet<NodeId>,
+) -> Option<NodeId> {
+    let [(root, _ordinal)] = facts.top_level.as_slice() else {
+        return None;
+    };
+    let index = AlphaIdentifierIndex::new(facts);
+    let declared_nodes = native_declared_binding_nodes(&index, skipped_nodes, *root);
+    let [node] = declared_nodes.as_slice() else {
+        return None;
+    };
+    Some(*node)
+}
+
+fn native_declared_binding_count(
+    facts: &ChunkFacts,
+    skipped_nodes: &BTreeSet<NodeId>,
+) -> Option<usize> {
+    let [(root, _ordinal)] = facts.top_level.as_slice() else {
+        return None;
+    };
+    let index = AlphaIdentifierIndex::new(facts);
+    Some(native_declared_binding_nodes(&index, skipped_nodes, *root).len())
+}
+
 fn native_declared_binding_nodes(
     index: &AlphaIdentifierIndex,
     skipped_nodes: &BTreeSet<NodeId>,
@@ -1243,10 +1289,6 @@ fn native_child_list_patterns(
         .union(&child_list_prop_nodes)
         .copied()
         .collect::<BTreeSet<_>>();
-    if child_list_hole_nodes.is_empty() {
-        return Some(BTreeMap::new());
-    }
-
     let mut children_by_parent = BTreeMap::<NodeId, Vec<(u32, NodeId)>>::new();
     for (parent, index, child) in &facts.child {
         children_by_parent
@@ -1293,6 +1335,20 @@ fn native_child_list_patterns(
             }
         }
         if hole_positions.is_empty() {
+            if child_list_hole_nodes.is_empty()
+                && let Some(declarator) =
+                    single_declarator_segment(parent_kind, &children, &node_kind)
+            {
+                patterns.insert(
+                    *parent,
+                    NativeChildListPattern {
+                        start_index,
+                        segments: vec![vec![declarator]],
+                        anchored_left: false,
+                        anchored_right: false,
+                    },
+                );
+            }
             continue;
         }
 
@@ -1314,6 +1370,24 @@ fn native_child_list_patterns(
 
     if valid_child_list_nodes == child_list_hole_nodes {
         Some(patterns)
+    } else {
+        None
+    }
+}
+
+fn single_declarator_segment(
+    parent_kind: NodeKind,
+    children: &[NodeId],
+    node_kind: &BTreeMap<NodeId, NodeKind>,
+) -> Option<NodeId> {
+    if parent_kind != NodeKind::VarDecl {
+        return None;
+    }
+    let [declarator] = children else {
+        return None;
+    };
+    if node_kind.get(declarator) == Some(&NodeKind::VarDeclarator) {
+        Some(*declarator)
     } else {
         None
     }
@@ -2003,6 +2077,59 @@ mod tests {
                 owner: OwnerTerm::Var { id },
                 binding: StringTerm::Var { .. },
             } if *id == target_owner
+        )));
+    }
+
+    #[test]
+    fn alpha_all_source_match_without_target_binding_projects_single_declared_binding() {
+        let mut selector =
+            AnonymousStatementSelector::exact(r#"const readable = { kind: "selected" };"#);
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        let target_owner = lowered.program.targets[lowered.target.0].owner;
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::OwnerDeclaresBinding {
+                owner: OwnerTerm::Var { id },
+                binding: StringTerm::Var { .. },
+            } if *id == target_owner
+        )));
+    }
+
+    #[test]
+    fn single_declarator_source_match_lowers_to_open_var_decl_pattern() {
+        let mut selector =
+            AnonymousStatementSelector::exact(r#"const readable = { kind: "selected" };"#);
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstChildListPattern {
+                start_index: 0,
+                anchored_left: false,
+                anchored_right: false,
+                segments,
+                ..
+            } if segments.len() == 1 && segments[0].len() == 1
         )));
     }
 
