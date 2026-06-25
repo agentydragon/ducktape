@@ -73,6 +73,7 @@ struct NativeAstFactLowering<'a> {
     alpha_identifier_vars: &'a BTreeMap<NodeId, SelectorVariableId>,
     exact_identifier_projection_vars: &'a BTreeMap<NodeId, SelectorVariableId>,
     child_list_patterns: &'a BTreeMap<NodeId, NativeChildListPattern>,
+    regex_predicates: &'a NativeRegexPredicateIndex,
 }
 
 impl MemberSelectorProgramBuilder {
@@ -366,10 +367,14 @@ impl MemberSelectorProgramBuilder {
         else {
             return Ok(false);
         };
-        let Some(hole_roots) = native_single_node_hole_roots(&facts) else {
+        let regex_predicates = native_string_literal_regex_predicates(&facts);
+        let Some(hole_roots) =
+            native_single_node_hole_roots(&facts, &regex_predicates.consumed_nodes)
+        else {
             return Ok(false);
         };
         let mut skipped_nodes = native_hole_subtree_nodes(&facts, &hole_roots);
+        skipped_nodes.extend(regex_predicates.consumed_nodes.iter().copied());
         let Some(child_list_patterns) = native_child_list_patterns(&facts, &mut skipped_nodes)
         else {
             return Ok(false);
@@ -475,6 +480,7 @@ impl MemberSelectorProgramBuilder {
             alpha_identifier_vars: &alpha_identifier_vars,
             exact_identifier_projection_vars: &exact_identifier_projection_vars,
             child_list_patterns: &child_list_patterns,
+            regex_predicates: &regex_predicates,
         });
         Ok(true)
     }
@@ -489,6 +495,7 @@ impl MemberSelectorProgramBuilder {
             alpha_identifier_vars,
             exact_identifier_projection_vars,
             child_list_patterns,
+            regex_predicates,
         } = lowering;
         let mut wildcard_string_vars = BTreeMap::<String, SelectorVariableId>::new();
         for (_node, token) in &facts.str_wildcard {
@@ -522,6 +529,14 @@ impl MemberSelectorProgramBuilder {
             let Some(node_var) = node_vars.get(node).copied() else {
                 continue;
             };
+            if let Some(pattern) = regex_predicates.pattern_by_call.get(node) {
+                self.program
+                    .add_atom(SelectorAtom::AstStringLiteralMatchingRegex {
+                        node: node_term(node_var),
+                        pattern: const_str(pattern),
+                    });
+                continue;
+            }
             self.program.add_atom(SelectorAtom::AstKind {
                 node: node_term(node_var),
                 node_kind: *kind,
@@ -535,6 +550,9 @@ impl MemberSelectorProgramBuilder {
         }
         for (parent, index, child) in &facts.child {
             if skipped_nodes.contains(parent) {
+                continue;
+            }
+            if regex_predicates.pattern_by_call.contains_key(parent) {
                 continue;
             }
             if child_list_patterns
@@ -1131,6 +1149,62 @@ struct NativeChildListPattern {
     anchored_right: bool,
 }
 
+#[derive(Debug, Default)]
+struct NativeRegexPredicateIndex {
+    pattern_by_call: BTreeMap<NodeId, String>,
+    consumed_nodes: BTreeSet<NodeId>,
+}
+
+fn native_string_literal_regex_predicates(facts: &ChunkFacts) -> NativeRegexPredicateIndex {
+    let node_kind: BTreeMap<NodeId, NodeKind> = facts.node_kind.iter().copied().collect();
+    let ident_name: BTreeMap<NodeId, &str> = facts
+        .ident_name
+        .iter()
+        .map(|(node, name)| (*node, name.as_str()))
+        .collect();
+    let str_lit: BTreeMap<NodeId, &str> = facts
+        .str_lit
+        .iter()
+        .map(|(node, value)| (*node, value.as_str()))
+        .collect();
+    let mut children_by_parent = BTreeMap::<NodeId, Vec<(u32, NodeId)>>::new();
+    for (parent, index, child) in &facts.child {
+        children_by_parent
+            .entry(*parent)
+            .or_default()
+            .push((*index, *child));
+    }
+    for children in children_by_parent.values_mut() {
+        children.sort_by_key(|(index, _child)| *index);
+    }
+
+    let mut result = NativeRegexPredicateIndex::default();
+    for (node, kind) in &node_kind {
+        if *kind != NodeKind::Call {
+            continue;
+        }
+        let Some(children) = children_by_parent.get(node) else {
+            continue;
+        };
+        let [(_, callee), (_, arg)] = children.as_slice() else {
+            continue;
+        };
+        if node_kind.get(callee) != Some(&NodeKind::Ident)
+            || ident_name.get(callee).copied() != Some(STRING_LITERAL_REGEX_PREDICATE)
+            || node_kind.get(arg) != Some(&NodeKind::StrLit)
+        {
+            continue;
+        }
+        let Some(pattern) = str_lit.get(arg).copied() else {
+            continue;
+        };
+        result.pattern_by_call.insert(*node, pattern.to_string());
+        result.consumed_nodes.insert(*callee);
+        result.consumed_nodes.insert(*arg);
+    }
+    result
+}
+
 fn selector_hole_name(name: &str) -> bool {
     name == STRING_LITERAL_REGEX_PREDICATE
         || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
@@ -1149,7 +1223,10 @@ fn selector_hole_name(name: &str) -> bool {
         .any(|keyword| labeled_hole_name_for(name, keyword).is_some())
 }
 
-fn native_single_node_hole_roots(facts: &ChunkFacts) -> Option<BTreeSet<NodeId>> {
+fn native_single_node_hole_roots(
+    facts: &ChunkFacts,
+    consumed_nodes: &BTreeSet<NodeId>,
+) -> Option<BTreeSet<NodeId>> {
     let node_kind: BTreeMap<NodeId, NodeKind> = facts.node_kind.iter().copied().collect();
     let mut parent_by_child = BTreeMap::<NodeId, (NodeId, u32)>::new();
     let mut child_counts = BTreeMap::<NodeId, u32>::new();
@@ -1160,6 +1237,9 @@ fn native_single_node_hole_roots(facts: &ChunkFacts) -> Option<BTreeSet<NodeId>>
 
     let mut roots = BTreeSet::new();
     for (node, name) in &facts.ident_name {
+        if consumed_nodes.contains(node) {
+            continue;
+        }
         match classify_native_single_node_hole(
             *node,
             name,
@@ -1173,7 +1253,10 @@ fn native_single_node_hole_roots(facts: &ChunkFacts) -> Option<BTreeSet<NodeId>>
             }
         }
     }
-    for (_node, name) in &facts.prop_name {
+    for (node, name) in &facts.prop_name {
+        if consumed_nodes.contains(node) {
+            continue;
+        }
         if selector_hole_name(name) && !native_child_list_hole_name(name) {
             return None;
         }
@@ -1925,6 +2008,53 @@ mod tests {
             lowered.program.variables[first.0].domain,
             VariableDomain::String
         ));
+    }
+
+    #[test]
+    fn exact_source_match_string_literal_regex_predicate_lowers_natively() {
+        let selector = AnonymousStatementSelector::exact(
+            r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
+        );
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
+            "regex string-literal predicates should stay in the native selector IR"
+        );
+        assert!(
+            lowered.program.atoms.iter().any(|atom| {
+                matches!(
+                    atom,
+                    SelectorAtom::AstStringLiteralMatchingRegex {
+                        pattern: StringTerm::Const { value },
+                        ..
+                    } if value == "^WidgetShell-[0-9]+$"
+                )
+            }),
+            "expected a native regex string-literal atom: {:#?}",
+            lowered.program.atoms
+        );
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| {
+                matches!(
+                    atom,
+                    SelectorAtom::AstIdentifierName {
+                        value: StringTerm::Const { value },
+                        ..
+                    } if value == STRING_LITERAL_REGEX_PREDICATE
+                )
+            }),
+            "predicate callee should be consumed, not matched as a real identifier"
+        );
     }
 
     #[test]

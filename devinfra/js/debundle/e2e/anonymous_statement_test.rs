@@ -698,18 +698,21 @@ export { runtimeBinding, siblingBinding, Existing };
 fn source_match_timing_env_reports_member_selector_resolution() {
     let fixture = run_fixture_with_env(
         FixtureOpts::new(
-            r#"function runtimeFormat(value) {
-  return "OK:" + value.trim().toUpperCase();
+            r#"const runtimePrefix = "OK:";
+function runtimeFormat(value) {
+  return runtimePrefix + value.trim().toUpperCase();
 }
 console.log(runtimeFormat(" ok "));
-export { runtimeFormat };
+export { runtimePrefix, runtimeFormat };
 "#,
             vec![logical_module(
                 "format",
-                &[Member::source_alpha(
+                &[Member::source_alpha_target(
                     "formatValue",
-                    r#"function formatValue(value) {
-  return STR_LITERAL_MATCHING_RE("^OK:") + value.trim().toUpperCase();
+                    "formatValue",
+                    r#"const prefix = "OK:";
+function formatValue(value) {
+  return prefix + value.trim().toUpperCase();
 }"#,
                 )],
             )],
@@ -724,9 +727,10 @@ export { runtimeFormat };
         "kind=members[].selector.source_match export=`formatValue`",
         "selector_key=",
         "body_key=",
-        "body_indices=[0]",
+        "body_indices=[1]",
         "binding=runtimeFormat",
-        "selector=function formatValue(value) { return STR_LITERAL_MATCHING_RE(\"^OK:\") + value.trim().toUpperCase(); }",
+        "target_binding=`formatValue`",
+        "selector=const prefix = \"OK:\"; function formatValue(value) { return prefix + value.trim().toUpperCase(); }",
     ] {
         assert!(
             fixture.stderr.contains(required),
@@ -808,18 +812,21 @@ export { RuntimeWidget };
 fn source_match_timing_preview_can_be_disabled() {
     let fixture = run_fixture_with_env(
         FixtureOpts::new(
-            r#"function runtimeNormalize(value) {
-  return "ok:" + value.trim().toLowerCase();
+            r#"const runtimePrefix = "ok:";
+function runtimeNormalize(value) {
+  return runtimePrefix + value.trim().toLowerCase();
 }
 console.log(runtimeNormalize(" OK "));
-export { runtimeNormalize };
+export { runtimePrefix, runtimeNormalize };
 "#,
             vec![logical_module(
                 "normalize",
-                &[Member::source_alpha(
+                &[Member::source_alpha_target(
                     "normalizeValue",
-                    r#"function normalizeValue(value) {
-  return STR_LITERAL_MATCHING_RE("^ok:") + value.trim().toLowerCase();
+                    "normalizeValue",
+                    r#"const prefix = "ok:";
+function normalizeValue(value) {
+  return prefix + value.trim().toLowerCase();
 }"#,
                 )],
             )],
@@ -834,10 +841,12 @@ export { runtimeNormalize };
     for required in [
         "[debundle source_match]",
         "request=static/app::normalize",
+        "kind=members[].selector.source_match export=`normalizeValue`",
         "selector_key=",
         "body_key=",
-        "body_indices=[0]",
+        "body_indices=[1]",
         "binding=runtimeNormalize",
+        "target_binding=`normalizeValue`",
     ] {
         assert!(
             fixture.stderr.contains(required),
@@ -846,7 +855,7 @@ export { runtimeNormalize };
         );
     }
     assert!(
-        !fixture.stderr.contains("STR_LITERAL_MATCHING_RE"),
+        !fixture.stderr.contains("function normalizeValue"),
         "timing preview should be hidden when DUCKTAPE_SOURCE_MATCH_TIMING_PREVIEW=0\nstderr:\n{}",
         fixture.stderr,
     );

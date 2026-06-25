@@ -188,6 +188,10 @@ pub enum SelectorAtom {
         node: NodeTerm,
         value: StringTerm,
     },
+    AstStringLiteralMatchingRegex {
+        node: NodeTerm,
+        pattern: StringTerm,
+    },
     AstNumberLiteral {
         node: NodeTerm,
         value: StringTerm,
@@ -443,6 +447,10 @@ impl SelectorProgram {
                 self.validate_node_term(node, "ast_child_count.node")
             }
             SelectorAtom::AstStringLiteral { node, value }
+            | SelectorAtom::AstStringLiteralMatchingRegex {
+                node,
+                pattern: value,
+            }
             | SelectorAtom::AstNumberLiteral { node, value }
             | SelectorAtom::AstIdentifierName { node, value }
             | SelectorAtom::AstPropertyName { node, value }

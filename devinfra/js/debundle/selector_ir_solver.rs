@@ -13,6 +13,7 @@ use std::fmt;
 
 use analysis::{OwnerId, StatementOrdinal};
 use ascent::ascent;
+use regex::Regex;
 use selector_ir::{
     ClaimKind, ClaimOutcome, NodeTerm, OrdinalTerm, OwnerTerm, ResolvedClaim, SelectorAtom,
     SelectorFact, SelectorFactStore, SelectorProgram, SelectorProgramError, SelectorTarget,
@@ -135,6 +136,7 @@ ascent! {
     relation ast_regex_literal(u32, String, String); // node, pattern, flags
     relation ast_super_class(u32, u32); // class node, super-class expression node
     relation ast_top_level(u32, usize); // root node, statement ordinal
+    relation ast_string_literal_regex_match(u32, String); // string literal node, pattern
 
     relation owner_statement_ordinal(usize, usize);
     owner_statement_ordinal(*owner, *ordinal) <--
@@ -306,6 +308,7 @@ ascent! {
     relation required_ast_super_class_class(usize, usize, u32);
     relation required_ast_super_class_super(usize, usize, u32);
     relation required_ast_string_literal(usize, usize, String);
+    relation required_ast_string_literal_matching_regex(usize, usize, String);
     relation required_ast_number_literal(usize, usize, String);
     relation required_ast_bool_literal(usize, usize, bool);
     relation required_ast_identifier_name(usize, usize, String);
@@ -346,6 +349,10 @@ ascent! {
         required_ast_string_literal(constraint, var, value),
         ast_string_literal(node, actual),
         if actual == value;
+    node_constraint_support(*constraint, *var, *node) <--
+        required_ast_string_literal_matching_regex(constraint, var, pattern),
+        ast_string_literal_regex_match(node, actual_pattern),
+        if actual_pattern == pattern;
     node_constraint_support(*constraint, *var, *node) <--
         required_ast_number_literal(constraint, var, value),
         ast_number_literal(node, actual),
@@ -680,6 +687,18 @@ pub fn solve(
     for (node, value) in &fact_index.ast_string_literals {
         ascent.ast_string_literal.push((*node, value.clone()));
     }
+    for pattern in support.string_literal_regex_patterns() {
+        let Ok(regex) = Regex::new(&pattern) else {
+            continue;
+        };
+        for (node, value) in &fact_index.ast_string_literals {
+            if regex.is_match(value) {
+                ascent
+                    .ast_string_literal_regex_match
+                    .push((*node, pattern.clone()));
+            }
+        }
+    }
     for (node, value) in &fact_index.ast_string_wildcards {
         ascent.ast_string_wildcard.push((*node, value.clone()));
     }
@@ -900,6 +919,13 @@ pub fn solve(
                     constraint.id,
                     constraint.variable.0,
                     value.clone(),
+                ));
+            }
+            NodeUnaryConstraintKind::StringLiteralMatchingRegex { pattern } => {
+                ascent.required_ast_string_literal_matching_regex.push((
+                    constraint.id,
+                    constraint.variable.0,
+                    pattern.clone(),
                 ));
             }
             NodeUnaryConstraintKind::NumberLiteral { value } => {
@@ -1514,6 +1540,22 @@ impl ProgramSupport {
                     *node,
                     *string,
                     NodeStringConstraintKind::AstStringLiteral,
+                ),
+                SelectorAtom::AstStringLiteralMatchingRegex {
+                    node,
+                    pattern: StringTerm::Const { value },
+                } => support.add_node_label(
+                    node,
+                    NodeUnaryConstraintKind::StringLiteralMatchingRegex {
+                        pattern: value.clone(),
+                    },
+                    "ast_string_literal_matching_regex",
+                ),
+                SelectorAtom::AstStringLiteralMatchingRegex {
+                    pattern: StringTerm::Var { .. },
+                    ..
+                } => support.unsupported_atoms.push(
+                    "unsupported variable ast_string_literal_matching_regex.pattern".to_string(),
                 ),
                 SelectorAtom::AstNumberLiteral {
                     node,
@@ -2158,6 +2200,18 @@ impl ProgramSupport {
         }
     }
 
+    fn string_literal_regex_patterns(&self) -> BTreeSet<String> {
+        self.node_unary_constraints
+            .iter()
+            .filter_map(|constraint| match &constraint.kind {
+                NodeUnaryConstraintKind::StringLiteralMatchingRegex { pattern } => {
+                    Some(pattern.clone())
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     fn unsupported_reason_for_target(&self, target: &SelectorTarget) -> Option<String> {
         if !self.constraints_by_var.contains_key(&target.owner) {
             return Some("target owner variable has no selector constraints".to_string());
@@ -2259,6 +2313,7 @@ enum NodeUnaryConstraintKind {
     SuperClassClass { super_class: u32 },
     SuperClassSuper { class_node: u32 },
     StringLiteral { value: String },
+    StringLiteralMatchingRegex { pattern: String },
     NumberLiteral { value: String },
     BoolLiteral { value: bool },
     IdentifierName { value: String },
@@ -2436,6 +2491,7 @@ fn atom_kind(atom: &SelectorAtom) -> &'static str {
         SelectorAtom::AstSuperClass { .. } => "ast_super_class",
         SelectorAtom::AstChildCount { .. } => "ast_child_count",
         SelectorAtom::AstStringLiteral { .. } => "ast_string_literal",
+        SelectorAtom::AstStringLiteralMatchingRegex { .. } => "ast_string_literal_matching_regex",
         SelectorAtom::AstNumberLiteral { .. } => "ast_number_literal",
         SelectorAtom::AstBoolLiteral { .. } => "ast_bool_literal",
         SelectorAtom::AstIdentifierName { .. } => "ast_identifier_name",
@@ -3802,6 +3858,60 @@ const wrongCallee = makeOther("value");
                     owner,
                     statement_ordinal: statement_ordinal_for_owner(&facts, owner),
                     binding: Some("runtimeTarget".to_string()),
+                    provenance: Vec::new(),
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn solves_lowered_source_match_string_literal_regex_predicate_natively() {
+        let mut selector = AnonymousStatementSelector::exact(
+            r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
+        );
+        selector.identifiers = spec::SourceMatchIdentifierMode::AlphaAll;
+        selector.target_binding = Some("readableStyle".to_string());
+        let lowered = lower_member_selector(
+            &MemberSelectorLoweringContext::new(ChunkId(0), "runtime/target"),
+            "Target",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
+            "STR_LITERAL_MATCHING_RE should lower into native AST constraints"
+        );
+        assert!(
+            lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| { matches!(atom, SelectorAtom::AstStringLiteralMatchingRegex { .. }) }),
+            "expected native regex literal atom: {:#?}",
+            lowered.program.atoms
+        );
+        let facts = fact_store_from_analyzed_source(
+            r#"
+const wrongPrefix = "OtherShell-42";
+const targetClassName = "WidgetShell-42";
+"#,
+        );
+
+        let result = solve(&lowered.program, &facts).unwrap();
+        let owner = owner_for_binding(&facts, "targetClassName");
+
+        assert_eq!(
+            result.outcome_for(lowered.target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner,
+                    statement_ordinal: statement_ordinal_for_owner(&facts, owner),
+                    binding: Some("targetClassName".to_string()),
                     provenance: Vec::new(),
                 },
             })

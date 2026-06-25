@@ -1084,6 +1084,7 @@ rust_library(
         ":analysis",
         ":selector_ir",
         "@crates//:ascent",
+        "@crates//:regex",
     ],
 )
 
