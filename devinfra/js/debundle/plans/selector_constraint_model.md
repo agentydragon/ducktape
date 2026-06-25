@@ -498,8 +498,8 @@ EDB; nothing is fundamentally inexpressible.
 | `EXPR[_label]` / `STMT[_label]` / `ANYTHING[_label]`                                         | unmentioned position (faithful don't-care)            | —                                                      |
 | run-holes `STMT_LIST` / `ARGS` / `OBJECT_PROPS` / `CLASS_REST` / `CASE_REST` / `DECLARATORS` | absorb = don't-constrain; anchors keep relative order | `child` index column                                   |
 | `STR_LITERAL_MATCHING_RE("re")`                                                              | filter atom `str_matches(node,"re")`                  | `str_lit(node,value)`                                  |
-| `identifiers: exact`                                                                         | name filter                                           | `name(node,spelling)`                                  |
-| `identifiers: alpha_all`                                                                     | identifier variable + scope                           | `resolves_to` (have it) + alpha-canonical ids          |
+| internal exact identifier constraint                                                         | name filter                                           | `name(node,spelling)`                                  |
+| public `source_match` identifiers                                                            | identifier variable + scope                           | `resolves_to` (have it) + alpha-canonical ids          |
 | `target_binding`                                                                             | choice of distinguished variable                      | —                                                      |
 | `binding_groups` (adopt_names / exports)                                                     | mechanical per-target expansion (already done)        | —                                                      |
 | ordered / positional anchors                                                                 | child-index compare (`i < j`; adjacency `j == i + 1`) | `child` index column                                   |

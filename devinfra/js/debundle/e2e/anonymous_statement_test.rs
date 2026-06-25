@@ -741,7 +741,7 @@ function formatValue(value) {
 }
 
 #[test]
-fn exact_native_source_match_skips_legacy_resolver_timing() {
+fn alpha_all_native_source_match_skips_legacy_resolver_timing() {
     let fixture = run_fixture_with_env(
         FixtureOpts::new(
             r#"function runtimeFormat(value) {
@@ -752,7 +752,7 @@ export { runtimeFormat };
 "#,
             vec![logical_module(
                 "format",
-                &[Member::source_exact_target(
+                &[Member::source_alpha_target(
                     "formatValue",
                     "runtimeFormat",
                     r#"function runtimeFormat(value) {
@@ -767,13 +767,13 @@ export { runtimeFormat };
     assert_entry_output(&fixture, "OK\n");
     assert!(
         !fixture.stderr.contains("[debundle source_match]"),
-        "native exact source_match should not call the legacy resolver\nstderr:\n{}",
+        "native alpha_all source_match should not call the legacy resolver\nstderr:\n{}",
         fixture.stderr,
     );
 }
 
 #[test]
-fn exact_native_source_match_with_extends_skips_legacy_resolver_timing() {
+fn alpha_all_native_source_match_with_extends_skips_legacy_resolver_timing() {
     let fixture = run_fixture_with_env(
         FixtureOpts::new(
             r#"class RuntimeWidget extends Object {
@@ -786,7 +786,7 @@ export { RuntimeWidget };
 "#,
             vec![logical_module(
                 "widget",
-                &[Member::source_exact_target(
+                &[Member::source_alpha_target(
                     "runtimeWidget",
                     "RuntimeWidget",
                     r#"class RuntimeWidget extends Object {
@@ -803,7 +803,7 @@ export { RuntimeWidget };
     assert_entry_output(&fixture, "runtime\n");
     assert!(
         !fixture.stderr.contains("[debundle source_match]"),
-        "native exact source_match with extends should not call the legacy resolver\nstderr:\n{}",
+        "native alpha_all source_match with extends should not call the legacy resolver\nstderr:\n{}",
         fixture.stderr,
     );
 }

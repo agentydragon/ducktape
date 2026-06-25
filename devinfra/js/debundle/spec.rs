@@ -728,9 +728,9 @@ pub struct AnonymousStatement {
     #[serde(rename = "match", default, skip_serializing_if = "Option::is_none")]
     pub match_source: Option<String>,
     /// Readable structural selector for the target top-level statement.
-    /// `identifiers: alpha_all` treats binding/value identifiers in `match`
-    /// as alpha-renamable placeholders while keeping literals, operators,
-    /// member property names, and overall AST structure significant.
+    /// `source_match` treats binding/value identifiers in `match` as
+    /// alpha-renamable placeholders while keeping literals, operators, member
+    /// property names, and overall AST structure significant.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_match: Option<SourceMatch>,
     /// Optional YAML-only note. Use this for provenance,
@@ -835,7 +835,7 @@ impl std::error::Error for AnonymousStatementSelectorError {}
 #[derive(Debug, Clone, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 pub struct SourceMatch {
     #[serde(
-        default,
+        default = "default_source_match_identifier_mode",
         skip_serializing_if = "is_default_source_match_identifier_mode"
     )]
     pub identifiers: SourceMatchIdentifierMode,
@@ -857,7 +857,7 @@ pub struct SourceMatch {
 #[derive(Deserialize)]
 struct SourceMatchWire {
     #[serde(default)]
-    identifiers: SourceMatchIdentifierMode,
+    identifiers: Option<SourceMatchIdentifierMode>,
     #[serde(default)]
     target_binding: Option<String>,
     #[serde(default)]
@@ -886,8 +886,17 @@ impl<'de> Deserialize<'de> for SourceMatch {
                  supported by this debundler; upgrade the debundler or remove the field(s)"
             )));
         }
+        let identifiers = match wire.identifiers {
+            None | Some(SourceMatchIdentifierMode::AlphaAll) => SourceMatchIdentifierMode::AlphaAll,
+            Some(SourceMatchIdentifierMode::Exact) => {
+                return Err(serde::de::Error::custom(
+                    "source_match identifiers: exact is no longer supported; omit `identifiers` \
+                     or use `alpha_all`",
+                ));
+            }
+        };
         Ok(Self {
-            identifiers: wire.identifiers,
+            identifiers,
             target_binding: wire.target_binding,
             wildcard_string_literals: wire.wildcard_string_literals,
             match_source: wire.match_source,
@@ -928,13 +937,20 @@ impl AnonymousStatementSelector {
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceMatchIdentifierMode {
-    #[default]
+    /// Internal exact identifier constraints for native lowering / solver tests.
+    /// Public `SourceMatch` deserialization rejects this spelling.
     Exact,
+    /// The public `source_match` identifier policy.
+    #[default]
     AlphaAll,
 }
 
+fn default_source_match_identifier_mode() -> SourceMatchIdentifierMode {
+    SourceMatchIdentifierMode::AlphaAll
+}
+
 fn is_default_source_match_identifier_mode(mode: &SourceMatchIdentifierMode) -> bool {
-    *mode == SourceMatchIdentifierMode::Exact
+    *mode == default_source_match_identifier_mode()
 }
 
 /// Default value the [`UnassignedMode::CatchallFile`] target path
@@ -1667,6 +1683,29 @@ mod tests {
         );
         assert!(
             message.contains("object_props"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
+    fn source_match_defaults_to_alpha_all_identifiers() {
+        let source_match: SourceMatch =
+            serde_json::from_str(r#"{ "match": "const readable = runtime;" }"#).unwrap();
+        assert_eq!(source_match.identifiers, SourceMatchIdentifierMode::AlphaAll);
+    }
+
+    #[test]
+    fn source_match_rejects_exact_identifier_mode() {
+        let error: serde_json::Error = serde_json::from_str::<SourceMatch>(
+            r#"{
+              "identifiers": "exact",
+              "match": "const readable = runtime;"
+            }"#,
+        )
+        .unwrap_err();
+        let message = error.to_string();
+        assert!(
+            message.contains("identifiers: exact is no longer supported"),
             "unexpected error: {message}"
         );
     }

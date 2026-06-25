@@ -39,9 +39,10 @@ on this shape.
 **The rewrite.** The stock corpus pins members with `binding: {name}` selectors,
 which resolve through a cheap name lookup and never touch the fact resolver. A
 small one-off harness rewrites all 2461 members to `source_match` selectors
-(`match` = the declaration line, `identifiers: exact`, `target_binding` = the
-binding); the generator emits one declaration per line, so the binding-name →
-exact-source-line map is unambiguous. Every member resolution then flows through
+(`match` = the declaration line, internal exact identifier matching,
+`target_binding` = the binding); the generator emits one declaration per line,
+so the binding-name → exact-source-line map is unambiguous. Every member
+resolution then flows through
 `ChunkResolver::resolve_member` → `selector_match::matches_indexed`. Output is byte-identical to the binding-name
 run (same 12 MB owner graph) — the rewrite changes only the resolution path, not
 the result.
@@ -229,8 +230,8 @@ super-linear slope, not just a microbenchmark.
    `matching_body_indices` machinery (0.12% / 3.21%) is the seam to extend. This
    is what removes the quadratic.
 3. **Faster exact-identifier compares.** `__memcmp_avx2_movbe` at 9.94% is exact
-   string comparison from `identifiers: exact`. Interning identifier atoms in the
-   EDB and comparing atom ids would drop it; lower priority than 1–2 and partly
+   internal identifier string comparison. Interning identifier atoms in the EDB
+   and comparing atom ids would drop it; lower priority than 1–2 and partly
    subsumed once the candidate set shrinks.
 
 Do not add stage-timing fields to production code for this — the call-graph

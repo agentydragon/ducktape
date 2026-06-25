@@ -1269,7 +1269,7 @@ export { beforeTarget, runtimeTarget, afterTarget, makeTarget };
 "#,
         vec![logical_module(
             "target",
-            &[Member::source_exact_target(
+            &[Member::source_alpha_target(
                 "SelectedTarget",
                 "Target",
                 r#"const ANYTHING = null,
@@ -2830,7 +2830,7 @@ export { runtimePrefix, runtimeTarget, runtimeSuffix, makeTarget };
             subject,
             vec![logical_module(
                 "target",
-                &[Member::source_exact_target(
+                &[Member::source_alpha_target(
                     "SelectedTarget",
                     "Target",
                     selector,

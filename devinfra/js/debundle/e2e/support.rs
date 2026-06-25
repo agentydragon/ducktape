@@ -222,32 +222,6 @@ impl Member {
         }
     }
 
-    /// Extract one binding from a matched declaration in exact identifier mode
-    /// by naming that binding as it appears in the selector source.
-    pub fn source_exact_target(
-        name: &'static str,
-        target_binding: impl Into<String>,
-        match_source: impl Into<String>,
-    ) -> Self {
-        Self {
-            name,
-            binding: None,
-            source_match: Some(FixtureSourceMatch {
-                identifiers: "exact",
-                target_binding: Some(target_binding.into()),
-                wildcard_string_literals: Vec::new(),
-                match_source: match_source.into(),
-            }),
-            cross_ref: None,
-            reads_member: None,
-            member_of_module: None,
-            passed_to_call: None,
-            makes_decorate_call: None,
-            intrinsic_alias: None,
-            comment: None,
-        }
-    }
-
     /// Pin a member as the entity that **references** the anchor member `@anchor`
     /// (a delegator / consumer body), re-exported under `name`. `kind` optionally
     /// narrows to one source-declaration kind (`function_declaration`, …) when

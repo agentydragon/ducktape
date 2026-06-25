@@ -266,7 +266,9 @@ pub struct ChunkFacts {
     /// numeric-literal token, rendered faithfully (source `raw` when present).
     pub num_lit: Vec<(NodeId, String)>,
     pub bool_lit: Vec<(NodeId, bool)>,
-    /// identifier spelling (the `identifiers: exact` surface).
+    /// Identifier spelling. Exact identifier comparisons are retained as an
+    /// internal lowering / solver constraint even though public `source_match`
+    /// authoring uses alpha-all matching.
     pub ident_name: Vec<(NodeId, String)>,
     /// member / property / method name (non-computed).
     pub prop_name: Vec<(NodeId, String)>,

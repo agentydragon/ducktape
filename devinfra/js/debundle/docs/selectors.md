@@ -156,7 +156,6 @@ members:
   - name: selectedConfig
     selector:
       source_match:
-        identifiers: alpha_all
         match: 'const config = { kind: "selected", enabled: true };'
 ```
 
@@ -171,11 +170,14 @@ by `selector_key` to find identical selector+target forms. For private bundle
 logs, set `DUCKTAPE_SOURCE_MATCH_TIMING_PREVIEW=0` to hide selector source while
 keeping keys, body indices, request ids, and binding summaries.
 
-`identifiers: alpha_all` treats binding/value identifiers in the selector
-as alpha-renamable placeholders while keeping literals, operators,
-member property names, object keys, and AST structure significant. This
-is useful for matching `function(x, y) { return x * z; }` against the
-same structure after minifier parameter names drift.
+`source_match` treats binding/value identifiers in the selector as
+alpha-renamable placeholders while keeping literals, operators, member
+property names, object keys, and AST structure significant. This is useful for
+matching `function(x, y) { return x * z; }` against the same structure after
+minifier parameter names drift. Existing specs may still spell
+`identifiers: alpha_all` explicitly, but alpha-all is the only public
+identifier policy; exact/non-alpha identifier matching is retained only as an
+internal lowering primitive.
 
 ## `target_binding` and context windows
 
@@ -187,7 +189,6 @@ members:
   - name: selectedLocalPart
     selector:
       source_match:
-        identifiers: alpha_all
         target_binding: localPart
         match: |
           const localPart = "primary",
@@ -204,7 +205,6 @@ members:
   - name: selectedSessions
     selector:
       source_match:
-        identifiers: alpha_all
         target_binding: sessions
         match: |
           const sessions = new Map(EXPR);
@@ -227,7 +227,6 @@ members:
   - name: selectedConfig
     selector:
       source_match:
-        identifiers: alpha_all
         target_binding: config
         match: |
           const config = { kind: "selected" };
@@ -250,7 +249,6 @@ different `target_binding` values:
 ```yaml
 binding_groups:
   - source_match:
-      identifiers: alpha_all
       match: |
         const localPart = "system",
           domain = "example.test",
@@ -270,7 +268,6 @@ them together:
 ```yaml
 binding_groups:
   - source_match:
-      identifiers: alpha_all
       match: |
         const firstClassName = STR_LITERAL_MATCHING_RE("^Widget-module_first__[A-Za-z0-9_-]+$");
         const secondClassName = STR_LITERAL_MATCHING_RE("^Widget-module_second__[A-Za-z0-9_-]+$");
@@ -301,7 +298,6 @@ When the selector source already uses the desired public names, use
 ```yaml
 binding_groups:
   - source_match:
-      identifiers: alpha_all
       match: |
         const SYSTEM_EMAIL_LOCAL_PART = "system",
           SYSTEM_EMAIL_DOMAIN = "example.test",
@@ -324,7 +320,6 @@ list, use declarator-list holes instead of spelling unrelated siblings:
 ```yaml
 binding_groups:
   - source_match:
-      identifiers: alpha_all
       match: |
         const DECLARATORS_BEFORE = null,
           selectedFormatter = EXPR_FORMATTER,
@@ -382,14 +377,12 @@ subtrees that are not stable enough to spell exactly:
 members:
   - selector:
       source_match:
-        identifiers: alpha_all
         match: |
           var x = foo(EXPR_LEFT, EXPR_RIGHT, x);
     name: resolvedValue
 
 anonymous_statements:
   - source_match:
-      identifiers: alpha_all
       match: |
         if (ready) {
           STMT_REGISTER_PRELUDE;
@@ -455,7 +448,6 @@ For string literals with stable shape but unstable suffixes, use
 members:
   - selector:
       source_match:
-        identifiers: alpha_all
         match: |
           const selectedStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");
     name: widgetShellStyle
@@ -521,7 +513,6 @@ absorbed sequence for cross-occurrence equality.
 members:
   - selector:
       source_match:
-        identifiers: alpha_all
         match: |
           class K {
             increment() {

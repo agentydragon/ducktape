@@ -315,17 +315,14 @@ pub struct SelectorCodemodArgs {
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 #[value(rename_all = "kebab-case")]
 pub enum SourceMatchIdentifierModeArg {
-    /// Match identifiers literally (the selector's spelling must match).
-    Exact,
     /// Treat binding/value identifiers as alpha-renamable placeholders — the
-    /// authoring norm for selectors that survive minifier renames.
+    /// source_match authoring policy that survives minifier renames.
     AlphaAll,
 }
 
 impl From<SourceMatchIdentifierModeArg> for SourceMatchIdentifierMode {
     fn from(value: SourceMatchIdentifierModeArg) -> Self {
         match value {
-            SourceMatchIdentifierModeArg::Exact => Self::Exact,
             SourceMatchIdentifierModeArg::AlphaAll => Self::AlphaAll,
         }
     }
@@ -350,7 +347,9 @@ pub struct MatchSelectorArgs {
     #[arg(long = "match")]
     pub match_source: String,
 
-    /// Identifier policy for the candidate selector.
+    /// Identifier policy for the candidate selector. Alpha-all is the public
+    /// source_match authoring policy; exact identifier constraints remain an
+    /// internal lowering primitive.
     #[arg(long = "identifiers", value_enum, default_value_t = SourceMatchIdentifierModeArg::AlphaAll)]
     pub identifiers: SourceMatchIdentifierModeArg,
 
