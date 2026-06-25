@@ -92,36 +92,61 @@ operator decided against it), not `done`. Query the actionable set directly with
 Backlog **or** In progress). When you read an individual node, take its
 `**Task status**:` line as authoritative — ignore the checkbox glyph.
 
-## Incremental scan — resume from a bookmark
+### Always exclude trashed nodes
 
-`edited.since` takes a **milliseconds** epoch, so keep an exact bookmark in
-`memory/` (e.g. `tana: through 2026-06-25T20:30:00Z` → `1750883400000`) and only
-look at what changed:
+Every node in a `search_nodes` result carries an **`inTrash`** boolean. There is **no
+trash flag in the query DSL**, so `search_nodes` returns trashed nodes mixed in with
+live ones — **filter `inTrash === true` out client-side** before surfacing or filing
+anything. A trashed task the operator deleted is not relevant; surfacing it is the
+same class of error as surfacing a Done one. (Measured 2026-06-25: trashed `#Task`
+nodes still come back from the status-field query.)
 
-```jsonc
-// task nodes changed since the bookmark, still actionable:
-{"and":[{"hasType":"<taskTag>"},
-        {"or":[{"field":{"fieldId":"<statusF>","nodeId":"<backlog>"}},
-               {"field":{"fieldId":"<statusF>","nodeId":"<inProgress>"}}]},
-        {"edited":{"since": <bookmarkMs>}}]}
-```
+## Incremental scan — read EVERY change since the bookmark, not just tasks
 
-`created` only supports `{last: <days>}` (no `since`), so for brand-new nodes either
-`or:[{edited:{since:…}},{created:{last:N}}]` with `N` rounded up from the bookmark,
-or just rely on `edited.since` (creation stamps an edit). Bare `edited.since` across
-ALL nodes is noisy (daily-note churn easily hits the 100 cap) — always combine with
-`hasType` / status to narrow.
+Tana is the operator's primary brain; **a sweep must see all of it that changed since
+last time, across all node types** — not only `#Task`. Edits to meetings, projects,
+daily notes, company/person nodes, and free notes carry context that implies new tasks,
+problems worth solving, status updates on things you already track, and patterns worth
+suggesting. Missing edits = missing the operator's current reality.
 
-## What to mine
+Keep an **exact millisecond bookmark** in `memory/` (e.g. `tana: through
+2026-06-25T20:30:00Z` → `1750883400000`); `edited.since` takes ms. Each sweep, pull
+everything edited since it and **advance the bookmark to now** when done.
 
-- **Actionable tasks** — the Backlog/In-progress set above; the freshly-edited ones
-  are the operator's current focus, the stale ones are easy wins or things slipping.
-- **Recent daily notes** — walk the last ~1–2 weeks of daily/calendar nodes (find
-  via `search_nodes`, then `get_children`) for tasks jotted but never captured as
-  `#Task`: "follow up on X", "ask Y", half-formed ideas.
+**The hard constraint: `search_nodes` has NO pagination** (only `query`,
+`workspaceIds`, `limit`; no offset/cursor) **and `edited` has no upper bound** (only
+`since`/`last`, no range). So a single `{edited:{since}}` silently **truncates at the
+`limit` (~100)** — and Tana syncs Google Calendar as a stream of `#Meeting` nodes, so
+churn blows past 100 fast. To read the change set **completely**:
 
-Turn the worthwhile ones into items: `suggestion` for "do this", `prepared_prompt`
-where a full-access agent could carry it out (embed the node title + date + the
-desired outcome). Evidence in `body`: node title, date, a short quote — **never**
-dump raw node bodies. Skip anything whose `Task status` is Done/Cancelled, anything
-already tracked, and anything you've filed before.
+1. Scope to the operator's workspace(s) with `workspaceIds`.
+2. Run `{edited:{since:<ms>}}` (+ `created:{last:N}` for brand-new nodes — `created`
+   has no `since`). If it returns **fewer than `limit`**, that's the complete set.
+3. If it **hits the cap**, it's truncated — **narrow and re-run per supertag**:
+   `and:[{hasType:<tag>},{edited:{since}}]` for each tag from `list_tags`, since a
+   single tag rarely exceeds 100. Cover untagged/daily churn via the date nodes
+   directly (`get_children` on the recent `#Day`/Week nodes).
+4. Keep the **bookmark cadence tight enough** that a window never exceeds the cap; if
+   one tag ever caps anyway, sweep more often (smaller windows). Log if you suspect
+   truncation so a gap is visible rather than silent.
+
+Always drop `inTrash` nodes (above). `#Meeting`/`#Day` nodes are mostly routine
+calendar syncs — skim, don't dwell, unless one implies something (a note like "…for
+insurance fighting" on a meeting is a real signal).
+
+## What to mine — reason beyond tasks
+
+- **Actionable `#Task`s** (Backlog/In-progress, not trashed): freshly-edited = current
+  focus; stale = easy wins or things slipping.
+- **Everything else that changed** — read it for: (a) **status updates** on things you
+  already track (close/advance the matching item); (b) **latent tasks** jotted in
+  daily notes/projects but never made `#Task`s ("follow up on X", "ask Y"); (c)
+  **problems** implied by a note that an agent could solve; (d) **patterns in how the
+  operator uses Tana** worth suggesting (e.g. recurring manual steps to automate, a
+  messy area to restructure) — surface those as `suggestion` items too.
+
+Turn the worthwhile ones into items: `suggestion` for "do this / here's an idea",
+`prepared_prompt` where a full-access agent could carry it out (embed the node title +
+date + desired outcome). Evidence in `body`: node title, date, a short quote — **never**
+dump raw node bodies. Skip anything trashed, anything whose `Task status` is
+Done/Cancelled, anything already tracked, and anything you've filed before.
