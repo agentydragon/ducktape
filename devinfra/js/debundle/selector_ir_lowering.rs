@@ -1513,6 +1513,11 @@ fn classify_native_single_node_hole(
         return Some(HoleClassification::Supported { root: node });
     }
 
+    if kind == Some(NodeKind::BindingIdent) && hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
+    {
+        return Some(HoleClassification::Supported { root: node });
+    }
+
     if native_child_list_hole_name(name) {
         return Some(HoleClassification::NotHole);
     }
@@ -2923,6 +2928,83 @@ mod tests {
                 segments,
                 ..
             } if segments.len() == 1
+        )));
+    }
+
+    #[test]
+    fn source_match_with_anything_binding_params_lowers_natively() {
+        let mut selector = AnonymousStatementSelector::exact(
+            "function readable(ANYTHING, ANYTHING) { return 1; }",
+        );
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value == "ANYTHING"
+            )),
+            "ANYTHING binding params are hole syntax, not identifier constraints"
+        );
+        let target_owner = lowered.program.targets[lowered.target.0].owner;
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::OwnerDeclaresBinding {
+                owner: OwnerTerm::Var { id },
+                binding: StringTerm::Var { .. },
+            } if *id == target_owner
+        )));
+    }
+
+    #[test]
+    fn source_match_with_anything_object_pattern_value_lowers_natively() {
+        let selector =
+            AnonymousStatementSelector::exact("const { stable: ANYTHING } = readInput();");
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value == "ANYTHING"
+            )),
+            "ANYTHING pattern values are hole syntax, not identifier constraints"
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstPropertyName {
+                value: StringTerm::Const { value },
+                ..
+            } if value == "stable"
         )));
     }
 
