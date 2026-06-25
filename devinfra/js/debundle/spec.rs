@@ -1691,7 +1691,10 @@ mod tests {
     fn source_match_defaults_to_alpha_all_identifiers() {
         let source_match: SourceMatch =
             serde_json::from_str(r#"{ "match": "const readable = runtime;" }"#).unwrap();
-        assert_eq!(source_match.identifiers, SourceMatchIdentifierMode::AlphaAll);
+        assert_eq!(
+            source_match.identifiers,
+            SourceMatchIdentifierMode::AlphaAll
+        );
     }
 
     #[test]
