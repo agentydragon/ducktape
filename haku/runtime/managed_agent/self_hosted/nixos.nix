@@ -93,13 +93,15 @@ let
     patchShebangs $out/bin/haku-entrypoint
   '';
 
-  # The pod's entry process. A thin wrapper that puts the worker tool closure on
-  # PATH (so the image doesn't depend on the container PATH) and execs the
-  # entrypoint. Added to systemPackages below, so it lands at the stable path
+  # The pod's entry process. A thin wrapper that puts the worker tool closure
+  # AND the `haku-worker` poll command on PATH (so the image doesn't depend on
+  # the container PATH — there's no login shell, so `/sw/bin` is NOT on PATH and
+  # the entrypoint's `exec haku-worker` would fail), then execs the entrypoint.
+  # Added to systemPackages below, so it lands at the stable path
   # `/sw/bin/haku-worker-run` — what the Deployment's `command` invokes.
   haku-worker-run = pkgs.writeShellApplication {
     name = "haku-worker-run";
-    runtimeInputs = workerTools;
+    runtimeInputs = workerTools ++ [ haku-worker ];
     text = ''exec ${entrypoint}/bin/haku-entrypoint "$@"'';
   };
 in
