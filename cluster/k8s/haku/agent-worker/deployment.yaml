@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: haku-worker
   annotations:
-    description: "Anthropic Managed Agents self-hosted worker (Runtime B; ducktape haku/runtime/managed_agent/self_hosted). Long-polls Anthropic's work queue (`ant beta:worker poll`) and runs tool calls in-sandbox. The haku-sandbox perimeter (haku-mitmproxy egress, RBAC, ResourceQuota) is the fence; the worker holds only the environment key, never the org API key."
+    description: "Anthropic Managed Agents self-hosted worker (Runtime B; ducktape haku/runtime/managed_agent/self_hosted). Long-polls Anthropic's work queue (worker.py on the anthropic Python SDK) and runs tool calls in-sandbox. The haku-sandbox perimeter (haku-mitmproxy egress, RBAC, ResourceQuota) is the fence; the worker holds only the environment key, never the org API key."
 spec:
   replicas: 1
   strategy:
@@ -51,12 +51,6 @@ spec:
             # login shell k8s won't set it, so pin it to haku's home.
             - name: HOME
               value: /home/haku
-            # Verbose ant worker logging (global --debug). Currently ON while we
-            # diagnose sessions stalling at "idle" (worker claims work but tool
-            # results never post — suspected mitmproxy interference with the
-            # session-tool-runner stream). Set to "" or remove to disable.
-            - name: ANT_DEBUG
-              value: "1"
             - name: ANTHROPIC_ENVIRONMENT_ID
               value: env_015uqL9WAMSDytQEWWmLG9zF # haku-selfhosted environment (not secret)
             - name: ANTHROPIC_ENVIRONMENT_KEY

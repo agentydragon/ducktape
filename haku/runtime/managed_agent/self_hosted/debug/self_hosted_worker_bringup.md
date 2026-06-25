@@ -96,9 +96,11 @@ empty-output command, masked by the agent's `2>/dev/null | head`.
 
 ## Diagnostic recipes
 
-- **Worker debug logs:** `ANT_DEBUG=1` on the Deployment → `ant --debug`. Look for
-  `claimed work`, `executing tool`, `dispatched tool … posted=true/false`, and
-  `tool result send hit permanent 4xx`.
+- **Worker debug logs:** the Python `worker.py` logs to stderr at `INFO`
+  (`kubectl logs deploy/haku-worker -n haku-sandbox`); the SDK's
+  `EnvironmentWorker` logs poll/claim/dispatch under the `anthropic` logger.
+  (Historical, on the old `ant` worker: `ANT_DEBUG=1` → `ant --debug`, whose
+  `tool result send hit permanent 4xx` line was the empty-output tell.)
 - **Session timeline (control plane, org key):**
   `ant beta:sessions:events list <sid>` — `agent.tool_use` vs `user.tool_result`
   (match on `tool_use_id`); an unmatched `tool_use` is the stuck one. `is_error`
@@ -114,7 +116,7 @@ empty-output command, masked by the agent's `2>/dev/null | head`.
 
 - `haku.agent.yaml` model is **Sonnet** (`TEMP(debugging)`); restore
   `claude-opus-4-8` and re-pin the deployment.
-- `ANT_DEBUG=1` in the worker Deployment; set to `""` once stable.
+- ~~`ANT_DEBUG=1`~~ — gone with the `ant` worker; `worker.py` logs at `INFO`.
 - mitmproxy `ignore_hosts` is a keeper, but has a `TODO` to tighten (currently
   passes all of `api.anthropic.com`).
 
@@ -131,19 +133,47 @@ pty` + `TERM=dumb` runner, `[output truncated]`, native `glob`/`grep`) and **no
 Implication for "switch to the SDK that runs Claude Code": there isn't one. The
 Managed Agents **SDK** `EnvironmentWorker` (Python/TS/Go) is _also_ an
 independent reimplementation of the same `agent_toolset_20260401` — not Claude
-Code. So switching SDKs does **not** buy Claude Code's harness. The only real
-"switch" options:
+Code. So switching SDKs does **not** buy Claude Code's harness. But the toolsets
+are **hand-rolled per language and not consistent with each other**, and that is
+the lever: the empty-output→400 guard exists in the **Python and TypeScript**
+SDKs but **not** the Go one.
 
-- **Go SDK `EnvironmentWorker`** — a different impl of the toolset that _might_
-  guard the empty-result case better (the API requires `content.text` ≥ 1, so a
-  correct worker must send a placeholder; check the SDK source before betting on
-  it). Avoids the Python lockfile conflict, but means building/maintaining a
-  custom Go worker instead of the stock `ant` CLI.
-- **Python SDK `EnvironmentWorker`** — reopens the `anthropic` 0.103-vs-0.80
-  lockfile conflict that motivated "ant-all-the-way"; avoid.
+## Resolution (2026-06-25): switch the worker to the Python SDK
 
-Neither is Claude Code. Recommended: stay on `ant`, mitigate triggers, and report
-the empty-result→400 deadlock upstream.
+We replaced `ant` (Go) with `worker.py` on the official **anthropic Python SDK**.
+The empty-result deadlock is **Go-specific**, confirmed in source (repos cloned
+in `~/code`):
+
+- **Go (buggy):** `anthropic-sdk-go tools/agenttoolset/agenttoolset.go:145
+textResult(s)` → `BetaTextBlockParam{Text: s}`, no empty guard → the 400.
+- **Python (guarded):** `anthropic-sdk-python
+src/anthropic/lib/tools/_beta_session_runner.py:235` bridges a tool's string
+  result with `content or "(no output)"` (and the block-list path / final
+  fallback likewise default to `"(no output)"`). So an empty tool result becomes
+  `(no output)` — no 400, no deadlock. The TS SDK guards it too.
+
+Why not just bump the **Bazel** lockfile to a guarded `anthropic`: we can't.
+`agent-framework-anthropic` (used by `haku/runtime/agent`) hard-pins
+`anthropic<0.80.1,>=0.80.0` on **every** release through the latest
+(`1.0.0b260618`, checked 2026-06-25) — and the Managed Agents worker lib
+(`anthropic.lib.environments`) only landed ~0.111. So the worker's `anthropic`
+0.111 is pinned **independently in `nixos.nix`** (a `python3` override on the
+worker closure only), and `worker.py` is a baked script excluded from Bazel —
+not in the shared lockfile. See `nixos.nix` + `worker.py` + the local
+`BUILD.bazel`.
+
+The Go artifacts are **kept** for possible future use: the `anthropic-cli`
+package stays in `nix/packages/` and the devshell (just no longer baked into the
+worker image), and the upstream issue
+[anthropic-sdk-go#377](https://github.com/anthropics/anthropic-sdk-go/issues/377)
+tracks a Go-side fix. If `#377` lands and the Bazel-lockfile pin ever frees up,
+revisiting a Go worker (or re-unifying on the SDK lockfile) is open.
+
+Tiers we considered but didn't need: reimplementing the toolset against the SDK
+worker protocol (the `tools=` factory hook accepts custom `BetaTool`s — useful
+only for Claude-Code-grade behavior like spill-large-output-to-file, which the
+stock toolset lacks), or a from-scratch poll/heartbeat/lease loop (heavy; the
+protocol is beta and churning — `worker.go` is ~526 LOC of lease subtlety).
 
 ## Current state & next steps (as of 2026-06-23)
 

@@ -1,0 +1,8 @@
+# worker.py is intentionally NOT a Bazel target. It runs only inside the
+# haku-worker NixOS image, against the anthropic Python SDK ≥0.111 (the Managed
+# Agents worker lib), pinned in nixos.nix. The repo's shared Bazel lockfile is
+# held at anthropic 0.80 by agent-framework-anthropic's hard pin
+# (anthropic<0.80.1), which predates that lib — so a py_library here would fail
+# the mypy aspect on `import anthropic.lib.environments`. It's a baked script
+# like entrypoint.sh; ruff still lints it via pre-commit.
+# gazelle:exclude worker.py

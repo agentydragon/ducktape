@@ -1,7 +1,14 @@
 # NixOS-closure container image for the Haku Managed Agents self-hosted worker
 # (Runtime B, haku/runtime/managed_agent). We build a full-NixOS rootfs (so the
-# whole tool closure — bash/git/kubectl/ant/psql/… — is consistent with the rest
+# whole tool closure — bash/git/kubectl/psql/… — is consistent with the rest
 # of the fleet) but we do NOT boot it: the pod runs the worker process directly.
+#
+# The poll loop is `worker.py` on the official anthropic Python SDK, NOT `ant`
+# (the Go CLI): the Go SDK deadlocks a session on empty tool output
+# (anthropic-sdk-go#377); the Python session runner guards that case. The SDK
+# can't ride the Bazel lockfile (agent-framework-anthropic hard-pins anthropic
+# to 0.80.0, while the worker lib needs ≥0.111), so it's pinned independently in
+# the override below — see <debug/self_hosted_worker_bringup.md>.
 #
 # Runs UNPRIVILEGED and as NON-ROOT: k8s execs `/sw/bin/haku-worker-run` (the
 # wrapper below, on the stable system-path) as uid 1000 (`haku`) with all caps
@@ -17,7 +24,6 @@
 {
   modulesPath,
   pkgs,
-  anthropic-cli,
   fastmcp,
   ...
 }:
@@ -45,8 +51,40 @@ let
     kubectl
     postgresql # psql (Plaid, reached cluster-internally)
     fastmcp # in-cluster MCP facades (tana-mcp-ro, …)
-    anthropic-cli # `ant` — the worker poll loop
   ];
+
+  # anthropic Python SDK ≥0.111 (the Managed Agents worker lib). nixpkgs ships
+  # 0.75 and the repo's Bazel lockfile is held at 0.80 by agent-framework, so
+  # pin it here for the worker closure only: bump the version + sdist, and add
+  # docstring-parser (a runtime dep new since the nixpkgs derivation's 0.75).
+  pythonWithAnthropic =
+    let
+      python = pkgs.python3.override {
+        self = python;
+        packageOverrides = _pyfinal: pyprev: {
+          anthropic = pyprev.anthropic.overridePythonAttrs (old: rec {
+            version = "0.111.0";
+            src = pyprev.fetchPypi {
+              pname = "anthropic";
+              inherit version;
+              hash = "sha256-OcvaCsF6bUI+W/YJgRvWmybt32KZ16RoEm4FvHEc6CY=";
+            };
+            dependencies = (old.dependencies or [ ]) ++ [ pyprev.docstring-parser ];
+            doCheck = false;
+          });
+        };
+      };
+    in
+    python.withPackages (ps: [ ps.anthropic ]);
+
+  # worker.py is the single source of truth (self-contained + runnable on the
+  # SDK). The `haku-worker` command runs it under the pinned interpreter; the
+  # entrypoint execs it like it used to exec `ant beta:worker poll`.
+  haku-worker = pkgs.writeShellApplication {
+    name = "haku-worker";
+    runtimeInputs = [ pythonWithAnthropic ];
+    text = ''exec python ${./worker.py} "$@"'';
+  };
 
   # entrypoint.sh is the single source of truth (self-contained + runnable);
   # bake it in with its shebang patched to the store bash.
@@ -70,7 +108,6 @@ in
 
   networking.hostName = "haku-worker";
   networking.nftables.enable = false;
-  nixpkgs.config.allowUnfree = true; # anthropic-cli is unfree
 
   # Non-root agent user (uid 1000). The pod runs the worker as this uid via
   # securityContext.runAsUser. createHome gives a writable /home/haku in the
@@ -90,7 +127,10 @@ in
   };
 
   security.pki.certificateFiles = [ "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" ];
-  environment.systemPackages = workerTools ++ [ haku-worker-run ];
+  environment.systemPackages = workerTools ++ [
+    haku-worker-run
+    haku-worker
+  ];
 
   system.stateVersion = "25.11";
 }

@@ -25,9 +25,10 @@ clone_or_pull() { # <url> <dest> [extra git clone flags...]
 # Behavior: ducktape's haku/base + haku/run.md, read at runtime (live-editable —
 # no image rebuild to change the manual). NOT --depth 1: the run procedure's
 # base-sync diffs HEAD against the last-reconciled commit (`git log <pin>..HEAD`),
-# which needs that commit present. A week of history covers the wake cadence;
-# a `git log` that reaches past the pin just errors empty (and an empty tool
-# result currently deadlocks the session — ant posts "" and the API 400s it).
+# which needs that commit present. A week of history covers the wake cadence.
+# (A `git log` that reaches past the pin errors with empty output; the Python
+# worker turns empty tool output into "(no output)" rather than deadlocking on
+# it the way `ant` did — see worker.py / anthropic-sdk-go#377.)
 clone_or_pull "$HAKU_DUCKTAPE_REPO_URL" "$ducktape_dir" --shallow-since="1 week ago"
 # Memory + the only write surface.
 clone_or_pull "$HAKU_STATE_REPO_URL" "$state_dir" --depth 1
@@ -37,10 +38,8 @@ git -C "$state_dir" config user.email haku@allegedly.works
 # kubectl uses the pod's haku ServiceAccount token automatically (in-cluster);
 # no kubeconfig to materialize, unlike the Claude Code web home.
 #
-# ANT_DEBUG (set in the Deployment manifest) toggles ant's verbose logging: the
-# global --debug flag must precede the subcommand. Empty/unset = off. Useful for
-# diagnosing the worker's session-tool-runner stream (claim vs result-submission)
-# — e.g. when sessions stall at "idle" behind the mitmproxy egress.
-exec ant ${ANT_DEBUG:+--debug} beta:worker poll \
-  --environment-id "$ANTHROPIC_ENVIRONMENT_ID" \
-  --workdir "$workspace"
+# Long-poll the self-hosted work queue (worker.py on the anthropic Python SDK,
+# baked into the image as `haku-worker`). ANTHROPIC_ENVIRONMENT_ID/_KEY come from
+# the Deployment env; the workdir holds the git clones above.
+export ANTHROPIC_WORKDIR="$workspace"
+exec haku-worker

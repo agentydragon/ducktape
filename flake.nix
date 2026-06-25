@@ -557,11 +557,13 @@
           ];
         };
 
-        # Haku Managed Agents self-hosted worker (Runtime B). anthropic-cli and
-        # fastmcp are ducktape packages, passed in rather than re-derived.
+        # Haku Managed Agents self-hosted worker (Runtime B). fastmcp is a
+        # ducktape package, passed in rather than re-derived. The poll loop is
+        # worker.py on the anthropic Python SDK now, not `ant` (the anthropic-cli
+        # package stays available in the devshell); see nixos.nix.
         haku-worker = nixpkgs.lib.nixosSystem {
           inherit system;
-          specialArgs = { inherit (ducktapePkgs) anthropic-cli fastmcp; };
+          specialArgs = { inherit (ducktapePkgs) fastmcp; };
           modules = [
             ./haku/runtime/managed_agent/self_hosted/nixos.nix
           ];
