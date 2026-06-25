@@ -3721,9 +3721,7 @@ const good = other;
 
     #[test]
     fn solves_lowered_alpha_all_source_match_projects_target_binding() {
-        let mut selector = AnonymousStatementSelector::exact(
-            r#"const first = make("left"), second = make("right");"#,
-        );
+        let mut selector = AnonymousStatementSelector::exact(r#"const second = make("right");"#);
         selector.identifiers = spec::SourceMatchIdentifierMode::AlphaAll;
         selector.target_binding = Some("second".to_string());
         let lowered = lower_member_selector(
@@ -3756,6 +3754,54 @@ const candidateLeft = make("left"), candidateRight = make("right");
                     owner,
                     statement_ordinal: statement_ordinal_for_owner(&facts, owner),
                     binding: Some("candidateRight".to_string()),
+                    provenance: Vec::new(),
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn solves_lowered_exact_source_match_projects_target_binding() {
+        let mut selector =
+            AnonymousStatementSelector::exact(r#"const Target = makeTarget("value");"#);
+        selector.target_binding = Some("Target".to_string());
+        let lowered = lower_member_selector(
+            &MemberSelectorLoweringContext::new(ChunkId(0), "runtime/target"),
+            "Target",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        let facts = fact_store_from_analyzed_source(
+            r#"
+function makeTarget(value) {
+  return value;
+}
+function makeOther(value) {
+  return value;
+}
+const runtimeTarget = makeTarget("value");
+const wrongCallee = makeOther("value");
+"#,
+        );
+
+        let result = solve(&lowered.program, &facts).unwrap();
+        let owner = owner_for_binding(&facts, "runtimeTarget");
+
+        assert_eq!(
+            result.outcome_for(lowered.target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner,
+                    statement_ordinal: statement_ordinal_for_owner(&facts, owner),
+                    binding: Some("runtimeTarget".to_string()),
                     provenance: Vec::new(),
                 },
             })

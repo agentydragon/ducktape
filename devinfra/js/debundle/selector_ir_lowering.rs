@@ -71,6 +71,7 @@ struct NativeAstFactLowering<'a> {
     skipped_nodes: &'a BTreeSet<NodeId>,
     identifier_mode: SourceMatchIdentifierMode,
     alpha_identifier_vars: &'a BTreeMap<NodeId, SelectorVariableId>,
+    exact_identifier_projection_vars: &'a BTreeMap<NodeId, SelectorVariableId>,
     child_list_patterns: &'a BTreeMap<NodeId, NativeChildListPattern>,
 }
 
@@ -376,9 +377,11 @@ impl MemberSelectorProgramBuilder {
         let [(root_node, _ordinal)] = facts.top_level.as_slice() else {
             return Ok(false);
         };
-        let alpha_projected_binding_node = match (&selector.target_binding, selector.identifiers) {
-            (Some(target_binding), SourceMatchIdentifierMode::AlphaAll) => {
-                if native_declared_binding_count(&facts, &skipped_nodes) != Some(1) {
+        let target_binding_node = match &selector.target_binding {
+            Some(target_binding) => {
+                if selector.identifiers == SourceMatchIdentifierMode::AlphaAll
+                    && native_declared_binding_count(&facts, &skipped_nodes) != Some(1)
+                {
                     return Ok(false);
                 }
                 let Some(target_binding_node) =
@@ -386,8 +389,11 @@ impl MemberSelectorProgramBuilder {
                 else {
                     return Ok(false);
                 };
-                Some(target_binding_node)
+                Some((target_binding.as_str(), target_binding_node))
             }
+            None => None,
+        };
+        let alpha_projected_binding_node = match (&selector.target_binding, selector.identifiers) {
             (None, SourceMatchIdentifierMode::AlphaAll) => {
                 native_single_declared_binding_node(&facts, &skipped_nodes)
             }
@@ -416,16 +422,25 @@ impl MemberSelectorProgramBuilder {
         } else {
             BTreeMap::new()
         };
-        match (&selector.target_binding, selector.identifiers) {
-            (Some(target_binding), SourceMatchIdentifierMode::Exact) => {
+        let mut exact_identifier_projection_vars = BTreeMap::new();
+        match (target_binding_node, selector.identifiers) {
+            (Some((target_binding, target_binding_node)), SourceMatchIdentifierMode::Exact) => {
+                let target_binding_var = self.program.add_variable(
+                    VariableDomain::String,
+                    Some(format!(
+                        "{logical_module}::source_match.target_binding.{target_binding}"
+                    )),
+                );
+                exact_identifier_projection_vars.insert(target_binding_node, target_binding_var);
                 self.program.add_atom(SelectorAtom::OwnerDeclaresBinding {
                     owner: owner_term(owner),
-                    binding: const_str(target_binding),
+                    binding: string_term(target_binding_var),
                 });
             }
-            (Some(_target_binding), SourceMatchIdentifierMode::AlphaAll) => {
-                let projected_binding_node = alpha_projected_binding_node
-                    .expect("alpha_all target_binding native node was checked before lowering");
+            (
+                Some((_target_binding, projected_binding_node)),
+                SourceMatchIdentifierMode::AlphaAll,
+            ) => {
                 let projected_binding_var = alpha_identifier_vars
                     .get(&projected_binding_node)
                     .copied()
@@ -458,6 +473,7 @@ impl MemberSelectorProgramBuilder {
             skipped_nodes: &skipped_nodes,
             identifier_mode: selector.identifiers,
             alpha_identifier_vars: &alpha_identifier_vars,
+            exact_identifier_projection_vars: &exact_identifier_projection_vars,
             child_list_patterns: &child_list_patterns,
         });
         Ok(true)
@@ -471,6 +487,7 @@ impl MemberSelectorProgramBuilder {
             skipped_nodes,
             identifier_mode,
             alpha_identifier_vars,
+            exact_identifier_projection_vars,
             child_list_patterns,
         } = lowering;
         let mut wildcard_string_vars = BTreeMap::<String, SelectorVariableId>::new();
@@ -618,9 +635,18 @@ impl MemberSelectorProgramBuilder {
             }
             match identifier_mode {
                 SourceMatchIdentifierMode::Exact => {
-                    self.add_ast_string_label(node_vars, *node, value, |node, value| {
-                        SelectorAtom::AstIdentifierName { node, value }
-                    });
+                    if let Some(identifier) = exact_identifier_projection_vars.get(node).copied() {
+                        if let Some(node) = node_vars.get(node).copied() {
+                            self.program.add_atom(SelectorAtom::AstIdentifierName {
+                                node: node_term(node),
+                                value: string_term(identifier),
+                            });
+                        }
+                    } else {
+                        self.add_ast_string_label(node_vars, *node, value, |node, value| {
+                            SelectorAtom::AstIdentifierName { node, value }
+                        });
+                    }
                 }
                 SourceMatchIdentifierMode::AlphaAll => {
                     let (Some(node), Some(identifier)) = (
@@ -2628,7 +2654,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_source_match_target_binding_adds_owner_binding_constraint() {
+    fn exact_source_match_target_binding_projects_binding_variable() {
         let mut selector = AnonymousStatementSelector::exact("const a = 1, b = 2;");
         selector.target_binding = Some("b".to_string());
         let lowered = lower_member_selector(
@@ -2646,15 +2672,37 @@ mod tests {
                 .iter()
                 .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
         );
-        assert!(matches!(
-            lowered.program.atoms.iter().find(|atom| {
-                matches!(atom, SelectorAtom::OwnerDeclaresBinding { .. })
-            }),
-            Some(SelectorAtom::OwnerDeclaresBinding {
-                owner: OwnerTerm::Var { id },
-                binding: StringTerm::Const { value },
-            }) if *id == target_owner && value == "b"
-        ));
+        let projected_bindings = lowered
+            .program
+            .atoms
+            .iter()
+            .filter_map(|atom| match atom {
+                SelectorAtom::OwnerDeclaresBinding {
+                    owner: OwnerTerm::Var { id },
+                    binding: StringTerm::Var { id: binding },
+                } if *id == target_owner => Some(*binding),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(projected_bindings.len(), 1);
+        let projected_binding = projected_bindings[0];
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstIdentifierName {
+                value: StringTerm::Var { id },
+                ..
+            } if *id == projected_binding
+        )));
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value == "b"
+            )),
+            "target_binding's selector-local spelling should project from the matched node"
+        );
         assert!(
             lowered
                 .program
