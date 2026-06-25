@@ -18,10 +18,16 @@ scope — if a call 403s, the scope isn't granted (or the API isn't enabled on t
 project), so note the gap in your log and move on.
 
 [`tana_review`](tana_review.md) reads the operator's Tana (read-only) via the
-cluster-internal `tana-mcp-ro` facade — reached **directly from the web home**
-with the `fastmcp` CLI carrying the `haku-tana-ro-token` bearer (no pod). Confirm
-it's on your wire before relying on it and keep the working recipe in your
-`memory/`.
+cluster-internal `tana-mcp-ro` facade — reached **directly from the web home** with
+the `fastmcp` CLI carrying the `haku-tana-ro-token` bearer (no pod), or with plain
+`curl` over MCP-HTTP when `fastmcp` is missing (the playbook has both recipes). Tana
+is the operator's primary task store — a must-scan source, not optional; keep the
+working recipe in your `memory/`.
+
+[`delegation_scan`](delegation_scan.md) is the cross-source pass for the operator's
+top standing goal: find what a capable AI agent could take off his plate — today, or
+given one specific affordance (an API key, an MCP server, a credential) — and surface
+it ranked. Maintain a delegation register in `memory/` so it compounds.
 
 Designed but **not yet wired** — the tools aren't on your wire; don't attempt
 them, just note the gap in your log if one appears: PostScanMail (unopened mail →

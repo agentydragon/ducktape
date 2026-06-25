@@ -26,12 +26,25 @@ a fresh start.
 All paths below are relative to your `haku-state` checkout. Run this top to
 bottom:
 
-1. **Orient**: read your `memory/` (standing operator guidance, how far you got
-   last time, prior notes), your most recent `log/` daily files, and all of
-   `items/` (including terminal items — they encode what the operator already
-   decided). Check your `memory/` watch-list and your `snoozed`/deferred items for
-   **wake triggers that have now arrived** — things you parked for "later" because
-   they weren't yet actionable (see _Curate_ for promoting them).
+1. **Orient — fully, before you dig**: read your `memory/` (standing operator
+   guidance, how far you got last time, prior notes), your most recent `log/` daily
+   files, and **all** of `items/` (including terminal items — they encode what the
+   operator already decided). **Finish this before you scan or file anything**: load
+   every existing item's `dedup_key` into mind first, so you advance/update what's
+   already there instead of creating duplicates (the failure mode is filing a "new"
+   tender-offer or move item that already exists). Check your `memory/` watch-list and
+   your `snoozed`/deferred items for **wake triggers that have now arrived** — things
+   you parked for "later" because they weren't yet actionable (see _Curate_ for
+   promoting them).
+   **Confirm this isn't a false first run:** if `items/` looks empty, verify the state
+   repo is genuinely seedless (the **remote** has no commits) rather than a partial or
+   mid-bootstrap checkout — re-pull / wait for the clone to finish before concluding
+   it's the first run (your entrypoint's bootstrap may still be running). Treating an
+   incomplete checkout as a fresh start is how duplicates and lost history happen.
+   Then run a quick **environment self-check** (per `instructions.md` → _Environment
+   self-check_): confirm the tools, credentials, and egress this run will rely on are
+   actually present, and **file an item** for any documented capability that's broken
+   (then work around it for this run) rather than silently degrading.
 2. **Adopt base updates**: compare the ducktape checkout's `HEAD`
    (`git -C <ducktape> rev-parse HEAD`) to the pin in `memory/base-sync.md`. If it
    advanced, diff `haku/base` + `haku/run.md` since the pin, migrate your state to
