@@ -410,11 +410,6 @@ impl MemberSelectorProgramBuilder {
         else {
             return Ok(false);
         };
-        if selector.identifiers == SourceMatchIdentifierMode::AlphaAll
-            && !native_alpha_source_match_supported(&facts, &skipped_nodes)
-        {
-            return Ok(false);
-        }
         let bare_properties = if selector.identifiers == SourceMatchIdentifierMode::AlphaAll {
             native_bare_property_selectors(&facts, &skipped_nodes)
         } else {
@@ -559,11 +554,6 @@ impl MemberSelectorProgramBuilder {
         else {
             return Ok(false);
         };
-        if selector.identifiers == SourceMatchIdentifierMode::AlphaAll
-            && !native_alpha_source_match_supported(&facts, &skipped_nodes)
-        {
-            return Ok(false);
-        }
         let bare_properties = if selector.identifiers == SourceMatchIdentifierMode::AlphaAll {
             native_bare_property_selectors(&facts, &skipped_nodes)
         } else {
@@ -1099,25 +1089,6 @@ fn introduces_alpha_scope(kind: NodeKind) -> bool {
             | NodeKind::Setter
             | NodeKind::Catch
     )
-}
-
-fn native_alpha_source_match_supported(
-    facts: &ChunkFacts,
-    skipped_nodes: &BTreeSet<NodeId>,
-) -> bool {
-    let [(_root, _ordinal)] = facts.top_level.as_slice() else {
-        return false;
-    };
-
-    if facts
-        .node_kind
-        .iter()
-        .any(|(node, kind)| !skipped_nodes.contains(node) && *kind == NodeKind::AssignProp)
-    {
-        return false;
-    }
-
-    true
 }
 
 fn native_target_binding_node(
@@ -3271,6 +3242,34 @@ mod tests {
             atom,
             SelectorAtom::AstKind {
                 node_kind: NodeKind::Seq,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn alpha_all_source_match_assign_property_lowers_natively() {
+        let mut selector =
+            AnonymousStatementSelector::exact("const selected = { stable = fallbackValue };");
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstKind {
+                node_kind: NodeKind::AssignProp,
                 ..
             }
         )));

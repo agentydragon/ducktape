@@ -4416,6 +4416,48 @@ function good(target, decorators) {
     }
 
     #[test]
+    fn solves_alpha_all_source_match_assign_property() {
+        let mut selector =
+            AnonymousStatementSelector::exact(r#"const selected = { stable = "ok" };"#);
+        selector.identifiers = spec::SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &MemberSelectorLoweringContext::new(ChunkId(0), "runtime/target"),
+            "Target",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        let facts = fact_store_from_analyzed_source(
+            r#"
+const bad = { runtimeStable = "wrong" };
+const good = { runtimeStable = "ok" };
+"#,
+        );
+
+        let result = solve(&lowered.program, &facts).unwrap();
+        let owner = owner_for_binding(&facts, "good");
+
+        assert_eq!(
+            result.outcome_for(lowered.target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner,
+                    statement_ordinal: statement_ordinal_for_owner(&facts, owner),
+                    binding: Some("good".to_string()),
+                    provenance: Vec::new(),
+                },
+            })
+        );
+    }
+
+    #[test]
     fn solves_lowered_alpha_all_source_match_projects_target_binding() {
         let mut selector =
             AnonymousStatementSelector::exact(r#"function second() { return make("right"); }"#);
