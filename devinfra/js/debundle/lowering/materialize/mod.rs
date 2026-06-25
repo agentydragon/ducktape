@@ -173,15 +173,14 @@ pub(super) fn materialize_logical_chunk(
     let mut imported_binding_resolver =
         ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
     let mut imported_from_by_src = BTreeMap::<String, String>::new();
-    // One selector resolver for the whole chunk, shared across every request's
-    // member and binding-group resolution (built once — see the seam contract in
+    // One selector resolver for the whole chunk, shared by global-selector
+    // fallback facts (built once — see the seam contract in
     // `source_match::SelectorResolver`). The fact-based `ChunkResolver` is the
     // production resolver: it builds the chunk's EDB once and resolves every
     // selector against it, at parity with the former hand-rolled matcher (proven
     // by the corpus differential, <debug/2026_06_18_per_chunk_gate_real_source.md>).
     let selector_resolver = source_match::ChunkResolver::new(&runtime_ast.module);
     let explicit_request_ctx = ExplicitRequestContext {
-        selector_resolver: &selector_resolver,
         declaration_by_name: &declaration_by_name,
         chunk_top_level_mark,
         target_dir,
@@ -200,7 +199,6 @@ pub(super) fn materialize_logical_chunk(
     }
     builder.drop_explicit_request_scratch();
     builder.pull_destructure_siblings(&destructure_siblings, chunk_top_level_mark)?;
-    builder.adopt_bindings_of_claimed_anonymous_statements(&declarations);
     builder.add_residual_sweep(
         residual_request.as_ref(),
         chunk_unassigned_mode.catchall_file_target(),
@@ -306,6 +304,7 @@ pub(super) fn materialize_logical_chunk(
             &declaration_by_name,
         )
     })?;
+    builder.adopt_bindings_of_claimed_anonymous_statements(&declarations);
     drop(imported_binding_resolver);
     time_phase!(timings, "fold_rebind_atomic_units", {
         apply_stage_one_a5(&mut builder, &precomputed);

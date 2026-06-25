@@ -6,6 +6,7 @@
 //! `eq_ignore_span` compare the source-level identifier shape.
 
 use super::*;
+use crate::plans::AnonymousStatementRequest;
 
 #[derive(Debug, Clone)]
 pub(super) struct ResolvedAnonymousStatement {
@@ -53,39 +54,33 @@ fn one_anonymous_group(
     }
 }
 
-/// Resolve every anonymous statement entry on `request` to a pre-split body
-/// index in the chunk's top-level body, via the selector resolver seam. The
-/// resolver requires exactly one match per entry — a 0-match or ambiguous-match
-/// selector is a spec error.
-pub(super) fn resolve_anonymous_statement_ordinals(
-    request: &LogicalRequest,
+pub(super) fn resolve_anonymous_statement_request(
+    request_id: &str,
+    statement: &AnonymousStatementRequest,
     resolver: &dyn source_match::SelectorResolver,
     keep_going: bool,
     diagnostics: &mut Vec<AnonymousStatementDiagnostic>,
 ) -> Result<Vec<ResolvedAnonymousStatement>> {
-    let mut resolved = Vec::new();
-    for statement in &request.anonymous_statements {
-        let ordinals = match resolver
-            .resolve_anonymous_groups(&request.id, &statement.selector)
-            .and_then(|groups| one_anonymous_group(&request.id, &statement.selector, groups))
-        {
-            Ok(ordinals) => ordinals,
-            Err(error) if keep_going => {
-                diagnostics.push(AnonymousStatementDiagnostic {
-                    module_id: request.id.clone(),
-                    selector: statement.selector.clone(),
-                    message: format!("{error:#}"),
-                });
-                continue;
-            }
-            Err(error) => return Err(error),
-        };
-        for ordinal in ordinals {
-            resolved.push(ResolvedAnonymousStatement {
-                ordinal,
-                comment: statement.comment.clone(),
+    let ordinals = match resolver
+        .resolve_anonymous_groups(request_id, &statement.selector)
+        .and_then(|groups| one_anonymous_group(request_id, &statement.selector, groups))
+    {
+        Ok(ordinals) => ordinals,
+        Err(error) if keep_going => {
+            diagnostics.push(AnonymousStatementDiagnostic {
+                module_id: request_id.to_string(),
+                selector: statement.selector.clone(),
+                message: format!("{error:#}"),
             });
+            return Ok(Vec::new());
         }
-    }
-    Ok(resolved)
+        Err(error) => return Err(error),
+    };
+    Ok(ordinals
+        .into_iter()
+        .map(|ordinal| ResolvedAnonymousStatement {
+            ordinal,
+            comment: statement.comment.clone(),
+        })
+        .collect())
 }

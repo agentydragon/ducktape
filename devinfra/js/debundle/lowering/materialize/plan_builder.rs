@@ -6,7 +6,7 @@
 
 use super::super::ordinal::body_index_for_statement_ordinal;
 use super::*;
-use crate::plans::RelationalSelector;
+use crate::plans::{AnonymousStatementRequest, RelationalSelector};
 use analysis::StatementOrdinal;
 use anyhow::anyhow;
 
@@ -33,6 +33,13 @@ struct SourceMatchTargetInfo {
     selector: spec::AnonymousStatementSelector,
     selector_key: String,
     group_assignment: Option<SourceMatchGroupAssignment>,
+}
+
+#[derive(Debug, Clone)]
+struct AnonymousStatementTargetInfo {
+    target: SelectorTargetId,
+    request_index: usize,
+    statement: AnonymousStatementRequest,
 }
 
 impl DuplicateBindingClaim {
@@ -128,7 +135,7 @@ fn resolved_anchor_bindings(
     let mut anchor_binding: HashMap<String, Option<String>> = HashMap::new();
     for request in explicit_requests {
         for member in &request.members {
-            if member.binding.is_empty() {
+            if member.resolves_after_stage_a() {
                 continue;
             }
             anchor_binding
@@ -242,7 +249,7 @@ fn member_selector_spec_for_global_solver(
         });
     }
 
-    if member.binding.is_empty() || member.is_import_specifier {
+    if member.resolves_after_stage_a() || member.is_import_specifier {
         return None;
     }
     Some(spec::MemberSelectorSpec::Binding(spec::BindingSelector {
@@ -759,6 +766,30 @@ fn render_anonymous_statement_diagnostics(diagnostics: &[AnonymousStatementDiagn
     report
 }
 
+fn anonymous_statement_no_match_message(
+    request: &LogicalRequest,
+    statement: &AnonymousStatementRequest,
+) -> String {
+    format!(
+        "logical_module {}: anonymous_statements[].match did not match any top-level statement \
+         group in the chunk. Selector:\n{}",
+        request.id, statement.selector.match_source,
+    )
+}
+
+fn anonymous_statement_ambiguous_message(
+    request: &LogicalRequest,
+    statement: &AnonymousStatementRequest,
+    candidate_count: usize,
+    body_indices: &[usize],
+) -> String {
+    format!(
+        "logical_module {}: anonymous_statements[].match is ambiguous -- matched {} top-level \
+         statement groups at body indices {:?}. Refine the selector. Source:\n{}",
+        request.id, candidate_count, body_indices, statement.selector.match_source,
+    )
+}
+
 /// Output of `ChunkPlanBuilder::finalize`: everything downstream
 /// `lower_chunk` + the chunk-report builder need from the plan
 /// construction phase.
@@ -772,12 +803,6 @@ pub(super) struct ChunkPlan {
 
 /// Per-explicit-request inputs the builder reads but does not own.
 pub(super) struct ExplicitRequestContext<'a> {
-    /// The selector resolver, built once for this chunk (see
-    /// `materialize_chunk`) and shared across anonymous statement resolution and
-    /// the global selector pass. Carrying the resolver rather than rebuilding it
-    /// per request is what keeps a fact-based resolver's per-chunk EDB
-    /// construction off the hot path.
-    pub(super) selector_resolver: &'a dyn source_match::SelectorResolver,
     pub(super) declaration_by_name: &'a HashMap<Id, usize>,
     pub(super) chunk_top_level_mark: swc_common::Mark,
     pub(super) target_dir: &'a str,
@@ -879,10 +904,12 @@ impl ChunkPlanBuilder {
     }
 
     /// Process one explicit (non-residual) logical-module request:
-    /// resolve its anonymous-statement matches, claim each named
-    /// member, and append a `ModulePlan`. Duplicate-claim detection
-    /// across all explicit requests is keyed by binding-name via the
-    /// builder's `catalogue_index_by_name` scratch index.
+    /// claim each pre-Stage-A named member, and append a `ModulePlan`.
+    /// Solver-resolved members and anonymous statement selectors are left
+    /// unclaimed until `resolve_and_claim_global_selectors` runs over Stage A
+    /// facts. Duplicate-claim detection across all explicit requests is keyed
+    /// by binding-name via the builder's `catalogue_index_by_name` scratch
+    /// index.
     pub(super) fn add_explicit_request(
         &mut self,
         index: usize,
@@ -893,49 +920,6 @@ impl ChunkPlanBuilder {
     ) -> Result<()> {
         reject_duplicate_member_bindings("logical_module", &request.id, &request.members)?;
         let mut bindings = HashMap::<String, String>::new();
-        let anonymous_statement_claims = resolve_anonymous_statement_ordinals(
-            request,
-            ctx.selector_resolver,
-            self.keep_going,
-            &mut self.anonymous_statement_diagnostics,
-        )?;
-        for claim in &anonymous_statement_claims {
-            if let Some(existing) = self
-                .anonymous_ordinal_assignment
-                .get(&claim.ordinal)
-                .copied()
-            {
-                let existing_id: String = self
-                    .module_plans
-                    .get(existing)
-                    .map(|plan: &ModulePlan| plan.id.clone())
-                    .unwrap_or_else(|| format!("<plan#{existing}>"));
-                bail!(
-                    "anonymous_statements[].match in module {} also matches the \
-                     top-level statement at ordinal {} already claimed by module {}; \
-                     each anonymous statement may belong to at most one logical \
-                     module.",
-                    request.id,
-                    claim.ordinal,
-                    existing_id,
-                );
-            }
-            self.anonymous_ordinal_assignment
-                .insert(claim.ordinal, index);
-        }
-        let anonymous_statement_ordinals: Vec<usize> = anonymous_statement_claims
-            .iter()
-            .map(|claim| claim.ordinal)
-            .collect();
-        let anonymous_statement_comments: BTreeMap<usize, String> = anonymous_statement_claims
-            .iter()
-            .filter_map(|claim| {
-                claim
-                    .comment
-                    .as_ref()
-                    .map(|comment| (claim.ordinal, comment.clone()))
-            })
-            .collect();
         let dest_target_file = target_file_for_request(ctx.target_dir, &request.target_path)?;
         let module_id = ModuleId(LogicalModuleIndex(index));
         let mut duplicate_bindings = BTreeSet::<String>::new();
@@ -943,7 +927,7 @@ impl ChunkPlanBuilder {
             // Deferred selector members resolve in the global selector pass after
             // Stage A has produced the owner graph and selector fact store. Until
             // then their `binding` is empty, so they contribute nothing here.
-            if member.is_relational() || member.source_match.is_some() {
+            if member.resolves_after_stage_a() {
                 continue;
             }
             if let Some(existing_kind) = self.catalogue_index_by_name.get(member.binding.as_str()) {
@@ -1055,7 +1039,7 @@ impl ChunkPlanBuilder {
         let binding_comments: BTreeMap<String, String> = request
             .members
             .iter()
-            .filter(|member| !member.is_relational() && member.source_match.is_none())
+            .filter(|member| !member.resolves_after_stage_a())
             .filter(|member| !duplicate_bindings.contains(member.binding.as_str()))
             .filter_map(|member| {
                 member
@@ -1067,7 +1051,7 @@ impl ChunkPlanBuilder {
         let binding_claim_origins: BTreeMap<String, String> = request
             .members
             .iter()
-            .filter(|member| !member.is_relational() && member.source_match.is_none())
+            .filter(|member| !member.resolves_after_stage_a())
             .filter(|member| !duplicate_bindings.contains(member.binding.as_str()))
             .map(|member| (member.binding.clone(), member.claim_origin.clone()))
             .collect();
@@ -1077,13 +1061,99 @@ impl ChunkPlanBuilder {
             target_path: request.target_path.clone(),
             explicit: true,
             bindings,
-            anonymous_statement_ordinals,
-            anonymous_statement_comments,
+            anonymous_statement_ordinals: Vec::new(),
+            anonymous_statement_comments: BTreeMap::new(),
             comment: request.comment.clone(),
             binding_comments,
             binding_claim_origins,
         });
         Ok(())
+    }
+
+    fn claim_anonymous_statement(
+        &mut self,
+        module_index: usize,
+        request_id: &str,
+        claim: &ResolvedAnonymousStatement,
+    ) -> Result<()> {
+        if let Some(existing) = self
+            .anonymous_ordinal_assignment
+            .get(&claim.ordinal)
+            .copied()
+        {
+            let existing_id: String = self
+                .module_plans
+                .get(existing)
+                .map(|plan: &ModulePlan| plan.id.clone())
+                .unwrap_or_else(|| format!("<plan#{existing}>"));
+            bail!(
+                "anonymous_statements[].match in module {} also matches the top-level \
+                 statement at body index {} already claimed by module {}; each anonymous \
+                 statement may belong to at most one logical module.",
+                request_id,
+                claim.ordinal,
+                existing_id,
+            );
+        }
+        self.anonymous_ordinal_assignment
+            .insert(claim.ordinal, module_index);
+        let plan = self.module_plans.get_mut(module_index).with_context(|| {
+            format!(
+                "logical_module {request_id}: anonymous statement resolved before its module plan existed"
+            )
+        })?;
+        plan.anonymous_statement_ordinals.push(claim.ordinal);
+        plan.anonymous_statement_ordinals.sort_unstable();
+        plan.anonymous_statement_ordinals.dedup();
+        if let Some(comment) = &claim.comment {
+            plan.anonymous_statement_comments
+                .insert(claim.ordinal, comment.clone());
+        }
+        Ok(())
+    }
+
+    fn claim_anonymous_statement_from_solver(
+        &mut self,
+        module: &swc_ecma_ast::Module,
+        module_index: usize,
+        request_id: &str,
+        statement: &AnonymousStatementRequest,
+        claim: &ResolvedClaim,
+    ) -> Result<()> {
+        let body_index = body_index_for_statement_ordinal(&module.body, claim.statement_ordinal.0)
+            .with_context(|| {
+                format!(
+                    "logical_module {request_id}: global selector solver resolved anonymous \
+                     statement to post-split ordinal {} which has no source body item",
+                    claim.statement_ordinal.0,
+                )
+            })?;
+        self.claim_anonymous_statement(
+            module_index,
+            request_id,
+            &ResolvedAnonymousStatement {
+                ordinal: body_index,
+                comment: statement.comment.clone(),
+            },
+        )
+    }
+
+    fn record_anonymous_statement_failure_or_bail(
+        &mut self,
+        request: &LogicalRequest,
+        statement: &AnonymousStatementRequest,
+        message: String,
+    ) -> Result<()> {
+        if self.keep_going {
+            self.anonymous_statement_diagnostics
+                .push(AnonymousStatementDiagnostic {
+                    module_id: request.id.clone(),
+                    selector: statement.selector.clone(),
+                    message,
+                });
+            return Ok(());
+        }
+        bail!("{message}")
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1103,11 +1173,14 @@ impl ChunkPlanBuilder {
         chunk_id_interned: ChunkId,
         declaration_by_name: &HashMap<Id, usize>,
     ) -> Result<()> {
-        if explicit_requests
+        let has_deferred_members = explicit_requests
             .iter()
             .flat_map(|request| &request.members)
-            .all(|member| !member.is_relational() && member.source_match.is_none())
-        {
+            .any(MemberRequest::resolves_after_stage_a);
+        let has_anonymous_statements = explicit_requests
+            .iter()
+            .any(|request| !request.anonymous_statements.is_empty());
+        if !has_deferred_members && !has_anonymous_statements {
             return Ok(());
         }
 
@@ -1131,47 +1204,75 @@ impl ChunkPlanBuilder {
             Result<Vec<source_match::MemberBindingGroupMatch>, String>,
         >::new();
         let mut source_match_targets = Vec::<SourceMatchTargetInfo>::new();
+        let mut anonymous_statement_targets = Vec::<AnonymousStatementTargetInfo>::new();
         let mut pending_constraints = Vec::<(String, String, spec::MemberSelectorSpec)>::new();
-        let source_match_ordinal_by_binding =
-            source_match_candidate_statement_ordinals(owner_graph);
-        let mut facts =
-            selector_fact_store_for_chunk(chunk_id_interned, owner_graph, module, import_sources)?;
-        for (index, request) in explicit_requests.iter().enumerate() {
-            let group_assignments = source_match_group_assignments(request);
-            for (member_index, member) in request.members.iter().enumerate() {
-                let Some(selector) = member_selector_spec_for_global_solver(member) else {
-                    continue;
-                };
-                let target = builder.declare_member_target_in_module(
-                    &request.id,
-                    &member.export_name,
-                    &selector,
-                )?;
-                pending_constraints.push((
-                    request.id.clone(),
-                    member.export_name.clone(),
-                    selector,
-                ));
-                if member.is_relational() || member.source_match.is_some() {
-                    deferred_targets.insert(
-                        target,
-                        (
-                            index,
-                            member.clone(),
-                            group_assignments.get(&member_index).cloned(),
-                        ),
-                    );
+        if has_deferred_members {
+            for (index, request) in explicit_requests.iter().enumerate() {
+                let group_assignments = source_match_group_assignments(request);
+                for (member_index, member) in request.members.iter().enumerate() {
+                    let Some(selector) = member_selector_spec_for_global_solver(member) else {
+                        continue;
+                    };
+                    let target = builder.declare_member_target_in_module(
+                        &request.id,
+                        &member.export_name,
+                        &selector,
+                    )?;
+                    pending_constraints.push((
+                        request.id.clone(),
+                        member.export_name.clone(),
+                        selector,
+                    ));
+                    if member.resolves_after_stage_a() {
+                        deferred_targets.insert(
+                            target,
+                            (
+                                index,
+                                member.clone(),
+                                group_assignments.get(&member_index).cloned(),
+                            ),
+                        );
+                    }
+                    if let Some(source_selector) = &member.source_match {
+                        let selector_key = source_match::selector_key(source_selector);
+                        source_match_targets.push(SourceMatchTargetInfo {
+                            target,
+                            request_id: request.id.clone(),
+                            export_name: member.export_name.clone(),
+                            selector: source_selector.clone(),
+                            selector_key: selector_key.clone(),
+                            group_assignment: group_assignments.get(&member_index).cloned(),
+                        });
+                    }
                 }
-                if let Some(source_selector) = &member.source_match {
-                    let selector_key = source_match::selector_key(source_selector);
-                    source_match_targets.push(SourceMatchTargetInfo {
-                        target,
-                        request_id: request.id.clone(),
-                        export_name: member.export_name.clone(),
-                        selector: source_selector.clone(),
-                        selector_key: selector_key.clone(),
-                        group_assignment: group_assignments.get(&member_index).cloned(),
-                    });
+            }
+        }
+        for (request_index, request) in explicit_requests.iter().enumerate() {
+            for (statement_index, statement) in request.anonymous_statements.iter().enumerate() {
+                match builder.declare_native_anonymous_statement_target_in_module(
+                    &request.id,
+                    statement_index,
+                    &statement.selector,
+                )? {
+                    Some(target) => {
+                        anonymous_statement_targets.push(AnonymousStatementTargetInfo {
+                            target,
+                            request_index,
+                            statement: statement.clone(),
+                        })
+                    }
+                    None => {
+                        let claims = resolve_anonymous_statement_request(
+                            &request.id,
+                            statement,
+                            selector_resolver,
+                            self.keep_going,
+                            &mut self.anonymous_statement_diagnostics,
+                        )?;
+                        for claim in claims {
+                            self.claim_anonymous_statement(request_index, &request.id, &claim)?;
+                        }
+                    }
                 }
             }
         }
@@ -1179,6 +1280,13 @@ impl ChunkPlanBuilder {
             builder.lower_member_constraints_in_module(&logical_module, &export_name, &selector)?;
         }
         let program = builder.into_program()?;
+        if program.targets.is_empty() {
+            return Ok(());
+        }
+        let source_match_ordinal_by_binding =
+            source_match_candidate_statement_ordinals(owner_graph);
+        let mut facts =
+            selector_fact_store_for_chunk(chunk_id_interned, owner_graph, module, import_sources)?;
         let source_match_oracle_targets = source_match_targets
             .iter()
             .filter_map(|target| {
@@ -1368,7 +1476,7 @@ impl ChunkPlanBuilder {
                         bail!("{message}");
                     }
                     bail!(
-                        "logical_module {}: global selector solver found no match for relational \
+                        "logical_module {}: global selector solver found no match for selector \
                          member `{}` ({}): {:?}",
                         request.id,
                         member.export_name,
@@ -1422,7 +1530,7 @@ impl ChunkPlanBuilder {
                     }
                     bail!(
                         "logical_module {}: global selector solver found {} candidates for \
-                         relational member `{}` ({}): {:?}",
+                         selector member `{}` ({}): {:?}",
                         request.id,
                         candidates.len(),
                         member.export_name,
@@ -1435,7 +1543,7 @@ impl ChunkPlanBuilder {
                     conflicting_targets,
                 }) => {
                     bail!(
-                        "logical_module {}: global selector solver assigned relational member `{}` \
+                        "logical_module {}: global selector solver assigned selector member `{}` \
                          to duplicate owner {:?} shared by targets {:?}",
                         request.id,
                         member.export_name,
@@ -1445,7 +1553,7 @@ impl ChunkPlanBuilder {
                 }
                 Some(ClaimOutcome::Unsupported { message }) => {
                     bail!(
-                        "logical_module {}: global selector solver does not support relational \
+                        "logical_module {}: global selector solver does not support selector \
                          member `{}` ({}): {}",
                         request.id,
                         member.export_name,
@@ -1456,10 +1564,81 @@ impl ChunkPlanBuilder {
                 None => {
                     bail!(
                         "logical_module {}: global selector solver returned no outcome for \
-                         relational member `{}` ({})",
+                         selector member `{}` ({})",
                         request.id,
                         member.export_name,
                         member.claim_origin,
+                    );
+                }
+            }
+        }
+        for info in anonymous_statement_targets {
+            let request = &explicit_requests[info.request_index];
+            match result.outcome_for(info.target) {
+                Some(ClaimOutcome::Unique { claim }) => {
+                    self.claim_anonymous_statement_from_solver(
+                        module,
+                        info.request_index,
+                        &request.id,
+                        &info.statement,
+                        claim,
+                    )?;
+                }
+                Some(ClaimOutcome::NoMatch) => {
+                    self.record_anonymous_statement_failure_or_bail(
+                        request,
+                        &info.statement,
+                        anonymous_statement_no_match_message(request, &info.statement),
+                    )?;
+                    continue;
+                }
+                Some(ClaimOutcome::Ambiguous { candidates }) => {
+                    let body_indices = candidates
+                        .iter()
+                        .filter_map(|candidate| {
+                            body_index_for_statement_ordinal(
+                                &module.body,
+                                candidate.statement_ordinal.0,
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    self.record_anonymous_statement_failure_or_bail(
+                        request,
+                        &info.statement,
+                        anonymous_statement_ambiguous_message(
+                            request,
+                            &info.statement,
+                            candidates.len(),
+                            &body_indices,
+                        ),
+                    )?;
+                    continue;
+                }
+                Some(ClaimOutcome::Duplicate {
+                    owner,
+                    conflicting_targets,
+                }) => {
+                    bail!(
+                        "logical_module {}: global selector solver assigned anonymous statement \
+                         to duplicate owner {:?} shared by targets {:?}",
+                        request.id,
+                        owner,
+                        conflicting_targets,
+                    );
+                }
+                Some(ClaimOutcome::Unsupported { message }) => {
+                    bail!(
+                        "logical_module {}: global selector solver does not support anonymous \
+                         statement selector: {}",
+                        request.id,
+                        message,
+                    );
+                }
+                None => {
+                    bail!(
+                        "logical_module {}: global selector solver returned no outcome for \
+                         anonymous statement selector",
+                        request.id,
                     );
                 }
             }
@@ -2445,11 +2624,10 @@ impl ChunkPlanBuilder {
     /// block-hoisted `var` inside a claimed `try` statement) belong
     /// to the module that claims the statement: the declaration is
     /// emitted there, so binding ownership, exports, and
-    /// cross-module import wiring must follow it. Runs before the
-    /// residual sweep so the sweep doesn't route these bindings to
-    /// the catchall while their declaring statement lives elsewhere
-    /// (which emitted an `export { name }` whose declaration is in a
-    /// different file — a SyntaxError at load).
+    /// cross-module import wiring must follow it. Runs after global
+    /// selector resolution; bindings already swept into residual are
+    /// moved out so the residual file does not export declarations
+    /// emitted in another module.
     pub(super) fn adopt_bindings_of_claimed_anonymous_statements(
         &mut self,
         declarations: &[TopLevelDecl],
@@ -2460,8 +2638,13 @@ impl ChunkPlanBuilder {
             };
             let module = ModuleId(LogicalModuleIndex(plan_index));
             for (name, id) in &decl.bindings {
-                if self.binding_assignment.contains_key(id) {
-                    continue;
+                if let Some(existing) = self.binding_assignment.get(id).copied() {
+                    if Some(existing) != self.residual_plan_index {
+                        continue;
+                    }
+                    if let Some(residual_index) = self.residual_plan_index {
+                        self.module_plans[residual_index].bindings.remove(name);
+                    }
                 }
                 self.binding_assignment.insert(id.clone(), plan_index);
                 self.module_plans[plan_index]

@@ -138,6 +138,36 @@ impl MemberSelectorProgramBuilder {
         ))
     }
 
+    pub fn declare_native_anonymous_statement_target_in_module(
+        &mut self,
+        logical_module: impl Into<String>,
+        statement_index: usize,
+        selector: &AnonymousStatementSelector,
+    ) -> Result<Option<SelectorTargetId>, SelectorIrLoweringError> {
+        if !native_anonymous_source_match_supported(selector) {
+            return Ok(None);
+        }
+        let logical_module = logical_module.into();
+        let owner = self.program.add_variable(
+            VariableDomain::Owner,
+            Some(format!(
+                "{logical_module}::anonymous_statement.{statement_index}"
+            )),
+        );
+        if !self.try_lower_native_source_match(&logical_module, owner, selector)? {
+            return Ok(None);
+        }
+        Ok(Some(self.program.add_target(
+            self.context.chunk_id,
+            owner,
+            logical_module,
+            ClaimKind::AnonymousStatement,
+            ClaimOrigin::AnonymousStatement {
+                index: statement_index,
+            },
+        )))
+    }
+
     pub fn lower_member_constraints_in_module(
         &mut self,
         logical_module: &str,
@@ -1196,6 +1226,16 @@ impl AlphaIdentifierState {
 #[derive(Default)]
 struct AlphaIdentifierFrame {
     by_name: BTreeMap<String, SelectorVariableId>,
+}
+
+fn native_anonymous_source_match_supported(selector: &AnonymousStatementSelector) -> bool {
+    // Keep alpha and multi-statement anonymous selectors on the existing
+    // resolver path until the native solver has bounded support for those
+    // broader patterns.
+    selector.identifiers == SourceMatchIdentifierMode::Exact
+        && selector.target_binding.is_none()
+        && selector.wildcard_string_literals.is_empty()
+        && !selector.match_source.contains('\n')
 }
 
 fn owner_term(owner: SelectorVariableId) -> OwnerTerm {
