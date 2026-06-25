@@ -84,8 +84,6 @@ in
     ./modules/sops-env.nix
     ./services/activitywatch.nix
     ./opencode
-  ]
-  ++ lib.optionals enableGui [
     ./modules/gnome-shell-keybindings.nix
     ./modules/flameshot-screenshots.nix
   ];

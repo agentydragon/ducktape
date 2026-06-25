@@ -1,7 +1,12 @@
 # Flameshot screenshot configuration
 # Configures Flameshot as the default screenshot tool with Print Screen key
-{ pkgs, ... }:
 {
+  pkgs,
+  lib,
+  enableGui,
+  ...
+}:
+lib.mkIf enableGui {
   xdg.autostart = {
     enable = true;
     entries = [

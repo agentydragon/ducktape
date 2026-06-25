@@ -11,11 +11,11 @@
 # References:
 #   https://github.com/pop-os/shell/blob/master_noble/scripts/configure.sh
 #   https://github.com/pop-os/shell/blob/master_noble/schemas/org.gnome.shell.extensions.pop-shell.gschema.xml
-{ lib, ... }:
+{ lib, enableGui, ... }:
 let
   emptyStrArray = lib.hm.gvariant.mkEmptyArray lib.hm.gvariant.type.string;
 in
-{
+lib.mkIf enableGui {
   dconf.settings = {
     # Pop Shell extension preferences and keybinding overrides.
     # Strip arrow key variants from focus (we use Super+Arrow for workspaces
