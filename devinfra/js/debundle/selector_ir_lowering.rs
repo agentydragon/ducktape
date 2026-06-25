@@ -1431,9 +1431,7 @@ fn declarators_carrier_ident(
     if node_kind.get(&node) != Some(&NodeKind::VarDeclarator) {
         return None;
     }
-    let Some((_, binding)) = children_by_parent.get(&node)?.first() else {
-        return None;
-    };
+    let (_, binding) = children_by_parent.get(&node)?.first()?;
     if node_kind.get(binding) == Some(&NodeKind::BindingIdent)
         && ident_name.get(binding).is_some_and(|name| {
             labeled_hole_name_for(name, DECLARATORS_HOLE_KEYWORD).is_some()

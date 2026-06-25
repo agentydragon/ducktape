@@ -16,7 +16,7 @@ use ascent::ascent;
 use selector_ir::{
     ClaimKind, ClaimOutcome, NodeTerm, OrdinalTerm, OwnerTerm, ResolvedClaim, SelectorAtom,
     SelectorFact, SelectorFactStore, SelectorProgram, SelectorProgramError, SelectorTarget,
-    SelectorTargetId, SelectorVariableId, SolverClaim, SolverResult, StringTerm, VariableDomain,
+    SelectorVariableId, SolverClaim, SolverResult, StringTerm, VariableDomain,
 };
 
 fn optional_u32_matches(expected: &Option<u32>, actual: u32) -> bool {
@@ -2772,7 +2772,7 @@ impl Error for SelectorIrSolverError {}
 mod tests {
     use super::*;
     use analysis::{AnalysisHints, ChunkId, analyze_chunk, build_owner_graph};
-    use selector_ir::{ClaimKind, ClaimOrigin, VariableDomain};
+    use selector_ir::{ClaimKind, ClaimOrigin, SelectorTargetId, VariableDomain};
     use selector_ir_lowering::{
         MemberSelectorLoweringContext, MemberSelectorProgramBuilder, lower_member_selector,
     };
