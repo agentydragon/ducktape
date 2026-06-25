@@ -83,7 +83,7 @@ fn validate_json_reports_every_failure_class_in_one_pass() {
         missing["recommended_next_action"]
             .as_str()
             .unwrap()
-            .contains("nearest_candidates"),
+            .contains("logged selector context"),
         "{missing:#}"
     );
 

@@ -113,7 +113,7 @@ export { renderCard, decoratePrimary, decorateSecondary };
         missing["recommended_next_action"]
             .as_str()
             .unwrap()
-            .contains("nearest_candidates"),
+            .contains("logged selector context"),
         "{missing:#}"
     );
 

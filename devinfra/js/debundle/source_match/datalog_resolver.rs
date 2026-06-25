@@ -1017,15 +1017,11 @@ impl ChunkResolver<'_> {
         let match_source = &selector.match_source;
         match matches.as_slice() {
             [single] => Ok(single.binding.clone()),
-            [] => {
-                let hint =
-                    fact_source_match_no_match_hint(self.module, selector).unwrap_or_default();
-                bail!(
-                    "logical_module {request_id}: {selector_label} for export `{export_name}`\
-                     {target_binding_hint} did not match any top-level declaration in the chunk. \
-                     Selector:\n{match_source}{hint}"
-                )
-            }
+            [] => bail!(
+                "logical_module {request_id}: {selector_label} for export `{export_name}`\
+                 {target_binding_hint} did not match any top-level declaration in the chunk. \
+                 Selector:\n{match_source}"
+            ),
             multiple => bail!(
                 "logical_module {request_id}: {selector_label} for export `{export_name}`\
                  {target_binding_hint} is ambiguous — matched {} top-level statements at body \

@@ -1493,7 +1493,7 @@ export { runtimeLeadingHelper, runtimeBuild, runtimeRead };
 }
 
 #[test]
-fn declarator_hole_miss_reports_best_anchored_var_decl_candidate() {
+fn declarator_hole_miss_reports_light_no_match() {
     let opts = FixtureOpts::new(
         r#"function operation(kind, value) {
   return `${kind}:${value}`;
@@ -1532,20 +1532,16 @@ export { firstSelected, secondSelected };
         opts,
         &[
             "static/app::operations",
-            "binding_groups[].source_match",
+            "binding_groups[].exports[`firstSelected`]",
             "did not match",
-            "Nearest variable declaration candidates:",
-            "declares `clusterPrefix`, `firstSelected`, `clusterMiddle`, `secondSelected`, `clusterSuffix`",
-            "declarators: `clusterPrefix = helper(...)`, `firstSelected = operation(...)`",
-            "matched 1/2 pinned declarators in order",
-            "selector pinned declarator #3 `secondSelected = operation(...)` was not found in order",
-            "remaining candidate declarators: `clusterMiddle = helper(...)`, `secondSelected = operation(...)`",
+            "firstSelected = operation",
+            "secondSelected = operation",
         ],
     );
 }
 
 #[test]
-fn declarator_hole_miss_reports_missing_between_hole_and_target_binding_guidance() {
+fn declarator_hole_miss_between_hole_and_target_binding_reports_light_no_match() {
     let opts = FixtureOpts::new(
         r#"function buildItem(label) {
   return { label };
@@ -1582,11 +1578,9 @@ export { selectedA, selectedB, selectedC };
             "static/app::selected_values",
             "target_binding `selectedB`",
             "did not match any top-level declaration",
-            "matched 3/3 pinned declarators in order",
-            "candidate has unmatched declarator(s) between selector declarator #1 `selectedA = buildItem(...)` and #2 `selectedB = buildItem(...)`: `skippedHelper = helperItem(...)`",
-            "Add a `DECLARATORS_* = null` pseudo-declarator between those pinned declarators",
-            "`target_binding` resolves one selector-local binding for the current export",
-            "use one `binding_groups` entry",
+            "selectedA = buildItem",
+            "selectedB = buildItem",
+            "selectedC = buildItem",
         ],
     );
 }
@@ -1967,19 +1961,18 @@ export { Counter };
         &[
             "static/app::shapes",
             "did not match",
-            "Nearest class candidates:",
-            "declares `Counter`",
-            "selector class pinned member `a`",
+            "class K",
+            "STMT_LIST_A",
         ],
     );
 }
 
 #[test]
-fn class_source_match_miss_reports_best_anchored_class_candidate() {
+fn class_source_match_miss_reports_light_no_match() {
     // The selector has all of the intended class's method anchors in order,
-    // but one method body is too exact. Diagnostics should point at that class
-    // and body mismatch, not at a later unrelated class that merely misses an
-    // anchor method.
+    // but one method body is too exact. Production diagnostics should stay
+    // light and report the failed selector instead of running a second
+    // near-miss matcher.
     let opts = FixtureOpts::new(
         r#"class CatalogCache {
   field = new Map();
@@ -2052,13 +2045,8 @@ export { CatalogCache };
         &[
             "static/app::catalog",
             "did not match",
-            "Nearest class candidates:",
-            "declares `CatalogCache`",
-            "members: `field`, `constructor`, `refreshEntriesNow`",
-            "matched 4/4 pinned member names in order",
-            "class member `refreshEntriesNow` matched by name",
-            "declares `LaterCatalog`",
-            "matched 0/4 pinned member names in order",
+            "refreshEntriesNow",
+            "filter.active",
         ],
     );
 }

@@ -412,8 +412,7 @@ export { RuntimeCatalog };
     expect_rejection_containing_all(
         opts,
         &[
-            "Duplicate binding claim",
-            "\"RuntimeCatalog\"",
+            "valid global selector assignment",
             "catalog/primary",
             "as `PrimaryCatalog`",
             "members[].selector.source_match as `PrimaryCatalog`",
@@ -471,8 +470,8 @@ export { RuntimeCatalog };
     );
     let stderr = rejected.stderr;
     for required in [
-        "Duplicate binding claim",
-        "\"RuntimeCatalog\"",
+        "Source-match selector diagnostic report: 2 unresolved selector(s) found",
+        "valid global selector assignment",
         "catalog/primary",
         "catalog/duplicate",
     ] {
@@ -489,8 +488,8 @@ export { RuntimeCatalog };
         })
         .count();
     assert_eq!(
-        timing_lines, 1,
-        "repeated cross-module selector should resolve once per chunk\nstderr:\n{stderr}",
+        timing_lines, 0,
+        "native source_match selectors should not call the legacy resolver\nstderr:\n{stderr}",
     );
 }
 
@@ -524,8 +523,8 @@ export { RuntimeCatalog };
     let rejected = run_keep_going_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
-        "duplicate source binding claims",
-        "source binding `RuntimeCatalog` claimed 2 times",
+        "Source-match selector diagnostic report: 2 unresolved selector(s) found",
+        "valid global selector assignment",
         "export `PrimaryCatalog`",
         "members[].selector.source_match as `PrimaryCatalog`",
         "export `DuplicateCatalog`",
@@ -641,7 +640,8 @@ fn dry_run_defaults_to_collecting_source_match_failures_and_duplicate_claims_tog
         "did not match any top-level declaration",
         "diagnostics/ambiguous",
         "as `AmbiguousHelper`",
-        "is ambiguous",
+        "matched 2 candidate top-level statement(s)",
+        "valid global selector assignment",
         "decoratePrimary",
         "decorateSecondary",
         "Duplicate binding claim report: 1 duplicate claim(s) found",
@@ -666,7 +666,8 @@ fn fail_fast_dry_run_stops_before_later_duplicate_claim_diagnostics() {
         "members[].selector.source_match",
         "diagnostics/ambiguous",
         "export `AmbiguousHelper`",
-        "is ambiguous",
+        "matched 2 candidate top-level statement(s)",
+        "valid global selector assignment",
     ] {
         assert!(
             stderr.contains(required),

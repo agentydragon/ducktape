@@ -52,7 +52,7 @@ impl DuplicateBindingClaim {
 // `selector_diagnostics` crate so writer and reader cannot drift.
 use selector_diagnostics::{
     DuplicateClaimReport, DuplicateClaimSiteReport, SelectorDiagnosticEntry,
-    SelectorDiagnosticsReport, SelectorNearestCandidate,
+    SelectorDiagnosticsReport,
 };
 use selector_ir::{
     ClaimOutcome, OwnerTerm, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore,
@@ -428,26 +428,21 @@ struct SourceMatchDiagnostic {
     category: String,
     body_indices: Vec<usize>,
     first_mismatch: Option<String>,
-    nearest_candidates: Vec<SelectorNearestCandidate>,
 }
 
 impl SourceMatchDiagnostic {
     fn new(
-        runtime_module: &Module,
         module_id: &str,
         module_path: &str,
         member: &MemberRequest,
+        body_indices: Vec<usize>,
         message: String,
     ) -> Self {
         let selector = member
             .source_match
             .clone()
             .expect("source_match diagnostic requires unresolved selector");
-        let SourceMatchReportDetails {
-            body_indices,
-            first_mismatch,
-            nearest_candidates,
-        } = source_match_report_details(runtime_module, module_id, &selector, &message);
+        let first_mismatch = first_relevant_error_line(&message);
         Self {
             module_id: module_id.to_string(),
             module_path: module_path.to_string(),
@@ -457,7 +452,6 @@ impl SourceMatchDiagnostic {
             category: classify_source_match_failure(&message).to_string(),
             body_indices,
             first_mismatch,
-            nearest_candidates,
             message,
         }
     }
@@ -511,6 +505,61 @@ fn source_match_no_match_message(
         "logical_module {}: members[].selector.source_match for export `{}`{} did not match any \
          top-level declaration in the chunk. Selector:\n{}",
         request.id, member.export_name, target_binding_hint, selector.match_source,
+    ))
+}
+
+fn native_source_match_no_match_message(
+    request: &LogicalRequest,
+    member: &MemberRequest,
+) -> Option<String> {
+    let selector = member.source_match.as_ref()?;
+    let target_binding_hint = selector
+        .target_binding
+        .as_deref()
+        .map(|target| format!(" target_binding `{target}`"))
+        .unwrap_or_default();
+    Some(format!(
+        "logical_module {}: members[].selector.source_match for export `{}`{} did not produce a \
+         valid global selector assignment. The selector may have no matching source declaration, \
+         or the joint constraints may reject all otherwise matching declarations. Selector:\n{}",
+        request.id, member.export_name, target_binding_hint, selector.match_source,
+    ))
+}
+
+fn source_match_joint_no_match_message(
+    request: &LogicalRequest,
+    member: &MemberRequest,
+    candidates: Option<&[source_match::MemberBindingMatch]>,
+) -> Option<String> {
+    let selector = member.source_match.as_ref()?;
+    let candidates = candidates?;
+    if candidates.is_empty() {
+        return None;
+    }
+    let target_binding_hint = selector
+        .target_binding
+        .as_deref()
+        .map(|target| format!(" target_binding `{target}`"))
+        .unwrap_or_default();
+    Some(format!(
+        "logical_module {}: members[].selector.source_match for export `{}`{} matched {} \
+         candidate top-level statement(s), but no valid global selector assignment survived the \
+         joint constraints (for example all_different / connected relational selectors). Matched \
+         body indices: {:?}; bindings: {}. Selector:\n{}",
+        request.id,
+        member.export_name,
+        target_binding_hint,
+        candidates.len(),
+        candidates
+            .iter()
+            .map(|candidate| candidate.body_idx)
+            .collect::<Vec<_>>(),
+        candidates
+            .iter()
+            .map(|candidate| candidate.binding.binding_name.as_str())
+            .collect::<Vec<_>>()
+            .join(", "),
+        selector.match_source,
     ))
 }
 
@@ -573,85 +622,6 @@ fn native_source_match_ambiguous_message(
     ))
 }
 
-fn source_match_resolution_error_message(
-    selector_resolver: &dyn source_match::SelectorResolver,
-    request: &LogicalRequest,
-    member: &MemberRequest,
-    group_assignment: Option<&SourceMatchGroupAssignment>,
-) -> Option<String> {
-    let selector = member.source_match.as_ref()?;
-    if let Some(group) = group_assignment {
-        let member_error = selector_resolver
-            .resolve_member_with_label(
-                &request.id,
-                &member.export_name,
-                selector,
-                "binding_groups[].source_match",
-            )
-            .err()
-            .map(|error| format!("{error:#}"));
-        return member_error.or_else(|| {
-            selector_resolver
-                .resolve_member_group(&request.id, &group.selector, &group.exports_by_target)
-                .err()
-                .map(|error| format!("{error:#}"))
-        });
-    }
-    selector_resolver
-        .resolve_member(&request.id, &member.export_name, selector)
-        .err()
-        .map(|error| format!("{error:#}"))
-}
-
-struct SourceMatchReportDetails {
-    body_indices: Vec<usize>,
-    first_mismatch: Option<String>,
-    nearest_candidates: Vec<SelectorNearestCandidate>,
-}
-
-fn source_match_report_details(
-    runtime_module: &Module,
-    request_id: &str,
-    selector: &spec::AnonymousStatementSelector,
-    message: &str,
-) -> SourceMatchReportDetails {
-    match source_match::fact_source_match_body_debt(runtime_module, request_id, selector, 1, 3) {
-        Ok(debt) => {
-            let body_indices = debt
-                .exact_groups
-                .iter()
-                .flat_map(|group| group.iter().flatten().copied())
-                .collect::<BTreeSet<_>>()
-                .into_iter()
-                .collect::<Vec<_>>();
-            let nearest_candidates = debt
-                .near_misses
-                .into_iter()
-                .map(|candidate| SelectorNearestCandidate {
-                    body_index: candidate.body_idx,
-                    declared_bindings: candidate.declared_bindings,
-                    score: candidate.score,
-                    first_mismatch: candidate.reason,
-                })
-                .collect::<Vec<_>>();
-            let first_mismatch = nearest_candidates
-                .first()
-                .map(|candidate| candidate.first_mismatch.clone())
-                .or_else(|| first_relevant_error_line(message));
-            SourceMatchReportDetails {
-                body_indices,
-                first_mismatch,
-                nearest_candidates,
-            }
-        }
-        Err(error) => SourceMatchReportDetails {
-            body_indices: Vec::new(),
-            first_mismatch: Some(format!("failed to analyze nearest candidates: {error:#}")),
-            nearest_candidates: Vec::new(),
-        },
-    }
-}
-
 fn first_relevant_error_line(message: &str) -> Option<String> {
     message
         .lines()
@@ -675,7 +645,7 @@ fn recommended_source_match_action(category: &str) -> &'static str {
             "Refine the selector, add target_binding when selecting one binding from a matched declaration, or narrow the matched source context."
         }
         "unresolved_selector" => {
-            "Update the selector source to match the current chunk or inspect nearest_candidates before applying a mechanical rewrite."
+            "Update the selector source to match the current chunk or inspect the logged selector context before applying a mechanical rewrite."
         }
         _ => "Inspect the selector error and update the spec syntax or selector source.",
     }
@@ -1298,7 +1268,7 @@ impl ChunkPlanBuilder {
         }
         let result = selector_ir_solver::solve(&program, &facts)?;
 
-        for (target, (index, member, group_assignment)) in deferred_targets {
+        for (target, (index, member, _group_assignment)) in deferred_targets {
             let request = &explicit_requests[index];
             match result.outcome_for(target) {
                 Some(ClaimOutcome::Unique { claim }) => {
@@ -1355,32 +1325,42 @@ impl ChunkPlanBuilder {
                     )?;
                 }
                 Some(ClaimOutcome::NoMatch) => {
+                    let native_source_match = member.source_match.is_some()
+                        && !source_match_oracle_targets.contains(&target);
                     if let Some(message) = source_match_errors
                         .get(&target)
                         .cloned()
                         .or_else(|| {
-                            if member.source_match.is_some()
-                                && !source_match_oracle_targets.contains(&target)
-                            {
-                                source_match_no_match_message(request, &member)
+                            source_match_joint_no_match_message(
+                                request,
+                                &member,
+                                source_match_candidates.get(&target).map(Vec::as_slice),
+                            )
+                        })
+                        .or_else(|| {
+                            if native_source_match {
+                                native_source_match_no_match_message(request, &member)
                             } else {
-                                source_match_resolution_error_message(
-                                    selector_resolver,
-                                    request,
-                                    &member,
-                                    group_assignment.as_ref(),
-                                )
+                                source_match_no_match_message(request, &member)
                             }
                         })
-                        .or_else(|| source_match_no_match_message(request, &member))
                     {
                         if self.keep_going {
+                            let body_indices = source_match_candidates
+                                .get(&target)
+                                .map(|candidates| {
+                                    candidates
+                                        .iter()
+                                        .map(|candidate| candidate.body_idx)
+                                        .collect::<Vec<_>>()
+                                })
+                                .unwrap_or_default();
                             self.source_match_diagnostics
                                 .push(SourceMatchDiagnostic::new(
-                                    module,
                                     &request.id,
                                     &request.target_path,
                                     &member,
+                                    body_indices,
                                     message,
                                 ));
                             continue;
@@ -1402,28 +1382,38 @@ impl ChunkPlanBuilder {
                     {
                         native_source_match_ambiguous_message(request, &member, candidates)
                     } else {
-                        source_match_resolution_error_message(
-                            selector_resolver,
+                        source_match_ambiguous_message(
                             request,
                             &member,
-                            group_assignment.as_ref(),
+                            source_match_candidates.get(&target).map(Vec::as_slice),
                         )
-                        .or_else(|| {
-                            source_match_ambiguous_message(
-                                request,
-                                &member,
-                                source_match_candidates.get(&target).map(Vec::as_slice),
-                            )
-                        })
                     };
                     if let Some(message) = message {
                         if self.keep_going {
+                            let body_indices = if member.source_match.is_some()
+                                && source_match_oracle_targets.contains(&target)
+                            {
+                                source_match_candidates
+                                    .get(&target)
+                                    .map(|candidates| {
+                                        candidates
+                                            .iter()
+                                            .map(|candidate| candidate.body_idx)
+                                            .collect::<Vec<_>>()
+                                    })
+                                    .unwrap_or_default()
+                            } else {
+                                candidates
+                                    .iter()
+                                    .map(|candidate| candidate.statement_ordinal.0)
+                                    .collect::<Vec<_>>()
+                            };
                             self.source_match_diagnostics
                                 .push(SourceMatchDiagnostic::new(
-                                    module,
                                     &request.id,
                                     &request.target_path,
                                     &member,
+                                    body_indices,
                                     message,
                                 ));
                             continue;
@@ -2779,7 +2769,7 @@ impl ChunkPlanBuilder {
                 claim_origin: Some(diagnostic.claim_origin.clone()),
                 body_indices: diagnostic.body_indices.clone(),
                 first_mismatch: diagnostic.first_mismatch.clone(),
-                nearest_candidates: diagnostic.nearest_candidates.clone(),
+                nearest_candidates: Vec::new(),
                 source_match_preview: Some(source_match::source_match_preview(
                     &diagnostic.selector.match_source,
                 )),

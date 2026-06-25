@@ -452,7 +452,11 @@ fn intrinsic_alias_fails_closed_when_no_alias_matches() {
                 ),
             ],
         ),
-        &["intrinsic_alias", "did not resolve"],
+        &[
+            "global selector solver found no match",
+            "decorateClassMember",
+            "MakesDecorateCall",
+        ],
     );
 }
 
@@ -517,7 +521,11 @@ export { C };
                 ),
             ],
         ),
-        &["intrinsic_alias", "did not resolve"],
+        &[
+            "global selector solver found no match",
+            "decorateClassMember",
+            "MakesDecorateCall",
+        ],
     );
 }
 
@@ -583,6 +591,10 @@ export { C };
                 ),
             ],
         ),
-        &["intrinsic_alias", "did not resolve"],
+        &[
+            "global selector solver found no match",
+            "decorateClassMember",
+            "MakesDecorateCall",
+        ],
     );
 }

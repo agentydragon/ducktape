@@ -948,6 +948,10 @@ fn native_alpha_source_match_supported(
     }
 
     let root_kind = index.node_kind.get(root).copied();
+    if !has_target_binding && root_kind == Some(NodeKind::FnDecl) {
+        return false;
+    }
+
     if has_target_binding && root_kind == Some(NodeKind::VarDecl) {
         return false;
     }
@@ -2555,6 +2559,51 @@ mod tests {
     fn alpha_all_source_match_nested_scope_stays_oracle_only() {
         let mut selector =
             AnonymousStatementSelector::exact("function a(xs) { return xs.map((x) => x.id); }");
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector.clone()),
+        )
+        .unwrap();
+
+        assert_source_match_oracle_only(&lowered, &selector);
+    }
+
+    #[test]
+    fn alpha_all_class_source_match_with_target_binding_stays_native() {
+        let mut selector =
+            AnonymousStatementSelector::exact("class A { method() { return \"selected\"; } }");
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        selector.target_binding = Some("A".to_string());
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        let target_owner = lowered.program.targets[lowered.target.0].owner;
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::OwnerDeclaresBinding {
+                owner: OwnerTerm::Var { id },
+                binding: StringTerm::Var { .. },
+            } if *id == target_owner
+        )));
+    }
+
+    #[test]
+    fn alpha_all_function_without_target_binding_stays_oracle_only() {
+        let mut selector =
+            AnonymousStatementSelector::exact("function a() { return \"selected\"; }");
         selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
         let lowered = lower_member_selector(
             &context(),
