@@ -565,7 +565,7 @@ impl MemberSelectorProgramBuilder {
         variable_label: &str,
         node_vars: &BTreeMap<NodeId, SelectorVariableId>,
         top_level_roots: &[NodeId],
-    ) -> Result<(), SelectorIrLoweringError> {
+    ) -> Result<Vec<SelectorVariableId>, SelectorIrLoweringError> {
         let mut ordinals = Vec::new();
         for (index, root) in top_level_roots.iter().enumerate() {
             let Some(root) = node_vars.get(root).copied() else {
@@ -584,7 +584,7 @@ impl MemberSelectorProgramBuilder {
             ordinals.push(ordinal);
         }
         let Some(base_ordinal) = ordinals.first().copied() else {
-            return Ok(());
+            return Ok(ordinals);
         };
         for (index, ordinal) in ordinals.iter().enumerate() {
             let offset =
@@ -598,7 +598,7 @@ impl MemberSelectorProgramBuilder {
                 offset,
             });
         }
-        Ok(())
+        Ok(ordinals)
     }
 
     fn lower_native_top_level_window(
@@ -673,11 +673,16 @@ impl MemberSelectorProgramBuilder {
             return Ok(false);
         };
         let module_stmt_list_hole_roots = native_module_stmt_list_hole_roots(&facts);
-        let Some(top_level_roots) =
-            native_single_pinned_top_level_segment(&facts, &module_stmt_list_hole_roots)
-        else {
+        let top_level_segments =
+            native_pinned_top_level_segments(&facts, &module_stmt_list_hole_roots);
+        if top_level_segments.is_empty() {
             return Ok(false);
-        };
+        }
+        let top_level_roots = top_level_segments
+            .iter()
+            .flatten()
+            .copied()
+            .collect::<Vec<_>>();
         let regex_predicates = native_string_literal_regex_predicates(&facts);
         let Some(hole_roots) =
             native_single_node_hole_roots(&facts, &regex_predicates.consumed_nodes)
@@ -742,13 +747,28 @@ impl MemberSelectorProgramBuilder {
         let Some(root_by_target_binding) = root_by_target_binding else {
             return Ok(false);
         };
-        if top_level_roots.len() > 1 {
-            self.lower_native_top_level_fixed_sequence(
-                logical_module,
-                "binding_group.source_match",
-                &node_vars,
-                &top_level_roots,
-            )?;
+        if top_level_segments.len() > 1 || top_level_roots.len() > 1 {
+            let mut previous_segment_last = None;
+            for (segment_index, segment_roots) in top_level_segments.iter().enumerate() {
+                let ordinals = self.lower_native_top_level_fixed_sequence(
+                    logical_module,
+                    &format!("binding_group.source_match.segment.{segment_index}"),
+                    &node_vars,
+                    segment_roots,
+                )?;
+                let Some(segment_first) = ordinals.first().copied() else {
+                    continue;
+                };
+                if let Some(previous_segment_last) = previous_segment_last {
+                    self.program.add_atom(SelectorAtom::OrdinalBefore {
+                        before: OrdinalTerm::Var {
+                            id: previous_segment_last,
+                        },
+                        after: OrdinalTerm::Var { id: segment_first },
+                    });
+                }
+                previous_segment_last = ordinals.last().copied();
+            }
         }
 
         let alpha_identifier_vars = if selector.identifiers == SourceMatchIdentifierMode::AlphaAll {
@@ -1343,27 +1363,25 @@ fn native_module_stmt_list_hole_roots(facts: &ChunkFacts) -> BTreeSet<NodeId> {
         .collect()
 }
 
-fn native_single_pinned_top_level_segment(
+fn native_pinned_top_level_segments(
     facts: &ChunkFacts,
     module_stmt_list_hole_roots: &BTreeSet<NodeId>,
-) -> Option<Vec<NodeId>> {
-    let mut roots = Vec::new();
-    let mut saw_pinned_root = false;
-    let mut saw_trailing_hole = false;
+) -> Vec<Vec<NodeId>> {
+    let mut segments = Vec::new();
+    let mut current_segment = Vec::new();
     for (root, _ordinal) in &facts.top_level {
         if module_stmt_list_hole_roots.contains(root) {
-            if saw_pinned_root {
-                saw_trailing_hole = true;
+            if !current_segment.is_empty() {
+                segments.push(std::mem::take(&mut current_segment));
             }
             continue;
         }
-        if saw_trailing_hole {
-            return None;
-        }
-        saw_pinned_root = true;
-        roots.push(*root);
+        current_segment.push(*root);
     }
-    if roots.is_empty() { None } else { Some(roots) }
+    if !current_segment.is_empty() {
+        segments.push(current_segment);
+    }
+    segments
 }
 
 fn native_single_declared_binding_node(
@@ -3197,7 +3215,7 @@ STMT_LIST_TAIL;"#,
     }
 
     #[test]
-    fn binding_group_source_match_with_internal_stmt_list_hole_stays_oracle_only() {
+    fn binding_group_source_match_with_internal_stmt_list_hole_lowers_to_native_sequence() {
         let mut group_selector = AnonymousStatementSelector::exact(
             r#"const first = makeFirst();
 STMT_LIST_MIDDLE;
@@ -3206,10 +3224,29 @@ function second() {
 }"#,
         );
         group_selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let mut first_selector = group_selector.clone();
+        first_selector.target_binding = Some("first".to_string());
+        let mut second_selector = group_selector.clone();
+        second_selector.target_binding = Some("second".to_string());
+
         let mut builder = MemberSelectorProgramBuilder::new(context());
+        builder
+            .declare_member_target_in_module(
+                "runtime/widgets",
+                "First",
+                &MemberSelectorSpec::SourceMatch(first_selector),
+            )
+            .unwrap();
+        builder
+            .declare_member_target_in_module(
+                "runtime/widgets",
+                "Second",
+                &MemberSelectorSpec::SourceMatch(second_selector),
+            )
+            .unwrap();
 
         assert!(
-            !builder
+            builder
                 .try_lower_native_source_match_group(
                     "runtime/widgets",
                     &group_selector,
@@ -3219,8 +3256,24 @@ function second() {
                     ]),
                 )
                 .unwrap(),
-            "internal top-level STMT_LIST needs ordered-subsequence ordinal support"
+            "internal top-level STMT_LIST should lower to an ordinal-before constraint"
         );
+        let program = builder.into_program().unwrap();
+
+        assert!(
+            !program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
+            "internal module-level STMT_LIST holes should not force the group oracle"
+        );
+        assert!(program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::OrdinalBefore {
+                before: OrdinalTerm::Var { .. },
+                after: OrdinalTerm::Var { .. },
+            }
+        )));
     }
 
     #[test]

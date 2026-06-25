@@ -173,6 +173,13 @@ fn assignment_satisfies_equality(
     match kind {
         EqualityConstraintKind::Equal => left == right,
         EqualityConstraintKind::NotEqual => left != right,
+        EqualityConstraintKind::OrdinalBefore => matches!(
+            (left, right),
+            (
+                AssignmentValue::StatementOrdinal(left),
+                AssignmentValue::StatementOrdinal(right),
+            ) if left < right
+        ),
     }
 }
 
@@ -1745,6 +1752,9 @@ impl ProgramSupport {
                     ordinal,
                     offset,
                 } => support.add_ordinal_offset(base, ordinal, *offset),
+                SelectorAtom::OrdinalBefore { before, after } => {
+                    support.add_ordinal_before(before, after)
+                }
                 SelectorAtom::ReadsMember {
                     owner: OwnerTerm::Var { id },
                     object: None,
@@ -2390,6 +2400,20 @@ impl ProgramSupport {
             _ => self
                 .unsupported_atoms
                 .push("unsupported mixed constant/variable ordinal_offset assertion".to_string()),
+        }
+    }
+
+    fn add_ordinal_before(&mut self, before: &OrdinalTerm, after: &OrdinalTerm) {
+        match (before, after) {
+            (OrdinalTerm::Var { id: before }, OrdinalTerm::Var { id: after }) => {
+                self.add_equality(*before, *after, EqualityConstraintKind::OrdinalBefore)
+            }
+            (OrdinalTerm::Const { .. }, OrdinalTerm::Const { .. }) => self
+                .unsupported_atoms
+                .push("unsupported constant-only ordinal_before assertion".to_string()),
+            _ => self
+                .unsupported_atoms
+                .push("unsupported mixed constant/variable ordinal_before assertion".to_string()),
         }
     }
 
@@ -3089,6 +3113,7 @@ struct EqualityConstraint {
 enum EqualityConstraintKind {
     Equal,
     NotEqual,
+    OrdinalBefore,
 }
 
 fn optional_const_string(value: &Option<StringTerm>) -> Option<Option<String>> {
@@ -3125,6 +3150,7 @@ fn atom_kind(atom: &SelectorAtom) -> &'static str {
         SelectorAtom::AstRegexLiteral { .. } => "ast_regex_literal",
         SelectorAtom::AstTopLevel { .. } => "ast_top_level",
         SelectorAtom::OrdinalOffset { .. } => "ordinal_offset",
+        SelectorAtom::OrdinalBefore { .. } => "ordinal_before",
         SelectorAtom::ReadsMember { .. } => "reads_member",
         SelectorAtom::ReadsMemberOfOwner { .. } => "reads_member_of_owner",
         SelectorAtom::ConsumesModuleMember { .. } => "consumes_module_member",
@@ -3812,6 +3838,102 @@ mod tests {
         ));
         assert_eq!(
             solve(&program, &gapped).unwrap().outcome_for(target),
+            Some(&ClaimOutcome::NoMatch)
+        );
+    }
+
+    #[test]
+    fn ordinal_before_requires_ordered_top_level_roots() {
+        let mut program = SelectorProgram::default();
+        let owner_var = program.add_variable(VariableDomain::Owner, Some("@Target".to_string()));
+        let first_node = program.add_variable(
+            VariableDomain::AstNode,
+            Some("source_match.first".to_string()),
+        );
+        let second_node = program.add_variable(
+            VariableDomain::AstNode,
+            Some("source_match.second".to_string()),
+        );
+        let first_ordinal = program.add_variable(
+            VariableDomain::StatementOrdinal,
+            Some("source_match.first.ordinal".to_string()),
+        );
+        let second_ordinal = program.add_variable(
+            VariableDomain::StatementOrdinal,
+            Some("source_match.second.ordinal".to_string()),
+        );
+        let target = program.add_target(
+            ChunkId(0),
+            owner_var,
+            "runtime/widgets",
+            ClaimKind::Binding {
+                export_name: Some("Target".to_string()),
+            },
+            ClaimOrigin::MemberSelector,
+        );
+        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+            owner: OwnerTerm::Var { id: owner_var },
+            binding: StringTerm::Const {
+                value: "selected".to_string(),
+            },
+        });
+        program.add_atom(SelectorAtom::OwnerTopLevelRoot {
+            owner: OwnerTerm::Var { id: owner_var },
+            root: NodeTerm::Var { id: second_node },
+        });
+        program.add_atom(SelectorAtom::AstTopLevel {
+            node: NodeTerm::Var { id: first_node },
+            ordinal: OrdinalTerm::Var { id: first_ordinal },
+        });
+        program.add_atom(SelectorAtom::AstTopLevel {
+            node: NodeTerm::Var { id: second_node },
+            ordinal: OrdinalTerm::Var { id: second_ordinal },
+        });
+        program.add_atom(SelectorAtom::OrdinalBefore {
+            before: OrdinalTerm::Var { id: first_ordinal },
+            after: OrdinalTerm::Var { id: second_ordinal },
+        });
+        program.add_atom(SelectorAtom::AstKind {
+            node: NodeTerm::Var { id: first_node },
+            node_kind: chunk_facts::NodeKind::VarDecl,
+        });
+        program.add_atom(SelectorAtom::AstKind {
+            node: NodeTerm::Var { id: second_node },
+            node_kind: chunk_facts::NodeKind::VarDecl,
+        });
+        let facts = |first_ordinal, second_ordinal| SelectorFactStore {
+            facts: vec![
+                owner(2, second_ordinal, "var_decl"),
+                declared(2, "selected"),
+                SelectorFact::AstTopLevel {
+                    chunk_id: ChunkId(0),
+                    node: 10,
+                    statement_ordinal: StatementOrdinal(first_ordinal),
+                },
+                SelectorFact::AstTopLevel {
+                    chunk_id: ChunkId(0),
+                    node: 20,
+                    statement_ordinal: StatementOrdinal(second_ordinal),
+                },
+                SelectorFact::AstKind {
+                    chunk_id: ChunkId(0),
+                    node: 10,
+                    node_kind: chunk_facts::NodeKind::VarDecl,
+                },
+                SelectorFact::AstKind {
+                    chunk_id: ChunkId(0),
+                    node: 20,
+                    node_kind: chunk_facts::NodeKind::VarDecl,
+                },
+            ],
+        };
+
+        assert!(matches!(
+            solve(&program, &facts(1, 3)).unwrap().outcome_for(target),
+            Some(ClaimOutcome::Unique { claim }) if claim.owner == OwnerId(2)
+        ));
+        assert_eq!(
+            solve(&program, &facts(3, 1)).unwrap().outcome_for(target),
             Some(&ClaimOutcome::NoMatch)
         );
     }

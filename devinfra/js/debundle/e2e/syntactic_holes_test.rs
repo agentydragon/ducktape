@@ -1017,6 +1017,54 @@ STMT_LIST_TAIL;"#,
 }
 
 #[test]
+fn binding_group_source_match_range_with_internal_stmt_list_hole_stays_native() {
+    let fixture = run_fixture_with_env(
+        FixtureOpts::new(
+            r#"const runtimeFirst = "alpha";
+const ignoredMiddle = "middle";
+function runtimeSecond() {
+  return `${runtimeFirst}:beta`;
+}
+console.log(runtimeSecond(), ignoredMiddle);
+export { runtimeFirst, ignoredMiddle, runtimeSecond };
+"#,
+            vec![logical_module_with_binding_groups(
+                "selected/gapped-range",
+                &[],
+                &[BindingGroup::source_alpha(
+                    r#"const first = "alpha";
+STMT_LIST_MIDDLE;
+function second() {
+  return `${first}:beta`;
+}"#,
+                    &[("first", "first"), ("second", "second")],
+                )],
+            )],
+        ),
+        &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
+    );
+    assert!(
+        !fixture.stderr.contains("[debundle source_match]"),
+        "native binding_group source_match with internal STMT_LIST should not call the legacy resolver\nstderr:\n{}",
+        fixture.stderr
+    );
+
+    assert_entry_output(&fixture, "alpha:beta middle\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/selected/gapped-range.js",
+        &["first", "second"],
+        &["ignoredMiddle"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected/gapped-range.js",
+        &["const first", "function second", "alpha"],
+        &["ignoredMiddle", "STMT_LIST"],
+    );
+}
+
+#[test]
 fn binding_group_source_match_range_matches_exported_const_declarations() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"export const runtimeFirstClassName = "Widget-module_first__exp1";

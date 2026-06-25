@@ -232,6 +232,10 @@ pub enum SelectorAtom {
         ordinal: OrdinalTerm,
         offset: i32,
     },
+    OrdinalBefore {
+        before: OrdinalTerm,
+        after: OrdinalTerm,
+    },
     ReadsMember {
         owner: OwnerTerm,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -498,6 +502,10 @@ impl SelectorProgram {
             SelectorAtom::OrdinalOffset { base, ordinal, .. } => {
                 self.validate_ordinal_term(base, "ordinal_offset.base")?;
                 self.validate_ordinal_term(ordinal, "ordinal_offset.ordinal")
+            }
+            SelectorAtom::OrdinalBefore { before, after } => {
+                self.validate_ordinal_term(before, "ordinal_before.before")?;
+                self.validate_ordinal_term(after, "ordinal_before.after")
             }
             SelectorAtom::ReadsMember {
                 owner,
