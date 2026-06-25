@@ -48,7 +48,7 @@ spec:
           cores: 1
         resources:
           requests:
-            memory: 2Gi
+            memory: 4Gi
         firmware:
           bootloader:
             efi:
