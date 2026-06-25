@@ -10,7 +10,7 @@ use std::fmt;
 use analysis::{ChunkId, StatementKind};
 use chunk_facts::{ChunkFacts, NodeId, NodeKind};
 use selector_ir::{
-    ClaimKind, ClaimOrigin, NodeTerm, OwnerTerm, RelationalPrimitive, SelectorAtom,
+    ClaimKind, ClaimOrigin, NodeTerm, OrdinalTerm, OwnerTerm, RelationalPrimitive, SelectorAtom,
     SelectorProgram, SelectorTargetId, SelectorVariableId, StringTerm, VariableDomain,
 };
 use source_match_holes::{
@@ -390,7 +390,10 @@ impl MemberSelectorProgramBuilder {
         }) else {
             return Ok(false);
         };
-        if parsed.body.len() != 1 {
+        if parsed.body.is_empty() {
+            return Ok(false);
+        }
+        if parsed.body.len() > 1 && selector.target_binding.is_none() {
             return Ok(false);
         }
         let Ok(facts) =
@@ -398,6 +401,9 @@ impl MemberSelectorProgramBuilder {
         else {
             return Ok(false);
         };
+        if parsed.body.len() > 1 && native_module_stmt_list_hole_roots(&facts) {
+            return Ok(false);
+        }
         let regex_predicates = native_string_literal_regex_predicates(&facts);
         let Some(hole_roots) =
             native_single_node_hole_roots(&facts, &regex_predicates.consumed_nodes)
@@ -415,9 +421,14 @@ impl MemberSelectorProgramBuilder {
         } else {
             BTreeMap::new()
         };
-        let [(root_node, _ordinal)] = facts.top_level.as_slice() else {
+        if facts.top_level.len() != parsed.body.len() {
             return Ok(false);
-        };
+        }
+        let top_level_roots = facts
+            .top_level
+            .iter()
+            .map(|(root, _ordinal)| *root)
+            .collect::<Vec<_>>();
         let target_binding_node = match &selector.target_binding {
             Some(target_binding) => {
                 let Some(target_binding_node) =
@@ -435,6 +446,29 @@ impl MemberSelectorProgramBuilder {
             }
             _ => None,
         };
+        let target_root_node =
+            if let Some((_target_binding, target_binding_node)) = target_binding_node {
+                let index = AlphaIdentifierIndex::new(&facts);
+                let Some(root) = native_top_level_root_containing_node(
+                    &index,
+                    &top_level_roots,
+                    target_binding_node,
+                ) else {
+                    return Ok(false);
+                };
+                root
+            } else {
+                let [root] = top_level_roots.as_slice() else {
+                    return Ok(false);
+                };
+                *root
+            };
+        let Some(target_root_index) = top_level_roots
+            .iter()
+            .position(|root| *root == target_root_node)
+        else {
+            return Ok(false);
+        };
 
         let mut node_vars = BTreeMap::<NodeId, SelectorVariableId>::new();
         for (node, _kind) in &facts.node_kind {
@@ -446,13 +480,21 @@ impl MemberSelectorProgramBuilder {
                 ),
             );
         }
-        let Some(root) = node_vars.get(root_node).copied() else {
+        let Some(root) = node_vars.get(&target_root_node).copied() else {
             return Ok(false);
         };
         self.program.add_atom(SelectorAtom::OwnerTopLevelRoot {
             owner: owner_term(owner),
             root: node_term(root),
         });
+        if top_level_roots.len() > 1 {
+            self.lower_native_top_level_window(
+                logical_module,
+                &node_vars,
+                &top_level_roots,
+                target_root_index,
+            )?;
+        }
         let alpha_identifier_vars = if selector.identifiers == SourceMatchIdentifierMode::AlphaAll {
             self.lower_alpha_identifier_variables(logical_module, &facts, &skipped_nodes)
         } else {
@@ -515,6 +557,52 @@ impl MemberSelectorProgramBuilder {
             regex_predicates: &regex_predicates,
         });
         Ok(true)
+    }
+
+    fn lower_native_top_level_window(
+        &mut self,
+        logical_module: &str,
+        node_vars: &BTreeMap<NodeId, SelectorVariableId>,
+        top_level_roots: &[NodeId],
+        target_root_index: usize,
+    ) -> Result<(), SelectorIrLoweringError> {
+        let target_ordinal = self.program.add_variable(
+            VariableDomain::StatementOrdinal,
+            Some(format!(
+                "{logical_module}::source_match.window.target_ordinal"
+            )),
+        );
+        for (index, root) in top_level_roots.iter().enumerate() {
+            let Some(root) = node_vars.get(root).copied() else {
+                continue;
+            };
+            let ordinal = if index == target_root_index {
+                target_ordinal
+            } else {
+                self.program.add_variable(
+                    VariableDomain::StatementOrdinal,
+                    Some(format!(
+                        "{logical_module}::source_match.window.ordinal.{index}"
+                    )),
+                )
+            };
+            self.program.add_atom(SelectorAtom::AstTopLevel {
+                node: node_term(root),
+                ordinal: OrdinalTerm::Var { id: ordinal },
+            });
+            let offset = i32::try_from(index)
+                .and_then(|index| i32::try_from(target_root_index).map(|target| index - target))
+                .map_err(|_| SelectorIrLoweringError::Unsupported {
+                    selector_kind: "source_match",
+                    reason: "multi-statement source_match window exceeds solver i32 range",
+                })?;
+            self.program.add_atom(SelectorAtom::OrdinalOffset {
+                base: OrdinalTerm::Var { id: target_ordinal },
+                ordinal: OrdinalTerm::Var { id: ordinal },
+                offset,
+            });
+        }
+        Ok(())
     }
 
     pub fn try_lower_native_source_match_group(
@@ -920,12 +1008,22 @@ impl MemberSelectorProgramBuilder {
         facts: &ChunkFacts,
         skipped_nodes: &BTreeSet<NodeId>,
     ) -> BTreeMap<NodeId, SelectorVariableId> {
-        let [(root, _ordinal)] = facts.top_level.as_slice() else {
+        if facts.top_level.is_empty() {
             return BTreeMap::new();
-        };
+        }
         let index = AlphaIdentifierIndex::new(facts);
         let mut state = AlphaIdentifierState::default();
-        self.lower_alpha_identifier_node(logical_module, &index, skipped_nodes, &mut state, *root)
+        let mut result = BTreeMap::new();
+        for (root, _ordinal) in &facts.top_level {
+            result.extend(self.lower_alpha_identifier_node(
+                logical_module,
+                &index,
+                skipped_nodes,
+                &mut state,
+                *root,
+            ));
+        }
+        result
     }
 
     fn lower_alpha_identifier_node(
@@ -1096,11 +1194,15 @@ fn native_target_binding_node(
     skipped_nodes: &BTreeSet<NodeId>,
     target_binding: &str,
 ) -> Option<NodeId> {
-    let [(root, _ordinal)] = facts.top_level.as_slice() else {
+    if facts.top_level.is_empty() {
         return None;
-    };
+    }
     let index = AlphaIdentifierIndex::new(facts);
-    let declared_nodes = native_declared_binding_nodes(&index, skipped_nodes, *root);
+    let declared_nodes = facts
+        .top_level
+        .iter()
+        .flat_map(|(root, _ordinal)| native_declared_binding_nodes(&index, skipped_nodes, *root))
+        .collect::<Vec<_>>();
     let matches = declared_nodes
         .into_iter()
         .filter(|node| index.ident_name.get(node).map(String::as_str) == Some(target_binding))
@@ -1109,6 +1211,50 @@ fn native_target_binding_node(
         return None;
     };
     Some(*node)
+}
+
+fn native_top_level_root_containing_node(
+    index: &AlphaIdentifierIndex,
+    top_level_roots: &[NodeId],
+    target: NodeId,
+) -> Option<NodeId> {
+    let roots = top_level_roots
+        .iter()
+        .copied()
+        .filter(|root| native_node_contains(index, *root, target))
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return None;
+    };
+    Some(*root)
+}
+
+fn native_node_contains(index: &AlphaIdentifierIndex, root: NodeId, target: NodeId) -> bool {
+    if root == target {
+        return true;
+    }
+    index
+        .children_by_parent
+        .get(&root)
+        .into_iter()
+        .flatten()
+        .any(|child| native_node_contains(index, *child, target))
+}
+
+fn native_module_stmt_list_hole_roots(facts: &ChunkFacts) -> bool {
+    let index = AlphaIdentifierIndex::new(facts);
+    facts.top_level.iter().any(|(root, _ordinal)| {
+        index.node_kind.get(root) == Some(&NodeKind::ExprStmt)
+            && index.children_by_parent.get(root).is_some_and(|children| {
+                let [child] = children.as_slice() else {
+                    return false;
+                };
+                index.node_kind.get(child) == Some(&NodeKind::Ident)
+                    && index.ident_name.get(child).is_some_and(|name| {
+                        labeled_hole_name_for(name, STMT_LIST_HOLE_KEYWORD).is_some()
+                    })
+            })
+    })
 }
 
 fn native_single_declared_binding_node(
@@ -2356,6 +2502,48 @@ mod tests {
                 .atoms
                 .iter()
                 .any(|atom| matches!(atom, SelectorAtom::AstSuperClass { .. }))
+        );
+    }
+
+    #[test]
+    fn multi_statement_source_match_lowers_to_native_window_constraints() {
+        let mut selector = AnonymousStatementSelector::exact(
+            "function helper(value) { return value + 1; }\nconst selected = makeThing();",
+        );
+        selector.target_binding = Some("selected".to_string());
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
+            "fixed-window member source_match selectors should stay in native IR"
+        );
+        let offsets = lowered
+            .program
+            .atoms
+            .iter()
+            .filter_map(|atom| match atom {
+                SelectorAtom::OrdinalOffset { offset, .. } => Some(*offset),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(offsets, vec![-1, 0]);
+        assert_eq!(
+            lowered
+                .program
+                .atoms
+                .iter()
+                .filter(|atom| matches!(atom, SelectorAtom::AstTopLevel { .. }))
+                .count(),
+            2
         );
     }
 

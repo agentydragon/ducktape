@@ -695,7 +695,7 @@ export { runtimeBinding, siblingBinding, Existing };
 }
 
 #[test]
-fn source_match_timing_env_reports_member_selector_resolution() {
+fn multi_statement_native_source_match_skips_legacy_resolver_timing() {
     let fixture = run_fixture_with_env(
         FixtureOpts::new(
             r#"const runtimePrefix = "OK:";
@@ -721,23 +721,11 @@ function formatValue(value) {
     );
 
     assert_entry_output(&fixture, "OK:OK\n");
-    for required in [
-        "[debundle source_match]",
-        "request=static/app::format",
-        "kind=members[].selector.source_match export=`formatValue`",
-        "selector_key=",
-        "body_key=",
-        "body_indices=[1]",
-        "binding=runtimeFormat",
-        "target_binding=`formatValue`",
-        "selector=const prefix = \"OK:\"; function formatValue(value) { return prefix + value.trim().toUpperCase(); }",
-    ] {
-        assert!(
-            fixture.stderr.contains(required),
-            "stderr missing {required:?}\nstderr:\n{}",
-            fixture.stderr,
-        );
-    }
+    assert!(
+        !fixture.stderr.contains("[debundle source_match]"),
+        "native multi-statement source_match should not call the legacy resolver\nstderr:\n{}",
+        fixture.stderr,
+    );
 }
 
 #[test]
@@ -840,7 +828,7 @@ export { RuntimeWidget };
 }
 
 #[test]
-fn source_match_timing_preview_can_be_disabled() {
+fn multi_statement_native_source_match_ignores_legacy_timing_preview_env() {
     let fixture = run_fixture_with_env(
         FixtureOpts::new(
             r#"const runtimePrefix = "ok:";
@@ -869,25 +857,9 @@ function normalizeValue(value) {
     );
 
     assert_entry_output(&fixture, "ok:ok\n");
-    for required in [
-        "[debundle source_match]",
-        "request=static/app::normalize",
-        "kind=members[].selector.source_match export=`normalizeValue`",
-        "selector_key=",
-        "body_key=",
-        "body_indices=[1]",
-        "binding=runtimeNormalize",
-        "target_binding=`normalizeValue`",
-    ] {
-        assert!(
-            fixture.stderr.contains(required),
-            "stderr missing {required:?}\nstderr:\n{}",
-            fixture.stderr,
-        );
-    }
     assert!(
-        !fixture.stderr.contains("function normalizeValue"),
-        "timing preview should be hidden when DUCKTAPE_SOURCE_MATCH_TIMING_PREVIEW=0\nstderr:\n{}",
+        !fixture.stderr.contains("[debundle source_match]"),
+        "native multi-statement source_match should not call the legacy resolver\nstderr:\n{}",
         fixture.stderr,
     );
 }

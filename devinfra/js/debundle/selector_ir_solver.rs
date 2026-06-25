@@ -37,6 +37,37 @@ fn optional_edge_kind_matches(expected: &Option<String>, actual: &str) -> bool {
         .is_none_or(|expected| expected == actual)
 }
 
+fn top_level_ordinal_offset_rows(
+    ast_top_levels: &[(u32, StatementOrdinal)],
+    required_offsets: &BTreeSet<i32>,
+) -> Vec<(usize, usize, i32)> {
+    if required_offsets.is_empty() {
+        return Vec::new();
+    }
+    let ordinals = ast_top_levels
+        .iter()
+        .map(|(_node, ordinal)| ordinal.0)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let mut rows = Vec::new();
+    for (base_index, base) in ordinals.iter().enumerate() {
+        for offset in required_offsets {
+            let Some(target_index) = (base_index as isize).checked_add(*offset as isize) else {
+                continue;
+            };
+            if target_index < 0 {
+                continue;
+            }
+            let Some(ordinal) = ordinals.get(target_index as usize) else {
+                continue;
+            };
+            rows.push((*base, *ordinal, *offset));
+        }
+    }
+    rows
+}
+
 type AssignmentRow = Vec<(usize, AssignmentValue)>;
 type EqualityCheck = (usize, usize, EqualityConstraintKind);
 type EqualityCheckSchedule = Vec<(usize, Vec<EqualityCheck>)>;
@@ -194,6 +225,7 @@ ascent! {
     relation ast_super_class(u32, u32); // class node, super-class expression node
     relation ast_top_level(u32, usize); // root node, statement ordinal
     relation ast_string_literal_regex_match(u32, String); // string literal node, pattern
+    relation ordinal_offset(usize, usize, i32); // base statement ordinal, target statement ordinal, body-order offset
 
     relation owner_statement_ordinal(usize, usize);
     owner_statement_ordinal(*owner, *ordinal) <--
@@ -467,6 +499,7 @@ ascent! {
     relation required_ast_child(usize, usize, usize, u32);
     relation required_ast_super_class(usize, usize, usize);
     relation required_ast_top_level(usize, usize, usize);
+    relation required_ordinal_offset(usize, usize, usize, i32);
     relation required_owner_top_level_root(usize, usize, usize);
     relation required_ast_string_literal_var(usize, usize, usize);
     relation required_ast_identifier_name_var(usize, usize, usize);
@@ -516,6 +549,11 @@ ascent! {
     node_ordinal_constraint_edge(*constraint, *node_var, *node, *ordinal_var, *ordinal) <--
         required_ast_top_level(constraint, node_var, ordinal_var),
         ast_top_level(node, ordinal);
+
+    relation ordinal_ordinal_constraint_edge(usize, usize, usize, usize, usize);
+    ordinal_ordinal_constraint_edge(*constraint, *base_var, *base, *ordinal_var, *ordinal) <--
+        required_ordinal_offset(constraint, base_var, ordinal_var, offset),
+        ordinal_offset(base, ordinal, offset);
 
     relation node_string_constraint_edge(usize, usize, u32, usize, String);
     node_string_constraint_edge(*constraint, *node_var, *node, *string_var, value.clone()) <--
@@ -586,6 +624,14 @@ ascent! {
         if let Some(row) = assignment_row_2(
             *node_var,
             AssignmentValue::AstNode(*node),
+            *ordinal_var,
+            AssignmentValue::StatementOrdinal(*ordinal),
+        );
+    atom_assignment(*constraint, row) <--
+        ordinal_ordinal_constraint_edge(constraint, base_var, base, ordinal_var, ordinal),
+        if let Some(row) = assignment_row_2(
+            *base_var,
+            AssignmentValue::StatementOrdinal(*base),
             *ordinal_var,
             AssignmentValue::StatementOrdinal(*ordinal),
         );
@@ -781,6 +827,12 @@ pub fn solve(
     }
     for (node, ordinal) in &fact_index.ast_top_levels {
         ascent.ast_top_level.push((*node, ordinal.0));
+    }
+    for (base, ordinal, offset) in top_level_ordinal_offset_rows(
+        &fact_index.ast_top_levels,
+        &support.required_ordinal_offsets(),
+    ) {
+        ascent.ordinal_offset.push((base, ordinal, offset));
     }
     for constraint in &support.node_list_constraints {
         for row in child_list_assignment_rows(constraint, &fact_index) {
@@ -1141,6 +1193,18 @@ pub fn solve(
             )),
         }
     }
+    for constraint in &support.ordinal_ordinal_constraints {
+        match constraint.kind {
+            OrdinalOrdinalConstraintKind::Offset { offset } => {
+                ascent.required_ordinal_offset.push((
+                    constraint.id,
+                    constraint.base.0,
+                    constraint.ordinal.0,
+                    offset,
+                ));
+            }
+        }
+    }
     for constraint in &support.node_string_constraints {
         match &constraint.kind {
             NodeStringConstraintKind::StringLiteral => {
@@ -1429,6 +1493,7 @@ struct ProgramSupport {
     node_node_constraints: Vec<NodeNodeConstraint>,
     node_list_constraints: Vec<NodeListConstraint>,
     node_ordinal_constraints: Vec<NodeOrdinalConstraint>,
+    ordinal_ordinal_constraints: Vec<OrdinalOrdinalConstraint>,
     node_string_constraints: Vec<NodeStringConstraint>,
     owner_string_constraints: Vec<OwnerStringConstraint>,
     equality_constraints: Vec<EqualityConstraint>,
@@ -1675,6 +1740,11 @@ impl ProgramSupport {
                 SelectorAtom::AstTopLevel { node, ordinal } => {
                     support.add_ast_top_level(node, ordinal)
                 }
+                SelectorAtom::OrdinalOffset {
+                    base,
+                    ordinal,
+                    offset,
+                } => support.add_ordinal_offset(base, ordinal, *offset),
                 SelectorAtom::ReadsMember {
                     owner: OwnerTerm::Var { id },
                     object: None,
@@ -1987,6 +2057,25 @@ impl ProgramSupport {
         self.constraints_by_var.entry(ordinal).or_default().push(id);
     }
 
+    fn add_ordinal_ordinal(
+        &mut self,
+        base: SelectorVariableId,
+        ordinal: SelectorVariableId,
+        kind: OrdinalOrdinalConstraintKind,
+    ) {
+        let id = self.next_constraint_id;
+        self.next_constraint_id += 1;
+        self.ordinal_ordinal_constraints
+            .push(OrdinalOrdinalConstraint {
+                id,
+                base,
+                ordinal,
+                kind,
+            });
+        self.constraints_by_var.entry(base).or_default().push(id);
+        self.constraints_by_var.entry(ordinal).or_default().push(id);
+    }
+
     fn add_node_string(
         &mut self,
         node: SelectorVariableId,
@@ -2287,6 +2376,23 @@ impl ProgramSupport {
         }
     }
 
+    fn add_ordinal_offset(&mut self, base: &OrdinalTerm, ordinal: &OrdinalTerm, offset: i32) {
+        match (base, ordinal) {
+            (OrdinalTerm::Var { id: base }, OrdinalTerm::Var { id: ordinal }) => self
+                .add_ordinal_ordinal(
+                    *base,
+                    *ordinal,
+                    OrdinalOrdinalConstraintKind::Offset { offset },
+                ),
+            (OrdinalTerm::Const { .. }, OrdinalTerm::Const { .. }) => self
+                .unsupported_atoms
+                .push("unsupported constant-only ordinal_offset assertion".to_string()),
+            _ => self
+                .unsupported_atoms
+                .push("unsupported mixed constant/variable ordinal_offset assertion".to_string()),
+        }
+    }
+
     fn string_literal_regex_patterns(&self) -> BTreeSet<String> {
         self.node_unary_constraints
             .iter()
@@ -2295,6 +2401,15 @@ impl ProgramSupport {
                     Some(pattern.clone())
                 }
                 _ => None,
+            })
+            .collect()
+    }
+
+    fn required_ordinal_offsets(&self) -> BTreeSet<i32> {
+        self.ordinal_ordinal_constraints
+            .iter()
+            .map(|constraint| match constraint.kind {
+                OrdinalOrdinalConstraintKind::Offset { offset } => offset,
             })
             .collect()
     }
@@ -2558,6 +2673,10 @@ impl ProgramSupport {
             variables.insert(constraint.node.0);
             variables.insert(constraint.ordinal.0);
         }
+        if let Some(constraint) = self.ordinal_ordinal_constraints.iter().find(|c| c.id == id) {
+            variables.insert(constraint.base.0);
+            variables.insert(constraint.ordinal.0);
+        }
         if let Some(constraint) = self.node_string_constraints.iter().find(|c| c.id == id) {
             variables.insert(constraint.node.0);
             variables.insert(constraint.string.0);
@@ -2635,6 +2754,10 @@ impl ProgramSupport {
                 .any(|constraint| constraint.id == id)
             || self
                 .node_ordinal_constraints
+                .iter()
+                .any(|constraint| constraint.id == id)
+            || self
+                .ordinal_ordinal_constraints
                 .iter()
                 .any(|constraint| constraint.id == id)
         {
@@ -2914,6 +3037,19 @@ enum NodeOrdinalConstraintKind {
 }
 
 #[derive(Debug, Clone)]
+struct OrdinalOrdinalConstraint {
+    id: usize,
+    base: SelectorVariableId,
+    ordinal: SelectorVariableId,
+    kind: OrdinalOrdinalConstraintKind,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum OrdinalOrdinalConstraintKind {
+    Offset { offset: i32 },
+}
+
+#[derive(Debug, Clone)]
 struct NodeStringConstraint {
     id: usize,
     node: SelectorVariableId,
@@ -2988,6 +3124,7 @@ fn atom_kind(atom: &SelectorAtom) -> &'static str {
         SelectorAtom::AstOperator { .. } => "ast_operator",
         SelectorAtom::AstRegexLiteral { .. } => "ast_regex_literal",
         SelectorAtom::AstTopLevel { .. } => "ast_top_level",
+        SelectorAtom::OrdinalOffset { .. } => "ordinal_offset",
         SelectorAtom::ReadsMember { .. } => "reads_member",
         SelectorAtom::ReadsMemberOfOwner { .. } => "reads_member_of_owner",
         SelectorAtom::ConsumesModuleMember { .. } => "consumes_module_member",
@@ -3547,6 +3684,136 @@ mod tests {
         let result = solve(&program, &facts).unwrap();
 
         assert_eq!(result.outcome_for(target), Some(&ClaimOutcome::NoMatch));
+    }
+
+    #[test]
+    fn ordinal_offset_requires_adjacent_statement_window() {
+        let mut program = SelectorProgram::default();
+        let owner_var = program.add_variable(VariableDomain::Owner, Some("@Target".to_string()));
+        let helper_node = program.add_variable(
+            VariableDomain::AstNode,
+            Some("source_match.helper".to_string()),
+        );
+        let target_node = program.add_variable(
+            VariableDomain::AstNode,
+            Some("source_match.target".to_string()),
+        );
+        let helper_ordinal = program.add_variable(
+            VariableDomain::StatementOrdinal,
+            Some("source_match.helper.ordinal".to_string()),
+        );
+        let target_ordinal = program.add_variable(
+            VariableDomain::StatementOrdinal,
+            Some("source_match.target.ordinal".to_string()),
+        );
+        let target = program.add_target(
+            ChunkId(0),
+            owner_var,
+            "runtime/widgets",
+            ClaimKind::Binding {
+                export_name: Some("Target".to_string()),
+            },
+            ClaimOrigin::MemberSelector,
+        );
+        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+            owner: OwnerTerm::Var { id: owner_var },
+            binding: StringTerm::Const {
+                value: "selected".to_string(),
+            },
+        });
+        program.add_atom(SelectorAtom::OwnerStatementOrdinal {
+            owner: OwnerTerm::Var { id: owner_var },
+            ordinal: OrdinalTerm::Var { id: target_ordinal },
+        });
+        program.add_atom(SelectorAtom::AstTopLevel {
+            node: NodeTerm::Var { id: helper_node },
+            ordinal: OrdinalTerm::Var { id: helper_ordinal },
+        });
+        program.add_atom(SelectorAtom::AstTopLevel {
+            node: NodeTerm::Var { id: target_node },
+            ordinal: OrdinalTerm::Var { id: target_ordinal },
+        });
+        program.add_atom(SelectorAtom::AstKind {
+            node: NodeTerm::Var { id: helper_node },
+            node_kind: chunk_facts::NodeKind::FnDecl,
+        });
+        program.add_atom(SelectorAtom::AstKind {
+            node: NodeTerm::Var { id: target_node },
+            node_kind: chunk_facts::NodeKind::VarDecl,
+        });
+        program.add_atom(SelectorAtom::OrdinalOffset {
+            base: OrdinalTerm::Var { id: target_ordinal },
+            ordinal: OrdinalTerm::Var { id: helper_ordinal },
+            offset: -1,
+        });
+        let adjacent = SelectorFactStore {
+            facts: vec![
+                owner(1, 1, "fn_decl"),
+                owner(2, 2, "var_decl"),
+                declared(2, "selected"),
+                SelectorFact::AstTopLevel {
+                    chunk_id: ChunkId(0),
+                    node: 10,
+                    statement_ordinal: StatementOrdinal(1),
+                },
+                SelectorFact::AstTopLevel {
+                    chunk_id: ChunkId(0),
+                    node: 20,
+                    statement_ordinal: StatementOrdinal(2),
+                },
+                SelectorFact::AstKind {
+                    chunk_id: ChunkId(0),
+                    node: 10,
+                    node_kind: chunk_facts::NodeKind::FnDecl,
+                },
+                SelectorFact::AstKind {
+                    chunk_id: ChunkId(0),
+                    node: 20,
+                    node_kind: chunk_facts::NodeKind::VarDecl,
+                },
+            ],
+        };
+        let gapped = SelectorFactStore {
+            facts: vec![
+                owner(1, 1, "fn_decl"),
+                owner(2, 3, "var_decl"),
+                declared(2, "selected"),
+                SelectorFact::AstTopLevel {
+                    chunk_id: ChunkId(0),
+                    node: 10,
+                    statement_ordinal: StatementOrdinal(1),
+                },
+                SelectorFact::AstTopLevel {
+                    chunk_id: ChunkId(0),
+                    node: 20,
+                    statement_ordinal: StatementOrdinal(3),
+                },
+                SelectorFact::AstTopLevel {
+                    chunk_id: ChunkId(0),
+                    node: 15,
+                    statement_ordinal: StatementOrdinal(2),
+                },
+                SelectorFact::AstKind {
+                    chunk_id: ChunkId(0),
+                    node: 10,
+                    node_kind: chunk_facts::NodeKind::FnDecl,
+                },
+                SelectorFact::AstKind {
+                    chunk_id: ChunkId(0),
+                    node: 20,
+                    node_kind: chunk_facts::NodeKind::VarDecl,
+                },
+            ],
+        };
+
+        assert!(matches!(
+            solve(&program, &adjacent).unwrap().outcome_for(target),
+            Some(ClaimOutcome::Unique { claim }) if claim.owner == OwnerId(2)
+        ));
+        assert_eq!(
+            solve(&program, &gapped).unwrap().outcome_for(target),
+            Some(&ClaimOutcome::NoMatch)
+        );
     }
 
     #[test]
@@ -4593,6 +4860,67 @@ const wrongCallee = makeOther("value");
                     provenance: Vec::new(),
                 },
             })
+        );
+    }
+
+    #[test]
+    fn solves_lowered_multi_statement_source_match_window_natively() {
+        let mut selector = AnonymousStatementSelector::exact(
+            "function helper(value) { return value + 1; }\nconst selected = makeThing();",
+        );
+        selector.target_binding = Some("selected".to_string());
+        let lowered = lower_member_selector(
+            &MemberSelectorLoweringContext::new(ChunkId(0), "runtime/widgets"),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+
+        let adjacent = fact_store_from_analyzed_source(
+            r#"
+function helper(value) {
+  return value + 1;
+}
+const selected = makeThing();
+const other = makeThing();
+"#,
+        );
+        let gapped = fact_store_from_analyzed_source(
+            r#"
+function helper(value) {
+  return value + 1;
+}
+const gap = 0;
+const selected = makeThing();
+"#,
+        );
+
+        let result = solve(&lowered.program, &adjacent).unwrap();
+        let owner = owner_for_binding(&adjacent, "selected");
+        assert_eq!(
+            result.outcome_for(lowered.target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner,
+                    statement_ordinal: statement_ordinal_for_owner(&adjacent, owner),
+                    binding: Some("selected".to_string()),
+                    provenance: Vec::new(),
+                },
+            })
+        );
+        assert_eq!(
+            solve(&lowered.program, &gapped)
+                .unwrap()
+                .outcome_for(lowered.target),
+            Some(&ClaimOutcome::NoMatch)
         );
     }
 

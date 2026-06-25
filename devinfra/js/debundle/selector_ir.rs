@@ -227,6 +227,11 @@ pub enum SelectorAtom {
         node: NodeTerm,
         ordinal: OrdinalTerm,
     },
+    OrdinalOffset {
+        base: OrdinalTerm,
+        ordinal: OrdinalTerm,
+        offset: i32,
+    },
     ReadsMember {
         owner: OwnerTerm,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -489,6 +494,10 @@ impl SelectorProgram {
             SelectorAtom::AstTopLevel { node, ordinal } => {
                 self.validate_node_term(node, "ast_top_level.node")?;
                 self.validate_ordinal_term(ordinal, "ast_top_level.ordinal")
+            }
+            SelectorAtom::OrdinalOffset { base, ordinal, .. } => {
+                self.validate_ordinal_term(base, "ordinal_offset.base")?;
+                self.validate_ordinal_term(ordinal, "ordinal_offset.ordinal")
             }
             SelectorAtom::ReadsMember {
                 owner,
