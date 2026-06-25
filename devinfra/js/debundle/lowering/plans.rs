@@ -257,7 +257,7 @@ pub(super) fn logical_requests_for_chunk(
             let members = build_members(&module.members, &module.binding_groups, &id)?;
             reject_duplicate_export_names("logical_module", &id, &members)?;
             reject_duplicate_member_bindings("logical_module", &id, &members)?;
-            let mut anonymous_statements = module
+            let anonymous_statements = module
                 .anonymous_statements
                 .iter()
                 .map(|stmt| {

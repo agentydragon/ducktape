@@ -1325,7 +1325,9 @@ fn native_child_list_start_index(parent_kind: NodeKind) -> Option<u32> {
         | NodeKind::SwitchCase
         | NodeKind::Array
         | NodeKind::VarDecl
-        | NodeKind::Class => Some(0),
+        | NodeKind::Class
+        | NodeKind::Object
+        | NodeKind::ObjectPat => Some(0),
         NodeKind::Call | NodeKind::New | NodeKind::OptCall => Some(1),
         NodeKind::Switch => Some(1),
         _ => None,
