@@ -55,7 +55,6 @@ _STANDARD_E2E_DEPS = [
         deps = _STANDARD_E2E_DEPS,
     )
     for name in [
-        "anonymous_statement_test",
         "binding_group_adopt_names_test",
         "chunk_admission_test",
         "comma_list_owner_split_test",
@@ -78,7 +77,6 @@ _STANDARD_E2E_DEPS = [
         "missing_binding_member_test",
         "residual_member_rename_test",
         "source_order_emit_test",
-        "cross_module_emission_test",
         "purity_test",
         "import_coalescing_test",
         "object_literal_import_collapse_test",
@@ -106,10 +104,48 @@ _STANDARD_E2E_DEPS = [
         "spec_comments_test",
         "selector_diagnostics_report_test",
         "spec_validate_cli_test",
-        "syntactic_holes_test",
         "cross_ref_lowering_test",
     ]
 ]
+
+rust_test(
+    name = "anonymous_statement_test",
+    size = "small",
+    srcs = ["anonymous_statement_test.rs"],
+    crate_root = "anonymous_statement_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = _STANDARD_E2E_DEPS,
+)
+
+rust_test(
+    name = "cross_module_emission_test",
+    size = "small",
+    srcs = ["cross_module_emission_test.rs"],
+    crate_root = "cross_module_emission_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = _STANDARD_E2E_DEPS,
+)
+
+rust_test(
+    name = "syntactic_holes_test",
+    size = "small",
+    srcs = ["syntactic_holes_test.rs"],
+    crate_root = "syntactic_holes_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = _STANDARD_E2E_DEPS,
+)
 
 # E2E tests that also inspect the in-process analysis types
 # (`OwnerGraphReport`, `BindingReport`, etc.) emitted alongside the
@@ -162,6 +198,7 @@ rust_test(
 # directly alongside the standard fixture pipeline.
 rust_test(
     name = "peel_factorize_landability_test",
+    size = "small",
     srcs = ["peel_factorize_landability_test.rs"],
     crate_root = "peel_factorize_landability_test.rs",
     data = [
@@ -184,6 +221,7 @@ rust_test(
 # into the extension of their target active module.
 rust_test(
     name = "peel_factorize_extend_anonymous_test",
+    size = "small",
     srcs = ["peel_factorize_extend_anonymous_test.rs"],
     crate_root = "peel_factorize_extend_anonymous_test.rs",
     data = [
@@ -537,6 +575,7 @@ rust_test(
 # explicit `--apply` mutation of member-form source_match selectors.
 rust_test(
     name = "selector_codemod_cli_test",
+    size = "small",
     srcs = ["selector_codemod_cli_test.rs"],
     crate_root = "selector_codemod_cli_test.rs",
     data = ["//devinfra/js/debundle"],
