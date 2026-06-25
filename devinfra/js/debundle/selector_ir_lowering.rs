@@ -1477,10 +1477,37 @@ fn native_single_node_hole_roots(
             continue;
         }
         if selector_hole_name(name) && !native_child_list_hole_name(name) {
+            if native_contextual_anything_prop_child_list_carrier(
+                *node,
+                name,
+                &node_kind,
+                &parent_by_child,
+                &child_counts,
+            ) {
+                continue;
+            }
             return None;
         }
     }
     Some(roots)
+}
+
+fn native_contextual_anything_prop_child_list_carrier(
+    node: NodeId,
+    name: &str,
+    node_kind: &BTreeMap<NodeId, NodeKind>,
+    parent_by_child: &BTreeMap<NodeId, (NodeId, u32)>,
+    child_counts: &BTreeMap<NodeId, u32>,
+) -> bool {
+    if hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_none() {
+        return false;
+    }
+    let Some((parent, index)) = parent_by_child.get(&node).copied() else {
+        return false;
+    };
+    index == 0
+        && node_kind.get(&parent) == Some(&NodeKind::ClassProp)
+        && child_counts.get(&parent).copied().unwrap_or(0) == 1
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1516,6 +1543,14 @@ fn classify_native_single_node_hole(
     if kind == Some(NodeKind::BindingIdent) && hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
     {
         return Some(HoleClassification::Supported { root: node });
+    }
+
+    if hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
+        && (kind == Some(NodeKind::Shorthand)
+            || (kind == Some(NodeKind::PatAssign)
+                && child_counts.get(&node).copied().unwrap_or(0) == 0))
+    {
+        return Some(HoleClassification::NotHole);
     }
 
     if native_child_list_hole_name(name) {
@@ -1697,7 +1732,7 @@ fn native_child_list_patterns(
         );
     }
 
-    if valid_child_list_nodes == child_list_hole_nodes {
+    if child_list_hole_nodes.is_subset(&valid_child_list_nodes) {
         Some(patterns)
     } else {
         None
@@ -1821,6 +1856,7 @@ fn object_props_carrier_ident(
             if node_kind.get(&node) == Some(&NodeKind::Shorthand)
                 && ident_name.get(&node).is_some_and(|name| {
                     labeled_hole_name_for(name, OBJECT_PROPS_HOLE_KEYWORD).is_some()
+                        || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
                 })
             {
                 Some(node)
@@ -1833,6 +1869,7 @@ fn object_props_carrier_ident(
                 && children_by_parent.get(&node).is_none_or(Vec::is_empty)
                 && ident_name.get(&node).is_some_and(|name| {
                     labeled_hole_name_for(name, OBJECT_PROPS_HOLE_KEYWORD).is_some()
+                        || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
                 })
             {
                 Some(node)
@@ -3287,6 +3324,90 @@ mod tests {
     }
 
     #[test]
+    fn source_match_with_anything_object_props_hole_lowers_natively() {
+        let selector =
+            AnonymousStatementSelector::exact("const actual = { stable: 1, ANYTHING, tail: 2 };");
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstChildListPattern {
+                start_index: 0,
+                anchored_left: true,
+                anchored_right: true,
+                segments,
+                ..
+            } if segments.len() == 2
+                && segments[0].len() == 1
+                && segments[1].len() == 1
+        )));
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value == "ANYTHING"
+            )),
+            "ANYTHING object-property shorthand is run-hole syntax, not an identifier constraint"
+        );
+    }
+
+    #[test]
+    fn source_match_with_anything_object_pattern_props_hole_lowers_natively() {
+        let selector =
+            AnonymousStatementSelector::exact("const { stable, ANYTHING, tail } = actual;");
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstChildListPattern {
+                start_index: 0,
+                anchored_left: true,
+                anchored_right: true,
+                segments,
+                ..
+            } if segments.len() == 2
+                && segments[0].len() == 1
+                && segments[1].len() == 1
+        )));
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value == "ANYTHING"
+            )),
+            "ANYTHING object-pattern shorthand is run-hole syntax, not an identifier constraint"
+        );
+    }
+
+    #[test]
     fn source_match_with_declarators_lowers_to_native_child_list_pattern() {
         let selector = AnonymousStatementSelector::exact(
             "const DECLARATORS_BEFORE = null, picked = make(), DECLARATORS_AFTER = null;",
@@ -3324,6 +3445,47 @@ mod tests {
                 } if value.starts_with(DECLARATORS_HOLE_KEYWORD)
             )),
             "DECLARATORS labels are hole syntax, not identifier constraints"
+        );
+    }
+
+    #[test]
+    fn source_match_with_anything_declarators_lowers_to_native_child_list_pattern() {
+        let selector = AnonymousStatementSelector::exact(
+            "const ANYTHING = null, picked = make(), ANYTHING = null;",
+        );
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstChildListPattern {
+                start_index: 0,
+                anchored_left: false,
+                anchored_right: false,
+                segments,
+                ..
+            } if segments.len() == 1 && segments[0].len() == 1
+        )));
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value == "ANYTHING"
+            )),
+            "ANYTHING declarators are run-hole syntax, not identifier constraints"
         );
     }
 
@@ -3420,6 +3582,47 @@ mod tests {
                 "bare CLASS_REST class selector must not constrain class child count"
             );
         }
+    }
+
+    #[test]
+    fn source_match_with_anything_class_rest_lowers_to_native_child_list_pattern() {
+        let selector = AnonymousStatementSelector::exact(
+            "class Widget { ANYTHING; render() { return 1; } ANYTHING; }",
+        );
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstChildListPattern {
+                start_index: 0,
+                anchored_left: false,
+                anchored_right: false,
+                segments,
+                ..
+            } if segments.len() == 1 && segments[0].len() == 1
+        )));
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstPropertyName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value == "ANYTHING"
+            )),
+            "ANYTHING class members are run-hole syntax, not property-name constraints"
+        );
     }
 
     #[test]
