@@ -401,7 +401,7 @@ impl MemberSelectorProgramBuilder {
         else {
             return Ok(false);
         };
-        if parsed.body.len() > 1 && native_module_stmt_list_hole_roots(&facts) {
+        if parsed.body.len() > 1 && !native_module_stmt_list_hole_roots(&facts).is_empty() {
             return Ok(false);
         }
         let regex_predicates = native_string_literal_regex_predicates(&facts);
@@ -559,6 +559,48 @@ impl MemberSelectorProgramBuilder {
         Ok(true)
     }
 
+    fn lower_native_top_level_fixed_sequence(
+        &mut self,
+        logical_module: &str,
+        variable_label: &str,
+        node_vars: &BTreeMap<NodeId, SelectorVariableId>,
+        top_level_roots: &[NodeId],
+    ) -> Result<(), SelectorIrLoweringError> {
+        let mut ordinals = Vec::new();
+        for (index, root) in top_level_roots.iter().enumerate() {
+            let Some(root) = node_vars.get(root).copied() else {
+                continue;
+            };
+            let ordinal = self.program.add_variable(
+                VariableDomain::StatementOrdinal,
+                Some(format!(
+                    "{logical_module}::{variable_label}.sequence.ordinal.{index}"
+                )),
+            );
+            self.program.add_atom(SelectorAtom::AstTopLevel {
+                node: node_term(root),
+                ordinal: OrdinalTerm::Var { id: ordinal },
+            });
+            ordinals.push(ordinal);
+        }
+        let Some(base_ordinal) = ordinals.first().copied() else {
+            return Ok(());
+        };
+        for (index, ordinal) in ordinals.iter().enumerate() {
+            let offset =
+                i32::try_from(index).map_err(|_| SelectorIrLoweringError::Unsupported {
+                    selector_kind: "source_match",
+                    reason: "multi-statement source_match sequence exceeds solver i32 range",
+                })?;
+            self.program.add_atom(SelectorAtom::OrdinalOffset {
+                base: OrdinalTerm::Var { id: base_ordinal },
+                ordinal: OrdinalTerm::Var { id: *ordinal },
+                offset,
+            });
+        }
+        Ok(())
+    }
+
     fn lower_native_top_level_window(
         &mut self,
         logical_module: &str,
@@ -622,7 +664,7 @@ impl MemberSelectorProgramBuilder {
         }) else {
             return Ok(false);
         };
-        if parsed.body.len() != 1 {
+        if parsed.body.is_empty() {
             return Ok(false);
         }
         let Ok(facts) =
@@ -630,6 +672,9 @@ impl MemberSelectorProgramBuilder {
         else {
             return Ok(false);
         };
+        if !native_module_stmt_list_hole_roots(&facts).is_empty() {
+            return Ok(false);
+        }
         let regex_predicates = native_string_literal_regex_predicates(&facts);
         let Some(hole_roots) =
             native_single_node_hole_roots(&facts, &regex_predicates.consumed_nodes)
@@ -647,9 +692,14 @@ impl MemberSelectorProgramBuilder {
         } else {
             BTreeMap::new()
         };
-        let [(root_node, _ordinal)] = facts.top_level.as_slice() else {
+        if facts.top_level.len() != parsed.body.len() {
             return Ok(false);
-        };
+        }
+        let top_level_roots = facts
+            .top_level
+            .iter()
+            .map(|(root, _ordinal)| *root)
+            .collect::<Vec<_>>();
 
         let mut target_binding_nodes = BTreeMap::<String, NodeId>::new();
         for target_binding in exports_by_target.keys() {
@@ -673,9 +723,31 @@ impl MemberSelectorProgramBuilder {
                 ),
             );
         }
-        let Some(root) = node_vars.get(root_node).copied() else {
+        let root_by_target_binding = {
+            let index = AlphaIdentifierIndex::new(&facts);
+            target_binding_nodes
+                .iter()
+                .map(|(target_binding, target_binding_node)| {
+                    native_top_level_root_containing_node(
+                        &index,
+                        &top_level_roots,
+                        *target_binding_node,
+                    )
+                    .map(|root| (target_binding.clone(), root))
+                })
+                .collect::<Option<BTreeMap<_, _>>>()
+        };
+        let Some(root_by_target_binding) = root_by_target_binding else {
             return Ok(false);
         };
+        if top_level_roots.len() > 1 {
+            self.lower_native_top_level_fixed_sequence(
+                logical_module,
+                "binding_group.source_match",
+                &node_vars,
+                &top_level_roots,
+            )?;
+        }
 
         let alpha_identifier_vars = if selector.identifiers == SourceMatchIdentifierMode::AlphaAll {
             self.lower_alpha_identifier_variables(logical_module, &facts, &skipped_nodes)
@@ -685,6 +757,11 @@ impl MemberSelectorProgramBuilder {
         let mut exact_identifier_projection_vars = BTreeMap::new();
         for (target_binding, export_name) in exports_by_target {
             let owner = self.owner_for_local_export(logical_module, export_name);
+            let root = root_by_target_binding
+                .get(target_binding)
+                .and_then(|root| node_vars.get(root))
+                .copied()
+                .expect("target binding roots were collected for every export");
             self.program.add_atom(SelectorAtom::OwnerTopLevelRoot {
                 owner: owner_term(owner),
                 root: node_term(root),
@@ -1241,11 +1318,16 @@ fn native_node_contains(index: &AlphaIdentifierIndex, root: NodeId, target: Node
         .any(|child| native_node_contains(index, *child, target))
 }
 
-fn native_module_stmt_list_hole_roots(facts: &ChunkFacts) -> bool {
+fn native_module_stmt_list_hole_roots(facts: &ChunkFacts) -> BTreeSet<NodeId> {
     let index = AlphaIdentifierIndex::new(facts);
-    facts.top_level.iter().any(|(root, _ordinal)| {
-        index.node_kind.get(root) == Some(&NodeKind::ExprStmt)
-            && index.children_by_parent.get(root).is_some_and(|children| {
+    facts
+        .top_level
+        .iter()
+        .filter_map(|(root, _ordinal)| {
+            if index.node_kind.get(root) != Some(&NodeKind::ExprStmt) {
+                return None;
+            }
+            let is_hole = index.children_by_parent.get(root).is_some_and(|children| {
                 let [child] = children.as_slice() else {
                     return false;
                 };
@@ -1253,8 +1335,10 @@ fn native_module_stmt_list_hole_roots(facts: &ChunkFacts) -> bool {
                     && index.ident_name.get(child).is_some_and(|name| {
                         labeled_hole_name_for(name, STMT_LIST_HOLE_KEYWORD).is_some()
                     })
-            })
-    })
+            });
+            is_hole.then_some(*root)
+        })
+        .collect()
 }
 
 fn native_single_declared_binding_node(
@@ -2928,6 +3012,90 @@ mod tests {
             })
             .collect::<BTreeSet<_>>();
         assert_eq!(projected_bindings.len(), 2);
+    }
+
+    #[test]
+    fn multi_statement_binding_group_source_match_lowers_to_native_sequence() {
+        let mut group_selector = AnonymousStatementSelector::exact(
+            r#"const first = makeFirst();
+function second() {
+    return first.value;
+}"#,
+        );
+        group_selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let mut first_selector = group_selector.clone();
+        first_selector.target_binding = Some("first".to_string());
+        let mut second_selector = group_selector.clone();
+        second_selector.target_binding = Some("second".to_string());
+
+        let mut builder = MemberSelectorProgramBuilder::new(context());
+        let first_target = builder
+            .declare_member_target_in_module(
+                "runtime/widgets",
+                "First",
+                &MemberSelectorSpec::SourceMatch(first_selector),
+            )
+            .unwrap();
+        let second_target = builder
+            .declare_member_target_in_module(
+                "runtime/widgets",
+                "Second",
+                &MemberSelectorSpec::SourceMatch(second_selector),
+            )
+            .unwrap();
+        assert!(
+            builder
+                .try_lower_native_source_match_group(
+                    "runtime/widgets",
+                    &group_selector,
+                    &BTreeMap::from([
+                        ("first".to_string(), "First".to_string()),
+                        ("second".to_string(), "Second".to_string()),
+                    ]),
+                )
+                .unwrap()
+        );
+        let program = builder.into_program().unwrap();
+
+        assert!(
+            !program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
+            "multi-statement binding_groups should stay in native IR"
+        );
+        let first_owner = program.targets[first_target.0].owner;
+        let second_owner = program.targets[second_target.0].owner;
+        let roots = program
+            .atoms
+            .iter()
+            .filter_map(|atom| match atom {
+                SelectorAtom::OwnerTopLevelRoot {
+                    owner: OwnerTerm::Var { id },
+                    root: NodeTerm::Var { id: root },
+                } if *id == first_owner || *id == second_owner => Some(*root),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(roots.len(), 2);
+        assert_ne!(roots[0], roots[1]);
+        assert_eq!(
+            program
+                .atoms
+                .iter()
+                .filter(|atom| matches!(atom, SelectorAtom::AstTopLevel { .. }))
+                .count(),
+            2
+        );
+        let offsets = program
+            .atoms
+            .iter()
+            .filter_map(|atom| match atom {
+                SelectorAtom::OrdinalOffset { offset, .. } => Some(*offset),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(offsets, vec![0, 1]);
     }
 
     #[test]

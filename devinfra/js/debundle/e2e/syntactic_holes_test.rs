@@ -913,8 +913,9 @@ const styles = { first: firstClassName, second: secondClassName };"#,
 
 #[test]
 fn binding_group_source_match_range_ignores_comments_and_exports_subset() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const runtimeFirstClassName = "Widget-module_first__c0m";
+    let fixture = run_fixture_with_env(
+        FixtureOpts::new(
+            r#"const runtimeFirstClassName = "Widget-module_first__c0m";
 // Deliberately between declarations; comments should not become selector anchors.
 const runtimeSecondClassName = "Widget-module_second__m3nt";
 /* Another ignored comment before the aggregate object. */
@@ -925,17 +926,24 @@ const runtimeStyles = {
 console.log(runtimeStyles.first, runtimeStyles.second);
 export { runtimeFirstClassName, runtimeSecondClassName, runtimeStyles };
 "#,
-        vec![logical_module_with_binding_groups(
-            "styles/commented-widget",
-            &[],
-            &[BindingGroup::source_alpha(
-                r#"const firstClassName = STR_LITERAL_MATCHING_RE("^Widget-module_first__[A-Za-z0-9_-]+$");
+            vec![logical_module_with_binding_groups(
+                "styles/commented-widget",
+                &[],
+                &[BindingGroup::source_alpha(
+                    r#"const firstClassName = STR_LITERAL_MATCHING_RE("^Widget-module_first__[A-Za-z0-9_-]+$");
 const secondClassName = STR_LITERAL_MATCHING_RE("^Widget-module_second__[A-Za-z0-9_-]+$");
 const styles = { first: firstClassName, second: secondClassName };"#,
-                &[("styles", "styles")],
+                    &[("styles", "styles")],
+                )],
             )],
-        )],
-    ));
+        ),
+        &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
+    );
+    assert!(
+        !fixture.stderr.contains("[debundle source_match]"),
+        "native multi-statement binding_group source_match should not call the legacy resolver\nstderr:\n{}",
+        fixture.stderr
+    );
 
     assert_entry_output(
         &fixture,
