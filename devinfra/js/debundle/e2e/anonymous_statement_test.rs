@@ -931,25 +931,33 @@ export { runtimeLocalPart, runtimeDomain, runtimeAddress, duplicateLocalPart };
 
 #[test]
 fn binding_group_source_match_extracts_multiple_bindings_from_multideclarator() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"let runtimeA = 100,
+    let fixture = run_fixture_with_env(
+        FixtureOpts::new(
+            r#"let runtimeA = 100,
   runtimeB = null,
   runtimeC = `${runtimeA}:${runtimeB === null}:bar`;
 const Existing = "existing";
 console.log(runtimeA, runtimeB === null, runtimeC, Existing);
 export { runtimeA, runtimeB, runtimeC, Existing };
 "#,
-        vec![logical_module_with_binding_groups(
-            "selected_values",
-            &[],
-            &[BindingGroup::source_alpha(
-                r#"let a = 100,
+            vec![logical_module_with_binding_groups(
+                "selected_values",
+                &[],
+                &[BindingGroup::source_alpha(
+                    r#"let a = 100,
   b = null,
   c = `${a}:${b === null}:bar`;"#,
-                &[("a", "NameA"), ("b", "NameB"), ("c", "NameC")],
+                    &[("a", "NameA"), ("b", "NameB"), ("c", "NameC")],
+                )],
             )],
-        )],
-    ));
+        ),
+        &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
+    );
+    assert!(
+        !fixture.stderr.contains("[debundle source_match]"),
+        "native binding_group source_match should not call the legacy resolver\nstderr:\n{}",
+        fixture.stderr
+    );
 
     let mut exports =
         list_module_exports(&fixture.out_root, "static/app/modules/selected_values.js");
