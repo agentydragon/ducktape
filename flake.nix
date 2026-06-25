@@ -519,7 +519,7 @@
           };
         };
 
-        # Gecko - headless CLI-only VM (Proxmox) for Claude Code / Codex
+        # Gecko - headless CLI-only KubeVirt VM for Claude Code / Codex
         gecko = mkNixos {
           hostname = "gecko";
           username = "agentydragon";

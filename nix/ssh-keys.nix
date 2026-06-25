@@ -10,4 +10,5 @@ in
   rugged = readKey "rugged-default.pub";
   rugged_wyrm = readKey "rugged-wyrm.pub";
   atlas = readKey "atlas-default.pub";
+  gecko = readKey "gecko-default.pub";
 }

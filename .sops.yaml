@@ -5,11 +5,13 @@ keys:
   - &rugged-host age1ek24fa0hv54p3d8f08zrlgx69c7vsausadmgnxahurvtshhleegs3ys6n0
   - &atlas-host age1a23u3lugygtks3hhku9l3hsjc44y0eu7pv4q3r7n8u2k62uq3c9qmwh4ur
   - &iguana-host age1zemurrcedw7sme3hh793cv8u5zu8eeekn637zpkulxwuw8uav58srwcxzv
+  - &gecko-host age180y753h0vzxm8a3y3rd7c3zykhrat8xlajczuxuk7dz0h82cdf2s0slmw5
   # User keys (derived from ~/.ssh/id_ed25519 via ssh-to-age)
   - &wyrm2-agentydragon age12c2ef6ayydzvmz6k49pyyhtgu2g00nyynmht8y3laqvxn3wya4wselpc4s
   - &rugged-agentydragon age1qdgn0k59t7ghg3t4gg02g2ppnzp7uz0ddplup38y84hqslcsgsxq3v9tkz
   - &atlas-agentydragon age15hfg4r2zfc2zl6zarecpvykxjktw4zu3grlahz4397rstmhqpvtqjgf6yy
   - &iguana-agentydragon age1l325yz3v2mev3t896mzvmmkaatjc7z4d9kukvnjuslgwwd8zg9ss9pnsc7
+  - &gecko-agentydragon age1wjv755gsh9l02wm3wet48kjl6ju5ckk3jgllfpe8xmfauqqardgq7pt7ud
   # Claude agent key (Claude Code web sessions, private key in claude-sandbox k8s secret)
   - &claude-web age15gxxqn49sp8qhdya6utanzsxgzpfup63yfuht9yza4adpule4auqzsddj2
   # Haku agent key (Haku background-agent routine; private key in
@@ -99,6 +101,7 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
+          - *gecko-agentydragon
 
   # Flux ntfy webhook: only the topic URL (address) is a capability/secret. The
   # ntfy message-template headers are non-secret presentation config, so keep
@@ -228,6 +231,12 @@ creation_rules:
           - *admin
           - *iguana-host
           - *iguana-agentydragon
+  - path_regex: secrets/hosts/gecko-attic\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *gecko-host
+          - *gecko-agentydragon
 
   # --- Per-host secrets (admin + host) ---
   - path_regex: secrets/hosts/wyrm2-.*\.yaml$
@@ -250,6 +259,11 @@ creation_rules:
       - age:
           - *admin
           - *iguana-host
+  - path_regex: secrets/hosts/gecko-.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *gecko-host
 
   # --- SSH keys (SOPS binary, admin + owning host's user key) ---
   - path_regex: ssh_keys/wyrm2-.*\.sops\.key$
@@ -276,6 +290,12 @@ creation_rules:
       - age:
           - *admin
           - *atlas-agentydragon
+  - path_regex: ssh_keys/gecko-.*\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *gecko-agentydragon
 
   # --- Per-user home-manager secrets (admin + user SSH key) ---
   - path_regex: secrets/home/wyrm2/.*\.yaml$
@@ -293,6 +313,11 @@ creation_rules:
       - age:
           - *admin
           - *atlas-agentydragon
+  - path_regex: secrets/home/gecko/.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *gecko-agentydragon
 
   # --- Plaid API credentials (admin + all user keys) ---
   - path_regex: secrets/plaid\.sops\.yaml$
@@ -394,6 +419,7 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
+          - *gecko-agentydragon
   # Claude web K8s bearer JWT (auto-rotated by the authentik-jwt-rotation CronJob)
   - path_regex: secrets/claude-web-k8s-jwt\.yaml$
     key_groups:
@@ -456,6 +482,7 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
+          - *gecko-agentydragon
           - *claude-web
           - *codex-cloud-agent
           - *haku

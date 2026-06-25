@@ -1,4 +1,4 @@
-# Gecko - headless CLI-only NixOS VM (Proxmox)
+# Gecko - headless CLI-only NixOS VM (KubeVirt)
 {
   pkgs,
   lib,
@@ -11,32 +11,46 @@ let
     wyrm2
     atlas
     rugged
+    gecko
   ];
 in
 {
   imports = [
     ../../modules/vm-hardware.nix
+    ../../modules/bazel
+    ../../modules/system-inspection-sudo.nix
   ];
+
+  # Passwordless sudo for read-only system inspection commands used by agents.
+  ducktape.systemInspectionSudo.enable = true;
 
   environment.systemPackages = with pkgs; [
     neovim
     tmux
     htop
+    btop
     ripgrep
+    fd
+    fzf
+    jq
+    yq
     tree
     pv
     strace
     lsof
+    sops
+    ssh-to-age
     home-manager
   ];
 
   users.users.${username} = {
     shell = pkgs.zsh;
     openssh.authorizedKeys.keys = sshKeys;
+    extraGroups = [ "systemd-journal" ];
   };
 
   users.users.root.openssh.authorizedKeys.keys = sshKeys;
   services.openssh.settings.PermitRootLogin = lib.mkForce "prohibit-password";
 
-  users.motd = "Gecko - headless CLI VM\n";
+  users.motd = "Gecko - headless KubeVirt agent VM\n";
 }
