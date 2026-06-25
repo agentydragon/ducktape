@@ -372,7 +372,7 @@ impl MemberSelectorProgramBuilder {
             return Ok(false);
         };
         let mut skipped_nodes = native_hole_subtree_nodes(&facts, &hole_roots);
-        let Some(child_list_patterns) = native_stmt_list_child_patterns(&facts, &mut skipped_nodes)
+        let Some(child_list_patterns) = native_child_list_patterns(&facts, &mut skipped_nodes)
         else {
             return Ok(false);
         };
@@ -500,7 +500,13 @@ impl MemberSelectorProgramBuilder {
             }
         }
         for (parent, index, child) in &facts.child {
-            if skipped_nodes.contains(parent) || child_list_patterns.contains_key(parent) {
+            if skipped_nodes.contains(parent) {
+                continue;
+            }
+            if child_list_patterns
+                .get(parent)
+                .is_some_and(|pattern| *index >= pattern.start_index)
+            {
                 continue;
             }
             let (Some(parent), Some(child)) = (node_vars.get(parent), node_vars.get(child)) else {
@@ -1136,7 +1142,7 @@ fn classify_native_single_node_hole(
         return Some(HoleClassification::Supported { root: node });
     }
 
-    if labeled_hole_name_for(name, STMT_LIST_HOLE_KEYWORD).is_some() {
+    if native_child_list_hole_name(name) {
         return Some(HoleClassification::NotHole);
     }
 
@@ -1186,7 +1192,17 @@ fn native_hole_subtree_nodes(
     skipped
 }
 
-fn native_stmt_list_child_patterns(
+fn native_child_list_hole_name(name: &str) -> bool {
+    [
+        STMT_LIST_HOLE_KEYWORD,
+        ARGS_HOLE_KEYWORD,
+        ARRAY_ELEMENTS_HOLE_KEYWORD,
+    ]
+    .iter()
+    .any(|keyword| labeled_hole_name_for(name, keyword).is_some())
+}
+
+fn native_child_list_patterns(
     facts: &ChunkFacts,
     skipped_nodes: &mut BTreeSet<NodeId>,
 ) -> Option<BTreeMap<NodeId, NativeChildListPattern>> {
@@ -1196,13 +1212,17 @@ fn native_stmt_list_child_patterns(
         .iter()
         .map(|(node, name)| (*node, name.as_str()))
         .collect();
-    let stmt_list_idents = ident_name
+    let child_list_idents = ident_name
         .iter()
         .filter_map(|(node, name)| {
-            labeled_hole_name_for(name, STMT_LIST_HOLE_KEYWORD).map(|_| *node)
+            if native_child_list_hole_name(name) {
+                Some(*node)
+            } else {
+                None
+            }
         })
         .collect::<BTreeSet<_>>();
-    if stmt_list_idents.is_empty() {
+    if child_list_idents.is_empty() {
         return Some(BTreeMap::new());
     }
 
@@ -1218,26 +1238,31 @@ fn native_stmt_list_child_patterns(
     }
 
     let mut patterns = BTreeMap::new();
-    let mut valid_stmt_list_idents = BTreeSet::new();
+    let mut valid_child_list_idents = BTreeSet::new();
     for (parent, children_with_indices) in &children_by_parent {
-        if !matches!(
-            node_kind.get(parent).copied(),
-            Some(NodeKind::Block | NodeKind::SwitchCase)
-        ) {
+        let Some(parent_kind) = node_kind.get(parent).copied() else {
             continue;
-        }
+        };
+        let Some(start_index) = native_child_list_start_index(parent_kind) else {
+            continue;
+        };
 
         let children = children_with_indices
             .iter()
+            .filter(|(index, _child)| *index >= start_index)
             .map(|(_index, child)| *child)
             .collect::<Vec<_>>();
         let mut hole_positions = BTreeSet::new();
         for (index, child) in children.iter().enumerate() {
-            if let Some(ident) =
-                stmt_list_carrier_ident(*child, &node_kind, &children_by_parent, &ident_name)
-            {
+            if let Some(ident) = native_child_list_carrier_ident(
+                parent_kind,
+                *child,
+                &node_kind,
+                &children_by_parent,
+                &ident_name,
+            ) {
                 hole_positions.insert(index);
-                valid_stmt_list_idents.insert(ident);
+                valid_child_list_idents.insert(ident);
                 skipped_nodes.insert(*child);
                 skipped_nodes.insert(ident);
             }
@@ -1248,13 +1273,10 @@ fn native_stmt_list_child_patterns(
 
         let (segments, anchored_left, anchored_right) =
             child_list_segments(&children, &hole_positions);
-        if segments.is_empty() {
-            return None;
-        }
         patterns.insert(
             *parent,
             NativeChildListPattern {
-                start_index: 0,
+                start_index,
                 segments,
                 anchored_left,
                 anchored_right,
@@ -1262,31 +1284,60 @@ fn native_stmt_list_child_patterns(
         );
     }
 
-    if valid_stmt_list_idents == stmt_list_idents {
+    if valid_child_list_idents == child_list_idents {
         Some(patterns)
     } else {
         None
     }
 }
 
-fn stmt_list_carrier_ident(
+fn native_child_list_start_index(parent_kind: NodeKind) -> Option<u32> {
+    match parent_kind {
+        NodeKind::Block | NodeKind::SwitchCase | NodeKind::Array => Some(0),
+        NodeKind::Call | NodeKind::New | NodeKind::OptCall => Some(1),
+        _ => None,
+    }
+}
+
+fn native_child_list_carrier_ident(
+    parent_kind: NodeKind,
     node: NodeId,
     node_kind: &BTreeMap<NodeId, NodeKind>,
     children_by_parent: &BTreeMap<NodeId, Vec<(u32, NodeId)>>,
     ident_name: &BTreeMap<NodeId, &str>,
 ) -> Option<NodeId> {
-    if node_kind.get(&node) != Some(&NodeKind::ExprStmt) {
-        return None;
+    match parent_kind {
+        NodeKind::Block | NodeKind::SwitchCase => {
+            if node_kind.get(&node) != Some(&NodeKind::ExprStmt) {
+                return None;
+            }
+            let [(_, ident)] = children_by_parent.get(&node)?.as_slice() else {
+                return None;
+            };
+            native_ident_hole(*ident, STMT_LIST_HOLE_KEYWORD, node_kind, ident_name)
+        }
+        NodeKind::Call | NodeKind::New | NodeKind::OptCall => {
+            native_ident_hole(node, ARGS_HOLE_KEYWORD, node_kind, ident_name)
+        }
+        NodeKind::Array => {
+            native_ident_hole(node, ARRAY_ELEMENTS_HOLE_KEYWORD, node_kind, ident_name)
+        }
+        _ => None,
     }
-    let [(_, ident)] = children_by_parent.get(&node)?.as_slice() else {
-        return None;
-    };
-    if node_kind.get(ident) == Some(&NodeKind::Ident)
+}
+
+fn native_ident_hole(
+    node: NodeId,
+    keyword: &str,
+    node_kind: &BTreeMap<NodeId, NodeKind>,
+    ident_name: &BTreeMap<NodeId, &str>,
+) -> Option<NodeId> {
+    if node_kind.get(&node) == Some(&NodeKind::Ident)
         && ident_name
-            .get(ident)
-            .is_some_and(|name| labeled_hole_name_for(name, STMT_LIST_HOLE_KEYWORD).is_some())
+            .get(&node)
+            .is_some_and(|name| labeled_hole_name_for(name, keyword).is_some())
     {
-        Some(*ident)
+        Some(node)
     } else {
         None
     }
@@ -1419,6 +1470,21 @@ mod tests {
 
     fn context() -> MemberSelectorLoweringContext {
         MemberSelectorLoweringContext::new(ChunkId(3), "runtime/widgets")
+    }
+
+    fn assert_source_match_oracle_only(
+        lowered: &LoweredMemberSelector,
+        selector: &AnonymousStatementSelector,
+    ) {
+        let target_owner = lowered.program.targets[lowered.target.0].owner;
+        assert_eq!(lowered.program.atoms.len(), 1);
+        assert!(matches!(
+            &lowered.program.atoms[0],
+            SelectorAtom::SourceMatchCandidate {
+                owner: OwnerTerm::Var { id },
+                selector_key: StringTerm::Const { value },
+            } if *id == target_owner && value == &source_match::selector_key(selector)
+        ));
     }
 
     #[test]
@@ -1816,6 +1882,144 @@ mod tests {
             )),
             "STMT_LIST labels are hole syntax, not identifier constraints"
         );
+    }
+
+    #[test]
+    fn exact_source_match_with_argument_run_holes_lowers_to_native_child_list_pattern() {
+        let selector = AnonymousStatementSelector::exact(
+            r#"const selectedValue = joinParts("stable", ARGS_BEFORE, importantValue, ARGS_AFTER);"#,
+        );
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        let (segments, anchored_left, anchored_right) = lowered
+            .program
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                SelectorAtom::AstChildListPattern {
+                    start_index: 1,
+                    segments,
+                    anchored_left,
+                    anchored_right,
+                    ..
+                } => Some((segments, *anchored_left, *anchored_right)),
+                _ => None,
+            })
+            .expect("argument holes should lower to a child-list pattern");
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].len(), 1);
+        assert_eq!(segments[1].len(), 1);
+        assert!(anchored_left);
+        assert!(!anchored_right);
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value == "ARGS_BEFORE" || value == "ARGS_AFTER"
+            )),
+            "ARGS labels are hole syntax, not identifier constraints"
+        );
+    }
+
+    #[test]
+    fn exact_source_match_with_array_element_run_hole_lowers_to_native_child_list_pattern() {
+        let selector = AnonymousStatementSelector::exact(
+            r#"const readable = ["black", ARRAY_ELEMENTS, "white"];"#,
+        );
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        let (segments, anchored_left, anchored_right) = lowered
+            .program
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                SelectorAtom::AstChildListPattern {
+                    start_index: 0,
+                    segments,
+                    anchored_left,
+                    anchored_right,
+                    ..
+                } if segments.len() == 2 => Some((segments, *anchored_left, *anchored_right)),
+                _ => None,
+            })
+            .expect("array-element holes should lower to a child-list pattern");
+        assert_eq!(segments[0].len(), 1);
+        assert_eq!(segments[1].len(), 1);
+        assert!(anchored_left);
+        assert!(anchored_right);
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value == "ARRAY_ELEMENTS"
+            )),
+            "ARRAY_ELEMENTS labels are hole syntax, not identifier constraints"
+        );
+    }
+
+    #[test]
+    fn alpha_all_source_match_with_argument_run_hole_lowers_natively() {
+        let mut selector = AnonymousStatementSelector::exact("const a = foo(ARGS, b);");
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstChildListPattern { start_index: 1, .. }
+        )));
+    }
+
+    #[test]
+    fn misplaced_argument_run_hole_stays_oracle_only() {
+        let selector = AnonymousStatementSelector::exact("const a = ARGS;");
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector.clone()),
+        )
+        .unwrap();
+
+        assert_source_match_oracle_only(&lowered, &selector);
     }
 
     #[test]
