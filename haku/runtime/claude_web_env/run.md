@@ -29,6 +29,36 @@ environment-neutral `haku/run.md`.
   upgrade (`cluster/k8s/kube-api-proxy`); they were briefly broken until that was
   added. Clean up pods after (20-pod quota).
 
+## First: wait for bootstrap to finish (avoid the false "first run")
+
+`bootstrap.sh` runs as a **background** profile command, so when your session
+starts it may **not have finished cloning** `~/haku-state` yet. The clone lands via
+an **atomic swap**, so `~/haku-state` is never half-populated — it simply **doesn't
+exist** until the clone completes. Two signals tell you it's still running, both
+surfaced to you as system messages (the hook daemon drains background-command
+stdout + lifecycle messages on each tool call): bootstrap's own
+`haku-state: cloning in the background (pid …) — NOT ready yet` line, and the
+daemon's `Task [bootstrap] exited 0.` once it finishes. **Until you've seen the
+exit message (or confirmed `~/haku-state/items` exists), do not treat the absent/
+empty checkout as a first run** — orienting too early and concluding "first run"
+creates duplicates of items that already exist on the remote. Before Step 1, block
+until the clone is actually complete:
+
+```bash
+for i in $(seq 1 60); do
+  if git -C ~/haku-state rev-parse HEAD >/dev/null 2>&1 && [ -d ~/haku-state/items ]; then
+    echo "haku-state ready at $(git -C ~/haku-state rev-parse --short HEAD)"; break
+  fi
+  echo "waiting for bootstrap clone… ($i)"; sleep 5
+done
+git -C ~/haku-state pull --ff-only || true
+```
+
+If it's still not ready after the wait, re-run
+`haku/runtime/claude_web_env/bootstrap.sh` yourself and check the output. Only treat
+the state as a genuine first run if, after a **completed** clone, the **remote** has
+no commits — never on the strength of a local checkout that might still be filling in.
+
 ## Then run
 
 Concrete paths for this environment: your `haku-state` checkout is `~/haku-state`,

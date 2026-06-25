@@ -18,9 +18,12 @@ here (on Anthropic infra) and drives the cluster over `kubectl`; the
 - **Allowed domains:** the [default allowed domains](https://code.claude.com/docs/en/claude-code-on-the-web#default-allowed-domains)
   plus:
   - `*.anthropic.com`
-  - `*.allegedly.works` — the cluster (kube API, Forgejo, LiteLLM, …)
-  - `*.googleapis.com` — Gmail/Calendar read-only REST
+  - `*.allegedly.works` — the cluster (kube API, Forgejo, LiteLLM, `tana-mcp-ro`, …)
+  - `*.googleapis.com` — Gmail/Calendar/Tasks read-only REST
   - `*.buildbuddy.io` — RBE/remote cache (only if Haku runs `bbr`)
+  - `nixos.org`, `cache.nixos.org` — Nix channels + binary cache, so the
+    `.#agent-haku` install (and any Nix/pre-commit work) pulls from the cache
+    instead of failing (observed: `nixos.org` 403 without this).
 
 ## Files
 
@@ -48,3 +51,22 @@ here (on Anthropic infra) and drives the cluster over `kubectl`; the
 
 Depends on `secrets/haku-k8s-jwt.yaml` existing (minted by the
 `authentik-jwt-rotation` CronJob) — that JWT is what the kubeconfig is built from.
+
+## Gotcha: the Setup hook can clobber `.#agent-haku` (fastmcp/Tana)
+
+`web_setup.sh` runs **twice** per fresh session: once as the init script (via
+`setup.sh`, which sets `DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku` → installs fastmcp)
+and once as the **Setup hook** (`web_setup_hook.sh` → `web_setup.sh`), which does
+**not** carry that env var. The Setup-hook run was defaulting to `.#devtools` and
+running `nix profile remove agent-haku`, **wiping fastmcp** and leaving a dangling
+`/usr/local/bin/fastmcp` — so Haku lost Tana access (it fell back to "skip Tana").
+On `resume-cached` sessions only the Setup hook runs, so agent-haku never installed
+at all.
+
+Fix (in `devinfra/claude/web_setup.sh`): when `DUCKTAPE_WEB_SETUP_OUTPUT` is unset
+but `DUCKTAPE_CLAUDE_HOOKS_PROFILE` points at a Haku profile, it now defaults to
+`agent-haku` — so **both** paths install fastmcp consistently — and it prunes
+dangling `/usr/local/bin` symlinks before re-bridging. Setting
+`DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku` as a web-UI env var is an equally valid
+explicit override. (Tana also has a `curl` fallback in the base instructions, so a
+missing fastmcp degrades rather than blinds — but the closure should be present.)

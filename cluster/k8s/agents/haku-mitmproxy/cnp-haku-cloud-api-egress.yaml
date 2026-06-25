@@ -37,6 +37,11 @@ spec:
         - matchName: index.docker.io
         - matchName: gmail.googleapis.com
         - matchName: www.googleapis.com
+        # Google Tasks API — Haku reads the operator's task list (the Tasks
+        # playbook). www.googleapis.com covers Calendar/Drive; Tasks is on its
+        # own host. (A 403 here is a token-scope gap, not this allowlist — but
+        # the host must still be reachable once the scope is granted.)
+        - matchName: tasks.googleapis.com
       toPorts:
         - ports:
             - port: "443"
@@ -49,6 +54,18 @@ spec:
         - matchName: pypi.org
         - matchName: files.pythonhosted.org
         - matchName: registry.npmjs.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Nix binary cache + channels — so Haku runtimes that install/refresh their
+    # Nix closure (e.g. the agent-haku devtools/fastmcp install) hit the public
+    # cache instead of building from source. cache.nixos.org serves nars;
+    # nixos.org redirects channel/installer fetches.
+    - toFQDNs:
+        - matchName: cache.nixos.org
+        - matchName: nixos.org
+        - matchName: channels.nixos.org
       toPorts:
         - ports:
             - port: "443"

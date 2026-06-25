@@ -88,6 +88,18 @@ esac
 # haku/runtime/claude_web_env/setup.sh) to get `.#agent-haku`, which composes `.#devtools`
 # and adds the fastmcp MCP-client CLI. Only honored in `profile` install mode.
 WEB_SETUP_OUTPUT="${DUCKTAPE_WEB_SETUP_OUTPUT:-devtools}"
+# Self-heal the Haku web home. DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku is set inside
+# haku/runtime/claude_web_env/setup.sh (the init-script path), but the Setup-hook
+# path (web_setup_hook.sh → this script) and resume-cached sessions run WITHOUT it
+# — so they would reinstall the lean .#devtools and clobber the .#agent-haku
+# (fastmcp) the init script installed, silently breaking Haku's Tana access. The
+# hooks profile IS visible on both paths (UI env var), so when it's Haku's profile
+# and no explicit output was requested, default to agent-haku. (Explicit
+# DUCKTAPE_WEB_SETUP_OUTPUT always wins.)
+if [ -z "${DUCKTAPE_WEB_SETUP_OUTPUT:-}" ] && [[ "${DUCKTAPE_CLAUDE_HOOKS_PROFILE:-}" == *haku* ]]; then
+  WEB_SETUP_OUTPUT=agent-haku
+  log "Haku profile detected (DUCKTAPE_CLAUDE_HOOKS_PROFILE=$DUCKTAPE_CLAUDE_HOOKS_PROFILE); defaulting WEB_SETUP_OUTPUT=agent-haku"
+fi
 
 FLAKE="path:$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SETUP_COMMIT=$(git -C "${FLAKE#path:}" rev-parse HEAD 2>/dev/null || echo 'unknown')
@@ -250,6 +262,15 @@ fi
 # Symlink all Nix-installed binaries into /usr/local/bin so they're on PATH.
 # Claude Code is launched directly (not via login shell), so the Nix profile bin
 # is not in PATH when hooks run. /usr/local/bin is always in PATH.
+#
+# First prune any dangling /usr/local/bin symlinks left by a PREVIOUS install of a
+# different output: switching agent-haku→devtools (or vice versa) removes binaries
+# (e.g. fastmcp) from the profile, but the old symlink lingers and masquerades as
+# present (`which fastmcp` resolves to a broken link). Drop links whose target is
+# gone before re-bridging the current profile.
+for link in /usr/local/bin/*; do
+  [ -L "$link" ] && [ ! -e "$link" ] && rm -f "$link"
+done
 for bin in "${NIX_PROFILE}"/bin/*; do
   ln -sfn "$bin" /usr/local/bin/"$(basename "$bin")"
 done
