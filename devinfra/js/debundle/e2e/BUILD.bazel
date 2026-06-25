@@ -881,9 +881,7 @@ rust_test(
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:peel",
         "//devinfra/js/debundle:spec",
-        "@crates//:serde",
         "@crates//:serde_json",
-        "@rules_rust//tools/runfiles",
     ],
 )
 
@@ -904,9 +902,6 @@ rust_test(
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:peel",
         "//devinfra/js/debundle:spec",
-        "@crates//:serde",
-        "@crates//:serde_json",
-        "@rules_rust//tools/runfiles",
     ],
 )
 
@@ -1118,7 +1113,6 @@ rust_test(
     edition = "2024",
     deps = [
         ":support",
-        "@crates//:serde_json",
         "@crates//:tempfile",
     ],
 )
@@ -1134,7 +1128,6 @@ rust_test(
     edition = "2024",
     deps = [
         ":support",
-        "@crates//:serde_json",
         "@crates//:tempfile",
     ],
 )
@@ -1203,7 +1196,6 @@ rust_test(
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:peel",
         "//devinfra/js/debundle:report_fixtures",
-        "//devinfra/js/debundle:spec",
         "@crates//:serde_json",
         "@crates//:tempfile",
     ],
@@ -1253,7 +1245,6 @@ rust_test(
     deps = [
         ":support",
         "@crates//:regex",
-        "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@crates//:tempfile",
     ],
@@ -1288,7 +1279,6 @@ rust_test(
     deps = [
         ":support",
         "//devinfra/js/debundle:js_ast",
-        "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@crates//:tempfile",
     ],
@@ -1354,7 +1344,6 @@ rust_test(
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:peel",
         "//devinfra/js/debundle:report_fixtures",
-        "//devinfra/js/debundle:spec",
         "@crates//:serde_json",
         "@crates//:tempfile",
     ],
