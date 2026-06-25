@@ -1105,9 +1105,7 @@ fn native_single_node_hole_roots(facts: &ChunkFacts) -> Option<BTreeSet<NodeId>>
         }
     }
     for (_node, name) in &facts.prop_name {
-        if selector_hole_name(name)
-            && labeled_hole_name_for(name, OBJECT_PROPS_HOLE_KEYWORD).is_none()
-        {
+        if selector_hole_name(name) && !native_child_list_hole_name(name) {
             return None;
         }
     }
@@ -1198,6 +1196,9 @@ fn native_child_list_hole_name(name: &str) -> bool {
     [
         STMT_LIST_HOLE_KEYWORD,
         ARGS_HOLE_KEYWORD,
+        DECLARATORS_HOLE_KEYWORD,
+        CLASS_REST_HOLE_KEYWORD,
+        CASE_REST_HOLE_KEYWORD,
         OBJECT_PROPS_HOLE_KEYWORD,
         ARRAY_ELEMENTS_HOLE_KEYWORD,
     ]
@@ -1212,6 +1213,11 @@ fn native_child_list_patterns(
     let node_kind: BTreeMap<NodeId, NodeKind> = facts.node_kind.iter().copied().collect();
     let ident_name: BTreeMap<NodeId, &str> = facts
         .ident_name
+        .iter()
+        .map(|(node, name)| (*node, name.as_str()))
+        .collect();
+    let prop_name: BTreeMap<NodeId, &str> = facts
+        .prop_name
         .iter()
         .map(|(node, name)| (*node, name.as_str()))
         .collect();
@@ -1279,6 +1285,7 @@ fn native_child_list_patterns(
                 &node_kind,
                 &children_by_parent,
                 &ident_name,
+                &prop_name,
             ) {
                 hole_positions.insert(index);
                 valid_child_list_nodes.insert(ident);
@@ -1317,8 +1324,13 @@ fn native_child_list_patterns(
 
 fn native_child_list_start_index(parent_kind: NodeKind) -> Option<u32> {
     match parent_kind {
-        NodeKind::Block | NodeKind::SwitchCase | NodeKind::Array => Some(0),
+        NodeKind::Block
+        | NodeKind::SwitchCase
+        | NodeKind::Array
+        | NodeKind::VarDecl
+        | NodeKind::Class => Some(0),
         NodeKind::Call | NodeKind::New | NodeKind::OptCall => Some(1),
+        NodeKind::Switch => Some(1),
         _ => None,
     }
 }
@@ -1329,6 +1341,7 @@ fn native_child_list_carrier_ident(
     node_kind: &BTreeMap<NodeId, NodeKind>,
     children_by_parent: &BTreeMap<NodeId, Vec<(u32, NodeId)>>,
     ident_name: &BTreeMap<NodeId, &str>,
+    prop_name: &BTreeMap<NodeId, &str>,
 ) -> Option<NodeId> {
     match parent_kind {
         NodeKind::Block | NodeKind::SwitchCase => {
@@ -1348,6 +1361,13 @@ fn native_child_list_carrier_ident(
         }
         NodeKind::Object | NodeKind::ObjectPat => {
             object_props_carrier_ident(parent_kind, node, node_kind, children_by_parent, ident_name)
+        }
+        NodeKind::VarDecl => {
+            declarators_carrier_ident(node, node_kind, children_by_parent, ident_name)
+        }
+        NodeKind::Class => class_rest_carrier_key(node, node_kind, children_by_parent, prop_name),
+        NodeKind::Switch => {
+            case_rest_carrier_ident(node, node_kind, children_by_parent, ident_name)
         }
         _ => None,
     }
@@ -1402,6 +1422,75 @@ fn object_props_carrier_ident(
             }
         }
         _ => None,
+    }
+}
+
+fn declarators_carrier_ident(
+    node: NodeId,
+    node_kind: &BTreeMap<NodeId, NodeKind>,
+    children_by_parent: &BTreeMap<NodeId, Vec<(u32, NodeId)>>,
+    ident_name: &BTreeMap<NodeId, &str>,
+) -> Option<NodeId> {
+    if node_kind.get(&node) != Some(&NodeKind::VarDeclarator) {
+        return None;
+    }
+    let Some((_, binding)) = children_by_parent.get(&node)?.first() else {
+        return None;
+    };
+    if node_kind.get(binding) == Some(&NodeKind::BindingIdent)
+        && ident_name.get(binding).is_some_and(|name| {
+            labeled_hole_name_for(name, DECLARATORS_HOLE_KEYWORD).is_some()
+                || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
+        })
+    {
+        Some(*binding)
+    } else {
+        None
+    }
+}
+
+fn class_rest_carrier_key(
+    node: NodeId,
+    node_kind: &BTreeMap<NodeId, NodeKind>,
+    children_by_parent: &BTreeMap<NodeId, Vec<(u32, NodeId)>>,
+    prop_name: &BTreeMap<NodeId, &str>,
+) -> Option<NodeId> {
+    if node_kind.get(&node) != Some(&NodeKind::ClassProp) {
+        return None;
+    }
+    let [(_, key)] = children_by_parent.get(&node)?.as_slice() else {
+        return None;
+    };
+    if prop_name.get(key).is_some_and(|name| {
+        labeled_hole_name_for(name, CLASS_REST_HOLE_KEYWORD).is_some()
+            || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
+    }) {
+        Some(*key)
+    } else {
+        None
+    }
+}
+
+fn case_rest_carrier_ident(
+    node: NodeId,
+    node_kind: &BTreeMap<NodeId, NodeKind>,
+    children_by_parent: &BTreeMap<NodeId, Vec<(u32, NodeId)>>,
+    ident_name: &BTreeMap<NodeId, &str>,
+) -> Option<NodeId> {
+    if node_kind.get(&node) != Some(&NodeKind::SwitchCase) {
+        return None;
+    }
+    let [(_, test)] = children_by_parent.get(&node)?.as_slice() else {
+        return None;
+    };
+    if node_kind.get(test) == Some(&NodeKind::Ident)
+        && ident_name
+            .get(test)
+            .is_some_and(|name| labeled_hole_name_for(name, CASE_REST_HOLE_KEYWORD).is_some())
+    {
+        Some(*test)
+    } else {
+        None
     }
 }
 
@@ -2273,6 +2362,145 @@ mod tests {
                 "bare OBJECT_PROPS object selector must not constrain object child count"
             );
         }
+    }
+
+    #[test]
+    fn source_match_with_declarators_lowers_to_native_child_list_pattern() {
+        let selector = AnonymousStatementSelector::exact(
+            "const DECLARATORS_BEFORE = null, picked = make(), DECLARATORS_AFTER = null;",
+        );
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstChildListPattern {
+                start_index: 0,
+                anchored_left: false,
+                anchored_right: false,
+                segments,
+                ..
+            } if segments.len() == 1 && segments[0].len() == 1
+        )));
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value.starts_with(DECLARATORS_HOLE_KEYWORD)
+            )),
+            "DECLARATORS labels are hole syntax, not identifier constraints"
+        );
+    }
+
+    #[test]
+    fn source_match_with_class_rest_lowers_to_native_child_list_pattern() {
+        let selector = AnonymousStatementSelector::exact(
+            "class Widget { CLASS_REST_BEFORE; render() { return 1; } CLASS_REST_AFTER; }",
+        );
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstChildListPattern {
+                start_index: 0,
+                anchored_left: false,
+                anchored_right: false,
+                segments,
+                ..
+            } if segments.len() == 1 && segments[0].len() == 1
+        )));
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstPropertyName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value.starts_with(CLASS_REST_HOLE_KEYWORD)
+            )),
+            "CLASS_REST labels are hole syntax, not property-name constraints"
+        );
+    }
+
+    #[test]
+    fn source_match_with_case_rest_lowers_to_native_child_list_pattern() {
+        let selector = AnonymousStatementSelector::exact(
+            r#"function readable(kind) {
+  switch (kind) {
+    case CASE_REST_BEFORE:
+    case "go":
+      return 42;
+    case CASE_REST_AFTER:
+  }
+}"#,
+        );
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        let switch_pattern_parent = lowered.program.atoms.iter().find_map(|atom| match atom {
+            SelectorAtom::AstChildListPattern {
+                parent: NodeTerm::Var { id },
+                start_index: 1,
+                anchored_left: false,
+                anchored_right: false,
+                segments,
+            } if segments.len() == 1 && segments[0].len() == 1 => Some(*id),
+            _ => None,
+        });
+        let switch_pattern_parent =
+            switch_pattern_parent.expect("CASE_REST should lower to a switch child-list pattern");
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstKind {
+                node: NodeTerm::Var { id },
+                node_kind,
+            } if *id == switch_pattern_parent && *node_kind == NodeKind::Switch
+        )));
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value.starts_with(CASE_REST_HOLE_KEYWORD)
+            )),
+            "CASE_REST labels are hole syntax, not identifier constraints"
+        );
     }
 
     #[test]
