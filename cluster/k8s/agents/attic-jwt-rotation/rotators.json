@@ -33,6 +33,14 @@
       "push": []
     },
     {
+      "name": "gecko attic reader",
+      "sops_file": "secrets/hosts/gecko-attic.yaml",
+      "sub": "gecko",
+      "validity": "1 year",
+      "pull": ["main", "gaffer"],
+      "push": []
+    },
+    {
       "name": "claude-web attic reader",
       "sops_file": "secrets/claude-web-attic.yaml",
       "sub": "claude-web",

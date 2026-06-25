@@ -19,7 +19,16 @@ in
     ../../modules/vm-hardware.nix
     ../../modules/bazel
     ../../modules/system-inspection-sudo.nix
+    ../../modules/attic-substituter.nix
   ];
+
+  # Pull substituter for cache.allegedly.works/{main,gaffer}. Reader JWT is
+  # auto-rotated by attic-jwt-rotation CronJob; the SOPS file is decryptable
+  # by the gecko host key + agentydragon user key.
+  ducktape.attic-substituter = {
+    enable = true;
+    sopsFile = ../../../../secrets/hosts/gecko-attic.yaml;
+  };
 
   # Passwordless sudo for read-only system inspection commands used by agents.
   ducktape.systemInspectionSudo.enable = true;
