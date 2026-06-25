@@ -527,8 +527,10 @@ fn native_source_match_no_match_message(
         .unwrap_or_default();
     Some(format!(
         "logical_module {}: members[].selector.source_match for export `{}`{} did not produce a \
-         valid global selector assignment. The selector may have no matching source declaration, \
-         or the joint constraints may reject all otherwise matching declarations. Selector:\n{}",
+         valid global selector assignment for any top-level declaration accepted by the global \
+         selector solver. The selector did not match any top-level declaration under the joint \
+         constraints; it may have no matching source declaration, or the joint constraints may \
+         reject all otherwise matching declarations. Selector:\n{}",
         request.id, member.export_name, target_binding_hint, selector.match_source,
     ))
 }
@@ -609,12 +611,18 @@ fn native_source_match_ambiguous_message(
     candidates: &[ResolvedClaim],
 ) -> Option<String> {
     let selector = member.source_match.as_ref()?;
+    let target_binding_hint = selector
+        .target_binding
+        .as_deref()
+        .map(|target| format!(" target_binding `{target}`"))
+        .unwrap_or_default();
     Some(format!(
-        "logical_module {}: members[].selector.source_match for export `{}` is ambiguous in the \
+        "logical_module {}: members[].selector.source_match for export `{}`{} is ambiguous in the \
          native selector solver -- matched {} owners at statement ordinals {:?} (bindings: {}). \
          Refine the selector. Source:\n{}",
         request.id,
         member.export_name,
+        target_binding_hint,
         candidates.len(),
         candidates
             .iter()
@@ -639,6 +647,10 @@ fn first_relevant_error_line(message: &str) -> Option<String> {
 fn classify_source_match_failure(message: &str) -> &'static str {
     if message.contains(" is ambiguous") {
         "ambiguous_selector"
+    } else if message.contains("valid global selector assignment")
+        || message.contains("global selector solver")
+    {
+        "selector_resolution_error"
     } else if message.contains("did not match any") {
         "unresolved_selector"
     } else {
@@ -1206,6 +1218,9 @@ impl ChunkPlanBuilder {
         let mut source_match_targets = Vec::<SourceMatchTargetInfo>::new();
         let mut anonymous_statement_targets = Vec::<AnonymousStatementTargetInfo>::new();
         let mut pending_constraints = Vec::<(String, String, spec::MemberSelectorSpec)>::new();
+        let mut pending_source_match_groups = Vec::<(String, SourceMatchGroupAssignment)>::new();
+        let mut pending_source_match_group_keys =
+            BTreeSet::<(String, SourceMatchGroupCacheKey)>::new();
         if has_deferred_members {
             for (index, request) in explicit_requests.iter().enumerate() {
                 let group_assignments = source_match_group_assignments(request);
@@ -1218,20 +1233,28 @@ impl ChunkPlanBuilder {
                         &member.export_name,
                         &selector,
                     )?;
-                    pending_constraints.push((
-                        request.id.clone(),
-                        member.export_name.clone(),
-                        selector,
-                    ));
-                    if member.resolves_after_stage_a() {
-                        deferred_targets.insert(
-                            target,
-                            (
-                                index,
-                                member.clone(),
-                                group_assignments.get(&member_index).cloned(),
+                    let group_assignment = group_assignments.get(&member_index).cloned();
+                    if let Some(group) = &group_assignment {
+                        let key = (
+                            request.id.clone(),
+                            SourceMatchGroupCacheKey::new(
+                                group.selector.clone(),
+                                &group.exports_by_target,
                             ),
                         );
+                        if pending_source_match_group_keys.insert(key) {
+                            pending_source_match_groups.push((request.id.clone(), group.clone()));
+                        }
+                    } else {
+                        pending_constraints.push((
+                            request.id.clone(),
+                            member.export_name.clone(),
+                            selector,
+                        ));
+                    }
+                    if member.resolves_after_stage_a() {
+                        deferred_targets
+                            .insert(target, (index, member.clone(), group_assignment.clone()));
                     }
                     if let Some(source_selector) = &member.source_match {
                         let selector_key = source_match::selector_key(source_selector);
@@ -1241,7 +1264,7 @@ impl ChunkPlanBuilder {
                             export_name: member.export_name.clone(),
                             selector: source_selector.clone(),
                             selector_key: selector_key.clone(),
-                            group_assignment: group_assignments.get(&member_index).cloned(),
+                            group_assignment,
                         });
                     }
                 }
@@ -1274,6 +1297,24 @@ impl ChunkPlanBuilder {
                         }
                     }
                 }
+            }
+        }
+        for (logical_module, group) in pending_source_match_groups {
+            if builder.try_lower_native_source_match_group(
+                &logical_module,
+                &group.selector,
+                &group.exports_by_target,
+            )? {
+                continue;
+            }
+            for (target_binding, export_name) in group.exports_by_target {
+                let mut selector = group.selector.clone();
+                selector.target_binding = Some(target_binding);
+                builder.lower_member_constraints_in_module(
+                    &logical_module,
+                    &export_name,
+                    &spec::MemberSelectorSpec::SourceMatch(selector),
+                )?;
             }
         }
         for (logical_module, export_name, selector) in pending_constraints {
