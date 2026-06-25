@@ -1105,7 +1105,9 @@ fn native_single_node_hole_roots(facts: &ChunkFacts) -> Option<BTreeSet<NodeId>>
         }
     }
     for (_node, name) in &facts.prop_name {
-        if selector_hole_name(name) {
+        if selector_hole_name(name)
+            && labeled_hole_name_for(name, OBJECT_PROPS_HOLE_KEYWORD).is_none()
+        {
             return None;
         }
     }
@@ -1196,6 +1198,7 @@ fn native_child_list_hole_name(name: &str) -> bool {
     [
         STMT_LIST_HOLE_KEYWORD,
         ARGS_HOLE_KEYWORD,
+        OBJECT_PROPS_HOLE_KEYWORD,
         ARRAY_ELEMENTS_HOLE_KEYWORD,
     ]
     .iter()
@@ -1222,7 +1225,22 @@ fn native_child_list_patterns(
             }
         })
         .collect::<BTreeSet<_>>();
-    if child_list_idents.is_empty() {
+    let child_list_prop_nodes = facts
+        .prop_name
+        .iter()
+        .filter_map(|(node, name)| {
+            if native_child_list_hole_name(name) {
+                Some(*node)
+            } else {
+                None
+            }
+        })
+        .collect::<BTreeSet<_>>();
+    let child_list_hole_nodes = child_list_idents
+        .union(&child_list_prop_nodes)
+        .copied()
+        .collect::<BTreeSet<_>>();
+    if child_list_hole_nodes.is_empty() {
         return Some(BTreeMap::new());
     }
 
@@ -1238,7 +1256,7 @@ fn native_child_list_patterns(
     }
 
     let mut patterns = BTreeMap::new();
-    let mut valid_child_list_idents = BTreeSet::new();
+    let mut valid_child_list_nodes = BTreeSet::new();
     for (parent, children_with_indices) in &children_by_parent {
         let Some(parent_kind) = node_kind.get(parent).copied() else {
             continue;
@@ -1253,6 +1271,7 @@ fn native_child_list_patterns(
             .map(|(_index, child)| *child)
             .collect::<Vec<_>>();
         let mut hole_positions = BTreeSet::new();
+        let mut allow_all_hole_pattern = false;
         for (index, child) in children.iter().enumerate() {
             if let Some(ident) = native_child_list_carrier_ident(
                 parent_kind,
@@ -1262,9 +1281,11 @@ fn native_child_list_patterns(
                 &ident_name,
             ) {
                 hole_positions.insert(index);
-                valid_child_list_idents.insert(ident);
-                skipped_nodes.insert(*child);
-                skipped_nodes.insert(ident);
+                valid_child_list_nodes.insert(ident);
+                if matches!(parent_kind, NodeKind::Object | NodeKind::ObjectPat) {
+                    allow_all_hole_pattern = true;
+                }
+                collect_native_child_list_subtree(*child, &children_by_parent, skipped_nodes);
             }
         }
         if hole_positions.is_empty() {
@@ -1273,6 +1294,9 @@ fn native_child_list_patterns(
 
         let (segments, anchored_left, anchored_right) =
             child_list_segments(&children, &hole_positions);
+        if segments.is_empty() && !allow_all_hole_pattern {
+            return None;
+        }
         patterns.insert(
             *parent,
             NativeChildListPattern {
@@ -1284,7 +1308,7 @@ fn native_child_list_patterns(
         );
     }
 
-    if valid_child_list_idents == child_list_idents {
+    if valid_child_list_nodes == child_list_hole_nodes {
         Some(patterns)
     } else {
         None
@@ -1322,6 +1346,9 @@ fn native_child_list_carrier_ident(
         NodeKind::Array => {
             native_ident_hole(node, ARRAY_ELEMENTS_HOLE_KEYWORD, node_kind, ident_name)
         }
+        NodeKind::Object | NodeKind::ObjectPat => {
+            object_props_carrier_ident(parent_kind, node, node_kind, children_by_parent, ident_name)
+        }
         _ => None,
     }
 }
@@ -1340,6 +1367,55 @@ fn native_ident_hole(
         Some(node)
     } else {
         None
+    }
+}
+
+fn object_props_carrier_ident(
+    parent_kind: NodeKind,
+    node: NodeId,
+    node_kind: &BTreeMap<NodeId, NodeKind>,
+    children_by_parent: &BTreeMap<NodeId, Vec<(u32, NodeId)>>,
+    ident_name: &BTreeMap<NodeId, &str>,
+) -> Option<NodeId> {
+    match parent_kind {
+        NodeKind::Object => {
+            if node_kind.get(&node) == Some(&NodeKind::Shorthand)
+                && ident_name.get(&node).is_some_and(|name| {
+                    labeled_hole_name_for(name, OBJECT_PROPS_HOLE_KEYWORD).is_some()
+                })
+            {
+                Some(node)
+            } else {
+                None
+            }
+        }
+        NodeKind::ObjectPat => {
+            if node_kind.get(&node) == Some(&NodeKind::PatAssign)
+                && children_by_parent.get(&node).is_none_or(Vec::is_empty)
+                && ident_name.get(&node).is_some_and(|name| {
+                    labeled_hole_name_for(name, OBJECT_PROPS_HOLE_KEYWORD).is_some()
+                })
+            {
+                Some(node)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn collect_native_child_list_subtree(
+    node: NodeId,
+    children_by_parent: &BTreeMap<NodeId, Vec<(u32, NodeId)>>,
+    skipped_nodes: &mut BTreeSet<NodeId>,
+) {
+    if skipped_nodes.insert(node)
+        && let Some(children) = children_by_parent.get(&node)
+    {
+        for (_index, child) in children {
+            collect_native_child_list_subtree(*child, children_by_parent, skipped_nodes);
+        }
     }
 }
 
@@ -2020,6 +2096,183 @@ mod tests {
         .unwrap();
 
         assert_source_match_oracle_only(&lowered, &selector);
+    }
+
+    #[test]
+    fn source_match_with_object_props_lowers_to_native_child_list_pattern() {
+        let selector = AnonymousStatementSelector::exact(
+            "const actual = { head: 1, OBJECT_PROPS_MID, tail: 2 };",
+        );
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstChildListPattern {
+                start_index: 0,
+                anchored_left: true,
+                anchored_right: true,
+                segments,
+                ..
+            } if segments.len() == 2
+                && segments[0].len() == 1
+                && segments[1].len() == 1
+        )));
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value == "OBJECT_PROPS_MID"
+            )),
+            "OBJECT_PROPS labels are hole syntax, not identifier constraints"
+        );
+    }
+
+    #[test]
+    fn source_match_with_object_props_before_after_lowers_to_open_pattern() {
+        let selector = AnonymousStatementSelector::exact(
+            "const actual = { OBJECT_PROPS_BEFORE, stable: 1, OBJECT_PROPS_AFTER };",
+        );
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstChildListPattern {
+                start_index: 0,
+                anchored_left: false,
+                anchored_right: false,
+                segments,
+                ..
+            } if segments.len() == 1 && segments[0].len() == 1
+        )));
+    }
+
+    #[test]
+    fn source_match_with_object_pattern_props_lowers_to_native_child_list_pattern() {
+        let selector = AnonymousStatementSelector::exact(
+            "const { OBJECT_PROPS_BEFORE, stable, OBJECT_PROPS_AFTER } = input;",
+        );
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstChildListPattern {
+                start_index: 0,
+                anchored_left: false,
+                anchored_right: false,
+                segments,
+                ..
+            } if segments.len() == 1 && segments[0].len() == 1
+        )));
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value == "OBJECT_PROPS_BEFORE" || value == "OBJECT_PROPS_AFTER"
+            )),
+            "OBJECT_PROPS pattern labels are hole syntax, not identifier constraints"
+        );
+    }
+
+    #[test]
+    fn source_match_with_bare_object_props_hole_does_not_pin_object_arity() {
+        let selector = AnonymousStatementSelector::exact("const actual = { OBJECT_PROPS };");
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::AstChildListPattern { .. })),
+            "all-hole object lists are represented by omitting arity and child atoms"
+        );
+        assert!(
+            !lowered.program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value == "OBJECT_PROPS"
+            )),
+            "bare OBJECT_PROPS is hole syntax, not an identifier constraint"
+        );
+        let object_nodes = lowered
+            .program
+            .atoms
+            .iter()
+            .filter_map(|atom| match atom {
+                SelectorAtom::AstKind {
+                    node: NodeTerm::Var { id },
+                    node_kind,
+                } if node_kind.as_tag() == "Object" => Some(*id),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(!object_nodes.is_empty());
+        for object_node in object_nodes {
+            assert!(
+                !lowered.program.atoms.iter().any(|atom| matches!(
+                    atom,
+                    SelectorAtom::AstChildCount {
+                        node: NodeTerm::Var { id },
+                        ..
+                    } if *id == object_node
+                )),
+                "bare OBJECT_PROPS object selector must not constrain object child count"
+            );
+        }
     }
 
     #[test]
