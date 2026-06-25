@@ -4183,6 +4183,50 @@ function candidateRight() {
     }
 
     #[test]
+    fn solves_alpha_all_target_binding_in_multideclarator() {
+        let mut selector = AnonymousStatementSelector::exact(
+            r#"const first = build("left"), second = build("right");"#,
+        );
+        selector.identifiers = spec::SourceMatchIdentifierMode::AlphaAll;
+        selector.target_binding = Some("second".to_string());
+        let lowered = lower_member_selector(
+            &MemberSelectorLoweringContext::new(ChunkId(0), "runtime/target"),
+            "Target",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        let facts = fact_store_from_analyzed_source(
+            r#"
+const runtimeFirst = build("left"), runtimeSecond = build("right");
+const otherFirst = build("left"), otherSecond = build("wrong");
+"#,
+        );
+
+        let result = solve(&lowered.program, &facts).unwrap();
+        let owner = owner_for_binding(&facts, "runtimeSecond");
+
+        assert_eq!(
+            result.outcome_for(lowered.target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner,
+                    statement_ordinal: statement_ordinal_for_owner(&facts, owner),
+                    binding: Some("runtimeSecond".to_string()),
+                    provenance: Vec::new(),
+                },
+            })
+        );
+    }
+
+    #[test]
     fn solves_lowered_exact_source_match_projects_target_binding() {
         let mut selector =
             AnonymousStatementSelector::exact(r#"const Target = makeTarget("value");"#);

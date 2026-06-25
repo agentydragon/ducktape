@@ -419,11 +419,6 @@ impl MemberSelectorProgramBuilder {
         };
         let target_binding_node = match &selector.target_binding {
             Some(target_binding) => {
-                if selector.identifiers == SourceMatchIdentifierMode::AlphaAll
-                    && native_declared_binding_count(&facts, &skipped_nodes) != Some(1)
-                {
-                    return Ok(false);
-                }
                 let Some(target_binding_node) =
                     native_target_binding_node(&facts, &skipped_nodes, target_binding)
                 else {
@@ -1162,17 +1157,6 @@ fn native_single_declared_binding_node(
         return None;
     };
     Some(*node)
-}
-
-fn native_declared_binding_count(
-    facts: &ChunkFacts,
-    skipped_nodes: &BTreeSet<NodeId>,
-) -> Option<usize> {
-    let [(root, _ordinal)] = facts.top_level.as_slice() else {
-        return None;
-    };
-    let index = AlphaIdentifierIndex::new(facts);
-    Some(native_declared_binding_nodes(&index, skipped_nodes, *root).len())
 }
 
 fn native_declared_binding_nodes(
@@ -2470,6 +2454,48 @@ mod tests {
                 binding: StringTerm::Var { .. },
             } if *id == target_owner
         )));
+    }
+
+    #[test]
+    fn alpha_all_target_binding_in_multideclarator_lowers_natively() {
+        let mut selector = AnonymousStatementSelector::exact(
+            r#"const first = build("left"), second = build("right");"#,
+        );
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        selector.target_binding = Some("second".to_string());
+        let lowered = lower_member_selector(
+            &context(),
+            "Selected",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
+            "alpha_all source_match with target_binding in a multi-declarator should stay native",
+        );
+        let target_owner = lowered.program.targets[lowered.target.0].owner;
+        let projected_bindings = lowered
+            .program
+            .atoms
+            .iter()
+            .filter_map(|atom| match atom {
+                SelectorAtom::OwnerDeclaresBinding {
+                    owner: OwnerTerm::Var { id },
+                    binding: StringTerm::Var { id: binding },
+                } if *id == target_owner => Some(*binding),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            projected_bindings.len(),
+            1,
+            "target owner should project exactly one declared binding variable",
+        );
     }
 
     #[test]
