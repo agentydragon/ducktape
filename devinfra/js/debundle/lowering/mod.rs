@@ -61,7 +61,9 @@ mod util;
 mod vendor_imports;
 mod visitors;
 
-use anonymous::{AnonymousStatementDiagnostic, resolve_anonymous_statement_ordinals};
+use anonymous::{
+    AnonymousStatementDiagnostic, ResolvedAnonymousStatement, resolve_anonymous_statement_request,
+};
 use body_facts::{ModuleBodyFacts, collect_module_body_facts};
 use chunk_ast::{
     ChunkAstAnalysis, TopLevelDecl, analyze_chunk_ast, binding_ids, binding_names, declaration_ids,

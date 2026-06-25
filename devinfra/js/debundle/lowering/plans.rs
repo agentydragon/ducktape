@@ -114,10 +114,14 @@ pub(super) struct MemberRequest {
 }
 
 impl MemberRequest {
-    /// Whether this member is pinned by a relational selector (and so resolves in a
-    /// post-Stage-A pass, with an empty `binding` until then).
-    pub(super) fn is_relational(&self) -> bool {
-        self.relational.is_some()
+    /// Whether this member's binding is intentionally unknown until Stage A
+    /// facts are available and the global selector solver runs.
+    ///
+    /// Request lowering canonicalizes every non-name member selector into this
+    /// shape. Callers should route on that semantic state instead of re-spelling
+    /// individual selector forms such as `source_match` versus the relation enum.
+    pub(super) fn resolves_after_stage_a(&self) -> bool {
+        self.binding.is_empty()
     }
 
     pub(super) fn cross_ref(&self) -> Option<&spec::CrossRefTarget> {
@@ -335,9 +339,9 @@ pub(super) fn build_members(
         .map(|m| {
             let selected = m.selector.selected()?;
             let kind_label = selected.selector_kind_label();
-            // A relational / source-match member's public export name can't default
-            // to a binding name — the binding isn't known until the selector
-            // resolves — so `name:` is required. The kind label colors the message.
+            // A solver-resolved member's public export name can't default to a
+            // binding name — the binding isn't known until the selector resolves
+            // — so `name:` is required. The kind label colors the message.
             let require_name = || {
                 m.name.clone().ok_or_else(|| {
                     anyhow::anyhow!(

@@ -204,7 +204,7 @@ pub(super) fn reject_duplicate_member_bindings(
 ) -> Result<()> {
     let mut by_binding = BTreeMap::<String, Vec<&MemberRequest>>::new();
     for member in members {
-        if member.binding.is_empty() {
+        if member.resolves_after_stage_a() {
             continue;
         }
         by_binding
