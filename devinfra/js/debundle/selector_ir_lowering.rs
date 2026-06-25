@@ -672,9 +672,12 @@ impl MemberSelectorProgramBuilder {
         else {
             return Ok(false);
         };
-        if !native_module_stmt_list_hole_roots(&facts).is_empty() {
+        let module_stmt_list_hole_roots = native_module_stmt_list_hole_roots(&facts);
+        let Some(top_level_roots) =
+            native_single_pinned_top_level_segment(&facts, &module_stmt_list_hole_roots)
+        else {
             return Ok(false);
-        }
+        };
         let regex_predicates = native_string_literal_regex_predicates(&facts);
         let Some(hole_roots) =
             native_single_node_hole_roots(&facts, &regex_predicates.consumed_nodes)
@@ -682,6 +685,10 @@ impl MemberSelectorProgramBuilder {
             return Ok(false);
         };
         let mut skipped_nodes = native_hole_subtree_nodes(&facts, &hole_roots);
+        skipped_nodes.extend(native_hole_subtree_nodes(
+            &facts,
+            &module_stmt_list_hole_roots,
+        ));
         skipped_nodes.extend(regex_predicates.consumed_nodes.iter().copied());
         let Some(child_list_patterns) = native_child_list_patterns(&facts, &mut skipped_nodes)
         else {
@@ -695,11 +702,6 @@ impl MemberSelectorProgramBuilder {
         if facts.top_level.len() != parsed.body.len() {
             return Ok(false);
         }
-        let top_level_roots = facts
-            .top_level
-            .iter()
-            .map(|(root, _ordinal)| *root)
-            .collect::<Vec<_>>();
 
         let mut target_binding_nodes = BTreeMap::<String, NodeId>::new();
         for target_binding in exports_by_target.keys() {
@@ -1341,6 +1343,29 @@ fn native_module_stmt_list_hole_roots(facts: &ChunkFacts) -> BTreeSet<NodeId> {
         .collect()
 }
 
+fn native_single_pinned_top_level_segment(
+    facts: &ChunkFacts,
+    module_stmt_list_hole_roots: &BTreeSet<NodeId>,
+) -> Option<Vec<NodeId>> {
+    let mut roots = Vec::new();
+    let mut saw_pinned_root = false;
+    let mut saw_trailing_hole = false;
+    for (root, _ordinal) in &facts.top_level {
+        if module_stmt_list_hole_roots.contains(root) {
+            if saw_pinned_root {
+                saw_trailing_hole = true;
+            }
+            continue;
+        }
+        if saw_trailing_hole {
+            return None;
+        }
+        saw_pinned_root = true;
+        roots.push(*root);
+    }
+    if roots.is_empty() { None } else { Some(roots) }
+}
+
 fn native_single_declared_binding_node(
     facts: &ChunkFacts,
     skipped_nodes: &BTreeSet<NodeId>,
@@ -1978,7 +2003,7 @@ fn native_child_list_patterns(
     let child_list_idents = ident_name
         .iter()
         .filter_map(|(node, name)| {
-            if native_child_list_hole_name(name) {
+            if !skipped_nodes.contains(node) && native_child_list_hole_name(name) {
                 Some(*node)
             } else {
                 None
@@ -1989,7 +2014,7 @@ fn native_child_list_patterns(
         .prop_name
         .iter()
         .filter_map(|(node, name)| {
-            if native_child_list_hole_name(name) {
+            if !skipped_nodes.contains(node) && native_child_list_hole_name(name) {
                 Some(*node)
             } else {
                 None
@@ -3096,6 +3121,106 @@ function second() {
             })
             .collect::<Vec<_>>();
         assert_eq!(offsets, vec![0, 1]);
+    }
+
+    #[test]
+    fn binding_group_source_match_with_outer_stmt_list_holes_lowers_to_native_sequence() {
+        let mut group_selector = AnonymousStatementSelector::exact(
+            r#"STMT_LIST_HEAD;
+const first = makeFirst();
+function second() {
+    return first.value;
+}
+STMT_LIST_TAIL;"#,
+        );
+        group_selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let mut first_selector = group_selector.clone();
+        first_selector.target_binding = Some("first".to_string());
+        let mut second_selector = group_selector.clone();
+        second_selector.target_binding = Some("second".to_string());
+
+        let mut builder = MemberSelectorProgramBuilder::new(context());
+        builder
+            .declare_member_target_in_module(
+                "runtime/widgets",
+                "First",
+                &MemberSelectorSpec::SourceMatch(first_selector),
+            )
+            .unwrap();
+        builder
+            .declare_member_target_in_module(
+                "runtime/widgets",
+                "Second",
+                &MemberSelectorSpec::SourceMatch(second_selector),
+            )
+            .unwrap();
+        assert!(
+            builder
+                .try_lower_native_source_match_group(
+                    "runtime/widgets",
+                    &group_selector,
+                    &BTreeMap::from([
+                        ("first".to_string(), "First".to_string()),
+                        ("second".to_string(), "Second".to_string()),
+                    ]),
+                )
+                .unwrap()
+        );
+        let program = builder.into_program().unwrap();
+
+        assert!(
+            !program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
+            "outer module-level STMT_LIST holes should not force the group oracle"
+        );
+        assert_eq!(
+            program
+                .atoms
+                .iter()
+                .filter(|atom| matches!(atom, SelectorAtom::AstTopLevel { .. }))
+                .count(),
+            2,
+            "only pinned top-level statements should get top-level ordinal constraints"
+        );
+        assert!(
+            !program.atoms.iter().any(|atom| matches!(
+                atom,
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Const { value },
+                    ..
+                } if value.starts_with(STMT_LIST_HOLE_KEYWORD)
+            )),
+            "module-level STMT_LIST labels are hole syntax, not identifier constraints"
+        );
+    }
+
+    #[test]
+    fn binding_group_source_match_with_internal_stmt_list_hole_stays_oracle_only() {
+        let mut group_selector = AnonymousStatementSelector::exact(
+            r#"const first = makeFirst();
+STMT_LIST_MIDDLE;
+function second() {
+    return first.value;
+}"#,
+        );
+        group_selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let mut builder = MemberSelectorProgramBuilder::new(context());
+
+        assert!(
+            !builder
+                .try_lower_native_source_match_group(
+                    "runtime/widgets",
+                    &group_selector,
+                    &BTreeMap::from([
+                        ("first".to_string(), "First".to_string()),
+                        ("second".to_string(), "Second".to_string()),
+                    ]),
+                )
+                .unwrap(),
+            "internal top-level STMT_LIST needs ordered-subsequence ordinal support"
+        );
     }
 
     #[test]

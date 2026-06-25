@@ -967,6 +967,56 @@ const styles = { first: firstClassName, second: secondClassName };"#,
 }
 
 #[test]
+fn binding_group_source_match_range_with_outer_stmt_list_holes_stays_native() {
+    let fixture = run_fixture_with_env(
+        FixtureOpts::new(
+            r#"const ignoredBefore = "before";
+const runtimeFirst = "alpha";
+function runtimeSecond() {
+  return `${runtimeFirst}:beta`;
+}
+const ignoredAfter = "after";
+console.log(runtimeSecond(), ignoredBefore, ignoredAfter);
+export { ignoredBefore, runtimeFirst, runtimeSecond, ignoredAfter };
+"#,
+            vec![logical_module_with_binding_groups(
+                "selected/range",
+                &[],
+                &[BindingGroup::source_alpha(
+                    r#"STMT_LIST_HEAD;
+const first = "alpha";
+function second() {
+  return `${first}:beta`;
+}
+STMT_LIST_TAIL;"#,
+                    &[("first", "first"), ("second", "second")],
+                )],
+            )],
+        ),
+        &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
+    );
+    assert!(
+        !fixture.stderr.contains("[debundle source_match]"),
+        "native binding_group source_match with outer STMT_LIST holes should not call the legacy resolver\nstderr:\n{}",
+        fixture.stderr
+    );
+
+    assert_entry_output(&fixture, "alpha:beta before after\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/selected/range.js",
+        &["first", "second"],
+        &["ignoredBefore", "ignoredAfter"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected/range.js",
+        &["const first", "function second", "alpha"],
+        &["ignoredBefore", "ignoredAfter", "STMT_LIST"],
+    );
+}
+
+#[test]
 fn binding_group_source_match_range_matches_exported_const_declarations() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"export const runtimeFirstClassName = "Widget-module_first__exp1";
