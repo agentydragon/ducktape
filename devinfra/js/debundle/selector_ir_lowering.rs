@@ -1121,9 +1121,11 @@ fn native_alpha_source_match_supported(
         return false;
     }
 
-    if facts.node_kind.iter().any(|(node, kind)| {
-        !skipped_nodes.contains(node) && matches!(kind, NodeKind::Seq | NodeKind::AssignProp)
-    }) {
+    if facts
+        .node_kind
+        .iter()
+        .any(|(node, kind)| !skipped_nodes.contains(node) && *kind == NodeKind::AssignProp)
+    {
         return false;
     }
 
@@ -3254,6 +3256,35 @@ mod tests {
                 is_binding: true,
                 ..
             } if value == "stable"
+        )));
+    }
+
+    #[test]
+    fn alpha_all_source_match_sequence_expression_lowers_natively() {
+        let mut selector = AnonymousStatementSelector::exact(
+            "function a(target, decorators) { return (applyDecorators(target, decorators), target); }",
+        );
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::AstKind {
+                node_kind: NodeKind::Seq,
+                ..
+            }
         )));
     }
 
