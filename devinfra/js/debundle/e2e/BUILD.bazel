@@ -25,88 +25,549 @@ rust_library(
     ],
 )
 
-# Standard e2e tests: shell out to the built debundler binary against
-# a fixture spec and assert on the emitted artifact tree. `:support`
-# depends on `:analysis` (for typed owner-graph helpers like
-# `owner_for_binding`), so it reaches every test transitively; tests that
-# name `analysis::` types directly still list `:analysis` themselves.
-_STANDARD_E2E_DEPS = [
-    ":support",
-    "@crates//:serde",
-    "@crates//:serde_json",
-    "@crates//:serde_yaml",
-    "@crates//:swc_common",
-    "@crates//:swc_ecma_ast",
-    "@crates//:swc_ecma_parser",
-    "@crates//:tempfile",
-    "@rules_rust//tools/runfiles",
-]
+rust_test(
+    name = "chunk_admission_test",
+    srcs = ["chunk_admission_test.rs"],
+    crate_root = "chunk_admission_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
 
-[
-    rust_test(
-        name = name,
-        srcs = ["{}.rs".format(name)],
-        crate_root = "{}.rs".format(name),
-        data = [
-            "//devinfra/js/debundle",
-            "@nodejs_linux_amd64//:bin/node",
-        ],
-        edition = "2024",
-        deps = _STANDARD_E2E_DEPS,
-    )
-    for name in [
-        "binding_group_adopt_names_test",
-        "chunk_admission_test",
-        "comma_list_owner_split_test",
-        "lowering_test",
-        "mini_factors_test",
-        "naturalization_test",
-        "naturalize_cross_scope_params_test",
-        "object_plain_data_calls_test",
-        "url_rebase_test",
-        "vendor_swap_test",
-        "identifier_rename_queue_test",
-        "sibling_declarator_steal_test",
-        "chunk_rename_cross_module_test",
-        "chunk_renames_test",
-        "rename_shadowed_inner_binding_test",
-        "rename_shorthand_destructure_test",
-        "rename_target_capture_test",
-        "member_comment_rename_test",
-        "export_local_heuristic_remap_test",
-        "missing_binding_member_test",
-        "residual_member_rename_test",
-        "source_order_emit_test",
-        "purity_test",
-        "import_coalescing_test",
-        "object_literal_import_collapse_test",
-        "object_literal_return_shorthand_drops_import_test",
-        "duplicate_export_test",
-        "duplicate_top_level_declaration_test",
-        "at_init_promotion_nested_closure_test",
-        "at_init_promotion_post_await_test",
-        "hoisted_var_declaration_test",
-        "export_default_purity_test",
-        "auto_grown_export_alias_collision_test",
-        "reserved_word_mint_test",
-        "runtime_tdz_on_imported_class_test",
-        "accepted_spec_runs_under_node_test",
-        "gate_rejection_scopes_to_bad_scc_test",
-        "lemma_one_linker_post_order_test",
-        "lemma_two_rescued_asymmetric_cycle_test",
-        "lemma_three_at_init_read_test",
-        "lemma_four_lazy_read_cycle_test",
-        "lemma_five_side_effect_order_test",
-        "asymmetric_non_residual_cycle_test",
-        "mediator_reaches_asymmetric_cycle_test",
-        "namespace_aggregator_split_tdz_test",
-        "pass_two_tdz_cut_diagnosis_test",
-        "spec_comments_test",
-        "selector_diagnostics_report_test",
-        "spec_validate_cli_test",
-        "cross_ref_lowering_test",
-    ]
-]
+rust_test(
+    name = "comma_list_owner_split_test",
+    srcs = ["comma_list_owner_split_test.rs"],
+    crate_root = "comma_list_owner_split_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "lowering_test",
+    srcs = ["lowering_test.rs"],
+    crate_root = "lowering_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "mini_factors_test",
+    srcs = ["mini_factors_test.rs"],
+    crate_root = "mini_factors_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "naturalization_test",
+    srcs = ["naturalization_test.rs"],
+    crate_root = "naturalization_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "naturalize_cross_scope_params_test",
+    srcs = ["naturalize_cross_scope_params_test.rs"],
+    crate_root = "naturalize_cross_scope_params_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "object_plain_data_calls_test",
+    srcs = ["object_plain_data_calls_test.rs"],
+    crate_root = "object_plain_data_calls_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "url_rebase_test",
+    srcs = ["url_rebase_test.rs"],
+    crate_root = "url_rebase_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "vendor_swap_test",
+    srcs = ["vendor_swap_test.rs"],
+    crate_root = "vendor_swap_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+rust_test(
+    name = "identifier_rename_queue_test",
+    srcs = ["identifier_rename_queue_test.rs"],
+    crate_root = "identifier_rename_queue_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "chunk_rename_cross_module_test",
+    srcs = ["chunk_rename_cross_module_test.rs"],
+    crate_root = "chunk_rename_cross_module_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "chunk_renames_test",
+    srcs = ["chunk_renames_test.rs"],
+    crate_root = "chunk_renames_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "rename_shadowed_inner_binding_test",
+    srcs = ["rename_shadowed_inner_binding_test.rs"],
+    crate_root = "rename_shadowed_inner_binding_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "rename_shorthand_destructure_test",
+    srcs = ["rename_shorthand_destructure_test.rs"],
+    crate_root = "rename_shorthand_destructure_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "rename_target_capture_test",
+    srcs = ["rename_target_capture_test.rs"],
+    crate_root = "rename_target_capture_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "member_comment_rename_test",
+    srcs = ["member_comment_rename_test.rs"],
+    crate_root = "member_comment_rename_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "export_local_heuristic_remap_test",
+    srcs = ["export_local_heuristic_remap_test.rs"],
+    crate_root = "export_local_heuristic_remap_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "missing_binding_member_test",
+    srcs = ["missing_binding_member_test.rs"],
+    crate_root = "missing_binding_member_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "residual_member_rename_test",
+    srcs = ["residual_member_rename_test.rs"],
+    crate_root = "residual_member_rename_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "source_order_emit_test",
+    srcs = ["source_order_emit_test.rs"],
+    crate_root = "source_order_emit_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "purity_test",
+    srcs = ["purity_test.rs"],
+    crate_root = "purity_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "object_literal_import_collapse_test",
+    srcs = ["object_literal_import_collapse_test.rs"],
+    crate_root = "object_literal_import_collapse_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "object_literal_return_shorthand_drops_import_test",
+    srcs = ["object_literal_return_shorthand_drops_import_test.rs"],
+    crate_root = "object_literal_return_shorthand_drops_import_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "duplicate_export_test",
+    srcs = ["duplicate_export_test.rs"],
+    crate_root = "duplicate_export_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "at_init_promotion_nested_closure_test",
+    srcs = ["at_init_promotion_nested_closure_test.rs"],
+    crate_root = "at_init_promotion_nested_closure_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "at_init_promotion_post_await_test",
+    srcs = ["at_init_promotion_post_await_test.rs"],
+    crate_root = "at_init_promotion_post_await_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "hoisted_var_declaration_test",
+    srcs = ["hoisted_var_declaration_test.rs"],
+    crate_root = "hoisted_var_declaration_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "export_default_purity_test",
+    srcs = ["export_default_purity_test.rs"],
+    crate_root = "export_default_purity_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "auto_grown_export_alias_collision_test",
+    srcs = ["auto_grown_export_alias_collision_test.rs"],
+    crate_root = "auto_grown_export_alias_collision_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "reserved_word_mint_test",
+    srcs = ["reserved_word_mint_test.rs"],
+    crate_root = "reserved_word_mint_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "runtime_tdz_on_imported_class_test",
+    srcs = ["runtime_tdz_on_imported_class_test.rs"],
+    crate_root = "runtime_tdz_on_imported_class_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "accepted_spec_runs_under_node_test",
+    srcs = ["accepted_spec_runs_under_node_test.rs"],
+    crate_root = "accepted_spec_runs_under_node_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "gate_rejection_scopes_to_bad_scc_test",
+    srcs = ["gate_rejection_scopes_to_bad_scc_test.rs"],
+    crate_root = "gate_rejection_scopes_to_bad_scc_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "lemma_one_linker_post_order_test",
+    srcs = ["lemma_one_linker_post_order_test.rs"],
+    crate_root = "lemma_one_linker_post_order_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "lemma_two_rescued_asymmetric_cycle_test",
+    srcs = ["lemma_two_rescued_asymmetric_cycle_test.rs"],
+    crate_root = "lemma_two_rescued_asymmetric_cycle_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "lemma_three_at_init_read_test",
+    srcs = ["lemma_three_at_init_read_test.rs"],
+    crate_root = "lemma_three_at_init_read_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "lemma_four_lazy_read_cycle_test",
+    srcs = ["lemma_four_lazy_read_cycle_test.rs"],
+    crate_root = "lemma_four_lazy_read_cycle_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "lemma_five_side_effect_order_test",
+    srcs = ["lemma_five_side_effect_order_test.rs"],
+    crate_root = "lemma_five_side_effect_order_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "asymmetric_non_residual_cycle_test",
+    srcs = ["asymmetric_non_residual_cycle_test.rs"],
+    crate_root = "asymmetric_non_residual_cycle_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "mediator_reaches_asymmetric_cycle_test",
+    srcs = ["mediator_reaches_asymmetric_cycle_test.rs"],
+    crate_root = "mediator_reaches_asymmetric_cycle_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "namespace_aggregator_split_tdz_test",
+    srcs = ["namespace_aggregator_split_tdz_test.rs"],
+    crate_root = "namespace_aggregator_split_tdz_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "pass_two_tdz_cut_diagnosis_test",
+    srcs = ["pass_two_tdz_cut_diagnosis_test.rs"],
+    crate_root = "pass_two_tdz_cut_diagnosis_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "cross_ref_lowering_test",
+    srcs = ["cross_ref_lowering_test.rs"],
+    crate_root = "cross_ref_lowering_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
 
 rust_test(
     name = "anonymous_statement_test",
@@ -118,7 +579,20 @@ rust_test(
         "@nodejs_linux_amd64//:bin/node",
     ],
     edition = "2024",
-    deps = _STANDARD_E2E_DEPS,
+    deps = [":support"],
+)
+
+rust_test(
+    name = "binding_group_adopt_names_test",
+    size = "small",
+    srcs = ["binding_group_adopt_names_test.rs"],
+    crate_root = "binding_group_adopt_names_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
 )
 
 rust_test(
@@ -131,7 +605,101 @@ rust_test(
         "@nodejs_linux_amd64//:bin/node",
     ],
     edition = "2024",
-    deps = _STANDARD_E2E_DEPS,
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "duplicate_top_level_declaration_test",
+    size = "small",
+    srcs = ["duplicate_top_level_declaration_test.rs"],
+    crate_root = "duplicate_top_level_declaration_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "import_coalescing_test",
+    size = "small",
+    srcs = ["import_coalescing_test.rs"],
+    crate_root = "import_coalescing_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "selector_diagnostics_report_test",
+    size = "small",
+    srcs = ["selector_diagnostics_report_test.rs"],
+    crate_root = "selector_diagnostics_report_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "sibling_declarator_steal_test",
+    size = "small",
+    srcs = ["sibling_declarator_steal_test.rs"],
+    crate_root = "sibling_declarator_steal_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "spec_comments_test",
+    size = "small",
+    srcs = ["spec_comments_test.rs"],
+    crate_root = "spec_comments_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
+    name = "spec_validate_cli_test",
+    size = "small",
+    srcs = ["spec_validate_cli_test.rs"],
+    crate_root = "spec_validate_cli_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+    ],
 )
 
 rust_test(
@@ -144,35 +712,134 @@ rust_test(
         "@nodejs_linux_amd64//:bin/node",
     ],
     edition = "2024",
-    deps = _STANDARD_E2E_DEPS,
+    deps = [":support"],
 )
 
 # E2E tests that also inspect the in-process analysis types
 # (`OwnerGraphReport`, `BindingReport`, etc.) emitted alongside the
 # debundler's text output. These need a direct dep on `:analysis`.
-[
-    rust_test(
-        name = name,
-        srcs = ["{}.rs".format(name)],
-        crate_root = "{}.rs".format(name),
-        data = [
-            "//devinfra/js/debundle",
-            "@nodejs_linux_amd64//:bin/node",
-        ],
-        edition = "2024",
-        deps = _STANDARD_E2E_DEPS + ["//devinfra/js/debundle:analysis"],
-    )
-    for name in [
-        "realizability_test",
-        "owner_graph_purity_reason_test",
-        "at_init_promotion_fndecl_direct_read_test",
-        "at_init_cross_module_call_body_reads_test",
-        "at_init_s_chain_dataflow_test",
-        "at_init_unresolved_callee_test",
-        "pure_members_test",
-        "s_chain_dataflow_soundness_test",
-    ]
-]
+rust_test(
+    name = "realizability_test",
+    srcs = ["realizability_test.rs"],
+    crate_root = "realizability_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "owner_graph_purity_reason_test",
+    srcs = ["owner_graph_purity_reason_test.rs"],
+    crate_root = "owner_graph_purity_reason_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "at_init_promotion_fndecl_direct_read_test",
+    srcs = ["at_init_promotion_fndecl_direct_read_test.rs"],
+    crate_root = "at_init_promotion_fndecl_direct_read_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "//devinfra/js/debundle:analysis",
+    ],
+)
+
+rust_test(
+    name = "at_init_cross_module_call_body_reads_test",
+    srcs = ["at_init_cross_module_call_body_reads_test.rs"],
+    crate_root = "at_init_cross_module_call_body_reads_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "//devinfra/js/debundle:analysis",
+    ],
+)
+
+rust_test(
+    name = "at_init_s_chain_dataflow_test",
+    srcs = ["at_init_s_chain_dataflow_test.rs"],
+    crate_root = "at_init_s_chain_dataflow_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "//devinfra/js/debundle:analysis",
+    ],
+)
+
+rust_test(
+    name = "at_init_unresolved_callee_test",
+    srcs = ["at_init_unresolved_callee_test.rs"],
+    crate_root = "at_init_unresolved_callee_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "//devinfra/js/debundle:analysis",
+    ],
+)
+
+rust_test(
+    name = "pure_members_test",
+    srcs = ["pure_members_test.rs"],
+    crate_root = "pure_members_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "s_chain_dataflow_soundness_test",
+    srcs = ["s_chain_dataflow_soundness_test.rs"],
+    crate_root = "s_chain_dataflow_soundness_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "//devinfra/js/debundle:analysis",
+    ],
+)
 
 # Node-differential sweep: drives the real pipeline per fixture, then
 # compares the gate simulator's predicted evaluation post-order
@@ -188,9 +855,12 @@ rust_test(
         "@nodejs_linux_amd64//:bin/node",
     ],
     edition = "2024",
-    deps = _STANDARD_E2E_DEPS + [
+    deps = [
+        ":support",
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:gate",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_parser",
     ],
 )
 
@@ -639,7 +1309,10 @@ rust_test(
         "@nodejs_linux_amd64//:bin/node",
     ],
     edition = "2024",
-    deps = _STANDARD_E2E_DEPS,
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+    ],
 )
 
 # `debundle scc` filters + `debundle cluster` neighbors against a
