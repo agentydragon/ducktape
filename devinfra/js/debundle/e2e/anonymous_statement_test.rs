@@ -773,6 +773,37 @@ export { runtimeFormat };
 }
 
 #[test]
+fn alpha_all_function_source_match_without_target_binding_skips_legacy_resolver_timing() {
+    let fixture = run_fixture_with_env(
+        FixtureOpts::new(
+            r#"function runtimeFormat(value) {
+  return value.trim().toUpperCase();
+}
+console.log(runtimeFormat(" ok "));
+export { runtimeFormat };
+"#,
+            vec![logical_module(
+                "format",
+                &[Member::source_alpha(
+                    "formatValue",
+                    r#"function formatValue(value) {
+  return value.trim().toUpperCase();
+}"#,
+                )],
+            )],
+        ),
+        &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
+    );
+
+    assert_entry_output(&fixture, "OK\n");
+    assert!(
+        !fixture.stderr.contains("[debundle source_match]"),
+        "native alpha_all source_match without target_binding should not call the legacy resolver\nstderr:\n{}",
+        fixture.stderr,
+    );
+}
+
+#[test]
 fn alpha_all_native_source_match_with_extends_skips_legacy_resolver_timing() {
     let fixture = run_fixture_with_env(
         FixtureOpts::new(
@@ -946,22 +977,25 @@ export { runtimeA, runtimeB, runtimeC, Existing };
 
 #[test]
 fn member_source_match_target_binding_can_select_single_declarator_from_comma_list() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const siblingBinding = { kind: "other", enabled: false },
+    let fixture = run_fixture_with_env(
+        FixtureOpts::new(
+            r#"const siblingBinding = { kind: "other", enabled: false },
   runtimeBinding = { kind: "selected", enabled: true };
 const Existing = "existing";
 console.log(runtimeBinding.kind, siblingBinding.kind, Existing);
 export { siblingBinding, runtimeBinding, Existing };
 "#,
-        vec![logical_module(
-            "selected_config",
-            &[Member::source_alpha_target(
-                "selectedConfig",
-                "config",
-                r#"const config = { kind: "selected", enabled: true };"#,
+            vec![logical_module(
+                "selected_config",
+                &[Member::source_alpha_target(
+                    "selectedConfig",
+                    "config",
+                    r#"const config = { kind: "selected", enabled: true };"#,
+                )],
             )],
-        )],
-    ));
+        ),
+        &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
+    );
 
     assert_module_source(
         &fixture.out_root,
@@ -976,6 +1010,11 @@ export { siblingBinding, runtimeBinding, Existing };
         &["runtimeBinding"],
     );
     assert_entry_output(&fixture, "selected other existing\n");
+    assert!(
+        fixture.stderr.contains("[debundle source_match]"),
+        "var-declaration target_binding source_match remains on the legacy resolver until open-list constraints are native\nstderr:\n{}",
+        fixture.stderr,
+    );
 }
 
 #[test]

@@ -3695,7 +3695,7 @@ function wrongShape(flag) {
 
     #[test]
     fn solves_lowered_alpha_all_source_match_with_identifier_variables() {
-        let mut selector = AnonymousStatementSelector::exact("const a = a;");
+        let mut selector = AnonymousStatementSelector::exact("function a() { return a; }");
         selector.identifiers = spec::SourceMatchIdentifierMode::AlphaAll;
         let lowered = lower_member_selector(
             &MemberSelectorLoweringContext::new(ChunkId(0), "runtime/target"),
@@ -3712,8 +3712,8 @@ function wrongShape(flag) {
         );
         let facts = fact_store_from_analyzed_source(
             r#"
-const bad = other;
-const good = good;
+function bad() { return other; }
+function good() { return good; }
 "#,
         );
 
@@ -3736,7 +3736,7 @@ const good = good;
 
     #[test]
     fn solves_lowered_alpha_all_source_match_rejects_collapsed_distinct_identifiers() {
-        let mut selector = AnonymousStatementSelector::exact("const a = b;");
+        let mut selector = AnonymousStatementSelector::exact("function a() { return b; }");
         selector.identifiers = spec::SourceMatchIdentifierMode::AlphaAll;
         let lowered = lower_member_selector(
             &MemberSelectorLoweringContext::new(ChunkId(0), "runtime/target"),
@@ -3753,8 +3753,8 @@ const good = good;
         );
         let facts = fact_store_from_analyzed_source(
             r#"
-const bad = bad;
-const good = other;
+function bad() { return bad; }
+function good() { return other; }
 "#,
         );
 
@@ -3873,10 +3873,9 @@ const wrongCallee = makeOther("value");
     #[test]
     fn solves_lowered_source_match_string_literal_regex_predicate_natively() {
         let mut selector = AnonymousStatementSelector::exact(
-            r#"function readableStyle() { return STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$"); }"#,
+            r#"function runtimeTarget() { return STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$"); }"#,
         );
-        selector.identifiers = spec::SourceMatchIdentifierMode::AlphaAll;
-        selector.target_binding = Some("readableStyle".to_string());
+        selector.target_binding = Some("runtimeTarget".to_string());
         let lowered = lower_member_selector(
             &MemberSelectorLoweringContext::new(ChunkId(0), "runtime/target"),
             "Target",

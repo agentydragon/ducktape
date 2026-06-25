@@ -19,13 +19,13 @@
 //!
 //! Failure taxonomy ([`SelectorDiagnosticEntry::category`]):
 //!
-//! - `unresolved_selector` — a `source_match` selector matched zero
+//! - `unresolved_selector` — a legacy `source_match` selector matched zero
 //!   top-level candidates (no-match);
-//! - `ambiguous_selector` — a `source_match` selector matched more than one
-//!   candidate without a differentiating `target_binding`;
+//! - `ambiguous_selector` — the active resolver reported more than one valid
+//!   selector assignment;
 //! - `selector_resolution_error` — the selector failed to resolve for a
-//!   reason other than no-match / ambiguity (parse / schema / unsupported
-//!   hole);
+//!   reason other than a classified no-match / ambiguity (including native
+//!   solver no-assignment diagnostics, parse / schema / unsupported hole);
 //! - `duplicate_claim` — two selectors resolved to the same declaration
 //!   identity in the same chunk.
 //!

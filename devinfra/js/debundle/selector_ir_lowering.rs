@@ -380,12 +380,7 @@ impl MemberSelectorProgramBuilder {
             return Ok(false);
         };
         if selector.identifiers == SourceMatchIdentifierMode::AlphaAll
-            && !native_alpha_source_match_supported(
-                &facts,
-                &skipped_nodes,
-                &child_list_patterns,
-                selector.target_binding.is_some(),
-            )
+            && !native_alpha_source_match_supported(&facts, &skipped_nodes, &child_list_patterns)
         {
             return Ok(false);
         }
@@ -914,14 +909,21 @@ fn native_alpha_source_match_supported(
     facts: &ChunkFacts,
     skipped_nodes: &BTreeSet<NodeId>,
     child_list_patterns: &BTreeMap<NodeId, NativeChildListPattern>,
-    has_target_binding: bool,
 ) -> bool {
     let index = AlphaIdentifierIndex::new(facts);
-    let [(root, _ordinal)] = facts.top_level.as_slice() else {
+    let [(_root, _ordinal)] = facts.top_level.as_slice() else {
         return false;
     };
 
     if native_alpha_has_explicit_same_name_property(&index, skipped_nodes) {
+        return false;
+    }
+
+    // Syntactic holes and open child-list patterns still rely on the legacy
+    // matcher's structural semantics. Keep alpha native lowering to complete
+    // no-hole shapes until these constraints are represented directly in the
+    // solver.
+    if !skipped_nodes.is_empty() || !child_list_patterns.is_empty() {
         return false;
     }
 
@@ -944,19 +946,6 @@ fn native_alpha_source_match_supported(
                 NodeKind::Seq | NodeKind::Shorthand | NodeKind::AssignProp
             )
     }) {
-        return false;
-    }
-
-    let root_kind = index.node_kind.get(root).copied();
-    if !has_target_binding && root_kind == Some(NodeKind::FnDecl) {
-        return false;
-    }
-
-    if has_target_binding && root_kind == Some(NodeKind::VarDecl) {
-        return false;
-    }
-
-    if root_kind == Some(NodeKind::VarDecl) && !skipped_nodes.is_empty() {
         return false;
     }
 
@@ -2286,7 +2275,8 @@ mod tests {
 
     #[test]
     fn alpha_all_source_match_keeps_property_names_exact() {
-        let mut selector = AnonymousStatementSelector::exact("const a = object.stableName;");
+        let mut selector =
+            AnonymousStatementSelector::exact("function a() { return object.stableName; }");
         selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
         let lowered = lower_member_selector(
             &context(),
@@ -2334,56 +2324,33 @@ mod tests {
     }
 
     #[test]
-    fn alpha_all_source_match_without_target_binding_projects_single_declared_binding() {
+    fn alpha_all_var_decl_without_target_binding_stays_oracle_only() {
         let mut selector =
             AnonymousStatementSelector::exact(r#"const readable = { kind: "selected" };"#);
         selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
         let lowered = lower_member_selector(
             &context(),
             "Widget",
-            &MemberSelectorSpec::SourceMatch(selector),
+            &MemberSelectorSpec::SourceMatch(selector.clone()),
         )
         .unwrap();
 
-        let target_owner = lowered.program.targets[lowered.target.0].owner;
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
-        assert!(lowered.program.atoms.iter().any(|atom| matches!(
-            atom,
-            SelectorAtom::OwnerDeclaresBinding {
-                owner: OwnerTerm::Var { id },
-                binding: StringTerm::Var { .. },
-            } if *id == target_owner
-        )));
+        assert_source_match_oracle_only(&lowered, &selector);
     }
 
     #[test]
-    fn single_declarator_source_match_lowers_to_open_var_decl_pattern() {
+    fn alpha_all_single_declarator_source_match_stays_oracle_only() {
         let mut selector =
             AnonymousStatementSelector::exact(r#"const readable = { kind: "selected" };"#);
         selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
         let lowered = lower_member_selector(
             &context(),
             "Widget",
-            &MemberSelectorSpec::SourceMatch(selector),
+            &MemberSelectorSpec::SourceMatch(selector.clone()),
         )
         .unwrap();
 
-        assert!(lowered.program.atoms.iter().any(|atom| matches!(
-            atom,
-            SelectorAtom::AstChildListPattern {
-                start_index: 0,
-                anchored_left: false,
-                anchored_right: false,
-                segments,
-                ..
-            } if segments.len() == 1 && segments[0].len() == 1
-        )));
+        assert_source_match_oracle_only(&lowered, &selector);
     }
 
     #[test]
@@ -2601,18 +2568,32 @@ mod tests {
     }
 
     #[test]
-    fn alpha_all_function_without_target_binding_stays_oracle_only() {
+    fn alpha_all_function_without_target_binding_stays_native() {
         let mut selector =
             AnonymousStatementSelector::exact("function a() { return \"selected\"; }");
         selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
         let lowered = lower_member_selector(
             &context(),
             "Widget",
-            &MemberSelectorSpec::SourceMatch(selector.clone()),
+            &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
 
-        assert_source_match_oracle_only(&lowered, &selector);
+        let target_owner = lowered.program.targets[lowered.target.0].owner;
+        assert!(
+            !lowered
+                .program
+                .atoms
+                .iter()
+                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
+        );
+        assert!(lowered.program.atoms.iter().any(|atom| matches!(
+            atom,
+            SelectorAtom::OwnerDeclaresBinding {
+                owner: OwnerTerm::Var { id },
+                binding: StringTerm::Var { .. },
+            } if *id == target_owner
+        )));
     }
 
     #[test]

@@ -488,8 +488,8 @@ export { RuntimeCatalog };
         })
         .count();
     assert_eq!(
-        timing_lines, 0,
-        "native source_match selectors should not call the legacy resolver\nstderr:\n{stderr}",
+        timing_lines, 1,
+        "CLASS_REST selectors should reuse one cached legacy resolution across modules\nstderr:\n{stderr}",
     );
 }
 
@@ -576,7 +576,7 @@ export { existingHelper };
         "diagnostics/source_match",
         "as `MissingFormatter`",
         "as `MissingParser`",
-        "did not match any top-level declaration",
+        "valid global selector assignment",
         "missingFormatter",
         "missingParser",
     ] {
@@ -637,13 +637,9 @@ fn dry_run_defaults_to_collecting_source_match_failures_and_duplicate_claims_tog
         "Source-match selector diagnostic report: 2 unresolved selector(s) found",
         "diagnostics/missing",
         "as `MissingFormatter`",
-        "did not match any top-level declaration",
+        "valid global selector assignment",
         "diagnostics/ambiguous",
         "as `AmbiguousHelper`",
-        "matched 2 candidate top-level statement(s)",
-        "valid global selector assignment",
-        "decoratePrimary",
-        "decorateSecondary",
         "Duplicate binding claim report: 1 duplicate claim(s) found",
         "\"renderCard\"",
         "owners/card",
@@ -666,7 +662,6 @@ fn fail_fast_dry_run_stops_before_later_duplicate_claim_diagnostics() {
         "members[].selector.source_match",
         "diagnostics/ambiguous",
         "export `AmbiguousHelper`",
-        "matched 2 candidate top-level statement(s)",
         "valid global selector assignment",
     ] {
         assert!(

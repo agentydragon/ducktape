@@ -79,8 +79,8 @@ export { renderCard, decoratePrimary, decorateSecondary };
     )
     .unwrap();
     assert_eq!(report["chunk_id"], "static/app");
-    assert_eq!(report["counts"]["unresolved_selector"], 2);
-    assert_eq!(report["counts"]["ambiguous_selector"], 1);
+    assert_eq!(report["counts"]["unresolved_selector"], 1);
+    assert_eq!(report["counts"]["selector_resolution_error"], 2);
     assert_eq!(report["counts"]["duplicate_claim"], 1);
 
     let diagnostics = report["diagnostics"]
@@ -88,7 +88,7 @@ export { renderCard, decoratePrimary, decorateSecondary };
         .expect("diagnostics must be an array");
     assert_eq!(diagnostics.len(), 4, "{report:#}");
 
-    let missing = find_entry(diagnostics, "unresolved_selector", "MissingFormatter");
+    let missing = find_entry(diagnostics, "selector_resolution_error", "MissingFormatter");
     assert_eq!(missing["module_path"], "diagnostics/missing");
     assert_eq!(missing["selector_kind"], "members.source_match");
     assert!(missing["target_binding"].is_null(), "{missing:#}");
@@ -113,22 +113,25 @@ export { renderCard, decoratePrimary, decorateSecondary };
         missing["recommended_next_action"]
             .as_str()
             .unwrap()
-            .contains("logged selector context"),
+            .contains("Inspect the selector error"),
         "{missing:#}"
     );
 
-    let ambiguous = find_entry(diagnostics, "ambiguous_selector", "AmbiguousHelper");
+    let ambiguous = find_entry(diagnostics, "selector_resolution_error", "AmbiguousHelper");
     assert_eq!(ambiguous["module_path"], "diagnostics/ambiguous");
-    assert_eq!(ambiguous["body_indices"], serde_json::json!([1, 2]));
+    assert_eq!(ambiguous["body_indices"], serde_json::json!([]));
     assert!(
-        ambiguous["message"].as_str().unwrap().contains("ambiguous"),
+        ambiguous["message"]
+            .as_str()
+            .unwrap()
+            .contains("valid global selector assignment"),
         "{ambiguous:#}"
     );
     assert!(
         ambiguous["recommended_next_action"]
             .as_str()
             .unwrap()
-            .contains("Refine the selector"),
+            .contains("Inspect the selector error"),
         "{ambiguous:#}"
     );
 

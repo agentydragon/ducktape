@@ -630,7 +630,7 @@ fn first_relevant_error_line(message: &str) -> Option<String> {
 }
 
 fn classify_source_match_failure(message: &str) -> &'static str {
-    if message.contains("ambiguous") {
+    if message.contains(" is ambiguous") {
         "ambiguous_selector"
     } else if message.contains("did not match any") {
         "unresolved_selector"
