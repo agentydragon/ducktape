@@ -94,6 +94,85 @@ ResourceQuota); none of it relies on agent restraint.
 ant beta:deployments run --deployment-id "$DEPL_ID"   # test one run, watch in Console
 ```
 
+## Updating the agent / deployment (control plane)
+
+These are **control-plane** objects at Anthropic — `haku.{agent,environment,deployment}.yaml`
+are version-controlled here but applied with `ant` (org `ANTHROPIC_API_KEY`),
+**not** Flux. Editing the YAML alone changes nothing live. The two image-side
+files (`worker.py`, `nixos.nix`, `entrypoint.sh`) are the only ones that flow
+through CI + Flux. Live IDs: agent `agent_01CV5VupX8ALuVD1dsoEzHY6`, deployment
+`depl_011DSrUoXuhoDWJoPyDuePqR` (haku-scan), environment
+`env_015uqL9WAMSDytQEWWmLG9zF`.
+
+After editing `haku.agent.yaml`, apply it and re-pin in **both** steps:
+
+```sh
+# 1. Push the new agent version. The YAML is the request body (stdin); --version
+#    is the CURRENT version (optimistic-concurrency guard) — get it from retrieve.
+cur=$(ant beta:agents retrieve --agent-id "$AGENT_ID" --transform version -r)
+ant beta:agents update --agent-id "$AGENT_ID" --version "$cur" < haku.agent.yaml
+#    -> returns the new version (e.g. 3)
+
+# 2. RE-PIN the deployment. It pins a SPECIFIC agent version, so a fresh agent
+#    version is ignored until you re-pin. A bare agent ID re-pins to latest:
+ant beta:deployments update --deployment-id "$DEPL_ID" --agent "$AGENT_ID"
+ant beta:deployments retrieve --deployment-id "$DEPL_ID" --transform '{agent}'  # confirm version bumped
+```
+
+`haku.deployment.yaml` (schedule, initial events) is likewise applied with
+`ant beta:deployments update` (flags like `--schedule`, `--initial-event`).
+
+Test + observe:
+
+```sh
+ant beta:deployments run --deployment-id "$DEPL_ID" --transform '{id}'  # the run's session_id is in the response
+ant beta:sessions:events list "$SID"                                    # transcript (tool_use vs tool_result)
+ant beta:sessions delete --session-id "$SID"  # end a stuck/parked session; the worker force-stops the
+                                              # work item and returns to polling (no pod restart needed)
+```
+
+**Gotcha:** a deployment run uses the agent version the deployment pins _at run
+time_, and a parked session keeps the version it was created with — so re-pin
+**before** triggering a wake, and start a fresh session to pick up the change
+(re-pinning doesn't migrate an in-flight session).
+
+### Reading a session transcript
+
+`ant beta:sessions:events list <SID>` is the control-plane (org-key) transcript.
+Use `--format jsonl` for one event per line so `jq` can parse it (the default
+`auto` pretty-prints; it is **not** a JSON array):
+
+```sh
+ant beta:sessions:events list "$SID" --format jsonl > events.jsonl
+
+# Conversation flow — the wake, the model's text, and every tool call:
+jq -r 'select(.type=="user.message" or .type=="agent.message")
+       | "[\(.type)] \([.content[]?|.text//empty]|join(" "))"' events.jsonl
+jq -r 'select(.type|test("tool_use$")) | "TOOL \(.name)  \(.input|tojson[:160])"' events.jsonl
+
+# Tool results + errors (is_error=true is a tool-level failure, not a worker bug):
+jq -r 'select(.type|test("tool_result$")) | "\(.tool_use_id) is_error=\(.is_error)"' events.jsonl
+```
+
+Event types worth knowing: `user.message` (the wake), `agent.thinking`,
+`agent.message` (model text), `agent.tool_use` / `agent.mcp_tool_use` (calls),
+`user.tool_result` (results, keyed by `tool_use_id`), and
+`session.status_idle` / `session.thread_status_idle` carrying a `stop_reason`.
+
+**Diagnosing a stuck session:** a `*_tool_use` whose `id` has no matching
+`user.tool_result.tool_use_id` is the pending one. If the session is idle with
+`stop_reason.type == "requires_action"`, that tool is **awaiting approval** —
+its toolset's `permission_policy` is `always_ask` (set it to `always_allow` in
+`haku.agent.yaml` for unattended runs; that is the trust-boundary posture here).
+Distinguish from the old empty-output **deadlock** (now fixed): that showed a
+`tool_use` whose result never posted because the worker 400'd on empty text —
+here results post fine (`200 OK` in the pod logs); the agent is just **waiting**.
+
+The worker-side view is the pod logs (`kubectl logs deploy/haku-worker
+-n haku-sandbox`): `executing tool tool=… tool_use_id=…` then `POST …/events
+200` per result, `work/…/heartbeat` keeping the lease, and `session terminated`
+→ `work/…/stop` when a session ends.
+
 ## Worker env
 
 `ANTHROPIC_ENVIRONMENT_ID`, `ANTHROPIC_ENVIRONMENT_KEY`, `HAKU_DUCKTAPE_REPO_URL`,
