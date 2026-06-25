@@ -17,7 +17,7 @@ use regex::Regex;
 use selector_ir::{
     ClaimKind, ClaimOutcome, NodeTerm, OrdinalTerm, OwnerTerm, ResolvedClaim, SelectorAtom,
     SelectorFact, SelectorFactStore, SelectorProgram, SelectorProgramError, SelectorTarget,
-    SelectorVariableId, SolverClaim, SolverResult, StringTerm, VariableDomain,
+    SelectorVariableId, SolverClaim, SolverResult, StringTerm,
 };
 
 fn optional_u32_matches(expected: &Option<u32>, actual: u32) -> bool {
@@ -38,6 +38,8 @@ fn optional_edge_kind_matches(expected: &Option<String>, actual: &str) -> bool {
 }
 
 type AssignmentRow = Vec<(usize, AssignmentValue)>;
+type EqualityCheck = (usize, usize, EqualityConstraintKind);
+type EqualityCheckSchedule = Vec<(usize, Vec<EqualityCheck>)>;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum AssignmentValue {
@@ -86,6 +88,28 @@ fn merge_assignment_bindings(mut row: AssignmentRow) -> Option<AssignmentRow> {
     Some(merged)
 }
 
+fn project_assignment_row(row: &AssignmentRow, live_variables: &[usize]) -> Option<AssignmentRow> {
+    Some(
+        row.iter()
+            .filter(|(var, _value)| live_variables.binary_search(var).is_ok())
+            .cloned()
+            .collect(),
+    )
+}
+
+fn connect_variables(variables: BTreeSet<usize>, adjacency: &mut BTreeMap<usize, BTreeSet<usize>>) {
+    let Some(first) = variables.first().copied() else {
+        return;
+    };
+    for variable in &variables {
+        adjacency.entry(*variable).or_default();
+    }
+    for variable in variables {
+        adjacency.entry(first).or_default().insert(variable);
+        adjacency.entry(variable).or_default().insert(first);
+    }
+}
+
 fn assignment_owner(row: &AssignmentRow, variable: usize) -> Option<usize> {
     row.iter().find_map(|(var, value)| {
         if *var != variable {
@@ -96,6 +120,38 @@ fn assignment_owner(row: &AssignmentRow, variable: usize) -> Option<usize> {
             _ => None,
         }
     })
+}
+
+fn assignment_value(row: &AssignmentRow, variable: usize) -> Option<&AssignmentValue> {
+    row.iter()
+        .find_map(|(var, value)| (*var == variable).then_some(value))
+}
+
+fn assignment_satisfies_equality(
+    row: &AssignmentRow,
+    left_var: usize,
+    right_var: usize,
+    kind: EqualityConstraintKind,
+) -> bool {
+    let Some(left) = assignment_value(row, left_var) else {
+        return false;
+    };
+    let Some(right) = assignment_value(row, right_var) else {
+        return false;
+    };
+    match kind {
+        EqualityConstraintKind::Equal => left == right,
+        EqualityConstraintKind::NotEqual => left != right,
+    }
+}
+
+fn assignment_satisfies_equalities(
+    row: &AssignmentRow,
+    checks: &[(usize, usize, EqualityConstraintKind)],
+) -> bool {
+    checks
+        .iter()
+        .all(|(left, right, kind)| assignment_satisfies_equality(row, *left, *right, *kind))
 }
 
 fn assignment_string(row: &AssignmentRow, variable: usize) -> Option<String> {
@@ -470,15 +526,13 @@ ascent! {
         required_owner_declares_binding_var(constraint, owner_var, string_var),
         declares(owner, binding);
 
-    relation variable_value_domain(usize, AssignmentValue);
-    relation target_owner_var(usize);
-    relation target_binding_projection_var(usize, usize);
-    relation target_binding_projection_const(usize, String);
-    relation required_equal(usize, usize, usize);
-    relation required_not_equal(usize, usize, usize);
+    relation project_owner_after_step(usize, usize);
+    relation project_binding_var_after_step(usize, usize, usize);
+    relation project_binding_const_after_step(usize, usize, String);
     relation constraint_order(usize, usize);
-    relation constraint_count(usize);
     relation child_list_assignment(usize, AssignmentRow);
+    relation equality_checks_after_step(usize, Vec<EqualityCheck>);
+    relation live_variables_after_step(usize, Vec<usize>);
 
     relation atom_assignment(usize, AssignmentRow);
     atom_assignment(*constraint, row.clone()) <--
@@ -545,57 +599,38 @@ ascent! {
             *string_var,
             AssignmentValue::String(binding.clone()),
         );
-    atom_assignment(*constraint, row) <--
-        required_equal(constraint, left_var, right_var),
-        variable_value_domain(left_var, value),
-        variable_value_domain(right_var, value),
-        if let Some(row) = assignment_row_2(
-            *left_var,
-            value.clone(),
-            *right_var,
-            value.clone(),
-        );
-    atom_assignment(*constraint, row) <--
-        required_not_equal(constraint, left_var, right_var),
-        variable_value_domain(left_var, left_value),
-        variable_value_domain(right_var, right_value),
-        if left_value != right_value,
-        if let Some(row) = assignment_row_2(
-            *left_var,
-            left_value.clone(),
-            *right_var,
-            right_value.clone(),
-        );
 
     relation partial_assignment(usize, AssignmentRow);
     partial_assignment(0, Vec::new());
-    partial_assignment(*step + 1, merged_row) <--
+    relation stepped_assignment(usize, AssignmentRow);
+    stepped_assignment(*step + 1, merged_row.clone()) <--
         partial_assignment(step, row),
         constraint_order(step, constraint),
         atom_assignment(constraint, constraint_row),
-        if let Some(merged_row) = merge_assignment_rows(row, constraint_row);
+        if let Some(merged_row) = merge_assignment_rows(row, constraint_row),
+        equality_checks_after_step((*step + 1), equality_checks),
+        if assignment_satisfies_equalities(&merged_row, equality_checks);
 
-    relation complete_assignment(AssignmentRow);
-    complete_assignment(row.clone()) <--
-        partial_assignment(step, row),
-        constraint_count(required),
-        if *step == *required;
+    partial_assignment(*step, projected_row) <--
+        stepped_assignment(step, row),
+        live_variables_after_step(step, live_variables),
+        if let Some(projected_row) = project_assignment_row(row, live_variables);
 
     relation solution_owner(usize, usize);
     solution_owner(*target_var, owner) <--
-        target_owner_var(target_var),
-        complete_assignment(row),
+        project_owner_after_step(step, target_var),
+        stepped_assignment(step, row),
         if let Some(owner) = assignment_owner(row, *target_var);
 
     relation solution_target_binding(usize, usize, String);
     solution_target_binding(*target_var, owner, binding.clone()) <--
-        target_binding_projection_var(target_var, binding_var),
-        complete_assignment(row),
+        project_binding_var_after_step(step, target_var, binding_var),
+        stepped_assignment(step, row),
         if let Some(owner) = assignment_owner(row, *target_var),
         if let Some(binding) = assignment_string(row, *binding_var);
     solution_target_binding(*target_var, owner, binding.clone()) <--
-        target_binding_projection_const(target_var, binding),
-        complete_assignment(row),
+        project_binding_const_after_step(step, target_var, binding),
+        stepped_assignment(step, row),
         if let Some(owner) = assignment_owner(row, *target_var);
 }
 
@@ -728,61 +763,47 @@ pub fn solve(
     for (node, ordinal) in &fact_index.ast_top_levels {
         ascent.ast_top_level.push((*node, ordinal.0));
     }
-    for variable in &program.variables {
-        match variable.domain {
-            VariableDomain::Owner => {
-                for owner in &fact_index.all_owners {
-                    ascent
-                        .variable_value_domain
-                        .push((variable.id.0, AssignmentValue::Owner(owner.0)));
-                }
-            }
-            VariableDomain::AstNode => {
-                for node in &fact_index.all_nodes {
-                    ascent
-                        .variable_value_domain
-                        .push((variable.id.0, AssignmentValue::AstNode(*node)));
-                }
-            }
-            VariableDomain::StatementOrdinal => {
-                for ordinal in &fact_index.all_statement_ordinals {
-                    ascent
-                        .variable_value_domain
-                        .push((variable.id.0, AssignmentValue::StatementOrdinal(ordinal.0)));
-                }
-            }
-            VariableDomain::String => {
-                for value in &fact_index.all_strings {
-                    ascent
-                        .variable_value_domain
-                        .push((variable.id.0, AssignmentValue::String(value.clone())));
-                }
-            }
-        }
-    }
-    for target in &program.targets {
-        ascent.target_owner_var.push((target.owner.0,));
-    }
-    for (owner, binding) in &support.target_binding_projection_by_owner {
-        match binding {
-            TargetBindingProjection::Const(value) => ascent
-                .target_binding_projection_const
-                .push((owner.0, value.clone())),
-            TargetBindingProjection::Var(binding) => ascent
-                .target_binding_projection_var
-                .push((owner.0, binding.0)),
-        }
-    }
     for constraint in &support.node_list_constraints {
         for row in child_list_assignment_rows(constraint, &fact_index) {
             ascent.child_list_assignment.push((constraint.id, row));
         }
     }
     let constraint_ids = support.constraint_ids();
+    for (step, equality_checks) in support.equality_checks_by_step(&constraint_ids) {
+        ascent
+            .equality_checks_after_step
+            .push((step, equality_checks));
+    }
+    let target_projection_steps =
+        support.target_projection_steps(&constraint_ids, &program.targets);
+    for target in &program.targets {
+        let Some(step) = target_projection_steps.get(&target.owner).copied() else {
+            continue;
+        };
+        ascent.project_owner_after_step.push((step, target.owner.0));
+        if let Some(binding) = support
+            .target_binding_projection_by_owner
+            .get(&target.owner)
+        {
+            match binding {
+                TargetBindingProjection::Const(value) => ascent
+                    .project_binding_const_after_step
+                    .push((step, target.owner.0, value.clone())),
+                TargetBindingProjection::Var(binding) => ascent
+                    .project_binding_var_after_step
+                    .push((step, target.owner.0, binding.0)),
+            }
+        }
+    }
+    for (step, live_variables) in support.live_variables_by_step(&constraint_ids, &program.targets)
+    {
+        ascent
+            .live_variables_after_step
+            .push((step, live_variables));
+    }
     for (step, constraint) in constraint_ids.iter().enumerate() {
         ascent.constraint_order.push((step, *constraint));
     }
-    ascent.constraint_count.push((constraint_ids.len(),));
     for constraint in &support.unary_constraints {
         match &constraint.kind {
             UnaryConstraintKind::Binding { binding } => ascent.required_binding.push((
@@ -1113,22 +1134,6 @@ pub fn solve(
                     constraint.id,
                     constraint.owner.0,
                     constraint.string.0,
-                ));
-            }
-        }
-    }
-    for constraint in &support.equality_constraints {
-        match constraint.kind {
-            EqualityConstraintKind::Equal => {
-                ascent
-                    .required_equal
-                    .push((constraint.id, constraint.left.0, constraint.right.0));
-            }
-            EqualityConstraintKind::NotEqual => {
-                ascent.required_not_equal.push((
-                    constraint.id,
-                    constraint.left.0,
-                    constraint.right.0,
                 ));
             }
         }
@@ -2238,8 +2243,370 @@ impl ProgramSupport {
             .next()
     }
 
+    fn live_variables_by_step(
+        &self,
+        constraint_ids: &[usize],
+        targets: &[SelectorTarget],
+    ) -> Vec<(usize, Vec<usize>)> {
+        let constraint_variables = constraint_ids
+            .iter()
+            .map(|id| self.variables_for_constraint(*id))
+            .collect::<Vec<_>>();
+        let equality_check_steps = self.equality_check_steps(constraint_ids);
+        let target_projection_steps = self.target_projection_steps(constraint_ids, targets);
+        let mut future_live = BTreeSet::<usize>::new();
+        let mut by_step = BTreeMap::<usize, Vec<usize>>::new();
+        by_step.insert(
+            constraint_ids.len(),
+            self.with_future_scheduled_variables(
+                constraint_ids.len(),
+                &future_live,
+                &equality_check_steps,
+                &target_projection_steps,
+            ),
+        );
+        for (idx, variables) in constraint_variables.iter().enumerate().rev() {
+            for variable in variables {
+                future_live.insert(*variable);
+            }
+            by_step.insert(
+                idx,
+                self.with_future_scheduled_variables(
+                    idx,
+                    &future_live,
+                    &equality_check_steps,
+                    &target_projection_steps,
+                ),
+            );
+        }
+        (1..=constraint_ids.len())
+            .map(|step| (step, by_step.get(&step).cloned().unwrap_or_default()))
+            .collect()
+    }
+
+    fn with_future_scheduled_variables(
+        &self,
+        step: usize,
+        live: &BTreeSet<usize>,
+        equality_check_steps: &BTreeMap<usize, usize>,
+        target_projection_steps: &BTreeMap<SelectorVariableId, usize>,
+    ) -> Vec<usize> {
+        let mut live = live.clone();
+        for constraint in &self.equality_constraints {
+            if equality_check_steps
+                .get(&constraint.id)
+                .is_some_and(|check_step| *check_step > step)
+            {
+                live.insert(constraint.left.0);
+                live.insert(constraint.right.0);
+            }
+        }
+        for (owner, projection_step) in target_projection_steps {
+            if *projection_step > step {
+                live.insert(owner.0);
+                if let Some(TargetBindingProjection::Var(binding)) =
+                    self.target_binding_projection_by_owner.get(owner)
+                {
+                    live.insert(binding.0);
+                }
+            }
+        }
+        live.into_iter().collect()
+    }
+
+    fn target_projection_steps(
+        &self,
+        constraint_ids: &[usize],
+        targets: &[SelectorTarget],
+    ) -> BTreeMap<SelectorVariableId, usize> {
+        let components = self.variable_components(constraint_ids);
+        let variable_last_steps = self.variable_last_constraint_steps(constraint_ids);
+        let equality_check_steps = self.equality_check_steps(constraint_ids);
+        targets
+            .iter()
+            .filter_map(|target| {
+                let component = components.get(&target.owner.0)?;
+                let mut projection_step = component
+                    .iter()
+                    .filter_map(|variable| variable_last_steps.get(variable).copied())
+                    .max()
+                    .unwrap_or(0);
+                for constraint in &self.equality_constraints {
+                    if component.contains(&constraint.left.0)
+                        || component.contains(&constraint.right.0)
+                    {
+                        projection_step = projection_step.max(
+                            equality_check_steps
+                                .get(&constraint.id)
+                                .copied()
+                                .unwrap_or(0),
+                        );
+                    }
+                }
+                (projection_step > 0).then_some((target.owner, projection_step))
+            })
+            .collect()
+    }
+
+    fn variable_components(&self, constraint_ids: &[usize]) -> BTreeMap<usize, BTreeSet<usize>> {
+        let mut adjacency = BTreeMap::<usize, BTreeSet<usize>>::new();
+        for constraint_id in constraint_ids {
+            connect_variables(
+                self.variables_for_constraint(*constraint_id),
+                &mut adjacency,
+            );
+        }
+        for constraint in &self.equality_constraints {
+            connect_variables(
+                [constraint.left.0, constraint.right.0]
+                    .into_iter()
+                    .collect(),
+                &mut adjacency,
+            );
+        }
+
+        let mut components = BTreeMap::<usize, BTreeSet<usize>>::new();
+        let mut visited = BTreeSet::<usize>::new();
+        for variable in adjacency.keys().copied().collect::<Vec<_>>() {
+            if visited.contains(&variable) {
+                continue;
+            }
+            let mut component = BTreeSet::<usize>::new();
+            let mut stack = vec![variable];
+            visited.insert(variable);
+            while let Some(current) = stack.pop() {
+                component.insert(current);
+                for neighbor in adjacency.get(&current).into_iter().flatten() {
+                    if visited.insert(*neighbor) {
+                        stack.push(*neighbor);
+                    }
+                }
+            }
+            for member in &component {
+                components.insert(*member, component.clone());
+            }
+        }
+        components
+    }
+
+    fn equality_checks_by_step(&self, constraint_ids: &[usize]) -> EqualityCheckSchedule {
+        let equality_check_steps = self.equality_check_steps(constraint_ids);
+        (1..=constraint_ids.len())
+            .map(|step| {
+                let checks = self
+                    .equality_constraints
+                    .iter()
+                    .filter(|constraint| {
+                        equality_check_steps
+                            .get(&constraint.id)
+                            .is_some_and(|check_step| *check_step == step)
+                    })
+                    .map(|constraint| (constraint.left.0, constraint.right.0, constraint.kind))
+                    .collect();
+                (step, checks)
+            })
+            .collect()
+    }
+
+    fn equality_check_steps(&self, constraint_ids: &[usize]) -> BTreeMap<usize, usize> {
+        let variable_last_steps = self.variable_last_constraint_steps(constraint_ids);
+        let final_step = constraint_ids.len();
+        self.equality_constraints
+            .iter()
+            .filter_map(|constraint| {
+                let check_step = variable_last_steps
+                    .get(&constraint.left.0)
+                    .copied()
+                    .unwrap_or(final_step)
+                    .max(
+                        variable_last_steps
+                            .get(&constraint.right.0)
+                            .copied()
+                            .unwrap_or(final_step),
+                    );
+                (check_step > 0).then_some((constraint.id, check_step))
+            })
+            .collect()
+    }
+
+    fn variable_last_constraint_steps(&self, constraint_ids: &[usize]) -> BTreeMap<usize, usize> {
+        let mut last_steps = BTreeMap::<usize, usize>::new();
+        for (idx, constraint_id) in constraint_ids.iter().enumerate() {
+            for variable in self.variables_for_constraint(*constraint_id) {
+                last_steps.insert(variable, idx + 1);
+            }
+        }
+        last_steps
+    }
+
+    fn variables_for_constraint(&self, id: usize) -> BTreeSet<usize> {
+        let mut variables = BTreeSet::new();
+        if let Some(constraint) = self.unary_constraints.iter().find(|c| c.id == id) {
+            variables.insert(constraint.variable.0);
+        }
+        if let Some(constraint) = self.node_unary_constraints.iter().find(|c| c.id == id) {
+            variables.insert(constraint.variable.0);
+        }
+        if let Some(constraint) = self.ordinal_unary_constraints.iter().find(|c| c.id == id) {
+            variables.insert(constraint.variable.0);
+        }
+        if let Some(constraint) = self.binary_constraints.iter().find(|c| c.id == id) {
+            variables.insert(constraint.left.0);
+            variables.insert(constraint.right.0);
+        }
+        if let Some(constraint) = self.owner_ordinal_constraints.iter().find(|c| c.id == id) {
+            variables.insert(constraint.owner.0);
+            variables.insert(constraint.ordinal.0);
+        }
+        if let Some(constraint) = self.owner_node_constraints.iter().find(|c| c.id == id) {
+            variables.insert(constraint.owner.0);
+            variables.insert(constraint.node.0);
+        }
+        if let Some(constraint) = self.node_node_constraints.iter().find(|c| c.id == id) {
+            variables.insert(constraint.left.0);
+            variables.insert(constraint.right.0);
+        }
+        if let Some(constraint) = self.node_list_constraints.iter().find(|c| c.id == id) {
+            variables.insert(constraint.parent.0);
+            for child in constraint.segments.iter().flatten() {
+                variables.insert(child.0);
+            }
+        }
+        if let Some(constraint) = self.node_ordinal_constraints.iter().find(|c| c.id == id) {
+            variables.insert(constraint.node.0);
+            variables.insert(constraint.ordinal.0);
+        }
+        if let Some(constraint) = self.node_string_constraints.iter().find(|c| c.id == id) {
+            variables.insert(constraint.node.0);
+            variables.insert(constraint.string.0);
+        }
+        if let Some(constraint) = self.owner_string_constraints.iter().find(|c| c.id == id) {
+            variables.insert(constraint.owner.0);
+            variables.insert(constraint.string.0);
+        }
+        variables
+    }
+
     fn constraint_ids(&self) -> Vec<usize> {
-        (0..self.next_constraint_id).collect()
+        let equality_ids = self
+            .equality_constraints
+            .iter()
+            .map(|constraint| constraint.id)
+            .collect::<BTreeSet<_>>();
+        let mut remaining = (0..self.next_constraint_id)
+            .filter(|id| !equality_ids.contains(id))
+            .collect::<BTreeSet<_>>();
+        let variables_by_constraint = remaining
+            .iter()
+            .map(|id| (*id, self.variables_for_constraint(*id)))
+            .collect::<BTreeMap<_, _>>();
+        let mut ordered = Vec::with_capacity(remaining.len());
+        let mut bound = BTreeSet::<usize>::new();
+
+        while !remaining.is_empty() {
+            let has_connected = !bound.is_empty()
+                && remaining.iter().any(|id| {
+                    variables_by_constraint
+                        .get(id)
+                        .is_some_and(|variables| !variables.is_disjoint(&bound))
+                });
+            if !bound.is_empty() && !has_connected {
+                bound.clear();
+            }
+
+            let Some(chosen) = remaining
+                .iter()
+                .min_by_key(|id| {
+                    let variables = variables_by_constraint.get(id).expect("constraint vars");
+                    let connected = bound.is_empty() || !variables.is_disjoint(&bound);
+                    let new_variables = variables.difference(&bound).count();
+                    (
+                        usize::from(!connected),
+                        self.constraint_order_rank(**id),
+                        new_variables,
+                        variables.len(),
+                        **id,
+                    )
+                })
+                .copied()
+            else {
+                break;
+            };
+            remaining.remove(&chosen);
+            if let Some(variables) = variables_by_constraint.get(&chosen) {
+                bound.extend(variables.iter().copied());
+            }
+            ordered.push(chosen);
+        }
+
+        ordered
+    }
+
+    fn constraint_order_rank(&self, id: usize) -> usize {
+        if self
+            .owner_node_constraints
+            .iter()
+            .any(|constraint| constraint.id == id)
+            || self
+                .owner_ordinal_constraints
+                .iter()
+                .any(|constraint| constraint.id == id)
+            || self
+                .node_ordinal_constraints
+                .iter()
+                .any(|constraint| constraint.id == id)
+        {
+            return 0;
+        }
+        if self
+            .binary_constraints
+            .iter()
+            .any(|constraint| constraint.id == id)
+            || self
+                .node_node_constraints
+                .iter()
+                .any(|constraint| constraint.id == id)
+            || self
+                .node_list_constraints
+                .iter()
+                .any(|constraint| constraint.id == id)
+        {
+            return 1;
+        }
+        if self
+            .unary_constraints
+            .iter()
+            .any(|constraint| constraint.id == id)
+            || self
+                .owner_string_constraints
+                .iter()
+                .any(|constraint| constraint.id == id)
+            || self
+                .node_string_constraints
+                .iter()
+                .any(|constraint| constraint.id == id)
+        {
+            return 2;
+        }
+        if let Some(constraint) = self
+            .node_unary_constraints
+            .iter()
+            .find(|constraint| constraint.id == id)
+        {
+            return match &constraint.kind {
+                NodeUnaryConstraintKind::Kind { .. }
+                | NodeUnaryConstraintKind::ChildCount { .. } => 4,
+                _ => 3,
+            };
+        }
+        if self
+            .ordinal_unary_constraints
+            .iter()
+            .any(|constraint| constraint.id == id)
+        {
+            return 3;
+        }
+        5
     }
 }
 
@@ -2461,7 +2828,7 @@ struct EqualityConstraint {
     kind: EqualityConstraintKind,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum EqualityConstraintKind {
     Equal,
     NotEqual,
@@ -2517,8 +2884,6 @@ fn atom_kind(atom: &SelectorAtom) -> &'static str {
 struct FactIndex {
     all_owners: BTreeSet<OwnerId>,
     all_nodes: BTreeSet<u32>,
-    all_statement_ordinals: BTreeSet<StatementOrdinal>,
-    all_strings: BTreeSet<String>,
     owner_facts: Vec<(OwnerId, StatementOrdinal, String)>,
     statement_ordinal_by_owner: BTreeMap<OwnerId, StatementOrdinal>,
     owner_by_statement_ordinal: BTreeMap<StatementOrdinal, OwnerId>,
@@ -2571,7 +2936,6 @@ impl FactIndex {
                 index
                     .owner_by_statement_ordinal
                     .insert(*statement_ordinal, *owner);
-                index.all_statement_ordinals.insert(*statement_ordinal);
             }
         }
 
@@ -2585,7 +2949,6 @@ impl FactIndex {
                     ..
                 } => {
                     index.declared_bindings.push((*owner, binding.clone()));
-                    index.all_strings.insert(binding.clone());
                     index
                         .owner_bindings
                         .entry(*owner)
@@ -2708,7 +3071,6 @@ impl FactIndex {
                 }
                 SelectorFact::AstStringLiteral { node, value, .. } => {
                     index.all_nodes.insert(*node);
-                    index.all_strings.insert(value.clone());
                     index.ast_string_literals.push((*node, value.clone()));
                 }
                 SelectorFact::AstStringWildcard { node, token, .. } => {
@@ -2725,7 +3087,6 @@ impl FactIndex {
                 }
                 SelectorFact::AstIdentifierName { node, value, .. } => {
                     index.all_nodes.insert(*node);
-                    index.all_strings.insert(value.clone());
                     index.ast_identifier_names.push((*node, value.clone()));
                 }
                 SelectorFact::AstPropertyName { node, value, .. } => {
@@ -2762,7 +3123,6 @@ impl FactIndex {
                     ..
                 } => {
                     index.all_nodes.insert(*node);
-                    index.all_statement_ordinals.insert(*statement_ordinal);
                     index.ast_top_levels.push((*node, *statement_ordinal));
                 }
             }

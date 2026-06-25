@@ -1229,13 +1229,7 @@ struct AlphaIdentifierFrame {
 }
 
 fn native_anonymous_source_match_supported(selector: &AnonymousStatementSelector) -> bool {
-    // Keep alpha and multi-statement anonymous selectors on the existing
-    // resolver path until the native solver has bounded support for those
-    // broader patterns.
-    selector.identifiers == SourceMatchIdentifierMode::Exact
-        && selector.target_binding.is_none()
-        && selector.wildcard_string_literals.is_empty()
-        && !selector.match_source.contains('\n')
+    selector.target_binding.is_none()
 }
 
 fn owner_term(owner: SelectorVariableId) -> OwnerTerm {
