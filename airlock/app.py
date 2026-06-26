@@ -45,6 +45,7 @@ from airlock.models import (
     DeploymentInfo,
     DisconnectedOAuthStatus,
     ExpiredOAuthStatus,
+    OAuthConnectionStatus,
     OAuthProviderStatus,
 )
 from airlock.oauth.k8s_client import K8sTokenStore
@@ -194,6 +195,7 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
         result: list[OAuthProviderStatus] = []
         for name, provider in oauth_providers.items():
             token = await oauth_k8s_store.read_token(provider.config.refresh_secret.name, oauth_target_ns)
+            status: OAuthConnectionStatus
             if token is None:
                 status = DisconnectedOAuthStatus()
             elif token.expires_at <= datetime.now(UTC):

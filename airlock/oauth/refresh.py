@@ -53,6 +53,7 @@ async def token_refresh_loop(
     warned_scope_drifts: set[tuple[str, str]] = set()
     while True:
         for name, provider in providers.items():
+            token = None
             try:
                 token = await k8s_store.read_token(provider.config.refresh_secret.name, target_namespace)
                 if token is None:
@@ -75,11 +76,25 @@ async def token_refresh_loop(
                     refresh_errors[name] = repr(exc)
                 # Delete the access secret if the token is actually expired so
                 # downstream consumers don't get a stale nonfunctional bearer token.
-                if datetime.now(UTC) >= token.expires_at:
+                if token is None:
+                    logger.warning(
+                        f"Leaving access secret for {name} unchanged after refresh failure because "
+                        "the refresh token could not be read."
+                    )
+                elif datetime.now(UTC) >= token.expires_at:
+                    logger.warning(
+                        f"Deleting access secret for {name} because refresh failed and "
+                        f"the token expired at {token.expires_at}."
+                    )
                     try:
                         await k8s_store.delete_secret(provider.config.access_secret.name, target_namespace)
                     except Exception:
                         logger.exception(f"Failed to delete expired access secret for {name}")
+                else:
+                    logger.warning(
+                        f"Leaving access secret for {name} unchanged after refresh failure because "
+                        f"the token remains valid until {token.expires_at}."
+                    )
         try:
             await k8s_store.delete_orphaned_secrets(target_namespace, known_secret_names)
         except Exception:

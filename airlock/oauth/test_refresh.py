@@ -122,6 +122,67 @@ async def test_refresh_loop_continues_on_error(provider: GenericOAuth2Provider) 
     mock_store.write_token.assert_not_called()
 
 
+async def test_refresh_loop_keeps_access_secret_when_refresh_fails_for_valid_token(
+    provider: GenericOAuth2Provider, caplog: pytest.LogCaptureFixture
+) -> None:
+    expiring_token = _make_token(hours_until_expiry=0.5)
+
+    mock_store = AsyncMock()
+    mock_store.read_token.return_value = expiring_token
+
+    with (
+        caplog.at_level("WARNING"),
+        patch.object(provider, "refresh_tokens", side_effect=RuntimeError("network error")),
+    ):
+        await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
+
+    mock_store.delete_secret.assert_not_called()
+    assert any(
+        "Leaving access secret for test unchanged after refresh failure because the token remains valid until"
+        in record.message
+        for record in caplog.records
+    )
+
+
+async def test_refresh_loop_deletes_access_secret_when_refresh_fails_for_expired_token(
+    provider: GenericOAuth2Provider, caplog: pytest.LogCaptureFixture
+) -> None:
+    expired_token = _make_token(hours_until_expiry=-0.5)
+
+    mock_store = AsyncMock()
+    mock_store.read_token.return_value = expired_token
+
+    with (
+        caplog.at_level("WARNING"),
+        patch.object(provider, "refresh_tokens", side_effect=RuntimeError("network error")),
+    ):
+        await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
+
+    mock_store.delete_secret.assert_any_call("test-access-token", "test-ns")
+    assert any(
+        "Deleting access secret for test because refresh failed and the token expired at" in record.message
+        for record in caplog.records
+    )
+
+
+async def test_refresh_loop_logs_when_refresh_token_cannot_be_read(
+    provider: GenericOAuth2Provider, caplog: pytest.LogCaptureFixture
+) -> None:
+    mock_store = AsyncMock()
+    mock_store.read_token.side_effect = RuntimeError("k8s down")
+
+    with caplog.at_level("WARNING"), patch.object(provider, "refresh_tokens") as mock_refresh:
+        await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
+
+    mock_refresh.assert_not_called()
+    mock_store.delete_secret.assert_not_called()
+    assert any(
+        "Leaving access secret for test unchanged after refresh failure because the refresh token could not be read."
+        in record.message
+        for record in caplog.records
+    )
+
+
 async def test_refresh_loop_deletes_orphaned_secrets(provider: GenericOAuth2Provider) -> None:
     # delete_orphaned_secrets should be called with the set of names declared in config.
     mock_store = AsyncMock()
