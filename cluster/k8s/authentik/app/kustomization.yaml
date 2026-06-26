@@ -33,4 +33,5 @@ configMapGenerator:
       - blueprints/openhands-sso.yaml
       - blueprints/fava-sso.yaml
       - blueprints/haku-dashboard-sso.yaml
+      - blueprints/haku-ui-sso.yaml
     namespace: authentik

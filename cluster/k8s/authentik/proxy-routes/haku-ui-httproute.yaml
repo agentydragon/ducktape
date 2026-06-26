@@ -1,0 +1,21 @@
+# HTTPRoute for the agent-authored Haku UI via the shared Authentik proxy outpost.
+# Traffic flows: Gateway -> outpost (auth, agentydragon-only) -> haku-ui backend
+# (Service haku-ui in haku-sandbox, via the provider's internal_host).
+# Operator-owned by construction: Kyverno forbids Haku creating routes in
+# haku-sandbox, so this authentik-namespace route is the only public path to haku-ui.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: haku-ui
+  namespace: authentik
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "haku-ui.allegedly.works"
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80

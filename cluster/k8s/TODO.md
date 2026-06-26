@@ -162,3 +162,21 @@ closed (its UI must reach the operator only via the Authentik route).
       manifest to carry a selector label. Revisit if/when #42159 is fixed and there's a
       clean way to label those built-in namespaces — then switch listeners to
       `from: Selector` and the denylist becomes redundant.
+
+## Haku `haku-ui` / workloads pipe — hardening follow-ups
+
+The `cluster/k8s/haku/workloads/` Flux pipe and the `haku-ui.allegedly.works`
+Authentik route work; these tighten them (operator-approved as follow-ups):
+
+- [ ] **Read-only deploy key for the `haku-state` GitRepository.** The pipe's
+      `GitRepository` reuses the r/w `haku-state-git-write` Secret for basic auth
+      (Flux only pulls, but the cred is read/write — there's no separate read
+      principal on the repo). Mint a read-only Forgejo deploy key for `haku-state`
+      and point the GitRepository's `secretRef` at it instead.
+- [ ] **Ingress NetworkPolicy restricting `haku-ui` to the Authentik outpost.**
+      `haku-sandbox` has default-allow ingress (the mitmproxy fence is egress-only),
+      so any in-cluster pod can reach `svc/haku-ui` directly — external access is
+      still gateway→Authentik only, so this is defense-in-depth, not a perimeter
+      hole. Add a CiliumNetworkPolicy selecting `app: haku-ui` that admits ingress
+      only from the `authentik` server pods (same gap the README tracks for
+      `agents-mitmproxy`/`proxmox`).
