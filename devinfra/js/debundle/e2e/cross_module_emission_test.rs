@@ -461,13 +461,7 @@ export { RuntimeCatalog };
         ],
     );
 
-    let rejected = run_keep_going_dry_run_rejection_fixture_with_env(
-        opts,
-        &[
-            ("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1"),
-            ("DUCKTAPE_SOURCE_MATCH_TIMING_PREVIEW", "0"),
-        ],
-    );
+    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
         "Source-match selector diagnostic report: 2 unresolved selector(s) found",
@@ -480,17 +474,6 @@ export { RuntimeCatalog };
             "stderr missing {required:?}\nstderr:\n{stderr}",
         );
     }
-    let timing_lines = stderr
-        .lines()
-        .filter(|line| {
-            line.contains("[debundle source_match]")
-                && line.contains("kind=members[].selector.source_match")
-        })
-        .count();
-    assert_eq!(
-        timing_lines, 0,
-        "CLASS_REST selectors should stay in the global solver instead of falling back to legacy source_match resolution\nstderr:\n{stderr}",
-    );
 }
 
 #[test]

@@ -224,8 +224,8 @@ this list as the dispatch summary, not a second plan.
    profiles show retained-statement cloning hot.
 6. Replace diagnostic-only matcher mirrors with solver-native explanations:
    generic `NoMatch` fallback reporting, empty `nearest_candidates`, fact
-   near-miss/source-aware debt scoring, `match-selector` slack relaxation, old
-   source-match timing hooks, and selector-IR row/stat stderr diagnostics.
+   near-miss/source-aware debt scoring, `match-selector` slack relaxation, and
+   selector-IR row/stat stderr diagnostics.
    Keep cheap wrappers over production data; remove side data structures that
    exist only for the old matcher/row-solver path.
 

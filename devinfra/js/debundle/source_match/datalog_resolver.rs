@@ -928,32 +928,6 @@ impl ChunkResolver<'_> {
         self.collect_member_candidates(request_id, selector)
     }
 
-    fn member_candidates_with_timing(
-        &self,
-        request_id: &str,
-        export_name: &str,
-        selector: &AnonymousStatementSelector,
-    ) -> Result<Vec<MemberBindingMatch>> {
-        let (matches, elapsed) =
-            time_source_match(|| self.collect_member_candidates(request_id, selector));
-        let matches = matches?;
-        if source_match_timings_enabled() {
-            let body_indices: Vec<usize> = matches.iter().map(|m| m.body_idx).collect();
-            let binding = match matches.as_slice() {
-                [single] => single.binding.binding_name.as_str(),
-                _ => "<unresolved>",
-            };
-            emit_source_match_timing(
-                &format!("members[].selector.source_match export=`{export_name}`"),
-                request_id,
-                selector,
-                elapsed,
-                &format!("body_indices={body_indices:?} binding={binding}"),
-            );
-        }
-        Ok(matches)
-    }
-
     fn member_group_candidates_impl(
         &self,
         request_id: &str,
@@ -1042,7 +1016,7 @@ impl SelectorResolver for ChunkResolver<'_> {
         selector_label: &'static str,
     ) -> Result<ResolvedMemberBinding> {
         let needles = parse_needles(request_id, selector)?;
-        let (matches, elapsed) = time_source_match(|| match needles.as_slice() {
+        let matches = match needles.as_slice() {
             [needle] if selector_var_decl_has_declarator_holes(needle) => {
                 // Declarator-hole var-decls need alignment-aware extraction: a
                 // DECLARATORS run hole absorbs declarators, so the owner's binding
@@ -1057,32 +1031,18 @@ impl SelectorResolver for ChunkResolver<'_> {
             }
             [needle] => member_matches_single_statement(self, needle, request_id, selector),
             _ => member_matches_multi(self, &needles, request_id, selector),
-        });
+        };
         let matches = matches?;
-        if source_match_timings_enabled() {
-            let body_indices: Vec<usize> = matches.iter().map(|m| m.body_idx).collect();
-            let binding = match matches.as_slice() {
-                [single] => single.binding.binding_name.as_str(),
-                _ => "<unresolved>",
-            };
-            emit_source_match_timing(
-                &format!("{selector_label} export=`{export_name}`"),
-                request_id,
-                selector,
-                elapsed,
-                &format!("body_indices={body_indices:?} binding={binding}"),
-            );
-        }
         self.collapse_member_match(matches, request_id, export_name, selector, selector_label)
     }
 
     fn member_candidates(
         &self,
         request_id: &str,
-        export_name: &str,
+        _export_name: &str,
         selector: &AnonymousStatementSelector,
     ) -> Result<Vec<MemberBindingMatch>> {
-        self.member_candidates_with_timing(request_id, export_name, selector)
+        self.collect_member_candidates(request_id, selector)
     }
 
     fn member_group_candidates(

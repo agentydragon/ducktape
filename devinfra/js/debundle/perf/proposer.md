@@ -201,8 +201,8 @@ A 2026-06-14 downstream old-spec dry-run replay of a large private web
 corpus still showed material member-form `source_match` cost after the
 literal-initializer fast path (#2201) and selector aggregation
 (#2200/#2203). The replay used an optimized debundler, direct
-`debundle run --dry-run --keep-going`, `DUCKTAPE_SOURCE_MATCH_TIMINGS=1`,
-`DUCKTAPE_SOURCE_MATCH_TIMING_THRESHOLD_MS=50`, preview disabled, and:
+`debundle run --dry-run --keep-going`, the now-removed per-selector
+stderr timer set to a 50 ms threshold, preview disabled, and:
 
 ```bash
 perf record -F 199 -e cpu-clock:u --call-graph dwarf,8192 \
@@ -233,8 +233,8 @@ predicate logic: `match_var_declarator_slice_with_alignment`,
 `match_expr`, `StringLiteralPredicate::matches`, and body-group
 alignment.
 
-Follow-up replay on the same corpus with source-match timing threshold
-set to 0 showed 761 total source-match resolutions, with member
+Follow-up replay on the same corpus with the removed per-selector timer
+threshold set to 0 showed 761 total source-match resolutions, with member
 selectors accounting for nearly all residual selector wall:
 
 - post-clone-fix baseline: 2.508s summed `source_match` timing, 2.384s

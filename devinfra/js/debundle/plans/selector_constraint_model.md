@@ -832,9 +832,8 @@ remaining safe early cleanup queue starts with tooling-only conveniences:
 
 - narrow source-aware `selector-debt` near-match options;
 - replace generic `NoMatch` fallback text, empty `nearest_candidates`, fact
-  near-miss scoring, `match-selector` slack relaxation, legacy source-match
-  timing hooks, and selector-IR row/stat stderr diagnostics with solver-native
-  explanations.
+  near-miss scoring, `match-selector` slack relaxation, and selector-IR
+  row/stat stderr diagnostics with solver-native explanations.
 
 Defer removal of `identifiers: alpha_all`, exact anonymous `match`, readability
 labels / typed holes, and top-level anonymous `STMT_LIST` until a gaffer-private

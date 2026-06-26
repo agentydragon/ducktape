@@ -653,107 +653,82 @@ export { runtimeBinding, siblingBinding, Existing };
 }
 
 #[test]
-fn multi_statement_native_source_match_skips_legacy_resolver_timing() {
-    let fixture = run_fixture_with_env(
-        FixtureOpts::new(
-            r#"const runtimePrefix = "OK:";
+fn multi_statement_native_source_match_resolves() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimePrefix = "OK:";
 function runtimeFormat(value) {
   return runtimePrefix + value.trim().toUpperCase();
 }
 console.log(runtimeFormat(" ok "));
 export { runtimePrefix, runtimeFormat };
 "#,
-            vec![logical_module(
-                "format",
-                &[Member::source_alpha_target(
-                    "formatValue",
-                    "formatValue",
-                    r#"const prefix = "OK:";
+        vec![logical_module(
+            "format",
+            &[Member::source_alpha_target(
+                "formatValue",
+                "formatValue",
+                r#"const prefix = "OK:";
 function formatValue(value) {
   return prefix + value.trim().toUpperCase();
 }"#,
-                )],
             )],
-        ),
-        &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
-    );
+        )],
+    ));
 
     assert_entry_output(&fixture, "OK:OK\n");
-    assert!(
-        !fixture.stderr.contains("[debundle source_match]"),
-        "native multi-statement source_match should not call the legacy resolver\nstderr:\n{}",
-        fixture.stderr,
-    );
 }
 
 #[test]
-fn alpha_all_native_source_match_skips_legacy_resolver_timing() {
-    let fixture = run_fixture_with_env(
-        FixtureOpts::new(
-            r#"function runtimeFormat(value) {
+fn alpha_all_native_source_match_resolves() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function runtimeFormat(value) {
   return value.trim().toUpperCase();
 }
 console.log(runtimeFormat(" ok "));
 export { runtimeFormat };
 "#,
-            vec![logical_module(
-                "format",
-                &[Member::source_alpha_target(
-                    "formatValue",
-                    "runtimeFormat",
-                    r#"function runtimeFormat(value) {
+        vec![logical_module(
+            "format",
+            &[Member::source_alpha_target(
+                "formatValue",
+                "runtimeFormat",
+                r#"function runtimeFormat(value) {
   return value.trim().toUpperCase();
 }"#,
-                )],
             )],
-        ),
-        &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
-    );
+        )],
+    ));
 
     assert_entry_output(&fixture, "OK\n");
-    assert!(
-        !fixture.stderr.contains("[debundle source_match]"),
-        "native alpha_all source_match should not call the legacy resolver\nstderr:\n{}",
-        fixture.stderr,
-    );
 }
 
 #[test]
-fn alpha_all_function_source_match_without_target_binding_skips_legacy_resolver_timing() {
-    let fixture = run_fixture_with_env(
-        FixtureOpts::new(
-            r#"function runtimeFormat(value) {
+fn alpha_all_function_source_match_without_target_binding_resolves() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function runtimeFormat(value) {
   return value.trim().toUpperCase();
 }
 console.log(runtimeFormat(" ok "));
 export { runtimeFormat };
 "#,
-            vec![logical_module(
-                "format",
-                &[Member::source_alpha(
-                    "formatValue",
-                    r#"function formatValue(value) {
+        vec![logical_module(
+            "format",
+            &[Member::source_alpha(
+                "formatValue",
+                r#"function formatValue(value) {
   return value.trim().toUpperCase();
 }"#,
-                )],
             )],
-        ),
-        &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
-    );
+        )],
+    ));
 
     assert_entry_output(&fixture, "OK\n");
-    assert!(
-        !fixture.stderr.contains("[debundle source_match]"),
-        "native alpha_all source_match without target_binding should not call the legacy resolver\nstderr:\n{}",
-        fixture.stderr,
-    );
 }
 
 #[test]
-fn alpha_all_native_source_match_with_extends_skips_legacy_resolver_timing() {
-    let fixture = run_fixture_with_env(
-        FixtureOpts::new(
-            r#"class RuntimeWidget extends Object {
+fn alpha_all_native_source_match_with_extends_resolves() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"class RuntimeWidget extends Object {
   label() {
     return "runtime";
   }
@@ -761,65 +736,47 @@ fn alpha_all_native_source_match_with_extends_skips_legacy_resolver_timing() {
 console.log(new RuntimeWidget().label());
 export { RuntimeWidget };
 "#,
-            vec![logical_module(
-                "widget",
-                &[Member::source_alpha_target(
-                    "runtimeWidget",
-                    "RuntimeWidget",
-                    r#"class RuntimeWidget extends Object {
+        vec![logical_module(
+            "widget",
+            &[Member::source_alpha_target(
+                "runtimeWidget",
+                "RuntimeWidget",
+                r#"class RuntimeWidget extends Object {
   label() {
     return "runtime";
   }
 }"#,
-                )],
             )],
-        ),
-        &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
-    );
+        )],
+    ));
 
     assert_entry_output(&fixture, "runtime\n");
-    assert!(
-        !fixture.stderr.contains("[debundle source_match]"),
-        "native alpha_all source_match with extends should not call the legacy resolver\nstderr:\n{}",
-        fixture.stderr,
-    );
 }
 
 #[test]
-fn multi_statement_native_source_match_ignores_legacy_timing_preview_env() {
-    let fixture = run_fixture_with_env(
-        FixtureOpts::new(
-            r#"const runtimePrefix = "ok:";
+fn multi_statement_native_source_match_with_shared_prefix_resolves() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimePrefix = "ok:";
 function runtimeNormalize(value) {
   return runtimePrefix + value.trim().toLowerCase();
 }
 console.log(runtimeNormalize(" OK "));
 export { runtimePrefix, runtimeNormalize };
 "#,
-            vec![logical_module(
-                "normalize",
-                &[Member::source_alpha_target(
-                    "normalizeValue",
-                    "normalizeValue",
-                    r#"const prefix = "ok:";
+        vec![logical_module(
+            "normalize",
+            &[Member::source_alpha_target(
+                "normalizeValue",
+                "normalizeValue",
+                r#"const prefix = "ok:";
 function normalizeValue(value) {
   return prefix + value.trim().toLowerCase();
 }"#,
-                )],
             )],
-        ),
-        &[
-            ("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1"),
-            ("DUCKTAPE_SOURCE_MATCH_TIMING_PREVIEW", "0"),
-        ],
-    );
+        )],
+    ));
 
     assert_entry_output(&fixture, "ok:ok\n");
-    assert!(
-        !fixture.stderr.contains("[debundle source_match]"),
-        "native multi-statement source_match should not call the legacy resolver\nstderr:\n{}",
-        fixture.stderr,
-    );
 }
 
 #[test]
@@ -861,33 +818,25 @@ export { runtimeLocalPart, runtimeDomain, runtimeAddress, duplicateLocalPart };
 
 #[test]
 fn binding_group_source_match_extracts_multiple_bindings_from_multideclarator() {
-    let fixture = run_fixture_with_env(
-        FixtureOpts::new(
-            r#"let runtimeA = 100,
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"let runtimeA = 100,
   runtimeB = null,
   runtimeC = `${runtimeA}:${runtimeB === null}:bar`;
 const Existing = "existing";
 console.log(runtimeA, runtimeB === null, runtimeC, Existing);
 export { runtimeA, runtimeB, runtimeC, Existing };
 "#,
-            vec![logical_module_with_binding_groups(
-                "selected_values",
-                &[],
-                &[BindingGroup::source_alpha(
-                    r#"let a = 100,
+        vec![logical_module_with_binding_groups(
+            "selected_values",
+            &[],
+            &[BindingGroup::source_alpha(
+                r#"let a = 100,
   b = null,
   c = `${a}:${b === null}:bar`;"#,
-                    &[("a", "NameA"), ("b", "NameB"), ("c", "NameC")],
-                )],
+                &[("a", "NameA"), ("b", "NameB"), ("c", "NameC")],
             )],
-        ),
-        &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
-    );
-    assert!(
-        !fixture.stderr.contains("[debundle source_match]"),
-        "native binding_group source_match should not call the legacy resolver\nstderr:\n{}",
-        fixture.stderr
-    );
+        )],
+    ));
 
     let mut exports =
         list_module_exports(&fixture.out_root, "static/app/modules/selected_values.js");
@@ -915,25 +864,22 @@ export { runtimeA, runtimeB, runtimeC, Existing };
 
 #[test]
 fn member_source_match_target_binding_can_select_single_declarator_from_comma_list() {
-    let fixture = run_fixture_with_env(
-        FixtureOpts::new(
-            r#"const siblingBinding = { kind: "other", enabled: false },
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const siblingBinding = { kind: "other", enabled: false },
   runtimeBinding = { kind: "selected", enabled: true };
 const Existing = "existing";
 console.log(runtimeBinding.kind, siblingBinding.kind, Existing);
 export { siblingBinding, runtimeBinding, Existing };
 "#,
-            vec![logical_module(
-                "selected_config",
-                &[Member::source_alpha_target(
-                    "selectedConfig",
-                    "config",
-                    r#"const config = { kind: "selected", enabled: true };"#,
-                )],
+        vec![logical_module(
+            "selected_config",
+            &[Member::source_alpha_target(
+                "selectedConfig",
+                "config",
+                r#"const config = { kind: "selected", enabled: true };"#,
             )],
-        ),
-        &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
-    );
+        )],
+    ));
 
     assert_module_source(
         &fixture.out_root,
@@ -948,11 +894,6 @@ export { siblingBinding, runtimeBinding, Existing };
         &["runtimeBinding"],
     );
     assert_entry_output(&fixture, "selected other existing\n");
-    assert!(
-        !fixture.stderr.contains("[debundle source_match]"),
-        "var-declaration target_binding source_match should stay on the native global solver path\nstderr:\n{}",
-        fixture.stderr,
-    );
 }
 
 #[test]

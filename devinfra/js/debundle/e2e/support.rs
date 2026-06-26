@@ -943,16 +943,12 @@ pub struct RejectedFixture {
 }
 
 pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
-    run_fixture_with_env(opts, &[])
-}
-
-pub fn run_fixture_with_env(opts: FixtureOpts<'_>, env: &[(&str, &str)]) -> Fixture {
     let setup = setup_fixture(&opts);
     let spec_path = setup.root.path().join("transform_spec.yaml");
     let spec = build_spec(&opts, &setup);
     write_yaml_file(&spec_path, &spec);
 
-    let result = spawn_transform(&spec_path, env);
+    let result = spawn_transform(&spec_path);
     assert!(
         result.status.success(),
         "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
@@ -1048,13 +1044,6 @@ pub fn run_fail_fast_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> Rejecte
 /// flag; keep-going is now the default for broad pipeline runs.
 pub fn run_keep_going_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
     run_rejection_fixture_with_args(opts, &["--dry-run", "--keep-going"])
-}
-
-pub fn run_keep_going_dry_run_rejection_fixture_with_env(
-    opts: FixtureOpts<'_>,
-    env: &[(&str, &str)],
-) -> RejectedFixture {
-    run_rejection_fixture_with_args_and_env(opts, &["--dry-run", "--keep-going"], env)
 }
 
 fn run_rejection_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> RejectedFixture {
@@ -1726,8 +1715,8 @@ pub struct CommandResult {
     pub status: std::process::ExitStatus,
 }
 
-fn spawn_transform(spec_path: &Path, env: &[(&str, &str)]) -> CommandResult {
-    run_debundler_with_env(spec_path, &[], env)
+fn spawn_transform(spec_path: &Path) -> CommandResult {
+    run_debundler(spec_path, &[])
 }
 
 fn spawn_transform_with_args(

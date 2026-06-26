@@ -8,7 +8,7 @@
 //! crate-internal items re-exported below via `pub(crate) use`, so each
 //! submodule only needs `use super::*;`:
 //!
-//! - `timing` — selector identity keys, preview, and timing diagnostics.
+//! - `identity` — selector identity keys and log-safe previews.
 //! - `parse_validate` — selector/module parsing and capability validation.
 //! - `types` — shared result/selector types.
 //! - `binding_resolution` — binding-group selector expansion and declared-binding
@@ -56,9 +56,9 @@ mod datalog_resolver;
 mod declared_bindings;
 mod fact_near_miss;
 mod holes;
+mod identity;
 mod parse_validate;
 mod resolver;
-mod timing;
 mod types;
 
 // Crate-internal re-exports: each submodule reaches its siblings' crate-internal
@@ -66,17 +66,14 @@ mod types;
 pub(crate) use anonymous_statement::*;
 pub(crate) use declared_bindings::*;
 pub(crate) use holes::*;
-pub(crate) use timing::{
-    emit_source_match_timing, source_match_timings_enabled, time_source_match,
-};
 
 // Public API: importable at `source_match::<item>` exactly as before the split.
 pub use binding_resolution::{binding_group_member_selectors, source_match_declared_binding_names};
 pub use datalog_resolver::ChunkResolver;
 pub use fact_near_miss::fact_source_match_body_debt;
+pub use identity::{selector_body_key, selector_key, source_match_preview};
 pub use parse_validate::parse_selector_module_with_capability_check;
 pub use resolver::SelectorResolver;
-pub use timing::{selector_body_key, selector_key, source_match_preview};
 pub use types::{
     BindingGroupMemberSelector, MemberBindingGroupMatch, MemberBindingMatch, ResolvedMemberBinding,
     ResolvedMemberBindingGroup, SourceMatchBodyDebt, SourceMatchNearMiss,
