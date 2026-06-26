@@ -217,7 +217,7 @@ Two tiers the console treats completely differently:
   item model + its UI + styling/build/image-automation move out of ducktape into
   agent-owned `haku-state` — Haku is given a high-level objective ("surface what's useful
   to act on"), not a ducktape schema, and the shell keeps only the boundary (capability
-  tier, iframe host, protocol, CSP/trust indicator, perimeter); the trusted renderer +
+  tier, iframe host, protocol, CSP, top-layer confirm, perimeter); the trusted renderer +
   trace tier retire. Full design + invariants + phasing:
   <console/plans/free_form_ui_iframe.md>.
 

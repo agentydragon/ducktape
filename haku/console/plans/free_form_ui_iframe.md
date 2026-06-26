@@ -90,9 +90,10 @@ trusting the content:
    exfiltrate to the public (invariant 2), cannot reach the bearer or fire a
    capability (invariant 1), and cannot open a new public door (invariant 3).
    Residual risk is **consent fidelity** — agent UI could phish the operator
-   (fake "approve X" that records Y). Mitigations: keep privileged controls and
-   their copy in the **shell chrome** (not the iframe), and mark the iframe region
-   visibly as agent-authored.
+   (fake "approve X" that records Y). Mitigation is the capability gate (a faked
+   control is inert) plus the **top-layer modal confirm + backdrop** at the moment of
+   a privileged action — _not_ a visible "agent-authored" marker, which the iframe can
+   spoof. See "The shell as a thin trusted layer".
 
 ## How Haku runs the service (no image builds)
 
@@ -129,19 +130,43 @@ This means the console's existing **trace tier becomes legacy**: it stays only f
 the trusted declarative item list (Phase 1a). Once the UI lives in Haku's iframe,
 Haku's own backend records intent, and the trace tier can eventually be retired.
 
-## The shell in the fullscreen model
+## The shell as a thin trusted layer
 
-The iframe is expected to **fill the viewport** — Haku's UI scrolls internally like
-any full-page app, so there's no content-height autosizing. The trusted shell is then
-a **thin layer over** the iframe, not chrome around it. It owns, on its **own z-layer**
-(which the agent UI can't draw over or intercept):
+The iframe is expected to **cover most of the page** — Haku's UI scrolls internally
+like a full-page app, so there's no content-height autosizing. The trusted shell is
+then a **thin layer**, not chrome around it. It owns:
 
-- **a persistent trust indicator** (small badge / border) so the operator can always
-  tell shell pixels from agent-authored pixels — the only pixels to trust for a
-  privileged prompt. This matters more fullscreen: the agent surface is a large
-  phishing canvas.
-- **privileged-action confirms** (below), rendered as overlays above the iframe.
-- the frame + the bridge endpoint.
+- **the moment-of-decision confirm** for any privileged action — see below. This, not
+  a badge, is the trustworthy surface.
+- the frame + the bridge endpoint + the CSP.
+
+**A persistent "trust indicator" is not a security control — don't rely on it.** A web
+page has no secure-attention channel (the OS has Ctrl-Alt-Del; the browser has the
+address bar — neither is available to a sub-region of a page). An iframe covering most
+of the page can render a pixel-perfect **decoy** badge; the shell's real badge sits on
+a higher z-layer so it can't be drawn _over_, but the operator can't reliably tell it
+from a decoy drawn beside it. A static frame/border is at most cosmetic honesty, never
+a boundary.
+
+Security therefore does **not** depend on the operator visually distinguishing shell
+pixels from agent pixels. It rests on two things:
+
+1. **The capability gate makes a faked control inert.** If the iframe draws a fake
+   "Launch" button, clicking it only emits a `requestCapability` (below) — which the
+   shell re-gates with its own CSRF + confirm + bearer. Spoofing the _look_ of a
+   privileged control accomplishes nothing on the privileged path.
+2. **The confirm is the only trustworthy surface, and it only has to exist at the
+   moment of approval.** Render it as a **top-layer modal** (`<dialog>.showModal()`)
+   with a **backdrop**: the iframe cannot draw over it, read it, or intercept clicks
+   meant for it (top layer + cross-origin + pointer capture), and the backdrop dims
+   the agent UI so "the shell is talking now" is unambiguous. Anti-clickjacking
+   hygiene on it: explicit action text the operator must read, a deliberate click on a
+   freshly-rendered button (no click-through / brief focus delay) — the residual
+   attack isn't spoofing a badge, it's baiting the operator's click onto the real
+   confirm.
+
+Also **withhold the Fullscreen API** from the iframe (no `allow="fullscreen"`) so it
+can't go truly fullscreen and spoof the browser chrome itself.
 
 ## The protocol (postMessage)
 
@@ -193,7 +218,7 @@ fine for a single-operator Chrome/Firefox tool.)
 
 - **v1 — frame it + the minimal bridge.** Operator stands up the Authentik-gated
   same-site route → the `haku-ui` Service in `haku-sandbox`, the fullscreen iframe
-  (`sandbox` + CSP + trust indicator), and ships `requestCapability("launch-routine")`
+  (`sandbox` + CSP + top-layer confirm), and ships `requestCapability("launch-routine")`
   - `openLink`. Haku stands up its Deployment and serves a first page reading
     `haku-state`. Goal: prove the frame + isolation + the two affordances end-to-end.
 - **v1.5 — gateway hardening.** Tighten `cluster-gateway` `allowedRoutes` so the
@@ -224,7 +249,7 @@ What's left in ducktape is the **irreducible trusted core, and nothing else**:
 - the **capability tier** (the bearer + CSRF + `launch-routine` and any future
   privileged verbs);
 - the **iframe host** page + the **`postMessage` protocol** and its validation;
-- the **CSP + trust indicator** (the pixels the operator is entitled to trust);
+- the **CSP** + the **top-layer modal confirm** (the only trustworthy surface, at the moment of a privileged action);
 - the **perimeter** (`haku-console` namespace, the Authentik-gated route, the
   gateway-route invariant).
 
