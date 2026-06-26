@@ -102,7 +102,7 @@ resource "claude-managed-agents_vault_credential" "haku_kube" {
     type             = "static_bearer"
     mcp_server_url   = "https://kubectl-machine-mcp.allegedly.works/mcp"
     token            = var.haku_kube_token
-    token_wo_version = var.haku_kube_token_wo_version
+    token_wo_version = tonumber(var.haku_kube_token_wo_version)
   }
 }
 
