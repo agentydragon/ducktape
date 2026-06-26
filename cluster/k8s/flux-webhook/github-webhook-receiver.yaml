@@ -115,6 +115,9 @@ spec:
       name: token-provisioner
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
+      name: grocy-sf-user-perms-provisioner
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
       name: cpap-sync
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository

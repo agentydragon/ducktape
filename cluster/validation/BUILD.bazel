@@ -357,6 +357,7 @@ py_test(
         "//cluster/k8s:flux_system_files",
         "//cluster/k8s/agents/attic-jwt-rotation:manifests",
         "//cluster/k8s/agents/authentik-jwt-rotation:manifests",
+        "//cluster/k8s/grocy/sf/user-perms:manifests",
         "//cluster/k8s/inventree/token-provisioner:manifests",
         "//cluster/k8s/litellm/app:manifests",
         "//cluster/k8s/litellm/tana:manifests",
