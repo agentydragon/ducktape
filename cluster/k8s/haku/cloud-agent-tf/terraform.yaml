@@ -15,6 +15,16 @@ spec:
   serviceAccountName: tf-runner
   approvePlan: "auto"
 
+  # Publish the provisioned resource IDs (agent_id, deployment_id, environment_id,
+  # vault_id — see tf/gitops/haku-cloud-agent/outputs.tf) into an in-cluster Secret
+  # so they have one canonical, machine-readable source instead of being copy-pasted
+  # literals that drift. The IDs are identifiers, not credentials; the Secret is
+  # gated by flux-system RBAC. Consumers: the cloud-agent runbook reads deployment_id
+  # from here for `ant beta:deployments run` (a future in-cluster runner would read it
+  # the same way). Empty `outputs` => all four outputs are written.
+  writeOutputsToSecret:
+    name: haku-cloud-agent-ids
+
   # The static_bearer credential's haku-k8s JWT is read in-cluster by the tofu
   # root itself (kubernetes_secret_v1 data source from the haku-cloud-kube-token
   # Secret; see tf/gitops/haku-cloud-agent/main.tf) — not via spec.vars, whose

@@ -1,5 +1,8 @@
+# These outputs are published to the haku-cloud-agent-ids Secret (flux-system) by
+# the Terraform CR's writeOutputsToSecret — the canonical source consumers read
+# from. See cluster/k8s/haku/cloud-agent-tf/README.md.
 output "vault_id" {
-  description = "Vault ID, consumed by the out-of-band static_bearer credential seed/rotation step (see main.tf header)."
+  description = "Vault ID (vlt_*) holding the haku-k8s static_bearer credential."
   value       = claude-managed-agents_vault.haku_cloud.id
 }
 

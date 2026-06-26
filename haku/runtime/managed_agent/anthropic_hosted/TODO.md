@@ -1,45 +1,34 @@
 # Managed Agents — Anthropic-hosted cloud TODO
 
-P0 passed (cloud session reaches `kubeapi.allegedly.works` as `haku`); the phased
-build plan is <PLAN.md>. Open items from the v0 bring-up:
+P0 shipped: the cloud control plane is Terraform-managed
+(<../../../../tf/gitops/haku-cloud-agent>) and the agent reaches the cluster
+through `kubectl-machine-mcp` as `haku`. The phased build plan is <PLAN.md>.
+Open items:
 
-- **Auto-propagate the rotated k8s token into the Anthropic vault.** `provision.sh`
-  injects `KUBE_TOKEN` (from `secrets/haku-k8s-jwt.yaml`) as a one-shot vault
-  credential. `authentik-jwt-rotation` rotates the in-cluster secret but does
-  **not** push the refreshed token to the vault, so the cloud credential silently
-  expires → kube-apiserver 401s with no pod touched. Interim: extend the rotation
-  CronJob to `ant beta:vaults:credentials update` before expiry. The IaC
-  alternative (manage the agent/vault with a Terraform provider) is evaluated
-  below.
-- **Tighten cloud egress.** `haku.environment.yaml` has `networking.type:
-unrestricted` (TODO in-file). Narrow to `type: limited` + an explicit
-  `allowed_hosts`. (The `KUBE_TOKEN` secret is already scoped — only substituted
-  on `kubeapi.allegedly.works` — so this is hardening, not a leak fix.)
-- **Move off Path B to the k8s-MCP path.** v0 `curl`s kube-apiserver directly
-  with the `aud=kubectl-sandbox-client-credentials` token. The cleaner
-  `kubectl-sandbox-mcp` path needs a token with `aud=kubectl-sandbox-mcp` +
-  `groups=[haku]`, which no Authentik provider mints yet (<PLAN.md> P0 gate).
+- **Tighten cloud egress.** The environment has `networking.type: unrestricted`
+  (TODO in main.tf). Narrow to `type: limited` + an explicit `allowed_hosts`. (The
+  static_bearer MCP credential is already scoped — only presented to the
+  `kubectl-machine-mcp` URL — so this is hardening, not a leak fix.)
+- **Build the run loop (P1–P3).** Ephemeral-pod compute, the cloud run procedure,
+  and a scheduled wake — see <PLAN.md>. The agent today only runs the v0
+  connectivity test.
 
 The Sonnet pin (`model: claude-sonnet-4-6`) is intentional for bring-up test runs
 — not a TODO; revisit the model once the runtime is past v0.
 
-## Terraform provider options (the IaC alternative for token propagation)
+## Resolved
 
-Managing the agent + vault credential as IaC would resolve the token-propagation
-item cleanly. There is **no official/verified Anthropic provider** — all options
-are `community` tier (surveyed 2026-06-25):
-
-| Provider                                     | Scope                                                                   | Adoption                                  | Verdict                                                         |
-| -------------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------- | --------------------------------------------------------------- |
-| **`andasv/anthropic-claude-managed-agents`** | Managed Agents: agents, environments, **vaults**, skill uploads, memory | 2★, created 2026-05-12, no registry stats | Only one that fits — but immature; single author, no real users |
-| `ippontech/anthropic`                        | Admin API (workspaces / API keys / members) — **not** agents/vaults     | ~8.5k downloads, 10★, active              | Doesn't cover our use case                                      |
-| `jianyuan/anthropic`                         | Admin API — **not** agents/vaults                                       | ~1.7k downloads, oldest (since 2024-12)   | Doesn't cover our use case                                      |
-| `gszzzzzz/claude`                            | Claude Admin API — **not** agents/vaults                                | ~1.3k downloads, 0★, stale (push 2026-03) | Doesn't cover our use case                                      |
-
-Only `andasv/anthropic-claude-managed-agents` models `vaults` + credentials (the
-resource we'd need), and it's too young to trust for Haku's control plane (uses
-TF ≥1.11 write-only attributes for secrets, which is the right shape).
-
-**Decision:** stay with scripting `ant beta:vaults:credentials update` from the
-`authentik-jwt-rotation` CronJob for now; re-evaluate `andasv` once it has real
-adoption.
+- **Token propagation (was the blocking concern).** The rotated `haku-k8s` JWT now
+  reaches the Anthropic vault automatically: `authentik-jwt-rotation` writes the
+  `haku-cloud-kube-token` Secret → Flux applies it → the tofu root reads it
+  in-cluster and re-sends it into the vault as a TF 1.11 write-only attribute. No
+  CronJob-calls-`ant` step.
+- **IaC adoption.** We adopted `modus-agendi/anthropic-claude-managed-agents`
+  (pinned + hash-locked) to manage the agent/vault/credential declaratively —
+  reversing the earlier "stay with scripting, re-evaluate once it has adoption"
+  call. It's a low-user-count community provider, so **review the source diff on
+  every version bump** before repinning (see memory
+  `project_acma_provider_repin_review` and the caution in `terraform.tf`).
+- **Off Path B onto the MCP path.** v0 first `curl`ed kube-apiserver directly
+  (`aud=kubectl-sandbox-client-credentials`); now it goes through
+  `kubectl-machine-mcp`, which trusts that issuer. No second audience needed.

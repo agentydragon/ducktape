@@ -6,8 +6,8 @@
 # to kube-apiserver, which maps groups:["haku"] -> oidc-ksbx-groups:haku, so Haku
 # gets full CRUD in haku-sandbox plus cluster-wide diagnostics read.
 #
-# Supersedes the imperative anthropic_hosted/provision.sh bring-up (Path B,
-# bash+curl+env-var KUBE_TOKEN), which the provider couldn't model.
+# Supersedes the retired imperative bring-up (Path B, bash+curl+env-var
+# KUBE_TOKEN); see haku/runtime/managed_agent/anthropic_hosted/README.md.
 #
 # CREDENTIAL ROTATION: the static_bearer credential carries the haku-k8s Authentik
 # JWT, which rotates ~every 44 days. The chain is fully automatic and the rotator
