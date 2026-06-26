@@ -142,39 +142,30 @@ resource "claude-managed-agents_vault_credential" "haku_kube" {
   }
 }
 
-# Tolerant read of the grocy-sf token Secret (published by the rotator's haku-grocy
-# entry). Unlike kube_token — a hard kubernetes_secret_v1 whose absence aborts the
-# whole apply — grocy is OPTIONAL: kubernetes_resources returns an empty list rather
-# than erroring, so a missing Secret simply leaves grocy_enabled = false and skips
-# the credential below. Never let an absent grocy token break the haku_kube
-# credential. Secret .data is base64 (raw API object), so decode (kubernetes_secret_v1
-# would have auto-decoded).
-data "kubernetes_resources" "grocy_token" {
-  api_version    = "v1"
-  kind           = "Secret"
-  namespace      = "flux-system"
-  field_selector = "metadata.name==haku-cloud-grocy-sf-token"
+# The grocy-sf token Secret, published by the rotator (haku-grocy entry) and applied
+# by THIS module's kustomization (haku-grocy-sf-token.sops.yaml) — so it is always
+# present when this applies, exactly like kube_token above. Same hard
+# kubernetes_secret_v1 read: a tolerant kubernetes_resources lookup would need
+# cluster-wide CRD read for GVK discovery (tf-runner-role grants only secrets +
+# leases), not worth a chart-level RBAC grant for an always-committed secret.
+data "kubernetes_secret_v1" "grocy_token" {
+  metadata {
+    name      = "haku-cloud-grocy-sf-token"
+    namespace = "flux-system"
+  }
 }
 
-locals {
-  grocy_secret  = try(data.kubernetes_resources.grocy_token.objects[0], null)
-  grocy_enabled = local.grocy_secret != null
-}
-
-# Read-only grocy-sf bearer, bound to the grocy-sf MCP URL. count gates on the
-# Secret's presence (the accepted fallback: no Secret -> no grocy credential ->
-# grocy tools just don't authenticate). token write-only; token_wo_version = exp
-# epoch so each rotation re-sends (same pattern as haku_kube).
+# Read-only grocy-sf bearer, bound to the grocy-sf MCP URL. token write-only;
+# token_wo_version = the JWT exp epoch so each rotation re-sends (as haku_kube).
 resource "claude-managed-agents_vault_credential" "haku_grocy" {
-  count        = local.grocy_enabled ? 1 : 0
   vault_id     = claude-managed-agents_vault.haku_cloud.id
   display_name = "haku grocy-sf bearer (read-only, grocy-sf MCP)"
 
   auth = {
     type             = "static_bearer"
     mcp_server_url   = "https://grocy-mcp-sf.allegedly.works/mcp"
-    token            = base64decode(local.grocy_secret.data["jwt"])
-    token_wo_version = tonumber(base64decode(local.grocy_secret.data["token-exp"]))
+    token            = data.kubernetes_secret_v1.grocy_token.data["jwt"]
+    token_wo_version = tonumber(data.kubernetes_secret_v1.grocy_token.data["token-exp"])
   }
 }
 
