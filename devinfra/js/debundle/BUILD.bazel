@@ -1101,6 +1101,7 @@ rust_library(
         ":chunk_facts",
         ":selector_constraint_model",
         ":selector_ir",
+        "@crates//:regex",
     ],
 )
 

@@ -11,6 +11,7 @@ use std::fmt;
 
 use analysis::{OwnerId, StatementOrdinal};
 use chunk_facts::NodeId;
+use regex::Regex;
 use selector_constraint_model::{
     AllDifferentReason, BinaryConstraintKind, ConstraintModelError, ConstraintValue,
     ConstraintVariableId, SelectorConstraintModel,
@@ -300,6 +301,15 @@ fn lower_atom_constraint(
             value,
             &domains.ast_string_literals,
         ),
+        SelectorAtom::AstStringLiteralMatchingRegex { node, pattern } => {
+            add_ast_string_literal_matching_regex_allowed_tuples(
+                model,
+                variables,
+                node,
+                pattern,
+                &domains.ast_string_literals,
+            )
+        }
         SelectorAtom::AstNumberLiteral { node, value } => add_node_string_allowed_tuples(
             model,
             variables,
@@ -793,6 +803,37 @@ fn add_node_node_allowed_tuples(
     add_allowed_tuple_set(model, constraint_variables, tuples)
 }
 
+fn add_node_allowed_tuples(
+    model: &mut SelectorConstraintModel,
+    variables: &[ConstraintVariableId],
+    node: &NodeTerm,
+    facts: &BTreeSet<NodeId>,
+) -> Result<(), SelectorConstraintModelBuildError> {
+    let mut constraint_variables = Vec::new();
+    if let NodeTerm::Var { id } = node {
+        constraint_variables.push(model_variable(variables, *id)?);
+    }
+    if constraint_variables.is_empty() {
+        return facts
+            .iter()
+            .any(|fact_node| node_term_matches(node, *fact_node))
+            .then_some(())
+            .ok_or_else(
+                || SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied {
+                    atom: format!("node fact {node:?}"),
+                },
+            );
+    }
+
+    let tuples = facts
+        .iter()
+        .filter(|fact_node| node_term_matches(node, **fact_node))
+        .map(|fact_node| vec![ConstraintValue::AstNode(*fact_node)])
+        .collect::<BTreeSet<_>>();
+
+    add_allowed_tuple_set(model, constraint_variables, tuples)
+}
+
 fn add_node_string_allowed_tuples(
     model: &mut SelectorConstraintModel,
     variables: &[ConstraintVariableId],
@@ -839,6 +880,25 @@ fn add_node_string_allowed_tuples(
         .collect::<BTreeSet<_>>();
 
     add_allowed_tuple_set(model, constraint_variables, tuples)
+}
+
+fn add_ast_string_literal_matching_regex_allowed_tuples(
+    model: &mut SelectorConstraintModel,
+    variables: &[ConstraintVariableId],
+    node: &NodeTerm,
+    pattern: &StringTerm,
+    facts: &BTreeSet<(NodeId, String)>,
+) -> Result<(), SelectorConstraintModelBuildError> {
+    let pattern = required_string_term_const(pattern, "ast_string_literal_matching_regex.pattern")?;
+    let matching_nodes = Regex::new(&pattern)
+        .map(|regex| {
+            facts
+                .iter()
+                .filter_map(|(fact_node, value)| regex.is_match(value).then_some(*fact_node))
+                .collect::<BTreeSet<_>>()
+        })
+        .unwrap_or_default();
+    add_node_allowed_tuples(model, variables, node, &matching_nodes)
 }
 
 fn add_node_ordinal_allowed_tuples(
@@ -2680,6 +2740,54 @@ mod tests {
             allowed_tuples_for(&model, &[ConstraintVariableId(6), ConstraintVariableId(7)]).tuples,
             vec![vec![ordinal(0), ordinal(1)]]
         );
+    }
+
+    #[test]
+    fn ast_string_literal_matching_regex_restricts_node_domain() {
+        let mut program = SelectorProgram::default();
+        let node = program.add_variable(VariableDomain::AstNode, Some("literal".to_string()));
+        program.add_atom(SelectorAtom::AstStringLiteralMatchingRegex {
+            node: NodeTerm::Var { id: node },
+            pattern: StringTerm::Const {
+                value: "^button-".to_string(),
+            },
+        });
+
+        let facts = fact_store(vec![
+            ast_string_literal(10, "button-primary"),
+            ast_string_literal(20, "input-primary"),
+            ast_string_literal(30, "button-secondary"),
+        ]);
+
+        let model = build_selector_constraint_model(&program, &facts).unwrap();
+
+        assert_eq!(
+            allowed_tuples_for(&model, &[ConstraintVariableId(0)]),
+            &AllowedTupleConstraint {
+                id: AllowedTupleConstraintId(0),
+                variables: vec![ConstraintVariableId(0)],
+                tuples: vec![vec![ast_node(10)], vec![ast_node(30)]],
+            }
+        );
+    }
+
+    #[test]
+    fn ast_string_literal_matching_regex_rejects_variable_pattern() {
+        let mut program = SelectorProgram::default();
+        let node = program.add_variable(VariableDomain::AstNode, Some("literal".to_string()));
+        let pattern = program.add_variable(VariableDomain::String, Some("pattern".to_string()));
+        program.add_atom(SelectorAtom::AstStringLiteralMatchingRegex {
+            node: NodeTerm::Var { id: node },
+            pattern: StringTerm::Var { id: pattern },
+        });
+
+        let facts = fact_store(vec![ast_string_literal(10, "button-primary")]);
+
+        let err = build_selector_constraint_model(&program, &facts).unwrap_err();
+        assert!(matches!(
+            err,
+            SelectorConstraintModelBuildError::UnsupportedAtom { .. }
+        ));
     }
 
     #[test]
