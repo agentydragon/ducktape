@@ -47,10 +47,10 @@ message AllDifferent {
 message TargetProjection {
   uint32 target_id = 1;
   uint32 owner_variable_id = 2;
-  bool has_binding_variable = 3;
-  uint32 binding_variable_id = 4;
-  bool has_binding_const = 5;
-  string binding_const = 6;
+  oneof binding_projection {
+    uint32 binding_variable_id = 3;
+    string binding_const = 4;
+  }
 }
 
 message SelectorCpSatResponse {

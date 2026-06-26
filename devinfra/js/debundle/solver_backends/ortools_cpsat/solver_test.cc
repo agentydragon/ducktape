@@ -117,16 +117,12 @@ TEST(SelectorCpSatSolverTest, InvalidProblemReportsDiagnostic) {
   EXPECT_FALSE(response.diagnostic().empty());
 }
 
-TEST(SelectorCpSatSolverTest, ConflictingBindingProjectionReportsDiagnostic) {
+TEST(SelectorCpSatSolverTest, ConstantBindingProjectionDoesNotAddVariable) {
   const cpsat::SelectorCpSatRequest request = ParseRequest(R"pb(
     variables { id: 0 values: 0 debug_name: "owner" }
-    variables { id: 1 values: 10 debug_name: "binding" }
     target_projections {
       target_id: 0
       owner_variable_id: 0
-      has_binding_variable: true
-      binding_variable_id: 1
-      has_binding_const: true
       binding_const: "minA"
     }
   )pb");
@@ -134,8 +130,12 @@ TEST(SelectorCpSatSolverTest, ConflictingBindingProjectionReportsDiagnostic) {
   const cpsat::SelectorCpSatResponse response =
       cpsat::SolveSelectorCpSat(request);
 
-  EXPECT_EQ(response.status(), cpsat::SOLVER_STATUS_INVALID);
-  EXPECT_FALSE(response.diagnostic().empty());
+  EXPECT_EQ(response.status(), cpsat::SOLVER_STATUS_SATISFIABLE);
+  EXPECT_EQ(response.assignment_coverage(),
+            cpsat::ASSIGNMENT_COVERAGE_TARGET_SUPPORT_COMPLETE);
+  ASSERT_EQ(response.assignments_size(), 1);
+  EXPECT_TRUE(RowHas(response.assignments(0), 0, 0));
+  EXPECT_EQ(response.assignments(0).values_size(), 1);
 }
 
 }  // namespace

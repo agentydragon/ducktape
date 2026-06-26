@@ -176,13 +176,8 @@ absl::StatusOr<std::vector<uint32_t>> ProjectionVariableIds(
     const SelectorCpSatRequest& request, const VariableMap& variables) {
   std::set<uint32_t> ids;
   for (const TargetProjection& projection : request.target_projections()) {
-    if (projection.has_binding_variable() && projection.has_binding_const()) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "target projection ", projection.target_id(),
-          " has both binding variable and binding const"));
-    }
     ids.insert(projection.owner_variable_id());
-    if (projection.has_binding_variable()) {
+    if (projection.has_binding_variable_id()) {
       ids.insert(projection.binding_variable_id());
     }
   }

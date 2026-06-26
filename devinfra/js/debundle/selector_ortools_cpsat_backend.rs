@@ -233,17 +233,21 @@ fn all_different_from_backend(
 fn target_projection_from_backend(
     projection: &BackendTargetProjection,
 ) -> Result<wire::TargetProjection, OrToolsCpSatBackendError> {
-    let binding_variable_id = projection
+    let binding_projection = projection
         .binding_variable
         .map(constraint_variable_id)
-        .transpose()?;
+        .transpose()?
+        .map(wire::target_projection::BindingProjection::BindingVariableId)
+        .or_else(|| {
+            projection
+                .binding_const
+                .clone()
+                .map(wire::target_projection::BindingProjection::BindingConst)
+        });
     Ok(wire::TargetProjection {
         target_id: u32_id("target_projections.target_id", projection.target.0)?,
         owner_variable_id: constraint_variable_id(projection.owner_variable)?,
-        has_binding_variable: binding_variable_id.is_some(),
-        binding_variable_id: binding_variable_id.unwrap_or_default(),
-        has_binding_const: projection.binding_const.is_some(),
-        binding_const: projection.binding_const.clone().unwrap_or_default(),
+        binding_projection,
     })
 }
 
@@ -373,10 +377,12 @@ mod tests {
 
         assert_eq!(wire_projection.target_id, 7);
         assert_eq!(wire_projection.owner_variable_id, 0);
-        assert!(!wire_projection.has_binding_variable);
-        assert_eq!(wire_projection.binding_variable_id, 0);
-        assert!(wire_projection.has_binding_const);
-        assert_eq!(wire_projection.binding_const, "minA");
+        assert_eq!(
+            wire_projection.binding_projection,
+            Some(wire::target_projection::BindingProjection::BindingConst(
+                "minA".to_string()
+            ))
+        );
     }
 
     #[test]
