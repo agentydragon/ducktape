@@ -1,14 +1,25 @@
-# haku/state_template — k8s workload starter for haku-state
+# haku/state_template — first-run starter for haku-state
 
-Starter manifests Haku copies into its `haku-state` repo on first run, **only if
+Starter content Haku copies into its `haku-state` repo on first run, **only if
 absent**. Haku has the ducktape checkout, so the "seed" is a copy Haku does itself —
 no operator Job or Terraform provisioner, and nothing here is applied from ducktape.
 It is **not** in `haku/base/` and is **not** baked into Haku's image; it's a
 copy-source Haku reads at run time, so `haku-state` stays Haku-authored.
 
-Scope is **only `k8s/`**. The rest of `haku-state` (`items/`, `intake/`, `memory/`,
-`log/`, `dashboard/`) has no template — Haku creates those itself, per
-`haku/base/instructions.md`.
+It is a **skeleton with placeholders**, not descriptions — the durable contract for
+each dir lives in `haku/base/instructions.md` (linked from the stubs). Layout mirrors
+`haku-state`'s root:
+
+| Dir                 | Starter content                                                          | After seed                                                   |
+| ------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| `items/`            | empty (`.gitkeep`)                                                       | Haku writes one `<id>.yaml` per item                         |
+| `intake/processed/` | empty (`.gitkeep`)                                                       | operator feedback lands in `intake/`; reduced → `processed/` |
+| `log/`              | empty (`.gitkeep`)                                                       | per-day run journal `log/YYYY-MM-DD.md`                      |
+| `memory/`           | placeholder stubs (operator model, situational awareness, base-sync pin) | Haku's to restructure freely                                 |
+| `k8s/`              | the `haku-ui` workload starter                                           | Haku's GitOps workload dir (below)                           |
+
+There is intentionally **no `dashboard/`** — the console renders the dashboard from
+`items/` at request time, so Haku commits no dashboard page.
 
 ## `k8s/` — Haku's GitOps workload dir
 

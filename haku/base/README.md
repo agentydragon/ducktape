@@ -36,5 +36,6 @@ and that perimeter is what limits it (see `haku/PLAN.md`).
 
 Haku's **state** (items, intake, memory, log) lives in the separate
 `haku-state` repo — the only thing Haku writes, cloned into Haku's home during a
-run (the web home puts it at `~/haku-state`). The repo starts empty (no seed);
-Haku creates the structure on first run. Design and roadmap: `haku/PLAN.md`.
+run (the web home puts it at `~/haku-state`). The repo starts empty; on first run
+Haku scaffolds it from `haku/state_template/` (a starter skeleton with placeholders,
+plus the `k8s/` workload starter), then owns it. Design and roadmap: `haku/PLAN.md`.

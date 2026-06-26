@@ -309,10 +309,13 @@ git -C ~/haku-state config user.name haku
 git -C ~/haku-state config user.email haku@allegedly.works
 ```
 
-The repo may be **empty on the first run** (no seed) — if so, create the
-structure yourself: `items/`, `intake/processed/`, `log/`, `memory/`, and
-`dashboard/`. **But don't confuse a mid-bootstrap or incomplete checkout for a first
-run** — see _Environment self-check_.
+The repo may be **empty on the first run** (no seed) — if so, scaffold it from
+`haku/state_template/` in your ducktape checkout: a starter skeleton (`items/`,
+`intake/processed/`, `log/`, `memory/` with placeholder stubs) plus a `k8s/` workload
+starter. Copy what's missing, then make it yours — replace the placeholders and evolve
+the structure (`memory/` especially). The console renders the dashboard from `items/`,
+so there's no `dashboard/` to create. **But don't confuse a mid-bootstrap or incomplete
+checkout for a first run** — see _Environment self-check_.
 
 ## Environment self-check — surface breakages as items
 

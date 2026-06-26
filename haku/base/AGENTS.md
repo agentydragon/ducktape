@@ -40,9 +40,11 @@ move runtime instructions here, and don't put editor notes in `instructions.md`.
 - `base/` is read-only to Haku and baked into its image; behavior changes land
   by editing here and letting the image rebuild (Flux image automation bumps the
   CronJob tag). There is no live-editing path.
-- Do **not** add seed content to Haku's state from here — `haku-state` starts
-  empty and Haku creates its own structure. `base/` and state are separate; the
-  only thing Haku writes is state.
+- Do **not** add seed content to Haku's state from `base/` — it's baked into the
+  image and read-only. First-run starter scaffolding lives in `haku/state_template/`
+  instead (a separate ducktape copy-source Haku reads at run time, not part of
+  `base/`); Haku copies it, so state stays Haku-authored. `base/` and state are
+  separate; the only thing Haku writes is state.
 - Keep `instructions.md` and `haku/run.md` in sync when you change the cycle: the
   contracts are described once in `instructions.md`; `haku/run.md` holds the **shape of
   the run** (ordering invariants + the fluid loop, not a rigid step list) and
