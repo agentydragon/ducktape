@@ -119,6 +119,112 @@ earns its place only if execution becomes agent-mediated (where what runs can di
 from what was reviewed). Its credentials get the same treatment as everything else —
 scoped or proxied, never trusted to the agent's restraint.
 
+## The agent-authored console (free-form UI behind a trusted boundary)
+
+Direction (operator, 2026-06-26): grow the console so **Haku authors more and more of
+it** — today operator-clickable `actions[]` + free-text feedback, evolving toward Haku
+writing arbitrary interactive UI (inputs, interlinked pages, TSX/JS) that records what
+the operator expressed into `haku-state` for Haku to reduce on its next run. The console
+stays the operator's interface _with_ Haku; Haku just gets to shape it.
+
+The hard constraint: the console must eventually hold secrets **Haku may not have** (the
+Claude Code web session bearer that launches the routine — see `TODO.md` → _Console_)
+and run privileged actions Haku itself can't. So agent-authored UI and the
+secret-holding trusted code must sit on opposite sides of a real boundary.
+
+### Two boundaries, not one
+
+Different threats, different mechanisms — keep them distinct:
+
+- **Confidentiality / integrity (k8s layer).** Haku must not _read_ the console's secrets
+  or logs, nor _change_ its trusted code/perimeter without a PR. The existing agent RBAC
+  is already shaped for this: `cluster-diagnostics-reader` is **secret-free** (no
+  `secrets`/`pods/log`/`configmaps` cluster-wide; logs only in infra namespaces), so a
+  console in its **own namespace** is invisible to Haku for free. Today the console runs
+  **in `haku-sandbox`** (`haku-sandbox-admin` = full CRUD), so Haku can already read its
+  git secret and exec its pod — **no boundary exists yet.** Splitting it out is the
+  prerequisite for holding any agent-forbidden secret.
+- **Confused deputy (browser layer).** Agent-authored UI runs in the **operator's
+  authenticated browser**, same-origin with the console API and holding the Authentik
+  session. So agent JS needn't _read_ a secret to abuse it — it can _call the privileged
+  endpoint_ with the operator's authority. Hiding the secret server-side does nothing
+  here. This is the boundary that actually constrains "Haku writes arbitrary TSX," and
+  it's enforced in the browser (origin isolation), not in k8s.
+
+### Trust zones
+
+- **`haku-console` (trusted, new namespace).** Ducktape code, Bazel→GHCR→Flux — so its
+  code, its **capability allowlist**, and its secrets change only by a merged PR. Holds
+  the launch bearer; exposes the API (below); owns and renders privileged controls.
+  Because it's **reviewed/released ducktape code, not agent-driven, it does not sit
+  behind the `haku-mitmproxy` fence** — that fence exists to contain _the agent_; the
+  console is contained by code review + the PR gate, so it gets ordinary
+  (least-privilege) egress to reach the Claude Code web API. No `haku` RoleBinding → Haku
+  can't read its secrets/logs or patch it.
+- **Agent-UI render/sandbox (untrusted by construction).** Serves and runs the UI Haku
+  authored into `haku-state`. Holds no secrets; may stay in `haku-sandbox` (Haku owning
+  it costs nothing). In the 1b target it's a **separate browser origin**.
+- **Haku agent (`haku-sandbox`).** Authors UI + content into `haku-state`; reads back
+  traces. No access to the trusted side.
+- **`haku-state` git.** The shared medium: Haku writes content+UI, the console writes
+  operator traces, Haku reduces them.
+
+### The API split
+
+Two tiers the console treats completely differently:
+
+- **Trace API (low-priv).** Records operator-expressed intent into `haku-state`. Exposed
+  to agent-authored UI. **Grants Haku nothing new** — it already writes `haku-state`
+  directly — so it's cheap and broad; its only real property is _consent fidelity_ (did
+  the operator genuinely express this?), a UX/trust concern, not a confidentiality one.
+- **Capability API (high-priv).** Anything using a console-only secret or acting on the
+  world (launch the routine). The teeth live here. Per capability: rendered/owned by the
+  **trusted shell** (never agent UI), fired only on a **genuine operator gesture** against
+  **trusted-rendered copy** (not agent free-text, so Haku can't phish consent),
+  CSRF-gated, and **audited** in the trusted namespace (the audit log doubles as the
+  "recent executions" view). The allowlist stays **tiny and PR-gated** — the standing
+  question per verb is "if Haku tricked the operator into firing this once, is the worst
+  case acceptable?" (Yes for _launch the routine_; a future _move money_ verb changes the
+  whole design.)
+
+### Phasing
+
+- **Phase 0 (prerequisite).** Split the trusted console into the `haku-console` namespace;
+  never put an agent-forbidden secret in `haku-sandbox`. Smallest, highest-leverage step;
+  stands alone.
+- **Phase 1 — declarative (1a).** Generalize today's `actions[]` discriminated union into
+  a richer **typed widget schema** (containers, inputs, selects, links, sub-pages) emitted
+  in `haku-state` and interpreted by a **trusted renderer** — _no agent JS executes_.
+  Introduce the trace/capability split and the shell-owned launch control. Delivers the
+  launch feature + the boundary with modest work.
+- **Phase 2 — free-form (1b, the destination).** Haku writes TSX/JS into `haku-state`; the
+  untrusted render origin transpiles it **at runtime** (never compiled into the trusted
+  bundle) and runs it in a **sandboxed cross-origin iframe** (`sandbox` without
+  `allow-same-origin`, strict CSP). It reaches the outside only via a `postMessage` bridge
+  to the shell, which exposes **only the trace tier**; capabilities stay shell-owned. The
+  widget schema becomes "the bridge API, declaratively"; free-form TSX is "the bridge API,
+  imperatively" — same boundary, two front-ends.
+
+### Server-side compute for agent UI
+
+When agent-authored UI needs a backend, it talks to a **Haku-owned backend running in
+`haku-sandbox`** (the agent's own perimeter), **separate from the console's** — one option
+among several. This keeps the rule clean: code Haku authors never runs with the console's
+secret privileges. The console backend stays the fixed, PR-gated capability/trace
+provider; arbitrary agent compute lives agent-side, behind the agent's own fence.
+
+### Open question — proving "this really came from the operator" to agent-side code
+
+Phase 2 wants agent-side code (or the trace it reduces) to trust that an action
+_genuinely_ came from the real operator, not from agent-authored UI forging it. Sketch
+(operator, 2026-06-26): an **Authentik-native** attestation — e.g. give Haku its own
+Authentik OIDC provider so the console can hand agent-side code a short-lived,
+operator-authenticated token (or sign the trace with an operator-attested claim) that
+agent-side code verifies. Open: exact shape (signed trace vs. a token the agent's backend
+validates), how it composes with _Haku is its own principal_, and whether it's worth it
+before free-form UI lands. Until then, consent fidelity rests on the trusted shell
+rendering canonical copy for anything that matters.
+
 ## Open questions
 
 - **Value scoring**: single curator-owned 0–100 plus deadline is probably enough; resist

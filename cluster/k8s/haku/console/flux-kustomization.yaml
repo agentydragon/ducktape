@@ -14,9 +14,7 @@ spec:
     kind: GitRepository
     name: flux-system
   dependsOn:
-    - name: haku-namespace
-    - name: haku-rbac
-    - name: haku-state # provisions haku-state-git-write in the haku-sandbox namespace
-    - name: haku-mitmproxy
+    - name: haku-console-namespace # the console's own trusted namespace (not haku-sandbox)
+    - name: haku-state # provisions haku-state-git-write into the haku-console namespace
     - name: gateway
     - name: authentik

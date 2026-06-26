@@ -73,6 +73,31 @@ facade** in front (the Authentik OAuth facade is auth, not tool filtering — se
   `kubectl_sandbox_fixed_groups` `else` default with an explicit SA→group map
   once the claude-sandbox JWT path has soaked (`tf/gitops/agent-machine-access`).
 
+## Console — operator-facing dashboard
+
+The console design + action model live in `console/README.md`.
+
+- **Launch the claude-code-web routine from a click.** Add a console button that
+  starts a Haku Claude Code web session via the minted bearer (a Claude Code web
+  session API token). This is a **new shape** for the console: today the backend
+  "stays dumb" — every action is a click-overlay commit Haku reduces on its next
+  run — but a launch is an **immediate side-effecting POST** to the Claude Code
+  web session API, so it needs a real backend endpoint (e.g. `POST /api/launch`),
+  not the overlay/toggle path.
+  - **Perimeter (operator-owned — `cluster/k8s/haku/console/`).** The console
+    today writes only to the internal `haku-state` Forgejo and makes no external
+    calls; its only credential is `haku-state-git-write`. Launching adds (a) the
+    bearer as a **new console secret**, and (b) `haku-sandbox` mitmproxy **egress
+    to the Claude Code web API host**. Both widen the console's perimeter — land
+    them as operator-owned manifest changes.
+  - **Guardrails.** Gate to one in-flight run (disable / suppress duplicates while
+    a session is live) so a stray click can't fan out sessions. Authentik already
+    scopes the console to the operator.
+- **Show recent routine executions.** A read-only panel listing recent
+  claude-code-web sessions of the routine (status, start time, link to the session
+  in the Claude Code web UI), rendered alongside the launch button. Source: the
+  Claude Code web sessions API (list scope on the same / a companion token).
+
 ## Managed Agents runtimes — per-runtime TODOs
 
 Runtime-specific TODOs live with each runtime (the agent loop runs at Anthropic;

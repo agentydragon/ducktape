@@ -24,4 +24,6 @@ spec:
     - name: forgejo # Forgejo API must be up (provider target)
     - name: tofu-controller
     - name: tofu-state-db
-    - name: haku-namespace # the git-creds Secret lands in the haku-sandbox namespace
+    # The git-creds Secret lands in both target namespaces; wait for each to exist.
+    - name: haku-namespace
+    - name: haku-console-namespace

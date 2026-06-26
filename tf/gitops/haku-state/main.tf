@@ -64,12 +64,21 @@ resource "forgejo_collaborator" "claude" {
   permission    = "read"
 }
 
-# Write credentials for scan runs, delivered to the haku-sandbox namespace so
-# the in-cluster scanner can clone/commit/push state.
+# Write credentials for the haku-state git consumers, delivered to:
+#   - haku-sandbox: in-cluster scan runs / the self-hosted worker.
+#   - haku-console: the console, which lives in its own trusted namespace (NOT
+#     haku-sandbox) so it can hold secrets Haku may not read. The git creds are
+#     not such a secret (Haku writes haku-state anyway), but the console needs
+#     them there. See haku/PLAN.md → "The agent-authored console".
+# Each target namespace is created by its own Flux kustomization, which the
+# wrapping forgejo/haku-state Kustomization dependsOn; this resource retries
+# until the namespace exists.
 resource "kubernetes_secret" "haku_state_git_write" {
+  for_each = toset(["haku-sandbox", "haku-console"])
+
   metadata {
     name      = "haku-state-git-write"
-    namespace = "haku-sandbox"
+    namespace = each.value
   }
 
   data = {

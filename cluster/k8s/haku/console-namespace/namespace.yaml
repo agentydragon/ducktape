@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  # The Haku console's own trusted namespace — deliberately NOT haku-sandbox.
+  # The console is reviewed/released ducktape code, so it sits OUTSIDE Haku's
+  # RBAC (no `haku` RoleBinding here) and OUTSIDE the haku-mitmproxy egress fence
+  # (the fence's CiliumClusterwideNetworkPolicy keys on the haku-sandbox
+  # namespace; this one gets ordinary egress). This is the confidentiality
+  # boundary that lets the console later hold secrets Haku may not read — e.g.
+  # the Claude Code web session bearer. See haku/PLAN.md → "The agent-authored
+  # console (free-form UI behind a trusted boundary)".
+  name: haku-console
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: "auto"
+    name: haku-console

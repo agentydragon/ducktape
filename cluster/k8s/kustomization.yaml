@@ -201,6 +201,7 @@ resources:
   # --- haku (personal background agent; see haku/PLAN.md) ---
   - haku/namespace/flux-kustomization.yaml
   - haku/rbac/flux-kustomization.yaml
+  - haku/console-namespace/flux-kustomization.yaml # the console's own trusted namespace
   - haku/console/flux-kustomization.yaml
   - haku/agent-worker/flux-kustomization.yaml # suspended; see the dir README to activate
 
