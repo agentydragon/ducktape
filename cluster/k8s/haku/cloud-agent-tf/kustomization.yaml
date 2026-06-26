@@ -4,4 +4,7 @@ resources:
   - anthropic-api-key.sops.yaml
   # Seeded here; authentik-jwt-rotation overwrites it on each mint (rotations.yaml).
   - haku-kube-token.sops.yaml
+  # Published by authentik-jwt-rotation (haku-grocy entry); read tolerantly by the
+  # tofu root (a missing Secret just disables Haku's grocy-sf credential).
+  - haku-grocy-sf-token.sops.yaml
   - terraform.yaml

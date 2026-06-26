@@ -53,6 +53,11 @@ resource "claude-managed-agents_agent" "haku_cloud" {
     cluster-wide read for diagnostics. Spin ephemeral pods in `haku-sandbox` to
     do in-cluster work (Plaid, in-cluster MCPs, git), then clean them up.
 
+    You also have READ-ONLY access to the operator's grocy stock/pantry via the
+    `grocy-sf` MCP server. Use it to answer questions about what's in stock,
+    expiring, or shopping-list-worthy. Writes are rejected server-side (403) —
+    never try to mutate stock.
+
     IMPORTANT (v0 bring-up): your operating manual and run procedure are not wired
     yet. Do exactly what each user message asks, then stop.
   EOT
@@ -62,6 +67,15 @@ resource "claude-managed-agents_agent" "haku_cloud" {
       type = "url"
       name = "kubectl-machine"
       url  = "https://kubectl-machine-mcp.allegedly.works/mcp"
+    },
+    # Read-only grocy-sf (the operator's pantry/stock). Always declared; it only
+    # works when the grocy-sf vault credential exists (see haku_grocy below). If the
+    # rotator hasn't published the token Secret, the credential is absent and these
+    # tools just fail to authenticate — the accepted fallback, not a hard error.
+    {
+      type = "url"
+      name = "grocy-sf"
+      url  = "https://grocy-mcp-sf.allegedly.works/mcp"
     },
   ]
 
@@ -79,6 +93,16 @@ resource "claude-managed-agents_agent" "haku_cloud" {
     {
       type            = "mcp_toolset"
       mcp_server_name = "kubectl-machine"
+      default_config = {
+        permission_policy = { type = "always_allow" }
+      }
+    },
+    # grocy-sf toolset — read-only by construction: the `haku` Grocy user has empty
+    # permissions, so the Grocy API serves reads (200) and rejects every write
+    # (403). always_allow is therefore safe; the server-side ACL is the fence.
+    {
+      type            = "mcp_toolset"
+      mcp_server_name = "grocy-sf"
       default_config = {
         permission_policy = { type = "always_allow" }
       }
@@ -115,6 +139,42 @@ resource "claude-managed-agents_vault_credential" "haku_kube" {
     mcp_server_url   = "https://kubectl-machine-mcp.allegedly.works/mcp"
     token            = data.kubernetes_secret_v1.kube_token.data["jwt"]
     token_wo_version = tonumber(data.kubernetes_secret_v1.kube_token.data["token-exp"])
+  }
+}
+
+# Tolerant read of the grocy-sf token Secret (published by the rotator's haku-grocy
+# entry). Unlike kube_token — a hard kubernetes_secret_v1 whose absence aborts the
+# whole apply — grocy is OPTIONAL: kubernetes_resources returns an empty list rather
+# than erroring, so a missing Secret simply leaves grocy_enabled = false and skips
+# the credential below. Never let an absent grocy token break the haku_kube
+# credential. Secret .data is base64 (raw API object), so decode (kubernetes_secret_v1
+# would have auto-decoded).
+data "kubernetes_resources" "grocy_token" {
+  api_version    = "v1"
+  kind           = "Secret"
+  namespace      = "flux-system"
+  field_selector = "metadata.name==haku-cloud-grocy-sf-token"
+}
+
+locals {
+  grocy_secret  = try(data.kubernetes_resources.grocy_token.objects[0], null)
+  grocy_enabled = local.grocy_secret != null
+}
+
+# Read-only grocy-sf bearer, bound to the grocy-sf MCP URL. count gates on the
+# Secret's presence (the accepted fallback: no Secret -> no grocy credential ->
+# grocy tools just don't authenticate). token write-only; token_wo_version = exp
+# epoch so each rotation re-sends (same pattern as haku_kube).
+resource "claude-managed-agents_vault_credential" "haku_grocy" {
+  count        = local.grocy_enabled ? 1 : 0
+  vault_id     = claude-managed-agents_vault.haku_cloud.id
+  display_name = "haku grocy-sf bearer (read-only, grocy-sf MCP)"
+
+  auth = {
+    type             = "static_bearer"
+    mcp_server_url   = "https://grocy-mcp-sf.allegedly.works/mcp"
+    token            = base64decode(local.grocy_secret.data["jwt"])
+    token_wo_version = tonumber(base64decode(local.grocy_secret.data["token-exp"]))
   }
 }
 
