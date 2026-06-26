@@ -17,11 +17,15 @@ from typing import Annotated, cast
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi_csrf_protect import CsrfProtect
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from haku.console.config import LaunchRoutineConfig, Settings
 
 logger = logging.getLogger(__name__)
+
+# Required on every Anthropic API request; without it the fire endpoint 400s
+# ("anthropic-version: header is required").
+ANTHROPIC_VERSION = "2023-06-01"
 
 Csrf = Annotated[CsrfProtect, Depends()]
 
@@ -33,8 +37,15 @@ class CsrfTokenResponse(BaseModel):
 
 
 class LaunchRoutineResult(BaseModel):
-    status: str
-    upstream_status: int
+    session_url: str = Field(description="claude.ai/code URL of the launched Haku session")
+
+
+def _upstream_detail(resp: httpx.Response) -> str:
+    """Best-effort human-readable reason from an upstream error response."""
+    try:
+        return str(resp.json()["error"]["message"])
+    except (ValueError, KeyError, TypeError):
+        return resp.text[:300]
 
 
 def _settings(request: Request) -> Settings:
@@ -68,9 +79,18 @@ async def launch_routine(
     """Fire the Haku claude-code-web routine. CSRF-gated; the bearer stays server-side."""
     await csrf_protect.validate_csrf(request)
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(config.url, headers={"Authorization": f"Bearer {config.token.get_secret_value()}"})
+        resp = await client.post(
+            config.url,
+            headers={
+                "Authorization": f"Bearer {config.token.get_secret_value()}",
+                "anthropic-version": ANTHROPIC_VERSION,
+            },
+        )
     # Audit to stdout in the haku-console namespace (Haku can't read these logs).
     logger.info("capability launch-routine fired: upstream status %s", resp.status_code)
     if not resp.is_success:
-        raise HTTPException(status_code=502, detail=f"routine fire failed upstream ({resp.status_code})")
-    return LaunchRoutineResult(status="launched", upstream_status=resp.status_code)
+        # Surface the upstream reason so the frontend can show it, not a bare 502.
+        raise HTTPException(
+            status_code=502, detail=f"routine fire failed ({resp.status_code}): {_upstream_detail(resp)}"
+        )
+    return LaunchRoutineResult(session_url=resp.json()["claude_code_session_url"])

@@ -2,14 +2,11 @@ import { type FormEvent, type KeyboardEvent, useState } from "react";
 import { Button, Text, Textarea } from "@mantine/core";
 
 import { sendFeedback } from "./client.ts";
+import { toastError } from "./toast.ts";
 
-// Submit lifecycle as a closed union so the spinner/disabled/error states can't be
-// combined into something nonsensical (e.g. "sending" while also showing an error).
-type SubmitState =
-  | { status: "idle" }
-  | { status: "sending" }
-  | { status: "sent" }
-  | { status: "error"; message: string };
+// Submit lifecycle as a closed union so the spinner/disabled states can't be combined
+// into something nonsensical. Failures surface as a toast (toast.ts), not inline.
+type SubmitState = { status: "idle" } | { status: "sending" } | { status: "sent" };
 
 interface FeedbackFormProps {
   minRows: number;
@@ -24,7 +21,7 @@ interface FeedbackFormProps {
 // Textarea + submit button that appends an intake note for Haku. Shared by the global
 // "Note to Haku" box and the per-item box. The Mantine Button's `loading` shows a
 // spinner and disables the form while the commit-push is in flight, so the operator
-// sees it land; a failure surfaces inline on the Textarea instead of being swallowed.
+// sees it land; a failure surfaces as a toast (toast.ts) instead of being swallowed.
 //
 // Enter-to-send: the textarea's default (Enter inserts a newline) is inverted so the
 // common "type a line, hit Enter" sends without reaching for the mouse — the ↵ on the
@@ -43,7 +40,8 @@ export function FeedbackForm({ minRows, placeholder, submitLabel, itemId }: Feed
         setState({ status: "sent" });
       })
       .catch((e: unknown) => {
-        setState({ status: "error", message: e instanceof Error ? e.message : String(e) });
+        setState({ status: "idle" });
+        toastError("Feedback failed", e);
       });
   }
 
@@ -86,7 +84,6 @@ export function FeedbackForm({ minRows, placeholder, submitLabel, itemId }: Feed
         onKeyDown={onKeyDown}
         placeholder={placeholder}
         disabled={sending}
-        error={state.status === "error" ? `Failed: ${state.message}` : undefined}
       />
       <div className="flex items-center gap-3">
         <Button

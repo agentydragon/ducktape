@@ -42,12 +42,29 @@ def _csrf(client: TestClient) -> str:
 
 @respx.mock
 def test_launch_routine_fires_with_server_side_bearer(cap_client) -> None:
-    route = respx.post(FIRE_URL).mock(return_value=httpx.Response(200, json={"queued": True}))
+    session_url = "https://claude.ai/code/session_test123"
+    route = respx.post(FIRE_URL).mock(
+        return_value=httpx.Response(200, json={"claude_code_session_url": session_url, "type": "routine_fire"})
+    )
     resp = cap_client.post("/api/capabilities/launch-routine", headers={"X-CSRF-Token": _csrf(cap_client)})
     assert resp.status_code == 200
-    assert resp.json() == {"status": "launched", "upstream_status": 200}
-    # The bearer is attached server-side and never returned to the client.
-    assert route.calls.last.request.headers["authorization"] == "Bearer sk-test-token"
+    assert resp.json() == {"session_url": session_url}
+    # The bearer + required anthropic-version header are attached server-side; the
+    # bearer is never returned to the client.
+    sent = route.calls.last.request
+    assert sent.headers["authorization"] == "Bearer sk-test-token"
+    assert sent.headers["anthropic-version"] == "2023-06-01"
+
+
+@respx.mock
+def test_launch_routine_surfaces_upstream_error_detail(cap_client) -> None:
+    respx.post(FIRE_URL).mock(
+        return_value=httpx.Response(400, json={"error": {"message": "anthropic-version: header is required"}})
+    )
+    resp = cap_client.post("/api/capabilities/launch-routine", headers={"X-CSRF-Token": _csrf(cap_client)})
+    assert resp.status_code == 502
+    # The real upstream reason is propagated to the client, not a bare 502.
+    assert "anthropic-version: header is required" in resp.json()["detail"]
 
 
 @respx.mock

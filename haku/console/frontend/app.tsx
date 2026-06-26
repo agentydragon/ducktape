@@ -6,6 +6,7 @@ import { INTAKE_NEW, UP_NEXT } from "./constants.ts";
 import { FeedbackForm } from "./feedback.tsx";
 import { LaunchRoutineButton } from "./launch.tsx";
 import { TaskCard, clickKey } from "./task.tsx";
+import { toastError } from "./toast.ts";
 
 function statusCounts(items: Item[]): string {
   const counts: Record<string, number> = {};
@@ -44,14 +45,19 @@ export default function App() {
     if (wasClicked) next.delete(key);
     else next.add(key);
     setClicked(next); // optimistic; reverted below on failure
-    void (wasClicked ? unclickAction(itemId, actionId) : clickAction(itemId, actionId)).catch(() => {
+    void (wasClicked ? unclickAction(itemId, actionId) : clickAction(itemId, actionId)).catch((e: unknown) => {
       const reverted = new Set(next);
       if (wasClicked) reverted.add(key);
       else reverted.delete(key);
       setClicked(reverted);
+      toastError("Action failed", e);
     });
   }
 
+  // Error reporting standard: action failures (launch, feedback, a click) surface as
+  // toasts (see toast.ts). The initial dashboard load is the one exception — a failure
+  // leaves nothing to render, so it gets a persistent page-level message rather than a
+  // toast that could auto-dismiss over a blank screen.
   if (error)
     return (
       <Text c="red" className="mx-auto max-w-3xl p-4">

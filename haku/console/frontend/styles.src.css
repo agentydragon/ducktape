@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@mantine/core/styles.css";
+@import "@mantine/notifications/styles.css";
 
 /* Tailwind v4 scans the class names listed in this generated index (see BUILD:
    tailwind_content_index) so utility classes used in the .tsx survive the build. */
