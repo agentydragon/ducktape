@@ -66,7 +66,6 @@ impl BindingGroup {
             source_match: FixtureSourceMatch {
                 identifiers: "alpha_all",
                 target_binding: None,
-                wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             },
             adopt_names: None,
@@ -80,7 +79,6 @@ impl BindingGroup {
             source_match: FixtureSourceMatch {
                 identifiers: "alpha_all",
                 target_binding: None,
-                wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             },
             adopt_names: Some(FixtureAdoptNames::All(true)),
@@ -97,7 +95,6 @@ impl BindingGroup {
             source_match: FixtureSourceMatch {
                 identifiers: "alpha_all",
                 target_binding: None,
-                wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             },
             adopt_names: Some(FixtureAdoptNames::Names(names.to_vec())),
@@ -114,7 +111,6 @@ impl BindingGroup {
             source_match: FixtureSourceMatch {
                 identifiers: "alpha_all",
                 target_binding: None,
-                wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             },
             adopt_names: Some(FixtureAdoptNames::All(true)),
@@ -183,7 +179,6 @@ impl Member {
             source_match: Some(FixtureSourceMatch {
                 identifiers: "alpha_all",
                 target_binding: None,
-                wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             }),
             cross_ref: None,
@@ -209,7 +204,6 @@ impl Member {
             source_match: Some(FixtureSourceMatch {
                 identifiers: "alpha_all",
                 target_binding: Some(target_binding.into()),
-                wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             }),
             cross_ref: None,
@@ -563,8 +557,6 @@ struct FixtureSourceMatch {
     identifiers: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     target_binding: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    wildcard_string_literals: Vec<String>,
     #[serde(rename = "match")]
     match_source: String,
 }
@@ -584,26 +576,6 @@ impl FixtureAnonymousStatement {
             source_match: Some(FixtureSourceMatch {
                 identifiers: "alpha_all",
                 target_binding: None,
-                wildcard_string_literals: Vec::new(),
-                match_source: match_source.into(),
-            }),
-            comment: None,
-        }
-    }
-
-    fn alpha_all_with_wildcard_strings(
-        match_source: impl Into<String>,
-        wildcard_string_literals: &[&str],
-    ) -> Self {
-        Self {
-            match_source: None,
-            source_match: Some(FixtureSourceMatch {
-                identifiers: "alpha_all",
-                target_binding: None,
-                wildcard_string_literals: wildcard_string_literals
-                    .iter()
-                    .map(|literal| (*literal).to_string())
-                    .collect(),
                 match_source: match_source.into(),
             }),
             comment: None,
@@ -770,24 +742,6 @@ pub fn logical_module_with_anon_alpha(
         members,
         &[],
         vec![FixtureAnonymousStatement::alpha_all(anon_match)],
-        None,
-    )
-}
-
-pub fn logical_module_with_anon_alpha_string_wildcards(
-    path: &str,
-    members: &[Member],
-    anon_match: &str,
-    wildcard_string_literals: &[&str],
-) -> LogicalModuleEntry {
-    logical_module_entry(
-        path,
-        members,
-        &[],
-        vec![FixtureAnonymousStatement::alpha_all_with_wildcard_strings(
-            anon_match,
-            wildcard_string_literals,
-        )],
         None,
     )
 }

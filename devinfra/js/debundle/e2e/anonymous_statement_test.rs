@@ -620,48 +620,6 @@ export { selectedValue, existingValue };
 }
 
 #[test]
-fn alpha_anonymous_statement_selector_supports_explicit_string_literal_wildcards() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const selectedValue = 1;
-const existingValue = 2;
-(function () {
-  const target = globalThis;
-  target.auditMarkers = target.auditMarkers || {};
-  target.auditMarkers["primary-slot"] = "runtime-generated-primary";
-})();
-(function () {
-  const target = globalThis;
-  target.auditMarkers = target.auditMarkers || {};
-  target.auditMarkers["secondary-slot"] = "runtime-generated-secondary";
-})();
-export { selectedValue, existingValue };
-"#,
-        vec![logical_module_with_anon_alpha_string_wildcards(
-            "primary_marker",
-            &[Member::new("selectedValue")],
-            r#"(function () {
-  const target = globalThis;
-  target.auditMarkers = target.auditMarkers || {};
-  target.auditMarkers["primary-slot"] = "<generated-id>";
-})();"#,
-            &["<generated-id>"],
-        )],
-    ));
-
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/primary_marker.js",
-        &["selectedValue", "primary-slot", "runtime-generated-primary"],
-        &[
-            "<generated-id>",
-            "secondary-slot",
-            "runtime-generated-secondary",
-        ],
-    );
-    assert_entry_output(&fixture, "");
-}
-
-#[test]
 fn member_source_match_variable_declarator_survives_binding_name_drift() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const runtimeBinding = { kind: "selected", enabled: true },

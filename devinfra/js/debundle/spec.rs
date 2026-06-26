@@ -845,10 +845,9 @@ pub struct SourceMatch {
     /// binding from it. Invalid on `anonymous_statements[].source_match`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_binding: Option<String>,
-    /// String-literal placeholder values in `match` that should match any
-    /// candidate string literal at the same AST position. Use this for
-    /// volatile generated literals while keeping all other strings exact.
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    /// Internal-only string-literal placeholder values used by legacy matcher
+    /// tests. The public YAML surface no longer accepts or emits this field.
+    #[serde(skip)]
     pub wildcard_string_literals: BTreeSet<String>,
     #[serde(rename = "match")]
     pub match_source: String,
@@ -860,8 +859,6 @@ struct SourceMatchWire {
     identifiers: Option<SourceMatchIdentifierMode>,
     #[serde(default)]
     target_binding: Option<String>,
-    #[serde(default)]
-    wildcard_string_literals: BTreeSet<String>,
     #[serde(rename = "match")]
     match_source: String,
     #[serde(flatten)]
@@ -898,7 +895,7 @@ impl<'de> Deserialize<'de> for SourceMatch {
         Ok(Self {
             identifiers,
             target_binding: wire.target_binding,
-            wildcard_string_literals: wire.wildcard_string_literals,
+            wildcard_string_literals: BTreeSet::new(),
             match_source: wire.match_source,
         })
     }
@@ -1683,6 +1680,27 @@ mod tests {
         );
         assert!(
             message.contains("object_props"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
+    fn source_match_rejects_legacy_wildcard_string_literals() {
+        let error: serde_json::Error = serde_json::from_str::<SourceMatch>(
+            r#"{
+              "identifiers": "alpha_all",
+              "match": "const readable = \"TOKEN\";",
+              "wildcard_string_literals": ["TOKEN"]
+            }"#,
+        )
+        .unwrap_err();
+        let message = error.to_string();
+        assert!(
+            message.contains("unsupported selector capability"),
+            "unexpected error: {message}"
+        );
+        assert!(
+            message.contains("wildcard_string_literals"),
             "unexpected error: {message}"
         );
     }

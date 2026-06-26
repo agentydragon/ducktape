@@ -683,7 +683,6 @@ struct BindingGroupSuggestionCandidate {
     declarator: VarDeclarator,
     declaration_kind: VarDeclKind,
     identifiers: spec::SourceMatchIdentifierMode,
-    wildcard_string_literals: Vec<String>,
 }
 
 fn collect_binding_group_suggestion_candidate(
@@ -742,7 +741,6 @@ fn collect_binding_group_suggestion_candidate(
         declarator: declarator.clone(),
         declaration_kind: needle_var.kind,
         identifiers: selector.identifiers,
-        wildcard_string_literals: selector.wildcard_string_literals.iter().cloned().collect(),
     }))
 }
 
@@ -793,12 +791,8 @@ fn build_binding_group_suggestion(
             declarator_idx: candidate.declarator_idx,
         })
         .collect::<Vec<_>>();
-    let candidate_yaml = render_binding_group_candidate_yaml(
-        &selectors,
-        &match_source,
-        first.identifiers,
-        &first.wildcard_string_literals,
-    );
+    let candidate_yaml =
+        render_binding_group_candidate_yaml(&selectors, &match_source, first.identifiers);
     SourceAwareBindingGroupSuggestion {
         module: first.key.module.clone(),
         body_idx: first.key.body_idx,
@@ -810,9 +804,8 @@ fn build_binding_group_suggestion(
 
 fn selector_group_key(selector: &AnonymousStatementSelector) -> String {
     format!(
-        "{:?}\0{:?}\0{}",
+        "{:?}\0{}",
         selector.identifiers,
-        selector.wildcard_string_literals,
         normalize_match(&selector.match_source),
     )
 }
@@ -856,7 +849,6 @@ fn render_binding_group_candidate_yaml(
     selectors: &[SourceMatchBindingGroupSelector],
     match_source: &str,
     identifiers: spec::SourceMatchIdentifierMode,
-    wildcard_string_literals: &[String],
 ) -> String {
     let mut lines = vec![
         "binding_groups:".to_string(),
@@ -866,16 +858,6 @@ fn render_binding_group_candidate_yaml(
         lines.push(format!(
             "      identifiers: {}",
             source_match_identifier_mode_label(identifiers),
-        ));
-    }
-    if !wildcard_string_literals.is_empty() {
-        lines.push(format!(
-            "      wildcard_string_literals: [{}]",
-            wildcard_string_literals
-                .iter()
-                .map(|value| yaml_single_quoted(value))
-                .collect::<Vec<_>>()
-                .join(", "),
         ));
     }
     lines.push("      match: |".to_string());
@@ -944,10 +926,6 @@ fn js_string_escape(value: &str) -> String {
         }
     }
     escaped
-}
-
-fn yaml_single_quoted(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "''"))
 }
 
 fn source_match_identifier_mode_label(mode: spec::SourceMatchIdentifierMode) -> &'static str {
