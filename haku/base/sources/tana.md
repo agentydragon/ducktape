@@ -10,24 +10,17 @@ the Tana PAT stays server-side, so you never see it.
 ## Reaching it
 
 `tana-mcp-ro` is exposed at `https://tana-mcp-ro.allegedly.works/mcp`, gated by a
-static bearer. Your home has the `fastmcp` CLI (baked into the agent-haku closure —
-see `haku/runtime/claude_web_env/`), so talk to it **directly** — no pod, no JSON-RPC
-handshake. Read the bearer from the reflected `haku-tana-ro-token` secret into a
-shell variable (reference `"$TOKEN"`, never the literal, so the secret stays out of
-your transcript), then list and call:
+**static bearer** — the reflected `haku-tana-ro-token` secret, key `token`. The
+transport mechanics (`fastmcp`, the `curl` fallback, reading the bearer into
+`"$TOKEN"`) are shared across MCP sources; see [`mcp_over_http.md`](mcp_over_http.md).
+Tana is the operator's most important source — if `fastmcp` is missing, fall back to
+`curl`, never skip it.
 
 ```bash
 TOKEN=$(kubectl -n haku-sandbox get secret haku-tana-ro-token \
   -o jsonpath='{.data.token}' | base64 -d)
-URL=https://tana-mcp-ro.allegedly.works/mcp
-
-# What's exposed, with each tool's argument schema:
-fastmcp list "$URL" --auth "$TOKEN" --transport http --input-schema
-
-# Call a tool — args are key=value pairs per the schema above (or
-# --input-json '{…}' for nested); add --json for machine-readable output:
-fastmcp call "$URL" search_nodes query="follow up" --auth "$TOKEN" --transport http
-fastmcp call "$URL" read_node nodeId="<id>" --auth "$TOKEN" --transport http
+fastmcp call https://tana-mcp-ro.allegedly.works/mcp \
+  search_nodes query="follow up" --auth "$TOKEN" --transport http --json
 ```
 
 Read tools only — `search_nodes`, `read_node`, `get_children`, `open_node`,
@@ -35,24 +28,9 @@ Read tools only — `search_nodes`, `read_node`, `get_children`, `open_node`,
 `list` is empty or a call 401s, note the gap in your log and move on (the facade
 flips NotReady on a bad upstream, and the bearer must be the reflected one).
 
-### Fallback: `curl` when `fastmcp` is missing
-
-`fastmcp` is just a convenience wrapper. If it isn't on your `PATH` (e.g. the web
-home came up with the lean `.#devtools` instead of `.#agent-haku`), **do not skip
-Tana** — it's the operator's most important source. The facade is plain
-MCP-over-HTTP behind the same bearer and the same `…/mcp` endpoint, so drive it with
-`curl` using the standard streamable-HTTP MCP handshake you already know
-(`initialize`, capturing the `Mcp-Session-Id` response header → `notifications/
-initialized` → `tools/call`, threading that header). Read `"$TOKEN"` from the secret
-as above. **Tana gotcha:** responses come back as SSE — the JSON-RPC payload is on
-`data: {…}` lines, not a bare body, so strip the prefix before parsing.
-
 `search_nodes` takes a top-level `query` (and `limit`, max ~100) — **no
 `workspaceId`**; the structured query DSL is in the tool's own `description`. Link
-Tana nodes in items as `https://app.tana.inc?nodeid=<nodeId>`. **Surface the
-`fastmcp` gap itself as an item** (see _Environment self-check_) so the operator can
-fix the closure — curl keeps you working meanwhile, but the root cause should reach
-the dashboard.
+Tana nodes in items as `https://app.tana.inc?nodeid=<nodeId>`.
 
 ## Determining whether a task is actually open — use the `Task status` field, NOT the checkbox or `is:todo`
 

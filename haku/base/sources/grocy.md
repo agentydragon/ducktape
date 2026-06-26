@@ -10,34 +10,21 @@ add, consume, or edit stock.
 
 ## Reaching it
 
-Grocy is exposed as an MCP server at `https://grocy-mcp-sf.allegedly.works/mcp`,
-authenticated by a bearer JWT (the MCP validates it and runs the auth handshake into
-Grocy itself, injecting your read-only `haku` user). Your home has the `fastmcp` CLI
-(baked into the agent-haku closure — see `haku/runtime/claude_web_env/`), so talk to it
-**directly** — no pod. Read the bearer from the reflected `haku-cloud-grocy-sf-token`
-secret (the same rotated grocy JWT the cloud agent uses, mirrored into `haku-sandbox`)
-into a shell variable — reference `"$TOKEN"`, never the literal, so the secret stays out
-of your transcript:
+Grocy is an MCP server at `https://grocy-mcp-sf.allegedly.works/mcp`. The transport
+mechanics — `fastmcp`, the `curl` fallback, reading the bearer into `"$TOKEN"` — are
+shared across MCP sources; see [`mcp_over_http.md`](mcp_over_http.md). Grocy specifics:
+
+- **Bearer:** the reflected `haku-cloud-grocy-sf-token` secret, key `jwt` (the same
+  rotated grocy JWT the cloud agent uses, mirrored into `haku-sandbox`). The MCP
+  validates it and runs the auth handshake into Grocy, injecting your read-only `haku`
+  user — so reads return 200 and **every write 403s** server-side.
 
 ```bash
 TOKEN=$(kubectl -n haku-sandbox get secret haku-cloud-grocy-sf-token \
   -o jsonpath='{.data.jwt}' | base64 -d)
-URL=https://grocy-mcp-sf.allegedly.works/mcp
-
-# What's exposed, with each tool's argument schema:
-fastmcp list "$URL" --auth "$TOKEN" --transport http --input-schema
-
-# Call a read tool (--json for machine-readable output):
-fastmcp call "$URL" stock_get --auth "$TOKEN" --transport http --json
+fastmcp call https://grocy-mcp-sf.allegedly.works/mcp stock_get \
+  --auth "$TOKEN" --transport http --json
 ```
-
-### Fallback: `curl` when `fastmcp` is missing
-
-`fastmcp` is just a convenience wrapper (see `tana.md` for the same situation). If it
-isn't on your `PATH`, drive the facade with `curl` over the standard streamable-HTTP MCP
-handshake (`initialize` → capture `Mcp-Session-Id` → `notifications/initialized` →
-`tools/call`, threading the header; responses may arrive SSE-framed on `data:` lines).
-**Surface the `fastmcp` gap as an item** so the operator can fix the closure.
 
 ## What to read
 

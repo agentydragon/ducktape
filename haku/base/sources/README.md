@@ -39,6 +39,11 @@ grows its own techniques and records them in its state `memory/`.
   (always reachable; you have the checkout). The **cluster** is likewise a standing
   source — see `../instructions.md` → _How you reason_ (read-only diagnostics).
 
+The MCP-server sources (`tana`, `grocy`) share one transport how-to —
+[`mcp_over_http.md`](mcp_over_http.md) (`fastmcp`, `curl` fallback, reading the
+bearer); their own files carry only the URL, secret, tools, and gotchas. It's a
+shared mechanic, not a channel.
+
 ## Techniques live elsewhere
 
 Reusable, source-agnostic ways to be useful — inbox-like triage & cleanup, delegation
