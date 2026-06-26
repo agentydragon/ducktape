@@ -51,6 +51,15 @@ class K8sTokenStore:
             else:
                 raise
 
+    async def delete_secret(self, secret_name: str, namespace: str) -> None:
+        """Delete a managed secret, ignoring 404 (already gone)."""
+        try:
+            await self._api.delete_namespaced_secret(secret_name, namespace)
+            logger.info(f"Deleted secret {namespace}/{secret_name}")
+        except ApiException as e:
+            if e.status != 404:
+                raise
+
     async def delete_orphaned_secrets(self, namespace: str, known_names: frozenset[str]) -> None:
         """Delete managed secrets whose names are not in known_names."""
         label_selector = f"app.kubernetes.io/managed-by={self._managed_by}"

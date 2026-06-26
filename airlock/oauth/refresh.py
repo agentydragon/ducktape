@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from collections.abc import Mapping
+from datetime import UTC, datetime
 
 from airlock.oauth.k8s_client import K8sTokenStore
 from airlock.oauth.provider import ACCESS_TOKEN_FIELDS, GenericOAuth2Provider
@@ -72,6 +73,13 @@ async def token_refresh_loop(
                 logger.exception(f"Failed to refresh token for {name}")
                 if refresh_errors is not None:
                     refresh_errors[name] = repr(exc)
+                # Delete the access secret if the token is actually expired so
+                # downstream consumers don't get a stale nonfunctional bearer token.
+                if datetime.now(UTC) >= token.expires_at:
+                    try:
+                        await k8s_store.delete_secret(provider.config.access_secret.name, target_namespace)
+                    except Exception:
+                        logger.exception(f"Failed to delete expired access secret for {name}")
         try:
             await k8s_store.delete_orphaned_secrets(target_namespace, known_secret_names)
         except Exception:
