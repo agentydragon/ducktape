@@ -26,16 +26,6 @@ struct DuplicateBindingClaim {
 }
 
 #[derive(Debug, Clone)]
-struct SourceMatchTargetInfo {
-    target: SelectorTargetId,
-    request_id: String,
-    export_name: String,
-    selector: spec::AnonymousStatementSelector,
-    selector_key: String,
-    group_assignment: Option<SourceMatchGroupAssignment>,
-}
-
-#[derive(Debug, Clone)]
 struct AnonymousStatementTargetInfo {
     target: SelectorTargetId,
     request_index: usize,
@@ -61,10 +51,7 @@ use selector_diagnostics::{
     DuplicateClaimReport, DuplicateClaimSiteReport, SelectorDiagnosticEntry,
     SelectorDiagnosticsReport,
 };
-use selector_ir::{
-    ClaimOutcome, OwnerTerm, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore,
-    SelectorProgram, SelectorTargetId, StringTerm,
-};
+use selector_ir::{ClaimOutcome, ResolvedClaim, SelectorFact, SelectorFactStore, SelectorTargetId};
 use selector_ir_lowering::{MemberSelectorLoweringContext, MemberSelectorProgramBuilder};
 
 impl From<&DuplicateClaimSite> for DuplicateClaimSiteReport {
@@ -347,67 +334,6 @@ fn selector_fact_store_for_chunk(
     Ok(store)
 }
 
-fn source_match_candidate_statement_ordinals(
-    owner_graph: &analysis::OwnerGraph,
-) -> BTreeMap<String, Option<StatementOrdinal>> {
-    let mut by_binding = BTreeMap::new();
-    for node in owner_graph.iter_nodes() {
-        for binding in &node.declared {
-            by_binding
-                .entry(binding.0.as_str().to_string())
-                .and_modify(|existing| {
-                    if *existing != Some(node.statement_ordinal) {
-                        *existing = None;
-                    }
-                })
-                .or_insert(Some(node.statement_ordinal));
-        }
-    }
-    by_binding
-}
-
-fn source_match_candidate_statement_ordinal(
-    by_binding: &BTreeMap<String, Option<StatementOrdinal>>,
-    request_id: &str,
-    export_name: &str,
-    candidate: &source_match::MemberBindingMatch,
-) -> Result<StatementOrdinal> {
-    match by_binding.get(&candidate.binding.binding_name) {
-        Some(Some(statement_ordinal)) => Ok(*statement_ordinal),
-        Some(None) => Err(anyhow!(
-            "logical_module {request_id}: source_match candidate for member `{export_name}` \
-             matched binding `{}` but that binding is declared by multiple owner-graph nodes",
-            candidate.binding.binding_name,
-        )),
-        None => Err(anyhow!(
-            "logical_module {request_id}: source_match candidate for member `{export_name}` \
-             matched binding `{}` at body index {}, but that binding does not appear in the \
-             owner graph",
-            candidate.binding.binding_name,
-            candidate.body_idx,
-        )),
-    }
-}
-
-fn program_has_source_match_candidate_atom(
-    program: &SelectorProgram,
-    target: SelectorTargetId,
-    selector_key: &str,
-) -> bool {
-    let Some(target_owner) = program.targets.get(target.0).map(|target| target.owner) else {
-        return false;
-    };
-    program.atoms.iter().any(|atom| {
-        matches!(
-            atom,
-            SelectorAtom::SourceMatchCandidate {
-                owner: OwnerTerm::Var { id },
-                selector_key: StringTerm::Const { value },
-            } if *id == target_owner && value == selector_key
-        )
-    })
-}
-
 fn solver_claim_is_import_specifier(facts: &SelectorFactStore, claim: &ResolvedClaim) -> bool {
     facts.facts.iter().any(|fact| {
         matches!(
@@ -498,23 +424,6 @@ fn render_source_match_diagnostics(diagnostics: &[SourceMatchDiagnostic]) -> Str
     report
 }
 
-fn source_match_no_match_message(
-    request: &LogicalRequest,
-    member: &MemberRequest,
-) -> Option<String> {
-    let selector = member.source_match.as_ref()?;
-    let target_binding_hint = selector
-        .target_binding
-        .as_deref()
-        .map(|target| format!(" target_binding `{target}`"))
-        .unwrap_or_default();
-    Some(format!(
-        "logical_module {}: members[].selector.source_match for export `{}`{} did not match any \
-         top-level declaration in the chunk. Selector:\n{}",
-        request.id, member.export_name, target_binding_hint, selector.match_source,
-    ))
-}
-
 fn native_source_match_no_match_message(
     request: &LogicalRequest,
     member: &MemberRequest,
@@ -532,76 +441,6 @@ fn native_source_match_no_match_message(
          constraints; it may have no matching source declaration, or the joint constraints may \
          reject all otherwise matching declarations. Selector:\n{}",
         request.id, member.export_name, target_binding_hint, selector.match_source,
-    ))
-}
-
-fn source_match_joint_no_match_message(
-    request: &LogicalRequest,
-    member: &MemberRequest,
-    candidates: Option<&[source_match::MemberBindingMatch]>,
-) -> Option<String> {
-    let selector = member.source_match.as_ref()?;
-    let candidates = candidates?;
-    if candidates.is_empty() {
-        return None;
-    }
-    let target_binding_hint = selector
-        .target_binding
-        .as_deref()
-        .map(|target| format!(" target_binding `{target}`"))
-        .unwrap_or_default();
-    Some(format!(
-        "logical_module {}: members[].selector.source_match for export `{}`{} matched {} \
-         candidate top-level statement(s), but no valid global selector assignment survived the \
-         joint constraints (for example all_different / connected relational selectors). Matched \
-         body indices: {:?}; bindings: {}. Selector:\n{}",
-        request.id,
-        member.export_name,
-        target_binding_hint,
-        candidates.len(),
-        candidates
-            .iter()
-            .map(|candidate| candidate.body_idx)
-            .collect::<Vec<_>>(),
-        candidates
-            .iter()
-            .map(|candidate| candidate.binding.binding_name.as_str())
-            .collect::<Vec<_>>()
-            .join(", "),
-        selector.match_source,
-    ))
-}
-
-fn source_match_ambiguous_message(
-    request: &LogicalRequest,
-    member: &MemberRequest,
-    candidates: Option<&[source_match::MemberBindingMatch]>,
-) -> Option<String> {
-    let selector = member.source_match.as_ref()?;
-    let candidates = candidates?;
-    let target_binding_hint = selector
-        .target_binding
-        .as_deref()
-        .map(|target| format!(" target_binding `{target}`"))
-        .unwrap_or_default();
-    Some(format!(
-        "logical_module {}: members[].selector.source_match for export `{}`{} is ambiguous -- \
-         matched {} top-level statements at body indices {:?} (bindings: {}). Refine the \
-         selector. Source:\n{}",
-        request.id,
-        member.export_name,
-        target_binding_hint,
-        candidates.len(),
-        candidates
-            .iter()
-            .map(|candidate| candidate.body_idx)
-            .collect::<Vec<_>>(),
-        candidates
-            .iter()
-            .map(|candidate| candidate.binding.binding_name.as_str())
-            .collect::<Vec<_>>()
-            .join(", "),
-        selector.match_source,
     ))
 }
 
@@ -1175,7 +1014,6 @@ impl ChunkPlanBuilder {
         owner_graph: &analysis::OwnerGraph,
         module: &swc_ecma_ast::Module,
         import_sources: &HashMap<String, String>,
-        selector_resolver: &dyn source_match::SelectorResolver,
         runtime_import_facts: &RuntimeImportFacts,
         imported_binding_resolver: &mut ArtifactSourceImportResolutionCache<'_>,
         imported_from_by_src: &mut BTreeMap<String, String>,
@@ -1200,22 +1038,7 @@ impl ChunkPlanBuilder {
             chunk_id_interned,
             chunk_id,
         ));
-        let mut deferred_targets = BTreeMap::<
-            SelectorTargetId,
-            (usize, MemberRequest, Option<SourceMatchGroupAssignment>),
-        >::new();
-        let mut source_match_candidates =
-            BTreeMap::<SelectorTargetId, Vec<source_match::MemberBindingMatch>>::new();
-        let mut source_match_errors = BTreeMap::<SelectorTargetId, String>::new();
-        let mut source_match_candidate_cache = BTreeMap::<
-            spec::AnonymousStatementSelector,
-            Result<Vec<source_match::MemberBindingMatch>, String>,
-        >::new();
-        let mut source_match_group_candidate_cache = BTreeMap::<
-            SourceMatchGroupCacheKey,
-            Result<Vec<source_match::MemberBindingGroupMatch>, String>,
-        >::new();
-        let mut source_match_targets = Vec::<SourceMatchTargetInfo>::new();
+        let mut deferred_targets = BTreeMap::<SelectorTargetId, (usize, MemberRequest)>::new();
         let mut anonymous_statement_targets = Vec::<AnonymousStatementTargetInfo>::new();
         let mut pending_constraints = Vec::<(String, String, spec::MemberSelectorSpec)>::new();
         let mut pending_source_match_groups = Vec::<(String, SourceMatchGroupAssignment)>::new();
@@ -1253,19 +1076,7 @@ impl ChunkPlanBuilder {
                         ));
                     }
                     if member.resolves_after_stage_a() {
-                        deferred_targets
-                            .insert(target, (index, member.clone(), group_assignment.clone()));
-                    }
-                    if let Some(source_selector) = &member.source_match {
-                        let selector_key = source_match::selector_key(source_selector);
-                        source_match_targets.push(SourceMatchTargetInfo {
-                            target,
-                            request_id: request.id.clone(),
-                            export_name: member.export_name.clone(),
-                            selector: source_selector.clone(),
-                            selector_key: selector_key.clone(),
-                            group_assignment,
-                        });
+                        deferred_targets.insert(target, (index, member.clone()));
                     }
                 }
             }
@@ -1276,25 +1087,21 @@ impl ChunkPlanBuilder {
                     &request.id,
                     statement_index,
                     &statement.selector,
-                )? {
-                    Some(target) => {
-                        anonymous_statement_targets.push(AnonymousStatementTargetInfo {
-                            target,
-                            request_index,
-                            statement: statement.clone(),
-                        })
-                    }
-                    None => {
-                        let claims = resolve_anonymous_statement_request(
-                            &request.id,
-                            statement,
-                            selector_resolver,
-                            self.keep_going,
-                            &mut self.anonymous_statement_diagnostics,
+                ) {
+                    Ok(target) => anonymous_statement_targets.push(AnonymousStatementTargetInfo {
+                        target,
+                        request_index,
+                        statement: statement.clone(),
+                    }),
+                    Err(error) => {
+                        let message = format!(
+                            "logical_module {}: anonymous_statements[].match cannot be lowered \
+                             into native selector IR: {error}",
+                            request.id,
+                        );
+                        self.record_anonymous_statement_failure_or_bail(
+                            request, statement, message,
                         )?;
-                        for claim in claims {
-                            self.claim_anonymous_statement(request_index, &request.id, &claim)?;
-                        }
                     }
                 }
             }
@@ -1307,15 +1114,11 @@ impl ChunkPlanBuilder {
             )? {
                 continue;
             }
-            for (target_binding, export_name) in group.exports_by_target {
-                let mut selector = group.selector.clone();
-                selector.target_binding = Some(target_binding);
-                builder.lower_member_constraints_in_module(
-                    &logical_module,
-                    &export_name,
-                    &spec::MemberSelectorSpec::SourceMatch(selector),
-                )?;
+            return Err(selector_ir_lowering::SelectorIrLoweringError::Unsupported {
+                selector_kind: "binding_group.source_match",
+                reason: "selector shape is not yet supported by native selector IR",
             }
+            .into());
         }
         for (logical_module, export_name, selector) in pending_constraints {
             builder.lower_member_constraints_in_module(&logical_module, &export_name, &selector)?;
@@ -1324,100 +1127,11 @@ impl ChunkPlanBuilder {
         if program.targets.is_empty() {
             return Ok(());
         }
-        let source_match_ordinal_by_binding =
-            source_match_candidate_statement_ordinals(owner_graph);
-        let mut facts =
+        let facts =
             selector_fact_store_for_chunk(chunk_id_interned, owner_graph, module, import_sources)?;
-        let source_match_oracle_targets = source_match_targets
-            .iter()
-            .filter_map(|target| {
-                program_has_source_match_candidate_atom(
-                    &program,
-                    target.target,
-                    &target.selector_key,
-                )
-                .then_some(target.target)
-            })
-            .collect::<BTreeSet<_>>();
-        for target in &source_match_targets {
-            if !source_match_oracle_targets.contains(&target.target) {
-                continue;
-            }
-            let candidates = if let Some(group) = &target.group_assignment {
-                let target_binding =
-                    target.selector.target_binding.as_deref().with_context(|| {
-                        format!(
-                            "logical_module {}: binding-group member `{}` unexpectedly has no \
-                         target_binding",
-                            target.request_id, target.export_name,
-                        )
-                    })?;
-                let cache_key =
-                    SourceMatchGroupCacheKey::new(group.selector.clone(), &group.exports_by_target);
-                let group_candidates = match source_match_group_candidate_cache.get(&cache_key) {
-                    Some(cached) => cached.clone(),
-                    None => {
-                        let resolved = selector_resolver
-                            .member_group_candidates(
-                                &target.request_id,
-                                &group.selector,
-                                &group.exports_by_target,
-                            )
-                            .map_err(|error| format!("{error:#}"));
-                        source_match_group_candidate_cache.insert(cache_key, resolved.clone());
-                        resolved
-                    }
-                };
-                group_candidates.map(|groups| {
-                    groups
-                        .into_iter()
-                        .filter_map(|group| group.bindings.get(target_binding).cloned())
-                        .collect::<Vec<_>>()
-                })
-            } else {
-                match source_match_candidate_cache.get(&target.selector) {
-                    Some(cached) => cached.clone(),
-                    None => {
-                        let resolved = selector_resolver
-                            .member_candidates(
-                                &target.request_id,
-                                &target.export_name,
-                                &target.selector,
-                            )
-                            .map_err(|error| format!("{error:#}"));
-                        source_match_candidate_cache
-                            .insert(target.selector.clone(), resolved.clone());
-                        resolved
-                    }
-                }
-            };
-            match candidates {
-                Ok(candidates) => {
-                    for candidate in &candidates {
-                        let statement_ordinal = source_match_candidate_statement_ordinal(
-                            &source_match_ordinal_by_binding,
-                            &target.request_id,
-                            &target.export_name,
-                            candidate,
-                        )?;
-                        facts.push(SelectorFact::SourceMatchCandidate {
-                            chunk_id: chunk_id_interned,
-                            selector_key: target.selector_key.clone(),
-                            statement_ordinal,
-                            binding: candidate.binding.binding_name.clone(),
-                        });
-                    }
-                    source_match_candidates.insert(target.target, candidates);
-                }
-                Err(error) if self.keep_going => {
-                    source_match_errors.insert(target.target, error);
-                }
-                Err(error) => bail!("{error}"),
-            }
-        }
         let result = selector_ir_solver::solve(&program, &facts)?;
 
-        for (target, (index, member, _group_assignment)) in deferred_targets {
+        for (target, (index, member)) in deferred_targets {
             let request = &explicit_requests[index];
             match result.outcome_for(target) {
                 Some(ClaimOutcome::Unique { claim }) => {
@@ -1428,27 +1142,9 @@ impl ChunkPlanBuilder {
                             request.id, member.export_name, claim.owner,
                         )
                     })?;
-                    let oracle_selects_import = source_match_candidates
-                        .get(&target)
-                        .and_then(|candidates| {
-                            candidates.iter().find(|candidate| {
-                                candidate.binding.binding_name == binding
-                                    && StatementOrdinal(js_ast::statement_ordinal_for_body_index(
-                                        &module.body,
-                                        candidate.body_idx,
-                                    )) == claim.statement_ordinal
-                            })
-                        })
-                        .is_some_and(|candidate| {
-                            matches!(
-                                candidate.binding.kind,
-                                Some(BindingSourceKind::ImportSpecifier)
-                            )
-                        });
                     let native_selects_import = member.source_match.is_some()
-                        && !source_match_oracle_targets.contains(&target)
                         && solver_claim_is_import_specifier(&facts, claim);
-                    if oracle_selects_import || native_selects_import {
+                    if native_selects_import {
                         self.claim_post_stage_a_imported_binding(
                             request,
                             &member,
@@ -1474,42 +1170,14 @@ impl ChunkPlanBuilder {
                     )?;
                 }
                 Some(ClaimOutcome::NoMatch) => {
-                    let native_source_match = member.source_match.is_some()
-                        && !source_match_oracle_targets.contains(&target);
-                    if let Some(message) = source_match_errors
-                        .get(&target)
-                        .cloned()
-                        .or_else(|| {
-                            source_match_joint_no_match_message(
-                                request,
-                                &member,
-                                source_match_candidates.get(&target).map(Vec::as_slice),
-                            )
-                        })
-                        .or_else(|| {
-                            if native_source_match {
-                                native_source_match_no_match_message(request, &member)
-                            } else {
-                                source_match_no_match_message(request, &member)
-                            }
-                        })
-                    {
+                    if let Some(message) = native_source_match_no_match_message(request, &member) {
                         if self.keep_going {
-                            let body_indices = source_match_candidates
-                                .get(&target)
-                                .map(|candidates| {
-                                    candidates
-                                        .iter()
-                                        .map(|candidate| candidate.body_idx)
-                                        .collect::<Vec<_>>()
-                                })
-                                .unwrap_or_default();
                             self.source_match_diagnostics
                                 .push(SourceMatchDiagnostic::new(
                                     &request.id,
                                     &request.target_path,
                                     &member,
-                                    body_indices,
+                                    Vec::new(),
                                     message,
                                 ));
                             continue;
@@ -1526,37 +1194,14 @@ impl ChunkPlanBuilder {
                     );
                 }
                 Some(ClaimOutcome::Ambiguous { candidates }) => {
-                    let message = if member.source_match.is_some()
-                        && !source_match_oracle_targets.contains(&target)
-                    {
-                        native_source_match_ambiguous_message(request, &member, candidates)
-                    } else {
-                        source_match_ambiguous_message(
-                            request,
-                            &member,
-                            source_match_candidates.get(&target).map(Vec::as_slice),
-                        )
-                    };
+                    let message =
+                        native_source_match_ambiguous_message(request, &member, candidates);
                     if let Some(message) = message {
                         if self.keep_going {
-                            let body_indices = if member.source_match.is_some()
-                                && source_match_oracle_targets.contains(&target)
-                            {
-                                source_match_candidates
-                                    .get(&target)
-                                    .map(|candidates| {
-                                        candidates
-                                            .iter()
-                                            .map(|candidate| candidate.body_idx)
-                                            .collect::<Vec<_>>()
-                                    })
-                                    .unwrap_or_default()
-                            } else {
-                                candidates
-                                    .iter()
-                                    .map(|candidate| candidate.statement_ordinal.0)
-                                    .collect::<Vec<_>>()
-                            };
+                            let body_indices = candidates
+                                .iter()
+                                .map(|candidate| candidate.statement_ordinal.0)
+                                .collect::<Vec<_>>();
                             self.source_match_diagnostics
                                 .push(SourceMatchDiagnostic::new(
                                     &request.id,

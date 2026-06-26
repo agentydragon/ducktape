@@ -2,14 +2,16 @@
 //!
 //! The solver runs one Ascent derivation over the lowered selector constraints
 //! plus chunk-level owner/fact-store relations, then projects target claims from
-//! the derived candidate sets. It supports binding/name/kind constraints and
-//! `source_match` candidate constraints, and the current relational selector
-//! primitives. Unsupported atoms remain explicit `ClaimOutcome::Unsupported` rows
-//! instead of being ignored or approximated.
+//! the derived candidate sets. It supports binding/name/kind constraints,
+//! native AST-backed source-match constraints, and the current relational
+//! selector primitives. Unsupported atoms remain explicit
+//! `ClaimOutcome::Unsupported` rows instead of being ignored or approximated.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
+use std::io::Write;
+use std::time::{Duration, Instant};
 
 use analysis::{OwnerId, StatementOrdinal};
 use ascent::ascent;
@@ -19,6 +21,19 @@ use selector_ir::{
     SelectorFact, SelectorFactStore, SelectorProgram, SelectorProgramError, SelectorTarget,
     SelectorVariableId, SolverClaim, SolverResult, StringTerm,
 };
+
+const SELECTOR_IR_STATS_ENV: &str = "DUCKTAPE_SELECTOR_IR_STATS";
+
+fn selector_ir_stats_enabled() -> bool {
+    std::env::var(SELECTOR_IR_STATS_ENV)
+        .ok()
+        .is_some_and(|raw| {
+            !matches!(
+                raw.to_ascii_lowercase().as_str(),
+                "" | "0" | "false" | "off" | "no"
+            )
+        })
+}
 
 fn optional_u32_matches(expected: &Option<u32>, actual: u32) -> bool {
     expected.is_none_or(|expected| expected == actual)
@@ -216,7 +231,6 @@ ascent! {
     relation call_arg_from(String, String, String, u32); // argument, callee object, member, index
     relation decorate_call(String, String, Option<String>); // callee, class binding, member
     relation intrinsic_alias(String, String); // binding, Object property
-    relation source_match_candidate(String, usize, String); // selector key, owner, matched binding
     relation ast_kind(u32, String); // AST node, node kind tag
     relation ast_child(u32, u32, u32); // parent, child index, child
     relation ast_child_count(u32, u32); // node, number of direct AST children
@@ -239,26 +253,6 @@ ascent! {
         owner_fact(owner, ordinal, _kind);
 
     relation owner_top_level_root(usize, u32);
-    owner_top_level_root(*owner, *node) <--
-        owner_fact(owner, ordinal, _kind),
-        ast_top_level(node, ordinal);
-    relation ast_descendant(u32, u32);
-    ast_descendant(*parent, *child) <--
-        ast_child(parent, _index, child);
-    ast_descendant(*ancestor, *descendant) <--
-        ast_child(ancestor, _index, child),
-        ast_descendant(child, descendant);
-    relation ast_top_level_binding(u32, String);
-    ast_top_level_binding(*root, binding.clone()) <--
-        ast_top_level(root, _ordinal),
-        ast_descendant(root, binding_node),
-        ast_kind(binding_node, kind),
-        ast_identifier_name(binding_node, binding),
-        if kind.as_str() == "BindingIdent";
-    owner_top_level_root(*owner, *root) <--
-        owner_fact(owner, _ordinal, _kind),
-        declares(owner, binding),
-        ast_top_level_binding(root, binding);
 
     relation name_owner(String, usize);
     name_owner(binding.clone(), *owner) <-- declares(owner, binding);
@@ -331,7 +325,6 @@ ascent! {
     relation required_passed_to_call(usize, usize, String, Option<u32>);
     relation required_passed_to_call_from_binding(usize, usize, String, String, Option<u32>);
     relation required_makes_decorate_call_for_binding(usize, usize, String, Option<String>);
-    relation required_source_match_candidate(usize, usize, String);
     relation required_owner_statement_ordinal(usize, usize, usize);
 
     relation constraint_support(usize, usize, usize); // constraint id, variable id, owner
@@ -387,10 +380,6 @@ ascent! {
         declares(owner, _declared),
         if actual_class_anchor == class_anchor,
         if optional_string_matches(member, actual_member);
-    constraint_support(*constraint, *var, *owner) <--
-        required_source_match_candidate(constraint, var, selector_key),
-        source_match_candidate(selector_key, owner, _binding),
-        owner_fact(owner, _ordinal, _kind);
     constraint_support(*constraint, *var, *owner) <--
         required_owner_statement_ordinal(constraint, var, ordinal),
         owner_statement_ordinal(owner, actual_ordinal),
@@ -592,6 +581,7 @@ ascent! {
     relation child_list_assignment(usize, AssignmentRow);
     relation equality_checks_after_step(usize, Vec<EqualityCheck>);
     relation live_variables_after_step(usize, Vec<usize>);
+    relation stored_variables_after_step(usize, Vec<usize>);
 
     relation atom_assignment(usize, AssignmentRow);
     atom_assignment(*constraint, row.clone()) <--
@@ -670,13 +660,15 @@ ascent! {
     relation partial_assignment(usize, AssignmentRow);
     partial_assignment(0, Vec::new());
     relation stepped_assignment(usize, AssignmentRow);
-    stepped_assignment(*step + 1, merged_row.clone()) <--
+    stepped_assignment(*step + 1, stored_row) <--
         partial_assignment(step, row),
         constraint_order(step, constraint),
         atom_assignment(constraint, constraint_row),
         if let Some(merged_row) = merge_assignment_rows(row, constraint_row),
         equality_checks_after_step((*step + 1), equality_checks),
-        if assignment_satisfies_equalities(&merged_row, equality_checks);
+        if assignment_satisfies_equalities(&merged_row, equality_checks),
+        stored_variables_after_step((*step + 1), stored_variables),
+        if let Some(stored_row) = project_assignment_row(&merged_row, stored_variables);
 
     partial_assignment(*step, projected_row) <--
         stepped_assignment(step, row),
@@ -719,6 +711,8 @@ pub fn solve(
     }
 
     let fact_index = FactIndex::from_store(facts);
+    let mut stats =
+        selector_ir_stats_enabled().then(|| SelectorIrStats::new(program, &fact_index, &support));
     let mut ascent = AscentProgram::default();
     for (owner, ordinal, kind) in &fact_index.owner_facts {
         ascent
@@ -771,11 +765,6 @@ pub fn solve(
         ascent
             .intrinsic_alias
             .push((binding.clone(), property.clone()));
-    }
-    for (selector_key, owner, binding) in &fact_index.source_match_candidates {
-        ascent
-            .source_match_candidate
-            .push((selector_key.clone(), owner.0, binding.clone()));
     }
     for (node, node_kind) in &fact_index.ast_kinds {
         ascent.ast_kind.push((*node, node_kind.clone()));
@@ -835,17 +824,28 @@ pub fn solve(
     for (node, ordinal) in &fact_index.ast_top_levels {
         ascent.ast_top_level.push((*node, ordinal.0));
     }
+    for (owner, root) in &fact_index.owner_top_level_roots {
+        ascent.owner_top_level_root.push((owner.0, *root));
+    }
     for (base, ordinal, offset) in top_level_ordinal_offset_rows(
         &fact_index.ast_top_levels,
         &support.required_ordinal_offsets(),
     ) {
         ascent.ordinal_offset.push((base, ordinal, offset));
     }
+    let child_list_started = Instant::now();
     for constraint in &support.node_list_constraints {
-        for row in child_list_assignment_rows(constraint, &fact_index) {
+        let candidate_parents = child_list_candidate_parents(constraint, &fact_index, &support);
+        let candidate_parent_count = candidate_parents.len();
+        let rows = child_list_assignment_rows(constraint, &fact_index, candidate_parents);
+        if let Some(stats) = &mut stats {
+            stats.record_child_list_rows(constraint, candidate_parent_count, rows.len());
+        }
+        for row in rows {
             ascent.child_list_assignment.push((constraint.id, row));
         }
     }
+    let child_list_elapsed = child_list_started.elapsed();
     let constraint_ids = support.constraint_ids();
     for (step, equality_checks) in support.equality_checks_by_step(&constraint_ids) {
         ascent
@@ -878,6 +878,13 @@ pub fn solve(
         ascent
             .live_variables_after_step
             .push((step, live_variables));
+    }
+    for (step, stored_variables) in
+        support.stored_variables_by_step(&constraint_ids, &program.targets)
+    {
+        ascent
+            .stored_variables_after_step
+            .push((step, stored_variables));
     }
     for (step, constraint) in constraint_ids.iter().enumerate() {
         ascent.constraint_order.push((step, *constraint));
@@ -957,13 +964,6 @@ pub fn solve(
                 class_anchor.clone(),
                 member.clone(),
             )),
-            UnaryConstraintKind::SourceMatchCandidate { selector_key } => {
-                ascent.required_source_match_candidate.push((
-                    constraint.id,
-                    constraint.variable.0,
-                    selector_key.clone(),
-                ));
-            }
             UnaryConstraintKind::OwnerStatementOrdinal { ordinal } => {
                 ascent.required_owner_statement_ordinal.push((
                     constraint.id,
@@ -1250,7 +1250,14 @@ pub fn solve(
             }
         }
     }
+    if let Some(stats) = &stats {
+        stats.emit_before_ascent(child_list_elapsed);
+    }
+    let ascent_started = Instant::now();
     ascent.run();
+    if let Some(stats) = &stats {
+        stats.emit_after_ascent(ascent_started.elapsed());
+    }
 
     let candidates = group_solution_owners(ascent.solution_owner);
     let projected_bindings = group_solution_target_bindings(ascent.solution_target_binding);
@@ -1267,13 +1274,7 @@ pub fn solve(
 
         let candidates = candidates.get(&target.owner).cloned().unwrap_or_default();
         let projected_bindings = projected_bindings.get(&target.owner).cloned();
-        let outcome = classify_candidates(
-            target,
-            candidates,
-            projected_bindings,
-            &fact_index,
-            &support,
-        );
+        let outcome = classify_candidates(target, candidates, projected_bindings, &fact_index);
         claims.push(SolverClaim {
             target: target.id,
             outcome,
@@ -1327,19 +1328,20 @@ fn group_solution_target_bindings(
 fn child_list_assignment_rows(
     constraint: &NodeListConstraint,
     facts: &FactIndex,
+    candidate_parents: BTreeSet<u32>,
 ) -> Vec<AssignmentRow> {
     let mut rows = Vec::new();
-    for parent in &facts.all_nodes {
+    for parent in candidate_parents {
         let subject_children = facts
             .ast_children_by_parent
-            .get(parent)
+            .get(&parent)
             .map(Vec::as_slice)
             .unwrap_or(&[])
             .iter()
             .filter(|(index, _child)| *index >= constraint.start_index)
             .map(|(_index, child)| *child)
             .collect::<Vec<_>>();
-        let mut current = vec![(constraint.parent.0, AssignmentValue::AstNode(*parent))];
+        let mut current = vec![(constraint.parent.0, AssignmentValue::AstNode(parent))];
         collect_child_list_assignment_rows(
             constraint,
             &subject_children,
@@ -1350,6 +1352,134 @@ fn child_list_assignment_rows(
         );
     }
     rows
+}
+
+fn child_list_candidate_parents(
+    constraint: &NodeListConstraint,
+    facts: &FactIndex,
+    support: &ProgramSupport,
+) -> BTreeSet<u32> {
+    let mut candidates: Option<BTreeSet<u32>> = None;
+    for node_constraint in support.node_unary_constraints_for_variable(constraint.parent) {
+        let matching = nodes_matching_unary_constraint(&node_constraint.kind, facts);
+        candidates = Some(match candidates {
+            Some(existing) => existing.intersection(&matching).copied().collect(),
+            None => matching,
+        });
+    }
+    candidates.unwrap_or_else(|| facts.all_nodes.clone())
+}
+
+fn nodes_matching_unary_constraint(
+    kind: &NodeUnaryConstraintKind,
+    facts: &FactIndex,
+) -> BTreeSet<u32> {
+    match kind {
+        NodeUnaryConstraintKind::Kind { node_kind } => facts
+            .ast_kinds
+            .iter()
+            .filter_map(|(node, actual)| (actual == node_kind).then_some(*node))
+            .collect(),
+        NodeUnaryConstraintKind::ChildCount { count } => facts
+            .ast_child_counts
+            .iter()
+            .filter_map(|(node, actual)| (actual == count).then_some(*node))
+            .collect(),
+        NodeUnaryConstraintKind::ChildParent { index, child } => facts
+            .ast_children
+            .iter()
+            .filter_map(|(parent, actual_index, actual_child)| {
+                (actual_index == index && actual_child == child).then_some(*parent)
+            })
+            .collect(),
+        NodeUnaryConstraintKind::ChildChild { parent, index } => facts
+            .ast_children
+            .iter()
+            .filter_map(|(actual_parent, actual_index, child)| {
+                (actual_parent == parent && actual_index == index).then_some(*child)
+            })
+            .collect(),
+        NodeUnaryConstraintKind::SuperClassClass { super_class } => facts
+            .ast_super_classes
+            .iter()
+            .filter_map(|(class_node, actual_super_class)| {
+                (actual_super_class == super_class).then_some(*class_node)
+            })
+            .collect(),
+        NodeUnaryConstraintKind::SuperClassSuper { class_node } => facts
+            .ast_super_classes
+            .iter()
+            .filter_map(|(actual_class_node, super_class)| {
+                (actual_class_node == class_node).then_some(*super_class)
+            })
+            .collect(),
+        NodeUnaryConstraintKind::StringLiteral { value } => facts
+            .ast_string_literals
+            .iter()
+            .filter_map(|(node, actual)| (actual == value).then_some(*node))
+            .collect(),
+        NodeUnaryConstraintKind::StringLiteralMatchingRegex { pattern } => {
+            let Ok(regex) = Regex::new(pattern) else {
+                return BTreeSet::new();
+            };
+            facts
+                .ast_string_literals
+                .iter()
+                .filter_map(|(node, actual)| regex.is_match(actual).then_some(*node))
+                .collect()
+        }
+        NodeUnaryConstraintKind::NumberLiteral { value } => facts
+            .ast_number_literals
+            .iter()
+            .filter_map(|(node, actual)| (actual == value).then_some(*node))
+            .collect(),
+        NodeUnaryConstraintKind::BoolLiteral { value } => facts
+            .ast_bool_literals
+            .iter()
+            .filter_map(|(node, actual)| (actual == value).then_some(*node))
+            .collect(),
+        NodeUnaryConstraintKind::IdentifierName { value } => facts
+            .ast_identifier_names
+            .iter()
+            .filter_map(|(node, actual)| (actual == value).then_some(*node))
+            .collect(),
+        NodeUnaryConstraintKind::PropertyName { value } => facts
+            .ast_property_names
+            .iter()
+            .filter_map(|(node, actual)| (actual == value).then_some(*node))
+            .collect(),
+        NodeUnaryConstraintKind::BareProperty {
+            key,
+            identifier,
+            is_binding,
+        } => facts
+            .ast_bare_properties
+            .iter()
+            .filter_map(|(node, actual_key, actual_identifier, actual_is_binding)| {
+                (actual_key == key
+                    && actual_identifier == identifier
+                    && actual_is_binding == is_binding)
+                    .then_some(*node)
+            })
+            .collect(),
+        NodeUnaryConstraintKind::Operator { value } => facts
+            .ast_operators
+            .iter()
+            .filter_map(|(node, actual)| (actual == value).then_some(*node))
+            .collect(),
+        NodeUnaryConstraintKind::RegexLiteral { pattern, flags } => facts
+            .ast_regex_literals
+            .iter()
+            .filter_map(|(node, actual_pattern, actual_flags)| {
+                (actual_pattern == pattern && actual_flags == flags).then_some(*node)
+            })
+            .collect(),
+        NodeUnaryConstraintKind::TopLevelOrdinal { ordinal } => facts
+            .ast_top_levels
+            .iter()
+            .filter_map(|(node, actual_ordinal)| (actual_ordinal == ordinal).then_some(*node))
+            .collect(),
+    }
 }
 
 fn collect_child_list_assignment_rows(
@@ -1405,30 +1535,146 @@ fn collect_child_list_assignment_rows(
     }
 }
 
+#[derive(Debug)]
+struct SelectorIrStats {
+    target_count: usize,
+    atom_count: usize,
+    owner_fact_count: usize,
+    ast_node_count: usize,
+    unary_constraint_count: usize,
+    node_unary_constraint_count: usize,
+    binary_constraint_count: usize,
+    owner_node_constraint_count: usize,
+    node_node_constraint_count: usize,
+    node_list_constraint_count: usize,
+    equality_constraint_count: usize,
+    child_list_rows: Vec<ChildListRowStats>,
+}
+
+#[derive(Debug, Clone)]
+struct ChildListRowStats {
+    constraint_id: usize,
+    parent_var: usize,
+    candidate_parent_count: usize,
+    row_count: usize,
+    segment_lengths: Vec<usize>,
+    anchored_left: bool,
+    anchored_right: bool,
+}
+
+impl SelectorIrStats {
+    fn new(program: &SelectorProgram, facts: &FactIndex, support: &ProgramSupport) -> Self {
+        Self {
+            target_count: program.targets.len(),
+            atom_count: program.atoms.len(),
+            owner_fact_count: facts.owner_facts.len(),
+            ast_node_count: facts.all_nodes.len(),
+            unary_constraint_count: support.unary_constraints.len(),
+            node_unary_constraint_count: support.node_unary_constraints.len(),
+            binary_constraint_count: support.binary_constraints.len(),
+            owner_node_constraint_count: support.owner_node_constraints.len(),
+            node_node_constraint_count: support.node_node_constraints.len(),
+            node_list_constraint_count: support.node_list_constraints.len(),
+            equality_constraint_count: support.equality_constraints.len(),
+            child_list_rows: Vec::new(),
+        }
+    }
+
+    fn record_child_list_rows(
+        &mut self,
+        constraint: &NodeListConstraint,
+        candidate_parent_count: usize,
+        row_count: usize,
+    ) {
+        self.child_list_rows.push(ChildListRowStats {
+            constraint_id: constraint.id,
+            parent_var: constraint.parent.0,
+            candidate_parent_count,
+            row_count,
+            segment_lengths: constraint.segments.iter().map(Vec::len).collect(),
+            anchored_left: constraint.anchored_left,
+            anchored_right: constraint.anchored_right,
+        });
+    }
+
+    fn emit_before_ascent(&self, child_list_elapsed: Duration) {
+        let child_list_row_count = self
+            .child_list_rows
+            .iter()
+            .map(|entry| entry.row_count)
+            .sum::<usize>();
+        let max_child_list_rows = self
+            .child_list_rows
+            .iter()
+            .map(|entry| entry.row_count)
+            .max()
+            .unwrap_or(0);
+        eprintln!(
+            "[debundle selector_ir] targets={} atoms={} owners={} ast_nodes={} constraints.unary={} constraints.node_unary={} constraints.binary={} constraints.owner_node={} constraints.node_node={} constraints.node_list={} constraints.equality={} child_list.rows={} child_list.max_rows={} child_list.row_generation_ms={}",
+            self.target_count,
+            self.atom_count,
+            self.owner_fact_count,
+            self.ast_node_count,
+            self.unary_constraint_count,
+            self.node_unary_constraint_count,
+            self.binary_constraint_count,
+            self.owner_node_constraint_count,
+            self.node_node_constraint_count,
+            self.node_list_constraint_count,
+            self.equality_constraint_count,
+            child_list_row_count,
+            max_child_list_rows,
+            child_list_elapsed.as_millis(),
+        );
+        let mut top_child_lists = self.child_list_rows.clone();
+        top_child_lists.sort_by_key(|entry| {
+            (
+                std::cmp::Reverse(entry.row_count),
+                std::cmp::Reverse(entry.candidate_parent_count),
+                entry.constraint_id,
+            )
+        });
+        for entry in top_child_lists.into_iter().take(10) {
+            eprintln!(
+                "[debundle selector_ir child_list] constraint={} parent_var={} candidate_parents={} rows={} segment_lengths={:?} anchored_left={} anchored_right={}",
+                entry.constraint_id,
+                entry.parent_var,
+                entry.candidate_parent_count,
+                entry.row_count,
+                entry.segment_lengths,
+                entry.anchored_left,
+                entry.anchored_right,
+            );
+        }
+        let _ = std::io::stderr().flush();
+    }
+
+    fn emit_after_ascent(&self, ascent_elapsed: Duration) {
+        eprintln!(
+            "[debundle selector_ir] ascent_run_ms={}",
+            ascent_elapsed.as_millis()
+        );
+        let _ = std::io::stderr().flush();
+    }
+}
+
 fn classify_candidates(
     target: &SelectorTarget,
     candidates: BTreeSet<OwnerId>,
     projected_bindings: Option<BTreeSet<(OwnerId, String)>>,
     facts: &FactIndex,
-    support: &ProgramSupport,
 ) -> ClaimOutcome {
-    let claims: Vec<ResolvedClaim> =
-        if let Some(selector_key) = support.source_match_selector_for(target.owner) {
-            candidates
-                .into_iter()
-                .flat_map(|owner| resolved_source_match_claims(target, owner, facts, &selector_key))
-                .collect()
-        } else if let Some(projected_bindings) = projected_bindings {
-            projected_bindings
-                .into_iter()
-                .filter_map(|(owner, binding)| resolved_claim(target, owner, Some(binding), facts))
-                .collect()
-        } else {
-            candidates
-                .into_iter()
-                .filter_map(|owner| resolved_claim(target, owner, None, facts))
-                .collect()
-        };
+    let claims: Vec<ResolvedClaim> = if let Some(projected_bindings) = projected_bindings {
+        projected_bindings
+            .into_iter()
+            .filter_map(|(owner, binding)| resolved_claim(target, owner, Some(binding), facts))
+            .collect()
+    } else {
+        candidates
+            .into_iter()
+            .filter_map(|owner| resolved_claim(target, owner, None, facts))
+            .collect()
+    };
     match claims.as_slice() {
         [] => ClaimOutcome::NoMatch,
         [claim] => ClaimOutcome::Unique {
@@ -1436,28 +1682,6 @@ fn classify_candidates(
         },
         _ => ClaimOutcome::Ambiguous { candidates: claims },
     }
-}
-
-fn resolved_source_match_claims(
-    target: &SelectorTarget,
-    owner: OwnerId,
-    facts: &FactIndex,
-    selector_key: &str,
-) -> Vec<ResolvedClaim> {
-    let Some(statement_ordinal) = facts.statement_ordinal_by_owner.get(&owner).copied() else {
-        return Vec::new();
-    };
-    facts
-        .source_match_bindings_for_owner(selector_key, owner)
-        .into_iter()
-        .map(|binding| ResolvedClaim {
-            chunk_id: target.chunk_id,
-            owner,
-            statement_ordinal,
-            binding: Some(binding),
-            provenance: Vec::new(),
-        })
-        .collect()
 }
 
 fn resolved_claim(
@@ -1881,15 +2105,6 @@ impl ProgramSupport {
                     *referenced_by,
                     BinaryConstraintKind::IntrinsicAlias {
                         property: value.clone(),
-                    },
-                ),
-                SelectorAtom::SourceMatchCandidate {
-                    owner: OwnerTerm::Var { id },
-                    selector_key: StringTerm::Const { value },
-                } => support.add_unary(
-                    *id,
-                    UnaryConstraintKind::SourceMatchCandidate {
-                        selector_key: value.clone(),
                     },
                 ),
                 SelectorAtom::Equal { left, right } => {
@@ -2438,30 +2653,27 @@ impl ProgramSupport {
             .collect()
     }
 
+    fn node_unary_constraints_for_variable(
+        &self,
+        variable: SelectorVariableId,
+    ) -> Vec<&NodeUnaryConstraint> {
+        self.node_unary_constraints_by_var
+            .get(&variable)
+            .into_iter()
+            .flatten()
+            .filter_map(|constraint_id| {
+                self.node_unary_constraints
+                    .iter()
+                    .find(|constraint| constraint.id == *constraint_id)
+            })
+            .collect()
+    }
+
     fn unsupported_reason_for_target(&self, target: &SelectorTarget) -> Option<String> {
         if !self.constraints_by_var.contains_key(&target.owner) {
             return Some("target owner variable has no selector constraints".to_string());
         }
         None
-    }
-
-    fn source_match_selector_for(&self, variable: SelectorVariableId) -> Option<String> {
-        self.unary_constraints_by_var
-            .get(&variable)?
-            .iter()
-            .filter_map(|constraint_id| {
-                let constraint = self
-                    .unary_constraints
-                    .iter()
-                    .find(|constraint| constraint.id == *constraint_id)?;
-                match &constraint.kind {
-                    UnaryConstraintKind::SourceMatchCandidate { selector_key } => {
-                        Some(selector_key.clone())
-                    }
-                    _ => None,
-                }
-            })
-            .next()
     }
 
     fn live_variables_by_step(
@@ -2502,6 +2714,40 @@ impl ProgramSupport {
         }
         (1..=constraint_ids.len())
             .map(|step| (step, by_step.get(&step).cloned().unwrap_or_default()))
+            .collect()
+    }
+
+    fn stored_variables_by_step(
+        &self,
+        constraint_ids: &[usize],
+        targets: &[SelectorTarget],
+    ) -> Vec<(usize, Vec<usize>)> {
+        let target_projection_steps = self.target_projection_steps(constraint_ids, targets);
+        let mut by_step = self
+            .live_variables_by_step(constraint_ids, targets)
+            .into_iter()
+            .map(|(step, variables)| (step, variables.into_iter().collect::<BTreeSet<_>>()))
+            .collect::<BTreeMap<_, _>>();
+        for (owner, projection_step) in target_projection_steps {
+            let stored = by_step.entry(projection_step).or_default();
+            stored.insert(owner.0);
+            if let Some(TargetBindingProjection::Var(binding)) =
+                self.target_binding_projection_by_owner.get(&owner)
+            {
+                stored.insert(binding.0);
+            }
+        }
+        (1..=constraint_ids.len())
+            .map(|step| {
+                (
+                    step,
+                    by_step
+                        .remove(&step)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .collect(),
+                )
+            })
             .collect()
     }
 
@@ -2769,6 +3015,28 @@ impl ProgramSupport {
 
     fn constraint_order_rank(&self, id: usize) -> usize {
         if self
+            .unary_constraints
+            .iter()
+            .any(|constraint| constraint.id == id)
+            || self
+                .ordinal_unary_constraints
+                .iter()
+                .any(|constraint| constraint.id == id)
+        {
+            return 0;
+        }
+        if let Some(constraint) = self
+            .node_unary_constraints
+            .iter()
+            .find(|constraint| constraint.id == id)
+        {
+            return match &constraint.kind {
+                NodeUnaryConstraintKind::Kind { .. }
+                | NodeUnaryConstraintKind::ChildCount { .. } => 2,
+                _ => 1,
+            };
+        }
+        if self
             .owner_node_constraints
             .iter()
             .any(|constraint| constraint.id == id)
@@ -2785,7 +3053,7 @@ impl ProgramSupport {
                 .iter()
                 .any(|constraint| constraint.id == id)
         {
-            return 0;
+            return 3;
         }
         if self
             .binary_constraints
@@ -2800,42 +3068,20 @@ impl ProgramSupport {
                 .iter()
                 .any(|constraint| constraint.id == id)
         {
-            return 1;
+            return 4;
         }
         if self
-            .unary_constraints
+            .owner_string_constraints
             .iter()
             .any(|constraint| constraint.id == id)
-            || self
-                .owner_string_constraints
-                .iter()
-                .any(|constraint| constraint.id == id)
             || self
                 .node_string_constraints
                 .iter()
                 .any(|constraint| constraint.id == id)
         {
-            return 2;
+            return 5;
         }
-        if let Some(constraint) = self
-            .node_unary_constraints
-            .iter()
-            .find(|constraint| constraint.id == id)
-        {
-            return match &constraint.kind {
-                NodeUnaryConstraintKind::Kind { .. }
-                | NodeUnaryConstraintKind::ChildCount { .. } => 4,
-                _ => 3,
-            };
-        }
-        if self
-            .ordinal_unary_constraints
-            .iter()
-            .any(|constraint| constraint.id == id)
-        {
-            return 3;
-        }
-        5
+        6
     }
 }
 
@@ -2884,9 +3130,6 @@ enum UnaryConstraintKind {
     MakesDecorateCallForBinding {
         class_anchor: String,
         member: Option<String>,
-    },
-    SourceMatchCandidate {
-        selector_key: String,
     },
     OwnerStatementOrdinal {
         ordinal: StatementOrdinal,
@@ -3159,7 +3402,6 @@ fn atom_kind(atom: &SelectorAtom) -> &'static str {
         SelectorAtom::MakesDecorateCall { .. } => "makes_decorate_call",
         SelectorAtom::MakesDecorateCallForOwner { .. } => "makes_decorate_call_for_owner",
         SelectorAtom::IntrinsicAlias { .. } => "intrinsic_alias",
-        SelectorAtom::SourceMatchCandidate { .. } => "source_match_candidate",
         SelectorAtom::Equal { .. } => "equal",
         SelectorAtom::NotEqual { .. } => "not_equal",
     }
@@ -3183,7 +3425,6 @@ struct FactIndex {
     call_arguments_from: Vec<(String, String, String, usize)>,
     decorate_calls: Vec<(String, String, Option<String>)>,
     intrinsic_aliases: Vec<(String, String)>,
-    source_match_candidates: Vec<(String, OwnerId, String)>,
     ast_kinds: Vec<(u32, String)>,
     ast_children: Vec<(u32, u32, u32)>,
     ast_children_by_parent: BTreeMap<u32, Vec<(u32, u32)>>,
@@ -3199,6 +3440,7 @@ struct FactIndex {
     ast_regex_literals: Vec<(u32, String, String)>,
     ast_super_classes: Vec<(u32, u32)>,
     ast_top_levels: Vec<(u32, StatementOrdinal)>,
+    owner_top_level_roots: Vec<(OwnerId, u32)>,
 }
 
 impl FactIndex {
@@ -3323,20 +3565,6 @@ impl FactIndex {
                         .intrinsic_aliases
                         .push((binding.clone(), property.clone()));
                 }
-                SelectorFact::SourceMatchCandidate {
-                    selector_key,
-                    statement_ordinal,
-                    binding,
-                    ..
-                } => {
-                    if let Some(owner) = index.owner_by_statement_ordinal.get(statement_ordinal) {
-                        index.source_match_candidates.push((
-                            selector_key.clone(),
-                            *owner,
-                            binding.clone(),
-                        ));
-                    }
-                }
                 SelectorFact::AstKind {
                     node, node_kind, ..
                 } => {
@@ -3445,6 +3673,7 @@ impl FactIndex {
             children.sort_by_key(|(child_index, _child)| *child_index);
         }
         index.ast_children_by_parent = children_by_parent;
+        index.owner_top_level_roots = owner_top_level_root_rows(&index);
         index
     }
 
@@ -3456,18 +3685,69 @@ impl FactIndex {
         }
         Some(binding)
     }
+}
 
-    fn source_match_bindings_for_owner(&self, selector_key: &str, owner: OwnerId) -> Vec<String> {
-        self.source_match_candidates
-            .iter()
-            .filter(|(candidate_key, candidate_owner, _binding)| {
-                candidate_key == selector_key && *candidate_owner == owner
-            })
-            .map(|(_key, _owner, binding)| binding.clone())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect()
+fn owner_top_level_root_rows(index: &FactIndex) -> Vec<(OwnerId, u32)> {
+    let mut rows = BTreeSet::<(OwnerId, u32)>::new();
+    let ast_roots_by_ordinal = index
+        .ast_top_levels
+        .iter()
+        .map(|(node, ordinal)| (*ordinal, *node))
+        .fold(
+            BTreeMap::<StatementOrdinal, Vec<u32>>::new(),
+            |mut roots, (ordinal, node)| {
+                roots.entry(ordinal).or_default().push(node);
+                roots
+            },
+        );
+    for (owner, ordinal, _kind) in &index.owner_facts {
+        if let Some(roots) = ast_roots_by_ordinal.get(ordinal) {
+            for root in roots {
+                rows.insert((*owner, *root));
+            }
+        }
     }
+
+    let mut owners_by_binding = BTreeMap::<&str, Vec<OwnerId>>::new();
+    for (owner, binding) in &index.declared_bindings {
+        owners_by_binding
+            .entry(binding.as_str())
+            .or_default()
+            .push(*owner);
+    }
+    if owners_by_binding.is_empty() {
+        return rows.into_iter().collect();
+    }
+
+    let binding_ident_nodes = index
+        .ast_kinds
+        .iter()
+        .filter_map(|(node, kind)| (kind == "BindingIdent").then_some(*node))
+        .collect::<BTreeSet<_>>();
+    let identifier_by_node = index
+        .ast_identifier_names
+        .iter()
+        .map(|(node, value)| (*node, value.as_str()))
+        .collect::<BTreeMap<_, _>>();
+
+    for (root, _ordinal) in &index.ast_top_levels {
+        let mut stack = vec![*root];
+        while let Some(node) = stack.pop() {
+            if binding_ident_nodes.contains(&node)
+                && let Some(binding) = identifier_by_node.get(&node)
+                && let Some(owners) = owners_by_binding.get(binding)
+            {
+                for owner in owners {
+                    rows.insert((*owner, *root));
+                }
+            }
+            if let Some(children) = index.ast_children_by_parent.get(&node) {
+                stack.extend(children.iter().map(|(_index, child)| *child));
+            }
+        }
+    }
+
+    rows.into_iter().collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4505,13 +4785,6 @@ mod tests {
         )
         .unwrap()
         .program;
-        assert!(
-            !program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
-            "single-node expression holes should lower to native AST constraints"
-        );
         let facts = fact_store_from_analyzed_source(
             r#"
 const selected = Math.max(alpha + 1, beta ? beta.value : "fallback");
@@ -4544,13 +4817,6 @@ const wrongCallee = Math.min(alpha + 1, beta ? beta.value : "fallback");
         )
         .unwrap()
         .program;
-        assert!(
-            !program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
-            "single-node statement holes should lower to native AST constraints"
-        );
         let facts = fact_store_from_analyzed_source(
             r#"
 function selected(flag) {
@@ -4590,13 +4856,6 @@ function wrongShape(flag) {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         let facts = fact_store_from_analyzed_source(
             r#"
 function bad() { return other; }
@@ -4631,13 +4890,6 @@ function good() { return good; }
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         let facts = fact_store_from_analyzed_source(
             r#"
 function bad() { return bad; }
@@ -4673,13 +4925,6 @@ function good() { return other; }
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         let facts = fact_store_from_analyzed_source(
             r#"
 function wrongKey(runtimeStable) {
@@ -4720,13 +4965,6 @@ function good(runtimeStable) {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         let facts = fact_store_from_analyzed_source(
             r#"
 function wrongKey(input) {
@@ -4769,13 +5007,6 @@ function good(input) {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         let facts = fact_store_from_analyzed_source(
             r#"
 function bad(target, decorators) {
@@ -4815,13 +5046,6 @@ function good(target, decorators) {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         let facts = fact_store_from_analyzed_source(
             r#"
 const bad = { runtimeStable = "wrong" };
@@ -4858,13 +5082,6 @@ const good = { runtimeStable = "ok" };
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         let facts = fact_store_from_analyzed_source(
             r#"
 function candidateLeft() {
@@ -4906,13 +5123,6 @@ function candidateRight() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         let facts = fact_store_from_analyzed_source(
             r#"
 const runtimeFirst = build("left"), runtimeSecond = build("right");
@@ -4948,13 +5158,6 @@ const otherFirst = build("left"), otherSecond = build("wrong");
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         let facts = fact_store_from_analyzed_source(
             r#"
 function makeTarget(value) {
@@ -4997,13 +5200,6 @@ const wrongCallee = makeOther("value");
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
 
         let adjacent = fact_store_from_analyzed_source(
             r#"
@@ -5058,14 +5254,6 @@ const selected = makeThing();
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
-            "STR_LITERAL_MATCHING_RE should lower into native AST constraints"
-        );
         assert!(
             lowered
                 .program
@@ -5389,7 +5577,7 @@ function targetClassName() {
     }
 
     #[test]
-    fn solves_intrinsic_alias_chain_when_class_anchor_is_source_match_candidate() {
+    fn solves_intrinsic_alias_chain_when_class_anchor_is_native_source_match() {
         let mut builder = MemberSelectorProgramBuilder::new(MemberSelectorLoweringContext::new(
             ChunkId(0),
             "features/widget",
@@ -5408,146 +5596,9 @@ function targetClassName() {
             kind: None,
         });
         let mut class_selector = AnonymousStatementSelector::exact(
-            "const DecoratedClass = class Widget { STMT_LIST; };",
+            r#"const DecoratedClass = class Widget { method() { return "selected"; } };"#,
         );
-        class_selector.target_binding = Some("DecoratedClass".to_string());
-        let class_member_selector = MemberSelectorSpec::SourceMatch(class_selector.clone());
-
-        let define_alias = builder
-            .declare_member_target_in_module(
-                "features/widget",
-                "definePropertyAlias",
-                &define_alias_selector,
-            )
-            .unwrap();
-        let descriptor_alias = builder
-            .declare_member_target_in_module(
-                "features/widget",
-                "descriptorAlias",
-                &descriptor_alias_selector,
-            )
-            .unwrap();
-        let helper = builder
-            .declare_member_target_in_module("features/widget", "applyDecorators", &helper_selector)
-            .unwrap();
-        let class = builder
-            .declare_member_target_in_module(
-                "features/widget",
-                "DecoratedClass",
-                &class_member_selector,
-            )
-            .unwrap();
-        for (export_name, selector) in [
-            ("definePropertyAlias", &define_alias_selector),
-            ("descriptorAlias", &descriptor_alias_selector),
-            ("applyDecorators", &helper_selector),
-            ("DecoratedClass", &class_member_selector),
-        ] {
-            builder
-                .lower_member_constraints_in_module("features/widget", export_name, selector)
-                .unwrap();
-        }
-        let program = builder.into_program().unwrap();
-        let class_owner = program.targets[class.0].owner;
-        let selector_key = program
-            .atoms
-            .iter()
-            .find_map(|atom| match atom {
-                selector_ir::SelectorAtom::SourceMatchCandidate {
-                    owner: selector_ir::OwnerTerm::Var { id },
-                    selector_key: selector_ir::StringTerm::Const { value },
-                } if *id == class_owner => Some(value.clone()),
-                _ => None,
-            })
-            .expect("class source_match should lower to a candidate selector key");
-        let facts = SelectorFactStore {
-            facts: vec![
-                owner(1, 1, "var_decl"),
-                declared(1, "defineAlias"),
-                owner(2, 2, "var_decl"),
-                declared(2, "descriptorAlias"),
-                owner(3, 3, "var_decl"),
-                declared(3, "decorateHelper"),
-                owner(4, 4, "var_decl"),
-                declared(4, "targetClass"),
-                SelectorFact::IntrinsicAliasUse {
-                    chunk_id: ChunkId(0),
-                    binding: "defineAlias".to_string(),
-                    property: "defineProperty".to_string(),
-                },
-                SelectorFact::IntrinsicAliasUse {
-                    chunk_id: ChunkId(0),
-                    binding: "descriptorAlias".to_string(),
-                    property: "getOwnPropertyDescriptor".to_string(),
-                },
-                SelectorFact::OwnerReferencesBinding {
-                    chunk_id: ChunkId(0),
-                    owner: OwnerId(3),
-                    binding: "defineAlias".to_string(),
-                    edge_kind: "eager_use".to_string(),
-                },
-                SelectorFact::OwnerReferencesBinding {
-                    chunk_id: ChunkId(0),
-                    owner: OwnerId(3),
-                    binding: "descriptorAlias".to_string(),
-                    edge_kind: "eager_use".to_string(),
-                },
-                SelectorFact::DecorateCallUse {
-                    chunk_id: ChunkId(0),
-                    callee: "decorateHelper".to_string(),
-                    class_anchor: "targetClass".to_string(),
-                    member: None,
-                },
-                SelectorFact::SourceMatchCandidate {
-                    chunk_id: ChunkId(0),
-                    selector_key,
-                    statement_ordinal: StatementOrdinal(4),
-                    binding: "targetClass".to_string(),
-                },
-            ],
-        };
-
-        let result = solve(&program, &facts).unwrap();
-
-        for (target, owner) in [
-            (define_alias, OwnerId(1)),
-            (descriptor_alias, OwnerId(2)),
-            (helper, OwnerId(3)),
-            (class, OwnerId(4)),
-        ] {
-            assert!(
-                matches!(
-                    result.outcome_for(target),
-                    Some(ClaimOutcome::Unique { claim }) if claim.owner == owner
-                ),
-                "target {target:?} should resolve to {owner:?}: {:#?}",
-                result.outcome_for(target)
-            );
-        }
-    }
-
-    #[test]
-    fn solves_intrinsic_alias_chain_from_analyzed_decorate_trio() {
-        let mut builder = MemberSelectorProgramBuilder::new(MemberSelectorLoweringContext::new(
-            ChunkId(0),
-            "features/widget",
-        ));
-        let define_alias_selector = MemberSelectorSpec::IntrinsicAlias(IntrinsicAliasTarget {
-            property: "defineProperty".to_string(),
-            referenced_by: "applyDecorators".to_string(),
-        });
-        let descriptor_alias_selector = MemberSelectorSpec::IntrinsicAlias(IntrinsicAliasTarget {
-            property: "getOwnPropertyDescriptor".to_string(),
-            referenced_by: "applyDecorators".to_string(),
-        });
-        let helper_selector = MemberSelectorSpec::MakesDecorateCall(MakesDecorateCallTarget {
-            class: "DecoratedClass".to_string(),
-            member: None,
-            kind: None,
-        });
-        let mut class_selector = AnonymousStatementSelector::exact(
-            "const DecoratedClass = class Widget { STMT_LIST; };",
-        );
+        class_selector.identifiers = spec::SourceMatchIdentifierMode::AlphaAll;
         class_selector.target_binding = Some("DecoratedClass".to_string());
         let class_member_selector = MemberSelectorSpec::SourceMatch(class_selector);
 
@@ -5586,20 +5637,104 @@ function targetClassName() {
                 .unwrap();
         }
         let program = builder.into_program().unwrap();
-        let class_owner_var = program.targets[class.0].owner;
-        let selector_key = program
-            .atoms
-            .iter()
-            .find_map(|atom| match atom {
-                selector_ir::SelectorAtom::SourceMatchCandidate {
-                    owner: selector_ir::OwnerTerm::Var { id },
-                    selector_key: selector_ir::StringTerm::Const { value },
-                } if *id == class_owner_var => Some(value.clone()),
-                _ => None,
-            })
-            .expect("class source_match should lower to a candidate selector key");
+        let facts = fact_store_from_analyzed_source(
+            r#"
+var defineAlias = Object.defineProperty,
+  descriptorAlias = Object.getOwnPropertyDescriptor,
+  decorateHelper = (decorators, target, key, kind) => {
+    const desc = kind ? descriptorAlias(target, key) : target;
+    for (const decorator of decorators) decorator(target, key, desc);
+    defineAlias(target, key, desc);
+  };
+const targetClass = class LocalWidget { method() { return "selected"; } };
+decorateHelper([tag], targetClass.prototype, "greet", 1);
+"#,
+        );
 
-        let mut facts = fact_store_from_analyzed_source(
+        let result = solve(&program, &facts).unwrap();
+
+        for (target, owner) in [
+            (define_alias, owner_for_binding(&facts, "defineAlias")),
+            (
+                descriptor_alias,
+                owner_for_binding(&facts, "descriptorAlias"),
+            ),
+            (helper, owner_for_binding(&facts, "decorateHelper")),
+            (class, owner_for_binding(&facts, "targetClass")),
+        ] {
+            assert!(
+                matches!(
+                    result.outcome_for(target),
+                    Some(ClaimOutcome::Unique { claim }) if claim.owner == owner
+                ),
+                "target {target:?} should resolve to {owner:?}: {:#?}",
+                result.outcome_for(target)
+            );
+        }
+    }
+
+    #[test]
+    fn solves_intrinsic_alias_chain_from_analyzed_decorate_trio() {
+        let mut builder = MemberSelectorProgramBuilder::new(MemberSelectorLoweringContext::new(
+            ChunkId(0),
+            "features/widget",
+        ));
+        let define_alias_selector = MemberSelectorSpec::IntrinsicAlias(IntrinsicAliasTarget {
+            property: "defineProperty".to_string(),
+            referenced_by: "applyDecorators".to_string(),
+        });
+        let descriptor_alias_selector = MemberSelectorSpec::IntrinsicAlias(IntrinsicAliasTarget {
+            property: "getOwnPropertyDescriptor".to_string(),
+            referenced_by: "applyDecorators".to_string(),
+        });
+        let helper_selector = MemberSelectorSpec::MakesDecorateCall(MakesDecorateCallTarget {
+            class: "DecoratedClass".to_string(),
+            member: None,
+            kind: None,
+        });
+        let mut class_selector =
+            AnonymousStatementSelector::exact("const DecoratedClass = class Widget {};");
+        class_selector.identifiers = spec::SourceMatchIdentifierMode::AlphaAll;
+        class_selector.target_binding = Some("DecoratedClass".to_string());
+        let class_member_selector = MemberSelectorSpec::SourceMatch(class_selector);
+
+        let define_alias = builder
+            .declare_member_target_in_module(
+                "features/widget",
+                "definePropertyAlias",
+                &define_alias_selector,
+            )
+            .unwrap();
+        let descriptor_alias = builder
+            .declare_member_target_in_module(
+                "features/widget",
+                "descriptorAlias",
+                &descriptor_alias_selector,
+            )
+            .unwrap();
+        let helper = builder
+            .declare_member_target_in_module("features/widget", "applyDecorators", &helper_selector)
+            .unwrap();
+        let class = builder
+            .declare_member_target_in_module(
+                "features/widget",
+                "DecoratedClass",
+                &class_member_selector,
+            )
+            .unwrap();
+        for (export_name, selector) in [
+            ("definePropertyAlias", &define_alias_selector),
+            ("descriptorAlias", &descriptor_alias_selector),
+            ("applyDecorators", &helper_selector),
+            ("DecoratedClass", &class_member_selector),
+        ] {
+            builder
+                .lower_member_constraints_in_module("features/widget", export_name, selector)
+                .unwrap();
+        }
+        let program = builder.into_program().unwrap();
+
+        let facts = fact_store_from_analyzed_source(
             r#"
 var defineAlias = Object.defineProperty,
   descriptorAlias = Object.getOwnPropertyDescriptor,
@@ -5613,12 +5748,6 @@ decorateHelper([tag], targetClass.prototype, "greet", 1);
 "#,
         );
         let class_owner = owner_for_binding(&facts, "targetClass");
-        facts.push(SelectorFact::SourceMatchCandidate {
-            chunk_id: ChunkId(0),
-            selector_key,
-            statement_ordinal: statement_ordinal_for_owner(&facts, class_owner),
-            binding: "targetClass".to_string(),
-        });
 
         let result = solve(&program, &facts).unwrap();
 

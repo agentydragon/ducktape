@@ -144,21 +144,28 @@ impl MemberSelectorProgramBuilder {
         logical_module: impl Into<String>,
         statement_index: usize,
         selector: &AnonymousStatementSelector,
-    ) -> Result<Option<SelectorTargetId>, SelectorIrLoweringError> {
+    ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
         if !native_anonymous_source_match_supported(selector) {
-            return Ok(None);
+            return Err(SelectorIrLoweringError::unsupported(
+                "anonymous_statements.source_match",
+                "selector shape is not yet supported by native selector IR",
+            ));
         }
         let logical_module = logical_module.into();
-        let owner = self.program.add_variable(
+        let mut scratch = self.clone();
+        let owner = scratch.program.add_variable(
             VariableDomain::Owner,
             Some(format!(
                 "{logical_module}::anonymous_statement.{statement_index}"
             )),
         );
-        if !self.try_lower_native_source_match(&logical_module, owner, selector)? {
-            return Ok(None);
+        if !scratch.try_lower_native_source_match(&logical_module, owner, selector)? {
+            return Err(SelectorIrLoweringError::unsupported(
+                "anonymous_statements.source_match",
+                "selector shape is not yet supported by native selector IR",
+            ));
         }
-        Ok(Some(self.program.add_target(
+        let target = scratch.program.add_target(
             self.context.chunk_id,
             owner,
             logical_module,
@@ -166,7 +173,9 @@ impl MemberSelectorProgramBuilder {
             ClaimOrigin::AnonymousStatement {
                 index: statement_index,
             },
-        )))
+        );
+        *self = scratch;
+        Ok(target)
     }
 
     pub fn lower_member_constraints_in_module(
@@ -258,10 +267,10 @@ impl MemberSelectorProgramBuilder {
             MemberSelectorSpec::Binding(binding) => self.lower_binding_selector(owner, binding),
             MemberSelectorSpec::SourceMatch(selector) => {
                 if !self.try_lower_native_source_match(logical_module, owner, selector)? {
-                    self.program.add_atom(SelectorAtom::SourceMatchCandidate {
-                        owner: owner_term(owner),
-                        selector_key: const_str(&source_match::selector_key(selector)),
-                    });
+                    return Err(SelectorIrLoweringError::unsupported(
+                        "source_match",
+                        "selector shape is not yet supported by native selector IR",
+                    ));
                 }
                 Ok(())
             }
@@ -382,14 +391,19 @@ impl MemberSelectorProgramBuilder {
         owner: SelectorVariableId,
         selector: &AnonymousStatementSelector,
     ) -> Result<bool, SelectorIrLoweringError> {
-        let Ok(parsed) = js_ast::with_swc_globals(|| {
-            js_ast::parse_js_module_ast(
-                &format!("<selector ir source_match in {logical_module}>"),
+        let parsed = js_ast::with_swc_globals(|| {
+            source_match::parse_selector_module_with_capability_check(
+                logical_module,
+                "source_match",
+                format!("<selector ir source_match in {logical_module}>"),
                 &selector.match_source,
+                "source_match",
             )
-        }) else {
-            return Ok(false);
-        };
+        })
+        .map_err(|error| SelectorIrLoweringError::UnsupportedSourceMatch {
+            selector_kind: "source_match",
+            reason: error.to_string(),
+        })?;
         if parsed.body.is_empty() {
             return Ok(false);
         }
@@ -656,14 +670,19 @@ impl MemberSelectorProgramBuilder {
         if selector.target_binding.is_some() || exports_by_target.is_empty() {
             return Ok(false);
         }
-        let Ok(parsed) = js_ast::with_swc_globals(|| {
-            js_ast::parse_js_module_ast(
-                &format!("<selector ir binding_group source_match in {logical_module}>"),
+        let parsed = js_ast::with_swc_globals(|| {
+            source_match::parse_selector_module_with_capability_check(
+                logical_module,
+                "binding_group.source_match",
+                format!("<selector ir binding_group source_match in {logical_module}>"),
                 &selector.match_source,
+                "binding_group.source_match",
             )
-        }) else {
-            return Ok(false);
-        };
+        })
+        .map_err(|error| SelectorIrLoweringError::UnsupportedSourceMatch {
+            selector_kind: "binding_group.source_match",
+            reason: error.to_string(),
+        })?;
         if parsed.body.is_empty() {
             return Ok(false);
         }
@@ -2399,6 +2418,10 @@ pub enum SelectorIrLoweringError {
         selector_kind: &'static str,
         reason: &'static str,
     },
+    UnsupportedSourceMatch {
+        selector_kind: &'static str,
+        reason: String,
+    },
     DanglingAnchor {
         logical_module: String,
         export_name: String,
@@ -2422,6 +2445,13 @@ impl fmt::Display for SelectorIrLoweringError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unsupported {
+                selector_kind,
+                reason,
+            } => write!(
+                f,
+                "unsupported selector IR lowering for {selector_kind}: {reason}"
+            ),
+            Self::UnsupportedSourceMatch {
                 selector_kind,
                 reason,
             } => write!(
@@ -2475,21 +2505,6 @@ mod tests {
 
     fn context() -> MemberSelectorLoweringContext {
         MemberSelectorLoweringContext::new(ChunkId(3), "runtime/widgets")
-    }
-
-    fn assert_source_match_oracle_only(
-        lowered: &LoweredMemberSelector,
-        selector: &AnonymousStatementSelector,
-    ) {
-        let target_owner = lowered.program.targets[lowered.target.0].owner;
-        assert_eq!(lowered.program.atoms.len(), 1);
-        assert!(matches!(
-            &lowered.program.atoms[0],
-            SelectorAtom::SourceMatchCandidate {
-                owner: OwnerTerm::Var { id },
-                selector_key: StringTerm::Const { value },
-            } if *id == target_owner && value == &source_match::selector_key(selector)
-        ));
     }
 
     #[test]
@@ -2568,14 +2583,6 @@ mod tests {
             &MemberSelectorSpec::SourceMatch(selector.clone()),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(
             lowered
                 .program
@@ -2615,14 +2622,6 @@ mod tests {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(
             lowered
                 .program
@@ -2644,15 +2643,6 @@ mod tests {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
-            "fixed-window member source_match selectors should stay in native IR"
-        );
         let offsets = lowered
             .program
             .atoms
@@ -2687,14 +2677,6 @@ mod tests {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         let mut string_vars = lowered.program.atoms.iter().filter_map(|atom| match atom {
             SelectorAtom::AstStringLiteral {
                 value: StringTerm::Var { id },
@@ -2723,15 +2705,6 @@ mod tests {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
-            "regex string-literal predicates should stay in the native selector IR"
-        );
         assert!(
             lowered.program.atoms.iter().any(|atom| {
                 matches!(
@@ -2769,14 +2742,6 @@ mod tests {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(
             !lowered.program.atoms.iter().any(|atom| {
                 matches!(
@@ -2810,14 +2775,6 @@ mod tests {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(
             !lowered.program.atoms.iter().any(|atom| {
                 matches!(
@@ -2854,14 +2811,6 @@ mod tests {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         let identifier_vars = lowered
             .program
             .atoms
@@ -2923,13 +2872,6 @@ mod tests {
         .unwrap();
 
         let target_owner = lowered.program.targets[lowered.target.0].owner;
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::OwnerDeclaresBinding {
@@ -2952,15 +2894,6 @@ mod tests {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
-            "alpha_all source_match with target_binding in a multi-declarator should stay native",
-        );
         let target_owner = lowered.program.targets[lowered.target.0].owner;
         let projected_bindings = lowered
             .program
@@ -3020,13 +2953,6 @@ mod tests {
                 .unwrap()
         );
         let program = builder.into_program().unwrap();
-
-        assert!(
-            !program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         let first_owner = program.targets[first_target.0].owner;
         let second_owner = program.targets[second_target.0].owner;
         let shared_roots = program
@@ -3099,14 +3025,6 @@ function second() {
                 .unwrap()
         );
         let program = builder.into_program().unwrap();
-
-        assert!(
-            !program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
-            "multi-statement binding_groups should stay in native IR"
-        );
         let first_owner = program.targets[first_target.0].owner;
         let second_owner = program.targets[second_target.0].owner;
         let roots = program
@@ -3185,14 +3103,6 @@ STMT_LIST_TAIL;"#,
                 .unwrap()
         );
         let program = builder.into_program().unwrap();
-
-        assert!(
-            !program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
-            "outer module-level STMT_LIST holes should not force the group oracle"
-        );
         assert_eq!(
             program
                 .atoms
@@ -3259,14 +3169,6 @@ function second() {
             "internal top-level STMT_LIST should lower to an ordinal-before constraint"
         );
         let program = builder.into_program().unwrap();
-
-        assert!(
-            !program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. })),
-            "internal module-level STMT_LIST holes should not force the group oracle"
-        );
         assert!(program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::OrdinalBefore {
@@ -3289,13 +3191,6 @@ function second() {
         .unwrap();
 
         let target_owner = lowered.program.targets[lowered.target.0].owner;
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::OwnerDeclaresBinding {
@@ -3316,14 +3211,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::AstChildListPattern {
@@ -3346,14 +3233,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::AstChildListPattern {
@@ -3384,14 +3263,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(
             !lowered.program.atoms.iter().any(|atom| matches!(
                 atom,
@@ -3440,14 +3311,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         let (segments, anchored_left, anchored_right) = lowered
             .program
             .atoms
@@ -3490,14 +3353,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(
             !lowered.program.atoms.iter().any(|atom| matches!(
                 atom,
@@ -3546,14 +3401,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         let (segments, anchored_left, anchored_right) = lowered
             .program
             .atoms
@@ -3595,14 +3442,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::AstChildListPattern {
@@ -3627,14 +3466,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(
             !lowered.program.atoms.iter().any(|atom| matches!(
                 atom,
@@ -3665,14 +3496,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(
             !lowered.program.atoms.iter().any(|atom| matches!(
                 atom,
@@ -3702,14 +3525,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::AstBareProperty {
@@ -3733,14 +3548,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::AstBareProperty {
@@ -3764,14 +3571,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::AstKind {
@@ -3792,14 +3591,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::AstKind {
@@ -3820,14 +3611,21 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
+        let identifier_var_count = lowered
+            .program
+            .atoms
+            .iter()
+            .filter(|atom| {
+                matches!(
+                    atom,
+                    SelectorAtom::AstIdentifierName {
+                        value: StringTerm::Var { .. },
+                        ..
+                    }
+                )
+            })
+            .count();
+        assert!(identifier_var_count >= 4);
     }
 
     #[test]
@@ -3844,13 +3642,6 @@ function second() {
         .unwrap();
 
         let target_owner = lowered.program.targets[lowered.target.0].owner;
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::OwnerDeclaresBinding {
@@ -3873,13 +3664,6 @@ function second() {
         .unwrap();
 
         let target_owner = lowered.program.targets[lowered.target.0].owner;
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::OwnerDeclaresBinding {
@@ -3890,16 +3674,22 @@ function second() {
     }
 
     #[test]
-    fn misplaced_argument_run_hole_stays_oracle_only() {
+    fn misplaced_argument_run_hole_fails_closed() {
         let selector = AnonymousStatementSelector::exact("const a = ARGS;");
-        let lowered = lower_member_selector(
+        let error = lower_member_selector(
             &context(),
             "Widget",
             &MemberSelectorSpec::SourceMatch(selector.clone()),
         )
-        .unwrap();
+        .unwrap_err();
 
-        assert_source_match_oracle_only(&lowered, &selector);
+        assert!(matches!(
+            error,
+            SelectorIrLoweringError::Unsupported {
+                selector_kind: "source_match",
+                reason: "selector shape is not yet supported by native selector IR",
+            }
+        ));
     }
 
     #[test]
@@ -3913,14 +3703,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::AstChildListPattern {
@@ -3956,14 +3738,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::AstChildListPattern {
@@ -3987,14 +3761,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::AstChildListPattern {
@@ -4026,14 +3792,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(
             !lowered
                 .program
@@ -4089,14 +3847,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::AstChildListPattern {
@@ -4131,14 +3881,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::AstChildListPattern {
@@ -4174,14 +3916,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::AstChildListPattern {
@@ -4215,14 +3949,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::AstChildListPattern {
@@ -4256,14 +3982,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::AstChildListPattern {
@@ -4295,14 +4013,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(
             !lowered.program.atoms.iter().any(|atom| matches!(
                 atom,
@@ -4351,14 +4061,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         assert!(lowered.program.atoms.iter().any(|atom| matches!(
             atom,
             SelectorAtom::AstChildListPattern {
@@ -4399,14 +4101,6 @@ function second() {
             &MemberSelectorSpec::SourceMatch(selector),
         )
         .unwrap();
-
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         let switch_pattern_parent = lowered.program.atoms.iter().find_map(|atom| match atom {
             SelectorAtom::AstChildListPattern {
                 parent: NodeTerm::Var { id },
@@ -4450,13 +4144,6 @@ function second() {
         .unwrap();
 
         let target_owner = lowered.program.targets[lowered.target.0].owner;
-        assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::SourceMatchCandidate { .. }))
-        );
         let projected_bindings = lowered
             .program
             .atoms

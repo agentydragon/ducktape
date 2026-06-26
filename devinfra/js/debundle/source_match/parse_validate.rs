@@ -141,7 +141,7 @@ impl Visit for UnsupportedAnythingCollector {
     }
 }
 
-pub(crate) fn parse_selector_module_with_capability_check(
+pub fn parse_selector_module_with_capability_check(
     request_id: &str,
     selector_kind: &str,
     file_label: String,

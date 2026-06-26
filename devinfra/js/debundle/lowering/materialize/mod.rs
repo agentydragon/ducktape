@@ -14,6 +14,8 @@ mod passed_to_call;
 mod plan_builder;
 mod reads_member;
 
+use std::io::Write;
+
 pub(super) use apply::apply_materialized_logical_chunks;
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
 
@@ -25,6 +27,27 @@ use js_ast::statement_ordinal_for_body_index;
 use output_layout::{
     ATOMIC_UNIT_CONFLICTS_REPORT, CYCLES_REPORT, OWNER_GRAPH_REPORT, SELECTOR_DIAGNOSTICS_REPORT,
 };
+
+const DEBUNDLE_PROGRESS_ENV: &str = "DUCKTAPE_DEBUNDLE_PROGRESS";
+
+fn debundle_progress_enabled() -> bool {
+    std::env::var(DEBUNDLE_PROGRESS_ENV)
+        .ok()
+        .is_some_and(|raw| {
+            !matches!(
+                raw.to_ascii_lowercase().as_str(),
+                "" | "0" | "false" | "off" | "no"
+            )
+        })
+}
+
+fn emit_debundle_progress(chunk_id: &str, phase: &str, state: &str) {
+    if !debundle_progress_enabled() {
+        return;
+    }
+    eprintln!("[debundle progress] chunk={chunk_id} phase={phase} state={state}");
+    let _ = std::io::stderr().flush();
+}
 
 /// Per-chunk inputs that identify the chunk and where its outputs
 /// should land. Bundled into `MaterializeLogicalChunkInputs::context`.
@@ -115,6 +138,7 @@ pub(super) fn materialize_logical_chunk(
         .chunk_table
         .get(chunk_id)
         .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
+    emit_debundle_progress(chunk_id, "materialize_logical_chunk", "start");
     let chunk_started = Instant::now();
     let mut timings = PhaseTimings::default();
     let target_file = time_phase!(timings, "resolve_entry", {
@@ -173,13 +197,6 @@ pub(super) fn materialize_logical_chunk(
     let mut imported_binding_resolver =
         ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
     let mut imported_from_by_src = BTreeMap::<String, String>::new();
-    // One selector resolver for the whole chunk, shared by global-selector
-    // fallback facts (built once — see the seam contract in
-    // `source_match::SelectorResolver`). The fact-based `ChunkResolver` is the
-    // production resolver: it builds the chunk's EDB once and resolves every
-    // selector against it, at parity with the former hand-rolled matcher (proven
-    // by the corpus differential, <debug/2026_06_18_per_chunk_gate_real_source.md>).
-    let selector_resolver = source_match::ChunkResolver::new(&runtime_ast.module);
     let explicit_request_ctx = ExplicitRequestContext {
         declaration_by_name: &declaration_by_name,
         chunk_top_level_mark,
@@ -265,7 +282,8 @@ pub(super) fn materialize_logical_chunk(
         None => DynamicImportTarget::External,
     };
     let stage_one = time_phase!(timings, "compute_stage_one_analysis", {
-        compute_stage_one_analysis(
+        emit_debundle_progress(chunk_id, "compute_stage_one_analysis", "start");
+        let stage_one = compute_stage_one_analysis(
             chunk_id,
             &runtime_ast.module,
             &analysis_hints,
@@ -273,14 +291,16 @@ pub(super) fn materialize_logical_chunk(
             |span| line_index.line_range_for_span(span),
             owner_graph_options,
             &resolve_dynamic_import,
-        )?
+        )?;
+        emit_debundle_progress(chunk_id, "compute_stage_one_analysis", "end");
+        stage_one
     });
     let StageOneAnalysis {
         fact_analysis: analysis,
         owner_graph_and_units: precomputed,
     } = stage_one;
     // Global selector resolution: `add_explicit_request` left deferred selector
-    // members unclaimed. Compile binding anchors, source_match candidates, and
+    // members unclaimed. Compile binding anchors, source_match constraints, and
     // relational selectors into one IR program and run one Ascent solver pass over
     // the owner graph + chunk AST relation facts.
     let import_sources: HashMap<String, String> = runtime_import_facts
@@ -288,12 +308,12 @@ pub(super) fn materialize_logical_chunk(
         .map(|(local, src)| (local.to_string(), src.to_string()))
         .collect();
     time_phase!(timings, "resolve_global_selector_members", {
-        builder.resolve_and_claim_global_selectors(
+        emit_debundle_progress(chunk_id, "resolve_global_selector_members", "start");
+        let result = builder.resolve_and_claim_global_selectors(
             &explicit_requests,
             &precomputed.owner_graph,
             &runtime_ast.module,
             &import_sources,
-            &selector_resolver,
             &runtime_import_facts,
             &mut imported_binding_resolver,
             &mut imported_from_by_src,
@@ -302,7 +322,9 @@ pub(super) fn materialize_logical_chunk(
             &target_file,
             chunk_id_interned,
             &declaration_by_name,
-        )
+        );
+        emit_debundle_progress(chunk_id, "resolve_global_selector_members", "end");
+        result
     })?;
     builder.adopt_bindings_of_claimed_anonymous_statements(&declarations);
     drop(imported_binding_resolver);

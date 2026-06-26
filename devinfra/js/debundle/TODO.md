@@ -24,13 +24,15 @@ records and scoped backlogs; when a plan's core work is complete, its remaining
 tail should be summarized here instead of leaving the plan looking like a second
 priority queue.
 
-**Current focus (2026-06-23 post-#2447).** PRs #2439, #2443, #2446, and
-#2447 moved `source_match` onto the Ascent-backed selector path, lowered the
-exact single-statement AST subset, stopped calling `ChunkResolver` for native
-selectors, and added native class-superclass constraints. The remaining P0 is
-to make every live selector form lower into one declarative Ascent/CSP-style
-constraint program. `SourceMatchCandidate` should shrink to the unsupported
-fallback set and then disappear.
+**Current focus (2026-06-25).** PRs #2439, #2443, #2446, and #2447 moved
+`source_match` onto the Ascent-backed selector path, lowered the exact
+single-statement AST subset, stopped calling `ChunkResolver` for native
+selectors, and added native class-superclass constraints. Current work deletes
+the `SourceMatchCandidate` schema, member/group candidate-oracle injection, and
+production anonymous-statement `ChunkResolver` fallback. The remaining P0 is to
+make every retained selector form lower faithfully into one declarative
+Ascent/CSP-style constraint program; unsupported forms now fail closed instead
+of taking a production procedural fallback.
 
 Dispatch work in this order:
 
@@ -42,18 +44,14 @@ Dispatch work in this order:
    holes, regex string predicates, and then ordered run holes (`STMT_LIST`,
    `OBJECT_PROPS`, `DECLARATORS`, `ARGS`, `CLASS_REST`, `CASE_REST`,
    `ARRAY_ELEMENTS`) as native constraints. Preserve the fail-closed rule:
-   unsupported constructs stay on the oracle until their faithful encoding is
+   unsupported constructs report `unsupported` until their faithful encoding is
    implemented.
 3. **Source-match surface pruning (P0.3).** Remove legacy `source_match`
    options that no current downstream spec uses before nativeization hardens
    them into the new IR. `target_statement` / `target_statements` have been
    removed; the remaining gaffer-private census follow-up is
    `wildcard_string_literals`.
-4. **Delete the candidate oracle (P0.4).** Remove `SelectorAtom::SourceMatchCandidate`
-   / `SelectorFact::SourceMatchCandidate` once all retained selector forms lower
-   natively. No-match, ambiguity, unsupported, and duplicate-claim diagnostics
-   should be projections of solver results and categoricity / `all_different`.
-5. **Derived relational predicates (P0.5).** Fold the remaining bridge
+4. **Derived relational predicates (P0.4).** Fold the remaining bridge
    vocabulary (`cross_ref`, `reads_member`, `member_of_module`,
    `passed_to_call`, `makes_decorate_call`, `intrinsic_alias`) into IR atoms or
    derived predicates over owner/reference + AST facts.
@@ -118,10 +116,7 @@ this list as the dispatch summary, not a second plan.
 3. **Prune unused source-match options.** Finish the
    `wildcard_string_literals` census/removal decision, and run a broader
    vestigial-feature audit before nativeizing more rarely-used spec surface.
-4. **Retire `SourceMatchCandidate`.** Delete the pre-enumerated candidate
-   oracle once all retained selector forms lower natively, and route
-   source-match diagnostics through solver categoricity / `all_different`.
-5. **Fold bridge vocabulary into derived predicates.** Re-express the staged
+4. **Fold bridge vocabulary into derived predicates.** Re-express the staged
    relational selectors as solver predicates over owner/reference + AST facts.
    Real-spec Gaffer work should supply missing predicates and diagnostics, not
    another permanent resolver layer.

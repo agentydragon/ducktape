@@ -66,7 +66,6 @@ mod types;
 pub(crate) use anonymous_statement::*;
 pub(crate) use declared_bindings::*;
 pub(crate) use holes::*;
-pub(crate) use parse_validate::*;
 pub(crate) use timing::{
     emit_source_match_timing, source_match_timings_enabled, time_source_match,
 };
@@ -75,6 +74,7 @@ pub(crate) use timing::{
 pub use binding_resolution::{binding_group_member_selectors, source_match_declared_binding_names};
 pub use datalog_resolver::ChunkResolver;
 pub use fact_near_miss::fact_source_match_body_debt;
+pub use parse_validate::parse_selector_module_with_capability_check;
 pub use resolver::SelectorResolver;
 pub use timing::{selector_body_key, selector_key, source_match_preview};
 pub use types::{
