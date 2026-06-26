@@ -41,15 +41,16 @@ rotations:
       namespace: flux-system
   - name: haku-grocy
     # Source JWT for haku's read-only access to the grocy-sf MCP. Issued by the
-    # grocy-mcp-sf provider so its iss matches the MCP's JWTVerifier; the MCP runs
-    # the jwt-bearer exchange into the grocy-sf proxy itself, so no exchange_scopes
-    # here. The outpost then injects X-authentik-username=haku → the read-only
-    # `haku` Grocy user (empty perms). aud defaults to the provider client_id.
-    provider_slug: grocy-mcp-sf
+    # dedicated grocy-mcp-haku-sf provider (30-day validity; shares grocy-mcp-sf's
+    # signing key so the MCP's JWKS validates it, and the MCP accepts its issuer via
+    # GROCY_MCP_AUTH__EXTRA_JWT_ISSUERS). No exchange_scopes — the MCP runs the
+    # jwt-bearer exchange into the grocy-sf proxy itself. The outpost then injects
+    # X-authentik-username=haku → the read-only `haku` Grocy user (empty perms).
+    provider_slug: grocy-mcp-haku-sf
     scopes: openid profile email
     credential_mode: user_password
     expected_audiences:
-      - grocy-mcp-sf
+      - grocy-mcp-haku-sf
     credentials_dir: /var/run/secrets/authentik/haku-grocy
     sops_file: secrets/haku-grocy-jwt.yaml
     token_field: jwt

@@ -38,7 +38,7 @@ from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
 from key_value.aio.protocols import AsyncKeyValue
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -82,6 +82,13 @@ class AuthentikAuthConfig(BaseModel):
     public_base_url: str
     proxy_client_id: str | None = None
     exchange_timeout: float = 10.0
+    extra_jwt_issuers: tuple[str, ...] = Field(
+        default=(),
+        description="Additional issuers the JWTVerifier accepts (beyond oidc_issuer). "
+        "Only valid for providers that share oidc_issuer's signing key, so the same "
+        "JWKS validates their tokens. Used for dedicated machine client_credentials "
+        "providers reaching the same MCP.",
+    )
 
     def normalized_public_base_url(self) -> str:
         return self.public_base_url.rstrip("/")
@@ -140,13 +147,21 @@ def build_authentik_auth(
     )
     assert proxy.client_registration_options is not None
     proxy.client_registration_options.valid_scopes = valid_scopes or DEFAULT_VALID_SCOPES
-    # Accept the issuer both with and without a trailing slash. `normalized_issuer()`
+    # Accept each issuer both with and without a trailing slash. `normalized_issuer()`
     # strips the slash, but Authentik's per-provider tokens carry `iss` WITH a
     # trailing slash and JWTVerifier compares `iss` to the configured issuer by exact
     # string match — so the bare form alone rejects every real Authentik token. (Not
     # caught before because claude.ai authenticates through OIDCProxy, never the
     # JWTVerifier path; direct machine bearer tokens do.)
-    return MultiAuth(server=proxy, verifiers=[JWTVerifier(jwks_uri=jwks_uri, issuer=[issuer, issuer + "/"])])
+    #
+    # extra_jwt_issuers lets the verifier also accept tokens from sibling providers
+    # that share this provider's signing key (so the same JWKS validates them) — e.g.
+    # a dedicated machine client_credentials provider whose tokens reach the same MCP.
+    issuers = [issuer, issuer + "/"]
+    for extra in config.extra_jwt_issuers:
+        bare = extra.rstrip("/")
+        issuers += [bare, bare + "/"]
+    return MultiAuth(server=proxy, verifiers=[JWTVerifier(jwks_uri=jwks_uri, issuer=issuers)])
 
 
 # ── Token exchange auth ───────────────────────────────────────────────────

@@ -136,6 +136,33 @@ def test_build_authentik_auth_accepts_issuer_with_trailing_slash() -> None:
     assert "https://auth.example.com/application/o/test" in issuer
 
 
+def test_build_authentik_auth_includes_extra_jwt_issuers() -> None:
+    """extra_jwt_issuers widen the JWTVerifier's accepted issuers (both slash forms),
+    so a sibling provider sharing the signing key (e.g. a dedicated machine
+    client_credentials provider) is accepted on the same MCP.
+    """
+    discovery_response = AsyncMock()
+    discovery_response.raise_for_status = lambda: discovery_response
+    discovery_response.json = lambda: {"jwks_uri": "https://auth.example.com/application/o/test/jwks/"}
+
+    cfg = _config(issuer="https://auth.example.com/application/o/test/").model_copy(
+        update={"extra_jwt_issuers": ("https://auth.example.com/application/o/machine/",)}
+    )
+    with (
+        patch("mcp_infra.authentik_auth.auth.httpx.get", return_value=discovery_response),
+        patch("mcp_infra.authentik_auth.auth.OIDCProxy") as oidc_proxy_cls,
+        patch("mcp_infra.authentik_auth.auth.JWTVerifier") as jwt_verifier_cls,
+        patch("mcp_infra.authentik_auth.auth.MultiAuth"),
+    ):
+        oidc_proxy_cls.return_value.client_registration_options = AsyncMock()
+        build_authentik_auth(cfg)
+
+    issuer = jwt_verifier_cls.call_args.kwargs["issuer"]
+    assert "https://auth.example.com/application/o/machine/" in issuer
+    assert "https://auth.example.com/application/o/machine" in issuer
+    assert "https://auth.example.com/application/o/test/" in issuer  # primary still present
+
+
 # ── AuthentikExchangeAuth tests ───────────────────────────────────────────
 
 

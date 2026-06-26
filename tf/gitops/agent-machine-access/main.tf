@@ -130,7 +130,12 @@ resource "authentik_provider_proxy" "grocy_sf" {
   invalidation_flow     = data.authentik_flow.invalidation.id
   access_token_validity = "hours=24"
 
-  jwt_federation_providers = [authentik_provider_oauth2.grocy_mcp_sf.id]
+  # grocy_mcp_haku_sf federates here too, so haku's machine token can be exchanged
+  # for a grocy-sf proxy token (the MCP performs that jwt-bearer exchange).
+  jwt_federation_providers = [
+    authentik_provider_oauth2.grocy_mcp_sf.id,
+    authentik_provider_oauth2.grocy_mcp_haku_sf.id,
+  ]
 }
 
 resource "authentik_application" "grocy_sf" {
@@ -210,6 +215,47 @@ resource "kubernetes_secret" "grocy_mcp_oidc_sf" {
     client_secret         = authentik_provider_oauth2.grocy_mcp_sf.client_secret
     grocy_proxy_client_id = authentik_provider_proxy.grocy_sf.client_id
   }
+}
+
+# Dedicated machine client_credentials provider for haku's read-only grocy-sf MCP
+# token, kept separate from the user-facing grocy-mcp-sf so its long access-token
+# validity doesn't lengthen claude.ai user tokens. It SHARES grocy-mcp-sf's
+# self_signed signing key, so the grocy-mcp-sf JWKS (which the MCP's JWTVerifier is
+# configured from) already validates tokens minted here — the MCP only has to also
+# accept this provider's issuer (GROCY_MCP_AUTH__EXTRA_JWT_ISSUERS on the grocy-sf
+# MCP deployment). The grocy-sf proxy federates this provider too (above), so the
+# MCP's jwt-bearer exchange into the proxy works; the haku SA carries username
+# `haku`, which the outpost forwards to Grocy.
+resource "authentik_provider_oauth2" "grocy_mcp_haku_sf" {
+  name        = "grocy-mcp-haku-sf"
+  client_id   = "grocy-mcp-haku-sf"
+  client_type = "confidential"
+
+  authorization_flow = data.authentik_flow.implicit_consent.id
+  invalidation_flow  = data.authentik_flow.invalidation.id
+  signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+  issuer_mode                = "per_provider"
+  include_claims_in_id_token = true
+
+  # 30d access-token validity — comfortable margin over the rotation CronJob's 24h
+  # re-mint threshold (re-mints ~every 29 days). See cluster/k8s/agents/authentik-jwt-rotation/.
+  access_token_validity = "days=30"
+
+  property_mappings = [
+    data.authentik_property_mapping_provider_scope.openid.id,
+    data.authentik_property_mapping_provider_scope.email.id,
+    data.authentik_property_mapping_provider_scope.profile.id,
+  ]
+
+  # client_credentials doesn't redirect, so allowed_redirect_uris is omitted.
+}
+
+resource "authentik_application" "grocy_mcp_haku_sf" {
+  name              = "Grocy MCP Haku (SF)"
+  slug              = "grocy-mcp-haku-sf"
+  protocol_provider = authentik_provider_oauth2.grocy_mcp_haku_sf.id
+  meta_description  = "Machine client_credentials provider for haku's read-only grocy-sf MCP access"
 }
 
 # --- Grocy Vallejo household (proxy provider + MCP OAuth2) ---
@@ -932,32 +978,21 @@ resource "kubernetes_secret" "haku_client_credentials" {
 # Haku reads the SF Grocy instance through the standard grocy-sf MCP
 # (grocy-mcp-sf.allegedly.works), no separate facade. The authentik-jwt-rotation
 # CronJob mints a client_credentials JWT FOR this `haku` service account against
-# the grocy-mcp-sf OAuth2 provider, so the token's iss matches the MCP's
-# JWTVerifier. The MCP then runs its usual jwt-bearer exchange into the grocy-sf
-# proxy provider and the outpost injects X-authentik-username=haku — which maps to
-# the read-only `haku` Grocy user (empty permission set, provisioned by
-# cluster/k8s/grocy/sf/haku-user). Read-only is enforced server-side by Grocy
-# (its API gates every write on a permission this user lacks); this identity adds
-# no write capability.
+# the dedicated grocy-mcp-haku-sf provider (above) — separate from the user-facing
+# grocy-mcp-sf so its 30-day validity doesn't lengthen claude.ai user tokens, but
+# sharing the same signing key so the MCP's JWKS still validates it. The MCP runs
+# its usual jwt-bearer exchange into the grocy-sf proxy provider and the outpost
+# injects X-authentik-username=haku — which maps to the read-only `haku` Grocy user
+# (empty permission set, provisioned by cluster/k8s/grocy/sf/haku-user). Read-only
+# is enforced server-side by Grocy (its API gates every write on a permission this
+# user lacks); this identity adds no write capability.
 #
-# Mirrors the haku-k8s pattern above, but issues from grocy-mcp-sf (not the shared
-# kubectl provider) and the SA username is `haku` (not haku-k8s) because that
-# username is what the outpost forwards to Grocy.
+# Mirrors the haku-k8s pattern above (user_password client_credentials), but the SA
+# username is `haku` (not haku-k8s) because that username is what the outpost
+# forwards to Grocy.
 #
 # Consumer: cluster/k8s/agents/authentik-jwt-rotation/ CronJob (haku-grocy entry).
 # It mints the JWT and commits it SOPS-encrypted to secrets/haku-grocy-jwt.yaml.
-#
-# TODO(haku-grocy blocker #2): the grocy-mcp-sf provider has no
-# access_token_validity set, so it issues ~10-minute tokens — far too short for
-# the rotation model (the rotator commits a token that expires before any
-# consumer reads it; verified live, exp ≈ 599s). Before wiring runtimes, give
-# this token a long validity like haku-k8s (its provider uses hours=1080).
-# Caveat: grocy-mcp-sf is SHARED with the claude.ai user-login flow, so either
-# set access_token_validity on it directly (also lengthens user tokens) or split
-# out a dedicated grocy-mcp-haku client-credentials provider (then add its issuer
-# to the MCP's JWTVerifier list). See project memory project-haku-grocy-ro.
-# (Blocker #1 — the JWTVerifier trailing-slash issuer bug — is fixed separately
-# in mcp_infra/authentik_auth/auth.py.)
 
 resource "authentik_user" "haku_grocy" {
   username = "haku"
@@ -967,7 +1002,7 @@ resource "authentik_user" "haku_grocy" {
 }
 
 # App-password token, used as the password in the client_credentials
-# username/password exchange against the grocy-mcp-sf provider's client_id.
+# username/password exchange against the grocy-mcp-haku-sf provider's client_id.
 resource "authentik_token" "haku_grocy" {
   identifier   = "haku-grocy-client-credentials"
   user         = authentik_user.haku_grocy.id
@@ -977,9 +1012,9 @@ resource "authentik_token" "haku_grocy" {
   description  = "client_credentials app-password for Haku's grocy-sf JWT rotation"
 }
 
-# Authorize the haku SA to mint tokens on the grocy-mcp-sf OAuth2 application.
-resource "authentik_policy_binding" "haku_grocy_mcp_sf" {
-  target = authentik_application.grocy_mcp_sf.uuid
+# Authorize the haku SA to mint tokens on the dedicated grocy-mcp-haku-sf application.
+resource "authentik_policy_binding" "haku_grocy_mcp_haku" {
+  target = authentik_application.grocy_mcp_haku_sf.uuid
   user   = authentik_user.haku_grocy.id
   order  = 1
 }
@@ -993,20 +1028,20 @@ resource "authentik_policy_binding" "haku_grocy_sf_proxy" {
   order  = 1
 }
 
-# K8s Secret holding the grocy-mcp-sf provider's client_id + the haku username and
-# app-password. Lives in agents-infra (where the authentik-jwt-rotation CronJob
+# K8s Secret holding the grocy-mcp-haku-sf provider's client_id + the haku username
+# and app-password. Lives in agents-infra (where the authentik-jwt-rotation CronJob
 # runs); the minted JWT lives SOPS-encrypted in secrets/haku-grocy-jwt.yaml.
 resource "kubernetes_secret" "haku_grocy_client_credentials" {
   metadata {
     name      = "haku-grocy-client-credentials"
     namespace = "agents-infra"
     annotations = {
-      description = "client_id (grocy-mcp-sf OAuth2 provider) + haku username/app-password, authenticating the haku service account so the authentik-jwt-rotation CronJob can mint its grocy-sf MCP JWT"
+      description = "client_id (grocy-mcp-haku-sf OAuth2 provider) + haku username/app-password, authenticating the haku service account so the authentik-jwt-rotation CronJob can mint its grocy-sf MCP JWT"
     }
   }
 
   data = {
-    client_id = authentik_provider_oauth2.grocy_mcp_sf.client_id
+    client_id = authentik_provider_oauth2.grocy_mcp_haku_sf.client_id
     username  = authentik_user.haku_grocy.username
     password  = authentik_token.haku_grocy.key
   }
