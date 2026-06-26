@@ -25,6 +25,20 @@ rotations:
     credentials_dir: /var/run/secrets/authentik/haku-k8s
     sops_file: secrets/haku-k8s-jwt.yaml
     token_field: jwt
+  - name: haku-grocy
+    # Source JWT for haku's read-only access to the grocy-sf MCP. Issued by the
+    # grocy-mcp-sf provider so its iss matches the MCP's JWTVerifier; the MCP runs
+    # the jwt-bearer exchange into the grocy-sf proxy itself, so no exchange_scopes
+    # here. The outpost then injects X-authentik-username=haku → the read-only
+    # `haku` Grocy user (empty perms). aud defaults to the provider client_id.
+    provider_slug: grocy-mcp-sf
+    scopes: openid profile email
+    credential_mode: user_password
+    expected_audiences:
+      - grocy-mcp-sf
+    credentials_dir: /var/run/secrets/authentik/haku-grocy
+    sops_file: secrets/haku-grocy-jwt.yaml
+    token_field: jwt
   - name: alloy-otlp
     provider_slug: alloy-otlp-client-credentials
     scopes: openid profile email
