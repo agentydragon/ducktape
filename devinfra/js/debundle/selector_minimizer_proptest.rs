@@ -459,12 +459,11 @@ proptest! {
                 })
                 .collect();
 
-            // An ambiguous chunk (two alpha-identical declarations) cannot be
-            // pinned even by the exact selector; the synthesizer errors and
-            // there is nothing to assert. `full_ast_fallback = true` keeps the
-            // exact selector when minimization finds nothing sparse.
+            // Ambiguous chunks or chunks with no proving sparse selector are
+            // skipped; there is nothing useful for this soundness property to
+            // assert in those cases.
             let Ok(GroupSelectorOutcome::Synthesized(group)) =
-                synthesize_simplest_selector_for_group(&index, decl_idx, &members, true, true, 1)
+                synthesize_simplest_selector_for_group(&index, decl_idx, &members, 1)
             else {
                 return Ok(());
             };

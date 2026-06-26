@@ -24,7 +24,7 @@ use shape_index::ShapeIndex;
 use source_match::{ChunkResolver, SelectorResolver};
 use spec::{SourceMatch, SourceMatchIdentifierMode};
 use spec_modules::{collect_module_files, is_module_yaml, module_path_from_file};
-use swc_common::{BytePos, DUMMY_SP, Span, Spanned};
+use swc_common::{BytePos, DUMMY_SP, Span};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
@@ -75,11 +75,6 @@ pub struct SelectorCodemodConfig {
     pub modules_root: PathBuf,
     pub apply: bool,
     pub rewrite: SelectorCodemodRewrite,
-    pub minimize_synthesized_selectors: bool,
-    /// When a binding group minimizes to no sparse selector, emit the exact
-    /// full-AST `source_match` instead of skipping the member. Off by default:
-    /// full-AST selectors are rebuild-fragile, so the default skips them.
-    pub full_ast_fallback: bool,
     pub files: Vec<PathBuf>,
     pub modules: Vec<String>,
     pub module_prefixes: Vec<String>,
@@ -239,8 +234,6 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
                     .expect("source-aware rewrite loaded synthesis index"),
                 selected_exports,
                 NameBindingRewriteOptions {
-                    minimize_synthesized_selectors: config.minimize_synthesized_selectors,
-                    full_ast_fallback: config.full_ast_fallback,
                     apply: config.apply,
                     candidates: config.candidates,
                 },
@@ -572,8 +565,6 @@ struct NameBindingMember {
 
 #[derive(Debug, Clone, Copy)]
 struct NameBindingRewriteOptions {
-    minimize_synthesized_selectors: bool,
-    full_ast_fallback: bool,
     apply: bool,
     candidates: usize,
 }
@@ -612,12 +603,9 @@ struct SynthesizedDeclGroup {
 /// declaration kind, wrapper shape, initializer kind, callee/member paths,
 /// object keys, literal atoms, class/function names, and declarator slots.
 /// Synthesis can then ask for the smallest feature path whose candidate set is
-/// singleton and render everything else as selector holes. This first slice
-/// builds the binding-to-declaration and declarator-slot index needed for exact
-/// function/class recovery plus multi-declarator var gap minimization.
+/// singleton and render everything else as selector holes.
 struct ChunkSelectorIndex {
     parsed: js_ast::ParsedJsModule,
-    source: String,
     decls: Vec<IndexedDeclaration>,
     binding_to_decl: BTreeMap<String, Vec<usize>>,
     /// Layer-1 read-off shape index (W2). Built once per chunk; the migrated
@@ -645,7 +633,6 @@ enum IndexedDeclarationKind {
 #[derive(Debug)]
 struct IndexedBinding {
     name: String,
-    declarator_idx: Option<usize>,
 }
 
 fn rewrite_name_bindings_to_source_match(
@@ -732,8 +719,6 @@ fn rewrite_name_bindings_to_source_match(
             index,
             decl_idx,
             &group_members,
-            options.minimize_synthesized_selectors,
-            options.full_ast_fallback,
             options.candidates,
         ) {
             Ok(GroupSelectorOutcome::Synthesized(synthesized)) => {
@@ -975,7 +960,6 @@ fn add_module_prefix_files(
 
 impl ChunkSelectorIndex {
     fn new(parsed: js_ast::ParsedJsModule) -> Self {
-        let source = parsed.source_text();
         let mut decls = Vec::new();
         let mut binding_to_decl: BTreeMap<String, Vec<usize>> = BTreeMap::new();
         for (body_idx, item) in parsed.module.body.iter().enumerate() {
@@ -995,7 +979,6 @@ impl ChunkSelectorIndex {
         let shape_index = ShapeIndex::new(&parsed.module);
         Self {
             parsed,
-            source,
             decls,
             binding_to_decl,
             shape_index,
@@ -1022,28 +1005,22 @@ impl IndexedDeclaration {
                 IndexedDeclarationKind::Function,
                 vec![IndexedBinding {
                     name: function.ident.sym.to_string(),
-                    declarator_idx: None,
                 }],
             ),
             Some(Decl::Class(class)) => (
                 IndexedDeclarationKind::Class,
                 vec![IndexedBinding {
                     name: class.ident.sym.to_string(),
-                    declarator_idx: None,
                 }],
             ),
             Some(Decl::Var(var)) => (
                 IndexedDeclarationKind::Var,
                 var.decls
                     .iter()
-                    .enumerate()
-                    .flat_map(|(declarator_idx, declarator)| {
+                    .flat_map(|declarator| {
                         binding_names_for_pat(&declarator.name)
                             .into_iter()
-                            .map(move |name| IndexedBinding {
-                                name,
-                                declarator_idx: Some(declarator_idx),
-                            })
+                            .map(move |name| IndexedBinding { name })
                     })
                     .collect(),
             ),
@@ -1059,9 +1036,9 @@ impl IndexedDeclaration {
 
 /// Outcome of trying to synthesize a selector for one declaration group.
 ///
-/// `Skipped` is returned when minimization produces no sparse selector and the
-/// full-AST fallback is disabled (the default): rather than pin the exact AST
-/// (rebuild-fragile), the caller skips the members with this reason.
+/// `Skipped` is returned when minimization produces no proving sparse selector:
+/// rather than pin the rebuild-fragile exact AST, the caller skips the members
+/// with this reason.
 enum GroupSelectorOutcome {
     Synthesized(SynthesizedSelectorGroup),
     Skipped(String),
@@ -1071,8 +1048,6 @@ fn synthesize_simplest_selector_for_group(
     index: &ChunkSelectorIndex,
     decl_idx: usize,
     members: &[NameBindingMember],
-    minimize_synthesized_selectors: bool,
-    full_ast_fallback: bool,
     candidates_limit: usize,
 ) -> Result<GroupSelectorOutcome> {
     let decl = index
@@ -1092,55 +1067,24 @@ fn synthesize_simplest_selector_for_group(
             runtime_binding: member.binding_name.clone(),
         })
         .collect::<Vec<_>>();
-    let exact_selector = || {
-        render_exact_selector_for_group(index, item, decl, &targets).map(|(source, holes)| {
-            (
-                trim_selector_source_line_suffixes(&source),
-                holes.into_iter().collect::<BTreeSet<_>>(),
-            )
-        })
-    };
-    let exact_proved =
-        |full_ast_fallback: bool| -> Result<Option<(String, BTreeSet<String>, usize)>> {
-            // The exact selector is the full-AST fallback. With `--no-minimize` the
-            // caller explicitly opted out of minimization and wants the exact
-            // selector, so emit it regardless of `full_ast_fallback`.
-            if minimize_synthesized_selectors && !full_ast_fallback {
-                return Ok(None);
-            }
-            let (exact_source, exact_holes) = exact_selector()?;
-            let candidate_count = prove_synthesized_selector(index, decl, &targets, &exact_source)
-                .context("proving exact synthesized selector")?;
-            Ok(Some((exact_source, exact_holes, candidate_count)))
-        };
-    let specialized = minimize_synthesized_selectors
-        .then(|| synthesize_specialized_selector(index, item, decl, &targets))
-        .transpose()?
-        .flatten();
-    let proved = if let Some(specialized) = specialized {
-        let match_source = trim_selector_source_line_suffixes(&specialized.match_source);
-        match prove_synthesized_selector(index, decl, &targets, &match_source) {
-            Ok(candidate_count) => {
-                Some((match_source, specialized.rewritten_holes, candidate_count))
-            }
-            Err(_) => exact_proved(full_ast_fallback)?,
-        }
-    } else {
-        exact_proved(full_ast_fallback)?
-    };
-
-    let Some((match_source, rewritten_holes, candidate_count)) = proved else {
+    let Some(specialized) = synthesize_specialized_selector(index, item, decl, &targets)? else {
         return Ok(GroupSelectorOutcome::Skipped(
-            "minimization found no sparse selector; skipping full-AST pin \
-             (pass --full-ast-fallback to emit the exact selector)"
-                .to_string(),
+            "minimization found no sparse selector; skipping full-AST pin".to_string(),
         ));
     };
+    let match_source = trim_selector_source_line_suffixes(&specialized.match_source);
+    let Ok(candidate_count) = prove_synthesized_selector(index, decl, &targets, &match_source)
+    else {
+        return Ok(GroupSelectorOutcome::Skipped(
+            "minimization found no sparse selector; skipping full-AST pin".to_string(),
+        ));
+    };
+    let rewritten_holes = specialized.rewritten_holes;
 
     // `--candidates N > 1`: collect the rest of the ranked read-off menu beyond the
-    // primary pick (deduped against it). Only meaningful for the minimized forms;
-    // the exact-fallback and the not-yet-covered object/var menus yield none.
-    let alternatives = if candidates_limit > 1 && minimize_synthesized_selectors {
+    // primary pick (deduped against it). Object/multi-declarator-var menus yield
+    // none until their read-off forms are wired through the menu path.
+    let alternatives = if candidates_limit > 1 {
         synthesize_specialized_selector_candidates(index, item, decl, &targets, candidates_limit)?
             .into_iter()
             .map(|candidate| SelectorAlternative {
@@ -1462,37 +1406,6 @@ struct SpecializedSelector {
     rewritten_holes: BTreeSet<String>,
 }
 
-fn render_exact_selector_for_group(
-    index: &ChunkSelectorIndex,
-    item: &ModuleItem,
-    decl: &IndexedDeclaration,
-    targets: &[SynthesizedTargetBinding],
-) -> Result<(String, Vec<String>)> {
-    match decl.kind {
-        IndexedDeclarationKind::Var => render_var_group_selector(index, item, decl, targets),
-        IndexedDeclarationKind::Function | IndexedDeclarationKind::Class => {
-            let target = targets
-                .first()
-                .context("function/class synthesis requires one target")?;
-            if targets.len() != 1 {
-                bail!("grouped function/class declarations are not supported");
-            }
-            Ok((
-                render_single_binding_item_selector(
-                    index,
-                    item,
-                    &target.runtime_binding,
-                    &target.export_name,
-                )?,
-                Vec::new(),
-            ))
-        }
-        IndexedDeclarationKind::Other => {
-            bail!("unsupported declaration kind for selector synthesis")
-        }
-    }
-}
-
 fn synthesize_specialized_selector(
     index: &ChunkSelectorIndex,
     item: &ModuleItem,
@@ -1501,8 +1414,8 @@ fn synthesize_specialized_selector(
 ) -> Result<Option<SpecializedSelector>> {
     match decl.kind {
         // Function and class single-pick is the candidates read-off at limit 1
-        // (`read_off_candidates` stops at the first proving selector). On an empty
-        // result the caller falls back to the exact selector.
+        // (`read_off_candidates` stops at the first proving selector). On an
+        // empty result the caller skips instead of emitting a full-AST pin.
         IndexedDeclarationKind::Function | IndexedDeclarationKind::Class => Ok(
             synthesize_specialized_selector_candidates(index, item, decl, targets, 1)?
                 .into_iter()
@@ -1566,8 +1479,8 @@ fn synthesize_specialized_var_selector(
 ) -> Result<Option<SpecializedSelector>> {
     let var = item_var_decl(item).context("indexed var declaration no longer has var AST")?;
     // Single-target and multi-target vars both route through the AST-prune group
-    // path (the single case is the N=1 group). On `None`, the caller falls back
-    // to the exact selector.
+    // path (the single case is the N=1 group). On `None`, the caller skips
+    // instead of emitting a full-AST pin.
     minimize_var_group_selector(index, var, decl, targets)
 }
 
@@ -1609,171 +1522,13 @@ fn matched_body_indices(
     )
 }
 
-fn render_var_group_selector(
-    index: &ChunkSelectorIndex,
-    item: &ModuleItem,
-    decl: &IndexedDeclaration,
-    targets: &[SynthesizedTargetBinding],
-) -> Result<(String, Vec<String>)> {
-    let var = item_var_decl(item).context("indexed var declaration no longer has var AST")?;
-    let target_decl_indices = targets
-        .iter()
-        .map(|target| {
-            decl.declared_bindings
-                .iter()
-                .find(|binding| binding.name == target.runtime_binding)
-                .and_then(|binding| binding.declarator_idx)
-                .with_context(|| {
-                    format!(
-                        "target `{}` is not a var declarator",
-                        target.runtime_binding
-                    )
-                })
-        })
-        .collect::<Result<BTreeSet<_>>>()?;
-    let export_by_runtime = targets
-        .iter()
-        .map(|target| (target.runtime_binding.as_str(), target.export_name.as_str()))
-        .collect::<BTreeMap<_, _>>();
-    let mut parts = Vec::new();
-    let mut holes = Vec::new();
-    let mut skipped_run = 0usize;
-    for (idx, declarator) in var.decls.iter().enumerate() {
-        if !target_decl_indices.contains(&idx) {
-            skipped_run += 1;
-            continue;
-        }
-        if skipped_run > 0 {
-            let hole = declarator_hole_name();
-            parts.push(format!("{hole} = null"));
-            holes.push(hole.to_string());
-            skipped_run = 0;
-        }
-        let runtime_name = single_ident_pat_name(&declarator.name)
-            .context("only identifier var declarators can be synthesized today")?;
-        let export_name = export_by_runtime
-            .get(runtime_name)
-            .copied()
-            .context("target declarator missing export name")?;
-        parts.push(render_var_declarator_selector(
-            index,
-            declarator,
-            runtime_name,
-            export_name,
-        )?);
-    }
-    if skipped_run > 0 {
-        let hole = declarator_hole_name();
-        parts.push(format!("{hole} = null"));
-        holes.push(hole.to_string());
-    }
-    if parts.is_empty() {
-        bail!("var selector synthesis selected no target declarators");
-    }
-    Ok((
-        format!(
-            "{} {};",
-            js_ast::var_decl_kind_str(var.kind),
-            parts.join(",\n  ")
-        ),
-        holes,
-    ))
-}
-
 /// The declarator-run hole for a binding-group selector. The matcher treats every
-/// `DECLARATORS` / `DECLARATORS_*` run hole identically — the positional suffix is
-/// not equality-binding (only used in human-facing hint text) — so the renderer
-/// always emits the plain keyword. (Suffixed forms remain accepted on input.)
+/// `DECLARATORS` / `DECLARATORS_*` run hole identically -- the positional suffix
+/// is not equality-binding, only used in human-facing hint text -- so the
+/// renderer always emits the plain keyword. Suffixed forms remain accepted on
+/// input.
 fn declarator_hole_name() -> &'static str {
     DECLARATORS_HOLE_KEYWORD
-}
-
-fn render_var_declarator_selector(
-    index: &ChunkSelectorIndex,
-    declarator: &VarDeclarator,
-    runtime_name: &str,
-    export_name: &str,
-) -> Result<String> {
-    let source = source_for_span(index, declarator.span())?;
-    replace_ident_span_text(
-        index,
-        &source.text,
-        source.start,
-        declarator.name.span(),
-        runtime_name,
-        export_name,
-    )
-}
-
-fn render_single_binding_item_selector(
-    index: &ChunkSelectorIndex,
-    item: &ModuleItem,
-    runtime_binding: &str,
-    export_name: &str,
-) -> Result<String> {
-    let source = source_for_span(index, item.span())?;
-    let ident_span = match item_decl(item) {
-        Some(Decl::Fn(function)) => function.ident.span,
-        Some(Decl::Class(class)) => class.ident.span,
-        _ => bail!("unsupported single-binding declaration kind"),
-    };
-    replace_ident_span_text(
-        index,
-        &source.text,
-        source.start,
-        ident_span,
-        runtime_binding,
-        export_name,
-    )
-}
-
-struct SourceSlice {
-    start: usize,
-    text: String,
-}
-
-fn source_for_span(index: &ChunkSelectorIndex, span: Span) -> Result<SourceSlice> {
-    let (mut start, mut end) = span_offsets(index, span)?;
-    while start < end && index.source.as_bytes()[start].is_ascii_whitespace() {
-        start += 1;
-    }
-    while end > start && index.source.as_bytes()[end - 1].is_ascii_whitespace() {
-        end -= 1;
-    }
-    let mut text = index
-        .source
-        .get(start..end)
-        .context("span is not on UTF-8 boundaries")?
-        .to_string();
-    if !text.ends_with(';') && span_item_like_semicolon(&text) {
-        text.push(';');
-    }
-    Ok(SourceSlice { start, text })
-}
-
-fn span_offsets(index: &ChunkSelectorIndex, span: Span) -> Result<(usize, usize)> {
-    let file = index
-        .parsed
-        .cm
-        .files()
-        .first()
-        .cloned()
-        .context("source map has no file")?;
-    let start = span
-        .lo()
-        .0
-        .checked_sub(file.start_pos.0)
-        .context("span starts before source file")? as usize;
-    let end = span
-        .hi()
-        .0
-        .checked_sub(file.start_pos.0)
-        .context("span ends before source file")? as usize;
-    Ok((start, end))
-}
-
-fn span_item_like_semicolon(source: &str) -> bool {
-    source.starts_with("const ") || source.starts_with("let ") || source.starts_with("var ")
 }
 
 fn trim_selector_source_line_suffixes(source: &str) -> String {
@@ -1782,37 +1537,6 @@ fn trim_selector_source_line_suffixes(source: &str) -> String {
         .map(|line| line.trim_end_matches([' ', '\t']))
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-fn replace_ident_span_text(
-    index: &ChunkSelectorIndex,
-    local_source: &str,
-    local_start: usize,
-    ident_span: Span,
-    expected: &str,
-    replacement: &str,
-) -> Result<String> {
-    if expected == replacement {
-        return Ok(local_source.to_string());
-    }
-    let (source_start, source_end) = span_offsets(index, ident_span)?;
-    let rel_start = source_start
-        .checked_sub(local_start)
-        .context("identifier span starts before local source")?;
-    let rel_end = source_end
-        .checked_sub(local_start)
-        .context("identifier span ends before local source")?;
-    if local_source.get(rel_start..rel_end) != Some(expected) {
-        bail!(
-            "identifier span expected `{expected}` but found `{:?}`",
-            local_source.get(rel_start..rel_end)
-        );
-    }
-    let mut out = String::new();
-    out.push_str(&local_source[..rel_start]);
-    out.push_str(replacement);
-    out.push_str(&local_source[rel_end..]);
-    Ok(out)
 }
 
 struct SynthesizedCandidateInput<'a> {
@@ -2378,15 +2102,10 @@ mod adjacent_function_grouping_tests {
 }
 
 #[cfg(test)]
-mod full_ast_fallback_tests {
+mod exact_fallback_removed_tests {
     use super::*;
 
-    fn outcome_for(
-        source: &str,
-        runtime: &str,
-        minimize: bool,
-        full_ast_fallback: bool,
-    ) -> GroupSelectorOutcome {
+    fn outcome_for(source: &str, runtime: &str) -> GroupSelectorOutcome {
         js_ast::with_swc_globals(|| {
             let parsed =
                 js_ast::parse_js_module_consuming("<fallback-test>", source.to_string()).unwrap();
@@ -2402,116 +2121,30 @@ mod full_ast_fallback_tests {
                 binding_name: runtime.to_string(),
                 comment: None,
             }];
-            synthesize_simplest_selector_for_group(
-                &index,
-                decl_idx,
-                &members,
-                minimize,
-                full_ast_fallback,
-                1,
-            )
-            .unwrap()
+            synthesize_simplest_selector_for_group(&index, decl_idx, &members, 1).unwrap()
         })
     }
 
-    // A function whose body's only discriminator (a deep numeric literal) is
-    // not surfaced by the bounded body-anchor candidate generator, among
-    // same-arity siblings: the minimizer finds no sparse selector, so synthesis
-    // must fall back to the exact full-AST selector.
-    const HARD_TO_MINIMIZE: &str = "\
+    // Alpha-identical siblings have no stable sparse selector that can prove
+    // the target uniquely, so synthesis skips rather than emitting an exact
+    // full-AST selector.
+    const AMBIGUOUS_SIBLINGS: &str = "\
 function target(a, b) {\n\
-  return wrap(a, b, deep(nest({ inner: [0, 0, 0, 0, 1234567] })));\n\
+  return wrap(a, b);\n\
 }\n\
-function siblingOne(a, b) {\n\
-  return wrap(a, b, deep(nest({ inner: [0, 0, 0, 0, 7654321] })));\n\
+function sibling(a, b) {\n\
+  return wrap(a, b);\n\
 }\n\
-function siblingTwo(a, b) {\n\
-  return wrap(a, b, deep(nest({ inner: [0, 0, 0, 0, 9999999] })));\n\
-}\n\
-function wrap(a, b, c) { return c; }\n\
-function deep(x) { return x; }\n\
-function nest(x) { return x; }\n\
+function wrap(a, b) { return [a, b]; }\n\
 export { target };\n";
 
     #[test]
-    fn full_ast_fallback_only_affects_the_exact_fallback_decision() {
-        // Core invariant of the flag: enabling it can only turn a default skip
-        // into an (exact) emission, never the reverse. Whenever the default
-        // (fallback off) skips, the reason is the no-sparse-selector message and
-        // the same group with the flag on emits instead.
-        js_ast::with_swc_globals(|| {
-            let index = ChunkSelectorIndex::new(
-                js_ast::parse_js_module_consuming("<fallback-test>", HARD_TO_MINIMIZE.to_string())
-                    .unwrap(),
-            );
-            let decl_idx = *index
-                .binding_to_decl
-                .get("target")
-                .unwrap()
-                .first()
-                .unwrap();
-            let members = [NameBindingMember {
-                member_index: 0,
-                export_name: "Target".to_string(),
-                binding_name: "target".to_string(),
-                comment: None,
-            }];
-            let off =
-                synthesize_simplest_selector_for_group(&index, decl_idx, &members, true, false, 1)
-                    .unwrap();
-            if let GroupSelectorOutcome::Skipped(reason) = &off {
-                assert!(reason.contains("no sparse selector"), "{reason}");
-                let on = synthesize_simplest_selector_for_group(
-                    &index, decl_idx, &members, true, true, 1,
-                )
-                .unwrap();
-                assert!(
-                    matches!(on, GroupSelectorOutcome::Synthesized(_)),
-                    "fallback on must emit where the default skipped"
-                );
-            }
-        });
-    }
-
-    #[test]
-    fn full_ast_fallback_on_never_skips_where_off_could_emit() {
-        // With the fallback enabled, the exact selector is emitted; the only
-        // non-emission is a hard error (alpha-ambiguous chunk), never a skip.
-        js_ast::with_swc_globals(|| {
-            let index = ChunkSelectorIndex::new(
-                js_ast::parse_js_module_consuming("<fallback-test>", HARD_TO_MINIMIZE.to_string())
-                    .unwrap(),
-            );
-            let decl_idx = *index
-                .binding_to_decl
-                .get("target")
-                .unwrap()
-                .first()
-                .unwrap();
-            let members = [NameBindingMember {
-                member_index: 0,
-                export_name: "Target".to_string(),
-                binding_name: "target".to_string(),
-                comment: None,
-            }];
-            let GroupSelectorOutcome::Synthesized(group) =
-                synthesize_simplest_selector_for_group(&index, decl_idx, &members, true, true, 1)
-                    .unwrap()
-            else {
-                panic!("full_ast_fallback=true must not skip");
-            };
-            assert_eq!(group.candidate_count, 1);
-            // The selector resolves uniquely back to the intended target.
-            let matched = matched_body_indices(&index, "Target", &group.match_source).unwrap();
-            assert_eq!(matched, BTreeSet::from([group.body_idx]));
-        });
-    }
-
-    #[test]
-    fn no_minimize_emits_exact_regardless_of_fallback_flag() {
-        // `--no-minimize` is an explicit request for the exact selector, so it
-        // emits even when full_ast_fallback is off.
-        let outcome = outcome_for(HARD_TO_MINIMIZE, "target", false, false);
-        assert!(matches!(outcome, GroupSelectorOutcome::Synthesized(_)));
+    fn ambiguous_group_skips_without_suggesting_removed_fallback_flag() {
+        let outcome = outcome_for(AMBIGUOUS_SIBLINGS, "target");
+        let GroupSelectorOutcome::Skipped(reason) = outcome else {
+            panic!("expected ambiguous fixture to skip without exact fallback");
+        };
+        assert!(reason.contains("no sparse selector"), "{reason}");
+        assert!(!reason.contains("full-ast-fallback"), "{reason}");
     }
 }

@@ -80,8 +80,8 @@ name pins in the dogfood-apply PR; the well-holed >40-line conversions ship.
 ## Read-off minimizer real-chunk perf (2026-06-16, post prove-gate-via-index)
 
 W4 perf acceptance measurement of the **current read-off minimizer** (shape-index
-`minimal_anchor_set` + `kept_spans_for_anchor_set`, the default minimization path;
-no `--no-minimize`), **with the prove-gate-via-index fast-path (#2280)**. Dry run
+`minimal_anchor_set` + `kept_spans_for_anchor_set`, the default minimization path),
+**with the prove-gate-via-index fast-path (#2280)**. Dry run
 (no `--apply`), `name-binding-to-source-match` rewrite, **`-c opt` binary** run
 directly (no Bazel overhead), wall-clock via `time.perf_counter`, peak RSS via
 `getrusage(RUSAGE_CHILDREN)` on a fresh child per scope. Members counted as

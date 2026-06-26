@@ -37,6 +37,19 @@ fn run_codemod(modules: &Path, extra: &[&str]) -> std::process::Output {
     out
 }
 
+fn run_spec_codemod_command_raw(
+    command: &str,
+    modules: &Path,
+    extra: &[&str],
+) -> std::process::Output {
+    let mut args = vec!["spec", command, "--modules", modules.to_str().unwrap()];
+    args.extend_from_slice(extra);
+    Command::new(debundler_path())
+        .args(&args)
+        .output()
+        .expect("spawn debundle")
+}
+
 fn fixture(modules: &Path) -> (PathBuf, PathBuf) {
     let target = modules.join("ui/widgets.yaml");
     let other = modules.join("other/untouched.yaml");
@@ -515,31 +528,25 @@ fn extract_regex_literal_pattern(match_source: &str) -> String {
 }
 
 #[test]
-fn synthesize_selectors_full_ast_fallback_flag_is_accepted() {
-    // The minimizer almost always finds a sparse selector for synthesizable
-    // declarations, so the full-AST fallback path is hard to trigger from a
-    // small fixture (the gating itself is unit-tested in selector_codemod.rs).
-    // Here we just confirm the `--full-ast-fallback` flag is wired into the CLI
-    // and does not change the result when minimization succeeds.
+fn removed_exact_selector_flags_are_rejected() {
     let dir = tempfile::tempdir().unwrap();
-    let (modules, source) = synthesis_function_minimization_fixture(dir.path());
+    let modules = dir.path().join("modules");
+    fs::create_dir_all(&modules).unwrap();
 
-    let out = run_synthesize_selectors(
-        &modules,
-        &[
-            "--source-file",
-            source.to_str().unwrap(),
-            "--item",
-            "app/format:FormatValue",
-            "--full-ast-fallback",
-            "--apply",
-            "--format",
-            "json",
-        ],
-    );
-    let parsed = parse_stdout_json(&out);
-    assert_eq!(parsed["summary"]["changed_candidates"], 1, "{parsed}");
-    assert_eq!(parsed["summary"]["skipped_candidates"], 0, "{parsed}");
+    for command in ["selector-codemod", "synthesize-selectors"] {
+        for flag in ["--no-minimize", "--full-ast-fallback"] {
+            let out = run_spec_codemod_command_raw(command, &modules, &[flag]);
+            assert!(
+                !out.status.success(),
+                "{command} {flag} unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            assert!(stderr.contains(flag), "{stderr}");
+            assert!(stderr.contains("unexpected argument"), "{stderr}");
+        }
+    }
 }
 
 #[test]
@@ -604,7 +611,6 @@ fn synthesize_selectors_apply_single_member_preserves_unrelated_yaml_structure()
             source.to_str().unwrap(),
             "--item",
             "app/bootstrap:FormatValue",
-            "--no-minimize",
             "--apply",
             "--format",
             "json",
@@ -651,11 +657,7 @@ fn synthesize_selectors_apply_single_member_preserves_unrelated_yaml_structure()
     assert_eq!(source_match["target_binding"], "FormatValue");
     let match_source = source_match["match"].as_str().unwrap();
     assert!(
-        match_source.contains("function FormatValue(value)"),
-        "{match_source}"
-    );
-    assert!(
-        match_source.contains("trimmed.toUpperCase()"),
+        match_source.contains("function FormatValue("),
         "{match_source}"
     );
 
