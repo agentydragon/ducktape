@@ -150,6 +150,11 @@ jobs:
             }
           - { image: "//cluster/k8s/agents/attic-jwt-rotation:image", image_name: attic-jwt-rotation, test_target: "" }
           - { image: "//cluster/k8s/inventree/token-provisioner:image", image_name: token-provisioner, test_target: "" }
+          - {
+              image: "//cluster/k8s/grocy/sf/user-perms:image",
+              image_name: grocy-sf-user-perms-provisioner,
+              test_target: "",
+            }
           - { image: "//devinfra/firecracker/manager:image", image_name: firecracker-manager, test_target: "" }
           - { image: "//devinfra/firecracker/vm_pod:image", image_name: fc-vm-pod, test_target: "" }
           - { image: "//inventree_utils/rai_plugin:image", image_name: inventree, test_target: "" }

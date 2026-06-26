@@ -12,10 +12,9 @@ NetworkPolicy is what restricts who may present it.
 """
 
 import contextlib
-import json
 import time
-import urllib.error
-import urllib.request
+
+import httpx
 
 GROCY = "http://grocy.grocy-sf.svc.cluster.local:80"
 ADMIN = "admin"  # Grocy's built-in admin user (created by the schema migration)
@@ -23,54 +22,42 @@ OPERATORS = ("agentydragon", "auragon")  # SF household humans to keep at ADMIN
 ADMIN_PERMISSION_ID = 1  # the ADMIN root permission (implies all others)
 
 
-def call(method: str, path: str, *, user: str, body: dict | None = None):
-    """JSON API request. Raises HTTPError on non-2xx; expects a JSON (or empty) body."""
-    data = json.dumps(body).encode() if body is not None else None
-    headers = {"X-authentik-username": user}
-    if data is not None:
-        headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(GROCY + path, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req) as response:
-        raw = response.read().decode()
-    return json.loads(raw) if raw.strip() else None
-
-
-def wait_for_schema() -> None:
+def wait_for_schema(client: httpx.Client) -> None:
     """Await Grocy's schema. The app self-migrates at startup (postStart hits the
     auth-exempt `/`) and Flux only runs this Job once grocy is Ready, but poll
-    defensively so the Job also works run standalone. Hit `/` raw (its body is an
-    HTML redirect — never parse it) in case migration hasn't run, then poll the
-    JSON `/api/users` until the schema exists.
+    defensively so the Job also works run standalone. Hit `/` (its body is an HTML
+    redirect — ignore it) in case migration hasn't run, then poll the JSON
+    `/api/users` until the schema exists.
     """
     for _ in range(30):
-        with contextlib.suppress(urllib.error.HTTPError):
-            urllib.request.urlopen(
-                urllib.request.Request(GROCY + "/", headers={"X-authentik-username": ADMIN}, method="GET")
-            ).read()
-        try:
-            if isinstance(call("GET", "/api/users", user=ADMIN), list):
-                return
-        except urllib.error.HTTPError:
-            pass
+        with contextlib.suppress(httpx.HTTPError):
+            client.get("/")
+        resp = client.get("/api/users")
+        if resp.status_code == 200 and isinstance(resp.json(), list):
+            return
         time.sleep(2)
     raise RuntimeError("Grocy schema not ready in time")
 
 
 def main() -> None:
-    wait_for_schema()
-    for operator in OPERATORS:
-        # Auto-create the operator if absent (reverse-proxy auth creates the user on
-        # the first request bearing its username; default-deny means it is born
-        # read-only), then grant ADMIN as the built-in admin user.
-        call("GET", "/api/system/info", user=operator)
-        users = call("GET", "/api/users", user=ADMIN)
-        if not isinstance(users, list):
-            raise RuntimeError(f"GET /api/users did not return a list: {users!r}")
-        user = next((u for u in users if u["username"] == operator), None)
-        if user is None:
-            raise RuntimeError(f"{operator!r} user was not created by the reverse-proxy auth")
-        call("PUT", f"/api/users/{user['id']}/permissions", user=ADMIN, body={"permissions": [ADMIN_PERMISSION_ID]})
-        print(f"{operator!r} (id={user['id']}) ensured ADMIN")
+    with httpx.Client(
+        base_url=GROCY, headers={"X-authentik-username": ADMIN}, follow_redirects=True, timeout=30
+    ) as client:
+        wait_for_schema(client)
+        for operator in OPERATORS:
+            # Auto-create the operator if absent (reverse-proxy auth creates the user
+            # on the first request bearing its username; default-deny means it is born
+            # read-only), then grant ADMIN as the built-in admin user.
+            client.get("/api/system/info", headers={"X-authentik-username": operator}).raise_for_status()
+            users_resp = client.get("/api/users")
+            users_resp.raise_for_status()
+            user = next((u for u in users_resp.json() if u["username"] == operator), None)
+            if user is None:
+                raise RuntimeError(f"{operator!r} user was not created by the reverse-proxy auth")
+            client.put(
+                f"/api/users/{user['id']}/permissions", json={"permissions": [ADMIN_PERMISSION_ID]}
+            ).raise_for_status()
+            print(f"{operator!r} (id={user['id']}) ensured ADMIN")
 
 
 if __name__ == "__main__":

@@ -4,7 +4,3 @@ namespace: grocy-sf
 resources:
   - networkpolicy.yaml
   - job.yaml
-configMapGenerator:
-  - name: grocy-sf-user-perms-provisioner-script
-    files:
-      - provision.py
