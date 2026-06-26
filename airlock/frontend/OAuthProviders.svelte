@@ -7,6 +7,18 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
 
+  type ScopeRow = {
+    scope: string;
+    requested: boolean;
+    granted: boolean;
+  };
+  type ScopeComparison = {
+    rows: ScopeRow[];
+    missing: string[];
+    extra: string[];
+    drift: boolean;
+  };
+
   onMount(async () => {
     try {
       const api = await getApiClient();
@@ -23,12 +35,22 @@
     return new Date(iso).toLocaleString();
   }
 
-  function scopeDiff(requested: string[], granted: string): { missing: string[]; extra: string[]; drift: boolean } {
+  function compareScopes(requested: string[], granted: string): ScopeComparison {
+    const requestedScopes = [...new Set(requested)];
+    const requestedSet = new Set(requestedScopes);
     const grantedSet = new Set(granted ? granted.split(/\s+/).filter(Boolean) : []);
-    const requestedSet = new Set(requested);
-    const missing = [...requestedSet].filter((s) => !grantedSet.has(s)).sort();
-    const extra = [...grantedSet].filter((s) => !requestedSet.has(s)).sort();
-    return { missing, extra, drift: missing.length + extra.length > 0 };
+    const missing = requestedScopes.filter((scope) => !grantedSet.has(scope)).sort();
+    const extra = [...grantedSet].filter((scope) => !requestedSet.has(scope)).sort();
+    return {
+      rows: [...requestedScopes, ...extra].map((scope) => ({
+        scope,
+        requested: requestedSet.has(scope),
+        granted: grantedSet.has(scope),
+      })),
+      missing,
+      extra,
+      drift: missing.length + extra.length > 0,
+    };
   }
 </script>
 
@@ -43,6 +65,8 @@
 {:else}
   <div class="space-y-4">
     {#each providers as provider (provider.name)}
+      {@const grantedScope = provider.status.state === "connected" ? provider.status.scope : ""}
+      {@const scopes = compareScopes(provider.requested_scopes, grantedScope)}
       <div class="card rounded-lg shadow-sm p-5">
         <div class="flex items-start justify-between gap-4">
           <div class="flex-1">
@@ -58,25 +82,56 @@
                   <span class="status-pill status-pill-pending">Not connected</span>
                 {/if}
               </dd>
-              <dt class="section-heading font-semibold">Requested</dt>
-              <dd class="m-0" style="color: var(--color-text-muted);">
-                {provider.requested_scopes.join(" ") || "(none)"}
+              <dt class="section-heading font-semibold">Scopes</dt>
+              <dd class="m-0 min-w-0">
+                <div class="scope-table-wrap overflow-x-auto rounded-md">
+                  <table class="scope-table min-w-full border-collapse text-xs">
+                    <thead>
+                      <tr class="thead-row">
+                        <th class="th-cell px-3 py-2 text-left font-semibold">Scope</th>
+                        <th class="th-cell px-3 py-2 text-center font-semibold">Requested</th>
+                        <th class="th-cell px-3 py-2 text-center font-semibold">Granted</th>
+                      </tr>
+                    </thead>
+                    <tbody class="tbody">
+                      {#if scopes.rows.length === 0}
+                        <tr>
+                          <td class="px-3 py-2 italic" colspan="3" style="color: var(--color-text-muted);">No scopes</td
+                          >
+                        </tr>
+                      {:else}
+                        {#each scopes.rows as row (row.scope)}
+                          <tr class="data-row">
+                            <td class="scope-cell px-3 py-2 font-mono">{row.scope}</td>
+                            <td class="px-3 py-2 text-center">
+                              <span class={row.requested ? "scope-mark scope-mark-yes" : "scope-mark scope-mark-no"}>
+                                {row.requested ? "✓" : "✕"}
+                              </span>
+                            </td>
+                            <td class="px-3 py-2 text-center">
+                              <span class={row.granted ? "scope-mark scope-mark-yes" : "scope-mark scope-mark-no"}>
+                                {row.granted ? "✓" : "✕"}
+                              </span>
+                            </td>
+                          </tr>
+                        {/each}
+                      {/if}
+                    </tbody>
+                  </table>
+                </div>
               </dd>
               {#if provider.status.state === "connected"}
                 <dt class="section-heading font-semibold">Expires</dt>
                 <dd class="m-0" style="color: var(--color-text-muted);">{fmtExpiry(provider.status.expires_at)}</dd>
-                <dt class="section-heading font-semibold">Granted</dt>
-                <dd class="m-0" style="color: var(--color-text-muted);">{provider.status.scope || "(none)"}</dd>
-                {@const diff = scopeDiff(provider.requested_scopes, provider.status.scope)}
-                {#if diff.drift}
+                {#if scopes.drift}
                   <dt class="section-heading font-semibold">Drift</dt>
                   <dd class="m-0" style="color: var(--color-warning, #b45309);">
-                    {#if diff.missing.length > 0}missing: <code class="code-tag text-xs rounded px-1.5 py-0.5"
-                        >{diff.missing.join(" ")}</code
+                    {#if scopes.missing.length > 0}missing: <code class="code-tag text-xs rounded px-1.5 py-0.5"
+                        >{scopes.missing.join(" ")}</code
                       >{/if}
-                    {#if diff.missing.length > 0 && diff.extra.length > 0}<span>; </span>{/if}
-                    {#if diff.extra.length > 0}extra: <code class="code-tag text-xs rounded px-1.5 py-0.5"
-                        >{diff.extra.join(" ")}</code
+                    {#if scopes.missing.length > 0 && scopes.extra.length > 0}<span>; </span>{/if}
+                    {#if scopes.extra.length > 0}extra: <code class="code-tag text-xs rounded px-1.5 py-0.5"
+                        >{scopes.extra.join(" ")}</code
                       >{/if}
                     — re-authorize to fix
                   </dd>
@@ -95,3 +150,26 @@
     {/each}
   </div>
 {/if}
+
+<style>
+  .scope-table-wrap {
+    border: 1px solid var(--color-border);
+  }
+
+  .scope-cell {
+    color: var(--color-text-code);
+    overflow-wrap: anywhere;
+  }
+
+  .scope-mark {
+    font-weight: 700;
+  }
+
+  .scope-mark-yes {
+    color: var(--color-success);
+  }
+
+  .scope-mark-no {
+    color: var(--color-text-muted);
+  }
+</style>
