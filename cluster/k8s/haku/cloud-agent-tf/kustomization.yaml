@@ -2,4 +2,6 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - anthropic-api-key.sops.yaml
+  # Seeded here; authentik-jwt-rotation overwrites it on each mint (rotations.yaml).
+  - haku-kube-token.sops.yaml
   - terraform.yaml

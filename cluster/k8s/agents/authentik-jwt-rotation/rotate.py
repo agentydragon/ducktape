@@ -44,6 +44,24 @@ TOKEN_URL = f"{AUTH_BASE}/application/o/token/"
 CredentialMode = Literal["client_secret", "user_password"]
 
 
+class K8sSecretOutput(BaseModel):
+    """Optional second output: write the minted token as a k8s Secret manifest.
+
+    Lets a rotation feed an in-cluster consumer (Flux decrypts + applies the
+    Secret) without that consumer ever touching SOPS. The `path` lives under
+    `cluster/k8s/` so the `.sops.yaml` cluster catch-all rule encrypts stringData
+    for Flux + admin. The token's `exp` epoch is written alongside so consumers
+    that need a monotonic "the token changed" signal (e.g. a Terraform write-only
+    `*_wo_version`) have one without decrypting the token.
+    """
+
+    path: Path = Field(description="Repo-relative path for the Secret manifest (under cluster/k8s/, *.sops.yaml)")
+    name: str
+    namespace: str
+    token_key: str = Field(default="jwt", description="stringData key for the JWT")
+    exp_key: str = Field(default="token-exp", description="stringData key for the JWT exp epoch (seconds)")
+
+
 class Rotation(BaseModel):
     name: str = Field(description="Human-readable name for logs and the commit message")
     provider_slug: str = Field(description="Authentik provider slug; pins the expected source-JWT issuer")
@@ -71,6 +89,11 @@ class Rotation(BaseModel):
         default=None,
         description="When set, exchange the source JWT into a proxy-provider token "
         "(client_id from credentials_dir/proxy_client_id) with these scopes",
+    )
+    k8s_secret: K8sSecretOutput | None = Field(
+        default=None,
+        description="When set, also write the minted token as a k8s Secret manifest (in addition "
+        "to sops_file) for an in-cluster consumer to read via Flux.",
     )
 
     @property
@@ -243,13 +266,41 @@ def rotate_one(client: httpx.Client, rotation: Rotation, config: Config) -> bool
     rotation.sops_file.write_text(yaml.safe_dump(stamps, sort_keys=False, width=2**31))
     subprocess.run(["sops", "encrypt", "--in-place", str(rotation.sops_file)], check=True)
     logger.info("%s: wrote token expiring %s", rotation.name, expires_iso)
+
+    if rotation.k8s_secret:
+        write_k8s_secret(rotation.k8s_secret, final_jwt, int(final_payload["exp"]))
+        logger.info("%s: wrote k8s Secret %s", rotation.name, rotation.k8s_secret.path)
     return True
+
+
+def write_k8s_secret(out: K8sSecretOutput, token: str, exp_epoch: int) -> None:
+    """Write `out.path` as a SOPS-encrypted k8s Secret manifest carrying the token + exp.
+
+    stringData is encrypted by the `.sops.yaml` cluster catch-all rule; metadata
+    stays plaintext. The exp epoch is the monotonic signal a consumer uses to know
+    the token rotated (e.g. a Terraform write-only `*_wo_version`).
+    """
+    manifest = {
+        "apiVersion": "v1",
+        "kind": "Secret",
+        "metadata": {
+            "name": out.name,
+            "namespace": out.namespace,
+            "annotations": {"description": "Authentik JWT minted by authentik-jwt-rotation (rotated ~biweekly)."},
+        },
+        "type": "Opaque",
+        "stringData": {out.token_key: token, out.exp_key: str(exp_epoch)},
+    }
+    out.path.parent.mkdir(parents=True, exist_ok=True)
+    out.path.write_text(yaml.safe_dump(manifest, sort_keys=False, width=2**31))
+    subprocess.run(["sops", "encrypt", "--in-place", str(out.path)], check=True)
 
 
 def sparse_clone(config: Config, github_pat: str) -> None:
     """Init + sparse-fetch only .sops.yaml and the rotations' sops_files into cwd."""
     remote = f"https://x-access-token:{github_pat}@github.com/{config.github_repo}.git"
     sparse_paths = [config.sops_config, *(str(r.sops_file) for r in config.rotations)]
+    sparse_paths += [str(r.k8s_secret.path) for r in config.rotations if r.k8s_secret]
     subprocess.run(["git", "init", "-q"], check=True)
     subprocess.run(["git", "remote", "add", "origin", remote], check=True)
     subprocess.run(["git", "config", "core.sparseCheckout", "true"], check=True)
@@ -264,6 +315,8 @@ def commit_and_push(config: Config, rotated: list[str]) -> None:
     for rotation in config.rotations:
         if rotation.name in rotated:
             subprocess.run(["git", "add", "--", str(rotation.sops_file)], check=True)
+            if rotation.k8s_secret:
+                subprocess.run(["git", "add", "--", str(rotation.k8s_secret.path)], check=True)
     if subprocess.run(["git", "diff", "--cached", "--quiet"], check=False).returncode == 0:
         logger.info("tokens minted but SOPS files unchanged on disk (unexpected); nothing to commit")
         return

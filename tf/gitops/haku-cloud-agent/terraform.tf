@@ -1,5 +1,7 @@
 terraform {
-  required_version = ">= 1.0"
+  # >= 1.11: the vault_credential token is a write-only attribute and the
+  # haku_kube_token variable is ephemeral.
+  required_version = ">= 1.11"
 
   required_providers {
     # CAUTION: low-user-count community provider holding an Anthropic API key.

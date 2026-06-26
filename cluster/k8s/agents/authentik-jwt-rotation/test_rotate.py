@@ -6,7 +6,16 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
-from rotate import Config, Rotation, jwt_payload, mint_jwt, remaining_hours, stamped_audiences, token_audiences
+from rotate import (
+    Config,
+    K8sSecretOutput,
+    Rotation,
+    jwt_payload,
+    mint_jwt,
+    remaining_hours,
+    stamped_audiences,
+    token_audiences,
+)
 
 
 def _make_jwt(claims: dict) -> str:
@@ -91,6 +100,32 @@ def test_rotation_expected_audiences_defaults_none_and_parses_list():
         base | {"expected_audiences": ["kubectl-sandbox-client-credentials", "kubectl-passthrough-mcp"]}
     )
     assert with_aud.expected_audiences == ["kubectl-sandbox-client-credentials", "kubectl-passthrough-mcp"]
+
+
+def test_rotation_k8s_secret_defaults_none_and_parses():
+    base = {
+        "name": "haku-k8s",
+        "provider_slug": "kubectl-sandbox-client-credentials",
+        "scopes": "openid profile email groups",
+        "credentials_dir": "/creds",
+        "sops_file": "secrets/haku-k8s-jwt.yaml",
+        "token_field": "jwt",
+    }
+    assert Rotation.model_validate(base).k8s_secret is None
+    r = Rotation.model_validate(
+        base
+        | {
+            "k8s_secret": {
+                "path": "cluster/k8s/haku/cloud-agent-tf/haku-kube-token.sops.yaml",
+                "name": "haku-cloud-kube-token",
+                "namespace": "flux-system",
+            }
+        }
+    )
+    assert isinstance(r.k8s_secret, K8sSecretOutput)
+    assert r.k8s_secret.token_key == "jwt"  # default
+    assert r.k8s_secret.exp_key == "token-exp"  # default
+    assert r.k8s_secret.namespace == "flux-system"
 
 
 def test_rotation_expected_issuer_derived_from_slug():

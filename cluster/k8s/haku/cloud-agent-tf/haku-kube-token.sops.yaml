@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: haku-cloud-kube-token
+    namespace: flux-system
+    annotations:
+        description: Authentik JWT minted by authentik-jwt-rotation (rotated ~biweekly). Seed; rotator overwrites at next mint. Read by tf/gitops/haku-cloud-agent -> Anthropic vault static_bearer.
+type: Opaque
+stringData:
+    jwt: ENC[AES256_GCM,data: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,iv:H7A+PPOe5pG51tKNoHeIX/8jrlKqLyXhIJp0TWbVVvw=,tag:ECnhRKvlELL68M6Q/ZjOlg==,type:str]
+    token-exp: ENC[AES256_GCM,data:klZey43bdX+FrA==,iv:gr4yVSxEwkhuhwzKeHoVasTVx8glVRTMMOYzj9L6mfc=,tag:Bjp3L/TD6c8XGP7S4ULzgw==,type:str]
+sops:
+    age:
+        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBaeE0zb0ZtMThtUEsvWkMx
+            WndLQmdxaDlSbFlDMDJadVpzcGtVSmJkNjEwCktvM1NVS3FMT2k2MDRvYnhCdFIx
+            RUF6T21wRWJGcVgvUGFjeURBUWhsOUEKLS0tIFpjZ3F3clpST0U0bEM1ZUVSbFQz
+            b2VWNFB4WVJYUjh5TWlwR2dBc05OQ2cKEfi2PhD+CKhjnGG+TUeqoJ0YUq/GWbCr
+            2cZjRzHVzOi4eozJVyT2prpaSwyqFhA4nROJxhizLS8KK3MAlVy9GQ==
+            -----END AGE ENCRYPTED FILE-----
+        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB6MXg5OSsrV0hiUmM0WHg0
+            NVNpQXhsanNHZ1VNVjMrNTl6OVYvNkJMbkJFCjdSLzVyWndWanR3b08zbERacDEw
+            cU9yWStqYVYxdUVQdVdHNmpqQ3pUbmcKLS0tIFVHNTVjOTZHbUt5T3lYTGpESVZO
+            RzZHb0hJZTdFaHVXWmhyUGhtaFZwT1EKBja7N4TRXiectYHetdsu2jN3ol6/dKF6
+            D8XNsCU+B4kUoDvBHyOeXcmv2Sh5zdSjGTj2T4yig2NtkJd4UBArjw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-06-26T15:36:13Z"
+    mac: ENC[AES256_GCM,data:xu12y/jyDMOZt7mqqiFM7BoIQ5h4uXyEFJ4elRcw3kPAX2CRSqhcdAmNTdtt4hipnErQ6TuztsWdTew/XXOqAbzjNth9Sjf80nSRug3Blhw3esWJ4A/L8TY2LrDhYjLaX8NwMZh83vrFnFejrfWhBh8hH/RaR/tSwnDaq4Irj4o=,iv:Am8mBZvXmjy9tOaZaHIKFTGGGvceXym0SfRE7IQLdoU=,tag:+QkJ+gOJq1duDBqxg2WWPw==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

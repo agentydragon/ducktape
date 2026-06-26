@@ -9,20 +9,14 @@
 # Supersedes the imperative anthropic_hosted/provision.sh bring-up (Path B,
 # bash+curl+env-var KUBE_TOKEN), which the provider couldn't model.
 #
-# CREDENTIAL OWNERSHIP: Terraform owns the environment, agent, vault shell, and
-# deployment. The vault's static_bearer credential (the rotating haku JWT) is
-# seeded and refreshed OUT OF BAND — the haku JWT rotates ~every 44 days and the
-# provider's write-only token can't track that. Per anthropic_hosted/PLAN.md
-# ("static_bearer + rotation CronJob"), the authentik-jwt-rotation CronJob will
-# own it (follow-up). Until then, seed it once against the TF-created vault:
-#
-#   ant beta:vaults:credentials create --vault-id "$(tofu output -raw vault_id)" <<'YAML'
-#   display_name: haku k8s bearer (kubectl-machine-mcp)
-#   auth:
-#     type: static_bearer
-#     mcp_server_url: https://kubectl-machine-mcp.allegedly.works/mcp
-#     token: <sops -d --extract '["jwt"]' secrets/haku-k8s-jwt.yaml>
-#   YAML
+# CREDENTIAL ROTATION: the static_bearer credential carries the haku-k8s Authentik
+# JWT, which rotates ~every 44 days. The chain is fully automatic and the rotator
+# stays dumb (it only mints + commits): authentik-jwt-rotation writes the token as
+# the haku-cloud-kube-token k8s Secret -> Flux applies it -> this runner reads it
+# (var.haku_kube_token + var.haku_kube_token_wo_version) -> tofu re-sends it into
+# the Anthropic vault. The token is a TF 1.11 write-only attribute, so it only
+# re-sends when token_wo_version changes; we set that to the JWT's exp epoch
+# (monotonic, bumps on every mint).
 
 # api_key is read from the ANTHROPIC_API_KEY env var, injected into the
 # tofu-controller runner from the haku-cloud-anthropic-api-key Secret (a
@@ -92,10 +86,24 @@ resource "claude-managed-agents_agent" "haku_cloud" {
   ]
 }
 
-# Vault shell. The static_bearer credential inside it is seeded/rotated out of
-# band (see the header comment) — Terraform does not manage it.
 resource "claude-managed-agents_vault" "haku_cloud" {
   display_name = "haku-cloud"
+}
+
+# The haku-k8s Authentik JWT, bound to the kubectl-machine-mcp URL. Anthropic
+# presents it when the agent connects to that MCP; the MCP forwards it to
+# kube-apiserver (groups:["haku"] -> oidc-ksbx-groups:haku). token is write-only;
+# token_wo_version = the JWT exp epoch so each rotation re-sends (see header).
+resource "claude-managed-agents_vault_credential" "haku_kube" {
+  vault_id     = claude-managed-agents_vault.haku_cloud.id
+  display_name = "haku k8s bearer (kubectl-machine-mcp)"
+
+  auth = {
+    type             = "static_bearer"
+    mcp_server_url   = "https://kubectl-machine-mcp.allegedly.works/mcp"
+    token            = var.haku_kube_token
+    token_wo_version = var.haku_kube_token_wo_version
+  }
 }
 
 resource "claude-managed-agents_deployment" "haku_cloud" {

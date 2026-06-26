@@ -36,3 +36,17 @@ spec:
             secretKeyRef:
               name: haku-cloud-anthropic-api-key
               key: api-key
+        # haku-k8s Authentik JWT (rotated by authentik-jwt-rotation into the
+        # haku-cloud-kube-token Secret) + its exp epoch. tofu writes the token into
+        # the Anthropic vault as a static_bearer credential; the exp drives the
+        # write-only token_wo_version so each rotation re-sends. See the root's main.tf.
+        - name: TF_VAR_haku_kube_token
+          valueFrom:
+            secretKeyRef:
+              name: haku-cloud-kube-token
+              key: jwt
+        - name: TF_VAR_haku_kube_token_wo_version
+          valueFrom:
+            secretKeyRef:
+              name: haku-cloud-kube-token
+              key: token-exp

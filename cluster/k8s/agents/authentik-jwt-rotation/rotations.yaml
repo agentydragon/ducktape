@@ -25,6 +25,20 @@ rotations:
     credentials_dir: /var/run/secrets/authentik/haku-k8s
     sops_file: secrets/haku-k8s-jwt.yaml
     token_field: jwt
+    # Also publish the token as an in-cluster k8s Secret so the haku-cloud-agent
+    # tofu root can read it (env var) and write it into Haku's Anthropic vault as a
+    # static_bearer credential. `token-exp` is the monotonic signal tofu uses for
+    # the write-only token_wo_version, so a rotation re-sends the new token.
+    # TODO: the token now lives SOPS-encrypted in two places — secrets/haku-k8s-jwt.yaml
+    #   (bare, for the CLI/write_kubeconfig path) and this k8s Secret manifest (for
+    #   Flux). That duplication is annoying. Nicer would be a single SOPS file that
+    #   Flux can turn into a Secret directly (Flux only decrypts+applies files that
+    #   are already k8s manifests; it won't synthesize a Secret from a bare jwt:
+    #   file). Revisit if Flux/an operator grows a "SOPS data file -> Secret" path.
+    k8s_secret:
+      path: cluster/k8s/haku/cloud-agent-tf/haku-kube-token.sops.yaml
+      name: haku-cloud-kube-token
+      namespace: flux-system
   - name: haku-grocy
     # Source JWT for haku's read-only access to the grocy-sf MCP. Issued by the
     # grocy-mcp-sf provider so its iss matches the MCP's JWTVerifier; the MCP runs

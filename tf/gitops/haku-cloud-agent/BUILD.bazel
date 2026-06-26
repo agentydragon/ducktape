@@ -5,7 +5,7 @@ tf_providers_versions(
     providers = {
         "claude-managed-agents": "modus-agendi/anthropic-claude-managed-agents:~>1.1",
     },
-    tf_version = "1.9.8",
+    tf_version = "1.11.2",
 )
 
 tf_module(
