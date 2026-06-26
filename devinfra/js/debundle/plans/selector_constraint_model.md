@@ -828,10 +828,8 @@ resolver architecture:
 ## Cleanup Dispatch Queue
 
 Do not preserve old matcher conveniences merely because they exist today. The
-safe early cleanup queue now starts with tooling-only conveniences:
+remaining safe early cleanup queue starts with tooling-only conveniences:
 
-- remove `selector-codemod --no-minimize` / `--full-ast-fallback`; the current
-  Gaffer workflow census found no downstream callers;
 - narrow source-aware `selector-debt` near-match options;
 - replace generic `NoMatch` fallback text, empty `nearest_candidates`, fact
   near-miss scoring, `match-selector` slack relaxation, legacy source-match

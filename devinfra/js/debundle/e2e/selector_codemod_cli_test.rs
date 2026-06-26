@@ -37,19 +37,6 @@ fn run_codemod(modules: &Path, extra: &[&str]) -> std::process::Output {
     out
 }
 
-fn run_spec_codemod_command_raw(
-    command: &str,
-    modules: &Path,
-    extra: &[&str],
-) -> std::process::Output {
-    let mut args = vec!["spec", command, "--modules", modules.to_str().unwrap()];
-    args.extend_from_slice(extra);
-    Command::new(debundler_path())
-        .args(&args)
-        .output()
-        .expect("spawn debundle")
-}
-
 fn fixture(modules: &Path) -> (PathBuf, PathBuf) {
     let target = modules.join("ui/widgets.yaml");
     let other = modules.join("other/untouched.yaml");
@@ -525,28 +512,6 @@ fn extract_regex_literal_pattern(match_source: &str) -> String {
     // matcher's parser un-escapes it before compiling; mirror that here so the
     // test compiles the same pattern the matcher does.
     rest[..end].replace("\\\\", "\\")
-}
-
-#[test]
-fn removed_exact_selector_flags_are_rejected() {
-    let dir = tempfile::tempdir().unwrap();
-    let modules = dir.path().join("modules");
-    fs::create_dir_all(&modules).unwrap();
-
-    for command in ["selector-codemod", "synthesize-selectors"] {
-        for flag in ["--no-minimize", "--full-ast-fallback"] {
-            let out = run_spec_codemod_command_raw(command, &modules, &[flag]);
-            assert!(
-                !out.status.success(),
-                "{command} {flag} unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
-                String::from_utf8_lossy(&out.stdout),
-                String::from_utf8_lossy(&out.stderr)
-            );
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            assert!(stderr.contains(flag), "{stderr}");
-            assert!(stderr.contains("unexpected argument"), "{stderr}");
-        }
-    }
 }
 
 #[test]
