@@ -65,7 +65,6 @@ pub struct MemberSelectorProgramBuilder {
 }
 
 struct NativeAstFactLowering<'a> {
-    logical_module: &'a str,
     facts: &'a ChunkFacts,
     node_vars: &'a BTreeMap<NodeId, SelectorVariableId>,
     skipped_nodes: &'a BTreeSet<NodeId>,
@@ -557,7 +556,6 @@ impl MemberSelectorProgramBuilder {
             (None, _) => {}
         }
         self.lower_native_ast_facts(NativeAstFactLowering {
-            logical_module,
             facts: &facts,
             node_vars: &node_vars,
             skipped_nodes: &skipped_nodes,
@@ -835,7 +833,6 @@ impl MemberSelectorProgramBuilder {
         }
 
         self.lower_native_ast_facts(NativeAstFactLowering {
-            logical_module,
             facts: &facts,
             node_vars: &node_vars,
             skipped_nodes: &skipped_nodes,
@@ -851,7 +848,6 @@ impl MemberSelectorProgramBuilder {
 
     fn lower_native_ast_facts(&mut self, lowering: NativeAstFactLowering<'_>) {
         let NativeAstFactLowering {
-            logical_module,
             facts,
             node_vars,
             skipped_nodes,
@@ -871,26 +867,6 @@ impl MemberSelectorProgramBuilder {
                 || bare_properties.contains_key(node)
                 || bare_property_structural_nodes.contains(node)
         };
-        let mut wildcard_string_vars = BTreeMap::<String, SelectorVariableId>::new();
-        for (_node, token) in &facts.str_wildcard {
-            if structurally_skipped_node(_node) {
-                continue;
-            }
-            wildcard_string_vars
-                .entry(token.clone())
-                .or_insert_with(|| {
-                    self.program.add_variable(
-                        VariableDomain::String,
-                        Some(format!("{logical_module}::source_match.string.{token}")),
-                    )
-                });
-        }
-        let wildcard_string_by_node: BTreeMap<NodeId, SelectorVariableId> = facts
-            .str_wildcard
-            .iter()
-            .filter(|(node, _token)| !structurally_skipped_node(node))
-            .filter_map(|(node, token)| wildcard_string_vars.get(token).map(|var| (*node, *var)))
-            .collect();
         let mut child_counts: BTreeMap<NodeId, u32> =
             facts.node_kind.iter().map(|(node, _)| (*node, 0)).collect();
         for (parent, _index, _child) in &facts.child {
@@ -1008,18 +984,9 @@ impl MemberSelectorProgramBuilder {
             if structurally_skipped_node(node) {
                 continue;
             }
-            if let Some(wildcard_string_var) = wildcard_string_by_node.get(node).copied() {
-                if let Some(node) = node_vars.get(node).copied() {
-                    self.program.add_atom(SelectorAtom::AstStringLiteral {
-                        node: node_term(node),
-                        value: string_term(wildcard_string_var),
-                    });
-                }
-            } else {
-                self.add_ast_string_label(node_vars, *node, value, |node, value| {
-                    SelectorAtom::AstStringLiteral { node, value }
-                });
-            }
+            self.add_ast_string_label(node_vars, *node, value, |node, value| {
+                SelectorAtom::AstStringLiteral { node, value }
+            });
         }
         for (node, value) in &facts.num_lit {
             if structurally_skipped_node(node) {

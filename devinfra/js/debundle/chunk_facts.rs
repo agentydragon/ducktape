@@ -256,13 +256,6 @@ pub struct ChunkFacts {
     pub child: Vec<(NodeId, u32, NodeId)>,
     /// string-literal value, unescaped via `js_ast::str_value`.
     pub str_lit: Vec<(NodeId, String)>,
-    /// A `StrLit` **needle** node whose value is a selector wildcard string literal
-    /// (`wildcard_string_literals`) -> the wildcard token. Only needle facts carry
-    /// these (real subject source never does): the matcher treats such a node as a
-    /// string wildcard that matches any string-literal subject, binding the token
-    /// to one concrete value across the match. Absent ⟹ the `str_lit` value is
-    /// matched exactly.
-    pub str_wildcard: Vec<(NodeId, String)>,
     /// numeric-literal token, rendered faithfully (source `raw` when present).
     pub num_lit: Vec<(NodeId, String)>,
     pub bool_lit: Vec<(NodeId, bool)>,
@@ -322,10 +315,6 @@ fn expr_variant_name(expr: &Expr) -> &'static str {
 struct Extractor {
     facts: ChunkFacts,
     next: NodeId,
-    /// The selector's wildcard string literals, for a **needle** projection — a
-    /// `StrLit` whose value is in this set is additionally recorded in
-    /// `str_wildcard`. Empty for subject (chunk-body) projection.
-    wildcard_string_literals: std::collections::BTreeSet<String>,
 }
 
 impl Extractor {
@@ -1218,9 +1207,6 @@ impl Extractor {
             Lit::Str(value) => {
                 let id = self.node(NodeKind::StrLit);
                 let text = js_ast::str_value(value);
-                if self.wildcard_string_literals.contains(&text) {
-                    self.facts.str_wildcard.push((id, text.clone()));
-                }
                 self.facts.str_lit.push((id, text));
                 Ok(id)
             }
@@ -1273,27 +1259,6 @@ pub fn extract_facts(module: &Module) -> Result<ChunkFacts, Unsupported> {
 /// item into a one-item [`Module`] first.
 pub fn extract_facts_items(items: &[ModuleItem]) -> Result<ChunkFacts, Unsupported> {
     let mut extractor = Extractor::default();
-    for (body_idx, item) in items.iter().enumerate() {
-        let ordinal = statement_ordinal_for_body_index(items, body_idx);
-        extractor.module_item(item, ordinal)?;
-    }
-    Ok(extractor.facts)
-}
-
-/// Like [`extract_facts_items`], but for a **needle** projection: a `StrLit` whose
-/// value is in `wildcard_string_literals` is additionally recorded in
-/// `ChunkFacts::str_wildcard`, so the matcher matches it as a string wildcard
-/// (any string-literal value, bound consistently) instead of by exact value.
-/// Subject (chunk-body) facts use [`extract_facts_items`] — they carry no
-/// wildcards.
-pub fn extract_facts_needle(
-    items: &[ModuleItem],
-    wildcard_string_literals: &std::collections::BTreeSet<String>,
-) -> Result<ChunkFacts, Unsupported> {
-    let mut extractor = Extractor {
-        wildcard_string_literals: wildcard_string_literals.clone(),
-        ..Extractor::default()
-    };
     for (body_idx, item) in items.iter().enumerate() {
         let ordinal = statement_ordinal_for_body_index(items, body_idx);
         extractor.module_item(item, ordinal)?;

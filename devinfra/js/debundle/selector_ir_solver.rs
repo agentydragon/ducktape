@@ -220,7 +220,6 @@ ascent! {
     relation ast_child(u32, u32, u32); // parent, child index, child
     relation ast_child_count(u32, u32); // node, number of direct AST children
     relation ast_string_literal(u32, String); // node, value
-    relation ast_string_wildcard(u32, String); // needle node, wildcard token
     relation ast_number_literal(u32, String); // node, value
     relation ast_bool_literal(u32, bool); // node, value
     relation ast_identifier_name(u32, String); // node, value
@@ -772,9 +771,6 @@ pub fn solve(
                     .push((*node, pattern.clone()));
             }
         }
-    }
-    for (node, value) in &fact_index.ast_string_wildcards {
-        ascent.ast_string_wildcard.push((*node, value.clone()));
     }
     for (node, value) in &fact_index.ast_number_literals {
         ascent.ast_number_literal.push((*node, value.clone()));
@@ -3277,7 +3273,6 @@ struct FactIndex {
     ast_children_by_parent: BTreeMap<u32, Vec<(u32, u32)>>,
     ast_child_counts: Vec<(u32, u32)>,
     ast_string_literals: Vec<(u32, String)>,
-    ast_string_wildcards: Vec<(u32, String)>,
     ast_number_literals: Vec<(u32, String)>,
     ast_bool_literals: Vec<(u32, bool)>,
     ast_identifier_names: Vec<(u32, String)>,
@@ -3433,10 +3428,6 @@ impl FactIndex {
                 SelectorFact::AstStringLiteral { node, value, .. } => {
                     index.all_nodes.insert(*node);
                     index.ast_string_literals.push((*node, value.clone()));
-                }
-                SelectorFact::AstStringWildcard { node, token, .. } => {
-                    index.all_nodes.insert(*node);
-                    index.ast_string_wildcards.push((*node, token.clone()));
                 }
                 SelectorFact::AstNumberLiteral { node, value, .. } => {
                     index.all_nodes.insert(*node);

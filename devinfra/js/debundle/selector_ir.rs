@@ -801,11 +801,6 @@ pub enum SelectorFact {
         node: NodeId,
         value: String,
     },
-    AstStringWildcard {
-        chunk_id: ChunkId,
-        node: NodeId,
-        token: String,
-    },
     AstNumberLiteral {
         chunk_id: ChunkId,
         node: NodeId,
@@ -898,7 +893,6 @@ impl SelectorFact {
             Self::AstKind { .. } => "ast_kind",
             Self::AstChild { .. } => "ast_child",
             Self::AstStringLiteral { .. } => "ast_string_literal",
-            Self::AstStringWildcard { .. } => "ast_string_wildcard",
             Self::AstNumberLiteral { .. } => "ast_number_literal",
             Self::AstBoolLiteral { .. } => "ast_bool_literal",
             Self::AstIdentifierName { .. } => "ast_identifier_name",
@@ -977,14 +971,6 @@ impl SelectorFactStore {
                 value: value.clone(),
             }
         }));
-        self.facts
-            .extend(facts.str_wildcard.iter().map(|(node, token)| {
-                SelectorFact::AstStringWildcard {
-                    chunk_id,
-                    node: *node,
-                    token: token.clone(),
-                }
-            }));
         self.facts.extend(facts.num_lit.iter().map(|(node, value)| {
             SelectorFact::AstNumberLiteral {
                 chunk_id,

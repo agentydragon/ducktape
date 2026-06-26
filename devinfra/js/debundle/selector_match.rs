@@ -100,18 +100,12 @@ struct AlphaScope {
 #[derive(Clone)]
 struct Bindings {
     scopes: Vec<AlphaScope>,
-    /// Wildcard-string-literal token -> the concrete subject string value it bound
-    /// to, so one wildcard matches one value consistently across the match (the
-    /// deleted matcher's `bind_string`). Not lexically scoped — a wildcard literal
-    /// pins a value globally within the match, like the regex predicate.
-    string_wildcards: HashMap<String, String>,
 }
 
 impl Default for Bindings {
     fn default() -> Self {
         Self {
             scopes: vec![AlphaScope::default()],
-            string_wildcards: HashMap::new(),
         }
     }
 }
@@ -176,19 +170,6 @@ impl Bindings {
         }
     }
 
-    /// Match a wildcard string literal against a subject value, binding the token
-    /// the first time and requiring consistency after (see `string_wildcards`).
-    fn match_string_wildcard(&mut self, wildcard: &str, value: &str) -> bool {
-        match self.string_wildcards.get(wildcard) {
-            Some(existing) => existing == value,
-            None => {
-                self.string_wildcards
-                    .insert(wildcard.to_string(), value.to_string());
-                true
-            }
-        }
-    }
-
     /// Force a needle↔subject mapping in the current frame before matching (the
     /// `target_binding` alpha coupling). Honors an existing mapping; fails if
     /// either side is already mapped incompatibly. Used in both identifier modes.
@@ -240,10 +221,6 @@ pub struct Index {
     children: Vec<Vec<NodeId>>,
     ident: Vec<Option<Box<str>>>,
     str_lit: Vec<Option<Box<str>>>,
-    /// A needle `StrLit` node -> its wildcard token (`str_wildcard` fact). Present
-    /// only on needle indices; `homo` matches such a node as a string wildcard
-    /// (any string-literal subject, bound consistently) instead of by exact value.
-    str_wildcard: Vec<Option<Box<str>>>,
     num_lit: Vec<Option<Box<str>>>,
     bool_lit: Vec<Option<bool>>,
     prop_name: Vec<Option<Box<str>>>,
@@ -300,7 +277,6 @@ impl Index {
             children,
             ident: label(&facts.ident_name),
             str_lit: label(&facts.str_lit),
-            str_wildcard: label(&facts.str_wildcard),
             num_lit: label(&facts.num_lit),
             bool_lit,
             prop_name: label(&facts.prop_name),
@@ -338,12 +314,6 @@ impl Index {
 
     fn str_lit_of(&self, id: NodeId) -> Option<&str> {
         self.str_lit
-            .get(id as usize)
-            .and_then(|slot| slot.as_deref())
-    }
-
-    fn str_wildcard_of(&self, id: NodeId) -> Option<&str> {
-        self.str_wildcard
             .get(id as usize)
             .and_then(|slot| slot.as_deref())
     }
@@ -785,17 +755,6 @@ fn homo(
                 (Some(re), Some(value)) => re.is_match(value),
                 _ => false,
             });
-    }
-
-    // Wildcard string literal (`wildcard_string_literals`): matches any
-    // string-literal subject value, binding the wildcard token to one value
-    // consistently across the match. The needle node is a `StrLit` carrying a
-    // `str_wildcard` fact; the subject must be a real `StrLit`.
-    if let Some(wildcard) = needle.str_wildcard_of(nid) {
-        return Ok(match (subject.kind_of(sid), subject.str_lit_of(sid)) {
-            (NodeKind::StrLit, Some(value)) => bindings.match_string_wildcard(wildcard, value),
-            _ => false,
-        });
     }
 
     // Shorthand ⟷ explicit same-name property equivalence (object literals and
@@ -1403,10 +1362,7 @@ pub fn invariant_tokens(index: &Index) -> Vec<Token> {
         .collect();
     let mut tokens: HashSet<Token> = HashSet::new();
     for node in 0..node_count {
-        // A wildcard string literal matches any value, so it pins no `Str` token
-        // (indexing its placeholder text would wrongly require it of the subject).
         if !predicate_args.contains(&node)
-            && index.str_wildcard_of(node).is_none()
             && let Some(value) = index.str_lit_of(node)
         {
             tokens.insert(Token::Str(value.into()));

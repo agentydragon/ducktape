@@ -497,7 +497,6 @@ impl FactDomains {
                 }
                 SelectorFact::AstKind { node, .. }
                 | SelectorFact::AstStringLiteral { node, .. }
-                | SelectorFact::AstStringWildcard { node, .. }
                 | SelectorFact::AstNumberLiteral { node, .. }
                 | SelectorFact::AstBoolLiteral { node, .. }
                 | SelectorFact::AstIdentifierName { node, .. }
@@ -580,7 +579,6 @@ impl FactDomains {
     fn add_fact_strings(&mut self, fact: &SelectorFact) {
         match fact {
             SelectorFact::AstStringLiteral { value, .. }
-            | SelectorFact::AstStringWildcard { token: value, .. }
             | SelectorFact::AstNumberLiteral { value, .. }
             | SelectorFact::AstIdentifierName { value, .. }
             | SelectorFact::AstPropertyName { value, .. }
