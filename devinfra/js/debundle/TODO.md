@@ -24,34 +24,44 @@ records and scoped backlogs; when a plan's core work is complete, its remaining
 tail should be summarized here instead of leaving the plan looking like a second
 priority queue.
 
-**Current focus (2026-06-25).** PRs #2439, #2443, #2446, and #2447 moved
+**Current focus (2026-06-26).** PRs #2439, #2443, #2446, and #2447 moved
 `source_match` onto the Ascent-backed selector path, lowered the exact
 single-statement AST subset, stopped calling `ChunkResolver` for native
-selectors, and added native class-superclass constraints. Current work deletes
-the `SourceMatchCandidate` schema, member/group candidate-oracle injection, and
-production anonymous-statement `ChunkResolver` fallback. The remaining P0 is to
-make every retained selector form lower faithfully into one declarative
-Ascent/CSP-style constraint program; unsupported forms now fail closed instead
+selectors, and added native class-superclass constraints. That proved the
+global-resolution direction, but profiling the production-sized path showed the
+current Ascent exact-assignment encoding is not the endpoint: it carries
+`AssignmentRow` payloads through `partial_assignment` / `stepped_assignment`
+relations and implements target injectivity as pairwise row filtering instead
+of a native global constraint. The remaining P0 is to carve a
+`SelectorConstraintModel` boundary, keep Ascent/Rust as fact and allowed-tuple
+derivation where useful, and move exact target assignment to a CP/SAT backend
+with first-class `all_different`. Unsupported forms still fail closed instead
 of taking a production procedural fallback.
 
 Dispatch work in this order:
 
-1. **Alpha-all as query structure (P0.1).** Lower `identifiers: alpha_all` to
+1. **Constraint-model/backend pivot (P0.0).** Introduce the explicit
+   `SelectorConstraintModel` contract: typed finite domains, allowed tuples,
+   equality/disequality, ordering, target projection, and semantic
+   `all_different`. Target OR-Tools CP-SAT first; use RustSAT + CaDiCaL/Kissat
+   only if OR-Tools integration is too expensive. Do not optimize the current
+   `AssignmentRow` scheduler as if it were the final solver.
+2. **Alpha-all as query structure (P0.1).** Lower `identifiers: alpha_all` to
    logic variables, equality, disequality / `all_different`, and scope facts.
    Do not clone the procedural `selector_match::Bindings` matcher inside the
    solver; alpha-renaming should fall out of the query.
-2. **Core hole predicates (P0.2).** Lower simple `ANYTHING` / `EXPR` / `STMT`
+3. **Core hole predicates (P0.2).** Lower simple `ANYTHING` / `EXPR` / `STMT`
    holes, regex string predicates, and then ordered run holes (`STMT_LIST`,
    `OBJECT_PROPS`, `DECLARATORS`, `ARGS`, `CLASS_REST`, `CASE_REST`,
    `ARRAY_ELEMENTS`) as native constraints. Preserve the fail-closed rule:
    unsupported constructs report `unsupported` until their faithful encoding is
    implemented.
-3. **Source-match surface pruning (P0.3).** Remove legacy `source_match`
+4. **Source-match surface pruning (P0.3).** Remove legacy `source_match`
    options that no current downstream spec uses before nativeization hardens
    them into the new IR. `target_statement` / `target_statements` have been
    removed; the remaining gaffer-private census follow-up is
    `wildcard_string_literals`.
-4. **Derived relational predicates (P0.4).** Fold the remaining bridge
+5. **Derived relational predicates (P0.4).** Fold the remaining bridge
    vocabulary (`cross_ref`, `reads_member`, `member_of_module`,
    `passed_to_call`, `makes_decorate_call`, `intrinsic_alias`) into IR atoms or
    derived predicates over owner/reference + AST facts.
@@ -73,12 +83,14 @@ One-line status for each `plans/` design doc; this is the discovery index, not a
 parallel dispatch queue.
 
 - <plans/selector_constraint_model.md> — **active (P0 global resolver).**
-  Canonical plan for the selector model, Ascent solver choice, execution
-  phases, verification gates, and Gaffer evidence queue. #2439 closed the
-  global-solver admission path for `source_match`; #2443/#2446/#2447 moved the
-  exact native subset out of the oracle. Current top priority is alpha-all and
-  hole lowering as one declarative query, plus pruning unused source-match
-  surface before carrying it forward. The landed bridge primitives (`cross_ref`,
+  Canonical plan for the selector model, backend ownership, execution phases,
+  verification gates, and Gaffer evidence queue. #2439 closed the global-solver
+  admission path for `source_match`; #2443/#2446/#2447 moved the exact native
+  subset out of the oracle. Current top priority is the solver-backend pivot:
+  preserve one whole-spec constraint model, but stop treating Ascent row
+  enumeration as the exact-assignment backend. Next work is alpha-all and hole
+  lowering into that model, plus pruning unused source-match surface before
+  carrying it forward. The landed bridge primitives (`cross_ref`,
   `reads_member`, `member_of_module`, `passed_to_call`, `makes_decorate_call`,
   `intrinsic_alias`) are useful fact/selector vocabulary, but are bridge
   implementations until they fold into derived predicates. See
@@ -104,19 +116,37 @@ propose`.
 Detailed design and gates live in <plans/selector_constraint_model.md>; keep
 this list as the dispatch summary, not a second plan.
 
-1. **Lower alpha-all declaratively.** Represent selector-local identifier
+1. **Carve the exact-assignment backend boundary.** Materialize a
+   `SelectorConstraintModel` from `SelectorProgram` + facts, with typed finite
+   domains, allowed tuples, target projections, and semantic `all_different`.
+   Ascent may stay on the fact/table side; the exact target assignment must be
+   owned by OR-Tools CP-SAT or a measured SAT fallback, not by
+   `AssignmentRow` enumeration.
+2. **Unblock the solver dependency path before wiring it into production.**
+   OR-Tools CP-SAT remains the target backend, but the first sidecar spike hit a
+   Bzlmod conflict: `or-tools@9.15` pulls `pybind11_abseil`, whose dev-only pip
+   hub is also named `pypi`. Resolve that as a dependency-only slice, prove a
+   tiny CP-SAT target under RBE, and only then wire selector solving to it. If
+   that integration stays too expensive, encode the same
+   `SelectorConstraintModel` through the RustSAT + CaDiCaL/Kissat fallback.
+3. **Lower alpha-all declaratively.** Represent selector-local identifier
    bindings/references as variables and constraints over facts, including
    equality, disequality / `all_different`, and scope. This is the blocker for
    current gaffer-private payoff: its Tana spec uses `identifiers: alpha_all`
    for every `source_match`.
-2. **Lower the retained hole vocabulary.** Start with simple single-node holes
+4. **Lower the retained hole vocabulary.** Start with simple single-node holes
    and regex string predicates, then add ordered run-hole placement for the
    high-volume families (`STMT_LIST`, `DECLARATORS`, `OBJECT_PROPS`). Each
    lowering must be faithful or fail closed.
-3. **Prune unused source-match options.** Finish the
-   `wildcard_string_literals` census/removal decision, and run a broader
-   vestigial-feature audit before nativeizing more rarely-used spec surface.
-4. **Fold bridge vocabulary into derived predicates.** Re-express the staged
+5. **Prune unused source-match/options before nativeizing them.** Safe cleanup
+   candidates from the current Ducktape/Gaffer census: remove or hide
+   `source_match.wildcard_string_literals`, remove the single-choice
+   `match-selector --identifiers` flag, and avoid preserving old
+   `STATEMENT_*` compatibility names. Likely follow-ups: trim
+   `selector-codemod` exact-body fallback knobs and source-aware
+   `selector-debt` debug options once their solver-backed replacements are
+   scoped.
+6. **Fold bridge vocabulary into derived predicates.** Re-express the staged
    relational selectors as solver predicates over owner/reference + AST facts.
    Real-spec Gaffer work should supply missing predicates and diagnostics, not
    another permanent resolver layer.
@@ -127,12 +157,15 @@ this list as the dispatch summary, not a second plan.
    or add adjacent verbs so every broad rewrite can emit a dry-run patch plan,
    apply with filters, and explain every skipped candidate. The prove gate
    should be solver categoricity, not an independent selector-matcher path.
-2. **Selector diagnostics — remaining extensions.** The keep-going JSON report
-   (`debundle spec validate --keep-going --format text|json|ndjson`) landed
-   (#2302; shared contract in `selector_diagnostics.rs`) and classifies
-   unresolved / ambiguous / duplicate-claim failures with full provenance. Fold
-   remaining anonymous-statement failures, blocker comments, and
-   free-readable-identifier cases into the solver-backed report shape.
+2. **Selector diagnostics — solver-backed replacement.** The keep-going JSON
+   report (`debundle spec validate --keep-going --format text|json|ndjson`)
+   landed (#2302; shared contract in `selector_diagnostics.rs`) and classifies
+   unresolved / ambiguous / duplicate-claim failures with full provenance.
+   Treat that as the current user-facing contract, not as architecture to carry
+   forward unchanged: the new backend should emit per-target solver
+   explanations directly. Fold remaining anonymous-statement failures, blocker
+   comments, free-readable-identifier cases, and nearest-candidate needs into
+   that solver-backed report shape.
 3. **Spec repair from diagnostics.** Add a workflow that consumes the
    solver-backed keep-going report, proposes mechanically proven patch plans for
    no-match, ambiguous, duplicate-claim, and unsupported-selector cases, and
@@ -187,6 +220,12 @@ this list as the dispatch summary, not a second plan.
    path-keyed index if fresh profiles show chunk file lookup hot.
 5. Move `split_entry_body` to a draining/move-based implementation if fresh
    profiles show retained-statement cloning hot.
+6. Replace diagnostic-only matcher mirrors with solver-native explanations:
+   generic `NoMatch` fallback reporting, empty `nearest_candidates`, fact
+   near-miss/source-aware debt scoring, `match-selector` slack relaxation, old
+   source-match timing hooks, and selector-IR row/stat stderr diagnostics.
+   Keep cheap wrappers over production data; remove side data structures that
+   exist only for the old matcher/row-solver path.
 
 ### P3 — read-off minimizer polish
 

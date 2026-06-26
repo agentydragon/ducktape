@@ -3,6 +3,37 @@
 This note tracks selector issues found while porting a downstream debundle spec.
 Examples are intentionally generic and anonymized.
 
+## Global Matching Needs Injective Target Assignment
+
+Some selectors are intentionally broad, and the spec relies on the whole
+assignment to disambiguate them. Solving each selector independently, or
+dropping target injectivity, leaves those broad selectors ambiguous.
+
+Observed pattern:
+
+```js
+const broadCandidate = f(134);
+const exactCandidate = f(123);
+```
+
+Given two readable claims:
+
+- `X`: `const x = f(ANYTHING);`
+- `Y`: `const y = f(123);`
+
+`Y` should bind to `exactCandidate`, and target injectivity should force `X` to
+`broadCandidate`. Without a native/global `all_different`, both `X` and `Y` can
+claim `exactCandidate`, or `X` can remain ambiguous between both candidates.
+
+Desired behavior:
+
+- Treat `all_different` across claimed targets as selector semantics, not as a
+  best-effort diagnostic.
+- Enforce it in the exact-assignment backend so forced matches propagate to
+  broader selectors instead of enumerating invalid duplicate rows and rejecting
+  them late.
+- Add regression coverage before replacing the current `AssignmentRow` solver.
+
 ## Stable Identifiers Are Only Local To One Match
 
 `source_match` with `identifiers: alpha_all` makes readable names usable for
