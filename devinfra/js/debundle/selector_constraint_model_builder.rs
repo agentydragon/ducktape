@@ -12,8 +12,8 @@ use std::fmt;
 use analysis::{OwnerId, StatementOrdinal};
 use chunk_facts::NodeId;
 use selector_constraint_model::{
-    BinaryConstraintKind, ConstraintModelError, ConstraintValue, ConstraintVariableId,
-    SelectorConstraintModel,
+    AllDifferentReason, BinaryConstraintKind, ConstraintModelError, ConstraintValue,
+    ConstraintVariableId, SelectorConstraintModel,
 };
 use selector_ir::{
     ClaimKind, NodeTerm, OrdinalTerm, OwnerTerm, SelectorAtom, SelectorFact, SelectorFactStore,
@@ -64,6 +64,18 @@ pub fn build_selector_constraint_model(
 
     for targets in &program.all_different {
         model.require_target_all_different(targets.clone())?;
+    }
+    for variable_set in &program.all_different_variables {
+        model.add_all_different(
+            variable_set
+                .variables
+                .iter()
+                .map(|variable| model_variable(&variables, *variable))
+                .collect::<Result<Vec<_>, _>>()?,
+            AllDifferentReason::SelectorSemantics {
+                label: variable_set.label.clone(),
+            },
+        )?;
     }
 
     model.validate()?;
@@ -2426,6 +2438,61 @@ mod tests {
                 variables: vec![ConstraintVariableId(1)],
                 tuples: vec![vec![owner(20)]],
             }
+        );
+    }
+
+    #[test]
+    fn lowers_selector_semantic_variable_all_different() {
+        let mut program = SelectorProgram::default();
+        let owner = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
+        let left = program.add_variable(VariableDomain::String, Some("alpha.left".to_string()));
+        let right = program.add_variable(VariableDomain::String, Some("alpha.right".to_string()));
+        program.add_target(
+            ChunkId(0),
+            owner,
+            "module",
+            ClaimKind::Binding {
+                export_name: Some("Widget".to_string()),
+            },
+            ClaimOrigin::Synthetic,
+        );
+        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+            owner: OwnerTerm::Var { id: owner },
+            binding: StringTerm::Const {
+                value: "widget".to_string(),
+            },
+        });
+        program.add_atom(SelectorAtom::AstIdentifierName {
+            node: NodeTerm::Const { node: 1 },
+            value: StringTerm::Var { id: left },
+        });
+        program.add_atom(SelectorAtom::AstIdentifierName {
+            node: NodeTerm::Const { node: 2 },
+            value: StringTerm::Var { id: right },
+        });
+        program.require_variables_all_different(
+            vec![left, right],
+            "module::source_match.alpha_all.frame",
+        );
+
+        let facts = fact_store(vec![
+            owner_fact(10, 0, "var"),
+            declared_binding(10, "widget"),
+            ast_identifier_name(1, "a"),
+            ast_identifier_name(2, "b"),
+        ]);
+
+        let model = build_selector_constraint_model(&program, &facts).unwrap();
+
+        assert_eq!(
+            model.all_different,
+            vec![AllDifferentConstraint {
+                id: AllDifferentConstraintId(0),
+                variables: vec![ConstraintVariableId(1), ConstraintVariableId(2)],
+                reason: AllDifferentReason::SelectorSemantics {
+                    label: "module::source_match.alpha_all.frame".to_string(),
+                },
+            }]
         );
     }
 

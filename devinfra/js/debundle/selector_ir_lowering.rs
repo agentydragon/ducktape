@@ -1104,6 +1104,7 @@ impl MemberSelectorProgramBuilder {
                 *root,
             ));
         }
+        self.add_alpha_identifier_frame_all_different(logical_module, state.current_frame());
         result
     }
 
@@ -1156,7 +1157,8 @@ impl MemberSelectorProgramBuilder {
             ));
         }
         if pushes_scope {
-            state.frames.pop();
+            let frame = state.frames.pop().expect("pushed alpha scope should exist");
+            self.add_alpha_identifier_frame_all_different(logical_module, &frame);
         }
         result
     }
@@ -1243,6 +1245,23 @@ impl MemberSelectorProgramBuilder {
                 });
             }
         }
+    }
+
+    fn add_alpha_identifier_frame_all_different(
+        &mut self,
+        logical_module: &str,
+        frame: &AlphaIdentifierFrame,
+    ) {
+        let mut variables = frame.by_name.values().copied().collect::<Vec<_>>();
+        variables.sort();
+        variables.dedup();
+        if variables.len() < 2 {
+            return;
+        }
+        self.program.require_variables_all_different(
+            variables,
+            format!("{logical_module}::source_match.alpha_all.frame"),
+        );
     }
 
     fn add_kind_atom(&mut self, owner: SelectorVariableId, kind: Option<BindingSourceKind>) {
@@ -2769,6 +2788,15 @@ mod tests {
             .filter(|atom| matches!(atom, SelectorAtom::NotEqual { .. }))
             .count();
         assert_eq!(not_equal_pairs, 3);
+        assert_eq!(lowered.program.all_different_variables.len(), 1);
+        assert_eq!(
+            lowered.program.all_different_variables[0].variables,
+            vec![identifier_vars[0], identifier_vars[1], identifier_vars[2]]
+        );
+        assert_eq!(
+            lowered.program.all_different_variables[0].label,
+            "runtime/widgets::source_match.alpha_all.frame"
+        );
     }
 
     #[test]

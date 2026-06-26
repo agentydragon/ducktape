@@ -1983,6 +1983,13 @@ impl ProgramSupport {
                 }
             }
         }
+        for variable_set in &program.all_different_variables {
+            for (left_index, left) in variable_set.variables.iter().enumerate() {
+                for right in variable_set.variables.iter().skip(left_index + 1) {
+                    support.add_equality(*left, *right, EqualityConstraintKind::NotEqual);
+                }
+            }
+        }
         support
     }
 

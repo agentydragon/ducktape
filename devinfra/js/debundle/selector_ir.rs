@@ -303,6 +303,15 @@ pub struct SelectorProgram {
     /// Sets of target ids that must land on distinct owners.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub all_different: Vec<Vec<SelectorTargetId>>,
+    /// Sets of variables that must land on distinct values.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub all_different_variables: Vec<SelectorVariableAllDifferent>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SelectorVariableAllDifferent {
+    pub variables: Vec<SelectorVariableId>,
+    pub label: String,
 }
 
 impl SelectorProgram {
@@ -348,6 +357,18 @@ impl SelectorProgram {
         self.all_different.push(targets);
     }
 
+    pub fn require_variables_all_different(
+        &mut self,
+        variables: Vec<SelectorVariableId>,
+        label: impl Into<String>,
+    ) {
+        self.all_different_variables
+            .push(SelectorVariableAllDifferent {
+                variables,
+                label: label.into(),
+            });
+    }
+
     pub fn validate(&self) -> Result<(), SelectorProgramError> {
         for (idx, variable) in self.variables.iter().enumerate() {
             if variable.id != SelectorVariableId(idx) {
@@ -375,6 +396,26 @@ impl SelectorProgram {
             }
             for target in target_set {
                 self.require_target(*target)?;
+            }
+        }
+        for variable_set in &self.all_different_variables {
+            if variable_set.variables.len() < 2 {
+                return Err(SelectorProgramError::DegenerateAllDifferent);
+            }
+            let mut expected_domain = None;
+            for variable in &variable_set.variables {
+                let domain = self.require_variable(*variable, "all_different_variables")?;
+                match expected_domain {
+                    None => expected_domain = Some(domain),
+                    Some(expected) if expected != domain => {
+                        return Err(SelectorProgramError::DomainMismatch {
+                            context: "all_different_variables",
+                            expected,
+                            actual: domain,
+                        });
+                    }
+                    Some(_) => {}
+                }
             }
         }
         Ok(())
@@ -744,7 +785,7 @@ impl fmt::Display for SelectorProgramError {
                 )
             }
             Self::DegenerateAllDifferent => {
-                write!(f, "all_different requires at least two targets")
+                write!(f, "all_different requires at least two entries")
             }
             Self::EmptyChildListPattern => {
                 write!(
@@ -1268,6 +1309,33 @@ mod tests {
                 context: "selector target owner",
                 expected: VariableDomain::Owner,
                 actual: VariableDomain::AstNode,
+            })
+        );
+    }
+
+    #[test]
+    fn validates_variable_all_different_domains() {
+        let mut program = SelectorProgram::default();
+        let left = program.add_variable(VariableDomain::String, Some("left".to_string()));
+        let right = program.add_variable(VariableDomain::String, Some("right".to_string()));
+        program.require_variables_all_different(vec![left, right], "alpha frame");
+
+        assert_eq!(program.validate(), Ok(()));
+    }
+
+    #[test]
+    fn rejects_variable_all_different_domain_mismatch() {
+        let mut program = SelectorProgram::default();
+        let string = program.add_variable(VariableDomain::String, Some("string".to_string()));
+        let owner = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
+        program.require_variables_all_different(vec![string, owner], "mixed");
+
+        assert_eq!(
+            program.validate(),
+            Err(SelectorProgramError::DomainMismatch {
+                context: "all_different_variables",
+                expected: VariableDomain::String,
+                actual: VariableDomain::Owner,
             })
         );
     }
