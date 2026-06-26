@@ -18,11 +18,22 @@ move runtime instructions here, and don't put editor notes in `instructions.md`.
 - `schema/item.json` — the item schema, validated at write time. Changing item
   shape means editing this **and** the _Item contract_ / _Dashboard_ spec in
   `instructions.md` together.
-- `sources/` — Haku's **information sources** (operator-linked channels: inbox,
-  calendar, Drive, Tana, repos, …) plus a couple of example cross-source techniques.
-  They are inputs/reference, **not** a checklist — frame each as "what this source
-  tells you + how to read it," and keep techniques as illustrations Haku adapts, never
-  a mandate or a closed set. Don't let this dir read as "runbooks to execute."
+- `sources/<channel>.md` — one file per **information source (channel)**: gmail,
+  calendar, drive, tasks, tana, plaid, ducktape. Content is strictly **what this
+  channel tells you about the operator + how to read it** — auth, API/query shape,
+  fields, gotchas. **Not** what to do with it.
+- `recipes.md` — **source-agnostic techniques** (the _process_): reusable ways to be
+  useful, applied situationally across whatever channels fit — inbox-like triage &
+  cleanup, calendar prep, financial anomalies & leaks, delegation scan, opportunistic
+  synthesis, … Illustrations, **not** a checklist or a closed set. Read by Haku as part
+  of its manual (referenced from `instructions.md` → _How you reason_).
+
+  **Source vs. recipe — the boundary** (the thing that kept getting muddled): a source
+  file is about **getting and reading** the data; a recipe is about **acting on** what
+  you find. If a line reads "look for X → file an item," it's a recipe, not a source —
+  move it. Keep `sources/*.md` free of "look for / file one item per finding" process,
+  and keep `recipes.md` free of channel-specific access mechanics (those belong in the
+  source). A recipe should name the channels it applies over, not embed how to query them.
 
 ## Editing rules
 
@@ -33,6 +44,7 @@ move runtime instructions here, and don't put editor notes in `instructions.md`.
   empty and Haku creates its own structure. `base/` and state are separate; the
   only thing Haku writes is state.
 - Keep `instructions.md` and `haku/run.md` in sync when you change the cycle: the
-  contracts are described once in `instructions.md`; `haku/run.md` only sequences
-  the steps (and per-environment entrypoints only add setup) — neither redefines
-  the contracts.
+  contracts are described once in `instructions.md`; `haku/run.md` holds the **shape of
+  the run** (ordering invariants + the fluid loop, not a rigid step list) and
+  per-environment entrypoints only add setup — neither restates the contracts. Don't
+  re-introduce a numbered 1..N waterfall.

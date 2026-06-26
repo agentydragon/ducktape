@@ -22,10 +22,20 @@ _How you reason_); these just seed it.
   affordance, **name it** in the item so the operator can decide to provision it.
   Maintain a delegation register in `memory/` so it compounds (see _How you reason_).
 
-- **Forgotten money leak.** A recurring charge (Plaid) with no matching evidence
-  anywhere (no receipt, no signup, never used) → research the merchant, and if it looks
-  like a zombie subscription, file a `prepared_prompt` to cancel it. Generalizes to any
-  "paying for something unused" signal.
+- **Financial anomalies & leaks.** Over a recent window of transactions (Plaid), look for
+  duplicate charges (same merchant/amount, close dates), **new recurring merchants** (a
+  subscription you may not know you have), recurring charges whose amount changed, **fees**
+  (overdraft, FX, card — usually killable), and charges unusually large for a merchant's
+  history. For a recurring charge with no matching evidence anywhere (no receipt, no signup,
+  never used), research the merchant and, if it's a zombie subscription, file a
+  `prepared_prompt` to cancel it. One item per finding, evidence in `body` (date, merchant,
+  amount, account); **skip expected regulars** (rent, known subscriptions noted in `memory/`).
+
+- **Calendar prep.** Over the upcoming ~1–2 weeks, scan events for: missing prep / agenda /
+  travel-or-buffer time, conflicts and double-bookings, and meetings that **imply a task**
+  (book travel, prepare a doc, bring something). File an item per finding, linking the event
+  by its `htmlLink` (title + start time). Cross-check mail/Tana for whether an event still
+  stands before acting.
 
 - **Fix something that's broken.** A breakage signal — CI red on a repo, a Flux
   Kustomization stuck not-ready, a cert near expiry, an email "your X failed" → go read

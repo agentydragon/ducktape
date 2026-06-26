@@ -13,14 +13,8 @@ Schema:
 [`finance/plaid/db/migrations/versions/0001_initial.py`](https://github.com/agentydragon/ducktape/blob/devel/finance/plaid/db/migrations/versions/0001_initial.py).
 **Query the `current_transactions` view by default** (it excludes removed rows); columns
 include `date, name, amount, merchant_name, account_id, pfc_primary, pfc_detailed`.
-Query `information_schema` (or `\dt`) first if you need to orient. Look at roughly the
-last 60 days for:
+Query `information_schema` (or `\dt`) first if you need to orient.
 
-- duplicate charges (same merchant, amount, close dates)
-- new recurring merchants (a subscription you may not know you have)
-- recurring charges whose amount changed
-- fees (overdraft, FX, card fees) — usually killable
-- charges unusually large for their merchant's history
-
-File one item per finding, evidence in `body` (date, merchant, amount, account).
-Don't file expected regulars (rent, known subscriptions you've noted in `memory/`).
+What to _do_ with the transactions (duplicate charges, new recurring merchants, changed
+amounts, killable fees, unusually large charges, zombie subscriptions) → the **financial
+anomalies & leaks** recipe in [`../recipes.md`](../recipes.md).
