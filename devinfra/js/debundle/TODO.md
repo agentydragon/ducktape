@@ -88,10 +88,11 @@ parallel dispatch queue.
   Canonical plan for the selector model, backend ownership, execution phases,
   verification gates, and Gaffer evidence queue. #2439 closed the global-solver
   admission path for `source_match`; #2443/#2446/#2447 moved the exact native
-  subset out of the oracle. Current top priority is the solver-backend pivot:
-  preserve one whole-spec constraint model, but stop treating Ascent row
-  enumeration as the exact-assignment backend. Next work is alpha-all and hole
-  lowering into that model, plus pruning unused source-match surface before
+  subset out of the oracle. The solver-backend pivot is now in flight: the
+  CP-SAT sidecar consumes the backend-neutral problem through generated Rust
+  proto bindings, and production materialization has an opt-in CP-SAT backend
+  switch while Ascent remains the default. Current top priority is alpha-all and
+  hole lowering into that model, plus pruning unused source-match surface before
   carrying it forward. The landed bridge primitives (`cross_ref`,
   `reads_member`, `member_of_module`, `passed_to_call`, `makes_decorate_call`,
   `intrinsic_alias`) are useful fact/selector vocabulary, but are bridge
@@ -119,12 +120,14 @@ Detailed design and gates live in <plans/selector_constraint_model.md>; keep
 this list as the dispatch summary, not a second plan.
 
 1. **Wire the exact-assignment backend.** The backend-neutral
-   `SelectorConstraintModel`, backend problem contract, and backend solver
-   adapter are landed, and OR-Tools CP-SAT now builds under RBE with
-   `all_different`/table-constraint smoke coverage. Next, convert the typed
-   Rust backend problem into the CP-SAT sidecar wire format, run it through the
-   backend adapter, and make the anonymized broad-vs-specific fixture resolve
-   through CP-SAT rather than `AssignmentRow` enumeration.
+   `SelectorConstraintModel`, backend problem contract, CP-SAT sidecar,
+   generated Rust proto bindings, Rust backend adapter, and opt-in production
+   selector backend switch are in flight through #2536/#2537. The anonymized
+   broad-vs-specific injectivity fixture resolves through CP-SAT rather than
+   `AssignmentRow` enumeration. Remaining work in this slice is to run the
+   supported subset against real Gaffer evidence through the opt-in backend and
+   make CP-SAT the default only after alpha-all/hole coverage stops blocking the
+   real Tana spec.
 2. **Keep Ascent on fact/table derivation, not exact assignment.** Ascent may
    continue deriving relation support and allowed tuples, but exact target
    assignment must be owned by OR-Tools CP-SAT or a measured SAT fallback with
