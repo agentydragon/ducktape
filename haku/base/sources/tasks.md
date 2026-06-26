@@ -1,7 +1,7 @@
 # Google Tasks
 
 Scan Google Tasks for overdue and stale to-dos with the read-only Google token
-(see `../instructions.md` → _Hard rules_; same `$TOK`). List your task lists, then
+(the read-only Google token `$TOK`, see [README](README.md)). List your task lists, then
 each list's open tasks:
 `curl -s -H "Authorization: Bearer $TOK" 'https://tasks.googleapis.com/tasks/v1/users/@me/lists'`,
 then `.../lists/{tasklistId}/tasks?showCompleted=false&showHidden=false`. Look for:

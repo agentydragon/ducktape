@@ -121,3 +121,9 @@ Settled (not blockers):
   `haku-state` for replayability.
 - **tier-2 execution** — haku-owned execution behind stronger gating, only if
   handoff-via-prompt proves too slow for routine actions.
+- **Precise effort/cost model** — today effort budgeting is a rough heuristic
+  (operator value-of-time anchor in `memory/` vs. a hand-wavy "tokens loosely track
+  cost" proxy; see `instructions.md` → effort budgeting). Make it concrete: actual
+  per-run token/$ accounting (e.g. from LiteLLM/Langfuse), a real estimate of model
+  cost (e.g. Opus 4.8 per-token), and a defensible mapping from "agent effort" to
+  "value of the operator's time" so Haku can decide research depth on more than a vibe.

@@ -1,6 +1,6 @@
 # Gmail
 
-Read Gmail with the read-only token (see `../instructions.md` → _Hard rules_). List new
+Read Gmail with the read-only Google token `$TOK` ([README](README.md)). List new
 mail since your bookmark — resume precisely with `q=after:<epoch-seconds>`, since Gmail's
 `after:YYYY/MM/DD` is only date-granular and would re-scan or skip part of a day (on the
 first run, a window like `newer_than:7d`):

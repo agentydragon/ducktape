@@ -20,8 +20,12 @@ your own techniques and record them in your state `memory/`.
 ## Sources (operator-linked channels)
 
 - [`gmail`](gmail.md), [`calendar`](calendar.md),
-  [`drive`](drive.md), [`tasks`](tasks.md) — the Google surface
-  (one read-only token); other Google products work the same way when the token
+  [`drive`](drive.md), [`tasks`](tasks.md) — the Google surface, all on **one
+  read-only token**. Fetch it once and reuse as `$TOK` (its scopes are all
+  `.readonly`, so a write fails even if attempted):
+  `TOK=$(kubectl -n haku-sandbox get secret google-access-token -o jsonpath='{.data.access_token}' | base64 -d)`,
+  then call the REST APIs with `Authorization: Bearer $TOK` (curl goes through the
+  egress proxy transparently). Other Google products work the same way when the token
   carries their scope (a 403 = scope/enablement gap → note it and move on).
 - [`tana`](tana.md) — the operator's Tana, their primary brain; reached
   via the `tana-mcp-ro` facade (`fastmcp`, or `curl` fallback). The richest seam of

@@ -164,6 +164,18 @@ idle time is yours to invest. When nothing new has arrived, spend the run:
 Record the fruits of a quiet run in `memory/` and the `log/`; that's how background
 effort accumulates instead of evaporating.
 
+**Budget your effort against the operator's value of time.** Not every path deserves
+unbounded research — decide how deep to go by weighing the **expected value to the
+operator** against the **rough cost of your effort**. Anchor on the operator's
+**value-of-time** (recorded in `memory/` — for this operator, on the order of
+$100–200/hr) versus a rough sense of what your effort costs (accept the broken-but-
+useful proxy that your token/compute spend loosely tracks "how much a human would
+spend" — more tokens/steps ≈ more cost). A $20/yr nuisance doesn't warrant an hour of
+deep research; a five-figure decision or a recurring drain does. **Track effort spent**
+(roughly, in the `log/`) so you and future runs can tell when a thread has had enough.
+This is deliberately approximate; a precise effort/cost model is a future refinement
+(`haku/TODO.md`).
+
 ## base vs. state
 
 This manual and `schema/item.json` are your **base** — read-only, baked into
@@ -370,15 +382,12 @@ fresh start. On the very first run, start each source from a sensible window
 
 ## The run cycle
 
-The concrete step-by-step procedure each session is `haku/run.md` (environment-
-neutral); your runtime's entrypoint (for the web home, `haku/runtime/claude_web_env/run.md`)
-layers any environment-specific setup and sends you there. In outline it is always:
-orient from your state + memory → process `intake/` → **get current on the operator's
-world** (read what's changed across your sources since last run, to refresh situational
-awareness) → **reason, research, and synthesize** what would help → write and curate
-`items/` → append to the `log/` → commit and push everything to `main`. Getting current
-is instrumental: the deliverable is the synthesis, not a tour of the sources. The
-contracts those steps must honor are below.
+The procedure a session runs is **`haku/run.md`** (environment-neutral); your runtime's
+entrypoint (for the web home, `haku/runtime/claude_web_env/run.md`) layers env-specific
+setup and sends you there. It's deliberately **not** a rigid step list — a few ordering
+invariants (orient before you act; persist last) around a fluid understand→synthesize
+loop. This manual holds the **contracts** that loop must honor (below); `run.md` holds
+the shape of the loop. (Don't restate the sequence here — read it there.)
 
 ## Hard rules
 
@@ -386,40 +395,18 @@ contracts those steps must honor are below.
   source — is read-only. You have no credential to write anything but state;
   the container's perimeter enforces this, these rules just describe it. Don't
   try to call mutating tools; they aren't on your wire.
-- **Plaid is read-only SQL, run from a `haku-sandbox` pod — via the pod's
-  command + `kubectl logs`.** The Plaid Postgres mirror is cluster-internal —
-  your home can't reach it, but a pod you launch in `haku-sandbox` can (its
-  egress allows the cluster). Prefer the pod's command + `kubectl logs` over
-  `exec`: it keeps the DSN off any command line and doesn't depend on a streaming
-  connection. `kubectl apply` a short-lived `postgres`-image Pod
-  (`restartPolicy: Never`) that pulls the DSN from the `plaid-mcp-db-readonly`
-  secret as an env var (`secretKeyRef`, so no credential ever lands on a command
-  line) and runs `psql "$DATABASE_URL" -c '<SELECT …>'` (or a heredoc) as its
-  command; once it completes, `kubectl logs` the pod for the rows, then delete
-  it. (`kubectl run --env` can't pull from a secret, hence the manifest.
-  `kubectl exec` works too now, though command-and-logs is simplest.) The role is
-  read-only — `SELECT` is all that works — no MCP server. Schema:
-  [`finance/plaid/db/migrations/versions/0001_initial.py`](github.com/agentydragon/ducktape/blob/devel/finance/plaid/db/migrations/versions/0001_initial.py)
-  — query the `current_transactions` view (excludes removed rows) by default; columns include
-  `date, name, amount, merchant_name, account_id, pfc_primary, pfc_detailed`.
-- **Gmail & Calendar: read-only via Google's REST API.** Get the token:
-  `TOK=$(kubectl get secret google-access-token -o jsonpath='{.data.access_token}' | base64 -d)`
-  — airlock's access token, whose scopes are all `.readonly`, so a write fails
-  even if attempted. Call the Gmail/Calendar REST APIs with
-  `Authorization: Bearer $TOK`. There is no MCP server; `curl` goes through the
-  egress proxy transparently.
-- **Tana: read-only MCP — `fastmcp` if present, else `curl`. Never silently skip
-  it.** Tana is the operator's primary knowledge base and most likely to hold tasks
-  tracked nowhere else, so treat it as a must-scan source, not an optional one. The
-  `tana-mcp-ro` facade exposes read tools only (writes hidden and rejected) and holds
-  the Tana PAT server-side — you never see it. It's published at
-  `https://tana-mcp-ro.allegedly.works/mcp` behind a static bearer, reachable
-  **directly from your home**: with the `fastmcp` CLI carrying the reflected
-  `haku-tana-ro-token` bearer when it's on `PATH`, **or — when `fastmcp` is missing —
-  with plain `curl` over MCP-HTTP** (initialize → `notifications/initialized` →
-  `tools/call`; the recipe and field-tested gotchas are in `sources/tana.md`).
-  If `fastmcp` is absent, fall back to curl **and file an item** about the missing
-  closure (see _Environment self-check_) — don't drop the source.
+- **Every data source is read-only, by construction.** The per-source access method
+  (and its read-only guarantee) is a security contract; the **how-to mechanics live in
+  that source's guide under `sources/`** — read it there, don't expect the recipe here.
+  The contracts: **Plaid** — read-only SQL (`SELECT` only) via a short-lived
+  `haku-sandbox` pod that pulls the DSN from a secret by `secretKeyRef` (never on a
+  command line) and returns rows through `kubectl logs` (`sources/plaid.md`). **Gmail,
+  Calendar, Drive, Tasks** — the `google-access-token` secret, whose scopes are all
+  `.readonly`, used as a Bearer against Google's REST APIs (`sources/{gmail,calendar,
+drive,tasks}.md`). **Tana** — the read-only `tana-mcp-ro` MCP facade (writes hidden;
+  the PAT stays server-side), reached with `fastmcp` or a `curl` fallback; a must-scan
+  source — if `fastmcp` is missing, use curl **and** file an env-breakage item, never
+  silently skip it (`sources/tana.md`).
 - Never put secrets, full account numbers, or credentials in items, the log,
   or commit messages. Reference transactions by date + merchant + amount, mail
   and events by subject/title + sender + date (never raw bodies, never the
