@@ -35,30 +35,17 @@ Read tools only — `search_nodes`, `read_node`, `get_children`, `open_node`,
 `list` is empty or a call 401s, note the gap in your log and move on (the facade
 flips NotReady on a bad upstream, and the bearer must be the reflected one).
 
-### Fallback: drive the facade with `curl` when `fastmcp` is missing
+### Fallback: `curl` when `fastmcp` is missing
 
-`fastmcp` is the convenience wrapper, **not** the only way in. If it isn't on your
-`PATH` (e.g. the web home came up with the lean `.#devtools` instead of
-`.#agent-haku`), **do not skip Tana** — it's the operator's most important source.
-The facade is plain MCP-over-HTTP behind the same bearer, so reach it with `curl`:
-do an `initialize` (capture the `Mcp-Session-Id` response header), send
-`notifications/initialized`, then `tools/call`. Responses come back as SSE
-(`data: {…}` lines). A minimal one-call-per-invocation helper (fresh handshake each
-time, stateless-friendly):
-
-```bash
-TOK=$(kubectl -n haku-sandbox get secret haku-tana-ro-token -o jsonpath='{.data.token}' | base64 -d)
-URL=https://tana-mcp-ro.allegedly.works/mcp
-H=(-H "Authorization: Bearer $TOK" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream")
-SID=$(curl -sS -D - -o /dev/null "${H[@]}" -X POST "$URL" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"haku","version":"0"}}}' \
-  | awk 'tolower($1)=="mcp-session-id:"{print $2}' | tr -d '\r')
-curl -sS "${H[@]}" -H "Mcp-Session-Id: $SID" -X POST "$URL" \
-  -d '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' >/dev/null
-curl -sS "${H[@]}" -H "Mcp-Session-Id: $SID" -X POST "$URL" \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"search_nodes","arguments":{"query":{"and":[{"hasType":"<taskTagId>"},{"or":[{"field":{"fieldId":"<statusFieldId>","nodeId":"<backlogId>"}},{"field":{"fieldId":"<statusFieldId>","nodeId":"<inProgressId>"}}]}]},"limit":100}}}' \
-  | sed 's/^data: //' | grep -E '^\{' | tail -1
-```
+`fastmcp` is just a convenience wrapper. If it isn't on your `PATH` (e.g. the web
+home came up with the lean `.#devtools` instead of `.#agent-haku`), **do not skip
+Tana** — it's the operator's most important source. The facade is plain
+MCP-over-HTTP behind the same bearer and the same `…/mcp` endpoint, so drive it with
+`curl` using the standard streamable-HTTP MCP handshake you already know
+(`initialize`, capturing the `Mcp-Session-Id` response header → `notifications/
+initialized` → `tools/call`, threading that header). Read `"$TOKEN"` from the secret
+as above. **Tana gotcha:** responses come back as SSE — the JSON-RPC payload is on
+`data: {…}` lines, not a bare body, so strip the prefix before parsing.
 
 `search_nodes` takes a top-level `query` (and `limit`, max ~100) — **no
 `workspaceId`**; the structured query DSL is in the tool's own `description`. Link
@@ -88,8 +75,8 @@ Discover its field id and option ids with `get_tag_schema` on the task tag (ids 
 closed** — never surface them, and reconcile any existing item against them: a Tana
 **Done** → mark the item `done`; a Tana **Cancelled** → mark it `rejected` (the
 operator decided against it), not `done`. Query the actionable set directly with the
-`field` operator (the curl example above): `hasType:<taskTag>` AND (`field` status =
-Backlog **or** In progress). When you read an individual node, take its
+`field` operator: `hasType:<taskTag>` AND (`field` status = Backlog **or** In
+progress). When you read an individual node, take its
 `**Task status**:` line as authoritative — ignore the checkbox glyph.
 
 ### Always exclude trashed nodes

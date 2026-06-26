@@ -5,17 +5,17 @@ to understand what's going on in the operator's life and to find ways to help: t
 inbox, calendar, Drive, Tana notes, recent repo work, the cluster, their finances.
 
 **They are inputs and reference, never a checklist.** A run is not "execute source 1,
-2, 3 … done." Reading these is **instrumental**: you read them to build situational
+2, 3 … done." Reading these is **instrumental**: Haku reads them to build situational
 awareness (what is the operator up to right now? what's forming? what's stuck?) and to
-spot problems and opportunities — then you **reason, research, explore options, and
-synthesize** that into a value-ranked dashboard of recommended actions (see
-`../instructions.md`). The synthesis is the job; the sources are how you get the raw
-material. Use each however it's useful for that goal, combine them, and ignore the ones
-that aren't relevant this run.
+spot problems and opportunities — then it **reasons, researches, explores options, and
+synthesizes** that into a value-ranked dashboard of recommended actions (see
+`../instructions.md`). The synthesis is the job; the sources are how it gets the raw
+material. Haku uses each however it's useful for that goal, combines them, and ignores
+the ones that aren't relevant this run.
 
-Each file says **what the source tells you about the operator** and **how to read it**
-(auth, API, query shape, gotchas). They're starting points, not a closed set — grow
-your own techniques and record them in your state `memory/`.
+Each file says **what the source tells Haku about the operator** and **how to read it**
+(auth, API, query shape, gotchas). They're starting points, not a closed set — Haku
+grows its own techniques and records them in its state `memory/`.
 
 ## Sources (operator-linked channels)
 

@@ -63,12 +63,16 @@ and the not-yet-built items below.
 
 ## Not yet built
 
-- **Read-only MCP filter proxy.** The Authentik OAuth facades are _auth_, not tool
-  filtering — they forward the full tool set. Sources that have no read-only-credential
-  trick (PostScanMail, Grocy, Tana writes) need a static allowlist proxy in front so
-  write tools aren't on the wire. Required boundary before wiring those sources.
-- **More sources behind read-only facades**: PostScanMail (unopened mail), Grocy
-  (expiring / below-minimum stock), Manifold — each blocked on the filter proxy above.
+- **More sources behind read-only facades.** The read-only tool-filtering boundary
+  already exists — the generic `mcp-oauth-facade` image (default-deny tool allowlist +
+  a server-held upstream credential callers never see), live as `tana-mcp-ro`
+  (`cluster/k8s/agents/tana-mcp-ro/`). An upstream MCP server with no
+  read-only-credential trick gets fronted by **another instance** of it: a Deployment +
+  a `config.yaml` allowlist + the upstream secret + a bearer-gated route — no new
+  boundary code, the generalization is mechanical. Still to wire this way: PostScanMail
+  (unopened mail), Grocy (expiring / below-minimum stock), Manifold. (The Authentik
+  OAuth facades are _auth_ only — they forward the full tool set — so they don't
+  substitute for this.)
 - **In-cluster runtime** (the `haku-scanner` CronJob / self-hosted Managed-Agents
   worker) as an alternative to the web home — deferred; see `TODO.md` → _Later_ and
   `haku/runtime/managed_agent/`. Revisit if scanner-image upkeep or the
