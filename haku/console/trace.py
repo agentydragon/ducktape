@@ -11,20 +11,11 @@ real-world side effects) is a separate router, gated and audited; see
 from __future__ import annotations
 
 import asyncio
-from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter
 
-from haku.console.git_state import GitState
+from haku.console.deps import GitStateDep
 from haku.console.models import FeedbackRequest
-
-
-def _git_state(request: Request) -> GitState:
-    # app.state is Starlette's untyped (Any) container; create_app puts the GitState there.
-    return cast(GitState, request.app.state.git_state)
-
-
-GitStateDep = Annotated[GitState, Depends(_git_state)]
 
 router = APIRouter(prefix="/api/trace", tags=["trace"])
 

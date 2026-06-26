@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pygit2
 import pytest
@@ -68,8 +70,20 @@ def seeded(tmp_path: Path) -> SimpleNamespace:
 
 
 @pytest.fixture
-def client(seeded: SimpleNamespace) -> Iterator[TestClient]:
-    """App over the seeded remote; the context manager runs the lifespan, which clones it."""
-    app = create_app(seeded.settings, git_state=seeded.git_state)
-    with TestClient(app) as c:
+def make_client(seeded: SimpleNamespace) -> Callable[..., Any]:
+    """Factory: a TestClient over the seeded remote, with optional `Settings` overrides.
+    The context manager runs the lifespan, which clones the remote."""
+
+    @contextmanager
+    def _make(**settings_overrides: Any) -> Iterator[TestClient]:
+        settings = seeded.settings.model_copy(update=settings_overrides) if settings_overrides else seeded.settings
+        with TestClient(create_app(settings, git_state=seeded.git_state)) as c:
+            yield c
+
+    return _make
+
+
+@pytest.fixture
+def client(make_client: Callable[..., Any]) -> Iterator[TestClient]:
+    with make_client() as c:
         yield c

@@ -75,28 +75,18 @@ facade** in front (the Authentik OAuth facade is auth, not tool filtering — se
 
 ## Console — operator-facing dashboard
 
-The console design + action model live in `console/README.md`.
+The console design + action model live in `console/README.md`; the free-form-UI
+direction in `console/plans/free_form_ui_iframe.md`. (The launch-routine button itself
+has shipped on the capability tier — see the README.)
 
-- **Launch the claude-code-web routine from a click.** Add a console button that
-  starts a Haku Claude Code web session via the minted bearer (a Claude Code web
-  session API token). This is a **new shape** for the console: today the backend
-  "stays dumb" — every action is a click-overlay commit Haku reduces on its next
-  run — but a launch is an **immediate side-effecting POST** to the Claude Code
-  web session API, so it needs a real backend endpoint (e.g. `POST /api/launch`),
-  not the overlay/toggle path.
-  - **Perimeter (operator-owned — `cluster/k8s/haku/console/`).** The console
-    today writes only to the internal `haku-state` Forgejo and makes no external
-    calls; its only credential is `haku-state-git-write`. Launching adds (a) the
-    bearer as a **new console secret**, and (b) `haku-sandbox` mitmproxy **egress
-    to the Claude Code web API host**. Both widen the console's perimeter — land
-    them as operator-owned manifest changes.
-  - **Guardrails.** Gate to one in-flight run (disable / suppress duplicates while
-    a session is live) so a stray click can't fan out sessions. Authentik already
-    scopes the console to the operator.
-- **Show recent routine executions.** A read-only panel listing recent
-  claude-code-web sessions of the routine (status, start time, link to the session
-  in the Claude Code web UI), rendered alongside the launch button. Source: the
-  Claude Code web sessions API (list scope on the same / a companion token).
+- **Recent routine executions + one-in-flight guard.** A read-only panel listing recent
+  runs of the claude-code-web routine (status, start time, link), and a guard that blocks
+  a second launch while one is in flight so a stray click can't fan out sessions. Both
+  need a routine-runs **listing** API — **none is known to exist** for `claude_code`
+  routines (only `/fire`), so until one surfaces the interim affordance is the deep-link
+  to the routine's `claude.ai/code` page (already surfaced in the console). When a listing
+  API exists, build the panel and adopt the `anthropic` Python SDK for the Anthropic calls
+  (migrating the launch POST onto it).
 
 ## Managed Agents runtimes — per-runtime TODOs
 

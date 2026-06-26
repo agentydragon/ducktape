@@ -122,124 +122,30 @@ scoped or proxied, never trusted to the agent's restraint.
 ## The agent-authored console (free-form UI behind a trusted boundary)
 
 Direction (operator, 2026-06-26): grow the console so **Haku authors more and more of
-it** — today operator-clickable `actions[]` + free-text feedback, evolving toward Haku
-writing arbitrary interactive UI (inputs, interlinked pages, TSX/JS) that records what
-the operator expressed into `haku-state` for Haku to reduce on its next run. The console
-stays the operator's interface _with_ Haku; Haku just gets to shape it.
+it** — from today's operator-clickable `actions[]` + feedback toward Haku writing
+arbitrary interactive UI, with the trusted console shrinking to just the security
+boundary. That boundary — the `haku-console` namespace split, and the low-privilege
+**trace tier** vs. the secret-holding, CSRF-gated **capability tier** — is built; see
+`console/README.md` for the current contract and
+`console/plans/free_form_ui_iframe.md` for the boundary doctrine and the free-form design.
 
-The hard constraint: the console must eventually hold secrets **Haku may not have** (the
-Claude Code web session bearer that launches the routine — see `TODO.md` → _Console_)
-and run privileged actions Haku itself can't. So agent-authored UI and the
-secret-holding trusted code must sit on opposite sides of a real boundary.
+Still to build:
 
-### Two boundaries, not one
-
-Different threats, different mechanisms — keep them distinct:
-
-- **Confidentiality / integrity (k8s layer).** Haku must not _read_ the console's secrets
-  or logs, nor _change_ its trusted code/perimeter without a PR. The existing agent RBAC
-  is already shaped for this: `cluster-diagnostics-reader` is **secret-free** (no
-  `secrets`/`pods/log`/`configmaps` cluster-wide; logs only in infra namespaces), so a
-  console in its **own namespace** is invisible to Haku for free. Today the console runs
-  **in `haku-sandbox`** (`haku-sandbox-admin` = full CRUD), so Haku can already read its
-  git secret and exec its pod — **no boundary exists yet.** Splitting it out is the
-  prerequisite for holding any agent-forbidden secret.
-- **Confused deputy (browser layer).** Agent-authored UI runs in the **operator's
-  authenticated browser**, same-origin with the console API and holding the Authentik
-  session. So agent JS needn't _read_ a secret to abuse it — it can _call the privileged
-  endpoint_ with the operator's authority. Hiding the secret server-side does nothing
-  here. This is the boundary that actually constrains "Haku writes arbitrary TSX," and
-  it's enforced in the browser (origin isolation), not in k8s.
-
-### Trust zones
-
-- **`haku-console` (trusted, new namespace).** Ducktape code, Bazel→GHCR→Flux — so its
-  code, its **capability allowlist**, and its secrets change only by a merged PR. Holds
-  the launch bearer; exposes the API (below); owns and renders privileged controls.
-  Because it's **reviewed/released ducktape code, not agent-driven, it does not sit
-  behind the `haku-mitmproxy` fence** — that fence exists to contain _the agent_; the
-  console is contained by code review + the PR gate, so it gets ordinary
-  (least-privilege) egress to reach the Claude Code web API. No `haku` RoleBinding → Haku
-  can't read its secrets/logs or patch it.
-- **Agent-UI render/sandbox (untrusted by construction).** Serves and runs the UI Haku
-  authored into `haku-state`. Holds no secrets; may stay in `haku-sandbox` (Haku owning
-  it costs nothing). In the 1b target it's a **separate browser origin**.
-- **Haku agent (`haku-sandbox`).** Authors UI + content into `haku-state`; reads back
-  traces. No access to the trusted side.
-- **`haku-state` git.** The shared medium: Haku writes content+UI, the console writes
-  operator traces, Haku reduces them.
-
-### The API split
-
-Two tiers the console treats completely differently:
-
-- **Trace API (low-priv).** Records operator-expressed intent into `haku-state`. Exposed
-  to agent-authored UI. **Grants Haku nothing new** — it already writes `haku-state`
-  directly — so it's cheap and broad; its only real property is _consent fidelity_ (did
-  the operator genuinely express this?), a UX/trust concern, not a confidentiality one.
-- **Capability API (high-priv).** Anything using a console-only secret or acting on the
-  world (launch the routine). The teeth live here. Per capability: rendered/owned by the
-  **trusted shell** (never agent UI), fired only on a **genuine operator gesture** against
-  **trusted-rendered copy** (not agent free-text, so Haku can't phish consent),
-  CSRF-gated, and **audited** in the trusted namespace (the audit log doubles as the
-  "recent executions" view). The allowlist stays **tiny and PR-gated** — the standing
-  question per verb is "if Haku tricked the operator into firing this once, is the worst
-  case acceptable?" (Yes for _launch the routine_; a future _move money_ verb changes the
-  whole design.)
-
-### Phasing
-
-- **Phase 1 — declarative (1a).** A richer **typed widget schema** (containers, inputs,
-  selects, links, sub-pages) emitted in `haku-state` and interpreted by a **trusted
-  renderer** — _no agent JS executes_ — beyond today's `actions[]`. Still to build: an
-  in-console **executions panel** and a **one-in-flight guard**. Both want a
-  routine-runs-listing API — **none is known to exist** for `claude_code` routines
-  (only the `/fire` endpoint), so the interim "review past runs" affordance is the
-  deep-link to the routine's `claude.ai/code` page (built from the routine id alongside
-  the fire URL); each fire also returns its session deep-link. **When the listing API
-  surfaces and we build the panel, adopt the `anthropic` Python SDK** for the Anthropic
-  calls (it auto-sends the `anthropic-version` header — the omission that 502'd the
-  bare-`httpx` fire call — plus `auth_token` bearer, typed errors, and retries) and
-  migrate the `launch-routine` POST onto it at the same time.
-- **Phase 1b — free-form (the destination).** Haku runs **its own UI service** in
-  `haku-sandbox` (its Deployment, its choice of runtime, app code from `haku-state`, no
-  image build) and the console **embeds it in a cross-origin same-site iframe** — the
-  console never renders or even sees Haku's UI. The trusted shell shrinks to: hold the
-  bearer, own privileged actions, and frame the UI. Data + operator intent go straight to
-  Haku's own backend (it has the `haku-state` creds); a minimal `postMessage` bridge
-  carries only what needs trusted authority — **capability requests** (shell confirms +
-  fires) and **`openLink`** (shell vets scheme + host whitelist, confirms off-whitelist,
-  opens). Containment rests on
-  cross-origin isolation (the bearer is unreachable from any browser context), Haku's UI
-  being reachable **only** via the operator-owned **Authentik-gated** route (no public
-  exposure), and the agent being unable to create public routes (its RBAC allowlist omits
-  `httproutes`; harden the `from: All` gateway too). **North star (later):** even the
-  item model + its UI + styling/build/image-automation move out of ducktape into
-  agent-owned `haku-state` — Haku is given a high-level objective ("surface what's useful
-  to act on"), not a ducktape schema, and the shell keeps only the boundary (capability
-  tier, iframe host, protocol, CSP, top-layer confirm, perimeter); the trusted renderer +
-  trace tier retire. Full design + invariants + phasing:
+- **Richer declarative UI (1a).** A typed widget schema (containers, inputs, selects,
+  links, sub-pages) emitted in `haku-state` and interpreted by a trusted renderer —
+  _no agent JS_ — beyond today's `actions[]`. Plus an in-console **executions panel** + a
+  **one-in-flight guard**; both want a routine-runs-**listing** API, and **none is known
+  to exist** for `claude_code` routines (only `/fire`), so the interim "review past runs"
+  affordance is the deep-link to the routine's `claude.ai/code` page. When a listing API
+  surfaces and we build the panel, adopt the `anthropic` Python SDK (it auto-sends
+  `anthropic-version` — the omission that 502'd the bare-`httpx` fire — plus bearer auth,
+  typed errors, retries) and migrate the launch POST onto it then.
+- **Free-form UI (1b, the destination).** Haku runs its own UI service in `haku-sandbox`
+  and the console embeds it in a cross-origin iframe, never rendering it itself; a minimal
+  `postMessage` bridge carries only capability requests + `openLink`. **North star:** even
+  the item model + UI + build move into agent-owned `haku-state`; the shell keeps only the
+  boundary. Full design, containment invariants, and implementation order:
   <console/plans/free_form_ui_iframe.md>.
-
-### Server-side compute for agent UI
-
-When agent-authored UI needs a backend, it talks to a **Haku-owned backend running in
-`haku-sandbox`** (the agent's own perimeter), **separate from the console's** — one option
-among several. This keeps the rule clean: code Haku authors never runs with the console's
-secret privileges. The console backend stays the fixed, PR-gated capability/trace
-provider; arbitrary agent compute lives agent-side, behind the agent's own fence.
-
-### Open question — proving "this really came from the operator" to agent-side code
-
-Phase 2 wants agent-side code (or the trace it reduces) to trust that an action
-_genuinely_ came from the real operator, not from agent-authored UI forging it. Sketch
-(operator, 2026-06-26): an **Authentik-native** attestation — e.g. give Haku its own
-Authentik OIDC provider so the console can hand agent-side code a short-lived,
-operator-authenticated token (or sign the trace with an operator-attested claim) that
-agent-side code verifies. Open: exact shape (signed trace vs. a token the agent's backend
-validates), how it composes with _Haku is its own principal_, and whether it's worth it
-before free-form UI lands. Until then, consent fidelity rests on the trusted shell
-rendering canonical copy for anything that matters.
 
 ## Open questions
 

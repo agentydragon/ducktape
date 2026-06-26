@@ -56,14 +56,12 @@ no real operator behind it** (see `haku/PLAN.md` → _The agent-authored console
   The split is legible in the code: a search for what touches a privileged secret
   returns `capabilities.py` and never the trace router.
 
-## Boundary
+## Content vs. look
 
-- The backend (git layer, FastAPI JSON API) and frontend (React SPA) are **tested
-  ducktape code**, built Bazel→GHCR→Flux and deployed in the `haku-console` namespace.
-- It is **driven by haku-state at runtime for content**: items (data) are read from
-  the clone, so Haku evolves _what_ the dashboard shows without an image rebuild. The
-  _look_ now lives in the bundle (a frontend rebuild changes it) — unlike the old
-  server-rendered console, whose page/CSS templates could be overridden from the clone.
+Driven by `haku-state` **at runtime for content**: items (data) are read from the clone,
+so Haku evolves _what_ the dashboard shows without an image rebuild. The _look_ now lives
+in the bundle (a frontend rebuild changes it) — unlike the old server-rendered console,
+whose page/CSS templates could be overridden from the clone.
 
 ## Layout
 

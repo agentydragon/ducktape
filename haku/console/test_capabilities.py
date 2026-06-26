@@ -6,7 +6,8 @@ real transport, not TestClient's ASGI transport, so app calls still reach the ap
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from typing import Any
 
 import httpx
 import pytest
@@ -15,7 +16,6 @@ import respx
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
-from haku.console.app import create_app
 from haku.console.config import LaunchRoutineConfig
 
 ROUTINE_ID = "trig_test"
@@ -24,15 +24,12 @@ PAGE_URL = f"https://claude.ai/code/routines/{ROUTINE_ID}"
 
 
 @pytest.fixture
-def cap_client(seeded) -> Iterator[TestClient]:
+def cap_client(make_client: Callable[..., Any]) -> Iterator[TestClient]:
     """Console app with the launch-routine capability configured (over the seeded remote)."""
-    settings = seeded.settings.model_copy(
-        update={
-            "launch_routine": LaunchRoutineConfig(routine_id=ROUTINE_ID, token=SecretStr("sk-test-token")),
-            "csrf_secret": SecretStr("test-csrf-secret"),
-        }
-    )
-    with TestClient(create_app(settings, git_state=seeded.git_state)) as c:
+    with make_client(
+        launch_routine=LaunchRoutineConfig(routine_id=ROUTINE_ID, token=SecretStr("sk-test-token")),
+        csrf_secret=SecretStr("test-csrf-secret"),
+    ) as c:
         yield c
 
 
@@ -94,9 +91,8 @@ def test_launch_routine_upstream_failure_is_502(cap_client) -> None:
     assert resp.status_code == 502
 
 
-def test_launch_routine_unconfigured_is_503(seeded) -> None:
-    settings = seeded.settings.model_copy(update={"csrf_secret": SecretStr("test-csrf-secret")})
-    with TestClient(create_app(settings, git_state=seeded.git_state)) as c:
+def test_launch_routine_unconfigured_is_503(make_client: Callable[..., Any]) -> None:
+    with make_client(csrf_secret=SecretStr("test-csrf-secret")) as c:
         resp = c.post("/api/capabilities/launch-routine", headers={"X-CSRF-Token": _csrf(c)})
     assert resp.status_code == 503
 

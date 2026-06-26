@@ -12,14 +12,15 @@ this process. See `haku/PLAN.md` → _The agent-authored console_.
 from __future__ import annotations
 
 import logging
-from typing import Annotated, cast
+from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi_csrf_protect import CsrfProtect
 from pydantic import BaseModel, Field
 
-from haku.console.config import LaunchRoutineConfig, Settings
+from haku.console.config import LaunchRoutineConfig
+from haku.console.deps import SettingsDep
 
 logger = logging.getLogger(__name__)
 
@@ -48,12 +49,7 @@ def _upstream_detail(resp: httpx.Response) -> str:
         return resp.text[:300]
 
 
-def _settings(request: Request) -> Settings:
-    # app.state is Starlette's untyped (Any) container; create_app puts Settings there.
-    return cast(Settings, request.app.state.settings)
-
-
-def _launch_config(settings: Annotated[Settings, Depends(_settings)]) -> LaunchRoutineConfig:
+def _launch_config(settings: SettingsDep) -> LaunchRoutineConfig:
     if settings.launch_routine is None:
         raise HTTPException(status_code=503, detail="launch-routine capability is not configured")
     return settings.launch_routine

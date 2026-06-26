@@ -33,10 +33,20 @@ py_library(
 )
 
 py_library(
+    name = "deps",
+    srcs = ["deps.py"],
+    deps = [
+        ":config",
+        ":git_state",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
     name = "trace",
     srcs = ["trace.py"],
     deps = [
-        ":git_state",
+        ":deps",
         ":models",
         "@pypi//fastapi",
     ],
@@ -47,6 +57,7 @@ py_library(
     srcs = ["capabilities.py"],
     deps = [
         ":config",
+        ":deps",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
         "@pypi//httpx",
