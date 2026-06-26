@@ -30,7 +30,7 @@ def test_dashboard_lists_seeded_items(client, seeded) -> None:
 
 def test_click_records_overlay(client, seeded) -> None:
     item_id = seeded.ids[0]
-    assert client.post(f"/api/items/{item_id}/actions/snooze").json() == {"status": "clicked"}
+    assert client.put(f"/api/trace/items/{item_id}/actions/snooze").json() == {"status": "clicked"}
     assert {"item_id": item_id, "action_id": "snooze"} in client.get("/api/dashboard").json()["clicks"]
     assert (item_id, "snooze") in seeded.git_state.read_clicks()
     tip = _remote_tip(seeded.bare)
@@ -40,15 +40,15 @@ def test_click_records_overlay(client, seeded) -> None:
 
 def test_unclick_retracts_overlay(client, seeded) -> None:
     item_id = seeded.ids[0]
-    client.post(f"/api/items/{item_id}/actions/snooze")
-    assert client.delete(f"/api/items/{item_id}/actions/snooze").json() == {"status": "cleared"}
+    client.put(f"/api/trace/items/{item_id}/actions/snooze")
+    assert client.delete(f"/api/trace/items/{item_id}/actions/snooze").json() == {"status": "cleared"}
     assert seeded.git_state.read_clicks() == set()
     assert client.get("/api/dashboard").json()["clicks"] == []
     assert _remote_tip(seeded.bare).message == f"console: unclick snooze on {item_id}"
 
 
 def test_feedback_appends_intake_note(client, seeded) -> None:
-    assert client.post("/api/feedback", json={"text": "please prioritize taxes"}).json() == {"status": "ok"}
+    assert client.post("/api/trace/feedback", json={"text": "please prioritize taxes"}).json() == {"status": "ok"}
     tip = _remote_tip(seeded.bare)
     assert tip.author.name == "haku-console"
     assert tip.message == "console: feedback"
@@ -59,7 +59,7 @@ def test_feedback_appends_intake_note(client, seeded) -> None:
 
 def test_item_feedback_appends_tagged_intake_note(client, seeded) -> None:
     item_id = seeded.ids[0]
-    assert client.post("/api/feedback", json={"text": "this one is urgent", "item_id": item_id}).json() == {
+    assert client.post("/api/trace/feedback", json={"text": "this one is urgent", "item_id": item_id}).json() == {
         "status": "ok"
     }
     tip = _remote_tip(seeded.bare)

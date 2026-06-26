@@ -33,12 +33,23 @@ py_library(
 )
 
 py_library(
+    name = "trace",
+    srcs = ["trace.py"],
+    deps = [
+        ":git_state",
+        ":models",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
     name = "app",
     srcs = ["app.py"],
     deps = [
         ":config",
         ":git_state",
         ":models",
+        ":trace",
         "@pypi//fastapi",
         "@pypi//uvicorn",
     ],

@@ -1,11 +1,13 @@
 """FastAPI app for the Haku console: JSON API + same-origin React SPA.
 
 The dashboard is a React single-page app (static bundle) served same-origin with a
-JSON API under ``/api``. The write endpoints are **generic**: clicking an action
-records ``clicks/<item>/<action>`` and un-clicking removes it — the backend never
-interprets what an action *means* (snooze, reject, research…); Haku reduces the
-clicks overlay on its next run. Free-form feedback (global, or tagged to an item)
-appends to ``intake/``.
+JSON API under ``/api``. Writes are split into tiers (see `haku/PLAN.md` → _The
+agent-authored console_): the **trace tier** (`haku.console.trace`) only records
+operator-expressed intent into haku-state — clicks (the overlay Haku reduces) and
+feedback — and is the low-privilege surface safe for agent-authored UI. The
+high-privilege **capability tier** (console-only secrets, real-world side effects)
+will be a separate, gated router. ``app.py`` itself serves the read endpoints and
+the SPA.
 """
 
 from __future__ import annotations
@@ -19,9 +21,10 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from haku.console import trace
 from haku.console.config import Settings
 from haku.console.git_state import GitState
-from haku.console.models import Click, DashboardResponse, FeedbackRequest
+from haku.console.models import Click, DashboardResponse
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +53,8 @@ def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
                 await pull
 
     app = FastAPI(title="Haku console", lifespan=lifespan)
+    # Routers read git_state off app.state (see haku.console.trace).
+    app.state.git_state = git_state
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -65,26 +70,7 @@ def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
         clicked = [Click(item_id=item_id, action_id=action_id) for item_id, action_id in sorted(clicks)]
         return DashboardResponse(scan_time=scan_time, items=items, clicks=clicked)
 
-    # Generic action recording: the backend never interprets an action's meaning — it
-    # only records (POST) or retracts (DELETE) the click. Haku reads the clicks/ overlay
-    # on its next run and carries out each action's intent.
-    @app.post("/api/items/{item_id}/actions/{action_id}")
-    async def click(item_id: str, action_id: str) -> dict[str, str]:
-        async with git_state.lock:
-            await asyncio.to_thread(git_state.set_click, item_id, action_id)
-        return {"status": "clicked"}
-
-    @app.delete("/api/items/{item_id}/actions/{action_id}")
-    async def unclick(item_id: str, action_id: str) -> dict[str, str]:
-        async with git_state.lock:
-            await asyncio.to_thread(git_state.clear_click, item_id, action_id)
-        return {"status": "cleared"}
-
-    @app.post("/api/feedback")
-    async def feedback(req: FeedbackRequest) -> dict[str, str]:
-        async with git_state.lock:
-            await asyncio.to_thread(git_state.write_feedback, req.text, req.item_id)
-        return {"status": "ok"}
+    app.include_router(trace.router)
 
     # The built React SPA is served same-origin for everything else. Mounted last so the
     # API routes above take precedence; left unmounted in tests (static_dir unset).

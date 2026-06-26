@@ -18,20 +18,20 @@ export async function fetchDashboard(): Promise<DashboardResponse> {
 }
 
 export async function clickAction(itemId: string, actionId: string): Promise<void> {
-  const { error } = await api.POST("/api/items/{item_id}/actions/{action_id}", {
+  const { error } = await api.PUT("/api/trace/items/{item_id}/actions/{action_id}", {
     params: { path: { item_id: itemId, action_id: actionId } },
   });
   if (error) throw new Error("Failed to record click");
 }
 
 export async function unclickAction(itemId: string, actionId: string): Promise<void> {
-  const { error } = await api.DELETE("/api/items/{item_id}/actions/{action_id}", {
+  const { error } = await api.DELETE("/api/trace/items/{item_id}/actions/{action_id}", {
     params: { path: { item_id: itemId, action_id: actionId } },
   });
   if (error) throw new Error("Failed to retract click");
 }
 
 export async function sendFeedback(text: string, itemId?: string): Promise<void> {
-  const { error } = await api.POST("/api/feedback", { body: { text, item_id: itemId } });
+  const { error } = await api.POST("/api/trace/feedback", { body: { text, item_id: itemId } });
   if (error) throw new Error("Failed to send feedback");
 }

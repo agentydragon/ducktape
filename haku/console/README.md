@@ -20,15 +20,21 @@ session bearer). See `haku/PLAN.md` → _The agent-authored console_.
 The console never interprets what an action _means_. Each item Haku writes can carry
 `actions[]` (e.g. _Snooze 30d_, _Draft the email_, _Research deeper_); the dashboard
 renders each `command` action as a **click/un-click toggle**. Clicking records an
-overlay file `clicks/<item-id>/<action-id>` (`POST /api/items/<id>/actions/<aid>`),
+overlay file `clicks/<item-id>/<action-id>` (`PUT /api/trace/items/<id>/actions/<aid>`),
 un-clicking removes it (`DELETE`) — each a commit by the `haku-console` identity.
 **Haku reduces the overlay on its next run**: it reads the clicked actions, carries
 out each one's intent, and clears the click. So new verbs need no backend change —
 Haku invents the action and its meaning; the console only records the click.
 `claude_handoff` actions are stateless `claude.ai/new` deep-links (no commit).
-Feedback — the global box, or a per-item box on each card — appends to `intake/`;
-per-item notes are tagged with the item id, which Haku reduces as feedback on that
-item.
+Feedback — the global box, or a per-item box on each card — appends to `intake/`
+(`POST /api/trace/feedback`); per-item notes are tagged with the item id, which Haku
+reduces as feedback on that item.
+
+These writes are the **trace tier** (`trace.py`): they only record operator-expressed
+intent into haku-state, which Haku already owns, so they're safe to expose to
+agent-authored UI. Privileged actions that use console-only secrets or act on the
+world will live in a separate, gated **capability tier**. See `haku/PLAN.md` → _The
+agent-authored console_.
 
 ## Boundary
 
@@ -43,7 +49,8 @@ item.
 
 | Path               | Role                                                                                                                                                                                                                           |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `app.py`           | FastAPI `create_app` + lifespan (clone + background pull loop). JSON API: `GET /api/dashboard`, `POST`/`DELETE /api/items/{id}/actions/{aid}`, `POST /api/feedback`, `GET /healthz`; serves the SPA (`StaticFiles`) otherwise. |
+| `app.py`           | FastAPI `create_app` + lifespan (clone + background pull loop). Read endpoints (`GET /api/dashboard`, `GET /healthz`), mounts the trace router, serves the SPA (`StaticFiles`) otherwise.                                      |
+| `trace.py`         | Trace-tier router (`/api/trace/*`): the overlay toggle (`PUT`/`DELETE /api/trace/items/{id}/actions/{aid}`) and `POST /api/trace/feedback`. Low-privilege haku-state writes; reads `git_state` off `app.state`.                |
 | `git_state.py`     | pygit2 clone of haku-state; `reconcile` (fetch + hard-reset), `commit_push` with retry, `read_items`, and the clicks/-overlay + feedback writers. Talks to the cluster-internal **plaintext-HTTP** Forgejo (no TLS/CA needed). |
 | `models.py`        | Pydantic `Item` (discriminated-union `action` + `actions[]`) and the `/api` request/response models.                                                                                                                           |
 | `config.py`        | Env settings (`HAKU_CONSOLE_*`).                                                                                                                                                                                               |
