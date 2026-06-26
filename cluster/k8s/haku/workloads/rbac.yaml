@@ -1,0 +1,40 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: haku-state-workload-deployer
+  namespace: haku-sandbox
+  annotations:
+    description: "What Flux may apply when reconciling Haku's haku-state k8s/ dir — the workload subset of haku-sandbox-admin: Deployments/StatefulSets/DaemonSets/ReplicaSets, Services/ConfigMaps/PVCs, Jobs/CronJobs. Deliberately NOT secrets (no plaintext-git secrets) and NOT Gateway-API routes (Kyverno denies those too). So Haku's GitOps path can run workloads but never widen its own perimeter."
+rules:
+  - apiGroups: [""]
+    resources:
+      - services
+      - configmaps
+      - persistentvolumeclaims
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - statefulsets
+      - daemonsets
+      - replicasets
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: haku-state-workload-deployer
+  namespace: haku-sandbox
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: haku-state-workload-deployer
+subjects:
+  - kind: ServiceAccount
+    name: haku-state-reconciler
+    namespace: flux-system

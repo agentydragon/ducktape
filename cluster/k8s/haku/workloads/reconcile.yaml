@@ -1,0 +1,26 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: haku-state-workloads
+  namespace: flux-system
+  annotations:
+    description: "Reconciles Haku-authored workload manifests (haku-state k8s/) into haku-sandbox. Impersonates the constrained haku-state-reconciler SA, so it may apply only what that SA's Role allows (Deployments/Services/ConfigMaps/Jobs/CronJobs/PVCs in haku-sandbox — no Secrets, no routes). Until Haku seeds k8s/ this is NotReady (path not found); that is expected pre-first-run."
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 5m
+  path: ./k8s
+  prune: true
+  # Don't gate on workload health — these are Haku's own workloads; their
+  # readiness is Haku's concern, not the pipe's.
+  wait: false
+  sourceRef:
+    kind: GitRepository
+    name: haku-state
+  # Force everything into haku-sandbox regardless of what the manifests declare,
+  # so Haku can't target another namespace via this pipe.
+  targetNamespace: haku-sandbox
+  # Apply as the constrained SA (kustomize-controller impersonates
+  # system:serviceaccount:flux-system:haku-state-reconciler). RBAC + Kyverno are
+  # the fence; this just executes a subset of what Haku itself could do.
+  serviceAccountName: haku-state-reconciler

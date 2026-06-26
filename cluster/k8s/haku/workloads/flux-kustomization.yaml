@@ -1,0 +1,22 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: haku-workloads
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  path: ./cluster/k8s/haku/workloads
+  prune: true
+  # Don't gate on the inner haku-state-workloads Kustomization's readiness — it's
+  # NotReady until Haku first seeds k8s/, which would otherwise wedge this wrapper.
+  wait: false
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    # The forgejo/haku-state Terraform apply provisions the haku-state repo and the
+    # haku-state-git-write Secret (now also reflected into flux-system for the
+    # GitRepository's basic auth).
+    - name: haku-state

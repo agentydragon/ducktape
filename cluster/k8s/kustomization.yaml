@@ -207,6 +207,7 @@ resources:
   - haku/console/flux-kustomization.yaml
   - haku/agent-worker/flux-kustomization.yaml # suspended; see the dir README to activate
   - haku/cloud-agent-tf/flux-kustomization.yaml # Anthropic-hosted agent via claude-managed-agents tofu provider
+  - haku/workloads/flux-kustomization.yaml # Flux reconciles Haku's haku-state k8s/ workloads under a constrained SA
 
   # --- matrix ---
   - matrix/namespace/flux-kustomization.yaml

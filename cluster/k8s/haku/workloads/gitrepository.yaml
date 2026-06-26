@@ -1,0 +1,14 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: haku-state
+  namespace: flux-system
+  annotations:
+    description: "Haku's own state repo (internal Forgejo, plaintext HTTP). Source for the haku-state-workloads Kustomization, which reconciles Haku-authored manifests under k8s/ into haku-sandbox. Read-only pull; basic-auth via the haku-state-git-write Secret (the only creds available — Flux never pushes)."
+spec:
+  interval: 5m
+  url: http://forgejo-http.forgejo:3000/haku/haku-state.git
+  ref:
+    branch: main
+  secretRef:
+    name: haku-state-git-write
