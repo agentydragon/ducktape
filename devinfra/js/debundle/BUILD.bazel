@@ -1141,6 +1141,36 @@ rust_test(
 )
 
 rust_library(
+    name = "selector_ortools_cpsat_backend",
+    srcs = ["selector_ortools_cpsat_backend.rs"],
+    edition = "2024",
+    deps = [
+        ":selector_constraint_backend",
+        ":selector_constraint_model",
+        "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cp_sat_rust_proto",
+        "@rules_rust_prost//private/3rdparty/crates:prost",
+    ],
+)
+
+rust_test(
+    name = "selector_ortools_cpsat_backend_test",
+    size = "small",
+    crate = ":selector_ortools_cpsat_backend",
+    data = [
+        "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
+    ],
+    edition = "2024",
+    env = {
+        "ORTOOLS_CPSAT_SOLVER": "$(rlocationpath //devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver)",
+    },
+    deps = [
+        ":analysis",
+        ":selector_backend_solver",
+        ":selector_ir",
+    ],
+)
+
+rust_library(
     name = "selector_ir_lowering",
     srcs = ["selector_ir_lowering.rs"],
     edition = "2024",
