@@ -72,77 +72,24 @@ facade** in front (the Authentik OAuth facade is auth, not tool filtering — se
   `kubectl_sandbox_fixed_groups` `else` default with an explicit SA→group map
   once the claude-sandbox JWT path has soaked (`tf/gitops/agent-machine-access`).
 
-## Managed Agents runtime (Runtime B) — operator activation to go live
+## Managed Agents runtimes — per-runtime TODOs
 
-Runtime B (`runtime/managed_agent/self_hosted/`) is built end-to-end and its control plane is
-provisioned (environment `env_015uqL9WAMSDytQEWWmLG9zF`, agent, vault +
-`tana-mcp-ro` credential, scheduled deployment `depl_011DSrUoXuhoDWJoPyDuePqR`;
-full IDs recorded on #2438). PR #2442 adds the worker image build+push and the
-k8s manifests (`cluster/k8s/haku/agent-worker/`, shipped **suspended**). What
-remains is operator activation (runbook in that dir's README):
+Runtime-specific TODOs live with each runtime (the agent loop runs at Anthropic;
+the runtimes differ in where the sandbox runs — see
+<runtime/managed_agent/README.md>):
 
-- **Generate the environment key** in the Console (Environments →
-  `haku-selfhosted` → "Generate environment key") and `sops`
-  `cluster/k8s/haku/agent-worker/environment-key.sops.yaml` to the real value
-  (placeholder today, encrypted to the cluster/Flux age key).
-- **Activate + validate**: flip `suspend: false` on the Kustomization and watch
-  the Deployment — first systemd-PID1 pod in the cluster, so confirm it boots
-  unprivileged (cgroup-v2 delegation, writable `/run`) and tune the pod
-  `securityContext` if needed.
-- **Smoke test** — `ant beta:deployments run --deployment-id depl_011DSrUoXuhoDWJoPyDuePqR`,
-  watch in the Console.
-
-Settled (not blockers):
-
-- **Image build + push** — `nix build .#haku-worker-image` (full-NixOS,
-  `runtime/managed_agent/self_hosted/nixos.nix`) → `.github/workflows/haku-worker-image.yml`
-  imports + pushes to `ghcr.io/agentydragon/haku-worker`; Flux tracks the tag via
-  the `haku-worker` ImagePolicy.
-- **Egress** — `api.anthropic.com` is on the `haku-mitmproxy` allowlist
-  (`cluster/k8s/agents/haku-mitmproxy/cnp-haku-cloud-api-egress.yaml`); the worker
-  reaches the work queue through the TLS-terminating proxy and trusts its CA via
-  the inject policy (imported into the systemd unit).
-- **SOPS identity** — the in-cluster worker needs no `SOPS_AGE_KEY`: it uses its
-  `haku-worker` ServiceAccount for `kubectl` and reads creds from k8s secrets
-  (only the web home decrypts the public-`kubeapi` JWT via SOPS).
-- **Git sources** — haku-state on the in-cluster Forgejo
-  (`git.allegedly.works/haku/haku-state`, single `.netrc` via `HAKU_GIT_HOST` +
-  the `haku-state-git-write` creds); ducktape on public GitHub (anonymous,
-  read-only) — it isn't mirrored to the cluster Forgejo yet (that migration is
-  the "Cluster Forgejo repos" item above).
-
-## Managed Agents runtime — Anthropic-hosted (cloud) v0 known issues
-
-`runtime/managed_agent/anthropic_hosted/` P0 passed (cloud session reaches
-`kubeapi.allegedly.works` as `haku`). Open items from that bring-up:
-
-- **Auto-propagate the rotated k8s token into the Anthropic vault.** `provision.sh`
-  injects `KUBE_TOKEN` (from `secrets/haku-k8s-jwt.yaml`) as a one-shot vault
-  credential. `authentik-jwt-rotation` rotates the in-cluster secret but does
-  **not** push the refreshed token to the vault, so the cloud credential silently
-  expires → kube-apiserver 401s with no pod touched. Interim: extend the rotation
-  CronJob to `ant beta:vaults:credentials update` before expiry. Ideal would be
-  managing the agent/vault as IaC (a Terraform `ant`/Anthropic provider), but the
-  provider we found looked sparsely used / possibly immature — evaluate before
-  committing to it.
-- **Tighten cloud egress.** `haku.environment.yaml` has `networking.type:
-unrestricted` (TODO in-file). Narrow to `type: limited` + an explicit
-  `allowed_hosts`. (The `KUBE_TOKEN` secret is already scoped — only substituted
-  on `kubeapi.allegedly.works` — so this is hardening, not a leak fix.)
-- **Move off Path B to the k8s-MCP path.** v0 `curl`s kube-apiserver directly
-  with the `aud=kubectl-sandbox-client-credentials` token. The cleaner
-  `kubectl-sandbox-mcp` path needs a token with `aud=kubectl-sandbox-mcp` +
-  `groups=[haku]`, which no Authentik provider mints yet (PLAN.md P0 gate).
-
-The Sonnet pin (`model: claude-sonnet-4-6`) is intentional for bring-up test runs
-— not a TODO; revisit the model once the runtime is past v0.
+- **Self-hosted worker (Runtime B)** — operator activation to go live:
+  <runtime/managed_agent/self_hosted/TODO.md>.
+- **Anthropic-hosted cloud** — v0 known issues (token propagation, egress, the
+  k8s-MCP path) + the Terraform-provider evaluation:
+  <runtime/managed_agent/anthropic_hosted/TODO.md>.
 
 ## Later (post-v0)
 
 - **In-cluster runtime** — realized as `runtime/agent` (Runtime C, MAF
-  self-hosted loop) and `runtime/managed_agent/self_hosted` (Runtime B, Managed Agents
-  self-hosted worker; remaining wiring above). The old `haku-scanner` image +
-  CronJob idea is superseded.
+  self-hosted loop) and `runtime/managed_agent/self_hosted` (Runtime B, Managed
+  Agents self-hosted worker; remaining wiring in its per-runtime TODO above). The
+  old `haku-scanner` image + CronJob idea is superseded.
 - **haku-traces** — push Claude Code transcripts to a store separate from
   `haku-state` for replayability.
 - **tier-2 execution** — haku-owned execution behind stronger gating, only if
