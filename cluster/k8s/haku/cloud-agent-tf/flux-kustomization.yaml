@@ -13,6 +13,13 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+  # Decrypt the SOPS Secrets in this dir (anthropic-api-key, haku-kube-token);
+  # without this Flux applies the raw ENC[...] ciphertext and the runner gets a
+  # bogus key/token (401).
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
       kind: Terraform
