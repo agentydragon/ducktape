@@ -214,17 +214,44 @@ only the trusted shell opens, and only after the scheme gate + whitelist/confirm
 (Chrome/Firefox honor the persistent per-site allow cleanly; Safari is fiddlier —
 fine for a single-operator Chrome/Firefox tool.)
 
-## Phasing
+## Implementation order
 
-- **v1 — frame it + the minimal bridge.** Operator stands up the Authentik-gated
-  same-site route → the `haku-ui` Service in `haku-sandbox`, the fullscreen iframe
-  (`sandbox` + CSP + top-layer confirm), and ships `requestCapability("launch-routine")`
-  - `openLink`. Haku stands up its Deployment and serves a first page reading
-    `haku-state`. Goal: prove the frame + isolation + the two affordances end-to-end.
-- **v1.5 — gateway hardening.** Tighten `cluster-gateway` `allowedRoutes` so the
-  "no agent public routes" invariant holds at the gateway, not only via RBAC.
-- **later — the north star below**: more capabilities, then fully subsume the item UI
-  into Haku's iframe and retire the trusted renderer + trace tier.
+Sequenced to **de-risk the biggest unknown first** (does Authentik auth work inside
+the iframe?), deliver value incrementally, and leave the disruptive subsumption last.
+Each step is roughly PR-sized; the **owner** is who builds it.
+
+0. **Gateway hardening** _(operator; independent, do early)._ Scope `cluster-gateway`
+   `allowedRoutes` to a selector agent namespaces don't carry, so "agent can't create
+   public routes" holds structurally before Haku runs public-facing services. Not
+   blocked by anything (`cluster/k8s/TODO.md` tracks it); land it before the route goes
+   live. Can run in parallel with step 1.
+1. **Perimeter + isolation spike** _(operator; the linchpin)._ Stand up
+   `haku-ui.allegedly.works` (Authentik-gated, same-site) → a **trivial placeholder**
+   Service/Deployment, and embed it in the console as a sandboxed iframe (CSP
+   `frame-src`, `sandbox="allow-scripts"`, no `allow="fullscreen"`). Validates the
+   redesign-forcing unknowns cheaply: **does a same-site Authentik-gated app
+   authenticate inside the iframe** (no broken cookie / login-redirect), and does
+   cross-origin isolation hold? **Go/no-go gate before step 2** — if auth-in-iframe is
+   fiddly, fall back to bridging display data from the shell.
+2. **Haku's real UI service** _(Haku)._ Haku takes over the Deployment (stock runtime +
+   `haku-state` code), reads `haku-state`, serves a real first page (re-create the item
+   list as a starting point), records operator intent to its **own** backend, reads
+   operator identity from the forward-auth headers. Coexists with the trusted list;
+   needs nothing from the shell yet.
+3. **Bridge + `requestCapability`** _(operator)._ Add the `postMessage` transport +
+   origin validation + the **top-layer modal confirm** (`<dialog>` + backdrop) in the
+   shell; wire `requestCapability("launch-routine")` (cheapest — reuses the existing
+   capability tier). Establishes the confirm pattern everything else reuses.
+4. **`openLink`** _(operator)._ Scheme hard-gate + operator-owned host whitelist +
+   off-whitelist confirm overlay; assume the one-time popup-allow. The high-value
+   affordance — it plugs agent UI into the item→handoff loop.
+5. **North star — subsume the item UI** _(last; see below)._ Once Haku's UI is at least
+   as good as the trusted list, retire the trusted renderer + item schema + trace tier
+   from ducktape, move styling/build/image-automation into `haku-state`, and shrink the
+   shell to the irreducible core. Most disruptive; only safe once 1–4 are proven.
+
+Critical path is 1→2→3→4 (each builds on the prior); step 0 parallels step 1; treat
+step 1 as a spike with an explicit go/no-go before committing to step 2.
 
 ## North star: the shell owns nothing but the boundary
 
