@@ -87,6 +87,14 @@ has shipped on the capability tier — see the README.)
   to the routine's `claude.ai/code` page (already surfaced in the console). When a listing
   API exists, build the panel and adopt the `anthropic` Python SDK for the Anthropic calls
   (migrating the launch POST onto it).
+- **Per-fire instructions via the routine API's `text` field.** Extend the shipped launch
+  button beyond a bare wake: the `/fire` call accepts an optional freeform `text` body that's
+  passed to the session _alongside_ the saved routine prompt (additive context, not a
+  replacement; no templating/param interpolation; **API trigger only**). So the console could
+  offer several buttons that each fire the routine with a different canned instruction (e.g.
+  "scan Gmail now", "CPAP check", "triage open PRs"), plus a free-text box for an ad-hoc
+  one-off. Reuses the launch button's existing bearer + egress perimeter. Docs:
+  code.claude.com/docs/en/routines.
 
 ## Managed Agents runtimes — per-runtime TODOs
 
