@@ -242,6 +242,8 @@ fn target_projection_from_backend(
         owner_variable_id: constraint_variable_id(projection.owner_variable)?,
         has_binding_variable: binding_variable_id.is_some(),
         binding_variable_id: binding_variable_id.unwrap_or_default(),
+        has_binding_const: projection.binding_const.is_some(),
+        binding_const: projection.binding_const.clone().unwrap_or_default(),
     })
 }
 
@@ -317,7 +319,7 @@ mod tests {
     use selector_backend_solver::solve_with_backend;
     use selector_ir::{
         ClaimKind, ClaimOrigin, ClaimOutcome, OwnerTerm, ResolvedClaim, SelectorAtom, SelectorFact,
-        SelectorFactStore, SelectorProgram, StringTerm, VariableDomain,
+        SelectorFactStore, SelectorProgram, SelectorTargetId, StringTerm, VariableDomain,
     };
 
     use super::*;
@@ -356,6 +358,25 @@ mod tests {
             }
         }
         panic!("could not resolve sidecar runfile {rlocation}");
+    }
+
+    #[test]
+    fn request_preserves_constant_binding_projection() {
+        let projection = BackendTargetProjection {
+            target: SelectorTargetId(7),
+            owner_variable: ConstraintVariableId(0),
+            binding_variable: None,
+            binding_const: Some("minA".to_string()),
+        };
+
+        let wire_projection = target_projection_from_backend(&projection).unwrap();
+
+        assert_eq!(wire_projection.target_id, 7);
+        assert_eq!(wire_projection.owner_variable_id, 0);
+        assert!(!wire_projection.has_binding_variable);
+        assert_eq!(wire_projection.binding_variable_id, 0);
+        assert!(wire_projection.has_binding_const);
+        assert_eq!(wire_projection.binding_const, "minA");
     }
 
     #[test]

@@ -55,7 +55,7 @@ cc_test(
     deps = [
         ":selector_cp_sat_cc_proto",
         ":solver",
-        "@abseil-cpp//absl/log:check",
+        "@googletest//:gtest_main",
         "@protobuf",
     ],
 )

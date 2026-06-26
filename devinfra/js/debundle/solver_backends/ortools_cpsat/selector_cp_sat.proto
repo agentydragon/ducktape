@@ -49,6 +49,8 @@ message TargetProjection {
   uint32 owner_variable_id = 2;
   bool has_binding_variable = 3;
   uint32 binding_variable_id = 4;
+  bool has_binding_const = 5;
+  string binding_const = 6;
 }
 
 message SelectorCpSatResponse {
