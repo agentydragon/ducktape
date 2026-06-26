@@ -189,6 +189,40 @@ fn lower_atom_constraint(
             export_name,
             &domains.export_names,
         ),
+        SelectorAtom::OwnerReferencesBinding {
+            owner,
+            binding,
+            edge_kind,
+        } => {
+            let facts = match optional_string_term_const(edge_kind)? {
+                Some(edge_kind) => domains
+                    .owner_references_binding
+                    .iter()
+                    .filter_map(|(fact_owner, fact_binding, fact_edge_kind)| {
+                        (fact_edge_kind == &edge_kind)
+                            .then_some((*fact_owner, fact_binding.clone()))
+                    })
+                    .collect::<BTreeSet<_>>(),
+                None => domains
+                    .owner_references_binding
+                    .iter()
+                    .map(|(fact_owner, fact_binding, _edge_kind)| {
+                        (*fact_owner, fact_binding.clone())
+                    })
+                    .collect::<BTreeSet<_>>(),
+            };
+            add_owner_string_allowed_tuples(model, variables, owner, binding, &facts)
+        }
+        SelectorAtom::OwnerReferencesOwner { owner, referenced } => add_owner_owner_allowed_tuples(
+            model,
+            variables,
+            owner,
+            referenced,
+            &domains.references_owner,
+        ),
+        SelectorAtom::OwnerAliasesOwner { owner, aliased } => {
+            add_owner_owner_allowed_tuples(model, variables, owner, aliased, &domains.aliases_owner)
+        }
         SelectorAtom::OwnerTopLevelRoot { owner, root } => add_owner_node_allowed_tuples(
             model,
             variables,
@@ -340,6 +374,93 @@ fn lower_atom_constraint(
             ordinal,
             &domains.ordinal_offset_rows(*offset),
         ),
+        SelectorAtom::ReadsMember {
+            owner,
+            object: None,
+            member,
+        } => {
+            add_owner_string_allowed_tuples(model, variables, owner, member, &domains.member_reads)
+        }
+        SelectorAtom::ReadsMember {
+            owner,
+            object: Some(object),
+            member,
+        } => {
+            let object = required_string_term_const(object, "reads_member.object")?;
+            let facts = domains
+                .member_reads_from_binding
+                .iter()
+                .filter_map(|(fact_owner, fact_object, fact_member)| {
+                    (fact_object == &object).then_some((*fact_owner, fact_member.clone()))
+                })
+                .collect::<BTreeSet<_>>();
+            add_owner_string_allowed_tuples(model, variables, owner, member, &facts)
+        }
+        SelectorAtom::ReadsMemberOfOwner {
+            owner,
+            object,
+            member,
+        } => {
+            let member = required_string_term_const(member, "reads_member_of_owner.member")?;
+            let facts = domains
+                .reads_member_of_owner
+                .iter()
+                .filter_map(|(fact_owner, fact_object, fact_member)| {
+                    (fact_member == &member).then_some((*fact_owner, *fact_object))
+                })
+                .collect::<BTreeSet<_>>();
+            add_owner_owner_allowed_tuples(model, variables, owner, object, &facts)
+        }
+        SelectorAtom::MakesDecorateCall {
+            owner,
+            class_anchor,
+            member,
+        } => {
+            let class_anchor =
+                required_string_term_const(class_anchor, "makes_decorate_call.class_anchor")?;
+            let member = optional_string_term_const(member)?;
+            let facts = domains
+                .makes_decorate_call_for_binding
+                .iter()
+                .filter_map(|(fact_owner, fact_class_anchor, fact_member)| {
+                    (fact_class_anchor == &class_anchor
+                        && optional_string_matches(&member, fact_member))
+                    .then_some(*fact_owner)
+                })
+                .collect::<BTreeSet<_>>();
+            add_owner_allowed_tuples(model, variables, owner, &facts)
+        }
+        SelectorAtom::MakesDecorateCallForOwner {
+            owner,
+            class_anchor,
+            member,
+        } => {
+            let member = optional_string_term_const(member)?;
+            let facts = domains
+                .makes_decorate_call_for_owner
+                .iter()
+                .filter_map(|(fact_owner, fact_class_anchor, fact_member)| {
+                    optional_string_matches(&member, fact_member)
+                        .then_some((*fact_owner, *fact_class_anchor))
+                })
+                .collect::<BTreeSet<_>>();
+            add_owner_owner_allowed_tuples(model, variables, owner, class_anchor, &facts)
+        }
+        SelectorAtom::IntrinsicAlias {
+            owner,
+            property,
+            referenced_by,
+        } => {
+            let property = required_string_term_const(property, "intrinsic_alias.property")?;
+            let facts = domains
+                .intrinsic_alias_referenced_by
+                .iter()
+                .filter_map(|(fact_owner, fact_property, fact_referenced_by)| {
+                    (fact_property == &property).then_some((*fact_owner, *fact_referenced_by))
+                })
+                .collect::<BTreeSet<_>>();
+            add_owner_owner_allowed_tuples(model, variables, owner, referenced_by, &facts)
+        }
         SelectorAtom::Equal { left, right } => model
             .add_binary_constraint(
                 model_variable(variables, *left)?,
@@ -459,6 +580,85 @@ fn add_owner_ordinal_allowed_tuples(
             }
             if matches!(ordinal, OrdinalTerm::Var { .. }) {
                 tuple.push(ConstraintValue::StatementOrdinal(*fact_ordinal));
+            }
+            tuple
+        })
+        .collect::<BTreeSet<_>>();
+
+    add_allowed_tuple_set(model, constraint_variables, tuples)
+}
+
+fn add_owner_allowed_tuples(
+    model: &mut SelectorConstraintModel,
+    variables: &[ConstraintVariableId],
+    owner: &OwnerTerm,
+    facts: &BTreeSet<OwnerId>,
+) -> Result<(), SelectorConstraintModelBuildError> {
+    let mut constraint_variables = Vec::new();
+    if let OwnerTerm::Var { id } = owner {
+        constraint_variables.push(model_variable(variables, *id)?);
+    }
+    if constraint_variables.is_empty() {
+        return facts
+            .iter()
+            .any(|fact_owner| owner_term_matches(owner, *fact_owner))
+            .then_some(())
+            .ok_or_else(
+                || SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied {
+                    atom: format!("owner fact {owner:?}"),
+                },
+            );
+    }
+
+    let tuples = facts
+        .iter()
+        .filter(|fact_owner| owner_term_matches(owner, **fact_owner))
+        .map(|fact_owner| vec![ConstraintValue::Owner(*fact_owner)])
+        .collect::<BTreeSet<_>>();
+
+    add_allowed_tuple_set(model, constraint_variables, tuples)
+}
+
+fn add_owner_owner_allowed_tuples(
+    model: &mut SelectorConstraintModel,
+    variables: &[ConstraintVariableId],
+    left: &OwnerTerm,
+    right: &OwnerTerm,
+    facts: &BTreeSet<(OwnerId, OwnerId)>,
+) -> Result<(), SelectorConstraintModelBuildError> {
+    let mut constraint_variables = Vec::new();
+    if let OwnerTerm::Var { id } = left {
+        constraint_variables.push(model_variable(variables, *id)?);
+    }
+    if let OwnerTerm::Var { id } = right {
+        constraint_variables.push(model_variable(variables, *id)?);
+    }
+    if constraint_variables.is_empty() {
+        return facts
+            .iter()
+            .any(|(fact_left, fact_right)| {
+                owner_term_matches(left, *fact_left) && owner_term_matches(right, *fact_right)
+            })
+            .then_some(())
+            .ok_or_else(
+                || SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied {
+                    atom: format!("owner/owner fact {left:?} {right:?}"),
+                },
+            );
+    }
+
+    let tuples = facts
+        .iter()
+        .filter(|(fact_left, fact_right)| {
+            owner_term_matches(left, *fact_left) && owner_term_matches(right, *fact_right)
+        })
+        .map(|(fact_left, fact_right)| {
+            let mut tuple = Vec::with_capacity(constraint_variables.len());
+            if matches!(left, OwnerTerm::Var { .. }) {
+                tuple.push(ConstraintValue::Owner(*fact_left));
+            }
+            if matches!(right, OwnerTerm::Var { .. }) {
+                tuple.push(ConstraintValue::Owner(*fact_right));
             }
             tuple
         })
@@ -878,6 +1078,37 @@ fn ordinal_term_matches(term: &OrdinalTerm, ordinal: StatementOrdinal) -> bool {
     }
 }
 
+fn optional_string_matches(expected: &Option<String>, actual: &Option<String>) -> bool {
+    match expected {
+        Some(expected) => actual.as_deref() == Some(expected.as_str()),
+        None => true,
+    }
+}
+
+fn optional_string_term_const(
+    term: &Option<StringTerm>,
+) -> Result<Option<String>, SelectorConstraintModelBuildError> {
+    match term {
+        Some(StringTerm::Const { value }) => Ok(Some(value.clone())),
+        Some(StringTerm::Var { .. }) => Err(SelectorConstraintModelBuildError::UnsupportedAtom {
+            atom: "selector relation currently requires a constant optional string".to_string(),
+        }),
+        None => Ok(None),
+    }
+}
+
+fn required_string_term_const(
+    term: &StringTerm,
+    context: &'static str,
+) -> Result<String, SelectorConstraintModelBuildError> {
+    match term {
+        StringTerm::Const { value } => Ok(value.clone()),
+        StringTerm::Var { .. } => Err(SelectorConstraintModelBuildError::UnsupportedAtom {
+            atom: format!("{context} currently requires a constant string"),
+        }),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TargetBindingProjection {
     Const(String),
@@ -961,6 +1192,10 @@ struct FactDomains {
     owner_top_level_roots: BTreeSet<(OwnerId, NodeId)>,
     declared_bindings: BTreeSet<(OwnerId, String)>,
     export_names: BTreeSet<(OwnerId, String)>,
+    raw_owner_references_binding: BTreeSet<(OwnerId, String, String)>,
+    owner_references_binding: BTreeSet<(OwnerId, String, String)>,
+    references_owner: BTreeSet<(OwnerId, OwnerId)>,
+    aliases_owner: BTreeSet<(OwnerId, OwnerId)>,
     ast_kinds: BTreeSet<(NodeId, String)>,
     ast_children: BTreeSet<(NodeId, u32, NodeId)>,
     ast_child_counts: BTreeSet<(NodeId, u32)>,
@@ -974,6 +1209,15 @@ struct FactDomains {
     ast_operators: BTreeSet<(NodeId, String)>,
     ast_regex_literals: BTreeSet<(NodeId, String, String)>,
     ast_top_levels: BTreeSet<(NodeId, StatementOrdinal)>,
+    raw_member_reads: BTreeSet<(StatementOrdinal, Option<String>, String)>,
+    member_reads: BTreeSet<(OwnerId, String)>,
+    member_reads_from_binding: BTreeSet<(OwnerId, String, String)>,
+    reads_member_of_owner: BTreeSet<(OwnerId, OwnerId, String)>,
+    decorate_calls: BTreeSet<(String, String, Option<String>)>,
+    makes_decorate_call_for_binding: BTreeSet<(OwnerId, String, Option<String>)>,
+    makes_decorate_call_for_owner: BTreeSet<(OwnerId, OwnerId, Option<String>)>,
+    intrinsic_aliases: BTreeSet<(String, String)>,
+    intrinsic_alias_referenced_by: BTreeSet<(OwnerId, String, OwnerId)>,
 }
 
 impl FactDomains {
@@ -1053,6 +1297,11 @@ impl FactDomains {
                     self.add_owner(*owner);
                     self.add_string(binding);
                     self.add_string(edge_kind);
+                    self.raw_owner_references_binding.insert((
+                        *owner,
+                        binding.clone(),
+                        edge_kind.clone(),
+                    ));
                 }
                 SelectorFact::AstKind {
                     node, node_kind, ..
@@ -1148,6 +1397,11 @@ impl FactDomains {
                         self.add_string(object);
                     }
                     self.add_string(member);
+                    self.raw_member_reads.insert((
+                        *statement_ordinal,
+                        object.clone(),
+                        member.clone(),
+                    ));
                 }
                 SelectorFact::ModuleMemberUse {
                     statement_ordinal,
@@ -1182,12 +1436,19 @@ impl FactDomains {
                     if let Some(member) = member {
                         self.add_string(member);
                     }
+                    self.decorate_calls.insert((
+                        callee.clone(),
+                        class_anchor.clone(),
+                        member.clone(),
+                    ));
                 }
                 SelectorFact::IntrinsicAliasUse {
                     binding, property, ..
                 } => {
                     self.add_string(binding);
                     self.add_string(property);
+                    self.intrinsic_aliases
+                        .insert((binding.clone(), property.clone()));
                 }
             }
 
@@ -1197,6 +1458,119 @@ impl FactDomains {
     }
 
     fn add_derived_facts(&mut self) {
+        let mut owners_with_declarations = BTreeSet::new();
+        let mut owners_by_binding: BTreeMap<String, BTreeSet<OwnerId>> = BTreeMap::new();
+        for (owner, binding) in &self.declared_bindings {
+            owners_with_declarations.insert(*owner);
+            owners_by_binding
+                .entry(binding.clone())
+                .or_default()
+                .insert(*owner);
+        }
+
+        for (owner, binding, edge_kind) in &self.raw_owner_references_binding {
+            if owners_with_declarations.contains(owner) {
+                self.owner_references_binding
+                    .insert((*owner, binding.clone(), edge_kind.clone()));
+            }
+        }
+
+        for (owner, binding, _edge_kind) in &self.raw_owner_references_binding {
+            if !owners_with_declarations.contains(owner) {
+                continue;
+            }
+            if let Some(referenced_owners) = owners_by_binding.get(binding) {
+                self.references_owner.extend(
+                    referenced_owners
+                        .iter()
+                        .map(|referenced| (*owner, *referenced)),
+                );
+            }
+        }
+
+        let var_decl_owners = self
+            .owner_kinds
+            .iter()
+            .filter_map(|(owner, kind)| (kind == "var_decl").then_some(*owner))
+            .collect::<BTreeSet<_>>();
+        for (owner, binding, edge_kind) in &self.raw_owner_references_binding {
+            if edge_kind != "eager_use"
+                || !var_decl_owners.contains(owner)
+                || !owners_with_declarations.contains(owner)
+            {
+                continue;
+            }
+            if let Some(aliased_owners) = owners_by_binding.get(binding) {
+                self.aliases_owner
+                    .extend(aliased_owners.iter().map(|aliased| (*owner, *aliased)));
+            }
+        }
+
+        let owner_by_ordinal = self
+            .owner_statement_ordinals
+            .iter()
+            .map(|(owner, ordinal)| (*ordinal, *owner))
+            .collect::<BTreeMap<_, _>>();
+        for (statement_ordinal, object, member) in &self.raw_member_reads {
+            let Some(owner) = owner_by_ordinal.get(statement_ordinal) else {
+                continue;
+            };
+            if !owners_with_declarations.contains(owner) {
+                continue;
+            }
+            self.member_reads.insert((*owner, member.clone()));
+            if let Some(object) = object {
+                self.member_reads_from_binding
+                    .insert((*owner, object.clone(), member.clone()));
+            }
+        }
+
+        for (owner, object_binding, member) in &self.member_reads_from_binding {
+            if let Some(object_owners) = owners_by_binding.get(object_binding) {
+                self.reads_member_of_owner.extend(
+                    object_owners
+                        .iter()
+                        .map(|object_owner| (*owner, *object_owner, member.clone())),
+                );
+            }
+        }
+
+        for (callee, class_anchor, member) in &self.decorate_calls {
+            let Some(callee_owners) = owners_by_binding.get(callee) else {
+                continue;
+            };
+            for owner in callee_owners {
+                self.makes_decorate_call_for_binding.insert((
+                    *owner,
+                    class_anchor.clone(),
+                    member.clone(),
+                ));
+                if let Some(class_owners) = owners_by_binding.get(class_anchor) {
+                    self.makes_decorate_call_for_owner.extend(
+                        class_owners
+                            .iter()
+                            .map(|class_owner| (*owner, *class_owner, member.clone())),
+                    );
+                }
+            }
+        }
+
+        for (binding, property) in &self.intrinsic_aliases {
+            let Some(alias_owners) = owners_by_binding.get(binding) else {
+                continue;
+            };
+            for (referencer, used_binding, _edge_kind) in &self.raw_owner_references_binding {
+                if used_binding != binding {
+                    continue;
+                }
+                self.intrinsic_alias_referenced_by.extend(
+                    alias_owners
+                        .iter()
+                        .map(|alias_owner| (*alias_owner, property.clone(), *referencer)),
+                );
+            }
+        }
+
         let mut child_counts = BTreeMap::new();
         for (parent, index, _child) in &self.ast_children {
             let count = child_counts.entry(*parent).or_insert(0);
@@ -1636,6 +2010,41 @@ mod tests {
         }
     }
 
+    fn owner_reference(owner: usize, binding: &str, edge_kind: &str) -> SelectorFact {
+        SelectorFact::OwnerReferencesBinding {
+            chunk_id: ChunkId(0),
+            owner: OwnerId(owner),
+            binding: binding.to_string(),
+            edge_kind: edge_kind.to_string(),
+        }
+    }
+
+    fn member_read(ordinal: usize, object: Option<&str>, member: &str) -> SelectorFact {
+        SelectorFact::MemberRead {
+            chunk_id: ChunkId(0),
+            statement_ordinal: StatementOrdinal(ordinal),
+            object: object.map(str::to_string),
+            member: member.to_string(),
+        }
+    }
+
+    fn decorate_call(callee: &str, class_anchor: &str, member: Option<&str>) -> SelectorFact {
+        SelectorFact::DecorateCallUse {
+            chunk_id: ChunkId(0),
+            callee: callee.to_string(),
+            class_anchor: class_anchor.to_string(),
+            member: member.map(str::to_string),
+        }
+    }
+
+    fn intrinsic_alias(binding: &str, property: &str) -> SelectorFact {
+        SelectorFact::IntrinsicAliasUse {
+            chunk_id: ChunkId(0),
+            binding: binding.to_string(),
+            property: property.to_string(),
+        }
+    }
+
     fn fact_store(facts: Vec<SelectorFact>) -> SelectorFactStore {
         SelectorFactStore { facts }
     }
@@ -1963,17 +2372,196 @@ mod tests {
     }
 
     #[test]
+    fn relational_atoms_lower_to_allowed_tuple_constraints() {
+        let mut program = SelectorProgram::default();
+        let reference_owner =
+            program.add_variable(VariableDomain::Owner, Some("reference_owner".to_string()));
+        let referenced_owner =
+            program.add_variable(VariableDomain::Owner, Some("referenced_owner".to_string()));
+        let aliased_owner =
+            program.add_variable(VariableDomain::Owner, Some("aliased_owner".to_string()));
+        let reader_owner =
+            program.add_variable(VariableDomain::Owner, Some("reader_owner".to_string()));
+        let object_owner =
+            program.add_variable(VariableDomain::Owner, Some("object_owner".to_string()));
+        let decorator_owner =
+            program.add_variable(VariableDomain::Owner, Some("decorator_owner".to_string()));
+        let class_owner =
+            program.add_variable(VariableDomain::Owner, Some("class_owner".to_string()));
+        let intrinsic_referencer = program.add_variable(
+            VariableDomain::Owner,
+            Some("intrinsic_referencer".to_string()),
+        );
+        let referenced_binding = program.add_variable(
+            VariableDomain::String,
+            Some("referenced_binding".to_string()),
+        );
+        let read_member =
+            program.add_variable(VariableDomain::String, Some("read_member".to_string()));
+        let object_read_member = program.add_variable(
+            VariableDomain::String,
+            Some("object_read_member".to_string()),
+        );
+
+        program.add_atom(SelectorAtom::OwnerReferencesBinding {
+            owner: OwnerTerm::Var {
+                id: reference_owner,
+            },
+            binding: StringTerm::Var {
+                id: referenced_binding,
+            },
+            edge_kind: Some(StringTerm::Const {
+                value: "read".to_string(),
+            }),
+        });
+        program.add_atom(SelectorAtom::OwnerReferencesOwner {
+            owner: OwnerTerm::Const { owner: OwnerId(20) },
+            referenced: OwnerTerm::Var {
+                id: referenced_owner,
+            },
+        });
+        program.add_atom(SelectorAtom::OwnerAliasesOwner {
+            owner: OwnerTerm::Const { owner: OwnerId(30) },
+            aliased: OwnerTerm::Var { id: aliased_owner },
+        });
+        program.add_atom(SelectorAtom::ReadsMember {
+            owner: OwnerTerm::Var { id: reader_owner },
+            object: None,
+            member: StringTerm::Var { id: read_member },
+        });
+        program.add_atom(SelectorAtom::ReadsMember {
+            owner: OwnerTerm::Const { owner: OwnerId(40) },
+            object: Some(StringTerm::Const {
+                value: "objectBinding".to_string(),
+            }),
+            member: StringTerm::Var {
+                id: object_read_member,
+            },
+        });
+        program.add_atom(SelectorAtom::ReadsMemberOfOwner {
+            owner: OwnerTerm::Const { owner: OwnerId(40) },
+            object: OwnerTerm::Var { id: object_owner },
+            member: StringTerm::Const {
+                value: "value".to_string(),
+            },
+        });
+        program.add_atom(SelectorAtom::MakesDecorateCall {
+            owner: OwnerTerm::Var {
+                id: decorator_owner,
+            },
+            class_anchor: StringTerm::Const {
+                value: "Class".to_string(),
+            },
+            member: Some(StringTerm::Const {
+                value: "field".to_string(),
+            }),
+        });
+        program.add_atom(SelectorAtom::MakesDecorateCallForOwner {
+            owner: OwnerTerm::Const { owner: OwnerId(60) },
+            class_anchor: OwnerTerm::Var { id: class_owner },
+            member: Some(StringTerm::Const {
+                value: "field".to_string(),
+            }),
+        });
+        program.add_atom(SelectorAtom::IntrinsicAlias {
+            owner: OwnerTerm::Const { owner: OwnerId(80) },
+            property: StringTerm::Const {
+                value: "defineProperty".to_string(),
+            },
+            referenced_by: OwnerTerm::Var {
+                id: intrinsic_referencer,
+            },
+        });
+
+        let facts = fact_store(vec![
+            owner_fact(10, 0, "function"),
+            declared_binding(10, "target"),
+            owner_fact(20, 1, "function"),
+            declared_binding(20, "referrer"),
+            owner_reference(20, "target", "read"),
+            owner_fact(30, 2, "var_decl"),
+            declared_binding(30, "aliasStatement"),
+            owner_reference(30, "target", "eager_use"),
+            owner_fact(40, 3, "function"),
+            declared_binding(40, "reader"),
+            member_read(3, None, "size"),
+            member_read(3, Some("objectBinding"), "value"),
+            owner_fact(50, 4, "var_decl"),
+            declared_binding(50, "objectBinding"),
+            owner_fact(60, 5, "function"),
+            declared_binding(60, "decorate"),
+            owner_fact(70, 6, "class"),
+            declared_binding(70, "Class"),
+            decorate_call("decorate", "Class", Some("field")),
+            owner_fact(80, 7, "var_decl"),
+            declared_binding(80, "define"),
+            intrinsic_alias("define", "defineProperty"),
+            owner_fact(90, 8, "function"),
+            declared_binding(90, "aliasUser"),
+            owner_reference(90, "define", "read"),
+        ]);
+
+        let model = build_selector_constraint_model(&program, &facts).unwrap();
+
+        assert_eq!(
+            allowed_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(8)]).tuples,
+            vec![
+                vec![owner(20), string("target")],
+                vec![owner(90), string("define")],
+            ]
+        );
+        assert_eq!(
+            allowed_tuples_for(&model, &[ConstraintVariableId(1)]).tuples,
+            vec![vec![owner(10)]]
+        );
+        assert_eq!(
+            allowed_tuples_for(&model, &[ConstraintVariableId(2)]).tuples,
+            vec![vec![owner(10)]]
+        );
+        assert_eq!(
+            allowed_tuples_for(&model, &[ConstraintVariableId(3), ConstraintVariableId(9)]).tuples,
+            vec![
+                vec![owner(40), string("size")],
+                vec![owner(40), string("value")],
+            ]
+        );
+        assert_eq!(
+            allowed_tuples_for(&model, &[ConstraintVariableId(10)]).tuples,
+            vec![vec![string("value")]]
+        );
+        assert_eq!(
+            allowed_tuples_for(&model, &[ConstraintVariableId(4)]).tuples,
+            vec![vec![owner(50)]]
+        );
+        assert_eq!(
+            allowed_tuples_for(&model, &[ConstraintVariableId(5)]).tuples,
+            vec![vec![owner(60)]]
+        );
+        assert_eq!(
+            allowed_tuples_for(&model, &[ConstraintVariableId(6)]).tuples,
+            vec![vec![owner(70)]]
+        );
+        assert_eq!(
+            allowed_tuples_for(&model, &[ConstraintVariableId(7)]).tuples,
+            vec![vec![owner(90)]]
+        );
+    }
+
+    #[test]
     fn unsupported_atoms_fail_closed() {
         let mut program = SelectorProgram::default();
         let owner_var = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
-        let referenced_var =
-            program.add_variable(VariableDomain::Owner, Some("referenced".to_string()));
-        program.add_atom(SelectorAtom::OwnerReferencesOwner {
+        program.add_atom(SelectorAtom::ConsumesModuleMember {
             owner: OwnerTerm::Var { id: owner_var },
-            referenced: OwnerTerm::Var { id: referenced_var },
+            module: StringTerm::Const {
+                value: "mod".to_string(),
+            },
+            member: StringTerm::Const {
+                value: "value".to_string(),
+            },
         });
 
-        let facts = fact_store(vec![owner_fact(10, 0, "var"), owner_fact(20, 1, "var")]);
+        let facts = fact_store(vec![owner_fact(10, 0, "var")]);
 
         let err = build_selector_constraint_model(&program, &facts).unwrap_err();
         assert!(matches!(
