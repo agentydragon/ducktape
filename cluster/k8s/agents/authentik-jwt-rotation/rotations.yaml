@@ -54,6 +54,13 @@ rotations:
     credentials_dir: /var/run/secrets/authentik/haku-grocy
     sops_file: secrets/haku-grocy-jwt.yaml
     token_field: jwt
+    # Also publish the JWT (+ exp) as an in-cluster Secret so tf/gitops/haku-cloud-agent
+    # can hand it to the Anthropic vault as the grocy-sf MCP bearer (read via a no-fail
+    # lookup — absent secret just disables the grocy credential). Mirrors haku-k8s.
+    k8s_secret:
+      path: cluster/k8s/haku/cloud-agent-tf/haku-grocy-sf-token.sops.yaml
+      name: haku-cloud-grocy-sf-token
+      namespace: flux-system
   - name: alloy-otlp
     provider_slug: alloy-otlp-client-credentials
     scopes: openid profile email
