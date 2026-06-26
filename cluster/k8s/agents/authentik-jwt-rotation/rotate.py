@@ -7,13 +7,15 @@ One run processes every rotation listed in the YAML config. For each rotation it
      remaining validity exceeds `rotate_below_hours`. A real mint therefore
      happens only every ~44 days (45d validity - 1d threshold), but a failed
      rotation self-heals on the next hourly run.
-  2. Mints a fresh JWT via `client_credentials`, verifies its issuer and an
-     optional group claim, and — for proxy-fronted consumers — exchanges it
-     into a proxy-provider-scoped token (the JWT-bearer two-hop pattern the
-     Authentik outposts in this repo require).
+  2. Mints a fresh JWT via `client_credentials`, verifies its issuer, an
+     optional group claim, and an optional set of expected audiences on the
+     final token, and — for proxy-fronted consumers — exchanges it into a
+     proxy-provider-scoped token (the JWT-bearer two-hop pattern the Authentik
+     outposts in this repo require).
   3. Writes `expires_unencrypted` (from the final token's own `exp` claim, so
-     the freshness check is authoritative) plus the token, then `sops encrypt`s
-     in place.
+     the freshness check is authoritative), an `audiences_unencrypted` stamp
+     when audiences are expected (so the next run can force a re-mint if the
+     expectation changes), plus the token, then `sops encrypt`s in place.
 
 Everything that actually rotated this cycle lands in a single combined commit.
 The whole run operates from the clone root so SOPS creation rules (matched on
@@ -58,6 +60,13 @@ class Rotation(BaseModel):
     expected_group: str | None = Field(
         default=None, description="Group claim that must be present on the source JWT; aborts the rotation if missing"
     )
+    expected_audiences: list[str] | None = Field(
+        default=None,
+        description="Audiences (aud claim) that must all be present on the final written token. "
+        "Asserted on every mint, and forces a re-mint when the stored token's "
+        "audiences_unencrypted stamp does not already cover them — so adding an audience "
+        "rolls out on the next run instead of waiting for expiry.",
+    )
     exchange_scopes: str | None = Field(
         default=None,
         description="When set, exchange the source JWT into a proxy-provider token "
@@ -89,16 +98,42 @@ def jwt_payload(token: str) -> dict[str, Any]:
     return payload
 
 
+def unencrypted_stamps(sops_file: Path) -> dict[str, Any]:
+    """The plaintext `*_unencrypted` stamps from a sops file, parsed as YAML.
+
+    A sops-encrypted YAML file is still valid YAML, and the `*_unencrypted`-suffixed
+    keys keep their plaintext values (SOPS leaves them in clear), so the freshness
+    and audience stamps load straight out without the in-cluster age key. Returns
+    `{}` when the file is absent or empty.
+    """
+    if not sops_file.exists():
+        return {}
+    return yaml.safe_load(sops_file.read_text()) or {}
+
+
 def remaining_hours(sops_file: Path) -> float | None:
     """Hours until the existing token expires, or None if absent/unstamped."""
-    if not sops_file.exists():
+    expires = unencrypted_stamps(sops_file).get("expires_unencrypted")
+    if expires is None:
         return None
-    for line in sops_file.read_text().splitlines():
-        if line.startswith("expires_unencrypted:"):
-            value = line.split(":", 1)[1].strip().strip('"')
-            expires = datetime.fromisoformat(value)
-            return (expires - datetime.now(UTC)).total_seconds() / 3600
-    return None
+    return (datetime.fromisoformat(expires) - datetime.now(UTC)).total_seconds() / 3600
+
+
+def token_audiences(payload: dict[str, Any]) -> list[str]:
+    """The `aud` claim normalized to a list (the JWT spec allows a string or a list)."""
+    aud = payload.get("aud")
+    if aud is None:
+        return []
+    return [aud] if isinstance(aud, str) else list(aud)
+
+
+def stamped_audiences(sops_file: Path) -> list[str] | None:
+    """Audiences from the plaintext `audiences_unencrypted` stamp, or None if absent.
+
+    Lets the freshness check notice an audience-expectation change without
+    decrypting the token (the rotator has no in-cluster age key).
+    """
+    return unencrypted_stamps(sops_file).get("audiences_unencrypted")
 
 
 def mint_jwt(client: httpx.Client, rotation: Rotation) -> str:
@@ -143,7 +178,22 @@ def exchange_jwt(client: httpx.Client, rotation: Rotation, source_jwt: str, exch
 def rotate_one(client: httpx.Client, rotation: Rotation, config: Config) -> bool:
     """Mint + write a fresh token for one rotation. Returns True if it wrote."""
     remaining = remaining_hours(rotation.sops_file)
-    if remaining is not None and remaining > config.rotate_below_hours:
+    fresh = remaining is not None and remaining > config.rotate_below_hours
+    # An audience expectation the stored token doesn't already satisfy forces a
+    # re-mint regardless of remaining validity — otherwise adding an audience
+    # wouldn't take effect until the (~44-day) expiry. Read from the plaintext
+    # `audiences_unencrypted` stamp (no SOPS decryption needed).
+    if fresh and rotation.expected_audiences:
+        stored = stamped_audiences(rotation.sops_file)
+        if stored is None or not set(rotation.expected_audiences) <= set(stored):
+            logger.info(
+                "%s: stored audiences %s do not cover expected %s; forcing re-mint",
+                rotation.name,
+                stored,
+                rotation.expected_audiences,
+            )
+            fresh = False
+    if fresh:
         logger.info(
             "%s: %.0fh remaining > %dh threshold; skipping", rotation.name, remaining, config.rotate_below_hours
         )
@@ -168,14 +218,29 @@ def rotate_one(client: httpx.Client, rotation: Rotation, config: Config) -> bool
     else:
         final_jwt = source_jwt
 
+    final_payload = jwt_payload(final_jwt)
+    final_audiences = token_audiences(final_payload)
+    if rotation.expected_audiences:
+        missing = set(rotation.expected_audiences) - set(final_audiences)
+        if missing:
+            raise RuntimeError(
+                f"{rotation.name}: minted token missing expected audiences {sorted(missing)} "
+                f"(got {final_audiences!r}); check the Authentik provider's audience mapping"
+            )
+
     # `exp` from the token we actually write — the proxy provider's lifetime can
     # differ from the source provider's, so freshness must key off the final token.
-    expires_iso = datetime.fromtimestamp(int(jwt_payload(final_jwt)["exp"]), UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    expires_iso = datetime.fromtimestamp(int(final_payload["exp"]), UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # `expires_unencrypted` matches SOPS's default unencrypted_suffix, so it
-    # stays plaintext after `sops encrypt --in-place`.
+    # `*_unencrypted` keys match SOPS's default unencrypted_suffix, so they stay
+    # plaintext after `sops encrypt --in-place`. The audiences stamp lets the next
+    # run detect an audience-expectation change without decrypting the token.
+    stamps: dict[str, Any] = {"expires_unencrypted": expires_iso}
+    if rotation.expected_audiences:
+        stamps["audiences_unencrypted"] = final_audiences
+    stamps[rotation.token_field] = final_jwt
     rotation.sops_file.parent.mkdir(parents=True, exist_ok=True)
-    rotation.sops_file.write_text(f'expires_unencrypted: "{expires_iso}"\n{rotation.token_field}: {final_jwt}\n')
+    rotation.sops_file.write_text(yaml.safe_dump(stamps, sort_keys=False, width=2**31))
     subprocess.run(["sops", "encrypt", "--in-place", str(rotation.sops_file)], check=True)
     logger.info("%s: wrote token expiring %s", rotation.name, expires_iso)
     return True

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
-from rotate import Config, Rotation, jwt_payload, mint_jwt, remaining_hours
+from rotate import Config, Rotation, jwt_payload, mint_jwt, remaining_hours, stamped_audiences, token_audiences
 
 
 def _make_jwt(claims: dict) -> str:
@@ -56,6 +56,41 @@ def test_remaining_hours_reads_unencrypted_expiry(tmp_path: Path):
     remaining = remaining_hours(f)
     assert remaining is not None
     assert 9 < remaining < 11
+
+
+def test_token_audiences_normalizes_string_list_and_missing():
+    assert token_audiences({"aud": "one"}) == ["one"]
+    assert token_audiences({"aud": ["one", "two"]}) == ["one", "two"]
+    assert token_audiences({}) == []
+
+
+def test_stamped_audiences_reads_yaml_list(tmp_path: Path):
+    f = tmp_path / "t.yaml"
+    f.write_text('expires_unencrypted: "2030-01-01T00:00:00Z"\naudiences_unencrypted:\n  - a\n  - b\njwt: abc\n')
+    assert stamped_audiences(f) == ["a", "b"]
+
+
+def test_stamped_audiences_absent_is_none(tmp_path: Path):
+    f = tmp_path / "t.yaml"
+    f.write_text("jwt: abc\n")
+    assert stamped_audiences(f) is None
+    assert stamped_audiences(tmp_path / "absent.yaml") is None
+
+
+def test_rotation_expected_audiences_defaults_none_and_parses_list():
+    base = {
+        "name": "haku-k8s",
+        "provider_slug": "kubectl-sandbox-client-credentials",
+        "scopes": "openid profile email groups",
+        "credentials_dir": "/creds",
+        "sops_file": "secrets/haku-k8s-jwt.yaml",
+        "token_field": "jwt",
+    }
+    assert Rotation.model_validate(base).expected_audiences is None
+    with_aud = Rotation.model_validate(
+        base | {"expected_audiences": ["kubectl-sandbox-client-credentials", "kubectl-passthrough-mcp"]}
+    )
+    assert with_aud.expected_audiences == ["kubectl-sandbox-client-credentials", "kubectl-passthrough-mcp"]
 
 
 def test_rotation_expected_issuer_derived_from_slug():

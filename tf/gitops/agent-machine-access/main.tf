@@ -754,7 +754,17 @@ resource "authentik_property_mapping_provider_scope" "kubectl_machine_groups" {
     if username == "ak-kubectl-sandbox-client-credentials-client_credentials":
         return {"groups": ["kubectl-sandbox-users"]}
     if username == "haku-k8s":
-        return {"groups": ["haku"]}
+        # Multi-audience: the default aud is this provider's client_id
+        # (kubectl-sandbox-client-credentials), which kube-apiserver trusts for
+        # the direct kubeapi.allegedly.works path. Adding kubectl-passthrough-mcp
+        # lets the SAME token also authenticate to the passthrough kubectl MCP
+        # (its oauth_audience is kubectl-passthrough-mcp), which forwards the JWT
+        # to kube-apiserver. Consumer: tf/gitops/haku-cloud-agent — Haku's
+        # Anthropic-hosted managed agent reaches the cluster via that MCP with a
+        # static_bearer vault credential carrying this token. Authentik merges
+        # this aud with the provider default, so the minted token carries both;
+        # the authentik-jwt-rotation rotator asserts expected_audiences on mint.
+        return {"groups": ["haku"], "aud": "kubectl-passthrough-mcp"}
     return {"groups": []}
   EXPR
 }
