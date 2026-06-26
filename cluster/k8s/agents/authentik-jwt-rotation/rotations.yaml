@@ -57,10 +57,17 @@ rotations:
     # Also publish the JWT (+ exp) as an in-cluster Secret so tf/gitops/haku-cloud-agent
     # can hand it to the Anthropic vault as the grocy-sf MCP bearer (read via a no-fail
     # lookup — absent secret just disables the grocy credential). Mirrors haku-k8s.
+    # The reflector annotations also mirror it into haku-sandbox, where the self-hosted
+    # Haku home reads the bearer to call the grocy-sf MCP directly (like haku-tana-ro-token).
     k8s_secret:
       path: cluster/k8s/haku/cloud-agent-tf/haku-grocy-sf-token.sops.yaml
       name: haku-cloud-grocy-sf-token
       namespace: flux-system
+      annotations:
+        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-sandbox
+        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-sandbox
   - name: alloy-otlp
     provider_slug: alloy-otlp-client-credentials
     scopes: openid profile email

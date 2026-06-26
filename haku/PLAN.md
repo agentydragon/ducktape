@@ -70,9 +70,12 @@ and the not-yet-built items below.
   read-only-credential trick gets fronted by **another instance** of it: a Deployment +
   a `config.yaml` allowlist + the upstream secret + a bearer-gated route — no new
   boundary code, the generalization is mechanical. Still to wire this way: PostScanMail
-  (unopened mail), Grocy (expiring / below-minimum stock), Manifold. (The Authentik
-  OAuth facades are _auth_ only — they forward the full tool set — so they don't
-  substitute for this.)
+  (unopened mail), Manifold. (The Authentik OAuth facades are _auth_ only — they forward
+  the full tool set — so they don't substitute for this.) **Grocy** went a different,
+  cheaper route — no facade: its upstream enforces per-user permissions, so the read-only
+  `haku` Grocy user (empty perms → API serves reads, 403s writes) _is_ the boundary, and
+  Haku calls the grocy-sf MCP directly (`base/sources/grocy.md`). Prefer that whenever an
+  upstream has its own read-only-credential model; the facade is for the ones that don't.
 - **In-cluster runtime** (the `haku-scanner` CronJob / self-hosted Managed-Agents
   worker) as an alternative to the web home — deferred; see `TODO.md` → _Later_ and
   `haku/runtime/managed_agent/`. Revisit if scanner-image upkeep or the

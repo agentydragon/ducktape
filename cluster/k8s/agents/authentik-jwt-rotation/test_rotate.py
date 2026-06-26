@@ -10,6 +10,7 @@ from rotate import (
     Config,
     K8sSecretOutput,
     Rotation,
+    build_secret_manifest,
     jwt_payload,
     mint_jwt,
     remaining_hours,
@@ -126,6 +127,27 @@ def test_rotation_k8s_secret_defaults_none_and_parses():
     assert r.k8s_secret.token_key == "jwt"  # default
     assert r.k8s_secret.exp_key == "token-exp"  # default
     assert r.k8s_secret.namespace == "flux-system"
+    assert r.k8s_secret.annotations is None  # default
+
+
+def test_build_secret_manifest_carries_token_exp_and_merges_annotations():
+    out = K8sSecretOutput(
+        path=Path("cluster/k8s/x.sops.yaml"),
+        name="haku-cloud-grocy-sf-token",
+        namespace="flux-system",
+        annotations={"reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "haku-sandbox"},
+    )
+    manifest = build_secret_manifest(out, token="the-jwt", exp_epoch=1750000000)
+    assert manifest["stringData"] == {"jwt": "the-jwt", "token-exp": "1750000000"}
+    annotations = manifest["metadata"]["annotations"]
+    # The rotator's own description annotation survives, the configured one is merged in.
+    assert "description" in annotations
+    assert annotations["reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"] == "haku-sandbox"
+
+
+def test_build_secret_manifest_without_annotations_keeps_only_description():
+    out = K8sSecretOutput(path=Path("cluster/k8s/x.sops.yaml"), name="t", namespace="flux-system")
+    assert list(build_secret_manifest(out, token="j", exp_epoch=1)["metadata"]["annotations"]) == ["description"]
 
 
 def test_rotation_expected_issuer_derived_from_slug():

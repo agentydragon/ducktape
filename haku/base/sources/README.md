@@ -32,6 +32,9 @@ grows its own techniques and records them in its state `memory/`.
   intentions tracked nowhere else — a must-read source, not optional.
 - [`plaid`](plaid.md) — financial transactions (read-only SQL via
   a `haku-sandbox` pod).
+- [`grocy`](grocy.md) — the operator's household stock (expiring /
+  below-minimum items, shopping suggestions); reached via the grocy-sf MCP
+  (`fastmcp`), read-only because the `haku` Grocy user has empty permissions.
 - [`ducktape`](ducktape.md) — the operator's recent repo work
   (always reachable; you have the checkout). The **cluster** is likewise a standing
   source — see `../instructions.md` → _How you reason_ (read-only diagnostics).
@@ -45,5 +48,5 @@ sources fit (illustrations, not a checklist; invent your own). This directory is
 the channels and how to read them.
 
 Designed but **not yet wired** (don't attempt; note the gap if one appears):
-PostScanMail (unopened mail), Grocy (expiring / below-minimum stock) — each blocked
-until it sits behind a read-only filter facade; see `../../PLAN.md`.
+PostScanMail (unopened mail) — blocked until it sits behind a read-only filter
+facade; see `../../PLAN.md`.
