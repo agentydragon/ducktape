@@ -138,9 +138,11 @@ py_test(
 )
 
 # ── OCI image (the haku-console service) ──────────────────────────────────────
-# Plain debian-slim base: the console clones/pushes haku-state over cluster-internal
-# plaintext HTTP, so (unlike finance/beancount_export) it needs no ca-certificates
-# apt layer for pygit2.
+# ca-certificates apt layer (@trixie_ca_certificates): pygit2's Settings() eagerly
+# loads libgit2's OpenSSL cert locations from the system trust store at *import*
+# time, so `import pygit2` raises GitError on a bare slim base before any code runs
+# — even though the haku-state remote is plaintext HTTP and the certs are never
+# used. Same fix as finance/scraper and finance/augur/api.
 
 aspect_py_binary(
     name = "server_bin",
@@ -171,7 +173,7 @@ pkg_tar(
 
 oci_image(
     name = "server_image",
-    base = "@debian_slim_linux_amd64",
+    base = "@debian_trixie_slim_linux_amd64",
     entrypoint = py_image_entrypoint("server_bin"),
     env = dict(
         py_image_env(binary_name = "server_bin"),
@@ -184,6 +186,7 @@ oci_image(
     tars = [
         ":server_layers",
         ":web_tar",
+        "@trixie_ca_certificates//:flat",
     ],
     user = "1000:1000",
     visibility = ["//visibility:public"],
