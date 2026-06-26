@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubectl-machine-mcp-public
+  namespace: kubectl-machine-mcp
+data:
+  00-public.toml: |
+    require_oauth = true
+    # Machine (client_credentials) issuer — the non-interactive sibling of
+    # kubectl-passthrough-mcp, which trusts the PKCE/interactive issuer. Tokens
+    # minted by the kubectl-sandbox-client-credentials provider (authentik-jwt-rotation
+    # CronJob) validate here; the caller's own group claim drives RBAC. haku-k8s
+    # maps to oidc-ksbx-groups:haku, the generic machine principal to
+    # kubectl-sandbox-users (see tf/gitops/agent-machine-access kubectl_machine_groups).
+    authorization_url = "https://auth.allegedly.works/application/o/kubectl-sandbox-client-credentials/"
+    oauth_audience = "kubectl-sandbox-client-credentials"
+    # Passthrough forwards the caller's JWT as-is to kube-apiserver. No STS
+    # credentials needed because there's no token exchange on this server.
+    cluster_auth_mode = "passthrough"
+    cluster_provider_strategy = "in-cluster"
+    server_url = "https://kubectl-machine-mcp.allegedly.works"
+    port = "8080"

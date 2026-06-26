@@ -83,6 +83,8 @@ resources:
   - agents/kubectl-passthrough-mcp/app/flux-kustomization.yaml
   - agents/kubectl-sandbox-mcp/namespace/flux-kustomization.yaml
   - agents/kubectl-sandbox-mcp/app/flux-kustomization.yaml
+  - agents/kubectl-machine-mcp/namespace/flux-kustomization.yaml
+  - agents/kubectl-machine-mcp/app/flux-kustomization.yaml
   - agents/manifold-mcp/namespace/flux-kustomization.yaml
   - agents/manifold-mcp/app/flux-kustomization.yaml
   - agents/plaid-mcp/namespace/flux-kustomization.yaml

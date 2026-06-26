@@ -1,0 +1,26 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubectl-machine-mcp
+  namespace: flux-system
+spec:
+  suspend: false
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/agents/kubectl-machine-mcp/app
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: kubectl-machine-mcp
+      namespace: kubectl-machine-mcp
+  dependsOn:
+    - name: gateway
+    # The kubectl-sandbox-client-credentials Authentik provider (whose OIDC
+    # discovery + JWKS this server validates against) is created by this TF.
+    - name: agent-machine-access-tf

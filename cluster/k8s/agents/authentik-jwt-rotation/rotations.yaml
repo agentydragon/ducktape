@@ -15,16 +15,13 @@ rotations:
     scopes: openid profile email groups
     credential_mode: user_password
     expected_group: haku
-    # Multi-audience: the provider default aud (kubectl-sandbox-client-credentials)
-    # keeps the direct kubeapi.allegedly.works path working; kubectl-passthrough-mcp
-    # lets the same token authenticate to the passthrough kubectl MCP that Haku's
-    # Anthropic-hosted managed agent uses (tf/gitops/haku-cloud-agent). The audience
-    # is injected by the haku-k8s branch of the kubectl_machine_groups scope mapping
-    # in tf/gitops/agent-machine-access. Listing it here makes the rotator assert it
-    # on every mint and force a re-mint if a stored token doesn't carry it yet.
+    # Assert the token carries the audience kubectl-machine-mcp validates (the
+    # provider-default aud = its client_id). Haku's Anthropic-hosted managed agent
+    # reaches the cluster through that passthrough MCP with a static_bearer vault
+    # credential carrying this token (tf/gitops/haku-cloud-agent); the same aud also
+    # keeps the direct kubeapi.allegedly.works path working.
     expected_audiences:
       - kubectl-sandbox-client-credentials
-      - kubectl-passthrough-mcp
     credentials_dir: /var/run/secrets/authentik/haku-k8s
     sops_file: secrets/haku-k8s-jwt.yaml
     token_field: jwt
