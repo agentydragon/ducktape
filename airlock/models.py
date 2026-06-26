@@ -109,7 +109,7 @@ class Action(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-# ── Append-only event log ───────────────────────────────────────────────────
+# ── Append-only event log ────────────────────────────────────────────────────────
 
 
 class LogEventKind(StrEnum):
@@ -166,7 +166,7 @@ class LogEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-# ── Operator decisions ────────────────────────────────────────────────────────
+# ── Operator decisions ─────────────────────────────────────────────────────────────────
 
 
 class ApproveDecision(BaseModel):
@@ -189,7 +189,7 @@ class DenyDecision(BaseModel):
 OperatorDecision = Annotated[ApproveDecision | DenyDecision, Field(discriminator="kind")]
 
 
-# ── Wait mode for tool calls ──────────────────────────────────────────────
+# ── Wait mode for tool calls ─────────────────────────────────────────────────────
 
 
 class BlockingWait(BaseModel):
@@ -220,13 +220,32 @@ class ConnectedOAuthStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ExpiredOAuthStatus(BaseModel):
+    """Token secret exists but the access token is past its expires_at.
+
+    This means the refresh loop is running but failing to obtain a new token
+    (e.g. the refresh token was revoked). Re-authorization is required.
+    """
+
+    state: Literal["expired"] = "expired"
+    expires_at: datetime
+    scope: str
+    last_refresh_error: str | None = Field(
+        default=None, description="Most recent error from the background refresh loop, if any."
+    )
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class DisconnectedOAuthStatus(BaseModel):
     state: Literal["disconnected"] = "disconnected"
 
     model_config = ConfigDict(extra="forbid")
 
 
-OAuthConnectionStatus = Annotated[ConnectedOAuthStatus | DisconnectedOAuthStatus, Field(discriminator="state")]
+OAuthConnectionStatus = Annotated[
+    ConnectedOAuthStatus | ExpiredOAuthStatus | DisconnectedOAuthStatus, Field(discriminator="state")
+]
 
 
 class DeploymentInfo(BaseModel):

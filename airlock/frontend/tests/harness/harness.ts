@@ -7,7 +7,7 @@ import App from "../../App.svelte";
 import HarnessIndex from "./HarnessIndex.svelte";
 import type { Action, BackendStatus, OAuthProviderStatus } from "../../types.ts";
 
-// ── Mock data ────────────────────────────────────────────────────────────────
+// ── Mock data ────────────────────────────────────────────────────────────────────
 
 const PENDING_BASH: Action = {
   key: { session_key: "session-abc-123", action_seq: 1 },
@@ -90,9 +90,22 @@ const OAUTH_PROVIDERS: OAuthProviderStatus[] = [
     // Stale token missing PatientEOB/PatientRead — exercises the drift display.
     status: { state: "connected", expires_at: "2026-08-01T10:30:00Z", scope: "openid interop" },
   },
+  {
+    name: "drive",
+    display_name: "Google Drive",
+    provider_type: "oauth2",
+    requested_scopes: ["drive.readonly"],
+    // Expired access token — refresh loop is failing (e.g. refresh token revoked).
+    status: {
+      state: "expired",
+      expires_at: "2025-01-15T08:00:00Z",
+      scope: "drive.readonly",
+      last_refresh_error: "ClientResponseError('invalid_grant: Token has been expired or revoked.', status=400)",
+    },
+  },
 ];
 
-// ── Pages ────────────────────────────────────────────────────────────────────
+// ── Pages ────────────────────────────────────────────────────────────────────────
 
 const pages: Record<string, { hash: string }> = {
   ListPage: { hash: "#/" },

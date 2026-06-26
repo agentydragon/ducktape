@@ -65,7 +65,8 @@
 {:else}
   <div class="space-y-4">
     {#each providers as provider (provider.name)}
-      {@const grantedScope = provider.status.state === "connected" ? provider.status.scope : ""}
+      {@const grantedScope =
+        provider.status.state === "connected" || provider.status.state === "expired" ? provider.status.scope : ""}
       {@const scopes = compareScopes(provider.requested_scopes, grantedScope)}
       <div class="card rounded-lg shadow-sm p-5">
         <div class="flex items-start justify-between gap-4">
@@ -78,6 +79,8 @@
               <dd class="m-0">
                 {#if provider.status.state === "connected"}
                   <span class="status-pill status-pill-done">Connected</span>
+                {:else if provider.status.state === "expired"}
+                  <span class="status-pill status-pill-rejected">Token expired — refresh failing</span>
                 {:else}
                   <span class="status-pill status-pill-pending">Not connected</span>
                 {/if}
@@ -120,9 +123,13 @@
                   </table>
                 </div>
               </dd>
-              {#if provider.status.state === "connected"}
-                <dt class="section-heading font-semibold">Expires</dt>
-                <dd class="m-0" style="color: var(--color-text-muted);">{fmtExpiry(provider.status.expires_at)}</dd>
+              {#if provider.status.state === "connected" || provider.status.state === "expired"}
+                <dt class="section-heading font-semibold">Access token</dt>
+                <dd class="m-0" style="color: var(--color-text-muted);">
+                  {provider.status.state === "expired"
+                    ? `Expired ${fmtExpiry(provider.status.expires_at)}`
+                    : `Expires ${fmtExpiry(provider.status.expires_at)}`}
+                </dd>
                 {#if scopes.drift}
                   <dt class="section-heading font-semibold">Drift</dt>
                   <dd class="m-0" style="color: var(--color-warning, #b45309);">
@@ -134,6 +141,15 @@
                         >{scopes.extra.join(" ")}</code
                       >{/if}
                     — re-authorize to fix
+                  </dd>
+                {/if}
+                {#if provider.status.state === "expired" && provider.status.last_refresh_error}
+                  <dt class="section-heading font-semibold">Refresh error</dt>
+                  <dd class="m-0">
+                    <code
+                      class="code-tag text-xs rounded px-1.5 py-0.5 block whitespace-pre-wrap"
+                      style="color: var(--color-error);">{provider.status.last_refresh_error}</code
+                    >
                   </dd>
                 {/if}
               {/if}

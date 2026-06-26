@@ -38,8 +38,12 @@ async def token_refresh_loop(
     k8s_store: K8sTokenStore,
     target_namespace: str,
     check_interval: float = 300,
+    refresh_errors: dict[str, str] | None = None,
 ) -> None:
-    """Check all provider tokens periodically, refresh if near expiry, and clean up orphaned secrets."""
+    """Check all provider tokens periodically, refresh if near expiry, and clean up orphaned secrets.
+
+    refresh_errors: if provided, mutated in-place: cleared on success, set to exception repr on failure.
+    """
     known_secret_names = frozenset(
         name
         for provider in providers.values()
@@ -62,8 +66,12 @@ async def token_refresh_loop(
                     provider.config.access_secret.name, target_namespace, new_token, fields=ACCESS_TOKEN_FIELDS
                 )
                 logger.info(f"Refreshed token for {name} (new expiry {new_token.expires_at})")
-            except Exception:
+                if refresh_errors is not None:
+                    refresh_errors.pop(name, None)
+            except Exception as exc:
                 logger.exception(f"Failed to refresh token for {name}")
+                if refresh_errors is not None:
+                    refresh_errors[name] = repr(exc)
         try:
             await k8s_store.delete_orphaned_secrets(target_namespace, known_secret_names)
         except Exception:

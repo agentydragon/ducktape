@@ -17,6 +17,7 @@ import contextlib
 import json
 import logging
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +44,7 @@ from airlock.models import (
     DenyDecision,
     DeploymentInfo,
     DisconnectedOAuthStatus,
+    ExpiredOAuthStatus,
     OAuthProviderStatus,
 )
 from airlock.oauth.k8s_client import K8sTokenStore
@@ -80,6 +82,7 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
     oauth_providers: dict[str, GenericOAuth2Provider] = {}
     oauth_k8s_store: K8sTokenStore | None = None
     oauth_target_ns: str = ""
+    oauth_refresh_errors: dict[str, str] = {}
 
     @contextlib.asynccontextmanager
     async def app_lifespan(app: FastAPI):
@@ -101,7 +104,9 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
             async def index(rest: str) -> HTMLResponse:
                 return HTMLResponse(_html)
 
-        task = asyncio.create_task(token_refresh_loop(oauth_providers, oauth_k8s_store, oauth_target_ns))
+        task = asyncio.create_task(
+            token_refresh_loop(oauth_providers, oauth_k8s_store, oauth_target_ns, refresh_errors=oauth_refresh_errors)
+        )
         try:
             yield
         finally:
@@ -189,11 +194,14 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
         result: list[OAuthProviderStatus] = []
         for name, provider in oauth_providers.items():
             token = await oauth_k8s_store.read_token(provider.config.refresh_secret.name, oauth_target_ns)
-            status = (
-                ConnectedOAuthStatus(expires_at=token.expires_at, scope=token.scope)
-                if token
-                else DisconnectedOAuthStatus()
-            )
+            if token is None:
+                status = DisconnectedOAuthStatus()
+            elif token.expires_at <= datetime.now(UTC):
+                status = ExpiredOAuthStatus(
+                    expires_at=token.expires_at, scope=token.scope, last_refresh_error=oauth_refresh_errors.get(name)
+                )
+            else:
+                status = ConnectedOAuthStatus(expires_at=token.expires_at, scope=token.scope)
             result.append(
                 OAuthProviderStatus(
                     name=name,
