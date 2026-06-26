@@ -80,7 +80,7 @@ async def launch_routine(
     await csrf_protect.validate_csrf(request)
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
-            config.url,
+            config.fire_url,
             headers={
                 "Authorization": f"Bearer {config.token.get_secret_value()}",
                 "anthropic-version": ANTHROPIC_VERSION,

@@ -191,9 +191,16 @@ Two tiers the console treats completely differently:
 
 - **Phase 1 — declarative (1a).** A richer **typed widget schema** (containers, inputs,
   selects, links, sub-pages) emitted in `haku-state` and interpreted by a **trusted
-  renderer** — _no agent JS executes_ — beyond today's `actions[]`. Also still to build:
-  the **executions panel** in the SPA, and `GET /api/capabilities/launch-routine/executions`
-  - a **one-in-flight guard** (both gated on the routine-listing API, not yet wired).
+  renderer** — _no agent JS executes_ — beyond today's `actions[]`. Still to build: an
+  in-console **executions panel** and a **one-in-flight guard**. Both want a
+  routine-runs-listing API — **none is known to exist** for `claude_code` routines
+  (only the `/fire` endpoint), so the interim "review past runs" affordance is the
+  deep-link to the routine's `claude.ai/code` page (built from the routine id alongside
+  the fire URL); each fire also returns its session deep-link. **When the listing API
+  surfaces and we build the panel, adopt the `anthropic` Python SDK** for the Anthropic
+  calls (it auto-sends the `anthropic-version` header — the omission that 502'd the
+  bare-`httpx` fire call — plus `auth_token` bearer, typed errors, and retries) and
+  migrate the `launch-routine` POST onto it at the same time.
 - **Phase 2 — free-form (1b, the destination).** Haku writes TSX/JS into `haku-state`; the
   untrusted render origin transpiles it **at runtime** (never compiled into the trusted
   bundle) and runs it in a **sandboxed cross-origin iframe** (`sandbox` without

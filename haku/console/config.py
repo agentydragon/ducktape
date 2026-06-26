@@ -7,21 +7,35 @@ from pathlib import Path
 from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Both URLs are built from the routine (trigger) id, so only the id + token are
+# configured. The fire endpoint performs the launch; the claude.ai page is the
+# operator-facing deep-link to review past runs (there's no runs-listing API).
+_FIRE_URL = "https://api.anthropic.com/v1/claude_code/routines/{id}/fire"
+_PAGE_URL = "https://claude.ai/code/routines/{id}"
+
 
 class LaunchRoutineConfig(BaseModel):
-    """The `launch-routine` capability's target: the public Anthropic fire URL plus
-    the bearer that authorizes it. Both come from the `haku-routine-launch-token`
-    secret / deployment env; set together or not at all (the capability is disabled
-    when unset). The token lives only in the haku-console namespace — Haku can't
-    read it."""
+    """The `launch-routine` capability: the routine (trigger) id plus the bearer that
+    authorizes firing it. Both come from the deployment env / `haku-routine-launch-token`
+    secret; set together or not at all (the capability is disabled when unset). Only the
+    token is secret, and it lives only in the haku-console namespace — Haku can't read
+    it. The fire and page URLs are derived from the id."""
 
-    url: str
+    routine_id: str
     token: SecretStr
+
+    @property
+    def fire_url(self) -> str:
+        return _FIRE_URL.format(id=self.routine_id)
+
+    @property
+    def page_url(self) -> str:
+        return _PAGE_URL.format(id=self.routine_id)
 
 
 class Settings(BaseSettings):
-    # env_nested_delimiter so launch_routine.{url,token} read from
-    # HAKU_CONSOLE_LAUNCH_ROUTINE__URL / __TOKEN.
+    # env_nested_delimiter so launch_routine.{routine_id,token} read from
+    # HAKU_CONSOLE_LAUNCH_ROUTINE__{ROUTINE_ID,TOKEN}.
     model_config = SettingsConfigDict(env_prefix="HAKU_CONSOLE_", env_nested_delimiter="__")
 
     # haku-state git access. The repo_url is the cluster-internal plaintext-HTTP

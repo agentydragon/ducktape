@@ -84,7 +84,10 @@ def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
             clicks = await asyncio.to_thread(git_state.read_clicks)
         scan_time = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d %H:%M UTC")
         clicked = [Click(item_id=item_id, action_id=action_id) for item_id, action_id in sorted(clicks)]
-        return DashboardResponse(scan_time=scan_time, items=items, clicks=clicked)
+        launch = settings.launch_routine
+        return DashboardResponse(
+            scan_time=scan_time, items=items, clicks=clicked, launch_routine_url=launch.page_url if launch else None
+        )
 
     app.include_router(trace.router)
     app.include_router(capabilities.router)

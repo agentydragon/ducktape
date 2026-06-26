@@ -99,6 +99,11 @@ class DashboardResponse(BaseModel):
     scan_time: str
     items: list[Item]
     clicks: list[Click]
+    # The launch-routine's claude.ai/code page, surfaced as a "view past runs" deep-link
+    # (there's no runs-listing API). None when the launch capability isn't configured.
+    # This is a benign public link — the privileged launch action stays on the
+    # capability tier (see haku.console.capabilities).
+    launch_routine_url: str | None = None
 
 
 class FeedbackRequest(BaseModel):

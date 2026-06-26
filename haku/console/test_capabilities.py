@@ -18,7 +18,9 @@ from pydantic import SecretStr
 from haku.console.app import create_app
 from haku.console.config import LaunchRoutineConfig
 
-FIRE_URL = "https://fire.test.example/routines/trig_test/fire"
+ROUTINE_ID = "trig_test"
+FIRE_URL = f"https://api.anthropic.com/v1/claude_code/routines/{ROUTINE_ID}/fire"
+PAGE_URL = f"https://claude.ai/code/routines/{ROUTINE_ID}"
 
 
 @pytest.fixture
@@ -26,12 +28,22 @@ def cap_client(seeded) -> Iterator[TestClient]:
     """Console app with the launch-routine capability configured (over the seeded remote)."""
     settings = seeded.settings.model_copy(
         update={
-            "launch_routine": LaunchRoutineConfig(url=FIRE_URL, token=SecretStr("sk-test-token")),
+            "launch_routine": LaunchRoutineConfig(routine_id=ROUTINE_ID, token=SecretStr("sk-test-token")),
             "csrf_secret": SecretStr("test-csrf-secret"),
         }
     )
     with TestClient(create_app(settings, git_state=seeded.git_state)) as c:
         yield c
+
+
+def test_dashboard_surfaces_routine_page_url(cap_client) -> None:
+    # The routine deep-link (built from the id) reaches the SPA via the dashboard read.
+    assert cap_client.get("/api/dashboard").json()["launch_routine_url"] == PAGE_URL
+
+
+def test_dashboard_routine_url_none_when_unconfigured(client) -> None:
+    # The `client` fixture has no launch_routine configured.
+    assert client.get("/api/dashboard").json()["launch_routine_url"] is None
 
 
 def _csrf(client: TestClient) -> str:

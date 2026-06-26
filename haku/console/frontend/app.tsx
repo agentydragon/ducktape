@@ -79,7 +79,7 @@ export default function App() {
     <div className="mx-auto max-w-3xl px-4 py-8">
       <Group justify="space-between" align="center">
         <Title order={1}>Haku</Title>
-        <LaunchRoutineButton />
+        <LaunchRoutineButton routineUrl={data.launch_routine_url} />
       </Group>
       <Text c="dimmed" mb="lg">
         Your value-ranked backlog ·{" "}

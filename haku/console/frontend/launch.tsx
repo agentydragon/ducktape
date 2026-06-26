@@ -10,8 +10,9 @@ type State = { status: "idle" } | { status: "confirming" } | { status: "launchin
 // confirm copy live in the trusted bundle (never agent-authored), so a genuine operator
 // gesture against trusted-rendered text is what fires the capability — agent UI can at
 // most ask for it, never script or spoof it. The CSRF + server-side bearer live in the
-// backend (see haku/console/capabilities.py). Outcomes surface as toasts.
-export function LaunchRoutineButton() {
+// backend (see haku/console/capabilities.py). Outcomes surface as toasts. routineUrl, when
+// set, deep-links to the routine's claude.ai/code page to review past runs (no listing API).
+export function LaunchRoutineButton({ routineUrl }: { routineUrl?: string | null }) {
   const [state, setState] = useState<State>({ status: "idle" });
   const launching = state.status === "launching";
 
@@ -35,15 +36,22 @@ export function LaunchRoutineButton() {
 
   return (
     <>
-      <Button
-        variant="light"
-        color="indigo"
-        size="xs"
-        loading={launching}
-        onClick={() => setState({ status: "confirming" })}
-      >
-        {state.status === "launched" ? "Launched ✓" : "Launch Haku run"}
-      </Button>
+      <Group gap="sm">
+        <Button
+          variant="light"
+          color="indigo"
+          size="xs"
+          loading={launching}
+          onClick={() => setState({ status: "confirming" })}
+        >
+          {state.status === "launched" ? "Launched ✓" : "Launch Haku run"}
+        </Button>
+        {routineUrl && (
+          <Anchor href={routineUrl} target="_blank" rel="noreferrer" size="xs" c="dimmed">
+            View runs ↗
+          </Anchor>
+        )}
+      </Group>
 
       <Modal
         opened={state.status === "confirming" || launching}
