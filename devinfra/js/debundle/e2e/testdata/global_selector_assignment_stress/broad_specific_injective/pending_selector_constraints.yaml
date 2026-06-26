@@ -1,0 +1,55 @@
+# Pending contract for a future global-selector backend benchmark.
+#
+# This is deliberately not current debundle spec YAML. It records the intended
+# constraint model for the harness that will compare SelectorConstraintModel
+# backends without carrying private bundle source.
+status: pending-selector-backend-harness
+source: source.js
+targets:
+  specific_slots:
+    export_prefix: Route
+    runtime_prefix: route
+    slot_range: [0, 10]
+    identifiers: alpha_all
+    selector_template: |
+      export function targetRoute(arg) {
+        const first = sharedRead(arg, "user");
+        const second = sharedRuntime.normalize(first);
+        return sharedRuntime.emit("route", commonWrap("common", second), "slot-{index:02}");
+      }
+    expected_runtime_template: "route{index:02}"
+  broad_remainder:
+    export_name: RouteRemainder
+    identifiers: alpha_all
+    selector: |
+      export function targetRoute(arg) {
+        const first = sharedRead(arg, "user");
+        const second = sharedRuntime.normalize(first);
+        return sharedRuntime.emit("route", commonWrap("common", second), ANYTHING);
+      }
+    broad_domain_size: 12
+    expected_runtime_after_all_different: route11
+constraints:
+  all_different:
+    - Route00
+    - Route01
+    - Route02
+    - Route03
+    - Route04
+    - Route05
+    - Route06
+    - Route07
+    - Route08
+    - Route09
+    - Route10
+    - RouteRemainder
+expected:
+  specific_unique_claims: 11
+  broad_claim_without_all_different: ambiguous
+  broad_claim_with_all_different: route11
+measure:
+  - total wall time
+  - backend solve time
+  - assignment row count or equivalent candidate tuple count
+  - peak memory
+  - per-target outcome counts
