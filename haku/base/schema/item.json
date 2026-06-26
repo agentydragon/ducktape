@@ -4,7 +4,7 @@
   "title": "Haku item",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "dedup_key", "title", "body", "value", "action", "status"],
+  "required": ["id", "dedup_key", "title", "body", "value", "status"],
   "properties": {
     "id": {
       "type": "string",

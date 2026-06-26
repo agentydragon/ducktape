@@ -9,10 +9,11 @@ export function clickKey(itemId: string, actionId: string): string {
   return `${itemId} ${actionId}`;
 }
 
-// (href, label) for an item's primary action button.
+// (href, label) for an item's primary action button. `action` is optional — a pure
+// FYI item has none, in which case we just link to the item source.
 function primaryDeeplink(item: Item): [string, string] {
   const action = item.action;
-  if (action.kind === "prepared_prompt") {
+  if (action?.kind === "prepared_prompt") {
     const encoded = encodeURIComponent(action.prompt);
     if (encoded.length <= MAX_DEEPLINK) return [CLAUDE_NEW + encoded, "Hand to Claude →"];
   }
@@ -82,9 +83,11 @@ export function TaskCard({ item, clicked, onToggle }: TaskProps) {
               ⏳ {deadline}
             </Badge>
           )}
-          <Badge color="gray" variant="light" size="sm">
-            {item.action.kind}
-          </Badge>
+          {item.action && (
+            <Badge color="gray" variant="light" size="sm">
+              {item.action.kind}
+            </Badge>
+          )}
         </span>
       </summary>
       <div className="flex flex-col gap-3 py-2 pl-5">

@@ -458,7 +458,8 @@ no urgency. A big payoff that demands a lot of operator effort ranks **below** a
 small one they can approve in seconds. Calibrate against rejection feedback over
 time.
 
-Action kinds (only these two):
+Action kinds (only these two; `action` itself is **optional** — omit it for a pure
+FYI item with no primary button):
 
 - `suggestion` — FYI / "do this yourself"; no machine payload.
 - `prepared_prompt` — the workhorse, for anything worth handing to an agent with

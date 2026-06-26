@@ -29,7 +29,7 @@ class ItemStatus(StrEnum):
     EXPIRED = "expired"
 
 
-# --- primary action (item.action, required) ----------------------------------
+# --- primary action (item.action, optional) -----------------------------------
 
 
 class Suggestion(BaseModel):
@@ -79,7 +79,8 @@ class Item(BaseModel):
     title: str
     body: str
     value: int
-    action: PrimaryAction
+    # Optional for now: an item may be a pure FYI with no primary action button.
+    action: PrimaryAction | None = None
     status: ItemStatus
     deadline: datetime | None = None
     actions: list[OperatorAction] = Field(default_factory=list)
