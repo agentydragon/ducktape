@@ -726,17 +726,17 @@ This is the detailed P0 queue; <../TODO.md> should only summarize it.
   equality/disequality constraints, and native `all_different` where the
   selector semantics require injectivity. Do not clone `MatcherState` or add a
   procedural alpha resolver.
-- **G2 — exact-assignment backend spike.** Implement enough of
-  `SelectorConstraintModel` plus the exact backend to solve one hard
-  global-selector case with semantic `all_different`. Sequence this as:
-  first land the backend-neutral model boundary; next unblock and prove the
-  OR-Tools CP-SAT sidecar under RBE with a tiny finite-domain / `all_different`
-  / table-constraint target; then solve the anonymized broad-vs-specific
-  fixture. Private-corpus runs are optional smoke evidence, not checked-in
-  fixtures or the primary acceptance gate. If the OR-Tools Bzlmod conflict or
-  native dependency surface remains too expensive, perform the same spike
-  through RustSAT + CaDiCaL/Kissat. The acceptance bar is measured runtime and
-  matching semantics, not a nicer hand-written scheduler.
+- **G2 — exact-assignment backend spike.** The backend-neutral
+  `SelectorConstraintModel`, backend problem contract, backend solver adapter,
+  and OR-Tools CP-SAT dependency smoke test are landed. The remaining spike is
+  to make CP-SAT consume the backend problem through a maintained sidecar wire
+  format, return target-support-complete assignments, and solve the anonymized
+  broad-vs-specific fixture with semantic `all_different`. Private-corpus runs
+  are optional smoke evidence, not checked-in fixtures or the primary
+  acceptance gate. If the OR-Tools native path becomes too expensive after this
+  wire contract, encode the same `SelectorConstraintModel` through RustSAT +
+  CaDiCaL/Kissat. The acceptance bar is measured runtime and matching
+  semantics, not a nicer hand-written scheduler.
 - **G3 — retained hole and predicate lowering.** Lower today's retained
   JS-with-holes selectors and binding groups into native AST/owner IR atoms:
   simple existential holes, regex string predicates, run-hole placement

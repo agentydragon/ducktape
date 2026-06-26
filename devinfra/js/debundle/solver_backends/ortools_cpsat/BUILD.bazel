@@ -1,0 +1,55 @@
+load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+COPTS = ["-std=c++23"]
+
+proto_library(
+    name = "selector_cp_sat_proto",
+    srcs = ["selector_cp_sat.proto"],
+)
+
+cc_proto_library(
+    name = "selector_cp_sat_cc_proto",
+    deps = [":selector_cp_sat_proto"],
+)
+
+cc_library(
+    name = "solver",
+    srcs = ["solver.cc"],
+    hdrs = ["solver.h"],
+    copts = COPTS,
+    deps = [
+        ":selector_cp_sat_cc_proto",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@or-tools//ortools/sat:cp_model",
+        "@or-tools//ortools/sat:cp_model_solver",
+    ],
+)
+
+cc_binary(
+    name = "selector_cpsat_solver",
+    srcs = ["main.cc"],
+    copts = COPTS,
+    deps = [
+        ":selector_cp_sat_cc_proto",
+        ":solver",
+        "@abseil-cpp//absl/log:check",
+    ],
+)
+
+cc_test(
+    name = "solver_test",
+    srcs = ["solver_test.cc"],
+    copts = COPTS,
+    deps = [
+        ":selector_cp_sat_cc_proto",
+        ":solver",
+        "@abseil-cpp//absl/log:check",
+        "@protobuf",
+    ],
+)

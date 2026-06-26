@@ -118,19 +118,17 @@ propose`.
 Detailed design and gates live in <plans/selector_constraint_model.md>; keep
 this list as the dispatch summary, not a second plan.
 
-1. **Carve the exact-assignment backend boundary.** Materialize a
-   `SelectorConstraintModel` from `SelectorProgram` + facts, with typed finite
-   domains, allowed tuples, target projections, and semantic `all_different`.
-   Ascent may stay on the fact/table side; the exact target assignment must be
-   owned by OR-Tools CP-SAT or a measured SAT fallback, not by
-   `AssignmentRow` enumeration.
-2. **Unblock the solver dependency path before wiring it into production.**
-   OR-Tools CP-SAT remains the target backend, but the first sidecar spike hit a
-   Bzlmod conflict: `or-tools@9.15` pulls `pybind11_abseil`, whose dev-only pip
-   hub is also named `pypi`. Resolve that as a dependency-only slice, prove a
-   tiny CP-SAT target under RBE, and only then wire selector solving to it. If
-   that integration stays too expensive, encode the same
-   `SelectorConstraintModel` through the RustSAT + CaDiCaL/Kissat fallback.
+1. **Wire the exact-assignment backend.** The backend-neutral
+   `SelectorConstraintModel`, backend problem contract, and backend solver
+   adapter are landed, and OR-Tools CP-SAT now builds under RBE with
+   `all_different`/table-constraint smoke coverage. Next, convert the typed
+   Rust backend problem into the CP-SAT sidecar wire format, run it through the
+   backend adapter, and make the anonymized broad-vs-specific fixture resolve
+   through CP-SAT rather than `AssignmentRow` enumeration.
+2. **Keep Ascent on fact/table derivation, not exact assignment.** Ascent may
+   continue deriving relation support and allowed tuples, but exact target
+   assignment must be owned by OR-Tools CP-SAT or a measured SAT fallback with
+   semantic `all_different`.
 3. **Lower alpha-all declaratively.** Represent selector-local identifier
    bindings/references as variables and constraints over facts, including
    equality, disequality / `all_different`, and scope. This is the blocker for

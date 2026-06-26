@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package ducktape.debundle.solver_backends.ortools_cpsat;
+
+message SelectorCpSatRequest {
+  repeated Variable variables = 1;
+  repeated TableConstraint allowed_tables = 2;
+  repeated BinaryConstraint binary_constraints = 3;
+  repeated AllDifferent all_different = 4;
+  repeated TargetProjection target_projections = 5;
+}
+
+message Variable {
+  uint32 id = 1;
+  repeated int64 values = 2;
+  string debug_name = 3;
+}
+
+message TableConstraint {
+  uint32 id = 1;
+  repeated uint32 variable_ids = 2;
+  repeated Tuple allowed_rows = 3;
+}
+
+message Tuple {
+  repeated int64 values = 1;
+}
+
+message BinaryConstraint {
+  uint32 left_variable_id = 1;
+  uint32 right_variable_id = 2;
+  BinaryConstraintKind kind = 3;
+}
+
+enum BinaryConstraintKind {
+  BINARY_CONSTRAINT_KIND_UNSPECIFIED = 0;
+  BINARY_CONSTRAINT_KIND_EQUAL = 1;
+  BINARY_CONSTRAINT_KIND_NOT_EQUAL = 2;
+  BINARY_CONSTRAINT_KIND_ORDINAL_BEFORE = 3;
+}
+
+message AllDifferent {
+  uint32 id = 1;
+  repeated uint32 variable_ids = 2;
+}
+
+message TargetProjection {
+  uint32 target_id = 1;
+  uint32 owner_variable_id = 2;
+  bool has_binding_variable = 3;
+  uint32 binding_variable_id = 4;
+}
+
+message SelectorCpSatResponse {
+  SolverStatus status = 1;
+  AssignmentCoverage assignment_coverage = 2;
+  repeated AssignmentRow assignments = 3;
+  string diagnostic = 4;
+}
+
+enum SolverStatus {
+  SOLVER_STATUS_UNSPECIFIED = 0;
+  SOLVER_STATUS_SATISFIABLE = 1;
+  SOLVER_STATUS_UNSATISFIABLE = 2;
+  SOLVER_STATUS_AMBIGUOUS = 3;
+  SOLVER_STATUS_INVALID = 4;
+  SOLVER_STATUS_UNKNOWN = 5;
+}
+
+enum AssignmentCoverage {
+  ASSIGNMENT_COVERAGE_UNSPECIFIED = 0;
+  ASSIGNMENT_COVERAGE_SAMPLE = 1;
+  ASSIGNMENT_COVERAGE_TARGET_SUPPORT_COMPLETE = 2;
+}
+
+message AssignmentRow {
+  repeated Assignment values = 1;
+}
+
+message Assignment {
+  uint32 variable_id = 1;
+  int64 value = 2;
+}
