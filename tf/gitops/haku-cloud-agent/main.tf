@@ -58,6 +58,11 @@ resource "claude-managed-agents_agent" "haku_cloud" {
     expiring, or shopping-list-worthy. Writes are rejected server-side (403) —
     never try to mutate stock.
 
+    You have READ-ONLY access to the operator's Tana knowledge base via the
+    `tana-ro` MCP server (search_nodes, read_node, get_children, list_tags, …).
+    Use it to look things up in Tana. Write tools are not exposed; never attempt
+    to edit, move, or create Tana nodes.
+
     IMPORTANT (v0 bring-up): your operating manual and run procedure are not wired
     yet. Do exactly what each user message asks, then stop.
   EOT
@@ -76,6 +81,14 @@ resource "claude-managed-agents_agent" "haku_cloud" {
       type = "url"
       name = "grocy-sf"
       url  = "https://grocy-mcp-sf.allegedly.works/mcp"
+    },
+    # Read-only Tana facade (mcp-oauth-facade, tana-mcp-ro): exposes only read
+    # tools (search_nodes/read_node/get_children/…); the Tana PAT is injected
+    # server-side and every write tool is hidden. Bearer-gated by haku_tana_ro.
+    {
+      type = "url"
+      name = "tana-ro"
+      url  = "https://tana-mcp-ro.allegedly.works/mcp"
     },
   ]
 
@@ -103,6 +116,15 @@ resource "claude-managed-agents_agent" "haku_cloud" {
     {
       type            = "mcp_toolset"
       mcp_server_name = "grocy-sf"
+      default_config = {
+        permission_policy = { type = "always_allow" }
+      }
+    },
+    # tana-ro toolset — read-only by construction: the facade exposes only the
+    # read allowlist and rejects every write tool, so always_allow is safe.
+    {
+      type            = "mcp_toolset"
+      mcp_server_name = "tana-ro"
       default_config = {
         permission_policy = { type = "always_allow" }
       }
@@ -166,6 +188,34 @@ resource "claude-managed-agents_vault_credential" "haku_grocy" {
     mcp_server_url   = "https://grocy-mcp-sf.allegedly.works/mcp"
     token            = data.kubernetes_secret_v1.grocy_token.data["jwt"]
     token_wo_version = tonumber(data.kubernetes_secret_v1.grocy_token.data["token-exp"])
+  }
+}
+
+# The tana-mcp-ro facade's static client bearer, read straight from its owning
+# namespace (tana-mcp/haku-tana-ro-token, key "token") — the tf-runner has
+# cluster-wide secret read, so no reflected copy is needed. This is the same
+# Secret the facade itself validates (MCP_FACADE_CLIENT_AUTH__STATIC_BEARER) and
+# that reflector mirrors to haku-sandbox for the self-hosted worker.
+data "kubernetes_secret_v1" "tana_ro_token" {
+  metadata {
+    name      = "haku-tana-ro-token"
+    namespace = "tana-mcp"
+  }
+}
+
+# Read-only Tana bearer, bound to the tana-mcp-ro URL. The token is static (no
+# exp), so token_wo_version is derived from its content hash: a re-mint changes
+# the digest and re-sends, a no-op apply keeps it stable. (12 hex digits stays
+# within float64's safe-integer range.)
+resource "claude-managed-agents_vault_credential" "haku_tana_ro" {
+  vault_id     = claude-managed-agents_vault.haku_cloud.id
+  display_name = "haku tana bearer (read-only, tana-mcp-ro facade)"
+
+  auth = {
+    type             = "static_bearer"
+    mcp_server_url   = "https://tana-mcp-ro.allegedly.works/mcp"
+    token            = data.kubernetes_secret_v1.tana_ro_token.data["token"]
+    token_wo_version = parseint(substr(sha256(data.kubernetes_secret_v1.tana_ro_token.data["token"]), 0, 12), 16)
   }
 }
 
