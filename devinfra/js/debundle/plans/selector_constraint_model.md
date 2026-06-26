@@ -523,12 +523,12 @@ The current `source_match` hole vocabulary maps four ways; only the first is a t
   **T-variant**. Permitted only via the `where:` escape hatch and flagged by
   `selector-debt` — a stabilization target, not a default.
 
-Legacy `target_statement`, `target_statements`, and `wildcard_string_literals`
-are not current Tana/Gaffer requirements. Do not nativeize them by default:
-verify downstream absence, remove the authoring surface, and keep only a
-documented migration path if another consumer proves it needs them. For
-anonymous side effects, prefer one distinguished target per selector/query
-instead of an index into nearby context.
+Legacy `target_statement`, `target_statements`, and authored
+`wildcard_string_literals` are not current Tana/Gaffer requirements. Their
+public authoring surfaces have been removed, so do not re-nativeize them by
+default; keep only a documented migration path if another consumer proves it
+needs them. For anonymous side effects, prefer one distinguished target per
+selector/query instead of an index into nearby context.
 
 So in the clean native form the surviving holes are exactly the existence qualifiers;
 regex becomes a first-class CQ construct, and order/position is
@@ -746,15 +746,14 @@ This is the detailed P0 queue; <../TODO.md> should only summarize it.
   compiles faithfully or reports `unsupported`.
 - **G4 — source-match surface pruning.** Remove unused authoring options before
   nativeizing them. Current Gaffer/Tana census shows no use of
-  `target_statement`, `target_statements`, or `wildcard_string_literals`; verify
-  absence in a focused branch, delete the YAML/code/docs surface, and slate any
-  other vestigial debundle features that gaffer-private does not use for
-  removal rather than carrying them into the query model. Current safe cleanup
-  queue: `wildcard_string_literals`, `match-selector --identifiers`, and old
-  `STATEMENT_*` compatibility spellings if any remain in tests/docs. Defer
-  `identifiers: alpha_all`, exact anonymous `match`, readability labels, and
-  top-level `STMT_LIST` cleanup until either gaffer-private is migrated or the
-  single-resolution backend owns the retained forms.
+  `target_statement`, `target_statements`, or authored
+  `wildcard_string_literals`; those public surfaces plus the single-choice
+  `match-selector --identifiers` CLI flag have been removed. Slate any other
+  vestigial debundle features that gaffer-private does not use for removal
+  rather than carrying them into the query model. Defer the alpha-all identifier
+  mode, exact anonymous `match`, readability labels, and top-level `STMT_LIST`
+  cleanup until either gaffer-private is migrated or the single-resolution
+  backend owns the retained forms.
 - **G5 — tooling semantics cutover.** Move `match_selector`, selector codemods,
   synthesis, and repair/prove gates onto solver-backed selector semantics so
   authoring tools and production materialization do not drift. No-match,
@@ -807,8 +806,8 @@ The 2026-06-23 current-spec census found 5,583 `source_match` blocks across
 `identifiers: alpha_all`. The largest native-lowering blockers are hole forms:
 `ANYTHING`, `STMT_LIST`, `DECLARATORS`, `OBJECT_PROPS`, regex literal
 predicates, class-rest, and args/array-element runs. It found no uses of
-`target_statement`, `target_statements`, or `wildcard_string_literals`, so those
-are removal candidates, not P0 solver work.
+`target_statement`, `target_statements`, or authored
+`wildcard_string_literals`, so those are not P0 solver work.
 
 Use these as language/synthesis requirements for G5, not as independent
 resolver architecture:
@@ -829,18 +828,10 @@ resolver architecture:
 ## Cleanup Dispatch Queue
 
 Do not preserve old matcher conveniences merely because they exist today. The
-safe early cleanup queue is:
+safe early cleanup queue now starts with tooling-only conveniences:
 
-- remove or hide `source_match.wildcard_string_literals`;
-- remove `debundle spec match-selector --identifiers`, since the public flag is
-  single-choice and gaffer-private does not call it;
-- drop obsolete `STATEMENT_*` compatibility spelling if any tests/docs still
-  mention it.
-
-Likely cleanup after a focused branch or solver-backed replacement:
-
-- trim `selector-codemod --no-minimize` / `--full-ast-fallback` exact-body
-  knobs;
+- remove `selector-codemod --no-minimize` / `--full-ast-fallback`; the current
+  Gaffer workflow census found no downstream callers;
 - narrow source-aware `selector-debt` near-match options;
 - replace generic `NoMatch` fallback text, empty `nearest_candidates`, fact
   near-miss scoring, `match-selector` slack relaxation, legacy source-match

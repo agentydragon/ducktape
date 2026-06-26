@@ -59,8 +59,10 @@ Dispatch work in this order:
 4. **Source-match surface pruning (P0.3).** Remove legacy `source_match`
    options that no current downstream spec uses before nativeization hardens
    them into the new IR. `target_statement` / `target_statements` have been
-   removed; the remaining gaffer-private census follow-up is
-   `wildcard_string_literals`.
+   removed, and `wildcard_string_literals` plus the single-choice
+   `match-selector --identifiers` CLI flag are no longer public authoring
+   surfaces. Remaining pruning should target tooling-only conveniences, not
+   selector semantics that Gaffer still needs.
 5. **Derived relational predicates (P0.4).** Fold the remaining bridge
    vocabulary (`cross_ref`, `reads_member`, `member_of_module`,
    `passed_to_call`, `makes_decorate_call`, `intrinsic_alias`) into IR atoms or
@@ -138,14 +140,15 @@ this list as the dispatch summary, not a second plan.
    and regex string predicates, then add ordered run-hole placement for the
    high-volume families (`STMT_LIST`, `DECLARATORS`, `OBJECT_PROPS`). Each
    lowering must be faithful or fail closed.
-5. **Prune unused source-match/options before nativeizing them.** Safe cleanup
-   candidates from the current Ducktape/Gaffer census: remove or hide
-   `source_match.wildcard_string_literals`, remove the single-choice
-   `match-selector --identifiers` flag, and avoid preserving old
-   `STATEMENT_*` compatibility names. Likely follow-ups: trim
-   `selector-codemod` exact-body fallback knobs and source-aware
-   `selector-debt` debug options once their solver-backed replacements are
-   scoped.
+5. **Prune unused tooling options before nativeizing them.** The current
+   Ducktape/Gaffer census no longer has public `wildcard_string_literals`,
+   `target_statement`, `target_statements`, or `match-selector --identifiers`
+   surfaces to carry forward. The next safe tooling cleanup is removing the
+   `selector-codemod` exact-body fallback knobs; current Gaffer workflows do
+   not call them. Source-aware `selector-debt` debug options should be trimmed
+   once their solver-backed replacements are scoped. The retained `EXPR_*` /
+   `STMT_*` / `STMT_LIST_*` forms are readability labels and run holes, not old
+   `STATEMENT_*` compatibility spellings.
 6. **Fold bridge vocabulary into derived predicates.** Re-express the staged
    relational selectors as solver predicates over owner/reference + AST facts.
    Real-spec Gaffer work should supply missing predicates and diagnostics, not
