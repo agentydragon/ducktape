@@ -213,9 +213,9 @@ WaitMode = Annotated[BlockingWait | YieldAfterMs, Field(discriminator="mode")]
 
 
 class ConnectedOAuthStatus(BaseModel):
-    state: Literal["connected"] = "connected"
-    expires_at: datetime
-    scope: str
+    state: Literal["connected"] = Field(default="connected", description="Provider has a valid stored access token")
+    expires_at: datetime = Field(description="Access token expiry timestamp")
+    scope: str = Field(description="Provider-granted scope string stored with the access token")
 
     model_config = ConfigDict(extra="forbid")
 
@@ -227,9 +227,9 @@ class ExpiredOAuthStatus(BaseModel):
     (e.g. the refresh token was revoked). Re-authorization is required.
     """
 
-    state: Literal["expired"] = "expired"
-    expires_at: datetime
-    scope: str
+    state: Literal["expired"] = Field(default="expired", description="Stored access token has expired")
+    expires_at: datetime = Field(description="Expired access token timestamp")
+    scope: str = Field(description="Provider-granted scope string stored with the expired token")
     last_refresh_error: str | None = Field(
         default=None, description="Most recent error from the background refresh loop, if any."
     )
@@ -238,7 +238,7 @@ class ExpiredOAuthStatus(BaseModel):
 
 
 class DisconnectedOAuthStatus(BaseModel):
-    state: Literal["disconnected"] = "disconnected"
+    state: Literal["disconnected"] = Field(default="disconnected", description="Provider has no stored token")
 
     model_config = ConfigDict(extra="forbid")
 
@@ -268,7 +268,7 @@ class OAuthProviderStatus(BaseModel):
             "connected token to surface scope drift (re-auth required)."
         )
     )
-    status: OAuthConnectionStatus
+    status: OAuthConnectionStatus = Field(description="Current token connection state for this provider")
 
     model_config = ConfigDict(extra="forbid")
 
