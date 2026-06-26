@@ -143,12 +143,14 @@ Still to build:
   surfaces and we build the panel, adopt the `anthropic` Python SDK (it auto-sends
   `anthropic-version` — the omission that 502'd the bare-`httpx` fire — plus bearer auth,
   typed errors, retries) and migrate the launch POST onto it then.
-- **Free-form UI (1b, the destination).** Haku runs its own UI service in `haku-sandbox`
-  and the console embeds it in a cross-origin iframe, never rendering it itself; a minimal
-  `postMessage` bridge carries only capability requests + `openLink`. **North star:** even
-  the item model + UI + build move into agent-owned `haku-state`; the shell keeps only the
-  boundary. Full design, containment invariants, and implementation order:
-  <console/plans/free_form_ui_iframe.md>.
+- **Free-form UI (1b).** Foundation shipped (2026-06-26): Haku runs its own UI service in
+  `haku-sandbox` (reconciled from its `haku-state` `k8s/` under a constrained SA) and the
+  console embeds it as a sandboxed cross-origin iframe — the **Free-form UI** tab — never
+  rendering it itself. Still ahead: Haku replaces the placeholder with a real UI on its own
+  backend; the shell gains a minimal `postMessage` bridge (`requestCapability` + a top-layer
+  confirm, then `openLink`). **North star:** even the item model + UI + build move into
+  agent-owned `haku-state`; the shell keeps only the boundary. Full design, containment
+  invariants, and remaining order: <console/plans/free_form_ui_iframe.md>.
 
 ## Open questions
 

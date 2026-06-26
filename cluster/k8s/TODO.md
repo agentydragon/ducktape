@@ -142,20 +142,18 @@ Options to consider:
       Python image pattern with `pygit2` and certifi/CA-certs, matching the
       other pygit2-based images, and remove the extra package cruft.
 
-## Gateway: restrict `cluster-gateway` `allowedRoutes` (no agent self-exposure)
+## Gateway: `allowedRoutes` Selector (belt-and-suspenders; deferred)
 
-The hole: `cluster/k8s/gateway/gateway.yaml` listeners are all `allowedRoutes:
-namespaces: from: All`, so an HTTPRoute in **any** namespace can attach to the public
-gateway and bypass Authentik. Not currently exploitable — `haku-sandbox-admin` /
-`claude-sandbox-admin` omit `httproutes`/`gateways` — but a latent hole the
-agent-authored Haku UI (`haku/console/plans/free_form_ui_iframe.md`) relies on staying
-closed (its UI must reach the operator only via the Authentik route).
+Agent self-exposure — an HTTPRoute in any namespace attaching to the public gateway and
+bypassing Authentik (`cluster/k8s/gateway/gateway.yaml` listeners are all `allowedRoutes:
+namespaces: from: All`) — is **already fenced**: the `restrict-agent-gateway-routes`
+Kyverno ClusterPolicy denies route/Gateway creation in the agent namespaces, and
+`haku-sandbox-admin`/`claude-sandbox-admin` omit `httproutes`/`gateways` anyway. So the
+hole the agent-authored Haku UI (`haku/console/plans/free_form_ui_iframe.md`) relies on
+staying closed is closed. What's left is the gateway-layer belt-and-suspenders:
 
-- [x] **Mitigated (Kyverno denylist).** `restrict-agent-gateway-routes` ClusterPolicy
-      denies route/Gateway creation in the agent namespaces — closes the hole without
-      touching the live gateway. This is the current fence.
-- [ ] **Still want the `allowedRoutes` Selector eventually** (belt-and-suspenders at
-      the gateway layer itself, not only via a per-namespace deny). Deferred because:
+- [ ] **Still want the `allowedRoutes` Selector eventually** (at the gateway layer
+      itself, not only via a per-namespace deny). Deferred because:
       (a) Cilium bug #42159 — per-listener `allowedRoutes` bleeds across listeners in
       this setup (see `cluster/docs/plan.md`); (b) the kube-API routes live in the
       built-in `default` namespace (and a flux-system route) with no in-repo `Namespace`

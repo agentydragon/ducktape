@@ -63,6 +63,16 @@ so Haku evolves _what_ the dashboard shows without an image rebuild. The _look_ 
 in the bundle (a frontend rebuild changes it) — unlike the old server-rendered console,
 whose page/CSS templates could be overridden from the clone.
 
+## Free-form UI — Haku's own UI, embedded
+
+A **Free-form UI** tab embeds Haku's own UI service (`haku-ui.allegedly.works`, a separate
+Authentik-gated app Haku runs in `haku-sandbox`) as a **sandboxed cross-origin iframe** — the
+console never renders or even sees it. `HAKU_CONSOLE_HAKU_UI_URL` enables it; when set, the
+dashboard exposes the tab and the response CSP adds `frame-src` for that origin (and only it).
+Containment is cross-origin isolation: the iframe can't read the console's DOM/cookies or act
+as it — so Haku's UI can't act as the console. This is the first step of the agent-authored-UI
+direction; roadmap + boundary doctrine: `console/plans/free_form_ui_iframe.md`.
+
 ## Layout
 
 | Path               | Role                                                                                                                                                                                                                           |
