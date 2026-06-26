@@ -201,13 +201,18 @@ Two tiers the console treats completely differently:
   calls (it auto-sends the `anthropic-version` header — the omission that 502'd the
   bare-`httpx` fire call — plus `auth_token` bearer, typed errors, and retries) and
   migrate the `launch-routine` POST onto it at the same time.
-- **Phase 2 — free-form (1b, the destination).** Haku writes TSX/JS into `haku-state`; the
-  untrusted render origin transpiles it **at runtime** (never compiled into the trusted
-  bundle) and runs it in a **sandboxed cross-origin iframe** (`sandbox` without
-  `allow-same-origin`, strict CSP). It reaches the outside only via a `postMessage` bridge
-  to the shell, which exposes **only the trace tier**; capabilities stay shell-owned. The
-  widget schema becomes "the bridge API, declaratively"; free-form TSX is "the bridge API,
-  imperatively" — same boundary, two front-ends.
+- **Phase 1b — free-form (the destination).** Haku runs **its own UI service** in
+  `haku-sandbox` (its Deployment, its choice of runtime, app code from `haku-state`, no
+  image build) and the console **embeds it in a cross-origin same-site iframe** — the
+  console never renders or even sees Haku's UI. The trusted shell shrinks to: hold the
+  bearer, own privileged actions, and frame the UI. Data + operator intent go straight to
+  Haku's own backend (it has the `haku-state` creds); a minimal `postMessage` bridge
+  carries only **capability requests** (shell still confirms + fires). Containment rests on
+  cross-origin isolation (the bearer is unreachable from any browser context), Haku's UI
+  being reachable **only** via the operator-owned **Authentik-gated** route (no public
+  exposure), and the agent being unable to create public routes (its RBAC allowlist omits
+  `httproutes`; harden the `from: All` gateway too). Full design + invariants + phasing:
+  <console/plans/free_form_ui_iframe.md>.
 
 ### Server-side compute for agent UI
 
