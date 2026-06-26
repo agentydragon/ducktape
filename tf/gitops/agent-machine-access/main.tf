@@ -946,6 +946,18 @@ resource "kubernetes_secret" "haku_client_credentials" {
 #
 # Consumer: cluster/k8s/agents/authentik-jwt-rotation/ CronJob (haku-grocy entry).
 # It mints the JWT and commits it SOPS-encrypted to secrets/haku-grocy-jwt.yaml.
+#
+# TODO(haku-grocy blocker #2): the grocy-mcp-sf provider has no
+# access_token_validity set, so it issues ~10-minute tokens — far too short for
+# the rotation model (the rotator commits a token that expires before any
+# consumer reads it; verified live, exp ≈ 599s). Before wiring runtimes, give
+# this token a long validity like haku-k8s (its provider uses hours=1080).
+# Caveat: grocy-mcp-sf is SHARED with the claude.ai user-login flow, so either
+# set access_token_validity on it directly (also lengthens user tokens) or split
+# out a dedicated grocy-mcp-haku client-credentials provider (then add its issuer
+# to the MCP's JWTVerifier list). See project memory project-haku-grocy-ro.
+# (Blocker #1 — the JWTVerifier trailing-slash issuer bug — is fixed separately
+# in mcp_infra/authentik_auth/auth.py.)
 
 resource "authentik_user" "haku_grocy" {
   username = "haku"

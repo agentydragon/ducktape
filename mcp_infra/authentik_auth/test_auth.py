@@ -110,6 +110,32 @@ def test_build_authentik_auth_uses_jwks_uri_from_discovery() -> None:
     )
 
 
+def test_build_authentik_auth_accepts_issuer_with_trailing_slash() -> None:
+    """JWTVerifier must accept the issuer both with and without a trailing slash.
+
+    Authentik's per-provider tokens carry `iss` WITH a trailing slash, but
+    `normalized_issuer()` strips it and JWTVerifier matches `iss` by exact string,
+    so the bare form alone rejects every real Authentik token. Regression: this
+    silently blocked all direct machine bearer tokens (e.g. haku → grocy MCP).
+    """
+    discovery_response = AsyncMock()
+    discovery_response.raise_for_status = lambda: discovery_response
+    discovery_response.json = lambda: {"jwks_uri": "https://auth.example.com/application/o/test/jwks/"}
+
+    with (
+        patch("mcp_infra.authentik_auth.auth.httpx.get", return_value=discovery_response),
+        patch("mcp_infra.authentik_auth.auth.OIDCProxy") as oidc_proxy_cls,
+        patch("mcp_infra.authentik_auth.auth.JWTVerifier") as jwt_verifier_cls,
+        patch("mcp_infra.authentik_auth.auth.MultiAuth"),
+    ):
+        oidc_proxy_cls.return_value.client_registration_options = AsyncMock()
+        build_authentik_auth(_config(issuer="https://auth.example.com/application/o/test/"))
+
+    issuer = jwt_verifier_cls.call_args.kwargs["issuer"]
+    assert "https://auth.example.com/application/o/test/" in issuer  # the form Authentik actually emits
+    assert "https://auth.example.com/application/o/test" in issuer
+
+
 # ── AuthentikExchangeAuth tests ───────────────────────────────────────────
 
 

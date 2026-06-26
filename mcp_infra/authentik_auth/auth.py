@@ -140,7 +140,13 @@ def build_authentik_auth(
     )
     assert proxy.client_registration_options is not None
     proxy.client_registration_options.valid_scopes = valid_scopes or DEFAULT_VALID_SCOPES
-    return MultiAuth(server=proxy, verifiers=[JWTVerifier(jwks_uri=jwks_uri, issuer=issuer)])
+    # Accept the issuer both with and without a trailing slash. `normalized_issuer()`
+    # strips the slash, but Authentik's per-provider tokens carry `iss` WITH a
+    # trailing slash and JWTVerifier compares `iss` to the configured issuer by exact
+    # string match — so the bare form alone rejects every real Authentik token. (Not
+    # caught before because claude.ai authenticates through OIDCProxy, never the
+    # JWTVerifier path; direct machine bearer tokens do.)
+    return MultiAuth(server=proxy, verifiers=[JWTVerifier(jwks_uri=jwks_uri, issuer=[issuer, issuer + "/"])])
 
 
 # ── Token exchange auth ───────────────────────────────────────────────────
