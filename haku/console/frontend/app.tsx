@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { Anchor, Group, Loader, Text, Title } from "@mantine/core";
+import { Anchor, Group, Loader, Tabs, Text, Title } from "@mantine/core";
 
 import { type DashboardResponse, type Item, clickAction, fetchDashboard, unclickAction } from "./client.ts";
 import { INTAKE_NEW, UP_NEXT } from "./constants.ts";
 import { FeedbackForm } from "./feedback.tsx";
-import { HakuUiButton } from "./haku_ui.tsx";
+import { HakuUiFrame } from "./haku_ui.tsx";
 import { LaunchRoutineButton } from "./launch.tsx";
 import { TaskCard, clickKey } from "./task.tsx";
 import { toastError } from "./toast.ts";
@@ -76,61 +76,82 @@ export default function App() {
   const upNext = open.slice(0, UP_NEXT);
   const backlog = open.slice(UP_NEXT);
 
+  // Two peer views as tabs: the trusted "Action items" dashboard, and "Free-form UI"
+  // (Haku's own UI in a sandboxed iframe — only when configured). The items column
+  // stays readable (max-w-3xl); the UI tab breaks out to full width for room.
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
-      <Group justify="space-between" align="center">
-        <Title order={1}>Haku</Title>
-        <Group>
-          <HakuUiButton uiUrl={data.haku_ui_url} />
+    <div className="px-4 py-8">
+      <div className="mx-auto max-w-3xl">
+        <Group justify="space-between" align="center">
+          <Title order={1}>Haku</Title>
           <LaunchRoutineButton routineUrl={data.launch_routine_url} />
         </Group>
-      </Group>
-      <Text c="dimmed" mb="lg">
-        Your value-ranked backlog ·{" "}
-        <Anchor href={INTAKE_NEW} c="dimmed" underline="always">
-          + Add intake note
-        </Anchor>
-      </Text>
+        <Text c="dimmed" mb="lg">
+          Your value-ranked backlog ·{" "}
+          <Anchor href={INTAKE_NEW} c="dimmed" underline="always">
+            + Add intake note
+          </Anchor>
+        </Text>
+      </div>
 
-      <Title order={2} mt="xl" mb="sm">
-        Up next
-      </Title>
-      {upNext.length > 0 ? (
-        upNext.map((item) => <TaskCard key={item.id} item={item} clicked={clicked} onToggle={onToggle} />)
-      ) : (
-        <Text>No open items.</Text>
-      )}
-      {backlog.length > 0 && (
-        <details className="my-4">
-          <summary className="cursor-pointer font-semibold">Backlog — {backlog.length} more open item(s)</summary>
-          {backlog.map((item) => (
-            <TaskCard key={item.id} item={item} clicked={clicked} onToggle={onToggle} />
-          ))}
-        </details>
-      )}
+      <Tabs defaultValue="items">
+        <div className="mx-auto max-w-3xl">
+          <Tabs.List>
+            <Tabs.Tab value="items">Action items</Tabs.Tab>
+            {data.haku_ui_url && <Tabs.Tab value="ui">Free-form UI</Tabs.Tab>}
+          </Tabs.List>
+        </div>
 
-      <section className="mt-10">
-        <Title order={2} mb="sm">
-          Note to Haku
-        </Title>
-        <FeedbackForm
-          minRows={3}
-          placeholder="Anything for Haku to fold into its next run…"
-          submitLabel="Send to Haku"
-        />
-      </section>
+        <Tabs.Panel value="items">
+          <div className="mx-auto max-w-3xl">
+            <Title order={2} mt="xl" mb="sm">
+              Up next
+            </Title>
+            {upNext.length > 0 ? (
+              upNext.map((item) => <TaskCard key={item.id} item={item} clicked={clicked} onToggle={onToggle} />)
+            ) : (
+              <Text>No open items.</Text>
+            )}
+            {backlog.length > 0 && (
+              <details className="my-4">
+                <summary className="cursor-pointer font-semibold">Backlog — {backlog.length} more open item(s)</summary>
+                {backlog.map((item) => (
+                  <TaskCard key={item.id} item={item} clicked={clicked} onToggle={onToggle} />
+                ))}
+              </details>
+            )}
 
-      <Text
-        component="footer"
-        c="dimmed"
-        size="sm"
-        mt="xl"
-        className="border-t border-slate-200 pt-4 dark:border-slate-700"
-      >
-        {open.length} open · {statusCounts(data.items)}
-        <br />
-        Last scan: {data.scan_time}
-      </Text>
+            <section className="mt-10">
+              <Title order={2} mb="sm">
+                Note to Haku
+              </Title>
+              <FeedbackForm
+                minRows={3}
+                placeholder="Anything for Haku to fold into its next run…"
+                submitLabel="Send to Haku"
+              />
+            </section>
+
+            <Text
+              component="footer"
+              c="dimmed"
+              size="sm"
+              mt="xl"
+              className="border-t border-slate-200 pt-4 dark:border-slate-700"
+            >
+              {open.length} open · {statusCounts(data.items)}
+              <br />
+              Last scan: {data.scan_time}
+            </Text>
+          </div>
+        </Tabs.Panel>
+
+        {data.haku_ui_url && (
+          <Tabs.Panel value="ui">
+            <HakuUiFrame uiUrl={data.haku_ui_url} />
+          </Tabs.Panel>
+        )}
+      </Tabs>
     </div>
   );
 }

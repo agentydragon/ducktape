@@ -86,7 +86,6 @@ js_library(
     name = "haku_ui",
     srcs = ["haku_ui.tsx"],
     deps = [
-        "//:node_modules/@mantine/core",
         "//:node_modules/react",
     ],
 )
