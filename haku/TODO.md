@@ -62,7 +62,7 @@ facade** in front (the Authentik OAuth facade is auth, not tool filtering — se
 **Grocy is wired** (`base/sources/grocy.md`) — it didn't need a tool-filter facade:
 the `haku` Grocy user has empty permissions, so the Grocy API enforces read-only
 (200 reads / 403 writes) server-side. Haku reaches the grocy-sf MCP directly with a
-rotated JWT, reflected into `haku-sandbox` as `haku-cloud-grocy-sf-token`.
+rotated JWT, mirrored into `haku-sandbox` by ESO as `haku-cloud-grocy-sf-token`.
 
 ## Wiring / hardening
 

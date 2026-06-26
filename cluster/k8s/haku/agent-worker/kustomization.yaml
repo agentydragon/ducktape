@@ -5,3 +5,4 @@ resources:
   - rolebinding.yaml
   - environment-key.sops.yaml
   - deployment.yaml
+  - grocy-token-eso.yaml

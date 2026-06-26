@@ -14,10 +14,10 @@ Grocy is an MCP server at `https://grocy-mcp-sf.allegedly.works/mcp`. The transp
 mechanics — `fastmcp`, the `curl` fallback, reading the bearer into `"$TOKEN"` — are
 shared across MCP sources; see [`mcp_over_http.md`](mcp_over_http.md). Grocy specifics:
 
-- **Bearer:** the reflected `haku-cloud-grocy-sf-token` secret, key `jwt` (the same
-  rotated grocy JWT the cloud agent uses, mirrored into `haku-sandbox`). The MCP
-  validates it and runs the auth handshake into Grocy, injecting your read-only `haku`
-  user — so reads return 200 and **every write 403s** server-side.
+- **Bearer:** the `haku-cloud-grocy-sf-token` secret, key `jwt` (the same rotated grocy
+  JWT the cloud agent uses, mirrored into `haku-sandbox` by ESO). The MCP validates it
+  and runs the auth handshake into Grocy, injecting your read-only `haku` user — so
+  reads return 200 and **every write 403s** server-side.
 
 ```bash
 TOKEN=$(kubectl -n haku-sandbox get secret haku-cloud-grocy-sf-token \
@@ -44,4 +44,4 @@ items **below minimum** or absent that the operator relies on (a shopping nudge)
 **opportunistic** suggestions that combine stock with where the operator is and what
 else is going on (see `../recipes.md` → _Generate, don't just detect_). Never surface a
 suggestion to buy something already on a shopping list. If `list` is empty or a call
-401s, note the gap in your log and move on (the bearer must be the reflected one).
+401s, note the gap in your log and move on (the bearer must be the one in `haku-sandbox`).

@@ -60,13 +60,6 @@ class K8sSecretOutput(BaseModel):
     namespace: str
     token_key: str = Field(default="jwt", description="stringData key for the JWT")
     exp_key: str = Field(default="token-exp", description="stringData key for the JWT exp epoch (seconds)")
-    annotations: dict[str, str] | None = Field(
-        default=None,
-        description="Extra annotations merged into the Secret's metadata.annotations — e.g. "
-        "kubernetes-reflector reflection-* keys to auto-mirror the Secret into another namespace "
-        "(haku-sandbox, for the self-hosted Haku home to read the bearer). Single-write + reflector "
-        "fan-out, rather than the rotator looping over namespaces.",
-    )
 
 
 class Rotation(BaseModel):
@@ -281,19 +274,15 @@ def rotate_one(client: httpx.Client, rotation: Rotation, config: Config) -> bool
 
 
 def build_secret_manifest(out: K8sSecretOutput, token: str, exp_epoch: int) -> dict[str, Any]:
-    """The k8s Secret manifest carrying the token + exp (pre-encryption).
-
-    `out.annotations` is merged in (e.g. kubernetes-reflector keys to auto-mirror the
-    applied Secret into another namespace — single-write + fan-out, never a
-    per-namespace loop in the rotator).
-    """
-    annotations = {"description": "Authentik JWT minted by authentik-jwt-rotation (rotated ~biweekly)."}
-    if out.annotations:
-        annotations |= out.annotations
+    """The k8s Secret manifest carrying the token + exp (pre-encryption)."""
     return {
         "apiVersion": "v1",
         "kind": "Secret",
-        "metadata": {"name": out.name, "namespace": out.namespace, "annotations": annotations},
+        "metadata": {
+            "name": out.name,
+            "namespace": out.namespace,
+            "annotations": {"description": "Authentik JWT minted by authentik-jwt-rotation (rotated ~biweekly)."},
+        },
         "type": "Opaque",
         "stringData": {out.token_key: token, out.exp_key: str(exp_epoch)},
     }
