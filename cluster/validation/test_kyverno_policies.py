@@ -37,6 +37,32 @@ def mitmproxy_policy() -> Path:
     return _policy_path("cluster/k8s/kyverno/policies/inject-mitmproxy.yaml")
 
 
+@pytest.fixture
+def agent_gateway_routes_policy() -> Path:
+    return _policy_path("cluster/k8s/kyverno/policies/restrict-agent-gateway-routes.yaml")
+
+
+class TestRestrictAgentGatewayRoutes:
+    """The deny policy fences agents off the public gateway.
+
+    Namespace-scoped (no subject match), so it is testable with plain
+    `kyverno apply` — no admission --userinfo context needed.
+    """
+
+    def test_httproute_in_agent_namespace_denied(self, agent_gateway_routes_policy: Path):
+        result = apply_policy(agent_gateway_routes_policy, _testdata("httproute_in_agent_namespace.yaml"))
+        assert result.failed == 1, f"HTTPRoute in claude-sandbox must be denied\n{result.stdout}"
+
+    def test_tlsroute_in_agent_namespace_denied(self, agent_gateway_routes_policy: Path):
+        result = apply_policy(agent_gateway_routes_policy, _testdata("tlsroute_in_agent_namespace.yaml"))
+        assert result.failed == 1, f"TLSRoute in haku-sandbox must be denied\n{result.stdout}"
+
+    def test_httproute_in_service_namespace_allowed(self, agent_gateway_routes_policy: Path):
+        """Routes in non-agent (operator-owned) namespaces are untouched."""
+        result = apply_policy(agent_gateway_routes_policy, _testdata("httproute_in_service_namespace.yaml"))
+        assert result.failed == 0, f"HTTPRoute in forgejo must not be denied\n{result.stdout}"
+
+
 class TestInjectMitmproxyProxy:
     """Tests for the inject-mitmproxy-proxy ClusterPolicy."""
 

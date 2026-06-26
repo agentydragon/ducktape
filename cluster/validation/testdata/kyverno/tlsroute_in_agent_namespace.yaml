@@ -1,0 +1,15 @@
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TLSRoute
+metadata:
+  name: agent-tls-escape
+  namespace: haku-sandbox
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "agent-tls-escape.allegedly.works"
+  rules:
+    - backendRefs:
+        - name: agent-backdoor
+          port: 8443

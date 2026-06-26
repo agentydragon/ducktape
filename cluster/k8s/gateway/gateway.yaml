@@ -7,6 +7,12 @@ metadata:
     cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"
 spec:
   gatewayClassName: cilium
+  # Every listener uses allowedRoutes.namespaces.from: All. Per-listener Selector
+  # restriction is avoided because Cilium bug #42159 makes listener-scoped
+  # allowedRoutes config bleed across listeners (see cluster/docs/plan.md). The
+  # fence against agents publishing public routes that bypass Authentik is instead
+  # the Kyverno ClusterPolicy `restrict-agent-gateway-routes`, which denies route
+  # creation in the agent sandbox namespaces.
   listeners:
     - name: https-wildcard
       hostname: "*.allegedly.works"

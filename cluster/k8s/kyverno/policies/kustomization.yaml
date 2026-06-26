@@ -5,5 +5,6 @@ resources:
   - inject-mitmproxy.yaml
   - inject-haku-mitmproxy.yaml
   - restrict-agent-kustomization-patch.yaml
+  - restrict-agent-gateway-routes.yaml
   - clusterrole-cleanup-controller-jobs.yaml
   - clusterrole-cleanup-controller-workloads.yaml
