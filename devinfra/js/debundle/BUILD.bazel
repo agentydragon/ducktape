@@ -1068,6 +1068,29 @@ rust_test(
 )
 
 rust_library(
+    name = "selector_constraint_backend",
+    srcs = ["selector_constraint_backend.rs"],
+    edition = "2024",
+    deps = [
+        ":selector_constraint_model",
+        ":selector_ir",
+        "@crates//:serde",
+    ],
+)
+
+rust_test(
+    name = "selector_constraint_backend_test",
+    size = "small",
+    crate = ":selector_constraint_backend",
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":selector_constraint_model",
+        ":selector_ir",
+    ],
+)
+
+rust_library(
     name = "selector_constraint_model_builder",
     srcs = ["selector_constraint_model_builder.rs"],
     edition = "2024",
