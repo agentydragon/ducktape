@@ -5,20 +5,12 @@ resources:
   - ../../mcp-base
   - valkey-ovh-instance.yaml
   - server-httproute.yaml
+configMapGenerator:
+  - name: grocy-mcp-config
+    files:
+      - config.yaml
 patches:
-  - target:
-      kind: Deployment
-      name: grocy-mcp-server
-    patch: |
-      - op: replace
-        path: /spec/template/spec/containers/0/env/1/value
-        value: "https://auth.allegedly.works/application/o/grocy-mcp-vallejo/"
-      - op: replace
-        path: /spec/template/spec/containers/0/env/2/value
-        value: "https://grocy-mcp-vallejo.allegedly.works"
-      - op: replace
-        path: /spec/template/spec/containers/0/env/3/value
-        value: "https://grocy-vallejo.allegedly.works"
+  # Point the secret env at this household's OIDC secret (base uses grocy-mcp-oidc).
   - target:
       kind: Deployment
       name: grocy-mcp-server
@@ -49,9 +41,3 @@ patches:
                       secretKeyRef:
                         name: grocy-mcp-oidc-vallejo
                         key: grocy_proxy_client_id
-                  - name: GROCY_MCP_PERSISTENCE__KIND
-                    value: "valkey"
-                  - name: GROCY_MCP_PERSISTENCE__HOST
-                    value: "grocy-vallejo-valkey-ovh-master.grocy-vallejo.svc.cluster.local"
-                  - name: GROCY_MCP_PERSISTENCE__DB
-                    value: "0"

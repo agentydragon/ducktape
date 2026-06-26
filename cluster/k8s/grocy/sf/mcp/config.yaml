@@ -1,0 +1,15 @@
+# Non-secret config for the grocy-sf MCP server, mounted at GROCY_MCP_CONFIG_FILE.
+# Secrets (oidc client_id/secret, proxy client_id) come from env (grocy-mcp-oidc-sf
+# k8s Secret), so no single field here is secret.
+grocy_url: https://grocy-sf.allegedly.works
+auth:
+  oidc_issuer: https://auth.allegedly.works/application/o/grocy-mcp-sf/
+  public_base_url: https://grocy-mcp-sf.allegedly.works
+  # Also accept haku's machine token from the dedicated grocy-mcp-haku-sf provider,
+  # which shares grocy-mcp-sf's signing key so the configured JWKS validates it.
+  extra_jwt_issuers:
+    - https://auth.allegedly.works/application/o/grocy-mcp-haku-sf/
+persistence:
+  kind: valkey
+  host: grocy-sf-valkey-ovh-master.grocy-sf.svc.cluster.local
+  db: 0

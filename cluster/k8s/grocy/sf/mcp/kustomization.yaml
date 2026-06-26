@@ -5,20 +5,12 @@ resources:
   - ../../mcp-base
   - valkey-ovh-instance.yaml
   - server-httproute.yaml
+configMapGenerator:
+  - name: grocy-mcp-config
+    files:
+      - config.yaml
 patches:
-  - target:
-      kind: Deployment
-      name: grocy-mcp-server
-    patch: |
-      - op: replace
-        path: /spec/template/spec/containers/0/env/1/value
-        value: "https://auth.allegedly.works/application/o/grocy-mcp-sf/"
-      - op: replace
-        path: /spec/template/spec/containers/0/env/2/value
-        value: "https://grocy-mcp-sf.allegedly.works"
-      - op: replace
-        path: /spec/template/spec/containers/0/env/3/value
-        value: "https://grocy-sf.allegedly.works"
+  # Point the secret env at this household's OIDC secret (base uses grocy-mcp-oidc).
   - target:
       kind: Deployment
       name: grocy-mcp-server
@@ -49,15 +41,3 @@ patches:
                       secretKeyRef:
                         name: grocy-mcp-oidc-sf
                         key: grocy_proxy_client_id
-                  # Also accept haku's machine token from the dedicated
-                  # grocy-mcp-haku-sf provider (shares grocy-mcp-sf's signing key, so
-                  # the configured JWKS validates it; this widens the JWTVerifier's
-                  # accepted issuers). JSON list — extra_jwt_issuers is a list field.
-                  - name: GROCY_MCP_AUTH__EXTRA_JWT_ISSUERS
-                    value: '["https://auth.allegedly.works/application/o/grocy-mcp-haku-sf/"]'
-                  - name: GROCY_MCP_PERSISTENCE__KIND
-                    value: "valkey"
-                  - name: GROCY_MCP_PERSISTENCE__HOST
-                    value: "grocy-sf-valkey-ovh-master.grocy-sf.svc.cluster.local"
-                  - name: GROCY_MCP_PERSISTENCE__DB
-                    value: "0"

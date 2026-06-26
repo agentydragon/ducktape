@@ -1,0 +1,11 @@
+# Non-secret config for the grocy-vallejo MCP server, mounted at GROCY_MCP_CONFIG_FILE.
+# Secrets (oidc client_id/secret, proxy client_id) come from env (grocy-mcp-oidc-vallejo
+# k8s Secret), so no single field here is secret.
+grocy_url: https://grocy-vallejo.allegedly.works
+auth:
+  oidc_issuer: https://auth.allegedly.works/application/o/grocy-mcp-vallejo/
+  public_base_url: https://grocy-mcp-vallejo.allegedly.works
+persistence:
+  kind: valkey
+  host: grocy-vallejo-valkey-ovh-master.grocy-vallejo.svc.cluster.local
+  db: 0

@@ -7,12 +7,13 @@ modelling Grocy's API surface, see ``grocy_types.py``.
 
 from __future__ import annotations
 
+import os
 from datetime import date
 from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 from grocy_mcp.grocy_types import ReadableEntityType, WriteableEntityType
 from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
@@ -24,7 +25,14 @@ MAX_BATCH_SIZE = 100
 
 
 class ServerSettings(BaseSettings):
-    """Config for the Grocy MCP server."""
+    """Config for the Grocy MCP server.
+
+    Non-secret structured config (grocy_url, auth issuer/URLs/extra_jwt_issuers,
+    persistence) is loaded from the YAML file at ``GROCY_MCP_CONFIG_FILE``; secrets
+    (auth ``oidc_client_secret``, …) stay in ``GROCY_MCP_*`` env from a k8s Secret.
+    Env outranks the file and the two are deep-merged, so a single nested model
+    (``auth``) draws its non-secret fields from YAML and its secret fields from env.
+    """
 
     model_config = SettingsConfigDict(env_prefix="GROCY_MCP_", env_nested_delimiter="__")
 
@@ -42,6 +50,22 @@ class ServerSettings(BaseSettings):
     max_retries: int = Field(default=2, description="Retry count for transient errors (timeouts, 5xx).")
     retry_base_delay: float = Field(default=0.5, description="Initial retry delay in seconds; doubles each attempt.")
     persistence: PersistenceConfig = Field(default=FilePersistence(), description="OAuth state storage backend.")
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Insert an optional YAML file source (below env) when ``GROCY_MCP_CONFIG_FILE`` is set."""
+        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
+        if config_file := os.environ.get("GROCY_MCP_CONFIG_FILE"):
+            sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
+        sources.append(file_secret_settings)
+        return tuple(sources)
 
 
 # ── Shared field descriptions ───────────────────────────────────────────────

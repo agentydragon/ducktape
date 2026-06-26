@@ -32,13 +32,12 @@ spec:
           env:
             - name: LOG_LEVEL
               value: "DEBUG"
-            # Overlay patches replace these values per household.
-            - name: GROCY_MCP_AUTH__OIDC_ISSUER
-              value: "MUST_BE_PATCHED"
-            - name: GROCY_MCP_AUTH__PUBLIC_BASE_URL
-              value: "MUST_BE_PATCHED"
-            - name: GROCY_MCP_GROCY_URL
-              value: "MUST_BE_PATCHED"
+            # Non-secret structured config (grocy_url, auth issuer/URLs/
+            # extra_jwt_issuers, persistence) comes from this YAML file, supplied
+            # per household by the overlay's grocy-mcp-config configMap. Secrets
+            # stay in env below (per-household secret via overlay patch).
+            - name: GROCY_MCP_CONFIG_FILE
+              value: /etc/grocy-mcp/config.yaml
             - name: GROCY_MCP_AUTH__OIDC_CLIENT_ID
               valueFrom:
                 secretKeyRef:
@@ -61,6 +60,10 @@ spec:
             limits:
               memory: "256Mi"
               cpu: "200m"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/grocy-mcp
+              readOnly: true
           readinessProbe:
             tcpSocket:
               port: 8765
@@ -71,3 +74,7 @@ spec:
               port: 8765
             initialDelaySeconds: 15
             periodSeconds: 20
+      volumes:
+        - name: config
+          configMap:
+            name: grocy-mcp-config
