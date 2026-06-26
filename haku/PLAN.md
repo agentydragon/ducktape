@@ -111,7 +111,6 @@ class Item(BaseModel):
     value: int                   # 0–100 impact-vs-operator-effort score
     deadline: datetime | None    # perishability; past deadline → auto-expire
     action: Suggestion | PreparedPrompt   # discriminated union, see tiers
-    source: str                  # what produced it ("gmail_triage", "grocy_stock", free-form)
     status: Literal["open", "in_progress", "done", "rejected", "snoozed", "expired"]
 ```
 
@@ -142,7 +141,7 @@ feedback button does this) or be general. At the start of each run Haku:
 
 1. reads unprocessed intake entries,
 2. folds the guidance into its own `memory/` in whatever form future runs will
-   naturally act on (noting any expiry, e.g. "no `gmail_triage` reminders until
+   naturally act on (noting any expiry, e.g. "no `gmail` reminders until
    2026-06-19"), applying item-referencing feedback to that item,
 3. moves each processed entry to `intake/processed/` with its interpretation
    appended, so I can audit how my words got read.
@@ -508,10 +507,10 @@ facades_. This is where the Authentik `client_credentials` facade-auth work
 lands (creds in the proxy vs. in Haku; the "does a facade accept service-account
 JWTs" spike).
 
-v0 playbooks (all read-only by construction, no facade): `plaid_anomalies`
+v0 playbooks (all read-only by construction, no facade): `plaid`
 (unusual charges, forgotten recurring payments, fees) over `psql`;
-`gmail_triage` (threads awaiting a reply, buried deadlines, killable
-subscriptions) and `calendar_prep` (events missing prep/travel, conflicts) over
+`gmail` (threads awaiting a reply, buried deadlines, killable
+subscriptions) and `calendar` (events missing prep/travel, conflicts) over
 the Gmail/Calendar REST APIs with airlock's read-only Google token (see
 _Google_ below). Still waiting on a read-only filter facade (phase 1):
 `postscanmail` (unopened mail → open/discard) and `grocy_stock`
@@ -650,3 +649,36 @@ The web home already runs end to end, so phase 1 widens and sharpens the queue:
   `expected_group: haku` check on the `haku-k8s` entry in the
   `authentik-jwt-rotation` `rotations.yaml` is the interim fail-closed net (a
   mis-mapped Haku token aborts rotation rather than minting a mis-scoped JWT).
+
+## Future: letting Haku take some actions itself (permission-elevation tokens)
+
+Today Haku is strictly read-only/synthesize-and-recommend: it never acts on the
+world, it frames work for the operator to approve and hand off. A future direction
+(operator, 2026-06-26) is to let Haku take **some** actions autonomously that aren't
+allowed now — e.g. _draft an email_ (into Drafts, not send), _explore less-restricted
+websites_ for research, and similar low-blast-radius moves — without giving up the
+transparency and containment that make the read-only posture safe.
+
+Sketch to design out later (not built; a real mechanism-design + security effort):
+
+- **Permission-elevation tokens.** The operator mints a scoped, expiring grant ("you
+  may draft emails in account X", "you may browse the open web for the next N hours
+  for research") that Haku may exercise only under defined, limited circumstances.
+  The token names the capability, scope, and limits; Haku records when/why it used
+  one. Think capabilities, not standing privilege — the default stays read-only and
+  each elevation is explicit, narrow, and revocable.
+- **Transparency by construction.** Every elevated action is logged and surfaced
+  (what it did, under which grant, why) so the operator can audit after the fact —
+  the dashboard/log is the accountability surface, same as items are today.
+- **Security framing.** The current safety story is the perimeter (read-only creds,
+  scoped RBAC, mitmproxy egress), not agent restraint — so any elevation must be
+  enforced by the perimeter/mechanism (what the token actually unlocks), never by
+  trusting Haku to stay in bounds. Drafting (write to Drafts, no send) and sandboxed
+  browsing are good first candidates because their blast radius is small and reviewable.
+- **Open questions:** how grants are minted and stored (operator UI? a signed token in
+  a secret?), how Haku proves it's acting under one, how scopes compose with the
+  existing token/RBAC model, how "less-restricted browsing" stays contained, and where
+  the line sits between "draft for review" and "act."
+
+This is deliberately parked as a direction, not an MVP commitment — the
+handoff-via-prepared-prompt model is the current contract.

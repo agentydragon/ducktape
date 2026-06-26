@@ -18,8 +18,11 @@ move runtime instructions here, and don't put editor notes in `instructions.md`.
 - `schema/item.json` — the item schema, validated at write time. Changing item
   shape means editing this **and** the _Item contract_ / _Dashboard_ spec in
   `instructions.md` together.
-- `playbooks/` — **example** playbooks, explicitly not a closed set. When adding
-  one, frame it as an example and keep it a pattern Haku adapts, not a mandate.
+- `sources/` — Haku's **information sources** (operator-linked channels: inbox,
+  calendar, Drive, Tana, repos, …) plus a couple of example cross-source techniques.
+  They are inputs/reference, **not** a checklist — frame each as "what this source
+  tells you + how to read it," and keep techniques as illustrations Haku adapts, never
+  a mandate or a closed set. Don't let this dir read as "runbooks to execute."
 
 ## Editing rules
 

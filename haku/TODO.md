@@ -17,7 +17,7 @@ from `haku-sandbox`, plus an example playbook in `base/playbooks/`.
   (callers never see it), and is gated by the static bearer `haku-tana-ro-token`
   (reflected into `haku-sandbox`). It's published at the bearer-gated route
   `tana-mcp-ro.allegedly.works`, Haku's closure carries the `fastmcp` client, and
-  the `tana_review` playbook + the `haku-tana-ro-token` credentials row use it.
+  the `tana` playbook + the `haku-tana-ro-token` credentials row use it.
   Remaining:
   - Confirm the read-only allowlist against the live `tools/list`; settle the
     `get_or_create_calendar_node` exclusion (it can create a daily node).
@@ -31,7 +31,7 @@ from `haku-sandbox`, plus an example playbook in `base/playbooks/`.
     not a blocker.
   - **Future (PLAN north star):** give Haku `mcp__tana_ro__*` tools natively via a
     `.mcp.json` `http` entry to the route (bearer threaded from the reflected
-    secret), so `tana_review` can drop its connection section and the explicit
+    secret), so `tana` can drop its connection section and the explicit
     `fastmcp` step entirely.
 - **Cluster Forgejo repos** — read access to `ducktape` and `gaffer-private`
   if/when they're migrated or mirrored to the cluster Forgejo: grant the `haku`

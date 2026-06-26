@@ -80,7 +80,6 @@ class Item(BaseModel):
     body: str
     value: int
     action: PrimaryAction
-    source: str
     status: ItemStatus
     deadline: datetime | None = None
     actions: list[OperatorAction] = Field(default_factory=list)

@@ -4,7 +4,7 @@
   "title": "Haku item",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "dedup_key", "title", "body", "value", "action", "source", "status"],
+  "required": ["id", "dedup_key", "title", "body", "value", "action", "status"],
   "properties": {
     "id": {
       "type": "string",
@@ -61,10 +61,6 @@
           }
         }
       ]
-    },
-    "source": {
-      "type": "string",
-      "description": "What produced the item \u2014 a playbook name (e.g. plaid_anomalies) or a short tag for a self-directed finding"
     },
     "status": {
       "enum": ["open", "in_progress", "done", "rejected", "snoozed", "expired"]

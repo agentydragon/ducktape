@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     litellm_api_key: str = Field(description="Haku's scoped LiteLLM virtual key.")
     tana_ro_token: str | None = Field(default=None, description="Bearer for tana-mcp-ro; omit to run without Tana.")
     # Repos cloned at startup so the agent has them as context. ducktape holds the
-    # manual/run-procedure/playbooks + the codebase; haku-state is Haku's memory + write
+    # manual/run-procedure/sources + the codebase; haku-state is Haku's memory + write
     # surface. *_repo_url None skips the clone (the dir is assumed already present).
     ducktape_repo_url: str | None = Field(default=None, description="ducktape git URL to clone for context.")
     ducktape_dir: Path = Field(default=Path("/workspace/ducktape"), description="ducktape checkout (manual + code).")

@@ -1,4 +1,4 @@
-# tana_review (example)
+# Tana
 
 The operator's Tana workspace — daily notes, captured tasks, project nodes — is
 full of things they meant to do and never closed out. You can read it (read-only)

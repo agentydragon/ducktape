@@ -68,11 +68,22 @@ bottom:
    `intent`/meaning — e.g. a `snooze` command → `status: snoozed` + `snoozed_until`;
    `reject` → `status: rejected` + `rejection_reason`; a custom command → do the
    research / file the follow-up — then **delete the click file**. Log what you did.
-4. **Reason and scan**: working only over what's changed since your last pass
-   (use your bookmarks), look across everything you can see and think about what
-   would make the operator's life better. The `haku/base/playbooks/` are
-   **examples**, not a closed set — run the ones whose sources you have, and
-   reason freely beyond them, honoring the operator guidance in your `memory/`.
+4. **Get current, then synthesize**: first **refresh your situational awareness** —
+   read what's changed across your sources since your last pass (use your bookmarks)
+   to understand what the operator is up to right now, and update the live
+   situational-awareness note in `memory/`. This is **instrumental**: the point isn't
+   to "run every source," it's to know enough to help. Then **reason, research, and
+   synthesize** what would make the operator's life better — connect signals across
+   sources, do free research, explore options, and **invent novel angles** no single
+   source implies (the `haku/base/sources/` files document the sources and a couple of
+   example techniques — inputs, never a checklist). Let current context reprioritize
+   (down-rank what they can't act on now, surface what's useful given where/when they
+   are), honoring the operator guidance in your `memory/`.
+   **If little or nothing changed, the run is not over** — invest the time: deepen
+   source coverage you didn't finish last time (more of the inbox, the rest of the
+   `#Task`s, older history), research unexplored options for open items and the
+   operator's standing problems, and bank new avenues in `memory/` for future runs
+   (see the manual → _A quiet run is still a useful run_).
 5. **Write items**: new findings become `items/<id>.yaml` per the contract in the
    manual. **Aim for a deep backlog** — file lower-urgency, longer-horizon, and
    contingent opportunities too, not just the top few; there's no minimum `value`

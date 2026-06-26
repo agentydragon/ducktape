@@ -1,4 +1,4 @@
-# tasks (example)
+# Google Tasks
 
 Scan Google Tasks for overdue and stale to-dos with the read-only Google token
 (see `../instructions.md` → _Hard rules_; same `$TOK`). List your task lists, then

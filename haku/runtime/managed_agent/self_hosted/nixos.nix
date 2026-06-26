@@ -28,10 +28,10 @@
   ...
 }:
 let
-  # Haku's runtime tool surface: what playbooks may assume on PATH. Lean by
-  # design (no dev/infra toolchain — no bazelisk/tofu/helm); the worker runs
-  # playbooks, it is not a dev box. Add here when a playbook needs a new tool,
-  # so the runtimes stay in deliberate sync.
+  # Haku's runtime tool surface: what reading its sources may assume on PATH. Lean
+  # by design (no dev/infra toolchain — no bazelisk/tofu/helm); the worker reads
+  # sources and synthesizes, it is not a dev box. Add here when a source/technique
+  # needs a new tool, so the runtimes stay in deliberate sync.
   workerTools = with pkgs; [
     bashInteractive
     coreutils

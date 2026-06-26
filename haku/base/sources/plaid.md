@@ -1,4 +1,4 @@
-# plaid_anomalies (example)
+# Plaid
 
 Financial transactions live in the Plaid Postgres mirror. Query it by launching a
 `postgres`-image pod in `haku-sandbox` whose **command is your `psql` query**, then

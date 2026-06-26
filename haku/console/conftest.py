@@ -36,7 +36,6 @@ def _seed_remote(bare: Path, work: Path) -> list[str]:
             id=ulid,
             title=f"Test item {i}",
             value=90 - i,
-            source="test",
             status=ItemStatus.OPEN,
             body="**why** this matters, with `code` and a [link](https://example.com/x).",
             action=Suggestion(),

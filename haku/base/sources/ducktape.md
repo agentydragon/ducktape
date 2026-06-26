@@ -1,4 +1,4 @@
-# ducktape_git_review (example)
+# Ducktape (the operator's repos)
 
 You have the **ducktape repo** checked out (your base lives in it, and you already
 `git log` it to adopt base updates). Its recent history is a rich source of

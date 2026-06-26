@@ -1,4 +1,4 @@
-# gmail_triage (example)
+# Gmail
 
 Read Gmail with the read-only token (see `../instructions.md` → _Hard rules_). List new
 mail since your bookmark — resume precisely with `q=after:<epoch-seconds>`, since Gmail's

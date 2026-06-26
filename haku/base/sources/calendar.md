@@ -1,4 +1,4 @@
-# calendar_prep (example)
+# Calendar
 
 Read Calendar with the read-only Google token (see `../instructions.md` → _Hard rules_)
 over the next ~7–14 days:

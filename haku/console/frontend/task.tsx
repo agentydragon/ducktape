@@ -100,9 +100,6 @@ export function TaskCard({ item, clicked, onToggle }: TaskProps) {
           <Button component="a" href={href} color="teal" size="xs">
             {label}
           </Button>
-          <Badge color="gray" variant="light">
-            {item.source}
-          </Badge>
           <Anchor href={`${ITEM_SRC}/${item.id}.yaml`} c="dimmed" size="sm">
             item source →
           </Anchor>
