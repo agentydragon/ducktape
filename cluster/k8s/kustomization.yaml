@@ -206,6 +206,7 @@ resources:
   - haku/console-namespace/flux-kustomization.yaml # the console's own trusted namespace
   - haku/console/flux-kustomization.yaml
   - haku/agent-worker/flux-kustomization.yaml # suspended; see the dir README to activate
+  - haku/cloud-agent-tf/flux-kustomization.yaml # Anthropic-hosted agent via claude-managed-agents tofu provider
 
   # --- matrix ---
   - matrix/namespace/flux-kustomization.yaml

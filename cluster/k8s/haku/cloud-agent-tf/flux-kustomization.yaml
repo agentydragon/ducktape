@@ -1,0 +1,26 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: haku-cloud-agent
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 10m
+  path: ./cluster/k8s/haku/cloud-agent-tf
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: haku-cloud-agent
+      namespace: flux-system
+  dependsOn:
+    - name: tofu-controller
+    - name: tofu-state-db
+    # The agent reaches the cluster through this MCP; its first deployment run
+    # needs it serving.
+    - name: kubectl-machine-mcp

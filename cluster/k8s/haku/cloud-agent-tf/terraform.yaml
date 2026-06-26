@@ -1,0 +1,38 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: haku-cloud-agent
+  namespace: flux-system
+spec:
+  interval: 15m
+  refreshBeforeApply: true
+  path: ./tf/gitops/haku-cloud-agent
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+
+  serviceAccountName: tf-runner
+  approvePlan: "auto"
+
+  backendConfig:
+    customConfiguration: |
+      backend "pg" {
+        conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+        schema_name = "haku_cloud_agent"
+      }
+  runnerPodTemplate:
+    spec:
+      env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: tofu-state-db-credentials
+              key: password
+        # The claude-managed-agents provider reads ANTHROPIC_API_KEY directly.
+        # Dedicated, spend-capped Anthropic workspace; regular key, not admin.
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: haku-cloud-anthropic-api-key
+              key: api-key

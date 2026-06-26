@@ -105,6 +105,13 @@ tf.download(
     mirror = {
         "authentik": "goauthentik/authentik:2026.2.0",
         "aws": "hashicorp/aws:5.100.0",
+        # CAUTION: low-user-count community provider holding an Anthropic API key.
+        # On every version bump, manually review the source diff since the last
+        # pinned tag (focus: internal/client/ egress+secret handling,
+        # .github/workflows/release.yml) BEFORE updating the lock hashes. Do not
+        # auto-merge Renovate/update_deps bumps. See memory
+        # project_acma_provider_repin_review and tf/gitops/haku-cloud-agent/terraform.tf.
+        "claude-managed-agents": "modus-agendi/anthropic-claude-managed-agents:1.1.0",
         "external": "hashicorp/external:2.3.5",
         "flux": "fluxcd/flux:1.7.6",
         "forgejo": "svalabs/forgejo:1.5.0",
