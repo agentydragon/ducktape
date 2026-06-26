@@ -16,6 +16,13 @@ build --incompatible_strict_action_env
 build --per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations
 build --host_per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations
 
+# Suppress -Wsign-compare from OR-Tools' own sources. The current 9.15 release
+# emits signed/unsigned comparison warnings in external/or-tools+/, which are
+# upstream code rather than something this repo can fix. Keep this scoped to
+# OR-Tools so repo code still uses the normal warning policy.
+build --per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare
+build --host_per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare
+
 # Reduce runfiles disk usage (prevents "No space left on device" on CI runners).
 # Each py_test creates a runfiles tree with ~2,458 symlinks for the Python toolchain;
 # with many targets this exhausts the default 20 GB BuildBuddy disk.
