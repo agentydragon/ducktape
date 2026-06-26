@@ -198,8 +198,43 @@ fine for a single-operator Chrome/Firefox tool.)
     `haku-state`. Goal: prove the frame + isolation + the two affordances end-to-end.
 - **v1.5 — gateway hardening.** Tighten `cluster-gateway` `allowedRoutes` so the
   "no agent public routes" invariant holds at the gateway, not only via RBAC.
-- **later — more capabilities; retire the trace tier / declarative list** once the
-  agent-authored UI fully subsumes it.
+- **later — the north star below**: more capabilities, then fully subsume the item UI
+  into Haku's iframe and retire the trusted renderer + trace tier.
+
+## North star: the shell owns nothing but the boundary
+
+The end state (later — not the next step) drops the last thing ducktape still owns on
+the _content_ side: the **item model and its UI**. Today the trusted console owns the
+item schema (`models.py` / `base/schema/item.json`), the declarative renderer, the SPA
+bundle + styling, and the trace tier. In the north star, **all of that moves into
+Haku's iframe service and `haku-state`**:
+
+- Haku is given a **high-level objective** — _"surface for the operator the things
+  that are useful to act on"_ — and **no schema**. There is no ducktape-defined
+  `Item`, no fixed action kinds, no prescribed layout. Haku decides what the
+  abstraction is and how to present it, and evolves it freely.
+- The frontend's **styling, compilation, and the console SPA's Flux image automation**
+  move out of ducktape into **agent-owned `haku-state` code** — Haku's UI service
+  builds and serves its own assets; no ducktape rebuild for a UI or schema change.
+- The **trace tier retires** — Haku's own backend records operator intent (it already
+  owns `haku-state`).
+
+What's left in ducktape is the **irreducible trusted core, and nothing else**:
+
+- the **capability tier** (the bearer + CSRF + `launch-routine` and any future
+  privileged verbs);
+- the **iframe host** page + the **`postMessage` protocol** and its validation;
+- the **CSP + trust indicator** (the pixels the operator is entitled to trust);
+- the **perimeter** (`haku-console` namespace, the Authentik-gated route, the
+  gateway-route invariant).
+
+The litmus test for "does this belong in ducktape": **does it hold a secret, perform a
+privileged action, or define the trust boundary?** If not, it's Haku's — and the item
+abstraction fails that test, so it goes.
+
+Deliberately deferred: this only makes sense once the iframe UI + the affordances are
+proven and Haku can author an experience at least as good as today's declarative list.
+Until then, Phase 1a's trusted item list coexists.
 
 ## Open questions
 
