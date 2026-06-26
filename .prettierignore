@@ -60,8 +60,9 @@ devinfra/js/debundle/peel/golden/**
 # TODO: have the rotator format with prettier (or stop using prettier on yaml
 # entirely, which would also unblock cluster/k8s/flux-system, kustomization,
 # etc.) and drop these excludes.
-secrets/claude-web-k8s-jwt.yaml
-secrets/haku-k8s-jwt.yaml
+# Glob covers every rotated JWT (claude-web-k8s, haku-k8s, haku-grocy, …) so a new
+# rotation target doesn't break CI until someone adds it here by hand.
+secrets/*-jwt.yaml
 **/*.sops.yaml
 secrets/claude-web-attic.yaml
 secrets/hosts/*-attic.yaml
