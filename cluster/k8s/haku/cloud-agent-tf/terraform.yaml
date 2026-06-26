@@ -15,22 +15,10 @@ spec:
   serviceAccountName: tf-runner
   approvePlan: "auto"
 
-  # haku-k8s Authentik JWT (rotated by authentik-jwt-rotation into the
-  # haku-cloud-kube-token Secret) + its exp epoch. tofu writes the token into the
-  # Anthropic vault as a static_bearer credential; the exp drives the write-only
-  # token_wo_version so each rotation re-sends. Passed via the controller's native
-  # vars (NOT runner TF_VAR_* env — the tf-controller forbids that). See the root's main.tf.
-  vars:
-    - name: haku_kube_token
-      valueFrom:
-        secretKeyRef:
-          name: haku-cloud-kube-token
-          key: jwt
-    - name: haku_kube_token_wo_version
-      valueFrom:
-        secretKeyRef:
-          name: haku-cloud-kube-token
-          key: token-exp
+  # The static_bearer credential's haku-k8s JWT is read in-cluster by the tofu
+  # root itself (kubernetes_secret_v1 data source from the haku-cloud-kube-token
+  # Secret; see tf/gitops/haku-cloud-agent/main.tf) — not via spec.vars, whose
+  # valueFrom the tf-controller doesn't resolve here.
 
   backendConfig:
     customConfiguration: |

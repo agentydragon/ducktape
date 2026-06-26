@@ -1,6 +1,5 @@
 terraform {
-  # >= 1.11: the vault_credential token is a write-only attribute and the
-  # haku_kube_token variable is ephemeral.
+  # >= 1.11: the vault_credential token is a write-only attribute.
   required_version = ">= 1.11"
 
   required_providers {
@@ -13,6 +12,12 @@ terraform {
     claude-managed-agents = {
       source  = "modus-agendi/anthropic-claude-managed-agents"
       version = "~> 1.1"
+    }
+    # Reads the haku-cloud-kube-token Secret in-cluster for the static_bearer
+    # credential token. In-cluster auth via the tf-runner SA.
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.38"
     }
   }
 

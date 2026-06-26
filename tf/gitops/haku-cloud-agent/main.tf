@@ -12,8 +12,8 @@
 # CREDENTIAL ROTATION: the static_bearer credential carries the haku-k8s Authentik
 # JWT, which rotates ~every 44 days. The chain is fully automatic and the rotator
 # stays dumb (it only mints + commits): authentik-jwt-rotation writes the token as
-# the haku-cloud-kube-token k8s Secret -> Flux applies it -> this runner reads it
-# (var.haku_kube_token + var.haku_kube_token_wo_version) -> tofu re-sends it into
+# the haku-cloud-kube-token k8s Secret -> Flux applies it -> tofu reads it
+# in-cluster (kubernetes_secret_v1 data source, below) -> tofu re-sends it into
 # the Anthropic vault. The token is a TF 1.11 write-only attribute, so it only
 # re-sends when token_wo_version changes; we set that to the JWT's exp epoch
 # (monotonic, bumps on every mint).
@@ -90,6 +90,18 @@ resource "claude-managed-agents_vault" "haku_cloud" {
   display_name = "haku-cloud"
 }
 
+# Read the rotator-published token in-cluster (tf-runner SA; kubernetes provider
+# auto-configures in-cluster, as in tf/gitops/cpap-data). The tofu-controller's
+# spec.vars don't resolve secretKeyRef, so we read the Secret here instead. The
+# JWT lands in tfstate (sensitive) — same as cpap-data's data.kubernetes_secret;
+# the credential's `token` is still write-only so it isn't re-emitted on read.
+data "kubernetes_secret_v1" "kube_token" {
+  metadata {
+    name      = "haku-cloud-kube-token"
+    namespace = "flux-system"
+  }
+}
+
 # The haku-k8s Authentik JWT, bound to the kubectl-machine-mcp URL. Anthropic
 # presents it when the agent connects to that MCP; the MCP forwards it to
 # kube-apiserver (groups:["haku"] -> oidc-ksbx-groups:haku). token is write-only;
@@ -101,8 +113,8 @@ resource "claude-managed-agents_vault_credential" "haku_kube" {
   auth = {
     type             = "static_bearer"
     mcp_server_url   = "https://kubectl-machine-mcp.allegedly.works/mcp"
-    token            = var.haku_kube_token
-    token_wo_version = tonumber(var.haku_kube_token_wo_version)
+    token            = data.kubernetes_secret_v1.kube_token.data["jwt"]
+    token_wo_version = tonumber(data.kubernetes_secret_v1.kube_token.data["token-exp"])
   }
 }
 
