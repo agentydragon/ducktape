@@ -296,6 +296,7 @@ resources:
   # --- grocy ---
   - grocy/sf/app/flux-kustomization.yaml
   - grocy/sf/agent-rbac/flux-kustomization.yaml
+  - grocy/sf/user-perms/flux-kustomization.yaml
   - grocy/vallejo/app/flux-kustomization.yaml
   - grocy/vallejo/agent-rbac/flux-kustomization.yaml
 

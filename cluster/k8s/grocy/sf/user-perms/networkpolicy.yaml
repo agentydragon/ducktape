@@ -1,0 +1,24 @@
+# The base `grocy-ingress` policy (app-base) restricts Grocy :80 to the Authentik
+# outpost + Gatus, because any pod that reaches :80 can impersonate any user via the
+# trusted X-authentik-username header. NetworkPolicies are additive, so this grants
+# the user-perms provisioner Job that same in-cluster access (it acts as the admin
+# user to elevate the operators). Scoped to the provisioner pod label only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grocy-user-perms-provisioner-ingress
+  namespace: grocy-sf
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: grocy
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grocy-sf-user-perms-provisioner
+      ports:
+        - port: 80
+          protocol: TCP

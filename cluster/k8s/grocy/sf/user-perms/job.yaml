@@ -1,0 +1,47 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: grocy-sf-user-perms-provisioner
+  namespace: grocy-sf
+  annotations:
+    # One-shot: runs once per cluster bootstrap (Flux applies it after grocy is up).
+    # The Job spec is immutable, so let Flux recreate it when provision.py changes.
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grocy-sf-user-perms-provisioner
+    spec:
+      restartPolicy: OnFailure
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: provisioner
+          image: python:3.13-alpine
+          command: ["python", "/scripts/provision.py"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: script
+          configMap:
+            name: grocy-sf-user-perms-provisioner-script
