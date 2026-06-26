@@ -1049,6 +1049,25 @@ rust_test(
 )
 
 rust_library(
+    name = "selector_constraint_model",
+    srcs = ["selector_constraint_model.rs"],
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":chunk_facts",
+        ":selector_ir",
+        "@crates//:serde",
+    ],
+)
+
+rust_test(
+    name = "selector_constraint_model_test",
+    size = "small",
+    crate = ":selector_constraint_model",
+    edition = "2024",
+)
+
+rust_library(
     name = "selector_ir_lowering",
     srcs = ["selector_ir_lowering.rs"],
     edition = "2024",
