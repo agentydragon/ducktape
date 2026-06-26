@@ -50,6 +50,8 @@ import os
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import yaml
@@ -109,6 +111,69 @@ def build_kubeconfig(token: str) -> dict:
     }
 
 
+def _probe_token(server: str, token: str, *, timeout: float = 5.0) -> str | None:
+    """Check whether a bearer token is accepted by the kube API server.
+
+    Returns 'valid' (2xx or any non-401 HTTP response), 'invalid' (401
+    Unauthorized), or None when the server is unreachable (network/TLS error).
+    A 403 counts as 'valid': the token authenticated, just no permission.
+    """
+    req = urllib.request.Request(
+        f"{server}/api",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as _:
+            return "valid"
+    except urllib.error.HTTPError as e:
+        return "invalid" if e.code == 401 else "valid"
+    except Exception:
+        return None
+
+
+def _check_overwrite(existing: dict, new: dict, path: Path) -> None:
+    """Raise RuntimeError if overwriting `path` (containing `existing`) with `new` is unsafe.
+
+    Allows overwriting when the existing file is our own single-cluster, single-user
+    kubeconfig pointing at the same server with the same principal — i.e., a token
+    refresh is the only difference. Refuses in all other cases:
+    - Merged/personal kubeconfigs (multiple clusters, contexts, or users).
+    - Different server or user identity.
+    - New token already rejected (401) by the server.
+    The existing token's probe result is informational: we allow overwriting whether
+    it is still live (fresher JWT arriving) or already expired (rotation catch-up).
+    """
+    for field in ("clusters", "contexts", "users"):
+        n = len(existing.get(field) or [])
+        if n != 1:
+            raise RuntimeError(
+                f"refusing to overwrite {path}: existing kubeconfig has {n} {field} "
+                f"(expected 1) — looks like a merged or personal config"
+            )
+
+    existing_server = existing["clusters"][0]["cluster"]["server"]
+    new_server = new["clusters"][0]["cluster"]["server"]
+    if existing_server != new_server:
+        raise RuntimeError(
+            f"refusing to overwrite {path}: server {existing_server!r} != {new_server!r}"
+        )
+
+    existing_user = existing["users"][0]["name"]
+    new_user = new["users"][0]["name"]
+    if existing_user != new_user:
+        raise RuntimeError(
+            f"refusing to overwrite {path}: user {existing_user!r} != {new_user!r}"
+        )
+
+    # Same server + user: token refresh. Probe the new token to catch a broken JWT
+    # before writing it; probe the existing token for logging only.
+    new_token = new["users"][0]["user"]["token"]
+    if _probe_token(new_server, new_token) == "invalid":
+        raise RuntimeError(
+            f"refusing to write {path}: new token is rejected (401) by {new_server}"
+        )
+
+
 def write_kubeconfig_file(kubeconfig: dict, output_path: Path) -> None:
     """Atomic 0o600 write — never clobbers a non-empty foreign kubeconfig.
 
@@ -116,8 +181,10 @@ def write_kubeconfig_file(kubeconfig: dict, output_path: Path) -> None:
       Empty-file tolerance lets callers do `mktemp` (which creates a 0-byte
       file) and pass that path here.
     - File parses to a YAML doc identical to `kubeconfig`: no-op.
-    - File parses to anything else: raise — refusing to clobber a foreign
-      kubeconfig (e.g., user's existing ~/.kube/config).
+    - File parses to a single-cluster/user kubeconfig with the same server and
+      user identity: probe the new token and allow overwrite if it's valid
+      (token refresh path — see `_check_overwrite`).
+    - Anything else (merged config, different server/user, invalid new token): raise.
     """
     if output_path.exists():
         existing_raw = output_path.read_text()
@@ -130,9 +197,7 @@ def write_kubeconfig_file(kubeconfig: dict, output_path: Path) -> None:
         elif existing == kubeconfig:
             return
         else:
-            raise RuntimeError(
-                f"refusing to overwrite {output_path}: existing kubeconfig differs from the one we'd write"
-            )
+            _check_overwrite(existing, kubeconfig, output_path)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     serialized = yaml.safe_dump(kubeconfig, default_flow_style=False, sort_keys=False)

@@ -62,13 +62,83 @@ def test_write_kubeconfig_file_overwrites_empty(tmp_path: Path) -> None:
     assert output.stat().st_mode & 0o777 == 0o600
 
 
-def test_write_kubeconfig_file_refuses_to_clobber(tmp_path: Path) -> None:
+def _kubeconfig_with(**overrides: object) -> dict:
+    """Return a copy of _KUBECONFIG with top-level keys replaced."""
+    return {**_KUBECONFIG, **overrides}
+
+
+def _kubeconfig_with_user(user: str) -> dict:
+    kc = {**_KUBECONFIG}
+    kc["users"] = [{"name": user, "user": {"token": _FAKE_TOKEN}}]
+    kc["contexts"] = [{"context": {"cluster": "cluster", "namespace": "ns", "user": user}, "name": user}]
+    kc["current-context"] = user
+    return kc
+
+
+def test_write_kubeconfig_file_refuses_different_user(tmp_path: Path) -> None:
+    """Different user identity → refuse without probing the server."""
     output = tmp_path / "kubeconfig"
-    other = {**_KUBECONFIG, "current-context": "different"}
-    output.write_text(yaml.safe_dump(other))
-    with pytest.raises(RuntimeError, match="refusing to overwrite"):
+    output.write_text(yaml.safe_dump(_kubeconfig_with_user("someone-else")))
+    with pytest.raises(RuntimeError, match="user.*someone-else"):
         kubeconfig.write_kubeconfig_file(_KUBECONFIG, output)
-    assert yaml.safe_load(output.read_text()) == other
+    assert yaml.safe_load(output.read_text()) == _kubeconfig_with_user("someone-else")
+
+
+def test_write_kubeconfig_file_refuses_different_server(tmp_path: Path) -> None:
+    """Different server → refuse without probing."""
+    output = tmp_path / "kubeconfig"
+    other = {**_KUBECONFIG, "clusters": [{"cluster": {"server": "https://other.example.com"}, "name": "cluster"}]}
+    output.write_text(yaml.safe_dump(other))
+    with pytest.raises(RuntimeError, match="server"):
+        kubeconfig.write_kubeconfig_file(_KUBECONFIG, output)
+
+
+def test_write_kubeconfig_file_refuses_merged_config(tmp_path: Path) -> None:
+    """Merged kubeconfig (multiple users) → refuse without probing."""
+    output = tmp_path / "kubeconfig"
+    merged = {
+        **_KUBECONFIG,
+        "users": [
+            {"name": "u", "user": {"token": _FAKE_TOKEN}},
+            {"name": "admin", "user": {"token": "admin-token"}},
+        ],
+    }
+    output.write_text(yaml.safe_dump(merged))
+    with pytest.raises(RuntimeError, match="2 users"):
+        kubeconfig.write_kubeconfig_file(_KUBECONFIG, output)
+
+
+def test_write_kubeconfig_file_token_refresh_allowed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Same server+user, different token, new token valid → overwrite allowed."""
+    output = tmp_path / "kubeconfig"
+    output.write_text(yaml.safe_dump(_KUBECONFIG))
+    monkeypatch.setattr(kubeconfig, "_probe_token", lambda server, token, **_: "valid")
+    new_kc = {**_KUBECONFIG, "users": [{"name": "u", "user": {"token": "rotated.jwt.token"}}]}
+    kubeconfig.write_kubeconfig_file(new_kc, output)
+    assert yaml.safe_load(output.read_text()) == new_kc
+
+
+def test_write_kubeconfig_file_refuses_new_token_invalid(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Same server+user, different token, new token returns 401 → refuse."""
+    output = tmp_path / "kubeconfig"
+    output.write_text(yaml.safe_dump(_KUBECONFIG))
+    monkeypatch.setattr(kubeconfig, "_probe_token", lambda server, token, **_: "invalid")
+    new_kc = {**_KUBECONFIG, "users": [{"name": "u", "user": {"token": "bad.token"}}]}
+    with pytest.raises(RuntimeError, match="new token is rejected"):
+        kubeconfig.write_kubeconfig_file(new_kc, output)
+    assert yaml.safe_load(output.read_text()) == _KUBECONFIG
+
+
+def test_write_kubeconfig_file_token_refresh_server_unreachable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Server unreachable (probe returns None) → allow overwrite (can't verify, proceed)."""
+    output = tmp_path / "kubeconfig"
+    output.write_text(yaml.safe_dump(_KUBECONFIG))
+    monkeypatch.setattr(kubeconfig, "_probe_token", lambda server, token, **_: None)
+    new_kc = {**_KUBECONFIG, "users": [{"name": "u", "user": {"token": "rotated.jwt.token"}}]}
+    kubeconfig.write_kubeconfig_file(new_kc, output)
+    assert yaml.safe_load(output.read_text()) == new_kc
 
 
 def test_write_kubeconfig_file_refuses_on_invalid_yaml(tmp_path: Path) -> None:
