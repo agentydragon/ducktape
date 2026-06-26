@@ -111,6 +111,32 @@ Settled (not blockers):
   read-only) — it isn't mirrored to the cluster Forgejo yet (that migration is
   the "Cluster Forgejo repos" item above).
 
+## Managed Agents runtime — Anthropic-hosted (cloud) v0 known issues
+
+`runtime/managed_agent/anthropic_hosted/` P0 passed (cloud session reaches
+`kubeapi.allegedly.works` as `haku`). Open items from that bring-up:
+
+- **Auto-propagate the rotated k8s token into the Anthropic vault.** `provision.sh`
+  injects `KUBE_TOKEN` (from `secrets/haku-k8s-jwt.yaml`) as a one-shot vault
+  credential. `authentik-jwt-rotation` rotates the in-cluster secret but does
+  **not** push the refreshed token to the vault, so the cloud credential silently
+  expires → kube-apiserver 401s with no pod touched. Interim: extend the rotation
+  CronJob to `ant beta:vaults:credentials update` before expiry. Ideal would be
+  managing the agent/vault as IaC (a Terraform `ant`/Anthropic provider), but the
+  provider we found looked sparsely used / possibly immature — evaluate before
+  committing to it.
+- **Tighten cloud egress.** `haku.environment.yaml` has `networking.type:
+unrestricted` (TODO in-file). Narrow to `type: limited` + an explicit
+  `allowed_hosts`. (The `KUBE_TOKEN` secret is already scoped — only substituted
+  on `kubeapi.allegedly.works` — so this is hardening, not a leak fix.)
+- **Move off Path B to the k8s-MCP path.** v0 `curl`s kube-apiserver directly
+  with the `aud=kubectl-sandbox-client-credentials` token. The cleaner
+  `kubectl-sandbox-mcp` path needs a token with `aud=kubectl-sandbox-mcp` +
+  `groups=[haku]`, which no Authentik provider mints yet (PLAN.md P0 gate).
+
+The Sonnet pin (`model: claude-sonnet-4-6`) is intentional for bring-up test runs
+— not a TODO; revisit the model once the runtime is past v0.
+
 ## Later (post-v0)
 
 - **In-cluster runtime** — realized as `runtime/agent` (Runtime C, MAF
