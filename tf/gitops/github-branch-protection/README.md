@@ -63,9 +63,5 @@ access control plus the `ducktape-automation` App for GitOps writes.
 - Verify whether GitHub Secret Protection covers push protection on private
   personal-account repos now, then enable or explicitly reject it for
   `gaffer-private`.
-- Retire legacy SSH deploy keys superseded by `ducktape-automation` GitHub App
-  auth. Cleanup markers are in:
-  - `cluster/k8s/gaffer-private-source/deploy-key-tf.yaml`
-  - `cluster/k8s/gaffer-private-source/kustomization.yaml`
-  - `tf/gitops/gaffer-private-flux/main.tf`
-  - the Flux bootstrap git secret/deploy key for `agentydragon/ducktape`
+- Retire the Flux bootstrap git secret/deploy key for `agentydragon/ducktape`
+  if the root GitRepository moves to GitHub App auth.

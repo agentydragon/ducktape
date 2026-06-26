@@ -1,25 +1,19 @@
-# CLEANUP(added 2026-05-03): superseded by ducktape-automation GitHub App auth
-#   (cluster/k8s/flux-system/ducktape-automation-github-app.sops.yaml).
-#   Once App auth on the gaffer-private GitRepository has been Ready=True for
-#   ≥1 day, retire by:
-#     1. Remove this file and github-pat-gaffer-private-flux.sops.yaml from
-#        cluster/k8s/gaffer-private-source/kustomization.yaml.
-#     2. Strip prevent_destroy lifecycle blocks in
-#        tf/gitops/gaffer-private-flux/main.tf, then `tofu destroy` the module
-#        (revokes the GitHub deploy key, deletes the gaffer-private-deploy-key
-#        Secret, and the github-pat-gaffer-private-flux PAT).
-#     3. Delete tf/gitops/gaffer-private-flux/ and the BUILD.bazel target.
+# Staged retirement for the old gaffer-private Flux deploy key. The
+# GitRepository now uses the ducktape-automation GitHub App secret directly.
+# Keep this Terraform object and the github-pat-gaffer-private-flux Secret until
+# the destroy plan has completed, then delete both plus tf/gitops/gaffer-private-flux.
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
 kind: Terraform
 metadata:
   name: gaffer-private-flux
   namespace: flux-system
   annotations:
-    description: "Generates the gaffer-private flux deploy keypair, registers it on GitHub, and writes the flux Secret. Sourced from the flux-system GitRepository (NOT gaffer-private — chicken-and-egg). Superseded by ducktape-automation GitHub App auth — see top-of-file CLEANUP."
+    description: "Destroys the retired gaffer-private Flux deploy key and generated Secret; gaffer-private now uses ducktape-automation GitHub App auth."
 spec:
   interval: 15m
   refreshBeforeApply: true
   approvePlan: "auto"
+  destroy: true
   path: ./tf/gitops/gaffer-private-flux
   sourceRef:
     kind: GitRepository

@@ -24,8 +24,3 @@ spec:
     - name: tofu-state-db
     # Provides github-secrets-sync-pat (Administration:R/W on ducktape).
     - name: github-secrets-sync-secrets
-    # Provides github-pat-gaffer-private-flux (Administration:R/W on
-    # gaffer-private). gaffer-private-source's flux-kustomization
-    # deploys this PAT alongside the gaffer-private GitRepository
-    # source and the deploy-key tofu module.
-    - name: gaffer-private-source

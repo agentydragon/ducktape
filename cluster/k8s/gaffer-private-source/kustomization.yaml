@@ -4,8 +4,7 @@ resources:
   - source.yaml
   - bridge.yaml
   - image-update-automation.yaml
-  # CLEANUP(added 2026-05-03): retire deploy-key-tf.yaml + the PAT below once
-  # ducktape-automation GitHub App auth on `gaffer-private` is verified
-  # stable. See deploy-key-tf.yaml header for the full retirement steps.
+  # Keep these while deploy-key-tf.yaml runs its destroy plan; delete them after
+  # the Terraform object reports the old deploy key destroyed.
   - deploy-key-tf.yaml
   - github-pat-gaffer-private-flux.sops.yaml
