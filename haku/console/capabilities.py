@@ -15,8 +15,7 @@ import logging
 from typing import Annotated, cast
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi_csrf_protect import CsrfProtect
 from pydantic import BaseModel
 
@@ -27,6 +26,10 @@ logger = logging.getLogger(__name__)
 Csrf = Annotated[CsrfProtect, Depends()]
 
 router = APIRouter(prefix="/api/capabilities", tags=["capabilities"])
+
+
+class CsrfTokenResponse(BaseModel):
+    csrf_token: str
 
 
 class LaunchRoutineResult(BaseModel):
@@ -50,11 +53,12 @@ def _launch_config(settings: Annotated[Settings, Depends(_settings)]) -> LaunchR
 # privileged tier this way stops a cross-site request from riding the operator's
 # Authentik session cookie to fire a capability.
 @router.get("/csrf")
-async def csrf_token(csrf_protect: Csrf) -> JSONResponse:
+async def csrf_token(response: Response, csrf_protect: Csrf) -> CsrfTokenResponse:
+    # Set the signed cookie on the injected Response (which FastAPI returns) so the
+    # body can stay a typed model — the frontend generates its client off this schema.
     token, signed = csrf_protect.generate_csrf_tokens()
-    response = JSONResponse({"csrf_token": token})
     csrf_protect.set_csrf_cookie(signed, response)
-    return response
+    return CsrfTokenResponse(csrf_token=token)
 
 
 @router.post("/launch-routine")

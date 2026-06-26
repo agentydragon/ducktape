@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Anchor, Loader, Text, Title } from "@mantine/core";
+import { Anchor, Group, Loader, Text, Title } from "@mantine/core";
 
 import { type DashboardResponse, type Item, clickAction, fetchDashboard, unclickAction } from "./client.ts";
 import { INTAKE_NEW, UP_NEXT } from "./constants.ts";
 import { FeedbackForm } from "./feedback.tsx";
+import { LaunchRoutineButton } from "./launch.tsx";
 import { TaskCard, clickKey } from "./task.tsx";
 
 function statusCounts(items: Item[]): string {
@@ -70,7 +71,10 @@ export default function App() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      <Title order={1}>Haku</Title>
+      <Group justify="space-between" align="center">
+        <Title order={1}>Haku</Title>
+        <LaunchRoutineButton />
+      </Group>
       <Text c="dimmed" mb="lg">
         Your value-ranked backlog ·{" "}
         <Anchor href={INTAKE_NEW} c="dimmed" underline="always">

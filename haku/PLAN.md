@@ -192,9 +192,8 @@ Two tiers the console treats completely differently:
 - **Phase 1 — declarative (1a).** A richer **typed widget schema** (containers, inputs,
   selects, links, sub-pages) emitted in `haku-state` and interpreted by a **trusted
   renderer** — _no agent JS executes_ — beyond today's `actions[]`. Also still to build:
-  the shell-owned **launch control + executions panel** in the SPA, and
-  `GET /api/capabilities/launch-routine/executions` + a **one-in-flight guard** (both
-  gated on the routine-listing API, not yet wired).
+  the **executions panel** in the SPA, and `GET /api/capabilities/launch-routine/executions`
+  - a **one-in-flight guard** (both gated on the routine-listing API, not yet wired).
 - **Phase 2 — free-form (1b, the destination).** Haku writes TSX/JS into `haku-state`; the
   untrusted render origin transpiles it **at runtime** (never compiled into the trusted
   bundle) and runs it in a **sandboxed cross-origin iframe** (`sandbox` without

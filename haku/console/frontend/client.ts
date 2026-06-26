@@ -35,3 +35,15 @@ export async function sendFeedback(text: string, itemId?: string): Promise<void>
   const { error } = await api.POST("/api/trace/feedback", { body: { text, item_id: itemId } });
   if (error) throw new Error("Failed to send feedback");
 }
+
+// Capability tier. Fetch a CSRF token (which also sets the signed double-submit
+// cookie), then fire the routine echoing the token in X-CSRF-Token. The bearer
+// stays server-side; this only triggers the action.
+export async function launchRoutine(): Promise<void> {
+  const { data, error: csrfError } = await api.GET("/api/capabilities/csrf");
+  if (csrfError || !data) throw new Error("Failed to get CSRF token");
+  const { error } = await api.POST("/api/capabilities/launch-routine", {
+    headers: { "X-CSRF-Token": data.csrf_token },
+  });
+  if (error) throw new Error("Failed to launch routine");
+}

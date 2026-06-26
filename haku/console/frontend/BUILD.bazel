@@ -62,12 +62,23 @@ js_library(
 )
 
 js_library(
+    name = "launch",
+    srcs = ["launch.tsx"],
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
     name = "app",
     srcs = ["app.tsx"],
     deps = [
         ":client",
         ":constants",
         ":feedback",
+        ":launch",
         ":task",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -113,6 +124,7 @@ filegroup(
         "constants.ts",
         "feedback.tsx",
         "index.html",
+        "launch.tsx",
         "main.tsx",
         "markdown.ts",
         "task.tsx",
