@@ -1,0 +1,15 @@
+diff --git a/MODULE.bazel b/MODULE.bazel
+index 071898b..5d241c0 100644
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -62,7 +62,7 @@ pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+ [
+   pip.parse(
+-    hub_name = "pypi",
++    hub_name = "pybind11_abseil_pypi",
+     python_version = version,
+     requirements_lock = "//pybind11_abseil/requirements:requirements_lock_" + version.replace('.','_') + ".txt",
+   )
+@@ -72 +72 @@ pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+-use_repo(pip, "pypi")
++use_repo(pip, pypi = "pybind11_abseil_pypi")

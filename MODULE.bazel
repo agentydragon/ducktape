@@ -11,6 +11,9 @@ bazel_dep(name = "gazelle", version = "0.47.0", repo_name = "bazel_gazelle")
 bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "protobuf", version = "33.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "or-tools", version = "9.15")
+bazel_dep(name = "abseil-cpp", version = "20260107.1")
 bazel_dep(name = "googleapis", version = "0.0.0-20260223-edfe7983")
 bazel_dep(name = "googleapis-go", version = "1.0.0")
 bazel_dep(name = "rules_shell", version = "0.6.1")  # Required by buildifier_prebuilt
@@ -32,6 +35,17 @@ single_version_override(
     module_name = "rules_conda",
     patch_strip = 1,
     patches = ["//third_party/patches:rules_conda_sanitize_repo_name.patch"],
+)
+
+# or-tools@9.15 pulls pybind11_abseil for wrapper targets even when we only
+# build the C++ CP-SAT backend. Its module creates a dev-only pip hub named
+# "pypi", which collides with Ducktape's root pip hub during module extension
+# resolution. Keep pybind11_abseil's apparent @pypi mapping inside that module,
+# but give its generated hub a module-specific name.
+single_version_override(
+    module_name = "pybind11_abseil",
+    patch_strip = 1,
+    patches = ["//third_party/patches:pybind11_abseil_rename_pypi_hub.patch"],
 )
 
 # Fork with two fixes for CI disk exhaustion during mypy type-checking:
