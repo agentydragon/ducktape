@@ -1,8 +1,12 @@
 variable "haku_kube_token" {
-  type        = string
-  ephemeral   = true
-  sensitive   = true
-  description = "haku-k8s Authentik JWT for the static_bearer vault credential. Set from the haku-cloud-kube-token Secret's jwt key via the Terraform CR's spec.vars. ephemeral so it never lands in plan or state (the credential's token attribute is also write-only). See main.tf rotation note."
+  type      = string
+  sensitive = true
+  # NOT ephemeral: the tofu-controller's spec.vars does not populate ephemeral
+  # input variables, so an ephemeral var arrives null and the provider rejects
+  # the credential ("auth.token: Field required"). The credential's `token` is a
+  # write-only attribute, which already keeps the value out of tfstate; sensitive
+  # keeps it out of logs. See main.tf rotation note.
+  description = "haku-k8s Authentik JWT for the static_bearer vault credential. Set from the haku-cloud-kube-token Secret's jwt key via the Terraform CR's spec.vars."
 }
 
 variable "haku_kube_token_wo_version" {
