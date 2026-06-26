@@ -2638,7 +2638,6 @@ impl ChunkPlanBuilder {
                 claim_origin: Some(diagnostic.claim_origin.clone()),
                 body_indices: diagnostic.body_indices.clone(),
                 first_mismatch: diagnostic.first_mismatch.clone(),
-                nearest_candidates: Vec::new(),
                 source_match_preview: Some(source_match::source_match_preview(
                     &diagnostic.selector.match_source,
                 )),
@@ -2662,7 +2661,6 @@ impl ChunkPlanBuilder {
                 claim_origin: None,
                 body_indices: Vec::new(),
                 first_mismatch: first_relevant_error_line(&diagnostic.message),
-                nearest_candidates: Vec::new(),
                 source_match_preview: Some(source_match::source_match_preview(
                     &diagnostic.selector.match_source,
                 )),
@@ -2684,7 +2682,6 @@ impl ChunkPlanBuilder {
                 claim_origin: duplicate.duplicate.claim_origin.clone(),
                 body_indices: Vec::new(),
                 first_mismatch: None,
-                nearest_candidates: Vec::new(),
                 source_match_preview: None,
                 source_match_hash: None,
                 source_match_body_hash: None,

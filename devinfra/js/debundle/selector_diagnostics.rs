@@ -72,23 +72,12 @@ pub struct SelectorDiagnosticEntry {
     pub claim_origin: Option<String>,
     pub body_indices: Vec<usize>,
     pub first_mismatch: Option<String>,
-    pub nearest_candidates: Vec<SelectorNearestCandidate>,
     pub source_match_preview: Option<String>,
     pub source_match_hash: Option<String>,
     pub source_match_body_hash: Option<String>,
     pub duplicate_claim: Option<DuplicateClaimReport>,
     pub message: String,
     pub recommended_next_action: String,
-}
-
-/// A near-miss top-level statement scored against an unresolved selector,
-/// cheapest-distance first.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SelectorNearestCandidate {
-    pub body_index: usize,
-    pub declared_bindings: Vec<String>,
-    pub score: usize,
-    pub first_mismatch: String,
 }
 
 /// Two selectors resolving to the same declaration identity in one chunk.

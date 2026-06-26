@@ -10,8 +10,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
-use std::io::Write;
-use std::time::{Duration, Instant};
 
 use analysis::{OwnerId, StatementOrdinal};
 use ascent::ascent;
@@ -21,19 +19,6 @@ use selector_ir::{
     SelectorFact, SelectorFactStore, SelectorProgram, SelectorProgramError, SelectorTarget,
     SelectorVariableId, SolverClaim, SolverResult, StringTerm,
 };
-
-const SELECTOR_IR_STATS_ENV: &str = "DUCKTAPE_SELECTOR_IR_STATS";
-
-fn selector_ir_stats_enabled() -> bool {
-    std::env::var(SELECTOR_IR_STATS_ENV)
-        .ok()
-        .is_some_and(|raw| {
-            !matches!(
-                raw.to_ascii_lowercase().as_str(),
-                "" | "0" | "false" | "off" | "no"
-            )
-        })
-}
 
 fn optional_u32_matches(expected: &Option<u32>, actual: u32) -> bool {
     expected.is_none_or(|expected| expected == actual)
@@ -711,8 +696,6 @@ pub fn solve(
     }
 
     let fact_index = FactIndex::from_store(facts);
-    let mut stats =
-        selector_ir_stats_enabled().then(|| SelectorIrStats::new(program, &fact_index, &support));
     let mut ascent = AscentProgram::default();
     for (owner, ordinal, kind) in &fact_index.owner_facts {
         ascent
@@ -833,19 +816,13 @@ pub fn solve(
     ) {
         ascent.ordinal_offset.push((base, ordinal, offset));
     }
-    let child_list_started = Instant::now();
     for constraint in &support.node_list_constraints {
         let candidate_parents = child_list_candidate_parents(constraint, &fact_index, &support);
-        let candidate_parent_count = candidate_parents.len();
         let rows = child_list_assignment_rows(constraint, &fact_index, candidate_parents);
-        if let Some(stats) = &mut stats {
-            stats.record_child_list_rows(constraint, candidate_parent_count, rows.len());
-        }
         for row in rows {
             ascent.child_list_assignment.push((constraint.id, row));
         }
     }
-    let child_list_elapsed = child_list_started.elapsed();
     let constraint_ids = support.constraint_ids();
     for (step, equality_checks) in support.equality_checks_by_step(&constraint_ids) {
         ascent
@@ -1250,14 +1227,7 @@ pub fn solve(
             }
         }
     }
-    if let Some(stats) = &stats {
-        stats.emit_before_ascent(child_list_elapsed);
-    }
-    let ascent_started = Instant::now();
     ascent.run();
-    if let Some(stats) = &stats {
-        stats.emit_after_ascent(ascent_started.elapsed());
-    }
 
     let candidates = group_solution_owners(ascent.solution_owner);
     let projected_bindings = group_solution_target_bindings(ascent.solution_target_binding);
@@ -1532,129 +1502,6 @@ fn collect_child_list_assignment_rows(
             rows,
         );
         current.truncate(current_len);
-    }
-}
-
-#[derive(Debug)]
-struct SelectorIrStats {
-    target_count: usize,
-    atom_count: usize,
-    owner_fact_count: usize,
-    ast_node_count: usize,
-    unary_constraint_count: usize,
-    node_unary_constraint_count: usize,
-    binary_constraint_count: usize,
-    owner_node_constraint_count: usize,
-    node_node_constraint_count: usize,
-    node_list_constraint_count: usize,
-    equality_constraint_count: usize,
-    child_list_rows: Vec<ChildListRowStats>,
-}
-
-#[derive(Debug, Clone)]
-struct ChildListRowStats {
-    constraint_id: usize,
-    parent_var: usize,
-    candidate_parent_count: usize,
-    row_count: usize,
-    segment_lengths: Vec<usize>,
-    anchored_left: bool,
-    anchored_right: bool,
-}
-
-impl SelectorIrStats {
-    fn new(program: &SelectorProgram, facts: &FactIndex, support: &ProgramSupport) -> Self {
-        Self {
-            target_count: program.targets.len(),
-            atom_count: program.atoms.len(),
-            owner_fact_count: facts.owner_facts.len(),
-            ast_node_count: facts.all_nodes.len(),
-            unary_constraint_count: support.unary_constraints.len(),
-            node_unary_constraint_count: support.node_unary_constraints.len(),
-            binary_constraint_count: support.binary_constraints.len(),
-            owner_node_constraint_count: support.owner_node_constraints.len(),
-            node_node_constraint_count: support.node_node_constraints.len(),
-            node_list_constraint_count: support.node_list_constraints.len(),
-            equality_constraint_count: support.equality_constraints.len(),
-            child_list_rows: Vec::new(),
-        }
-    }
-
-    fn record_child_list_rows(
-        &mut self,
-        constraint: &NodeListConstraint,
-        candidate_parent_count: usize,
-        row_count: usize,
-    ) {
-        self.child_list_rows.push(ChildListRowStats {
-            constraint_id: constraint.id,
-            parent_var: constraint.parent.0,
-            candidate_parent_count,
-            row_count,
-            segment_lengths: constraint.segments.iter().map(Vec::len).collect(),
-            anchored_left: constraint.anchored_left,
-            anchored_right: constraint.anchored_right,
-        });
-    }
-
-    fn emit_before_ascent(&self, child_list_elapsed: Duration) {
-        let child_list_row_count = self
-            .child_list_rows
-            .iter()
-            .map(|entry| entry.row_count)
-            .sum::<usize>();
-        let max_child_list_rows = self
-            .child_list_rows
-            .iter()
-            .map(|entry| entry.row_count)
-            .max()
-            .unwrap_or(0);
-        eprintln!(
-            "[debundle selector_ir] targets={} atoms={} owners={} ast_nodes={} constraints.unary={} constraints.node_unary={} constraints.binary={} constraints.owner_node={} constraints.node_node={} constraints.node_list={} constraints.equality={} child_list.rows={} child_list.max_rows={} child_list.row_generation_ms={}",
-            self.target_count,
-            self.atom_count,
-            self.owner_fact_count,
-            self.ast_node_count,
-            self.unary_constraint_count,
-            self.node_unary_constraint_count,
-            self.binary_constraint_count,
-            self.owner_node_constraint_count,
-            self.node_node_constraint_count,
-            self.node_list_constraint_count,
-            self.equality_constraint_count,
-            child_list_row_count,
-            max_child_list_rows,
-            child_list_elapsed.as_millis(),
-        );
-        let mut top_child_lists = self.child_list_rows.clone();
-        top_child_lists.sort_by_key(|entry| {
-            (
-                std::cmp::Reverse(entry.row_count),
-                std::cmp::Reverse(entry.candidate_parent_count),
-                entry.constraint_id,
-            )
-        });
-        for entry in top_child_lists.into_iter().take(10) {
-            eprintln!(
-                "[debundle selector_ir child_list] constraint={} parent_var={} candidate_parents={} rows={} segment_lengths={:?} anchored_left={} anchored_right={}",
-                entry.constraint_id,
-                entry.parent_var,
-                entry.candidate_parent_count,
-                entry.row_count,
-                entry.segment_lengths,
-                entry.anchored_left,
-                entry.anchored_right,
-            );
-        }
-        let _ = std::io::stderr().flush();
-    }
-
-    fn emit_after_ascent(&self, ascent_elapsed: Duration) {
-        eprintln!(
-            "[debundle selector_ir] ascent_run_ms={}",
-            ascent_elapsed.as_millis()
-        );
-        let _ = std::io::stderr().flush();
     }
 }
 
