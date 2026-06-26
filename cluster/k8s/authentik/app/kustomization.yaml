@@ -28,7 +28,6 @@ configMapGenerator:
       - blueprints/claude-code-airlock-oauth2.yaml
       - blueprints/sdr-sso.yaml
       - blueprints/adsb-sso.yaml
-      - blueprints/study-casino-sso.yaml
       - blueprints/claude-service-account.yaml
       - blueprints/openhands-sso.yaml
       - blueprints/fava-sso.yaml

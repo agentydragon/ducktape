@@ -20,7 +20,6 @@ on:
     paths:
       - "devinfra/rbe_image/**"
       - "skills/freecad/Dockerfile.test"
-      - "third_party/kubernetes-mcp-server-pin.txt"
       - "x/rtl_tcp/Dockerfile"
       - "loom/gym/sandbox/**"
       - ".github/workflows/container-images.yml"
@@ -37,10 +36,6 @@ permissions:
 env:
   RBE_IMAGE: ghcr.io/${{ github.repository_owner }}/rbe-worker
   FREECAD_IMAGE: ghcr.io/${{ github.repository_owner }}/freecad-test
-  # CLEANUP: remove K8S_MCP_IMAGE block when upstream releases the
-  # /.well-known/oauth-authorization-server 404 fallback (post-v0.0.60).
-  # See third_party/kubernetes-mcp-server-pin.txt.
-  K8S_MCP_IMAGE: ghcr.io/${{ github.repository_owner }}/kubernetes-mcp-server
 
 jobs:
   rbe-image:
@@ -82,36 +77,6 @@ jobs:
           file: skills/freecad/Dockerfile.test
           cache_from: type=registry,ref=${{ env.FREECAD_IMAGE }}:buildcache
           cache_to: type=registry,ref=${{ env.FREECAD_IMAGE }}:buildcache,mode=max
-
-  # CLEANUP: delete this job when upstream releases a kubernetes-mcp-server version
-  # with the /.well-known/oauth-authorization-server 404 fallback (currently on main,
-  # post-v0.0.60 but unreleased). See third_party/kubernetes-mcp-server-pin.txt.
-  kubernetes-mcp-server-image:
-    name: Kubernetes MCP Server
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    outputs:
-      pin_tag: ${{ steps.build.outputs.pin_tag }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.ref_name }}
-
-      - name: Fetch upstream source at pinned commit
-        run: |
-          COMMIT=$(grep -v '^#' third_party/kubernetes-mcp-server-pin.txt | tr -d '[:space:]')
-          echo "Fetching containers/kubernetes-mcp-server at $COMMIT"
-          git clone --filter=tree:0 https://github.com/containers/kubernetes-mcp-server.git /tmp/k8s-mcp-server
-          git -C /tmp/k8s-mcp-server checkout "$COMMIT"
-
-      - uses: ./.github/actions/ghcr-build-push
-        id: build
-        with:
-          image: ${{ env.K8S_MCP_IMAGE }}
-          context: /tmp/k8s-mcp-server
-          file: /tmp/k8s-mcp-server/Dockerfile
-          cache_from: type=registry,ref=${{ env.K8S_MCP_IMAGE }}:buildcache
-          cache_to: type=registry,ref=${{ env.K8S_MCP_IMAGE }}:buildcache,mode=max
 
   rtl-tcp-image:
     name: RTL-TCP

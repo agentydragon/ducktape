@@ -95,20 +95,6 @@
       pkgsUnstable = import nixpkgs-unstable {
         inherit system;
         config.allowUnfree = true;
-        overlays = [
-          # CLEANUP(added 2026-04-18): Remove once NixOS/nixpkgs#510952 merges into
-          # nixos-unstable and we update the flake input.
-          # The npm tarball ships vendor/seccomp/*/apply-seccomp at mode 0644;
-          # NixOS preserves this into the store, breaking all sandboxed Bash calls.
-          # Upstream: anthropics/claude-code#43367
-          (final: prev: {
-            claude-code = prev.claude-code.overrideAttrs (old: {
-              postPatch = (old.postPatch or "") + ''
-                chmod -f +x vendor/seccomp/*/apply-seccomp 2>/dev/null || true
-              '';
-            });
-          })
-        ];
       };
 
       # Shared home-manager args passed to every HM configuration.

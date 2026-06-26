@@ -5,14 +5,14 @@
   lib,
 }:
 let
-  version = "0.0.60";
+  version = "0.0.63";
 in
 pkgs.stdenv.mkDerivation {
   pname = "kubernetes-mcp-server";
   inherit version;
   src = pkgs.fetchurl {
     url = "https://github.com/containers/kubernetes-mcp-server/releases/download/v${version}/kubernetes-mcp-server-linux-amd64";
-    hash = "sha256-UpUPjhtxzeG4POD5q/Rj1Ik1BJXm4Dq1Nmh4M3SUr3U=";
+    hash = "sha256-ysEVrf7CMJdpnwoiK+c72fE9L91fzsMuquy1oZLuT6Q=";
   };
   dontUnpack = true;
   installPhase = ''

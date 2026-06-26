@@ -10,7 +10,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import Field, PositiveInt, field_validator
+from pydantic import Field, PositiveInt
 
 from finance.augur.api.local_regulation import LocalRegulation
 from finance.augur.api.schemas import ApiModel
@@ -61,16 +61,6 @@ class Property(ApiModel):
             "to say. Frontend renders with `whitespace-pre-line` so authors can use newlines."
         ),
     )
-
-    @field_validator("notes", mode="before")
-    @classmethod
-    def _collapse_list_notes(cls, value: object) -> object:
-        # CLEANUP(added 2026-05-25): Drop once gaffer-private/k8s/augur/properties.yaml
-        #   has been migrated to single-string `notes:` (deploy currently authors
-        #   per-paragraph YAML lists). Until then, fold the list into one blob.
-        if isinstance(value, (list, tuple)):
-            return "\n\n".join(value)
-        return value
 
 
 class ProductInputDefaults(ApiModel):

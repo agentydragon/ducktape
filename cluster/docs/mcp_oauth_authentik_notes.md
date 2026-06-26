@@ -83,14 +83,8 @@ to Authentik. Authentik returns 404 HTML for
 `openid-configuration`). v0.0.60 blindly tried to JSON-decode the HTML
 and returned 500 to the client.
 
-**Fix on upstream main** (unreleased): 404 fallback that generates the
-`oauth-authorization-server` metadata from `openid-configuration`.
-
-**What we did**: built our own image from upstream commit
-`8d2bb9b748ba77075a0305389c105f202d7e9751` via
-`.github/workflows/container-images.yml`, pinned in
-`third_party/kubernetes-mcp-server-pin.txt`. All `CLEANUP` markers
-point back to this — switch to the upstream image when it releases.
+Fixed upstream in v0.0.63. The in-cluster MCP deployments now use the
+upstream `ghcr.io/containers/kubernetes-mcp-server:v0.0.63` image directly.
 
 ### The DCR problem
 
@@ -279,11 +273,6 @@ provider's `allowed_redirect_uris`. In the Custom Connectors UI, paste:
 - [ ] Watch for Authentik DCR release (2026.8.0?); once shipped, we can
       switch to DCR and remove the pre-configured client setup (though
       the current setup is arguably fine forever)
-- [ ] Watch for kubernetes-mcp-server release with the well-known 404
-      fallback; switch back to upstream image and delete our build job
-      (see CLEANUP markers in `third_party/kubernetes-mcp-server-pin.txt`,
-      `.github/workflows/container-images.yml`, and the deployment
-      manifests)
 - [ ] Consider a FastMCP wrapper pattern for future MCP servers that
       want DCR — `mcp_infra/authentik_auth/auth.py` provides
       `build_authentik_auth` / `AuthentikExchangeAuth` which implement
