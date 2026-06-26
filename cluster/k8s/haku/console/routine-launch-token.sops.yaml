@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: haku-routine-launch-token
+    namespace: haku-console
+    annotations:
+        description: 'Bearer (sk-ant-oat01-…) that fires the Haku "claude-code-web routine" — a Claude Code web session that runs the Haku loop. The console''s (forthcoming) capability tier POSTs to the routine''s public fire URL with this token to launch a run on operator click. Public fire URL: https://api.anthropic.com/v1/claude_code/routines/trig_0158pCMU1XBhoALBWikwSyK4/fire Deliberately lives in the haku-console namespace (NOT haku-sandbox) so Haku itself cannot read it — this is the secret the trust boundary exists to hold. Rotate by minting a new routine trigger token in the Anthropic Console and re-`sops`-ing this file. See haku/PLAN.md → "The agent-authored console" (capability tier).'
+type: Opaque
+stringData:
+    token: ENC[AES256_GCM,data:w0arGochPwpuJ9CKTDlE5nmkLwCuFj1wZZh22AbdRa1U+Q9FsDRiuk4v7udeZC9qT51h2N4fRV86aXOAyF3gQlaFHXIzRbb00KVpBnBLEqDDTeucRQng1QWvRt7Yk+QZM++emBKTGPMqGLaq,iv:5e/AmPgvp/eyFgOkHhuGg0Jnb0cgcNWwkthd4N3mh9M=,tag:i8NRemfKjjmReH4Iaoxmng==,type:str]
+sops:
+    age:
+        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA1UXUrcjdKdkxzQ3lDQUZs
+            T1FPMmkxUlhlSVdtYzFPZVNBcWQ0elBCWTFBClZlUW5pR2RRMmZ5SUFhejF5L0NH
+            WmU4dVlKNFpFekRRcGJJZm1VVUNZUmsKLS0tIEhJRUZEN3lBOFNYQ2Y3R1ByUGFR
+            cG5SSDQraEhOZktIYXd5TWVqSUs0UEEKeLa2UR2hyujXxqKTh7s/0Lfk+svU3rxL
+            TaMQRkNKnDbVdWtYH79QATv2iGB7uVqYmmWnr1hkXxhWXw9Di3w/fA==
+            -----END AGE ENCRYPTED FILE-----
+        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA5eldQRE9zVzY1Rk1HcjRl
+            K3UxMnNGNGxMQzFucFY4OGVZQVpWVGtJWlZjCi8rYXh1NUZwSTlYTStYejR3MDlv
+            QTdVa1pqNHA3eTFwaTN4N3B6SlNOYWcKLS0tIGRiSEZZOGhaN010R3M4R2pBUFZB
+            QTFqSXRHV1R0bktSYkRzL3lhTjRRa2MKRptS2V8uaPeK9x6yy9r4F6sHrpo2ZJPl
+            XuJWPmHKSIWUGDLbq+Eiw+sjYJzuMQHkP/eEadUmxrPYsiXtWwf3eQ==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-06-26T08:37:24Z"
+    mac: ENC[AES256_GCM,data:D9ciQSZWA6SacEeJcPnvd50F6lHbbbOLUBt2Xkst9qt/aYkCCumHG8PNx8rP3WrqxstI6mPYSQw6ON8TIU3oMt6IvUCuCOaYE6VCfuimPfFEUPRgtNBFdNhwh1S+wiJ1WQaETyeApVr8TRavLoQHCIsR5UUkI2Gd6Os2GKkJY3I=,iv:+EyuVKME96vZ2HLGI0DMRwYhK4HG/MNnYSD7wYZlsfg=,tag:LvkJdLmyIxRJlONPxLbB+w==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1
