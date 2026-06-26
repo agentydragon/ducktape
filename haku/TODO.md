@@ -6,7 +6,8 @@ actionable checklist. Remove entries once done.
 ## New read-only sources to wire
 
 Each follows the same pattern: a read-only credential or filter facade reachable
-from `haku-sandbox`, plus an example playbook in `base/playbooks/`.
+from `haku-sandbox`, plus a source guide in `base/sources/` (and any reusable
+technique as a recipe in `base/recipes.md`).
 
 - **CPAP data** — read-only access to daily summaries / AHI / compliance (see
   `cpap/`; WebDAV + EDF). Land scoped read creds as a `haku-sandbox` secret and
