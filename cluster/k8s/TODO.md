@@ -144,16 +144,21 @@ Options to consider:
 
 ## Gateway: restrict `cluster-gateway` `allowedRoutes` (no agent self-exposure)
 
-- [ ] 2026-06-26: `cluster/k8s/gateway/gateway.yaml` listeners are all
-      `allowedRoutes: namespaces: from: All`, so an HTTPRoute in **any** namespace
-      can attach to the public gateway and bypass Authentik. Not currently
-      exploitable by the agents — `haku-sandbox-admin` / `claude-sandbox-admin` are
-      explicit resource allowlists that omit `httproutes`/`gateways` — but it's a
-      latent hole: any future RBAC slip granting an agent-writable namespace
-      `httproutes` would let it self-expose publicly. Tighten
-      `allowedRoutes.namespaces` to a label `Selector` (or explicit set) that agent
-      namespaces (`haku-sandbox`, `claude-sandbox`, …) never carry, so "the agent
-      can't create public routes" holds structurally at the gateway, not only via
-      RBAC. The agent-authored Haku UI (`haku/console/plans/free_form_ui_iframe.md`)
-      depends on this — its UI must stay reachable only via the operator-owned
-      Authentik route.
+The hole: `cluster/k8s/gateway/gateway.yaml` listeners are all `allowedRoutes:
+namespaces: from: All`, so an HTTPRoute in **any** namespace can attach to the public
+gateway and bypass Authentik. Not currently exploitable — `haku-sandbox-admin` /
+`claude-sandbox-admin` omit `httproutes`/`gateways` — but a latent hole the
+agent-authored Haku UI (`haku/console/plans/free_form_ui_iframe.md`) relies on staying
+closed (its UI must reach the operator only via the Authentik route).
+
+- [x] **Mitigated (Kyverno denylist).** `restrict-agent-gateway-routes` ClusterPolicy
+      denies route/Gateway creation in the agent namespaces — closes the hole without
+      touching the live gateway. This is the current fence.
+- [ ] **Still want the `allowedRoutes` Selector eventually** (belt-and-suspenders at
+      the gateway layer itself, not only via a per-namespace deny). Deferred because:
+      (a) Cilium bug #42159 — per-listener `allowedRoutes` bleeds across listeners in
+      this setup (see `cluster/docs/plan.md`); (b) the kube-API routes live in the
+      built-in `default` namespace (and a flux-system route) with no in-repo `Namespace`
+      manifest to carry a selector label. Revisit if/when #42159 is fixed and there's a
+      clean way to label those built-in namespaces — then switch listeners to
+      `from: Selector` and the denylist becomes redundant.
