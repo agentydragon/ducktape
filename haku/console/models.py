@@ -104,6 +104,10 @@ class DashboardResponse(BaseModel):
     # This is a benign public link — the privileged launch action stays on the
     # capability tier (see haku.console.capabilities).
     launch_routine_url: str | None = None
+    # The Authentik-gated origin of Haku's own UI service (haku-sandbox), embedded in a
+    # sandboxed cross-origin iframe. None when unconfigured. The console never renders
+    # Haku's UI itself; it only frames this origin. See plans/free_form_ui_iframe.md.
+    haku_ui_url: str | None = None
 
 
 class FeedbackRequest(BaseModel):

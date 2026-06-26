@@ -83,12 +83,22 @@ js_library(
 )
 
 js_library(
+    name = "haku_ui",
+    srcs = ["haku_ui.tsx"],
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
     name = "app",
     srcs = ["app.tsx"],
     deps = [
         ":client",
         ":constants",
         ":feedback",
+        ":haku_ui",
         ":launch",
         ":task",
         ":toast",
@@ -136,6 +146,7 @@ filegroup(
         "client.ts",
         "constants.ts",
         "feedback.tsx",
+        "haku_ui.tsx",
         "index.html",
         "launch.tsx",
         "main.tsx",

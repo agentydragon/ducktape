@@ -4,6 +4,7 @@ import { Anchor, Group, Loader, Text, Title } from "@mantine/core";
 import { type DashboardResponse, type Item, clickAction, fetchDashboard, unclickAction } from "./client.ts";
 import { INTAKE_NEW, UP_NEXT } from "./constants.ts";
 import { FeedbackForm } from "./feedback.tsx";
+import { HakuUiButton } from "./haku_ui.tsx";
 import { LaunchRoutineButton } from "./launch.tsx";
 import { TaskCard, clickKey } from "./task.tsx";
 import { toastError } from "./toast.ts";
@@ -79,7 +80,10 @@ export default function App() {
     <div className="mx-auto max-w-3xl px-4 py-8">
       <Group justify="space-between" align="center">
         <Title order={1}>Haku</Title>
-        <LaunchRoutineButton routineUrl={data.launch_routine_url} />
+        <Group>
+          <HakuUiButton uiUrl={data.haku_ui_url} />
+          <LaunchRoutineButton routineUrl={data.launch_routine_url} />
+        </Group>
       </Group>
       <Text c="dimmed" mb="lg">
         Your value-ranked backlog ·{" "}

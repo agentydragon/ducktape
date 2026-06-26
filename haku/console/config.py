@@ -60,3 +60,10 @@ class Settings(BaseSettings):
     # makes the SPA refetch its token).
     launch_routine: LaunchRoutineConfig | None = None
     csrf_secret: SecretStr | None = None
+
+    # Free-form UI (Phase 1b): the Authentik-gated origin of Haku's own UI service
+    # (runs in haku-sandbox), embedded in the console as a sandboxed cross-origin
+    # iframe. When set, the dashboard surfaces the embed and the CSP allows framing
+    # that origin (and only it); unset → the feature is dormant. The console never
+    # renders Haku's UI itself. See haku/console/plans/free_form_ui_iframe.md.
+    haku_ui_url: str | None = None

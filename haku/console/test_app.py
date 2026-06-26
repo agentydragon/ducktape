@@ -73,5 +73,21 @@ def test_item_feedback_appends_tagged_intake_note(client, seeded) -> None:
     assert item_id in body
 
 
+def test_haku_ui_url_surfaced_and_csp_allows_framing_it(make_client) -> None:
+    ui = "https://haku-ui.example.test"
+    with make_client(haku_ui_url=ui) as c:
+        resp = c.get("/api/dashboard")
+        assert resp.json()["haku_ui_url"] == ui
+        csp = resp.headers["content-security-policy"]
+        assert f"frame-src 'self' {ui}" in csp
+        assert "frame-ancestors 'none'" in csp
+
+
+def test_haku_ui_unconfigured_is_none_and_csp_denies_framing(client) -> None:
+    resp = client.get("/api/dashboard")
+    assert resp.json()["haku_ui_url"] is None
+    assert "frame-src 'none'" in resp.headers["content-security-policy"]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

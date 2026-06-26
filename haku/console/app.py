@@ -17,9 +17,10 @@ import contextlib
 import datetime as dt
 import logging
 import secrets
+from collections.abc import Awaitable, Callable
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_csrf_protect import CsrfProtect
@@ -61,6 +62,19 @@ def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
     app.state.git_state = git_state
     app.state.settings = settings
 
+    # Content-Security-Policy: let the dashboard frame Haku's own UI origin (the
+    # sandboxed cross-origin iframe) and nothing else, and forbid the console itself
+    # from being framed. Only frame-* is set, so the SPA's own scripts/styles are
+    # unaffected. See haku/console/plans/free_form_ui_iframe.md.
+    frame_src = f"'self' {settings.haku_ui_url}" if settings.haku_ui_url else "'none'"
+    csp = f"frame-src {frame_src}; frame-ancestors 'none'"
+
+    @app.middleware("http")
+    async def _csp_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = csp
+        return response
+
     # CSRF for the capability tier: a header-located double-submit token (the SPA
     # echoes the token from GET /api/capabilities/csrf in X-CSRF-Token). Use the
     # configured secret, else an ephemeral one (fine for the single-replica console
@@ -86,7 +100,11 @@ def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
         clicked = [Click(item_id=item_id, action_id=action_id) for item_id, action_id in sorted(clicks)]
         launch = settings.launch_routine
         return DashboardResponse(
-            scan_time=scan_time, items=items, clicks=clicked, launch_routine_url=launch.page_url if launch else None
+            scan_time=scan_time,
+            items=items,
+            clicks=clicked,
+            launch_routine_url=launch.page_url if launch else None,
+            haku_ui_url=settings.haku_ui_url,
         )
 
     app.include_router(trace.router)
