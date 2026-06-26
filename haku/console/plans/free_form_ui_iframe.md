@@ -129,36 +129,77 @@ This means the console's existing **trace tier becomes legacy**: it stays only f
 the trusted declarative item list (Phase 1a). Once the UI lives in Haku's iframe,
 Haku's own backend records intent, and the trace tier can eventually be retired.
 
-## The protocol (postMessage) — minimal
+## The shell in the fullscreen model
 
-Since data + intent go to Haku's backend directly, the bridge carries only what
-genuinely needs the trusted side:
+The iframe is expected to **fill the viewport** — Haku's UI scrolls internally like
+any full-page app, so there's no content-height autosizing. The trusted shell is then
+a **thin layer over** the iframe, not chrome around it. It owns, on its **own z-layer**
+(which the agent UI can't draw over or intercept):
 
-1. **Capability requests** — the iframe asks the shell to perform a shell-owned
-   action: `postMessage {type: "requestCapability", id: "launch-routine"}` → the
-   shell renders its **own** confirm (trusted copy, CSRF, gesture) and fires with
-   the bearer. The iframe can _request_, never _invoke_. Origin is validated
-   against the real string `https://haku-ui.allegedly.works`.
-2. _(Possible later)_ richer host affordances (notifications, navigation) if the
-   agent UI needs them — added one verb at a time, each evaluated for blast radius.
+- **a persistent trust indicator** (small badge / border) so the operator can always
+  tell shell pixels from agent-authored pixels — the only pixels to trust for a
+  privileged prompt. This matters more fullscreen: the agent surface is a large
+  phishing canvas.
+- **privileged-action confirms** (below), rendered as overlays above the iframe.
+- the frame + the bridge endpoint.
 
-**v1 ships no bridge at all:** the Launch button stays in the shell chrome, and the
-iframe is a self-contained Haku app. The bridge is introduced only when Haku wants
-its own UI to surface the launch control.
+## The protocol (postMessage)
+
+Data + intent go to Haku's backend directly, so the bridge carries only actions that
+need the trusted side. Every inbound message is origin-checked
+(`event.origin === "https://haku-ui.allegedly.works"`) and schema-validated; the
+iframe can only _request_ — the shell decides and acts. Two first affordances:
+
+### `requestCapability` — perform a shell-owned action
+
+`{type: "requestCapability", id: "launch-routine"}` → the shell pops its **own**
+confirm overlay (trusted copy, CSRF) and fires with the bearer. The iframe never
+holds the bearer or invokes directly. This is the cheapest first affordance — it
+reuses the existing capability tier; the request just triggers the flow already there.
+
+### `openLink` — send the operator to a URL
+
+`{type: "openLink", url}` → the shell opens the link on the operator's behalf (the
+iframe can't: tight sandbox + cross-origin). Rules:
+
+- **Scheme is a hard gate** (never behind a confirm): allow only `https` (and
+  `mailto`); reject `javascript:` / `data:` / `blob:` / `file:` / … outright —
+  opening those in the top context would be code execution in the _shell's_ origin.
+  "Arbitrary links" means arbitrary `https` hosts, not arbitrary schemes.
+- **The host whitelist decides warn-vs-not.** It is **operator-owned trusted config
+  in the shell** — _not_ in `haku-state`, or Haku could whitelist a phishing host and
+  skip the confirm:
+  - whitelisted (claude.ai, github.com, your own services, …) → open directly;
+  - otherwise → shell **confirm overlay showing the real, full URL** → Open / Cancel
+    (a consent + anti-phishing gate: the agent supplies the URL, the shell displays it
+    honestly).
+- Always `window.open(url, "_blank", "noopener,noreferrer")`.
+
+This subsumes the item→handoff loop (a `claude.ai/new` deep-link is just a whitelisted
+open) and gives Haku a general "send me to a link" verb without ever letting agent UI
+navigate the operator unsupervised.
+
+**Popup permission (assumed one-time setup).** A `window.open` relayed over
+`postMessage` loses user-activation and gets popup-blocked. Rather than engineer
+around it, the operator grants a one-time per-origin **"allow pop-ups for
+`haku.allegedly.works`"**; thereafter the shell opens freely from postMessage
+handlers. The permission is on the **shell** origin only — the iframe stays
+`sandbox="allow-scripts"` (no `allow-popups`), so it still cannot open anything itself;
+only the trusted shell opens, and only after the scheme gate + whitelist/confirm.
+(Chrome/Firefox honor the persistent per-site allow cleanly; Safari is fiddlier —
+fine for a single-operator Chrome/Firefox tool.)
 
 ## Phasing
 
-- **v1 — frame it.** Operator stands up the Authentik-gated same-site route → the
-  `haku-ui` Service in `haku-sandbox`; the console embeds the iframe (`sandbox` +
-  CSP); Launch stays in shell chrome (no bridge). Haku stands up its Deployment and
-  serves a first page reading `haku-state`. Goal: prove the frame + isolation
-  end-to-end, with a real agent-authored page.
+- **v1 — frame it + the minimal bridge.** Operator stands up the Authentik-gated
+  same-site route → the `haku-ui` Service in `haku-sandbox`, the fullscreen iframe
+  (`sandbox` + CSP + trust indicator), and ships `requestCapability("launch-routine")`
+  - `openLink`. Haku stands up its Deployment and serves a first page reading
+    `haku-state`. Goal: prove the frame + isolation + the two affordances end-to-end.
 - **v1.5 — gateway hardening.** Tighten `cluster-gateway` `allowedRoutes` so the
   "no agent public routes" invariant holds at the gateway, not only via RBAC.
-- **v2 — the bridge.** Add the `requestCapability` protocol so agent UI can host a
-  launch control itself (shell still confirms + fires).
-- **later — retire the trace tier / declarative list** once the agent-authored UI
-  fully subsumes it.
+- **later — more capabilities; retire the trace tier / declarative list** once the
+  agent-authored UI fully subsumes it.
 
 ## Open questions
 

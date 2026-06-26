@@ -207,7 +207,9 @@ Two tiers the console treats completely differently:
   console never renders or even sees Haku's UI. The trusted shell shrinks to: hold the
   bearer, own privileged actions, and frame the UI. Data + operator intent go straight to
   Haku's own backend (it has the `haku-state` creds); a minimal `postMessage` bridge
-  carries only **capability requests** (shell still confirms + fires). Containment rests on
+  carries only what needs trusted authority — **capability requests** (shell confirms +
+  fires) and **`openLink`** (shell vets scheme + host whitelist, confirms off-whitelist,
+  opens). Containment rests on
   cross-origin isolation (the bearer is unreachable from any browser context), Haku's UI
   being reachable **only** via the operator-owned **Authentik-gated** route (no public
   exposure), and the agent being unable to create public routes (its RBAC allowlist omits
