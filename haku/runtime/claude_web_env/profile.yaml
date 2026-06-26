@@ -30,7 +30,11 @@ background_commands:
   # after_env so the K8S_* exports above are in scope.
   - name: bootstrap
     command: bash "$CLAUDE_PROJECT_DIR/haku/runtime/claude_web_env/bootstrap.sh"
-    timeout: 90
+    # TODO: investigate why git clone of haku-state takes 4+ minutes over web-home
+    # egress (observed 11th run 2026-06-26). 90s timed out every run; bumped to 600s
+    # as a stopgap. Root cause unknown — may be egress throttling on large initial
+    # clone, or Forgejo slow on cold start. Check with a fresh clone + timing.
+    timeout: 600
     after_env: true
   - name: creds banner
     command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/claude_hook/creds_banner.sh"
