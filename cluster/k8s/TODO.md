@@ -141,3 +141,19 @@ Options to consider:
       bundles shell tools like `curl`/`git`; consider moving to the standard
       Python image pattern with `pygit2` and certifi/CA-certs, matching the
       other pygit2-based images, and remove the extra package cruft.
+
+## Gateway: restrict `cluster-gateway` `allowedRoutes` (no agent self-exposure)
+
+- [ ] 2026-06-26: `cluster/k8s/gateway/gateway.yaml` listeners are all
+      `allowedRoutes: namespaces: from: All`, so an HTTPRoute in **any** namespace
+      can attach to the public gateway and bypass Authentik. Not currently
+      exploitable by the agents — `haku-sandbox-admin` / `claude-sandbox-admin` are
+      explicit resource allowlists that omit `httproutes`/`gateways` — but it's a
+      latent hole: any future RBAC slip granting an agent-writable namespace
+      `httproutes` would let it self-expose publicly. Tighten
+      `allowedRoutes.namespaces` to a label `Selector` (or explicit set) that agent
+      namespaces (`haku-sandbox`, `claude-sandbox`, …) never carry, so "the agent
+      can't create public routes" holds structurally at the gateway, not only via
+      RBAC. The agent-authored Haku UI (`haku/console/plans/free_form_ui_iframe.md`)
+      depends on this — its UI must stay reachable only via the operator-owned
+      Authentik route.
