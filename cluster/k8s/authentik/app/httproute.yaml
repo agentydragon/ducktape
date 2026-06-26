@@ -10,6 +10,21 @@ spec:
   hostnames:
     - "auth.allegedly.works"
   rules:
-    - backendRefs:
+    # Let the operator-owned Haku console (haku.allegedly.works) frame Authentik's
+    # pages, so the agent-authored Haku UI iframe (haku-ui.allegedly.works, a separate
+    # Authentik proxy app) can complete its first-time auth in-frame off the existing
+    # SSO session instead of forcing a separate top-level login. Authentik defaults to
+    # `X-Frame-Options: DENY` and sets no CSP; we swap that for a `frame-ancestors`
+    # whitelist so ONLY the console (and Authentik itself) may frame it — every other
+    # origin still can't. This does not let the framed app act as the console: that is
+    # cross-origin isolation (separate origins/cookies), independent of framing headers.
+    - filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            remove: ["X-Frame-Options"]
+            set:
+              - name: Content-Security-Policy
+                value: "frame-ancestors 'self' https://haku.allegedly.works"
+      backendRefs:
         - name: authentik-server
           port: 80
