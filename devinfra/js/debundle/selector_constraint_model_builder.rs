@@ -44,11 +44,18 @@ pub fn build_selector_constraint_model(
 
     for target in &program.targets {
         let owner_variable = model_variable(&variables, target.owner)?;
-        let binding_variable = target_binding_projections
-            .binding_variable(target.owner)
+        let binding_projection = target_binding_projections.binding_projection(target.owner);
+        let binding_variable = binding_projection
+            .and_then(TargetBindingProjection::variable)
             .map(|binding| model_variable(&variables, binding))
             .transpose()?;
-        model.add_target_projection(target.id, owner_variable, binding_variable)?;
+        let binding_const = binding_projection.and_then(TargetBindingProjection::constant);
+        model.add_target_projection_with_binding_const(
+            target.id,
+            owner_variable,
+            binding_variable,
+            binding_const,
+        )?;
     }
 
     for atom in &program.atoms {
@@ -398,10 +405,23 @@ impl TargetBindingProjections {
         }
     }
 
-    fn binding_variable(&self, owner: SelectorVariableId) -> Option<SelectorVariableId> {
-        match self.by_owner.get(&owner) {
-            Some(TargetBindingProjection::Var(binding)) => Some(*binding),
-            Some(TargetBindingProjection::Const(_)) | None => None,
+    fn binding_projection(&self, owner: SelectorVariableId) -> Option<&TargetBindingProjection> {
+        self.by_owner.get(&owner)
+    }
+}
+
+impl TargetBindingProjection {
+    fn variable(&self) -> Option<SelectorVariableId> {
+        match self {
+            Self::Var(binding) => Some(*binding),
+            Self::Const(_) => None,
+        }
+    }
+
+    fn constant(&self) -> Option<String> {
+        match self {
+            Self::Const(binding) => Some(binding.clone()),
+            Self::Var(_) => None,
         }
     }
 }
@@ -979,12 +999,20 @@ mod tests {
             ConstraintVariableId(0)
         );
         assert_eq!(model.target_projections[0].binding_variable, None);
+        assert_eq!(
+            model.target_projections[0].binding_const.as_deref(),
+            Some("shared")
+        );
         assert_eq!(model.target_projections[1].target, strict_target);
         assert_eq!(
             model.target_projections[1].owner_variable,
             ConstraintVariableId(1)
         );
         assert_eq!(model.target_projections[1].binding_variable, None);
+        assert_eq!(
+            model.target_projections[1].binding_const.as_deref(),
+            Some("specific")
+        );
         assert_eq!(model.binary_constraints, Vec::<BinaryConstraint>::new());
         assert_eq!(
             model.all_different,
@@ -1051,6 +1079,7 @@ mod tests {
             model.target_projections[0].binding_variable,
             Some(ConstraintVariableId(1))
         );
+        assert_eq!(model.target_projections[0].binding_const, None);
         assert_eq!(
             allowed_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(1)]),
             &AllowedTupleConstraint {

@@ -1115,6 +1115,32 @@ rust_test(
 )
 
 rust_library(
+    name = "selector_backend_solver",
+    srcs = ["selector_backend_solver.rs"],
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":selector_constraint_backend",
+        ":selector_constraint_model",
+        ":selector_constraint_model_builder",
+        ":selector_ir",
+    ],
+)
+
+rust_test(
+    name = "selector_backend_solver_test",
+    size = "small",
+    crate = ":selector_backend_solver",
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":selector_constraint_backend",
+        ":selector_constraint_model",
+        ":selector_ir",
+    ],
+)
+
+rust_library(
     name = "selector_ir_lowering",
     srcs = ["selector_ir_lowering.rs"],
     edition = "2024",

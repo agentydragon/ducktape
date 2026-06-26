@@ -58,6 +58,8 @@ pub struct BackendTargetProjection {
     pub owner_variable: ConstraintVariableId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binding_variable: Option<ConstraintVariableId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding_const: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -160,6 +162,7 @@ impl SelectorBackendProblem {
                     target: projection.target,
                     owner_variable: projection.owner_variable,
                     binding_variable: projection.binding_variable,
+                    binding_const: projection.binding_const.clone(),
                 })
                 .collect(),
             allowed_tuples,
@@ -247,9 +250,23 @@ pub enum BackendSolveStatus {
     Unknown,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackendAssignmentCoverage {
+    /// Returned assignments are examples only. They must not be used to classify
+    /// selector claims as unique or ambiguous.
+    #[default]
+    Sample,
+    /// Returned assignments cover every owner/binding support value that any
+    /// target projection can take across all satisfying global assignments.
+    TargetSupportComplete,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackendSolveResult {
     pub status: BackendSolveStatus,
+    #[serde(default)]
+    pub assignment_coverage: BackendAssignmentCoverage,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assignments: Vec<BackendAssignment>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

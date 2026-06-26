@@ -61,6 +61,8 @@ pub struct TargetProjection {
     pub owner_variable: ConstraintVariableId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binding_variable: Option<ConstraintVariableId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding_const: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -151,6 +153,24 @@ impl SelectorConstraintModel {
         owner_variable: ConstraintVariableId,
         binding_variable: Option<ConstraintVariableId>,
     ) -> Result<(), ConstraintModelError> {
+        self.add_target_projection_with_binding_const(
+            target,
+            owner_variable,
+            binding_variable,
+            None,
+        )
+    }
+
+    pub fn add_target_projection_with_binding_const(
+        &mut self,
+        target: SelectorTargetId,
+        owner_variable: ConstraintVariableId,
+        binding_variable: Option<ConstraintVariableId>,
+        binding_const: Option<String>,
+    ) -> Result<(), ConstraintModelError> {
+        if binding_variable.is_some() && binding_const.is_some() {
+            return Err(ConstraintModelError::ConflictingTargetBindingProjection { target });
+        }
         self.require_domain(owner_variable, VariableDomain::Owner)?;
         if let Some(binding_variable) = binding_variable {
             self.require_domain(binding_variable, VariableDomain::String)?;
@@ -166,6 +186,7 @@ impl SelectorConstraintModel {
             target,
             owner_variable,
             binding_variable,
+            binding_const,
         });
         Ok(())
     }
@@ -241,6 +262,11 @@ impl SelectorConstraintModel {
             self.require_domain(projection.owner_variable, VariableDomain::Owner)?;
             if let Some(binding_variable) = projection.binding_variable {
                 self.require_domain(binding_variable, VariableDomain::String)?;
+            }
+            if projection.binding_variable.is_some() && projection.binding_const.is_some() {
+                return Err(ConstraintModelError::ConflictingTargetBindingProjection {
+                    target: projection.target,
+                });
             }
             if !targets.insert(projection.target) {
                 return Err(ConstraintModelError::DuplicateTargetProjection {
@@ -516,6 +542,9 @@ pub enum ConstraintModelError {
     DuplicateTargetProjection {
         target: SelectorTargetId,
     },
+    ConflictingTargetBindingProjection {
+        target: SelectorTargetId,
+    },
     UnknownTargetProjection {
         target: SelectorTargetId,
     },
@@ -612,6 +641,10 @@ impl fmt::Display for ConstraintModelError {
             Self::DuplicateTargetProjection { target } => {
                 write!(f, "target {target:?} has multiple projections")
             }
+            Self::ConflictingTargetBindingProjection { target } => write!(
+                f,
+                "target {target:?} projects both a binding variable and a constant binding"
+            ),
             Self::UnknownTargetProjection { target } => {
                 write!(f, "target {target:?} has no model projection")
             }
