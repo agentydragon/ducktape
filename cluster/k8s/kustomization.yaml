@@ -293,6 +293,7 @@ resources:
   # --- grocy ---
   - grocy/sf/app/flux-kustomization.yaml
   - grocy/sf/agent-rbac/flux-kustomization.yaml
+  - grocy/sf/haku-user/flux-kustomization.yaml
   - grocy/vallejo/app/flux-kustomization.yaml
   - grocy/vallejo/agent-rbac/flux-kustomization.yaml
 
