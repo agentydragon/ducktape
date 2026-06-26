@@ -754,17 +754,18 @@ resource "authentik_property_mapping_provider_scope" "kubectl_machine_groups" {
     if username == "ak-kubectl-sandbox-client-credentials-client_credentials":
         return {"groups": ["kubectl-sandbox-users"]}
     if username == "haku-k8s":
-        # Multi-audience: the default aud is this provider's client_id
-        # (kubectl-sandbox-client-credentials), which kube-apiserver trusts for
-        # the direct kubeapi.allegedly.works path. Adding kubectl-passthrough-mcp
-        # lets the SAME token also authenticate to the passthrough kubectl MCP
-        # (its oauth_audience is kubectl-passthrough-mcp), which forwards the JWT
-        # to kube-apiserver. Consumer: tf/gitops/haku-cloud-agent — Haku's
-        # Anthropic-hosted managed agent reaches the cluster via that MCP with a
-        # static_bearer vault credential carrying this token. Authentik merges
-        # this aud with the provider default, so the minted token carries both;
-        # the authentik-jwt-rotation rotator asserts expected_audiences on mint.
-        return {"groups": ["haku"], "aud": "kubectl-passthrough-mcp"}
+        # Multi-audience. NOTE: Authentik REPLACES the token aud with whatever
+        # this mapping returns — it does NOT merge with the provider-default
+        # client_id — so every audience must be listed explicitly here, or the
+        # default (kubectl-sandbox-client-credentials) is dropped. That default
+        # keeps the direct kubeapi.allegedly.works path working; kubectl-passthrough-mcp
+        # lets the SAME token authenticate to the passthrough kubectl MCP (its
+        # oauth_audience is kubectl-passthrough-mcp), which forwards the JWT to
+        # kube-apiserver. Consumer: tf/gitops/haku-cloud-agent — Haku's Anthropic-
+        # hosted managed agent reaches the cluster via that MCP with a static_bearer
+        # vault credential carrying this token. The authentik-jwt-rotation rotator
+        # asserts both audiences on every mint.
+        return {"groups": ["haku"], "aud": ["kubectl-sandbox-client-credentials", "kubectl-passthrough-mcp"]}
     return {"groups": []}
   EXPR
 }
