@@ -38,6 +38,19 @@ spec:
               mountPath: /config
             - name: settingoverrides
               mountPath: /config/data/settingoverrides
+          lifecycle:
+            # Trigger Grocy's lazy schema migration at startup so a fresh DB is
+            # migrated before anything downstream (the MCP, logins, the user-perms
+            # Terraform) hits it. `/` is auth-exempt and runs MigrateDatabase()
+            # then 302s. Best-effort: bounded retry until the server is up, never
+            # fails the container — Grocy's normal lazy migration still covers the
+            # first real request if the server is slow to come up here.
+            postStart:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - "i=0; while [ $i -lt 60 ]; do curl -fsS -o /dev/null http://localhost:80/ && exit 0; sleep 2; i=$((i+1)); done"
           resources:
             requests:
               cpu: 50m
