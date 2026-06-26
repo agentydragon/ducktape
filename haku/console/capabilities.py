@@ -1,0 +1,72 @@
+"""Capability tier: high-privilege actions the console performs that Haku cannot.
+
+Unlike the trace tier (`haku.console.trace`), these endpoints use console-only
+secrets and act on the world, so they are **CSRF-gated**, **audited** to this
+trusted namespace's logs (which Haku has no RBAC to read), and the capability set
+is a small, **PR-gated** allowlist. Today the one capability is `launch-routine`:
+firing the Haku "claude-code-web routine" via its public Anthropic fire URL with
+the bearer from the `haku-routine-launch-token` secret. The bearer never leaves
+this process. See `haku/PLAN.md` → _The agent-authored console_.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Annotated, cast
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
+from fastapi_csrf_protect import CsrfProtect
+from pydantic import BaseModel
+
+from haku.console.config import LaunchRoutineConfig, Settings
+
+logger = logging.getLogger(__name__)
+
+Csrf = Annotated[CsrfProtect, Depends()]
+
+router = APIRouter(prefix="/api/capabilities", tags=["capabilities"])
+
+
+class LaunchRoutineResult(BaseModel):
+    status: str
+    upstream_status: int
+
+
+def _settings(request: Request) -> Settings:
+    # app.state is Starlette's untyped (Any) container; create_app puts Settings there.
+    return cast(Settings, request.app.state.settings)
+
+
+def _launch_config(settings: Annotated[Settings, Depends(_settings)]) -> LaunchRoutineConfig:
+    if settings.launch_routine is None:
+        raise HTTPException(status_code=503, detail="launch-routine capability is not configured")
+    return settings.launch_routine
+
+
+# The SPA fetches a CSRF token here (and gets the signed double-submit cookie), then
+# echoes the token in the X-CSRF-Token header on capability POSTs. Gating the
+# privileged tier this way stops a cross-site request from riding the operator's
+# Authentik session cookie to fire a capability.
+@router.get("/csrf")
+async def csrf_token(csrf_protect: Csrf) -> JSONResponse:
+    token, signed = csrf_protect.generate_csrf_tokens()
+    response = JSONResponse({"csrf_token": token})
+    csrf_protect.set_csrf_cookie(signed, response)
+    return response
+
+
+@router.post("/launch-routine")
+async def launch_routine(
+    request: Request, csrf_protect: Csrf, config: Annotated[LaunchRoutineConfig, Depends(_launch_config)]
+) -> LaunchRoutineResult:
+    """Fire the Haku claude-code-web routine. CSRF-gated; the bearer stays server-side."""
+    await csrf_protect.validate_csrf(request)
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(config.url, headers={"Authorization": f"Bearer {config.token.get_secret_value()}"})
+    # Audit to stdout in the haku-console namespace (Haku can't read these logs).
+    logger.info("capability launch-routine fired: upstream status %s", resp.status_code)
+    if not resp.is_success:
+        raise HTTPException(status_code=502, detail=f"routine fire failed upstream ({resp.status_code})")
+    return LaunchRoutineResult(status="launched", upstream_status=resp.status_code)

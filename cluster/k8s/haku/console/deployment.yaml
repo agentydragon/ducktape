@@ -67,6 +67,16 @@ spec:
                 secretKeyRef:
                   name: haku-state-git-write
                   key: password
+            # Capability tier: the launch-routine action. The fire URL is public
+            # (clear text); the bearer comes from the haku-console-only secret so
+            # Haku can't read it. See haku/PLAN.md → "The agent-authored console".
+            - name: HAKU_CONSOLE_LAUNCH_ROUTINE__URL
+              value: https://api.anthropic.com/v1/claude_code/routines/trig_0158pCMU1XBhoALBWikwSyK4/fire
+            - name: HAKU_CONSOLE_LAUNCH_ROUTINE__TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-routine-launch-token
+                  key: token
           resources:
             requests:
               cpu: 50m

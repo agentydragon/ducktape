@@ -43,14 +43,28 @@ py_library(
 )
 
 py_library(
+    name = "capabilities",
+    srcs = ["capabilities.py"],
+    deps = [
+        ":config",
+        "@pypi//fastapi",
+        "@pypi//fastapi_csrf_protect",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "app",
     srcs = ["app.py"],
     deps = [
+        ":capabilities",
         ":config",
         ":git_state",
         ":models",
         ":trace",
         "@pypi//fastapi",
+        "@pypi//fastapi_csrf_protect",
         "@pypi//uvicorn",
     ],
 )
@@ -103,6 +117,23 @@ py_test(
         "//:conftest",
         "@pypi//pygit2",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_capabilities",
+    srcs = ["test_capabilities.py"],
+    deps = [
+        ":app",
+        ":config",
+        ":conftest",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
     ],
 )
 

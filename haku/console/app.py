@@ -5,9 +5,9 @@ JSON API under ``/api``. Writes are split into tiers (see `haku/PLAN.md` → _Th
 agent-authored console_): the **trace tier** (`haku.console.trace`) only records
 operator-expressed intent into haku-state — clicks (the overlay Haku reduces) and
 feedback — and is the low-privilege surface safe for agent-authored UI. The
-high-privilege **capability tier** (console-only secrets, real-world side effects)
-will be a separate, gated router. ``app.py`` itself serves the read endpoints and
-the SPA.
+high-privilege **capability tier** (`haku.console.capabilities`) uses console-only
+secrets and acts on the world (launching the routine); it is CSRF-gated and audited.
+``app.py`` wires both routers, configures CSRF, and serves the read endpoints + SPA.
 """
 
 from __future__ import annotations
@@ -16,12 +16,16 @@ import asyncio
 import contextlib
 import datetime as dt
 import logging
+import secrets
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi_csrf_protect import CsrfProtect
+from fastapi_csrf_protect.exceptions import CsrfProtectError
 
-from haku.console import trace
+from haku.console import capabilities, trace
 from haku.console.config import Settings
 from haku.console.git_state import GitState
 from haku.console.models import Click, DashboardResponse
@@ -53,8 +57,20 @@ def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
                 await pull
 
     app = FastAPI(title="Haku console", lifespan=lifespan)
-    # Routers read git_state off app.state (see haku.console.trace).
+    # Routers read git_state / settings off app.state (see haku.console.{trace,capabilities}).
     app.state.git_state = git_state
+    app.state.settings = settings
+
+    # CSRF for the capability tier: a header-located double-submit token (the SPA
+    # echoes the token from GET /api/capabilities/csrf in X-CSRF-Token). Use the
+    # configured secret, else an ephemeral one (fine for the single-replica console
+    # — a restart just makes the SPA refetch its token).
+    csrf_secret = settings.csrf_secret.get_secret_value() if settings.csrf_secret else secrets.token_urlsafe(32)
+    CsrfProtect.load_config(lambda: [("secret_key", csrf_secret), ("token_location", "header")])
+
+    @app.exception_handler(CsrfProtectError)
+    async def _csrf_error(request: Request, exc: CsrfProtectError) -> JSONResponse:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -71,6 +87,7 @@ def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
         return DashboardResponse(scan_time=scan_time, items=items, clicks=clicked)
 
     app.include_router(trace.router)
+    app.include_router(capabilities.router)
 
     # The built React SPA is served same-origin for everything else. Mounted last so the
     # API routes above take precedence; left unmounted in tests (static_dir unset).

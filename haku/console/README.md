@@ -30,11 +30,31 @@ Feedback — the global box, or a per-item box on each card — appends to `inta
 (`POST /api/trace/feedback`); per-item notes are tagged with the item id, which Haku
 reduces as feedback on that item.
 
-These writes are the **trace tier** (`trace.py`): they only record operator-expressed
-intent into haku-state, which Haku already owns, so they're safe to expose to
-agent-authored UI. Privileged actions that use console-only secrets or act on the
-world will live in a separate, gated **capability tier**. See `haku/PLAN.md` → _The
-agent-authored console_.
+## Two write tiers — the internal security split
+
+Writes are split by **what's the worst case if agent-authored UI made this call with
+no real operator behind it** (see `haku/PLAN.md` → _The agent-authored console_):
+
+- **Trace tier** (`trace.py`, `/api/trace/*`) — only records operator-expressed intent
+  into `haku-state`, which Haku already owns, so it grants the agent **nothing new**.
+  Low-privilege; safe to expose to agent-authored UI.
+- **Capability tier** (`capabilities.py`, `/api/capabilities/*`) — uses console-only
+  secrets and acts on the world. The teeth live here, so it's treated very differently:
+  - **CSRF-gated.** A header-located double-submit token: the SPA fetches it from
+    `GET /api/capabilities/csrf` (which also sets the signed cookie) and echoes it in
+    `X-CSRF-Token` on the POST — so a cross-site request can't ride the operator's
+    Authentik session cookie to fire a capability.
+  - **Server-side secret.** The bearer is read from `Settings` / the
+    `haku-routine-launch-token` secret and attached to the upstream call; it never
+    reaches the client.
+  - **Audited.** Every invocation logs to stdout in the `haku-console` namespace, which
+    Haku has no RBAC to read.
+  - **Tiny, PR-gated allowlist.** Today one capability: `POST
+/api/capabilities/launch-routine` fires the Haku claude-code-web routine via its
+    public Anthropic fire URL. Adding a verb is a ducktape PR, never runtime data.
+
+  The split is legible in the code: a search for what touches a privileged secret
+  returns `capabilities.py` and never the trace router.
 
 ## Boundary
 
@@ -49,8 +69,9 @@ agent-authored console_.
 
 | Path               | Role                                                                                                                                                                                                                           |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `app.py`           | FastAPI `create_app` + lifespan (clone + background pull loop). Read endpoints (`GET /api/dashboard`, `GET /healthz`), mounts the trace router, serves the SPA (`StaticFiles`) otherwise.                                      |
+| `app.py`           | FastAPI `create_app` + lifespan (clone + background pull loop). Read endpoints (`GET /api/dashboard`, `GET /healthz`), CSRF config, mounts the trace + capability routers, serves the SPA (`StaticFiles`) otherwise.           |
 | `trace.py`         | Trace-tier router (`/api/trace/*`): the overlay toggle (`PUT`/`DELETE /api/trace/items/{id}/actions/{aid}`) and `POST /api/trace/feedback`. Low-privilege haku-state writes; reads `git_state` off `app.state`.                |
+| `capabilities.py`  | Capability-tier router (`/api/capabilities/*`): CSRF-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer; `GET /csrf` issues the double-submit token.                      |
 | `git_state.py`     | pygit2 clone of haku-state; `reconcile` (fetch + hard-reset), `commit_push` with retry, `read_items`, and the clicks/-overlay + feedback writers. Talks to the cluster-internal **plaintext-HTTP** Forgejo (no TLS/CA needed). |
 | `models.py`        | Pydantic `Item` (discriminated-union `action` + `actions[]`) and the `/api` request/response models.                                                                                                                           |
 | `config.py`        | Env settings (`HAKU_CONSOLE_*`).                                                                                                                                                                                               |
@@ -61,12 +82,14 @@ agent-authored console_.
 
 Manifests live in `cluster/k8s/haku/console/` (operator-owned — the perimeter is not
 Haku's to change); the `haku-console` namespace itself is `cluster/k8s/haku/console-namespace/`.
-Non-root, dropped caps, no service-account token; the only credential is the
-`haku-state-git-write` secret (provisioned into `haku-console` by the
-`tf/gitops/haku-state` module). As trusted ducktape code in its own namespace it is
-**not** behind the `haku-mitmproxy` fence — it gets ordinary cluster egress. The image
-bundles the built SPA at `/app/web` (`HAKU_CONSOLE_STATIC_DIR`). Design + roadmap:
-`haku/PLAN.md` and the `haku-state` repo's `plans/dashboard-arm.md`.
+Non-root, dropped caps, no service-account token. Credentials: the `haku-state-git-write`
+secret (provisioned into `haku-console` by the `tf/gitops/haku-state` module) and the
+`haku-routine-launch-token` secret (the capability tier's bearer; `HAKU_CONSOLE_LAUNCH_ROUTINE__TOKEN`).
+As trusted ducktape code in its own namespace it is **not** behind the `haku-mitmproxy`
+fence — it gets ordinary cluster egress (which the capability tier needs to reach the
+Anthropic fire URL). The image bundles the built SPA at `/app/web`
+(`HAKU_CONSOLE_STATIC_DIR`). Design + roadmap: `haku/PLAN.md` and the `haku-state` repo's
+`plans/dashboard-arm.md`.
 
 ## Test
 
