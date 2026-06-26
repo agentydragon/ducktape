@@ -744,11 +744,11 @@ This is the detailed P0 queue; <../TODO.md> should only summarize it.
   `CASE_REST`), anonymous statements as distinguished targets, exact
   identifiers, target bindings, and binding groups. Each construct either
   compiles faithfully or reports `unsupported`.
-- **G4 — source-match surface pruning.** Remove unused authoring options before
-  nativeizing them. Current Gaffer/Tana census shows no use of
-  `target_statement`, `target_statements`, or authored
-  `wildcard_string_literals`; those public surfaces plus the single-choice
-  `match-selector --identifiers` CLI flag have been removed. Slate any other
+- **G4 — source-match surface pruning.** Keep unused authoring/tooling options
+  out of the native query model. Current Gaffer/Tana census showed no use of
+  `target_statement`, `target_statements`, authored `wildcard_string_literals`,
+  the single-choice `match-selector --identifiers` CLI flag, or selector-codemod
+  exact-body fallbacks; those surfaces have been removed. Slate any other
   vestigial debundle features that gaffer-private does not use for removal
   rather than carrying them into the query model. Defer the alpha-all identifier
   mode, exact anonymous `match`, readability labels, and top-level `STMT_LIST`
