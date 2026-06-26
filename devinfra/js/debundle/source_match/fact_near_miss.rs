@@ -909,7 +909,6 @@ mod tests {
                 SourceMatchIdentifierMode::Exact
             },
             target_binding: None,
-            wildcard_string_literals: BTreeSet::new(),
         }
     }
 

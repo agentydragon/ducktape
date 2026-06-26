@@ -518,11 +518,6 @@ impl<'a, 'features> AstFeatureCollector<'a, 'features> {
         self.selector
             .is_none_or(|selector| selector.identifiers == SourceMatchIdentifierMode::Exact)
     }
-
-    fn string_literal_is_wildcard(&self, value: &str) -> bool {
-        self.selector
-            .is_some_and(|selector| selector.wildcard_string_literals.contains(value))
-    }
 }
 
 impl Visit for AstFeatureCollector<'_, '_> {
@@ -534,9 +529,7 @@ impl Visit for AstFeatureCollector<'_, '_> {
             match lit {
                 Lit::Str(str_) => {
                     let value = str_.value.to_string_lossy().to_string();
-                    if !self.string_literal_is_wildcard(&value) {
-                        self.features.insert(SelectorFeature::StringLiteral(value));
-                    }
+                    self.features.insert(SelectorFeature::StringLiteral(value));
                 }
                 // Number / bool literals are never wildcarded or holed in place
                 // (only an `EXPR`/`ANYTHING` hole erases them, handled above),
@@ -968,7 +961,6 @@ mod tests {
             match_source: match_source.to_string(),
             identifiers: SourceMatchIdentifierMode::AlphaAll,
             target_binding: None,
-            wildcard_string_literals: BTreeSet::new(),
         }
     }
 
@@ -1152,32 +1144,6 @@ const alpha = makeOther("shared-token");"#,
                 .contains(&SelectorFeature::CallCallee("makeWidget".to_string()))
         );
         assert_eq!(body_indices(index.candidate_set_for_query(&query)), vec![0]);
-    }
-
-    #[test]
-    fn wildcard_string_literals_are_not_index_anchors() {
-        let runtime = parse_module(
-            r#"const alpha = "runtime-a";
-const beta = "runtime-b";
-let gamma = "runtime-a";"#,
-        );
-        let index = SelectorCandidateIndex::new(&runtime);
-        let mut selector = selector(r#"const readable = "STRING_HOLE";"#);
-        selector
-            .wildcard_string_literals
-            .insert("STRING_HOLE".to_string());
-
-        let query = SelectorCandidateIndex::query_for_source_match(&selector).unwrap();
-        assert!(
-            !query.alternatives()[0]
-                .features()
-                .iter()
-                .any(|feature| matches!(feature, SelectorFeature::StringLiteral(_)))
-        );
-        assert_eq!(
-            body_indices(index.candidate_set_for_query(&query)),
-            vec![0, 1]
-        );
     }
 
     #[test]

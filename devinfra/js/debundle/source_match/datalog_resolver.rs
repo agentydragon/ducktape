@@ -18,19 +18,14 @@ fn item_facts(item: &ModuleItem) -> Option<chunk_facts::ChunkFacts> {
     chunk_facts::extract_facts_items(std::slice::from_ref(item)).ok()
 }
 
-/// Facts for a single **needle** statement, honoring the selector's
-/// `wildcard_string_literals` (a `StrLit` whose value is a wildcard projects to a
-/// `str_wildcard` fact the matcher matches against any string value). Subject
-/// (chunk-body) facts use [`item_facts`] — real source carries no wildcards.
+/// Facts for a single **needle** statement. Source-match selectors no longer
+/// carry string-literal wildcards, so needle facts use the same projection as
+/// subject facts.
 fn needle_item_facts(
     item: &ModuleItem,
-    selector: &AnonymousStatementSelector,
+    _selector: &AnonymousStatementSelector,
 ) -> Option<chunk_facts::ChunkFacts> {
-    chunk_facts::extract_facts_needle(
-        std::slice::from_ref(item),
-        &selector.wildcard_string_literals,
-    )
-    .ok()
+    chunk_facts::extract_facts_items(std::slice::from_ref(item)).ok()
 }
 
 /// One chunk's relational model, built once: the AST plus its top-level body
@@ -1180,7 +1175,6 @@ mod tests {
             match_source: match_source.to_string(),
             identifiers: SourceMatchIdentifierMode::AlphaAll,
             target_binding: target_binding.map(str::to_string),
-            wildcard_string_literals: BTreeSet::new(),
         }
     }
 
@@ -1193,7 +1187,6 @@ mod tests {
             match_source: match_source.to_string(),
             identifiers: SourceMatchIdentifierMode::AlphaAll,
             target_binding: None,
-            wildcard_string_literals: BTreeSet::new(),
         }
     }
 

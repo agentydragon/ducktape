@@ -123,7 +123,6 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
             match_source,
             identifiers: SourceMatchIdentifierMode::AlphaAll,
             target_binding: config.target_binding.clone(),
-            wildcard_string_literals: BTreeSet::new(),
         }
         .selector();
         resolver.member_candidates("<match-selector>", &selector)

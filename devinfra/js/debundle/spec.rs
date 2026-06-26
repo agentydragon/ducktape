@@ -801,7 +801,6 @@ impl AnonymousStatement {
                 match_source: match_source.clone(),
                 identifiers: SourceMatchIdentifierMode::Exact,
                 target_binding: None,
-                wildcard_string_literals: BTreeSet::new(),
             }),
             (None, Some(source_match)) if source_match.target_binding.is_some() => {
                 Err(AnonymousStatementSelectorError {
@@ -845,10 +844,6 @@ pub struct SourceMatch {
     /// binding from it. Invalid on `anonymous_statements[].source_match`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_binding: Option<String>,
-    /// Internal-only string-literal placeholder values used by legacy matcher
-    /// tests. The public YAML surface no longer accepts or emits this field.
-    #[serde(skip)]
-    pub wildcard_string_literals: BTreeSet<String>,
     #[serde(rename = "match")]
     pub match_source: String,
 }
@@ -895,7 +890,6 @@ impl<'de> Deserialize<'de> for SourceMatch {
         Ok(Self {
             identifiers,
             target_binding: wire.target_binding,
-            wildcard_string_literals: BTreeSet::new(),
             match_source: wire.match_source,
         })
     }
@@ -907,7 +901,6 @@ impl SourceMatch {
             match_source: self.match_source.clone(),
             identifiers: self.identifiers,
             target_binding: self.target_binding.clone(),
-            wildcard_string_literals: self.wildcard_string_literals.clone(),
         }
     }
 }
@@ -917,7 +910,6 @@ pub struct AnonymousStatementSelector {
     pub match_source: String,
     pub identifiers: SourceMatchIdentifierMode,
     pub target_binding: Option<String>,
-    pub wildcard_string_literals: BTreeSet<String>,
 }
 
 impl AnonymousStatementSelector {
@@ -926,7 +918,6 @@ impl AnonymousStatementSelector {
             match_source: match_source.into(),
             identifiers: SourceMatchIdentifierMode::Exact,
             target_binding: None,
-            wildcard_string_literals: BTreeSet::new(),
         }
     }
 }

@@ -410,9 +410,7 @@ impl MemberSelectorProgramBuilder {
         if parsed.body.len() > 1 && selector.target_binding.is_none() {
             return Ok(false);
         }
-        let Ok(facts) =
-            chunk_facts::extract_facts_needle(&parsed.body, &selector.wildcard_string_literals)
-        else {
+        let Ok(facts) = chunk_facts::extract_facts_items(&parsed.body) else {
             return Ok(false);
         };
         if parsed.body.len() > 1 && !native_module_stmt_list_hole_roots(&facts).is_empty() {
@@ -686,9 +684,7 @@ impl MemberSelectorProgramBuilder {
         if parsed.body.is_empty() {
             return Ok(false);
         }
-        let Ok(facts) =
-            chunk_facts::extract_facts_needle(&parsed.body, &selector.wildcard_string_literals)
-        else {
+        let Ok(facts) = chunk_facts::extract_facts_items(&parsed.body) else {
             return Ok(false);
         };
         let module_stmt_list_hole_roots = native_module_stmt_list_hole_roots(&facts);
@@ -2662,36 +2658,6 @@ mod tests {
                 .count(),
             2
         );
-    }
-
-    #[test]
-    fn exact_source_match_wildcard_strings_lower_to_shared_string_var() {
-        let mut selector =
-            AnonymousStatementSelector::exact("const pair = [\"__VALUE__\", \"__VALUE__\"];");
-        selector
-            .wildcard_string_literals
-            .insert("__VALUE__".to_string());
-        let lowered = lower_member_selector(
-            &context(),
-            "Widget",
-            &MemberSelectorSpec::SourceMatch(selector),
-        )
-        .unwrap();
-        let mut string_vars = lowered.program.atoms.iter().filter_map(|atom| match atom {
-            SelectorAtom::AstStringLiteral {
-                value: StringTerm::Var { id },
-                ..
-            } => Some(*id),
-            _ => None,
-        });
-        let first = string_vars.next().expect("first wildcard string atom");
-        let second = string_vars.next().expect("second wildcard string atom");
-        assert_eq!(first, second);
-        assert!(string_vars.next().is_none());
-        assert!(matches!(
-            lowered.program.variables[first.0].domain,
-            VariableDomain::String
-        ));
     }
 
     #[test]
