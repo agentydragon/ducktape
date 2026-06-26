@@ -346,6 +346,24 @@ mod tests {
         }
     }
 
+    fn owner_references_binding(owner: usize, binding: &str) -> SelectorFact {
+        SelectorFact::OwnerReferencesBinding {
+            chunk_id: ChunkId(0),
+            owner: OwnerId(owner),
+            binding: binding.to_string(),
+            edge_kind: "eager_use".to_string(),
+        }
+    }
+
+    fn member_read(ordinal: usize, object: Option<&str>, member: &str) -> SelectorFact {
+        SelectorFact::MemberRead {
+            chunk_id: ChunkId(0),
+            statement_ordinal: StatementOrdinal(ordinal),
+            object: object.map(str::to_string),
+            member: member.to_string(),
+        }
+    }
+
     fn sidecar_path() -> PathBuf {
         let rlocation = std::env::var("ORTOOLS_CPSAT_SOLVER")
             .expect("ORTOOLS_CPSAT_SOLVER must be set by Bazel");
@@ -452,6 +470,174 @@ mod tests {
                     owner: OwnerId(20),
                     statement_ordinal: StatementOrdinal(1),
                     binding: Some("specific".to_string()),
+                    provenance: Vec::new(),
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn cpsat_sidecar_solves_cross_ref_anchor_in_one_program() {
+        let mut program = SelectorProgram::default();
+        let anchor_owner = program.add_variable(VariableDomain::Owner, Some("anchor".to_string()));
+        let delegator_owner =
+            program.add_variable(VariableDomain::Owner, Some("delegator".to_string()));
+        let anchor_target = program.add_target(
+            ChunkId(0),
+            anchor_owner,
+            "module",
+            ClaimKind::Binding {
+                export_name: Some("Anchor".to_string()),
+            },
+            ClaimOrigin::Synthetic,
+        );
+        let delegator_target = program.add_target(
+            ChunkId(0),
+            delegator_owner,
+            "module",
+            ClaimKind::Binding {
+                export_name: Some("Delegator".to_string()),
+            },
+            ClaimOrigin::Synthetic,
+        );
+        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+            owner: OwnerTerm::Var { id: anchor_owner },
+            binding: StringTerm::Const {
+                value: "a".to_string(),
+            },
+        });
+        program.add_atom(SelectorAtom::OwnerReferencesOwner {
+            owner: OwnerTerm::Var {
+                id: delegator_owner,
+            },
+            referenced: OwnerTerm::Var { id: anchor_owner },
+        });
+        program.add_atom(SelectorAtom::OwnerKind {
+            owner: OwnerTerm::Var {
+                id: delegator_owner,
+            },
+            statement_kind: StringTerm::Const {
+                value: "fn_decl".to_string(),
+            },
+        });
+        program.require_all_different(vec![anchor_target, delegator_target]);
+
+        let mut facts = SelectorFactStore::default();
+        facts.push(owner_fact(1, 1, "var_decl"));
+        facts.push(declared_binding(1, "a"));
+        facts.push(owner_fact(2, 2, "fn_decl"));
+        facts.push(declared_binding(2, "b"));
+        facts.push(owner_references_binding(2, "a"));
+        facts.push(owner_fact(3, 3, "fn_decl"));
+        facts.push(declared_binding(3, "other"));
+        facts.push(owner_references_binding(3, "missing"));
+
+        let backend = OrToolsCpSatBackend::new(sidecar_path());
+        let result = solve_with_backend(&program, &facts, &backend).unwrap();
+
+        assert_eq!(
+            result.outcome_for(anchor_target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(1),
+                    statement_ordinal: StatementOrdinal(1),
+                    binding: Some("a".to_string()),
+                    provenance: Vec::new(),
+                }
+            })
+        );
+        assert_eq!(
+            result.outcome_for(delegator_target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(2),
+                    statement_ordinal: StatementOrdinal(2),
+                    binding: Some("b".to_string()),
+                    provenance: Vec::new(),
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn cpsat_sidecar_solves_object_constrained_reads_member_jointly() {
+        let mut program = SelectorProgram::default();
+        let object_owner = program.add_variable(VariableDomain::Owner, Some("object".to_string()));
+        let reader_owner = program.add_variable(VariableDomain::Owner, Some("reader".to_string()));
+        let object_target = program.add_target(
+            ChunkId(0),
+            object_owner,
+            "module",
+            ClaimKind::Binding {
+                export_name: Some("Context".to_string()),
+            },
+            ClaimOrigin::Synthetic,
+        );
+        let reader_target = program.add_target(
+            ChunkId(0),
+            reader_owner,
+            "module",
+            ClaimKind::Binding {
+                export_name: Some("ReadId".to_string()),
+            },
+            ClaimOrigin::Synthetic,
+        );
+        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+            owner: OwnerTerm::Var { id: object_owner },
+            binding: StringTerm::Const {
+                value: "ctx".to_string(),
+            },
+        });
+        program.add_atom(SelectorAtom::ReadsMemberOfOwner {
+            owner: OwnerTerm::Var { id: reader_owner },
+            object: OwnerTerm::Var { id: object_owner },
+            member: StringTerm::Const {
+                value: "id".to_string(),
+            },
+        });
+        program.add_atom(SelectorAtom::OwnerKind {
+            owner: OwnerTerm::Var { id: reader_owner },
+            statement_kind: StringTerm::Const {
+                value: "fn_decl".to_string(),
+            },
+        });
+        program.require_all_different(vec![object_target, reader_target]);
+
+        let mut facts = SelectorFactStore::default();
+        facts.push(owner_fact(1, 1, "var_decl"));
+        facts.push(declared_binding(1, "ctx"));
+        facts.push(owner_fact(2, 2, "fn_decl"));
+        facts.push(declared_binding(2, "readId"));
+        facts.push(member_read(2, Some("ctx"), "id"));
+        facts.push(owner_fact(3, 3, "fn_decl"));
+        facts.push(declared_binding(3, "other"));
+        facts.push(member_read(3, Some("otherCtx"), "id"));
+
+        let backend = OrToolsCpSatBackend::new(sidecar_path());
+        let result = solve_with_backend(&program, &facts, &backend).unwrap();
+
+        assert_eq!(
+            result.outcome_for(object_target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(1),
+                    statement_ordinal: StatementOrdinal(1),
+                    binding: Some("ctx".to_string()),
+                    provenance: Vec::new(),
+                }
+            })
+        );
+        assert_eq!(
+            result.outcome_for(reader_target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(2),
+                    statement_ordinal: StatementOrdinal(2),
+                    binding: Some("readId".to_string()),
                     provenance: Vec::new(),
                 }
             })
