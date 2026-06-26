@@ -44,7 +44,6 @@ use selector_debt::{
     SelectorDebtReport, SourceAwareSelectorDebtConfig, compute_selector_debt_with_source,
     populate_name_only_module_groups, render_selector_debt_text,
 };
-use spec::SourceMatchIdentifierMode;
 use spec_modules::{collect_module_files, module_path_from_file};
 use spec_stats::{SpecStats, compute_spec_stats, render_spec_stats_text};
 
@@ -312,22 +311,6 @@ pub struct SelectorCodemodArgs {
     pub format: Option<OutputFormat>,
 }
 
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-#[value(rename_all = "kebab-case")]
-pub enum SourceMatchIdentifierModeArg {
-    /// Treat binding/value identifiers as alpha-renamable placeholders — the
-    /// source_match authoring policy that survives minifier renames.
-    AlphaAll,
-}
-
-impl From<SourceMatchIdentifierModeArg> for SourceMatchIdentifierMode {
-    fn from(value: SourceMatchIdentifierModeArg) -> Self {
-        match value {
-            SourceMatchIdentifierModeArg::AlphaAll => Self::AlphaAll,
-        }
-    }
-}
-
 /// Args for `debundle spec match-selector`.
 #[derive(Debug, ClapArgs)]
 pub struct MatchSelectorArgs {
@@ -346,12 +329,6 @@ pub struct MatchSelectorArgs {
     /// The candidate `source_match` `match` text to test.
     #[arg(long = "match")]
     pub match_source: String,
-
-    /// Identifier policy for the candidate selector. Alpha-all is the public
-    /// source_match authoring policy; exact identifier constraints remain an
-    /// internal lowering primitive.
-    #[arg(long = "identifiers", value_enum, default_value_t = SourceMatchIdentifierModeArg::AlphaAll)]
-    pub identifiers: SourceMatchIdentifierModeArg,
 
     /// Selector-local binding to claim (sets `target_binding`) when the match
     /// declares more than one binding.
@@ -849,7 +826,6 @@ fn run_match_selector_cmd(args: MatchSelectorArgs) -> Result<()> {
         source_root: args.source_root,
         chunk: args.chunk,
         match_source: args.match_source,
-        identifiers: args.identifiers.into(),
         target_binding: args.target_binding,
         check_slack: !args.no_slack,
     })?;

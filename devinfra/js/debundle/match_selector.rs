@@ -50,7 +50,6 @@ pub struct MatchSelectorConfig {
     pub source_root: Option<PathBuf>,
     pub chunk: Option<PathBuf>,
     pub match_source: String,
-    pub identifiers: SourceMatchIdentifierMode,
     pub target_binding: Option<String>,
     /// Also compute holing slack when the selector pins a unique target.
     pub check_slack: bool,
@@ -122,7 +121,7 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
     let resolve = |match_source: String| -> Result<Vec<source_match::MemberBindingMatch>> {
         let selector = SourceMatch {
             match_source,
-            identifiers: config.identifiers,
+            identifiers: SourceMatchIdentifierMode::AlphaAll,
             target_binding: config.target_binding.clone(),
             wildcard_string_literals: BTreeSet::new(),
         }

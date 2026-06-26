@@ -177,10 +177,9 @@ wrong anchor, so slack only prioritizes; it never decides.
    `debundle spec match-selector --source-file <chunk> --match '<selector>'
 --target-binding <name>`: it reports whether the selector resolves **uniquely** to
    the binding you mean, and its **slack** — the kept things you could still hole
-   without losing uniqueness (i.e. whether you over-pinned). The `--identifiers` flag
-   defaults to `alpha-all`; note the **hyphen** — the CLI flag spelling is
-   `alpha-all`, even though the spec YAML field is `identifiers: alpha_all`. For a
-   whole-spec sweep, `debundle spec validate` (keep-going) resolves every selector
+   without losing uniqueness (i.e. whether you over-pinned). It uses the public
+   alpha-all source-match identifier policy. For a whole-spec sweep,
+   `debundle spec validate` (keep-going) resolves every selector
    and reports `no-match` / `ambiguous` / `duplicate-claim`.
 
 5. **Group** adjacent or cohesive bindings that share a declaration context into a
