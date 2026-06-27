@@ -1647,7 +1647,8 @@ fn alpha_scope_kind(kind: NodeKind) -> Option<AlphaScopeKind> {
     )
     .then_some(AlphaScopeKind::Var)
     .or_else(|| {
-        matches!(kind, NodeKind::Block | NodeKind::Catch).then_some(AlphaScopeKind::Lexical)
+        matches!(kind, NodeKind::Block | NodeKind::Catch | NodeKind::Switch)
+            .then_some(AlphaScopeKind::Lexical)
     })
 }
 
@@ -4144,6 +4145,72 @@ function second() {
         assert!(
             !occurrence_counts.values().any(|count| *count > 2),
             "catch-local names must not merge with function-scope var names: {occurrence_counts:?}"
+        );
+    }
+
+    #[test]
+    fn alpha_all_switch_let_uses_switch_lexical_scope() {
+        let mut selector = AnonymousStatementSelector::exact(
+            r#"function readable(input) {
+  const value = "outer";
+  switch (input.kind) {
+    case "left":
+      const value = input.left;
+      return value;
+  }
+  return value;
+}"#,
+        );
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        let identifier_vars = alpha_identifier_vars_in_source_order(&lowered.program);
+        let occurrence_counts = identifier_occurrence_counts(&identifier_vars);
+        assert_eq!(
+            occurrence_counts
+                .values()
+                .copied()
+                .filter(|count| *count == 2)
+                .count(),
+            2,
+            "outer and switch-local `value` bindings should each pair with their own return: {occurrence_counts:?}"
+        );
+        assert!(
+            !occurrence_counts.values().any(|count| *count == 4),
+            "switch-local lexical bindings must not collapse with the enclosing block binding: {occurrence_counts:?}"
+        );
+    }
+
+    #[test]
+    fn alpha_all_var_decl_inside_switch_binds_enclosing_var_scope() {
+        let mut selector = AnonymousStatementSelector::exact(
+            r#"function readable(input) {
+  switch (input.kind) {
+    case "left":
+      var hoisted = input.left;
+      return hoisted;
+  }
+  return hoisted;
+}"#,
+        );
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        let identifier_vars = alpha_identifier_vars_in_source_order(&lowered.program);
+        let occurrence_counts = identifier_occurrence_counts(&identifier_vars);
+        assert!(
+            occurrence_counts.values().any(|count| *count == 3),
+            "switch-body var binding should pair with both in-switch and after-switch uses: {occurrence_counts:?}"
         );
     }
 

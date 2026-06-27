@@ -159,6 +159,51 @@ export { actual };
 }
 
 #[test]
+fn member_source_match_alpha_all_allows_name_reuse_in_switch_scope() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function actual(input) {
+  const a = "outer";
+  switch (input.kind) {
+    case "left":
+      const b = input.left;
+      return b;
+  }
+  return a;
+}
+console.log(actual({ kind: "left", left: "L" }), actual({ kind: "right", left: "R" }));
+export { actual };
+"#,
+        vec![logical_module(
+            "format",
+            &[Member::source_alpha(
+                "format_value",
+                r#"function readable(input) {
+  const value = "outer";
+  switch (input.kind) {
+    case "left":
+      const value = input.left;
+      return value;
+  }
+  return value;
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "L outer\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/format.js",
+        &[
+            "function format_value",
+            r#"const a = "outer""#,
+            "const b = input.left",
+        ],
+        &["function actual", "function readable"],
+    );
+}
+
+#[test]
 fn member_source_match_alpha_all_named_function_expression_name_is_function_local() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const a = () => "outer";
