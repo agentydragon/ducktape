@@ -1,0 +1,12 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: haku-ui
+spec:
+  # The image the deployment marker pins (git.allegedly.works/haku/ui). Private
+  # package, so the reflector authenticates with the haku creds via the
+  # haku-forgejo-registry-pull dockerconfigjson Secret (same namespace, haku-sandbox).
+  image: git.allegedly.works/haku/ui
+  interval: 5m
+  secretRef:
+    name: haku-forgejo-registry-pull

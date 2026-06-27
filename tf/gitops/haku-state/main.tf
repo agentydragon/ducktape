@@ -92,12 +92,14 @@ resource "kubernetes_secret" "haku_state_git_write" {
   }
 }
 
-# imagePullSecret so Haku's UI Deployment (haku-sandbox) can pull the image its
-# Forgejo CI builds (git.allegedly.works/haku/ui:<sha>). The package is private
-# (haku's repo is private), so the kubelet needs auth. Pulls go over HTTPS via the
-# public host (kubelet image pulls are node-level, not subject to the pod's
-# mitmproxy egress). The CI workflow itself pushes with Forgejo Actions' built-in
-# job token — no push cred needed here. See cluster/k8s/haku-ci + haku/PLAN.md.
+# dockerconfigjson for the private git.allegedly.works/haku/ui package, in haku-sandbox:
+#   - the imagePullSecret Haku's UI Deployment uses to pull the image its Forgejo CI builds
+#     (kubelet pulls over HTTPS via the public host — node-level, not subject to the pod's
+#     mitmproxy egress), and
+#   - the auth Haku's own ImageRepository uses to scan the registry for new tags (the image
+#     automation is reconciled into haku-sandbox; see haku/state_template/k8s/haku-ui-image-automation).
+# The CI workflow itself pushes with Forgejo Actions' built-in job token — no push cred
+# needed here. See cluster/k8s/haku-ci + haku/PLAN.md.
 resource "kubernetes_secret" "haku_forgejo_registry_pull" {
   metadata {
     name      = "haku-forgejo-registry-pull"
@@ -146,5 +148,47 @@ resource "kubernetes_secret" "haku_ci_runner_token" {
 
   data = {
     token = jsondecode(data.http.haku_ci_registration_token.response_body).token
+  }
+}
+
+# Webhook token shared between the Forgejo package webhook and the Flux generic
+# Receiver `haku-ui-forgejo` (cluster/k8s/haku/ui-image-automation). The Receiver's
+# webhook path is sha256(token + receiver-name + namespace), so the token must match
+# on both ends. Don't rotate after creation — the path would change and orphan the
+# Forgejo webhook URL.
+resource "random_password" "forgejo_webhook_token" {
+  length  = 40
+  special = false
+}
+
+resource "kubernetes_secret" "forgejo_webhook_token" {
+  metadata {
+    name      = "forgejo-webhook-token"
+    namespace = "flux-system"
+  }
+
+  data = {
+    token = random_password.forgejo_webhook_token.result
+  }
+
+  lifecycle {
+    ignore_changes = [data]
+  }
+}
+
+# Fire a webhook on container-package publish (the CI image push) so Flux reconciles the
+# haku-ui ImageRepository immediately rather than on its 5m poll. Points at the in-cluster
+# receiver service (no hairpin / TLS). The generic receiver doesn't validate a signature,
+# so the unguessable sha256(token) path is the secret — no `secret` in the webhook config.
+# NOTE (verify in the paving loop): Forgejo packages are owner-scoped; a *repo* webhook may
+# not fire for `haku/ui` package pushes. If it doesn't, the 5m ImageRepository poll still
+# covers it — the webhook is a latency optimization, not a correctness dependency.
+resource "forgejo_repository_webhook" "haku_ui_image" {
+  repository_id = forgejo_repository.state.id
+  type          = "forgejo"
+  events        = ["package"]
+  config = {
+    content_type = "json"
+    url          = "http://webhook-receiver.flux-system/hook/${sha256(join("", [random_password.forgejo_webhook_token.result, "haku-ui-forgejo", "flux-system"]))}"
   }
 }

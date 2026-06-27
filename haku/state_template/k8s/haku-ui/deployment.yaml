@@ -32,9 +32,10 @@ spec:
           # Flux image automation writes this tag (NOT CI — the build-ui workflow
           # only pushes the image). The trailing `$imagepolicy` marker tells Flux's
           # ImageUpdateAutomation which image ref to rewrite; keep it on this line.
-          # Adopt the matching ImageRepository/ImagePolicy/ImageUpdateAutomation
-          # (ducktape ships them; see haku/state_template/README.md).
-          image: git.allegedly.works/haku/ui:latest # {"$imagepolicy": "flux-system:haku-ui"}
+          # The matching ImageRepository/ImagePolicy/ImageUpdateAutomation are Haku's
+          # own (the sibling k8s/haku-ui-image-automation/ dir), reconciled into
+          # haku-sandbox — hence the haku-sandbox:haku-ui policy ref.
+          image: git.allegedly.works/haku/ui:latest # {"$imagepolicy": "haku-sandbox:haku-ui"}
           ports:
             - containerPort: 8080
           env:

@@ -4,7 +4,7 @@ metadata:
   name: haku-state-workload-deployer
   namespace: haku-sandbox
   annotations:
-    description: "What Flux may apply when reconciling Haku's haku-state k8s/ dir — the workload subset of haku-sandbox-admin: Deployments/StatefulSets/DaemonSets/ReplicaSets, Services/ConfigMaps/PVCs, Jobs/CronJobs. Deliberately NOT secrets (no plaintext-git secrets) and NOT Gateway-API routes (Kyverno denies those too). So Haku's GitOps path can run workloads but never widen its own perimeter."
+    description: "What Flux may apply when reconciling Haku's haku-state k8s/ dir — the workload subset of haku-sandbox-admin: Deployments/StatefulSets/DaemonSets/ReplicaSets, Services/ConfigMaps/PVCs, Jobs/CronJobs, plus its own Flux image automation (image.toolkit ImageRepository/ImagePolicy/ImageUpdateAutomation + source.toolkit GitRepository). Those are bounded — the controllers that reconcile them only ever touch Haku's own images + haku-state. Deliberately NOT secrets (no plaintext-git secrets), NOT Gateway-API routes (Kyverno denies those too), and NOT notification.toolkit Receivers (a cross-namespace force-reconcile primitive — kept operator-owned, see cluster/k8s/haku/ui-image-webhook). So Haku's GitOps path can run + ship its own workloads but never widen its own perimeter."
 rules:
   - apiGroups: [""]
     resources:
@@ -23,6 +23,17 @@ rules:
     resources:
       - jobs
       - cronjobs
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Haku's own image automation (bounded — see the description). NOT Receivers.
+  - apiGroups: ["image.toolkit.fluxcd.io"]
+    resources:
+      - imagerepositories
+      - imagepolicies
+      - imageupdateautomations
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["source.toolkit.fluxcd.io"]
+    resources:
+      - gitrepositories
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

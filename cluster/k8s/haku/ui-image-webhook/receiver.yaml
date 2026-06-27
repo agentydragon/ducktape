@@ -1,0 +1,28 @@
+apiVersion: notification.toolkit.fluxcd.io/v1
+kind: Receiver
+metadata:
+  name: haku-ui-forgejo
+  namespace: flux-system
+spec:
+  # Forgejo's container-registry push fires a `package` webhook (provisioned by
+  # tf/gitops/haku-state) that hits this receiver, reconciling the haku-ui
+  # ImageRepository immediately instead of waiting for its 5m poll.
+  #
+  # Operator-owned (NOT in Haku's state_template): a Receiver lists resources to
+  # force-reconcile, which the notification-controller patches cluster-wide — a
+  # cross-namespace primitive we deliberately keep out of Haku's hands. The
+  # ImageRepository it triggers is Haku's own (haku-sandbox), referenced cross-namespace.
+  #
+  # type: generic — Flux has no Forgejo/Gitea receiver type, and Forgejo's HMAC headers
+  # (X-Gitea-Signature / X-Hub-Signature-256) don't match generic-hmac's X-Signature.
+  # Security is therefore the unguessable sha256(token) webhook path; a leaked URL only
+  # triggers a harmless ImageRepository re-scan. The token is the forgejo-webhook-token
+  # Secret (flux-system), which the Forgejo webhook URL also derives its path from.
+  type: generic
+  secretRef:
+    name: forgejo-webhook-token
+  resources:
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: haku-ui
+      namespace: haku-sandbox

@@ -17,6 +17,12 @@ from __future__ import annotations
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.k8s import ImagePolicyResource, ImageRepositoryResource, ReceiverResource
 
+# ImageRepositories defined in Haku's haku-state (haku/state_template), reconciled into
+# haku-sandbox — not under cluster/k8s, so the validator can't see them. An operator-owned
+# Receiver here may still reference one (cluster/k8s/haku/ui-image-webhook), so exempt these
+# from the "Receiver references an undefined ImageRepository" check.
+_HAKU_STATE_IMAGE_REPOS = {"haku-ui"}
+
 
 def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
     image_repos: set[str] = set()
@@ -43,7 +49,7 @@ def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
         *(
             f"flux-webhook/github-webhook-receiver.yaml references ImageRepository '{name}', "
             "but no such ImageRepository is defined under cluster/k8s."
-            for name in sorted(webhook_repos - image_repos)
+            for name in sorted(webhook_repos - image_repos - _HAKU_STATE_IMAGE_REPOS)
         ),
         *(
             f"ImagePolicy '{policy}' references ImageRepository '{ref}', which is not defined."

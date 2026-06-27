@@ -1,0 +1,15 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: haku-ui
+spec:
+  imageRepositoryRef:
+    name: haku-ui
+  # Tags are main-<utc14>-<sha> (see haku/state_template/.forgejo/workflows/build-ui.yaml).
+  # Extract the 14-digit timestamp and pick the newest numerically.
+  filterTags:
+    pattern: "^main-(?P<ts>[0-9]{14})-[0-9a-f]+$"
+    extract: $ts
+  policy:
+    numerical:
+      order: asc

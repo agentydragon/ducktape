@@ -1,0 +1,13 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: haku-state-write
+  annotations:
+    description: "Authenticated haku-state checkout for image-automation pushes (the haku-ui ImageUpdateAutomation writes the deploy tag back here). Separate from the read-only `haku-state` source used by the workloads pipe. Internal Forgejo, plaintext HTTP; basic auth via the haku-state-git-write Secret — the haku user owns the repo, so these creds can push."
+spec:
+  interval: 5m
+  url: http://forgejo-http.forgejo:3000/haku/haku-state.git
+  ref:
+    branch: main
+  secretRef:
+    name: haku-state-git-write
