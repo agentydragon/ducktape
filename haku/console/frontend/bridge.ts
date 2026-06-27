@@ -1,0 +1,53 @@
+// postMessage protocol between the trusted shell (this console) and Haku's
+// agent-authored UI iframe. The iframe may only **request**; the shell decides and
+// acts. Every inbound message is origin-checked and schema-validated.
+// See plans/free_form_ui_iframe.md → "The protocol".
+
+// Inbound (iframe → shell). Today only `openLink` is wired; `requestCapability`
+// (perform a shell-owned action like launch-routine) is the next affordance.
+export type Inbound = { type: "openLink"; url: string };
+
+// Outbound result (shell → iframe), so Haku's UI can react to the outcome.
+export type Outbound = { type: "openLinkResult"; url: string; opened: boolean; reason?: string };
+
+// Narrow an untrusted postMessage payload to a known message, or null.
+export function parseInbound(data: unknown): Inbound | null {
+  if (!data || typeof data !== "object") return null;
+  const m = data as Record<string, unknown>;
+  if (m.type === "openLink" && typeof m.url === "string") return { type: "openLink", url: m.url };
+  return null;
+}
+
+// Operator-owned trusted whitelist — it lives in the **shell** (ducktape, PR-gated),
+// deliberately NOT in haku-state, or Haku could whitelist a phishing host to skip the
+// confirm. An entry matches the host exactly or any subdomain of it.
+export const OPEN_LINK_WHITELIST = [
+  "claude.ai",
+  "github.com",
+  "allegedly.works", // the operator's own services (*.allegedly.works)
+  "mail.google.com",
+  "drive.google.com",
+  "calendar.google.com",
+  "app.tana.inc",
+];
+
+export type LinkVerdict = { action: "open" } | { action: "confirm" } | { action: "reject"; reason: string };
+
+// Scheme is a HARD gate (never behind a confirm): only `https` + `mailto` — opening
+// `javascript:`/`data:`/`blob:`/`file:` in the top context would run code in the
+// shell's origin. The host whitelist only decides warn-vs-not for `https`.
+export function vetOpenLink(rawUrl: string): LinkVerdict {
+  let u: URL;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    return { action: "reject", reason: "unparseable URL" };
+  }
+  if (u.protocol === "mailto:") return { action: "open" };
+  if (u.protocol !== "https:") {
+    return { action: "reject", reason: `scheme "${u.protocol}" not allowed (https/mailto only)` };
+  }
+  const host = u.hostname.toLowerCase();
+  const ok = OPEN_LINK_WHITELIST.some((w) => host === w || host.endsWith(`.${w}`));
+  return { action: ok ? "open" : "confirm" };
+}

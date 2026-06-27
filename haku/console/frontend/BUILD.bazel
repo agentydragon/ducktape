@@ -83,9 +83,26 @@ js_library(
 )
 
 js_library(
+    name = "bridge",
+    srcs = ["bridge.ts"],
+)
+
+js_library(
+    name = "confirm_dialog",
+    srcs = ["confirm_dialog.tsx"],
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
     name = "haku_ui",
     srcs = ["haku_ui.tsx"],
     deps = [
+        ":bridge",
+        ":confirm_dialog",
+        ":toast",
         "//:node_modules/react",
     ],
 )
@@ -143,6 +160,7 @@ filegroup(
     srcs = [
         "app.tsx",
         "client.ts",
+        "confirm_dialog.tsx",
         "constants.ts",
         "feedback.tsx",
         "haku_ui.tsx",
@@ -212,6 +230,7 @@ tsc_bin.tsc_test(
     ],
     chdir = package_name(),
     data = [
+        "bridge.test.ts",
         "markdown.test.ts",
         "tsconfig.json",
         ":main_lib",
@@ -229,6 +248,18 @@ vitest_bin.vitest_test(
         "markdown.test.ts",
         "vitest.config.ts",
         ":markdown",
+        "//:node_modules",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "bridge_test",
+    args = ["run"],
+    chdir = package_name(),
+    data = [
+        "bridge.test.ts",
+        "vitest.config.ts",
+        ":bridge",
         "//:node_modules",
     ],
 )

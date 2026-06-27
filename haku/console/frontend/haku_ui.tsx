@@ -1,19 +1,88 @@
-// Haku's own UI service — a separate, Authentik-gated origin running in
-// haku-sandbox — embedded in a sandboxed cross-origin iframe as the "Free-form UI"
-// tab. The console never renders Haku's UI itself; it only frames this origin (the
-// backend CSP frame-src is what permits the embed). `allow-same-origin` keeps the
-// framed app on its OWN origin (a different subdomain, so NOT the console's) so its
-// Authentik session cookie works; being cross-origin, it cannot reach into the
-// parent. No `allow="fullscreen"` and no allow-top-navigation, so it stays
-// contained. See plans/free_form_ui_iframe.md.
+import { useEffect, useRef, useState } from "react";
+
+import { type Outbound, parseInbound, vetOpenLink } from "./bridge.ts";
+import { ConfirmDialog } from "./confirm_dialog.tsx";
+import { toastError } from "./toast.ts";
+
+// Haku's own UI service — a separate, Authentik-gated origin running in haku-sandbox —
+// embedded as a sandboxed cross-origin iframe (the "Free-form UI" tab). The console
+// never renders Haku's UI itself; it only frames this origin (the backend CSP frame-src
+// permits the embed) and runs the trusted **bridge**: the iframe may `openLink` via
+// postMessage, but only the shell decides and acts (origin-checked + schema-validated +
+// scheme-gated + whitelist/confirm). `allow-same-origin`/`allow-forms` are needed for
+// the framed app's own Authentik auth; **no `allow-popups`** (only the shell opens
+// links) and **no `allow="fullscreen"`**. See plans/free_form_ui_iframe.md.
+
+// window.open relayed from a postMessage handler loses user-activation, so it needs the
+// operator's one-time "allow pop-ups for this site" (the shell origin only). Returns
+// false when the browser blocked it.
+function openExternal(url: string): boolean {
+  return window.open(url, "_blank", "noopener,noreferrer") !== null;
+}
+
+const POPUP_HINT = "Allow pop-ups for this site so the console can open links.";
+
 export function HakuUiFrame({ uiUrl }: { uiUrl: string }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [pendingUrl, setPendingUrl] = useState<string | null>(null);
+  const origin = new URL(uiUrl).origin;
+
+  function reply(msg: Outbound) {
+    iframeRef.current?.contentWindow?.postMessage(msg, origin);
+  }
+
+  function openAndReply(url: string) {
+    const opened = openExternal(url);
+    if (!opened) toastError("Pop-up blocked", POPUP_HINT);
+    reply({ type: "openLinkResult", url, opened });
+  }
+
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      if (e.origin !== origin) return; // only Haku's UI origin may talk to the shell
+      const msg = parseInbound(e.data);
+      if (!msg) return;
+      const verdict = vetOpenLink(msg.url);
+      if (verdict.action === "reject") {
+        toastError("Link blocked", verdict.reason);
+        reply({ type: "openLinkResult", url: msg.url, opened: false, reason: verdict.reason });
+      } else if (verdict.action === "open") {
+        openAndReply(msg.url);
+      } else {
+        setPendingUrl(msg.url); // off-whitelist → operator confirm
+      }
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [origin]);
+
+  function onApprove() {
+    const url = pendingUrl;
+    setPendingUrl(null);
+    if (url) openAndReply(url);
+  }
+
+  function onCancel() {
+    const url = pendingUrl;
+    setPendingUrl(null);
+    if (url) reply({ type: "openLinkResult", url, opened: false, reason: "cancelled" });
+  }
+
   return (
-    <iframe
-      src={uiUrl}
-      title="Haku UI"
-      sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-      className="mt-4 w-full"
-      style={{ height: "80vh", border: 0 }}
-    />
+    <>
+      <iframe
+        ref={iframeRef}
+        src={uiUrl}
+        title="Haku UI"
+        sandbox="allow-scripts allow-same-origin allow-forms"
+        className="mt-4 w-full"
+        style={{ height: "80vh", border: 0 }}
+      />
+      <ConfirmDialog
+        request={pendingUrl ? { title: "Open this link?", url: pendingUrl, approveLabel: "Open" } : null}
+        onApprove={onApprove}
+        onCancel={onCancel}
+      />
+    </>
   );
 }

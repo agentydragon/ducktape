@@ -60,7 +60,9 @@ trusting the content:
    launch bearer is unreachable from any browser context. Use a **same-site**
    subdomain (`*.allegedly.works`) so it's _cross-origin but same-site_: isolated
    from the shell, yet the Authentik SSO cookie isn't treated as a blocked
-   third-party cookie. Pin it with `sandbox="allow-scripts"` on the `<iframe>` and
+   third-party cookie. Pin it with `sandbox="allow-scripts allow-same-origin allow-forms"`
+   on the `<iframe>` (same-origin + forms are needed for the framed app's own Authentik
+   auth; **no `allow-popups`** — only the shell opens links) and
    `frame-src https://haku-ui.allegedly.works` in the shell's CSP.
 
 2. **Haku's UI is never publicly exposed.** Its only ingress is the
@@ -221,7 +223,7 @@ can't create public routes); the `haku-state` workloads Flux pipe (Haku's `k8s/`
 into `haku-sandbox` under a constrained impersonation SA, `cluster/k8s/haku/workloads/`)
 seeded from `haku/state_template/`; the Authentik-gated `haku-ui.allegedly.works` route; and
 the console's **Free-form UI** tab embedding it as a sandboxed cross-origin iframe (`frame-src`
-CSP, `sandbox="allow-scripts allow-same-origin allow-forms allow-popups"`). The de-risking
+CSP, `sandbox="allow-scripts allow-same-origin allow-forms"`). The de-risking
 question — _does a same-site Authentik-gated app authenticate inside the iframe?_ — is
 **answered yes**: the proxied haku-ui content is frameable; the only blocker was Authentik's
 flow page sending `X-Frame-Options: DENY`, fixed by serving
@@ -229,24 +231,27 @@ flow page sending `X-Frame-Options: DENY`, fixed by serving
 `auth.allegedly.works` so only the console may frame it. Cross-origin isolation holds, so
 `haku-ui ≠ haku-console` regardless of framing headers.
 
-**Remaining**, in order (critical path 1→2→3; each ~PR-sized; **owner** is who builds it):
+Also shipped: the **`postMessage` bridge** (origin-checked transport + the top-layer
+native-`<dialog>` confirm with backdrop) and the **`openLink`** affordance — scheme hard-gate
+(`https`/`mailto` only), operator-owned host whitelist in the shell (`bridge.ts`, not
+`haku-state`), off-whitelist confirm, and `window.open(…, "noopener,noreferrer")` (assumes the
+one-time per-origin pop-up allow). The iframe sandbox dropped `allow-popups` accordingly — only
+the shell opens. `state_template/k8s/haku-ui/index.html` carries a worked `openLink` demo.
+
+**Remaining**, in order (each ~PR-sized; **owner** is who builds it):
 
 1. **Haku's real UI service** _(Haku)._ Haku replaces the placeholder under its `k8s/`
    (stock runtime + `haku-state` code), serves a real first page (re-create the item list as
    a starting point), records operator intent to its **own** backend, reads operator identity
    from the forward-auth headers. Coexists with the trusted list; needs nothing from the shell
    yet.
-2. **Bridge + `requestCapability`** _(operator)._ Add the `postMessage` transport + origin
-   validation + the **top-layer modal confirm** (`<dialog>` + backdrop) in the shell; wire
-   `requestCapability("launch-routine")` (cheapest — reuses the existing capability tier).
-   Establishes the confirm pattern everything else reuses.
-3. **`openLink`** _(operator)._ Scheme hard-gate + operator-owned host whitelist +
-   off-whitelist confirm overlay; assume the one-time popup-allow. The high-value affordance —
-   it plugs agent UI into the item→handoff loop.
-4. **North star — subsume the item UI** _(last; see below)._ Once Haku's UI is at least as
+2. **`requestCapability`** _(operator)._ The remaining bridge affordance: wire
+   `requestCapability("launch-routine")` onto the already-shipped transport + top-layer confirm
+   (reuses the existing capability tier — the request just triggers the flow already there).
+3. **North star — subsume the item UI** _(last; see below)._ Once Haku's UI is at least as
    good as the trusted list, retire the trusted renderer + item schema + trace tier from
    ducktape, move styling/build/image-automation into `haku-state`, and shrink the shell to
-   the irreducible core. Most disruptive; only safe once 1–3 are proven.
+   the irreducible core. Most disruptive; only safe once 1–2 are proven.
 
 ## North star: the shell owns nothing but the boundary
 
