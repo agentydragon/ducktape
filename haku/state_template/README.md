@@ -17,7 +17,7 @@ each dir lives in `haku/base/instructions.md` (linked from the stubs). Layout mi
 | `log/`              | empty (`.gitkeep`)                                                       | per-day run journal `log/YYYY-MM-DD.md`                      |
 | `memory/`           | placeholder stubs (operator model, situational awareness, base-sync pin) | Haku's to restructure freely                                 |
 | `ui/`               | the ported item UI (React SPA + FastAPI backend + Dockerfile)            | Haku's own UI service, CI-built (below)                      |
-| `.forgejo/`         | the `build-ui` Forgejo Actions workflow                                  | Haku's CI: build image → push registry → bump deploy tag     |
+| `.forgejo/`         | the `build-ui` Forgejo Actions workflow                                  | Haku's CI: build image → push registry (Flux bumps the tag)  |
 | `k8s/`              | the `haku-ui` workload (Deployment + Service for the CI-built image)     | Haku's GitOps workload dir (below)                           |
 
 There is intentionally **no `dashboard/`** — the console renders its own dashboard from
@@ -36,10 +36,11 @@ the deployment, and evolves the UI** freely. Full detail: [`ui/README.md`](ui/RE
 
 Build-via-CI flow: Haku commits `ui/` + the `.forgejo/workflows/build-ui.yaml` workflow
 → the contained, repo-scoped Forgejo runner (`cluster/k8s/haku-ci`) builds + pushes
-`git.allegedly.works/haku/ui:<sha>` → CI bumps the tag in `k8s/haku-ui/deployment.yaml`
-→ Flux reconciles `haku-state` `k8s/` → the `haku-ui` Deployment rolls the new image.
-(No Bazel/BuildBuddy — `haku-state` may hold private operator info, so its source never
-leaves the cluster.)
+`git.allegedly.works/haku/ui:main-<utc>-<sha>` → **Flux image automation** (operator-owned,
+in ducktape `cluster/k8s/...`) writes the newest tag into `k8s/haku-ui/deployment.yaml` at
+its `{"$imagepolicy": ...}` marker → Flux reconciles `haku-state` `k8s/` → the `haku-ui`
+Deployment rolls the new image. CI never edits a manifest. (No Bazel/BuildBuddy —
+`haku-state` may hold private operator info, so its source never leaves the cluster.)
 
 ## `k8s/` — Haku's GitOps workload dir
 
@@ -51,7 +52,7 @@ denies any Gateway-API route. So Haku gets a GitOps path for persistent workload
 just ad-hoc `kubectl apply`) without being able to widen its own perimeter.
 
 The starter holds one workload, `haku-ui` — the Deployment + Service for the CI-built
-image (`git.allegedly.works/haku/ui:<tag>`, the tag CI bumps), served behind the
+image (`git.allegedly.works/haku/ui:<tag>`, the tag Flux image automation writes), served behind the
 operator-owned, Authentik-gated `haku-ui.allegedly.works` route and embedded in the
 console iframe (see `haku/console/plans/free_form_ui_iframe.md`). It pulls via the
 `haku-forgejo-registry-pull` imagePullSecret (operator-provisioned) and mounts the

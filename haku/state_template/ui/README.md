@@ -16,7 +16,7 @@ never a committed `dist/`. `ducktape bbr test` does not cover it.
 | `frontend/`                           | React + TypeScript SPA (standard Vite). Value-ranked **Up next** (top 7) + collapsible **Backlog**, collapsible task cards, `marked`+`dompurify` markdown bodies, command-action click/un-click toggles, `claude_handoff` deep-links, per-item + global feedback. |
 | `backend/`                            | FastAPI app (no build step). Clones/pulls `haku-state`, serves the SPA + a JSON API, and writes operator intent (`clicks/`, `intake/`) back to `haku-state`.                                                                                                      |
 | `Dockerfile`                          | Multi-stage: node builds the SPA → python:3.13-slim runtime runs uvicorn on `:8080` as non-root, with the built SPA copied in.                                                                                                                                    |
-| `../.forgejo/workflows/build-ui.yaml` | Forgejo Actions workflow: build → push `git.allegedly.works/haku/ui:<sha>` → bump the tag in `../k8s/haku-ui/deployment.yaml`.                                                                                                                                    |
+| `../.forgejo/workflows/build-ui.yaml` | Forgejo Actions workflow: build → push `git.allegedly.works/haku/ui:main-<utc>-<sha>`. Flux image automation (not CI) then writes the tag into `../k8s/haku-ui/deployment.yaml`.                                                                                  |
 | `../k8s/haku-ui/`                     | Deployment (the built image, `haku-forgejo-registry-pull` imagePullSecret, `haku-state-git-write` env) + Service (`80` → `8080`).                                                                                                                                 |
 
 ## Frontend
@@ -72,8 +72,11 @@ HAKU_UI_GIT_USERNAME=… HAKU_UI_GIT_PASSWORD=… HAKU_UI_GIT_REPO_URL=… pytho
 
 1. Haku commits `ui/` source + the workflow to `haku-state`.
 2. The repo-scoped, contained Forgejo Actions runner (`cluster/k8s/haku-ci`) builds
-   the image and pushes `git.allegedly.works/haku/ui:<sha>` to the in-cluster registry.
-3. CI bumps the tag in `k8s/haku-ui/deployment.yaml` and commits it back.
+   the image and pushes `git.allegedly.works/haku/ui:main-<utc>-<sha>` to the
+   in-cluster registry. CI stops here — it never edits a manifest.
+3. Flux image automation (operator-owned, in ducktape `cluster/k8s/...`) watches the
+   registry, picks the newest tag, and writes it into `k8s/haku-ui/deployment.yaml`
+   at the `{"$imagepolicy": ...}` marker.
 4. Flux reconciles `haku-state` `k8s/` → the `haku-ui` Deployment rolls the new image.
 
 Runtime deps land separately: the runner (`cluster/k8s/haku-ci`), the registry push
