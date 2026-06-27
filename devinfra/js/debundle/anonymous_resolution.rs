@@ -11,11 +11,18 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use analysis::{OwnerGraphReport, OwnerId, StatementKind};
+use analysis::{
+    AnalysisHints, ChunkId, OwnerGraphReport, OwnerId, StatementKind, analyze_chunk,
+    build_owner_graph,
+};
 use anyhow::{Context, Result, bail};
+use selector_ir::{ClaimOutcome, ResolvedClaim, SelectorFact, SelectorFactStore};
+use selector_ir_lowering::{MemberSelectorLoweringContext, lower_member_selector};
+use selector_runtime::solve_global_selector_program;
 use source_match::SelectorResolver;
-use spec::AnonymousStatementSelector;
+use spec::{AnonymousStatementSelector, MemberSelectorSpec};
 use swc_common::{EqIgnoreSpan, SyntaxContext};
+use swc_ecma_ast::Module;
 
 #[derive(Debug, Clone, Copy)]
 pub struct AnonymousStatementClaimSet<'a> {
@@ -35,9 +42,8 @@ pub struct MemberSelectorClaimSet<'a> {
 
 /// Resolve member-form `source_match` selectors to the chunk-top
 /// binding names they claim, by matching each selector against the
-/// chunk sources referenced by `graph`'s `source_location` data —
-/// the same source-backed matching (`source_match`) the run
-/// pipeline's member materialization applies. Each selector must
+/// chunk sources referenced by `graph`'s `source_location` data through
+/// the same selector-IR/CP-SAT path the run pipeline applies. Each selector must
 /// match exactly one declared binding across all chunk sources;
 /// zero or multiple matches are hard errors, as is unresolvable
 /// chunk source — the caller (the CLI edit gate) must never
@@ -78,32 +84,56 @@ fn resolve_member_selector_claims_in_globals(
         return Ok(vec![BTreeSet::new(); claims_by_module.len()]);
     }
 
-    with_source_resolvers(
+    with_source_modules(
         graph,
         owner_graph_path,
         modules_root,
         source_root,
         "spec contains members[].selector.source_match claims, but owner_graph.json has no \
          source_location data; cannot resolve source_match selectors",
-        |parsed_by_source, resolvers_by_source| {
+        |parsed_by_source| {
+            let facts_by_source: BTreeMap<String, SelectorFactStore> = parsed_by_source
+                .iter()
+                .map(|(source_path, parsed)| {
+                    Ok((
+                        source_path.clone(),
+                        selector_fact_store_for_module(&parsed.module).with_context(|| {
+                            format!("building selector facts for source {source_path}")
+                        })?,
+                    ))
+                })
+                .collect::<Result<_>>()?;
             let mut out = vec![BTreeSet::<String>::new(); claims_by_module.len()];
             for (module_idx, claims) in claims_by_module.iter().enumerate() {
                 let request_id = claims.module_path.to_string_lossy();
                 for selector in claims.selectors {
-                    let mut matches = Vec::new();
-                    for source_path in parsed_by_source.keys() {
-                        matches.extend(
-                            resolvers_by_source[source_path]
-                                .member_candidates(&request_id, selector)?,
-                        );
+                    let mut matches = Vec::<MemberSelectorMatch>::new();
+                    for (source_path, facts) in &facts_by_source {
+                        for claim in
+                            resolve_member_source_match_claims(facts, &request_id, selector)?
+                        {
+                            let binding_name = claim.binding.clone().with_context(|| {
+                                format!(
+                                    "module {} members[].selector.source_match matched source {} \
+                                     owner {:?} without a single declared binding; use \
+                                     target_binding or a single-binding selector",
+                                    claims.module_path.display(),
+                                    source_path,
+                                    claim.owner,
+                                )
+                            })?;
+                            matches.push(MemberSelectorMatch {
+                                binding_name,
+                                is_import_specifier: solver_claim_is_import_specifier(
+                                    facts, &claim,
+                                ),
+                            });
+                        }
                     }
                     match matches.as_slice() {
                         [single] => {
-                            if !matches!(
-                                single.binding.kind,
-                                Some(spec::BindingSourceKind::ImportSpecifier)
-                            ) {
-                                out[module_idx].insert(single.binding.binding_name.clone());
+                            if !single.is_import_specifier {
+                                out[module_idx].insert(single.binding_name.clone());
                             }
                         }
                         [] => bail!(
@@ -119,7 +149,7 @@ fn resolve_member_selector_claims_in_globals(
                             multiple.len(),
                             multiple
                                 .iter()
-                                .map(|matched| matched.binding.binding_name.as_str())
+                                .map(|matched| matched.binding_name.as_str())
                                 .collect::<Vec<_>>()
                                 .join(", "),
                             selector.match_source,
@@ -131,6 +161,81 @@ fn resolve_member_selector_claims_in_globals(
             Ok(out)
         },
     )
+}
+
+#[derive(Debug, Clone)]
+struct MemberSelectorMatch {
+    binding_name: String,
+    is_import_specifier: bool,
+}
+
+fn resolve_member_source_match_claims(
+    facts: &SelectorFactStore,
+    logical_module: &str,
+    selector: &AnonymousStatementSelector,
+) -> Result<Vec<ResolvedClaim>> {
+    let selector = MemberSelectorSpec::SourceMatch(selector.clone());
+    let lowered = lower_member_selector(
+        &MemberSelectorLoweringContext::new(ChunkId(0), logical_module),
+        "candidate",
+        &selector,
+    )
+    .with_context(|| "lowering members[].selector.source_match to selector IR")?;
+    let result = solve_global_selector_program(&lowered.program, facts)
+        .with_context(|| "solving members[].selector.source_match selector IR")?;
+    let outcome = result
+        .outcome_for(lowered.target)
+        .with_context(|| "selector solver did not return the member source_match target")?;
+    match outcome {
+        ClaimOutcome::Unique { claim } => Ok(vec![claim.clone()]),
+        ClaimOutcome::Ambiguous { candidates } => Ok(candidates.clone()),
+        ClaimOutcome::NoMatch => Ok(Vec::new()),
+        ClaimOutcome::Unsupported { message } => {
+            bail!("members[].selector.source_match is unsupported by selector IR solver: {message}")
+        }
+        ClaimOutcome::Duplicate {
+            owner,
+            conflicting_targets,
+        } => bail!(
+            "members[].selector.source_match produced a duplicate claim for owner {owner:?} \
+             across {conflicting_targets:?}",
+        ),
+    }
+}
+
+fn selector_fact_store_for_module(module: &Module) -> Result<SelectorFactStore> {
+    let analysis = analyze_chunk(module, &AnalysisHints::default(), None, |_| None);
+    let owner_graph = build_owner_graph(&analysis.facts)?;
+    let chunk_id = ChunkId(0);
+    let mut facts = SelectorFactStore::default();
+    facts.extend_chunk_facts(
+        chunk_id,
+        &chunk_facts::extract_facts(module).map_err(|unsupported| {
+            anyhow::anyhow!(
+                "selector AST fact extraction failed at {}; edit-gate source_match resolution \
+                 needs a complete AST EDB",
+                unsupported.context
+            )
+        })?,
+    );
+    facts.extend_owner_graph_facts(chunk_id, &owner_graph);
+    Ok(facts)
+}
+
+fn solver_claim_is_import_specifier(facts: &SelectorFactStore, claim: &ResolvedClaim) -> bool {
+    facts.facts.iter().any(|fact| {
+        matches!(
+            fact,
+            SelectorFact::Owner {
+                owner,
+                statement_ordinal,
+                statement_kind,
+                ..
+            } if *owner == claim.owner
+                && *statement_ordinal == claim.statement_ordinal
+                && statement_kind == "import"
+        )
+    })
 }
 
 pub fn resolve_anonymous_statement_claims(
@@ -324,23 +429,15 @@ fn resolve_anonymous_statement_claims_in_globals(
 }
 
 /// Parse every distinct `source_location.source_path` in `graph` and hand
-/// `body` a per-source `ChunkResolver` map alongside the parsed modules.
-/// Resolvers are built once and borrow the parsed modules (the build-once seam
-/// contract; the fact resolver would otherwise rebuild a per-source EDB on every
-/// selector), which is why the parsed map and its resolvers are produced
-/// together and lent through the closure rather than returned. `no_sources` is
-/// the caller-specific error raised when the graph carries no `source_location`
-/// data.
-fn with_source_resolvers<R>(
+/// `body` the parsed modules. `no_sources` is the caller-specific error raised
+/// when the graph carries no `source_location` data.
+fn with_source_modules<R>(
     graph: &OwnerGraphReport,
     owner_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
     no_sources: &str,
-    body: impl for<'m> FnOnce(
-        &'m BTreeMap<String, js_ast::ParsedJsModule>,
-        &BTreeMap<String, source_match::ChunkResolver<'m>>,
-    ) -> Result<R>,
+    body: impl FnOnce(&BTreeMap<String, js_ast::ParsedJsModule>) -> Result<R>,
 ) -> Result<R> {
     let source_paths: BTreeSet<String> = graph
         .nodes
@@ -361,16 +458,44 @@ fn with_source_resolvers<R>(
             ))
         })
         .collect::<Result<_>>()?;
-    let resolvers_by_source: BTreeMap<_, _> = parsed_by_source
-        .iter()
-        .map(|(source_path, parsed)| {
-            (
-                source_path.clone(),
-                source_match::ChunkResolver::new(&parsed.module),
-            )
-        })
-        .collect();
-    body(&parsed_by_source, &resolvers_by_source)
+    body(&parsed_by_source)
+}
+
+/// Parse every distinct `source_location.source_path` in `graph` and hand
+/// `body` a per-source `ChunkResolver` map alongside the parsed modules.
+/// Resolvers are built once and borrow the parsed modules, so the parsed map and
+/// its resolvers are produced together and lent through the closure rather than
+/// returned.
+fn with_source_resolvers<R>(
+    graph: &OwnerGraphReport,
+    owner_graph_path: &Path,
+    modules_root: &Path,
+    source_root: Option<&Path>,
+    no_sources: &str,
+    body: impl for<'m> FnOnce(
+        &'m BTreeMap<String, js_ast::ParsedJsModule>,
+        &BTreeMap<String, source_match::ChunkResolver<'m>>,
+    ) -> Result<R>,
+) -> Result<R> {
+    with_source_modules(
+        graph,
+        owner_graph_path,
+        modules_root,
+        source_root,
+        no_sources,
+        |parsed_by_source| {
+            let resolvers_by_source: BTreeMap<_, _> = parsed_by_source
+                .iter()
+                .map(|(source_path, parsed)| {
+                    (
+                        source_path.clone(),
+                        source_match::ChunkResolver::new(&parsed.module),
+                    )
+                })
+                .collect();
+            body(parsed_by_source, &resolvers_by_source)
+        },
+    )
 }
 
 /// Resolve `source_path` to a file on disk, read it, and parse it as a JS

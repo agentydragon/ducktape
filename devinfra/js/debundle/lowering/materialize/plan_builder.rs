@@ -53,50 +53,11 @@ use selector_diagnostics::{
 };
 use selector_ir::{
     ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
-    SelectorTargetId, SolverResult,
+    SelectorTargetId,
 };
 use selector_ir_lowering::{MemberSelectorLoweringContext, MemberSelectorProgramBuilder};
-use selector_ortools_cpsat_backend::OrToolsCpSatBackend;
+use selector_runtime::solve_global_selector_program;
 use source_match::SelectorResolver;
-
-const ORTOOLS_CPSAT_SOLVER_ENV: &str = "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER";
-const ORTOOLS_CPSAT_SOLVER_RUNFILE: &str =
-    "_main/devinfra/js/debundle/solver_backends/ortools_cpsat/selector_cpsat_solver";
-
-fn ortools_cpsat_solver_from_env() -> Result<PathBuf> {
-    if let Ok(solver_path) = std::env::var(ORTOOLS_CPSAT_SOLVER_ENV) {
-        return parse_ortools_cpsat_solver_path(Some(&solver_path));
-    }
-    if let Some(solver_path) = ortools_cpsat_solver_from_runfiles() {
-        return Ok(solver_path);
-    }
-    bail!("{ORTOOLS_CPSAT_SOLVER_ENV} must point at selector_cpsat_solver")
-}
-
-fn parse_ortools_cpsat_solver_path(solver_path: Option<&str>) -> Result<PathBuf> {
-    let solver_path = solver_path
-        .map(str::trim)
-        .filter(|path| !path.is_empty())
-        .with_context(|| {
-            format!("{ORTOOLS_CPSAT_SOLVER_ENV} must point at selector_cpsat_solver")
-        })?;
-    Ok(PathBuf::from(solver_path))
-}
-
-fn ortools_cpsat_solver_from_runfiles() -> Option<PathBuf> {
-    let runfiles_dir = std::env::var_os("RUNFILES_DIR").map(PathBuf::from)?;
-    let path = runfiles_dir.join(ORTOOLS_CPSAT_SOLVER_RUNFILE);
-    path.exists().then_some(path)
-}
-
-fn solve_global_selector_program(
-    program: &selector_ir::SelectorProgram,
-    facts: &SelectorFactStore,
-) -> Result<SolverResult> {
-    let backend = OrToolsCpSatBackend::new(ortools_cpsat_solver_from_env()?);
-    selector_backend_solver::solve_with_backend(program, facts, &backend)
-        .context("global selector CP-SAT backend failed")
-}
 
 impl From<&DuplicateClaimSite> for DuplicateClaimSiteReport {
     fn from(site: &DuplicateClaimSite) -> Self {
@@ -2193,38 +2154,5 @@ impl ChunkPlanBuilder {
             anonymous_ordinal_assignment: self.anonymous_ordinal_assignment,
             unmatched_spec_claims: self.unmatched_spec_claims,
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ortools_cpsat_solver_path_accepts_non_empty_path() {
-        assert_eq!(
-            parse_ortools_cpsat_solver_path(Some(" /tmp/solver ")).unwrap(),
-            PathBuf::from("/tmp/solver")
-        );
-    }
-
-    #[test]
-    fn ortools_cpsat_solver_path_requires_sidecar_path() {
-        let error =
-            parse_ortools_cpsat_solver_path(None).expect_err("missing sidecar path should fail");
-        assert!(
-            error
-                .to_string()
-                .contains("DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER"),
-            "{error}"
-        );
-        let error =
-            parse_ortools_cpsat_solver_path(Some(" ")).expect_err("empty sidecar path should fail");
-        assert!(
-            error
-                .to_string()
-                .contains("DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER"),
-            "{error}"
-        );
     }
 }

@@ -173,11 +173,16 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":chunk_facts",
         ":js_ast",
+        ":selector_ir",
+        ":selector_ir_lowering",
+        ":selector_runtime",
         ":source_match",
         ":spec",
         "@crates//:anyhow",
         "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
     ],
 )
 
@@ -850,6 +855,7 @@ rust_library(
         ":selector_ir",
         ":selector_ir_lowering",
         ":selector_ortools_cpsat_backend",
+        ":selector_runtime",
         ":source_match",
         ":spec",
         ":stage_one",
@@ -1175,6 +1181,24 @@ rust_test(
         ":selector_ir_lowering",
         ":spec",
     ],
+)
+
+rust_library(
+    name = "selector_runtime",
+    srcs = ["selector_runtime.rs"],
+    edition = "2024",
+    deps = [
+        ":selector_backend_solver",
+        ":selector_ir",
+        ":selector_ortools_cpsat_backend",
+        "@crates//:anyhow",
+    ],
+)
+
+rust_test(
+    name = "selector_runtime_test",
+    crate = ":selector_runtime",
+    edition = "2024",
 )
 
 rust_library(
