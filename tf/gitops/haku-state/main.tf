@@ -118,3 +118,33 @@ resource "kubernetes_secret" "haku_forgejo_registry_pull" {
     })
   }
 }
+
+# Registration token for the contained Forgejo Actions runner (cluster/k8s/haku-ci),
+# which builds Haku's UI image from haku-state. The svalabs/forgejo provider has no
+# runner-token resource, so fetch it from the repo's registration-token API as the
+# repo-owning haku user (owner ⇒ repo admin) and deliver it to the haku-ci namespace
+# as the Secret the runner registers with. GET returns the repo's *current* token
+# (it doesn't rotate on read), so repeated applies don't churn the Secret.
+# depends_on forces the read to apply-time, after the repo exists.
+data "http" "haku_ci_registration_token" {
+  url    = "${var.forgejo_url}/api/v1/repos/${forgejo_user.haku.login}/${forgejo_repository.state.name}/actions/runners/registration-token"
+  method = "GET"
+  request_headers = {
+    Authorization = "Basic ${base64encode("${forgejo_user.haku.login}:${random_password.haku.result}")}"
+    Accept        = "application/json"
+  }
+  depends_on = [forgejo_repository.state]
+}
+
+# The haku-ci namespace is created by its own Flux kustomization (cluster/k8s/haku-ci);
+# this resource retries until it exists. Replaces the manual SOPS bootstrap token.
+resource "kubernetes_secret" "haku_ci_runner_token" {
+  metadata {
+    name      = "haku-ci-runner-token"
+    namespace = "haku-ci"
+  }
+
+  data = {
+    token = jsondecode(data.http.haku_ci_registration_token.response_body).token
+  }
+}

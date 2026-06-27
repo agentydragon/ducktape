@@ -136,6 +136,7 @@ tf.download(
         "hcloud": "hetznercloud/hcloud:1.60.0",
         "headscale": "awlsring/headscale:0.5.0",
         "helm": "hashicorp/helm:3.1.1",
+        "http": "hashicorp/http:3.6.0",
         "kubernetes": "hashicorp/kubernetes:2.38.0",
         "libvirt": "dmacvicar/libvirt:0.9.3",
         "local": "hashicorp/local:2.5.3",

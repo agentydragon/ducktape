@@ -6,6 +6,10 @@ terraform {
       source  = "svalabs/forgejo"
       version = "~> 1.5"
     }
+    http = {
+      source  = "hashicorp/http"
+      version = "~> 3.4"
+    }
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = "~> 2.38"

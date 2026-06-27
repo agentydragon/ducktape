@@ -28,28 +28,25 @@ adversarial (containment = cross-origin iframe isolation + the capability gate +
 scheme-gate). A CI-built image vs committed files doesn't widen that — it only changes _how_
 Haku produces the image, and the runner can't escape its perimeter.
 
-## ⚠️ Paving steps (not yet done — fill in during the iterate loop)
+## ⚠️ Paving — validate the builder
 
-1. **Registration token (required — the pod stays pending without it).** A **repo-scoped**
-   runner registration token for `haku-state`, provisioned as Secret `haku-ci-runner-token`
-   (key `token`) in `haku-ci`. **Ideal: tofu-controller-provisioned** — but the `svalabs/forgejo`
-   provider doesn't expose runner registration tokens, so until that's added (or we drive the
-   Forgejo `…/runners/registration-token` API from a tofu `null_resource`/`restapi` provider),
-   it's generated once from the repo's Actions → Runners settings and committed as a SOPS
-   `runner-token.sops.yaml` here. **TODO: replace the manual SOPS step with tofu provisioning.**
-2. **Validate the builder.** Rootless `dind` on Talos is the **main risk** and may need
-   securityContext/seccomp tuning, `/dev/fuse`, or a switch to **rootless buildkit** if the
-   daemon won't start. Check `kubectl -n haku-ci logs deploy/haku-runner -c dind`, run a trivial
-   `.forgejo/workflows/` build, and iterate here.
+Rootless `dind` on Talos is the **main risk** and may need securityContext/seccomp tuning,
+`/dev/fuse`, or a switch to **rootless buildkit** if the daemon won't start. Check
+`kubectl -n haku-ci logs deploy/haku-runner -c dind`, run a trivial `.forgejo/workflows/`
+build, and iterate here.
 
 ## What's here
 
-| File                 | Role                                                                |
-| -------------------- | ------------------------------------------------------------------- |
-| `namespace.yaml`     | the `haku-ci` namespace                                             |
-| `networkpolicy.yaml` | egress fence (DNS + registries/npm/pypi + in-cluster)               |
-| `runner-config.yaml` | the act_runner `config.yaml` (labels, dind `DOCKER_HOST`, capacity) |
-| `deployment.yaml`    | the act_runner + rootless `dind` sidecar                            |
+| File                 | Role                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------- |
+| `namespace.yaml`     | the `haku-ci` namespace                                                                  |
+| `networkpolicy.yaml` | egress fence (DNS + registries/npm/pypi + in-cluster)                                    |
+| `config.yaml`        | the act_runner config (labels, dind `DOCKER_HOST`, capacity), via a `configMapGenerator` |
+| `deployment.yaml`    | the act_runner + rootless `dind` sidecar                                                 |
 
-`flux-kustomization.yaml` (root-wired) applies this dir; `wait: false` because the runner is
-pending until the token lands.
+The registration-token Secret (`haku-ci-runner-token`) is provisioned by `tf/gitops/haku-state`
+(a `hashicorp/http` GET of the repo's runner registration-token API, written to the Secret) —
+not committed here.
+
+`flux-kustomization.yaml` (root-wired) applies this dir; `wait: false` because the runner stays
+pending until that token Secret lands.
