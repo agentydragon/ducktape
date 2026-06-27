@@ -22,7 +22,7 @@ function openExternal(url: string): boolean {
 
 const POPUP_HINT = "Allow pop-ups for this site so the console can open links.";
 
-export function HakuUiFrame({ uiUrl }: { uiUrl: string }) {
+export function HakuUiEmbed({ uiUrl }: { uiUrl: string }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const origin = new URL(uiUrl).origin;

@@ -4,7 +4,7 @@ import { Anchor, Group, Loader, Tabs, Text, Title } from "@mantine/core";
 import { type DashboardResponse, type Item, clickAction, fetchDashboard, unclickAction } from "./client.ts";
 import { INTAKE_NEW, UP_NEXT } from "./constants.ts";
 import { FeedbackForm } from "./feedback.tsx";
-import { HakuUiFrame } from "./haku_ui.tsx";
+import { HakuUiEmbed } from "./haku_ui_embed.tsx";
 import { LaunchRoutineButton } from "./launch.tsx";
 import { TaskCard, clickKey } from "./task.tsx";
 import { toastError } from "./toast.ts";
@@ -148,7 +148,7 @@ export default function App() {
 
         {data.haku_ui_url && (
           <Tabs.Panel value="ui">
-            <HakuUiFrame uiUrl={data.haku_ui_url} />
+            <HakuUiEmbed uiUrl={data.haku_ui_url} />
           </Tabs.Panel>
         )}
       </Tabs>

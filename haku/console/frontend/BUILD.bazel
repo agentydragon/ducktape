@@ -97,8 +97,8 @@ js_library(
 )
 
 js_library(
-    name = "haku_ui",
-    srcs = ["haku_ui.tsx"],
+    name = "haku_ui_embed",
+    srcs = ["haku_ui_embed.tsx"],
     deps = [
         ":bridge",
         ":confirm_dialog",
@@ -114,7 +114,7 @@ js_library(
         ":client",
         ":constants",
         ":feedback",
-        ":haku_ui",
+        ":haku_ui_embed",
         ":launch",
         ":task",
         ":toast",
@@ -163,7 +163,7 @@ filegroup(
         "confirm_dialog.tsx",
         "constants.ts",
         "feedback.tsx",
-        "haku_ui.tsx",
+        "haku_ui_embed.tsx",
         "index.html",
         "launch.tsx",
         "main.tsx",
