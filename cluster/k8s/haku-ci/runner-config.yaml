@@ -17,7 +17,7 @@ data:
       # `<label>:docker://<image>` runs jobs in that container image (which must
       # carry the docker CLI to reach the dind sidecar).
       labels:
-        - "docker:docker://docker:27-cli"
+        - "haku-ci:docker://docker:27-cli"
     container:
       # The dind-rootless sidecar; no privileged daemon, no host docker socket.
       docker_host: "tcp://localhost:2375"
