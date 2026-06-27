@@ -290,6 +290,20 @@ Until then, Phase 1a's trusted item list coexists.
 
 ## Open questions
 
+- **Consider deleting the console-side trace API.** The console kept a generic,
+  item-agnostic `POST /api/trace` (+ a "Note to Haku" box) when the item UI moved to
+  haku-ui. But haku-ui now records operator intent through its **own** backend, so the
+  console trace API is the lone trace-write left on the boundary — and the boundary rule
+  is **route across it only what the trusted side uniquely holds (a secret or a real-world
+  capability), not writes the iframe could do itself.** A trace isn't an authorization: it
+  writes to haku-state, which Haku already owns and reduces, so a forged trace grants Haku
+  nothing it couldn't do directly — console-mediated writing buys no provenance either,
+  because the request originates in Haku's own iframe JS (no trusted-side operator consent).
+  Real operator provenance would require the **shell** to render the consent (like the
+  `openLink` off-whitelist confirm), not relay-and-sign a Haku-authored message. So unless
+  we add that trusted-side consent, the console trace API earns nothing over haku-ui writing
+  directly — consider removing it (and the note box), leaving the console as capability tier
+  - iframe shell only.
 - **Share the iframe protocol instead of duplicating it.** The protocol contract is
   small, so for now Haku's UI keeps a hand-maintained copy of the message shapes,
   with `haku/console/frontend/bridge.ts` as the authoritative source (notes in both
