@@ -124,6 +124,38 @@ export { actual };
 }
 
 #[test]
+fn member_source_match_alpha_all_named_function_expression_name_is_function_local() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const a = () => "outer";
+const b = function c(n) {
+  return n <= 0 ? "inner" : c(n - 1);
+};
+console.log(a(), b(1));
+export { a, b };
+"#,
+        vec![logical_module(
+            "format",
+            &[Member::source_alpha_target(
+                "wrapper",
+                "wrapper",
+                r#"const outer = () => "outer";
+const wrapper = function outer(n) {
+  return n <= 0 ? "inner" : outer(n - 1);
+};"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "outer inner\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/format.js",
+        &["const wrapper", "function c", "c(n - 1)"],
+        &["function outer"],
+    );
+}
+
+#[test]
 fn member_source_match_treats_object_shorthand_as_explicit_same_name_property() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"function actual(apiMode, enabled) {

@@ -1157,6 +1157,27 @@ impl MemberSelectorProgramBuilder {
 
         let mut result = BTreeMap::new();
         let kind = index.node_kind.get(&node).copied();
+        match kind {
+            Some(NodeKind::FnDecl | NodeKind::ClassDecl) => {
+                return self.lower_alpha_declaration_identifier_node(
+                    logical_module,
+                    index,
+                    skipped_nodes,
+                    state,
+                    node,
+                );
+            }
+            Some(NodeKind::FnExpr | NodeKind::ClassExpr) => {
+                return self.lower_alpha_named_expression_identifier_node(
+                    logical_module,
+                    index,
+                    skipped_nodes,
+                    state,
+                    node,
+                );
+            }
+            _ => {}
+        }
         if let (Some(kind), Some(name)) = (kind, index.ident_name.get(&node)) {
             let identifier = if matches!(kind, NodeKind::BindingIdent | NodeKind::PatAssign) {
                 self.alpha_binding_identifier(logical_module, state, name)
@@ -1195,6 +1216,100 @@ impl MemberSelectorProgramBuilder {
             let frame = state.frames.pop().expect("pushed alpha scope should exist");
             self.add_alpha_identifier_frame_all_different(logical_module, &frame);
         }
+        result
+    }
+
+    fn lower_alpha_declaration_identifier_node(
+        &mut self,
+        logical_module: &str,
+        index: &AlphaIdentifierIndex,
+        skipped_nodes: &BTreeSet<NodeId>,
+        state: &mut AlphaIdentifierState,
+        node: NodeId,
+    ) -> BTreeMap<NodeId, SelectorVariableId> {
+        let mut result = BTreeMap::new();
+        for (child_index, child) in index
+            .children_by_parent
+            .get(&node)
+            .into_iter()
+            .flatten()
+            .copied()
+            .enumerate()
+        {
+            if child_index == 0
+                && index.node_kind.get(&child) == Some(&NodeKind::Ident)
+                && let Some(name) = index.ident_name.get(&child)
+            {
+                let identifier = self.alpha_binding_identifier(logical_module, state, name);
+                result.insert(child, identifier);
+                continue;
+            }
+            result.extend(self.lower_alpha_identifier_node(
+                logical_module,
+                index,
+                skipped_nodes,
+                state,
+                child,
+            ));
+        }
+        result
+    }
+
+    fn lower_alpha_named_expression_identifier_node(
+        &mut self,
+        logical_module: &str,
+        index: &AlphaIdentifierIndex,
+        skipped_nodes: &BTreeSet<NodeId>,
+        state: &mut AlphaIdentifierState,
+        node: NodeId,
+    ) -> BTreeMap<NodeId, SelectorVariableId> {
+        let children = index
+            .children_by_parent
+            .get(&node)
+            .cloned()
+            .unwrap_or_default();
+        let Some(name_child) = children.first().copied().filter(|child| {
+            index.node_kind.get(child) == Some(&NodeKind::Ident)
+                && index.ident_name.contains_key(child)
+        }) else {
+            let mut result = BTreeMap::new();
+            for child in children {
+                result.extend(self.lower_alpha_identifier_node(
+                    logical_module,
+                    index,
+                    skipped_nodes,
+                    state,
+                    child,
+                ));
+            }
+            return result;
+        };
+
+        state.frames.push(AlphaIdentifierFrame::default());
+        let mut result = BTreeMap::new();
+        let name = index
+            .ident_name
+            .get(&name_child)
+            .expect("checked named expression identifier spelling");
+        let identifier = self.alpha_binding_identifier(logical_module, state, name);
+        result.insert(name_child, identifier);
+        for child in children {
+            if child == name_child {
+                continue;
+            }
+            result.extend(self.lower_alpha_identifier_node(
+                logical_module,
+                index,
+                skipped_nodes,
+                state,
+                child,
+            ));
+        }
+        let frame = state
+            .frames
+            .pop()
+            .expect("pushed named-expression alpha scope should exist");
+        self.add_alpha_identifier_frame_all_different(logical_module, &frame);
         result
     }
 
@@ -3687,6 +3802,83 @@ function second() {
     }
 
     #[test]
+    fn alpha_all_arrow_param_shadowing_uses_inner_binding_for_inner_refs() {
+        let mut selector = AnonymousStatementSelector::exact(
+            "function readable(x) { return items.map((x) => x); }",
+        );
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        let identifier_vars = alpha_identifier_vars_in_source_order(&lowered.program);
+        assert_eq!(identifier_vars.len(), 5);
+        let occurrence_counts = identifier_occurrence_counts(&identifier_vars);
+        assert_eq!(
+            occurrence_counts
+                .values()
+                .copied()
+                .filter(|count| *count == 2)
+                .count(),
+            1,
+            "the arrow parameter and body reference should share one alpha binding: {occurrence_counts:?}"
+        );
+        assert!(
+            !occurrence_counts.values().any(|count| *count > 2),
+            "the inner arrow binding must not merge with the outer parameter: {occurrence_counts:?}"
+        );
+    }
+
+    #[test]
+    fn alpha_all_named_function_expression_name_is_private_to_function_body() {
+        let mut selector = AnonymousStatementSelector::exact(
+            "const holder = function inner() { return inner; }; const leak = inner;",
+        );
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        selector.target_binding = Some("holder".to_string());
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        let identifier_vars = alpha_identifier_vars_in_source_order(&lowered.program);
+        assert_eq!(identifier_vars.len(), 5);
+        let function_name = identifier_vars[1];
+        let body_reference = identifier_vars[2];
+        let outside_reference = identifier_vars[4];
+        assert_eq!(function_name, body_reference);
+        assert_ne!(function_name, outside_reference);
+    }
+
+    #[test]
+    fn alpha_all_named_class_expression_name_is_private_to_class_body() {
+        let mut selector = AnonymousStatementSelector::exact(
+            "const holder = class Inner { method() { return Inner; } }; const leak = Inner;",
+        );
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        selector.target_binding = Some("holder".to_string());
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        let identifier_vars = alpha_identifier_vars_in_source_order(&lowered.program);
+        assert_eq!(identifier_vars.len(), 5);
+        let class_name = identifier_vars[1];
+        let method_reference = identifier_vars[2];
+        let outside_reference = identifier_vars[4];
+        assert_eq!(class_name, method_reference);
+        assert_ne!(class_name, outside_reference);
+    }
+
+    #[test]
     fn alpha_all_class_source_match_with_target_binding_stays_native() {
         let mut selector =
             AnonymousStatementSelector::exact("class A { method() { return \"selected\"; } }");
@@ -4327,5 +4519,29 @@ function second() {
                 .any(|target| *target == anchor),
             "plain binding anchors should not participate in target owner injectivity"
         );
+    }
+
+    fn alpha_identifier_vars_in_source_order(program: &SelectorProgram) -> Vec<SelectorVariableId> {
+        program
+            .atoms
+            .iter()
+            .filter_map(|atom| match atom {
+                SelectorAtom::AstIdentifierName {
+                    value: StringTerm::Var { id },
+                    ..
+                } => Some(*id),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn identifier_occurrence_counts(
+        identifier_vars: &[SelectorVariableId],
+    ) -> BTreeMap<SelectorVariableId, usize> {
+        let mut counts = BTreeMap::new();
+        for identifier in identifier_vars {
+            *counts.entry(*identifier).or_default() += 1;
+        }
+        counts
     }
 }
