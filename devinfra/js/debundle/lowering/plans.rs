@@ -35,33 +35,32 @@ pub(super) struct AnonymousStatementRequest {
 /// name. At most one relation can apply to a member, so the variants are mutually
 /// exclusive (an enum, not sibling `Option`s). Each is resolved after the chunk's
 /// owner graph is built — the relational facts live there / are derived from the
-/// chunk AST and joined to it — by the matching post-analysis pass in
-/// `materialize::*`. A member carrying one has an empty `binding` and `None`
-/// `source_match` until its pass resolves the target into the plan.
+/// chunk AST and joined to it — by the global selector solver. A member carrying
+/// one has an empty `binding` and `None` `source_match` until the solver resolves
+/// the target into the plan.
 #[derive(Debug, Clone)]
 pub(super) enum RelationalSelector {
-    /// `@Name` cross-reference: a relational edge to a separately-identified anchor
-    /// member (`materialize::cross_ref`, resolved against the anchor's already-
-    /// resolved binding).
+    /// `@Name` cross-reference: a relational edge to a separately-identified
+    /// anchor member, resolved against the anchor's solver assignment.
     CrossRef(spec::CrossRefTarget),
-    /// The member it reads (`obj.X`); `materialize::reads_member`, resolved against
-    /// the owner-graph `reads_member` EDB.
+    /// The member it reads (`obj.X`), resolved against the owner-graph
+    /// `reads_member` EDB.
     ReadsMember(spec::ReadsMemberTarget),
     /// **Use-site** consumption (`mod.X`, `mod` an imported binding → its source
-    /// module); `materialize::member_of_module`, resolved against the owner-graph
-    /// `member_of_module` EDB joined to the import table.
+    /// module), resolved against the owner-graph `member_of_module` EDB joined to
+    /// the import table.
     MemberOfModule(spec::MemberOfModuleTarget),
     /// The `resolves_to`-of-argument primitive: passed as an argument to a call of a
-    /// known callee (`registry.register(Target)`); `materialize::passed_to_call`.
+    /// known callee (`registry.register(Target)`).
     PassedToCall(spec::PassedToCallTarget),
     /// The inverse-direction sibling of `PassedToCall`: the **callee** of an esbuild
     /// `__decorate`-style application on a pinned class (`H([d], @Class.prototype,
-    /// "m")`); `materialize::makes_decorate_call`.
+    /// "m")`).
     MakesDecorateCall(spec::MakesDecorateCallTarget),
     /// The follow-on companion of `MakesDecorateCall`: an `Object.<property>`
     /// intrinsic alias (`var X = Object.defineProperty`) referenced by a known
-    /// helper (`referenced_by: @<decorateHelper>`); `materialize::intrinsic_alias`,
-    /// the referencer edge riding the owner graph's own `references` edge.
+    /// helper (`referenced_by: @<decorateHelper>`), with the referencer edge riding
+    /// the owner graph's own `references` edge.
     IntrinsicAlias(spec::IntrinsicAliasTarget),
 }
 
@@ -73,7 +72,7 @@ pub(super) struct MemberRequest {
     pub(super) source_match: Option<spec::AnonymousStatementSelector>,
     /// The relational selector pinning this member's target, if any. Mutually
     /// exclusive with `binding`/`source_match`: a member carrying one has an empty
-    /// `binding` until its post-analysis pass resolves the target. See
+    /// `binding` until the global selector solver resolves the target. See
     /// [`RelationalSelector`].
     pub(super) relational: Option<RelationalSelector>,
     /// When `true`, the member's source is an import specifier in the
@@ -126,48 +125,6 @@ impl MemberRequest {
         self.source_match.is_some()
             || self.relational.is_some()
             || (self.binding_selector.is_some() && !self.is_import_specifier)
-    }
-
-    pub(super) fn cross_ref(&self) -> Option<&spec::CrossRefTarget> {
-        match &self.relational {
-            Some(RelationalSelector::CrossRef(target)) => Some(target),
-            _ => None,
-        }
-    }
-
-    pub(super) fn reads_member(&self) -> Option<&spec::ReadsMemberTarget> {
-        match &self.relational {
-            Some(RelationalSelector::ReadsMember(target)) => Some(target),
-            _ => None,
-        }
-    }
-
-    pub(super) fn member_of_module(&self) -> Option<&spec::MemberOfModuleTarget> {
-        match &self.relational {
-            Some(RelationalSelector::MemberOfModule(target)) => Some(target),
-            _ => None,
-        }
-    }
-
-    pub(super) fn passed_to_call(&self) -> Option<&spec::PassedToCallTarget> {
-        match &self.relational {
-            Some(RelationalSelector::PassedToCall(target)) => Some(target),
-            _ => None,
-        }
-    }
-
-    pub(super) fn makes_decorate_call(&self) -> Option<&spec::MakesDecorateCallTarget> {
-        match &self.relational {
-            Some(RelationalSelector::MakesDecorateCall(target)) => Some(target),
-            _ => None,
-        }
-    }
-
-    pub(super) fn intrinsic_alias(&self) -> Option<&spec::IntrinsicAliasTarget> {
-        match &self.relational {
-            Some(RelationalSelector::IntrinsicAlias(target)) => Some(target),
-            _ => None,
-        }
     }
 
     /// Extend `hints` with this member's spec-level trust assertions

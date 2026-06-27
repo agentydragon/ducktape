@@ -305,30 +305,6 @@ cycle-detection between <peel/quotient.rs> and
 correctness invariants for the realizability gate; a shared impl risks hiding
 drift. Audit before attempting.
 
-## Cleanup backlog (post-#2398 review)
-
-Items surfaced by the post-#2398 debundler cleanup review that were **not**
-applied. The applied items (the empty-arm collapse, the `Resolution`
-`single_from_map`/`unique_owner` helpers, `chunk_facts` `build_children_map`, the
-`MemberRequest` `RelationalSelector` enum + `selector_kind_label`, and the
-`resolve_anchor` anchor-resolution helper) are done and intentionally omitted.
-
-- **C3 remainder — deeper data-driven relational resolution.**
-  `lowering/materialize/plan_builder.rs` now shares the common relational
-  member scan through `relational_targets`, so the repeated no-op guard and
-  per-member loops are no longer open-coded six times. The deferred part is a
-  fuller collapse of the six `resolve_and_claim_*` passes (`cross_ref`,
-  `reads_member`, `member_of_module`, `passed_to_call`, `makes_decorate_call`,
-  `intrinsic_alias`) into one data-driven pass. That remains behavior-risky:
-  the passes have genuinely different resolution-builder signatures
-  (`member_of_module` needs `import_sources`; others do not), different anchor
-  sources (`resolved_anchor_bindings` vs `claimed_member_bindings` vs none),
-  and different per-primitive kernel calls and `with_context` closures. If
-  attempted, keep the per-primitive bits legible (shared-helper route, not a
-  code-gen macro), and profile with external tools if runtime changes are in
-  question. The per-resolver `#[allow(clippy::too_many_arguments)]`s only
-  become removable once the standalone resolvers disappear into the loop.
-
 ## Excalidraw live-browser smoke
 
 Build an open-source live-browser smoke test for the debundler against

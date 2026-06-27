@@ -8,12 +8,10 @@
 //! the spec carries `cross_ref` selectors, and we assert the resolved binding
 //! lands in the right module and the emitted tree runs under Node.
 //!
-//! These also pin the **anchor-ordering decision** (see `materialize::cross_ref`):
-//! the anchor's binding comes from the already-resolved members of the chunk
-//! (anchor-first), because the owner graph's `export_name` is not populated at
-//! member-resolution time. `cross_ref_anchor_ordering_uses_resolved_member_binding`
-//! is the discriminating case — the anchor is itself pinned by a non-name
-//! selector, so a name-based shortcut could not have found it.
+//! These also pin anchor resolution through the global selector solver:
+//! `cross_ref_anchor_ordering_uses_resolved_member_binding` is the discriminating
+//! case — the anchor is itself pinned by a non-name selector, so a name-based
+//! shortcut could not have found it.
 
 use debundle_e2e_support::*;
 

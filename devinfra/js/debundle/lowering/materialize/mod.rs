@@ -4,15 +4,7 @@
 //! `apply_materialized_logical_chunks`.
 
 mod apply;
-mod cross_ref;
-mod intrinsic_alias;
-mod kind_labels;
-mod makes_decorate_call;
-mod member_of_module;
-mod owner_graph_projection;
-mod passed_to_call;
 mod plan_builder;
-mod reads_member;
 
 use std::io::Write;
 
