@@ -30,6 +30,11 @@ struct ProjectionRow {
   }
 };
 
+struct ProjectionVariable {
+  uint32_t id;
+  sat::IntVar variable;
+};
+
 SelectorCpSatResponse InvalidResponse(const absl::Status& status) {
   SelectorCpSatResponse response;
   response.set_status(SOLVER_STATUS_INVALID);
@@ -172,7 +177,7 @@ absl::Status AddAllDifferentConstraints(const SelectorCpSatRequest& request,
   return absl::OkStatus();
 }
 
-absl::StatusOr<std::vector<uint32_t>> ProjectionVariableIds(
+absl::StatusOr<std::vector<ProjectionVariable>> ProjectionVariables(
     const SelectorCpSatRequest& request, const VariableMap& variables) {
   std::set<uint32_t> ids;
   for (const TargetProjection& projection : request.target_projections()) {
@@ -186,13 +191,71 @@ absl::StatusOr<std::vector<uint32_t>> ProjectionVariableIds(
       return MissingVariableStatus(id);
     }
   }
-  return std::vector<uint32_t>(ids.begin(), ids.end());
+  std::vector<ProjectionVariable> projection_variables;
+  projection_variables.reserve(ids.size());
+  for (uint32_t id : ids) {
+    projection_variables.push_back({id, variables.at(id)});
+  }
+  return projection_variables;
+}
+
+ProjectionRow ProjectionRowFromSolution(
+    const sat::CpSolverResponse& response,
+    const std::vector<ProjectionVariable>& projection_variables) {
+  ProjectionRow row;
+  row.values.reserve(projection_variables.size());
+  for (const ProjectionVariable& projection_variable : projection_variables) {
+    row.values.push_back(
+        {projection_variable.id,
+         sat::SolutionIntegerValue(response, projection_variable.variable)});
+  }
+  return row;
+}
+
+void AddForbiddenProjectionRow(
+    const ProjectionRow& row,
+    const std::vector<ProjectionVariable>& projection_variables,
+    sat::CpModelBuilder* model) {
+  std::vector<sat::IntVar> variables;
+  variables.reserve(projection_variables.size());
+  for (const ProjectionVariable& projection_variable : projection_variables) {
+    variables.push_back(projection_variable.variable);
+  }
+  sat::TableConstraint forbidden = model->AddForbiddenAssignments(variables);
+  std::vector<int64_t> values;
+  values.reserve(row.values.size());
+  for (const auto& [_variable_id, value] : row.values) {
+    values.push_back(value);
+  }
+  forbidden.AddTuple(values);
 }
 
 SelectorCpSatResponse ResponseFromSolver(
     const sat::CpSolverResponse& solver_response,
     const std::set<ProjectionRow>& projection_rows, bool complete) {
   SelectorCpSatResponse response;
+
+  if (!projection_rows.empty()) {
+    if (!complete) {
+      response.set_status(SOLVER_STATUS_UNKNOWN);
+      response.set_assignment_coverage(ASSIGNMENT_COVERAGE_SAMPLE);
+      response.set_diagnostic(sat::CpSolverResponseStats(solver_response));
+    } else {
+      response.set_status(projection_rows.size() == 1 ? SOLVER_STATUS_SATISFIABLE
+                                                      : SOLVER_STATUS_AMBIGUOUS);
+      response.set_assignment_coverage(
+          ASSIGNMENT_COVERAGE_TARGET_SUPPORT_COMPLETE);
+    }
+    for (const ProjectionRow& row : projection_rows) {
+      AssignmentRow* assignment_row = response.add_assignments();
+      for (const auto& [variable_id, value] : row.values) {
+        Assignment* assignment = assignment_row->add_values();
+        assignment->set_variable_id(variable_id);
+        assignment->set_value(value);
+      }
+    }
+    return response;
+  }
 
   switch (solver_response.status()) {
     case sat::CpSolverStatus::INFEASIBLE:
@@ -202,7 +265,10 @@ SelectorCpSatResponse ResponseFromSolver(
       return response;
     case sat::CpSolverStatus::OPTIMAL:
     case sat::CpSolverStatus::FEASIBLE:
-      break;
+      response.set_status(SOLVER_STATUS_UNKNOWN);
+      response.set_assignment_coverage(ASSIGNMENT_COVERAGE_SAMPLE);
+      response.set_diagnostic(sat::CpSolverResponseStats(solver_response));
+      return response;
     case sat::CpSolverStatus::MODEL_INVALID:
       response.set_status(SOLVER_STATUS_INVALID);
       response.set_assignment_coverage(ASSIGNMENT_COVERAGE_SAMPLE);
@@ -214,23 +280,6 @@ SelectorCpSatResponse ResponseFromSolver(
       response.set_assignment_coverage(ASSIGNMENT_COVERAGE_SAMPLE);
       response.set_diagnostic(sat::CpSolverResponseStats(solver_response));
       return response;
-  }
-
-  response.set_status(projection_rows.size() == 1 ? SOLVER_STATUS_SATISFIABLE
-                                                  : SOLVER_STATUS_AMBIGUOUS);
-  response.set_assignment_coverage(
-      complete ? ASSIGNMENT_COVERAGE_TARGET_SUPPORT_COMPLETE
-               : ASSIGNMENT_COVERAGE_SAMPLE);
-  if (!complete) {
-    response.set_diagnostic(sat::CpSolverResponseStats(solver_response));
-  }
-  for (const ProjectionRow& row : projection_rows) {
-    AssignmentRow* assignment_row = response.add_assignments();
-    for (const auto& [variable_id, value] : row.values) {
-      Assignment* assignment = assignment_row->add_values();
-      assignment->set_variable_id(variable_id);
-      assignment->set_value(value);
-    }
   }
   return response;
 }
@@ -270,34 +319,40 @@ SelectorCpSatResponse SolveSelectorCpSat(const SelectorCpSatRequest& request) {
     return InvalidResponse(build_status);
   }
 
-  absl::StatusOr<std::vector<uint32_t>> projection_variable_ids =
-      ProjectionVariableIds(request, variables);
-  if (!projection_variable_ids.ok()) {
-    return InvalidResponse(projection_variable_ids.status());
+  absl::StatusOr<std::vector<ProjectionVariable>> projection_variables =
+      ProjectionVariables(request, variables);
+  if (!projection_variables.ok()) {
+    return InvalidResponse(projection_variables.status());
   }
 
   std::set<ProjectionRow> projection_rows;
-  sat::Model solver_model;
-  sat::SatParameters parameters;
-  parameters.set_enumerate_all_solutions(true);
-  parameters.set_num_search_workers(1);
-  solver_model.Add(sat::NewSatParameters(parameters));
-  solver_model.Add(sat::NewFeasibleSolutionObserver(
-      [&](const sat::CpSolverResponse& response) {
-        ProjectionRow row;
-        row.values.reserve(projection_variable_ids->size());
-        for (uint32_t variable_id : *projection_variable_ids) {
-          row.values.push_back(
-              {variable_id,
-               sat::SolutionIntegerValue(response, variables.at(variable_id))});
-        }
-        projection_rows.insert(std::move(row));
-      }));
+  sat::CpSolverResponse solver_response;
+  for (;;) {
+    sat::Model solver_model;
+    sat::SatParameters parameters;
+    parameters.set_num_search_workers(1);
+    solver_model.Add(sat::NewSatParameters(parameters));
 
-  const sat::CpSolverResponse solver_response =
-      sat::SolveCpModel(model.Build(), &solver_model);
-  const bool complete = solver_response.status() == sat::CpSolverStatus::OPTIMAL;
-  return ResponseFromSolver(solver_response, projection_rows, complete);
+    solver_response = sat::SolveCpModel(model.Build(), &solver_model);
+    switch (solver_response.status()) {
+      case sat::CpSolverStatus::OPTIMAL:
+      case sat::CpSolverStatus::FEASIBLE: {
+        ProjectionRow row =
+            ProjectionRowFromSolution(solver_response, *projection_variables);
+        projection_rows.insert(row);
+        AddForbiddenProjectionRow(row, *projection_variables, &model);
+        break;
+      }
+      case sat::CpSolverStatus::INFEASIBLE:
+        return ResponseFromSolver(solver_response, projection_rows,
+                                  /*complete=*/true);
+      case sat::CpSolverStatus::MODEL_INVALID:
+      case sat::CpSolverStatus::UNKNOWN:
+      default:
+        return ResponseFromSolver(solver_response, projection_rows,
+                                  /*complete=*/false);
+    }
+  }
 }
 
 }  // namespace ducktape::debundle::solver_backends::ortools_cpsat

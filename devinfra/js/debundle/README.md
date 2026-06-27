@@ -95,6 +95,29 @@ bazel build //path/to:debundle \
   --@ducktape//devinfra/js/debundle:debundler=@my_debundle_bin//file
 ```
 
+The rule declares `@ducktape//devinfra/js/debundle:ortools_cpsat_solver` as an
+action tool and passes its execroot path to the debundler. The materializer uses
+that OR-Tools CP-SAT sidecar for global selector assignment. Consumers can
+override the solver tool with the matching label flag when needed.
+
+Pipeline outputs include `debug/selector_cpsat_request.pb`, the exact protobuf
+payload sent to the OR-Tools CP-SAT sidecar, plus
+`debug/selector_cpsat_summary.json` with compact counts for variables, finite
+domains, allowed tables, binary constraints, and global `all_different`
+constraints. The Rust debundler and C++ sidecar communicate through the binary
+protobuf request/response; JSON here is only human-readable metadata.
+
+For slow solver investigations, build the problem output group without running
+the CP-SAT search:
+
+```sh
+bazel build //path/to:debundle --output_groups=selector_problem
+```
+
+This emits `bazel-bin/path/to/debundle.selector_cpsat_request.pb` and
+`bazel-bin/path/to/debundle.selector_cpsat_summary.json` after the same selector
+lowering step the full pipeline uses.
+
 ## Profiling Actions
 
 For recurring performance work, prefer `debundle_pipeline_with_profiles`.

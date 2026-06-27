@@ -62,6 +62,7 @@ pub struct MemberSelectorProgramBuilder {
     owners_by_export: BTreeMap<(String, String), SelectorVariableId>,
     global_owner_by_export: BTreeMap<String, Option<SelectorVariableId>>,
     targeted_owners: BTreeMap<SelectorVariableId, String>,
+    owner_injectivity_classes: BTreeMap<SelectorVariableId, String>,
 }
 
 struct NativeAstFactLowering<'a> {
@@ -76,6 +77,12 @@ struct NativeAstFactLowering<'a> {
     regex_predicates: &'a NativeRegexPredicateIndex,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum OwnerInjectivityClass {
+    Owner(SelectorVariableId),
+    Shared(String),
+}
+
 impl MemberSelectorProgramBuilder {
     pub fn new(context: MemberSelectorLoweringContext) -> Self {
         Self {
@@ -84,6 +91,7 @@ impl MemberSelectorProgramBuilder {
             owners_by_export: BTreeMap::new(),
             global_owner_by_export: BTreeMap::new(),
             targeted_owners: BTreeMap::new(),
+            owner_injectivity_classes: BTreeMap::new(),
         }
     }
 
@@ -196,15 +204,24 @@ impl MemberSelectorProgramBuilder {
                 });
             }
         }
-        let mut unique_target_by_owner = BTreeMap::<SelectorVariableId, SelectorTargetId>::new();
+        let mut unique_target_by_owner_class =
+            BTreeMap::<OwnerInjectivityClass, SelectorTargetId>::new();
         for target in &self.program.targets {
             if self.targeted_owners.contains_key(&target.owner) {
-                unique_target_by_owner
-                    .entry(target.owner)
+                let class = self
+                    .owner_injectivity_classes
+                    .get(&target.owner)
+                    .cloned()
+                    .map(OwnerInjectivityClass::Shared)
+                    .unwrap_or(OwnerInjectivityClass::Owner(target.owner));
+                unique_target_by_owner_class
+                    .entry(class)
                     .or_insert(target.id);
             }
         }
-        let all_different_targets = unique_target_by_owner.into_values().collect::<Vec<_>>();
+        let all_different_targets = unique_target_by_owner_class
+            .into_values()
+            .collect::<Vec<_>>();
         if all_different_targets.len() > 1 {
             self.program.require_all_different(all_different_targets);
         }
@@ -792,11 +809,23 @@ impl MemberSelectorProgramBuilder {
         let mut exact_identifier_projection_vars = BTreeMap::new();
         for (target_binding, export_name) in exports_by_target {
             let owner = self.owner_for_local_export(logical_module, export_name);
-            let root = root_by_target_binding
+            let root_node = root_by_target_binding
                 .get(target_binding)
-                .and_then(|root| node_vars.get(root))
                 .copied()
                 .expect("target binding roots were collected for every export");
+            self.owner_injectivity_classes.insert(
+                owner,
+                binding_group_owner_injectivity_class(
+                    logical_module,
+                    selector,
+                    exports_by_target,
+                    root_node,
+                ),
+            );
+            let root = node_vars
+                .get(&root_node)
+                .copied()
+                .expect("target binding root should have a node variable");
             self.program.add_atom(SelectorAtom::OwnerTopLevelRoot {
                 owner: owner_term(owner),
                 root: node_term(root),
@@ -869,8 +898,9 @@ impl MemberSelectorProgramBuilder {
         };
         let mut child_counts: BTreeMap<NodeId, u32> =
             facts.node_kind.iter().map(|(node, _)| (*node, 0)).collect();
-        for (parent, _index, _child) in &facts.child {
-            *child_counts.entry(*parent).or_insert(0) += 1;
+        for (parent, index, _child) in &facts.child {
+            let count = child_counts.entry(*parent).or_insert(0);
+            *count = (*count).max(index + 1);
         }
         for (node, kind) in &facts.node_kind {
             if skipped_nodes.contains(node) {
@@ -1323,10 +1353,11 @@ fn native_top_level_root_containing_node(
         .copied()
         .filter(|root| native_node_contains(index, *root, target))
         .collect::<Vec<_>>();
-    let [root] = roots.as_slice() else {
-        return None;
-    };
-    Some(*root)
+    roots.iter().copied().find(|candidate| {
+        !roots
+            .iter()
+            .any(|other| *other != *candidate && native_node_contains(index, *candidate, *other))
+    })
 }
 
 fn native_node_contains(index: &AlphaIdentifierIndex, root: NodeId, target: NodeId) -> bool {
@@ -1448,6 +1479,10 @@ fn native_declared_binding_nodes(
                     .into_iter()
                     .flat_map(|pattern| native_pattern_binding_nodes(index, skipped_nodes, pattern))
             })
+            .collect(),
+        Some(NodeKind::VarDeclarator) => child_at(index, node, 0)
+            .into_iter()
+            .flat_map(|pattern| native_pattern_binding_nodes(index, skipped_nodes, pattern))
             .collect(),
         _ => Vec::new(),
     }
@@ -2378,6 +2413,23 @@ fn selector_origin(selector: &MemberSelectorSpec) -> ClaimOrigin {
     }
 }
 
+fn binding_group_owner_injectivity_class(
+    logical_module: &str,
+    selector: &AnonymousStatementSelector,
+    exports_by_target: &BTreeMap<String, String>,
+    root: NodeId,
+) -> String {
+    let target_bindings = exports_by_target
+        .keys()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{logical_module}|binding_group.source_match|{}|{target_bindings}|root:{root}",
+        selector.match_source
+    )
+}
+
 fn statement_kind_str_for_spec(kind: BindingSourceKind) -> &'static str {
     let statement_kind = match kind {
         BindingSourceKind::VariableDeclarator => StatementKind::VarDecl,
@@ -2611,6 +2663,42 @@ mod tests {
                 .iter()
                 .any(|atom| matches!(atom, SelectorAtom::AstSuperClass { .. }))
         );
+    }
+
+    #[test]
+    fn exact_source_match_sparse_child_indices_use_index_arity() {
+        let selector = AnonymousStatementSelector::exact("!(function () {})();");
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+        let fn_expr_node = lowered
+            .program
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                SelectorAtom::AstKind {
+                    node: NodeTerm::Var { id },
+                    node_kind: NodeKind::FnExpr,
+                } => Some(*id),
+                _ => None,
+            })
+            .expect("anonymous function expression should be lowered");
+        let fn_expr_child_count = lowered
+            .program
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                SelectorAtom::AstChildCount {
+                    node: NodeTerm::Var { id },
+                    count,
+                } if *id == fn_expr_node => Some(*count),
+                _ => None,
+            })
+            .expect("function expression should carry an arity constraint");
+        assert_eq!(fn_expr_child_count, 2);
     }
 
     #[test]
@@ -2929,6 +3017,10 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(shared_roots.len(), 2);
         assert_eq!(shared_roots[0], shared_roots[1]);
+        assert!(
+            program.all_different.is_empty(),
+            "same-root binding group exports must not be forced to distinct owners"
+        );
 
         let projected_bindings = program
             .atoms

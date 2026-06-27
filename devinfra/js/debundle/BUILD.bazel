@@ -852,7 +852,6 @@ rust_library(
         ":selector_diagnostics",
         ":selector_ir",
         ":selector_ir_lowering",
-        ":selector_ir_solver",
         ":selector_ortools_cpsat_backend",
         ":selector_solve",
         ":source_match",
@@ -1112,8 +1111,12 @@ rust_test(
     edition = "2024",
     deps = [
         ":analysis",
+        ":chunk_facts",
+        ":js_ast",
         ":selector_constraint_model",
         ":selector_ir",
+        ":selector_ir_lowering",
+        ":spec",
     ],
 )
 
@@ -1151,6 +1154,7 @@ rust_library(
         ":selector_constraint_backend",
         ":selector_constraint_model",
         "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cp_sat_rust_proto",
+        "@crates//:serde_json",
         "@rules_rust_prost//private/3rdparty/crates:prost",
     ],
 )
@@ -1168,8 +1172,12 @@ rust_test(
     },
     deps = [
         ":analysis",
+        ":chunk_facts",
+        ":js_ast",
         ":selector_backend_solver",
         ":selector_ir",
+        ":selector_ir_lowering",
+        ":spec",
     ],
 )
 
@@ -1234,10 +1242,19 @@ label_flag(
     visibility = ["//visibility:public"],
 )
 
+label_flag(
+    name = "ortools_cpsat_solver",
+    build_setting_default = "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
+    visibility = ["//visibility:public"],
+)
+
 rust_binary(
     name = "debundle",
     srcs = ["main.rs"],
     crate_root = "main.rs",
+    data = [
+        "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
+    ],
     edition = "2024",
     deps = [
         ":cli",

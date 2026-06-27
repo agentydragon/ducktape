@@ -1112,7 +1112,9 @@ impl LoweredChildListPattern {
             for child in segment {
                 lowered_segment.push(lower_node_term(child, variables)?);
             }
-            segments.push(lowered_segment);
+            if !lowered_segment.is_empty() {
+                segments.push(lowered_segment);
+            }
         }
         Ok(Self {
             parent,
@@ -1121,19 +1123,6 @@ impl LoweredChildListPattern {
             anchored_left: terms.anchored_left,
             anchored_right: terms.anchored_right,
         })
-    }
-
-    fn variables(&self) -> Vec<ConstraintVariableId> {
-        let mut variables = Vec::new();
-        let mut seen = BTreeSet::new();
-        for term in std::iter::once(self.parent).chain(self.segments.iter().flatten().copied()) {
-            if let LoweredNodeTerm::Var(variable) = term
-                && seen.insert(variable)
-            {
-                variables.push(variable);
-            }
-        }
-        variables
     }
 }
 
@@ -1149,7 +1138,25 @@ fn add_ast_child_list_pattern_allowed_tuples(
         return Ok(());
     }
 
-    let constraint_variables = pattern.variables();
+    for segment_index in 0..pattern.segments.len() {
+        add_child_list_segment_constraint(model, &pattern, segment_index, domains)?;
+    }
+    for segment_index in 1..pattern.segments.len() {
+        add_child_list_segment_order_constraint(model, &pattern, segment_index, domains)?;
+    }
+    Ok(())
+}
+
+fn add_child_list_segment_constraint(
+    model: &mut SelectorConstraintModel,
+    pattern: &LoweredChildListPattern,
+    segment_index: usize,
+    domains: &FactDomains,
+) -> Result<(), SelectorConstraintModelBuildError> {
+    let segment = &pattern.segments[segment_index];
+    let constraint_variables = child_list_constraint_variables(
+        std::iter::once(pattern.parent).chain(segment.iter().copied()),
+    );
     let mut tuples = BTreeSet::new();
     let mut constant_only_match = false;
 
@@ -1159,19 +1166,42 @@ fn add_ast_child_list_pattern_allowed_tuples(
             candidate_parent,
             pattern.start_index,
         );
-
-        let mut current = Vec::new();
-        if !bind_node_term(pattern.parent, candidate_parent, &mut current) {
+        let Some(latest_start) = subject_children.len().checked_sub(segment.len()) else {
+            continue;
+        };
+        let mut lo = 0;
+        let mut hi = latest_start;
+        if segment_index == 0 && pattern.anchored_left {
+            hi = 0;
+        }
+        if segment_index == pattern.segments.len() - 1 && pattern.anchored_right {
+            lo = latest_start;
+        }
+        if lo > hi {
             continue;
         }
-        ChildListTupleCollector {
-            pattern: &pattern,
-            subject_children: &subject_children,
-            constraint_variables: &constraint_variables,
-            tuples: &mut tuples,
-            constant_only_match: &mut constant_only_match,
+
+        for start in lo..=hi {
+            let mut current = Vec::new();
+            if !bind_node_term(pattern.parent, candidate_parent, &mut current) {
+                continue;
+            }
+            let mut segment_matches = true;
+            for (offset, term) in segment.iter().enumerate() {
+                if !bind_node_term(*term, subject_children[start + offset], &mut current) {
+                    segment_matches = false;
+                    break;
+                }
+            }
+            if segment_matches {
+                finish_child_list_tuple(
+                    &constraint_variables,
+                    &current,
+                    &mut tuples,
+                    &mut constant_only_match,
+                );
+            }
         }
-        .collect(0, 0, &mut current);
     }
 
     if constraint_variables.is_empty() {
@@ -1183,6 +1213,77 @@ fn add_ast_child_list_pattern_allowed_tuples(
     }
 
     add_allowed_tuple_set(model, constraint_variables, tuples)
+}
+
+fn add_child_list_segment_order_constraint(
+    model: &mut SelectorConstraintModel,
+    pattern: &LoweredChildListPattern,
+    segment_index: usize,
+    domains: &FactDomains,
+) -> Result<(), SelectorConstraintModelBuildError> {
+    let previous = &pattern.segments[segment_index - 1];
+    let current = &pattern.segments[segment_index];
+    let previous_last = *previous
+        .last()
+        .expect("child-list pattern segments are filtered to be non-empty");
+    let current_first = *current
+        .first()
+        .expect("child-list pattern segments are filtered to be non-empty");
+    let constraint_variables =
+        child_list_constraint_variables([pattern.parent, previous_last, current_first]);
+    let mut tuples = BTreeSet::new();
+    let mut constant_only_match = false;
+
+    for candidate_parent in child_list_candidate_parents(pattern.parent, &domains.ast_children) {
+        let subject_children = child_list_subject_children(
+            &domains.ast_children,
+            candidate_parent,
+            pattern.start_index,
+        );
+        for (left_index, left_child) in subject_children.iter().enumerate() {
+            for right_child in subject_children.iter().skip(left_index + 1) {
+                let mut current = Vec::new();
+                if !bind_node_term(pattern.parent, candidate_parent, &mut current)
+                    || !bind_node_term(previous_last, *left_child, &mut current)
+                    || !bind_node_term(current_first, *right_child, &mut current)
+                {
+                    continue;
+                }
+                finish_child_list_tuple(
+                    &constraint_variables,
+                    &current,
+                    &mut tuples,
+                    &mut constant_only_match,
+                );
+            }
+        }
+    }
+
+    if constraint_variables.is_empty() {
+        return constant_only_match.then_some(()).ok_or_else(|| {
+            SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied {
+                atom: "ast_child_list_pattern".to_string(),
+            }
+        });
+    }
+
+    add_allowed_tuple_set(model, constraint_variables, tuples)
+}
+
+fn child_list_constraint_variables<I>(terms: I) -> Vec<ConstraintVariableId>
+where
+    I: IntoIterator<Item = LoweredNodeTerm>,
+{
+    let mut variables = Vec::new();
+    let mut seen = BTreeSet::new();
+    for term in terms {
+        if let LoweredNodeTerm::Var(variable) = term
+            && seen.insert(variable)
+        {
+            variables.push(variable);
+        }
+    }
+    variables
 }
 
 fn lower_node_term(
@@ -1223,81 +1324,6 @@ fn child_list_subject_children(
         .collect()
 }
 
-struct ChildListTupleCollector<'a> {
-    pattern: &'a LoweredChildListPattern,
-    subject_children: &'a [NodeId],
-    constraint_variables: &'a [ConstraintVariableId],
-    tuples: &'a mut BTreeSet<Vec<ConstraintValue>>,
-    constant_only_match: &'a mut bool,
-}
-
-impl ChildListTupleCollector<'_> {
-    fn collect(
-        &mut self,
-        segment_index: usize,
-        candidate_min: usize,
-        current: &mut Vec<(ConstraintVariableId, ConstraintValue)>,
-    ) {
-        let Some(segment) = self.pattern.segments.get(segment_index) else {
-            self.finish_row(current);
-            return;
-        };
-
-        let remaining: usize = self.pattern.segments[segment_index..]
-            .iter()
-            .map(Vec::len)
-            .sum();
-        let Some(latest_start) = self.subject_children.len().checked_sub(remaining) else {
-            return;
-        };
-        let mut lo = candidate_min;
-        let mut hi = latest_start;
-        if segment_index == 0 && self.pattern.anchored_left {
-            hi = hi.min(0);
-        }
-        if segment_index == self.pattern.segments.len() - 1 && self.pattern.anchored_right {
-            lo = lo.max(latest_start);
-        }
-        if lo > hi {
-            return;
-        }
-
-        for start in lo..=hi {
-            let current_len = current.len();
-            let mut segment_matches = true;
-            for (offset, term) in segment.iter().enumerate() {
-                if !bind_node_term(*term, self.subject_children[start + offset], current) {
-                    segment_matches = false;
-                    break;
-                }
-            }
-            if segment_matches {
-                self.collect(segment_index + 1, start + segment.len(), current);
-            }
-            current.truncate(current_len);
-        }
-    }
-
-    fn finish_row(&mut self, current: &[(ConstraintVariableId, ConstraintValue)]) {
-        let Some(merged) = merge_node_assignment_bindings(current.to_vec()) else {
-            return;
-        };
-        if self.constraint_variables.is_empty() {
-            *self.constant_only_match = true;
-            return;
-        }
-        let assignments = merged.into_iter().collect::<BTreeMap<_, _>>();
-        if let Some(tuple) = self
-            .constraint_variables
-            .iter()
-            .map(|variable| assignments.get(variable).cloned())
-            .collect::<Option<Vec<_>>>()
-        {
-            self.tuples.insert(tuple);
-        }
-    }
-}
-
 fn bind_node_term(
     term: LoweredNodeTerm,
     actual: NodeId,
@@ -1309,6 +1335,29 @@ fn bind_node_term(
             true
         }
         LoweredNodeTerm::Const(expected) => expected == actual,
+    }
+}
+
+fn finish_child_list_tuple(
+    constraint_variables: &[ConstraintVariableId],
+    current: &[(ConstraintVariableId, ConstraintValue)],
+    tuples: &mut BTreeSet<Vec<ConstraintValue>>,
+    constant_only_match: &mut bool,
+) {
+    let Some(merged) = merge_node_assignment_bindings(current.to_vec()) else {
+        return;
+    };
+    if constraint_variables.is_empty() {
+        *constant_only_match = true;
+        return;
+    }
+    let assignments = merged.into_iter().collect::<BTreeMap<_, _>>();
+    if let Some(tuple) = constraint_variables
+        .iter()
+        .map(|variable| assignments.get(variable).cloned())
+        .collect::<Option<Vec<_>>>()
+    {
+        tuples.insert(tuple);
     }
 }
 
@@ -1459,10 +1508,64 @@ fn add_allowed_tuple_set(
     variables: Vec<ConstraintVariableId>,
     tuples: BTreeSet<Vec<ConstraintValue>>,
 ) -> Result<(), SelectorConstraintModelBuildError> {
+    let (variables, tuples) = normalize_allowed_tuple_columns(variables, tuples);
     model
         .add_allowed_tuples(variables, tuples.into_iter().collect())
         .map(|_| ())
         .map_err(Into::into)
+}
+
+fn normalize_allowed_tuple_columns(
+    variables: Vec<ConstraintVariableId>,
+    tuples: BTreeSet<Vec<ConstraintValue>>,
+) -> (Vec<ConstraintVariableId>, BTreeSet<Vec<ConstraintValue>>) {
+    if tuples.iter().any(|tuple| tuple.len() != variables.len()) {
+        return (variables, tuples);
+    }
+
+    let mut unique_variables = Vec::new();
+    let mut column_by_variable = BTreeMap::new();
+    let mut output_column_by_input = Vec::with_capacity(variables.len());
+    for variable in &variables {
+        let output_column = if let Some(output_column) = column_by_variable.get(variable) {
+            *output_column
+        } else {
+            let output_column = unique_variables.len();
+            unique_variables.push(*variable);
+            column_by_variable.insert(*variable, output_column);
+            output_column
+        };
+        output_column_by_input.push(output_column);
+    }
+
+    if unique_variables.len() == variables.len() {
+        return (variables, tuples);
+    }
+
+    let mut normalized_tuples = BTreeSet::new();
+    'row: for tuple in tuples {
+        let mut normalized = vec![None; unique_variables.len()];
+        for (value, output_column) in tuple
+            .into_iter()
+            .zip(output_column_by_input.iter().copied())
+        {
+            if let Some(existing) = &normalized[output_column] {
+                if existing != &value {
+                    continue 'row;
+                }
+            } else {
+                normalized[output_column] = Some(value);
+            }
+        }
+        normalized_tuples.insert(
+            normalized
+                .into_iter()
+                .map(|value| value.expect("every output column is referenced"))
+                .collect(),
+        );
+    }
+
+    (unique_variables, normalized_tuples)
 }
 
 fn owner_term_matches(term: &OwnerTerm, owner: OwnerId) -> bool {
@@ -2059,7 +2162,11 @@ impl FactDomains {
             }
         }
 
-        let mut child_counts = BTreeMap::new();
+        let mut child_counts = self
+            .nodes
+            .iter()
+            .map(|node| (*node, 0))
+            .collect::<BTreeMap<_, _>>();
         for (parent, index, _child) in &self.ast_children {
             let count = child_counts.entry(*parent).or_insert(0);
             *count = (*count).max(index + 1);
@@ -2071,6 +2178,38 @@ impl FactDomains {
             for (node, top_level_ordinal) in &self.ast_top_levels {
                 if ordinal == top_level_ordinal {
                     self.owner_top_level_roots.insert((*owner, *node));
+                }
+            }
+        }
+
+        let binding_ident_nodes = self
+            .ast_kinds
+            .iter()
+            .filter_map(|(node, kind)| {
+                (kind == chunk_facts::NodeKind::BindingIdent.as_tag()).then_some(*node)
+            })
+            .collect::<BTreeSet<_>>();
+        let identifier_by_node = self
+            .ast_identifier_names
+            .iter()
+            .map(|(node, value)| (*node, value.as_str()))
+            .collect::<BTreeMap<_, _>>();
+        let mut children_by_parent = BTreeMap::<NodeId, Vec<NodeId>>::new();
+        for (parent, _index, child) in &self.ast_children {
+            children_by_parent.entry(*parent).or_default().push(*child);
+        }
+        for (root, _ordinal) in &self.ast_top_levels {
+            let mut stack = vec![*root];
+            while let Some(node) = stack.pop() {
+                if binding_ident_nodes.contains(&node)
+                    && let Some(binding) = identifier_by_node.get(&node)
+                    && let Some(owners) = owners_by_binding.get(*binding)
+                {
+                    self.owner_top_level_roots
+                        .extend(owners.iter().map(|owner| (*owner, *root)));
+                }
+                if let Some(children) = children_by_parent.get(&node) {
+                    stack.extend(children.iter().copied());
                 }
             }
         }
@@ -2395,6 +2534,8 @@ mod tests {
         ConstraintValue,
     };
     use selector_ir::{ClaimOrigin, SelectorTargetId};
+    use selector_ir_lowering::{MemberSelectorLoweringContext, MemberSelectorProgramBuilder};
+    use spec::{AnonymousStatementSelector, MemberSelectorSpec, SourceMatchIdentifierMode};
 
     fn owner(value: usize) -> ConstraintValue {
         ConstraintValue::Owner(OwnerId(value))
@@ -2570,6 +2711,107 @@ mod tests {
             .iter()
             .find(|constraint| constraint.variables == variables)
             .unwrap()
+    }
+
+    fn satisfying_tuples_for(
+        model: &SelectorConstraintModel,
+        variables: &[ConstraintVariableId],
+    ) -> Vec<Vec<ConstraintValue>> {
+        let mut rows = BTreeSet::new();
+        let mut assignment = BTreeMap::new();
+        collect_satisfying_tuples(model, variables, 0, &mut assignment, &mut rows);
+        rows.into_iter().collect()
+    }
+
+    fn collect_satisfying_tuples(
+        model: &SelectorConstraintModel,
+        variables: &[ConstraintVariableId],
+        variable_index: usize,
+        assignment: &mut BTreeMap<ConstraintVariableId, ConstraintValue>,
+        rows: &mut BTreeSet<Vec<ConstraintValue>>,
+    ) {
+        let Some(variable) = model.variables.get(variable_index) else {
+            if model_constraints_satisfied(model, assignment)
+                && let Some(row) = variables
+                    .iter()
+                    .map(|variable| assignment.get(variable).cloned())
+                    .collect::<Option<Vec<_>>>()
+            {
+                rows.insert(row);
+            }
+            return;
+        };
+
+        for value in &variable.values {
+            assignment.insert(variable.id, value.clone());
+            collect_satisfying_tuples(model, variables, variable_index + 1, assignment, rows);
+        }
+        assignment.remove(&variable.id);
+    }
+
+    fn model_constraints_satisfied(
+        model: &SelectorConstraintModel,
+        assignment: &BTreeMap<ConstraintVariableId, ConstraintValue>,
+    ) -> bool {
+        model.allowed_tuples.iter().all(|constraint| {
+            constraint
+                .variables
+                .iter()
+                .map(|variable| assignment.get(variable).cloned())
+                .collect::<Option<Vec<_>>>()
+                .is_some_and(|row| constraint.tuples.contains(&row))
+        }) && model.binary_constraints.iter().all(|constraint| {
+            let Some(left) = assignment.get(&constraint.left) else {
+                return false;
+            };
+            let Some(right) = assignment.get(&constraint.right) else {
+                return false;
+            };
+            match constraint.kind {
+                BinaryConstraintKind::Equal => left == right,
+                BinaryConstraintKind::NotEqual => left != right,
+                BinaryConstraintKind::OrdinalBefore => {
+                    matches!(
+                        (left, right),
+                        (
+                            ConstraintValue::StatementOrdinal(left),
+                            ConstraintValue::StatementOrdinal(right)
+                        ) if left < right
+                    )
+                }
+            }
+        }) && model
+            .all_different
+            .iter()
+            .all(|constraint| constraint.is_satisfied_by(assignment) == Some(true))
+    }
+
+    #[test]
+    fn duplicate_variables_in_allowed_tuple_atoms_are_merged() {
+        let mut program = SelectorProgram::default();
+        let node = program.add_variable(VariableDomain::AstNode, Some("node".to_string()));
+        program.add_atom(SelectorAtom::AstChild {
+            parent: NodeTerm::Var { id: node },
+            index: 0,
+            child: NodeTerm::Var { id: node },
+        });
+
+        let facts = fact_store(vec![
+            ast_child(10, 0, 10),
+            ast_child(10, 1, 20),
+            ast_child(20, 0, 20),
+        ]);
+
+        let model = build_selector_constraint_model(&program, &facts).unwrap();
+
+        assert_eq!(
+            allowed_tuples_for(&model, &[ConstraintVariableId(0)]),
+            &AllowedTupleConstraint {
+                id: AllowedTupleConstraintId(0),
+                variables: vec![ConstraintVariableId(0)],
+                tuples: vec![vec![ast_node(10)], vec![ast_node(20)]],
+            }
+        );
     }
 
     #[test]
@@ -2987,7 +3229,7 @@ mod tests {
         let model = build_selector_constraint_model(&program, &facts).unwrap();
 
         assert_eq!(
-            allowed_tuples_for(
+            satisfying_tuples_for(
                 &model,
                 &[
                     ConstraintVariableId(0),
@@ -2995,20 +3237,12 @@ mod tests {
                     ConstraintVariableId(2)
                 ]
             ),
-            &AllowedTupleConstraint {
-                id: AllowedTupleConstraintId(0),
-                variables: vec![
-                    ConstraintVariableId(0),
-                    ConstraintVariableId(1),
-                    ConstraintVariableId(2)
-                ],
-                tuples: vec![
-                    vec![ast_node(100), ast_node(10), ast_node(20)],
-                    vec![ast_node(100), ast_node(10), ast_node(30)],
-                    vec![ast_node(100), ast_node(20), ast_node(30)],
-                    vec![ast_node(200), ast_node(20), ast_node(10)],
-                ],
-            }
+            vec![
+                vec![ast_node(100), ast_node(10), ast_node(20)],
+                vec![ast_node(100), ast_node(10), ast_node(30)],
+                vec![ast_node(100), ast_node(20), ast_node(30)],
+                vec![ast_node(200), ast_node(20), ast_node(10)],
+            ]
         );
     }
 
@@ -3042,12 +3276,8 @@ mod tests {
         let model = build_selector_constraint_model(&program, &facts).unwrap();
 
         assert_eq!(
-            allowed_tuples_for(&model, &[ConstraintVariableId(0)]),
-            &AllowedTupleConstraint {
-                id: AllowedTupleConstraintId(0),
-                variables: vec![ConstraintVariableId(0)],
-                tuples: vec![vec![ast_node(100)]],
-            }
+            satisfying_tuples_for(&model, &[ConstraintVariableId(0)]),
+            vec![vec![ast_node(100)]]
         );
     }
 
@@ -3186,6 +3416,146 @@ mod tests {
                 tuples: vec![vec![ast_node(100), ast_node(10)]],
             }
         );
+    }
+
+    #[test]
+    fn alpha_all_source_match_model_accepts_matching_chunk_facts() {
+        js_ast::with_swc_globals(|| {
+            let mut selector =
+                AnonymousStatementSelector::exact("function readable(items) { return items; }");
+            selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+            let lowered = selector_ir_lowering::lower_member_selector(
+                &MemberSelectorLoweringContext::new(ChunkId(0), "static/app::format"),
+                "format_items",
+                &MemberSelectorSpec::SourceMatch(selector),
+            )
+            .unwrap();
+
+            let module = js_ast::parse_js_module_ast(
+                "<chunk>",
+                "function actual(values) { return values; }\nexport { actual };\n",
+            )
+            .unwrap();
+            let chunk_facts = chunk_facts::extract_facts(&module).unwrap();
+            let mut facts = SelectorFactStore::default();
+            facts.extend_chunk_facts(ChunkId(0), &chunk_facts);
+            facts.push(owner_fact(0, 0, "fn_decl"));
+            facts.push(declared_binding(0, "actual"));
+
+            let model = build_selector_constraint_model(&lowered.program, &facts).unwrap();
+            let empty_constraints = model
+                .allowed_tuples
+                .iter()
+                .filter(|constraint| constraint.tuples.is_empty())
+                .map(|constraint| {
+                    let variable_names = constraint
+                        .variables
+                        .iter()
+                        .map(|variable| {
+                            model.variables[variable.0]
+                                .debug_name
+                                .clone()
+                                .unwrap_or_else(|| format!("{variable:?}"))
+                        })
+                        .collect::<Vec<_>>();
+                    (constraint, variable_names)
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                empty_constraints.is_empty(),
+                "source_match model has empty allowed-tuple constraints: {empty_constraints:#?}"
+            );
+            let projection = &model.target_projections[0];
+            let binding_variable = projection
+                .binding_variable
+                .expect("alpha_all source_match should project its binding variable");
+
+            assert_eq!(
+                satisfying_tuples_for(&model, &[projection.owner_variable, binding_variable]),
+                vec![vec![owner(0), string("actual")]]
+            );
+        });
+    }
+
+    #[test]
+    fn alpha_all_binding_group_model_accepts_multideclarator_chunk_facts() {
+        js_ast::with_swc_globals(|| {
+            let mut group_selector = AnonymousStatementSelector::exact(
+                "const primary = EXPR_PRIMARY, secondary = EXPR_SECONDARY;",
+            );
+            group_selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+            let mut primary_selector = group_selector.clone();
+            primary_selector.target_binding = Some("primary".to_string());
+            let mut secondary_selector = group_selector.clone();
+            secondary_selector.target_binding = Some("secondary".to_string());
+
+            let mut builder = MemberSelectorProgramBuilder::new(
+                MemberSelectorLoweringContext::new(ChunkId(0), "static/app::settings"),
+            );
+            builder
+                .declare_member_target_in_module(
+                    "static/app::settings",
+                    "primary",
+                    &MemberSelectorSpec::SourceMatch(primary_selector),
+                )
+                .unwrap();
+            builder
+                .declare_member_target_in_module(
+                    "static/app::settings",
+                    "secondary",
+                    &MemberSelectorSpec::SourceMatch(secondary_selector),
+                )
+                .unwrap();
+            assert!(
+                builder
+                    .try_lower_native_source_match_group(
+                        "static/app::settings",
+                        &group_selector,
+                        &BTreeMap::from([
+                            ("primary".to_string(), "primary".to_string()),
+                            ("secondary".to_string(), "secondary".to_string()),
+                        ]),
+                    )
+                    .unwrap()
+            );
+            let program = builder.into_program().unwrap();
+
+            let module = js_ast::parse_js_module_ast(
+                "<chunk>",
+                "const primary = 10, secondary = 20;\nexport { primary, secondary };\n",
+            )
+            .unwrap();
+            let chunk_facts = chunk_facts::extract_facts(&module).unwrap();
+            let mut facts = SelectorFactStore::default();
+            facts.extend_chunk_facts(ChunkId(0), &chunk_facts);
+            facts.push(owner_fact(0, 0, "var_decl"));
+            facts.push(declared_binding(0, "primary"));
+            facts.push(declared_binding(0, "secondary"));
+
+            let model = build_selector_constraint_model(&program, &facts).unwrap();
+            let empty_constraints = model
+                .allowed_tuples
+                .iter()
+                .filter(|constraint| constraint.tuples.is_empty())
+                .map(|constraint| {
+                    let variable_names = constraint
+                        .variables
+                        .iter()
+                        .map(|variable| {
+                            model.variables[variable.0]
+                                .debug_name
+                                .clone()
+                                .unwrap_or_else(|| format!("{variable:?}"))
+                        })
+                        .collect::<Vec<_>>();
+                    (constraint, variable_names)
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                empty_constraints.is_empty(),
+                "binding group model has empty allowed-tuple constraints: {empty_constraints:#?}"
+            );
+        });
     }
 
     #[test]

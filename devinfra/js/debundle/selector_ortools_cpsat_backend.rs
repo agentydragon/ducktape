@@ -6,6 +6,7 @@
 
 use std::error::Error;
 use std::fmt;
+use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
@@ -19,6 +20,10 @@ use selector_constraint_backend::{
 };
 use selector_constraint_model::{BinaryConstraintKind, ConstraintVariableId};
 use selector_cp_sat_proto::ducktape::debundle::solver_backends::ortools_cpsat as wire;
+
+const REQUEST_PROTO_ENV: &str = "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_REQUEST_PROTO";
+const SUMMARY_JSON_ENV: &str = "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SUMMARY_JSON";
+const DUMP_ONLY_ENV: &str = "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_DUMP_ONLY";
 
 #[derive(Debug, Clone)]
 pub struct OrToolsCpSatBackend {
@@ -42,7 +47,14 @@ impl SelectorConstraintBackend for OrToolsCpSatBackend {
 
     fn solve(&self, problem: &SelectorBackendProblem) -> Result<BackendSolveResult, Self::Error> {
         let request = request_from_problem(problem)?;
-        let output = run_sidecar(&self.solver_path, request.encode_to_vec().as_slice())?;
+        let request_bytes = request.encode_to_vec();
+        let dumped_request_path = dump_request_if_requested(problem, &request, &request_bytes)?;
+        if dump_only_requested() {
+            return Err(OrToolsCpSatBackendError::DumpOnly {
+                path: dumped_request_path,
+            });
+        }
+        let output = run_sidecar(&self.solver_path, request_bytes.as_slice())?;
         let response = wire::SelectorCpSatResponse::decode(output.as_slice())
             .map_err(OrToolsCpSatBackendError::DecodeResponse)?;
         response_into_backend_result(response)
@@ -82,15 +94,36 @@ fn run_sidecar(
 
 #[derive(Debug)]
 pub enum OrToolsCpSatBackendError {
-    IdOutOfRange { field: &'static str, value: usize },
+    IdOutOfRange {
+        field: &'static str,
+        value: usize,
+    },
     Spawn(io::Error),
     MissingChildStdin,
     WriteRequest(io::Error),
     Wait(io::Error),
-    SidecarFailed { status: ExitStatus, stderr: String },
+    SidecarFailed {
+        status: ExitStatus,
+        stderr: String,
+    },
     DecodeResponse(prost::DecodeError),
-    InvalidStatus { status: i32 },
-    InvalidAssignmentCoverage { coverage: i32 },
+    DumpSummaryJson {
+        path: PathBuf,
+        source: serde_json::Error,
+    },
+    DumpIo {
+        path: PathBuf,
+        source: io::Error,
+    },
+    DumpOnly {
+        path: Option<PathBuf>,
+    },
+    InvalidStatus {
+        status: i32,
+    },
+    InvalidAssignmentCoverage {
+        coverage: i32,
+    },
 }
 
 impl fmt::Display for OrToolsCpSatBackendError {
@@ -112,6 +145,33 @@ impl fmt::Display for OrToolsCpSatBackendError {
             Self::DecodeResponse(err) => {
                 write!(f, "failed to decode CP-SAT response protobuf: {err}")
             }
+            Self::DumpSummaryJson { path, source } => {
+                write!(
+                    f,
+                    "failed to serialize CP-SAT summary JSON at {}: {source}",
+                    path.display()
+                )
+            }
+            Self::DumpIo { path, source } => {
+                write!(
+                    f,
+                    "failed to write CP-SAT diagnostic artifact at {}: {source}",
+                    path.display()
+                )
+            }
+            Self::DumpOnly { path: Some(path) } => {
+                write!(
+                    f,
+                    "dumped CP-SAT request at {}; stopping before sidecar because {DUMP_ONLY_ENV}=1",
+                    path.display()
+                )
+            }
+            Self::DumpOnly { path: None } => {
+                write!(
+                    f,
+                    "{DUMP_ONLY_ENV}=1 requires {REQUEST_PROTO_ENV} or {SUMMARY_JSON_ENV} to point at an output file"
+                )
+            }
             Self::InvalidStatus { status } => {
                 write!(f, "CP-SAT sidecar returned invalid status {status}")
             }
@@ -130,13 +190,196 @@ impl Error for OrToolsCpSatBackendError {
         match self {
             Self::Spawn(err) | Self::WriteRequest(err) | Self::Wait(err) => Some(err),
             Self::DecodeResponse(err) => Some(err),
+            Self::DumpSummaryJson { source, .. } => Some(source),
+            Self::DumpIo { source, .. } => Some(source),
             Self::IdOutOfRange { .. }
             | Self::MissingChildStdin
             | Self::SidecarFailed { .. }
+            | Self::DumpOnly { .. }
             | Self::InvalidStatus { .. }
             | Self::InvalidAssignmentCoverage { .. } => None,
         }
     }
+}
+
+fn dump_request_if_requested(
+    problem: &SelectorBackendProblem,
+    request: &wire::SelectorCpSatRequest,
+    request_bytes: &[u8],
+) -> Result<Option<PathBuf>, OrToolsCpSatBackendError> {
+    let request_proto_path = env_path(REQUEST_PROTO_ENV);
+    let summary_json_path = env_path(SUMMARY_JSON_ENV);
+    if request_proto_path.is_none() && summary_json_path.is_none() {
+        return Ok(None);
+    }
+
+    if let Some(path) = &request_proto_path {
+        write_request_proto(path, request_bytes)?;
+    }
+    if let Some(path) = &summary_json_path {
+        write_summary_json(path, problem, request, request_bytes.len())?;
+    }
+    Ok(request_proto_path.or(summary_json_path))
+}
+
+fn env_path(env: &str) -> Option<PathBuf> {
+    std::env::var_os(env)
+        .map(PathBuf::from)
+        .filter(|path| !path.as_os_str().is_empty())
+}
+
+fn write_request_proto(path: &Path, request_bytes: &[u8]) -> Result<(), OrToolsCpSatBackendError> {
+    create_parent_dir(path)?;
+    let temp_path = path.with_extension("pb.tmp");
+    fs::write(&temp_path, request_bytes).map_err(|source| OrToolsCpSatBackendError::DumpIo {
+        path: temp_path.clone(),
+        source,
+    })?;
+    fs::rename(&temp_path, path).map_err(|source| OrToolsCpSatBackendError::DumpIo {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn write_summary_json(
+    path: &Path,
+    problem: &SelectorBackendProblem,
+    request: &wire::SelectorCpSatRequest,
+    request_encoded_bytes: usize,
+) -> Result<(), OrToolsCpSatBackendError> {
+    create_parent_dir(path)?;
+    let temp_path = path.with_extension("json.tmp");
+    let mut file =
+        fs::File::create(&temp_path).map_err(|source| OrToolsCpSatBackendError::DumpIo {
+            path: temp_path.clone(),
+            source,
+        })?;
+    let summary = problem_summary(problem, request, request_encoded_bytes);
+    serde_json::to_writer_pretty(&mut file, &summary).map_err(|source| {
+        OrToolsCpSatBackendError::DumpSummaryJson {
+            path: temp_path.clone(),
+            source,
+        }
+    })?;
+    file.write_all(b"\n")
+        .map_err(|source| OrToolsCpSatBackendError::DumpIo {
+            path: temp_path.clone(),
+            source,
+        })?;
+    file.flush()
+        .map_err(|source| OrToolsCpSatBackendError::DumpIo {
+            path: temp_path.clone(),
+            source,
+        })?;
+    drop(file);
+    fs::rename(&temp_path, path).map_err(|source| OrToolsCpSatBackendError::DumpIo {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn create_parent_dir(path: &Path) -> Result<(), OrToolsCpSatBackendError> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent).map_err(|source| OrToolsCpSatBackendError::DumpIo {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    Ok(())
+}
+
+fn dump_only_requested() -> bool {
+    std::env::var_os(DUMP_ONLY_ENV)
+        .map(|value| !value.is_empty() && value != "0")
+        .unwrap_or(false)
+}
+
+fn problem_summary(
+    problem: &SelectorBackendProblem,
+    request: &wire::SelectorCpSatRequest,
+    request_encoded_bytes: usize,
+) -> serde_json::Value {
+    let total_domain_values = problem
+        .variables
+        .iter()
+        .map(|variable| variable.values.len())
+        .sum::<usize>();
+    let max_domain_values = problem
+        .variables
+        .iter()
+        .map(|variable| variable.values.len())
+        .max()
+        .unwrap_or(0);
+    let allowed_row_count = problem
+        .allowed_tuples
+        .iter()
+        .map(|constraint| constraint.tuples.len())
+        .sum::<usize>();
+    let allowed_cell_count = problem
+        .allowed_tuples
+        .iter()
+        .map(|constraint| {
+            constraint
+                .tuples
+                .iter()
+                .map(|tuple| tuple.len())
+                .sum::<usize>()
+        })
+        .sum::<usize>();
+    let max_allowed_rows = problem
+        .allowed_tuples
+        .iter()
+        .map(|constraint| constraint.tuples.len())
+        .max()
+        .unwrap_or(0);
+    let max_allowed_arity = problem
+        .allowed_tuples
+        .iter()
+        .map(|constraint| constraint.variables.len())
+        .max()
+        .unwrap_or(0);
+    let binary_equal_count = problem
+        .binary_constraints
+        .iter()
+        .filter(|constraint| matches!(constraint.kind, BinaryConstraintKind::Equal))
+        .count();
+    let binary_not_equal_count = problem
+        .binary_constraints
+        .iter()
+        .filter(|constraint| matches!(constraint.kind, BinaryConstraintKind::NotEqual))
+        .count();
+    let binary_ordinal_before_count = problem
+        .binary_constraints
+        .iter()
+        .filter(|constraint| matches!(constraint.kind, BinaryConstraintKind::OrdinalBefore))
+        .count();
+
+    serde_json::json!({
+        "all_different_count": problem.all_different.len(),
+        "allowed_cell_count": allowed_cell_count,
+        "allowed_row_count": allowed_row_count,
+        "allowed_table_count": problem.allowed_tuples.len(),
+        "binary_constraint_count": problem.binary_constraints.len(),
+        "binary_equal_count": binary_equal_count,
+        "binary_not_equal_count": binary_not_equal_count,
+        "binary_ordinal_before_count": binary_ordinal_before_count,
+        "max_allowed_arity": max_allowed_arity,
+        "max_allowed_rows": max_allowed_rows,
+        "max_domain_values": max_domain_values,
+        "request_encoded_bytes": request_encoded_bytes,
+        "target_projection_count": problem.target_projections.len(),
+        "total_domain_values": total_domain_values,
+        "value_dictionary_count": problem.value_dictionary.len(),
+        "variable_count": problem.variables.len(),
+        "wire_all_different_count": request.all_different.len(),
+        "wire_allowed_table_count": request.allowed_tables.len(),
+        "wire_binary_constraint_count": request.binary_constraints.len(),
+        "wire_target_projection_count": request.target_projections.len(),
+        "wire_variable_count": request.variables.len(),
+    })
 }
 
 fn request_from_problem(
@@ -317,14 +560,17 @@ fn u32_id(field: &'static str, value: usize) -> Result<u32, OrToolsCpSatBackendE
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
 
-    use analysis::{ChunkId, OwnerId, StatementOrdinal};
+    use analysis::{AnalysisHints, ChunkId, OwnerId, StatementOrdinal};
     use selector_backend_solver::solve_with_backend;
     use selector_ir::{
         ClaimKind, ClaimOrigin, ClaimOutcome, OwnerTerm, ResolvedClaim, SelectorAtom, SelectorFact,
         SelectorFactStore, SelectorProgram, SelectorTargetId, StringTerm, VariableDomain,
     };
+    use selector_ir_lowering::{MemberSelectorLoweringContext, MemberSelectorProgramBuilder};
+    use spec::{AnonymousStatementSelector, MemberSelectorSpec, SourceMatchIdentifierMode};
 
     use super::*;
 
@@ -498,6 +744,119 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn cpsat_sidecar_resolves_alpha_all_binding_group_multideclarator() {
+        js_ast::with_swc_globals(|| {
+            let mut group_selector = AnonymousStatementSelector::exact(
+                "const primary = EXPR_PRIMARY, secondary = EXPR_SECONDARY;",
+            );
+            group_selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+            let mut primary_selector = group_selector.clone();
+            primary_selector.target_binding = Some("primary".to_string());
+            let mut secondary_selector = group_selector.clone();
+            secondary_selector.target_binding = Some("secondary".to_string());
+
+            let mut builder = MemberSelectorProgramBuilder::new(
+                MemberSelectorLoweringContext::new(ChunkId(0), "static/app::settings"),
+            );
+            let primary_target = builder
+                .declare_member_target_in_module(
+                    "static/app::settings",
+                    "primary",
+                    &MemberSelectorSpec::SourceMatch(primary_selector),
+                )
+                .unwrap();
+            let secondary_target = builder
+                .declare_member_target_in_module(
+                    "static/app::settings",
+                    "secondary",
+                    &MemberSelectorSpec::SourceMatch(secondary_selector),
+                )
+                .unwrap();
+            assert!(
+                builder
+                    .try_lower_native_source_match_group(
+                        "static/app::settings",
+                        &group_selector,
+                        &BTreeMap::from([
+                            ("primary".to_string(), "primary".to_string()),
+                            ("secondary".to_string(), "secondary".to_string()),
+                        ]),
+                    )
+                    .unwrap()
+            );
+            let program = builder.into_program().unwrap();
+
+            let module = js_ast::parse_js_module_ast(
+                "<chunk>",
+                "const primary = 10, secondary = 20;\n\
+                 console.log(primary + secondary);\n\
+                 export { primary, secondary };\n",
+            )
+            .unwrap();
+            let chunk_facts = chunk_facts::extract_facts(&module).unwrap();
+            let analysis =
+                analysis::facts::analyze_chunk(&module, &AnalysisHints::default(), None, |_| None);
+            let owner_graph = analysis::graph::build_owner_graph(&analysis.facts).unwrap();
+            let mut facts = SelectorFactStore::default();
+            facts.extend_chunk_facts(ChunkId(0), &chunk_facts);
+            for node in owner_graph.iter_nodes() {
+                facts.push(SelectorFact::Owner {
+                    chunk_id: ChunkId(0),
+                    owner: node.id,
+                    statement_ordinal: node.statement_ordinal,
+                    statement_kind: node.kind.to_string(),
+                });
+                for binding in &node.declared {
+                    facts.push(SelectorFact::DeclaredBinding {
+                        chunk_id: ChunkId(0),
+                        owner: node.id,
+                        binding: binding.0.as_str().to_string(),
+                        export_name: None,
+                    });
+                }
+            }
+            for edge in owner_graph.iter_edges() {
+                if let Some(binding) = edge.reason.binding() {
+                    facts.push(SelectorFact::OwnerReferencesBinding {
+                        chunk_id: ChunkId(0),
+                        owner: edge.from,
+                        binding: binding.0.as_str().to_string(),
+                        edge_kind: edge.reason.kind().to_string(),
+                    });
+                }
+            }
+
+            let backend = OrToolsCpSatBackend::new(sidecar_path());
+            let result = solve_with_backend(&program, &facts, &backend).unwrap();
+
+            assert_eq!(
+                result.outcome_for(primary_target),
+                Some(&ClaimOutcome::Unique {
+                    claim: ResolvedClaim {
+                        chunk_id: ChunkId(0),
+                        owner: OwnerId(0),
+                        statement_ordinal: StatementOrdinal(0),
+                        binding: Some("primary".to_string()),
+                        provenance: Vec::new(),
+                    }
+                })
+            );
+            assert_eq!(
+                result.outcome_for(secondary_target),
+                Some(&ClaimOutcome::Unique {
+                    claim: ResolvedClaim {
+                        chunk_id: ChunkId(0),
+                        owner: OwnerId(1),
+                        statement_ordinal: StatementOrdinal(1),
+                        binding: Some("secondary".to_string()),
+                        provenance: Vec::new(),
+                    }
+                })
+            );
+        });
     }
 
     #[test]

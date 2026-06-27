@@ -57,58 +57,43 @@ use selector_ir::{
 use selector_ir_lowering::{MemberSelectorLoweringContext, MemberSelectorProgramBuilder};
 use selector_ortools_cpsat_backend::OrToolsCpSatBackend;
 
-const SELECTOR_BACKEND_ENV: &str = "DUCKTAPE_DEBUNDLE_SELECTOR_BACKEND";
 const ORTOOLS_CPSAT_SOLVER_ENV: &str = "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER";
+const ORTOOLS_CPSAT_SOLVER_RUNFILE: &str =
+    "_main/devinfra/js/debundle/solver_backends/ortools_cpsat/selector_cpsat_solver";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum GlobalSelectorBackendChoice {
-    Ascent,
-    OrToolsCpSat { solver_path: PathBuf },
+fn ortools_cpsat_solver_from_env() -> Result<PathBuf> {
+    if let Ok(solver_path) = std::env::var(ORTOOLS_CPSAT_SOLVER_ENV) {
+        return parse_ortools_cpsat_solver_path(Some(&solver_path));
+    }
+    if let Some(solver_path) = ortools_cpsat_solver_from_runfiles() {
+        return Ok(solver_path);
+    }
+    bail!("{ORTOOLS_CPSAT_SOLVER_ENV} must point at selector_cpsat_solver")
 }
 
-fn global_selector_backend_from_env() -> Result<GlobalSelectorBackendChoice> {
-    let backend = std::env::var(SELECTOR_BACKEND_ENV).ok();
-    let solver_path = std::env::var(ORTOOLS_CPSAT_SOLVER_ENV).ok();
-    parse_global_selector_backend(backend.as_deref(), solver_path.as_deref())
+fn parse_ortools_cpsat_solver_path(solver_path: Option<&str>) -> Result<PathBuf> {
+    let solver_path = solver_path
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .with_context(|| {
+            format!("{ORTOOLS_CPSAT_SOLVER_ENV} must point at selector_cpsat_solver")
+        })?;
+    Ok(PathBuf::from(solver_path))
 }
 
-fn parse_global_selector_backend(
-    backend: Option<&str>,
-    solver_path: Option<&str>,
-) -> Result<GlobalSelectorBackendChoice> {
-    let backend = backend.unwrap_or_default().trim();
-    if backend.is_empty() || backend.eq_ignore_ascii_case("ascent") {
-        return Ok(GlobalSelectorBackendChoice::Ascent);
-    }
-    if matches!(
-        backend.to_ascii_lowercase().as_str(),
-        "ortools-cpsat" | "ortools_cpsat" | "cp-sat" | "cpsat"
-    ) {
-        let solver_path = solver_path
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-            .with_context(|| {
-                format!("{SELECTOR_BACKEND_ENV}=ortools-cpsat requires {ORTOOLS_CPSAT_SOLVER_ENV}")
-            })?;
-        return Ok(GlobalSelectorBackendChoice::OrToolsCpSat {
-            solver_path: PathBuf::from(solver_path),
-        });
-    }
-    bail!("unknown {SELECTOR_BACKEND_ENV} value {backend:?}; expected `ascent` or `ortools-cpsat`")
+fn ortools_cpsat_solver_from_runfiles() -> Option<PathBuf> {
+    let runfiles_dir = std::env::var_os("RUNFILES_DIR").map(PathBuf::from)?;
+    let path = runfiles_dir.join(ORTOOLS_CPSAT_SOLVER_RUNFILE);
+    path.exists().then_some(path)
 }
 
 fn solve_global_selector_program(
     program: &selector_ir::SelectorProgram,
     facts: &SelectorFactStore,
 ) -> Result<SolverResult> {
-    match global_selector_backend_from_env()? {
-        GlobalSelectorBackendChoice::Ascent => Ok(selector_ir_solver::solve(program, facts)?),
-        GlobalSelectorBackendChoice::OrToolsCpSat { solver_path } => {
-            let backend = OrToolsCpSatBackend::new(solver_path);
-            selector_backend_solver::solve_with_backend(program, facts, &backend)
-                .context("global selector CP-SAT backend failed")
-        }
-    }
+    let backend = OrToolsCpSatBackend::new(ortools_cpsat_solver_from_env()?);
+    selector_backend_solver::solve_with_backend(program, facts, &backend)
+        .context("global selector CP-SAT backend failed")
 }
 
 impl From<&DuplicateClaimSite> for DuplicateClaimSiteReport {
@@ -2822,53 +2807,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn selector_backend_choice_defaults_to_ascent() {
+    fn ortools_cpsat_solver_path_accepts_non_empty_path() {
         assert_eq!(
-            parse_global_selector_backend(None, None).unwrap(),
-            GlobalSelectorBackendChoice::Ascent
-        );
-        assert_eq!(
-            parse_global_selector_backend(Some(""), None).unwrap(),
-            GlobalSelectorBackendChoice::Ascent
-        );
-        assert_eq!(
-            parse_global_selector_backend(Some("ascent"), None).unwrap(),
-            GlobalSelectorBackendChoice::Ascent
+            parse_ortools_cpsat_solver_path(Some(" /tmp/solver ")).unwrap(),
+            PathBuf::from("/tmp/solver")
         );
     }
 
     #[test]
-    fn selector_backend_choice_accepts_ortools_cpsat_aliases() {
-        for backend in ["ortools-cpsat", "ortools_cpsat", "cp-sat", "cpsat"] {
-            assert_eq!(
-                parse_global_selector_backend(Some(backend), Some(" /tmp/solver ")).unwrap(),
-                GlobalSelectorBackendChoice::OrToolsCpSat {
-                    solver_path: PathBuf::from("/tmp/solver")
-                }
-            );
-        }
-    }
-
-    #[test]
-    fn selector_backend_choice_requires_sidecar_path() {
-        let error = parse_global_selector_backend(Some("ortools-cpsat"), None)
-            .expect_err("missing sidecar path should fail");
+    fn ortools_cpsat_solver_path_requires_sidecar_path() {
+        let error =
+            parse_ortools_cpsat_solver_path(None).expect_err("missing sidecar path should fail");
         assert!(
             error
                 .to_string()
                 .contains("DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER"),
             "{error}"
         );
-    }
-
-    #[test]
-    fn selector_backend_choice_rejects_unknown_backend() {
-        let error = parse_global_selector_backend(Some("manual-csp"), None)
-            .expect_err("unknown backend should fail");
+        let error =
+            parse_ortools_cpsat_solver_path(Some(" ")).expect_err("empty sidecar path should fail");
         assert!(
             error
                 .to_string()
-                .contains("unknown DUCKTAPE_DEBUNDLE_SELECTOR_BACKEND"),
+                .contains("DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER"),
             "{error}"
         );
     }
