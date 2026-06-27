@@ -30,11 +30,13 @@ Haku produces the image, and the runner can't escape its perimeter.
 
 ## ⚠️ Paving steps (not yet done — fill in during the iterate loop)
 
-1. **Registration token (required — the pod stays pending without it).** After Forgejo Actions
-   is live (#2556), generate a **repo-scoped** runner registration token for `haku-state`
-   (Forgejo → the `haku/haku-state` repo → Settings → Actions → Runners → "Create new runner"),
-   and provision it as Secret `haku-ci-runner-token` (key `token`) in `haku-ci` — as a
-   SOPS-managed `runner-token.sops.yaml` here, or via `tf/gitops/haku-state`.
+1. **Registration token (required — the pod stays pending without it).** A **repo-scoped**
+   runner registration token for `haku-state`, provisioned as Secret `haku-ci-runner-token`
+   (key `token`) in `haku-ci`. **Ideal: tofu-controller-provisioned** — but the `svalabs/forgejo`
+   provider doesn't expose runner registration tokens, so until that's added (or we drive the
+   Forgejo `…/runners/registration-token` API from a tofu `null_resource`/`restapi` provider),
+   it's generated once from the repo's Actions → Runners settings and committed as a SOPS
+   `runner-token.sops.yaml` here. **TODO: replace the manual SOPS step with tofu provisioning.**
 2. **Validate the builder.** Rootless `dind` on Talos is the **main risk** and may need
    securityContext/seccomp tuning, `/dev/fuse`, or a switch to **rootless buildkit** if the
    daemon won't start. Check `kubectl -n haku-ci logs deploy/haku-runner -c dind`, run a trivial

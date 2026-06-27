@@ -3,5 +3,8 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - networkpolicy.yaml
-  - runner-config.yaml
   - deployment.yaml
+configMapGenerator:
+  - name: haku-runner-config
+    files:
+      - config.yaml

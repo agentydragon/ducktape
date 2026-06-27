@@ -1,0 +1,18 @@
+# act_runner (forgejo-runner) daemon config. Jobs run in a docker-cli container (so
+# workflows can `docker build`/`docker push`) talking to the rootless dind sidecar
+# via DOCKER_HOST. capacity:1 keeps builds serial (bounded blast radius + resource
+# use). See README for the builder iterate notes.
+log:
+  level: info
+runner:
+  capacity: 1
+  timeout: 30m
+  # `<label>:docker://<image>` runs jobs in that container image (which must carry
+  # the docker CLI to reach the dind sidecar).
+  labels:
+    - "haku-ci:docker://docker:27-cli"
+container:
+  docker_host: "tcp://localhost:2375"
+  options: ""
+cache:
+  enabled: false
