@@ -56,5 +56,5 @@ image (`git.allegedly.works/haku/ui:<tag>`, the tag Flux image automation writes
 operator-owned, Authentik-gated `haku-ui.allegedly.works` route and embedded in the
 console iframe (see `haku/console/plans/free_form_ui_iframe.md`). It pulls via the
 `haku-forgejo-registry-pull` imagePullSecret (operator-provisioned) and mounts the
-`haku-state-git-write` secret for the backend's git access. Haku evolves the UI and adds
-more workloads as sibling dirs under `k8s/`.
+`haku-state-git-write` secret as the backend's Forgejo API credentials. Haku evolves the
+UI and adds more workloads as sibling dirs under `k8s/`.
