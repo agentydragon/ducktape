@@ -14,7 +14,7 @@ use chunk_facts::NodeId;
 use regex::Regex;
 use selector_constraint_model::{
     AllDifferentReason, BinaryConstraintKind, ConstraintModelError, ConstraintValue,
-    ConstraintVariableId, SelectorConstraintModel,
+    ConstraintVariableId, SelectorConstraintModel, TargetBindingProjection,
 };
 use selector_ir::{
     ClaimKind, NodeTerm, OrdinalTerm, OwnerTerm, SelectorAtom, SelectorFact, SelectorFactStore,
@@ -45,18 +45,16 @@ pub fn build_selector_constraint_model(
 
     for target in &program.targets {
         let owner_variable = model_variable(&variables, target.owner)?;
-        let binding_projection = target_binding_projections.binding_projection(target.owner);
-        let binding_variable = binding_projection
-            .and_then(TargetBindingProjection::variable)
-            .map(|binding| model_variable(&variables, binding))
-            .transpose()?;
-        let binding_const = binding_projection.and_then(TargetBindingProjection::constant);
-        model.add_target_projection_with_binding_const(
-            target.id,
-            owner_variable,
-            binding_variable,
-            binding_const,
-        )?;
+        let binding_projection = match target_binding_projections.binding_projection(target.owner) {
+            Some(SourceBindingProjection::Const(binding)) => {
+                Some(TargetBindingProjection::Const(binding.clone()))
+            }
+            Some(SourceBindingProjection::Var(binding)) => Some(TargetBindingProjection::Variable(
+                model_variable(&variables, *binding)?,
+            )),
+            None => None,
+        };
+        model.add_target_projection(target.id, owner_variable, binding_projection)?;
     }
 
     for atom in &program.atoms {
@@ -98,8 +96,8 @@ pub enum SelectorConstraintModelBuildError {
     },
     ConflictingTargetBindingProjection {
         owner: SelectorVariableId,
-        existing: TargetBindingProjection,
-        actual: TargetBindingProjection,
+        existing: SourceBindingProjection,
+        actual: SourceBindingProjection,
     },
 }
 
@@ -1643,14 +1641,14 @@ fn required_string_term_const(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TargetBindingProjection {
+pub enum SourceBindingProjection {
     Const(String),
     Var(SelectorVariableId),
 }
 
 #[derive(Debug, Default)]
 struct TargetBindingProjections {
-    by_owner: BTreeMap<SelectorVariableId, TargetBindingProjection>,
+    by_owner: BTreeMap<SelectorVariableId, SourceBindingProjection>,
 }
 
 impl TargetBindingProjections {
@@ -1661,11 +1659,11 @@ impl TargetBindingProjections {
                 SelectorAtom::OwnerDeclaresBinding {
                     owner: OwnerTerm::Var { id: owner },
                     binding: StringTerm::Const { value },
-                } => projections.insert(*owner, TargetBindingProjection::Const(value.clone()))?,
+                } => projections.insert(*owner, SourceBindingProjection::Const(value.clone()))?,
                 SelectorAtom::OwnerDeclaresBinding {
                     owner: OwnerTerm::Var { id: owner },
                     binding: StringTerm::Var { id: binding },
-                } => projections.insert(*owner, TargetBindingProjection::Var(*binding))?,
+                } => projections.insert(*owner, SourceBindingProjection::Var(*binding))?,
                 _ => {}
             }
         }
@@ -1675,7 +1673,7 @@ impl TargetBindingProjections {
     fn insert(
         &mut self,
         owner: SelectorVariableId,
-        binding: TargetBindingProjection,
+        binding: SourceBindingProjection,
     ) -> Result<(), SelectorConstraintModelBuildError> {
         match self.by_owner.get(&owner) {
             Some(existing) if existing != &binding => Err(
@@ -1693,24 +1691,8 @@ impl TargetBindingProjections {
         }
     }
 
-    fn binding_projection(&self, owner: SelectorVariableId) -> Option<&TargetBindingProjection> {
+    fn binding_projection(&self, owner: SelectorVariableId) -> Option<&SourceBindingProjection> {
         self.by_owner.get(&owner)
-    }
-}
-
-impl TargetBindingProjection {
-    fn variable(&self) -> Option<SelectorVariableId> {
-        match self {
-            Self::Var(binding) => Some(*binding),
-            Self::Const(_) => None,
-        }
-    }
-
-    fn constant(&self) -> Option<String> {
-        match self {
-            Self::Const(binding) => Some(binding.clone()),
-            Self::Var(_) => None,
-        }
     }
 }
 
@@ -2867,20 +2849,18 @@ mod tests {
             model.target_projections[0].owner_variable,
             ConstraintVariableId(0)
         );
-        assert_eq!(model.target_projections[0].binding_variable, None);
         assert_eq!(
-            model.target_projections[0].binding_const.as_deref(),
-            Some("shared")
+            model.target_projections[0].binding_projection,
+            Some(TargetBindingProjection::Const("shared".to_string()))
         );
         assert_eq!(model.target_projections[1].target, strict_target);
         assert_eq!(
             model.target_projections[1].owner_variable,
             ConstraintVariableId(1)
         );
-        assert_eq!(model.target_projections[1].binding_variable, None);
         assert_eq!(
-            model.target_projections[1].binding_const.as_deref(),
-            Some("specific")
+            model.target_projections[1].binding_projection,
+            Some(TargetBindingProjection::Const("specific".to_string()))
         );
         assert_eq!(model.binary_constraints, Vec::<BinaryConstraint>::new());
         assert_eq!(
@@ -3000,10 +2980,9 @@ mod tests {
             ConstraintVariableId(0)
         );
         assert_eq!(
-            model.target_projections[0].binding_variable,
-            Some(ConstraintVariableId(1))
+            model.target_projections[0].binding_projection,
+            Some(TargetBindingProjection::Variable(ConstraintVariableId(1)))
         );
-        assert_eq!(model.target_projections[0].binding_const, None);
         assert_eq!(
             allowed_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(1)]),
             &AllowedTupleConstraint {
@@ -3466,9 +3445,10 @@ mod tests {
                 "source_match model has empty allowed-tuple constraints: {empty_constraints:#?}"
             );
             let projection = &model.target_projections[0];
-            let binding_variable = projection
-                .binding_variable
-                .expect("alpha_all source_match should project its binding variable");
+            let binding_variable = match projection.binding_projection {
+                Some(TargetBindingProjection::Variable(variable)) => variable,
+                _ => panic!("alpha_all source_match should project its binding variable"),
+            };
 
             assert_eq!(
                 satisfying_tuples_for(&model, &[projection.owner_variable, binding_variable]),

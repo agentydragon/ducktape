@@ -96,7 +96,10 @@ parallel dispatch queue.
   carrying it forward. The landed bridge primitives (`cross_ref`,
   `reads_member`, `member_of_module`, `passed_to_call`, `makes_decorate_call`,
   `intrinsic_alias`) are useful fact/selector vocabulary, but are bridge
-  implementations until they fold into derived predicates. See
+  implementations until they fold into derived predicates. The solver-backend
+  pivot has landed far enough that production materialization now uses the
+  protobuf CP-SAT sidecar for the supported subset; the remaining priority is
+  language coverage, not another exact-assignment backend switch. See
   <debug/2026_06_19_p4_debt_worklist.md> for real-spec evidence.
 - <plans/automated_spec_workflows.md> — **active design, downstream of P0.**
   North-star for the inventory/plan/apply/validate CLI surface and the
@@ -121,13 +124,12 @@ this list as the dispatch summary, not a second plan.
 
 1. **Wire the exact-assignment backend.** The backend-neutral
    `SelectorConstraintModel`, backend problem contract, CP-SAT sidecar,
-   generated Rust proto bindings, Rust backend adapter, and opt-in production
-   selector backend switch are in flight through #2536/#2537. The anonymized
+   generated Rust proto bindings, Rust backend adapter, and production
+   materialization hook have landed for the supported subset. The anonymized
    broad-vs-specific injectivity fixture resolves through CP-SAT rather than
    `AssignmentRow` enumeration. Remaining work in this slice is to run the
-   supported subset against real Gaffer evidence through the opt-in backend and
-   make CP-SAT the default only after alpha-all/hole coverage stops blocking the
-   real Tana spec.
+   supported subset against real Gaffer evidence and use its unsupported-form
+   failures to drive native selector-language coverage.
 2. **Keep Ascent on fact/table derivation, not exact assignment.** Ascent may
    continue deriving relation support and allowed tuples, but exact target
    assignment must be owned by OR-Tools CP-SAT or a measured SAT fallback with
@@ -321,12 +323,11 @@ applied. The applied items (the empty-arm collapse, the `Resolution`
   the passes have genuinely different resolution-builder signatures
   (`member_of_module` needs `import_sources`; others do not), different anchor
   sources (`resolved_anchor_bindings` vs `claimed_member_bindings` vs none),
-  different per-primitive kernel calls and `with_context` closures, and each
-  call site carries a distinct `time_phase!` timing label. If attempted,
-  preserve every `time_phase!` label and keep the per-primitive bits legible
-  (shared-helper route, not a code-gen macro). The per-resolver
-  `#[allow(clippy::too_many_arguments)]`s only become removable once the
-  standalone resolvers disappear into the loop.
+  and different per-primitive kernel calls and `with_context` closures. If
+  attempted, keep the per-primitive bits legible (shared-helper route, not a
+  code-gen macro), and profile with external tools if runtime changes are in
+  question. The per-resolver `#[allow(clippy::too_many_arguments)]`s only
+  become removable once the standalone resolvers disappear into the loop.
 
 ## Excalidraw live-browser smoke
 

@@ -976,7 +976,7 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   scope at the call site; the static analyzer cannot see what it
   references; `I` would be incomplete. **Enforced (partially)**: the
   input-chunk admission scan (`chunk_admission`, run by
-  `stage_one::compute_stage_one_analysis` next to the A2 bail)
+  `stage_one::compute_chunk_analysis` next to the A2 bail)
   rejects direct `eval(...)` and seq-indirect `(0, eval)(...)` calls
   at module top level (looking through parens and comma sequences to
   the callee), with the offending statement ordinal in the
@@ -992,7 +992,7 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   `facts::analyze_chunk_structural` records the first module-top
   `AwaitExpr`, excluding lazy positions like
   function/arrow/method/getter/setter bodies and instance class
-  fields), and `stage_one::compute_stage_one_analysis` `bail!`s
+  fields), and `stage_one::compute_chunk_analysis` `bail!`s
   with the offending statement ordinal as soon as fact analysis
   returns — before any quotient or lowering work. Production
   chunks we target are TLA-free in practice; the rejection turns
@@ -1211,12 +1211,12 @@ member names`, it projects onto each importing chunk's local binding
 
 A1–A5 are statically checkable on each chunk, and each now has an
 enforced core. A2 is enforced by the TLA scan inside fact analysis —
-`stage_one::compute_stage_one_analysis` `bail!`s with the offending
+`stage_one::compute_chunk_analysis` `bail!`s with the offending
 statement ordinal as soon as fact analysis returns, before any
 quotient or lowering work. A1, A3, and A5 are enforced (to the
 per-assumption strengths described above) by the input-chunk
 admission scan in `chunk_admission`, which
-`compute_stage_one_analysis` runs right after the A2 bail; its
+`compute_chunk_analysis` runs right after the A2 bail; its
 diagnostics carry the chunk id, the offending statement ordinal,
 and the matched shape. A4 is enforced at parse time. The admission
 scan is on by default for every materialized chunk; for audited
@@ -1380,7 +1380,7 @@ It does not establish:
   different evaluation algorithm (`InnerModuleEvaluation` returns
   a Promise; cyclic async-module groups have AsyncCycleRoot
   semantics). A separate proof would be needed; instead the
-  materializer refuses TLA chunks explicitly (the Stage A bail
+  materializer refuses TLA chunks explicitly (the chunk-analysis bail
   described under A2 above).
 - **Dynamic eval / reflection bypassing the static graph (A1, A5
   violations).** The `I` graph is incomplete in this case;
@@ -1507,35 +1507,36 @@ as `ExternalChunk(_)` leaves in the per-chunk graph. **Future
 work**: a multi-chunk lift would have `validate_factorization` take a
 `BTreeMap<ChunkId, ChunkFactorization>` and walk the union graph.
 
-### Pipeline split (Stage A / Stage B)
+### Pipeline split (chunk analysis / materialization)
 
 The per-chunk pipeline is two halves with sharply different
 dependencies:
 
-- **Stage A** (spec-independent): parse → per-statement facts →
+- **Chunk analysis** (spec-independent): parse → per-statement facts →
   owner graph → structural atomic units. Pure function of
   `(source bytes, analysis hints, OwnerGraphOptions)`. The composer
-  is `stage_one::compute_stage_one_analysis`, returning a
-  `StageOneAnalysis` that bundles `ChunkFactAnalysis` (facts +
+  is `stage_one::compute_chunk_analysis`, returning a
+  `ChunkAnalysis` that bundles `ChunkFactAnalysis` (facts +
   top-level-await detection + redundant-hint warnings) with the
   `OwnerGraphAndUnits` derived from those facts.
-- **Stage B** (spec-dependent): assemble the partition from the
+- **Materialization** (spec-dependent): assemble the partition from the
   spec's binding claims, run the realizability gate, lower to ESM.
   Today this lives inline in `lowering::materialize_logical_chunk`.
 
 The materializer is the composition of both. Current code materializes
-Stage A in-memory through one named call site. Keep that shape: it makes
-the boundary explicit without committing the pipeline to cross-process
-fact reuse. If future work tries to cache Stage A across processes, it
-must first solve SWC hygiene replay for pre-filter facts; see
+chunk analysis in-memory through one named call site. Keep that shape:
+it makes the boundary explicit without committing the pipeline to
+cross-process fact reuse. If future work tries to cache chunk analysis
+across processes, it must first solve SWC hygiene replay for pre-filter
+facts; see
 `docs/wire_format.md` and `docs/lessons_learned/cross_process_stage_b.md`.
 
 The reason to call this out: every diagnostic in §"Two classes of
-atom" lives in Stage B (it depends on the spec's quotient), but its
-inputs all come from Stage A. Refactors that move work between the
-two halves must respect the boundary — anything spec-dependent
-cannot move into Stage A; anything that only depends on source bytes
-should not stay in Stage B.
+atom" lives in materialization (it depends on the spec's quotient), but
+its inputs all come from chunk analysis. Refactors that move work
+between the two halves must respect the boundary — anything
+spec-dependent cannot move into chunk analysis; anything that only
+depends on source bytes should not stay in materialization.
 
 ### Two classes of atom
 

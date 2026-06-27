@@ -105,8 +105,8 @@ is slower and the repro can't be shared publicly.
 
 ## Performance Profiling
 
-Use external profiling before adding fine-grained timing boilerplate
-to production code. The default downstream workflow is documented in
+Use external profiling rather than fine-grained timing boilerplate in
+production code. The default downstream workflow is documented in
 <README.md>: use the profile sibling targets from
 `debundle_pipeline_with_profiles` so the profiling run shares the real
 Bazel action's spec paths, package roots, working directory, declared
@@ -120,6 +120,13 @@ shape problems. Many fixes should be structural: change maps to dense
 typed-id vectors, cache instead of recomputing, use a better graph
 algorithm, fuse passes, or adopt a proven crate/data structure rather
 than sprinkling more counters through the code.
+
+Do not commit ad hoc timing macros, detailed per-phase timers, or
+one-off elapsed-time counters solely for profiling. Use `perf`,
+Callgrind (`valgrind --tool=callgrind`), heaptrack, Massif, or the
+Bazel profile targets instead. If temporary instrumentation is
+unavoidable during an investigation, keep it local and remove it before
+review.
 
 Use production builds for absolute elapsed-time numbers. Symbol-heavy
 profiling flags can trade exact wall-clock comparability for better

@@ -18,7 +18,9 @@ use selector_constraint_backend::{
     BackendTargetProjection, BackendValueId, BackendVariable, BackendVariableAssignment,
     SelectorBackendProblem, SelectorConstraintBackend,
 };
-use selector_constraint_model::{BinaryConstraintKind, ConstraintVariableId};
+use selector_constraint_model::{
+    BinaryConstraintKind, ConstraintVariableId, TargetBindingProjection,
+};
 use selector_cp_sat_proto::ducktape::debundle::solver_backends::ortools_cpsat as wire;
 
 const REQUEST_PROTO_ENV: &str = "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_REQUEST_PROTO";
@@ -476,17 +478,17 @@ fn all_different_from_backend(
 fn target_projection_from_backend(
     projection: &BackendTargetProjection,
 ) -> Result<wire::TargetProjection, OrToolsCpSatBackendError> {
-    let binding_projection = projection
-        .binding_variable
-        .map(constraint_variable_id)
-        .transpose()?
-        .map(wire::target_projection::BindingProjection::BindingVariableId)
-        .or_else(|| {
-            projection
-                .binding_const
-                .clone()
-                .map(wire::target_projection::BindingProjection::BindingConst)
-        });
+    let binding_projection = match &projection.binding_projection {
+        Some(TargetBindingProjection::Variable(variable)) => Some(
+            wire::target_projection::BindingProjection::BindingVariableId(constraint_variable_id(
+                *variable,
+            )?),
+        ),
+        Some(TargetBindingProjection::Const(binding)) => Some(
+            wire::target_projection::BindingProjection::BindingConst(binding.clone()),
+        ),
+        None => None,
+    };
     Ok(wire::TargetProjection {
         target_id: u32_id("target_projections.target_id", projection.target.0)?,
         owner_variable_id: constraint_variable_id(projection.owner_variable)?,
@@ -657,8 +659,7 @@ mod tests {
         let projection = BackendTargetProjection {
             target: SelectorTargetId(7),
             owner_variable: ConstraintVariableId(0),
-            binding_variable: None,
-            binding_const: Some("minA".to_string()),
+            binding_projection: Some(TargetBindingProjection::Const("minA".to_string())),
         };
 
         let wire_projection = target_projection_from_backend(&projection).unwrap();

@@ -8,7 +8,7 @@ spec edits hit only Stage B; Stage A's expensive parse + analysis
 gets cached.
 
 The plan landed partially — the structural composer
-(`stage_one/mod.rs::compute_stage_one_analysis`) and the on-disk
+(`stage_one/mod.rs::compute_chunk_analysis`) and the on-disk
 sidecars (`reports/tree/<chunk_id>/chunk_analysis/{facts,
 atomic_units,manifest}.json`) shipped. **The cross-process consumer
 never did, and the design is abandoned.** This note records why, so
@@ -108,10 +108,10 @@ doesn't justify it.
 
 ## What we kept
 
-The composer pattern survived: `compute_stage_one_analysis` is a
+The composer pattern survived: `compute_chunk_analysis` is a
 clean function that runs parse → facts → owner-graph → atomic-units
 behind one named call. Its value is **structural readability** —
-the materializer reads more cleanly when Stage A is a single
+the materializer reads more cleanly when chunk analysis is a single
 function call rather than four inline stages — not cross-process
 caching.
 

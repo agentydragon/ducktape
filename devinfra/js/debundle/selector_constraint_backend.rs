@@ -13,6 +13,7 @@ use std::fmt;
 use selector_constraint_model::{
     AllDifferentConstraintId, AllDifferentReason, AllowedTupleConstraintId, BinaryConstraintKind,
     ConstraintModelError, ConstraintValue, ConstraintVariableId, SelectorConstraintModel,
+    TargetBindingProjection,
 };
 use selector_ir::{SelectorTargetId, SelectorVariableId, VariableDomain};
 use serde::{Deserialize, Serialize};
@@ -57,9 +58,7 @@ pub struct BackendTargetProjection {
     pub target: SelectorTargetId,
     pub owner_variable: ConstraintVariableId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub binding_variable: Option<ConstraintVariableId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub binding_const: Option<String>,
+    pub binding_projection: Option<TargetBindingProjection>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -161,8 +160,7 @@ impl SelectorBackendProblem {
                 .map(|projection| BackendTargetProjection {
                     target: projection.target,
                     owner_variable: projection.owner_variable,
-                    binding_variable: projection.binding_variable,
-                    binding_const: projection.binding_const.clone(),
+                    binding_projection: projection.binding_projection.clone(),
                 })
                 .collect(),
             allowed_tuples,

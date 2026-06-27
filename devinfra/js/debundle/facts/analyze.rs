@@ -69,11 +69,11 @@ impl Visit for TopLevelAwaitFinder {
 /// [`analyze_chunk_with_policy`].
 ///
 /// **Cross-pass sharing**: this layer is NOT shareable across the two
-/// `analyze_chunk` call sites (Stage A composer vs `vendor::strip`)
+/// `analyze_chunk` call sites (chunk-analysis composer vs `vendor::strip`)
 /// because they analyze different `Module` values. Vendor strip
 /// reparses the emitted chunk file from disk and then mutates it
 /// (`split_top_level_var_decls`, `strip_export_specifiers`) before
-/// analyzing; Stage A analyzes the in-memory lowered runtime AST.
+/// analyzing; chunk analysis analyzes the in-memory lowered runtime AST.
 /// Even ignoring the reparse, `strip_export_specifiers` rewrites
 /// `ExportNamed` items and folds `ExportDecl` into `Stmt::Decl`, which
 /// changes the body view that `top_level_item_views` produces. So this

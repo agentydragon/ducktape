@@ -309,19 +309,12 @@ for the exact-assignment backend. It matches this problem directly: finite
 integer domains, allowed-assignment table constraints, solution/status
 reporting, and a native
 [`AllDifferent`](https://developers.google.com/optimization/reference/python/sat/python/cp_model#AddAllDifferent)
-global constraint. The main risk is integration cost, because OR-Tools is not a
-Rust-native dependency; treat the first implementation as a thin Bazel/C++
-sidecar or protobuf boundary and measure it on the hardest Tana selector case
-before broad cutover.
-
-Known integration blocker: a first sidecar spike with `or-tools@9.15` reached
-Bazel analysis on RBE and then failed because `pybind11_abseil` defines a
-dev-only pip hub named `pypi`, conflicting with Ducktape's existing `pypi` hub.
-Handle this as a dependency-only unblock before production solver work. Viable
-directions are a Bzlmod override/patch for `pybind11_abseil`, an isolated
-sidecar Bazel module boundary, or switching to the SAT fallback if the OR-Tools
-dependency surface stays too expensive. The concrete unblock plan lives in
-<ortools_bzlmod_unblock.md>.
+global constraint. The first production implementation is the thin Bazel/C++
+sidecar with protobuf transport. That keeps OR-Tools ownership on the C++ side
+and keeps the Rust boundary as `SelectorBackendProblem -> SelectorCpSatRequest`.
+The next risk is not integration feasibility; it is whether the retained Tana
+selector language lowers into this model with enough coverage and acceptable
+runtime.
 
 The fallback is **[RustSAT](https://github.com/chrjabs/rustsat) +
 CaDiCaL/Kissat** if OR-Tools integration is too expensive. In that shape the

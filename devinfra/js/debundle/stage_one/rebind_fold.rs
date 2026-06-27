@@ -1,4 +1,4 @@
-//! Stage A.5 composer: rebind-only atomic-unit folding.
+//! Rebind-only atomic-unit folding.
 //!
 //! Background: see `docs/design.md` and `atomic_units.rs`. The
 //! structural-atomic-unit pass over the owner graph symmetrizes
@@ -9,7 +9,7 @@
 //! assignment fires. Without folding, such a spec would surface as
 //! an `atomic_unit_conflict` and the materializer would bail.
 //!
-//! Stage A.5 takes the post-seed binding→module assignment (the
+//! The pass takes the post-seed binding→module assignment (the
 //! "partition" after explicit requests + destructure pull + residual
 //! sweep have all run) plus the structural atomic units, and decides
 //! which unclaimed cycle members should silently fold into the
@@ -17,10 +17,8 @@
 //! only reads the owner graph + atomic-units + assignment + the
 //! residual plan index. Mutation of the lowering-side `ModulePlan`
 //! list happens at the caller (today: `ChunkPlanBuilder::apply_rebind_folds`).
-//!
-//! "Stage A.5" because it runs after Stage A (`compute_stage_one_analysis`)
-//! and after the partition's seed phases, but before Stage B (lowering
-//! proper). See `ARCHITECTURE_BACKLOG.md` for the separation rationale.
+//! It runs after chunk analysis (`compute_chunk_analysis`) and after
+//! the partition's seed phases, but before module emission.
 
 use std::collections::HashMap;
 

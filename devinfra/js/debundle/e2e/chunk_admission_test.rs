@@ -127,7 +127,7 @@ export { A, lazyByName, loadVendor };
 fn with_block_is_rejected_at_parse() {
     // Module code is strict per ECMA-262, and the parser surfaces
     // `with` as a recoverable parse error that fails chunk loading —
-    // so A4 never reaches the Stage A admission scan and needs no AST
+    // so A4 never reaches the chunk-analysis admission scan and needs no AST
     // check there. This test pins the parse-time rejection (and that
     // the error message names the strict-mode `with` ban, not just an
     // opaque error count).

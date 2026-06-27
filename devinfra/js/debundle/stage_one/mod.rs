@@ -1,8 +1,8 @@
-//! Stage A composer for the per-chunk pipeline.
+//! Chunk-analysis composer for the per-chunk pipeline.
 //!
-//! Stage A is the **spec-independent** half of the per-chunk
-//! pipeline. Given a parsed chunk AST plus analysis hints + per-
-//! chunk owner-graph options, it produces:
+//! Chunk analysis is the **spec-independent** half of the per-chunk
+//! pipeline. Given a parsed chunk AST plus analysis hints +
+//! per-chunk owner-graph options, it produces:
 //!
 //! - per-statement static facts (declared bindings, eager/lazy reads,
 //!   side-effect summaries, purity classification, top-level-await
@@ -11,8 +11,8 @@
 //! - the structural atomic units (owner-level SCCs of `G_atomic`),
 //!   which any valid factorization must keep co-located.
 //!
-//! The composer also owns the side-effects that derive purely
-//! from Stage A output:
+//! The composer also owns the side-effects that derive purely from
+//! chunk-analysis output:
 //!
 //! - stderr warnings for redundant-purity / redundant-pure-member
 //!   spec hints the analyzer can already infer;
@@ -22,26 +22,27 @@
 //!   checkable input assumptions (docs/design.md A1/A3/A5; see
 //!   `chunk_admission`), including its override notices.
 //!
-//! Stage A is a pure function of `(chunk_id, module, hints,
+//! Chunk analysis is a pure function of `(chunk_id, module, hints,
 //! owner_graph_options)` plus the spec-free `source_path` annotation,
 //! the line-index callback for source-location resolution, and the
 //! caller-supplied dynamic-import resolver (the A3 admission check
-//! needs "which chunk does this specifier land in", but Stage A
-//! itself stays artifact-free). It does not read the spec, the
-//! partition, chunk renames, or the unassigned-mode policy — those
-//! are Stage B inputs.
+//! needs "which chunk does this specifier land in", but chunk
+//! analysis itself stays artifact-free). It does not read the spec,
+//! the partition, chunk renames, or the unassigned-mode policy —
+//! those are materialization inputs.
 //!
-//! Stage A is materialized only in memory, by callers
+//! Chunk analysis is materialized only in memory, by callers
 //! (today: `materialize_logical_chunk`) that call
-//! [`compute_stage_one_analysis`] and pass its components to Stage B.
-//! A previous design also serialized Stage A's output to disk so a
-//! separate-process Stage B could consume the cache; that design was
-//! abandoned (see `docs/lessons_learned/cross_process_stage_b.md`).
+//! [`compute_chunk_analysis`] and pass its components to the
+//! materializer. A previous design also serialized chunk-analysis
+//! output to disk so a separate-process materialization action could
+//! consume the cache; that design was abandoned (see
+//! `docs/lessons_learned/cross_process_stage_b.md`).
 //! The composer survives as a structural readability boundary.
 //!
-//! Atomic-unit-rebind folding is the "Stage A.5" step: it runs after
+//! Atomic-unit-rebind folding runs after
 //! the partition seed phases (explicit requests, destructure pull,
-//! residual sweep) but is purely a function of Stage A's output
+//! residual sweep) but is purely a function of chunk-analysis output
 //! (owner graph + atomic units) and the post-seed binding→module
 //! assignment. The decision logic lives at
 //! [`compute_rebind_folds`]; the lowering-side caller applies the
@@ -63,10 +64,10 @@ use analysis::facts::{ChunkFactAnalysis, analyze_chunk};
 use analysis::graph::OwnerGraphOptions;
 use analysis::purity::{RedundantPureMemberReason, RedundantPurityReason};
 
-/// Output of Stage A: the per-chunk analysis that does not depend on
-/// the spec.
+/// Output of chunk analysis: the per-chunk analysis that does not
+/// depend on the spec.
 #[derive(Debug, Clone)]
-pub struct StageOneAnalysis {
+pub struct ChunkAnalysis {
     /// Per-statement static facts plus chunk-wide flags (top-level
     /// await detection, redundant purity / pure-member hints).
     pub fact_analysis: ChunkFactAnalysis,
@@ -78,7 +79,7 @@ pub struct StageOneAnalysis {
     pub owner_graph_and_units: OwnerGraphAndUnits,
 }
 
-/// Run Stage A: analyze the chunk's facts, emit any
+/// Run chunk analysis: analyze the chunk's facts, emit any
 /// redundant-purity-hint diagnostics, fail fast if the chunk has
 /// top-level `await` or fails the input-chunk admission scan, then
 /// derive the owner graph + structural atomic units.
@@ -88,9 +89,9 @@ pub struct StageOneAnalysis {
 /// violates a non-overridden admission check (docs/design.md
 /// A1/A3/A5; see `chunk_admission`). `resolve_dynamic_import`
 /// supplies the artifact-aware "where does this dynamic-import
-/// specifier land" answer for the A3 check — Stage A itself stays
-/// artifact-free.
-pub fn compute_stage_one_analysis<F>(
+/// specifier land" answer for the A3 check — chunk analysis itself
+/// stays artifact-free.
+pub fn compute_chunk_analysis<F>(
     chunk_id: &str,
     module: &Module,
     hints: &AnalysisHints,
@@ -98,7 +99,7 @@ pub fn compute_stage_one_analysis<F>(
     line_range_for_span: F,
     owner_graph_options: OwnerGraphOptions,
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
-) -> Result<StageOneAnalysis>
+) -> Result<ChunkAnalysis>
 where
     F: FnMut(Span) -> Option<(usize, usize)>,
 {
@@ -122,7 +123,7 @@ where
     let owner_graph_and_units =
         compute_owner_graph_and_units_with(&fact_analysis.facts, owner_graph_options)
             .with_context(|| format!("building owner graph for chunk {chunk_id}"))?;
-    Ok(StageOneAnalysis {
+    Ok(ChunkAnalysis {
         fact_analysis,
         owner_graph_and_units,
     })
@@ -197,7 +198,7 @@ mod tests {
     #[test]
     fn composer_runs_facts_and_owner_graph_together() {
         let module = parse("const A = 1;\nconst B = A + 1;\nexport { A, B };\n");
-        let stage_one = compute_stage_one_analysis(
+        let chunk_analysis = compute_chunk_analysis(
             "test_chunk",
             &module,
             &AnalysisHints::default(),
@@ -206,13 +207,13 @@ mod tests {
             OwnerGraphOptions::default(),
             &|_| DynamicImportTarget::External,
         )
-        .expect("stage one");
+        .expect("chunk analysis");
 
         // Three top-level items: two consts + one export.
-        assert_eq!(stage_one.fact_analysis.facts.len(), 3);
-        assert!(stage_one.fact_analysis.top_level_await.is_none());
+        assert_eq!(chunk_analysis.fact_analysis.facts.len(), 3);
+        assert!(chunk_analysis.fact_analysis.top_level_await.is_none());
 
-        let owner_count = stage_one.owner_graph_and_units.owner_graph.num_nodes();
+        let owner_count = chunk_analysis.owner_graph_and_units.owner_graph.num_nodes();
         assert!(
             owner_count >= 2,
             "owner graph must hold at least one node per declared \
@@ -220,7 +221,7 @@ mod tests {
         );
 
         assert!(
-            !stage_one.owner_graph_and_units.atomic_units.is_empty(),
+            !chunk_analysis.owner_graph_and_units.atomic_units.is_empty(),
             "atomic-units pass produced no structural units",
         );
     }
@@ -232,7 +233,7 @@ mod tests {
     #[test]
     fn composer_bails_on_top_level_await() {
         let module = parse("const data = await fetch('/api');\n");
-        let result = compute_stage_one_analysis(
+        let result = compute_chunk_analysis(
             "tla_chunk",
             &module,
             &AnalysisHints::default(),
@@ -241,7 +242,7 @@ mod tests {
             OwnerGraphOptions::default(),
             &|_| DynamicImportTarget::External,
         );
-        let err = result.expect_err("TLA chunks must fail Stage A");
+        let err = result.expect_err("TLA chunks must fail chunk analysis");
         let msg = format!("{err:#}");
         assert!(msg.contains("tla_chunk"), "error names chunk: {msg}");
         assert!(msg.contains("top-level `await`"), "error names TLA: {msg}");

@@ -107,7 +107,7 @@ member-form no-`target_binding` path that otherwise only reaches the
 "matched a multi-binding declaration" ambiguity diagnostic after a full
 AST match.
 
-### Generic after timings
+### Generic after optimization
 
 Same small workload, after the optimization:
 
@@ -174,7 +174,7 @@ next performance blocker is command-level filtering and plan application, not
 only the inner declaration-hole matcher. No private source text is reproduced
 here.
 
-Observed timings from an optimized merged binary:
+Observed elapsed times from an optimized merged binary:
 
 | Scope                    | Elapsed | Candidate changes | Notes                                       |
 | ------------------------ | ------: | ----------------: | ------------------------------------------- |

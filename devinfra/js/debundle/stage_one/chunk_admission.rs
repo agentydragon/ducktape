@@ -1,8 +1,8 @@
 //! Input-chunk admission scan for the statically-checkable
 //! assumptions of docs/design.md §"Conditions on the input chunk"
 //! (A1 `eval`, A3 internal dynamic `import()`, A5 cheap
-//! `import.meta` reflection shapes). Runs in Stage A
-//! ([`crate::compute_stage_one_analysis`]) right next to the A2
+//! `import.meta` reflection shapes). Runs during chunk analysis
+//! ([`crate::compute_chunk_analysis`]) right next to the A2
 //! top-level-await bail, before any quotient or lowering work.
 //!
 //! The scan is deliberately partial — it enforces the cheap,
@@ -29,7 +29,7 @@
 //!   `import.meta` use inside lazy positions.
 //!
 //! **A4 (`with` blocks) is not checked here** because it never
-//! reaches Stage A: module code is strict per ECMA-262, and the
+//! reaches chunk analysis: module code is strict per ECMA-262, and the
 //! production parser rejects `with` as a recoverable parse error
 //! even with `no_early_errors: true`
 //! (`js_ast::parse_module_from_source_file` fails on any recovered
@@ -50,7 +50,8 @@ use analysis::facts::top_level_item_views;
 
 /// Where a dynamic-import specifier resolves, from the caller chunk's
 /// perspective. Produced by the artifact-aware resolver the lowering
-/// layer passes into Stage A (Stage A itself is artifact-free).
+/// layer passes into chunk analysis (chunk analysis itself is
+/// artifact-free).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DynamicImportTarget {
     /// Resolves to a file of the chunk being analyzed — a debundled

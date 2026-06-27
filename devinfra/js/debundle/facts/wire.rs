@@ -12,10 +12,10 @@
 //! conversion functions.
 //!
 //! These types are not serialized. An earlier design serialized them
-//! as a per-chunk `facts.json` sidecar so a separate-process Stage B
-//! could consume Stage A's cached output. That plan was abandoned —
-//! the `ctxt` is `Globals`-local and the rejected alternatives are
-//! all unsound or value-less. See
+//! as a per-chunk `facts.json` sidecar so a separate-process
+//! materializer could consume cached chunk-analysis output. That plan
+//! was abandoned — the `ctxt` is `Globals`-local and the rejected
+//! alternatives are all unsound or value-less. See
 //! `docs/lessons_learned/cross_process_stage_b.md`.
 
 use std::collections::BTreeSet;

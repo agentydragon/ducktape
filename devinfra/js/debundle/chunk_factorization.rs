@@ -65,7 +65,7 @@ impl ChunkFactorization {
     ///
     /// Panics on facts where two statements declare the same binding
     /// (`analysis::DuplicateTopLevelDeclaration`) — the production
-    /// path goes through `compute_stage_one_analysis`, which surfaces
+    /// path goes through `compute_chunk_analysis`, which surfaces
     /// that as a spec-facing error before any factorization runs.
     pub fn build(
         chunk_id: String,

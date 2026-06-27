@@ -336,7 +336,7 @@ mod edge_role_wire_format_tests {
     /// JSON serialization shape: a `Direct` role omits the `role`
     /// field; a `PromotedAtInit` role nests `{kind: "promoted_at_init",
     /// callee_owner: "owner:N"}`. This pins the wire encoding so
-    /// callers (Stage A artifact readers) don't drift.
+    /// callers (chunk-analysis artifact readers) don't drift.
     #[test]
     fn role_json_shape_pinned() {
         let direct_report = OwnerGraphEdgeReport {

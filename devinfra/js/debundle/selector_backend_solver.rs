@@ -15,7 +15,7 @@ use selector_constraint_backend::{
     BackendSolveStatus, SelectorBackendProblem, SelectorBackendProblemError,
     SelectorConstraintBackend,
 };
-use selector_constraint_model::{ConstraintValue, ConstraintVariableId};
+use selector_constraint_model::{ConstraintValue, ConstraintVariableId, TargetBindingProjection};
 use selector_constraint_model_builder::{
     SelectorConstraintModelBuildError, build_selector_constraint_model,
 };
@@ -232,14 +232,14 @@ fn decode_satisfying_assignments<E>(
                 .get(&target.id)
                 .ok_or(SelectorBackendSolveError::MissingTargetProjection { target: target.id })?;
             let owner = assigned_owner(&decoded, projection.owner_variable)?;
-            let binding = if let Some(binding_const) = &projection.binding_const {
-                Some(binding_const.clone())
-            } else if let Some(binding_variable) = projection.binding_variable {
-                Some(assigned_string(&decoded, binding_variable)?)
-            } else {
-                facts
+            let binding = match &projection.binding_projection {
+                Some(TargetBindingProjection::Const(binding)) => Some(binding.clone()),
+                Some(TargetBindingProjection::Variable(binding_variable)) => {
+                    Some(assigned_string(&decoded, *binding_variable)?)
+                }
+                None => facts
                     .single_binding_for_owner(owner)
-                    .map(ToString::to_string)
+                    .map(ToString::to_string),
             };
             if matches!(
                 target.claim,
@@ -542,10 +542,9 @@ mod tests {
             ConstraintVariableId(0)
         );
         assert_eq!(
-            problem.target_projections[0].binding_variable,
-            Some(ConstraintVariableId(1))
+            problem.target_projections[0].binding_projection,
+            Some(TargetBindingProjection::Variable(ConstraintVariableId(1)))
         );
-        assert_eq!(problem.target_projections[0].binding_const, None);
         assert!(
             problem
                 .value_dictionary
@@ -564,10 +563,9 @@ mod tests {
         let problem = build_backend_problem(&program, &facts()).unwrap();
 
         assert_eq!(problem.target_projections[0].target, target);
-        assert_eq!(problem.target_projections[0].binding_variable, None);
         assert_eq!(
-            problem.target_projections[0].binding_const.as_deref(),
-            Some("minA")
+            problem.target_projections[0].binding_projection,
+            Some(TargetBindingProjection::Const("minA".to_string()))
         );
     }
 

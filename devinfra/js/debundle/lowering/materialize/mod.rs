@@ -22,7 +22,6 @@ use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
 use super::io::write_chunk_report_json;
 use super::util::{render_atomic_unit_cause_guidance, target_file_for_request};
 use super::*;
-use crate::time_phase;
 use js_ast::statement_ordinal_for_body_index;
 use output_layout::{
     ATOMIC_UNIT_CONFLICTS_REPORT, CYCLES_REPORT, OWNER_GRAPH_REPORT, SELECTOR_DIAGNOSTICS_REPORT,
@@ -139,18 +138,15 @@ pub(super) fn materialize_logical_chunk(
         .get(chunk_id)
         .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
     emit_debundle_progress(chunk_id, "materialize_logical_chunk", "start");
-    let chunk_started = Instant::now();
-    let mut timings = PhaseTimings::default();
-    let target_file = time_phase!(timings, "resolve_entry", {
-        file.map(normalize_module_path)
-            .transpose()?
-            .or_else(|| get_chunk_entry_path(artifact, chunk_id_interned))
-            .with_context(|| {
-                format!(
-                    "materialize_logical_modules could not determine entry file for chunk: {chunk_id}"
-                )
-            })
-    })?;
+    let target_file = file
+        .map(normalize_module_path)
+        .transpose()?
+        .or_else(|| get_chunk_entry_path(artifact, chunk_id_interned))
+        .with_context(|| {
+            format!(
+                "materialize_logical_modules could not determine entry file for chunk: {chunk_id}"
+            )
+        })?;
     let runtime_file = artifact
         .js_chunk(chunk_id_interned)?
         .get_file(&target_file)
@@ -165,9 +161,7 @@ pub(super) fn materialize_logical_chunk(
     let chunk_top_level_mark = runtime_ast.top_level_mark;
     let header_lines = runtime_file.header_lines.clone();
     let source_path = runtime_file.metadata.source_path.clone();
-    let chunk_ast_analysis = time_phase!(timings, "analyze_chunk_ast", {
-        analyze_chunk_ast(&runtime_ast.module)
-    });
+    let chunk_ast_analysis = analyze_chunk_ast(&runtime_ast.module);
     let ChunkAstAnalysis {
         runtime_import_facts,
         declarations,
@@ -176,15 +170,13 @@ pub(super) fn materialize_logical_chunk(
         pre_existing_entry_exports,
         pre_existing_public_export_names,
     } = chunk_ast_analysis;
-    let requests = time_phase!(timings, "build_requests", {
-        logical_requests_for_chunk(
-            logical_modules.get(chunk_id),
-            &chunk_unassigned_mode,
-            chunk_renames.contains_key(chunk_id),
-            chunk_id,
-            target_dir,
-        )
-    })?;
+    let requests = logical_requests_for_chunk(
+        logical_modules.get(chunk_id),
+        &chunk_unassigned_mode,
+        chunk_renames.contains_key(chunk_id),
+        chunk_id,
+        target_dir,
+    )?;
     let mut explicit_requests = requests
         .iter()
         .filter(|request| !request.residual)
@@ -192,7 +184,6 @@ pub(super) fn materialize_logical_chunk(
         .collect::<Vec<_>>();
     let residual_request = requests.iter().find(|request| request.residual).cloned();
 
-    let build_module_plans_started = Instant::now();
     let mut builder = ChunkPlanBuilder::new(keep_going);
     let mut imported_binding_resolver =
         ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
@@ -222,7 +213,6 @@ pub(super) fn materialize_logical_chunk(
         &declarations,
         target_dir,
     )?;
-    timings.add("build_module_plans", build_module_plans_started.elapsed());
 
     // Fetched before hints assembly: `local_property_effects` selects
     // the facts pass's local-effect policy, which travels in the hints.
@@ -230,7 +220,7 @@ pub(super) fn materialize_logical_chunk(
         .get(chunk_id)
         .copied()
         .unwrap_or_default();
-    let analysis_hints: AnalysisHints = time_phase!(timings, "collect_analysis_hints", {
+    let analysis_hints: AnalysisHints = {
         let mut hints = collect_analysis_hints(&explicit_requests, chunk_renames.get(chunk_id));
         hints.imported_purities = cross_module_purities
             .bindings
@@ -259,12 +249,10 @@ pub(super) fn materialize_logical_chunk(
         }
         hints.trusted_dataflow_summaries = owner_graph_options.trusted_dataflow_summaries;
         hints
-    });
-    let line_index = time_phase!(timings, "build_source_line_index", {
-        runtime_ast.line_index()
-    });
-    // Stage A: spec-independent analysis (facts + owner graph +
-    // structural atomic units). See `stage_one/mod.rs` for the composer.
+    };
+    let line_index = runtime_ast.line_index();
+    // Chunk analysis: spec-independent facts, owner graph, and structural
+    // atomic units. See `stage_one/mod.rs` for the current implementation.
     // A3 admission resolver: where does a dynamic-import specifier in
     // this chunk's entry land? Same artifact resolution the specifier
     // rewriter uses; `SameChunk` marks a debundled internal module.
@@ -281,72 +269,61 @@ pub(super) fn materialize_logical_chunk(
         Some(_) => DynamicImportTarget::OtherChunk,
         None => DynamicImportTarget::External,
     };
-    let stage_one = time_phase!(timings, "compute_stage_one_analysis", {
-        emit_debundle_progress(chunk_id, "compute_stage_one_analysis", "start");
-        let stage_one = compute_stage_one_analysis(
-            chunk_id,
-            &runtime_ast.module,
-            &analysis_hints,
-            Some(&source_path),
-            |span| line_index.line_range_for_span(span),
-            owner_graph_options,
-            &resolve_dynamic_import,
-        )?;
-        emit_debundle_progress(chunk_id, "compute_stage_one_analysis", "end");
-        stage_one
-    });
-    let StageOneAnalysis {
+    emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
+    let chunk_analysis = compute_chunk_analysis(
+        chunk_id,
+        &runtime_ast.module,
+        &analysis_hints,
+        Some(&source_path),
+        |span| line_index.line_range_for_span(span),
+        owner_graph_options,
+        &resolve_dynamic_import,
+    )?;
+    emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
+    let ChunkAnalysis {
         fact_analysis: analysis,
         owner_graph_and_units: precomputed,
-    } = stage_one;
+    } = chunk_analysis;
     // Global selector resolution: `add_explicit_request` left deferred selector
     // members unclaimed. Compile binding anchors, source_match constraints, and
-    // relational selectors into one IR program and run one Ascent solver pass over
-    // the owner graph + chunk AST relation facts.
+    // relational selectors into one IR program and solve over the owner graph +
+    // chunk AST relation facts.
     let import_sources: HashMap<String, String> = runtime_import_facts
         .iter_local_sources()
         .map(|(local, src)| (local.to_string(), src.to_string()))
         .collect();
-    time_phase!(timings, "resolve_global_selector_members", {
-        emit_debundle_progress(chunk_id, "resolve_global_selector_members", "start");
-        let result = builder.resolve_and_claim_global_selectors(
-            &explicit_requests,
-            &precomputed.owner_graph,
-            &runtime_ast.module,
-            &import_sources,
-            &runtime_import_facts,
-            &mut imported_binding_resolver,
-            &mut imported_from_by_src,
-            chunk_top_level_mark,
-            chunk_id,
-            &target_file,
-            chunk_id_interned,
-            &declaration_by_name,
-        );
-        emit_debundle_progress(chunk_id, "resolve_global_selector_members", "end");
-        result
-    })?;
+    emit_debundle_progress(chunk_id, "resolve_global_selector_members", "start");
+    let result = builder.resolve_and_claim_global_selectors(
+        &explicit_requests,
+        &precomputed.owner_graph,
+        &runtime_ast.module,
+        &import_sources,
+        &runtime_import_facts,
+        &mut imported_binding_resolver,
+        &mut imported_from_by_src,
+        chunk_top_level_mark,
+        chunk_id,
+        &target_file,
+        chunk_id_interned,
+        &declaration_by_name,
+    );
+    emit_debundle_progress(chunk_id, "resolve_global_selector_members", "end");
+    result?;
     builder.adopt_bindings_of_claimed_anonymous_statements(&declarations);
     drop(imported_binding_resolver);
-    time_phase!(timings, "fold_rebind_atomic_units", {
-        apply_stage_one_a5(&mut builder, &precomputed);
-    });
+    apply_rebind_folds_from_chunk_analysis(&mut builder, &precomputed);
     if matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors) {
-        time_phase!(timings, "synthesize_mini_factor_plans", {
-            builder.synthesize_mini_factors(&precomputed, &runtime_ast.module.body, target_dir)
-        })?;
+        builder.synthesize_mini_factors(&precomputed, &runtime_ast.module.body, target_dir)?;
     }
     if let Some(report) = builder.selector_diagnostics_report(chunk_id)
         && let Some(report_out_dir) = report_emission.rejection_dir()
     {
-        time_phase!(timings, "write_selector_diagnostics_report", {
-            write_chunk_report_json(
-                report_out_dir,
-                chunk_id,
-                SELECTOR_DIAGNOSTICS_REPORT,
-                &report,
-            )
-        })?;
+        write_chunk_report_json(
+            report_out_dir,
+            chunk_id,
+            SELECTOR_DIAGNOSTICS_REPORT,
+            &report,
+        )?;
     }
     // Plan construction is finished — consume the builder and use
     // owned state from here on.
@@ -368,27 +345,24 @@ pub(super) fn materialize_logical_chunk(
     // entry ledger in `lower_chunk` re-collects the Chunk-scope intents
     // and the per-module naturalize ledgers re-collect the Module-scope
     // ones, each sealing against its body's occupancy.
-    let sealed_renames = time_phase!(timings, "seal_rename_ledger", {
+    let sealed_renames = {
         let mut ledger = RenameLedger::default();
         if let Some(renames) = chunk_renames.get(chunk_id) {
             collect_chunk_renames(renames, chunk_top_level_mark, &mut ledger)?;
         }
         collect_plan_export_rename_intents(&module_plans, chunk_top_level_mark, &mut ledger);
         ledger.seal(&SealValidation::default())
-    })?;
+    }?;
     let chunk_renames_map = sealed_renames.chunk_renames_by_name();
-    let (logical_modules, default_destination) =
-        time_phase!(timings, "project_factorization_modules", {
-            project_factorization_modules_with_sentinel(
-                &module_plans,
-                &runtime_ast.module.body,
-                chunk_top_level_mark,
-                chunk_id,
-                target_dir,
-                &target_file,
-                chunk_unassigned_mode.catchall_file_target(),
-            )
-        })?;
+    let (logical_modules, default_destination) = project_factorization_modules_with_sentinel(
+        &module_plans,
+        &runtime_ast.module.body,
+        chunk_top_level_mark,
+        chunk_id,
+        target_dir,
+        &target_file,
+        chunk_unassigned_mode.catchall_file_target(),
+    )?;
     let redundant_purity_hints = analysis.redundant_purity_hints;
     let factorization_chunk_renames: HashMap<Id, swc_atoms::Atom> = chunk_renames_map
         .iter()
@@ -399,80 +373,67 @@ pub(super) fn materialize_logical_chunk(
             )
         })
         .collect();
-    let factorization = time_phase!(timings, "build_factorization", {
-        ChunkFactorization::build_with(
-            chunk_id.to_string(),
-            precomputed,
-            bindings_catalogue,
-            logical_modules,
-            factorization_chunk_renames,
-            default_destination,
-        )
-    });
-    let factorization_report = time_phase!(timings, "validate_factorization", {
-        factorization.validate()
-    });
+    let factorization = ChunkFactorization::build_with(
+        chunk_id.to_string(),
+        precomputed,
+        bindings_catalogue,
+        logical_modules,
+        factorization_chunk_renames,
+        default_destination,
+    );
+    let factorization_report = factorization.validate();
     validate_and_emit_reports(
         chunk_id,
         report_emission,
         &factorization,
         &factorization_report,
-        &mut timings,
     )?;
 
-    let lowered = time_phase!(timings, "lower_chunk_total", {
-        lower_chunk(LowerChunkInputs {
-            context: LowerChunkContext {
-                artifact,
-                artifact_indexes,
-                chunk_id,
-                chunk_id_interned,
-                source_path: &source_path,
-                entry_file: &target_file,
-                header_lines: &header_lines,
-                vendor_import_oracle,
-            },
-            ast: LowerChunkAst {
-                runtime_ast,
-                declarations: &declarations,
-                declaration_by_name: &declaration_by_name,
-                chunk_top_level_mark,
-            },
-            plan: LowerChunkPlan {
-                module_plans: &module_plans,
-                binding_assignment: &binding_assignment,
-                anonymous_ordinal_assignment: &anonymous_ordinal_assignment,
-                factorization: &factorization,
-            },
-            spec_facts: LowerChunkSpecFacts {
-                runtime_import_facts: &runtime_import_facts,
-                sealed_renames: &sealed_renames,
-                chunk_renames: &chunk_renames_map,
-                pre_existing_entry_exports: &pre_existing_entry_exports,
-                pre_existing_public_export_names: &pre_existing_public_export_names,
-            },
-        })
+    let lowered = lower_chunk(LowerChunkInputs {
+        context: LowerChunkContext {
+            artifact,
+            artifact_indexes,
+            chunk_id,
+            chunk_id_interned,
+            source_path: &source_path,
+            entry_file: &target_file,
+            header_lines: &header_lines,
+            vendor_import_oracle,
+        },
+        ast: LowerChunkAst {
+            runtime_ast,
+            declarations: &declarations,
+            declaration_by_name: &declaration_by_name,
+            chunk_top_level_mark,
+        },
+        plan: LowerChunkPlan {
+            module_plans: &module_plans,
+            binding_assignment: &binding_assignment,
+            anonymous_ordinal_assignment: &anonymous_ordinal_assignment,
+            factorization: &factorization,
+        },
+        spec_facts: LowerChunkSpecFacts {
+            runtime_import_facts: &runtime_import_facts,
+            sealed_renames: &sealed_renames,
+            chunk_renames: &chunk_renames_map,
+            pre_existing_entry_exports: &pre_existing_entry_exports,
+            pre_existing_public_export_names: &pre_existing_public_export_names,
+        },
     })?;
     let LoweredChunk {
         files,
         file_records,
         applied,
         vendor_reference_rewrites,
-        timings: lower_timings,
     } = lowered;
-    timings.extend_prefixed("lower", lower_timings);
 
-    let final_modules = time_phase!(timings, "build_final_module_report", {
-        build_final_module_report(&module_plans, &factorization, chunk_top_level_mark)
-    });
-    let directory_dependency_facts = time_phase!(timings, "build_directory_dependency_facts", {
-        build_directory_dependency_facts(chunk_id, &factorization)
-    });
+    let final_modules =
+        build_final_module_report(&module_plans, &factorization, chunk_top_level_mark);
+    let directory_dependency_facts = build_directory_dependency_facts(chunk_id, &factorization);
     let validation = ChunkValidationSummary {
         status: "ok",
         linker_order: factorization_report.linker_order.clone(),
     };
-    let timings = timings.into_durations(chunk_started.elapsed());
     let report = ChunkModulesReport {
         chunk_id: chunk_id.to_string(),
         counts: ChunkModulesCounts {
@@ -489,7 +450,6 @@ pub(super) fn materialize_logical_chunk(
             })
             .collect(),
         redundant_purity_hints,
-        timings,
     };
     Ok(MaterializedLogicalChunk {
         chunk_id: chunk_id_interned,
@@ -506,25 +466,28 @@ pub(super) fn materialize_logical_chunk(
     })
 }
 
-/// Stage A.5 composer: fold rebind-only atomic units into their
+/// Rebind-fold composer: fold rebind-only atomic units into their
 /// explicit destination. Bridges the pure
 /// `stage_one::compute_rebind_folds` decision over the chunk's
 /// post-seed partition (managed by `ChunkPlanBuilder`) into the
 /// builder's plan-list/catalogue state.
 ///
-/// Stage A.5 runs after the seed phases of partition construction
+/// This runs after the seed phases of partition construction
 /// (explicit requests, destructure pull, residual sweep) and before
 /// `synthesize_mini_factors`. The decision step is spec-independent —
-/// it only inspects Stage A's owner graph + atomic units, the
+/// it only inspects the chunk-analysis owner graph + atomic units, the
 /// builder's binding→plan assignment, and the residual landing-site
 /// index — so it lives in the `analysis` crate; this thin composer
 /// owns the application of those decisions to the builder's
 /// `ModulePlan` list.
 ///
-/// See `ARCHITECTURE_BACKLOG.md` § "`compute_stage_one_analysis` —
+/// See `ARCHITECTURE_BACKLOG.md` § "`compute_chunk_analysis` —
 /// only rebind-folding still leaks into the materializer" for the
 /// original separation rationale.
-fn apply_stage_one_a5(builder: &mut ChunkPlanBuilder, precomputed: &OwnerGraphAndUnits) {
+fn apply_rebind_folds_from_chunk_analysis(
+    builder: &mut ChunkPlanBuilder,
+    precomputed: &OwnerGraphAndUnits,
+) {
     let folds = compute_rebind_folds(
         precomputed,
         builder.binding_assignment(),
@@ -642,7 +605,6 @@ fn validate_and_emit_reports(
     report_emission: &ReportEmission,
     factorization: &ChunkFactorization,
     factorization_report: &::gate::FactorizationReport,
-    timings: &mut PhaseTimings,
 ) -> Result<()> {
     let rejected = !factorization_report.atomic_unit_conflicts.is_empty()
         || !factorization_report.cycles.is_empty();
@@ -655,17 +617,13 @@ fn validate_and_emit_reports(
         report_emission.full_dir()
     };
     if let Some(report_out_dir) = report_out_dir {
-        let owner_graph_report = time_phase!(timings, "build_owner_graph_report", {
-            factorization.owner_graph_report()
-        });
-        time_phase!(timings, "write_owner_graph_report", {
-            write_chunk_report_json(
-                report_out_dir,
-                chunk_id,
-                OWNER_GRAPH_REPORT,
-                &owner_graph_report,
-            )
-        })?;
+        let owner_graph_report = factorization.owner_graph_report();
+        write_chunk_report_json(
+            report_out_dir,
+            chunk_id,
+            OWNER_GRAPH_REPORT,
+            &owner_graph_report,
+        )?;
     }
     if !factorization_report.atomic_unit_conflicts.is_empty() {
         if let Some(report_out_dir) = report_out_dir {
@@ -677,14 +635,12 @@ fn validate_and_emit_reports(
                 &factorization_report.atomic_unit_conflicts,
                 &|id| factorization.analysis.module_path(id),
             );
-            time_phase!(timings, "write_atomic_unit_conflicts_report", {
-                write_chunk_report_json(
-                    report_out_dir,
-                    chunk_id,
-                    ATOMIC_UNIT_CONFLICTS_REPORT,
-                    &wire,
-                )
-            })?;
+            write_chunk_report_json(
+                report_out_dir,
+                chunk_id,
+                ATOMIC_UNIT_CONFLICTS_REPORT,
+                &wire,
+            )?;
         }
         let summary = render_atomic_unit_conflict_summary(
             &factorization_report.atomic_unit_conflicts,
@@ -705,9 +661,7 @@ fn validate_and_emit_reports(
             // `validation.rs` `BlockingSccEntry` for the schema and
             // `docs/cli.md` § "Gate queries" for the CLI surface.
             let wire = ::gate::BlockingSccEntry::from_cycle_reports(&factorization_report.cycles);
-            time_phase!(timings, "write_cycles_report", {
-                write_chunk_report_json(report_out_dir, chunk_id, CYCLES_REPORT, &wire)
-            })?;
+            write_chunk_report_json(report_out_dir, chunk_id, CYCLES_REPORT, &wire)?;
         }
         let summary = render_cycle_summary(&factorization_report.cycles);
         bail!(

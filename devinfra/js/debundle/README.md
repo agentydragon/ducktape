@@ -158,7 +158,7 @@ nix develop --command bazelisk build //path/to:debundle_profile_perf \
 Each profile target writes a `<target>.profile` tree artifact. Common files:
 
 - `command.sh`: replayable command with the Bazel action cwd and argv.
-- `stdout.txt`: debundler stage timings.
+- `stdout.txt`: debundler stdout from the profiled run.
 - `debundle.out/`: the debundle output tree produced by the profiled run.
 
 Mode-specific files:
@@ -301,7 +301,7 @@ spec field (`spec::OwnerGraphOptions::local_property_effects`) and in
 Every materialized chunk is screened against the statically checkable
 input assumptions of `docs/design.md` → "Conditions on the input
 chunk" before any quotient or lowering work (`chunk_admission.rs`,
-run from `stage_one::compute_stage_one_analysis` next to the A2
+run from `stage_one::compute_chunk_analysis` next to the A2
 top-level-await bail). The enforced shapes:
 
 - **A1** — direct `eval(...)` / seq-indirect `(0, eval)(...)` calls at

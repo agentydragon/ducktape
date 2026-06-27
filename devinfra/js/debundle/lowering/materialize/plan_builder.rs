@@ -148,13 +148,13 @@ fn render_duplicate_binding_claims(duplicates: &[DuplicateBindingClaim]) -> Stri
 }
 
 /// `export_name → minified binding` over the members already resolved by
-/// `add_explicit_request` — the anchor-first handle a post-Stage-A selector pass
+/// `add_explicit_request` — the anchor-first handle a post-analysis selector pass
 /// uses to resolve a `@Anchor` reference (`cross_ref`'s anchor, `reads_member`'s
 /// `object:`) to a minified binding. The owner graph's `export_name` is not
 /// populated at member-resolution time, so the readable→binding map is rebuilt
 /// from the resolved members instead (see `materialize::cross_ref`).
 ///
-/// Members still unresolved at this point (the post-Stage-A selectors themselves)
+/// Members still unresolved at this point (the post-analysis selectors themselves)
 /// have an empty `binding` and are skipped. An export name claimed by two
 /// resolved members maps to `None` so it cannot anchor ambiguously — resolution
 /// stays categorical, and a missing/ambiguous anchor fails closed at the use site.
@@ -164,7 +164,7 @@ fn resolved_anchor_bindings(
     let mut anchor_binding: HashMap<String, Option<String>> = HashMap::new();
     for request in explicit_requests {
         for member in &request.members {
-            if member.resolves_after_stage_a() {
+            if member.resolves_after_chunk_analysis() {
                 continue;
             }
             anchor_binding
@@ -278,13 +278,13 @@ fn member_selector_spec_for_global_solver(
         });
     }
 
-    if member.resolves_after_stage_a() || member.is_import_specifier {
+    if member.resolves_after_chunk_analysis() || member.is_import_specifier {
         return None;
     }
-    Some(spec::MemberSelectorSpec::Binding(spec::BindingSelector {
-        name: member.binding.clone(),
-        kind: None,
-    }))
+    member
+        .binding_selector
+        .clone()
+        .map(spec::MemberSelectorSpec::Binding)
 }
 
 fn selector_fact_store_for_chunk(
@@ -755,6 +755,10 @@ pub(super) struct ChunkPlanBuilder {
     /// name-collision checks. The map is dropped by
     /// `drop_explicit_request_scratch`.
     catalogue_index_by_name: HashMap<String, BindingKind>,
+    /// Name-keyed duplicate-check scratch for binding selectors that have a
+    /// known source binding spelling but whose ownership is claimed after chunk
+    /// analysis through the global solver.
+    deferred_binding_claims_by_name: HashMap<String, DuplicateClaimSite>,
     /// Duplicate binding claims found while processing explicit
     /// requests. We keep scanning later requests after recording a
     /// duplicate so one run can report all duplicate claim sites in
@@ -789,6 +793,7 @@ impl ChunkPlanBuilder {
             residual_plan_index: None,
             unmatched_spec_claims: Vec::new(),
             catalogue_index_by_name: HashMap::new(),
+            deferred_binding_claims_by_name: HashMap::new(),
             duplicate_binding_claims: Vec::new(),
             source_match_diagnostics: Vec::new(),
             anonymous_statement_diagnostics: Vec::new(),
@@ -797,12 +802,12 @@ impl ChunkPlanBuilder {
     }
 
     /// Process one explicit (non-residual) logical-module request:
-    /// claim each pre-Stage-A named member, and append a `ModulePlan`.
+    /// claim each member that does not need chunk-analysis facts, and append a
+    /// `ModulePlan`.
     /// Solver-resolved members and anonymous statement selectors are left
-    /// unclaimed until `resolve_and_claim_global_selectors` runs over Stage A
-    /// facts. Duplicate-claim detection across all explicit requests is keyed
-    /// by binding-name via the builder's `catalogue_index_by_name` scratch
-    /// index.
+    /// unclaimed until `resolve_and_claim_global_selectors` runs over chunk
+    /// analysis facts. Duplicate-claim detection across all explicit requests is
+    /// keyed by binding-name via the builder's scratch indexes.
     pub(super) fn add_explicit_request(
         &mut self,
         index: usize,
@@ -817,63 +822,63 @@ impl ChunkPlanBuilder {
         let module_id = ModuleId(LogicalModuleIndex(index));
         let mut duplicate_bindings = BTreeSet::<String>::new();
         for member in &request.members {
-            // Deferred selector members resolve in the global selector pass after
-            // Stage A has produced the owner graph and selector fact store. Until
-            // then their `binding` is empty, so they contribute nothing here.
-            if member.resolves_after_stage_a() {
-                continue;
+            if !member.binding.is_empty() {
+                if let Some(existing_kind) =
+                    self.catalogue_index_by_name.get(member.binding.as_str())
+                {
+                    let duplicate = self.duplicate_claim_for(
+                        existing_kind,
+                        &member.binding,
+                        ctx.chunk_id,
+                        request,
+                        member,
+                    );
+                    self.duplicate_binding_claims.push(duplicate);
+                    duplicate_bindings.insert(member.binding.clone());
+                    continue;
+                }
+                if let Some(existing) = self
+                    .deferred_binding_claims_by_name
+                    .get(member.binding.as_str())
+                {
+                    self.duplicate_binding_claims.push(DuplicateBindingClaim {
+                        chunk_id: ctx.chunk_id.to_string(),
+                        binding: member.binding.clone(),
+                        existing: existing.clone(),
+                        duplicate: DuplicateClaimSite {
+                            module_id: request.id.clone(),
+                            export_name: Some(member.export_name.clone()),
+                            claim_origin: Some(member.claim_origin.clone()),
+                        },
+                    });
+                    duplicate_bindings.insert(member.binding.clone());
+                    continue;
+                }
             }
-            if let Some(existing_kind) = self.catalogue_index_by_name.get(member.binding.as_str()) {
-                let existing = match existing_kind {
-                    BindingKind::Owned {
-                        module: ModuleId(LogicalModuleIndex(owner_index)),
-                    } => {
-                        let plan = self.module_plans.get(*owner_index);
-                        DuplicateClaimSite {
-                            module_id: plan
-                                .map(|plan| plan.id.clone())
-                                .unwrap_or_else(|| format!("<plan#{owner_index}>")),
-                            export_name: plan
-                                .and_then(|plan| plan.bindings.get(member.binding.as_str()))
-                                .cloned(),
-                            claim_origin: plan
-                                .and_then(|plan| {
-                                    plan.binding_claim_origins.get(member.binding.as_str())
-                                })
-                                .cloned(),
-                        }
+            if member.resolves_after_chunk_analysis() {
+                if member.binding_selector.is_some() && !member.is_import_specifier {
+                    let binding_id = top_level_id(&member.binding, ctx.chunk_top_level_mark);
+                    if !ctx.declaration_by_name.contains_key(&binding_id) {
+                        self.unmatched_spec_claims.push(crate::UnmatchedSpecClaim {
+                            chunk_id: ctx.chunk_id.to_string(),
+                            module_path: spec::ModulePath::parse(&request.target_path, "")
+                                .expect("request target_path is a canonical module path"),
+                            binding_name: member.binding.clone(),
+                            export_name: member.export_name.clone(),
+                        });
+                        continue;
                     }
-                    BindingKind::Imported {
-                        re_exporter: ModuleId(LogicalModuleIndex(re_index)),
-                        public_name,
-                        ..
-                    } => {
-                        let plan = self.module_plans.get(*re_index);
+                }
+                if !member.binding.is_empty() {
+                    self.deferred_binding_claims_by_name.insert(
+                        member.binding.clone(),
                         DuplicateClaimSite {
-                            module_id: plan
-                                .map(|plan| plan.id.clone())
-                                .unwrap_or_else(|| format!("<plan#{re_index}>")),
-                            export_name: Some(public_name.to_string()),
-                            claim_origin: plan
-                                .and_then(|plan| {
-                                    plan.binding_claim_origins.get(member.binding.as_str())
-                                })
-                                .cloned(),
-                        }
-                    }
-                };
-                let duplicate = DuplicateBindingClaim {
-                    chunk_id: ctx.chunk_id.to_string(),
-                    binding: member.binding.clone(),
-                    existing,
-                    duplicate: DuplicateClaimSite {
-                        module_id: request.id.clone(),
-                        export_name: Some(member.export_name.clone()),
-                        claim_origin: Some(member.claim_origin.clone()),
-                    },
-                };
-                self.duplicate_binding_claims.push(duplicate);
-                duplicate_bindings.insert(member.binding.clone());
+                            module_id: request.id.clone(),
+                            export_name: Some(member.export_name.clone()),
+                            claim_origin: Some(member.claim_origin.clone()),
+                        },
+                    );
+                }
                 continue;
             }
             if member.is_import_specifier {
@@ -932,7 +937,7 @@ impl ChunkPlanBuilder {
         let binding_comments: BTreeMap<String, String> = request
             .members
             .iter()
-            .filter(|member| !member.resolves_after_stage_a())
+            .filter(|member| !member.resolves_after_chunk_analysis())
             .filter(|member| !duplicate_bindings.contains(member.binding.as_str()))
             .filter_map(|member| {
                 member
@@ -944,7 +949,7 @@ impl ChunkPlanBuilder {
         let binding_claim_origins: BTreeMap<String, String> = request
             .members
             .iter()
-            .filter(|member| !member.resolves_after_stage_a())
+            .filter(|member| !member.resolves_after_chunk_analysis())
             .filter(|member| !duplicate_bindings.contains(member.binding.as_str()))
             .map(|member| (member.binding.clone(), member.claim_origin.clone()))
             .collect();
@@ -1068,7 +1073,7 @@ impl ChunkPlanBuilder {
         let has_deferred_members = explicit_requests
             .iter()
             .flat_map(|request| &request.members)
-            .any(MemberRequest::resolves_after_stage_a);
+            .any(MemberRequest::resolves_after_chunk_analysis);
         let has_anonymous_statements = explicit_requests
             .iter()
             .any(|request| !request.anonymous_statements.is_empty());
@@ -1090,6 +1095,12 @@ impl ChunkPlanBuilder {
             for (index, request) in explicit_requests.iter().enumerate() {
                 let group_assignments = source_match_group_assignments(request);
                 for (member_index, member) in request.members.iter().enumerate() {
+                    if member.binding_selector.is_some() && !member.is_import_specifier {
+                        let binding_id = top_level_id(&member.binding, chunk_top_level_mark);
+                        if !declaration_by_name.contains_key(&binding_id) {
+                            continue;
+                        }
+                    }
                     let Some(selector) = member_selector_spec_for_global_solver(member) else {
                         continue;
                     };
@@ -1117,7 +1128,7 @@ impl ChunkPlanBuilder {
                             selector,
                         ));
                     }
-                    if member.resolves_after_stage_a() {
+                    if member.resolves_after_chunk_analysis() {
                         deferred_targets.insert(target, (index, member.clone()));
                     }
                 }
@@ -1187,7 +1198,7 @@ impl ChunkPlanBuilder {
                     let native_selects_import = member.source_match.is_some()
                         && solver_claim_is_import_specifier(&facts, claim);
                     if native_selects_import {
-                        self.claim_post_stage_a_imported_binding(
+                        self.claim_imported_binding_after_chunk_analysis(
                             request,
                             &member,
                             binding,
@@ -1201,7 +1212,7 @@ impl ChunkPlanBuilder {
                         )?;
                         continue;
                     }
-                    self.claim_post_stage_a_binding(
+                    self.claim_binding_after_chunk_analysis(
                         request,
                         &member,
                         binding,
@@ -1375,7 +1386,7 @@ impl ChunkPlanBuilder {
     }
 
     /// Resolve and claim every `cross_ref` member across all explicit requests,
-    /// using the chunk's owner-graph `Resolution`. Runs after Stage A (the owner
+    /// using the chunk's owner-graph `Resolution`. Runs after chunk analysis (the owner
     /// graph carries the reference/alias edges cross-refs ride) but before
     /// `finalize`. Cross-ref members were left unclaimed by `add_explicit_request`
     /// (their target binding isn't known until here).
@@ -1479,10 +1490,10 @@ impl ChunkPlanBuilder {
                 )
             })?;
         // The cross-ref residual-move citation: the binding was parked at the
-        // residual plan by the pre-Stage-A sweep, exactly as `apply_rebind_folds`
+        // residual plan by the pre-analysis sweep, exactly as `apply_rebind_folds`
         // / `synthesize_mini_factors` handle their late claims; the shared tail
         // moves it out.
-        self.claim_post_stage_a_binding(
+        self.claim_binding_after_chunk_analysis(
             request,
             member,
             binding,
@@ -1550,7 +1561,7 @@ impl ChunkPlanBuilder {
 
     /// Resolve and claim every `reads_member` member across all explicit
     /// requests, using the chunk's owner-graph `Resolution` (with the chunk's AST
-    /// member-read facts joined in). Runs after Stage A (the owner graph exists
+    /// member-read facts joined in). Runs after chunk analysis (the owner graph exists
     /// and the AST is in scope) but before `finalize`. Reads-member members were
     /// left unclaimed by `add_explicit_request` (their target binding isn't known
     /// until here).
@@ -1653,7 +1664,7 @@ impl ChunkPlanBuilder {
                     request.id, member.export_name, target.member,
                 )
             })?;
-        self.claim_post_stage_a_binding(
+        self.claim_binding_after_chunk_analysis(
             request,
             member,
             binding,
@@ -1666,7 +1677,7 @@ impl ChunkPlanBuilder {
 
     /// Resolve and claim every `passed_to_call` member across all explicit
     /// requests, using the chunk's owner-graph `Resolution` (with the chunk's AST
-    /// call-argument facts joined in). Runs after Stage A (the owner graph exists
+    /// call-argument facts joined in). Runs after chunk analysis (the owner graph exists
     /// and the AST is in scope) but before `finalize`. Passed-to-call members were
     /// left unclaimed by `add_explicit_request` (their target binding isn't known
     /// until here).
@@ -1774,7 +1785,7 @@ impl ChunkPlanBuilder {
                     request.id, member.export_name, target.callee_member,
                 )
             })?;
-        self.claim_post_stage_a_binding(
+        self.claim_binding_after_chunk_analysis(
             request,
             member,
             binding,
@@ -1788,7 +1799,7 @@ impl ChunkPlanBuilder {
     /// Resolve and claim every `makes_decorate_call` member across all explicit
     /// requests, using the chunk's owner-graph `Resolution` (with the chunk's AST
     /// decorator-application facts joined in). The inverse-direction sibling of
-    /// `resolve_and_claim_passed_to_calls`, with the same post-Stage-A timing and
+    /// `resolve_and_claim_passed_to_calls`, with the same post-analysis timing and
     /// no-op-when-absent contract. Makes-decorate-call members were left unclaimed
     /// by `add_explicit_request` (their target binding isn't known until here).
     ///
@@ -1889,7 +1900,7 @@ impl ChunkPlanBuilder {
                         request.id, member.export_name, target.class,
                     )
                 })?;
-        self.claim_post_stage_a_binding(
+        self.claim_binding_after_chunk_analysis(
             request,
             member,
             binding,
@@ -1903,7 +1914,7 @@ impl ChunkPlanBuilder {
     /// Resolve and claim every `intrinsic_alias` member across all explicit
     /// requests, using the chunk's owner-graph `Resolution` (with the chunk's AST
     /// intrinsic-alias facts joined in). The follow-on companion of
-    /// `resolve_and_claim_makes_decorate_calls`, with the same post-Stage-A timing
+    /// `resolve_and_claim_makes_decorate_calls`, with the same post-analysis timing
     /// and no-op-when-absent contract. Intrinsic-alias members were left unclaimed by
     /// `add_explicit_request` (their target binding isn't known until here).
     ///
@@ -2013,7 +2024,7 @@ impl ChunkPlanBuilder {
                         request.id, member.export_name, target.property, target.referenced_by,
                     )
                 })?;
-        self.claim_post_stage_a_binding(
+        self.claim_binding_after_chunk_analysis(
             request,
             member,
             binding,
@@ -2027,7 +2038,7 @@ impl ChunkPlanBuilder {
     /// Resolve and claim every `member_of_module` member across all explicit
     /// requests, using the chunk's owner-graph `Resolution` with the
     /// `member_of_module` use-site EDB (member accesses joined to the chunk's
-    /// import table). Runs after Stage A, mirroring
+    /// import table). Runs after chunk analysis, mirroring
     /// [`Self::resolve_and_claim_reads_members`]; `member_of_module` members were
     /// left unclaimed by `add_explicit_request` (their target binding isn't known
     /// until here).
@@ -2076,7 +2087,7 @@ impl ChunkPlanBuilder {
                         request.id, member.export_name, target.module, target.member,
                     )
                 })?;
-            self.claim_post_stage_a_binding(
+            self.claim_binding_after_chunk_analysis(
                 request,
                 member,
                 binding,
@@ -2091,11 +2102,11 @@ impl ChunkPlanBuilder {
 
     /// `export_name → resolved minified binding` over the already-claimed members
     /// of **one logical module** (`module_plans[index]`), including those resolved
-    /// by earlier *post-Stage-A* passes (`reads_member` / `member_of_module` /
+    /// by earlier *post-analysis* passes (`reads_member` / `member_of_module` /
     /// `passed_to_call` / `makes_decorate_call`). Unlike [`resolved_anchor_bindings`]
     /// — which sees only `add_explicit_request`-resolved `binding`/`source_match`
     /// members — this reads the claimed bindings back out of the module plan, so an
-    /// anchor pinned by a prior post-Stage-A pass is resolvable. An export name
+    /// anchor pinned by a prior post-analysis pass is resolvable. An export name
     /// claimed by two distinct bindings *within this module* maps to `None`
     /// (ambiguous → fail-closed), matching `resolved_anchor_bindings`' semantics.
     ///
@@ -2123,16 +2134,16 @@ impl ChunkPlanBuilder {
         by_export
     }
 
-    /// Claim a binding a post-Stage-A selector pass resolved to (the shared tail
+    /// Claim a binding a post-analysis selector pass resolved to (the shared tail
     /// of `reads_member` and `member_of_module`): record an unmatched-claim if the
     /// binding has no top-level declaration; error / record a duplicate if already
     /// claimed; otherwise move it out of the residual sweep and into module
     /// `index`, registering its export name, claim origin, and comment. The
     /// residual move mirrors the cross-ref pass — the binding was parked at the
-    /// residual plan when the pre-Stage-A sweep ran, before this pass knew its
+    /// residual plan when the pre-analysis sweep ran, before this pass knew its
     /// identity.
     #[allow(clippy::too_many_arguments)]
-    fn claim_post_stage_a_imported_binding(
+    fn claim_imported_binding_after_chunk_analysis(
         &mut self,
         request: &LogicalRequest,
         member: &MemberRequest,
@@ -2213,7 +2224,7 @@ impl ChunkPlanBuilder {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn claim_post_stage_a_binding(
+    fn claim_binding_after_chunk_analysis(
         &mut self,
         request: &LogicalRequest,
         member: &MemberRequest,
@@ -2256,7 +2267,7 @@ impl ChunkPlanBuilder {
             self.duplicate_binding_claims.push(duplicate);
             return Ok(());
         }
-        // The residual sweep ran before Stage A (before this pass), so the target
+        // The residual sweep ran before chunk analysis (before this pass), so the target
         // binding — unclaimed at sweep time — was parked at the residual plan. Move
         // it out: overwrite its assignment and prune the residual plan's export
         // list, so the residual module doesn't keep `export { <binding> }` for a
@@ -2289,6 +2300,7 @@ impl ChunkPlanBuilder {
     /// the residual sweep don't consult this index.
     pub(super) fn drop_explicit_request_scratch(&mut self) {
         self.catalogue_index_by_name = HashMap::new();
+        self.deferred_binding_claims_by_name = HashMap::new();
     }
 
     /// Destructure-atomicity: a destructuring declarator like
@@ -2328,6 +2340,15 @@ impl ChunkPlanBuilder {
                             .insert(sibling_id.clone(), owner_index);
                         self.bindings_catalogue
                             .insert(sibling_id, BindingKind::Owned { module: owner_id });
+                        let plan = &mut self.module_plans[owner_index];
+                        plan.bindings.insert(sibling.clone(), sibling.clone());
+                    }
+                    Some(other_index) if Some(other_index) == self.residual_plan_index => {
+                        self.binding_assignment
+                            .insert(sibling_id.clone(), owner_index);
+                        self.bindings_catalogue
+                            .insert(sibling_id, BindingKind::Owned { module: owner_id });
+                        self.module_plans[other_index].bindings.remove(sibling);
                         let plan = &mut self.module_plans[owner_index];
                         plan.bindings.insert(sibling.clone(), sibling.clone());
                     }
@@ -2478,10 +2499,9 @@ impl ChunkPlanBuilder {
     }
 
     /// `MiniFactors` mode: every unclaimed atomic factor unit gets
-    /// its own synthesized plan at `__auto/mini/NNNN`. Run after
-    /// Stage A.5 (`apply_rebind_folds`) so the residual sweep +
-    /// rebind folding have already settled which units are still
-    /// unclaimed. Bindings
+    /// its own synthesized plan at `__auto/mini/NNNN`. Run after rebind folding
+    /// so the residual sweep and fold decisions have already settled which
+    /// units are still unclaimed. Bindings
     /// previously parked at the residual plan are moved out into the
     /// synthesized plan; the residual plan's `bindings` map is
     /// pruned to match.
@@ -2612,8 +2632,8 @@ impl ChunkPlanBuilder {
         Ok(())
     }
 
-    /// Apply a batch of rebind-fold decisions produced by the
-    /// Stage A.5 composer (`stage_one::compute_rebind_folds`).
+    /// Apply a batch of rebind-fold decisions produced from chunk analysis
+    /// (`stage_one::compute_rebind_folds`).
     ///
     /// Each fold reroutes a single binding from its previous plan
     /// (if any) to the cycle's explicit destination. The
@@ -2650,16 +2670,15 @@ impl ChunkPlanBuilder {
         }
     }
 
-    /// Borrow access to the current binding assignment so the
-    /// Stage A.5 composer can compute folds against it without
-    /// mutating the builder.
+    /// Borrow access to the current binding assignment so the rebind-fold
+    /// composer can compute folds without mutating the builder.
     pub(super) fn binding_assignment(&self) -> &HashMap<Id, usize> {
         &self.binding_assignment
     }
 
-    /// The residual landing-site plan index, if one was created by
-    /// the residual sweep. Needed by Stage A.5 to know which
-    /// existing claims count as "swept" (and hence still foldable).
+    /// The residual landing-site plan index, if one was created by the residual
+    /// sweep. Needed by rebind folding to know which existing claims count as
+    /// "swept" (and hence still foldable).
     pub(super) fn residual_plan_index(&self) -> Option<usize> {
         self.residual_plan_index
     }

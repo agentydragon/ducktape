@@ -122,6 +122,15 @@ When renaming/moving/deleting files or symbols, search **all references** across
 
 **Atomic API changes**: update all callers in the same commit. No transitional shims within this monorepo.
 
+## Profiling
+
+Use real profilers for performance investigations: `perf`, Callgrind
+(`valgrind --tool=callgrind`), heaptrack, Massif, or the component's
+Bazel profile targets. Do not commit ad hoc timing macros, fine-grained
+phase timers, or one-off elapsed-time counters to production code just
+to understand a hotspot. If temporary instrumentation is unavoidable,
+keep it local to the investigation and remove it before review.
+
 ## Before Hand-off
 
 ```bash

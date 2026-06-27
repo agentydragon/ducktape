@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
@@ -16,8 +15,7 @@ use analysis::{
 };
 use gate::{ChunkFactorization, render_atomic_unit_conflict_summary, render_cycle_summary};
 use stage_one::{
-    DynamicImportTarget, RebindFold, StageOneAnalysis, compute_rebind_folds,
-    compute_stage_one_analysis,
+    ChunkAnalysis, DynamicImportTarget, RebindFold, compute_chunk_analysis, compute_rebind_folds,
 };
 
 use artifact::{
@@ -111,38 +109,6 @@ use visitors::{
     IdentifierRenamer, RenameAndShorthandNaturalizer, RenameCaptureProbe, ShorthandNaturalizer,
 };
 
-macro_rules! time_phase {
-    ($timings:expr, $name:expr, $body:block) => {{
-        let phase_started = std::time::Instant::now();
-        let value = $body;
-        $timings.add($name, phase_started.elapsed());
-        value
-    }};
-}
-pub(crate) use time_phase;
-
-#[derive(Debug, Default, Clone)]
-struct PhaseTimings {
-    durations: BTreeMap<String, Duration>,
-}
-
-impl PhaseTimings {
-    fn add(&mut self, name: impl Into<String>, duration: Duration) {
-        *self.durations.entry(name.into()).or_default() += duration;
-    }
-
-    fn extend_prefixed(&mut self, prefix: &str, other: PhaseTimings) {
-        for (name, duration) in other.durations {
-            self.add(format!("{prefix}.{name}"), duration);
-        }
-    }
-
-    fn into_durations(mut self, total: Duration) -> BTreeMap<String, Duration> {
-        self.durations.insert("total".to_string(), total);
-        self.durations
-    }
-}
-
 pub struct MaterializeLogicalModulesResult {
     pub artifact: ChunkBundle,
     pub selected_lowerings: Vec<SelectedModuleLowering>,
@@ -190,7 +156,6 @@ pub struct ChunkModulesReport {
     /// on the report so JSON consumers can pin behavior across runs.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub redundant_purity_hints: Vec<RedundantPurityHint>,
-    pub timings: BTreeMap<String, Duration>,
 }
 
 #[derive(Debug, Clone, Serialize)]
