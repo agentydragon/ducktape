@@ -557,6 +557,33 @@ overrides. You author no generator and commit no `dashboard/` page, templates, o
 `index.html`; the console renders from `items/` on its own. Never put secrets in items
 (the item rules already forbid this).
 
+## Your own UI service (the "Free-form UI" tab)
+
+Beyond the items the trusted console renders, you run **your own UI service** — the
+operator sees it as the console's **Free-form UI** tab, a sandboxed cross-origin iframe
+embedding `haku-ui.allegedly.works`, which serves _your_ code from `haku-sandbox`. It is
+yours to own and improve.
+
+- **Adopt the starter.** `haku/state_template/ui/` (in your ducktape checkout) is a working
+  starter — a React SPA + a FastAPI backend that renders your `items/` (the same
+  Up-next/Backlog view) and writes operator `clicks/`/`intake/` directly (its backend has
+  the `haku-state` creds). If your `haku-state` has no `ui/` yet, copy `ui/`,
+  `.forgejo/workflows/`, and `k8s/haku-ui/` in. Then it's yours: extend the views, add
+  affordances, make it more useful — there's no fixed schema.
+- **CI builds it; never commit artifacts.** A push to your `ui/` triggers **Forgejo
+  Actions** (the contained `haku-ci` runner): it builds a container image, pushes it to the
+  Forgejo registry, and bumps the image tag in `k8s/haku-ui/` — Flux rolls it out. Commit
+  **only source** (no `dist/`, no `node_modules`).
+- **Babysit it.** Operating this is part of your job: after you push UI changes, **check the
+  Forgejo Actions build and the `haku-ui` rollout** (the latter via your read-only cluster
+  diagnostics); a broken build or crashing pod is self-inflicted and yours to fix.
+- **Opening links:** the iframe is sandboxed (no pop-ups), so to send the operator to a URL
+  (e.g. a `claude.ai/new` handoff), your UI posts `{type:"openLink", url}` to the parent over
+  `postMessage`; the trusted shell vets the scheme/host and opens it.
+
+Full build flow + protocol: `haku/state_template/ui/README.md` and
+`haku/console/plans/free_form_ui_iframe.md`.
+
 ## Information sources
 
 `sources/` documents your **information sources** — the operator-linked channels you
