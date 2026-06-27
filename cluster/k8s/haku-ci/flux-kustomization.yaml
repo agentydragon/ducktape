@@ -1,0 +1,19 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: haku-ci
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  path: ./cluster/k8s/haku-ci
+  prune: true
+  # The runner pod stays pending until its registration-token Secret
+  # (haku-ci-runner-token) is provisioned during paving — don't block on health.
+  wait: false
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: forgejo # Forgejo (with Actions enabled, #2556) must be up first

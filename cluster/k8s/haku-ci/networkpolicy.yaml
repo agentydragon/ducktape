@@ -1,0 +1,54 @@
+# Egress fence for the Haku CI runner. The runner builds Haku-authored images, so
+# it's agent-controlled compute — contain its egress to only what a build needs:
+# DNS, base-image registries + npm/pypi (to pull base images and deps), and
+# in-cluster services (the Forgejo git + registry it pulls source from and pushes
+# images to). Having any egress rule flips the selected pods to default-deny egress.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: haku-ci-runner-egress
+  namespace: haku-ci
+spec:
+  endpointSelector: {} # all pods in haku-ci
+  egress:
+    # CoreDNS (required for the FQDN rules below to resolve).
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    # Base-image registries + package mirrors the build pulls from.
+    - toFQDNs:
+        - matchName: ghcr.io
+        - matchName: pkg-containers.githubusercontent.com
+        - matchName: registry-1.docker.io
+        - matchName: auth.docker.io
+        - matchName: production.cloudflare.docker.com
+        - matchName: index.docker.io
+        - matchName: registry.npmjs.org
+        - matchName: pypi.org
+        - matchName: files.pythonhosted.org
+        # code.forgejo.org: the act_runner + forgejo job-container images.
+        - matchName: code.forgejo.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # In-cluster: the Forgejo git + OCI registry (forgejo-http.forgejo) the runner
+    # clones source from, pushes the built image to, and long-polls for jobs.
+    - toEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+            - port: "3000"
+              protocol: TCP

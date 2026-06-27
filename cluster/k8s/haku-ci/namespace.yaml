@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  # Operator-owned CI namespace for Haku's image builds. Deliberately NOT
+  # haku-sandbox — Haku has no RBAC here, so a prompt-injected Haku cannot tamper
+  # with the runner pod or its registry/git push creds. But the runner executes
+  # Haku-authored build steps (its workflow + Dockerfile), so it IS agent-controlled
+  # compute and is egress-fenced like haku-sandbox (networkpolicy.yaml) + builds
+  # rootless (no privileged escape). See README.md.
+  name: haku-ci
+  labels:
+    name: haku-ci

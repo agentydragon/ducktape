@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haku-runner
+  namespace: haku-ci
+  labels:
+    app.kubernetes.io/name: haku-runner
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-runner
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-runner
+    spec:
+      automountServiceAccountToken: false
+      # Schedule on OVH workers (same as docker-ci): the build layer cache is a
+      # disposable emptyDir, so it lives wherever it can schedule.
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      containers:
+        # The Forgejo Actions runner: registers (ephemerally) with the haku-state
+        # repo via the registration token, long-polls for jobs, and runs them in
+        # docker-cli job containers against the dind sidecar.
+        - name: runner
+          image: code.forgejo.org/forgejo/runner:6
+          command: ["sh", "-c"]
+          # Re-register on each start (ephemeral; no persisted .runner file/PVC),
+          # then run the daemon. The registration token is repo-scoped (haku-state).
+          args:
+            - |
+              set -e
+              forgejo-runner register --no-interactive \
+                --instance "$FORGEJO_INSTANCE_URL" \
+                --token "$(cat /secrets/token)" \
+                --name "$RUNNER_NAME" \
+                --labels "docker:docker://docker:27-cli" \
+                --config /config/config.yaml
+              exec forgejo-runner daemon --config /config/config.yaml
+          env:
+            - name: FORGEJO_INSTANCE_URL
+              value: http://forgejo-http.forgejo:3000
+            - name: RUNNER_NAME
+              value: haku-ci
+            - name: DOCKER_HOST
+              value: tcp://localhost:2375
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: token
+              mountPath: /secrets
+              readOnly: true
+            - name: runner-data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+        # Rootless Docker daemon (NOT privileged) for the builds. Listens only on
+        # localhost:2375 inside the pod. **Builder is the main iterate point** —
+        # rootless dind on Talos may need securityContext/seccomp tuning or a
+        # switch to rootless buildkit; see README.
+        - name: dind
+          image: docker:27-dind-rootless
+          args:
+            - --host=tcp://0.0.0.0:2375
+            - --tls=false
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: Unconfined
+          volumeMounts:
+            - name: docker-data
+              mountPath: /var/lib/docker
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "3"
+              memory: 6Gi
+      volumes:
+        - name: config
+          configMap:
+            name: haku-runner-config
+        - name: token
+          secret:
+            # Provisioned out-of-band during paving (see README): a repo-scoped
+            # runner registration token for haku-state. The pod stays pending until
+            # this Secret exists.
+            secretName: haku-ci-runner-token
+        - name: runner-data
+          emptyDir: {}
+        - name: docker-data
+          emptyDir: {}
