@@ -18,10 +18,24 @@ spec:
         app.kubernetes.io/name: haku-runner
     spec:
       automountServiceAccountToken: false
-      # Schedule on OVH workers (same as docker-ci): the build layer cache is a
-      # disposable emptyDir, so it lives wherever it can schedule.
-      nodeSelector:
-        topology.kubernetes.io/region: hil
+      # Pin to the ACTUAL OVH workers (ks_game_worker0/1), not the OVH control planes.
+      # The OVH CPs are schedulable (allowSchedulingOnControlPlanes) and region=hil, and
+      # are misleadingly keyed kimsufi_worker0/1 in tofu though their role is controlplane
+      # — so a plain region selector landed this runner on a control plane. That's wrong
+      # twice over: (1) this is agent-controlled build compute, which must stay off
+      # control-plane nodes, and (2) the user.max_user_namespaces sysctl rootless dind
+      # needs is set only on role==worker nodes (cluster/terraform/main/ovh-nodes.tf), so
+      # the runner must land there. Exclude any node carrying the control-plane label.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/region
+                    operator: In
+                    values: ["hil"]
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
       containers:
         # The Forgejo Actions runner: registers (ephemerally) with the haku-state
         # repo via the registration token, long-polls for jobs, and runs them in
