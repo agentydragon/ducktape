@@ -10,3 +10,5 @@ metadata:
   name: haku-ci
   labels:
     name: haku-ci
+    # The runner's resources are set deliberately; no VPA recommendations wanted.
+    goldilocks.fairwinds.com/enabled: "false"
