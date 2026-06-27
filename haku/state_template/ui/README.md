@@ -83,6 +83,7 @@ HAKU_UI_GIT_USERNAME=… HAKU_UI_GIT_PASSWORD=… HAKU_UI_FORGEJO_API_URL=… py
    at the `{"$imagepolicy": ...}` marker.
 4. Flux reconciles `haku-state` `k8s/` → the `haku-ui` Deployment rolls the new image.
 
-Runtime deps land separately: the runner (`cluster/k8s/haku-ci`), the registry push
-cred (`FORGEJO_REGISTRY_PASSWORD` Actions secret), and the `haku-forgejo-registry-pull`
-imagePullSecret. Real end-to-end validation happens in the paving loop after those land.
+Runtime deps land separately: the runner (`cluster/k8s/haku-ci`) and the
+`haku-forgejo-registry-pull` imagePullSecret. The registry **push** needs no secret —
+CI uses the built-in Forgejo Actions job token (`github.token`, `packages: write`). Real
+end-to-end validation happens in the paving loop after those land.

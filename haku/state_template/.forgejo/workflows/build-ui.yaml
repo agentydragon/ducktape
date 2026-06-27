@@ -28,17 +28,26 @@ on:
 jobs:
   build:
     runs-on: haku-ci # the repo-scoped, contained runner label (cluster/k8s/haku-ci)
+    # The built-in Forgejo Actions job token (github.token) authenticates the registry
+    # push — no separately-provisioned secret. packages:write scopes it to push to the
+    # repo owner's (haku/*) package namespace.
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # The runner provides a Docker-compatible builder. Auth to the in-cluster
-      # Forgejo registry using the `haku` user + a Forgejo Actions secret
-      # (FORGEJO_REGISTRY_PASSWORD) scoped to the haku/* package namespace.
+      # The runner provides a Docker-compatible builder. Auth to the in-cluster Forgejo
+      # registry with the built-in job token (github.actor + github.token) — Forgejo
+      # mints it per run, so there's no FORGEJO_REGISTRY_PASSWORD secret to provision.
+      # Fallback if a push is ever rejected (token lacks package write): provision a
+      # `forgejo_repository_action_secret` push cred in tf/gitops/haku-state and use
+      # `${{ secrets.<NAME> }}` here instead.
       - name: Log in to the Forgejo registry
         run: |
-          echo "${{ secrets.FORGEJO_REGISTRY_PASSWORD }}" \
-            | docker login git.allegedly.works -u haku --password-stdin
+          echo "${{ github.token }}" \
+            | docker login git.allegedly.works -u "${{ github.actor }}" --password-stdin
 
       # Tag pattern is what Flux image automation sorts on: a UTC timestamp makes
       # the newest build the highest tag (ImagePolicy `numerical` on the captured
