@@ -449,6 +449,70 @@ fn lower_atom_constraint(
                 .collect::<BTreeSet<_>>();
             add_owner_allowed_tuples(model, variables, owner, &facts)
         }
+        SelectorAtom::PassedToCall {
+            owner,
+            callee_object: None,
+            callee_member,
+            arg_index,
+        } => {
+            let callee_member =
+                required_string_term_const(callee_member, "passed_to_call.callee_member")?;
+            let facts = domains
+                .call_arguments
+                .iter()
+                .filter_map(|(fact_owner, fact_callee_member, fact_arg_index)| {
+                    (fact_callee_member == &callee_member
+                        && optional_u32_matches(*arg_index, *fact_arg_index))
+                    .then_some(*fact_owner)
+                })
+                .collect::<BTreeSet<_>>();
+            add_owner_allowed_tuples(model, variables, owner, &facts)
+        }
+        SelectorAtom::PassedToCall {
+            owner,
+            callee_object: Some(callee_object),
+            callee_member,
+            arg_index,
+        } => {
+            let callee_object =
+                required_string_term_const(callee_object, "passed_to_call.callee_object")?;
+            let callee_member =
+                required_string_term_const(callee_member, "passed_to_call.callee_member")?;
+            let facts = domains
+                .call_arguments_from_binding
+                .iter()
+                .filter_map(
+                    |(fact_owner, fact_callee_object, fact_callee_member, fact_arg_index)| {
+                        (fact_callee_object == &callee_object
+                            && fact_callee_member == &callee_member
+                            && optional_u32_matches(*arg_index, *fact_arg_index))
+                        .then_some(*fact_owner)
+                    },
+                )
+                .collect::<BTreeSet<_>>();
+            add_owner_allowed_tuples(model, variables, owner, &facts)
+        }
+        SelectorAtom::PassedToCallOfOwner {
+            owner,
+            callee_object,
+            callee_member,
+            arg_index,
+        } => {
+            let callee_member =
+                required_string_term_const(callee_member, "passed_to_call_of_owner.callee_member")?;
+            let facts = domains
+                .call_arguments_from_owner
+                .iter()
+                .filter_map(
+                    |(fact_owner, fact_callee_object, fact_callee_member, fact_arg_index)| {
+                        (fact_callee_member == &callee_member
+                            && optional_u32_matches(*arg_index, *fact_arg_index))
+                        .then_some((*fact_owner, *fact_callee_object))
+                    },
+                )
+                .collect::<BTreeSet<_>>();
+            add_owner_owner_allowed_tuples(model, variables, owner, callee_object, &facts)
+        }
         SelectorAtom::MakesDecorateCall {
             owner,
             class_anchor,
@@ -1444,6 +1508,13 @@ fn optional_string_matches(expected: &Option<String>, actual: &Option<String>) -
     }
 }
 
+fn optional_u32_matches(expected: Option<u32>, actual: usize) -> bool {
+    match expected {
+        Some(expected) => usize::try_from(expected).ok() == Some(actual),
+        None => true,
+    }
+}
+
 fn optional_string_term_const(
     term: &Option<StringTerm>,
 ) -> Result<Option<String>, SelectorConstraintModelBuildError> {
@@ -1574,6 +1645,10 @@ struct FactDomains {
     reads_member_of_owner: BTreeSet<(OwnerId, OwnerId, String)>,
     raw_module_member_uses: BTreeSet<(StatementOrdinal, String, String)>,
     module_member_uses: BTreeSet<(OwnerId, String, String)>,
+    raw_call_arguments: BTreeSet<(String, Option<String>, String, usize)>,
+    call_arguments: BTreeSet<(OwnerId, String, usize)>,
+    call_arguments_from_binding: BTreeSet<(OwnerId, String, String, usize)>,
+    call_arguments_from_owner: BTreeSet<(OwnerId, OwnerId, String, usize)>,
     decorate_calls: BTreeSet<(String, String, Option<String>)>,
     makes_decorate_call_for_binding: BTreeSet<(OwnerId, String, Option<String>)>,
     makes_decorate_call_for_owner: BTreeSet<(OwnerId, OwnerId, Option<String>)>,
@@ -1783,6 +1858,7 @@ impl FactDomains {
                     argument,
                     callee_object,
                     callee_member,
+                    arg_index,
                     ..
                 } => {
                     self.add_string(argument);
@@ -1790,6 +1866,12 @@ impl FactDomains {
                         self.add_string(callee_object);
                     }
                     self.add_string(callee_member);
+                    self.raw_call_arguments.insert((
+                        argument.clone(),
+                        callee_object.clone(),
+                        callee_member.clone(),
+                        *arg_index,
+                    ));
                 }
                 SelectorFact::DecorateCallUse {
                     callee,
@@ -1910,6 +1992,35 @@ impl FactDomains {
             }
             self.module_member_uses
                 .insert((*owner, module.clone(), member.clone()));
+        }
+
+        for (argument, callee_object, callee_member, arg_index) in &self.raw_call_arguments {
+            let Some(argument_owners) = owners_by_binding.get(argument) else {
+                continue;
+            };
+            for owner in argument_owners {
+                self.call_arguments
+                    .insert((*owner, callee_member.clone(), *arg_index));
+                if let Some(callee_object) = callee_object {
+                    self.call_arguments_from_binding.insert((
+                        *owner,
+                        callee_object.clone(),
+                        callee_member.clone(),
+                        *arg_index,
+                    ));
+                    if let Some(callee_object_owners) = owners_by_binding.get(callee_object) {
+                        self.call_arguments_from_owner
+                            .extend(callee_object_owners.iter().map(|callee_object_owner| {
+                                (
+                                    *owner,
+                                    *callee_object_owner,
+                                    callee_member.clone(),
+                                    *arg_index,
+                                )
+                            }));
+                    }
+                }
+            }
         }
 
         for (callee, class_anchor, member) in &self.decorate_calls {
@@ -2411,6 +2522,21 @@ mod tests {
             statement_ordinal: StatementOrdinal(ordinal),
             module: module.to_string(),
             member: member.to_string(),
+        }
+    }
+
+    fn call_argument_use(
+        argument: &str,
+        callee_object: Option<&str>,
+        callee_member: &str,
+        arg_index: usize,
+    ) -> SelectorFact {
+        SelectorFact::CallArgumentUse {
+            chunk_id: ChunkId(0),
+            argument: argument.to_string(),
+            callee_object: callee_object.map(str::to_string),
+            callee_member: callee_member.to_string(),
+            arg_index,
         }
     }
 
@@ -3289,15 +3415,109 @@ mod tests {
     }
 
     #[test]
+    fn passed_to_call_atoms_lower_to_allowed_tuple_constraints() {
+        let mut program = SelectorProgram::default();
+        let bare_argument_owner =
+            program.add_variable(VariableDomain::Owner, Some("bare_argument".to_string()));
+        let object_argument_owner =
+            program.add_variable(VariableDomain::Owner, Some("object_argument".to_string()));
+        let object_owner =
+            program.add_variable(VariableDomain::Owner, Some("object_owner".to_string()));
+        let owner_constrained_argument = program.add_variable(
+            VariableDomain::Owner,
+            Some("owner_constrained_argument".to_string()),
+        );
+        let owner_constrained_object = program.add_variable(
+            VariableDomain::Owner,
+            Some("owner_constrained_object".to_string()),
+        );
+
+        program.add_atom(SelectorAtom::PassedToCall {
+            owner: OwnerTerm::Var {
+                id: bare_argument_owner,
+            },
+            callee_object: None,
+            callee_member: StringTerm::Const {
+                value: "register".to_string(),
+            },
+            arg_index: Some(0),
+        });
+        program.add_atom(SelectorAtom::PassedToCall {
+            owner: OwnerTerm::Var {
+                id: object_argument_owner,
+            },
+            callee_object: Some(StringTerm::Const {
+                value: "registry".to_string(),
+            }),
+            callee_member: StringTerm::Const {
+                value: "register".to_string(),
+            },
+            arg_index: None,
+        });
+        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+            owner: OwnerTerm::Var { id: object_owner },
+            binding: StringTerm::Const {
+                value: "registry".to_string(),
+            },
+        });
+        program.add_atom(SelectorAtom::PassedToCallOfOwner {
+            owner: OwnerTerm::Var {
+                id: owner_constrained_argument,
+            },
+            callee_object: OwnerTerm::Var {
+                id: owner_constrained_object,
+            },
+            callee_member: StringTerm::Const {
+                value: "register".to_string(),
+            },
+            arg_index: Some(1),
+        });
+
+        let facts = fact_store(vec![
+            owner_fact(10, 0, "class"),
+            declared_binding(10, "WidgetA"),
+            call_argument_use("WidgetA", None, "register", 0),
+            owner_fact(20, 1, "class"),
+            declared_binding(20, "WidgetB"),
+            call_argument_use("WidgetB", Some("registry"), "register", 1),
+            owner_fact(30, 2, "var_decl"),
+            declared_binding(30, "registry"),
+            owner_fact(40, 3, "class"),
+            declared_binding(40, "Other"),
+            call_argument_use("Other", Some("otherRegistry"), "register", 1),
+            owner_fact(50, 4, "var_decl"),
+            declared_binding(50, "otherRegistry"),
+        ]);
+
+        let model = build_selector_constraint_model(&program, &facts).unwrap();
+
+        assert_eq!(
+            allowed_tuples_for(&model, &[ConstraintVariableId(0)]).tuples,
+            vec![vec![owner(10)]]
+        );
+        assert_eq!(
+            allowed_tuples_for(&model, &[ConstraintVariableId(1)]).tuples,
+            vec![vec![owner(20)]]
+        );
+        assert_eq!(
+            allowed_tuples_for(&model, &[ConstraintVariableId(2)]).tuples,
+            vec![vec![owner(30)]]
+        );
+        assert_eq!(
+            allowed_tuples_for(&model, &[ConstraintVariableId(3), ConstraintVariableId(4)]).tuples,
+            vec![vec![owner(20), owner(30)], vec![owner(40), owner(50)],]
+        );
+    }
+
+    #[test]
     fn unsupported_atoms_fail_closed() {
         let mut program = SelectorProgram::default();
         let owner_var = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
+        let member_var = program.add_variable(VariableDomain::String, Some("member".to_string()));
         program.add_atom(SelectorAtom::PassedToCall {
             owner: OwnerTerm::Var { id: owner_var },
             callee_object: None,
-            callee_member: StringTerm::Const {
-                value: "call".to_string(),
-            },
+            callee_member: StringTerm::Var { id: member_var },
             arg_index: None,
         });
 
