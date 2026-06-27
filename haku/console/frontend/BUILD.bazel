@@ -8,7 +8,7 @@ load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 
 package(default_visibility = ["//visibility:public"])
 
-# TypeScript types generated from the backend's OpenAPI schema (reuses the Item
+# TypeScript types generated from the backend's OpenAPI schema (reuses the API
 # Pydantic models as the wire contract). Not checked in; regenerated each build.
 js_openapi_schema(
     name = "schema",
@@ -18,15 +18,6 @@ js_openapi_schema(
 js_library(
     name = "constants",
     srcs = ["constants.ts"],
-)
-
-js_library(
-    name = "markdown",
-    srcs = ["markdown.ts"],
-    deps = [
-        "//:node_modules/dompurify",
-        "//:node_modules/marked",
-    ],
 )
 
 js_library(
@@ -53,19 +44,6 @@ js_library(
     deps = [
         ":client",
         ":toast",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/react",
-    ],
-)
-
-js_library(
-    name = "task",
-    srcs = ["task.tsx"],
-    deps = [
-        ":client",
-        ":constants",
-        ":feedback",
-        ":markdown",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
     ],
@@ -116,7 +94,6 @@ js_library(
         ":feedback",
         ":haku_ui_embed",
         ":launch",
-        ":task",
         ":toast",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -167,8 +144,6 @@ filegroup(
         "index.html",
         "launch.tsx",
         "main.tsx",
-        "markdown.ts",
-        "task.tsx",
         "toast.ts",
     ],
 )
@@ -231,25 +206,12 @@ tsc_bin.tsc_test(
     chdir = package_name(),
     data = [
         "bridge.test.ts",
-        "markdown.test.ts",
         "tsconfig.json",
         ":main_lib",
         ":schema",
         "//:node_modules",
     ],
     tags = ["lint"],
-)
-
-vitest_bin.vitest_test(
-    name = "markdown_test",
-    args = ["run"],
-    chdir = package_name(),
-    data = [
-        "markdown.test.ts",
-        "vitest.config.ts",
-        ":markdown",
-        "//:node_modules",
-    ],
 )
 
 vitest_bin.vitest_test(

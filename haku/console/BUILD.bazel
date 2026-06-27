@@ -26,9 +26,7 @@ py_library(
     name = "git_state",
     srcs = ["git_state.py"],
     deps = [
-        ":models",
         "@pypi//pygit2",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -111,12 +109,10 @@ py_library(
         ":app",
         ":config",
         ":git_state",
-        ":models",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//pyyaml",
     ],
 )
 

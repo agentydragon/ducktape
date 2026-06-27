@@ -1,20 +1,21 @@
 """FastAPI app for the Haku console: JSON API + same-origin React SPA.
 
-The dashboard is a React single-page app (static bundle) served same-origin with a
-JSON API under ``/api``. Writes are split into tiers (see `haku/PLAN.md` → _The
-agent-authored console_): the **trace tier** (`haku.console.trace`) only records
-operator-expressed intent into haku-state — clicks (the overlay Haku reduces) and
-feedback — and is the low-privilege surface safe for agent-authored UI. The
-high-privilege **capability tier** (`haku.console.capabilities`) uses console-only
+The console is a thin shell: the capability tier (launch-routine) + a generic
+"Note to Haku" trace box + the Free-form UI iframe. Item rendering has moved to
+``haku/state_template/ui/`` — Haku's own UI, embedded via iframe.
+
+Writes are split into tiers (see ``haku/PLAN.md`` → _The agent-authored console_):
+the **trace tier** (``haku.console.trace``) records opaque operator text into
+haku-state and is the low-privilege surface safe for agent-authored UI. The
+high-privilege **capability tier** (``haku.console.capabilities``) uses console-only
 secrets and acts on the world (launching the routine); it is CSRF-gated and audited.
-``app.py`` wires both routers, configures CSRF, and serves the read endpoints + SPA.
+``app.py`` wires both routers, configures CSRF, and serves the config endpoint + SPA.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import datetime as dt
 import logging
 import secrets
 from collections.abc import Awaitable, Callable
@@ -29,33 +30,17 @@ from fastapi_csrf_protect.exceptions import CsrfProtectError
 from haku.console import capabilities, trace
 from haku.console.config import Settings
 from haku.console.git_state import GitState
-from haku.console.models import Click, DashboardResponse
+from haku.console.models import ConfigResponse
 
 logger = logging.getLogger(__name__)
-
-
-async def _pull_loop(git_state: GitState, interval_s: float) -> None:
-    """Periodically reconcile the clone so the dashboard reflects Haku's runs."""
-    while True:
-        await asyncio.sleep(interval_s)
-        try:
-            async with git_state.lock:
-                await asyncio.to_thread(git_state.reconcile)
-        except Exception:
-            logger.warning("background pull failed", exc_info=True)
 
 
 def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
+        # Clone is still needed for trace writes (append_trace → commit_push).
         await asyncio.to_thread(git_state.clone_or_open)
-        pull = asyncio.create_task(_pull_loop(git_state, settings.pull_interval_s))
-        try:
-            yield
-        finally:
-            pull.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await pull
+        yield
 
     app = FastAPI(title="Haku console", lifespan=lifespan)
     # Routers read git_state / settings off app.state (see haku.console.{trace,capabilities}).
@@ -90,22 +75,11 @@ def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.get("/api/dashboard")
-    async def dashboard() -> DashboardResponse:
-        """Items (with their currently-clicked action ids) and the last scan time."""
-        async with git_state.lock:
-            items = await asyncio.to_thread(git_state.read_items)
-            clicks = await asyncio.to_thread(git_state.read_clicks)
-        scan_time = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d %H:%M UTC")
-        clicked = [Click(item_id=item_id, action_id=action_id) for item_id, action_id in sorted(clicks)]
+    @app.get("/api/config")
+    async def config() -> ConfigResponse:
+        """Static config for the SPA: launch-routine URL and Haku UI URL."""
         launch = settings.launch_routine
-        return DashboardResponse(
-            scan_time=scan_time,
-            items=items,
-            clicks=clicked,
-            launch_routine_url=launch.page_url if launch else None,
-            haku_ui_url=settings.haku_ui_url,
-        )
+        return ConfigResponse(launch_routine_url=launch.page_url if launch else None, haku_ui_url=settings.haku_ui_url)
 
     app.include_router(trace.router)
     app.include_router(capabilities.router)

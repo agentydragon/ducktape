@@ -47,7 +47,6 @@ class Settings(BaseSettings):
     branch: str = "main"
 
     clone_dir: Path = Path("/data/haku-state")
-    pull_interval_s: float = 45.0
 
     # Directory holding the built React SPA (index.html + assets), served same-origin.
     # Unset in tests (the API runs without a UI); set to the bundled dir in the image.

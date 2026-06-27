@@ -33,14 +33,14 @@ def cap_client(make_client: Callable[..., Any]) -> Iterator[TestClient]:
         yield c
 
 
-def test_dashboard_surfaces_routine_page_url(cap_client) -> None:
-    # The routine deep-link (built from the id) reaches the SPA via the dashboard read.
-    assert cap_client.get("/api/dashboard").json()["launch_routine_url"] == PAGE_URL
+def test_config_surfaces_routine_page_url(cap_client) -> None:
+    # The routine deep-link (built from the id) reaches the SPA via the config read.
+    assert cap_client.get("/api/config").json()["launch_routine_url"] == PAGE_URL
 
 
-def test_dashboard_routine_url_none_when_unconfigured(client) -> None:
+def test_config_routine_url_none_when_unconfigured(client) -> None:
     # The `client` fixture has no launch_routine configured.
-    assert client.get("/api/dashboard").json()["launch_routine_url"] is None
+    assert client.get("/api/config").json()["launch_routine_url"] is None
 
 
 def _csrf(client: TestClient) -> str:
