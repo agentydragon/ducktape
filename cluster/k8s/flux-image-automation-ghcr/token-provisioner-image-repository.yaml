@@ -4,5 +4,5 @@ metadata:
   name: token-provisioner
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/token-provisioner
+  image: ghcr.io/agentydragon/inventree-token-provisioner
   interval: 5m

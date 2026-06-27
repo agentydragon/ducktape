@@ -149,7 +149,11 @@ jobs:
               test_target: "//cluster/k8s/agents/authentik-jwt-rotation/...",
             }
           - { image: "//cluster/k8s/agents/attic-jwt-rotation:image", image_name: attic-jwt-rotation, test_target: "" }
-          - { image: "//cluster/k8s/inventree/token-provisioner:image", image_name: token-provisioner, test_target: "" }
+          - {
+              image: "//cluster/k8s/inventree/token-provisioner:image",
+              image_name: inventree-token-provisioner,
+              test_target: "",
+            }
           - {
               image: "//cluster/k8s/grocy/sf/user-perms:image",
               image_name: grocy-sf-user-perms-provisioner,
