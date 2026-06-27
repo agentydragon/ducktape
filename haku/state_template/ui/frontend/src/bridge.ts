@@ -7,8 +7,13 @@ import { SHELL_ORIGIN } from "./constants.ts";
 // (https/mailto only), opens whitelisted hosts directly, confirms off-whitelist hosts,
 // and rejects everything else — then replies with `{type:"openLinkResult", ...}`.
 // Protocol owner + whitelist live in the shell (ducktape, PR-gated), never here.
-// See haku/console/frontend/bridge.ts (the shell side) and the demo in
-// haku/state_template/k8s/haku-ui/index.html.
+//
+// DUPLICATE: the `OpenLinkResult` shape + message `type` strings below are a
+// hand-maintained copy of the AUTHORITATIVE protocol in ducktape's
+// haku/console/frontend/bridge.ts (the shell side). Keep the two in sync by hand.
+// TODO: share one protocol definition instead of duplicating it (see
+// haku/console/plans/free_form_ui_iframe.md → Open questions). See also the demo
+// in haku/state_template/k8s/haku-ui/index.html.
 
 interface OpenLinkResult {
   type: "openLinkResult";
