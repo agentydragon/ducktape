@@ -1176,6 +1176,15 @@ impl MemberSelectorProgramBuilder {
                     node,
                 );
             }
+            Some(NodeKind::VarDecl) => {
+                return self.lower_alpha_var_decl_identifier_node(
+                    logical_module,
+                    index,
+                    skipped_nodes,
+                    state,
+                    node,
+                );
+            }
             _ => {}
         }
         if let (Some(kind), Some(name)) = (kind, index.ident_name.get(&node)) {
@@ -1199,9 +1208,9 @@ impl MemberSelectorProgramBuilder {
             ));
         }
 
-        let pushes_scope = kind.is_some_and(introduces_alpha_scope);
-        if pushes_scope {
-            state.frames.push(AlphaIdentifierFrame::default());
+        let pushed_scope = kind.and_then(alpha_scope_kind);
+        if let Some(scope_kind) = pushed_scope {
+            state.frames.push(AlphaIdentifierFrame::new(scope_kind));
         }
         for child in index.children_by_parent.get(&node).into_iter().flatten() {
             result.extend(self.lower_alpha_identifier_node(
@@ -1212,9 +1221,190 @@ impl MemberSelectorProgramBuilder {
                 *child,
             ));
         }
-        if pushes_scope {
+        if pushed_scope.is_some() {
             let frame = state.frames.pop().expect("pushed alpha scope should exist");
             self.add_alpha_identifier_frame_all_different(logical_module, &frame);
+        }
+        result
+    }
+
+    fn lower_alpha_var_decl_identifier_node(
+        &mut self,
+        logical_module: &str,
+        index: &AlphaIdentifierIndex,
+        skipped_nodes: &BTreeSet<NodeId>,
+        state: &mut AlphaIdentifierState,
+        node: NodeId,
+    ) -> BTreeMap<NodeId, SelectorVariableId> {
+        let mut result = BTreeMap::new();
+        let binding_scope = match index.operator.get(&node).map(String::as_str) {
+            Some("var") => AlphaBindingScope::NearestVar,
+            _ => AlphaBindingScope::Current,
+        };
+        for child in index.children_by_parent.get(&node).into_iter().flatten() {
+            if index.node_kind.get(child) == Some(&NodeKind::VarDeclarator) {
+                result.extend(self.lower_alpha_var_declarator_identifier_node(
+                    logical_module,
+                    index,
+                    skipped_nodes,
+                    state,
+                    *child,
+                    binding_scope,
+                ));
+            } else {
+                result.extend(self.lower_alpha_identifier_node(
+                    logical_module,
+                    index,
+                    skipped_nodes,
+                    state,
+                    *child,
+                ));
+            }
+        }
+        result
+    }
+
+    fn lower_alpha_var_declarator_identifier_node(
+        &mut self,
+        logical_module: &str,
+        index: &AlphaIdentifierIndex,
+        skipped_nodes: &BTreeSet<NodeId>,
+        state: &mut AlphaIdentifierState,
+        node: NodeId,
+        binding_scope: AlphaBindingScope,
+    ) -> BTreeMap<NodeId, SelectorVariableId> {
+        if skipped_nodes.contains(&node) {
+            return BTreeMap::new();
+        }
+        let mut result = BTreeMap::new();
+
+        for (child_index, child) in index
+            .children_by_parent
+            .get(&node)
+            .into_iter()
+            .flatten()
+            .copied()
+            .enumerate()
+        {
+            if child_index == 0 {
+                result.extend(self.lower_alpha_pattern_binding_node(
+                    logical_module,
+                    index,
+                    skipped_nodes,
+                    state,
+                    child,
+                    binding_scope,
+                ));
+            } else {
+                result.extend(self.lower_alpha_identifier_node(
+                    logical_module,
+                    index,
+                    skipped_nodes,
+                    state,
+                    child,
+                ));
+            }
+        }
+        result
+    }
+
+    fn lower_alpha_pattern_binding_node(
+        &mut self,
+        logical_module: &str,
+        index: &AlphaIdentifierIndex,
+        skipped_nodes: &BTreeSet<NodeId>,
+        state: &mut AlphaIdentifierState,
+        node: NodeId,
+        binding_scope: AlphaBindingScope,
+    ) -> BTreeMap<NodeId, SelectorVariableId> {
+        if skipped_nodes.contains(&node) {
+            return BTreeMap::new();
+        }
+
+        let mut result = BTreeMap::new();
+        match index.node_kind.get(&node).copied() {
+            Some(NodeKind::BindingIdent) | Some(NodeKind::PatAssign) => {
+                if let Some(name) = index.ident_name.get(&node) {
+                    let identifier = self.alpha_binding_identifier_in_scope(
+                        logical_module,
+                        state,
+                        name,
+                        binding_scope,
+                    );
+                    result.insert(node, identifier);
+                }
+                for child in index.children_by_parent.get(&node).into_iter().flatten() {
+                    result.extend(self.lower_alpha_identifier_node(
+                        logical_module,
+                        index,
+                        skipped_nodes,
+                        state,
+                        *child,
+                    ));
+                }
+            }
+            Some(NodeKind::AssignPat) => {
+                for (child_index, child) in index
+                    .children_by_parent
+                    .get(&node)
+                    .into_iter()
+                    .flatten()
+                    .copied()
+                    .enumerate()
+                {
+                    if child_index == 0 {
+                        result.extend(self.lower_alpha_pattern_binding_node(
+                            logical_module,
+                            index,
+                            skipped_nodes,
+                            state,
+                            child,
+                            binding_scope,
+                        ));
+                    } else {
+                        result.extend(self.lower_alpha_identifier_node(
+                            logical_module,
+                            index,
+                            skipped_nodes,
+                            state,
+                            child,
+                        ));
+                    }
+                }
+            }
+            Some(NodeKind::PatKeyValue) => {
+                if let Some(value) = child_at(index, node, 1) {
+                    result.extend(self.lower_alpha_pattern_binding_node(
+                        logical_module,
+                        index,
+                        skipped_nodes,
+                        state,
+                        value,
+                        binding_scope,
+                    ));
+                }
+            }
+            Some(NodeKind::ArrayPat) | Some(NodeKind::ObjectPat) | Some(NodeKind::RestPat) => {
+                for child in index.children_by_parent.get(&node).into_iter().flatten() {
+                    result.extend(self.lower_alpha_pattern_binding_node(
+                        logical_module,
+                        index,
+                        skipped_nodes,
+                        state,
+                        *child,
+                        binding_scope,
+                    ));
+                }
+            }
+            _ => {
+                result.extend(self.lower_alpha_identifier_node(
+                    logical_module,
+                    index,
+                    skipped_nodes,
+                    state,
+                    node,
+                ));
+            }
         }
         result
     }
@@ -1319,13 +1509,32 @@ impl MemberSelectorProgramBuilder {
         state: &mut AlphaIdentifierState,
         name: &str,
     ) -> SelectorVariableId {
-        if let Some(existing) = state.current_frame().by_name.get(name).copied() {
+        self.alpha_binding_identifier_in_scope(
+            logical_module,
+            state,
+            name,
+            AlphaBindingScope::Current,
+        )
+    }
+
+    fn alpha_binding_identifier_in_scope(
+        &mut self,
+        logical_module: &str,
+        state: &mut AlphaIdentifierState,
+        name: &str,
+        binding_scope: AlphaBindingScope,
+    ) -> SelectorVariableId {
+        let frame_index = state.binding_frame_index(binding_scope);
+        if let Some(existing) = state.frames[frame_index].by_name.get(name).copied() {
             return existing;
         }
-        let distinct_from = state.current_frame().by_name.values().copied().collect();
+        let distinct_from = state.frames[frame_index]
+            .by_name
+            .values()
+            .copied()
+            .collect();
         let identifier = self.new_alpha_identifier_variable(logical_module, state, name);
-        state
-            .current_frame_mut()
+        state.frames[frame_index]
             .by_name
             .insert(name.to_string(), identifier);
         self.add_alpha_identifier_inequalities(state, identifier, distinct_from);
@@ -1349,8 +1558,8 @@ impl MemberSelectorProgramBuilder {
             .flat_map(|frame| frame.by_name.values().copied())
             .collect();
         let identifier = self.new_alpha_identifier_variable(logical_module, state, name);
-        state
-            .current_frame_mut()
+        let frame_index = state.binding_frame_index(AlphaBindingScope::NearestVar);
+        state.frames[frame_index]
             .by_name
             .insert(name.to_string(), identifier);
         self.add_alpha_identifier_inequalities(state, identifier, distinct_from);
@@ -1424,7 +1633,7 @@ impl MemberSelectorProgramBuilder {
     }
 }
 
-fn introduces_alpha_scope(kind: NodeKind) -> bool {
+fn alpha_scope_kind(kind: NodeKind) -> Option<AlphaScopeKind> {
     matches!(
         kind,
         NodeKind::Function
@@ -1437,6 +1646,8 @@ fn introduces_alpha_scope(kind: NodeKind) -> bool {
             | NodeKind::Setter
             | NodeKind::Catch
     )
+    .then_some(AlphaScopeKind::Var)
+    .or_else(|| (kind == NodeKind::Block).then_some(AlphaScopeKind::Lexical))
 }
 
 fn native_target_binding_node(
@@ -1654,6 +1865,7 @@ struct AlphaIdentifierIndex {
     node_kind: BTreeMap<NodeId, NodeKind>,
     ident_name: BTreeMap<NodeId, String>,
     prop_name: BTreeMap<NodeId, String>,
+    operator: BTreeMap<NodeId, String>,
     children_by_parent: BTreeMap<NodeId, Vec<NodeId>>,
     super_class_by_class: BTreeMap<NodeId, NodeId>,
 }
@@ -1682,6 +1894,7 @@ impl AlphaIdentifierIndex {
             node_kind: facts.node_kind.iter().copied().collect(),
             ident_name: facts.ident_name.iter().cloned().collect(),
             prop_name: facts.prop_name.iter().cloned().collect(),
+            operator: facts.operator.iter().cloned().collect(),
             children_by_parent,
             super_class_by_class: facts.super_class.iter().copied().collect(),
         }
@@ -1711,16 +1924,48 @@ impl AlphaIdentifierState {
             .expect("alpha identifier lowering always keeps a root frame")
     }
 
-    fn current_frame_mut(&mut self) -> &mut AlphaIdentifierFrame {
-        self.frames
-            .last_mut()
-            .expect("alpha identifier lowering always keeps a root frame")
+    fn binding_frame_index(&self, binding_scope: AlphaBindingScope) -> usize {
+        match binding_scope {
+            AlphaBindingScope::Current => self.frames.len() - 1,
+            AlphaBindingScope::NearestVar => self
+                .frames
+                .iter()
+                .rposition(|frame| frame.kind == AlphaScopeKind::Var)
+                .unwrap_or(0),
+        }
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AlphaScopeKind {
+    Lexical,
+    Var,
+}
+
+#[derive(Clone, Copy)]
+enum AlphaBindingScope {
+    Current,
+    NearestVar,
+}
+
 struct AlphaIdentifierFrame {
+    kind: AlphaScopeKind,
     by_name: BTreeMap<String, SelectorVariableId>,
+}
+
+impl AlphaIdentifierFrame {
+    fn new(kind: AlphaScopeKind) -> Self {
+        Self {
+            kind,
+            by_name: BTreeMap::new(),
+        }
+    }
+}
+
+impl Default for AlphaIdentifierFrame {
+    fn default() -> Self {
+        Self::new(AlphaScopeKind::Var)
+    }
 }
 
 fn native_anonymous_source_match_supported(selector: &AnonymousStatementSelector) -> bool {
@@ -3829,6 +4074,38 @@ function second() {
         assert!(
             !occurrence_counts.values().any(|count| *count > 2),
             "the inner arrow binding must not merge with the outer parameter: {occurrence_counts:?}"
+        );
+    }
+
+    #[test]
+    fn alpha_all_const_destructuring_in_sibling_blocks_uses_block_scoped_bindings() {
+        let mut selector = AnonymousStatementSelector::exact(
+            r#"function readable(input) {
+  { const { value } = input.left; collect(value); }
+  { const { value } = input.right; collect(value); }
+}"#,
+        );
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        let identifier_vars = alpha_identifier_vars_in_source_order(&lowered.program);
+        let occurrence_counts = identifier_occurrence_counts(&identifier_vars);
+        assert_eq!(
+            occurrence_counts
+                .values()
+                .filter(|count| **count == 1)
+                .count(),
+            3,
+            "expected sibling block shorthand bindings to remain independent in the alpha model: {occurrence_counts:?}"
+        );
+        assert!(
+            !occurrence_counts.values().any(|count| *count == 4),
+            "sibling block destructuring bindings must not collapse into one alpha variable: {occurrence_counts:?}"
         );
     }
 

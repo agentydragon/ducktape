@@ -124,6 +124,41 @@ export { actual };
 }
 
 #[test]
+fn member_source_match_alpha_all_allows_name_reuse_in_sibling_block_scopes() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function actual(input) {
+  const out = [];
+  { const { value: a } = input.left; out.push(a); }
+  { const { value: b } = input.right; out.push(b); }
+  return out.join("|");
+}
+console.log(actual({ left: { value: "L" }, right: { value: "R" } }));
+export { actual };
+"#,
+        vec![logical_module(
+            "format",
+            &[Member::source_alpha(
+                "format_values",
+                r#"function readable(input) {
+  const out = [];
+  { const { value } = input.left; out.push(value); }
+  { const { value } = input.right; out.push(value); }
+  return out.join("|");
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "L|R\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/format.js",
+        &["function format_values", "out.push(a)", "out.push(b)"],
+        &["function actual", "function readable"],
+    );
+}
+
+#[test]
 fn member_source_match_alpha_all_named_function_expression_name_is_function_local() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const a = () => "outer";
