@@ -1,41 +1,40 @@
-# haku/console — Haku's interactive dashboard
+# haku/console — Haku's interactive console
 
-A small FastAPI service that serves Haku's dashboard as a **React single-page app
-over a JSON API**, reading items from a clone of the `haku-state` repo and writing
-operator actions back as git commits. It is the **Haku console**: an interface Haku
-builds for the operator to interact _with Haku_, Authentik operator-only, read-only
-to the world, writing only to the internal `haku-state` Forgejo. It replaced the
-static nginx + git-sync dashboard (now retired).
+A small FastAPI service that serves the Haku console as a **React single-page app
+over a JSON API**. It is the trusted operator interface: Authentik operator-only,
+reviewed ducktape code. It replaced the static nginx + git-sync dashboard (now retired).
+
+Item rendering has **moved** to `haku/state_template/ui/` — Haku's own UI service,
+embedded via a sandboxed cross-origin iframe. The console is now a thin shell:
+the capability tier (launch-routine) + a generic "Note to Haku" trace box + the
+Free-form UI iframe.
 
 **Trust boundary:** the console is reviewed/released ducktape code, so it runs in
 its **own `haku-console` namespace** — deliberately _not_ `haku-sandbox`, the
 namespace Haku has full CRUD over. Haku therefore has no RBAC to read the console's
 secrets/logs or patch it, and the console sits outside the `haku-mitmproxy` egress
 fence (that fence keys on `haku-sandbox`). This is the confidentiality boundary that
-lets the console later hold secrets Haku may not read (e.g. the Claude Code web
-session bearer). See `haku/PLAN.md` → _The agent-authored console_.
+lets the console hold secrets Haku may not read (e.g. the Claude Code web session
+bearer). See `haku/PLAN.md` → _The agent-authored console_.
 
-## Action model — the backend stays dumb
+## Trace tier — item-agnostic
 
-The console never interprets what an action _means_. Each item Haku writes can carry
-`actions[]` (e.g. _Snooze 30d_, _Draft the email_, _Research deeper_); the dashboard
-renders each `command` action as a **click/un-click toggle**. Clicking records an
-overlay file `clicks/<item-id>/<action-id>` (`PUT /api/trace/items/<id>/actions/<aid>`),
-un-clicking removes it (`DELETE`) — each a commit by the `haku-console` identity.
-**Haku reduces the overlay on its next run**: it reads the clicked actions, carries
-out each one's intent, and clears the click. So new verbs need no backend change —
-Haku invents the action and its meaning; the console only records the click.
-`claude_handoff` actions are stateless `claude.ai/new` deep-links (no commit).
-Feedback — the global box, or a per-item box on each card — appends to `intake/`
-(`POST /api/trace/feedback`); per-item notes are tagged with the item id, which Haku
-reduces as feedback on that item.
+The console's trace tier is **item-agnostic**. `POST /api/trace` accepts a plain
+`{text: str}` and appends it as an intake note (`intake/<timestamp>-trace.md`) to
+haku-state, then commit-pushes. The frontend constructs whatever text it needs (e.g.
+"item blah action blah") and sends it as an opaque string. No verbs beyond "write a
+note" live in the trace tier; Haku reduces the notes on its next run.
+
+The backend keeps the haku-state clone and the `haku-state-git-write` secret so it
+can author these commits. There is no read path (no items, no clicks, no pull loop) —
+the clone is write-only from the console's perspective.
 
 ## Two write tiers — the internal security split
 
 Writes are split by **what's the worst case if agent-authored UI made this call with
 no real operator behind it** (see `haku/PLAN.md` → _The agent-authored console_):
 
-- **Trace tier** (`trace.py`, `/api/trace/*`) — only records operator-expressed intent
+- **Trace tier** (`trace.py`, `POST /api/trace`) — only records operator-expressed intent
   into `haku-state`, which Haku already owns, so it grants the agent **nothing new**.
   Low-privilege; safe to expose to agent-authored UI.
 - **Capability tier** (`capabilities.py`, `/api/capabilities/*`) — uses console-only
@@ -56,35 +55,29 @@ no real operator behind it** (see `haku/PLAN.md` → _The agent-authored console
   The split is legible in the code: a search for what touches a privileged secret
   returns `capabilities.py` and never the trace router.
 
-## Content vs. look
-
-Driven by `haku-state` **at runtime for content**: items (data) are read from the clone,
-so Haku evolves _what_ the dashboard shows without an image rebuild. The _look_ now lives
-in the bundle (a frontend rebuild changes it) — unlike the old server-rendered console,
-whose page/CSS templates could be overridden from the clone.
-
 ## Free-form UI — Haku's own UI, embedded
 
-A **Free-form UI** tab embeds Haku's own UI service (`haku-ui.allegedly.works`, a separate
-Authentik-gated app Haku runs in `haku-sandbox`) as a **sandboxed cross-origin iframe** — the
-console never renders or even sees it. `HAKU_CONSOLE_HAKU_UI_URL` enables it; when set, the
-dashboard exposes the tab and the response CSP adds `frame-src` for that origin (and only it).
-Containment is cross-origin isolation: the iframe can't read the console's DOM/cookies or act
-as it — so Haku's UI can't act as the console. This is the first step of the agent-authored-UI
-direction; roadmap + boundary doctrine: `console/plans/free_form_ui_iframe.md`.
+The console embeds Haku's own UI service (`haku-ui.allegedly.works`, a separate
+Authentik-gated app Haku runs in `haku-sandbox`) as a **sandboxed cross-origin iframe** —
+the console never renders or even sees its content. `HAKU_CONSOLE_HAKU_UI_URL` enables it;
+when set, the response CSP adds `frame-src` for that origin (and only it).
+Containment is cross-origin isolation: the iframe can't read the console's DOM/cookies
+or act as it — so Haku's UI can't act as the console. The trusted **bridge** (`bridge.ts`)
+lets the iframe request link opens via postMessage; the shell origin-checks, schema-validates,
+and decides. See `console/plans/free_form_ui_iframe.md`.
 
 ## Layout
 
-| Path               | Role                                                                                                                                                                                                                           |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `app.py`           | FastAPI `create_app` + lifespan (clone + background pull loop). Read endpoints (`GET /api/dashboard`, `GET /healthz`), CSRF config, mounts the trace + capability routers, serves the SPA (`StaticFiles`) otherwise.           |
-| `trace.py`         | Trace-tier router (`/api/trace/*`): the overlay toggle (`PUT`/`DELETE /api/trace/items/{id}/actions/{aid}`) and `POST /api/trace/feedback`. Low-privilege haku-state writes; reads `git_state` off `app.state`.                |
-| `capabilities.py`  | Capability-tier router (`/api/capabilities/*`): CSRF-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer; `GET /csrf` issues the double-submit token.                      |
-| `git_state.py`     | pygit2 clone of haku-state; `reconcile` (fetch + hard-reset), `commit_push` with retry, `read_items`, and the clicks/-overlay + feedback writers. Talks to the cluster-internal **plaintext-HTTP** Forgejo (no TLS/CA needed). |
-| `models.py`        | Pydantic `Item` (discriminated-union `action` + `actions[]`) and the `/api` request/response models.                                                                                                                           |
-| `config.py`        | Env settings (`HAKU_CONSOLE_*`).                                                                                                                                                                                               |
-| `export_schema.py` | Prints the OpenAPI schema; the frontend generates its TypeScript types from it.                                                                                                                                                |
-| `frontend/`        | React SPA (esbuild bundle) — see `frontend/README.md`.                                                                                                                                                                         |
+| Path               | Role                                                                                                                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `app.py`           | FastAPI `create_app` + lifespan (clone). `GET /api/config`, `GET /healthz`, CSRF config, mounts the trace + capability routers, serves the SPA (`StaticFiles`) otherwise.                                    |
+| `trace.py`         | Trace-tier router (`/api/trace`): a single `POST` that records an opaque operator note to haku-state. Low-privilege haku-state write; reads `git_state` off `app.state`.                                     |
+| `capabilities.py`  | Capability-tier router (`/api/capabilities/*`): CSRF-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer; `GET /csrf` issues the double-submit token.    |
+| `git_state.py`     | pygit2 clone of haku-state; `reconcile` (fetch + hard-reset), `commit_push` with retry, `append_trace` (the single write path). Talks to the cluster-internal **plaintext-HTTP** Forgejo (no TLS/CA needed). |
+| `models.py`        | Pydantic `TraceRequest` and `ConfigResponse` — the `/api` request/response models.                                                                                                                           |
+| `config.py`        | Env settings (`HAKU_CONSOLE_*`).                                                                                                                                                                             |
+| `export_schema.py` | Prints the OpenAPI schema; the frontend generates its TypeScript types from it.                                                                                                                              |
+| `frontend/`        | React SPA (esbuild bundle) — see `frontend/README.md`.                                                                                                                                                       |
 
 ## Perimeter / deploy
 

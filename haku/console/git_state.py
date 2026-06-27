@@ -1,7 +1,6 @@
-"""Owns a working clone of the haku-state repo: read items/templates, and apply
-operator actions as git commits.
+"""Owns a working clone of the haku-state repo: write operator traces as git commits.
 
-The console is a **second writer** to haku-state ``main`` (Haku's runs are the other),
+The console is a second writer to haku-state ``main`` (Haku's runs are the other),
 so every mutation reconciles against origin (fetch + hard-reset local branch) and
 retries the push on a non-fast-forward. Commits carry a distinct ``haku-console``
 identity so Haku can attribute them. pygit2 talks to the cluster-internal
@@ -23,9 +22,6 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import pygit2
-import yaml
-
-from haku.console.models import Item
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +36,8 @@ class GitState:
         self._dir = Path(clone_dir)
         self._branch = branch
         self._repo: pygit2.Repository | None = None
-        # Serializes the read-modify-write-push critical section against the
-        # background pull loop and other requests (single in-pod writer).
+        # Serializes the read-modify-write-push critical section against concurrent
+        # requests (single in-pod writer).
         self.lock = asyncio.Lock()
 
     def _callbacks(self) -> pygit2.RemoteCallbacks:
@@ -74,12 +70,6 @@ class GitState:
         self.repo.remotes["origin"].fetch(callbacks=self._callbacks())
         origin = self.repo.lookup_reference(f"refs/remotes/origin/{self._branch}").target
         self.repo.reset(origin, pygit2.enums.ResetMode.HARD)
-
-    def read_items(self) -> list[Item]:
-        items_dir = self._dir / "items"
-        if not items_dir.is_dir():
-            return []
-        return [Item.model_validate(yaml.safe_load(p.read_text())) for p in sorted(items_dir.glob("*.yaml"))]
 
     def commit_push(self, changes: Mapping[str, bytes | None], message: str, *, retries: int = 5) -> None:
         """Apply ``changes`` (relpath → bytes, or None to delete), commit, and push.
@@ -127,46 +117,9 @@ class GitState:
         self.repo.create_commit(head.name, CONSOLE_SIGNATURE, CONSOLE_SIGNATURE, message, tree, [head_commit.id])
         return True
 
-    # --- operator-action overlay (clicks/) + free-form feedback -----------------
-    # The console never edits items/ (Haku owns those). It records a clicked action as
-    # clicks/<item_id>/<action_id> (and removes it on un-click); Haku reduces these
-    # on its next run. The git history of clicks/ is the click/un-click event log.
-
-    @staticmethod
-    def _click_path(item_id: str, action_id: str) -> str:
-        return f"clicks/{item_id}/{action_id}"
-
-    def read_clicks(self) -> set[tuple[str, str]]:
-        """Currently-clicked (item_id, action_id) pairs, from the clicks/ overlay."""
-        root = self._dir / "clicks"
-        if not root.is_dir():
-            return set()
-        return {
-            (item_dir.name, click.name)
-            for item_dir in root.iterdir()
-            if item_dir.is_dir()
-            for click in item_dir.iterdir()
-            if click.is_file()
-        }
-
-    def set_click(self, item_id: str, action_id: str) -> None:
-        stamp = f"clicked_at: {dt.datetime.now(dt.UTC).isoformat(timespec='seconds')}\n"
-        self.commit_push(
-            {self._click_path(item_id, action_id): stamp.encode()}, f"console: click {action_id} on {item_id}"
-        )
-
-    def clear_click(self, item_id: str, action_id: str) -> None:
-        self.commit_push({self._click_path(item_id, action_id): None}, f"console: unclick {action_id} on {item_id}")
-
-    def write_feedback(self, text: str, item_id: str | None = None) -> None:
-        # Per-item feedback names the item id in the note (and filename); Haku's run
-        # contract treats an intake note referencing an item id as feedback on it.
+    def append_trace(self, text: str) -> None:
+        """Append an opaque operator-authored note to ``intake/`` and commit-push."""
         stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
-        if item_id is None:
-            path, heading, message = f"intake/{stamp}-feedback.md", "Operator feedback", "console: feedback"
-        else:
-            path = f"intake/{stamp}-feedback-{item_id}.md"
-            heading = f"Operator feedback on {item_id}"
-            message = f"console: feedback on {item_id}"
-        body = f"# {heading} ({stamp})\n\n{text.strip()}\n"
-        self.commit_push({path: body.encode()}, message)
+        path = f"intake/{stamp}-trace.md"
+        body = f"# Operator note ({stamp})\n\n{text.strip()}\n"
+        self.commit_push({path: body.encode()}, "console: trace")
