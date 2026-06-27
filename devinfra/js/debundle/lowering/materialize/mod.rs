@@ -309,6 +309,7 @@ pub(super) fn materialize_logical_chunk(
     );
     emit_debundle_progress(chunk_id, "resolve_global_selector_members", "end");
     result?;
+    builder.pull_destructure_siblings(&destructure_siblings, chunk_top_level_mark)?;
     builder.adopt_bindings_of_claimed_anonymous_statements(&declarations);
     drop(imported_binding_resolver);
     apply_rebind_folds_from_chunk_analysis(&mut builder, &precomputed);

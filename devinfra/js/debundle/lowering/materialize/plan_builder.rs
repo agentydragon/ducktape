@@ -52,10 +52,12 @@ use selector_diagnostics::{
     SelectorDiagnosticsReport,
 };
 use selector_ir::{
-    ClaimOutcome, ResolvedClaim, SelectorFact, SelectorFactStore, SelectorTargetId, SolverResult,
+    ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
+    SelectorTargetId, SolverResult,
 };
 use selector_ir_lowering::{MemberSelectorLoweringContext, MemberSelectorProgramBuilder};
 use selector_ortools_cpsat_backend::OrToolsCpSatBackend;
+use source_match::SelectorResolver;
 
 const ORTOOLS_CPSAT_SOLVER_ENV: &str = "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER";
 const ORTOOLS_CPSAT_SOLVER_RUNFILE: &str =
@@ -251,6 +253,12 @@ fn resolve_anchor<'a>(
 fn member_selector_spec_for_global_solver(
     member: &MemberRequest,
 ) -> Option<spec::MemberSelectorSpec> {
+    if let Some(binding) = &member.binding_selector
+        && !member.is_import_specifier
+    {
+        return Some(spec::MemberSelectorSpec::Binding(binding.clone()));
+    }
+
     if let Some(selector) = &member.source_match {
         return Some(spec::MemberSelectorSpec::SourceMatch(selector.clone()));
     }
@@ -288,21 +296,13 @@ fn member_selector_spec_for_global_solver(
 }
 
 fn selector_fact_store_for_chunk(
+    program: &SelectorProgram,
     chunk_id: ChunkId,
     owner_graph: &analysis::OwnerGraph,
     module: &swc_ecma_ast::Module,
     import_sources: &HashMap<String, String>,
 ) -> Result<SelectorFactStore> {
     let mut store = SelectorFactStore::default();
-    let ast_facts = chunk_facts::extract_facts(module).map_err(|unsupported| {
-        anyhow!(
-            "chunk {:?}: selector AST fact extraction failed at {}; global selector solving needs \
-             a complete AST EDB",
-            chunk_id,
-            unsupported.context,
-        )
-    })?;
-    store.extend_chunk_facts(chunk_id, &ast_facts);
     for node in owner_graph.iter_nodes() {
         store.push(SelectorFact::Owner {
             chunk_id,
@@ -329,51 +329,138 @@ fn selector_fact_store_for_chunk(
             });
         }
     }
-    for (ordinal, reads) in chunk_facts::member_reads_by_ordinal(module) {
-        for read in reads {
-            store.push(SelectorFact::MemberRead {
+
+    if selector_program_needs_ast_edb(program) {
+        let ast_facts = chunk_facts::extract_facts(module).map_err(|unsupported| {
+            anyhow!(
+                "chunk {:?}: selector AST fact extraction failed at {}; global selector solving \
+                 needs a complete AST EDB for this selector program",
                 chunk_id,
-                statement_ordinal: StatementOrdinal(ordinal),
-                object: read.object,
-                member: read.member,
+                unsupported.context,
+            )
+        })?;
+        store.extend_chunk_facts(chunk_id, &ast_facts);
+    }
+    if selector_program_needs_member_reads(program) {
+        for (ordinal, reads) in chunk_facts::member_reads_by_ordinal(module) {
+            for read in reads {
+                store.push(SelectorFact::MemberRead {
+                    chunk_id,
+                    statement_ordinal: StatementOrdinal(ordinal),
+                    object: read.object,
+                    member: read.member,
+                });
+            }
+        }
+    }
+    if selector_program_needs_module_member_uses(program) {
+        for (ordinal, uses) in chunk_facts::module_member_uses_by_ordinal(module, import_sources) {
+            for use_site in uses {
+                store.push(SelectorFact::ModuleMemberUse {
+                    chunk_id,
+                    statement_ordinal: StatementOrdinal(ordinal),
+                    module: use_site.module,
+                    member: use_site.member,
+                });
+            }
+        }
+    }
+    if selector_program_needs_call_argument_uses(program) {
+        for call in chunk_facts::call_argument_uses(module) {
+            store.push(SelectorFact::CallArgumentUse {
+                chunk_id,
+                argument: call.argument,
+                callee_object: call.callee_object,
+                callee_member: call.callee_member,
+                arg_index: call.arg_index,
             });
         }
     }
-    for (ordinal, uses) in chunk_facts::module_member_uses_by_ordinal(module, import_sources) {
-        for use_site in uses {
-            store.push(SelectorFact::ModuleMemberUse {
+    if selector_program_needs_decorate_call_uses(program) {
+        for call in chunk_facts::decorate_call_uses(module) {
+            store.push(SelectorFact::DecorateCallUse {
                 chunk_id,
-                statement_ordinal: StatementOrdinal(ordinal),
-                module: use_site.module,
-                member: use_site.member,
+                callee: call.callee,
+                class_anchor: call.class_anchor,
+                member: call.member,
             });
         }
     }
-    for call in chunk_facts::call_argument_uses(module) {
-        store.push(SelectorFact::CallArgumentUse {
-            chunk_id,
-            argument: call.argument,
-            callee_object: call.callee_object,
-            callee_member: call.callee_member,
-            arg_index: call.arg_index,
-        });
-    }
-    for call in chunk_facts::decorate_call_uses(module) {
-        store.push(SelectorFact::DecorateCallUse {
-            chunk_id,
-            callee: call.callee,
-            class_anchor: call.class_anchor,
-            member: call.member,
-        });
-    }
-    for alias in chunk_facts::intrinsic_alias_uses(module) {
-        store.push(SelectorFact::IntrinsicAliasUse {
-            chunk_id,
-            binding: alias.binding,
-            property: alias.property,
-        });
+    if selector_program_needs_intrinsic_alias_uses(program) {
+        for alias in chunk_facts::intrinsic_alias_uses(module) {
+            store.push(SelectorFact::IntrinsicAliasUse {
+                chunk_id,
+                binding: alias.binding,
+                property: alias.property,
+            });
+        }
     }
     Ok(store)
+}
+
+fn selector_program_needs_ast_edb(program: &SelectorProgram) -> bool {
+    program.atoms.iter().any(|atom| {
+        matches!(
+            atom,
+            SelectorAtom::OwnerTopLevelRoot { .. }
+                | SelectorAtom::AstKind { .. }
+                | SelectorAtom::AstChild { .. }
+                | SelectorAtom::AstChildListPattern { .. }
+                | SelectorAtom::AstSuperClass { .. }
+                | SelectorAtom::AstChildCount { .. }
+                | SelectorAtom::AstStringLiteral { .. }
+                | SelectorAtom::AstStringLiteralMatchingRegex { .. }
+                | SelectorAtom::AstNumberLiteral { .. }
+                | SelectorAtom::AstBoolLiteral { .. }
+                | SelectorAtom::AstIdentifierName { .. }
+                | SelectorAtom::AstPropertyName { .. }
+                | SelectorAtom::AstBareProperty { .. }
+                | SelectorAtom::AstOperator { .. }
+                | SelectorAtom::AstRegexLiteral { .. }
+                | SelectorAtom::AstTopLevel { .. }
+        )
+    })
+}
+
+fn selector_program_needs_member_reads(program: &SelectorProgram) -> bool {
+    program.atoms.iter().any(|atom| {
+        matches!(
+            atom,
+            SelectorAtom::ReadsMember { .. } | SelectorAtom::ReadsMemberOfOwner { .. }
+        )
+    })
+}
+
+fn selector_program_needs_module_member_uses(program: &SelectorProgram) -> bool {
+    program
+        .atoms
+        .iter()
+        .any(|atom| matches!(atom, SelectorAtom::ConsumesModuleMember { .. }))
+}
+
+fn selector_program_needs_call_argument_uses(program: &SelectorProgram) -> bool {
+    program.atoms.iter().any(|atom| {
+        matches!(
+            atom,
+            SelectorAtom::PassedToCall { .. } | SelectorAtom::PassedToCallOfOwner { .. }
+        )
+    })
+}
+
+fn selector_program_needs_decorate_call_uses(program: &SelectorProgram) -> bool {
+    program.atoms.iter().any(|atom| {
+        matches!(
+            atom,
+            SelectorAtom::MakesDecorateCall { .. } | SelectorAtom::MakesDecorateCallForOwner { .. }
+        )
+    })
+}
+
+fn selector_program_needs_intrinsic_alias_uses(program: &SelectorProgram) -> bool {
+    program
+        .atoms
+        .iter()
+        .any(|atom| matches!(atom, SelectorAtom::IntrinsicAlias { .. }))
 }
 
 fn solver_claim_is_import_specifier(facts: &SelectorFactStore, claim: &ResolvedClaim) -> bool {
@@ -683,6 +770,40 @@ fn anonymous_statement_ambiguous_message(
     )
 }
 
+fn anonymous_statement_diagnostic_message(
+    module: &swc_ecma_ast::Module,
+    request: &LogicalRequest,
+    statement: &AnonymousStatementRequest,
+) -> Option<String> {
+    let resolver = source_match::ChunkResolver::new(module);
+    let matches = match resolver.resolve_anonymous_groups(&request.id, &statement.selector) {
+        Ok(matches) => matches,
+        Err(error) => {
+            return Some(format!(
+                "logical_module {}: anonymous_statements[].match could not be checked after \
+                 global selector no-match: {error}. Selector:\n{}",
+                request.id, statement.selector.match_source,
+            ));
+        }
+    };
+    match matches.as_slice() {
+        [] => Some(anonymous_statement_no_match_message(request, statement)),
+        [_single] => None,
+        multiple => {
+            let body_indices = multiple
+                .iter()
+                .flat_map(|group| group.iter().copied())
+                .collect::<Vec<_>>();
+            Some(anonymous_statement_ambiguous_message(
+                request,
+                statement,
+                multiple.len(),
+                &body_indices,
+            ))
+        }
+    }
+}
+
 /// Output of `ChunkPlanBuilder::finalize`: everything downstream
 /// `lower_chunk` + the chunk-report builder need from the plan
 /// construction phase.
@@ -759,6 +880,11 @@ pub(super) struct ChunkPlanBuilder {
     /// known source binding spelling but whose ownership is claimed after chunk
     /// analysis through the global solver.
     deferred_binding_claims_by_name: HashMap<String, DuplicateClaimSite>,
+    /// Deferred binding selector names that were duplicate claims during
+    /// request construction. Every member for such a binding stays out of the
+    /// solver program so the existing duplicate-claim report remains the
+    /// primary diagnostic.
+    duplicate_deferred_binding_names: BTreeSet<String>,
     /// Duplicate binding claims found while processing explicit
     /// requests. We keep scanning later requests after recording a
     /// duplicate so one run can report all duplicate claim sites in
@@ -794,6 +920,7 @@ impl ChunkPlanBuilder {
             unmatched_spec_claims: Vec::new(),
             catalogue_index_by_name: HashMap::new(),
             deferred_binding_claims_by_name: HashMap::new(),
+            duplicate_deferred_binding_names: BTreeSet::new(),
             duplicate_binding_claims: Vec::new(),
             source_match_diagnostics: Vec::new(),
             anonymous_statement_diagnostics: Vec::new(),
@@ -835,6 +962,10 @@ impl ChunkPlanBuilder {
                     );
                     self.duplicate_binding_claims.push(duplicate);
                     duplicate_bindings.insert(member.binding.clone());
+                    if member.resolves_after_chunk_analysis() {
+                        self.duplicate_deferred_binding_names
+                            .insert(member.binding.clone());
+                    }
                     continue;
                 }
                 if let Some(existing) = self
@@ -852,6 +983,8 @@ impl ChunkPlanBuilder {
                         },
                     });
                     duplicate_bindings.insert(member.binding.clone());
+                    self.duplicate_deferred_binding_names
+                        .insert(member.binding.clone());
                     continue;
                 }
             }
@@ -1054,6 +1187,22 @@ impl ChunkPlanBuilder {
         bail!("{message}")
     }
 
+    fn report_anonymous_statement_failure_before_binding_no_match(
+        &mut self,
+        module: &swc_ecma_ast::Module,
+        request: &LogicalRequest,
+    ) -> Result<bool> {
+        for statement in &request.anonymous_statements {
+            let Some(message) = anonymous_statement_diagnostic_message(module, request, statement)
+            else {
+                continue;
+            };
+            self.record_anonymous_statement_failure_or_bail(request, statement, message)?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn resolve_and_claim_global_selectors(
         &mut self,
@@ -1095,6 +1244,14 @@ impl ChunkPlanBuilder {
             for (index, request) in explicit_requests.iter().enumerate() {
                 let group_assignments = source_match_group_assignments(request);
                 for (member_index, member) in request.members.iter().enumerate() {
+                    if member.resolves_after_chunk_analysis()
+                        && !member.binding.is_empty()
+                        && self
+                            .duplicate_deferred_binding_names
+                            .contains(&member.binding)
+                    {
+                        continue;
+                    }
                     if member.binding_selector.is_some() && !member.is_import_specifier {
                         let binding_id = top_level_id(&member.binding, chunk_top_level_mark);
                         if !declaration_by_name.contains_key(&binding_id) {
@@ -1180,9 +1337,86 @@ impl ChunkPlanBuilder {
         if program.targets.is_empty() {
             return Ok(());
         }
-        let facts =
-            selector_fact_store_for_chunk(chunk_id_interned, owner_graph, module, import_sources)?;
+        let facts = selector_fact_store_for_chunk(
+            &program,
+            chunk_id_interned,
+            owner_graph,
+            module,
+            import_sources,
+        )?;
         let result = solve_global_selector_program(&program, &facts)?;
+
+        for info in anonymous_statement_targets {
+            let request = &explicit_requests[info.request_index];
+            match result.outcome_for(info.target) {
+                Some(ClaimOutcome::Unique { claim }) => {
+                    self.claim_anonymous_statement_from_solver(
+                        module,
+                        info.request_index,
+                        &request.id,
+                        &info.statement,
+                        claim,
+                    )?;
+                }
+                Some(ClaimOutcome::NoMatch) => {
+                    self.record_anonymous_statement_failure_or_bail(
+                        request,
+                        &info.statement,
+                        anonymous_statement_no_match_message(request, &info.statement),
+                    )?;
+                    continue;
+                }
+                Some(ClaimOutcome::Ambiguous { candidates }) => {
+                    let body_indices = candidates
+                        .iter()
+                        .filter_map(|candidate| {
+                            body_index_for_statement_ordinal(
+                                &module.body,
+                                candidate.statement_ordinal.0,
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    self.record_anonymous_statement_failure_or_bail(
+                        request,
+                        &info.statement,
+                        anonymous_statement_ambiguous_message(
+                            request,
+                            &info.statement,
+                            candidates.len(),
+                            &body_indices,
+                        ),
+                    )?;
+                    continue;
+                }
+                Some(ClaimOutcome::Duplicate {
+                    owner,
+                    conflicting_targets,
+                }) => {
+                    bail!(
+                        "logical_module {}: global selector solver assigned anonymous statement \
+                         to duplicate owner {:?} shared by targets {:?}",
+                        request.id,
+                        owner,
+                        conflicting_targets,
+                    );
+                }
+                Some(ClaimOutcome::Unsupported { message }) => {
+                    bail!(
+                        "logical_module {}: global selector solver does not support anonymous \
+                         statement selector: {}",
+                        request.id,
+                        message,
+                    );
+                }
+                None => {
+                    bail!(
+                        "logical_module {}: global selector solver returned no outcome for \
+                         anonymous statement selector",
+                        request.id,
+                    );
+                }
+            }
+        }
 
         for (target, (index, member)) in deferred_targets {
             let request = &explicit_requests[index];
@@ -1236,6 +1470,15 @@ impl ChunkPlanBuilder {
                             continue;
                         }
                         bail!("{message}");
+                    }
+                    if member.binding_selector.is_some()
+                        && member.source_match.is_none()
+                        && member.relational.is_none()
+                        && self.report_anonymous_statement_failure_before_binding_no_match(
+                            module, request,
+                        )?
+                    {
+                        continue;
                     }
                     bail!(
                         "logical_module {}: global selector solver found no match for selector \
@@ -1307,77 +1550,6 @@ impl ChunkPlanBuilder {
                         request.id,
                         member.export_name,
                         member.claim_origin,
-                    );
-                }
-            }
-        }
-        for info in anonymous_statement_targets {
-            let request = &explicit_requests[info.request_index];
-            match result.outcome_for(info.target) {
-                Some(ClaimOutcome::Unique { claim }) => {
-                    self.claim_anonymous_statement_from_solver(
-                        module,
-                        info.request_index,
-                        &request.id,
-                        &info.statement,
-                        claim,
-                    )?;
-                }
-                Some(ClaimOutcome::NoMatch) => {
-                    self.record_anonymous_statement_failure_or_bail(
-                        request,
-                        &info.statement,
-                        anonymous_statement_no_match_message(request, &info.statement),
-                    )?;
-                    continue;
-                }
-                Some(ClaimOutcome::Ambiguous { candidates }) => {
-                    let body_indices = candidates
-                        .iter()
-                        .filter_map(|candidate| {
-                            body_index_for_statement_ordinal(
-                                &module.body,
-                                candidate.statement_ordinal.0,
-                            )
-                        })
-                        .collect::<Vec<_>>();
-                    self.record_anonymous_statement_failure_or_bail(
-                        request,
-                        &info.statement,
-                        anonymous_statement_ambiguous_message(
-                            request,
-                            &info.statement,
-                            candidates.len(),
-                            &body_indices,
-                        ),
-                    )?;
-                    continue;
-                }
-                Some(ClaimOutcome::Duplicate {
-                    owner,
-                    conflicting_targets,
-                }) => {
-                    bail!(
-                        "logical_module {}: global selector solver assigned anonymous statement \
-                         to duplicate owner {:?} shared by targets {:?}",
-                        request.id,
-                        owner,
-                        conflicting_targets,
-                    );
-                }
-                Some(ClaimOutcome::Unsupported { message }) => {
-                    bail!(
-                        "logical_module {}: global selector solver does not support anonymous \
-                         statement selector: {}",
-                        request.id,
-                        message,
-                    );
-                }
-                None => {
-                    bail!(
-                        "logical_module {}: global selector solver returned no outcome for \
-                         anonymous statement selector",
-                        request.id,
                     );
                 }
             }

@@ -62,6 +62,7 @@ pub struct MemberSelectorProgramBuilder {
     owners_by_export: BTreeMap<(String, String), SelectorVariableId>,
     global_owner_by_export: BTreeMap<String, Option<SelectorVariableId>>,
     targeted_owners: BTreeMap<SelectorVariableId, String>,
+    injective_targeted_owners: BTreeSet<SelectorVariableId>,
     owner_injectivity_classes: BTreeMap<SelectorVariableId, String>,
 }
 
@@ -91,6 +92,7 @@ impl MemberSelectorProgramBuilder {
             owners_by_export: BTreeMap::new(),
             global_owner_by_export: BTreeMap::new(),
             targeted_owners: BTreeMap::new(),
+            injective_targeted_owners: BTreeSet::new(),
             owner_injectivity_classes: BTreeMap::new(),
         }
     }
@@ -127,6 +129,9 @@ impl MemberSelectorProgramBuilder {
         let owner = self.owner_for_local_export(&logical_module, export_name);
         self.targeted_owners
             .insert(owner, format!("{logical_module}::{export_name}"));
+        if !matches!(selector, MemberSelectorSpec::Binding(_)) {
+            self.injective_targeted_owners.insert(owner);
+        }
         self.global_owner_by_export
             .entry(export_name.to_string())
             .and_modify(|slot| {
@@ -207,7 +212,7 @@ impl MemberSelectorProgramBuilder {
         let mut unique_target_by_owner_class =
             BTreeMap::<OwnerInjectivityClass, SelectorTargetId>::new();
         for target in &self.program.targets {
-            if self.targeted_owners.contains_key(&target.owner) {
+            if self.injective_targeted_owners.contains(&target.owner) {
                 let class = self
                     .owner_injectivity_classes
                     .get(&target.owner)
@@ -4265,7 +4270,10 @@ function second() {
         let delegator_owner = program.targets[delegator.0].owner;
 
         assert_eq!(program.variables.len(), 2);
-        assert_eq!(program.all_different, vec![vec![anchor, delegator]]);
+        assert!(
+            program.all_different.is_empty(),
+            "plain binding targets are not owner-injective by themselves"
+        );
         assert!(matches!(
             program.atoms.iter().find(|atom| matches!(atom, SelectorAtom::OwnerReferencesOwner { .. })),
             Some(SelectorAtom::OwnerReferencesOwner {
@@ -4273,5 +4281,51 @@ function second() {
                 referenced: OwnerTerm::Var { id: referenced_id },
             }) if *owner_id == delegator_owner && *referenced_id == anchor_owner
         ));
+    }
+
+    #[test]
+    fn relational_targets_remain_owner_injective_without_binding_anchors() {
+        let mut builder = MemberSelectorProgramBuilder::new(context());
+        let anchor = builder
+            .lower_member_selector(
+                "Anchor",
+                &MemberSelectorSpec::Binding(BindingSelector {
+                    name: "a".to_string(),
+                    kind: None,
+                }),
+            )
+            .unwrap();
+        let first = builder
+            .lower_member_selector(
+                "First",
+                &MemberSelectorSpec::CrossRef(CrossRefTarget {
+                    relation: CrossRefRelation::References,
+                    anchor: "Anchor".to_string(),
+                    kind: Some(BindingSourceKind::FunctionDeclaration),
+                }),
+            )
+            .unwrap();
+        let second = builder
+            .lower_member_selector(
+                "Second",
+                &MemberSelectorSpec::CrossRef(CrossRefTarget {
+                    relation: CrossRefRelation::References,
+                    anchor: "Anchor".to_string(),
+                    kind: Some(BindingSourceKind::FunctionDeclaration),
+                }),
+            )
+            .unwrap();
+
+        let program = builder.into_program().unwrap();
+
+        assert_eq!(program.all_different, vec![vec![first, second]]);
+        assert!(
+            !program
+                .all_different
+                .iter()
+                .flatten()
+                .any(|target| *target == anchor),
+            "plain binding anchors should not participate in target owner injectivity"
+        );
     }
 }

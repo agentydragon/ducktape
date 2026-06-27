@@ -118,12 +118,14 @@ impl MemberRequest {
     /// Whether this member's ownership is intentionally unknown until chunk
     /// analysis facts are available and the global selector solver runs.
     ///
-    /// Source-match and relational selectors resolve through the global solver.
-    /// Plain binding selectors stay on the direct claim path for now so they
-    /// keep their existing duplicate/unmatched diagnostics and do not require
-    /// full AST selector facts.
+    /// Source-match, relational, and non-import binding selectors resolve
+    /// through the global solver. Plain binding selectors keep their binding
+    /// spelling for hints and duplicate diagnostics, but ownership is read back
+    /// from the solver.
     pub(super) fn resolves_after_chunk_analysis(&self) -> bool {
-        self.source_match.is_some() || self.relational.is_some()
+        self.source_match.is_some()
+            || self.relational.is_some()
+            || (self.binding_selector.is_some() && !self.is_import_specifier)
     }
 
     pub(super) fn cross_ref(&self) -> Option<&spec::CrossRefTarget> {
