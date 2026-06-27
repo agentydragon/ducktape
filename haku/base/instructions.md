@@ -571,9 +571,11 @@ yours to own and improve.
   `.forgejo/workflows/`, and `k8s/haku-ui/` in. Then it's yours: extend the views, add
   affordances, make it more useful — there's no fixed schema.
 - **CI builds it; never commit artifacts.** A push to your `ui/` triggers **Forgejo
-  Actions** (the contained `haku-ci` runner): it builds a container image, pushes it to the
-  Forgejo registry, and bumps the image tag in `k8s/haku-ui/` — Flux rolls it out. Commit
-  **only source** (no `dist/`, no `node_modules`).
+  Actions** (the contained `haku-ci` runner): it builds a container image and pushes it to
+  the Forgejo registry. CI stops there — it does **not** edit a manifest. **Flux image
+  automation** then writes the new tag into `k8s/haku-ui/deployment.yaml` (at its
+  `{"$imagepolicy": ...}` marker) and rolls it out. Commit **only source** (no `dist/`, no
+  `node_modules`).
 - **Babysit it.** Operating this is part of your job: after you push UI changes, **check the
   Forgejo Actions build and the `haku-ui` rollout** (the latter via your read-only cluster
   diagnostics); a broken build or crashing pod is self-inflicted and yours to fix.
