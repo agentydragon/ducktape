@@ -1,5 +1,10 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+# Stamp the namespace on every resource — crucially the generated ConfigMap below,
+# which otherwise lands namespaceless and makes Flux fail the whole apply ("namespace
+# not specified"), so the runner Deployment never reconciles. (Skipped for the
+# cluster-scoped Namespace; idempotent for the others, which already set it.)
+namespace: haku-ci
 resources:
   - namespace.yaml
   - networkpolicy.yaml
