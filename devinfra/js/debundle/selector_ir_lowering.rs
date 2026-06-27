@@ -1644,10 +1644,11 @@ fn alpha_scope_kind(kind: NodeKind) -> Option<AlphaScopeKind> {
             | NodeKind::AsyncArrow
             | NodeKind::Constructor
             | NodeKind::Setter
-            | NodeKind::Catch
     )
     .then_some(AlphaScopeKind::Var)
-    .or_else(|| (kind == NodeKind::Block).then_some(AlphaScopeKind::Lexical))
+    .or_else(|| {
+        matches!(kind, NodeKind::Block | NodeKind::Catch).then_some(AlphaScopeKind::Lexical)
+    })
 }
 
 fn native_target_binding_node(
@@ -4106,6 +4107,43 @@ function second() {
         assert!(
             !occurrence_counts.values().any(|count| *count == 4),
             "sibling block destructuring bindings must not collapse into one alpha variable: {occurrence_counts:?}"
+        );
+    }
+
+    #[test]
+    fn alpha_all_var_decl_inside_catch_binds_enclosing_var_scope() {
+        let mut selector = AnonymousStatementSelector::exact(
+            r#"function readable() {
+  try {
+    risky();
+  } catch (err) {
+    var hoisted = err;
+  }
+  return hoisted;
+}"#,
+        );
+        selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+        let lowered = lower_member_selector(
+            &context(),
+            "Widget",
+            &MemberSelectorSpec::SourceMatch(selector),
+        )
+        .unwrap();
+
+        let identifier_vars = alpha_identifier_vars_in_source_order(&lowered.program);
+        let occurrence_counts = identifier_occurrence_counts(&identifier_vars);
+        assert_eq!(
+            occurrence_counts
+                .values()
+                .copied()
+                .filter(|count| *count == 2)
+                .count(),
+            2,
+            "catch param uses and catch-body var/return uses should each pair: {occurrence_counts:?}"
+        );
+        assert!(
+            !occurrence_counts.values().any(|count| *count > 2),
+            "catch-local names must not merge with function-scope var names: {occurrence_counts:?}"
         );
     }
 
