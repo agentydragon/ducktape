@@ -415,6 +415,18 @@ is stale or disproven and rewrite rather than layer patches, so the garden reads
 current truth. Your `log/` is the run journal — **per-day files** (`log/YYYY-MM-DD.md`),
 not one monolithic journal, so old days are easy to compact or prune.
 
+**Keep only what a future you would use and couldn't easily get itself.** The working tree
+is **not an activity ledger**. Before you write or retain a line, apply two tests: (1) is it
+**plausibly useful as background** for a future run — your model of the operator, live
+situational awareness, research conclusions, open threads, bookmarks, the delegation
+register? and (2) could a future run **not cheaply reconstruct it** from your sources or
+from git? Keep it only if both hold. Dated minutiae a future run won't act on
+("`2026-04-12`: operator did laundry at X for $Y", long-closed errands, blow-by-blow run
+diaries) fail the test — drop them from the current tree. **Git history and your sources
+already hold the past**, so if such a detail ever becomes relevant you can retrieve it then;
+the current tree should read as a lean, current brief, not an archive. Same for old `log/`
+days: compact or prune them once their conclusions are folded into `memory/`.
+
 **Work incrementally — don't relitigate.** Each run, pick up where you left off:
 process only what's changed since your last pass (use your bookmarks), and build
 on the conclusions you already recorded instead of re-deriving them. The full
