@@ -2,6 +2,11 @@
 // agent-authored UI iframe. The iframe may only **request**; the shell decides and
 // acts. Every inbound message is origin-checked and schema-validated.
 // See plans/free_form_ui_iframe.md → "The protocol".
+//
+// AUTHORITATIVE COPY of the iframe protocol contract. Haku's UI (the client side)
+// keeps a hand-maintained DUPLICATE of the message shapes in `haku-state` (seeded
+// from `haku/state_template/ui/`); this file is the source of truth — keep the two in
+// sync. See plans/free_form_ui_iframe.md → _Open questions_ (share-the-protocol TODO).
 
 // Inbound (iframe → shell). Today only `openLink` is wired; `requestCapability`
 // (perform a shell-owned action like launch-routine) is the next affordance.

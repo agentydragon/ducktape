@@ -290,6 +290,18 @@ Until then, Phase 1a's trusted item list coexists.
 
 ## Open questions
 
+- **Share the iframe protocol instead of duplicating it.** The protocol contract is
+  small, so for now Haku's UI keeps a hand-maintained copy of the message shapes,
+  with `haku/console/frontend/bridge.ts` as the authoritative source (notes in both
+  copies). They can drift. Share it properly later — a tiny package both pin, or a
+  generated/sync-checked artifact.
+- **Consider building Haku's UI with Bazel sometime.** It's currently a standalone
+  app (Vite + FastAPI + Dockerfile, built by Forgejo CI with rootless buildkit) —
+  ordinary tooling, deliberately _not_ Bazel, since the build is a small agent-owned
+  app, must stay off BuildBuddy (private), and should be easy for Haku to iterate on.
+  If we later want ducktape's build consistency + lint aspects + the shared protocol
+  as a real `bazel_dep`, revisit a Bazel build (the gaffer-private pattern: a
+  `haku-state` Bazel workspace on pinned ducktape, built local-only in the runner).
 - **Forward-auth header trust** — how Haku's backend distinguishes outpost traffic
   from direct in-cluster calls (so header identity can't be spoofed by another
   `haku-sandbox` pod).
