@@ -14,34 +14,60 @@ spec:
       labels:
         app: haku-ui
     spec:
+      # No service-account token; service-link env vars off (the backend fixes its
+      # own host/port and reads only HAKU_UI_* env, so a HAKU_UI_* service link
+      # would clobber config).
       automountServiceAccountToken: false
+      enableServiceLinks: false
+      # The image lives in the in-cluster Forgejo registry; the operator provisions
+      # this pull secret separately (reflected into haku-sandbox).
+      imagePullSecrets:
+        - name: haku-forgejo-registry-pull
       securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: nginx
-          # Unprivileged nginx serves /usr/share/nginx/html on :8080 as uid 101.
-          image: nginxinc/nginx-unprivileged:stable-alpine
+        - name: ui
+          # CI bumps this tag (see ../../.forgejo/workflows/build-ui.yaml). The
+          # internal Forgejo registry path is preferred for in-cluster pulls;
+          # the public host works too once the pull secret is wired.
+          image: git.allegedly.works/haku/ui:latest
           ports:
             - containerPort: 8080
+          env:
+            # haku-state git write creds (the haku-state-git-write secret, mounted
+            # into haku-sandbox by the tf/gitops/haku-state module). The backend
+            # clones/pushes haku-state with these.
+            - name: HAKU_UI_GIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: haku-state-git-write
+                  key: username
+            - name: HAKU_UI_GIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-state-git-write
+                  key: password
+            # Internal plaintext-HTTP Forgejo (cluster-internal, bypasses mitmproxy).
+            - name: HAKU_UI_GIT_REPO_URL
+              value: http://forgejo-http.forgejo:3000/haku/haku-state.git
           volumeMounts:
-            - name: html
-              mountPath: /usr/share/nginx/html
-              readOnly: true
+            - name: state
+              mountPath: /data
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
           resources:
             requests:
-              cpu: 10m
-              memory: 16Mi
-            limits:
-              cpu: 100m
+              cpu: 25m
               memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
       volumes:
-        - name: html
-          configMap:
-            name: haku-ui-html
+        # The haku-state clone lives here (writable); the rootfs stays read-only.
+        - name: state
+          emptyDir: {}

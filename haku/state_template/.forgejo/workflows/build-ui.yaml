@@ -1,0 +1,61 @@
+# Forgejo Actions workflow that builds Haku's UI image and ships it.
+#
+# Runs IN-CLUSTER on the contained, repo-scoped Forgejo Actions runner provided by
+# `cluster/k8s/haku-ci` — NOT on Bazel/BuildBuddy (haku-state may hold private
+# operator info, so its source never leaves the cluster). The runner is rootless;
+# this uses a plain `docker buildx`/`buildah`-style build the runner exposes.
+#
+# Flow:
+#   1. build the image from ui/Dockerfile
+#   2. push it to the in-cluster Forgejo registry as git.allegedly.works/haku/ui:<sha>
+#   3. bump the image tag in k8s/haku-ui/deployment.yaml and commit it back to
+#      haku-state — Flux then reconciles the new tag into the deployment.
+#
+# This is STARTER source Haku adopts and evolves. Heavily commented on purpose.
+
+name: build-ui
+on:
+  push:
+    branches: [main]
+    # Only rebuild when the UI source or this workflow changes.
+    paths:
+      - "ui/**"
+      - ".forgejo/workflows/build-ui.yaml"
+
+jobs:
+  build:
+    runs-on: haku-ci # the repo-scoped, contained runner label (cluster/k8s/haku-ci)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The runner provides a Docker-compatible builder. Auth to the in-cluster
+      # Forgejo registry using the `haku` user + a Forgejo Actions secret
+      # (FORGEJO_REGISTRY_PASSWORD) scoped to the haku/* package namespace.
+      - name: Log in to the Forgejo registry
+        run: |
+          echo "${{ secrets.FORGEJO_REGISTRY_PASSWORD }}" \
+            | docker login git.allegedly.works -u haku --password-stdin
+
+      - name: Build and push the image
+        run: |
+          IMAGE="git.allegedly.works/haku/ui:${{ github.sha }}"
+          docker build -f ui/Dockerfile -t "$IMAGE" ui
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      # Commit the new tag back into haku-state so Flux deploys it. Explicit
+      # git-audit-trail flow (vs Flux image automation) — Haku owns the bump.
+      - name: Bump the deployment image tag
+        run: |
+          IMAGE="git.allegedly.works/haku/ui:${{ github.sha }}"
+          sed -i -E "s|image: git.allegedly.works/haku/ui:.*|image: ${IMAGE}|" \
+            k8s/haku-ui/deployment.yaml
+          git config user.name haku-ci
+          git config user.email haku-ci@allegedly.works
+          git add k8s/haku-ui/deployment.yaml
+          # Skip CI on the bump commit so it doesn't re-trigger this workflow.
+          git commit -m "ci: deploy haku/ui:${{ github.sha }} [skip ci]" || {
+            echo "no tag change to commit"; exit 0;
+          }
+          git push origin HEAD:main

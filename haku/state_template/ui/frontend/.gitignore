@@ -1,0 +1,5 @@
+# Build output and deps — never committed. The build artifact is the CI-built
+# container image (see ../Dockerfile, ../../.forgejo/workflows/build-ui.yaml).
+node_modules/
+dist/
+*.tsbuildinfo

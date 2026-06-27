@@ -56,6 +56,12 @@ website/posts/** filename-conventions-ignored=true
 # conventional for k8s manifests (and matches the resource/host names).
 haku/state_template/** filename-conventions-ignored=true
 
+# The state_template `ui/` app is Haku-owned starter code built by Forgejo CI,
+# not by ducktape's Bazel/ruff/prettier toolchain. Its Python uses flat
+# container-relative imports (not ducktape package paths) and its TS/CSS isn't
+# wired into ducktape's frontend lint stack, so exempt it from rules-lint.
+haku/state_template/ui/** rules-lint-ignored=true
+
 # Non-K8s YAML under cluster/k8s/ - rules_distroless apt manifests for CronJob
 # images. cluster/validation/cluster.py reads this attribute via `git check-attr`
 # (pygit2) and skips the file from orphan detection + resource parsing.
