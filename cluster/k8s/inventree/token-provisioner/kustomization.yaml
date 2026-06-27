@@ -4,3 +4,4 @@ resources:
   - service-account.yaml
   - job.yaml
   - cronjob.yaml
+  - token-eso.yaml

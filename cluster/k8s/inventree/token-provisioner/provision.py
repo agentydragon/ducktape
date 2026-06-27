@@ -2,8 +2,9 @@
 
 Creates a non-privileged sandbox-agent user in InvenTree (if absent), issues
 a named API token for that user as superuser, and writes the token to a K8s
-Secret in the inventree namespace. Reflector mirrors the Secret to
-openclaw-sandbox and claude-sandbox.
+Secret in the inventree namespace. An ESO ClusterExternalSecret mirrors the
+Secret to openclaw-sandbox and claude-sandbox (token-eso.yaml) — distribution is
+decoupled from this provisioner, so it just writes one plain Secret.
 
 On subsequent runs (CronJob), checks the token expiry via the InvenTree API
 and renews it when fewer than RENEW_DAYS_BEFORE days remain: revokes the old
@@ -29,13 +30,6 @@ INVENTREE_NS = "inventree"
 SANDBOX_USERNAME = "sandbox-agent"
 TOKEN_NAME = "inventree-token-provisioner"
 RENEW_DAYS_BEFORE = 30
-
-_SECRET_ANNOTATIONS = {
-    "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-    "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "openclaw-sandbox,claude-sandbox",
-    "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-    "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "openclaw-sandbox,claude-sandbox",
-}
 
 
 def get_or_create_sandbox_user(api: InvenTreeAPI) -> int:
@@ -119,12 +113,7 @@ def main() -> None:
         token = provision_token(api, user_pk, existing=existing_token)
         print(f"Token renewed (first 8 chars): {token[:8]}...")
         v1.patch_namespaced_secret(
-            SECRET_NAME,
-            INVENTREE_NS,
-            client.V1Secret(
-                metadata=client.V1ObjectMeta(annotations=_SECRET_ANNOTATIONS),
-                string_data={"token": token, "username": SANDBOX_USERNAME},
-            ),
+            SECRET_NAME, INVENTREE_NS, client.V1Secret(string_data={"token": token, "username": SANDBOX_USERNAME})
         )
         print(f"Secret {SECRET_NAME} updated in {INVENTREE_NS}.")
     else:
@@ -133,13 +122,13 @@ def main() -> None:
         v1.create_namespaced_secret(
             INVENTREE_NS,
             client.V1Secret(
-                metadata=client.V1ObjectMeta(name=SECRET_NAME, namespace=INVENTREE_NS, annotations=_SECRET_ANNOTATIONS),
+                metadata=client.V1ObjectMeta(name=SECRET_NAME, namespace=INVENTREE_NS),
                 string_data={"token": token, "username": SANDBOX_USERNAME},
             ),
         )
         print(f"Secret {SECRET_NAME} created in {INVENTREE_NS}.")
 
-    print("Reflector will mirror to openclaw-sandbox and claude-sandbox.")
+    print("ESO ClusterExternalSecret mirrors the Secret to openclaw-sandbox and claude-sandbox.")
 
 
 if __name__ == "__main__":

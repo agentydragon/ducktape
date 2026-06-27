@@ -1,0 +1,44 @@
+# Mirror the provisioner-written inventree-api-token (token + username) out of the
+# inventree namespace into the sandbox namespaces, where the agents read it. ESO
+# replaces the kubernetes-reflector annotations the provisioner used to bake onto the
+# Secret — distribution is now a standalone, continuously-reconciled resource decoupled
+# from the provisioner (same pattern as agents/airlock/eso-access-tokens.yaml). The ESO
+# ServiceAccount already has cluster-wide secret read. Lives in this (suspended) unit so
+# it activates together with InvenTree.
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-inventree-secret-store
+spec:
+  provider:
+    kubernetes:
+      server:
+        caProvider:
+          type: ConfigMap
+          name: kube-root-ca.crt
+          key: ca.crt
+          namespace: default
+      auth:
+        serviceAccount:
+          name: external-secrets
+          namespace: external-secrets-system
+      remoteNamespace: inventree
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: inventree-api-token
+spec:
+  namespaces:
+    - openclaw-sandbox
+    - claude-sandbox
+  externalSecretSpec:
+    refreshInterval: 1m
+    secretStoreRef:
+      name: kubernetes-inventree-secret-store
+      kind: ClusterSecretStore
+    target:
+      name: inventree-api-token
+    dataFrom:
+      - extract:
+          key: inventree-api-token
