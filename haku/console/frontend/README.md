@@ -1,8 +1,10 @@
 # haku/console/frontend — dashboard SPA
 
 React 18 single-page app for the Haku console, bundled with esbuild and served
-same-origin by the console's FastAPI backend. Styled with the repo's house stack —
-**Mantine v7** components + **Tailwind v4** utilities — modeled on
+same-origin by the console service. Production serves static files through nginx
+in front of the FastAPI API process; FastAPI still has a direct StaticFiles mount
+for local/dev serving. Styled with the repo's house stack — **Mantine v7**
+components + **Tailwind v4** utilities — modeled on
 `finance/augur/frontend` (references root `//:node_modules/*`; no per-package
 `package.json`).
 
@@ -17,10 +19,12 @@ same-origin by the console's FastAPI backend. Styled with the repo's house stack
   the `Item` Pydantic models are the single source of truth for the wire contract.
 - `markdown.ts` — item `body` → sanitized HTML (`marked` + `dompurify`).
 - `styles.src.css` — `@import`s Tailwind + `@mantine/core` CSS; compiled by
-  `@tailwindcss/cli` to `dist/styles.css`. Deviation from a plain Tailwind setup: the
-  `@source` content index is a generated file (`tailwind_content_index`) concatenating
-  the sources Tailwind must scan, since Bazel sandboxes the inputs.
-- `index.html` — the docroot shell the backend serves (links `styles.css` + `main.js`).
+  `@tailwindcss/cli` to `generated/styles.css`, then fingerprinted into
+  `dist/assets/styles-<hash>.css`. Deviation from a plain Tailwind setup: the `@source`
+  content index is a generated file (`tailwind_content_index`) concatenating the sources
+  Tailwind must scan, since Bazel sandboxes the inputs.
+- `index.html` — the docroot shell template; `spa_bundle(fingerprint = True)` rewrites
+  placeholders to hashed JS/CSS/logo URLs under `dist/assets/`.
 
 ```bash
 bbr build //haku/console/frontend:bundle   # production bundle (dist/)

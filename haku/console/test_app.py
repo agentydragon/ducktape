@@ -44,6 +44,20 @@ def test_config_unconfigured_csp_denies_framing(client) -> None:
     assert "frame-src 'none'" in resp.headers["content-security-policy"]
 
 
+def test_cache_policy_splits_hashed_assets_app_shell_and_api(make_client, tmp_path: Path) -> None:
+    static_dir = tmp_path / "web"
+    assets_dir = static_dir / "assets"
+    assets_dir.mkdir(parents=True)
+    (static_dir / "index.html").write_text("<!doctype html><div id='root'></div>", encoding="utf-8")
+    (assets_dir / "main-abcdef123456.js").write_text("console.log('haku')", encoding="utf-8")
+
+    with make_client(static_dir=static_dir) as c:
+        assert c.get("/assets/main-abcdef123456.js").headers["cache-control"] == ("public, max-age=31536000, immutable")
+        assert c.get("/").headers["cache-control"] == "no-cache, max-age=0, must-revalidate"
+        assert c.get("/api/config").headers["cache-control"] == "no-store"
+        assert c.get("/healthz").headers["cache-control"] == "no-store"
+
+
 def test_trace_appends_intake_note(client, seeded) -> None:
     assert client.post("/api/trace", json={"text": "please prioritize taxes"}).json() == {"status": "ok"}
     tip = _remote_tip(seeded.bare)

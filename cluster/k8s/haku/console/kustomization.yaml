@@ -4,3 +4,11 @@ resources:
   - deployment.yaml
   - routine-launch-token.sops.yaml
   - service.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+  - name: haku-console-nginx
+    files:
+      - default.conf=nginx.conf

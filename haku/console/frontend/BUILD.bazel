@@ -1,10 +1,9 @@
-load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
-load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
 load("@npm_ducktape//:typescript/package_json.bzl", tsc_bin = "bin")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
+load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -27,6 +26,11 @@ js_library(
         ":schema",
         "//:node_modules/openapi-fetch",
     ],
+)
+
+js_library(
+    name = "assets",
+    srcs = ["assets.ts"],
 )
 
 js_library(
@@ -99,6 +103,7 @@ js_library(
     name = "app",
     srcs = ["app.tsx"],
     deps = [
+        ":assets",
         ":client",
         ":constants",
         ":feedback",
@@ -123,36 +128,13 @@ js_library(
     ],
 )
 
-esbuild(
-    name = "main_bundle",
-    config = {"jsx": "automatic"},
-    entry_point = "main.tsx",
-    format = "esm",
-    output = "dist/main.js",
-    platform = "browser",
-    sourcemap = "linked",
-    target = ["es2022"],
-    deps = [":main_lib"],
-)
-
-copy_file(
-    name = "bundle_index_html",
-    src = "index.html",
-    out = "dist/index.html",
-)
-
-copy_file(
-    name = "bundle_logo_svg",
-    src = "//haku/console:logo.svg",
-    out = "dist/logo.svg",
-)
-
 # Tailwind v4 scans the `@source`-declared file for class names; concatenate every
 # source whose utility classes the stylesheet must keep into the one file it lists.
 filegroup(
     name = "tailwind_content_srcs",
     srcs = [
         "app.tsx",
+        "assets.ts",
         "client.ts",
         "confirm_dialog.tsx",
         "constants.ts",
@@ -191,12 +173,12 @@ js_run_binary(
         "styles.src.css",
         ":tailwind_content_index",
     ],
-    outs = ["dist/styles.css"],
+    outs = ["generated/styles.css"],
     args = [
         "--input",
         "styles.src.css",
         "--output",
-        "dist/styles.css",
+        "generated/styles.css",
         "--minify",
     ],
     chdir = package_name(),
@@ -204,14 +186,16 @@ js_run_binary(
 )
 
 # Everything the backend serves as the SPA docroot.
-filegroup(
+spa_bundle(
     name = "bundle",
-    srcs = [
-        ":bundle_index_html",
-        ":bundle_logo_svg",
-        ":main_bundle",
-        ":styles_css",
-    ],
+    entry_point = "main.tsx",
+    fingerprint = True,
+    fingerprinted_assets = {
+        ":styles_css": "__STYLES_CSS__",
+        "//haku/console:logo.svg": "__LOGO_SVG__",
+    },
+    jsx = "automatic",
+    deps = [":main_lib"],
 )
 
 # Full TypeScript type-check (the correctness gate esbuild bundling skips).

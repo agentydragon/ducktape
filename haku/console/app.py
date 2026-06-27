@@ -34,6 +34,18 @@ from haku.console.models import ConfigResponse
 
 logger = logging.getLogger(__name__)
 
+APP_SHELL_CACHE_CONTROL = "no-cache, max-age=0, must-revalidate"
+IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
+NO_STORE_CACHE_CONTROL = "no-store"
+
+
+def _cache_control_for_path(path: str) -> str:
+    if path.startswith("/assets/"):
+        return IMMUTABLE_ASSET_CACHE_CONTROL
+    if path.startswith("/api/") or path == "/healthz":
+        return NO_STORE_CACHE_CONTROL
+    return APP_SHELL_CACHE_CONTROL
+
 
 def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
     @contextlib.asynccontextmanager
@@ -55,9 +67,10 @@ def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
     csp = f"frame-src {frame_src}; frame-ancestors 'none'"
 
     @app.middleware("http")
-    async def _csp_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    async def _security_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         response = await call_next(request)
         response.headers["Content-Security-Policy"] = csp
+        response.headers["Cache-Control"] = _cache_control_for_path(request.url.path)
         return response
 
     # CSRF for the capability tier: a header-located double-submit token (the SPA

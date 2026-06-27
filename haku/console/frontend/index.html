@@ -4,11 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Haku — dashboard</title>
-    <link rel="icon" type="image/svg+xml" href="./logo.svg" />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="icon" type="image/svg+xml" href="__LOGO_SVG__" />
+    <link rel="stylesheet" href="__STYLES_CSS__" />
+    <script>
+      window.__HAKU_ASSETS__ = { logo: "__LOGO_SVG__" };
+    </script>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="./main.js"></script>
+    <script type="module" src="__SPA_ENTRY__"></script>
   </body>
 </html>
