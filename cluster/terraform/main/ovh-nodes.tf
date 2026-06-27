@@ -331,6 +331,13 @@ locals {
         install = {
           image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${var.talos_version}"
         }
+        # Talos hardens user.max_user_namespaces to 0; the haku-ci runner's rootless
+        # dind (docker:dind-rootless) needs user namespaces to start. Scoped to the
+        # OVH/hil workers (where the runner schedules via nodeSelector region=hil), not
+        # cluster-wide. Applies live — no reboot. See cluster/k8s/haku-ci.
+        sysctls = {
+          "user.max_user_namespaces" = "1048576"
+        }
         # Topology labels set explicitly — no CCM for OVH bare metal.
         nodeLabels = {
           "topology.kubernetes.io/region" = "hil"
