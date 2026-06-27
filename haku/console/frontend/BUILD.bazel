@@ -30,9 +30,16 @@ js_library(
 )
 
 js_library(
+    name = "theme",
+    srcs = ["theme.ts"],
+    deps = ["//:node_modules/@mantine/core"],
+)
+
+js_library(
     name = "toast",
     srcs = ["toast.ts"],
     deps = [
+        ":theme",
         "//:node_modules/@mantine/notifications",
         "//:node_modules/react",
     ],
@@ -43,6 +50,7 @@ js_library(
     srcs = ["feedback.tsx"],
     deps = [
         ":client",
+        ":theme",
         ":toast",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -54,6 +62,7 @@ js_library(
     srcs = ["launch.tsx"],
     deps = [
         ":client",
+        ":theme",
         ":toast",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -69,6 +78,7 @@ js_library(
     name = "confirm_dialog",
     srcs = ["confirm_dialog.tsx"],
     deps = [
+        ":theme",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
     ],
@@ -105,6 +115,7 @@ js_library(
     srcs = ["main.tsx"],
     deps = [
         ":app",
+        ":theme",
         "//:node_modules/@mantine/core",
         "//:node_modules/@mantine/notifications",
         "//:node_modules/react",
@@ -150,6 +161,7 @@ filegroup(
         "index.html",
         "launch.tsx",
         "main.tsx",
+        "theme.ts",
         "toast.ts",
     ],
 )

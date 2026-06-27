@@ -2,6 +2,7 @@ import { type FormEvent, type KeyboardEvent, useState } from "react";
 import { Button, Text, Textarea } from "@mantine/core";
 
 import { postTrace } from "./client.ts";
+import { ACTION_COLOR } from "./theme.ts";
 import { toastError } from "./toast.ts";
 
 // Submit lifecycle as a closed union so the spinner/disabled states can't be combined
@@ -84,7 +85,7 @@ export function FeedbackForm({ minRows, placeholder, submitLabel }: FeedbackForm
       <div className="flex items-center gap-3">
         <Button
           type="submit"
-          color="teal"
+          color={ACTION_COLOR}
           loading={sending}
           disabled={!text.trim()}
           rightSection={

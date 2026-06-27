@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Anchor, Button, Group, Modal, Text } from "@mantine/core";
 
 import { launchRoutine } from "./client.ts";
+import { CAPABILITY_COLOR } from "./theme.ts";
 import { toastError, toastSuccess } from "./toast.ts";
 
 type State = { status: "idle" } | { status: "confirming" } | { status: "launching" } | { status: "launched" };
@@ -39,7 +40,7 @@ export function LaunchRoutineButton({ routineUrl }: { routineUrl?: string | null
       <Group gap="sm">
         <Button
           variant="light"
-          color="indigo"
+          color={CAPABILITY_COLOR}
           size="xs"
           loading={launching}
           onClick={() => setState({ status: "confirming" })}
@@ -66,7 +67,7 @@ export function LaunchRoutineButton({ routineUrl }: { routineUrl?: string | null
           <Button variant="default" disabled={launching} onClick={() => setState({ status: "idle" })}>
             Cancel
           </Button>
-          <Button color="indigo" loading={launching} onClick={confirm}>
+          <Button color={CAPABILITY_COLOR} loading={launching} onClick={confirm}>
             Launch
           </Button>
         </Group>

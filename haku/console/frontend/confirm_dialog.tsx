@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, Group, Text } from "@mantine/core";
 
+import { ACTION_COLOR } from "./theme.ts";
+
 export interface ConfirmRequest {
   title: string;
   body?: string; // what the action does, in trusted shell copy
@@ -48,14 +50,14 @@ export function ConfirmDialog({
         e.preventDefault(); // route Esc through our handler so the iframe gets a result
         onCancel();
       }}
-      className="max-w-md rounded-lg border border-slate-300 p-5 shadow-xl [&::backdrop]:bg-black/60 dark:border-slate-600 dark:bg-slate-800"
+      className="haku-confirm-dialog max-w-md rounded-lg p-5 shadow-xl"
     >
       {request && (
         <div className="flex flex-col gap-3">
           <Text fw={600}>{request.title}</Text>
           {request.body && <Text size="sm">{request.body}</Text>}
           {request.url && (
-            <Text size="sm" className="rounded bg-slate-100 p-2 font-mono break-all dark:bg-slate-900">
+            <Text size="sm" className="haku-url-preview rounded p-2 font-mono break-all">
               {request.url}
             </Text>
           )}
@@ -63,7 +65,7 @@ export function ConfirmDialog({
             <Button variant="default" size="xs" onClick={onCancel}>
               Cancel
             </Button>
-            <Button color="teal" size="xs" disabled={!armed} onClick={onApprove}>
+            <Button color={ACTION_COLOR} size="xs" disabled={!armed} onClick={onApprove}>
               {request.approveLabel}
             </Button>
           </Group>

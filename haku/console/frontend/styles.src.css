@@ -9,9 +9,25 @@
 @layer base {
   :root {
     color-scheme: light dark;
+    --haku-page-bg: #fbfaf6;
+    --haku-panel-bg: #fffdf8;
+    --haku-border: #d8d0df;
+    --haku-code-bg: #eaf6f2;
+    --haku-code-fg: #202728;
+    --haku-backdrop: rgb(21 74 70 / 55%);
+  }
+  :root[data-mantine-color-scheme="dark"] {
+    --haku-page-bg: #0f1f1d;
+    --haku-panel-bg: #142724;
+    --haku-border: #3b5652;
+    --haku-code-bg: #172f2b;
+    --haku-code-fg: #e8f4f0;
+    --haku-backdrop: rgb(0 0 0 / 68%);
   }
   body {
     margin: 0;
+    background: var(--haku-page-bg);
+    color: var(--mantine-color-text);
   }
 }
 
@@ -34,7 +50,7 @@
   margin: 0.2rem 0;
 }
 .md code {
-  background: var(--mantine-color-default-hover);
+  background: var(--haku-code-bg);
   padding: 0.05rem 0.3rem;
   border-radius: 4px;
   font-size: 0.9em;
@@ -43,4 +59,20 @@
 .md a {
   color: var(--mantine-color-anchor);
   overflow-wrap: anywhere;
+}
+
+.haku-confirm-dialog {
+  border: 1px solid var(--haku-border);
+  background: var(--haku-panel-bg);
+  color: var(--mantine-color-text);
+}
+
+.haku-confirm-dialog::backdrop {
+  background: var(--haku-backdrop);
+}
+
+.haku-url-preview {
+  border: 1px solid var(--haku-border);
+  background: var(--haku-code-bg);
+  color: var(--haku-code-fg);
 }
