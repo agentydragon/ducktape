@@ -91,3 +91,30 @@ resource "kubernetes_secret" "haku_state_git_write" {
     repo_url = "http://forgejo-http.forgejo:3000/${forgejo_user.haku.login}/${forgejo_repository.state.name}.git"
   }
 }
+
+# imagePullSecret so Haku's UI Deployment (haku-sandbox) can pull the image its
+# Forgejo CI builds (git.allegedly.works/haku/ui:<sha>). The package is private
+# (haku's repo is private), so the kubelet needs auth. Pulls go over HTTPS via the
+# public host (kubelet image pulls are node-level, not subject to the pod's
+# mitmproxy egress). The CI workflow itself pushes with Forgejo Actions' built-in
+# job token — no push cred needed here. See cluster/k8s/haku-ci + haku/PLAN.md.
+resource "kubernetes_secret" "haku_forgejo_registry_pull" {
+  metadata {
+    name      = "haku-forgejo-registry-pull"
+    namespace = "haku-sandbox"
+  }
+
+  type = "kubernetes.io/dockerconfigjson"
+
+  data = {
+    ".dockerconfigjson" = jsonencode({
+      auths = {
+        "git.allegedly.works" = {
+          username = forgejo_user.haku.login
+          password = random_password.haku.result
+          auth     = base64encode("${forgejo_user.haku.login}:${random_password.haku.result}")
+        }
+      }
+    })
+  }
+}
