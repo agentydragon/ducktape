@@ -6,23 +6,28 @@ no operator Job or Terraform provisioner, and nothing here is applied from duckt
 It is **not** in `haku/base/` and is **not** baked into Haku's image; it's a
 copy-source Haku reads at run time, so `haku-state` stays Haku-authored.
 
-It is a **skeleton with placeholders**, not descriptions — the durable contract for
-each dir lives in `haku/base/instructions.md` (linked from the stubs). Layout mirrors
-`haku-state`'s root:
+It seeds both placeholders **and** Haku's starting **method** — the procedures it runs, the
+UI it serves, and one example working format (the "items" board). Base (`haku/base/`) holds
+the durable job and judgment, **item-agnostic**; the concrete method is documented here and
+is Haku's to evolve or replace. Layout mirrors `haku-state`'s root:
 
-| Dir                 | Starter content                                                          | After seed                                                   |
-| ------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------ |
-| `items/`            | empty (`.gitkeep`)                                                       | Haku writes one `<id>.yaml` per item                         |
-| `intake/processed/` | empty (`.gitkeep`)                                                       | operator feedback lands in `intake/`; reduced → `processed/` |
-| `log/`              | empty (`.gitkeep`)                                                       | per-day run journal `log/YYYY-MM-DD.md`                      |
-| `memory/`           | placeholder stubs (operator model, situational awareness, base-sync pin) | Haku's to restructure freely                                 |
-| `ui/`               | the ported item UI (React SPA + FastAPI backend + Dockerfile)            | Haku's own UI service, CI-built (below)                      |
-| `.forgejo/`         | the `build-ui` Forgejo Actions workflow                                  | Haku's CI: build image → push registry (Flux bumps the tag)  |
-| `k8s/`              | the `haku-ui` workload (Deployment + Service for the CI-built image)     | Haku's GitOps workload dir (below)                           |
+| Dir                 | Starter content                                                          | After seed                                                    |
+| ------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| `memory/`           | placeholder stubs (operator model, situational awareness, base-sync pin) | Haku's to restructure freely                                  |
+| `log/`              | empty (`.gitkeep`)                                                       | per-day run journal `log/YYYY-MM-DD.md`                       |
+| `intake/processed/` | empty (`.gitkeep`)                                                       | operator feedback lands in `intake/`; reduced → `processed/`  |
+| `procedures/`       | the starter passes (README + topical files)                              | Haku's playbook — read + grow (below)                         |
+| `ui/`               | the starter UI (React SPA + FastAPI backend + Dockerfile)                | Haku's own UI service, CI-built (below)                       |
+| `items/`            | `README.md` (the example "items" model) + `.gitkeep`                     | Haku writes one `<id>.yaml` per item, if it keeps this format |
+| `schema/`           | `item.json` (validates the example item format)                          | yours to change with the model                                |
+| `.forgejo/`         | the `build-ui` Forgejo Actions workflow                                  | Haku's CI: build image → push registry (Flux bumps the tag)   |
+| `k8s/`              | the `haku-ui` workload (Deployment + Service for the CI-built image)     | Haku's GitOps workload dir (below)                            |
 
-There is intentionally **no `dashboard/`** — the console renders its own dashboard from
-`items/` at request time. The `ui/` app is Haku's **separate** item UI (embedded in the
-console's Free-form UI iframe), which Haku owns and evolves.
+The **item model** (`items/` + `schema/`) and the procedures are **one example
+implementation**, not a contract — Haku may redefine or discard them. There is intentionally
+**no `dashboard/`**: the trusted console no longer renders items; Haku's own `ui/` service
+does, reading this repo at request time, and the console just embeds `ui/` in its Free-form
+UI iframe. Everything Haku presents lives here and is Haku's to own and evolve.
 
 ## `ui/` — Haku's own item UI service (CI-built)
 

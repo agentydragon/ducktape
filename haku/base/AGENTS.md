@@ -6,34 +6,34 @@ move runtime instructions here, and don't put editor notes in `instructions.md`.
 
 ## What lives where
 
-- `instructions.md` — Haku's operating manual: who it is, how it reasons, the
-  credential/perimeter model, hard rules, the item contract, the dashboard spec,
-  and tone. Durable, runtime-agnostic. Keep it at the "what Haku is and
-  what it must honor" level.
+- `instructions.md` — Haku's operating manual: who it is, its objective, how it reasons,
+  the credential/perimeter model, hard rules, continuity, and that it maintains its own
+  UI/procedures/method. Durable, runtime-agnostic, **and item-agnostic** — it must read the
+  same no matter what Haku's state contains. Keep it at the "what Haku is and what it must
+  honor" level. **Do not** put an item schema, a board spec, statuses, action kinds, or any
+  presentation format here — those are Haku's implementation and live in its state (seeded
+  from `haku/state_template/`), not base.
 - The **run procedure** (the imperative step-by-step a session executes) lives
   in `haku/run.md` (environment-neutral); per-environment entrypoints like
   `haku/runtime/claude_web_env/run.md` only layer setup and defer to it. Neither belongs
   in `base/` — if you find yourself writing "step 1, step 2…" here, it belongs in
   `haku/run.md`.
-- `schema/item.json` — the item schema, validated at write time. Changing item
-  shape means editing this **and** the _Item contract_ / _Dashboard_ spec in
-  `instructions.md` together.
 - `sources/<channel>.md` — one file per **information source (channel)**: gmail,
   calendar, drive, tasks, tana, plaid, ducktape. Content is strictly **what this
   channel tells you about the operator + how to read it** — auth, API/query shape,
   fields, gotchas. **Not** what to do with it.
-- `recipes.md` — **source-agnostic techniques** (the _process_): reusable ways to be
-  useful, applied situationally across whatever channels fit — inbox-like triage &
-  cleanup, calendar prep, financial anomalies & leaks, delegation scan, opportunistic
-  synthesis, … Illustrations, **not** a checklist or a closed set. Read by Haku as part
-  of its manual (referenced from `instructions.md` → _How you reason_).
 
-  **Source vs. recipe — the boundary** (the thing that kept getting muddled): a source
-  file is about **getting and reading** the data; a recipe is about **acting on** what
-  you find. If a line reads "look for X → file an item," it's a recipe, not a source —
-  move it. Keep `sources/*.md` free of "look for / file one item per finding" process,
-  and keep `recipes.md` free of channel-specific access mechanics (those belong in the
-  source). A recipe should name the channels it applies over, not embed how to query them.
+Haku's **method is not in base.** The procedures it runs (the "passes"), the UI it serves,
+and whatever format that UI presents (the starter's "items" board + `schema/`) are seeded
+from `haku/state_template/` (`procedures/`, `ui/`, `items/` + `schema/`) and owned by Haku
+in its state. Don't add them here.
+
+**Source vs. procedure — the boundary** (the thing that kept getting muddled): a source
+file (base) is about **getting and reading** the data; a procedure (Haku's state) is about
+**acting on** what you find. If a line reads "look for X → surface it," it's a procedure,
+not a source — it belongs in `state_template/procedures/`, not `base/sources/`. Keep
+`sources/*.md` free of "look for / surface a finding" process, and keep procedures free of
+channel-specific access mechanics (those belong in the source).
 
 ## Editing rules
 
