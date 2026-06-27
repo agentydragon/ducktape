@@ -1,7 +1,7 @@
 # Backend runtime deps. Pinned loosely; CI/Dockerfile resolves concrete versions.
 fastapi>=0.115
 uvicorn[standard]>=0.34
-pygit2>=1.15
+httpx>=0.28
 pyyaml>=6.0
 pydantic>=2.10
 pydantic-settings>=2.7

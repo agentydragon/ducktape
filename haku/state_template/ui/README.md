@@ -14,7 +14,7 @@ never a committed `dist/`. `ducktape bbr test` does not cover it.
 | Path                                  | Role                                                                                                                                                                                                                                                              |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `frontend/`                           | React + TypeScript SPA (standard Vite). Value-ranked **Up next** (top 7) + collapsible **Backlog**, collapsible task cards, `marked`+`dompurify` markdown bodies, command-action click/un-click toggles, `claude_handoff` deep-links, per-item + global feedback. |
-| `backend/`                            | FastAPI app (no build step). Clones/pulls `haku-state`, serves the SPA + a JSON API, and writes operator intent (`clicks/`, `intake/`) back to `haku-state`.                                                                                                      |
+| `backend/`                            | FastAPI app (no build step). Talks to the **Forgejo contents API** (no local clone): reads `items/`+`clicks/`, serves the SPA + a JSON API, and writes operator intent (`clicks/`, `intake/`) back to `haku-state`.                                               |
 | `Dockerfile`                          | Multi-stage: node builds the SPA → python:3.13-slim runtime runs uvicorn on `:8080` as non-root, with the built SPA copied in.                                                                                                                                    |
 | `../.forgejo/workflows/build-ui.yaml` | Forgejo Actions workflow: build → push `git.allegedly.works/haku/ui:main-<utc>-<sha>`. Flux image automation (not CI) then writes the tag into `../k8s/haku-ui/deployment.yaml`.                                                                                  |
 | `../k8s/haku-ui/`                     | Deployment (the built image, `haku-forgejo-registry-pull` imagePullSecret, `haku-state-git-write` env) + Service (`80` → `8080`).                                                                                                                                 |
@@ -48,7 +48,9 @@ FastAPI, port `8080`. Endpoints:
 - `POST /api/trace/feedback` — append an intake note (`text`, optional `item_id`).
 - `GET /healthz`.
 
-It writes the **exact** conventions Haku reduces: `clicks/<item-id>/<action-id>` and
+Each write is **one Forgejo contents-API commit** (the server makes it — no local
+clone, no push/reconcile loop; see `backend/forgejo.py`), writing the **exact**
+conventions Haku reduces: `clicks/<item-id>/<action-id>` and
 `intake/<ts>-feedback[-<id>].md`. There is no capability tier (the privileged
 launch-routine stays in the trusted console); this is the low-privilege trace surface
 only.
@@ -59,13 +61,15 @@ authorization requires the ingress NetworkPolicy restricting the app to the outp
 (Phase 3 hardening) — until then it is advisory.
 
 Config is env-driven (`HAKU_UI_*`): `GIT_USERNAME`/`GIT_PASSWORD` from the
-`haku-state-git-write` secret, `GIT_REPO_URL` the internal Forgejo
-(`http://forgejo-http.forgejo:3000/haku/haku-state.git`), `STATIC_DIR` the bundled SPA.
+`haku-state-git-write` secret (used as Forgejo basic auth), `FORGEJO_API_URL` the
+internal Forgejo API root
+(`http://forgejo-http.forgejo:3000/api/v1/repos/haku/haku-state`), `STATIC_DIR` the
+bundled SPA.
 
 ```bash
 cd backend
 pip install -r requirements.txt
-HAKU_UI_GIT_USERNAME=… HAKU_UI_GIT_PASSWORD=… HAKU_UI_GIT_REPO_URL=… python app.py
+HAKU_UI_GIT_USERNAME=… HAKU_UI_GIT_PASSWORD=… HAKU_UI_FORGEJO_API_URL=… python app.py
 ```
 
 ## Build + deploy flow (Forgejo CI)

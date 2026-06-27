@@ -38,9 +38,9 @@ spec:
           ports:
             - containerPort: 8080
           env:
-            # haku-state git write creds (the haku-state-git-write secret, mounted
-            # into haku-sandbox by the tf/gitops/haku-state module). The backend
-            # clones/pushes haku-state with these.
+            # haku-state write creds (the haku-state-git-write secret, mounted into
+            # haku-sandbox by the tf/gitops/haku-state module). The backend uses these
+            # as Forgejo basic auth — no local clone.
             - name: HAKU_UI_GIT_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -51,12 +51,9 @@ spec:
                 secretKeyRef:
                   name: haku-state-git-write
                   key: password
-            # Internal plaintext-HTTP Forgejo (cluster-internal, bypasses mitmproxy).
-            - name: HAKU_UI_GIT_REPO_URL
-              value: http://forgejo-http.forgejo:3000/haku/haku-state.git
-          volumeMounts:
-            - name: state
-              mountPath: /data
+            # Internal plaintext-HTTP Forgejo API (cluster-internal, bypasses mitmproxy).
+            - name: HAKU_UI_FORGEJO_API_URL
+              value: http://forgejo-http.forgejo:3000/api/v1/repos/haku/haku-state
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -69,7 +66,3 @@ spec:
             limits:
               cpu: 250m
               memory: 256Mi
-      volumes:
-        # The haku-state clone lives here (writable); the rootfs stays read-only.
-        - name: state
-          emptyDir: {}
