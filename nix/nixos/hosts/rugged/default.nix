@@ -34,6 +34,7 @@ in
     ./foxconn-wwan.nix
     ./local_llm_arc.nix
     ./local_llm_npu.nix
+    ./gpu-debug.nix
     ./iio-debug.nix
     ../../modules/attic-substituter.nix
   ];
