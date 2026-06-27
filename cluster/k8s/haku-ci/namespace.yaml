@@ -12,3 +12,12 @@ metadata:
     name: haku-ci
     # The runner's resources are set deliberately; no VPA recommendations wanted.
     goldilocks.fairwinds.com/enabled: "false"
+    # Enforce the privileged Pod Security level. The rootless dind sidecar needs
+    # seccompProfile: Unconfined (nested-container clone/unshare), which the baseline
+    # and restricted levels both forbid. This does NOT make the pod privileged — it
+    # stays rootless (runAsUser 1000, no privileged:true, caps dropped); privileged
+    # PSA only stops *restricting* it. Safe because haku-ci is operator-only (Haku has
+    # no RBAC here; only Flux applies), so the loosened level grants Haku nothing.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: privileged
+    pod-security.kubernetes.io/audit: privileged
