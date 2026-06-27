@@ -1,0 +1,30 @@
+# Restrict ingress to Haku's UI service to the Authentik proxy outpost only.
+#
+# haku-sandbox has default-allow ingress (the mitmproxy fence is egress-only), so
+# without this any in-cluster pod could reach svc/haku-ui directly. Haku's UI backend
+# trusts the `X-authentik-username` forward-auth header to identify the operator — so a
+# direct in-cluster call could forge operator intent (clicks/feedback). Admitting
+# ingress to `haku-ui` ONLY from the authentik-server pods (which run the embedded
+# outpost) makes those headers trustworthy. External access is gateway→Authentik either
+# way; this is the in-cluster defense-in-depth the design doc + cluster TODO flagged.
+#
+# Operator-owned (Haku has no route/netpol RBAC), and it selects the `app: haku-ui`
+# label the starter Deployment uses (haku/state_template/k8s/haku-ui).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: haku-ui-ingress-authentik-only
+  namespace: haku-sandbox
+spec:
+  endpointSelector:
+    matchLabels:
+      app: haku-ui
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: authentik
+            app.kubernetes.io/name: authentik
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
