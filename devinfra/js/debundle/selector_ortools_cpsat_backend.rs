@@ -364,6 +364,30 @@ mod tests {
         }
     }
 
+    fn module_member_use(ordinal: usize, module: &str, member: &str) -> SelectorFact {
+        SelectorFact::ModuleMemberUse {
+            chunk_id: ChunkId(0),
+            statement_ordinal: StatementOrdinal(ordinal),
+            module: module.to_string(),
+            member: member.to_string(),
+        }
+    }
+
+    fn call_argument_use(
+        argument: &str,
+        callee_object: Option<&str>,
+        callee_member: &str,
+        arg_index: usize,
+    ) -> SelectorFact {
+        SelectorFact::CallArgumentUse {
+            chunk_id: ChunkId(0),
+            argument: argument.to_string(),
+            callee_object: callee_object.map(str::to_string),
+            callee_member: callee_member.to_string(),
+            arg_index,
+        }
+    }
+
     fn sidecar_path() -> PathBuf {
         let rlocation = std::env::var("ORTOOLS_CPSAT_SOLVER")
             .expect("ORTOOLS_CPSAT_SOLVER must be set by Bazel");
@@ -638,6 +662,150 @@ mod tests {
                     owner: OwnerId(2),
                     statement_ordinal: StatementOrdinal(2),
                     binding: Some("readId".to_string()),
+                    provenance: Vec::new(),
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn cpsat_sidecar_solves_consumes_module_member_allowed_tuple() {
+        let mut program = SelectorProgram::default();
+        let consumer_owner =
+            program.add_variable(VariableDomain::Owner, Some("consumer".to_string()));
+        let consumer_target = program.add_target(
+            ChunkId(0),
+            consumer_owner,
+            "module",
+            ClaimKind::Binding {
+                export_name: Some("WidgetConsumer".to_string()),
+            },
+            ClaimOrigin::Synthetic,
+        );
+        program.add_atom(SelectorAtom::ConsumesModuleMember {
+            owner: OwnerTerm::Var { id: consumer_owner },
+            module: StringTerm::Const {
+                value: "./accessors".to_string(),
+            },
+            member: StringTerm::Const {
+                value: "Widget".to_string(),
+            },
+        });
+
+        let mut facts = SelectorFactStore::default();
+        facts.push(owner_fact(65, 55, "function"));
+        facts.push(declared_binding(65, "useWidget"));
+        facts.push(module_member_use(55, "./accessors", "Widget"));
+        facts.push(owner_fact(66, 56, "function"));
+        facts.push(declared_binding(66, "useOther"));
+        facts.push(module_member_use(56, "./accessors", "Other"));
+        facts.push(owner_fact(67, 57, "function"));
+        facts.push(declared_binding(67, "useOtherModule"));
+        facts.push(module_member_use(57, "./other", "Widget"));
+
+        let backend = OrToolsCpSatBackend::new(sidecar_path());
+        let result = solve_with_backend(&program, &facts, &backend).unwrap();
+
+        assert_eq!(
+            result.outcome_for(consumer_target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(65),
+                    statement_ordinal: StatementOrdinal(55),
+                    binding: Some("useWidget".to_string()),
+                    provenance: Vec::new(),
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn cpsat_sidecar_solves_passed_to_call_of_owner_allowed_tuple() {
+        let mut program = SelectorProgram::default();
+        let registry_owner =
+            program.add_variable(VariableDomain::Owner, Some("registry".to_string()));
+        let widget_owner = program.add_variable(VariableDomain::Owner, Some("widget".to_string()));
+        let registry_target = program.add_target(
+            ChunkId(0),
+            registry_owner,
+            "module",
+            ClaimKind::Binding {
+                export_name: Some("Registry".to_string()),
+            },
+            ClaimOrigin::Synthetic,
+        );
+        let widget_target = program.add_target(
+            ChunkId(0),
+            widget_owner,
+            "module",
+            ClaimKind::Binding {
+                export_name: Some("RegisteredWidget".to_string()),
+            },
+            ClaimOrigin::Synthetic,
+        );
+        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+            owner: OwnerTerm::Var { id: registry_owner },
+            binding: StringTerm::Const {
+                value: "registry".to_string(),
+            },
+        });
+        program.add_atom(SelectorAtom::PassedToCallOfOwner {
+            owner: OwnerTerm::Var { id: widget_owner },
+            callee_object: OwnerTerm::Var { id: registry_owner },
+            callee_member: StringTerm::Const {
+                value: "register".to_string(),
+            },
+            arg_index: Some(1),
+        });
+        program.require_all_different(vec![registry_target, widget_target]);
+
+        let mut facts = SelectorFactStore::default();
+        facts.push(owner_fact(10, 0, "var_decl"));
+        facts.push(declared_binding(10, "registry"));
+        facts.push(owner_fact(20, 1, "class"));
+        facts.push(declared_binding(20, "Widget"));
+        facts.push(call_argument_use("Widget", Some("registry"), "register", 1));
+        facts.push(owner_fact(30, 2, "class"));
+        facts.push(declared_binding(30, "WrongIndex"));
+        facts.push(call_argument_use(
+            "WrongIndex",
+            Some("registry"),
+            "register",
+            0,
+        ));
+        facts.push(owner_fact(40, 3, "class"));
+        facts.push(declared_binding(40, "WrongObject"));
+        facts.push(call_argument_use(
+            "WrongObject",
+            Some("otherRegistry"),
+            "register",
+            1,
+        ));
+
+        let backend = OrToolsCpSatBackend::new(sidecar_path());
+        let result = solve_with_backend(&program, &facts, &backend).unwrap();
+
+        assert_eq!(
+            result.outcome_for(registry_target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(10),
+                    statement_ordinal: StatementOrdinal(0),
+                    binding: Some("registry".to_string()),
+                    provenance: Vec::new(),
+                }
+            })
+        );
+        assert_eq!(
+            result.outcome_for(widget_target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(20),
+                    statement_ordinal: StatementOrdinal(1),
+                    binding: Some("Widget".to_string()),
                     provenance: Vec::new(),
                 }
             })
