@@ -96,6 +96,27 @@ fn unique_match_reports_the_bound_target() {
 }
 
 #[test]
+fn split_declarator_match_reports_pre_split_body_index() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("app.js");
+    write(
+        &source,
+        "const runtimeFirst = build(\"left\"), runtimeSecond = build(\"right\");\n\
+         const after = initAfter();\n",
+    );
+    let report = match_selector(
+        &source,
+        "const first = build(\"left\"), second = build(\"right\");",
+        &["--target-binding", "second", "--no-slack"],
+    );
+    assert_eq!(report["unique"], Value::Bool(true));
+    let matches = report["matches"].as_array().unwrap();
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches[0]["body_index"], 0);
+    assert_eq!(matches[0]["binding_name"], "runtimeSecond");
+}
+
+#[test]
 fn no_match_is_not_unique() {
     let (_dir, source) = fixture();
     let report = match_selector(

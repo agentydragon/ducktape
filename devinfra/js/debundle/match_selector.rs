@@ -27,14 +27,17 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use analysis::{AnalysisHints, ChunkId, analyze_chunk, build_owner_graph};
 use anyhow::{Context, Result, bail};
+use selector_ir::{ClaimOutcome, ResolvedClaim, SelectorFactStore};
+use selector_ir_lowering::{MemberSelectorLoweringContext, lower_member_selector};
 use serde::Serialize;
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD,
     DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD,
     STMT_LIST_HOLE_KEYWORD, hole_name_for, labeled_hole_name_for,
 };
-use spec::{SourceMatch, SourceMatchIdentifierMode};
+use spec::{MemberSelectorSpec, SourceMatch, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::{
     AssignPatProp, BindingIdent, BlockStmt, CallExpr, Class, ClassMember, ClassProp, Decl, Expr,
@@ -115,17 +118,16 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
     let parsed = js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)
         .with_context(|| format!("parsing source file {}", source_file.display()))?;
 
-    // Fact-based candidate list (the non-categorical match set), built once for
-    // the chunk and shared across the baseline resolve plus every slack relaxation.
-    let resolver = source_match::ChunkResolver::new(&parsed.module);
-    let resolve = |match_source: String| -> Result<Vec<source_match::MemberBindingMatch>> {
-        let selector = SourceMatch {
+    let facts = selector_fact_store_for_module(&parsed.module)
+        .with_context(|| format!("building selector facts for {}", source_file.display()))?;
+    let resolve = |match_source: String| -> Result<Vec<SolverMatch>> {
+        resolve_match_selector(
+            &facts,
+            &parsed.module.body,
             match_source,
-            identifiers: SourceMatchIdentifierMode::AlphaAll,
-            target_binding: config.target_binding.clone(),
-        }
-        .selector();
-        resolver.member_candidates("<match-selector>", &selector)
+            config.target_binding.clone(),
+            "<match-selector>",
+        )
     };
 
     let baseline = resolve(config.match_source.clone())?;
@@ -133,7 +135,7 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
         .iter()
         .map(|matched| MatchSelectorMatch {
             body_index: matched.body_idx,
-            binding_name: matched.binding.binding_name.clone(),
+            binding_name: matched.binding_name.clone(),
         })
         .collect();
     matches.sort_by_key(|matched| matched.body_index);
@@ -143,7 +145,7 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
         (true, true) => Some(compute_slack(
             &config.match_source,
             baseline[0].body_idx,
-            &baseline[0].binding.binding_name,
+            &baseline[0].binding_name,
             config.target_binding.as_deref(),
             &resolve,
         )?),
@@ -157,6 +159,113 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SolverMatch {
+    body_idx: usize,
+    binding_name: String,
+}
+
+fn resolve_match_selector(
+    facts: &SelectorFactStore,
+    module_body: &[ModuleItem],
+    match_source: String,
+    target_binding: Option<String>,
+    logical_module: &str,
+) -> Result<Vec<SolverMatch>> {
+    let selector = MemberSelectorSpec::SourceMatch(
+        SourceMatch {
+            match_source,
+            identifiers: SourceMatchIdentifierMode::AlphaAll,
+            target_binding,
+        }
+        .selector(),
+    );
+    let lowered = lower_member_selector(
+        &MemberSelectorLoweringContext::new(ChunkId(0), logical_module),
+        "candidate",
+        &selector,
+    )
+    .with_context(|| "lowering match-selector source_match to selector IR")?;
+    let result = selector_ir_solver::solve(&lowered.program, facts)
+        .with_context(|| "solving match-selector source_match selector IR")?;
+    let outcome = result
+        .outcome_for(lowered.target)
+        .with_context(|| "selector solver did not return the match-selector target")?;
+    match outcome {
+        ClaimOutcome::Unique { claim } => Ok(vec![solver_match_from_claim(claim, module_body)?]),
+        ClaimOutcome::Ambiguous { candidates } => candidates
+            .iter()
+            .map(|claim| solver_match_from_claim(claim, module_body))
+            .collect::<Result<Vec<_>>>(),
+        ClaimOutcome::NoMatch => Ok(Vec::new()),
+        ClaimOutcome::Unsupported { message } => {
+            bail!("match-selector source_match is unsupported by selector IR solver: {message}")
+        }
+        ClaimOutcome::Duplicate {
+            owner,
+            conflicting_targets,
+        } => bail!(
+            "match-selector source_match produced a duplicate claim for owner {owner:?} across \
+             {conflicting_targets:?}",
+        ),
+    }
+}
+
+fn solver_match_from_claim(
+    claim: &ResolvedClaim,
+    module_body: &[ModuleItem],
+) -> Result<SolverMatch> {
+    let body_idx = body_index_for_statement_ordinal(module_body, claim.statement_ordinal.0)
+        .with_context(|| {
+            format!(
+                "match-selector source_match matched statement ordinal {} past the source body",
+                claim.statement_ordinal.0
+            )
+        })?;
+    let binding_name = claim.binding.clone().with_context(|| {
+        format!(
+            "match-selector source_match matched body index {body_idx} but did not project a binding; \
+             use --target-binding or a single-binding selector",
+        )
+    })?;
+    Ok(SolverMatch {
+        body_idx,
+        binding_name,
+    })
+}
+
+fn body_index_for_statement_ordinal(
+    body: &[ModuleItem],
+    statement_ordinal: usize,
+) -> Option<usize> {
+    let mut running = 0usize;
+    for (idx, item) in body.iter().enumerate() {
+        let count = js_ast::post_split_top_level_count(item);
+        if statement_ordinal < running + count {
+            return Some(idx);
+        }
+        running += count;
+    }
+    None
+}
+
+fn selector_fact_store_for_module(module: &Module) -> Result<SelectorFactStore> {
+    let analysis = analyze_chunk(module, &AnalysisHints::default(), None, |_| None);
+    let owner_graph = build_owner_graph(&analysis.facts)?;
+    let chunk_id = ChunkId(0);
+    let mut facts = SelectorFactStore::default();
+    facts.extend_chunk_facts(chunk_id, &chunk_facts::extract_facts(module).map_err(
+        |unsupported| {
+            anyhow::anyhow!(
+                "selector AST fact extraction failed at {}; match-selector needs a complete AST EDB",
+                unsupported.context
+            )
+        },
+    )?);
+    facts.extend_owner_graph_facts(chunk_id, &owner_graph);
+    Ok(facts)
+}
+
 /// Try every single-edit relaxation of the selector; keep the ones that still
 /// resolve to the same unique `(body_idx, binding_name)` target.
 fn compute_slack(
@@ -164,7 +273,7 @@ fn compute_slack(
     target_body_idx: usize,
     target_binding_name: &str,
     selector_target_binding: Option<&str>,
-    resolve: &impl Fn(String) -> Result<Vec<source_match::MemberBindingMatch>>,
+    resolve: &impl Fn(String) -> Result<Vec<SolverMatch>>,
 ) -> Result<Vec<SlackRelaxation>> {
     let mut selector_module =
         js_ast::parse_js_module_consuming("<match-selector slack>", match_source.to_string())
@@ -181,8 +290,7 @@ fn compute_slack(
             continue;
         }
         if let [only] = resolve(relaxed_match.clone())?.as_slice() {
-            if only.body_idx == target_body_idx && only.binding.binding_name == target_binding_name
-            {
+            if only.body_idx == target_body_idx && only.binding_name == target_binding_name {
                 slack.push(SlackRelaxation { relaxed_match });
             }
         }

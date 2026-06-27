@@ -979,6 +979,41 @@ impl SelectorFactStore {
         counts
     }
 
+    /// Import owner-graph facts that connect statement owners to their declared
+    /// bindings and binding-use edges.
+    pub fn extend_owner_graph_facts(
+        &mut self,
+        chunk_id: ChunkId,
+        owner_graph: &analysis::OwnerGraph,
+    ) {
+        for node in owner_graph.iter_nodes() {
+            self.push(SelectorFact::Owner {
+                chunk_id,
+                owner: node.id,
+                statement_ordinal: node.statement_ordinal,
+                statement_kind: node.kind.to_string(),
+            });
+            for binding in &node.declared {
+                self.push(SelectorFact::DeclaredBinding {
+                    chunk_id,
+                    owner: node.id,
+                    binding: binding.0.as_str().to_string(),
+                    export_name: None,
+                });
+            }
+        }
+        for edge in owner_graph.iter_edges() {
+            if let Some(binding) = edge.reason.binding() {
+                self.push(SelectorFact::OwnerReferencesBinding {
+                    chunk_id,
+                    owner: edge.from,
+                    binding: binding.0.as_str().to_string(),
+                    edge_kind: edge.reason.kind().to_string(),
+                });
+            }
+        }
+    }
+
     /// Import AST facts already extracted by `chunk_facts`. Bridge/use-site facts
     /// and owner-graph facts are pushed separately because they need joins with
     /// imports, owner ids, or materializer-specific binding metadata.
