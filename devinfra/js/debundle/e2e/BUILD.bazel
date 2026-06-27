@@ -138,6 +138,18 @@ rust_test(
 )
 
 rust_test(
+    name = "global_selector_assignment_test",
+    srcs = ["global_selector_assignment_test.rs"],
+    crate_root = "global_selector_assignment_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
     name = "identifier_rename_queue_test",
     srcs = ["identifier_rename_queue_test.rs"],
     crate_root = "identifier_rename_queue_test.rs",

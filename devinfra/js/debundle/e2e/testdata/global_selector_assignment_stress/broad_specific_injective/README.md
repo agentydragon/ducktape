@@ -21,9 +21,11 @@ module paths, or source text from any private bundle.
   matches every route and is forced to `route11` only by the target-level
   `all_different` constraint.
 
-The fixture is not wired into a Bazel target yet. It should become executable
-when the selector backend benchmark harness can build a `SelectorProgram` from
-this pending contract and run alternate `SelectorConstraintModel` backends.
+The smoke form is wired into
+`//devinfra/js/debundle/e2e:global_selector_assignment_test`. The pending YAML
+contract remains the backend-benchmark sketch for building a `SelectorProgram`
+directly from this shape and running alternate `SelectorConstraintModel`
+backends.
 
 ## Expected Semantics
 
