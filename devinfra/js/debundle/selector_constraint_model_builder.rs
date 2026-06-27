@@ -433,6 +433,22 @@ fn lower_atom_constraint(
                 .collect::<BTreeSet<_>>();
             add_owner_owner_allowed_tuples(model, variables, owner, object, &facts)
         }
+        SelectorAtom::ConsumesModuleMember {
+            owner,
+            module,
+            member,
+        } => {
+            let module = required_string_term_const(module, "consumes_module_member.module")?;
+            let member = required_string_term_const(member, "consumes_module_member.member")?;
+            let facts = domains
+                .module_member_uses
+                .iter()
+                .filter_map(|(fact_owner, fact_module, fact_member)| {
+                    (fact_module == &module && fact_member == &member).then_some(*fact_owner)
+                })
+                .collect::<BTreeSet<_>>();
+            add_owner_allowed_tuples(model, variables, owner, &facts)
+        }
         SelectorAtom::MakesDecorateCall {
             owner,
             class_anchor,
@@ -1556,6 +1572,8 @@ struct FactDomains {
     member_reads: BTreeSet<(OwnerId, String)>,
     member_reads_from_binding: BTreeSet<(OwnerId, String, String)>,
     reads_member_of_owner: BTreeSet<(OwnerId, OwnerId, String)>,
+    raw_module_member_uses: BTreeSet<(StatementOrdinal, String, String)>,
+    module_member_uses: BTreeSet<(OwnerId, String, String)>,
     decorate_calls: BTreeSet<(String, String, Option<String>)>,
     makes_decorate_call_for_binding: BTreeSet<(OwnerId, String, Option<String>)>,
     makes_decorate_call_for_owner: BTreeSet<(OwnerId, OwnerId, Option<String>)>,
@@ -1755,6 +1773,11 @@ impl FactDomains {
                     self.add_ordinal(*statement_ordinal);
                     self.add_string(module);
                     self.add_string(member);
+                    self.raw_module_member_uses.insert((
+                        *statement_ordinal,
+                        module.clone(),
+                        member.clone(),
+                    ));
                 }
                 SelectorFact::CallArgumentUse {
                     argument,
@@ -1876,6 +1899,17 @@ impl FactDomains {
                         .map(|object_owner| (*owner, *object_owner, member.clone())),
                 );
             }
+        }
+
+        for (statement_ordinal, module, member) in &self.raw_module_member_uses {
+            let Some(owner) = owner_by_ordinal.get(statement_ordinal) else {
+                continue;
+            };
+            if !owners_with_declarations.contains(owner) {
+                continue;
+            }
+            self.module_member_uses
+                .insert((*owner, module.clone(), member.clone()));
         }
 
         for (callee, class_anchor, member) in &self.decorate_calls {
@@ -2367,6 +2401,15 @@ mod tests {
             chunk_id: ChunkId(0),
             statement_ordinal: StatementOrdinal(ordinal),
             object: object.map(str::to_string),
+            member: member.to_string(),
+        }
+    }
+
+    fn module_member_use(ordinal: usize, module: &str, member: &str) -> SelectorFact {
+        SelectorFact::ModuleMemberUse {
+            chunk_id: ChunkId(0),
+            statement_ordinal: StatementOrdinal(ordinal),
+            module: module.to_string(),
             member: member.to_string(),
         }
     }
@@ -3077,6 +3120,8 @@ mod tests {
             VariableDomain::String,
             Some("object_read_member".to_string()),
         );
+        let module_consumer =
+            program.add_variable(VariableDomain::Owner, Some("module_consumer".to_string()));
 
         program.add_atom(SelectorAtom::OwnerReferencesBinding {
             owner: OwnerTerm::Var {
@@ -3118,6 +3163,17 @@ mod tests {
             object: OwnerTerm::Var { id: object_owner },
             member: StringTerm::Const {
                 value: "value".to_string(),
+            },
+        });
+        program.add_atom(SelectorAtom::ConsumesModuleMember {
+            owner: OwnerTerm::Var {
+                id: module_consumer,
+            },
+            module: StringTerm::Const {
+                value: "./accessors".to_string(),
+            },
+            member: StringTerm::Const {
+                value: "Widget".to_string(),
             },
         });
         program.add_atom(SelectorAtom::MakesDecorateCall {
@@ -3165,6 +3221,12 @@ mod tests {
             declared_binding(50, "objectBinding"),
             owner_fact(60, 5, "function"),
             declared_binding(60, "decorate"),
+            owner_fact(65, 55, "function"),
+            declared_binding(65, "moduleConsumer"),
+            module_member_use(55, "./accessors", "Widget"),
+            owner_fact(66, 56, "function"),
+            declared_binding(66, "otherModuleConsumer"),
+            module_member_use(56, "./accessors", "Other"),
             owner_fact(70, 6, "class"),
             declared_binding(70, "Class"),
             decorate_call("decorate", "Class", Some("field")),
@@ -3220,20 +3282,23 @@ mod tests {
             allowed_tuples_for(&model, &[ConstraintVariableId(7)]).tuples,
             vec![vec![owner(90)]]
         );
+        assert_eq!(
+            allowed_tuples_for(&model, &[ConstraintVariableId(11)]).tuples,
+            vec![vec![owner(65)]]
+        );
     }
 
     #[test]
     fn unsupported_atoms_fail_closed() {
         let mut program = SelectorProgram::default();
         let owner_var = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
-        program.add_atom(SelectorAtom::ConsumesModuleMember {
+        program.add_atom(SelectorAtom::PassedToCall {
             owner: OwnerTerm::Var { id: owner_var },
-            module: StringTerm::Const {
-                value: "mod".to_string(),
+            callee_object: None,
+            callee_member: StringTerm::Const {
+                value: "call".to_string(),
             },
-            member: StringTerm::Const {
-                value: "value".to_string(),
-            },
+            arg_index: None,
         });
 
         let facts = fact_store(vec![owner_fact(10, 0, "var")]);
