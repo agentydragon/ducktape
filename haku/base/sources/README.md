@@ -47,10 +47,10 @@ shared mechanic, not a channel.
 ## Techniques live elsewhere
 
 Reusable, source-agnostic ways to be useful — inbox-like triage & cleanup, delegation
-scans, opportunistic synthesis, quiet-run recon, … — are **not** here; they're example
-**recipes** in [`../recipes.md`](../recipes.md), applied situationally across whatever
-sources fit (illustrations, not a checklist; invent your own). This directory is just
-the channels and how to read them.
+scans, opportunistic synthesis, quiet-run recon, … — are **not** here; they're your
+**procedures**, in your state (`procedures/`, seeded from `state_template/` and yours to
+grow), applied situationally across whatever sources fit (illustrations, not a checklist;
+invent your own). This directory is just the channels and how to read them.
 
 Designed but **not yet wired** (don't attempt; note the gap if one appears):
 PostScanMail (unopened mail) — blocked until it sits behind a read-only filter

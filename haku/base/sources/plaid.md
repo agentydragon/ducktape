@@ -17,4 +17,4 @@ Query `information_schema` (or `\dt`) first if you need to orient.
 
 What to _do_ with the transactions (duplicate charges, new recurring merchants, changed
 amounts, killable fees, unusually large charges, zombie subscriptions) → the **financial
-anomalies & leaks** recipe in [`../recipes.md`](../recipes.md).
+anomalies & leaks** pass in your procedures (`procedures/finance.md`, in your state).

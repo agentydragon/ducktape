@@ -42,6 +42,7 @@ Read tools (writes exist but 403 for you — ignore them):
 Mine these for: items **expiring** (propose using them up — recipes, "eat this first"),
 items **below minimum** or absent that the operator relies on (a shopping nudge), and
 **opportunistic** suggestions that combine stock with where the operator is and what
-else is going on (see `../recipes.md` → _Generate, don't just detect_). Never surface a
+else is going on (see your procedures, `procedures/maintenance_and_synthesis.md` →
+_Generate, don't just detect_, in your state). Never surface a
 suggestion to buy something already on a shopping list. If `list` is empty or a call
 401s, note the gap in your log and move on (the bearer must be the one in `haku-sandbox`).

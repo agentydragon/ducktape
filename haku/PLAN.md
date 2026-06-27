@@ -8,9 +8,10 @@ needs his name kept in writing — hence the repo).
 detail has moved to where the code lives — the component READMEs and the manual — and
 git history holds the original full design rationale:
 
-- What Haku is and how it reasons, the item contract, the dashboard spec, the
-  credential/perimeter model: `haku/base/instructions.md` (+ `haku/base/sources/`,
-  `haku/base/recipes.md`).
+- What Haku is, its objective, and how it reasons, plus the credential/perimeter model:
+  `haku/base/instructions.md` (+ `haku/base/sources/`). Base is **item-agnostic**; Haku's
+  current working method — the item model + schema, its procedures, and its UI — lives in
+  `haku/state_template/` (seeded into `haku-state`), not base.
 - The run procedure: `haku/run.md`; the web runtime: `haku/runtime/claude_web_env/`.
 - The dashboard service: `haku/console/README.md`. Alternative runtimes (Managed
   Agents): `haku/runtime/managed_agent/` + `haku/plans/`.
@@ -34,8 +35,9 @@ Status: v0 is live — the **Claude Code web home** (`haku/runtime/claude_web_en
 the loop by hand/scheduled, driving the cluster over `kubectl` with `haku-sandbox` as
 its compute surface. The data plane (scoped k8s identity + JWT rotation, the sandbox,
 Plaid/Google read-only mirrors, `haku-state`, the console) is landed. Current work is
-iterating the base (instructions/sources/recipes) until the items are genuinely good,
-and the not-yet-built items below.
+iterating the base (instructions/sources) and Haku's method (the procedures + UI in
+`state_template`) until what Haku surfaces is genuinely good, and the not-yet-built items
+below.
 
 ## Durable doctrine (keep honoring this as the system grows)
 
@@ -148,9 +150,12 @@ Still to build:
   console embeds it as a sandboxed cross-origin iframe — the **Free-form UI** tab — never
   rendering it itself. Still ahead: Haku replaces the placeholder with a real UI on its own
   backend; the shell gains a minimal `postMessage` bridge (`requestCapability` + a top-layer
-  confirm, then `openLink`). **North star:** even the item model + UI + build move into
-  agent-owned `haku-state`; the shell keeps only the boundary. Full design, containment
-  invariants, and remaining order: <console/plans/free_form_ui_iframe.md>.
+  confirm, then `openLink`). **North star — base side landed:** the item model + schema +
+  procedures have moved out of ducktape's base into agent-owned `haku-state` (seeded from
+  `state_template/`), and base is now item-agnostic. Still ahead: the UI's styling/build and
+  Flux image-automation become fully agent-owned, and the trace tier retires; the shell
+  keeps only the boundary. Full design, containment invariants, and remaining order:
+  <console/plans/free_form_ui_iframe.md>.
 
 ## Open questions
 

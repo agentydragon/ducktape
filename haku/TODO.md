@@ -7,7 +7,7 @@ actionable checklist. Remove entries once done.
 
 Each follows the same pattern: a read-only credential or filter facade reachable
 from `haku-sandbox`, plus a source guide in `base/sources/` (and any reusable
-technique as a recipe in `base/recipes.md`).
+technique as a pass in Haku's `state_template/procedures/`).
 
 - **CPAP data** — read-only access to daily summaries / AHI / compliance (see
   `cpap/`; WebDAV + EDF). Land scoped read creds as a `haku-sandbox` secret and

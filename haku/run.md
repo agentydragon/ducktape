@@ -40,27 +40,30 @@ applies.
 
 1. **Orient — fully, before you dig.** Read your `memory/` (standing operator guidance,
    the live situational-awareness note, how far you got last time), your recent `log/`
-   files, and **all** of `items/` (terminal ones included — they encode what the operator
-   already decided). **Finish this before you scan or file anything**: load every existing
-   `dedup_key` first, so you advance what's already there instead of creating duplicates.
-   Check your watch-list and `snoozed` items for **wake triggers that have now arrived**.
-   **Confirm this isn't a false first run:** if `items/` looks empty, verify the **remote**
-   is genuinely seedless rather than a partial/mid-bootstrap checkout (re-pull / wait for
-   the clone). Then a quick **environment self-check** (manual → _Environment self-check_):
-   confirm the tools/credentials/egress you'll rely on are present, and **surface a finding** for
-   any documented capability that's broken (then work around it) rather than degrading silently.
+   files, and **all of your existing working set** (today: every file in `items/`, terminal
+   ones included — they encode what the operator already decided). **Finish this before you
+   scan or record anything**: load what you already have first (today: every `dedup_key`), so
+   you advance what's there instead of duplicating it. Check your watch-list and anything
+   deferred (today: `snoozed` items) for **wake triggers that have now arrived**. **Confirm
+   this isn't a false first run:** if your working set looks empty, verify the **remote** is
+   genuinely seedless rather than a partial/mid-bootstrap checkout (re-pull / wait for the
+   clone). Then a quick **environment self-check** (manual → _Environment self-check_):
+   confirm the tools/credentials/egress you'll rely on are present, and **surface a finding**
+   for any documented capability that's broken (then work around it) rather than degrading
+   silently.
 2. **Adopt base updates.** Compare the ducktape `HEAD` to the pin in `memory/base-sync.md`;
    if it advanced, diff `haku/base` + `haku/run.md` since the pin, migrate state to match
    (manual → _Adopting base updates_), update the pin, log what you reconciled. **For each
    base change that affects how you frame or prioritize what you surface** — vs. structural
    migrations — **note it as a retroactive obligation** to apply to everything already in
    your working set during curation. The diff is the spec; your open work is the scope.
-3. **Process intake + reduce clicks.** For each file in `intake/` (not `processed/`): fold
-   standing guidance into `memory/` (note expiry if time-bound), apply item-referencing
-   feedback to that item, then move it to `intake/processed/` with a note on how you read it.
-   For each `clicks/<item-id>/<action-id>` marker: carry out that action's `intent` (e.g.
-   `snooze` → `status: snoozed` + `snoozed_until`; `reject` → `rejected` + reason; a custom
-   command → do the research/follow-up), then **delete the click**.
+3. **Process operator feedback.** For each file in `intake/` (not `processed/`): fold
+   standing guidance into `memory/` (note expiry if time-bound), apply feedback that targets
+   something you surfaced to that thing, then move it to `intake/processed/` with a note on
+   how you read it. Then reduce the action markers your UI recorded (today: each
+   `clicks/<item-id>/<action-id>`): carry out that action's intent (today e.g. `snooze` →
+   `status: snoozed` + `snoozed_until`; `reject` → `rejected` + reason; a custom command → do
+   the research/follow-up), then **clear the marker**.
 
 ### The work — a continuous understand → synthesize loop
 
@@ -76,18 +79,19 @@ backlogs) you advance a little each run and pick up next time — not a one-pass
   options, **invent novel angles no single source implies**. Let current context
   reprioritize (down-rank what they can't act on now; surface what's useful given where/when
   they are). Honor the operator guidance in `memory/`.
-- **Act — write & curate `items/` as you go** (no separate write-then-curate phase):
-  - New findings → `items/<id>.yaml` per the contract; aim for a **deep backlog**, no
-    minimum `value`. Update existing items when evidence changed; never duplicate a
-    `dedup_key`; don't re-raise a rejected idea without materially new evidence (say what's new).
-  - Re-score; `expired` past-`deadline` items; **promote** `snoozed`/watch-list items whose
-    wake trigger arrived; `snooze` anything whose only next step is to wait; keep valid
-    lower-priority items `open` as backlog.
-  - Bring open items into conformance with the current contract (links-as-affordances,
-    actionability gate, …). **If you adopted a base update this run, the conformance sweep is
-    mandatory over _every_ open item** — apply each noted convention change wherever it
-    applies, not just the commit's examples. (Your UI renders live from your state; no page
-    to regenerate.)
+- **Act — record & curate your working set as you go** (no separate write-then-curate phase):
+  - New findings → record them in your format (today: `items/<id>.yaml`); aim for a **deep
+    backlog**, no minimum to surface. Update existing entries when evidence changed; never
+    duplicate (today: a `dedup_key`); don't re-raise a rejected idea without materially new
+    evidence (say what's new).
+  - Re-rank; retire what's elapsed (today: `expired` past-`deadline` entries); **promote**
+    anything deferred whose wake trigger arrived; **defer** anything whose only next step is
+    to wait (today: `snooze`); keep valid lower-priority work as backlog.
+  - Bring your open set into conformance with your current method's conventions (today:
+    links-as-affordances, the actionability gate, …). **If you adopted a base update this
+    run, the conformance sweep is mandatory over _everything_ open** — apply each noted
+    change wherever it applies, not just the commit's examples. (Your UI renders live from
+    your state; no page to regenerate.)
 - **Decide how much to invest**: weigh each path's value against the operator's
   value-of-time and the rough cost of your effort (manual → _How you reason_, effort
   budgeting). **A quiet run is not over** — deepen unfinished source coverage, research

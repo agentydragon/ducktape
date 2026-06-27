@@ -255,21 +255,23 @@ the shell opens. `state_template/k8s/haku-ui/index.html` carries a worked `openL
 
 ## North star: the shell owns nothing but the boundary
 
-The end state (later — not the next step) drops the last thing ducktape still owns on
-the _content_ side: the **item model and its UI**. Today the trusted console owns the
-item schema (`models.py` / `base/schema/item.json`), the declarative renderer, the SPA
-bundle + styling, and the trace tier. In the north star, **all of that moves into
-Haku's iframe service and `haku-state`**:
+**Status (2026-06-27): largely landed.** The trusted console no longer renders content
+(the item UI moved to Haku's own iframe service), and the **base scanner is now
+item-agnostic** — there is no ducktape-defined `Item`: the schema, the item contract, and
+the default passes moved out of `haku/base/` into agent-owned `haku-state` (seeded from
+`haku/state_template/`). Haku is given only the **high-level objective** — _make the
+operator's life go well; surface what's useful to act on_ — and **no schema**: it decides
+what the abstraction is, how to present it, and evolves it freely.
 
-- Haku is given a **high-level objective** — _"surface for the operator the things
-  that are useful to act on"_ — and **no schema**. There is no ducktape-defined
-  `Item`, no fixed action kinds, no prescribed layout. Haku decides what the
-  abstraction is and how to present it, and evolves it freely.
-- The frontend's **styling, compilation, and the console SPA's Flux image automation**
-  move out of ducktape into **agent-owned `haku-state` code** — Haku's UI service
-  builds and serves its own assets; no ducktape rebuild for a UI or schema change.
-- The **trace tier retires** — Haku's own backend records operator intent (it already
-  owns `haku-state`).
+Remaining to reach the full end state:
+
+- The UI's **styling, compilation, and image automation** become fully agent-owned — Haku's
+  UI service builds and serves its own assets (CI lives in `haku-state`); no ducktape
+  rebuild for a UI or format change. The Flux image-automation wiring is the open piece
+  (see `haku/PLAN.md` → _Haku UI paving_).
+- The **trace tier retires** — Haku's own backend records operator intent (it already owns
+  `haku-state`); the trusted console's only remaining write path is the opaque "Note to
+  Haku".
 
 What's left in ducktape is the **irreducible trusted core, and nothing else**:
 
@@ -282,11 +284,7 @@ What's left in ducktape is the **irreducible trusted core, and nothing else**:
 
 The litmus test for "does this belong in ducktape": **does it hold a secret, perform a
 privileged action, or define the trust boundary?** If not, it's Haku's — and the item
-abstraction fails that test, so it goes.
-
-Deliberately deferred: this only makes sense once the iframe UI + the affordances are
-proven and Haku can author an experience at least as good as today's declarative list.
-Until then, Phase 1a's trusted item list coexists.
+abstraction failed that test, so it went.
 
 ## Open questions
 

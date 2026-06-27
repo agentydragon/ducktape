@@ -10,5 +10,5 @@ the event in items). Calendar is most useful **cross-referenced** — with mail/
 whether an event still stands or implies work, and as the "when/where" that reprioritizes
 other items.
 
-What to _do_ with it (prep gaps, conflicts, implied tasks) → the **calendar-prep** recipe in
-[`../recipes.md`](../recipes.md).
+What to _do_ with it (prep gaps, conflicts, implied tasks) → the **calendar-prep** pass in
+your procedures (`procedures/calendar_and_geo.md`, in your state).
