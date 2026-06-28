@@ -103,15 +103,26 @@ spec:
           START_SSH_SERVER: true
           LFS_START_SERVER: true
 
+        # Session stays in Postgres (the CNPG forgejo-db is already HA), so it's
+        # shared across replicas — no per-instance state. Cache + queue, however,
+        # default to per-instance backends (memory / leveldb on the pod's PVC):
+        # with >1 replica each instance would keep its own cache (stale reads) and,
+        # worse, two leveldb queues on one shared volume would corrupt. Both move
+        # to the shared, replicated forgejo-valkey-ovh (cluster/k8s/forgejo/cache)
+        # so the deployment can scale to 2 replicas. (Switching the queue backend
+        # abandons any in-flight leveldb queue items on the next restart — fine for
+        # this instance's transient queues: webhook deliveries, mirror syncs.)
         session:
           PROVIDER: db
 
         cache:
           ENABLED: true
-          ADAPTER: memory
+          ADAPTER: redis
+          HOST: redis://forgejo-valkey-ovh-master.forgejo.svc.cluster.local:6379/0
 
         queue:
-          TYPE: level
+          TYPE: redis
+          CONN_STR: redis://forgejo-valkey-ovh-master.forgejo.svc.cluster.local:6379/0
 
         # In-cluster CI (Forgejo Actions). Enables the server-side feature; a
         # registered act_runner (cluster/k8s/haku-ci) executes workflows. Used so

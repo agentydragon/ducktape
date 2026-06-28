@@ -182,6 +182,7 @@ resources:
   # --- forgejo ---
   - forgejo/namespace/flux-kustomization.yaml
   - forgejo/db/flux-kustomization.yaml
+  - forgejo/cache/flux-kustomization.yaml
   - forgejo/app/flux-kustomization.yaml
   - forgejo/servicemonitor/flux-kustomization.yaml
   - forgejo/secrets/flux-kustomization.yaml

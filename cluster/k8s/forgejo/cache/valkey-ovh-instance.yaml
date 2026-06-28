@@ -1,0 +1,52 @@
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  name: forgejo-valkey-ovh
+  namespace: forgejo
+  annotations:
+    description: OVH Valkey for Forgejo cache + queue (shared, HA-ready replacement for per-instance memory cache / leveldb queue)
+spec:
+  clusterSize: 2
+  kubernetesConfig:
+    image: valkey/valkey:8-alpine
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  redisConfig:
+    maxMemoryPercentOfLimit: 80
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path-ovh
+        resources:
+          requests:
+            storage: 2Gi
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values: ["hil-ovh"]
+      # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
+      # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
+      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: forgejo-valkey-ovh
+          topologyKey: kubernetes.io/hostname
