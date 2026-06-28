@@ -3,8 +3,8 @@
 # Provisions a private `cpap-data/cpap-data` repo owned by a dedicated
 # `cpap-data` service user (full read/write on its own repo, used by the
 # nightly cpap-sync CronJob to commit+push files pulled from the ez Share SD
-# card), plus a read-only `cpap-data-reader` collaborator (used by Claude Code
-# to clone the archive for analysis). Two Kubernetes Secrets carry the
+# card), plus read-only collaborators for `cpap-data-reader`, `claude`, and
+# `haku`. Two Kubernetes Secrets carry the
 # respective git credentials. Auth is HTTPS Basic against the public ingress
 # (git.allegedly.works) — unlike augur-evidence's in-cluster URL, because the
 # sync CronJob runs hostNetwork on wyrm2 where host DNS is simpler than
@@ -79,6 +79,14 @@ resource "forgejo_collaborator" "reader" {
 resource "forgejo_collaborator" "claude" {
   repository_id = forgejo_repository.data.id
   user          = "claude"
+  permission    = "read"
+}
+
+# Read-only access for the haku agent account (user provisioned by
+# tf/gitops/haku-state).
+resource "forgejo_collaborator" "haku" {
+  repository_id = forgejo_repository.data.id
+  user          = "haku"
   permission    = "read"
 }
 
