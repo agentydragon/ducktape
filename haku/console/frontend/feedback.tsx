@@ -1,5 +1,10 @@
 import { type FormEvent, type KeyboardEvent, useState } from "react";
-import { Button, Text, Textarea } from "@mantine/core";
+import { ActionIcon, Button, Popover, Text, Textarea } from "@mantine/core";
+// Deep per-icon import (default export), not the barrel: the @tabler barrel makes
+// esbuild OOM tree-shaking it (~8.7 GB peak with the full node_modules tree), and
+// there's no clean per-action RAM lever (see debug/esbuild_tabler_memory.md). The
+// subpath ships no .d.mts, so it's typed via tabler-icons.d.ts.
+import IconMessage2 from "@tabler/icons-react/dist/esm/icons/IconMessage2.mjs";
 
 import { postTrace } from "./client.ts";
 import { ACTION_COLOR } from "./theme.ts";
@@ -101,5 +106,38 @@ export function FeedbackForm({ minRows, placeholder, submitLabel }: FeedbackForm
         </Text>
       </div>
     </form>
+  );
+}
+
+// Floating corner button that pops the note-to-haku form open as a popover, so the
+// form is an on-demand affordance instead of permanent real estate at the top of the
+// page. The form itself (FeedbackForm above) is unchanged; this only owns open/close
+// state and frames it. The popover closes on outside-click / Esc (Mantine defaults);
+// a successful send leaves it open showing "Sent ✓" rather than auto-closing, since
+// closing would hide the only success signal (there is no success toast).
+export function FeedbackFab() {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover opened={open} onChange={setOpen} position="top-end" withArrow shadow="md" width={360}>
+      <Popover.Target>
+        <ActionIcon
+          color={ACTION_COLOR}
+          variant="filled"
+          size="xl"
+          radius="xl"
+          aria-label="Note to Haku"
+          className="fixed bottom-6 right-6 z-50 shadow-lg"
+        >
+          <IconMessage2 size={20} />
+        </ActionIcon>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <FeedbackForm
+          minRows={4}
+          placeholder="Anything for Haku to fold into its next run…"
+          submitLabel="Send to Haku"
+        />
+      </Popover.Dropdown>
+    </Popover>
   );
 }

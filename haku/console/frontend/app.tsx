@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
-import { Anchor, Group, Loader, Text, Title } from "@mantine/core";
+import { Group, Loader, Text, Title } from "@mantine/core";
 
 import { LOGO_URL } from "./assets.ts";
 import { type ConfigResponse, fetchConfig } from "./client.ts";
-import { INTAKE_NEW } from "./constants.ts";
-import { FeedbackForm } from "./feedback.tsx";
+import { FeedbackFab } from "./feedback.tsx";
 import { HakuUiEmbed } from "./haku_ui_embed.tsx";
 import { LaunchRoutineButton } from "./launch.tsx";
 import { toastError } from "./toast.ts";
@@ -52,31 +51,10 @@ export default function App() {
         </Group>
         <LaunchRoutineButton routineUrl={config.launch_routine_url} />
       </Group>
-      <Text c="dimmed" mb="xl">
-        <Anchor href={INTAKE_NEW} c="dimmed" underline="always">
-          + Add intake note
-        </Anchor>
-      </Text>
+      {/* The Free-form UI is the main surface; the note-to-haku form opens from the corner button. */}
+      {config.haku_ui_url && <HakuUiEmbed uiUrl={config.haku_ui_url} />}
 
-      <section>
-        <Title order={2} mb="sm">
-          Note to Haku
-        </Title>
-        <FeedbackForm
-          minRows={3}
-          placeholder="Anything for Haku to fold into its next run…"
-          submitLabel="Send to Haku"
-        />
-      </section>
-
-      {config.haku_ui_url && (
-        <section className="mt-10">
-          <Title order={2} mb="sm">
-            Free-form UI
-          </Title>
-          <HakuUiEmbed uiUrl={config.haku_ui_url} />
-        </section>
-      )}
+      <FeedbackFab />
     </div>
   );
 }
