@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agent-box-secret-reader
+  namespace: agent-box
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agent-box-vm-images-s3-reader
+  namespace: seaweedfs
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["vm-images-s3-credentials"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-box-vm-images-s3-reader
+  namespace: seaweedfs
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agent-box-vm-images-s3-reader
+subjects:
+  - kind: ServiceAccount
+    name: agent-box-secret-reader
+    namespace: agent-box
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: agent-box-vm-images
+  namespace: agent-box
+spec:
+  provider:
+    kubernetes:
+      server:
+        caProvider:
+          type: ConfigMap
+          name: kube-root-ca.crt
+          key: ca.crt
+      auth:
+        serviceAccount:
+          name: agent-box-secret-reader
+          namespace: agent-box
+      remoteNamespace: seaweedfs
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: agent-box-vm-images-s3-reader
+  namespace: agent-box
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: SecretStore
+    name: agent-box-vm-images
+  target:
+    name: agent-box-vm-images-s3-reader
+    creationPolicy: Owner
+    template:
+      type: Opaque
+  data:
+    - secretKey: accessKeyId
+      remoteRef:
+        key: vm-images-s3-credentials
+        property: cdiReaderAccessKey
+    - secretKey: secretKey
+      remoteRef:
+        key: vm-images-s3-credentials
+        property: cdiReaderSecretKey

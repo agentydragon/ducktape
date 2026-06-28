@@ -20,6 +20,12 @@ keys:
   # Codex cloud agent key (OpenAI Codex, private key stored in Codex env secrets)
   # TODO: consider splitting shared tokens (buildbuddy, k8s jwt) into codex-specific variants
   - &codex-cloud-agent age1hy7al8s2cxjhehgf93mnkfdv2plr579t9uhvtdaxlmh3rx0j2g7sludsex
+  # Self-hosted agent-box VM (cluster/k8s/agent-box). agent-box-host = the VM's
+  # persisted SSH host key (installed via cloud-init); agent-box-codex-user = the
+  # codex user's id_ed25519, planted by NixOS sops-nix and doubling as the codex
+  # user's age decryption identity.
+  - &agent-box-host age1gzgkw3pcyd4aan0ndqnc7g7q4rrg3ufpd7n2hepuqpjcmqjj056s4lqawx
+  - &agent-box-codex-user age16madmg3yjv39dekr6dscqr2slv0haxcw7lw25v8vmly4wl95td4qwev54u
   # CI key (GitHub Actions + BuildBuddy, narrow access to CI-only secrets)
   # Private key: k8s Secret in github-secrets-sync namespace, synced to GHA as SOPS_AGE_KEY.
   # Manual paste into BuildBuddy org secrets.
@@ -237,6 +243,14 @@ creation_rules:
           - *admin
           - *gecko-host
           - *gecko-agentydragon
+  # agent-box VM attic reader: NixOS daemon decrypts via the host key, the codex
+  # user's home-manager via its user key. Must precede secrets/hosts/agent-box-.*.
+  - path_regex: secrets/hosts/agent-box-attic\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *agent-box-host
+          - *agent-box-codex-user
 
   # --- Per-host secrets (admin + host) ---
   - path_regex: secrets/hosts/wyrm2-.*\.yaml$
@@ -264,6 +278,11 @@ creation_rules:
       - age:
           - *admin
           - *gecko-host
+  - path_regex: secrets/hosts/agent-box-.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *agent-box-host
 
   # --- SSH keys (SOPS binary, admin + owning host's user key) ---
   - path_regex: ssh_keys/wyrm2-.*\.sops\.key$
@@ -307,6 +326,32 @@ creation_rules:
       - age:
           - *admin
           - *gecko-agentydragon
+  # --- Self-hosted agent-box VM keys ---
+  # Host key: cluster-recoverable (admin + user keys), installed via cloud-init.
+  - path_regex: ssh_keys/agent-box-host\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+  # User identity: decrypted on the VM by NixOS sops-nix via the host key, then
+  # planted at /home/codex/.ssh/id_ed25519. admin retained for management.
+  - path_regex: ssh_keys/agent-box-codex-user\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *agent-box-host
+  # Forgejo bot push key: decrypted by the codex user's home-manager sops-nix.
+  - path_regex: ssh_keys/agent-box-codex-forgejo\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *agent-box-codex-user
 
   # --- Per-user home-manager secrets (admin + user SSH key) ---
   - path_regex: secrets/home/wyrm2/.*\.yaml$
@@ -508,6 +553,7 @@ creation_rules:
           - *gecko-agentydragon
           - *claude-web
           - *codex-cloud-agent
+          - *agent-box-codex-user
           - *haku
           - *ci
   # Hetzner Robot webservice credentials (admin + all user keys)

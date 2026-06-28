@@ -505,6 +505,21 @@
           };
         };
 
+        # agent-box - headless CLI-only KubeVirt VM hosting agent users. The
+        # codex user runs OpenAI Codex under a dedicated, scoped identity
+        # (agent-box-codex-user). See plans/agent-box.md.
+        # TODO: add `claude` and `z-claude` agent users on this host.
+        agent-box = mkNixos {
+          hostname = "agent-box";
+          username = "codex";
+          hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
+          inlineHomeManager = {
+            enableGui = false;
+            isK8sWorker = false;
+            module = ./nix/home/hosts/agent-box.nix;
+          };
+        };
+
         # Gecko - headless CLI-only KubeVirt VM for Claude Code / Codex
         gecko = mkNixos {
           hostname = "gecko";

@@ -1,0 +1,39 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: agent-box
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 30m
+  path: ./cluster/k8s/agent-box/app
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  dependsOn:
+    - name: agent-box-namespace
+    - name: kubevirt
+    - name: cdi
+    - name: external-secrets-operator
+    - name: seaweedfs-public-s3
+    - name: local-path-provisioner
+  wait: true
+  healthChecks:
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: agent-box-vm-images-s3-reader
+      namespace: agent-box
+    - apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      name: agent-box-root
+      namespace: agent-box
+    - apiVersion: kubevirt.io/v1
+      kind: VirtualMachine
+      name: agent-box
+      namespace: agent-box

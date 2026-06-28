@@ -1,0 +1,50 @@
+# Public SSH for agent-box via a manual CiliumEnvoyConfig.
+#
+# Same mechanism as gecko's (Cilium 1.19 has no TCPRoute, so we declare an
+# Envoy listener directly on the hostNetwork cilium-envoy DaemonSet). gecko
+# already owns 0.0.0.0:22 on the hil nodes, and SSH has no SNI to multiplex on,
+# so agent-box takes a distinct listener port. Wildcard `*.allegedly.works` resolves
+# to the hil gateway IPs, so:
+#
+#     ssh -p 2201 codex@agent-box.allegedly.works
+#
+# (Past ~2-3 VMs the port juggling gets clunky; plans/vm_ssh_exposure.md sketches
+# the SNI-multiplexed TLSRoute + ProxyCommand path that retires per-VM ports.)
+apiVersion: cilium.io/v2
+kind: CiliumEnvoyConfig
+metadata:
+  name: agent-box-ssh
+  namespace: agent-box
+  annotations:
+    cec.cilium.io/use-original-source-address: "false"
+spec:
+  nodeSelector:
+    matchLabels:
+      topology.kubernetes.io/region: hil
+  backendServices:
+    - name: agent-box-ssh
+      namespace: agent-box
+      number:
+        - "22"
+  resources:
+    - "@type": type.googleapis.com/envoy.config.listener.v3.Listener
+      name: agent-box-ssh
+      address:
+        socketAddress:
+          address: 0.0.0.0
+          portValue: 2201
+      filterChains:
+        - filters:
+            - name: envoy.filters.network.tcp_proxy
+              typedConfig:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+                statPrefix: agent-box-ssh
+                cluster: agent-box:agent-box-ssh:22
+                idleTimeout: 3600s
+    - "@type": type.googleapis.com/envoy.config.cluster.v3.Cluster
+      name: agent-box:agent-box-ssh:22
+      type: EDS
+      edsClusterConfig:
+        serviceName: agent-box/agent-box-ssh:22
+      outlierDetection:
+        splitExternalLocalOriginErrors: true

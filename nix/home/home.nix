@@ -234,6 +234,14 @@ in
         identityFile = "~/.ssh/15leroy";
         port = 22;
       };
+      # agent-box VM: `ssh agent-box.allegedly.works` lands as the codex user.
+      # Distinct port because gecko owns :22 on the hil nodes (see
+      # cluster/k8s/agent-box/app/ciliumenvoyconfig.yaml).
+      "agent-box.allegedly.works" = {
+        hostname = "agent-box.allegedly.works";
+        user = "codex";
+        port = 2201;
+      };
     };
   };
 

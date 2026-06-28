@@ -1,0 +1,81 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: agent-box
+  namespace: agent-box
+  labels:
+    app.kubernetes.io/name: agent-box
+spec:
+  runStrategy: Always
+  # Own the root-disk DataVolume so KubeVirt drives the WaitForFirstConsumer
+  # bind: on local-path-ovh (a WFFC storageclass) CDI stays off the PVC, and
+  # KubeVirt schedules a short-lived pod with the VMI's requirements as the
+  # PVC's first consumer to bind it on the target node; CDI imports only after
+  # the PVC is Bound, then the VM boots — one consumer per phase, no race.
+  #
+  # Do NOT add cdi.kubevirt.io/storage.bind.immediate.requested here. CDI's
+  # ImmediateBindingRequested() is PRESENCE-based — ANY value (even "false")
+  # forces immediate binding, so CDI would start its own importer pod that
+  # races KubeVirt's bind pod for the same PVC, producing the "object has been
+  # modified" provisioning livelock. See
+  # https://github.com/kubevirt/containerized-data-importer/blob/main/doc/waitforfirstconsumer-storage-handling.md
+  dataVolumeTemplates:
+    - metadata:
+        name: agent-box-root
+      spec:
+        source:
+          s3:
+            url: "https://s3.allegedly.works/vm-images/bootstrap/f484cb3f043f7dab65528c4ad22330dace7b9fdb.qcow2"
+            secretRef: agent-box-vm-images-s3-reader
+        pvc:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 50Gi
+          storageClassName: local-path-ovh
+          volumeMode: Filesystem
+  template:
+    metadata:
+      labels:
+        kubevirt.io/domain: agent-box
+        app.kubernetes.io/name: agent-box
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      domain:
+        cpu:
+          cores: 1
+        resources:
+          requests:
+            memory: 4Gi
+        firmware:
+          bootloader:
+            efi:
+              secureBoot: false
+        devices:
+          disks:
+            - name: rootdisk
+              bootOrder: 1
+              disk:
+                bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+              ports:
+                - name: ssh
+                  port: 22
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          dataVolume:
+            name: agent-box-root
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            secretRef:
+              name: agent-box-cloud-init
