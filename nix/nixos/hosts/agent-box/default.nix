@@ -6,6 +6,7 @@
 {
   pkgs,
   lib,
+  config,
   username,
   ...
 }:
@@ -90,6 +91,14 @@ in
     shell = pkgs.zsh;
     openssh.authorizedKeys.keys = loginKeys;
     extraGroups = [ "systemd-journal" ];
+    # home-manager installs the user-level sops secrets (BuildBuddy, Forgejo,
+    # attic) via the codex user's `sops-nix.service` systemd *user* unit. A
+    # headless, non-lingering user has no `systemd --user`, so that unit never
+    # starts and the secrets never land. Linger keeps the user manager up at boot.
+    # TODO(better): can home-manager sops install user secrets without a
+    #   lingering session (activation-time install, not a user service)? Linger
+    #   is a heavy hammer for "run one oneshot at boot".
+    linger = true;
   };
 
   users.users.root.openssh.authorizedKeys.keys = loginKeys;
@@ -100,6 +109,41 @@ in
     }
   ];
   services.openssh.settings.PermitRootLogin = lib.mkForce "prohibit-password";
+
+  # First-boot ordering fix (ugly but localized). On a cold first boot the boot
+  # order is: sops-install-secrets (early, sysinit) → cloud-init writes the
+  # persisted host key (later, cloud-config stage) → sshd. So system sops runs
+  # before the host key exists and can't decrypt codex_id_ed25519; the user-level
+  # sops then has no age key either. Once cloud-init has settled, re-apply both:
+  # restart system sops (plants id_ed25519, host key now present), then re-run
+  # home-manager (which restarts the codex user's sops-nix.service → user
+  # secrets). Idempotent: on a reboot the host key is already persisted, system
+  # sops succeeds early, and these restarts are no-ops.
+  #
+  # TODO(better): this re-run is a workaround for sops-runs-early vs
+  #   cloud-init-writes-host-key-late. Cleaner options to evaluate:
+  #   (a) deliver the host key *before* sysinit (cloud-init `bootcmd` in the
+  #       cloud-init-local stage, or an initrd write) so system sops decrypts on
+  #       the first try and no re-run is needed;
+  #   (b) a sops-nix option to defer secret install past cloud-init without the
+  #       Before=sysinit ordering cycle;
+  #   (c) accept bootstrap+switch for hosts that need sops at first boot.
+  #   See plans/agent-box.md and the boot-ordering discussion.
+  systemd.services.agent-box-secrets-after-cloud-init = {
+    description = "Re-apply sops secrets after cloud-init persisted the host key (first-boot race)";
+    after = [
+      "cloud-final.service"
+      "home-manager-${username}.service"
+    ];
+    wants = [ "cloud-final.service" ];
+    wantedBy = [ "multi-user.target" ];
+    path = [ config.systemd.package ];
+    serviceConfig.Type = "oneshot";
+    script = ''
+      systemctl restart sops-install-secrets.service
+      systemctl restart home-manager-${username}.service
+    '';
+  };
 
   users.motd = "agent-box - headless KubeVirt agent VM (codex user: OpenAI Codex)\n";
 }

@@ -73,6 +73,28 @@ You log in _as_ codex with your personal keys (in `authorizedKeys`); the
 - No GitHub identity for codex in v1 (Forgejo-primary). The existing `agentydragon-agent`
   machine user already gets PR-but-not-push for free via the GitHub ruleset if wired later.
 
+## First-boot secret ordering (known-ugly, works)
+
+Direct-boot images have a first-boot race that bootstrap+switch never hits (gecko's sops
+runs at `nixos-rebuild switch`, long after cloud-init). Two bugs, both fixed in
+`nix/nixos/hosts/agent-box/default.nix` with localized workarounds:
+
+1. **system sops vs cloud-init**: `sops-install-secrets` runs early (sysinit) but
+   cloud-init writes the persisted host key late (cloud-config stage), so the first-boot
+   sops can't decrypt `codex_id_ed25519`. Worked around by a `oneshot` after
+   `cloud-final.service` that restarts sops + home-manager.
+2. **headless home-manager sops**: the user-level secrets install via the codex user's
+   `sops-nix.service` (a `systemd --user` unit), which never starts without a session.
+   Worked around with `users.users.codex.linger = true`.
+
+**TODOs — do better:**
+
+- Deliver the host key _before_ sysinit (cloud-init `bootcmd` in the `cloud-init-local`
+  stage, or initrd) so system sops decrypts on the first try — removes the re-run oneshot.
+- Find a way for home-manager sops to install user secrets without a lingering session
+  (activation-time install rather than a user service), so `linger` isn't needed.
+- Or decide direct-boot isn't worth it for sops-bearing hosts and use bootstrap+switch.
+
 ## Future
 
 - **More agent users on agent-box**: `claude`, `z-claude` — each with its own login keys,
