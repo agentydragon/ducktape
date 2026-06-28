@@ -6,7 +6,7 @@ Find AI subscriptions that complement an existing **Claude Max + ChatGPT Pro** l
 
 > How much useful complex work of the sort I have AI doing can I get per dollar?
 
-Constraint: don't violate TOS (no piping consumer chat endpoints into agent harnesses where prohibited).
+Constraint: don't violate TOS. Note (corrected 2026-06-27): a _personal, single-user_ agent on your own ChatGPT/Claude sub via the vendor's own client (Codex CLI/`codex exec`/SDK; Claude Code) is documented functionality. The TOS bite is on resale, multi-user apps, and powering third-party services — see [TOS notes](#tos-notes).
 
 ## The unit problem
 
@@ -131,7 +131,8 @@ For a heavy agent user already maxed on Claude Max + ChatGPT Pro:
 - **Z.ai GLM Coding Plan**: explicitly markets Claude Code/Cursor/Cline integration via Anthropic-compatible endpoint. Programmatic use is the intended use case.
 - **Kimi (Moonshot)**: same pattern — `api.moonshot.ai/anthropic` endpoint is documented for agent harnesses.
 - **Qwen Coding Plan**: documented CLI/agent integration.
-- **Claude Max / ChatGPT Pro**: don't pipe the consumer chat endpoints into third-party agents — use the API (separate billing) for that. Both vendors enforce.
+- **ChatGPT Pro (Codex)**: a single-user personal agent on your own sub is **within documented functionality**, not a TOS violation. OpenAI ships "Sign in with ChatGPT" OAuth and lists `codex exec` (non-interactive), the Codex SDK, scriptable workflows, and Codex cloud tasks as Plus/Pro features ([pricing](https://developers.openai.com/codex/pricing)). Third-party harnesses (opencode etc.) authenticate via that same official OAuth; an OpenAI maintainer confirmed forking Codex CLI is permitted ([discussion #8338](https://github.com/openai/codex/discussions/8338)). What the [Terms of Use](https://openai.com/policies/row-terms-of-use/) actually prohibit: reselling access / using ChatGPT to power third-party **services**, **multi-user** apps, and programmatic data **extraction** — none of which a personal agent trips. Genuine gray area: "Codex access tokens for trusted automation" are gated to Business/Enterprise, so OpenAI nudges _unattended_ automation toward enterprise tokens and reserves the final call. (Earlier versions of this doc claimed flatly "can't pipe ChatGPT into agent harnesses" — that was an oversimplification.)
+- **Claude Max**: use it through Claude Code (first-party, allowed). Piping the Max consumer endpoint into _other_ third-party harnesses is against Anthropic's TOS — use the API (separate billing) for that.
 - **GitHub Copilot**: bound to Copilot clients (IDE plugins, Copilot CLI, Copilot agent). No raw API key for harness reuse.
 
 ## Caveats — why this is fuzzy
