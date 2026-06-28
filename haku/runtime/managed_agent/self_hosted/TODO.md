@@ -31,8 +31,9 @@ operator activation (runbook in <README.md>):
 - **SOPS identity** — the in-cluster worker needs no `SOPS_AGE_KEY`: it uses its
   `haku-worker` ServiceAccount for `kubectl` and reads creds from k8s secrets
   (only the web home decrypts the public-`kubeapi` JWT via SOPS).
-- **Git sources** — haku-state on the in-cluster Forgejo
-  (`git.allegedly.works/haku/haku-state`, single `.netrc` via `HAKU_GIT_HOST` +
-  the `haku-state-git-write` creds); ducktape on public GitHub (anonymous,
-  read-only) — it isn't mirrored to the cluster Forgejo yet (the "Cluster Forgejo
-  repos" item in <../../../TODO.md>).
+- **Git sources** — haku-state plus read-only source mirrors on the in-cluster
+  Forgejo, all through the single `.netrc` written from `HAKU_GIT_HOST` +
+  `haku-state-git-write`. The worker currently clones the
+  `agentydragon/ducktape` mirror for `haku/base` + `haku/run.md`; the `haku`
+  read grants on `agentydragon/ducktape` and `agentydragon/gaffer-private` are
+  Terraform-managed in `tf/gitops/haku-state`.

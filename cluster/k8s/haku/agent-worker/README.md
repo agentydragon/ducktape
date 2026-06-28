@@ -11,22 +11,19 @@ Flux tracks the tag via the `haku-worker` ImagePolicy. We don't boot the image
 (no systemd): the pod runs the worker closure directly as non-root `haku` —
 see `deployment.yaml` and `../../../../haku/runtime/managed_agent/self_hosted/nixos.nix`.
 
-## Manual prerequisites — NOT yet turnkey
+## Manual prerequisite — NOT yet turnkey
 
-These are required for the worker to function and are **not** provisioned
-declaratively yet (TODO: fold into Terraform gitops like the other Forgejo
-resources):
+This is required for the worker to see fresh `haku/base` / `haku/run.md` content
+and is **not** provisioned declaratively yet:
 
 - **Forgejo ducktape mirror** (`git.allegedly.works/agentydragon/ducktape`): the
   worker clones ducktape from this in-cluster mirror, not GitHub (the egress
   proxy blocks GitHub). The mirror is **bumped manually** — it is not
   auto-synced from GitHub. Push the mirror before expecting Haku to see new
   `haku/base` / `haku/run.md` content.
-- **`haku` read access to the mirror**: the `haku` Forgejo user must be a
-  collaborator (read) on `agentydragon/ducktape`. Granted manually via the
-  Forgejo admin API:
-  `PUT /api/v1/repos/agentydragon/ducktape/collaborators/haku {"permission":"read"}`.
-  Not yet Terraform-managed.
+
+The `haku` Forgejo user's read grants on `agentydragon/ducktape` and
+`agentydragon/gaffer-private` are Terraform-managed by `tf/gitops/haku-state`.
 
 ## Activation runbook
 

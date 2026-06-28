@@ -3,10 +3,11 @@
 #
 # Provisions a private `haku/haku-state` repo owned by a dedicated `haku`
 # service user (full read/write on its own repo; scan runs commit+push items,
-# intake, steering, and log as this user), plus a read-only grant for the
-# `claude` agent account. A Kubernetes Secret in the `haku-sandbox` namespace
-# carries the git credentials, consumed by in-cluster scan runs. Mirrors
-# tf/gitops/augur-evidence. The repo starts empty (auto_init only) — no seed.
+# intake, steering, and log as this user), read-only source grants for the repos
+# Haku is allowed to clone, plus a read-only grant for the `claude` agent
+# account. A Kubernetes Secret in the `haku-sandbox` namespace carries the git
+# credentials, consumed by in-cluster scan runs. Mirrors tf/gitops/augur-evidence.
+# The repo starts empty (auto_init only) — no seed.
 
 data "kubernetes_secret" "forgejo_admin" {
   metadata {
@@ -53,6 +54,20 @@ resource "forgejo_branch_protection" "state_main" {
   repository_id = forgejo_repository.state.id
   branch_name   = "main"
   enable_push   = true
+}
+
+# Read-only source repos Haku may clone with its existing Forgejo basic-auth
+# credential. These repos are owned/adopted elsewhere; the provider's repository
+# ID format is owner/name, matching the import IDs in tf/gitops/forgejo-codex.
+resource "forgejo_collaborator" "haku_source_read" {
+  for_each = toset([
+    "agentydragon/ducktape",
+    "agentydragon/gaffer-private",
+  ])
+
+  repository_id = each.value
+  user          = forgejo_user.haku.login
+  permission    = "read"
 }
 
 # Read-only access for the claude agent account (user provisioned by
