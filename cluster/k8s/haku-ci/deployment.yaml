@@ -93,6 +93,14 @@ spec:
           args:
             - --host=tcp://0.0.0.0:2375
             - --tls=false
+          # --tls=false alone isn't enough: the dind entrypoint defaults DOCKER_TLS_CERTDIR
+          # to /certs and re-enables TLS on 2375, so the runner's plain-HTTP client hits
+          # "HTTP request to an HTTPS server". Emptying it disables TLS so 2375 is plain HTTP
+          # (localhost-only inside the pod). This is the last piece that lets the runner
+          # connect to the rootless daemon.
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: ""
           securityContext:
             privileged: true
             runAsUser: 1000
