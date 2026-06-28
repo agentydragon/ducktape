@@ -47,7 +47,7 @@ spec:
           image: ghcr.io/agentydragon/haku-console:devel-20260628000612-5c33640 # {"$imagepolicy": "flux-system:haku-console"}
           imagePullPolicy: Always
           command: ["/bin/sh", "-c"]
-          args: ["cp -a /app/web/. /web/"]
+          args: ["cp -R /app/web/. /web/"]
           volumeMounts:
             - name: web
               mountPath: /web
