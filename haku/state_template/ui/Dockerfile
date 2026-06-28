@@ -25,9 +25,10 @@ COPY backend/ ./backend/
 # The built SPA is served same-origin by the backend (HAKU_UI_STATIC_DIR).
 COPY --from=frontend /app/frontend/dist ./web
 
-# Run as a non-root user.
+# Run as a non-root user. Use the numeric UID (not the name): Kubernetes
+# runAsNonRoot can only verify a non-root user from a numeric USER.
 RUN useradd --create-home --uid 10001 haku && chown -R haku:haku /app
-USER haku
+USER 10001
 
 ENV HAKU_UI_STATIC_DIR=/app/web \
     PYTHONUNBUFFERED=1
