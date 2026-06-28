@@ -235,8 +235,11 @@ profiling result says not to collapse them:
   territory, and should use the backend named below.
 
 The serialization boundary is therefore `facts + lowered selectors ->
-SelectorConstraintModel`, not "generate a second procedural matcher" and not
-"push whole assignment rows through Datalog until one survives."
+CompiledSelectorProblem -> SelectorCpSatRequest`, not "generate a second
+procedural matcher" and not "push whole assignment rows through Datalog until
+one survives." The compiled problem owns shared interned value domains,
+narrowed variable supports, allowed tables, binary constraints, target
+projections, and semantic `all_different` in one representation.
 
 **EDB — facts extracted once per chunk.** The AST plus the one semantic edge:
 
@@ -294,9 +297,10 @@ not make Ascent own the exact assignment search. The owned layers are:
 2. **Fact and tuple derivation:** bundle AST + owner/reference facts →
    finite domains and allowed tuples. This may use Ascent or direct Rust joins
    where Datalog-style relation derivation is a good fit.
-3. **Constraint model:** `SelectorConstraintModel` with typed finite-domain
-   variables, allowed tuples, equality/disequality, ordinal/order constraints,
-   `all_different`, and target projections.
+3. **Compiled constraint problem:** `CompiledSelectorProblem` with shared
+   interned finite domains, narrowed variable supports, allowed tuples,
+   equality/disequality, ordinal/order constraints, `all_different`, and target
+   projections.
 4. **Exact solve:** a CP/SAT backend searches the model and returns enough
    solutions/projections to decide target categoricity.
 5. **Projection/diagnostics:** map solver assignments to claims and explain
@@ -311,18 +315,18 @@ reporting, and a native
 [`AllDifferent`](https://developers.google.com/optimization/reference/python/sat/python/cp_model#AddAllDifferent)
 global constraint. The first production implementation is the thin Bazel/C++
 sidecar with protobuf transport. That keeps OR-Tools ownership on the C++ side
-and keeps the Rust boundary as `SelectorBackendProblem -> SelectorCpSatRequest`.
+and keeps the Rust boundary as `CompiledSelectorProblem -> SelectorCpSatRequest`.
 The next risk is not integration feasibility; it is whether the retained Tana
 selector language lowers into this model with enough coverage and acceptable
 runtime.
 
 The fallback is **[RustSAT](https://github.com/chrjabs/rustsat) +
 CaDiCaL/Kissat** if OR-Tools integration is too expensive. In that shape the
-`SelectorConstraintModel` is encoded to SAT: boolean variables for `(selector
-variable, candidate value)`, exactly-one domain constraints, at-most-one per
-candidate value for `all_different`, and clauses/auxiliary variables for
-allowed tuples. This is an implementation fallback for the same CP model, not a
-license to hand-roll CSP heuristics in debundle.
+same compiled finite-domain problem is encoded to SAT: boolean variables for
+`(selector variable, candidate value)`, exactly-one domain constraints,
+at-most-one per candidate value for `all_different`, and clauses/auxiliary
+variables for allowed tuples. This is an implementation fallback for the same
+CP model, not a license to hand-roll CSP heuristics in debundle.
 
 Do **not** keep optimizing the current `AssignmentRow` scheduler as the
 destination. It is useful as a migration oracle and as evidence for which facts
@@ -411,7 +415,7 @@ EDB:
 - label posting lists still used by `ChunkResolver` in tooling/authoring paths.
 
 The cutover is a consumer change: add native AST relations and shape rules to
-the fact/tuple derivation layer, build the shared `SelectorConstraintModel`,
+the fact/tuple derivation layer, build the shared `CompiledSelectorProblem`,
 delete each production fallback shape after focused equivalence tests and
 corpus checks pass, then keep tooling/authoring uses behind the same
 solver-backed semantics.
@@ -719,17 +723,14 @@ This is the detailed P0 queue; <../TODO.md> should only summarize it.
   equality/disequality constraints, and native `all_different` where the
   selector semantics require injectivity. Do not clone `MatcherState` or add a
   procedural alpha resolver.
-- **G2 — exact-assignment backend spike.** The backend-neutral
-  `SelectorConstraintModel`, backend problem contract, backend solver adapter,
-  and OR-Tools CP-SAT dependency smoke test are landed. The remaining spike is
-  to make CP-SAT consume the backend problem through a maintained sidecar wire
-  format, return target-support-complete assignments, and solve the anonymized
-  broad-vs-specific fixture with semantic `all_different`. Private-corpus runs
-  are optional smoke evidence, not checked-in fixtures or the primary
-  acceptance gate. If the OR-Tools native path becomes too expensive after this
-  wire contract, encode the same `SelectorConstraintModel` through RustSAT +
-  CaDiCaL/Kissat. The acceptance bar is measured runtime and matching
-  semantics, not a nicer hand-written scheduler.
+- **G2 — exact-assignment backend cutover.** The compact
+  `CompiledSelectorProblem`, backend solver adapter, generated proto bindings,
+  CP-SAT sidecar wire format, and anonymized broad-vs-specific fixture are
+  landed for the supported subset. The next risk is production-sized runtime
+  and language coverage, not sidecar feasibility. If the OR-Tools native path
+  becomes too expensive after profiling, encode the same compiled finite-domain
+  problem through RustSAT + CaDiCaL/Kissat. The acceptance bar is measured
+  runtime and matching semantics, not a nicer hand-written scheduler.
 - **G3 — retained hole and predicate lowering.** Lower today's retained
   JS-with-holes selectors and binding groups into native AST/owner IR atoms:
   simple existential holes, regex string predicates, run-hole placement

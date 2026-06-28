@@ -1,9 +1,9 @@
 //! Backend-backed selector solver entry point.
 //!
 //! This module is the narrow bridge from selector IR/facts to a finite-domain
-//! backend. It does not choose assignments itself: it lowers to
-//! `SelectorBackendProblem`, calls a `SelectorConstraintBackend`, and decodes
-//! the backend's assignment into the existing materializer-facing `SolverResult`.
+//! backend. It does not choose assignments itself: it lowers to a compact
+//! compiled problem, calls a backend, and decodes the backend's assignment into
+//! the existing materializer-facing `SolverResult`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
@@ -12,26 +12,22 @@ use std::fmt;
 use analysis::{OwnerId, StatementOrdinal};
 use selector_constraint_backend::{
     BackendAssignment, BackendAssignmentCoverage, BackendAssignmentError, BackendSolveResult,
-    BackendSolveStatus, SelectorBackendProblem, SelectorBackendProblemError,
-    SelectorConstraintBackend,
+    BackendSolveStatus, CompiledSelectorProblem, ConstraintValue, ConstraintVariableId,
+    SelectorProblemBackend, TargetBindingProjection,
 };
-use selector_constraint_model::{ConstraintValue, ConstraintVariableId, TargetBindingProjection};
 use selector_constraint_model_builder::{
-    SelectorConstraintModelBuildError, build_selector_constraint_model,
+    CompiledSelectorProblemBuildError, compile_selector_problem,
 };
 use selector_ir::{
     ClaimKind, ClaimOutcome, ResolvedClaim, SelectorFact, SelectorFactStore, SelectorProgram,
     SelectorTargetId, SolverClaim, SolverResult,
 };
 
-pub fn build_backend_problem(
+pub fn compile_backend_problem(
     program: &SelectorProgram,
     facts: &SelectorFactStore,
-) -> Result<SelectorBackendProblem, SelectorBackendProblemBuildError> {
-    let model = build_selector_constraint_model(program, facts)
-        .map_err(SelectorBackendProblemBuildError::Model)?;
-    SelectorBackendProblem::from_model(&model)
-        .map_err(SelectorBackendProblemBuildError::BackendProblem)
+) -> Result<CompiledSelectorProblem, CompiledSelectorProblemBuildError> {
+    compile_selector_problem(program, facts)
 }
 
 pub fn solve_with_backend<B>(
@@ -40,10 +36,13 @@ pub fn solve_with_backend<B>(
     backend: &B,
 ) -> Result<SolverResult, SelectorBackendSolveError<B::Error>>
 where
-    B: SelectorConstraintBackend,
+    B: SelectorProblemBackend,
 {
     let problem =
-        build_backend_problem(program, facts).map_err(SelectorBackendSolveError::Build)?;
+        compile_backend_problem(program, facts).map_err(SelectorBackendSolveError::Build)?;
+    if problem.known_unsat.is_some() {
+        return Ok(no_match_result(program));
+    }
     let result = backend
         .solve(&problem)
         .map_err(SelectorBackendSolveError::Backend)?;
@@ -51,34 +50,8 @@ where
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SelectorBackendProblemBuildError {
-    Model(SelectorConstraintModelBuildError),
-    BackendProblem(SelectorBackendProblemError),
-}
-
-impl fmt::Display for SelectorBackendProblemBuildError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Model(err) => write!(f, "failed to build selector constraint model: {err}"),
-            Self::BackendProblem(err) => {
-                write!(f, "failed to build selector backend problem: {err}")
-            }
-        }
-    }
-}
-
-impl Error for SelectorBackendProblemBuildError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Model(err) => Some(err),
-            Self::BackendProblem(err) => Some(err),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectorBackendSolveError<E> {
-    Build(SelectorBackendProblemBuildError),
+    Build(CompiledSelectorProblemBuildError),
     Backend(E),
     Assignment(BackendAssignmentError),
     MissingTargetProjection {
@@ -173,7 +146,7 @@ where
 fn decode_backend_result<E>(
     program: &SelectorProgram,
     facts: &SelectorFactStore,
-    problem: &SelectorBackendProblem,
+    problem: &CompiledSelectorProblem,
     result: BackendSolveResult,
 ) -> Result<SolverResult, SelectorBackendSolveError<E>> {
     match result.status {
@@ -212,7 +185,7 @@ fn decode_backend_result<E>(
 fn decode_satisfying_assignments<E>(
     program: &SelectorProgram,
     facts: &SelectorFactStore,
-    problem: &SelectorBackendProblem,
+    problem: &CompiledSelectorProblem,
     assignments: &[BackendAssignment],
 ) -> Result<SolverResult, SelectorBackendSolveError<E>> {
     let facts = MaterializationFacts::from_store(facts);
@@ -392,11 +365,11 @@ mod tests {
     use std::convert::Infallible;
 
     use analysis::{ChunkId, OwnerId, StatementOrdinal};
+    use selector_constraint_backend::ConstraintValue;
     use selector_constraint_backend::{
         BackendAssignment, BackendAssignmentCoverage, BackendSolveResult, BackendSolveStatus,
         BackendValueId, BackendVariableAssignment,
     };
-    use selector_constraint_model::ConstraintValue;
     use selector_ir::{ClaimOrigin, OwnerTerm, SelectorAtom, StringTerm, VariableDomain};
 
     use super::*;
@@ -408,12 +381,12 @@ mod tests {
         status: BackendSolveStatus,
     }
 
-    impl SelectorConstraintBackend for SelectingBackend {
+    impl SelectorProblemBackend for SelectingBackend {
         type Error = Infallible;
 
         fn solve(
             &self,
-            problem: &SelectorBackendProblem,
+            problem: &CompiledSelectorProblem,
         ) -> Result<BackendSolveResult, Self::Error> {
             let mut assignments = Vec::new();
             for assignment in &self.assignments {
@@ -437,7 +410,7 @@ mod tests {
     }
 
     fn backend_value_for(
-        problem: &SelectorBackendProblem,
+        problem: &CompiledSelectorProblem,
         value: &ConstraintValue,
     ) -> BackendValueId {
         let index = problem
@@ -526,14 +499,14 @@ mod tests {
         facts.push(owner_fact(OwnerId(1), 10, "function"));
         facts.push(binding_fact(OwnerId(1), "minA", "Readable"));
         facts.push(owner_fact(OwnerId(2), 20, "function"));
-        facts.push(binding_fact(OwnerId(2), "minB", "Other"));
+        facts.push(binding_fact(OwnerId(2), "minB", "Readable"));
         facts
     }
 
     #[test]
     fn builds_backend_problem_from_selector_program() {
         let (program, target) = binding_program();
-        let problem = build_backend_problem(&program, &facts()).unwrap();
+        let problem = compile_backend_problem(&program, &facts()).unwrap();
 
         assert_eq!(problem.variables.len(), 2);
         assert_eq!(problem.target_projections[0].target, target);
@@ -560,7 +533,7 @@ mod tests {
     #[test]
     fn backend_problem_preserves_constant_binding_projection() {
         let (program, target) = const_binding_program();
-        let problem = build_backend_problem(&program, &facts()).unwrap();
+        let problem = compile_backend_problem(&program, &facts()).unwrap();
 
         assert_eq!(problem.target_projections[0].target, target);
         assert_eq!(

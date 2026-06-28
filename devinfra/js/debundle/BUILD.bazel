@@ -1058,30 +1058,12 @@ rust_test(
 )
 
 rust_library(
-    name = "selector_constraint_model",
-    srcs = ["selector_constraint_model.rs"],
-    edition = "2024",
-    deps = [
-        ":analysis",
-        ":chunk_facts",
-        ":selector_ir",
-        "@crates//:serde",
-    ],
-)
-
-rust_test(
-    name = "selector_constraint_model_test",
-    size = "small",
-    crate = ":selector_constraint_model",
-    edition = "2024",
-)
-
-rust_library(
     name = "selector_constraint_backend",
     srcs = ["selector_constraint_backend.rs"],
     edition = "2024",
     deps = [
-        ":selector_constraint_model",
+        ":analysis",
+        ":chunk_facts",
         ":selector_ir",
         "@crates//:serde",
     ],
@@ -1094,7 +1076,6 @@ rust_test(
     edition = "2024",
     deps = [
         ":analysis",
-        ":selector_constraint_model",
         ":selector_ir",
     ],
 )
@@ -1106,7 +1087,7 @@ rust_library(
     deps = [
         ":analysis",
         ":chunk_facts",
-        ":selector_constraint_model",
+        ":selector_constraint_backend",
         ":selector_ir",
         "@crates//:regex",
     ],
@@ -1121,7 +1102,7 @@ rust_test(
         ":analysis",
         ":chunk_facts",
         ":js_ast",
-        ":selector_constraint_model",
+        ":selector_constraint_backend",
         ":selector_ir",
         ":selector_ir_lowering",
         ":spec",
@@ -1135,7 +1116,6 @@ rust_library(
     deps = [
         ":analysis",
         ":selector_constraint_backend",
-        ":selector_constraint_model",
         ":selector_constraint_model_builder",
         ":selector_ir",
     ],
@@ -1149,7 +1129,6 @@ rust_test(
     deps = [
         ":analysis",
         ":selector_constraint_backend",
-        ":selector_constraint_model",
         ":selector_ir",
     ],
 )
@@ -1160,7 +1139,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":selector_constraint_backend",
-        ":selector_constraint_model",
+        ":selector_ir",
         "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cp_sat_rust_proto",
         "@crates//:serde_json",
         "@rules_rust_prost//private/3rdparty/crates:prost",

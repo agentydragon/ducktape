@@ -24,7 +24,7 @@ records and scoped backlogs; when a plan's core work is complete, its remaining
 tail should be summarized here instead of leaving the plan looking like a second
 priority queue.
 
-**Current focus (2026-06-26).** PRs #2439, #2443, #2446, and #2447 moved
+**Current focus (2026-06-27).** PRs #2439, #2443, #2446, and #2447 moved
 `source_match` onto the Ascent-backed selector path, lowered the exact
 single-statement AST subset, stopped calling `ChunkResolver` for native
 selectors, and added native class-superclass constraints. That proved the
@@ -32,20 +32,24 @@ global-resolution direction, but profiling the production-sized path showed the
 current Ascent exact-assignment encoding is not the endpoint: it carries
 `AssignmentRow` payloads through `partial_assignment` / `stepped_assignment`
 relations and implements target injectivity as pairwise row filtering instead
-of a native global constraint. The remaining P0 is to carve a
-`SelectorConstraintModel` boundary, keep Ascent/Rust as fact and allowed-tuple
-derivation where useful, and move exact target assignment to a CP/SAT backend
-with first-class `all_different`. Unsupported forms still fail closed instead
-of taking a production procedural fallback.
+of a native global constraint. The production cutover now compiles
+`SelectorProgram + SelectorFactStore` directly into a compact
+`CompiledSelectorProblem` and emits the OR-Tools CP-SAT protobuf from that
+single representation; the old typed model/backend-copy bridge has been
+removed. The remaining P0 is to keep improving fact/allowed-tuple derivation
+and language coverage while preserving first-class `all_different`.
+Unsupported forms still fail closed instead of taking a production procedural
+fallback.
 
 Dispatch work in this order:
 
-1. **Constraint-model/backend pivot (P0.0).** Introduce the explicit
-   `SelectorConstraintModel` contract: typed finite domains, allowed tuples,
-   equality/disequality, ordering, target projection, and semantic
-   `all_different`. Target OR-Tools CP-SAT first; use RustSAT + CaDiCaL/Kissat
-   only if OR-Tools integration is too expensive. Do not optimize the current
-   `AssignmentRow` scheduler as if it were the final solver.
+1. **Compiled-problem/backend cutover (P0.0).** Keep the explicit
+   `CompiledSelectorProblem` contract: shared interned domains, narrowed
+   variable supports, allowed tuples, equality/disequality, ordering, target
+   projection, and semantic `all_different`. Target OR-Tools CP-SAT first; use
+   RustSAT + CaDiCaL/Kissat only if OR-Tools integration is too expensive. Do
+   not optimize the current `AssignmentRow` scheduler as if it were the final
+   solver.
 2. **Alpha-all as query structure (P0.1).** Lower `identifiers: alpha_all` to
    logic variables, equality, disequality / `all_different`, and scope facts.
    Do not clone the procedural `selector_match::Bindings` matcher inside the
@@ -122,14 +126,14 @@ propose`.
 Detailed design and gates live in <plans/selector_constraint_model.md>; keep
 this list as the dispatch summary, not a second plan.
 
-1. **Wire the exact-assignment backend.** The backend-neutral
-   `SelectorConstraintModel`, backend problem contract, CP-SAT sidecar,
-   generated Rust proto bindings, Rust backend adapter, and production
-   materialization hook have landed for the supported subset. The anonymized
-   broad-vs-specific injectivity fixture resolves through CP-SAT rather than
-   `AssignmentRow` enumeration. Remaining work in this slice is to run the
-   supported subset against real Gaffer evidence and use its unsupported-form
-   failures to drive native selector-language coverage.
+1. **Wire the exact-assignment backend.** The compact
+   `CompiledSelectorProblem` contract, CP-SAT sidecar, generated Rust proto
+   bindings, Rust backend adapter, and production materialization hook have
+   landed for the supported subset. The anonymized broad-vs-specific
+   injectivity fixture resolves through CP-SAT rather than `AssignmentRow`
+   enumeration. Remaining work in this slice is to run the supported subset
+   against real Gaffer evidence and use its unsupported-form failures to drive
+   native selector-language coverage.
 2. **Keep Ascent on fact/table derivation, not exact assignment.** Ascent may
    continue deriving relation support and allowed tuples, but exact target
    assignment must be owned by OR-Tools CP-SAT or a measured SAT fallback with

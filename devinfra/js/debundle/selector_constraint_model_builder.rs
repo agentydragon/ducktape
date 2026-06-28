@@ -1,9 +1,4 @@
-//! Backend-neutral lowering from selector IR plus facts into a finite-domain
-//! constraint model.
-//!
-//! This is intentionally a shadow builder: it exposes the model boundary a
-//! CP/SAT backend can consume without changing the current Ascent-backed solver
-//! path.
+//! Lowering from selector IR plus facts into a compact finite-domain problem.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
@@ -12,33 +7,41 @@ use std::fmt;
 use analysis::{OwnerId, StatementOrdinal};
 use chunk_facts::NodeId;
 use regex::Regex;
-use selector_constraint_model::{
-    AllDifferentReason, BinaryConstraintKind, ConstraintModelError, ConstraintValue,
-    ConstraintVariableId, SelectorConstraintModel, TargetBindingProjection,
+use selector_constraint_backend::{
+    AllDifferentReason, BinaryConstraintKind, CompiledSelectorProblem,
+    CompiledSelectorProblemBuilder, CompiledSelectorProblemError, ConstraintValue,
+    ConstraintVariableId, TargetBindingProjection,
 };
 use selector_ir::{
     ClaimKind, NodeTerm, OrdinalTerm, OwnerTerm, SelectorAtom, SelectorFact, SelectorFactStore,
     SelectorProgram, SelectorProgramError, SelectorVariableId, StringTerm, VariableDomain,
 };
 
-pub fn build_selector_constraint_model(
+pub fn compile_selector_problem(
     program: &SelectorProgram,
     facts: &SelectorFactStore,
-) -> Result<SelectorConstraintModel, SelectorConstraintModelBuildError> {
+) -> Result<CompiledSelectorProblem, CompiledSelectorProblemBuildError> {
     program
         .validate()
-        .map_err(SelectorConstraintModelBuildError::InvalidProgram)?;
+        .map_err(CompiledSelectorProblemBuildError::InvalidProgram)?;
 
     let domains = FactDomains::from_program_and_facts(program, facts);
     let target_binding_projections = TargetBindingProjections::from_program(program)?;
 
-    let mut model = SelectorConstraintModel::default();
+    let mut model = CompiledSelectorProblemBuilder::default();
+    for domain in [
+        VariableDomain::Owner,
+        VariableDomain::AstNode,
+        VariableDomain::String,
+        VariableDomain::StatementOrdinal,
+    ] {
+        model.add_full_domain_values(domain, domains.values_for(domain))?;
+    }
     let mut variables = Vec::with_capacity(program.variables.len());
     for variable in &program.variables {
         variables.push(model.add_variable(
             variable.id,
             variable.domain,
-            domains.values_for(variable.domain),
             variable.debug_name.clone(),
         )?);
     }
@@ -77,14 +80,13 @@ pub fn build_selector_constraint_model(
         )?;
     }
 
-    model.validate()?;
-    Ok(model)
+    model.finish().map_err(Into::into)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SelectorConstraintModelBuildError {
+pub enum CompiledSelectorProblemBuildError {
     InvalidProgram(SelectorProgramError),
-    InvalidModel(ConstraintModelError),
+    InvalidModel(CompiledSelectorProblemError),
     UnknownSelectorVariable {
         variable: SelectorVariableId,
     },
@@ -101,18 +103,18 @@ pub enum SelectorConstraintModelBuildError {
     },
 }
 
-impl fmt::Display for SelectorConstraintModelBuildError {
+impl fmt::Display for CompiledSelectorProblemBuildError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidProgram(err) => write!(f, "invalid selector program: {err}"),
-            Self::InvalidModel(err) => write!(f, "invalid selector constraint model: {err}"),
+            Self::InvalidModel(err) => write!(f, "invalid compiled selector problem: {err}"),
             Self::UnknownSelectorVariable { variable } => {
                 write!(f, "selector variable {variable:?} has no model variable")
             }
             Self::UnsupportedAtom { atom } => {
                 write!(
                     f,
-                    "selector atom is not supported by the constraint model builder: {atom}"
+                    "selector atom is not supported by the compiled selector problem builder: {atom}"
                 )
             }
             Self::ConstantOnlyAtomUnsatisfied { atom } => {
@@ -133,7 +135,7 @@ impl fmt::Display for SelectorConstraintModelBuildError {
     }
 }
 
-impl Error for SelectorConstraintModelBuildError {
+impl Error for CompiledSelectorProblemBuildError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::InvalidProgram(err) => Some(err),
@@ -146,8 +148,8 @@ impl Error for SelectorConstraintModelBuildError {
     }
 }
 
-impl From<ConstraintModelError> for SelectorConstraintModelBuildError {
-    fn from(err: ConstraintModelError) -> Self {
+impl From<CompiledSelectorProblemError> for CompiledSelectorProblemBuildError {
+    fn from(err: CompiledSelectorProblemError) -> Self {
         Self::InvalidModel(err)
     }
 }
@@ -155,19 +157,19 @@ impl From<ConstraintModelError> for SelectorConstraintModelBuildError {
 fn model_variable(
     variables: &[ConstraintVariableId],
     variable: SelectorVariableId,
-) -> Result<ConstraintVariableId, SelectorConstraintModelBuildError> {
+) -> Result<ConstraintVariableId, CompiledSelectorProblemBuildError> {
     variables
         .get(variable.0)
         .copied()
-        .ok_or(SelectorConstraintModelBuildError::UnknownSelectorVariable { variable })
+        .ok_or(CompiledSelectorProblemBuildError::UnknownSelectorVariable { variable })
 }
 
 fn lower_atom_constraint(
     atom: &SelectorAtom,
     domains: &FactDomains,
     variables: &[ConstraintVariableId],
-    model: &mut SelectorConstraintModel,
-) -> Result<(), SelectorConstraintModelBuildError> {
+    model: &mut CompiledSelectorProblemBuilder,
+) -> Result<(), CompiledSelectorProblemBuildError> {
     match atom {
         SelectorAtom::OwnerKind {
             owner,
@@ -603,19 +605,19 @@ fn lower_atom_constraint(
             },
             domains,
         ),
-        _ => Err(SelectorConstraintModelBuildError::UnsupportedAtom {
+        _ => Err(CompiledSelectorProblemBuildError::UnsupportedAtom {
             atom: format!("{atom:?}"),
         }),
     }
 }
 
 fn add_owner_string_allowed_tuples(
-    model: &mut SelectorConstraintModel,
+    model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
     owner: &OwnerTerm,
     string: &StringTerm,
     facts: &BTreeSet<(OwnerId, String)>,
-) -> Result<(), SelectorConstraintModelBuildError> {
+) -> Result<(), CompiledSelectorProblemBuildError> {
     let mut constraint_variables = Vec::new();
     if let OwnerTerm::Var { id } = owner {
         constraint_variables.push(model_variable(variables, *id)?);
@@ -631,7 +633,7 @@ fn add_owner_string_allowed_tuples(
             })
             .then_some(())
             .ok_or_else(
-                || SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied {
+                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
                     atom: format!("owner/string fact {owner:?} {string:?}"),
                 },
             );
@@ -658,12 +660,12 @@ fn add_owner_string_allowed_tuples(
 }
 
 fn add_owner_ordinal_allowed_tuples(
-    model: &mut SelectorConstraintModel,
+    model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
     owner: &OwnerTerm,
     ordinal: &OrdinalTerm,
     facts: &BTreeSet<(OwnerId, StatementOrdinal)>,
-) -> Result<(), SelectorConstraintModelBuildError> {
+) -> Result<(), CompiledSelectorProblemBuildError> {
     let mut constraint_variables = Vec::new();
     if let OwnerTerm::Var { id } = owner {
         constraint_variables.push(model_variable(variables, *id)?);
@@ -680,7 +682,7 @@ fn add_owner_ordinal_allowed_tuples(
             })
             .then_some(())
             .ok_or_else(
-                || SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied {
+                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
                     atom: format!("owner/ordinal fact {owner:?} {ordinal:?}"),
                 },
             );
@@ -707,11 +709,11 @@ fn add_owner_ordinal_allowed_tuples(
 }
 
 fn add_owner_allowed_tuples(
-    model: &mut SelectorConstraintModel,
+    model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
     owner: &OwnerTerm,
     facts: &BTreeSet<OwnerId>,
-) -> Result<(), SelectorConstraintModelBuildError> {
+) -> Result<(), CompiledSelectorProblemBuildError> {
     let mut constraint_variables = Vec::new();
     if let OwnerTerm::Var { id } = owner {
         constraint_variables.push(model_variable(variables, *id)?);
@@ -722,7 +724,7 @@ fn add_owner_allowed_tuples(
             .any(|fact_owner| owner_term_matches(owner, *fact_owner))
             .then_some(())
             .ok_or_else(
-                || SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied {
+                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
                     atom: format!("owner fact {owner:?}"),
                 },
             );
@@ -738,12 +740,12 @@ fn add_owner_allowed_tuples(
 }
 
 fn add_owner_owner_allowed_tuples(
-    model: &mut SelectorConstraintModel,
+    model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
     left: &OwnerTerm,
     right: &OwnerTerm,
     facts: &BTreeSet<(OwnerId, OwnerId)>,
-) -> Result<(), SelectorConstraintModelBuildError> {
+) -> Result<(), CompiledSelectorProblemBuildError> {
     let mut constraint_variables = Vec::new();
     if let OwnerTerm::Var { id } = left {
         constraint_variables.push(model_variable(variables, *id)?);
@@ -759,7 +761,7 @@ fn add_owner_owner_allowed_tuples(
             })
             .then_some(())
             .ok_or_else(
-                || SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied {
+                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
                     atom: format!("owner/owner fact {left:?} {right:?}"),
                 },
             );
@@ -786,12 +788,12 @@ fn add_owner_owner_allowed_tuples(
 }
 
 fn add_owner_node_allowed_tuples(
-    model: &mut SelectorConstraintModel,
+    model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
     owner: &OwnerTerm,
     node: &NodeTerm,
     facts: &BTreeSet<(OwnerId, NodeId)>,
-) -> Result<(), SelectorConstraintModelBuildError> {
+) -> Result<(), CompiledSelectorProblemBuildError> {
     let mut constraint_variables = Vec::new();
     if let OwnerTerm::Var { id } = owner {
         constraint_variables.push(model_variable(variables, *id)?);
@@ -807,7 +809,7 @@ fn add_owner_node_allowed_tuples(
             })
             .then_some(())
             .ok_or_else(
-                || SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied {
+                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
                     atom: format!("owner/node fact {owner:?} {node:?}"),
                 },
             );
@@ -834,12 +836,12 @@ fn add_owner_node_allowed_tuples(
 }
 
 fn add_node_node_allowed_tuples(
-    model: &mut SelectorConstraintModel,
+    model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
     left: &NodeTerm,
     right: &NodeTerm,
     facts: &BTreeSet<(NodeId, NodeId)>,
-) -> Result<(), SelectorConstraintModelBuildError> {
+) -> Result<(), CompiledSelectorProblemBuildError> {
     let mut constraint_variables = Vec::new();
     if let NodeTerm::Var { id } = left {
         constraint_variables.push(model_variable(variables, *id)?);
@@ -855,7 +857,7 @@ fn add_node_node_allowed_tuples(
             })
             .then_some(())
             .ok_or_else(
-                || SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied {
+                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
                     atom: format!("node/node fact {left:?} {right:?}"),
                 },
             );
@@ -882,11 +884,11 @@ fn add_node_node_allowed_tuples(
 }
 
 fn add_node_allowed_tuples(
-    model: &mut SelectorConstraintModel,
+    model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
     node: &NodeTerm,
     facts: &BTreeSet<NodeId>,
-) -> Result<(), SelectorConstraintModelBuildError> {
+) -> Result<(), CompiledSelectorProblemBuildError> {
     let mut constraint_variables = Vec::new();
     if let NodeTerm::Var { id } = node {
         constraint_variables.push(model_variable(variables, *id)?);
@@ -897,7 +899,7 @@ fn add_node_allowed_tuples(
             .any(|fact_node| node_term_matches(node, *fact_node))
             .then_some(())
             .ok_or_else(
-                || SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied {
+                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
                     atom: format!("node fact {node:?}"),
                 },
             );
@@ -913,12 +915,12 @@ fn add_node_allowed_tuples(
 }
 
 fn add_node_string_allowed_tuples(
-    model: &mut SelectorConstraintModel,
+    model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
     node: &NodeTerm,
     string: &StringTerm,
     facts: &BTreeSet<(NodeId, String)>,
-) -> Result<(), SelectorConstraintModelBuildError> {
+) -> Result<(), CompiledSelectorProblemBuildError> {
     let mut constraint_variables = Vec::new();
     if let NodeTerm::Var { id } = node {
         constraint_variables.push(model_variable(variables, *id)?);
@@ -934,7 +936,7 @@ fn add_node_string_allowed_tuples(
             })
             .then_some(())
             .ok_or_else(
-                || SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied {
+                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
                     atom: format!("node/string fact {node:?} {string:?}"),
                 },
             );
@@ -961,12 +963,12 @@ fn add_node_string_allowed_tuples(
 }
 
 fn add_ast_string_literal_matching_regex_allowed_tuples(
-    model: &mut SelectorConstraintModel,
+    model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
     node: &NodeTerm,
     pattern: &StringTerm,
     facts: &BTreeSet<(NodeId, String)>,
-) -> Result<(), SelectorConstraintModelBuildError> {
+) -> Result<(), CompiledSelectorProblemBuildError> {
     let pattern = required_string_term_const(pattern, "ast_string_literal_matching_regex.pattern")?;
     let matching_nodes = Regex::new(&pattern)
         .map(|regex| {
@@ -980,12 +982,12 @@ fn add_ast_string_literal_matching_regex_allowed_tuples(
 }
 
 fn add_node_ordinal_allowed_tuples(
-    model: &mut SelectorConstraintModel,
+    model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
     node: &NodeTerm,
     ordinal: &OrdinalTerm,
     facts: &BTreeSet<(NodeId, StatementOrdinal)>,
-) -> Result<(), SelectorConstraintModelBuildError> {
+) -> Result<(), CompiledSelectorProblemBuildError> {
     let mut constraint_variables = Vec::new();
     if let NodeTerm::Var { id } = node {
         constraint_variables.push(model_variable(variables, *id)?);
@@ -1001,7 +1003,7 @@ fn add_node_ordinal_allowed_tuples(
             })
             .then_some(())
             .ok_or_else(
-                || SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied {
+                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
                     atom: format!("node/ordinal fact {node:?} {ordinal:?}"),
                 },
             );
@@ -1028,12 +1030,12 @@ fn add_node_ordinal_allowed_tuples(
 }
 
 fn add_ordinal_ordinal_allowed_tuples(
-    model: &mut SelectorConstraintModel,
+    model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
     base: &OrdinalTerm,
     ordinal: &OrdinalTerm,
     facts: &BTreeSet<(StatementOrdinal, StatementOrdinal)>,
-) -> Result<(), SelectorConstraintModelBuildError> {
+) -> Result<(), CompiledSelectorProblemBuildError> {
     let mut constraint_variables = Vec::new();
     if let OrdinalTerm::Var { id } = base {
         constraint_variables.push(model_variable(variables, *id)?);
@@ -1050,7 +1052,7 @@ fn add_ordinal_ordinal_allowed_tuples(
             })
             .then_some(())
             .ok_or_else(
-                || SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied {
+                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
                     atom: format!("ordinal/ordinal fact {base:?} {ordinal:?}"),
                 },
             );
@@ -1102,7 +1104,7 @@ impl LoweredChildListPattern {
     fn from_terms(
         terms: ChildListPatternTerms<'_>,
         variables: &[ConstraintVariableId],
-    ) -> Result<Self, SelectorConstraintModelBuildError> {
+    ) -> Result<Self, CompiledSelectorProblemBuildError> {
         let parent = lower_node_term(terms.parent, variables)?;
         let mut segments = Vec::with_capacity(terms.segments.len());
         for segment in terms.segments {
@@ -1125,11 +1127,11 @@ impl LoweredChildListPattern {
 }
 
 fn add_ast_child_list_pattern_allowed_tuples(
-    model: &mut SelectorConstraintModel,
+    model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
     terms: ChildListPatternTerms<'_>,
     domains: &FactDomains,
-) -> Result<(), SelectorConstraintModelBuildError> {
+) -> Result<(), CompiledSelectorProblemBuildError> {
     let pattern = LoweredChildListPattern::from_terms(terms, variables)?;
 
     if pattern.segments.iter().all(Vec::is_empty) {
@@ -1146,11 +1148,11 @@ fn add_ast_child_list_pattern_allowed_tuples(
 }
 
 fn add_child_list_segment_constraint(
-    model: &mut SelectorConstraintModel,
+    model: &mut CompiledSelectorProblemBuilder,
     pattern: &LoweredChildListPattern,
     segment_index: usize,
     domains: &FactDomains,
-) -> Result<(), SelectorConstraintModelBuildError> {
+) -> Result<(), CompiledSelectorProblemBuildError> {
     let segment = &pattern.segments[segment_index];
     let constraint_variables = child_list_constraint_variables(
         std::iter::once(pattern.parent).chain(segment.iter().copied()),
@@ -1204,7 +1206,7 @@ fn add_child_list_segment_constraint(
 
     if constraint_variables.is_empty() {
         return constant_only_match.then_some(()).ok_or_else(|| {
-            SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied {
+            CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
                 atom: "ast_child_list_pattern".to_string(),
             }
         });
@@ -1214,11 +1216,11 @@ fn add_child_list_segment_constraint(
 }
 
 fn add_child_list_segment_order_constraint(
-    model: &mut SelectorConstraintModel,
+    model: &mut CompiledSelectorProblemBuilder,
     pattern: &LoweredChildListPattern,
     segment_index: usize,
     domains: &FactDomains,
-) -> Result<(), SelectorConstraintModelBuildError> {
+) -> Result<(), CompiledSelectorProblemBuildError> {
     let previous = &pattern.segments[segment_index - 1];
     let current = &pattern.segments[segment_index];
     let previous_last = *previous
@@ -1259,7 +1261,7 @@ fn add_child_list_segment_order_constraint(
 
     if constraint_variables.is_empty() {
         return constant_only_match.then_some(()).ok_or_else(|| {
-            SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied {
+            CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
                 atom: "ast_child_list_pattern".to_string(),
             }
         });
@@ -1287,7 +1289,7 @@ where
 fn lower_node_term(
     term: &NodeTerm,
     variables: &[ConstraintVariableId],
-) -> Result<LoweredNodeTerm, SelectorConstraintModelBuildError> {
+) -> Result<LoweredNodeTerm, CompiledSelectorProblemBuildError> {
     match term {
         NodeTerm::Var { id } => model_variable(variables, *id).map(LoweredNodeTerm::Var),
         NodeTerm::Const { node } => Ok(LoweredNodeTerm::Const(*node)),
@@ -1379,14 +1381,14 @@ fn merge_node_assignment_bindings(
 }
 
 fn add_ast_bare_property_allowed_tuples(
-    model: &mut SelectorConstraintModel,
+    model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
     node: &NodeTerm,
     key: &StringTerm,
     identifier: &StringTerm,
     is_binding: bool,
     facts: &BTreeSet<(NodeId, String, String, bool)>,
-) -> Result<(), SelectorConstraintModelBuildError> {
+) -> Result<(), CompiledSelectorProblemBuildError> {
     let mut constraint_variables = Vec::new();
     if let NodeTerm::Var { id } = node {
         constraint_variables.push(model_variable(variables, *id)?);
@@ -1408,7 +1410,7 @@ fn add_ast_bare_property_allowed_tuples(
             })
             .then_some(())
             .ok_or_else(
-                || SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied {
+                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
                     atom: format!(
                         "ast_bare_property fact {node:?} {key:?} {identifier:?} {is_binding}"
                     ),
@@ -1443,13 +1445,13 @@ fn add_ast_bare_property_allowed_tuples(
 }
 
 fn add_ast_regex_literal_allowed_tuples(
-    model: &mut SelectorConstraintModel,
+    model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
     node: &NodeTerm,
     pattern: &StringTerm,
     flags: &StringTerm,
     facts: &BTreeSet<(NodeId, String, String)>,
-) -> Result<(), SelectorConstraintModelBuildError> {
+) -> Result<(), CompiledSelectorProblemBuildError> {
     let mut constraint_variables = Vec::new();
     if let NodeTerm::Var { id } = node {
         constraint_variables.push(model_variable(variables, *id)?);
@@ -1470,7 +1472,7 @@ fn add_ast_regex_literal_allowed_tuples(
             })
             .then_some(())
             .ok_or_else(
-                || SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied {
+                || CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
                     atom: format!("ast_regex_literal fact {node:?} {pattern:?} {flags:?}"),
                 },
             );
@@ -1502,10 +1504,10 @@ fn add_ast_regex_literal_allowed_tuples(
 }
 
 fn add_allowed_tuple_set(
-    model: &mut SelectorConstraintModel,
+    model: &mut CompiledSelectorProblemBuilder,
     variables: Vec<ConstraintVariableId>,
     tuples: BTreeSet<Vec<ConstraintValue>>,
-) -> Result<(), SelectorConstraintModelBuildError> {
+) -> Result<(), CompiledSelectorProblemBuildError> {
     let (variables, tuples) = normalize_allowed_tuple_columns(variables, tuples);
     model
         .add_allowed_tuples(variables, tuples.into_iter().collect())
@@ -1618,10 +1620,10 @@ fn optional_u32_matches(expected: Option<u32>, actual: usize) -> bool {
 
 fn optional_string_term_const(
     term: &Option<StringTerm>,
-) -> Result<Option<String>, SelectorConstraintModelBuildError> {
+) -> Result<Option<String>, CompiledSelectorProblemBuildError> {
     match term {
         Some(StringTerm::Const { value }) => Ok(Some(value.clone())),
-        Some(StringTerm::Var { .. }) => Err(SelectorConstraintModelBuildError::UnsupportedAtom {
+        Some(StringTerm::Var { .. }) => Err(CompiledSelectorProblemBuildError::UnsupportedAtom {
             atom: "selector relation currently requires a constant optional string".to_string(),
         }),
         None => Ok(None),
@@ -1631,10 +1633,10 @@ fn optional_string_term_const(
 fn required_string_term_const(
     term: &StringTerm,
     context: &'static str,
-) -> Result<String, SelectorConstraintModelBuildError> {
+) -> Result<String, CompiledSelectorProblemBuildError> {
     match term {
         StringTerm::Const { value } => Ok(value.clone()),
-        StringTerm::Var { .. } => Err(SelectorConstraintModelBuildError::UnsupportedAtom {
+        StringTerm::Var { .. } => Err(CompiledSelectorProblemBuildError::UnsupportedAtom {
             atom: format!("{context} currently requires a constant string"),
         }),
     }
@@ -1652,7 +1654,7 @@ struct TargetBindingProjections {
 }
 
 impl TargetBindingProjections {
-    fn from_program(program: &SelectorProgram) -> Result<Self, SelectorConstraintModelBuildError> {
+    fn from_program(program: &SelectorProgram) -> Result<Self, CompiledSelectorProblemBuildError> {
         let mut projections = Self::default();
         for atom in &program.atoms {
             match atom {
@@ -1674,10 +1676,10 @@ impl TargetBindingProjections {
         &mut self,
         owner: SelectorVariableId,
         binding: SourceBindingProjection,
-    ) -> Result<(), SelectorConstraintModelBuildError> {
+    ) -> Result<(), CompiledSelectorProblemBuildError> {
         match self.by_owner.get(&owner) {
             Some(existing) if existing != &binding => Err(
-                SelectorConstraintModelBuildError::ConflictingTargetBindingProjection {
+                CompiledSelectorProblemBuildError::ConflictingTargetBindingProjection {
                     owner,
                     existing: existing.clone(),
                     actual: binding,
@@ -2510,14 +2512,27 @@ mod tests {
     use super::*;
     use analysis::{ChunkId, OwnerId, StatementOrdinal};
     use chunk_facts::NodeKind;
-    use selector_constraint_model::{
-        AllDifferentConstraint, AllDifferentConstraintId, AllDifferentReason,
-        AllowedTupleConstraint, AllowedTupleConstraintId, BinaryConstraint, BinaryConstraintKind,
-        ConstraintValue,
+    use selector_constraint_backend::{
+        AllDifferentConstraintId, AllDifferentReason, AllowedTupleConstraintId, BackendValueId,
+        BinaryConstraintKind, CompiledAllDifferentConstraint as AllDifferentConstraint,
+        CompiledBinaryConstraint as BinaryConstraint, ConstraintValue,
     };
     use selector_ir::{ClaimOrigin, SelectorTargetId};
     use selector_ir_lowering::{MemberSelectorLoweringContext, MemberSelectorProgramBuilder};
     use spec::{AnonymousStatementSelector, MemberSelectorSpec, SourceMatchIdentifierMode};
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct AllowedTupleConstraint {
+        id: AllowedTupleConstraintId,
+        variables: Vec<ConstraintVariableId>,
+        tuples: Vec<Vec<ConstraintValue>>,
+    }
+
+    impl PartialEq<&AllowedTupleConstraint> for AllowedTupleConstraint {
+        fn eq(&self, other: &&AllowedTupleConstraint) -> bool {
+            self == *other
+        }
+    }
 
     fn owner(value: usize) -> ConstraintValue {
         ConstraintValue::Owner(OwnerId(value))
@@ -2684,19 +2699,28 @@ mod tests {
         SelectorFactStore { facts }
     }
 
-    fn allowed_tuples_for<'a>(
-        model: &'a SelectorConstraintModel,
+    fn allowed_tuples_for(
+        model: &CompiledSelectorProblem,
         variables: &[ConstraintVariableId],
-    ) -> &'a AllowedTupleConstraint {
-        model
+    ) -> AllowedTupleConstraint {
+        let constraint = model
             .allowed_tuples
             .iter()
             .find(|constraint| constraint.variables == variables)
-            .unwrap()
+            .unwrap();
+        AllowedTupleConstraint {
+            id: constraint.id,
+            variables: constraint.variables.clone(),
+            tuples: constraint
+                .tuples
+                .iter()
+                .map(|tuple| decode_tuple(model, tuple))
+                .collect(),
+        }
     }
 
     fn satisfying_tuples_for(
-        model: &SelectorConstraintModel,
+        model: &CompiledSelectorProblem,
         variables: &[ConstraintVariableId],
     ) -> Vec<Vec<ConstraintValue>> {
         let mut rows = BTreeSet::new();
@@ -2706,17 +2730,21 @@ mod tests {
     }
 
     fn collect_satisfying_tuples(
-        model: &SelectorConstraintModel,
+        model: &CompiledSelectorProblem,
         variables: &[ConstraintVariableId],
         variable_index: usize,
-        assignment: &mut BTreeMap<ConstraintVariableId, ConstraintValue>,
+        assignment: &mut BTreeMap<ConstraintVariableId, BackendValueId>,
         rows: &mut BTreeSet<Vec<ConstraintValue>>,
     ) {
         let Some(variable) = model.variables.get(variable_index) else {
             if model_constraints_satisfied(model, assignment)
                 && let Some(row) = variables
                     .iter()
-                    .map(|variable| assignment.get(variable).cloned())
+                    .map(|variable| {
+                        assignment
+                            .get(variable)
+                            .map(|value| decode_value(model, *value))
+                    })
                     .collect::<Option<Vec<_>>>()
             {
                 rows.insert(row);
@@ -2724,22 +2752,22 @@ mod tests {
             return;
         };
 
-        for value in &variable.values {
-            assignment.insert(variable.id, value.clone());
+        for value in model.variable_domain_values(variable) {
+            assignment.insert(variable.id, value);
             collect_satisfying_tuples(model, variables, variable_index + 1, assignment, rows);
         }
         assignment.remove(&variable.id);
     }
 
     fn model_constraints_satisfied(
-        model: &SelectorConstraintModel,
-        assignment: &BTreeMap<ConstraintVariableId, ConstraintValue>,
+        model: &CompiledSelectorProblem,
+        assignment: &BTreeMap<ConstraintVariableId, BackendValueId>,
     ) -> bool {
         model.allowed_tuples.iter().all(|constraint| {
             constraint
                 .variables
                 .iter()
-                .map(|variable| assignment.get(variable).cloned())
+                .map(|variable| assignment.get(variable).copied())
                 .collect::<Option<Vec<_>>>()
                 .is_some_and(|row| constraint.tuples.contains(&row))
         }) && model.binary_constraints.iter().all(|constraint| {
@@ -2753,8 +2781,10 @@ mod tests {
                 BinaryConstraintKind::Equal => left == right,
                 BinaryConstraintKind::NotEqual => left != right,
                 BinaryConstraintKind::OrdinalBefore => {
+                    let left = decode_value(model, *left);
+                    let right = decode_value(model, *right);
                     matches!(
-                        (left, right),
+                        (&left, &right),
                         (
                             ConstraintValue::StatementOrdinal(left),
                             ConstraintValue::StatementOrdinal(right)
@@ -2762,10 +2792,39 @@ mod tests {
                     )
                 }
             }
-        }) && model
-            .all_different
+        }) && model.all_different.iter().all(|constraint| {
+            let mut seen = BTreeSet::new();
+            constraint.variables.iter().all(|variable| {
+                assignment
+                    .get(variable)
+                    .is_some_and(|value| seen.insert(*value))
+            })
+        })
+    }
+
+    fn decode_tuple(
+        model: &CompiledSelectorProblem,
+        values: &[BackendValueId],
+    ) -> Vec<ConstraintValue> {
+        values
             .iter()
-            .all(|constraint| constraint.is_satisfied_by(assignment) == Some(true))
+            .map(|value| decode_value(model, *value))
+            .collect()
+    }
+
+    fn decode_value(model: &CompiledSelectorProblem, value: BackendValueId) -> ConstraintValue {
+        model.value_dictionary[value.0 as usize].clone()
+    }
+
+    fn decoded_variable_domain(
+        model: &CompiledSelectorProblem,
+        variable: ConstraintVariableId,
+    ) -> Vec<ConstraintValue> {
+        model
+            .variable_domain_values(&model.variables[variable.0])
+            .iter()
+            .map(|value| decode_value(model, *value))
+            .collect()
     }
 
     #[test]
@@ -2784,7 +2843,7 @@ mod tests {
             ast_child(20, 0, 20),
         ]);
 
-        let model = build_selector_constraint_model(&program, &facts).unwrap();
+        let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert_eq!(
             allowed_tuples_for(&model, &[ConstraintVariableId(0)]),
@@ -2841,7 +2900,7 @@ mod tests {
             declared_binding(20, "specific"),
         ]);
 
-        let model = build_selector_constraint_model(&program, &facts).unwrap();
+        let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert_eq!(model.target_projections.len(), 2);
         assert_eq!(model.target_projections[0].target, broad_target);
@@ -2933,7 +2992,7 @@ mod tests {
             ast_identifier_name(2, "b"),
         ]);
 
-        let model = build_selector_constraint_model(&program, &facts).unwrap();
+        let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert_eq!(
             model.all_different,
@@ -2971,7 +3030,7 @@ mod tests {
             declared_binding(8, "other"),
         ]);
 
-        let model = build_selector_constraint_model(&program, &facts).unwrap();
+        let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert_eq!(model.target_projections.len(), 1);
         assert_eq!(model.target_projections[0].target, target);
@@ -3104,11 +3163,11 @@ mod tests {
             ast_super_class(100, 140),
         ]);
 
-        let model = build_selector_constraint_model(&program, &facts).unwrap();
+        let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert_eq!(
             allowed_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(1)]).tuples,
-            vec![vec![owner(1), ast_node(100)], vec![owner(2), ast_node(200)]]
+            vec![vec![owner(1), ast_node(100)]]
         );
         assert_eq!(
             allowed_tuples_for(&model, &[ConstraintVariableId(1), ConstraintVariableId(2)]).tuples,
@@ -3149,7 +3208,7 @@ mod tests {
             ast_string_literal(30, "button-secondary"),
         ]);
 
-        let model = build_selector_constraint_model(&program, &facts).unwrap();
+        let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert_eq!(
             allowed_tuples_for(&model, &[ConstraintVariableId(0)]),
@@ -3173,10 +3232,10 @@ mod tests {
 
         let facts = fact_store(vec![ast_string_literal(10, "button-primary")]);
 
-        let err = build_selector_constraint_model(&program, &facts).unwrap_err();
+        let err = compile_selector_problem(&program, &facts).unwrap_err();
         assert!(matches!(
             err,
-            SelectorConstraintModelBuildError::UnsupportedAtom { .. }
+            CompiledSelectorProblemBuildError::UnsupportedAtom { .. }
         ));
     }
 
@@ -3205,7 +3264,7 @@ mod tests {
             ast_child(200, 1, 10),
         ]);
 
-        let model = build_selector_constraint_model(&program, &facts).unwrap();
+        let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert_eq!(
             satisfying_tuples_for(
@@ -3252,7 +3311,7 @@ mod tests {
             ast_child(300, 2, 40),
         ]);
 
-        let model = build_selector_constraint_model(&program, &facts).unwrap();
+        let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert_eq!(
             satisfying_tuples_for(&model, &[ConstraintVariableId(0)]),
@@ -3280,7 +3339,7 @@ mod tests {
             ast_child(200, 0, 40),
         ]);
 
-        let model = build_selector_constraint_model(&program, &facts).unwrap();
+        let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert_eq!(
             allowed_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(1)]),
@@ -3313,7 +3372,7 @@ mod tests {
             ast_child(300, 1, 30),
         ]);
 
-        let model = build_selector_constraint_model(&program, &facts).unwrap();
+        let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert_eq!(
             allowed_tuples_for(&model, &[ConstraintVariableId(0)]),
@@ -3328,14 +3387,12 @@ mod tests {
     #[test]
     fn ast_child_list_pattern_all_holes_is_neutral() {
         let parent = SelectorVariableId(0);
-        let mut model = SelectorConstraintModel::default();
+        let mut model = CompiledSelectorProblemBuilder::default();
+        model
+            .add_full_domain_values(VariableDomain::AstNode, vec![ast_node(100), ast_node(200)])
+            .unwrap();
         let parent_model_var = model
-            .add_variable(
-                parent,
-                VariableDomain::AstNode,
-                vec![ast_node(100), ast_node(200)],
-                Some("parent".to_string()),
-            )
+            .add_variable(parent, VariableDomain::AstNode, Some("parent".to_string()))
             .unwrap();
         let variables = vec![parent_model_var];
         let segments = Vec::new();
@@ -3355,9 +3412,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(model.allowed_tuples, Vec::<AllowedTupleConstraint>::new());
+        let model = model.finish().unwrap();
+        assert!(model.allowed_tuples.is_empty());
         assert_eq!(
-            model.variables[0].values,
+            decoded_variable_domain(&model, ConstraintVariableId(0)),
             vec![ConstraintValue::AstNode(100), ConstraintValue::AstNode(200)]
         );
     }
@@ -3385,7 +3443,7 @@ mod tests {
             ast_child(200, 1, 20),
         ]);
 
-        let model = build_selector_constraint_model(&program, &facts).unwrap();
+        let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert_eq!(
             allowed_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(1)]),
@@ -3421,7 +3479,7 @@ mod tests {
             facts.push(owner_fact(0, 0, "fn_decl"));
             facts.push(declared_binding(0, "actual"));
 
-            let model = build_selector_constraint_model(&lowered.program, &facts).unwrap();
+            let model = compile_selector_problem(&lowered.program, &facts).unwrap();
             let empty_constraints = model
                 .allowed_tuples
                 .iter()
@@ -3512,7 +3570,7 @@ mod tests {
             facts.push(declared_binding(0, "primary"));
             facts.push(declared_binding(0, "secondary"));
 
-            let model = build_selector_constraint_model(&program, &facts).unwrap();
+            let model = compile_selector_problem(&program, &facts).unwrap();
             let empty_constraints = model
                 .allowed_tuples
                 .iter()
@@ -3551,9 +3609,9 @@ mod tests {
 
         let facts = fact_store(vec![owner_fact(10, 0, "var"), owner_fact(20, 1, "var")]);
 
-        let model = build_selector_constraint_model(&program, &facts).unwrap();
+        let model = compile_selector_problem(&program, &facts).unwrap();
 
-        assert_eq!(model.allowed_tuples, Vec::<AllowedTupleConstraint>::new());
+        assert!(model.allowed_tuples.is_empty());
         assert_eq!(
             model.binary_constraints,
             vec![BinaryConstraint {
@@ -3562,7 +3620,10 @@ mod tests {
                 kind: BinaryConstraintKind::OrdinalBefore,
             }]
         );
-        assert_eq!(model.variables[0].values, vec![ordinal(0), ordinal(1)]);
+        assert_eq!(
+            decoded_variable_domain(&model, ConstraintVariableId(0)),
+            vec![ordinal(0), ordinal(1)]
+        );
     }
 
     #[test]
@@ -3714,7 +3775,7 @@ mod tests {
             owner_reference(90, "define", "read"),
         ]);
 
-        let model = build_selector_constraint_model(&program, &facts).unwrap();
+        let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert_eq!(
             allowed_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(8)]).tuples,
@@ -3839,7 +3900,7 @@ mod tests {
             declared_binding(50, "otherRegistry"),
         ]);
 
-        let model = build_selector_constraint_model(&program, &facts).unwrap();
+        let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert_eq!(
             allowed_tuples_for(&model, &[ConstraintVariableId(0)]).tuples,
@@ -3873,10 +3934,10 @@ mod tests {
 
         let facts = fact_store(vec![owner_fact(10, 0, "var")]);
 
-        let err = build_selector_constraint_model(&program, &facts).unwrap_err();
+        let err = compile_selector_problem(&program, &facts).unwrap_err();
         assert!(matches!(
             err,
-            SelectorConstraintModelBuildError::UnsupportedAtom { .. }
+            CompiledSelectorProblemBuildError::UnsupportedAtom { .. }
         ));
     }
 
@@ -3892,10 +3953,10 @@ mod tests {
 
         let facts = fact_store(vec![owner_fact(10, 0, "var")]);
 
-        let err = build_selector_constraint_model(&program, &facts).unwrap_err();
+        let err = compile_selector_problem(&program, &facts).unwrap_err();
         assert!(matches!(
             err,
-            SelectorConstraintModelBuildError::ConstantOnlyAtomUnsatisfied { .. }
+            CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied { .. }
         ));
     }
 }

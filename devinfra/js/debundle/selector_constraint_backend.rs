@@ -1,60 +1,73 @@
-//! Solver-facing contract for exact selector assignment backends.
+//! Compact compiled selector problem consumed by exact-assignment backends.
 //!
-//! `SelectorConstraintModel` is the semantic model. This module canonicalizes
-//! it into the integer-domain shape expected by external CP/SAT backends:
-//! variables keep finite integer domains, allowed-tuples reference the same
-//! integer ids, and `all_different` compares globally-canonical values rather
-//! than per-variable local indexes.
+//! This is the production boundary between selector/fact lowering and a CP/SAT
+//! backend. Values are interned once, variables hold compact full-domain handles
+//! or sparse candidate sets, and allowed tuples are stored as interned ids.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
-use selector_constraint_model::{
-    AllDifferentConstraintId, AllDifferentReason, AllowedTupleConstraintId, BinaryConstraintKind,
-    ConstraintModelError, ConstraintValue, ConstraintVariableId, SelectorConstraintModel,
-    TargetBindingProjection,
-};
+use analysis::{OwnerId, StatementOrdinal};
+use chunk_facts::NodeId;
 use selector_ir::{SelectorTargetId, SelectorVariableId, VariableDomain};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
+pub struct ConstraintVariableId(pub usize);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AllowedTupleConstraintId(pub usize);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AllDifferentConstraintId(pub usize);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct BackendValueId(pub i64);
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum ConstraintValue {
+    Owner(OwnerId),
+    AstNode(NodeId),
+    String(String),
+    StatementOrdinal(StatementOrdinal),
+}
+
+impl ConstraintValue {
+    pub fn domain(&self) -> VariableDomain {
+        match self {
+            Self::Owner(_) => VariableDomain::Owner,
+            Self::AstNode(_) => VariableDomain::AstNode,
+            Self::String(_) => VariableDomain::String,
+            Self::StatementOrdinal(_) => VariableDomain::StatementOrdinal,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BackendVariable {
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum CompiledVariableDomain {
+    Full(VariableDomain),
+    Sparse(Vec<BackendValueId>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompiledVariable {
     pub id: ConstraintVariableId,
     pub source: SelectorVariableId,
     pub domain: VariableDomain,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub debug_name: Option<String>,
-    pub values: Vec<BackendValueId>,
+    pub values: CompiledVariableDomain,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BackendAllowedTupleConstraint {
-    pub id: AllowedTupleConstraintId,
-    pub variables: Vec<ConstraintVariableId>,
-    pub tuples: Vec<Vec<BackendValueId>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BackendBinaryConstraint {
-    pub left: ConstraintVariableId,
-    pub right: ConstraintVariableId,
-    pub kind: BinaryConstraintKind,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BackendAllDifferentConstraint {
-    pub id: AllDifferentConstraintId,
-    pub variables: Vec<ConstraintVariableId>,
-    pub reason: AllDifferentReason,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BackendTargetProjection {
+pub struct TargetProjection {
     pub target: SelectorTargetId,
     pub owner_variable: ConstraintVariableId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -62,152 +75,125 @@ pub struct BackendTargetProjection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SelectorBackendProblem {
-    pub value_dictionary: Vec<ConstraintValue>,
-    pub variables: Vec<BackendVariable>,
-    pub target_projections: Vec<BackendTargetProjection>,
-    pub allowed_tuples: Vec<BackendAllowedTupleConstraint>,
-    pub binary_constraints: Vec<BackendBinaryConstraint>,
-    pub all_different: Vec<BackendAllDifferentConstraint>,
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum TargetBindingProjection {
+    Variable(ConstraintVariableId),
+    Const(String),
 }
 
-impl SelectorBackendProblem {
-    pub fn from_model(
-        model: &SelectorConstraintModel,
-    ) -> Result<Self, SelectorBackendProblemError> {
-        model
-            .validate()
-            .map_err(SelectorBackendProblemError::InvalidModel)?;
-
-        let mut value_ids = BTreeMap::new();
-        let mut value_dictionary = Vec::new();
-        for variable in &model.variables {
-            for value in &variable.values {
-                intern_value(value, &mut value_ids, &mut value_dictionary)?;
-            }
+impl TargetBindingProjection {
+    pub fn variable(&self) -> Option<ConstraintVariableId> {
+        match self {
+            Self::Variable(variable) => Some(*variable),
+            Self::Const(_) => None,
         }
+    }
+}
 
-        let mut variable_domains = BTreeMap::new();
-        let variables = model
-            .variables
-            .iter()
-            .map(|variable| {
-                let domain_values = variable.values.iter().cloned().collect::<BTreeSet<_>>();
-                variable_domains.insert(variable.id, domain_values);
-                Ok(BackendVariable {
-                    id: variable.id,
-                    source: variable.source,
-                    domain: variable.domain,
-                    debug_name: variable.debug_name.clone(),
-                    values: variable
-                        .values
-                        .iter()
-                        .map(|value| value_id(value, &value_ids))
-                        .collect::<Result<Vec<_>, _>>()?,
-                })
-            })
-            .collect::<Result<Vec<_>, SelectorBackendProblemError>>()?;
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompiledAllowedTupleConstraint {
+    pub id: AllowedTupleConstraintId,
+    pub variables: Vec<ConstraintVariableId>,
+    pub tuples: Vec<Vec<BackendValueId>>,
+}
 
-        let allowed_tuples = model
-            .allowed_tuples
-            .iter()
-            .map(|constraint| {
-                let tuples = constraint
-                    .tuples
-                    .iter()
-                    .enumerate()
-                    .map(|(tuple_index, tuple)| {
-                        constraint
-                            .variables
-                            .iter()
-                            .zip(tuple.iter())
-                            .map(|(variable, value)| {
-                                let domain_values = variable_domains.get(variable).ok_or(
-                                    SelectorBackendProblemError::UnknownVariable {
-                                        variable: *variable,
-                                    },
-                                )?;
-                                if !domain_values.contains(value) {
-                                    return Err(
-                                        SelectorBackendProblemError::TupleValueOutsideDomain {
-                                            constraint: constraint.id,
-                                            tuple_index,
-                                            variable: *variable,
-                                            value: value.clone(),
-                                        },
-                                    );
-                                }
-                                value_id(value, &value_ids)
-                            })
-                            .collect::<Result<Vec<_>, _>>()
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BinaryConstraintKind {
+    Equal,
+    NotEqual,
+    OrdinalBefore,
+}
 
-                Ok(BackendAllowedTupleConstraint {
-                    id: constraint.id,
-                    variables: constraint.variables.clone(),
-                    tuples,
-                })
-            })
-            .collect::<Result<Vec<_>, SelectorBackendProblemError>>()?;
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompiledBinaryConstraint {
+    pub left: ConstraintVariableId,
+    pub right: ConstraintVariableId,
+    pub kind: BinaryConstraintKind,
+}
 
-        Ok(Self {
-            value_dictionary,
-            variables,
-            target_projections: model
-                .target_projections
-                .iter()
-                .map(|projection| BackendTargetProjection {
-                    target: projection.target,
-                    owner_variable: projection.owner_variable,
-                    binding_projection: projection.binding_projection.clone(),
-                })
-                .collect(),
-            allowed_tuples,
-            binary_constraints: model
-                .binary_constraints
-                .iter()
-                .map(|constraint| BackendBinaryConstraint {
-                    left: constraint.left,
-                    right: constraint.right,
-                    kind: constraint.kind,
-                })
-                .collect(),
-            all_different: model
-                .all_different
-                .iter()
-                .map(|constraint| BackendAllDifferentConstraint {
-                    id: constraint.id,
-                    variables: constraint.variables.clone(),
-                    reason: constraint.reason.clone(),
-                })
-                .collect(),
-        })
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AllDifferentReason {
+    TargetInjectivity { targets: Vec<SelectorTargetId> },
+    SelectorSemantics { label: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompiledAllDifferentConstraint {
+    pub id: AllDifferentConstraintId,
+    pub variables: Vec<ConstraintVariableId>,
+    pub reason: AllDifferentReason,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FullDomainValues {
+    pub owners: Vec<BackendValueId>,
+    pub ast_nodes: Vec<BackendValueId>,
+    pub strings: Vec<BackendValueId>,
+    pub statement_ordinals: Vec<BackendValueId>,
+}
+
+impl FullDomainValues {
+    pub fn get(&self, domain: VariableDomain) -> &[BackendValueId] {
+        match domain {
+            VariableDomain::Owner => &self.owners,
+            VariableDomain::AstNode => &self.ast_nodes,
+            VariableDomain::String => &self.strings,
+            VariableDomain::StatementOrdinal => &self.statement_ordinals,
+        }
+    }
+
+    fn get_mut(&mut self, domain: VariableDomain) -> &mut Vec<BackendValueId> {
+        match domain {
+            VariableDomain::Owner => &mut self.owners,
+            VariableDomain::AstNode => &mut self.ast_nodes,
+            VariableDomain::String => &mut self.strings,
+            VariableDomain::StatementOrdinal => &mut self.statement_ordinals,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompiledSelectorProblem {
+    pub value_dictionary: Vec<ConstraintValue>,
+    pub full_domains: FullDomainValues,
+    pub variables: Vec<CompiledVariable>,
+    pub target_projections: Vec<TargetProjection>,
+    pub allowed_tuples: Vec<CompiledAllowedTupleConstraint>,
+    pub binary_constraints: Vec<CompiledBinaryConstraint>,
+    pub all_different: Vec<CompiledAllDifferentConstraint>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub known_unsat: Option<String>,
+}
+
+impl CompiledSelectorProblem {
+    pub fn variable_domain_values(&self, variable: &CompiledVariable) -> Vec<BackendValueId> {
+        match &variable.values {
+            CompiledVariableDomain::Full(domain) => self.full_domains.get(*domain).to_vec(),
+            CompiledVariableDomain::Sparse(values) => values.clone(),
+        }
     }
 
     pub fn decode_assignment(
         &self,
         assignment: &BackendAssignment,
     ) -> Result<BTreeMap<ConstraintVariableId, ConstraintValue>, BackendAssignmentError> {
-        let domains = self
+        let variables = self
             .variables
             .iter()
-            .map(|variable| {
-                (
-                    variable.id,
-                    variable.values.iter().copied().collect::<BTreeSet<_>>(),
-                )
-            })
+            .map(|variable| (variable.id, variable))
             .collect::<BTreeMap<_, _>>();
 
         let mut decoded = BTreeMap::new();
         for entry in &assignment.values {
-            let Some(domain) = domains.get(&entry.variable) else {
-                return Err(BackendAssignmentError::UnknownVariable {
-                    variable: entry.variable,
-                });
-            };
-            if !domain.contains(&entry.value) {
+            let variable =
+                variables
+                    .get(&entry.variable)
+                    .ok_or(BackendAssignmentError::UnknownVariable {
+                        variable: entry.variable,
+                    })?;
+            if !self.variable_domain_contains(variable, entry.value) {
                 return Err(BackendAssignmentError::ValueOutsideDomain {
                     variable: entry.variable,
                     value: entry.value,
@@ -226,21 +212,639 @@ impl SelectorBackendProblem {
         }
         Ok(decoded)
     }
+
+    fn variable_domain_contains(&self, variable: &CompiledVariable, value: BackendValueId) -> bool {
+        match &variable.values {
+            CompiledVariableDomain::Full(domain) => {
+                let Ok(index) = backend_value_index(value) else {
+                    return false;
+                };
+                self.value_dictionary
+                    .get(index)
+                    .is_some_and(|candidate| candidate.domain() == *domain)
+                    && self.full_domains.get(*domain).binary_search(&value).is_ok()
+            }
+            CompiledVariableDomain::Sparse(values) => values.binary_search(&value).is_ok(),
+        }
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default)]
+pub struct CompiledSelectorProblemBuilder {
+    value_ids: BTreeMap<ConstraintValue, BackendValueId>,
+    value_dictionary: Vec<ConstraintValue>,
+    full_domains: FullDomainValues,
+    variables: Vec<CompiledVariableBuilder>,
+    target_projections: Vec<TargetProjection>,
+    allowed_tuples: Vec<CompiledAllowedTupleConstraint>,
+    binary_constraints: Vec<CompiledBinaryConstraint>,
+    all_different: Vec<CompiledAllDifferentConstraint>,
+    variable_supports: Vec<Option<BTreeSet<BackendValueId>>>,
+    known_unsat: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct CompiledVariableBuilder {
+    id: ConstraintVariableId,
+    source: SelectorVariableId,
+    domain: VariableDomain,
+    debug_name: Option<String>,
+}
+
+impl CompiledSelectorProblemBuilder {
+    pub fn add_full_domain_values(
+        &mut self,
+        domain: VariableDomain,
+        values: impl IntoIterator<Item = ConstraintValue>,
+    ) -> Result<(), CompiledSelectorProblemError> {
+        let mut ids = Vec::new();
+        for value in values {
+            let actual = value.domain();
+            if actual != domain {
+                return Err(CompiledSelectorProblemError::DomainValueMismatch {
+                    expected: domain,
+                    actual,
+                });
+            }
+            ids.push(self.intern_value(value)?);
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        *self.full_domains.get_mut(domain) = ids;
+        Ok(())
+    }
+
+    pub fn add_variable(
+        &mut self,
+        source: SelectorVariableId,
+        domain: VariableDomain,
+        debug_name: Option<String>,
+    ) -> Result<ConstraintVariableId, CompiledSelectorProblemError> {
+        let id = ConstraintVariableId(self.variables.len());
+        self.variables.push(CompiledVariableBuilder {
+            id,
+            source,
+            domain,
+            debug_name,
+        });
+        self.variable_supports.push(None);
+        Ok(id)
+    }
+
+    pub fn add_target_projection(
+        &mut self,
+        target: SelectorTargetId,
+        owner_variable: ConstraintVariableId,
+        binding_projection: Option<TargetBindingProjection>,
+    ) -> Result<(), CompiledSelectorProblemError> {
+        self.require_domain(owner_variable, VariableDomain::Owner)?;
+        if let Some(binding_variable) = binding_projection
+            .as_ref()
+            .and_then(TargetBindingProjection::variable)
+        {
+            self.require_domain(binding_variable, VariableDomain::String)?;
+        }
+        if self
+            .target_projections
+            .iter()
+            .any(|projection| projection.target == target)
+        {
+            return Err(CompiledSelectorProblemError::DuplicateTargetProjection { target });
+        }
+        self.target_projections.push(TargetProjection {
+            target,
+            owner_variable,
+            binding_projection,
+        });
+        Ok(())
+    }
+
+    pub fn add_allowed_tuples(
+        &mut self,
+        variables: Vec<ConstraintVariableId>,
+        tuples: Vec<Vec<ConstraintValue>>,
+    ) -> Result<AllowedTupleConstraintId, CompiledSelectorProblemError> {
+        let id = AllowedTupleConstraintId(self.allowed_tuples.len());
+        if variables.is_empty() {
+            return Err(CompiledSelectorProblemError::EmptyAllowedTupleVariables { id });
+        }
+
+        let mut seen_variables = BTreeSet::new();
+        let domains = variables
+            .iter()
+            .map(|variable| {
+                if !seen_variables.insert(*variable) {
+                    return Err(CompiledSelectorProblemError::DuplicateTupleVariable {
+                        id,
+                        variable: *variable,
+                    });
+                }
+                Ok(self.require_variable(*variable)?.domain)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut compiled_tuples = Vec::with_capacity(tuples.len());
+        let mut supports = vec![BTreeSet::new(); variables.len()];
+        for (tuple_index, tuple) in tuples.into_iter().enumerate() {
+            if tuple.len() != variables.len() {
+                return Err(CompiledSelectorProblemError::TupleArityMismatch {
+                    id,
+                    tuple_index,
+                    expected: variables.len(),
+                    actual: tuple.len(),
+                });
+            }
+            let mut compiled = Vec::with_capacity(tuple.len());
+            for (column, (value, expected)) in tuple.into_iter().zip(domains.iter()).enumerate() {
+                let actual = value.domain();
+                if actual != *expected {
+                    return Err(CompiledSelectorProblemError::TupleDomainMismatch {
+                        id,
+                        tuple_index,
+                        variable: variables[column],
+                        expected: *expected,
+                        actual,
+                    });
+                }
+                let value_id = self.intern_value(value)?;
+                self.ensure_full_domain_contains(*expected, value_id);
+                supports[column].insert(value_id);
+                compiled.push(value_id);
+            }
+            compiled_tuples.push(compiled);
+        }
+        compiled_tuples.sort();
+        compiled_tuples.dedup();
+
+        if compiled_tuples.is_empty() {
+            self.known_unsat
+                .get_or_insert_with(|| format!("allowed tuple constraint {id:?} has no rows"));
+        } else {
+            for (variable, support) in variables.iter().zip(supports.into_iter()) {
+                self.intersect_variable_support(*variable, support)?;
+            }
+        }
+
+        self.allowed_tuples.push(CompiledAllowedTupleConstraint {
+            id,
+            variables,
+            tuples: compiled_tuples,
+        });
+        Ok(id)
+    }
+
+    pub fn add_binary_constraint(
+        &mut self,
+        left: ConstraintVariableId,
+        right: ConstraintVariableId,
+        kind: BinaryConstraintKind,
+    ) -> Result<(), CompiledSelectorProblemError> {
+        self.validate_binary_constraint(left, right, kind)?;
+        self.binary_constraints
+            .push(CompiledBinaryConstraint { left, right, kind });
+        Ok(())
+    }
+
+    pub fn add_all_different(
+        &mut self,
+        variables: Vec<ConstraintVariableId>,
+        reason: AllDifferentReason,
+    ) -> Result<AllDifferentConstraintId, CompiledSelectorProblemError> {
+        let id = AllDifferentConstraintId(self.all_different.len());
+        self.validate_all_different_constraint(id, &variables, &reason)?;
+        self.all_different.push(CompiledAllDifferentConstraint {
+            id,
+            variables,
+            reason,
+        });
+        Ok(id)
+    }
+
+    pub fn require_target_all_different(
+        &mut self,
+        targets: Vec<SelectorTargetId>,
+    ) -> Result<AllDifferentConstraintId, CompiledSelectorProblemError> {
+        let variables = targets
+            .iter()
+            .map(|target| self.target_owner_projection_variable(*target))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.add_all_different(variables, AllDifferentReason::TargetInjectivity { targets })
+    }
+
+    pub fn finish(mut self) -> Result<CompiledSelectorProblem, CompiledSelectorProblemError> {
+        let variables: Vec<CompiledVariable> = self
+            .variables
+            .iter()
+            .map(|variable| {
+                let values = match &self.variable_supports[variable.id.0] {
+                    Some(support) if support.is_empty() => {
+                        self.known_unsat.get_or_insert_with(|| {
+                            format!("variable {:?} has no supported values", variable.id)
+                        });
+                        CompiledVariableDomain::Full(variable.domain)
+                    }
+                    Some(support) => {
+                        CompiledVariableDomain::Sparse(support.iter().copied().collect())
+                    }
+                    None => CompiledVariableDomain::Full(variable.domain),
+                };
+                CompiledVariable {
+                    id: variable.id,
+                    source: variable.source,
+                    domain: variable.domain,
+                    debug_name: variable.debug_name.clone(),
+                    values,
+                }
+            })
+            .collect();
+        let mut allowed_tuples = self.allowed_tuples;
+        for constraint in &mut allowed_tuples {
+            constraint.tuples.retain(|tuple| {
+                constraint
+                    .variables
+                    .iter()
+                    .zip(tuple.iter())
+                    .all(|(variable, value)| {
+                        compiled_variable_domain_contains(
+                            &variables[variable.0].values,
+                            &self.full_domains,
+                            *value,
+                        )
+                    })
+            });
+            if constraint.tuples.is_empty() {
+                self.known_unsat.get_or_insert_with(|| {
+                    format!(
+                        "allowed tuple constraint {:?} has no rows after domain narrowing",
+                        constraint.id
+                    )
+                });
+            }
+        }
+
+        Ok(CompiledSelectorProblem {
+            value_dictionary: self.value_dictionary,
+            full_domains: self.full_domains,
+            variables,
+            target_projections: self.target_projections,
+            allowed_tuples,
+            binary_constraints: self.binary_constraints,
+            all_different: self.all_different,
+            known_unsat: self.known_unsat,
+        })
+    }
+
+    fn intern_value(
+        &mut self,
+        value: ConstraintValue,
+    ) -> Result<BackendValueId, CompiledSelectorProblemError> {
+        if let Some(id) = self.value_ids.get(&value) {
+            return Ok(*id);
+        }
+        let count = self.value_dictionary.len();
+        let id = BackendValueId(
+            i64::try_from(count)
+                .map_err(|_| CompiledSelectorProblemError::TooManyValues { count })?,
+        );
+        self.value_ids.insert(value.clone(), id);
+        self.value_dictionary.push(value);
+        Ok(id)
+    }
+
+    fn ensure_full_domain_contains(&mut self, domain: VariableDomain, value: BackendValueId) {
+        let values = self.full_domains.get_mut(domain);
+        match values.binary_search(&value) {
+            Ok(_) => {}
+            Err(index) => values.insert(index, value),
+        }
+    }
+
+    fn intersect_variable_support(
+        &mut self,
+        variable: ConstraintVariableId,
+        support: BTreeSet<BackendValueId>,
+    ) -> Result<(), CompiledSelectorProblemError> {
+        let slot = self
+            .variable_supports
+            .get_mut(variable.0)
+            .ok_or(CompiledSelectorProblemError::UnknownVariable { variable })?;
+        match slot {
+            None => *slot = Some(support),
+            Some(existing) => {
+                *existing = existing.intersection(&support).copied().collect();
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_binary_constraint(
+        &self,
+        left: ConstraintVariableId,
+        right: ConstraintVariableId,
+        kind: BinaryConstraintKind,
+    ) -> Result<(), CompiledSelectorProblemError> {
+        let left_domain = self.require_variable(left)?.domain;
+        let right_domain = self.require_variable(right)?.domain;
+        match kind {
+            BinaryConstraintKind::Equal | BinaryConstraintKind::NotEqual => {
+                if left_domain != right_domain {
+                    return Err(CompiledSelectorProblemError::BinaryDomainMismatch {
+                        left,
+                        right,
+                        left_domain,
+                        right_domain,
+                    });
+                }
+            }
+            BinaryConstraintKind::OrdinalBefore => {
+                if left_domain != VariableDomain::StatementOrdinal
+                    || right_domain != VariableDomain::StatementOrdinal
+                {
+                    return Err(CompiledSelectorProblemError::OrdinalBeforeDomainMismatch {
+                        left,
+                        right,
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_all_different_constraint(
+        &self,
+        id: AllDifferentConstraintId,
+        variables: &[ConstraintVariableId],
+        reason: &AllDifferentReason,
+    ) -> Result<(), CompiledSelectorProblemError> {
+        if variables.len() < 2 {
+            return Err(CompiledSelectorProblemError::DegenerateAllDifferent { id });
+        }
+        let mut seen = BTreeSet::new();
+        let mut expected_domain = None;
+        for variable in variables {
+            if !seen.insert(*variable) {
+                return Err(
+                    CompiledSelectorProblemError::DuplicateAllDifferentVariable {
+                        id,
+                        variable: *variable,
+                    },
+                );
+            }
+            let domain = self.require_variable(*variable)?.domain;
+            match expected_domain {
+                None => expected_domain = Some(domain),
+                Some(expected) if expected != domain => {
+                    return Err(CompiledSelectorProblemError::AllDifferentDomainMismatch {
+                        id,
+                        expected,
+                        actual: domain,
+                    });
+                }
+                Some(_) => {}
+            }
+        }
+
+        if let AllDifferentReason::TargetInjectivity { targets } = reason {
+            let projected_variables = targets
+                .iter()
+                .map(|target| self.target_owner_projection_variable(*target))
+                .collect::<Result<Vec<_>, _>>()?;
+            if projected_variables != variables {
+                return Err(
+                    CompiledSelectorProblemError::TargetInjectivityProjectionMismatch { id },
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    fn target_owner_projection_variable(
+        &self,
+        target: SelectorTargetId,
+    ) -> Result<ConstraintVariableId, CompiledSelectorProblemError> {
+        self.target_projections
+            .iter()
+            .find_map(|projection| {
+                (projection.target == target).then_some(projection.owner_variable)
+            })
+            .ok_or(CompiledSelectorProblemError::UnknownTargetProjection { target })
+    }
+
+    fn require_domain(
+        &self,
+        variable: ConstraintVariableId,
+        expected: VariableDomain,
+    ) -> Result<(), CompiledSelectorProblemError> {
+        let actual = self.require_variable(variable)?.domain;
+        if actual != expected {
+            return Err(CompiledSelectorProblemError::VariableDomainMismatch {
+                variable,
+                expected,
+                actual,
+            });
+        }
+        Ok(())
+    }
+
+    fn require_variable(
+        &self,
+        variable: ConstraintVariableId,
+    ) -> Result<&CompiledVariableBuilder, CompiledSelectorProblemError> {
+        self.variables
+            .get(variable.0)
+            .ok_or(CompiledSelectorProblemError::UnknownVariable { variable })
+    }
+}
+
+fn compiled_variable_domain_contains(
+    values: &CompiledVariableDomain,
+    full_domains: &FullDomainValues,
+    value: BackendValueId,
+) -> bool {
+    match values {
+        CompiledVariableDomain::Full(domain) => {
+            full_domains.get(*domain).binary_search(&value).is_ok()
+        }
+        CompiledVariableDomain::Sparse(values) => values.binary_search(&value).is_ok(),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CompiledSelectorProblemError {
+    UnknownVariable {
+        variable: ConstraintVariableId,
+    },
+    VariableDomainMismatch {
+        variable: ConstraintVariableId,
+        expected: VariableDomain,
+        actual: VariableDomain,
+    },
+    DomainValueMismatch {
+        expected: VariableDomain,
+        actual: VariableDomain,
+    },
+    DuplicateTargetProjection {
+        target: SelectorTargetId,
+    },
+    UnknownTargetProjection {
+        target: SelectorTargetId,
+    },
+    EmptyAllowedTupleVariables {
+        id: AllowedTupleConstraintId,
+    },
+    DuplicateTupleVariable {
+        id: AllowedTupleConstraintId,
+        variable: ConstraintVariableId,
+    },
+    TupleArityMismatch {
+        id: AllowedTupleConstraintId,
+        tuple_index: usize,
+        expected: usize,
+        actual: usize,
+    },
+    TupleDomainMismatch {
+        id: AllowedTupleConstraintId,
+        tuple_index: usize,
+        variable: ConstraintVariableId,
+        expected: VariableDomain,
+        actual: VariableDomain,
+    },
+    BinaryDomainMismatch {
+        left: ConstraintVariableId,
+        right: ConstraintVariableId,
+        left_domain: VariableDomain,
+        right_domain: VariableDomain,
+    },
+    OrdinalBeforeDomainMismatch {
+        left: ConstraintVariableId,
+        right: ConstraintVariableId,
+    },
+    DegenerateAllDifferent {
+        id: AllDifferentConstraintId,
+    },
+    DuplicateAllDifferentVariable {
+        id: AllDifferentConstraintId,
+        variable: ConstraintVariableId,
+    },
+    AllDifferentDomainMismatch {
+        id: AllDifferentConstraintId,
+        expected: VariableDomain,
+        actual: VariableDomain,
+    },
+    TargetInjectivityProjectionMismatch {
+        id: AllDifferentConstraintId,
+    },
+    TooManyValues {
+        count: usize,
+    },
+}
+
+impl fmt::Display for CompiledSelectorProblemError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnknownVariable { variable } => {
+                write!(f, "constraint references unknown variable {variable:?}")
+            }
+            Self::VariableDomainMismatch {
+                variable,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "variable {variable:?} expected {expected:?} domain, found {actual:?}"
+            ),
+            Self::DomainValueMismatch { expected, actual } => {
+                write!(f, "expected {expected:?} value, found {actual:?}")
+            }
+            Self::DuplicateTargetProjection { target } => {
+                write!(f, "target {target:?} has more than one projection")
+            }
+            Self::UnknownTargetProjection { target } => {
+                write!(f, "target {target:?} has no projection")
+            }
+            Self::EmptyAllowedTupleVariables { id } => {
+                write!(f, "allowed tuple constraint {id:?} has no variables")
+            }
+            Self::DuplicateTupleVariable { id, variable } => write!(
+                f,
+                "allowed tuple constraint {id:?} references variable {variable:?} more than once"
+            ),
+            Self::TupleArityMismatch {
+                id,
+                tuple_index,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "allowed tuple constraint {id:?} row {tuple_index} has arity {actual}, expected {expected}"
+            ),
+            Self::TupleDomainMismatch {
+                id,
+                tuple_index,
+                variable,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "allowed tuple constraint {id:?} row {tuple_index} variable {variable:?} expected {expected:?}, found {actual:?}"
+            ),
+            Self::BinaryDomainMismatch {
+                left,
+                right,
+                left_domain,
+                right_domain,
+            } => write!(
+                f,
+                "binary constraint {left:?}/{right:?} has mismatched domains {left_domain:?}/{right_domain:?}"
+            ),
+            Self::OrdinalBeforeDomainMismatch { left, right } => write!(
+                f,
+                "ordinal_before constraint {left:?}/{right:?} must reference statement ordinals"
+            ),
+            Self::DegenerateAllDifferent { id } => {
+                write!(
+                    f,
+                    "all_different constraint {id:?} has fewer than two variables"
+                )
+            }
+            Self::DuplicateAllDifferentVariable { id, variable } => write!(
+                f,
+                "all_different constraint {id:?} references variable {variable:?} more than once"
+            ),
+            Self::AllDifferentDomainMismatch {
+                id,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "all_different constraint {id:?} mixes {expected:?} and {actual:?} domains"
+            ),
+            Self::TargetInjectivityProjectionMismatch { id } => write!(
+                f,
+                "target-injectivity all_different constraint {id:?} does not match target projections"
+            ),
+            Self::TooManyValues { count } => {
+                write!(f, "compiled selector problem has too many values: {count}")
+            }
+        }
+    }
+}
+
+impl Error for CompiledSelectorProblemError {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackendAssignment {
     pub values: Vec<BackendVariableAssignment>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackendVariableAssignment {
     pub variable: ConstraintVariableId,
     pub value: BackendValueId,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BackendSolveStatus {
     Unsatisfiable,
     Satisfiable,
@@ -251,92 +855,23 @@ pub enum BackendSolveStatus {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BackendAssignmentCoverage {
-    /// Returned assignments are examples only. They must not be used to classify
-    /// selector claims as unique or ambiguous.
     #[default]
     Sample,
-    /// Returned assignments cover every owner/binding support value that any
-    /// target projection can take across all satisfying global assignments.
     TargetSupportComplete,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackendSolveResult {
     pub status: BackendSolveStatus,
-    #[serde(default)]
     pub assignment_coverage: BackendAssignmentCoverage,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assignments: Vec<BackendAssignment>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diagnostic: Option<String>,
 }
 
-pub trait SelectorConstraintBackend {
+pub trait SelectorProblemBackend {
     type Error;
 
-    fn solve(&self, problem: &SelectorBackendProblem) -> Result<BackendSolveResult, Self::Error>;
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SelectorBackendProblemError {
-    InvalidModel(ConstraintModelError),
-    TooManyValues {
-        count: usize,
-    },
-    UnknownValue {
-        value: ConstraintValue,
-    },
-    UnknownVariable {
-        variable: ConstraintVariableId,
-    },
-    TupleValueOutsideDomain {
-        constraint: AllowedTupleConstraintId,
-        tuple_index: usize,
-        variable: ConstraintVariableId,
-        value: ConstraintValue,
-    },
-}
-
-impl fmt::Display for SelectorBackendProblemError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidModel(err) => write!(f, "invalid selector constraint model: {err}"),
-            Self::TooManyValues { count } => write!(
-                f,
-                "selector backend problem has {count} distinct values, exceeding i64 ids"
-            ),
-            Self::UnknownValue { value } => {
-                write!(f, "selector backend value dictionary is missing {value:?}")
-            }
-            Self::UnknownVariable { variable } => {
-                write!(
-                    f,
-                    "selector backend problem references unknown variable {variable:?}"
-                )
-            }
-            Self::TupleValueOutsideDomain {
-                constraint,
-                tuple_index,
-                variable,
-                value,
-            } => write!(
-                f,
-                "allowed-tuple constraint {constraint:?} tuple {tuple_index} gives variable {variable:?} out-of-domain value {value:?}"
-            ),
-        }
-    }
-}
-
-impl Error for SelectorBackendProblemError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::InvalidModel(err) => Some(err),
-            Self::TooManyValues { .. }
-            | Self::UnknownValue { .. }
-            | Self::UnknownVariable { .. }
-            | Self::TupleValueOutsideDomain { .. } => None,
-        }
-    }
+    fn solve(&self, problem: &CompiledSelectorProblem) -> Result<BackendSolveResult, Self::Error>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -347,9 +882,6 @@ pub enum BackendAssignmentError {
     UnknownValue {
         value: BackendValueId,
     },
-    NegativeValue {
-        value: BackendValueId,
-    },
     ValueOutsideDomain {
         variable: ConstraintVariableId,
         value: BackendValueId,
@@ -357,239 +889,50 @@ pub enum BackendAssignmentError {
     DuplicateVariable {
         variable: ConstraintVariableId,
     },
+    NegativeValue {
+        value: BackendValueId,
+    },
+    ValueIndexOutOfRange {
+        value: BackendValueId,
+    },
 }
 
 impl fmt::Display for BackendAssignmentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnknownVariable { variable } => {
-                write!(
-                    f,
-                    "backend assignment references unknown variable {variable:?}"
-                )
+                write!(f, "assignment references unknown variable {variable:?}")
             }
             Self::UnknownValue { value } => {
-                write!(f, "backend assignment references unknown value {value:?}")
+                write!(f, "assignment references unknown value {value:?}")
             }
-            Self::NegativeValue { value } => {
+            Self::ValueOutsideDomain { variable, value } => {
                 write!(
                     f,
-                    "backend assignment references negative value id {value:?}"
+                    "assignment value {value:?} is outside variable {variable:?} domain"
                 )
             }
-            Self::ValueOutsideDomain { variable, value } => write!(
-                f,
-                "backend assignment gives variable {variable:?} out-of-domain value {value:?}"
-            ),
-            Self::DuplicateVariable { variable } => write!(
-                f,
-                "backend assignment gives variable {variable:?} more than one value"
-            ),
+            Self::DuplicateVariable { variable } => {
+                write!(
+                    f,
+                    "assignment includes variable {variable:?} more than once"
+                )
+            }
+            Self::NegativeValue { value } => {
+                write!(f, "assignment value id {value:?} is negative")
+            }
+            Self::ValueIndexOutOfRange { value } => {
+                write!(f, "assignment value id {value:?} does not fit in usize")
+            }
         }
     }
 }
 
 impl Error for BackendAssignmentError {}
 
-fn intern_value(
-    value: &ConstraintValue,
-    value_ids: &mut BTreeMap<ConstraintValue, BackendValueId>,
-    value_dictionary: &mut Vec<ConstraintValue>,
-) -> Result<BackendValueId, SelectorBackendProblemError> {
-    if let Some(id) = value_ids.get(value) {
-        return Ok(*id);
-    }
-    let count = value_dictionary.len();
-    let id = BackendValueId(
-        i64::try_from(count).map_err(|_| SelectorBackendProblemError::TooManyValues { count })?,
-    );
-    value_ids.insert(value.clone(), id);
-    value_dictionary.push(value.clone());
-    Ok(id)
-}
-
-fn value_id(
-    value: &ConstraintValue,
-    value_ids: &BTreeMap<ConstraintValue, BackendValueId>,
-) -> Result<BackendValueId, SelectorBackendProblemError> {
-    value_ids
-        .get(value)
-        .copied()
-        .ok_or_else(|| SelectorBackendProblemError::UnknownValue {
-            value: value.clone(),
-        })
-}
-
 fn backend_value_index(value: BackendValueId) -> Result<usize, BackendAssignmentError> {
-    usize::try_from(value.0).map_err(|_| BackendAssignmentError::NegativeValue { value })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use analysis::OwnerId;
-    use selector_constraint_model::{AllDifferentReason, ConstraintValue, SelectorConstraintModel};
-
-    fn owner(value: usize) -> ConstraintValue {
-        ConstraintValue::Owner(OwnerId(value))
+    if value.0 < 0 {
+        return Err(BackendAssignmentError::NegativeValue { value });
     }
-
-    fn backend_value(value: i64) -> BackendValueId {
-        BackendValueId(value)
-    }
-
-    #[test]
-    fn backend_problem_uses_global_value_ids_for_overlapping_domains() {
-        let mut model = SelectorConstraintModel::default();
-        let broad = model
-            .add_variable(
-                SelectorVariableId(0),
-                VariableDomain::Owner,
-                vec![owner(10), owner(20)],
-                Some("broad".to_string()),
-            )
-            .unwrap();
-        let strict = model
-            .add_variable(
-                SelectorVariableId(1),
-                VariableDomain::Owner,
-                vec![owner(20)],
-                Some("strict".to_string()),
-            )
-            .unwrap();
-        model
-            .add_target_projection(SelectorTargetId(0), broad, None)
-            .unwrap();
-        model
-            .add_target_projection(SelectorTargetId(1), strict, None)
-            .unwrap();
-        model
-            .require_target_all_different(vec![SelectorTargetId(0), SelectorTargetId(1)])
-            .unwrap();
-        model
-            .add_allowed_tuples(vec![broad], vec![vec![owner(10)], vec![owner(20)]])
-            .unwrap();
-        model
-            .add_allowed_tuples(vec![strict], vec![vec![owner(20)]])
-            .unwrap();
-
-        let problem = SelectorBackendProblem::from_model(&model).unwrap();
-
-        assert_eq!(problem.value_dictionary, vec![owner(10), owner(20)]);
-        assert_eq!(
-            problem.variables[0].values,
-            vec![backend_value(0), backend_value(1)]
-        );
-        assert_eq!(problem.variables[1].values, vec![backend_value(1)]);
-        assert_eq!(
-            problem.allowed_tuples[1].tuples,
-            vec![vec![backend_value(1)]],
-            "allowed tuples must use the same global id as all_different"
-        );
-        assert_eq!(
-            problem.all_different[0],
-            BackendAllDifferentConstraint {
-                id: AllDifferentConstraintId(0),
-                variables: vec![broad, strict],
-                reason: AllDifferentReason::TargetInjectivity {
-                    targets: vec![SelectorTargetId(0), SelectorTargetId(1)]
-                },
-            }
-        );
-    }
-
-    #[test]
-    fn backend_problem_rejects_tuple_values_outside_variable_domain() {
-        let mut model = SelectorConstraintModel::default();
-        let variable = model
-            .add_variable(
-                SelectorVariableId(0),
-                VariableDomain::Owner,
-                vec![owner(10)],
-                None,
-            )
-            .unwrap();
-        model
-            .add_allowed_tuples(vec![variable], vec![vec![owner(20)]])
-            .unwrap();
-
-        let err = SelectorBackendProblem::from_model(&model).unwrap_err();
-
-        assert!(matches!(
-            err,
-            SelectorBackendProblemError::TupleValueOutsideDomain {
-                constraint: AllowedTupleConstraintId(0),
-                tuple_index: 0,
-                variable: ConstraintVariableId(0),
-                value: ConstraintValue::Owner(OwnerId(20)),
-            }
-        ));
-    }
-
-    #[test]
-    fn backend_assignment_decodes_to_constraint_values() {
-        let mut model = SelectorConstraintModel::default();
-        let variable = model
-            .add_variable(
-                SelectorVariableId(0),
-                VariableDomain::Owner,
-                vec![owner(10), owner(20)],
-                None,
-            )
-            .unwrap();
-        let problem = SelectorBackendProblem::from_model(&model).unwrap();
-        let assignment = BackendAssignment {
-            values: vec![BackendVariableAssignment {
-                variable,
-                value: backend_value(1),
-            }],
-        };
-
-        assert_eq!(
-            problem.decode_assignment(&assignment).unwrap(),
-            BTreeMap::from([(variable, owner(20))])
-        );
-    }
-
-    #[test]
-    fn backend_assignment_rejects_local_value_ids() {
-        let mut model = SelectorConstraintModel::default();
-        let broad = model
-            .add_variable(
-                SelectorVariableId(0),
-                VariableDomain::Owner,
-                vec![owner(10), owner(20)],
-                None,
-            )
-            .unwrap();
-        let strict = model
-            .add_variable(
-                SelectorVariableId(1),
-                VariableDomain::Owner,
-                vec![owner(20)],
-                None,
-            )
-            .unwrap();
-        let problem = SelectorBackendProblem::from_model(&model).unwrap();
-        let assignment = BackendAssignment {
-            values: vec![
-                BackendVariableAssignment {
-                    variable: broad,
-                    value: backend_value(0),
-                },
-                BackendVariableAssignment {
-                    variable: strict,
-                    value: backend_value(0),
-                },
-            ],
-        };
-
-        assert_eq!(
-            problem.decode_assignment(&assignment).unwrap_err(),
-            BackendAssignmentError::ValueOutsideDomain {
-                variable: strict,
-                value: backend_value(0),
-            }
-        );
-    }
+    usize::try_from(value.0).map_err(|_| BackendAssignmentError::ValueIndexOutOfRange { value })
 }
