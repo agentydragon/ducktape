@@ -46,16 +46,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Auth to the Forgejo registry over HTTPS (git.allegedly.works, valid cert) with
-      # the built-in job token (github.actor + github.token) — Forgejo mints it per
-      # run, so there's no registry password secret to provision. Fallback if a push
-      # is ever rejected (token lacks package write): provision a
-      # `forgejo_repository_action_secret` push cred in tf/gitops/haku-state and use
-      # `${{ secrets.<NAME> }}` here.
+      # Auth to the Forgejo registry over HTTPS (git.allegedly.works, valid cert).
+      # NOT the built-in job token: Forgejo's auto github.token cannot push packages
+      # (the `permissions: packages: write` block isn't honored yet — forgejo#3571,
+      # targeted for Forgejo 16). So we log in as the repo owner (haku) with the
+      # REGISTRY_PUSH_TOKEN repo Action secret provisioned by tf/gitops/haku-state.
       - name: Log in to the Forgejo registry
         run: |
-          echo "${{ github.token }}" \
-            | docker login git.allegedly.works -u "${{ github.actor }}" --password-stdin
+          echo "${{ secrets.REGISTRY_PUSH_TOKEN }}" \
+            | docker login git.allegedly.works -u "${{ github.repository_owner }}" --password-stdin
 
       # Tag pattern is what Flux image automation sorts on: a UTC timestamp makes
       # the newest build the highest tag (ImagePolicy `numerical` on the captured

@@ -98,8 +98,8 @@ resource "kubernetes_secret" "haku_state_git_write" {
 #     mitmproxy egress), and
 #   - the auth Haku's own ImageRepository uses to scan the registry for new tags (the image
 #     automation is reconciled into haku-sandbox; see haku/state_template/k8s/haku-ui-image-automation).
-# The CI workflow itself pushes with Forgejo Actions' built-in job token — no push cred
-# needed here. See cluster/k8s/haku-ci + haku/PLAN.md.
+# The CI push credential is a repo Action secret (below), NOT this pull secret.
+# See cluster/k8s/haku-ci + haku/PLAN.md.
 resource "kubernetes_secret" "haku_forgejo_registry_pull" {
   metadata {
     name      = "haku-forgejo-registry-pull"
@@ -119,6 +119,28 @@ resource "kubernetes_secret" "haku_forgejo_registry_pull" {
       }
     })
   }
+}
+
+# Registry push credential for the build-ui Forgejo Actions workflow, delivered as
+# a repo Action secret (`${{ secrets.REGISTRY_PUSH_TOKEN }}`).
+#
+# Why this is needed: Forgejo's auto-generated Actions token (github.token) CANNOT
+# push container packages — the workflow `permissions: { packages: write }` block is
+# not honored yet (the granular-permissions feature is forgejo/forgejo#3571, still
+# open, targeted for the Forgejo 16 dev cycle). On Forgejo 15 a real credential is
+# the only way. We use the haku owner's own credential (haku owns the haku/ui
+# package; verified: haku basic auth -> HTTP 202 on a blob-upload handshake = push
+# allowed). The workflow logs in as `${{ github.repository_owner }}` (= haku).
+#
+# Least-privilege note: this is haku's full credential rather than a scoped
+# write:package token — the svalabs/forgejo provider has no token-minting resource,
+# and the CI already runs as haku (it clones haku-state and builds haku's image), so
+# this isn't a new trust boundary. If a tighter scope is wanted later, mint a
+# write:package token via a small Job (cf. authentik-jwt-rotation) and swap it in.
+resource "forgejo_repository_action_secret" "registry_push" {
+  repository_id = forgejo_repository.state.id
+  name          = "REGISTRY_PUSH_TOKEN"
+  data          = random_password.haku.result
 }
 
 # Registration token for the contained Forgejo Actions runner (cluster/k8s/haku-ci),
