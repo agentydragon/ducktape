@@ -212,7 +212,7 @@ spec:
     # ops), making even trivial /api/v1/version take ~7s. Give it real headroom.
     resources:
       limits:
-        cpu: "2"
+        cpu: "4"
         memory: 2Gi
       requests:
         cpu: 500m
