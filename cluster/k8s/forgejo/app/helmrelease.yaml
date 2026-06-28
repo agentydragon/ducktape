@@ -205,13 +205,17 @@ spec:
         type: ClusterIP
         port: 2222
 
-    # Resources
+    # Resources. Forgejo is a monolith: the web UI, API, git HTTP/SSH, the
+    # container/package registry, AND the Actions coordinator all run in this one
+    # process — so they share this CPU budget. The old 500m limit caused constant
+    # CFS throttling under load (CI image pushes + the haku-ui app's reads + git
+    # ops), making even trivial /api/v1/version take ~7s. Give it real headroom.
     resources:
       limits:
-        cpu: 500m
+        cpu: "2"
         memory: 2Gi
       requests:
-        cpu: 100m
+        cpu: 500m
         memory: 512Mi
 
     # Persistence
