@@ -1,0 +1,29 @@
+rationale: |
+  `mergeScript` is a home-manager activation snippet (wired in below via
+  `home.activation.codexConfig = lib.hm.dag.entryAfter [ "writeBoundary" ]
+  mergeScript`). Home-manager concatenates every activation snippet into a single
+  shell script, so a bare `exit 0` here does not skip just the codex config
+  merge — it terminates the ENTIRE home-manager activation. On a first-ever
+  activation (where this snippet runs before `linkGeneration` has linked `$BASE`)
+  the `if [ ! -f "$BASE" ]; then exit 0; fi` guard fires and aborts activation
+  before `linkGeneration` and `reloadSystemd` run, so no home files or user
+  systemd units get linked and nothing downstream activates. It is masked on
+  long-lived hosts, where `$BASE` already exists from a prior generation and the
+  guard is never taken, but bites a fresh activation (e.g. a freshly-imaged
+  headless host). The `set -euo pipefail` on the first line has the same class of
+  defect: it leaks into the concatenated script and changes error handling for
+  every later activation snippet. An activation snippet must not `exit` or
+  globally `set -e`; contain them in a subshell, or drop the guard entirely since
+  `merge.py` already no-ops when the base config is absent.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-000
+    files:
+      nix/home/codex/default.nix:
+        - [156, 156]
+        - [162, 164]
+    note: "`exit 0` (and `set -euo pipefail`) in a home-manager activation snippet abort/alter the whole concatenated activation, not just this codex merge step — skipping linkGeneration/reloadSystemd"
+    critic_scopes_expected_to_recall:
+      - ["nix/home/codex/default.nix"]
+    match_file_restriction:
+      - "nix/home/codex/default.nix"
