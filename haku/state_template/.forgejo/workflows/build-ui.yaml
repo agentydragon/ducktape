@@ -2,18 +2,18 @@
 #
 # Runs IN-CLUSTER on the contained, repo-scoped Forgejo Actions runner provided by
 # `cluster/k8s/haku-ci` — NOT on Bazel/BuildBuddy (haku-state may hold private
-# operator info, so its source never leaves the cluster). The runner is rootless.
+# operator info, so its source never leaves the cluster). The runner is rootless and
+# runs jobs in a standard "act" image (node + git + docker CLI).
 #
-# Everything talks to Forgejo over the in-cluster service (forgejo-http.forgejo:3000,
-# plain HTTP) rather than the public git.allegedly.works — so no build traffic
-# hairpins out to the public ingress. The dind daemon is started with
+# Everything talks to Forgejo over the in-cluster service: actions/checkout clones
+# from the runner's instance URL (forgejo-http.forgejo:3000), and the image is pushed
+# to that same in-cluster registry — so no build traffic hairpins out to the public
+# git.allegedly.works ingress. The dind daemon is started with
 # `--insecure-registry=forgejo-http.forgejo:3000` (see cluster/k8s/haku-ci) so the
 # HTTP registry push is allowed.
 #
 # Flow:
-#   1. clone the repo (the job container `docker:27-cli` is a minimal Alpine image
-#      with the docker CLI but no node — so JS actions like actions/checkout can't
-#      run — and no git, so we apk-add it and clone manually)
+#   1. check out the repo
 #   2. build the image from ui/Dockerfile
 #   3. push it to the Forgejo registry as
 #      forgejo-http.forgejo:3000/haku/ui:main-<utc-timestamp>-<short-sha>
@@ -39,23 +39,15 @@ jobs:
   build:
     runs-on: haku-ci # the repo-scoped, contained runner label (cluster/k8s/haku-ci)
     # The built-in Forgejo Actions job token (github.token) authenticates both the
-    # clone (contents:read) and the registry push (packages:write) — no separately
+    # checkout (contents:read) and the registry push (packages:write) — no separately
     # provisioned secret.
     permissions:
       contents: read
       packages: write
     steps:
-      # No actions/checkout: that's a JS action and docker:27-cli has no node. Install
-      # git and clone over the in-cluster Forgejo HTTP service. Clone to /tmp first so
-      # this doesn't depend on the workspace being empty, then copy in (incl. .git).
-      - name: Checkout (in-cluster, no JS action)
-        run: |
-          apk add --no-cache git
-          git clone --quiet \
-            "http://x-access-token:${{ github.token }}@forgejo-http.forgejo:3000/${{ github.repository }}.git" \
-            /tmp/src
-          git -C /tmp/src checkout --quiet "${{ github.sha }}"
-          cp -a /tmp/src/. .
+      # Clones from the runner's instance URL (forgejo-http.forgejo:3000) — in-cluster.
+      - name: Checkout
+        uses: actions/checkout@v4
 
       # Auth to the in-cluster Forgejo registry with the built-in job token
       # (github.actor + github.token) — Forgejo mints it per run, so there's no
