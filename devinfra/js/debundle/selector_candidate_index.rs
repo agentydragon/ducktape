@@ -979,9 +979,9 @@ mod tests {
     /// `ChunkResolver` — the correctness ground truth the candidate-index
     /// prefilter must be a sound superset of.
     fn exact_matches(runtime: &Module, selector: &AnonymousStatementSelector) -> Vec<usize> {
-        use source_match::SelectorResolver;
+        use source_match::legacy_resolver::SelectorResolver;
         js_ast::with_swc_globals(|| {
-            source_match::ChunkResolver::new(runtime)
+            source_match::legacy_resolver::ChunkResolver::new(runtime)
                 .resolve_anonymous_groups("<test>", selector)
                 .unwrap()
                 .into_iter()

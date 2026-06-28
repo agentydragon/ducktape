@@ -1,11 +1,10 @@
-//! The selector-resolution seam: the `SelectorResolver` trait.
+//! Legacy selector-resolution seam: the `SelectorResolver` trait.
 //!
 //! A resolver answers, for a parsed chunk and a JS-template selector: which
 //! top-level statement does the selector claim, and what binding(s) does it
 //! resolve to? The fact-based `ChunkResolver` (`datalog_resolver`) is the sole
-//! implementor — it builds its per-chunk model (the EDB) once and resolves many
-//! selectors against it. The trait is the seam the lowering pipeline dispatches
-//! through.
+//! implementor. This API is retained for parity tests and migration oracles;
+//! production selector resolution should go through `selector_runtime`.
 //!
 //! The output granularity is deliberately coarse: a member resolves to its
 //! `ResolvedMemberBinding` (the claimed binding + kind), an anonymous selector to

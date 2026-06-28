@@ -14,9 +14,9 @@
 //! - `binding_resolution` — binding-group selector expansion and declared-binding
 //!   extraction.
 //! - `declared_bindings` — declared-binding extraction from AST items.
-//! - `datalog_resolver` — the fact-based `ChunkResolver` (`SelectorResolver`).
+//! - `datalog_resolver` — the legacy fact-based resolver retained as an oracle.
 //! - `fact_near_miss` — fact-based `source_match` debt / near-miss diagnostics.
-//! - `resolver` — the `SelectorResolver` seam trait.
+//! - `resolver` — the legacy resolver seam trait.
 //! - `anonymous_statement` — anonymous source-match statement validation.
 //! - `holes` — local hole-keyword dispatch over AST nodes.
 
@@ -66,14 +66,21 @@ mod types;
 pub(crate) use anonymous_statement::*;
 pub(crate) use declared_bindings::*;
 pub(crate) use holes::*;
+pub(crate) use resolver::SelectorResolver;
 
-// Public API: importable at `source_match::<item>` exactly as before the split.
+/// Legacy procedural resolver API retained for parity tests and migration
+/// oracles while production resolution moves through `selector_runtime`.
+#[doc(hidden)]
+pub mod legacy_resolver {
+    pub use crate::datalog_resolver::ChunkResolver;
+    pub use crate::resolver::SelectorResolver;
+}
+
+// Public API for selector parsing, normalization, and diagnostics.
 pub use binding_resolution::{binding_group_member_selectors, source_match_declared_binding_names};
-pub use datalog_resolver::ChunkResolver;
 pub use fact_near_miss::fact_source_match_body_debt;
 pub use identity::{selector_body_key, selector_key, source_match_preview};
 pub use parse_validate::parse_selector_module_with_capability_check;
-pub use resolver::SelectorResolver;
 pub use types::{
     BindingGroupMemberSelector, MemberBindingGroupMatch, MemberBindingMatch, ResolvedMemberBinding,
     ResolvedMemberBindingGroup, SourceMatchBodyDebt, SourceMatchNearMiss,

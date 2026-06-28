@@ -1,8 +1,8 @@
 //! Soundness validation for the Layer-1 read-off API (W1).
 //!
 //! The shape index is only a candidate ranker; the fact-based `source_match`
-//! resolver stays the correctness gate. This test renders every read-off result
-//! to a `source_match` selector and runs it through the resolver
+//! resolver is retained here as the legacy correctness oracle. This test renders
+//! every read-off result to a `source_match` selector and runs it through the resolver
 //! (`ChunkResolver::resolve_anonymous_groups`), asserting it resolves **uniquely**
 //! to the intended item.
 //!
@@ -13,7 +13,7 @@
 
 use selector_candidate_index::SelectorFeature;
 use shape_index::{AnchorSet, ShapeFeature, ShapeIndex, Stability};
-use source_match::{ChunkResolver, SelectorResolver};
+use source_match::legacy_resolver::{ChunkResolver, SelectorResolver};
 use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
 use std::collections::BTreeSet;
 use swc_ecma_ast::*;
@@ -218,7 +218,7 @@ fn prop_name(name: &PropName) -> Option<String> {
     }
 }
 
-/// Render a read-off for `body_idx`, run it through the production matcher, and
+/// Render a read-off for `body_idx`, run it through the legacy matcher oracle, and
 /// assert unique resolution to `body_idx`.
 fn assert_read_off_resolves_uniquely(module: &Module, body_idx: usize) -> AnchorSet {
     let index = ShapeIndex::new(module);

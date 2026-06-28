@@ -28,7 +28,7 @@ use selector_match::{Index, Mode};
 
 /// The exact-match top-level alignments of a parsed selector body against a chunk
 /// body, over the fact model — the same `Vec<Vec<Option<usize>>>` shape the
-/// production resolver's anonymous path (`ChunkResolver::resolve_anonymous_groups`
+/// legacy resolver's anonymous path (`ChunkResolver::resolve_anonymous_groups`
 /// → [`selector_match::match_top_level_sequence_indexed`]) produces. A needle
 /// statement that does not project to facts (an unsupported construct) yields an
 /// empty index whose match fails closed, so it pins nothing — the same outcome as

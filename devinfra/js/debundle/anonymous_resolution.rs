@@ -4,7 +4,8 @@
 //! snippets (`anonymous_statements[].match`). Graph-backed CLI paths
 //! that need owner ids use this module as the single implementation
 //! for mapping matched selectors back to owner-graph nodes. The
-//! selector parser and AST equality live in `source_match`.
+//! selector parser, fact lowering, and assignment solving live in the
+//! selector-IR/runtime path.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env;

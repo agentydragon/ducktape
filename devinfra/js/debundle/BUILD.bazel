@@ -109,8 +109,9 @@ rust_test(
 )
 
 # Soundness validation: every read-off, rendered to a source_match and run
-# through the production matcher, must resolve uniquely to the intended item.
-# Separate crate so it exercises the public shape_index API plus the matcher.
+# through the legacy matcher oracle, must resolve uniquely to the intended item.
+# Separate crate so it exercises the public shape_index API plus the oracle
+# boundary explicitly.
 rust_test(
     name = "shape_index_soundness_test",
     srcs = ["shape_index_soundness_test.rs"],
@@ -178,7 +179,6 @@ rust_library(
         ":selector_ir",
         ":selector_ir_lowering",
         ":selector_runtime",
-        ":source_match",
         ":spec",
         "@crates//:anyhow",
         "@crates//:swc_common",
