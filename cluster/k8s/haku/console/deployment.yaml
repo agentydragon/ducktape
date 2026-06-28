@@ -148,7 +148,8 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           volumeMounts:
-            # The nginx entrypoint writes the envsubst-rendered template here.
+            # The SPA is baked into the image, but the nginx entrypoint still writes
+            # the envsubst-rendered runtime config here before nginx starts.
             - name: nginx-conf
               mountPath: /etc/nginx/conf.d
           securityContext:

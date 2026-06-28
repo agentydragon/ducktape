@@ -63,7 +63,8 @@ trusting the content:
    third-party cookie. Pin it with `sandbox="allow-scripts allow-same-origin allow-forms"`
    on the `<iframe>` (same-origin + forms are needed for the framed app's own Authentik
    auth; **no `allow-popups`** — only the shell opens links) and
-   `frame-src https://haku-ui.allegedly.works` in the shell's CSP.
+   `frame-src` for both `https://haku-ui.allegedly.works` and
+   `https://auth.allegedly.works` in the shell's CSP.
 
 2. **Haku's UI is never publicly exposed.** Its only ingress is the
    operator-owned, **Authentik-gated** route. Haku cannot publish private
