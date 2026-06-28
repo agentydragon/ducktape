@@ -17,19 +17,11 @@ locals {
   nebula_mesh  = jsondecode(file("${path.module}/../../../nebula-mesh.json"))
   nebula_hosts = local.nebula_mesh.hosts
 
-  # Map TF resource keys → roster host names (cert subject =
-  # "<host>.nebula.allegedly.works").
-  # CLEANUP(added 2026-06-28): now an identity map — the TF for_each keys were renamed to
-  #   the hostnames (this commit), so key == value. Drop this local and replace its sole
-  #   consumer (nebula_node_names) with the keys directly. Left in place here only to keep
-  #   this rename a pure, state-only refactor (no behavior change); remove in a follow-up.
-  nebula_tf_key_to_host = {
-    "ovh-ns103656" = "ovh-ns103656"
-    "ovh-ns103711" = "ovh-ns103711"
-    "ovh-ns104952" = "ovh-ns104952"
-    "ovh-ns104963" = "ovh-ns104963"
-    "ovh-ns102453" = "ovh-ns102453"
-  }
+  # The TF-managed Nebula nodes: the OVH bare-metal hosts, identified by hostname (the cert
+  # subject is "<host>.nebula.allegedly.works"). Derived from the OVH node inventory so there
+  # is a single source of truth for which hosts exist — those resources' for_each keys are the
+  # same hostnames.
+  nebula_managed_hosts = keys(merge(local.kimsufi_servers, local.kimsufi_cp_servers))
 
   # Derived: list of all lighthouse IPs (for non-lighthouse nodes' `lighthouse.hosts`).
   nebula_lighthouse_ips = [
@@ -42,10 +34,10 @@ locals {
     h.nebula_ip => [h.endpoint] if can(h.endpoint)
   }
 
-  # Map TF key → certificate file name.
+  # Map host → certificate file name.
   nebula_node_names = {
-    for tf_key, host in local.nebula_tf_key_to_host :
-    tf_key => "${host}.nebula.allegedly.works"
+    for host in local.nebula_managed_hosts :
+    host => "${host}.nebula.allegedly.works"
   }
 
   nebula_certs = {
@@ -115,8 +107,8 @@ locals {
   # Invariant for TF-managed hosts: lighthouse=true ⇔ relay=true. Non-
   # lighthouses use lighthouse-as-relay.
   nebula_configs_lighthouse = {
-    for tf_key, host_name in local.nebula_tf_key_to_host :
-    tf_key => merge(local.nebula_common, {
+    for host_name in local.nebula_managed_hosts :
+    host_name => merge(local.nebula_common, {
       lighthouse = {
         am_lighthouse    = true
         serve_dns        = true
@@ -130,8 +122,8 @@ locals {
   }
 
   nebula_configs_client = {
-    for tf_key, host_name in local.nebula_tf_key_to_host :
-    tf_key => merge(local.nebula_common, {
+    for host_name in local.nebula_managed_hosts :
+    host_name => merge(local.nebula_common, {
       lighthouse = {
         am_lighthouse    = false
         interval         = 10
@@ -187,21 +179,21 @@ locals {
 check "nebula_mesh_endpoint_drift" {
   assert {
     condition = alltrue([
-      for tf_key, host_name in local.nebula_tf_key_to_host :
-      try(local.nebula_hosts[host_name].endpoint, null) == try(local.nebula_live_endpoints[tf_key], null)
-      if contains(keys(local.nebula_live_endpoints), tf_key)
+      for host_name in local.nebula_managed_hosts :
+      try(local.nebula_hosts[host_name].endpoint, null) == try(local.nebula_live_endpoints[host_name], null)
+      if contains(keys(local.nebula_live_endpoints), host_name)
       && try(local.nebula_hosts[host_name].endpoint, null) != null
     ])
     error_message = format(
       "nebula-mesh.json endpoint drift vs live infrastructure (see cluster/docs/mesh_membership.md):\n%s",
       join("\n", [
-        for tf_key, host_name in local.nebula_tf_key_to_host :
-        format("  %s (tf=%s): json=%s live=%s", host_name, tf_key,
+        for host_name in local.nebula_managed_hosts :
+        format("  %s: json=%s live=%s", host_name,
           try(local.nebula_hosts[host_name].endpoint, "<missing>"),
-        try(local.nebula_live_endpoints[tf_key], "<missing>"))
-        if contains(keys(local.nebula_live_endpoints), tf_key)
+        try(local.nebula_live_endpoints[host_name], "<missing>"))
+        if contains(keys(local.nebula_live_endpoints), host_name)
         && try(local.nebula_hosts[host_name].endpoint, null) != null
-        && try(local.nebula_hosts[host_name].endpoint, "") != try(local.nebula_live_endpoints[tf_key], "")
+        && try(local.nebula_hosts[host_name].endpoint, "") != try(local.nebula_live_endpoints[host_name], "")
       ]),
     )
   }
