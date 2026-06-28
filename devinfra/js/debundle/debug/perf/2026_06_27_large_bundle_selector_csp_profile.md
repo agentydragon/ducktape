@@ -1,359 +1,163 @@
 # Large Bundle Selector CSP Profile
 
-This note summarizes a capped profile of the current global selector assignment
-path on a large private downstream bundle. It intentionally avoids naming the
-downstream product or copying any private source/code excerpts.
+This note tracks the current profiler-backed state of the global selector
+assignment path on a large private downstream bundle. It intentionally avoids
+naming the downstream product or copying any private source/code excerpts.
+
+Old per-run analysis has been pruned from this file. Use the latest profile
+below as the active baseline.
 
 ## Current Measurement
 
-- **Use the 2026-06-28 current-branch replay below as the active profile.** The
-  older measurements remain as historical context only.
-- A remote Bazel build with the downstream target and local Ducktape override was
-  capped at 5 minutes. The build did not complete.
-- The Bazel critical path included normal tool rebuild cost, but the debundle
-  pipeline action itself was still running after about 99 seconds when the build
-  was interrupted. That already crosses the "slow" threshold for production
-  debundling.
-- A direct local replay of the debundle pipeline action under `perf record` was
-  also capped at 5 minutes. It did not finish.
-- No CP-SAT request proto or CP-SAT summary JSON was emitted during the direct
-  replay. That means this run did not reach the OR-Tools sidecar. The current
-  blocker is pre-solver Rust work, not proven OR-Tools solving time.
-- The run also appeared memory-heavy. We did not capture a reliable max-RSS or
-  heap allocation profile in this pass, so memory needs to be measured explicitly
-  on the next replay.
-
-### 2026-06-28 Three-Minute Current-Branch Replay
-
-This replay used the same private downstream direct-action wrapper, but with the
-current Ducktape branch binaries at commit
-`ec4416d7e08445ce3e9c8105910c08cecbffc0e7`.
+The active profile is a direct replay of the downstream debundle action after
+PR #2635 ("Model debundle selector arithmetic as linear constraints"). The run
+used the pre-squash branch commit `72eeb249b933fefd1ae71c71e849c4029592bf63`,
+whose changes are now on `devel` via PR #2635.
 
 ```sh
-/usr/bin/time -v timeout --foreground --kill-after=30s 180s \
+/usr/bin/time -v timeout --foreground --kill-after=30s 120s \
+  env DUCKTAPE_DEBUNDLE_PROGRESS=1 \
   perf record -F 99 -e cycles:u --call-graph dwarf,8192 \
   -o <profile-dir>/perf.data -- <direct-replay-wrapper>
 ```
 
-The replay exited with status `124` after `3:01.89`; `perf` captured an
-approximately `179.897s` sample window with about `18K` user-space cycle samples
-and no lost samples. Max RSS was `3,723,844 KB`. The run emitted no CP-SAT
-request proto and no CP-SAT summary JSON, so it still timed out before the
-OR-Tools sidecar was invoked.
+Result:
 
-The completed flat `perf report` points at Rust-side construction work, not
-solver search. The top self-cost symbols were dominated by:
+- exit status `124`;
+- elapsed wall time `2:01.20`;
+- user CPU `120.63s`;
+- sys CPU `5.54s`;
+- max RSS `1,106,036 KB`;
+- profile window approximately `119.7s`;
+- `12,582` user-space cycle samples;
+- no lost samples in the completed flat `perf report`;
+- no CP-SAT request proto and no CP-SAT summary JSON were emitted.
 
-- equality/comparison over compact ids: `PartialEq for u32`;
-- allocator and movement costs: `malloc`, `_int_malloc`, `_int_free`,
-  `__memmove_avx_unaligned_erms`, vector growth/deallocation;
-- hashing and hash-table lookup: `Sip*`, `hashbrown::RawTable::find`,
-  `find_or_find_insert_slot`, `reserve_rehash`;
-- BTree navigation/replacement: `alloc::collections::btree::mem::replace`;
-- selector model lowering: `selector_constraint_model_builder::add_ast_child_allowed_tuples`;
-- normal parse/setup residue from SWC parsing.
+The run did not reach OR-Tools. It timed out inside Rust-side work before the
+sidecar request existed.
 
-The important current conclusion is narrower than the older two-minute profile:
-after compact domains, interned ids, and arithmetic-as-linear-constraints, the
-run still does not reach OR-Tools within three minutes. We are no longer looking
-at the old full-domain typed-model validation shape as the only explanation.
-The remaining visible costs are relation/table construction, row/domain
-interning and lookup, allocation/copying while building those relations, and
-AST-child allowed-table lowering.
+The debundle progress stream reached:
 
-That makes the next performance work:
-
-1. profile-guided reduction of allowed-table construction, starting with
-   `add_ast_child_allowed_tuples` and other relation-to-table lowerings;
-2. flatten allowed-table storage/serialization so rows are not nested heap
-   objects across Rust and protobuf;
-3. represent sparse/range-like integer domains as OR-Tools-style interval
-   domains instead of value lists;
-4. keep using native OR-Tools constraints for arithmetic and `all_different`;
-   do not add solver heuristics until a saved CP-SAT request shows the sidecar
-   is the bottleneck.
-
-### 2026-06-27 Two-Minute Direct Replay
-
-A later direct replay used the same private downstream action wrapper under:
-
-```sh
-/usr/bin/time -v timeout --foreground --kill-after=30s 2m \
-  perf record -F 99 -g --call-graph fp -- <direct-replay-wrapper>
+```text
+[debundle progress] chunk=... phase=materialize_logical_chunk state=start
+[debundle progress] chunk=... phase=compute_chunk_analysis state=start
+[debundle progress] chunk=... phase=compute_chunk_analysis state=end
+[debundle progress] chunk=... phase=resolve_global_selector_members state=start
 ```
 
-The replay exited with status `124` after `120.17s`; `perf` captured a
-`119.889s` sample window. Max RSS from `/usr/bin/time -v` was `3,353,792 KB`.
-No CP-SAT request proto or CP-SAT summary JSON was emitted, so the run was still
-inside Rust-side model construction when `timeout` killed it.
+There was no `resolve_global_selector_members state=end`.
 
-The sampled stacks show this approximate stage timeline:
+## Profile Evidence
 
-|      Time | Stage                                                                         | Stack evidence                                                                                                                                                                                                                                                    |
-| --------: | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-|    `0-1s` | wrapper setup, module discovery, spec/YAML loading                            | `spec_modules::collect_module_files_into`, `std::fs::metadata`, `serde_yaml` / `unsafe_libyaml`                                                                                                                                                                   |
-|    `1-4s` | source reads and SWC parse                                                    | `std::fs::read_to_string`, Rayon worker stacks in `swc_ecma_parser::parse_*`                                                                                                                                                                                      |
-|   `4-40s` | JavaScript traversal, fact extraction, purity/dataflow-style analysis         | `PlainDataWriteScanner::*`, `is_shadowed`, `ts_enum_iife`, `analysis::purity`, plus BTree and iterator frames                                                                                                                                                     |
-|  `40-80s` | allocation-heavy fact/index/lowering transition                               | `_int_malloc`, `_int_free`, `malloc_consolidate`, `__memmove`, BTree replacement/navigation                                                                                                                                                                       |
-| `80-120s` | selector constraint model/backend construction, especially allowed tuple work | `selector_constraint_model_builder::{add_node_string_allowed_tuples,string_term_matches}`, `selector_constraint_backend::{intern_ast_node,add_encoded_allowed_tuples_with_domains,FullDomainValues::get_mut}`, `hashbrown::RawTable::find`, BTree iteration/dedup |
+The completed flat report is dominated by Rust collection and iterator work. In
+the large `cpu_core/cycles/u` bucket, top self-cost symbols include:
 
-The kill point was the final row: selector constraint construction and encoded
-allowed-table insertion. This profile does not justify OR-Tools tuning yet; the
-sidecar had not started and the Rust wrapper had not emitted its request.
+- `alloc::collections::btree::mem::replace` at `11.46%`;
+- `Iterator::any::check::{{closure}}` at `8.57%`;
+- `core::slice::raw::from_raw_parts::precondition_check` at `4.95%`;
+- `__memmove_avx_unaligned_erms` at `4.78%`;
+- `malloc`, `_int_malloc`, `_int_free`, and `malloc_consolidate`;
+- BTree navigation/search frames.
 
-## Hot Path
+Representative time slices show two distinct high-level costs:
 
-The sampled direct replay points at selector assignment model construction:
+- around the middle of the run, samples are in `analysis::purity` and SWC AST
+  visitors such as `PlainDataWriteScanner` and
+  `is_ts_enum_iife_call_for_binding`, so chunk analysis is still materially
+  expensive;
+- near the end of the run, samples are inside
+  `selector_constraint_model_builder::compile_selector_problem` via
+  `FactDomains::from_program_and_facts`, especially `add_facts`,
+  `add_fact_strings`, `add_node`, `add_string`, `add_program_constants`, and
+  `add_atom_constants`.
 
-- `lowering::materialize::materialize_logical_chunk`
-- `ChunkPlanBuilder::resolve_and_claim_global_selectors`
-- `selector_runtime::solve_global_selector_program`
-- `selector_backend_solver::compile_backend_problem`
-- `selector_constraint_model_builder::compile_selector_problem`
-- pre-cutover typed domain materialization and validation
+A late representative slice had all sampled selector-model stacks passing
+through:
 
-The dominant self-cost was `BTreeMap`/`BTreeSet` insertion while validating every
-new finite-domain variable. The next visible costs were allocator churn, cloning
-large selector/program structures, and a smaller AST purity scanner hotspot.
-
-The important interpretation is not "the solver is slow." We are spending the
-time before the solver request exists, while constructing and validating the
-generic finite-domain model.
-
-## Memory Risk
-
-The current model shape likely creates both CPU and memory pressure:
-
-- every variable gets a cloned vector of all values in its domain type;
-- every variable validation allocates a temporary ordered set over that vector;
-- allowed-table lowering repeatedly constructs sorted sets of typed tuple values;
-- string-valued facts are cloned into domains and tuple rows before interning or
-  backend encoding.
-
-That means high RSS is plausible even before solver startup. The next replay
-should be wrapped with an external memory measurement such as `/usr/bin/time -v`
-to capture max RSS. If max RSS is high or grows steadily before the CP-SAT dump,
-run a heap profiler such as heaptrack or massif on the direct replay. That keeps
-profiling outside the production code and should show whether memory is dominated
-by variable domains, tuple tables, string cloning, or backend request building.
-
-## What We Still Do Not Know
-
-We do not yet know the final CP-SAT problem size for this large bundle run:
-
-- variable count
-- domain-size histogram
-- allowed-table arity histogram
-- allowed-table row-count and cell-count histograms
-- binary constraint counts by kind
-- `all_different` counts and arity histogram
-
-The current CP-SAT summary dump can report those once the backend is reached,
-but the measured run timed out before that boundary.
-
-## Rust-Side Algorithm Plan
-
-The current Rust-side algorithm has three expensive shapes before OR-Tools can
-do any propagation:
-
-1. **Global domain cloning.** `FactDomains::values_for(domain)` gives every
-   selector variable all known values of that type. If there are `V_owner`
-   owner variables and `D_owner` owner facts, construction starts with roughly
-   `V_owner * D_owner` typed values, even when each variable is immediately
-   constrained by a selective atom.
-2. **Repeated ordered-set validation.** The pre-cutover typed model validated
-   each variable by inserting every domain value into an ordered set. The
-   backend-copy bridge then validated again and rebuilt per-variable ordered
-   sets for membership checks.
-3. **Full relation scans and typed tuple sets.** Each atom lowering scans or
-   filters a fact relation, clones typed values, inserts `Vec<ConstraintValue>`
-   rows into a `BTreeSet`, and later converts the rows again into backend integer
-   ids.
-
-The next work should attack those algorithmic costs in this order.
-
-## Root Cause
-
-The hot `BTreeSet` insertion is a symptom. The deeper bug is that the Rust
-constraint model treats every variable as owning an explicit `Vec` of all
-possible typed values:
-
-```
-selector variable -> Vec<ConstraintValue>
+```text
+compile_selector_problem
+  FactDomains::from_program_and_facts
+    FactDomains::add_facts / add_fact_strings / add_program_constants
+      BTreeSet::insert / BTreeMap::insert
 ```
 
-For source-shaped selectors, many selector variables are AST-node variables.
-Each one starts with `all AST nodes in the bundle` as its domain, even when the
-selector immediately constrains it by kind, literal, child relation, owner root,
-or another selective relation. For owner/string variables the same mistake
-appears as `all owners` or `all strings`.
+That is the current first bottleneck. The run is still building global fact
+domains and derived indexes. It has not yet reached allowed-table lowering,
+protobuf request emission, or CP-SAT solving.
 
-So "emit a variable" is not O(1). It is currently closer to:
+## Current Root Cause
 
+After #2635, arithmetic constraints are no longer being materialized as large
+tuple relations. The remaining front-of-pipeline problem is broader:
+
+```text
+all facts -> global BTreeSet/BTreeMap domains and derived relations -> variables
 ```
-O(number_of_variables * full_domain_size * log(full_domain_size))
-```
 
-because each variable:
+`FactDomains::from_program_and_facts` eagerly scans every selector fact, clones
+many strings, inserts owners/nodes/strings/ordinals into ordered sets, builds
+derived relations, then walks all selector atoms to add constants. On a large
+bundle, this makes the path spend significant time and memory before the CSP
+solver can see any model.
 
-- clones or copies the full typed domain into its own vector;
-- validates that vector by inserting every value into an ordered set;
-- gets validated again by `model.validate()`;
-- gets converted again by the backend-copy bridge, which rebuilds per-variable
-  ordered sets for membership checks;
-- would later be serialized to the CP-SAT sidecar as another full repeated list
-  of values, where C++ copies, sorts, and duplicate-checks it again.
+This is not just an implementation detail. It keeps the Rust compiler in a
+database-like relation materialization phase even though the production goal is
+to describe the assignment problem compactly and let the solver propagate.
 
-That is why a large run can spend minutes before OR-Tools exists. The model is
-not just "emitting variables"; it is repeatedly materializing and checking huge
-cross-products of variables and global domains.
+The likely algorithmic mistakes are:
 
-The correct shape is:
+1. **Eager global domains.** Every value of each type is gathered before the
+   compiler has narrowed variable domains from the atoms that mention them.
+2. **Ordered heap-heavy storage.** `BTreeSet<String>` and `BTreeSet<(..., String)>`
+   make insertion and comparison expensive; determinism should come from final
+   sorting/deduping compact ids, not from ordered insertion of cloned strings.
+3. **Universal derived facts.** Derived relations are built whether or not the
+   current selector program needs that relation.
+4. **Late interning.** The builder still spends real time on typed facts and
+   strings before compact backend ids become the primary representation.
+5. **Remaining tuple-style lowering.** Child-list patterns and relation atoms
+   still have paths that enumerate supports into allowed tables. This is not
+   the end-of-run hot stack in the current profile, but it is the next model
+   shape to revisit after domain construction stops dominating.
 
-- global value dictionary / interned ids are owned once per fact domain;
-- a variable domain is either a compact range/reference to a shared domain, or a
-  narrowed candidate set;
-- unary atoms and selective relations reduce candidate domains before variable
-  materialization;
-- allowed tables are built over those narrowed/interned domains;
-- broad full domains should be represented as ranges or shared domain handles,
-  not copied vectors per variable.
+## Next Actions
 
-### 0. Make Construction Observable
+1. **Add a pre-solver model-build summary that is emitted before backend
+   request creation.** Timeout runs must report selector program counts, fact
+   relation cardinalities, global domain sizes, per-variable candidate sizes,
+   derived relation counts, and allowed-table histograms if reached. Keep this
+   as data output, not manual timing instrumentation.
+2. **Replace eager `FactDomains` BTree construction with compact dictionaries.**
+   Intern strings and typed ids once, collect into vectors/hash tables during
+   fact ingestion, then sort/dedup at the boundary where deterministic output is
+   needed.
+3. **Build only demanded indexes and derived relations.** Inspect the
+   `SelectorProgram` first, identify which atom kinds and constants are present,
+   and construct only the relation views needed by those atoms.
+4. **Derive candidate domains before materializing variables.** For each atom,
+   compute support sets after constants are applied; intersect supports per
+   variable; fall back to full domains only for genuinely unconstrained
+   variables.
+5. **Keep relation rows compact from the start.** Lower facts and allowed rows
+   to interned integer ids before tuple construction; avoid cloned
+   `ConstraintValue`/`String` rows on the production path.
+6. **Revisit child-list and relation atom lowering after domain construction is
+   no longer the measured blocker.** Prefer solver-level constraints or compact
+   table/element encodings over enumerating large intermediate relations in
+   Rust.
+7. **Only tune OR-Tools after a CP-SAT request exists.** When the run reaches
+   the sidecar, profile the saved proto through the C++ solver separately and
+   use CP-SAT stats to decide whether model changes, backend parameters, or
+   search strategies are justified.
 
-Add a pre-backend, anonymized model-build summary before backend conversion:
+## Immediate Plan
 
-- selector program counts: targets, variables, atoms, `all_different` groups;
-- fact relation cardinalities by relation;
-- initial global domain sizes by domain type;
-- per-variable candidate-domain sizes after any Rust-side pruning;
-- allowed-table arity/row/cell histograms before protobuf encoding;
-- max RSS from the wrapper command, not from production timing hooks.
+The next PR should target the high-level Rust-side shape, not solver heuristics:
 
-This summary must be emitted before OR-Tools request encoding so timeout runs
-still tell us how large the Rust-built problem became.
-
-### 1. Remove Validation/Conversion Waste
-
-This is the safest first code change because it should not alter the CSP model:
-
-- replace per-variable `BTreeSet` duplicate checks with linear validation over
-  already-canonical domain vectors, or add an internal constructor for domains
-  known to come from canonical `FactDomains` sets;
-- avoid calling full `model.validate()` twice on the builder-to-backend path;
-- replace backend per-variable `BTreeSet<ConstraintValue>` membership checks
-  with sorted-vector/binary-search checks or integer-domain checks after
-  interning;
-- keep the public defensive validation path for tests and external construction,
-  but stop using allocation-heavy validation on the trusted production builder
-  path.
-
-Expected effect: lower CPU and RSS without changing solver semantics. This is
-not a solver heuristic.
-
-### 2. Derive Per-Variable Candidate Domains Before Materializing Domains
-
-The deeper algorithmic issue is the full global domain assignment. Instead,
-compile selector atoms to exact support sets before constructing variables:
-
-- for every atom relation, compute the support values for each variable column
-  after constants are applied;
-- initialize each variable's domain to the intersection of supports from all
-  atoms mentioning that variable, falling back to the full typed domain only for
-  genuinely unconstrained variables;
-- filter allowed-table rows to those candidate domains before storing them;
-- optionally run a fixed-point semi-join / table-constraint support pass: remove
-  any value that has no supporting tuple in any incident allowed-table
-  constraint, then repeat until stable.
-
-This is ordinary CSP/table-constraint propagation at model-build time. It does
-not change the solution set; it prevents Rust from allocating values and tuples
-that no satisfying assignment could use.
-
-### 3. Intern Values Before Tuple Construction
-
-Move from typed, clone-heavy `ConstraintValue` rows to compact ids earlier:
-
-- intern owner/node/string/ordinal values once per fact domain;
-- represent relation rows and allowed tuples as small integer rows during
-  lowering;
-- keep a dictionary only for result projection and diagnostics;
-- sort/dedup compact rows with `sort_unstable` + `dedup`, or prove the source
-  relation is already canonical, instead of inserting typed rows into a
-  `BTreeSet` per atom.
-
-Expected effect: less string cloning, smaller tuple tables, less allocator
-pressure, and a cheaper protobuf boundary.
-
-### 4. Index Relations Instead Of Scanning Them Per Atom
-
-For common atom shapes, build reusable relation indexes keyed by constant terms:
-
-- owner -> declared binding/export/reference/member rows;
-- string/member/property literal -> owners or AST nodes;
-- AST node kind/literal/property posting lists;
-- owner-owner/reference edges and ordinal relations.
-
-Then lower an atom by reading the relevant posting list or indexed join rather
-than scanning the whole fact relation. This is Datalog/database-style relation
-evaluation, not exact assignment search.
-
-### 5. Collapse The Double Model Representation
-
-This has been implemented for the supported subset: the Rust boundary is now a
-`CompiledSelectorProblem` with interned finite-domain ids, shared full-domain
-sets, narrowed sparse supports, compact allowed tables, and direct protobuf
-emission. Keep this shape; do not reintroduce a full typed model followed by a
-full backend copy.
-
-### 6. Only Then Tune The Solver Layer
-
-If we reach the CP-SAT proto and the OR-Tools sidecar is the slow stage, switch
-to a solver-specific investigation:
-
-- profile the sidecar directly on the saved proto under `perf`/callgrind and
-  capture max RSS;
-- inspect CP-SAT solver stats: presolve time, conflicts, branches, propagation,
-  wall time, solution count/support enumeration behavior;
-- decide whether to change the CSP model shape, add redundant propagation
-  constraints, add symmetry-breaking constraints, factor large allowed tables,
-  use CP-SAT decision strategies/search hints, or tune CP-SAT parameters.
-
-Those solver/model heuristics are valid if the solver is the measured bottleneck.
-They should not be mixed into Rust-side model-construction work until we have a
-saved problem and solver stats.
-
-## Secondary Investigations
-
-- Check whether selector program cloning in
-  `resolve_and_claim_global_selectors` can be removed or made shallow.
-- Check whether the AST purity scanner is recomputing facts that should be
-  cached or generated once per bundle.
-- Confirm that `all_different` remains a native backend constraint in the
-  OR-Tools path, not an expanded pairwise constraint set.
-- Once the backend is reached, inspect the CP-SAT histograms before making solver
-  tuning decisions. If OR-Tools itself is then slow, profile the sidecar
-  separately.
-- Capture max RSS on the direct replay and, if memory is high, run a heap
-  profiler before making large representation changes.
-
-## Immediate Next Steps
-
-1. Add the pre-backend anonymized model-build summary and max-RSS capture path.
-   This makes timeout runs useful even before OR-Tools is reached.
-2. Remove pure construction waste: cheap trusted domain validation, no duplicate
-   full-model validation on the builder-to-backend path, and no temporary
-   ordered sets for per-variable domain membership when sorted vectors or
-   interned ids suffice.
-3. Rerun the same capped private downstream replay under `perf` and external
-   max-RSS measurement. Compare the profile against this note before attempting
-   broader changes.
-4. Implement per-variable candidate-domain derivation from atom support sets,
-   then filter allowed tables before materialization. If needed, add a
-   fixed-point semi-join support pass for table constraints.
-5. Intern values and relation rows before tuple construction, then replace
-   repeated whole-relation scans with reusable indexes for common atom shapes.
-6. When the run reaches OR-Tools, record the actual CP-SAT problem-size
-   histograms. If solver search is the bottleneck, replay the saved proto
-   through the sidecar under a native profiler and use CP-SAT stats to choose
-   model changes, backend optimizations, or CSP/search heuristics.
+1. add the pre-solver summary so future two-minute capped profiles are
+   informative even when the sidecar is not reached;
+2. make `FactDomains` demand-driven and compact-id based;
+3. reprofile the same downstream direct replay under `perf` with the `120s`
+   cap;
+4. if the run reaches the sidecar, capture CP-SAT problem-size stats and profile
+   the sidecar separately.
