@@ -13,7 +13,11 @@ import yaml
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
 
-_TERRAFORM_NODE_RE = re.compile(r"^    (?P<key>[A-Za-z0-9_]+)\s*=\s*\{(?P<body>.*?)^    \}", re.MULTILINE | re.DOTALL)
+# Node-map keys may be bare identifiers or quoted (the OVH keys are role-neutral hostnames
+# like "ovh-ns103656", which contain hyphens and so must be quoted in HCL).
+_TERRAFORM_NODE_RE = re.compile(
+    r'^    "?(?P<key>[A-Za-z0-9_-]+)"?\s*=\s*\{(?P<body>.*?)^    \}', re.MULTILINE | re.DOTALL
+)
 _TERRAFORM_STRING_ATTR_RE = re.compile(r'^\s*(?P<name>[A-Za-z0-9_]+)\s*=\s*"(?P<value>[^"]*)"', re.MULTILINE)
 
 

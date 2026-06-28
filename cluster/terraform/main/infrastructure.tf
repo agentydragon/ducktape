@@ -23,7 +23,7 @@ locals {
   proxmox_gateway = "10.2.0.1"
 
   # Stable Talos endpoint used for post-bootstrap client configuration reads.
-  primary_controlplane_ip     = data.ovh_dedicated_server.kimsufi_cp["kimsufi_cp0"].ip
+  primary_controlplane_ip     = data.ovh_dedicated_server.kimsufi_cp["ovh-ns102453"].ip
   kubeconfig_cluster_endpoint = "https://api.${var.cluster_domain}:6443"
 
   # Total expected node count (for health checks)

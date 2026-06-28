@@ -18,14 +18,17 @@ locals {
   nebula_hosts = local.nebula_mesh.hosts
 
   # Map TF resource keys → roster host names (cert subject =
-  # "<host>.nebula.allegedly.works"). Add a row when adding a TF-managed
-  # host to the roster.
+  # "<host>.nebula.allegedly.works").
+  # CLEANUP(added 2026-06-28): now an identity map — the TF for_each keys were renamed to
+  #   the hostnames (this commit), so key == value. Drop this local and replace its sole
+  #   consumer (nebula_node_names) with the keys directly. Left in place here only to keep
+  #   this rename a pure, state-only refactor (no behavior change); remove in a follow-up.
   nebula_tf_key_to_host = {
-    kimsufi_worker0 = "ovh-ns103656"
-    kimsufi_worker1 = "ovh-ns103711"
-    ks_game_worker0 = "ovh-ns104952"
-    ks_game_worker1 = "ovh-ns104963"
-    kimsufi_cp0     = "ovh-ns102453"
+    "ovh-ns103656" = "ovh-ns103656"
+    "ovh-ns103711" = "ovh-ns103711"
+    "ovh-ns104952" = "ovh-ns104952"
+    "ovh-ns104963" = "ovh-ns104963"
+    "ovh-ns102453" = "ovh-ns102453"
   }
 
   # Derived: list of all lighthouse IPs (for non-lighthouse nodes' `lighthouse.hosts`).

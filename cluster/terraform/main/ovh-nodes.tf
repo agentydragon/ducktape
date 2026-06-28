@@ -19,7 +19,7 @@
 
 locals {
   kimsufi_servers = {
-    kimsufi_worker0 = {
+    "ovh-ns103656" = {
       service_name    = var.kimsufi_service_name
       hostname        = "ovh-ns103656"
       nebula_ip       = "10.42.0.13"
@@ -29,7 +29,7 @@ locals {
       data_disk_match = "disk.dev_path == '/dev/sdb'"
       zone            = "hil-ovh"
     }
-    kimsufi_worker1 = {
+    "ovh-ns103711" = {
       service_name    = var.kimsufi_service_name_1
       hostname        = "ovh-ns103711"
       nebula_ip       = "10.42.0.14"
@@ -39,7 +39,7 @@ locals {
       data_disk_match = "disk.dev_path == '/dev/sdb'"
       zone            = "hil-ovh"
     }
-    ks_game_worker0 = {
+    "ovh-ns104952" = {
       service_name    = var.kimsufi_service_name_ks_game_0
       hostname        = "ovh-ns104952"
       nebula_ip       = "10.42.0.16"
@@ -48,7 +48,7 @@ locals {
       data_disk_match = "disk.serial == 'BTPF8304019P450RGN'"
       zone            = "hil-ovh"
     }
-    ks_game_worker1 = {
+    "ovh-ns104963" = {
       service_name    = var.kimsufi_service_name_ks_game_1
       hostname        = "ovh-ns104963"
       nebula_ip       = "10.42.0.17"
@@ -64,7 +64,7 @@ locals {
   }
 
   kimsufi_cp_servers = {
-    kimsufi_cp0 = {
+    "ovh-ns102453" = {
       service_name    = var.kimsufi_service_name_cp0
       hostname        = "ovh-ns102453"
       nebula_ip       = "10.42.0.15"
@@ -198,7 +198,7 @@ resource "ovh_dedicated_server_reboot_task" "kimsufi_to_rescue" {
 # Step 3: SSH into rescue, dd Talos image.
 # connection.timeout covers the window waiting for rescue to boot over SSH.
 # triggers on schematic_id so a kernel/extension change triggers re-provisioning.
-# To re-provision: tofu taint null_resource.install_talos_kimsufi["kimsufi_worker0"]
+# To re-provision: tofu taint null_resource.install_talos_kimsufi["ovh-ns103656"]
 resource "null_resource" "install_talos_kimsufi" {
   for_each = local.active_kimsufi_servers
 
@@ -378,10 +378,10 @@ locals {
   # paired DHCPv4Config below and should be canaried with talosctl --mode=try
   # before being added here.
   kimsufi_eno1_peer_route_enabled_nodes = toset([
-    "kimsufi_worker0",
-    "kimsufi_worker1",
-    "ks_game_worker0",
-    "ks_game_worker1",
+    "ovh-ns103656",
+    "ovh-ns103711",
+    "ovh-ns104952",
+    "ovh-ns104963",
   ])
 
   kimsufi_eno1_peer_route_patches = {
@@ -429,11 +429,11 @@ locals {
   # ExternalIP and removes the taint, and the node is in steady state.
   # Fresh-bootstrapped nodes (post-flag install) get this for free.
   kimsufi_cloud_provider_external_enabled_nodes = toset([
-    "kimsufi_cp0",
-    "kimsufi_worker0",
-    "kimsufi_worker1",
-    "ks_game_worker0",
-    "ks_game_worker1",
+    "ovh-ns102453",
+    "ovh-ns103656",
+    "ovh-ns103711",
+    "ovh-ns104952",
+    "ovh-ns104963",
   ])
 
   kimsufi_cloud_provider_external_patches = {
