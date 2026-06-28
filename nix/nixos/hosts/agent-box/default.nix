@@ -110,15 +110,18 @@ in
   ];
   services.openssh.settings.PermitRootLogin = lib.mkForce "prohibit-password";
 
-  # First-boot ordering fix (ugly but localized). On a cold first boot the boot
-  # order is: sops-install-secrets (early, sysinit) → cloud-init writes the
-  # persisted host key (later, cloud-config stage) → sshd. So system sops runs
-  # before the host key exists and can't decrypt codex_id_ed25519; the user-level
-  # sops then has no age key either. Once cloud-init has settled, re-apply both:
-  # restart system sops (plants id_ed25519, host key now present), then re-run
-  # home-manager (which restarts the codex user's sops-nix.service → user
-  # secrets). Idempotent: on a reboot the host key is already persisted, system
-  # sops succeeds early, and these restarts are no-ops.
+  # First-boot ordering fix (ugly but localized). On a cold first boot the
+  # NixOS `setupSecrets` activation snippet runs pre-systemd, before cloud-init
+  # writes the persisted host key (cloud-config stage), so it can't decrypt
+  # codex_id_ed25519. And home-manager-${username}.service runs at boot before
+  # the lingering user systemd manager is up, so it can't start the codex user's
+  # sops-nix.service either. Once cloud-init has settled, re-apply both:
+  # re-run setupSecrets (plants id_ed25519, host key now present), then restart
+  # home-manager (re-runs `systemctl restart --user sops-nix` with the user
+  # manager up + id present → user secrets). Idempotent on reboot.
+  #
+  # NOTE: system sops install is the `setupSecrets` activation snippet, NOT a
+  # systemd unit — there is no sops-install-secrets.service to restart.
   #
   # TODO(better): this re-run is a workaround for sops-runs-early vs
   #   cloud-init-writes-host-key-late. Cleaner options to evaluate:
@@ -140,7 +143,7 @@ in
     path = [ config.systemd.package ];
     serviceConfig.Type = "oneshot";
     script = ''
-      systemctl restart sops-install-secrets.service
+      ${config.system.activationScripts.setupSecrets.text}
       systemctl restart home-manager-${username}.service
     '';
   };
