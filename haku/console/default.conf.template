@@ -14,11 +14,13 @@ server {
 
   proxy_hide_header Content-Security-Policy;
   proxy_hide_header Cache-Control;
+  proxy_hide_header Referrer-Policy;
 
   add_header Content-Security-Policy
     "frame-src 'self' ${HAKU_CONSOLE_HAKU_UI_URL} ${HAKU_CONSOLE_AUTH_ORIGIN}; frame-ancestors 'none'"
     always;
   add_header Cache-Control $haku_cache_control always;
+  add_header Referrer-Policy "no-referrer" always;
 
   proxy_http_version 1.1;
   proxy_set_header Host $host;

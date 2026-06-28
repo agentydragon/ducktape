@@ -201,7 +201,11 @@ iframe can't: tight sandbox + cross-origin). Rules:
   - otherwise → shell **confirm overlay showing the real, full URL** → Open / Cancel
     (a consent + anti-phishing gate: the agent supplies the URL, the shell displays it
     honestly).
-- Always `window.open(url, "_blank", "noopener,noreferrer")`.
+- Open a same-origin blank tab first, treat a missing handle as the popup-block
+  signal, sever `opener`, then navigate it. The shell serves `Referrer-Policy:
+no-referrer`; using `noopener`/`noreferrer` in the `window.open` feature string is
+  intentionally avoided because those features make `window.open` return `null` even
+  when the tab opened.
 
 This subsumes the item→handoff loop (a `claude.ai/new` deep-link is just a whitelisted
 open) and gives Haku a general "send me to a link" verb without ever letting agent UI
@@ -235,8 +239,8 @@ holds, so `haku-ui ≠ haku-console` regardless of framing headers.
 Also shipped: the **`postMessage` bridge** (origin-checked transport + the top-layer
 native-`<dialog>` confirm with backdrop) and the **`openLink`** affordance — scheme hard-gate
 (`https`/`mailto` only), operator-owned host whitelist in the shell (`bridge.ts`, not
-`haku-state`), off-whitelist confirm, and `window.open(…, "noopener,noreferrer")` (assumes the
-one-time per-origin pop-up allow). The iframe sandbox dropped `allow-popups` accordingly — only
+`haku-state`), off-whitelist confirm, and shell-owned tab opening (assumes the one-time
+per-origin pop-up allow). The iframe sandbox dropped `allow-popups` accordingly — only
 the shell opens. `state_template/k8s/haku-ui/index.html` carries a worked `openLink` demo.
 
 **Remaining**, in order (each ~PR-sized; **owner** is who builds it):

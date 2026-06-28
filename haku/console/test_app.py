@@ -43,6 +43,7 @@ def test_config_unconfigured_csp_denies_framing(client) -> None:
     resp = client.get("/api/config")
     assert resp.json()["haku_ui_url"] is None
     assert "frame-src 'none'" in resp.headers["content-security-policy"]
+    assert resp.headers["referrer-policy"] == "no-referrer"
 
 
 def test_cache_policy_splits_hashed_assets_app_shell_and_api(make_client, tmp_path: Path) -> None:

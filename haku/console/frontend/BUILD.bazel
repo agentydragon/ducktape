@@ -203,6 +203,7 @@ tsc_bin.tsc_test(
     chdir = package_name(),
     data = [
         "bridge.test.ts",
+        "haku_ui_embed.test.ts",
         "tabler-icons.d.ts",
         "tsconfig.json",
         ":main_lib",
@@ -218,8 +219,10 @@ vitest_bin.vitest_test(
     chdir = package_name(),
     data = [
         "bridge.test.ts",
+        "haku_ui_embed.test.ts",
         "vitest.config.ts",
         ":bridge",
+        ":haku_ui_embed",
         "//:node_modules",
     ],
 )

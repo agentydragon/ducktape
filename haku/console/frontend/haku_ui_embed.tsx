@@ -13,11 +13,16 @@ import { toastError } from "./toast.ts";
 // the framed app's own Authentik auth; **no `allow-popups`** (only the shell opens
 // links) and **no `allow="fullscreen"`**. See plans/free_form_ui_iframe.md.
 
-// window.open relayed from a postMessage handler loses user-activation, so it needs the
-// operator's one-time "allow pop-ups for this site" (the shell origin only). Returns
-// false when the browser blocked it.
-function openExternal(url: string): boolean {
-  return window.open(url, "_blank", "noopener,noreferrer") !== null;
+// `noopener`/`noreferrer` force window.open() to return null even when the tab
+// opened, so open a same-origin blank tab first. The handle is the only reliable
+// popup-block signal; once it exists, sever opener before navigating it.
+export function openExternal(url: string): boolean {
+  const parsed = new URL(url);
+  const opened = window.open(parsed.protocol === "mailto:" ? url : "about:blank", "_blank");
+  if (!opened) return false;
+  opened.opener = null;
+  if (parsed.protocol !== "mailto:") opened.location.replace(url);
+  return true;
 }
 
 const POPUP_HINT = "Allow pop-ups for this site so the console can open links.";

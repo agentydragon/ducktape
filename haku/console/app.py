@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 APP_SHELL_CACHE_CONTROL = "no-cache, max-age=0, must-revalidate"
 IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
 NO_STORE_CACHE_CONTROL = "no-store"
+REFERRER_POLICY = "no-referrer"
 
 
 def _cache_control_for_path(path: str) -> str:
@@ -73,6 +74,7 @@ def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
         response = await call_next(request)
         response.headers["Content-Security-Policy"] = csp
         response.headers["Cache-Control"] = _cache_control_for_path(request.url.path)
+        response.headers["Referrer-Policy"] = REFERRER_POLICY
         return response
 
     # CSRF for the capability tier: a header-located double-submit token (the SPA
