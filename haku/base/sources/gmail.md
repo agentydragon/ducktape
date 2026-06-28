@@ -18,3 +18,16 @@ when you must read a body to judge it). Useful `q=` filters: `is:unread`,
 File one item per finding, referencing the thread by subject + sender + date. For
 actionable ones, write a `prepared_prompt` for an executor session (which has
 write access) to draft the reply / cancel / RSVP.
+
+## Gotchas (verified)
+
+- **Count `messages[]`, not `resultSizeEstimate`.** `resultSizeEstimate` is a rough
+  mailbox-wide estimate (it reads ~the same large number for _every_ non-empty query) — it is
+  **not** the match count. Use `len(messages)` and page with `nextPageToken`.
+- **Never hand-compute the `after:` epoch.** A bookmark accidentally set a few days in the
+  **future** makes `after:` return 0 on every run — a silent blind spot, not an empty inbox.
+  Derive the bookmark from data (the newest processed message's `internalDate`, which is ms —
+  divide by 1000 for `after:` seconds) or `date -u -d '<iso>' +%s`; and **guard on read**: a
+  stored epoch `> now` (`date -u +%s`) is corrupt — reset to `now - 1d` and rescan.
+- A `0`/empty `messages` result is only trustworthy once the bookmark is sane — when in doubt,
+  cross-check with a relative window (`newer_than:1d`).

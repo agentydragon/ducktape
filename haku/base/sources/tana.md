@@ -28,9 +28,31 @@ Read tools only — `search_nodes`, `read_node`, `get_children`, `open_node`,
 `list` is empty or a call 401s, note the gap in your log and move on (the facade
 flips NotReady on a bad upstream, and the bearer must be the reflected one).
 
-`search_nodes` takes a top-level `query` (and `limit`, max ~100) — **no
-`workspaceId`**; the structured query DSL is in the tool's own `description`. Link
-Tana nodes in items as `https://app.tana.inc?nodeid=<nodeId>`.
+`search_nodes(query, workspaceIds=[…], limit=50)` — `limit` **max 100** (101 → `too_big`),
+**no offset/cursor** (it cannot paginate; a result of exactly 100 means truncated). The
+structured query DSL is in the tool's own `description`. Link Tana nodes as
+`https://app.tana.inc?nodeid=<nodeId>`.
+
+## Structure — read subtrees, not just names (read this first)
+
+Tana is a **nested outliner**: every node owns a subtree of child bullets, and the substance
+of the operator's thinking lives in those **subtrees**. A flat `search_nodes` result gives you
+only node **names**. So the scan is **time-sweep to find what changed, then `read_node` its
+subtree** for the actual content. Verified facts that shape the method:
+
+- **Most of his nodes are UNTAGGED** free-text bullets. Anything built on `hasType`/supertags
+  is structurally **blind to the bulk of his content** — never scan by tag for completeness.
+- **Task updates accrete as child bullets INSIDE the task node** (the call log, the next step,
+  the dollar estimate), not under a daily node. **Notes** often go under the daily (`#Day`)
+  node — but **an edit on a given day does not necessarily live under that day's node.**
+- `read_node(nodeId, maxDepth)` (maxDepth ≤ 10) renders the subtree as markdown with
+  `<!-- node-id -->` markers — **the content tool.** `get_children(nodeId, limit≤100, offset)`
+  is the one **paginated** read for walking a large subtree.
+- Returned nodes carry `inTrash` (filter `true` out client-side — no trash flag in the DSL)
+  but **no `edited` timestamp** (can't sort by edit time).
+
+The operator maintains the concrete runnable sweep recipe in its own state procedures; keep
+this guide and that recipe in sync.
 
 ## Determining whether a task is actually open — use the `Task status` field, NOT the checkbox or `is:todo`
 
@@ -78,26 +100,26 @@ Keep an **exact millisecond bookmark** in `memory/` (e.g. `tana: through
 2026-06-25T20:30:00Z` → `1750883400000`); `edited.since` takes ms. Each sweep, pull
 everything edited since it and **advance the bookmark to now** when done.
 
-**The hard constraint: `search_nodes` has NO pagination** (only `query`,
-`workspaceIds`, `limit`; no offset/cursor) **and `edited` has no upper bound** (only
-`since`/`last`, no range). So a single `{edited:{since}}` silently **truncates at the
-`limit` (~100)** — and Tana syncs Google Calendar as a stream of `#Meeting` nodes, so
-churn blows past 100 fast. To read the change set **completely**:
+**`edited.since` alone is not enough — you also need `created.since`.** Typing a _new_
+bullet **creates** a node; it does not "edit" an existing one. So `{edited:{since}}` **misses
+most new daily content** (verified: a 2-day window returned 29 edited nodes but 100+ _created_,
+70 of them untagged and absent from the edited set). Run **both** every sweep:
 
 1. Scope to the operator's workspace(s) with `workspaceIds`.
-2. Run `{edited:{since:<ms>}}` (+ `created:{last:N}` for brand-new nodes — `created`
-   has no `since`). If it returns **fewer than `limit`**, that's the complete set.
-3. If it **hits the cap**, it's truncated — **narrow and re-run per supertag**:
-   `and:[{hasType:<tag>},{edited:{since}}]` for each tag from `list_tags`, since a
-   single tag rarely exceeds 100. Cover untagged/daily churn via the date nodes
-   directly (`get_children` on the recent `#Day`/Week nodes).
-4. Keep the **bookmark cadence tight enough** that a window never exceeds the cap; if
-   one tag ever caps anyway, sweep more often (smaller windows). Log if you suspect
-   truncation so a gap is visible rather than silent.
+2. **Edited:** `{edited:{since:<ms>}}`. **Created:** `{created:{last:N}}` (`created` has only
+   `last:<days>`, **no `since`**) → keep nodes whose `created` ISO ≥ your bookmark.
+3. **Read subtrees of what's substantive** (`read_node`) — the change's content is in the
+   subtree, not the name.
+4. **Cap = 100, no pagination.** A result of exactly 100 is truncated. Narrowing per supertag
+   (`and:[{hasType:<tag>},{edited:{since}}]`) helps for _tagged_ churn (Tana streams Google
+   Calendar as `#Meeting` nodes), **but cannot recover untagged nodes — the bulk.** So also
+   read recent `#Day` nodes' subtrees directly (`read_node`/paginated `get_children`) and keep
+   the **bookmark cadence tight** so windows rarely cap. If real content risks truncation,
+   **log it as a visible gap**, don't pretend completeness.
 
-Always drop `inTrash` nodes (above). `#Meeting`/`#Day` nodes are mostly routine
-calendar syncs — skim, don't dwell, unless one implies something (a note like "…for
-insurance fighting" on a meeting is a real signal).
+Always drop `inTrash` nodes (above). `#Meeting`/`#Day` calendar-sync nodes are mostly routine
+— skim, don't dwell, unless one implies something (a note like "…for insurance fighting" on a
+meeting is a real signal).
 
 ## What to mine — reason beyond tasks
 
