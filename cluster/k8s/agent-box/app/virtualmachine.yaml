@@ -25,7 +25,11 @@ spec:
       spec:
         source:
           s3:
-            url: "https://s3.allegedly.works/vm-images/bootstrap/f484cb3f043f7dab65528c4ad22330dace7b9fdb.qcow2"
+            # Full agent-box host image (built by vm-images-publisher with
+            # IMAGE_OUTPUT=agent-box-image). The VM boots straight into the real
+            # config — no bootstrap + nixos-rebuild switch. cloud-init still
+            # injects the persisted host key. Repin after rebuilding the image.
+            url: "https://s3.allegedly.works/vm-images/agent-box/6382ab144c0384552f52fb262fb94fe3c271353e.qcow2"
             secretRef: agent-box-vm-images-s3-reader
         pvc:
           accessModes:
