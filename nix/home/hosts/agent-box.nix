@@ -17,15 +17,16 @@
     ../modules/sops-env.nix # ducktape.sopsEnv (BuildBuddy key reads this)
     ../modules/buildbuddy.nix # BuildBuddy creds -> bazelrc + BUILDBUDDY_API_KEY
     ../modules/forgejo-ssh.nix # Forgejo bot push key + git.allegedly.works ssh block
+    ../modules/attic.nix # attic ~/.config/attic/config.toml (push/pull client)
   ];
 
   # home-manager sops-nix decrypts the codex user's secrets with its planted id.
   sops.age.sshKeyPaths = [ "${config.home.homeDirectory}/.ssh/id_ed25519" ];
 
-  # CLEANUP(added 2026-06-27): enable the home-manager attic client once
-  # secrets/hosts/agent-box-attic.yaml exists on devel (minted by attic-jwt-rotation):
-  #   imports += ../modules/attic.nix
-  #   ducktape.attic = { enable = true; sopsFile = ../../../secrets/hosts/agent-box-attic.yaml; };
+  ducktape.attic = {
+    enable = true;
+    sopsFile = ../../../secrets/hosts/agent-box-attic.yaml;
+  };
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/agent-box-codex-forgejo.sops.key;
 
   programs.zsh.enable = true;

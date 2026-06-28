@@ -25,18 +25,16 @@ in
     ../../modules/vm-hardware.nix
     ../../modules/bazel
     ../../modules/system-inspection-sudo.nix
+    ../../modules/attic-substituter.nix
   ];
 
-  # CLEANUP(added 2026-06-27): enable the Attic substituter once the
-  # attic-jwt-rotation CronJob (rotators.json -> `agent-box`) has minted and
-  # committed secrets/hosts/agent-box-attic.yaml to devel. Until that file
-  # exists, the path literal below would fail flake evaluation, so the wiring
-  # waits:
-  #   imports += ../../modules/attic-substituter.nix
-  #   ducktape.attic-substituter = {
-  #     enable = true;
-  #     sopsFile = ../../../../secrets/hosts/agent-box-attic.yaml;
-  #   };
+  # Pull from cache.allegedly.works/{main,gaffer}. Reader JWT auto-rotated by the
+  # attic-jwt-rotation CronJob (rotators.json -> `agent-box`), decryptable by the
+  # host key (cluster... agent-box-host) + the codex user key.
+  ducktape.attic-substituter = {
+    enable = true;
+    sopsFile = ../../../../secrets/hosts/agent-box-attic.yaml;
+  };
 
   # Process KubeVirt's NoCloud seed to install the persisted Ed25519 host key
   # (agent-box-host) before sshd starts — sops-nix decrypts the codex user key
