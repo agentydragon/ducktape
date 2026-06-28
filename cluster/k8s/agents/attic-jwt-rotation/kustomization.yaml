@@ -5,11 +5,7 @@ resources:
   - cronjob.yaml
 
 configMapGenerator:
-  - name: attic-jwt-rotation-script
-    namespace: nix-cache
-    files:
-      - rotate.sh
   - name: attic-rotators-config
     namespace: nix-cache
     files:
-      - rotators.json
+      - rotators.yaml

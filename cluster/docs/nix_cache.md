@@ -32,7 +32,7 @@ new server generates fresh keypairs — consumer pubkeys must then be updated.
 Tokens (admin, per-host readers, CI writers) are HS256 JWTs signed with the
 `attic-jwt-token` secret. Reader/writer tokens are auto-rotated by
 `cluster/k8s/agents/attic-jwt-rotation/` (single CronJob driven by
-`rotators.json`); admin tokens are minted ad hoc via `kubectl exec`.
+`rotators.yaml`); admin tokens are minted ad hoc via `kubectl exec`.
 
 (Cache **signing** keypairs — distinct from the JWT signing secret — live in
 attic's Postgres DB per cache, server-generated, never extracted.)

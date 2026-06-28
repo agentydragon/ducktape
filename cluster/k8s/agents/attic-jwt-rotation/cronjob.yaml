@@ -5,7 +5,7 @@ metadata:
   namespace: nix-cache
   annotations:
     description: >-
-      Rotates all Attic JWTs (per-host readers, claude-web reader, ducktape and gaffer CI writer tokens) defined in rotators.json. Hourly cron; per-token freshness check skips entries with >24h remaining, so a real mint runs ~once per token per year. See rotate.sh.
+      Rotates all Attic JWTs (per-host readers, claude-web reader, ducktape and gaffer CI writer tokens) defined in rotators.yaml. Hourly cron; per-token freshness check skips entries with >24h remaining, so a real mint runs ~once per token per year. See rotate.py.
 spec:
   schedule: "30 * * * *"
   successfulJobsHistoryLimit: 3
@@ -21,9 +21,6 @@ spec:
             - name: github-pat
               secret:
                 secretName: github-secrets-sync-pat
-            - name: rotate-script
-              configMap:
-                name: attic-jwt-rotation-script
             - name: rotators-config
               configMap:
                 name: attic-rotators-config
@@ -35,7 +32,7 @@ spec:
           containers:
             - name: rotate
               image: ghcr.io/agentydragon/attic-jwt-rotation:devel-20260504011152-2b39247 # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
-              command: ["/usr/bin/bash", "/scripts/rotate.sh"]
+              args: ["--config", "/config/rotators.yaml"]
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
@@ -43,9 +40,6 @@ spec:
               volumeMounts:
                 - name: github-pat
                   mountPath: /var/run/secrets/github-pat
-                  readOnly: true
-                - name: rotate-script
-                  mountPath: /scripts
                   readOnly: true
                 - name: rotators-config
                   mountPath: /config
