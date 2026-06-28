@@ -74,9 +74,17 @@ returns (not independently parked):
 
 - [ ] **etcd lease-PUT latency / control-plane HDD I/O contention.** etcd runs on
       rotational HDDs on the KS-5 control planes (no SSD there; the NVMe is on the
-      KS-GAME workers). Defrag + flux-controller pinning applied 2026-06-19; remaining:
-      pin the tofu-controller runners (blocked on centralizing the ~22 copy-pasted
-      `runnerPodTemplate`s) and the cross-repo augur ingest job, then the structural
+      KS-GAME workers). **Recurred 2026-06-28 as a full outage** (two CPs NotReady,
+      Forgejo 500s); a `vm-images-publisher` build wrote ~15 GB to a CP disk and
+      starved etcd. Applied so far: defrag + flux-controller pins (2026-06-19); soft
+      anti-affinity on all ~22 hil-ovh stateful workloads + hard anti-affinity on the
+      `vm-images-publisher` CronJob (2026-06-28, PR #2614). Remaining: **actively
+      migrate the running stateful pods off the CP nodes** (anti-affinity is
+      forward-only — node-by-node, health-gated; CNPG/Loki/Mimir use node-pinned
+      `local-path-ovh`, so moving an instance is a re-clone; the single `seaweedfs-filer`
+      is the one workload that can't roll without a brief SeaweedFS-wide blip); pin the
+      tofu-controller runners (blocked on centralizing the ~22 copy-pasted
+      `runnerPodTemplate`s) and the cross-repo augur ingest job; then the structural
       etcd-on-NVMe move. Full RCA + remediation tracking:
       <lessons_learned/2026_06_19_etcd_hdd_io_contention.md>.
 - [ ] **Investigate whether to re-enable VPA/Goldilocks recommendations.**
