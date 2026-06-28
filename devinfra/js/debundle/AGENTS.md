@@ -134,6 +134,12 @@ stack samples. Keep production telemetry coarse and useful for users of
 the pipeline; don't add detailed stage fields solely because an
 optimization investigation needs temporary visibility.
 
+For `perf` captures, follow the artifact-reading guide in <README.md> rather
+than adding one-off summarizers or timing hooks. In short: use
+`perf_record_stderr.txt` for debundler progress markers,
+`perf_report_flat_symbols.txt` for top self-cost symbols, and the symbolized
+children report plus bounded head/mid/late stack slices for callgraph evidence.
+
 For timed perf repros, prefer stopping the process on timeout before
 killing it, then attach with `gdb` to inspect live stacks and memory
 state. Use a core dump only when the interrupted state needs to be

@@ -164,13 +164,60 @@ Each profile target writes a `<target>.profile` tree artifact. Common files:
 Mode-specific files:
 
 - `time`: `stderr_time.txt` from `/usr/bin/time -v`.
-- `perf`: `perf.data`, `perf_report_children.txt`,
-  `perf_report_no_children.txt`, `perf_script_stacks.txt`, `perf_header.txt`,
-  and `perf_evlist.txt`.
+- `perf`: `perf.data`, `perf_report_flat_symbols.txt`,
+  `perf_report_children.txt`, `perf_report_no_children.txt`,
+  `perf_script_stacks_head.txt`, `perf_script_stacks_mid.txt`,
+  `perf_script_stacks_late.txt`, `perf_script_stacks.txt`,
+  `perf_header.txt`, `perf_evlist.txt`, `perf_wrapper_env.txt`,
+  `perf_record_stderr.txt`, and any `*.failed.txt` or `*.partial`
+  post-processing artifacts.
 - `massif_heap`: `massif_heap.out`, `massif_heap_stderr.txt`, and
   `ms_print_heap.txt` when `ms_print` is available.
 - `heaptrack`: `heaptrack*`, `heaptrack_stderr.txt`, and
   `heaptrack_print.txt` when `heaptrack_print` is available.
+
+Use the perf artifacts as follows:
+
+- `perf_record_stderr.txt`: debundler progress markers and `/usr/bin/time -v`
+  style resource output when the surrounding profile action records it. Use this
+  to identify the last started phase and whether the run reached CP-SAT output.
+- `perf_report_flat_symbols.txt`: fast no-callgraph view for top self-cost
+  symbols.
+- `perf_report_children.txt`: symbolized inclusive callgraph report. The
+  wrapper defaults to `PERF_ADDR2LINE_STYLE=llvm` because default perf
+  symbolization can be much slower on Rust DWARF. Use
+  `PERF_ADDR2LINE_STYLE=libdw` if llvm-style symbolization is unavailable or
+  needs comparison; use `default` only to debug perf itself.
+- `perf_report_no_children.txt`: flat report with the same symbolizer settings.
+- `perf_script_stacks_head.txt`, `perf_script_stacks_mid.txt`, and
+  `perf_script_stacks_late.txt`: bounded symbolized stack slices from the
+  beginning, middle, and end of the profile window. These are useful for
+  stage attribution even when full `perf script` output is too slow. If a
+  sibling `.failed.txt` exists but the stack file is non-empty, treat the stack
+  file as a partial but valid slice and read the failure file as timeout
+  metadata.
+- `perf_script_stacks.txt`: full `perf script` output when it completes within
+  the post-processing timeout.
+- `*.failed.txt` and `*.partial`: bounded post-processing failure metadata and
+  partial output. A failed full report with useful head/mid/late slices is still
+  a valid profiling run.
+
+Useful knobs:
+
+```sh
+PERF_RECORD_FREQ=49              # lower sample frequency for quick iteration
+PERF_ADDR2LINE_STYLE=libdw       # compare symbolizers; default is llvm
+PERF_POSTPROCESS_TIMEOUT=300s    # allow full report generation more time
+PERF_CALLGRAPH_TIMEOUT=30s       # allow each head/mid/late stack slice longer
+PERF_CALLGRAPH_MAX_STACK=64      # preserve deeper callchains in stack slices
+PERF_CALLGRAPH_SLICE_SECS=10     # widen each head/mid/late stack slice
+PERF_CALL_GRAPH=fp               # cheaper callgraphs if the binary has frame pointers
+```
+
+Lower `PERF_RECORD_FREQ` when iterating, but do not treat sampling frequency as
+the main fix for slow report generation. For debundler Rust profiles, the
+dominant post-processing issue is usually symbolization; tune the symbolizer
+and stack-capture knobs above before assuming the profile has too many samples.
 
 Save important runs before cleaning Bazel outputs:
 
