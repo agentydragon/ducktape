@@ -688,7 +688,7 @@ fn add_owner_string_indexed_allowed_tuples(
             )
         }
         (OwnerTerm::Var { id: owner_id }, StringTerm::Var { id: string_id }) => {
-            let constraint_variables = vec![
+            let constraint_variables = [
                 model_variable(variables, *owner_id)?,
                 model_variable(variables, *string_id)?,
             ];
@@ -696,13 +696,13 @@ fn add_owner_string_indexed_allowed_tuples(
                 .rows
                 .iter()
                 .map(|(fact_owner, fact_string)| {
-                    Ok(vec![
+                    Ok((
                         model.intern_owner(*fact_owner)?,
                         model.intern_string(fact_string)?,
-                    ])
+                    ))
                 })
                 .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-            add_encoded_allowed_tuple_set(model, constraint_variables, tuples)
+            add_encoded_allowed_binary_tuple_set(model, constraint_variables, tuples)
         }
     }
 }
@@ -749,7 +749,7 @@ fn add_node_string_indexed_allowed_tuples(
             )
         }
         (NodeTerm::Var { id: node_id }, StringTerm::Var { id: string_id }) => {
-            let constraint_variables = vec![
+            let constraint_variables = [
                 model_variable(variables, *node_id)?,
                 model_variable(variables, *string_id)?,
             ];
@@ -757,13 +757,13 @@ fn add_node_string_indexed_allowed_tuples(
                 .rows
                 .iter()
                 .map(|(fact_node, fact_string)| {
-                    Ok(vec![
+                    Ok((
                         model.intern_ast_node(*fact_node)?,
                         model.intern_string(fact_string)?,
-                    ])
+                    ))
                 })
                 .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-            add_encoded_allowed_tuple_set(model, constraint_variables, tuples)
+            add_encoded_allowed_binary_tuple_set(model, constraint_variables, tuples)
         }
     }
 }
@@ -834,7 +834,7 @@ fn add_ast_child_indexed_allowed_tuples(
             )
         }
         (NodeTerm::Var { id: parent_id }, NodeTerm::Var { id: child_id }) => {
-            let constraint_variables = vec![
+            let constraint_variables = [
                 model_variable(variables, *parent_id)?,
                 model_variable(variables, *child_id)?,
             ];
@@ -844,13 +844,13 @@ fn add_ast_child_indexed_allowed_tuples(
                 .into_iter()
                 .flatten()
                 .map(|(fact_parent, fact_child)| {
-                    Ok(vec![
+                    Ok((
                         model.intern_ast_node(*fact_parent)?,
                         model.intern_ast_node(*fact_child)?,
-                    ])
+                    ))
                 })
                 .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-            add_encoded_allowed_tuple_set(model, constraint_variables, tuples)
+            add_encoded_allowed_binary_tuple_set(model, constraint_variables, tuples)
         }
     }
 }
@@ -1764,6 +1764,27 @@ fn add_encoded_allowed_tuple_set(
     }
     model
         .add_encoded_allowed_tuples(variables, tuples)
+        .map(|_| ())
+        .map_err(Into::into)
+}
+
+fn add_encoded_allowed_binary_tuple_set(
+    model: &mut CompiledSelectorProblemBuilder,
+    variables: [ConstraintVariableId; 2],
+    tuples: Vec<(BackendValueId, BackendValueId)>,
+) -> Result<(), CompiledSelectorProblemBuildError> {
+    if variables[0] == variables[1] {
+        return model
+            .restrict_variable_to_encoded_values(
+                variables[0],
+                tuples
+                    .into_iter()
+                    .filter_map(|(left, right)| (left == right).then_some(left)),
+            )
+            .map_err(Into::into);
+    }
+    model
+        .add_encoded_allowed_binary_tuples(variables, tuples)
         .map(|_| ())
         .map_err(Into::into)
 }

@@ -95,7 +95,56 @@ impl TargetBindingProjection {
 pub struct CompiledAllowedTupleConstraint {
     pub id: AllowedTupleConstraintId,
     pub variables: Vec<ConstraintVariableId>,
-    pub tuples: Vec<Vec<BackendValueId>>,
+    pub tuples: CompiledAllowedTupleRows,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompiledAllowedTupleRows {
+    arity: usize,
+    values: Vec<BackendValueId>,
+}
+
+impl CompiledAllowedTupleRows {
+    fn from_rows(arity: usize, rows: Vec<Vec<BackendValueId>>) -> Self {
+        debug_assert!(arity > 0);
+        let mut values = Vec::with_capacity(rows.len().saturating_mul(arity));
+        for row in rows {
+            debug_assert_eq!(row.len(), arity);
+            values.extend(row);
+        }
+        Self { arity, values }
+    }
+
+    fn from_binary_rows(rows: Vec<(BackendValueId, BackendValueId)>) -> Self {
+        let mut values = Vec::with_capacity(rows.len().saturating_mul(2));
+        for (left, right) in rows {
+            values.push(left);
+            values.push(right);
+        }
+        Self { arity: 2, values }
+    }
+
+    pub fn len(&self) -> usize {
+        debug_assert!(self.arity > 0);
+        self.values.len() / self.arity
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    pub fn cell_count(&self) -> usize {
+        self.values.len()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &[BackendValueId]> {
+        debug_assert!(self.arity > 0);
+        self.values.chunks_exact(self.arity)
+    }
+
+    pub fn contains(&self, row: &[BackendValueId]) -> bool {
+        self.iter().any(|candidate| candidate == row)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -325,9 +374,36 @@ pub struct CompiledSelectorProblemBuilder {
 #[derive(Debug, Default)]
 struct DomainValueIds {
     owners: HashMap<OwnerId, BackendValueId>,
-    ast_nodes: HashMap<NodeId, BackendValueId>,
+    ast_nodes_sparse: HashMap<NodeId, BackendValueId>,
+    ast_nodes_dense: Vec<Option<BackendValueId>>,
     strings: HashMap<String, BackendValueId>,
     statement_ordinals: HashMap<StatementOrdinal, BackendValueId>,
+}
+
+impl DomainValueIds {
+    fn get_ast_node(&self, value: NodeId) -> Option<BackendValueId> {
+        let index = usize::try_from(value).ok()?;
+        self.ast_nodes_dense
+            .get(index)
+            .copied()
+            .flatten()
+            .or_else(|| self.ast_nodes_sparse.get(&value).copied())
+    }
+
+    fn insert_ast_node(&mut self, value: NodeId, id: BackendValueId) {
+        let Ok(index) = usize::try_from(value) else {
+            self.ast_nodes_sparse.insert(value, id);
+            return;
+        };
+        if index <= self.ast_nodes_dense.len().saturating_add(1024) {
+            if index >= self.ast_nodes_dense.len() {
+                self.ast_nodes_dense.resize(index + 1, None);
+            }
+            self.ast_nodes_dense[index] = Some(id);
+        } else {
+            self.ast_nodes_sparse.insert(value, id);
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -480,6 +556,47 @@ impl CompiledSelectorProblemBuilder {
         self.add_encoded_allowed_tuples_with_domains(variables, domains, tuples)
     }
 
+    pub fn add_encoded_allowed_binary_tuples(
+        &mut self,
+        variables: [ConstraintVariableId; 2],
+        tuples: Vec<(BackendValueId, BackendValueId)>,
+    ) -> Result<AllowedTupleConstraintId, CompiledSelectorProblemError> {
+        let id = AllowedTupleConstraintId(self.allowed_tuples.len());
+        let variables = variables.to_vec();
+        let domains = self.validate_allowed_tuple_variables(&variables)?;
+        let [left_domain, right_domain]: [VariableDomain; 2] = domains
+            .try_into()
+            .expect("binary tuple domains have arity 2");
+        let mut compiled_tuples = Vec::with_capacity(tuples.len());
+        for (tuple_index, (left, right)) in tuples.into_iter().enumerate() {
+            self.validate_encoded_value_domain(id, tuple_index, variables[0], left_domain, left)?;
+            if !self.encoded_value_matches_variable_domain(variables[0], left)? {
+                continue;
+            }
+            self.ensure_full_domain_contains(left_domain, left);
+            self.validate_encoded_value_domain(id, tuple_index, variables[1], right_domain, right)?;
+            if !self.encoded_value_matches_variable_domain(variables[1], right)? {
+                continue;
+            }
+            self.ensure_full_domain_contains(right_domain, right);
+            compiled_tuples.push((left, right));
+        }
+        compiled_tuples.sort_unstable();
+        compiled_tuples.dedup();
+
+        if compiled_tuples.is_empty() {
+            self.known_unsat
+                .get_or_insert_with(|| format!("allowed tuple constraint {id:?} has no rows"));
+        }
+
+        self.allowed_tuples.push(CompiledAllowedTupleConstraint {
+            id,
+            variables,
+            tuples: CompiledAllowedTupleRows::from_binary_rows(compiled_tuples),
+        });
+        Ok(id)
+    }
+
     pub fn restrict_variable_to_encoded_values(
         &mut self,
         variable: ConstraintVariableId,
@@ -493,12 +610,12 @@ impl CompiledSelectorProblemBuilder {
             self.validate_encoded_variable_domain_value(variable, domain, *value)?;
         }
 
-        let full_domain = self.full_domains.get(domain).to_vec();
+        let full_domain = self.full_domains.get(domain);
+        values.retain(|value| full_domain.binary_search(value).is_ok());
         let empty_domain = {
             let variable = self.require_variable_mut(variable)?;
             match &mut variable.values {
                 CompiledVariableDomain::Full(_) => {
-                    values.retain(|value| full_domain.binary_search(value).is_ok());
                     let empty_domain = values.is_empty();
                     variable.values = CompiledVariableDomain::Sparse(values);
                     empty_domain
@@ -549,12 +666,12 @@ impl CompiledSelectorProblemBuilder {
         &mut self,
         value: NodeId,
     ) -> Result<BackendValueId, CompiledSelectorProblemError> {
-        if let Some(id) = self.value_ids.ast_nodes.get(&value) {
-            return Ok(*id);
+        if let Some(id) = self.value_ids.get_ast_node(value) {
+            return Ok(id);
         }
         let count = self.value_dictionary.ast_nodes.len();
         let id = backend_value_id(count)?;
-        self.value_ids.ast_nodes.insert(value, id);
+        self.value_ids.insert_ast_node(value, id);
         self.value_dictionary.ast_nodes.push(value);
         Ok(id)
     }
@@ -609,9 +726,9 @@ impl CompiledSelectorProblemBuilder {
                     actual: tuple.len(),
                 });
             }
-            let mut compiled = Vec::with_capacity(tuple.len());
             let mut row_matches_variable_domains = true;
-            for (column, (value_id, expected)) in tuple.into_iter().zip(domains.iter()).enumerate()
+            for (column, (value_id, expected)) in
+                tuple.iter().copied().zip(domains.iter()).enumerate()
             {
                 self.validate_encoded_value_domain(
                     id,
@@ -625,10 +742,9 @@ impl CompiledSelectorProblemBuilder {
                     break;
                 }
                 self.ensure_full_domain_contains(*expected, value_id);
-                compiled.push(value_id);
             }
             if row_matches_variable_domains {
-                compiled_tuples.push(compiled);
+                compiled_tuples.push(tuple);
             }
         }
         compiled_tuples.sort();
@@ -639,10 +755,11 @@ impl CompiledSelectorProblemBuilder {
                 .get_or_insert_with(|| format!("allowed tuple constraint {id:?} has no rows"));
         }
 
+        let arity = variables.len();
         self.allowed_tuples.push(CompiledAllowedTupleConstraint {
             id,
             variables,
-            tuples: compiled_tuples,
+            tuples: CompiledAllowedTupleRows::from_rows(arity, compiled_tuples),
         });
         Ok(id)
     }
