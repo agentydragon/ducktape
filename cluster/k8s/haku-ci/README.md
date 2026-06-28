@@ -16,13 +16,12 @@ contained to roughly Haku's existing sandbox blast radius:
   can't tamper with the runner pod or its registry/git push creds — but it is **egress-fenced**
   like haku-sandbox (`networkpolicy.yaml`: DNS + base-image registries/npm/pypi + in-cluster
   only).
-- **Rootless daemon in a privileged pod** (`docker:27-dind-rootless`, `privileged: true`). The
-  dockerd still runs **rootless** (UID 1000), so it's strictly better than classic rootful
-  dind — but `privileged: true` is the documented requirement for dind-rootless (it provides
-  `/dev/net/tun` and disables the mount masks RootlessKit needs). The non-privileged path was
-  attempted and cleared seccomp + `user.max_user_namespaces` but couldn't get past the masks
-  (see the paving section). The privileged pod's blast radius is bounded by this namespace
-  being operator-only (no Haku RBAC), pinned **off the control planes**, and egress-fenced.
+- **Rootful dind in a privileged pod** (`docker:27-dind`, `privileged: true`). Using rootful
+  (not -rootless) so Docker uses standard veth interfaces that Cilium's DNS proxy can see —
+  rootless dind's slirp4netns networking bypasses the normal stack, so Cilium FQDN policies
+  don't apply and Docker Hub image pulls fail. The privileged pod's blast radius is bounded by
+  this namespace being operator-only (no Haku RBAC), pinned **off the control planes**, and
+  egress-fenced.
 - **Repo-scoped runner** registered only to the `haku-state` repo, so it only ever runs Haku's
   jobs; `capacity: 1` (serial builds).
 - **Scoped creds**: pushes only to the `haku/*` Forgejo package namespace; commits back only to
@@ -35,10 +34,11 @@ Haku produces the image, and the runner can't escape its perimeter.
 
 ## ⚠️ Paving — validate a real build
 
-The dind daemon now starts (privileged-pod rootless, after the non-privileged path dead-ended
-on the mount masks). What's left is an end-to-end check: trigger a `.forgejo/workflows/` build
-on the runner and confirm it builds + pushes an image. Check
-`kubectl -n haku-ci logs deploy/haku-runner -c dind` (daemon up) and the runner's job logs.
+Switched from rootless to rootful dind to fix Cilium FQDN tracking (rootless slirp4netns
+bypasses DNS proxy → Docker Hub blocked). What's left is confirming the end-to-end build
+works: trigger a `.forgejo/workflows/` build on the runner and confirm it builds + pushes
+an image. Check `kubectl -n haku-ci logs deploy/haku-runner -c dind` (daemon up) and the
+runner's job logs.
 
 ## What's here
 
@@ -47,7 +47,7 @@ on the runner and confirm it builds + pushes an image. Check
 | `namespace.yaml`     | the `haku-ci` namespace                                                                  |
 | `networkpolicy.yaml` | egress fence (DNS + registries/npm/pypi + in-cluster)                                    |
 | `config.yaml`        | the act_runner config (labels, dind `DOCKER_HOST`, capacity), via a `configMapGenerator` |
-| `deployment.yaml`    | the act_runner + rootless `dind` sidecar                                                 |
+| `deployment.yaml`    | the act_runner + rootful `dind` sidecar                                                  |
 
 The registration-token Secret (`haku-ci-runner-token`) is provisioned by `tf/gitops/haku-state`
 (a `hashicorp/http` GET of the repo's runner registration-token API, written to the Secret) —
