@@ -8,9 +8,10 @@
 #
 # minAvailable: 2 of 3 → at most one master/volume pod may be voluntarily
 # disrupted at a time, preserving raft quorum (master) and ≥2 replicas
-# (volume, replication=001). The singleton filer and the stateless s3 gateway
-# deliberately get no PDB (a maxUnavailable:0 PDB on a 1-replica set would wedge
-# node drains; s3 is freely reschedulable).
+# (volume, replication=001). The filer now runs 2 replicas and gets a
+# minAvailable: 1 PDB so a drain/descheduler can't take both filers down at
+# once (a SeaweedFS-wide metadata stall). The stateless s3 gateway deliberately
+# gets no PDB (freely reschedulable).
 #
 # See cluster/docs/lessons_learned/
 # 2026_06_19_seaweedfs_descheduler_dns_race_crashloop.md.
@@ -37,3 +38,15 @@ spec:
     matchLabels:
       app.kubernetes.io/name: seaweedfs
       app.kubernetes.io/component: volume
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: seaweedfs-filer
+  namespace: seaweedfs
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: seaweedfs
+      app.kubernetes.io/component: filer

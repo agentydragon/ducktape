@@ -128,10 +128,16 @@ spec:
             topologyKey: kubernetes.io/hostname
 
   filer:
-    # Single replica today. postgres2 backend allows scaling later — once
-    # the cluster has been operating on Postgres for a while and we've
-    # established WAL/PITR backup is healthy, this can go to 2+.
-    replicas: 1
+    # 2-replica HA. The filer is a stateless metadata gateway to the shared
+    # postgres2 store (seaweedfs-filer-db), so both replicas serve identical
+    # data and concurrent writes are handled by enableUpsert. HA lets the filer
+    # roll / drain without a SeaweedFS-wide metadata stall, and (with the
+    # affinity below) keeps it off the control-plane HDD nodes.
+    # NOTE: the metadata DB still has no off-cluster WAL/PITR backup — only the
+    # 2-instance CNPG streaming replication. That gap is independent of the
+    # filer replica count but worth closing (it is the SSOT for all SeaweedFS
+    # data; see the 2026_05_27 filer-metadata-loss lesson).
+    replicas: 2
     # spec.filer.config is filled in from filer.toml via the kustomize
     # configMapGenerator + replacement in kustomization.yaml. The TOML
     # config lives in its own file so it can be syntax-checked and edited
@@ -157,9 +163,9 @@ spec:
             name: seaweedfs-filer-db-app
             key: password
     metricsPort: 9326
-    # QoS / eviction protection as on master. Singleton, so deliberately NO
-    # PodDisruptionBudget — a maxUnavailable:0 PDB on a 1-replica set would
-    # wedge node drains.
+    # QoS / eviction protection as on master. Now 2 replicas → a minAvailable:1
+    # PDB (poddisruptionbudget.yaml) keeps the descheduler / node drains from
+    # taking both filers down at once.
     #
     # Memory sizing: the filer is a metadata gateway to Postgres (postgres2
     # backend — metadata lives in the DB, not in-pod), so steady-state is
@@ -183,6 +189,26 @@ spec:
       memory: 768Mi
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
+    affinity:
+      # Hard anti-affinity — one filer per host, so the 2 replicas never share
+      # a node and a single node loss can't take out both.
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: filer
+                app.kubernetes.io/name: seaweedfs
+            topologyKey: kubernetes.io/hostname
+      # Soft off the control-plane HDD nodes: in normal operation both filers
+      # land on the NVMe workers; CP stays a fallback if both workers are down.
+      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+      nodeAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
 
   s3:
     replicas: 2 # stateless S3 gateway — scales freely across the 3 kimsufi hosts
