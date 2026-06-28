@@ -6,6 +6,8 @@ downstream product or copying any private source/code excerpts.
 
 ## Current Measurement
 
+- **Use the 2026-06-28 current-branch replay below as the active profile.** The
+  older measurements remain as historical context only.
 - A remote Bazel build with the downstream target and local Ducktape override was
   capped at 5 minutes. The build did not complete.
 - The Bazel critical path included normal tool rebuild cost, but the debundle
@@ -20,6 +22,84 @@ downstream product or copying any private source/code excerpts.
 - The run also appeared memory-heavy. We did not capture a reliable max-RSS or
   heap allocation profile in this pass, so memory needs to be measured explicitly
   on the next replay.
+
+### 2026-06-28 Three-Minute Current-Branch Replay
+
+This replay used the same private downstream direct-action wrapper, but with the
+current Ducktape branch binaries at commit
+`ec4416d7e08445ce3e9c8105910c08cecbffc0e7`.
+
+```sh
+/usr/bin/time -v timeout --foreground --kill-after=30s 180s \
+  perf record -F 99 -e cycles:u --call-graph dwarf,8192 \
+  -o <profile-dir>/perf.data -- <direct-replay-wrapper>
+```
+
+The replay exited with status `124` after `3:01.89`; `perf` captured an
+approximately `179.897s` sample window with about `18K` user-space cycle samples
+and no lost samples. Max RSS was `3,723,844 KB`. The run emitted no CP-SAT
+request proto and no CP-SAT summary JSON, so it still timed out before the
+OR-Tools sidecar was invoked.
+
+The completed flat `perf report` points at Rust-side construction work, not
+solver search. The top self-cost symbols were dominated by:
+
+- equality/comparison over compact ids: `PartialEq for u32`;
+- allocator and movement costs: `malloc`, `_int_malloc`, `_int_free`,
+  `__memmove_avx_unaligned_erms`, vector growth/deallocation;
+- hashing and hash-table lookup: `Sip*`, `hashbrown::RawTable::find`,
+  `find_or_find_insert_slot`, `reserve_rehash`;
+- BTree navigation/replacement: `alloc::collections::btree::mem::replace`;
+- selector model lowering: `selector_constraint_model_builder::add_ast_child_allowed_tuples`;
+- normal parse/setup residue from SWC parsing.
+
+The important current conclusion is narrower than the older two-minute profile:
+after compact domains, interned ids, and arithmetic-as-linear-constraints, the
+run still does not reach OR-Tools within three minutes. We are no longer looking
+at the old full-domain typed-model validation shape as the only explanation.
+The remaining visible costs are relation/table construction, row/domain
+interning and lookup, allocation/copying while building those relations, and
+AST-child allowed-table lowering.
+
+That makes the next performance work:
+
+1. profile-guided reduction of allowed-table construction, starting with
+   `add_ast_child_allowed_tuples` and other relation-to-table lowerings;
+2. flatten allowed-table storage/serialization so rows are not nested heap
+   objects across Rust and protobuf;
+3. represent sparse/range-like integer domains as OR-Tools-style interval
+   domains instead of value lists;
+4. keep using native OR-Tools constraints for arithmetic and `all_different`;
+   do not add solver heuristics until a saved CP-SAT request shows the sidecar
+   is the bottleneck.
+
+### 2026-06-27 Two-Minute Direct Replay
+
+A later direct replay used the same private downstream action wrapper under:
+
+```sh
+/usr/bin/time -v timeout --foreground --kill-after=30s 2m \
+  perf record -F 99 -g --call-graph fp -- <direct-replay-wrapper>
+```
+
+The replay exited with status `124` after `120.17s`; `perf` captured a
+`119.889s` sample window. Max RSS from `/usr/bin/time -v` was `3,353,792 KB`.
+No CP-SAT request proto or CP-SAT summary JSON was emitted, so the run was still
+inside Rust-side model construction when `timeout` killed it.
+
+The sampled stacks show this approximate stage timeline:
+
+|      Time | Stage                                                                         | Stack evidence                                                                                                                                                                                                                                                    |
+| --------: | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|    `0-1s` | wrapper setup, module discovery, spec/YAML loading                            | `spec_modules::collect_module_files_into`, `std::fs::metadata`, `serde_yaml` / `unsafe_libyaml`                                                                                                                                                                   |
+|    `1-4s` | source reads and SWC parse                                                    | `std::fs::read_to_string`, Rayon worker stacks in `swc_ecma_parser::parse_*`                                                                                                                                                                                      |
+|   `4-40s` | JavaScript traversal, fact extraction, purity/dataflow-style analysis         | `PlainDataWriteScanner::*`, `is_shadowed`, `ts_enum_iife`, `analysis::purity`, plus BTree and iterator frames                                                                                                                                                     |
+|  `40-80s` | allocation-heavy fact/index/lowering transition                               | `_int_malloc`, `_int_free`, `malloc_consolidate`, `__memmove`, BTree replacement/navigation                                                                                                                                                                       |
+| `80-120s` | selector constraint model/backend construction, especially allowed tuple work | `selector_constraint_model_builder::{add_node_string_allowed_tuples,string_term_matches}`, `selector_constraint_backend::{intern_ast_node,add_encoded_allowed_tuples_with_domains,FullDomainValues::get_mut}`, `hashbrown::RawTable::find`, BTree iteration/dedup |
+
+The kill point was the final row: selector constraint construction and encoded
+allowed-table insertion. This profile does not justify OR-Tools tuning yet; the
+sidecar had not started and the Rust wrapper had not emitted its request.
 
 ## Hot Path
 

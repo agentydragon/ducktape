@@ -20,8 +20,9 @@ use selector_constraint_backend::{
 use selector_constraint_backend::{
     BackendAssignment, BackendAssignmentCoverage, BackendSolveResult, BackendSolveStatus,
     BackendValueId, BackendVariableAssignment, CompiledAllDifferentConstraint,
-    CompiledAllowedTupleConstraint, CompiledBinaryConstraint, CompiledSelectorProblem,
-    CompiledVariable, CompiledVariableDomain, SelectorProblemBackend, TargetProjection,
+    CompiledAllowedTupleConstraint, CompiledBinaryConstraint, CompiledLinearConstraint,
+    CompiledSelectorProblem, CompiledVariable, CompiledVariableDomain, SelectorProblemBackend,
+    TargetProjection,
 };
 use selector_cp_sat_proto::ducktape::debundle::solver_backends::ortools_cpsat as wire;
 use selector_ir::VariableDomain;
@@ -128,6 +129,7 @@ pub enum OrToolsCpSatBackendError {
     },
     InvalidStatus {
         status: i32,
+        diagnostic: Option<String>,
     },
     InvalidAssignmentCoverage {
         coverage: i32,
@@ -180,8 +182,12 @@ impl fmt::Display for OrToolsCpSatBackendError {
                     "{DUMP_ONLY_ENV}=1 requires {REQUEST_PROTO_ENV} or {SUMMARY_JSON_ENV} to point at an output file"
                 )
             }
-            Self::InvalidStatus { status } => {
-                write!(f, "CP-SAT sidecar returned invalid status {status}")
+            Self::InvalidStatus { status, diagnostic } => {
+                write!(f, "CP-SAT sidecar returned invalid status {status}")?;
+                if let Some(diagnostic) = diagnostic {
+                    write!(f, ": {diagnostic}")?;
+                }
+                Ok(())
             }
             Self::InvalidAssignmentCoverage { coverage } => {
                 write!(
@@ -479,6 +485,7 @@ fn problem_summary(
         "domain_size_histogram": domain_size_histogram,
         "domain_size_histogram_by_domain": domain_size_histogram_by_domain,
         "dump_sequence": dump_sequence,
+        "linear_constraint_count": problem.linear_constraints.len(),
         "max_allowed_arity": max_allowed_arity,
         "max_allowed_rows": max_allowed_rows,
         "max_domain_values": max_domain_values,
@@ -487,12 +494,13 @@ fn problem_summary(
         "total_domain_values": total_domain_values,
         "variable_domain_representation_count_by_kind": variable_domain_representation_count_by_kind,
         "variable_domain_sharing": domain_sharing,
-        "value_dictionary_count": problem.value_dictionary.len(),
+        "value_dictionary_count": problem.value_dictionary.total_len(),
         "variable_count": problem.variables.len(),
         "variable_count_by_domain": variable_count_by_domain,
         "wire_all_different_count": request.all_different.len(),
         "wire_allowed_table_count": request.allowed_tables.len(),
         "wire_binary_constraint_count": request.binary_constraints.len(),
+        "wire_linear_constraint_count": request.linear_constraints.len(),
         "wire_target_projection_count": request.target_projections.len(),
         "wire_variable_count": request.variables.len(),
     })
@@ -605,6 +613,11 @@ fn request_from_problem(
             .iter()
             .map(binary_constraint_from_backend)
             .collect::<Result<Vec<_>, _>>()?,
+        linear_constraints: problem
+            .linear_constraints
+            .iter()
+            .map(linear_constraint_from_backend)
+            .collect::<Result<Vec<_>, _>>()?,
         all_different: problem
             .all_different
             .iter()
@@ -622,14 +635,25 @@ fn variable_from_backend(
     problem: &CompiledSelectorProblem,
     variable: &CompiledVariable,
 ) -> Result<wire::Variable, OrToolsCpSatBackendError> {
+    let domain = match &variable.values {
+        CompiledVariableDomain::Full(domain) => {
+            Some(wire::variable::Domain::DenseDomain(wire::DenseDomain {
+                value_count: u32_id(
+                    "variables.dense_domain.value_count",
+                    problem.full_domains.get(*domain).len(),
+                )?,
+            }))
+        }
+        CompiledVariableDomain::Sparse(values) => {
+            Some(wire::variable::Domain::SparseDomain(wire::SparseDomain {
+                values: values.iter().map(|value| value.0).collect(),
+            }))
+        }
+    };
     Ok(wire::Variable {
         id: constraint_variable_id(variable.id)?,
-        values: problem
-            .variable_domain_values(variable)
-            .iter()
-            .map(|value| value.0)
-            .collect(),
         debug_name: variable.debug_name.clone().unwrap_or_default(),
+        domain,
     })
 }
 
@@ -665,6 +689,22 @@ fn binary_constraint_from_backend(
             BinaryConstraintKind::NotEqual => wire::BinaryConstraintKind::NotEqual,
             BinaryConstraintKind::OrdinalBefore => wire::BinaryConstraintKind::OrdinalBefore,
         } as i32,
+    })
+}
+
+fn linear_constraint_from_backend(
+    constraint: &CompiledLinearConstraint,
+) -> Result<wire::LinearConstraint, OrToolsCpSatBackendError> {
+    Ok(wire::LinearConstraint {
+        variable_ids: constraint
+            .variables
+            .iter()
+            .copied()
+            .map(constraint_variable_id)
+            .collect::<Result<Vec<_>, _>>()?,
+        coefficients: constraint.coefficients.clone(),
+        offset: constraint.offset,
+        domain: constraint.domain.clone(),
     })
 }
 
@@ -706,18 +746,28 @@ fn target_projection_from_backend(
 fn response_into_backend_result(
     response: wire::SelectorCpSatResponse,
 ) -> Result<BackendSolveResult, OrToolsCpSatBackendError> {
-    let status = match wire::SolverStatus::try_from(response.status).map_err(|_| {
-        OrToolsCpSatBackendError::InvalidStatus {
-            status: response.status,
+    let status_code = response.status;
+    let diagnostic = (!response.diagnostic.is_empty()).then_some(response.diagnostic);
+    let solver_response_stats =
+        (!response.solver_response_stats.is_empty()).then_some(response.solver_response_stats);
+    let solver_status = match wire::SolverStatus::try_from(status_code) {
+        Ok(status) => status,
+        Err(_) => {
+            return Err(OrToolsCpSatBackendError::InvalidStatus {
+                status: status_code,
+                diagnostic,
+            });
         }
-    })? {
+    };
+    let status = match solver_status {
         wire::SolverStatus::Unsatisfiable => BackendSolveStatus::Unsatisfiable,
         wire::SolverStatus::Satisfiable => BackendSolveStatus::Satisfiable,
         wire::SolverStatus::Ambiguous => BackendSolveStatus::Ambiguous,
         wire::SolverStatus::Unknown => BackendSolveStatus::Unknown,
         wire::SolverStatus::Invalid | wire::SolverStatus::Unspecified => {
             return Err(OrToolsCpSatBackendError::InvalidStatus {
-                status: response.status,
+                status: status_code,
+                diagnostic,
             });
         }
     };
@@ -740,7 +790,8 @@ fn response_into_backend_result(
             .into_iter()
             .map(assignment_row_into_backend)
             .collect(),
-        diagnostic: (!response.diagnostic.is_empty()).then_some(response.diagnostic),
+        diagnostic,
+        solver_response_stats,
     })
 }
 
@@ -841,6 +892,73 @@ mod tests {
             callee_member: callee_member.to_string(),
             arg_index,
         }
+    }
+
+    fn selector_fact_store_from_source(source: &str) -> SelectorFactStore {
+        let module = js_ast::parse_js_module_ast("<chunk>", source).unwrap();
+        let chunk_facts = chunk_facts::extract_facts(&module).unwrap();
+        let analysis =
+            analysis::facts::analyze_chunk(&module, &AnalysisHints::default(), None, |_| None);
+        let owner_graph = analysis::graph::build_owner_graph(&analysis.facts).unwrap();
+        let mut facts = SelectorFactStore::default();
+        facts.extend_chunk_facts(ChunkId(0), &chunk_facts);
+        for node in owner_graph.iter_nodes() {
+            facts.push(SelectorFact::Owner {
+                chunk_id: ChunkId(0),
+                owner: node.id,
+                statement_ordinal: node.statement_ordinal,
+                statement_kind: node.kind.to_string(),
+            });
+            for binding in &node.declared {
+                facts.push(SelectorFact::DeclaredBinding {
+                    chunk_id: ChunkId(0),
+                    owner: node.id,
+                    binding: binding.0.as_str().to_string(),
+                    export_name: None,
+                });
+            }
+        }
+        for edge in owner_graph.iter_edges() {
+            if let Some(binding) = edge.reason.binding() {
+                facts.push(SelectorFact::OwnerReferencesBinding {
+                    chunk_id: ChunkId(0),
+                    owner: edge.from,
+                    binding: binding.0.as_str().to_string(),
+                    edge_kind: edge.reason.kind().to_string(),
+                });
+            }
+        }
+        facts
+    }
+
+    fn owner_for_binding(facts: &SelectorFactStore, binding: &str) -> OwnerId {
+        facts
+            .facts
+            .iter()
+            .find_map(|fact| match fact {
+                SelectorFact::DeclaredBinding {
+                    owner,
+                    binding: fact_binding,
+                    ..
+                } if fact_binding == binding => Some(*owner),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("missing owner for binding {binding}"))
+    }
+
+    fn statement_ordinal_for_owner(facts: &SelectorFactStore, owner: OwnerId) -> StatementOrdinal {
+        facts
+            .facts
+            .iter()
+            .find_map(|fact| match fact {
+                SelectorFact::Owner {
+                    owner: fact_owner,
+                    statement_ordinal,
+                    ..
+                } if *fact_owner == owner => Some(*statement_ordinal),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("missing statement ordinal for owner {owner:?}"))
     }
 
     fn sidecar_path() -> PathBuf {
@@ -1060,6 +1178,54 @@ mod tests {
                         owner: OwnerId(1),
                         statement_ordinal: StatementOrdinal(1),
                         binding: Some("secondary".to_string()),
+                        provenance: Vec::new(),
+                    }
+                })
+            );
+        });
+    }
+
+    #[test]
+    fn cpsat_sidecar_resolves_alpha_target_binding_with_multideclarator_context() {
+        js_ast::with_swc_globals(|| {
+            let mut selector = AnonymousStatementSelector::exact(
+                r#"const config = { kind: "selected", enabled: true };
+function readConfig() {
+  return config.kind;
+}"#,
+            );
+            selector.identifiers = SourceMatchIdentifierMode::AlphaAll;
+            selector.target_binding = Some("config".to_string());
+            let lowered = selector_ir_lowering::lower_member_selector(
+                &MemberSelectorLoweringContext::new(ChunkId(0), "static/app::selected_config"),
+                "selectedConfig",
+                &MemberSelectorSpec::SourceMatch(selector),
+            )
+            .unwrap();
+            let facts = selector_fact_store_from_source(
+                r#"const helperBinding = { kind: "helper" },
+  runtimeBinding = { kind: "selected", enabled: true },
+  trailingBinding = { kind: "trailing" };
+function runtimeReader() {
+  return runtimeBinding.kind;
+}
+console.log(runtimeReader(), helperBinding.kind, trailingBinding.kind);
+export { helperBinding, runtimeBinding, trailingBinding, runtimeReader };
+"#,
+            );
+
+            let backend = OrToolsCpSatBackend::new(sidecar_path());
+            let result = solve_with_backend(&lowered.program, &facts, &backend).unwrap();
+            let owner = owner_for_binding(&facts, "runtimeBinding");
+
+            assert_eq!(
+                result.outcome_for(lowered.target),
+                Some(&ClaimOutcome::Unique {
+                    claim: ResolvedClaim {
+                        chunk_id: ChunkId(0),
+                        owner,
+                        statement_ordinal: statement_ordinal_for_owner(&facts, owner),
+                        binding: Some("runtimeBinding".to_string()),
                         provenance: Vec::new(),
                     }
                 })

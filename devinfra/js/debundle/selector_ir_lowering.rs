@@ -462,11 +462,20 @@ impl MemberSelectorProgramBuilder {
             .iter()
             .map(|(root, _ordinal)| *root)
             .collect::<Vec<_>>();
+        let alpha_index = (selector.target_binding.is_some()
+            || selector.identifiers == SourceMatchIdentifierMode::AlphaAll)
+            .then(|| AlphaIdentifierIndex::new(&facts));
         let target_binding_node = match &selector.target_binding {
             Some(target_binding) => {
-                let Some(target_binding_node) =
-                    native_target_binding_node(&facts, &skipped_nodes, target_binding)
-                else {
+                let Some(index) = alpha_index.as_ref() else {
+                    return Ok(false);
+                };
+                let Some(target_binding_node) = native_target_binding_node(
+                    index,
+                    &top_level_roots,
+                    &skipped_nodes,
+                    target_binding,
+                ) else {
                     return Ok(false);
                 };
                 Some((target_binding.as_str(), target_binding_node))
@@ -475,27 +484,31 @@ impl MemberSelectorProgramBuilder {
         };
         let alpha_projected_binding_node = match (&selector.target_binding, selector.identifiers) {
             (None, SourceMatchIdentifierMode::AlphaAll) => {
-                native_single_declared_binding_node(&facts, &skipped_nodes)
+                let Some(index) = alpha_index.as_ref() else {
+                    return Ok(false);
+                };
+                native_single_declared_binding_node(index, &top_level_roots, &skipped_nodes)
             }
             _ => None,
         };
-        let target_root_node =
-            if let Some((_target_binding, target_binding_node)) = target_binding_node {
-                let index = AlphaIdentifierIndex::new(&facts);
-                let Some(root) = native_top_level_root_containing_node(
-                    &index,
-                    &top_level_roots,
-                    target_binding_node,
-                ) else {
-                    return Ok(false);
-                };
-                root
-            } else {
-                let [root] = top_level_roots.as_slice() else {
-                    return Ok(false);
-                };
-                *root
+        let target_root_node = if let Some((_target_binding, target_binding_node)) =
+            target_binding_node
+        {
+            let Some(index) = alpha_index.as_ref() else {
+                return Ok(false);
             };
+            let Some(root) =
+                native_top_level_root_containing_node(index, &top_level_roots, target_binding_node)
+            else {
+                return Ok(false);
+            };
+            root
+        } else {
+            let [root] = top_level_roots.as_slice() else {
+                return Ok(false);
+            };
+            *root
+        };
         let Some(target_root_index) = top_level_roots
             .iter()
             .position(|root| *root == target_root_node)
@@ -744,10 +757,14 @@ impl MemberSelectorProgramBuilder {
         }
 
         let mut target_binding_nodes = BTreeMap::<String, NodeId>::new();
+        let index = AlphaIdentifierIndex::new(&facts);
         for target_binding in exports_by_target.keys() {
-            let Some(target_binding_node) =
-                native_target_binding_node(&facts, &skipped_nodes, target_binding)
-            else {
+            let Some(target_binding_node) = native_target_binding_node(
+                &index,
+                &top_level_roots,
+                &skipped_nodes,
+                target_binding,
+            ) else {
                 return Ok(false);
             };
             target_binding_nodes.insert(target_binding.clone(), target_binding_node);
@@ -766,7 +783,6 @@ impl MemberSelectorProgramBuilder {
             );
         }
         let root_by_target_binding = {
-            let index = AlphaIdentifierIndex::new(&facts);
             target_binding_nodes
                 .iter()
                 .map(|(target_binding, target_binding_node)| {
@@ -1653,18 +1669,17 @@ fn alpha_scope_kind(kind: NodeKind) -> Option<AlphaScopeKind> {
 }
 
 fn native_target_binding_node(
-    facts: &ChunkFacts,
+    index: &AlphaIdentifierIndex,
+    top_level_roots: &[NodeId],
     skipped_nodes: &BTreeSet<NodeId>,
     target_binding: &str,
 ) -> Option<NodeId> {
-    if facts.top_level.is_empty() {
+    if top_level_roots.is_empty() {
         return None;
     }
-    let index = AlphaIdentifierIndex::new(facts);
-    let declared_nodes = facts
-        .top_level
+    let declared_nodes = top_level_roots
         .iter()
-        .flat_map(|(root, _ordinal)| native_declared_binding_nodes(&index, skipped_nodes, *root))
+        .flat_map(|root| native_declared_binding_nodes(index, skipped_nodes, *root))
         .collect::<Vec<_>>();
     let matches = declared_nodes
         .into_iter()
@@ -1750,14 +1765,14 @@ fn native_pinned_top_level_segments(
 }
 
 fn native_single_declared_binding_node(
-    facts: &ChunkFacts,
+    index: &AlphaIdentifierIndex,
+    top_level_roots: &[NodeId],
     skipped_nodes: &BTreeSet<NodeId>,
 ) -> Option<NodeId> {
-    let [(root, _ordinal)] = facts.top_level.as_slice() else {
+    let [root] = top_level_roots else {
         return None;
     };
-    let index = AlphaIdentifierIndex::new(facts);
-    let declared_nodes = native_declared_binding_nodes(&index, skipped_nodes, *root);
+    let declared_nodes = native_declared_binding_nodes(index, skipped_nodes, *root);
     let [node] = declared_nodes.as_slice() else {
         return None;
     };

@@ -13,6 +13,7 @@
 #include "absl/strings/str_cat.h"
 #include "ortools/sat/cp_model.h"
 #include "ortools/sat/cp_model.pb.h"
+#include "ortools/sat/cp_model_checker.h"
 #include "ortools/sat/cp_model_solver.h"
 #include "ortools/sat/model.h"
 
@@ -43,35 +44,78 @@ SelectorCpSatResponse InvalidResponse(const absl::Status& status) {
   return response;
 }
 
+SelectorCpSatResponse InvalidModelResponse(
+    const sat::CpSolverResponse& solver_response,
+    const sat::CpModelProto& model_proto) {
+  SelectorCpSatResponse response;
+  response.set_status(SOLVER_STATUS_INVALID);
+  response.set_assignment_coverage(ASSIGNMENT_COVERAGE_SAMPLE);
+  response.set_solver_response_stats(sat::CpSolverResponseStats(solver_response));
+  const std::string validation_error = sat::ValidateCpModel(model_proto);
+  if (validation_error.empty()) {
+    response.set_diagnostic(
+        "CP-SAT reported MODEL_INVALID, but ValidateCpModel returned no error");
+  } else {
+    response.set_diagnostic(validation_error);
+  }
+  return response;
+}
+
 absl::Status MissingVariableStatus(uint32_t variable_id) {
   return absl::InvalidArgumentError(
       absl::StrCat("unknown variable id ", variable_id));
+}
+
+absl::StatusOr<::operations_research::Domain> DomainForVariable(
+    const Variable& variable) {
+  switch (variable.domain_case()) {
+    case Variable::kDenseDomain: {
+      if (variable.dense_domain().value_count() == 0) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("variable ", variable.id(), " has an empty domain"));
+      }
+      return ::operations_research::Domain(
+          0, static_cast<int64_t>(variable.dense_domain().value_count()) - 1);
+    }
+    case Variable::kSparseDomain: {
+      if (variable.sparse_domain().values().empty()) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("variable ", variable.id(), " has an empty domain"));
+      }
+      std::vector<int64_t> values(variable.sparse_domain().values().begin(),
+                                  variable.sparse_domain().values().end());
+      std::sort(values.begin(), values.end());
+      if (std::adjacent_find(values.begin(), values.end()) != values.end()) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "variable ", variable.id(), " has duplicate domain values"));
+      }
+      return ::operations_research::Domain::FromValues(values);
+    }
+    case Variable::DOMAIN_NOT_SET:
+      return absl::InvalidArgumentError(
+          absl::StrCat("variable ", variable.id(), " has no domain"));
+  }
+  return absl::InvalidArgumentError(
+      absl::StrCat("variable ", variable.id(), " has unsupported domain"));
 }
 
 absl::Status AddVariables(const SelectorCpSatRequest& request,
                           sat::CpModelBuilder* model,
                           VariableMap* variables) {
   for (const Variable& variable : request.variables()) {
-    if (variable.values().empty()) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("variable ", variable.id(), " has an empty domain"));
-    }
     if (variables->contains(variable.id())) {
       return absl::InvalidArgumentError(
           absl::StrCat("duplicate variable id ", variable.id()));
     }
 
-    std::vector<int64_t> values(variable.values().begin(),
-                                variable.values().end());
-    std::sort(values.begin(), values.end());
-    if (std::adjacent_find(values.begin(), values.end()) != values.end()) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "variable ", variable.id(), " has duplicate domain values"));
+    absl::StatusOr<::operations_research::Domain> domain =
+        DomainForVariable(variable);
+    if (!domain.ok()) {
+      return domain.status();
     }
 
     sat::IntVar int_var =
-        model->NewIntVar(::operations_research::Domain::FromValues(values))
-            .WithName(variable.debug_name());
+        model->NewIntVar(*domain).WithName(variable.debug_name());
     variables->emplace(variable.id(), int_var);
   }
   return absl::OkStatus();
@@ -158,6 +202,51 @@ absl::Status AddBinaryConstraints(const SelectorCpSatRequest& request,
   return absl::OkStatus();
 }
 
+absl::Status AddLinearConstraints(const SelectorCpSatRequest& request,
+                                  const VariableMap& variables,
+                                  sat::CpModelBuilder* model) {
+  for (const LinearConstraint& constraint : request.linear_constraints()) {
+    if (constraint.variable_ids_size() == 0) {
+      return absl::InvalidArgumentError("linear constraint has no variables");
+    }
+    if (constraint.variable_ids_size() != constraint.coefficients_size()) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "linear constraint has ", constraint.variable_ids_size(),
+          " variables but ", constraint.coefficients_size(), " coefficients"));
+    }
+    if (constraint.domain_size() == 0 || constraint.domain_size() % 2 != 0) {
+      return absl::InvalidArgumentError(
+          "linear constraint has invalid flat interval domain");
+    }
+    for (int index = 0; index < constraint.domain_size(); index += 2) {
+      if (constraint.domain(index) > constraint.domain(index + 1)) {
+        return absl::InvalidArgumentError(
+            "linear constraint has inverted domain interval");
+      }
+    }
+    std::vector<sat::IntVar> linear_variables;
+    linear_variables.reserve(constraint.variable_ids_size());
+    for (uint32_t variable_id : constraint.variable_ids()) {
+      const auto variable = variables.find(variable_id);
+      if (variable == variables.end()) {
+        return MissingVariableStatus(variable_id);
+      }
+      linear_variables.push_back(variable->second);
+    }
+    const std::vector<int64_t> coefficients(constraint.coefficients().begin(),
+                                            constraint.coefficients().end());
+    const std::vector<int64_t> domain(constraint.domain().begin(),
+                                      constraint.domain().end());
+    const sat::LinearExpr expression =
+        sat::LinearExpr::WeightedSum(linear_variables, coefficients) +
+        constraint.offset();
+    model->AddLinearConstraint(expression,
+                               ::operations_research::Domain::FromFlatIntervals(
+                                   domain));
+  }
+  return absl::OkStatus();
+}
+
 absl::Status AddAllDifferentConstraints(const SelectorCpSatRequest& request,
                                         const VariableMap& variables,
                                         sat::CpModelBuilder* model) {
@@ -234,12 +323,14 @@ SelectorCpSatResponse ResponseFromSolver(
     const sat::CpSolverResponse& solver_response,
     const std::set<ProjectionRow>& projection_rows, bool complete) {
   SelectorCpSatResponse response;
+  response.set_solver_response_stats(sat::CpSolverResponseStats(solver_response));
 
   if (!projection_rows.empty()) {
     if (!complete) {
       response.set_status(SOLVER_STATUS_UNKNOWN);
       response.set_assignment_coverage(ASSIGNMENT_COVERAGE_SAMPLE);
-      response.set_diagnostic(sat::CpSolverResponseStats(solver_response));
+      response.set_diagnostic(
+          "CP-SAT stopped before proving complete target support");
     } else {
       response.set_status(projection_rows.size() == 1 ? SOLVER_STATUS_SATISFIABLE
                                                       : SOLVER_STATUS_AMBIGUOUS);
@@ -267,18 +358,19 @@ SelectorCpSatResponse ResponseFromSolver(
     case sat::CpSolverStatus::FEASIBLE:
       response.set_status(SOLVER_STATUS_UNKNOWN);
       response.set_assignment_coverage(ASSIGNMENT_COVERAGE_SAMPLE);
-      response.set_diagnostic(sat::CpSolverResponseStats(solver_response));
+      response.set_diagnostic(
+          "CP-SAT found a feasible solve but returned no projected rows");
       return response;
     case sat::CpSolverStatus::MODEL_INVALID:
       response.set_status(SOLVER_STATUS_INVALID);
       response.set_assignment_coverage(ASSIGNMENT_COVERAGE_SAMPLE);
-      response.set_diagnostic(sat::CpSolverResponseStats(solver_response));
+      response.set_diagnostic("CP-SAT reported MODEL_INVALID");
       return response;
     case sat::CpSolverStatus::UNKNOWN:
     default:
       response.set_status(SOLVER_STATUS_UNKNOWN);
       response.set_assignment_coverage(ASSIGNMENT_COVERAGE_SAMPLE);
-      response.set_diagnostic(sat::CpSolverResponseStats(solver_response));
+      response.set_diagnostic("CP-SAT returned UNKNOWN");
       return response;
   }
   return response;
@@ -297,6 +389,11 @@ absl::Status BuildCpModel(const SelectorCpSatRequest& request,
   }
   if (const absl::Status status =
           AddBinaryConstraints(request, *variables, model);
+      !status.ok()) {
+    return status;
+  }
+  if (const absl::Status status =
+          AddLinearConstraints(request, *variables, model);
       !status.ok()) {
     return status;
   }
@@ -333,7 +430,8 @@ SelectorCpSatResponse SolveSelectorCpSat(const SelectorCpSatRequest& request) {
     parameters.set_num_search_workers(1);
     solver_model.Add(sat::NewSatParameters(parameters));
 
-    solver_response = sat::SolveCpModel(model.Build(), &solver_model);
+    const sat::CpModelProto model_proto = model.Build();
+    solver_response = sat::SolveCpModel(model_proto, &solver_model);
     switch (solver_response.status()) {
       case sat::CpSolverStatus::OPTIMAL:
       case sat::CpSolverStatus::FEASIBLE: {
@@ -347,6 +445,7 @@ SelectorCpSatResponse SolveSelectorCpSat(const SelectorCpSatRequest& request) {
         return ResponseFromSolver(solver_response, projection_rows,
                                   /*complete=*/true);
       case sat::CpSolverStatus::MODEL_INVALID:
+        return InvalidModelResponse(solver_response, model_proto);
       case sat::CpSolverStatus::UNKNOWN:
       default:
         return ResponseFromSolver(solver_response, projection_rows,

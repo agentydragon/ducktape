@@ -27,9 +27,13 @@ bool RowHas(const cpsat::AssignmentRow& row, uint32_t variable_id,
 
 TEST(SelectorCpSatSolverTest, AllDifferentPropagatesBroadSpecificFixture) {
   const cpsat::SelectorCpSatRequest request = ParseRequest(R"pb(
-    variables { id: 0 values: 0 values: 1 debug_name: "broad_owner" }
-    variables { id: 1 values: 0 values: 1 debug_name: "strict_owner" }
-    variables { id: 2 values: 0 values: 1 values: 2 debug_name: "reserved_owner" }
+    variables { id: 0 debug_name: "broad_owner" dense_domain { value_count: 2 } }
+    variables { id: 1 debug_name: "strict_owner" dense_domain { value_count: 2 } }
+    variables {
+      id: 2
+      debug_name: "reserved_owner"
+      dense_domain { value_count: 3 }
+    }
 
     all_different { id: 0 variable_ids: 0 variable_ids: 1 variable_ids: 2 }
 
@@ -67,7 +71,7 @@ TEST(SelectorCpSatSolverTest, AllDifferentPropagatesBroadSpecificFixture) {
 
 TEST(SelectorCpSatSolverTest, MultipleProjectionRowsAreAmbiguous) {
   const cpsat::SelectorCpSatRequest request = ParseRequest(R"pb(
-    variables { id: 0 values: 0 values: 1 debug_name: "owner" }
+    variables { id: 0 debug_name: "owner" dense_domain { value_count: 2 } }
     target_projections { target_id: 0 owner_variable_id: 0 }
   )pb");
 
@@ -82,15 +86,11 @@ TEST(SelectorCpSatSolverTest, MultipleProjectionRowsAreAmbiguous) {
 
 TEST(SelectorCpSatSolverTest, UnprojectedVariablesDoNotCreateRows) {
   const cpsat::SelectorCpSatRequest request = ParseRequest(R"pb(
-    variables { id: 0 values: 0 debug_name: "owner" }
+    variables { id: 0 debug_name: "owner" dense_domain { value_count: 1 } }
     variables {
       id: 1
-      values: 10
-      values: 11
-      values: 12
-      values: 13
-      values: 14
       debug_name: "internal_ast_node"
+      sparse_domain { values: [10, 11, 12, 13, 14] }
     }
     target_projections { target_id: 0 owner_variable_id: 0 }
   )pb");
@@ -108,7 +108,7 @@ TEST(SelectorCpSatSolverTest, UnprojectedVariablesDoNotCreateRows) {
 
 TEST(SelectorCpSatSolverTest, ConflictingTablesAreUnsat) {
   const cpsat::SelectorCpSatRequest request = ParseRequest(R"pb(
-    variables { id: 0 values: 0 values: 1 debug_name: "owner" }
+    variables { id: 0 debug_name: "owner" dense_domain { value_count: 2 } }
     allowed_tables {
       id: 0
       variable_ids: 0
@@ -145,7 +145,7 @@ TEST(SelectorCpSatSolverTest, InvalidProblemReportsDiagnostic) {
 
 TEST(SelectorCpSatSolverTest, ConstantBindingProjectionDoesNotAddVariable) {
   const cpsat::SelectorCpSatRequest request = ParseRequest(R"pb(
-    variables { id: 0 values: 0 debug_name: "owner" }
+    variables { id: 0 debug_name: "owner" dense_domain { value_count: 1 } }
     target_projections {
       target_id: 0
       owner_variable_id: 0

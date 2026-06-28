@@ -8,12 +8,24 @@ message SelectorCpSatRequest {
   repeated BinaryConstraint binary_constraints = 3;
   repeated AllDifferent all_different = 4;
   repeated TargetProjection target_projections = 5;
+  repeated LinearConstraint linear_constraints = 6;
 }
 
 message Variable {
   uint32 id = 1;
-  repeated int64 values = 2;
   string debug_name = 3;
+  oneof domain {
+    DenseDomain dense_domain = 4;
+    SparseDomain sparse_domain = 5;
+  }
+}
+
+message DenseDomain {
+  uint32 value_count = 1;
+}
+
+message SparseDomain {
+  repeated int64 values = 1;
 }
 
 message TableConstraint {
@@ -39,6 +51,15 @@ enum BinaryConstraintKind {
   BINARY_CONSTRAINT_KIND_ORDINAL_BEFORE = 3;
 }
 
+message LinearConstraint {
+  // Mirrors OR-Tools' LinearConstraintProto shape: sum(vars[i] * coeffs[i]) +
+  // offset must fall in the flat interval-domain list [lb0, ub0, lb1, ub1, ...].
+  repeated uint32 variable_ids = 1;
+  repeated int64 coefficients = 2;
+  int64 offset = 3;
+  repeated int64 domain = 4;
+}
+
 message AllDifferent {
   uint32 id = 1;
   repeated uint32 variable_ids = 2;
@@ -58,6 +79,7 @@ message SelectorCpSatResponse {
   AssignmentCoverage assignment_coverage = 2;
   repeated AssignmentRow assignments = 3;
   string diagnostic = 4;
+  string solver_response_stats = 5;
 }
 
 enum SolverStatus {

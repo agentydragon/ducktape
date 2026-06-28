@@ -405,6 +405,7 @@ mod tests {
                 assignment_coverage: self.coverage,
                 assignments,
                 diagnostic: None,
+                solver_response_stats: None,
             })
         }
     }
@@ -413,12 +414,10 @@ mod tests {
         problem: &CompiledSelectorProblem,
         value: &ConstraintValue,
     ) -> BackendValueId {
-        let index = problem
+        problem
             .value_dictionary
-            .iter()
-            .position(|candidate| candidate == value)
-            .expect("test backend value must be in dictionary");
-        BackendValueId(index.try_into().unwrap())
+            .encode(value)
+            .expect("test backend value must be in dictionary")
     }
 
     fn owner(value: usize) -> ConstraintValue {
@@ -521,12 +520,14 @@ mod tests {
         assert!(
             problem
                 .value_dictionary
-                .contains(&ConstraintValue::Owner(OwnerId(1)))
+                .encode(&ConstraintValue::Owner(OwnerId(1)))
+                .is_some()
         );
         assert!(
             problem
                 .value_dictionary
-                .contains(&ConstraintValue::String("minA".to_string()))
+                .encode(&ConstraintValue::String("minA".to_string()))
+                .is_some()
         );
     }
 
