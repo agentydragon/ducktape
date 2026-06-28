@@ -64,9 +64,15 @@ def create_app(settings: Settings) -> FastAPI:
     # This UI is itself framed by the console; forbid it from being framed by anyone
     # else (the console's own CSP frame-src already whitelists this origin).
     @app.middleware("http")
-    async def _frame_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    async def _response_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         response = await call_next(request)
         response.headers["Content-Security-Policy"] = "frame-ancestors https://haku.allegedly.works"
+        # The SPA shell (index.html) must always revalidate: a new build references new
+        # hashed asset filenames, so a stale-cached index.html would keep loading the old
+        # app — and the console iframe would keep showing the previous (placeholder) page.
+        # The hashed assets themselves are safe to cache (new build = new filename).
+        if response.headers.get("content-type", "").startswith("text/html"):
+            response.headers["Cache-Control"] = "no-cache"
         return response
 
     @app.get("/healthz")
