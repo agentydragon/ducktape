@@ -52,9 +52,13 @@ spec:
                 secretKeyRef:
                   name: haku-state-git-write
                   key: password
-            # Internal plaintext-HTTP Forgejo API (cluster-internal, bypasses mitmproxy).
+            # Internal plaintext-HTTP Forgejo API. Use the FULL .svc.cluster.local
+            # name: the haku-sandbox-force-proxy-egress CNP routes egress through the
+            # haku-mitmproxy, and NO_PROXY only exempts `.svc.cluster.local` — the short
+            # name `forgejo-http.forgejo` does NOT match, so it gets forced through the
+            # proxy and times out (no items load). The FQDN matches NO_PROXY → direct.
             - name: HAKU_UI_FORGEJO_API_URL
-              value: http://forgejo-http.forgejo:3000/api/v1/repos/haku/haku-state
+              value: http://forgejo-http.forgejo.svc.cluster.local:3000/api/v1/repos/haku/haku-state
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
