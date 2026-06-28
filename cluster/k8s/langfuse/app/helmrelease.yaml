@@ -38,6 +38,17 @@ spec:
         signUpDisabled: false
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
+      # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
+      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
       nextauth:
         url: "https://langfuse.allegedly.works"
         secret:
@@ -182,11 +193,33 @@ spec:
         resourcesPreset: small
         nodeSelector:
           topology.kubernetes.io/zone: hil-ovh
+        # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
+        # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
+        # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+        affinity:
+          nodeAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                preference:
+                  matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist
         persistence:
           storageClass: local-path-ovh
           size: 8Gi
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
+      # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
+      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
       persistence:
         storageClass: local-path-ovh
         size: 20Gi

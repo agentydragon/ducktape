@@ -96,6 +96,17 @@ spec:
           memory: 128Mi
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
+      # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
+      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
 
     ingester:
       replicas: 2
@@ -114,6 +125,16 @@ spec:
       zoneAwareReplication:
         enabled: false
       affinity:
+        # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
+        # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
+        # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             - labelSelector:
@@ -131,6 +152,17 @@ spec:
           memory: 128Mi
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
+      # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
+      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
 
     query_frontend:
       replicas: 1
@@ -140,6 +172,17 @@ spec:
           memory: 128Mi
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
+      # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
+      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
 
     query_scheduler:
       replicas: 1
@@ -149,6 +192,17 @@ spec:
           memory: 64Mi
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
+      # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
+      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
 
     compactor:
       replicas: 1
@@ -163,6 +217,17 @@ spec:
           memory: 128Mi
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
+      # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
+      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
 
     store_gateway:
       replicas: 1
@@ -178,6 +243,17 @@ spec:
           memory: 128Mi
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
+      # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
+      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
       zoneAwareReplication:
         enabled: false
 
@@ -195,6 +271,17 @@ spec:
           memory: 32Mi
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
+      # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
+      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
 
     # --- Disabled components ---
 
@@ -207,6 +294,17 @@ spec:
           memory: 128Mi
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
+      # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
+      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
 
     alertmanager:
       enabled: false

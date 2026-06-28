@@ -20,6 +20,16 @@ spec:
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
     topologyKey: kubernetes.io/hostname
+    # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
+    # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
+    # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
 
   storage:
     storageClass: local-path-ovh

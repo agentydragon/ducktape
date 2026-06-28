@@ -80,6 +80,17 @@ spec:
         goldilocks.fairwinds.com/enabled: "false"
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
+      # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
+      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
       persistence:
         storageClass: local-path-ovh
         size: 10Gi
@@ -100,6 +111,17 @@ spec:
         goldilocks.fairwinds.com/enabled: "false"
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
+      # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
+      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
       extraEnvFrom:
         - secretRef:
             name: loki-s3-credentials
@@ -117,6 +139,17 @@ spec:
         goldilocks.fairwinds.com/enabled: "false"
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
+      # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
+      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
       persistence:
         volumeClaimsEnabled: false
       extraEnvFrom:
@@ -142,6 +175,17 @@ spec:
           memory: 32Mi
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
+      # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
+      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
 
     # Disable bundled monitoring (we have kube-prometheus-stack)
     monitoring:

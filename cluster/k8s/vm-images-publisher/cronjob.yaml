@@ -26,6 +26,19 @@ spec:
           # sandbox-namespace DNS quirk that doesn't exist here).
           nodeSelector:
             topology.kubernetes.io/region: hil
+          # Keep VM-image builds OFF the control-plane HDD nodes: one such build
+          # wrote ~15 GB to ovh-ns103711's spinning disk in 15 min, starving etcd
+          # fsync and flapping 2 control planes NotReady (2026-06-28 outage).
+          # Hard (required), not preferred: a batch build has no availability need
+          # and belongs on the NVMe workers (region=hil + non-control-plane).
+          # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: DoesNotExist
           containers:
             - name: publish
               image: nixos/nix:2.24.11

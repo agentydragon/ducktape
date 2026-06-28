@@ -6,7 +6,50 @@ controllers pinned off the control-plane nodes). Structural fix (etcd on NVMe) a
 remaining workload pins (tofu runners, augur) are tracked below.
 **Severity:** Intermittent — `ControlPlaneLeasePutLatencyCritical` fires under load
 bursts; etcd health checks occasionally fail `context deadline exceeded`. No data loss,
-no quorum loss observed.
+no quorum loss observed. **Recurred 2026-06-28 as a full outage** (two control planes
+NotReady, Forgejo 500s) — see the dated section below.
+
+## 2026-06-28 recurrence — escalated to a real outage
+
+The same mechanism recurred and this time **flapped two control planes NotReady**
+(`ovh-ns103656`, `ovh-ns103711`) for ~10–15 min around 03:06–03:11Z, throwing Forgejo
+500s and restarting `authentik-server`. etcd raft apply latency hit **60 s**
+(`apply request took too long: 59.9s`); `talosctl service etcd` showed `Fail` on `.13`.
+Quorum held (leader `.15` + `.14` stayed in sync), so no data loss — but the API-server
+brownout cascaded. Hosts were alive throughout (ping + Talos `apid`/`kubelet` healthy);
+the failure was purely etcd fsync starvation, not hardware.
+
+**Data-driven trigger** (Mimir `container_fs_writes_bytes_total` per pod, increase over
+the 15 min into the stall, on the two CP nodes) — one batch job dominated by an order of
+magnitude:
+
+| pod                    | namespace             | node | MB written / 15 min |
+| ---------------------- | --------------------- | ---- | ------------------- |
+| `agent-box-img-…`      | `vm-images-publisher` | .14  | **15014**           |
+| `mimir-ingester-1`     | monitoring            | .14  | 916                 |
+| `mimir-ingester-0`     | monitoring            | .13  | 814                 |
+| `attic-db-3`           | nix-cache             | .13  | 270                 |
+| `loki-write-0`         | loki                  | .13  | 214                 |
+| `seaweedfs-filer-db-3` | seaweedfs             | .13  | 213                 |
+
+The `vm-images-publisher` CronJob (NixOS VM-image build → qcow2, ~15 GB written to the
+node overlay/emptyDir) carried only `nodeSelector: region=hil` and landed on a CP HDD
+node, saturating `sda5` (I/O-pressure `full avg10 ≈ 35 %`, queue depth ~28) and starving
+etcd. The chronic stateful writers (mimir/attic/loki/seaweedfs/CNPG) are real but each
+< ~1 MB/s sustained; the acute trigger was this single ~17 MB/s batch build.
+
+### Mitigation applied (2026-06-28)
+
+- **Stateful tier pinned soft-off the control plane** — `preferred` nodeAffinity
+  `node-role.kubernetes.io/control-plane DoesNotExist` added to all ~22 hil-ovh stateful
+  workloads (9 CNPG clusters, 8 Valkey, Loki, Mimir, langfuse + its clickhouse/zookeeper,
+  gatus, forgejo). Soft, to keep the CP nodes as overflow capacity if both workers are
+  down.
+- **VM-image builder pinned hard-off the control plane** — `required` nodeAffinity on the
+  `vm-images-publisher` CronJob jobTemplate. A batch build has no availability need and
+  belongs on the NVMe workers; this is the workload that caused the outage.
+- Complements the 2026-06-19 flux-controller pins. Still pending: the tofu-runner pins
+  (item 3 below) and the structural etcd-on-NVMe move (item 5).
 
 ## Symptom
 
