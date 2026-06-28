@@ -57,7 +57,6 @@ use selector_ir::{
 };
 use selector_ir_lowering::{MemberSelectorLoweringContext, MemberSelectorProgramBuilder};
 use selector_runtime::solve_global_selector_program;
-use source_match::SelectorResolver;
 
 impl From<&DuplicateClaimSite> for DuplicateClaimSiteReport {
     fn from(site: &DuplicateClaimSite) -> Self {
@@ -630,40 +629,6 @@ fn anonymous_statement_ambiguous_message(
     )
 }
 
-fn anonymous_statement_diagnostic_message(
-    module: &swc_ecma_ast::Module,
-    request: &LogicalRequest,
-    statement: &AnonymousStatementRequest,
-) -> Option<String> {
-    let resolver = source_match::ChunkResolver::new(module);
-    let matches = match resolver.resolve_anonymous_groups(&request.id, &statement.selector) {
-        Ok(matches) => matches,
-        Err(error) => {
-            return Some(format!(
-                "logical_module {}: anonymous_statements[].match could not be checked after \
-                 global selector no-match: {error}. Selector:\n{}",
-                request.id, statement.selector.match_source,
-            ));
-        }
-    };
-    match matches.as_slice() {
-        [] => Some(anonymous_statement_no_match_message(request, statement)),
-        [_single] => None,
-        multiple => {
-            let body_indices = multiple
-                .iter()
-                .flat_map(|group| group.iter().copied())
-                .collect::<Vec<_>>();
-            Some(anonymous_statement_ambiguous_message(
-                request,
-                statement,
-                multiple.len(),
-                &body_indices,
-            ))
-        }
-    }
-}
-
 /// Output of `ChunkPlanBuilder::finalize`: everything downstream
 /// `lower_chunk` + the chunk-report builder need from the plan
 /// construction phase.
@@ -1047,20 +1012,10 @@ impl ChunkPlanBuilder {
         bail!("{message}")
     }
 
-    fn report_anonymous_statement_failure_before_binding_no_match(
-        &mut self,
-        module: &swc_ecma_ast::Module,
-        request: &LogicalRequest,
-    ) -> Result<bool> {
-        for statement in &request.anonymous_statements {
-            let Some(message) = anonymous_statement_diagnostic_message(module, request, statement)
-            else {
-                continue;
-            };
-            self.record_anonymous_statement_failure_or_bail(request, statement, message)?;
-            return Ok(true);
-        }
-        Ok(false)
+    fn has_recorded_anonymous_statement_failure(&self, request: &LogicalRequest) -> bool {
+        self.anonymous_statement_diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.module_id == request.id)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1334,9 +1289,7 @@ impl ChunkPlanBuilder {
                     if member.binding_selector.is_some()
                         && member.source_match.is_none()
                         && member.relational.is_none()
-                        && self.report_anonymous_statement_failure_before_binding_no_match(
-                            module, request,
-                        )?
+                        && self.has_recorded_anonymous_statement_failure(request)
                     {
                         continue;
                     }

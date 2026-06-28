@@ -16,10 +16,11 @@ use analysis::{
     build_owner_graph,
 };
 use anyhow::{Context, Result, bail};
-use selector_ir::{ClaimOutcome, ResolvedClaim, SelectorFact, SelectorFactStore};
-use selector_ir_lowering::{MemberSelectorLoweringContext, lower_member_selector};
+use selector_ir::{ClaimOutcome, ResolvedClaim, SelectorFact, SelectorFactStore, SelectorTargetId};
+use selector_ir_lowering::{
+    MemberSelectorLoweringContext, MemberSelectorProgramBuilder, lower_member_selector,
+};
 use selector_runtime::solve_global_selector_program;
-use source_match::SelectorResolver;
 use spec::{AnonymousStatementSelector, MemberSelectorSpec};
 use swc_common::{EqIgnoreSpan, SyntaxContext};
 use swc_ecma_ast::Module;
@@ -347,14 +348,14 @@ fn resolve_anonymous_statement_claims_in_globals(
         return Ok(vec![BTreeSet::new(); claims_by_module.len()]);
     }
 
-    with_source_resolvers(
+    with_source_modules(
         graph,
         owner_graph_path,
         modules_root,
         source_root,
         "spec contains anonymous_statements, but owner_graph.json has no source_location \
          data; cannot resolve anonymous selectors",
-        |parsed_by_source, resolvers_by_source| {
+        |parsed_by_source| {
             let mut out = vec![BTreeSet::<OwnerId>::new(); claims_by_module.len()];
             let mut anonymous_owner_by_source_ordinal = HashMap::<(String, usize), OwnerId>::new();
             for (idx, node) in graph.nodes.iter().enumerate() {
@@ -369,63 +370,175 @@ fn resolve_anonymous_statement_claims_in_globals(
                 }
             }
 
-            for (module_idx, claims) in claims_by_module.iter().enumerate() {
-                for selector in claims.selectors {
-                    let mut match_groups = Vec::<Vec<(String, OwnerId)>>::new();
-                    for (source_path, parsed) in parsed_by_source {
-                        let body_index_groups = resolvers_by_source[source_path]
-                            .resolve_anonymous_groups(
-                                &claims.module_path.to_string_lossy(),
+            let anonymous_claims =
+                claims_by_module
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(module_idx, claims)| {
+                        let request_id = claims.module_path.to_string_lossy().to_string();
+                        claims.selectors.iter().enumerate().map(
+                            move |(selector_index, selector)| AnonymousSelectorClaimInfo {
+                                module_idx,
+                                selector_index,
+                                module_path: claims.module_path,
+                                request_id: request_id.clone(),
                                 selector,
-                            )?;
-                        for body_indices in body_index_groups {
-                            let mut owners = Vec::with_capacity(body_indices.len());
-                            for body_idx in body_indices {
-                                let statement_ordinal = js_ast::statement_ordinal_for_body_index(
-                                    &parsed.module.body,
-                                    body_idx,
-                                );
-                                let Some(&owner) = anonymous_owner_by_source_ordinal
-                                    .get(&(source_path.clone(), statement_ordinal))
-                                else {
-                                    bail!(
-                                        "module {} anonymous statement selector matched source {} body \
-                                 index {} / statement ordinal {}, but owner_graph.json has no \
-                                 anonymous owner at that source position",
-                                        claims.module_path.display(),
-                                        source_path,
-                                        body_idx,
-                                        statement_ordinal,
-                                    );
-                                };
-                                owners.push((source_path.clone(), owner));
-                            }
-                            match_groups.push(owners);
-                        }
-                    }
-                    match match_groups.as_slice() {
-                        [owners] => {
-                            out[module_idx].extend(owners.iter().map(|(_, owner)| *owner));
-                        }
-                        [] => bail!(
-                            "module {} anonymous statement selector did not match any source statement:\n{}",
-                            claims.module_path.display(),
-                            selector.match_source,
-                        ),
-                        multiple => bail!(
-                            "module {} anonymous statement selector matched {} source statement groups; \
-                     refine the selector:\n{}",
-                            claims.module_path.display(),
-                            multiple.len(),
-                            selector.match_source,
-                        ),
-                    }
+                            },
+                        )
+                    })
+                    .collect::<Vec<_>>();
+            let mut match_groups_by_claim =
+                vec![Vec::<Vec<(String, OwnerId)>>::new(); anonymous_claims.len()];
+
+            for (source_path, parsed) in parsed_by_source {
+                let mut builder = MemberSelectorProgramBuilder::new(
+                    MemberSelectorLoweringContext::new(ChunkId(0), source_path),
+                );
+                let mut targets = Vec::<AnonymousSelectorTargetInfo>::new();
+                for (claim_idx, claim) in anonymous_claims.iter().enumerate() {
+                    let target = builder
+                        .declare_native_anonymous_statement_target_in_module(
+                            &claim.request_id,
+                            claim.selector_index,
+                            claim.selector,
+                        )
+                        .with_context(|| {
+                            format!(
+                                "module {} anonymous statement selector cannot be lowered into \
+                                 native selector IR",
+                                claim.module_path.display(),
+                            )
+                        })?;
+                    targets.push(AnonymousSelectorTargetInfo { claim_idx, target });
+                }
+                if targets.is_empty() {
+                    continue;
+                }
+                let program = builder.into_program()?;
+                let facts = selector_fact_store_for_module(&parsed.module)
+                    .with_context(|| format!("building selector facts for source {source_path}"))?;
+                let result =
+                    solve_global_selector_program(&program, &facts).with_context(|| {
+                        format!("solving anonymous selectors for source {source_path}")
+                    })?;
+                for target in targets {
+                    let claim = &anonymous_claims[target.claim_idx];
+                    let outcome = result.outcome_for(target.target).with_context(|| {
+                        format!(
+                            "selector solver did not return anonymous statement target for module {}",
+                            claim.module_path.display(),
+                        )
+                    })?;
+                    let groups = anonymous_match_groups_for_outcome(
+                        source_path,
+                        claim,
+                        outcome,
+                        &anonymous_owner_by_source_ordinal,
+                    )?;
+                    match_groups_by_claim[target.claim_idx].extend(groups);
                 }
             }
 
+            for (claim, match_groups) in anonymous_claims.iter().zip(match_groups_by_claim) {
+                match match_groups.as_slice() {
+                    [owners] => {
+                        out[claim.module_idx].extend(owners.iter().map(|(_, owner)| *owner));
+                    }
+                    [] => bail!(
+                        "module {} anonymous statement selector did not match any source statement:\n{}",
+                        claim.module_path.display(),
+                        claim.selector.match_source,
+                    ),
+                    multiple => bail!(
+                        "module {} anonymous statement selector matched {} source statement groups; \
+                 refine the selector:\n{}",
+                        claim.module_path.display(),
+                        multiple.len(),
+                        claim.selector.match_source,
+                    ),
+                }
+            }
             Ok(out)
         },
     )
+}
+
+#[derive(Debug, Clone)]
+struct AnonymousSelectorClaimInfo<'a> {
+    module_idx: usize,
+    selector_index: usize,
+    module_path: &'a Path,
+    request_id: String,
+    selector: &'a AnonymousStatementSelector,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AnonymousSelectorTargetInfo {
+    claim_idx: usize,
+    target: SelectorTargetId,
+}
+
+fn anonymous_match_groups_for_outcome(
+    source_path: &str,
+    claim: &AnonymousSelectorClaimInfo<'_>,
+    outcome: &ClaimOutcome,
+    anonymous_owner_by_source_ordinal: &HashMap<(String, usize), OwnerId>,
+) -> Result<Vec<Vec<(String, OwnerId)>>> {
+    match outcome {
+        ClaimOutcome::Unique { claim: resolved } => Ok(vec![vec![anonymous_owner_for_claim(
+            source_path,
+            claim,
+            resolved,
+            anonymous_owner_by_source_ordinal,
+        )?]]),
+        ClaimOutcome::Ambiguous { candidates } => candidates
+            .iter()
+            .map(|resolved| {
+                Ok(vec![anonymous_owner_for_claim(
+                    source_path,
+                    claim,
+                    resolved,
+                    anonymous_owner_by_source_ordinal,
+                )?])
+            })
+            .collect(),
+        ClaimOutcome::NoMatch => Ok(Vec::new()),
+        ClaimOutcome::Unsupported { message } => {
+            bail!(
+                "module {} anonymous statement selector is unsupported by selector IR solver: {message}",
+                claim.module_path.display(),
+            )
+        }
+        ClaimOutcome::Duplicate {
+            owner,
+            conflicting_targets,
+        } => bail!(
+            "module {} anonymous statement selector produced a duplicate claim for owner {owner:?} \
+             across {conflicting_targets:?}",
+            claim.module_path.display(),
+        ),
+    }
+}
+
+fn anonymous_owner_for_claim(
+    source_path: &str,
+    claim: &AnonymousSelectorClaimInfo<'_>,
+    resolved: &ResolvedClaim,
+    anonymous_owner_by_source_ordinal: &HashMap<(String, usize), OwnerId>,
+) -> Result<(String, OwnerId)> {
+    let statement_ordinal = resolved.statement_ordinal.0;
+    let Some(&owner) =
+        anonymous_owner_by_source_ordinal.get(&(source_path.to_string(), statement_ordinal))
+    else {
+        bail!(
+            "module {} anonymous statement selector matched source {} statement ordinal {}, \
+             but owner_graph.json has no anonymous owner at that source position",
+            claim.module_path.display(),
+            source_path,
+            statement_ordinal,
+        );
+    };
+    Ok((source_path.to_string(), owner))
 }
 
 /// Parse every distinct `source_location.source_path` in `graph` and hand
@@ -459,43 +572,6 @@ fn with_source_modules<R>(
         })
         .collect::<Result<_>>()?;
     body(&parsed_by_source)
-}
-
-/// Parse every distinct `source_location.source_path` in `graph` and hand
-/// `body` a per-source `ChunkResolver` map alongside the parsed modules.
-/// Resolvers are built once and borrow the parsed modules, so the parsed map and
-/// its resolvers are produced together and lent through the closure rather than
-/// returned.
-fn with_source_resolvers<R>(
-    graph: &OwnerGraphReport,
-    owner_graph_path: &Path,
-    modules_root: &Path,
-    source_root: Option<&Path>,
-    no_sources: &str,
-    body: impl for<'m> FnOnce(
-        &'m BTreeMap<String, js_ast::ParsedJsModule>,
-        &BTreeMap<String, source_match::ChunkResolver<'m>>,
-    ) -> Result<R>,
-) -> Result<R> {
-    with_source_modules(
-        graph,
-        owner_graph_path,
-        modules_root,
-        source_root,
-        no_sources,
-        |parsed_by_source| {
-            let resolvers_by_source: BTreeMap<_, _> = parsed_by_source
-                .iter()
-                .map(|(source_path, parsed)| {
-                    (
-                        source_path.clone(),
-                        source_match::ChunkResolver::new(&parsed.module),
-                    )
-                })
-                .collect();
-            body(parsed_by_source, &resolvers_by_source)
-        },
-    )
 }
 
 /// Resolve `source_path` to a file on disk, read it, and parse it as a JS
