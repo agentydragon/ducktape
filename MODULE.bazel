@@ -1053,6 +1053,7 @@ use_repo(
     "com_github_blacktop_go_macho",
     "com_github_cheynewallace_tabby",
     "com_github_docker_docker",
+    "com_github_dustin_go_humanize",
     "com_github_elliotchance_orderedmap",
     "com_github_firebase_genkit_go",
     "com_github_fsouza_go_dockerclient",

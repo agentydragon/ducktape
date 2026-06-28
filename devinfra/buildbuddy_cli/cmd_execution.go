@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 
+	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 
+	cachepb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	executionpb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 )
 
@@ -44,6 +46,7 @@ func executionCmd() *cobra.Command {
 		},
 	}
 	cmd.AddCommand(executionSearchCmd())
+	cmd.AddCommand(executionFilesCmd())
 	return cmd
 }
 
@@ -94,5 +97,58 @@ func executionSearchCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect from git)")
 	cmd.Flags().Int32Var(&count, "count", 20, "Number of results to return")
+	return cmd
+}
+
+func executionFilesCmd() *cobra.Command {
+	var pageSize int32
+	cmd := &cobra.Command{
+		Use:   "files <invocation-id> <execution-id>",
+		Short: "List a remote execution's output files",
+		Long: "List the output files of a remote execution via GetExecutionDownloads. " +
+			"The execution ID is the one shown by `bbapi execution <invocation-id>`.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			c, err := newClient()
+			if err != nil {
+				return err
+			}
+			out := &cachepb.GetExecutionDownloadsResponse{}
+			var pageToken string
+			for i := 0; i < 100; i++ { // bound pagination as a safety cap
+				req := &cachepb.GetExecutionDownloadsRequest{
+					InvocationId: args[0],
+					ExecutionId:  args[1],
+					PageSize:     pageSize,
+					PageToken:    pageToken,
+				}
+				resp := &cachepb.GetExecutionDownloadsResponse{}
+				if err := c.call("GetExecutionDownloads", req, resp); err != nil {
+					return err
+				}
+				out.Downloads = append(out.Downloads, resp.GetDownloads()...)
+				pageToken = resp.GetNextPageToken()
+				if pageToken == "" {
+					break
+				}
+			}
+			if jsonOutput {
+				return printProtoJSON(out)
+			}
+			t := newTable()
+			t.header("PATH", "SIZE", "EXEC", "DIGEST")
+			for _, dl := range out.GetDownloads() {
+				exec := ""
+				if dl.GetIsExecutable() {
+					exec = "x"
+				}
+				dg := dl.GetDigest()
+				t.row(dl.GetPath(), humanize.IBytes(uint64(dg.GetSizeBytes())), exec, dg.GetHash())
+			}
+			t.flush()
+			return nil
+		},
+	}
+	cmd.Flags().Int32Var(&pageSize, "page-size", 0, "Results per page (0 = server default)")
 	return cmd
 }

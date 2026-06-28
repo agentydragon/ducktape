@@ -91,6 +91,10 @@ bbapi execution <invocation-id>
 # Search remote executions across invocations
 bbapi execution search <query>
 
+# List the output files of a remote execution (path, size, digest, exec bit)
+# The execution-id is the EXECUTION column from `bbapi execution <invocation-id>`
+bbapi execution files <invocation-id> <execution-id>
+
 # Aggregated invocation statistics (by branch, user, commit, etc.)
 bbapi invocation stat [--agg-type branch|user|host|repo|commit|pattern] [--repo URL] [--limit N]
 
@@ -117,6 +121,10 @@ bbapi trend [--days N] [--repo URL]
 ```
 
 All `bbapi` commands support `--json` for raw JSON output.
+
+Responses are parsed against pinned BuildBuddy protos but unknown fields are
+discarded, so `bbapi` tolerates API/proto drift between repins (newly added
+response fields) instead of hard-failing on the parse.
 
 ## Investigating Failed CI Builds
 

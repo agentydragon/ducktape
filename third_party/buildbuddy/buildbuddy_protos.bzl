@@ -2,14 +2,14 @@
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
-_COMMIT = "1222e417a7c36619102ea9436fc35045ce5f421e"
+_COMMIT = "a07198b9707dc26cbce3827d807da6854a978638"
 _PREFIX = "buildbuddy-" + _COMMIT
 
 def _buildbuddy_protos_impl(_ctx):
     http_archive(
         name = "buildbuddy_protos",
         url = "https://github.com/buildbuddy-io/buildbuddy/archive/{}.tar.gz".format(_COMMIT),
-        integrity = "sha256-CszZEJ3TfXIKSGhVeEns4r8DRYzEkn8KQXxwxXNy6ZA=",
+        integrity = "sha256-QCziTN+n9maFiVJD18q73gcJiwnti5gtaOBtCJIZX1o=",
         strip_prefix = _PREFIX,
         build_file = "//third_party/buildbuddy:BUILD.protos.bazel",
         patch_cmds = [

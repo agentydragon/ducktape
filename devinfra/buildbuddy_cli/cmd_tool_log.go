@@ -11,7 +11,6 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/spf13/cobra"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 type toolLog struct {
@@ -250,7 +249,7 @@ func listToolLogs(c *client, invocationID string) ([]toolLog, error) {
 	var result []toolLog
 	for _, raw := range rawEvents {
 		var ev bespb.BuildEvent
-		if err := protojson.Unmarshal(raw, &ev); err != nil {
+		if err := unmarshalJSON(raw, &ev); err != nil {
 			return nil, fmt.Errorf("parse BES event: %w", err)
 		}
 		logs := ev.GetBuildToolLogs()

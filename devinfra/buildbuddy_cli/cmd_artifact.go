@@ -10,7 +10,6 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/spf13/cobra"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // matchGlob reports whether s matches a simple glob pattern supporting '*' only.
@@ -348,7 +347,7 @@ func listArtifacts(c *client, invocationID string) ([]artifact, error) {
 	var result []artifact
 	for _, raw := range rawEvents {
 		var ev bespb.BuildEvent
-		if err := protojson.Unmarshal(raw, &ev); err != nil {
+		if err := unmarshalJSON(raw, &ev); err != nil {
 			return nil, fmt.Errorf("parse BES event: %w", err)
 		}
 		tr := ev.GetTestResult()

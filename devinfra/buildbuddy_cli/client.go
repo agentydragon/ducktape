@@ -65,10 +65,19 @@ func (c *client) call(method string, req proto.Message, resp proto.Message) erro
 	if httpResp.StatusCode != http.StatusOK {
 		return fmt.Errorf("HTTP %d: %s", httpResp.StatusCode, string(respBody))
 	}
-	if err := protojson.Unmarshal(respBody, resp); err != nil {
+	if err := unmarshalJSON(respBody, resp); err != nil {
 		return fmt.Errorf("unmarshal response: %w", err)
 	}
 	return nil
+}
+
+// unmarshalJSON parses a proto JSON message while discarding fields unknown to
+// our pinned protos, so a newer BuildBuddy API or BES response doesn't
+// hard-fail the parse. bbapi only reads named fields, so unknown ones are safe
+// to drop; repinning keeps the schema current, and this guards against drift
+// between repins (e.g. an invocation-link-type field added after the last pin).
+func unmarshalJSON(b []byte, m proto.Message) error {
+	return protojson.UnmarshalOptions{DiscardUnknown: true}.Unmarshal(b, m)
 }
 
 // resolveGroupID fetches the group_id by searching for a recent invocation
