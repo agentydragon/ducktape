@@ -21,9 +21,11 @@ spec:
       # Pin to the ACTUAL OVH workers (ks_game_worker0/1), not the OVH control planes.
       # The OVH CPs are schedulable (allowSchedulingOnControlPlanes) and region=hil, and
       # are misleadingly keyed kimsufi_worker0/1 in tofu though their role is controlplane
-      # — so a plain region selector landed this runner on a control plane. That's wrong:
-      # agent-controlled build compute must stay off control-plane nodes.
-      # Exclude any node carrying the control-plane label.
+      # — so a plain region selector landed this runner on a control plane. That's wrong
+      # twice over: (1) this is agent-controlled build compute, which must stay off
+      # control-plane nodes, and (2) the user.max_user_namespaces sysctl rootless dind
+      # needs is set only on role==worker nodes (cluster/terraform/main/ovh-nodes.tf), so
+      # the runner must land there. Exclude any node carrying the control-plane label.
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -77,24 +79,32 @@ spec:
               cpu: "1"
               memory: 1Gi
         # Docker daemon for the builds, listening only on localhost:2375 inside the pod.
-        # Using rootful dind (not -rootless) so Docker uses standard veth interfaces
-        # that Cilium's DNS proxy can see. Rootless dind uses slirp4netns/RootlessKit
-        # whose DNS queries bypass the normal network stack, so Cilium's FQDN policies
-        # don't apply and Docker Hub pulls fail with "no such image". Rootful + privileged
-        # is the trade-off; contained by haku-ci being operator-only (no Haku RBAC),
-        # off control planes, and egress-fenced. See README.
+        # privileged: true is the documented requirement for docker:dind-rootless — it
+        # provides /dev (incl. /dev/net/tun for RootlessKit) and disables the mount masks
+        # that otherwise hide those devices from RootlessKit's nested namespaces. The
+        # non-privileged path cleared seccomp (PSA) + user.max_user_namespaces (the OVH
+        # worker sysctl) but still couldn't create the rootless TAP because of the masks.
+        # Crucially the DAEMON still runs ROOTLESS (UID 1000 via the -rootless image), so
+        # this is strictly better than classic rootful dind; the privileged POD is the
+        # price, contained by haku-ci being operator-only (no Haku RBAC), off control
+        # planes, and egress-fenced. See README.
         - name: dind
-          image: docker:27-dind
+          image: docker:27-dind-rootless
           args:
             - --host=tcp://0.0.0.0:2375
             - --tls=false
-          # DOCKER_TLS_CERTDIR="" disables TLS so 2375 is plain HTTP; the runner's
-          # plain-HTTP client would otherwise hit "HTTP request to an HTTPS server".
+          # --tls=false alone isn't enough: the dind entrypoint defaults DOCKER_TLS_CERTDIR
+          # to /certs and re-enables TLS on 2375, so the runner's plain-HTTP client hits
+          # "HTTP request to an HTTPS server". Emptying it disables TLS so 2375 is plain HTTP
+          # (localhost-only inside the pod). This is the last piece that lets the runner
+          # connect to the rootless daemon.
           env:
             - name: DOCKER_TLS_CERTDIR
               value: ""
           securityContext:
             privileged: true
+            runAsUser: 1000
+            runAsGroup: 1000
           volumeMounts:
             - name: docker-data
               mountPath: /var/lib/docker
