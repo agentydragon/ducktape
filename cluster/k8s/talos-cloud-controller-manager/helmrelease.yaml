@@ -11,11 +11,21 @@ spec:
   chart:
     spec:
       chart: talos-cloud-controller-manager
+      # Pinned: the inline tofu render (terraform/main/talos-ccm.tf) reads this version too,
+      # so Flux + bootstrap stay reproducible and a chart bump can't silently move defaults.
+      version: 0.5.4
       sourceRef:
         kind: HelmRepository
         name: siderolabs
         namespace: kube-system
   values:
+    # Pin the CCM metrics/secure port explicitly. The chart's default is not stable across
+    # versions (0.5.4's values.yaml defaults to 10458, but the cluster is on 50258); pinning
+    # it here keeps Flux, the inline bootstrap manifest, and the live deployment all on one
+    # value, so there is no perpetual drift. 50258 = the value already applied (zero churn).
+    service:
+      port: 50258
+      containerPort: 50258
     enabledControllers:
       - cloud-node
       - cloud-node-lifecycle
