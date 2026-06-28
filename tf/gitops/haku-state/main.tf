@@ -56,16 +56,30 @@ resource "forgejo_branch_protection" "state_main" {
   enable_push   = true
 }
 
-# Read-only source repos Haku may clone with its existing Forgejo basic-auth
-# credential. These repos are owned/adopted elsewhere; the provider's repository
-# ID format is owner/name, matching the import IDs in tf/gitops/forgejo-codex.
-resource "forgejo_collaborator" "haku_source_read" {
-  for_each = toset([
+locals {
+  haku_source_repos = toset([
     "agentydragon/ducktape",
     "agentydragon/gaffer-private",
   ])
+}
 
-  repository_id = each.value
+# Read existing source repos by API because forgejo_collaborator wants the
+# numeric repository ID, while the provider has no repository data source.
+data "http" "haku_source_repo" {
+  for_each = local.haku_source_repos
+
+  url    = "${var.forgejo_url}/api/v1/repos/${each.value}"
+  method = "GET"
+  request_headers = {
+    Authorization = "Basic ${base64encode("${data.kubernetes_secret.forgejo_admin.data["username"]}:${data.kubernetes_secret.forgejo_admin.data["password"]}")}"
+    Accept        = "application/json"
+  }
+}
+
+resource "forgejo_collaborator" "haku_source_read" {
+  for_each = local.haku_source_repos
+
+  repository_id = jsondecode(data.http.haku_source_repo[each.value].response_body).id
   user          = forgejo_user.haku.login
   permission    = "read"
 }
