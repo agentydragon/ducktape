@@ -6,12 +6,12 @@ import ipaddress
 from collections import defaultdict
 from pathlib import Path
 
-import pygohcl
 import pytest
 import pytest_bazel
 import yaml
 
 from cluster.scripts import nebula_mesh
+from cluster.validation.terraform_hcl import locals_blocks
 from util.bazel.runfiles import get_required_path
 
 # The `locals` maps in ovh-nodes.tf that carry per-node role/hostname/nebula_ip. pygohcl decodes
@@ -79,12 +79,8 @@ def _control_plane_nebula_ips(mesh: nebula_mesh.Mesh) -> dict[str, str]:
 
 
 def _terraform_control_plane_nebula_ips(path: Path) -> dict[str, str]:
-    doc = pygohcl.loads(path.read_text())
-    # pygohcl collapses a single `locals {}` block to a dict but keeps multiple blocks as a
-    # list of dicts; normalize to a list, then gather the node-inventory maps across them.
-    blocks = doc.get("locals", [])
     nodes: dict[str, dict[str, str]] = {}
-    for block in [blocks] if isinstance(blocks, dict) else blocks:
+    for block in locals_blocks(path):
         for local_name in _NODE_INVENTORY_LOCALS:
             nodes.update(block.get(local_name, {}))
     by_role: dict[str, dict[str, str]] = defaultdict(dict)

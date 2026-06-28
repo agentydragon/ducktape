@@ -289,6 +289,12 @@ py_test(
     ],
 )
 
+py_library(
+    name = "terraform_hcl",
+    srcs = ["terraform_hcl.py"],
+    deps = ["@pypi//pygohcl"],
+)
+
 py_test(
     name = "test_nebula_mesh",
     srcs = ["test_nebula_mesh.py"],
@@ -298,9 +304,9 @@ py_test(
         "//cluster/terraform/main:ovh-nodes.tf",
     ],
     deps = [
+        ":terraform_hcl",
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
-        "@pypi//pygohcl",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
@@ -315,8 +321,8 @@ py_test(
         "//tf/gitops/dns-records:main.tf",
     ],
     deps = [
+        ":terraform_hcl",
         "//util/bazel:runfiles",
-        "@pypi//pygohcl",
         "@pypi//pytest_bazel",
     ],
 )

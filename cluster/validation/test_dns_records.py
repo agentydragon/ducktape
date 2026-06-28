@@ -6,20 +6,16 @@ import json
 from pathlib import Path
 from typing import Any
 
-import pygohcl
 import pytest_bazel
 
+from cluster.validation.terraform_hcl import locals_blocks
 from util.bazel.runfiles import get_required_path
 
 
 def _terraform_local_ips(path: Path, name: str) -> set[str]:
-    # pygohcl (HashiCorp's HCL2 parser) decodes the `local.<name>` IP list straight to a
-    # Python list of strings — a structural parse, not a regex over the file text.
-    doc = pygohcl.loads(path.read_text())
-    # pygohcl collapses a single `locals {}` block to a dict but keeps multiple blocks as a
-    # list of dicts; normalize to a list so either shape works.
-    blocks = doc.get("locals", [])
-    for block in [blocks] if isinstance(blocks, dict) else blocks:
+    # pygohcl decodes the `local.<name>` IP list straight to a Python list of strings
+    # — a structural parse, not a regex over the file text.
+    for block in locals_blocks(path):
         if name in block:
             return set(block[name])
     raise AssertionError(f"{path}: missing local.{name} list")
