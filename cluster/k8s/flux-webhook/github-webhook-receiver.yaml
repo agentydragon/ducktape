@@ -54,6 +54,9 @@ spec:
       name: haku-console
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
+      name: haku-console-static
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
       name: haku-worker
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
