@@ -1,0 +1,16 @@
+# Keep at least one Forgejo replica serving during voluntary disruption (node
+# drain, descheduler eviction, rolling update). With replicaCount 2 this lets one
+# pod be evicted at a time but never both — git/CI/registry/API stay up. The
+# descheduler honors PDBs unconditionally, so this is also what stops it from
+# taking both replicas down at once.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: forgejo
+      app.kubernetes.io/instance: forgejo
