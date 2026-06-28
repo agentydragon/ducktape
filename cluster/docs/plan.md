@@ -87,17 +87,17 @@ returns (not independently parked):
       `runnerPodTemplate`s) and the cross-repo augur ingest job; then the structural
       etcd-on-NVMe move. Full RCA + remediation tracking:
       <lessons_learned/2026_06_19_etcd_hdd_io_contention.md>.
-- [ ] **haku-ci Docker Hub pull-through cache** (replace the CloudFront egress
-      band-aid). The haku-ci runner's rootless dind pulls base images from Docker
-      Hub, which 307-redirects config/layer blob GETs to AWS CloudFront; the egress
-      policy now allows `*.cloudfront.net` as a band-aid (broad, and brittle if
-      Docker shifts CDNs again). Replace with an in-cluster `registry:2` configured
-      as a Docker Hub pull-through cache: transparent via the dind
-      `--registry-mirror` (Harbor's proxy-cache can't act as a root mirror, and
-      Harbor is currently down anyway), then drop the `*.cloudfront.net` allow.
-      Bonus: caching + Docker Hub rate-limit relief. Diagnosis: blob downloads were
-      dial-timing-out (`dial tcp <cloudfront-ip>:443: i/o timeout`) because only the
-      registry/auth FQDNs were allowlisted, not the blob CDN.
+- [ ] **haku-ci Docker Hub pull-through cache** (replace the external-CDN egress
+      allows). The haku-ci runner's rootless dind pulls base images from Docker
+      Hub, which 307-redirects config/layer blob GETs to `production.cloudfront.docker.com`
+      (AWS CloudFront). The egress policy now allowlists that host explicitly
+      (root cause was a `cloudflare` vs `cloudfront` hostname mix-up — only the
+      Cloudflare front was allowed). It works but couples the runner to Docker's
+      CDN hostnames. Replace with an in-cluster `registry:2` configured as a Docker
+      Hub pull-through cache: transparent via the dind `--registry-mirror` (Harbor's
+      proxy-cache can't act as a root mirror, and Harbor is currently down anyway),
+      then drop the docker.com CDN allows. Bonus: caching + Docker Hub rate-limit
+      relief.
 - [ ] **Investigate whether to re-enable VPA/Goldilocks recommendations.**
       Forgejo's namespace is Goldilocks-enabled and has a generated
       `goldilocks-forgejo` VPA, but the VPA control-plane deployments in

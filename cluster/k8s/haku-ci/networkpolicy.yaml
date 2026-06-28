@@ -29,18 +29,20 @@ spec:
         - matchName: pkg-containers.githubusercontent.com
         - matchName: registry-1.docker.io
         - matchName: auth.docker.io
-        - matchName: production.cloudflare.docker.com
         - matchName: index.docker.io
-        # Docker Hub 307-redirects image config + layer blob GETs to AWS
-        # CloudFront, so the manifest/auth hosts above aren't enough — without
-        # this, blob downloads dial-timeout and pulls fail with "No such image".
-        # matchPattern (not matchName) because the edge hostnames vary
-        # (server-<ip>.<pop>.r.cloudfront.net).
-        # TODO(haku-ci-pull-through-cache): replace this broad CDN allow with an
+        # Docker Hub 307-redirects image config + layer blob GETs to its CDN.
+        # Both fronts must be allowed: production.cloudFLARE.docker.com (above)
+        # AND production.cloudFRONT.docker.com (AWS CloudFront) — note the easily
+        # confused cloudflare/cloudfront pair. Without the CloudFront host, blob
+        # downloads dial-timeout and pulls fail with "No such image" while the
+        # manifest/auth hosts work fine (confirmed via Cilium's DNS cache:
+        # production.cloudfront.docker.com resolved to the timing-out IPs).
+        # TODO(haku-ci-pull-through-cache): drop these external CDN allows for an
         # in-cluster registry:2 Docker Hub pull-through cache (transparent via the
         # dind --registry-mirror, which Harbor's proxy-cache can't provide, and
         # Harbor is down anyway). Tracked in cluster/docs/plan.md.
-        - matchPattern: "*.cloudfront.net"
+        - matchName: production.cloudflare.docker.com
+        - matchName: production.cloudfront.docker.com
         - matchName: registry.npmjs.org
         - matchName: pypi.org
         - matchName: files.pythonhosted.org
