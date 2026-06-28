@@ -21,11 +21,32 @@ pub fn compile_selector_problem(
     program: &SelectorProgram,
     facts: &SelectorFactStore,
 ) -> Result<CompiledSelectorProblem, CompiledSelectorProblemBuildError> {
+    Ok(compile_selector_problem_with_summary(program, facts)?.problem)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompiledSelectorProblemWithSummary {
+    pub problem: CompiledSelectorProblem,
+    pub summary: SelectorModelBuildSummary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectorModelBuildSummary {
+    pub domain_value_counts: BTreeMap<&'static str, usize>,
+    pub stored_relation_counts: BTreeMap<&'static str, usize>,
+    pub derived_relation_counts: BTreeMap<&'static str, usize>,
+}
+
+pub fn compile_selector_problem_with_summary(
+    program: &SelectorProgram,
+    facts: &SelectorFactStore,
+) -> Result<CompiledSelectorProblemWithSummary, CompiledSelectorProblemBuildError> {
     program
         .validate()
         .map_err(CompiledSelectorProblemBuildError::InvalidProgram)?;
 
     let domains = FactDomains::from_program_and_facts(program, facts);
+    let summary = domains.summary();
     let target_binding_projections = TargetBindingProjections::from_program(program)?;
 
     let mut model = CompiledSelectorProblemBuilder::default();
@@ -80,7 +101,10 @@ pub fn compile_selector_problem(
         )?;
     }
 
-    model.finish().map_err(Into::into)
+    let problem = model
+        .finish()
+        .map_err(CompiledSelectorProblemBuildError::from)?;
+    Ok(CompiledSelectorProblemWithSummary { problem, summary })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -569,16 +593,9 @@ fn lower_atom_constraint(
                 BinaryConstraintKind::NotEqual,
             )
             .map_err(Into::into),
-        SelectorAtom::OrdinalBefore {
-            before: OrdinalTerm::Var { id: before },
-            after: OrdinalTerm::Var { id: after },
-        } => model
-            .add_binary_constraint(
-                model_variable(variables, *before)?,
-                model_variable(variables, *after)?,
-                BinaryConstraintKind::OrdinalBefore,
-            )
-            .map_err(Into::into),
+        SelectorAtom::OrdinalBefore { before, after } => {
+            add_ordinal_before_constraint(model, variables, before, after)
+        }
         SelectorAtom::AstChildListPattern {
             parent,
             start_index,
@@ -597,9 +614,6 @@ fn lower_atom_constraint(
             },
             domains,
         ),
-        _ => Err(CompiledSelectorProblemBuildError::UnsupportedAtom {
-            atom: format!("{atom:?}"),
-        }),
     }
 }
 
@@ -1083,6 +1097,17 @@ fn add_ordinal_offset_constraint(
     let base = ordinal_linear_variable(model, variables, base)?;
     let ordinal = ordinal_linear_variable(model, variables, ordinal)?;
     add_linear_offset_equality(model, base, ordinal, i64::from(offset))
+}
+
+fn add_ordinal_before_constraint(
+    model: &mut CompiledSelectorProblemBuilder,
+    variables: &[ConstraintVariableId],
+    before: &OrdinalTerm,
+    after: &OrdinalTerm,
+) -> Result<(), CompiledSelectorProblemBuildError> {
+    let before = ordinal_linear_variable(model, variables, before)?;
+    let after = ordinal_linear_variable(model, variables, after)?;
+    add_linear_offset_less_or_equal(model, before, after, 1)
 }
 
 fn ordinal_linear_variable(
@@ -1828,6 +1853,124 @@ impl FactDomains {
         domains.add_derived_facts();
         domains.add_program_constants(program);
         domains
+    }
+
+    fn summary(&self) -> SelectorModelBuildSummary {
+        SelectorModelBuildSummary {
+            domain_value_counts: BTreeMap::from([
+                ("owner", self.owners.len()),
+                ("ast_node", self.nodes.len()),
+                ("string", self.strings.len()),
+                ("statement_ordinal", self.ordinals.len()),
+            ]),
+            stored_relation_counts: BTreeMap::from([
+                ("owner_kind", self.owner_kinds.len()),
+                (
+                    "owner_statement_ordinal",
+                    self.owner_statement_ordinals.len(),
+                ),
+                ("owner_top_level_root", self.owner_top_level_roots.len()),
+                ("declared_binding", self.declared_bindings.len()),
+                ("export_name", self.export_names.len()),
+                (
+                    "raw_owner_references_binding",
+                    self.raw_owner_references_binding.len(),
+                ),
+                (
+                    "owner_references_binding",
+                    self.owner_references_binding.len(),
+                ),
+                ("references_owner", self.references_owner.len()),
+                ("aliases_owner", self.aliases_owner.len()),
+                ("ast_kind", self.ast_kinds.len()),
+                ("ast_child", ast_child_count(&self.ast_children_by_parent)),
+                ("ast_child_parent", self.ast_children_by_parent.len()),
+                ("ast_child_count", self.ast_child_counts.len()),
+                ("ast_super_class", self.ast_super_classes.len()),
+                ("ast_string_literal", self.ast_string_literals.len()),
+                ("ast_number_literal", self.ast_number_literals.len()),
+                ("ast_bool_literal", self.ast_bool_literals.len()),
+                ("ast_identifier_name", self.ast_identifier_names.len()),
+                ("ast_property_name", self.ast_property_names.len()),
+                ("ast_bare_property", self.ast_bare_properties.len()),
+                ("ast_operator", self.ast_operators.len()),
+                ("ast_regex_literal", self.ast_regex_literals.len()),
+                ("ast_top_level", self.ast_top_levels.len()),
+                ("ast_top_level_position", self.ast_top_level_positions.len()),
+                ("raw_member_read", self.raw_member_reads.len()),
+                ("member_read", self.member_reads.len()),
+                (
+                    "member_read_from_binding",
+                    self.member_reads_from_binding.len(),
+                ),
+                ("reads_member_of_owner", self.reads_member_of_owner.len()),
+                ("raw_module_member_use", self.raw_module_member_uses.len()),
+                ("module_member_use", self.module_member_uses.len()),
+                ("raw_call_argument", self.raw_call_arguments.len()),
+                ("call_argument", self.call_arguments.len()),
+                (
+                    "call_argument_from_binding",
+                    self.call_arguments_from_binding.len(),
+                ),
+                (
+                    "call_argument_from_owner",
+                    self.call_arguments_from_owner.len(),
+                ),
+                ("decorate_call", self.decorate_calls.len()),
+                (
+                    "makes_decorate_call_for_binding",
+                    self.makes_decorate_call_for_binding.len(),
+                ),
+                (
+                    "makes_decorate_call_for_owner",
+                    self.makes_decorate_call_for_owner.len(),
+                ),
+                ("intrinsic_alias", self.intrinsic_aliases.len()),
+                (
+                    "intrinsic_alias_referenced_by",
+                    self.intrinsic_alias_referenced_by.len(),
+                ),
+            ]),
+            derived_relation_counts: BTreeMap::from([
+                ("owner_top_level_root", self.owner_top_level_roots.len()),
+                (
+                    "owner_references_binding",
+                    self.owner_references_binding.len(),
+                ),
+                ("references_owner", self.references_owner.len()),
+                ("aliases_owner", self.aliases_owner.len()),
+                ("ast_child_count", self.ast_child_counts.len()),
+                ("ast_top_level_position", self.ast_top_level_positions.len()),
+                ("member_read", self.member_reads.len()),
+                (
+                    "member_read_from_binding",
+                    self.member_reads_from_binding.len(),
+                ),
+                ("reads_member_of_owner", self.reads_member_of_owner.len()),
+                ("module_member_use", self.module_member_uses.len()),
+                ("call_argument", self.call_arguments.len()),
+                (
+                    "call_argument_from_binding",
+                    self.call_arguments_from_binding.len(),
+                ),
+                (
+                    "call_argument_from_owner",
+                    self.call_arguments_from_owner.len(),
+                ),
+                (
+                    "makes_decorate_call_for_binding",
+                    self.makes_decorate_call_for_binding.len(),
+                ),
+                (
+                    "makes_decorate_call_for_owner",
+                    self.makes_decorate_call_for_owner.len(),
+                ),
+                (
+                    "intrinsic_alias_referenced_by",
+                    self.intrinsic_alias_referenced_by.len(),
+                ),
+            ]),
+        }
     }
 
     fn values_for(&self, domain: VariableDomain) -> Vec<ConstraintValue> {
@@ -2586,6 +2729,13 @@ impl FactDomains {
     fn add_ordinal(&mut self, ordinal: StatementOrdinal) {
         self.ordinals.insert(ordinal);
     }
+}
+
+fn ast_child_count(ast_children_by_parent: &BTreeMap<NodeId, Vec<(u32, NodeId)>>) -> usize {
+    ast_children_by_parent
+        .values()
+        .map(|children| children.len())
+        .sum()
 }
 
 #[cfg(test)]
@@ -3743,7 +3893,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_binary_atoms_stay_binary_constraints() {
+    fn ordinal_before_lowers_to_linear_constraint() {
         let mut program = SelectorProgram::default();
         let left = program.add_variable(VariableDomain::StatementOrdinal, Some("left".to_string()));
         let right =
@@ -3758,12 +3908,14 @@ mod tests {
         let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert!(model.allowed_tuples.is_empty());
+        assert!(model.binary_constraints.is_empty());
         assert_eq!(
-            model.binary_constraints,
-            vec![BinaryConstraint {
-                left: ConstraintVariableId(0),
-                right: ConstraintVariableId(1),
-                kind: BinaryConstraintKind::OrdinalBefore,
+            model.linear_constraints,
+            vec![LinearConstraint {
+                variables: vec![ConstraintVariableId(0), ConstraintVariableId(1)],
+                coefficients: vec![1, -1],
+                offset: 1,
+                domain: vec![0, 0],
             }]
         );
         assert_eq!(

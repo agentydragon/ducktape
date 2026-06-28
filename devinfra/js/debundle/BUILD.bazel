@@ -1118,6 +1118,7 @@ rust_library(
         ":selector_constraint_backend",
         ":selector_constraint_model_builder",
         ":selector_ir",
+        "@crates//:serde_json",
     ],
 )
 
@@ -1129,7 +1130,9 @@ rust_test(
     deps = [
         ":analysis",
         ":selector_constraint_backend",
+        ":selector_constraint_model_builder",
         ":selector_ir",
+        "@crates//:serde_json",
     ],
 )
 

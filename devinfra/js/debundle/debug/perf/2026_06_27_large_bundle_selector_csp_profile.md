@@ -161,3 +161,15 @@ The next PR should target the high-level Rust-side shape, not solver heuristics:
    cap;
 4. if the run reaches the sidecar, capture CP-SAT problem-size stats and profile
    the sidecar separately.
+
+For future timeout investigations, prefer stopping instead of immediately
+killing the profiled debundler at the cap. A stopped process can be inspected
+with `gdb` to read live stacks, heap shape, and relation/model state without
+writing a large core file. Dump core only if the exact interrupted state must be
+kept after the process exits.
+
+The pre-solver summary side files should be enabled during these runs. They
+report selector-program counts, input fact relation cardinalities, model-build
+domain/relation counts when reached, and compiled CSP shape when reached:
+variables by domain, domain-size histograms, allowed-table row/cell histograms,
+linear/binary/all-different counts, and broad `constraint_count_by_kind`.

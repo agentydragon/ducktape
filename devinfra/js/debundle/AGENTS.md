@@ -134,6 +134,11 @@ stack samples. Keep production telemetry coarse and useful for users of
 the pipeline; don't add detailed stage fields solely because an
 optimization investigation needs temporary visibility.
 
+For timed perf repros, prefer stopping the process on timeout before
+killing it, then attach with `gdb` to inspect live stacks and memory
+state. Use a core dump only when the interrupted state needs to be
+preserved after the process exits.
+
 ## Test shape preferences
 
 Strongly prefer **executable e2e tests with high-level assertions**
