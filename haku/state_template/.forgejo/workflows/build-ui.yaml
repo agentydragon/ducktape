@@ -2,17 +2,27 @@
 #
 # Runs IN-CLUSTER on the contained, repo-scoped Forgejo Actions runner provided by
 # `cluster/k8s/haku-ci` — NOT on Bazel/BuildBuddy (haku-state may hold private
-# operator info, so its source never leaves the cluster). The runner is rootless;
-# this uses a plain `docker buildx`/`buildah`-style build the runner exposes.
+# operator info, so its source never leaves the cluster). The runner is rootless.
+#
+# Everything talks to Forgejo over the in-cluster service (forgejo-http.forgejo:3000,
+# plain HTTP) rather than the public git.allegedly.works — so no build traffic
+# hairpins out to the public ingress. The dind daemon is started with
+# `--insecure-registry=forgejo-http.forgejo:3000` (see cluster/k8s/haku-ci) so the
+# HTTP registry push is allowed.
 #
 # Flow:
-#   1. build the image from ui/Dockerfile
-#   2. push it to the in-cluster Forgejo registry as
-#      git.allegedly.works/haku/ui:main-<utc-timestamp>-<short-sha>
-# That's it — CI does NOT touch the deployment manifest. Flux image automation
-# watches the registry, picks the newest tag by its timestamp, and writes it into
-# k8s/haku-ui/deployment.yaml itself (see the `{"$imagepolicy": ...}` marker on the
-# image line there). So there is no CI commit-back and no `[skip ci]` loop.
+#   1. clone the repo (the job container `docker:27-cli` is a minimal Alpine image
+#      with the docker CLI but no node — so JS actions like actions/checkout can't
+#      run — and no git, so we apk-add it and clone manually)
+#   2. build the image from ui/Dockerfile
+#   3. push it to the Forgejo registry as
+#      forgejo-http.forgejo:3000/haku/ui:main-<utc-timestamp>-<short-sha>
+# The image is the same per-owner Forgejo package whatever host pushed it, so it is
+# pullable as git.allegedly.works/haku/ui — which is what k8s/haku-ui/deployment.yaml
+# and the Flux ImageRepository reference. CI does NOT touch the deployment manifest:
+# Flux image automation watches the registry, picks the newest tag by its timestamp,
+# and writes it into the deployment itself (the `{"$imagepolicy": ...}` marker). So
+# there is no CI commit-back and no `[skip ci]` loop.
 #
 # This is STARTER source Haku adopts and evolves. Heavily commented on purpose.
 
@@ -28,26 +38,34 @@ on:
 jobs:
   build:
     runs-on: haku-ci # the repo-scoped, contained runner label (cluster/k8s/haku-ci)
-    # The built-in Forgejo Actions job token (github.token) authenticates the registry
-    # push — no separately-provisioned secret. packages:write scopes it to push to the
-    # repo owner's (haku/*) package namespace.
+    # The built-in Forgejo Actions job token (github.token) authenticates both the
+    # clone (contents:read) and the registry push (packages:write) — no separately
+    # provisioned secret.
     permissions:
       contents: read
       packages: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      # No actions/checkout: that's a JS action and docker:27-cli has no node. Install
+      # git and clone over the in-cluster Forgejo HTTP service. Clone to /tmp first so
+      # this doesn't depend on the workspace being empty, then copy in (incl. .git).
+      - name: Checkout (in-cluster, no JS action)
+        run: |
+          apk add --no-cache git
+          git clone --quiet \
+            "http://x-access-token:${{ github.token }}@forgejo-http.forgejo:3000/${{ github.repository }}.git" \
+            /tmp/src
+          git -C /tmp/src checkout --quiet "${{ github.sha }}"
+          cp -a /tmp/src/. .
 
-      # The runner provides a Docker-compatible builder. Auth to the in-cluster Forgejo
-      # registry with the built-in job token (github.actor + github.token) — Forgejo
-      # mints it per run, so there's no FORGEJO_REGISTRY_PASSWORD secret to provision.
-      # Fallback if a push is ever rejected (token lacks package write): provision a
-      # `forgejo_repository_action_secret` push cred in tf/gitops/haku-state and use
-      # `${{ secrets.<NAME> }}` here instead.
-      - name: Log in to the Forgejo registry
+      # Auth to the in-cluster Forgejo registry with the built-in job token
+      # (github.actor + github.token) — Forgejo mints it per run, so there's no
+      # registry password secret to provision. Fallback if a push is ever rejected
+      # (token lacks package write): provision a `forgejo_repository_action_secret`
+      # push cred in tf/gitops/haku-state and use `${{ secrets.<NAME> }}` here.
+      - name: Log in to the in-cluster Forgejo registry
         run: |
           echo "${{ github.token }}" \
-            | docker login git.allegedly.works -u "${{ github.actor }}" --password-stdin
+            | docker login forgejo-http.forgejo:3000 -u "${{ github.actor }}" --password-stdin
 
       # Tag pattern is what Flux image automation sorts on: a UTC timestamp makes
       # the newest build the highest tag (ImagePolicy `numerical` on the captured
@@ -55,6 +73,6 @@ jobs:
       - name: Build and push the image
         run: |
           TAG="main-$(date -u +%Y%m%d%H%M%S)-$(echo "${{ github.sha }}" | cut -c1-7)"
-          IMAGE="git.allegedly.works/haku/ui:${TAG}"
+          IMAGE="forgejo-http.forgejo:3000/haku/ui:${TAG}"
           docker build -f ui/Dockerfile -t "$IMAGE" ui
           docker push "$IMAGE"

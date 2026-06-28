@@ -93,6 +93,12 @@ spec:
           args:
             - --host=tcp://0.0.0.0:2375
             - --tls=false
+            # The build-ui workflow pushes to the Forgejo registry over the
+            # in-cluster service (forgejo-http.forgejo:3000, plain HTTP) instead of
+            # the public git.allegedly.works — keeps build traffic off the public
+            # hairpin. dockerd rejects HTTP registries unless they're declared
+            # insecure.
+            - --insecure-registry=forgejo-http.forgejo:3000
           # --tls=false alone isn't enough: the dind entrypoint defaults DOCKER_TLS_CERTDIR
           # to /certs and re-enables TLS on 2375, so the runner's plain-HTTP client hits
           # "HTTP request to an HTTPS server". Emptying it disables TLS so 2375 is plain HTTP
