@@ -71,16 +71,18 @@
       };
 
       # CI-released artifact pins (nix/artifact-pins.json), updated by sync-pins.yml.
-      # All entries are plain fetchurl; sha256 is SHA-256 SRI of the downloaded file.
+      # Use Nixpkgs fetchurl derivations, not builtins.fetchurl: hosts behind
+      # restricted egress can substitute these fixed-output paths from Attic
+      # instead of doing evaluator-time downloads from GitHub Releases.
       artifacts =
         let
           data = builtins.fromJSON (builtins.readFile ./nix/artifact-pins.json);
         in
         builtins.mapAttrs (
           _: spec:
-          builtins.fetchurl {
+          pkgs.fetchurl {
             inherit (spec) url;
-            sha256 = "sha256-${spec.sha256}";
+            hash = "sha256-${spec.sha256}";
           }
         ) data.pins;
 
