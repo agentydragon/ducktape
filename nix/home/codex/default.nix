@@ -191,35 +191,26 @@ let
     mode = "directory-symlink";
   };
 
-  # Run in a subshell so `exit` and `set -e` stay contained. home-manager
-  # concatenates every activation snippet into one script, so a bare `exit` here
-  # terminates the WHOLE activation — skipping linkGeneration/reloadSystemd and
-  # leaving all home files + user systemd units unlinked. That bites a first-ever
-  # activation (where this snippet runs before linkGeneration has placed $BASE),
-  # e.g. a freshly-imaged headless host; it's masked on long-lived hosts where
-  # $BASE already exists from a prior generation.
+  # No `exit`/`set -e` here: home-manager concatenates every activation snippet
+  # into one script, so either would derail the WHOLE activation — skipping
+  # linkGeneration/reloadSystemd and leaving all home files + user systemd units
+  # unlinked. (That bit a first-ever activation on a freshly-imaged headless
+  # host, where this snippet runs before linkGeneration has placed $BASE; masked
+  # on long-lived hosts where $BASE already exists.) merge.py already no-ops when
+  # the base config isn't present, so no shell guard is needed.
   mergeScript = ''
-    (
-      set -euo pipefail
+    for dir in \
+      '${codexHomeAbsolute}' \
+      '${codexNpmCache}' \
+      '${codexNixCache}' \
+      '${codexPreCommitCache}' \
+      '${codexSccacheCache}' \
+      '${codexBazelCache}' \
+      '${codexBazeliskCache}'; do
+      mkdir -p "$dir"
+    done
 
-      CODEX_HOME='${codexHomeAbsolute}'
-      BASE='${baseFileAbsolute}'
-      LIVE='${liveFileAbsolute}'
-
-      if [ ! -f "$BASE" ]; then
-        exit 0
-      fi
-
-      mkdir -p "$CODEX_HOME"
-      mkdir -p '${codexNpmCache}'
-      mkdir -p '${codexNixCache}'
-      mkdir -p '${codexPreCommitCache}'
-      mkdir -p '${codexSccacheCache}'
-      mkdir -p '${codexBazelCache}'
-      mkdir -p '${codexBazeliskCache}'
-
-      BASE="$BASE" LIVE="$LIVE" ${pythonMerge}/bin/python ${./merge.py}
-    )
+    BASE='${baseFileAbsolute}' LIVE='${liveFileAbsolute}' ${pythonMerge}/bin/python ${./merge.py}
   '';
 in
 {
