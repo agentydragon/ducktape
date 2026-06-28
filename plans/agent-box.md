@@ -118,3 +118,12 @@ runs at `nixos-rebuild switch`, long after cloud-init). Two bugs, both fixed in
   `flake.nix` and `nix/nixos/hosts/agent-box/default.nix`.
 - **SSH exposure**: per-VM ports get clunky past ~2-3 VMs; see plans/vm_ssh_exposure.md for
   the SNI-multiplexed path.
+- **Auto-provision the Codex CLI auth credential**: today the ChatGPT login is done
+  manually on the VM via the device-code flow, which writes `~/.codex/auth.json`. On every
+  image rebuild + VM recreate that file is lost and the login must be redone by hand.
+  Investigate planting it like the other codex secrets — e.g. SOPS-encrypt `auth.json` and
+  have home-manager sops-nix drop it into `~/.codex/auth.json` (decrypted with the
+  `agent-box-codex-user` key, same chain as the Forgejo/BuildBuddy secrets). Caveat: the
+  token likely carries a refresh token that rotates on use, so a static SOPS plant could go
+  stale — check whether the Codex CLI rewrites `auth.json` after refresh (one-time seed +
+  in-place refresh is fine; otherwise it needs periodic re-capture).
