@@ -65,6 +65,17 @@ inputs:
       emitted linkage JSON, e.g. "test,build".
     required: false
     default: ""
+  run_from_commit:
+    description: >
+      If set, passes --run_from_commit=<sha>: the runner checks out that exact commit
+      and skips workspace patch sync. bazel-ci uses this because the patch-sync path
+      (bb's generatePatches) can't mirror binary-file *deletions* — it emits "Binary
+      files differ" with no applyable hunk, so the runner's `git apply` fails before
+      Bazel runs. Only safe when the workspace is a clean checkout of that commit (the
+      patch path's "drops uncommitted changes" caveat doesn't apply). See
+      .github/workflows/bazel-ci.yml and devinfra/docs/bb_remote_internals.md.
+    required: false
+    default: ""
 
 outputs:
   log_path:
@@ -88,6 +99,7 @@ runs:
         INPUT_DISK_BYTES: ${{ inputs.disk_bytes }}
         INPUT_COMPUTE_UNITS: ${{ inputs.compute_units }}
         INPUT_LINKAGE_ROLES: ${{ inputs.linkage_roles }}
+        INPUT_RUN_FROM_COMMIT: ${{ inputs.run_from_commit }}
       run: |
         set -euo pipefail
 
@@ -137,6 +149,14 @@ runs:
           --runner_exec_properties=snapshot-read-policy=newest
         )
 
+        # --run_from_commit (optional): runner checks out the exact commit instead of
+        # mirroring the working tree as a patchset. See the run_from_commit input and
+        # bazel-ci.yml for the binary-deletion rationale.
+        RUN_FROM_COMMIT_ARGS=()
+        if [[ -n "$INPUT_RUN_FROM_COMMIT" ]]; then
+          RUN_FROM_COMMIT_ARGS=(--run_from_commit="$INPUT_RUN_FROM_COMMIT")
+        fi
+
         if [[ -n "$INPUT_SCRIPT" ]]; then
           # Forward RBE_IMAGE so the script can interpolate it into Bazel flags.
           ENV_ARGS+=(--remote_run_header="x-buildbuddy-platform.env-overrides=RBE_IMAGE=${RBE_IMAGE}")
@@ -145,6 +165,7 @@ runs:
             "${RUNNER_EXEC_PROPS[@]}"
             "${ENV_ARGS[@]}"
             "${BB_IMAGE_ARGS[@]}"
+            "${RUN_FROM_COMMIT_ARGS[@]}"
             --script="$INPUT_SCRIPT"
           )
         else
@@ -156,6 +177,7 @@ runs:
             "${RUNNER_EXEC_PROPS[@]}"
             "${ENV_ARGS[@]}"
             "${BB_IMAGE_ARGS[@]}"
+            "${RUN_FROM_COMMIT_ARGS[@]}"
             "${INPUT_ARGS_ARRAY[@]}"
             --config=rbe
             --config=ci

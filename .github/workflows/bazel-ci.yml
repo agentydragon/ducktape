@@ -39,26 +39,29 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
-      # bb remote's base resolution falls back to `git rev-parse <default-branch>@{upstream}`
-      # (and then the local `<default-branch>` ref) — both need a local branch. actions/checkout
-      # only creates remote-tracking refs (origin/devel), not local branches, so create one for
-      # PR builds. buildbuddy#11838 fixed the unpushed-local-commits case but still reads
-      # @{upstream}, which requires the local branch.
-      - name: Create local ref for default branch
-        if: github.event_name == 'pull_request'
-        run: git branch "$GIT_REPO_DEFAULT_BRANCH" "origin/$GIT_REPO_DEFAULT_BRANCH"
-
       # Combined test + build in one bb-remote `--script` invocation:
       # - Saves one Firecracker VM allocation per CI run.
       # - Avoids `bb remote build`'s post-run `downloadOutputs` path, which
       #   currently fails with "Exhausted all peers" — see
       #   devinfra/debug/bb_remote_peers_exhausted.md.
       # `&&` matches the previous step ordering: build runs only if test passed.
+      #
+      # run_from_commit: have the runner check out the exact commit instead of mirroring the
+      # PR as a patchset (base=devel + diff). The patch path (bb's generatePatches) can't sync
+      # binary-file *deletions* — for a deleted binary it emits "Binary files differ" with no
+      # applyable hunk, so the runner's `git apply` fails (exit 255) before Bazel even runs.
+      # Checking out the commit skips patch sync entirely. Safe here because the CI checkout is
+      # a clean commit (no uncommitted changes for the patch path to drop). Uses the PR head
+      # SHA (on origin, fetchable by the runner); GITHUB_SHA for push/dispatch. This also makes
+      # the old "create local devel ref" step unnecessary — run_from_commit skips base
+      # resolution (@{upstream}) entirely. See devinfra/docs/bb_remote_internals.md
+      # §"Git state synchronization" ("--run_from_commit disables patches").
       - name: Test + Build + lint
         id: bb-remote
         uses: ./.github/actions/bb-remote
         with:
           rbe_image: ${{ inputs.rbe_image }}
+          run_from_commit: ${{ github.event.pull_request.head.sha || github.sha }}
           linkage_roles: test,build
           script: |
             set -euo pipefail
