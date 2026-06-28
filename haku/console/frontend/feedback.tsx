@@ -118,26 +118,25 @@ export function FeedbackForm({ minRows, placeholder, submitLabel }: FeedbackForm
 export function FeedbackFab() {
   const [open, setOpen] = useState(false);
   return (
-    <Popover opened={open} onChange={setOpen} position="top-end" withArrow shadow="md" width={360}>
-      <Popover.Target>
-        <ActionIcon
-          color={ACTION_COLOR}
-          variant="filled"
-          size="xl"
-          radius="xl"
-          aria-label="Note to Haku"
-          className="fixed bottom-6 right-6 z-50 shadow-lg"
-        >
-          <IconMessage2 size={20} />
-        </ActionIcon>
-      </Popover.Target>
-      <Popover.Dropdown>
-        <FeedbackForm
-          minRows={4}
-          placeholder="Anything for Haku to fold into its next run…"
-          submitLabel="Send to Haku"
-        />
-      </Popover.Dropdown>
-    </Popover>
+    // Fixed to the viewport (not the centered content column) so the button stays
+    // pinned bottom-right regardless of scroll. A plain div carries the fixed
+    // positioning so no Mantine component styles can override it; the Popover's
+    // dropdown is portaled to <body> and still anchors to the ActionIcon.
+    <div className="fixed bottom-6 right-6 z-50">
+      <Popover opened={open} onChange={setOpen} position="top-end" withArrow shadow="md" width={360}>
+        <Popover.Target>
+          <ActionIcon color={ACTION_COLOR} variant="filled" size="xl" radius="xl" aria-label="Note to Haku">
+            <IconMessage2 size={20} />
+          </ActionIcon>
+        </Popover.Target>
+        <Popover.Dropdown>
+          <FeedbackForm
+            minRows={4}
+            placeholder="Anything for Haku to fold into its next run…"
+            submitLabel="Send to Haku"
+          />
+        </Popover.Dropdown>
+      </Popover>
+    </div>
   );
 }

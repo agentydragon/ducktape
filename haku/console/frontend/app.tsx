@@ -43,18 +43,21 @@ export default function App() {
     );
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
-      <Group justify="space-between" align="center" mb="xs">
-        <Group gap="sm" align="center">
-          <img src={LOGO_URL} alt="" aria-hidden="true" className="h-10 w-10 shrink-0" />
-          <Title order={1}>Haku</Title>
+    <>
+      <div className="mx-auto max-w-3xl px-4 py-8">
+        <Group justify="space-between" align="center" mb="xs">
+          <Group gap="sm" align="center">
+            <img src={LOGO_URL} alt="" aria-hidden="true" className="h-10 w-10 shrink-0" />
+            <Title order={1}>Haku</Title>
+          </Group>
+          <LaunchRoutineButton routineUrl={config.launch_routine_url} />
         </Group>
-        <LaunchRoutineButton routineUrl={config.launch_routine_url} />
-      </Group>
-      {/* The Free-form UI is the main surface; the note-to-haku form opens from the corner button. */}
-      {config.haku_ui_url && <HakuUiEmbed uiUrl={config.haku_ui_url} />}
+        {/* The Free-form UI is the main surface; the note-to-haku form opens from the corner button. */}
+        {config.haku_ui_url && <HakuUiEmbed uiUrl={config.haku_ui_url} />}
+      </div>
 
+      {/* Viewport-pinned (not inside the centered content column); see FeedbackFab. */}
       <FeedbackFab />
-    </div>
+    </>
   );
 }
