@@ -20,15 +20,14 @@ downstream chunk is ~6.9 MiB / 204k lines (<source_match_selector_profile.md> �
 
 ## Workload (2026-06-21)
 
-**Why not the documented default.** AGENTS.md → "Performance Profiling" points at
-the `debundle_pipeline_with_profiles` sibling targets over the
-`props/frontend/debundle/` corpus. At HEAD `05572738` (the #2398 commit) neither
-exists yet: `pipeline.bzl` defines only `debundle_pipeline` (no
-`_with_profiles`), and there is no `props/frontend/debundle/` corpus. The gaffer
+**Why not the documented default.** Current profiling guidance keeps host
+profilers outside Bazel unless they are supplied by a hermetic toolchain. This
+historical run predates the current public corpus setup: at HEAD `05572738` (the
+#2398 commit), there was no `props/frontend/debundle/` corpus. The gaffer
 `tana/re/web/78d928dca7` spec was off-limits (a concurrent lane worker was
 editing it). So this run uses the reproducible public stand-in the proposer note
-already established — the `gen_synth_corpus.py` corpus (gaffer-scale graph shape)
-— with one rewrite to make it exercise the fact resolver.
+already established — the `gen_synth_corpus.py` corpus (gaffer-scale graph
+shape) — with one rewrite to make it exercise the fact resolver.
 
 **Corpus.** `gen_synth_corpus.py --statements 10000 --seed 1 --claim-blocks 62`
 → a single 10051-statement / 436 KB chunk, 62 claimed modules, **2461 member

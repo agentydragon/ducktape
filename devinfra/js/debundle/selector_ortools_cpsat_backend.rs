@@ -402,6 +402,19 @@ fn problem_summary(
         .iter()
         .filter(|constraint| matches!(constraint.kind, BinaryConstraintKind::OrdinalBefore))
         .count();
+    let mut constraint_count_by_kind = BTreeMap::from([
+        ("allowed_table", problem.allowed_tuples.len()),
+        ("linear", problem.linear_constraints.len()),
+        ("all_different", problem.all_different.len()),
+    ]);
+    for constraint in &problem.binary_constraints {
+        let key = match constraint.kind {
+            BinaryConstraintKind::Equal => "binary_equal",
+            BinaryConstraintKind::NotEqual => "binary_not_equal",
+            BinaryConstraintKind::OrdinalBefore => "binary_ordinal_before",
+        };
+        *constraint_count_by_kind.entry(key).or_insert(0) += 1;
+    }
     let variable_count_by_domain = keyed_count(
         problem
             .variables
@@ -459,12 +472,25 @@ fn problem_summary(
             .iter()
             .map(|constraint| all_different_reason_name(&constraint.reason)),
     );
-    let variable_domain_representation_count_by_kind = keyed_count(problem.variables.iter().map(
-        |variable| match &variable.values {
-            CompiledVariableDomain::Full(_) => "full",
-            CompiledVariableDomain::Sparse(_) => "sparse",
-        },
-    ));
+    let linear_constraint_arity_histogram = usize_histogram(
+        problem
+            .linear_constraints
+            .iter()
+            .map(|constraint| constraint.variables.len()),
+    );
+    let variable_domain_representation_count_by_kind = keyed_count(
+        problem
+            .variables
+            .iter()
+            .map(|variable| variable_domain_representation_name(&variable.values)),
+    );
+    let variable_domain_encoding_count_by_domain =
+        grouped_keyed_count(problem.variables.iter().map(|variable| {
+            (
+                variable_domain_name(variable.domain),
+                variable_domain_encoding_name(&variable.values),
+            )
+        }));
     let domain_sharing = variable_domain_sharing_summary(problem);
 
     serde_json::json!({
@@ -482,16 +508,20 @@ fn problem_summary(
         "binary_equal_count": binary_equal_count,
         "binary_not_equal_count": binary_not_equal_count,
         "binary_ordinal_before_count": binary_ordinal_before_count,
+        "constraint_count_by_kind": constraint_count_by_kind,
         "domain_size_histogram": domain_size_histogram,
         "domain_size_histogram_by_domain": domain_size_histogram_by_domain,
         "dump_sequence": dump_sequence,
         "linear_constraint_count": problem.linear_constraints.len(),
+        "linear_constraint_arity_histogram": linear_constraint_arity_histogram,
         "max_allowed_arity": max_allowed_arity,
         "max_allowed_rows": max_allowed_rows,
         "max_domain_values": max_domain_values,
         "request_encoded_bytes": request_encoded_bytes,
+        "request_proto_bytes": request_encoded_bytes,
         "target_projection_count": problem.target_projections.len(),
         "total_domain_values": total_domain_values,
+        "variable_domain_encoding_count_by_domain": variable_domain_encoding_count_by_domain,
         "variable_domain_representation_count_by_kind": variable_domain_representation_count_by_kind,
         "variable_domain_sharing": domain_sharing,
         "value_dictionary_count": problem.value_dictionary.total_len(),
@@ -507,27 +537,70 @@ fn problem_summary(
 }
 
 fn variable_domain_sharing_summary(problem: &CompiledSelectorProblem) -> serde_json::Value {
-    let mut domain_use_counts: BTreeMap<Vec<BackendValueId>, usize> = BTreeMap::new();
+    let mut domain_use_counts: BTreeMap<(&'static str, Vec<BackendValueId>), usize> =
+        BTreeMap::new();
+    let mut domain_use_counts_by_domain: BTreeMap<
+        &'static str,
+        BTreeMap<Vec<BackendValueId>, usize>,
+    > = BTreeMap::new();
     for variable in &problem.variables {
+        let domain = variable_domain_name(variable.domain);
+        let values = problem.variable_domain_values(variable);
         *domain_use_counts
-            .entry(problem.variable_domain_values(variable))
+            .entry((domain, values.clone()))
+            .or_insert(0) += 1;
+        *domain_use_counts_by_domain
+            .entry(domain)
+            .or_default()
+            .entry(values)
             .or_insert(0) += 1;
     }
-    let unique_domain_value_count = domain_use_counts
-        .keys()
-        .map(|values| values.len())
-        .sum::<usize>();
-    let total_variable_domain_values = domain_use_counts
+
+    let by_domain = domain_use_counts_by_domain
         .iter()
-        .map(|(values, use_count)| values.len() * use_count)
-        .sum::<usize>();
-    let shared_domain_group_count = domain_use_counts
-        .values()
-        .filter(|use_count| **use_count > 1)
-        .count();
-    let max_variables_sharing_domain = domain_use_counts.values().copied().max().unwrap_or(0);
-    let variables_per_unique_domain_histogram =
-        usize_histogram(domain_use_counts.values().copied());
+        .map(|(domain, counts)| {
+            (
+                *domain,
+                domain_sharing_stats(
+                    counts
+                        .iter()
+                        .map(|(values, use_count)| (values.len(), *use_count)),
+                ),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut summary = domain_sharing_stats(
+        domain_use_counts
+            .iter()
+            .map(|((_domain, values), use_count)| (values.len(), *use_count)),
+    );
+    summary
+        .as_object_mut()
+        .expect("domain sharing stats should be a JSON object")
+        .insert("by_domain".to_string(), serde_json::json!(by_domain));
+    summary
+}
+
+fn domain_sharing_stats(
+    domain_value_use_counts: impl IntoIterator<Item = (usize, usize)>,
+) -> serde_json::Value {
+    let mut unique_domain_count = 0;
+    let mut unique_domain_value_count = 0;
+    let mut total_variable_domain_values = 0;
+    let mut shared_domain_group_count = 0;
+    let mut max_variables_sharing_domain = 0;
+    let mut variables_per_unique_domain = Vec::new();
+
+    for (value_count, use_count) in domain_value_use_counts {
+        unique_domain_count += 1;
+        unique_domain_value_count += value_count;
+        total_variable_domain_values += value_count * use_count;
+        if use_count > 1 {
+            shared_domain_group_count += 1;
+        }
+        max_variables_sharing_domain = max_variables_sharing_domain.max(use_count);
+        variables_per_unique_domain.push(use_count);
+    }
 
     serde_json::json!({
         "current_encoded_value_count": total_variable_domain_values,
@@ -535,8 +608,8 @@ fn variable_domain_sharing_summary(problem: &CompiledSelectorProblem) -> serde_j
         "encoded_value_savings_if_deduplicated": total_variable_domain_values.saturating_sub(unique_domain_value_count),
         "max_variables_sharing_domain": max_variables_sharing_domain,
         "shared_domain_group_count": shared_domain_group_count,
-        "unique_domain_count": domain_use_counts.len(),
-        "variables_per_unique_domain_histogram": variables_per_unique_domain_histogram,
+        "unique_domain_count": unique_domain_count,
+        "variables_per_unique_domain_histogram": usize_histogram(variables_per_unique_domain),
     })
 }
 
@@ -562,6 +635,20 @@ fn grouped_usize_histogram(
     grouped
 }
 
+fn grouped_keyed_count(
+    values: impl IntoIterator<Item = (&'static str, &'static str)>,
+) -> BTreeMap<&'static str, BTreeMap<&'static str, usize>> {
+    let mut grouped = BTreeMap::new();
+    for (group, key) in values {
+        *grouped
+            .entry(group)
+            .or_insert_with(BTreeMap::new)
+            .entry(key)
+            .or_insert(0) += 1;
+    }
+    grouped
+}
+
 fn keyed_count(keys: impl IntoIterator<Item = &'static str>) -> BTreeMap<&'static str, usize> {
     let mut counts = BTreeMap::new();
     for key in keys {
@@ -576,6 +663,20 @@ fn variable_domain_name(domain: VariableDomain) -> &'static str {
         VariableDomain::AstNode => "ast_node",
         VariableDomain::String => "string",
         VariableDomain::StatementOrdinal => "statement_ordinal",
+    }
+}
+
+fn variable_domain_representation_name(values: &CompiledVariableDomain) -> &'static str {
+    match values {
+        CompiledVariableDomain::Full(_) => "full",
+        CompiledVariableDomain::Sparse(_) => "sparse",
+    }
+}
+
+fn variable_domain_encoding_name(values: &CompiledVariableDomain) -> &'static str {
+    match values {
+        CompiledVariableDomain::Full(_) => "dense",
+        CompiledVariableDomain::Sparse(_) => "sparse",
     }
 }
 
@@ -825,6 +926,9 @@ mod tests {
 
     use analysis::{AnalysisHints, ChunkId, OwnerId, StatementOrdinal};
     use selector_backend_solver::solve_with_backend;
+    use selector_constraint_backend::{
+        AllDifferentConstraintId, DomainValueDictionary, FullDomainValues,
+    };
     use selector_ir::{
         ClaimKind, ClaimOrigin, ClaimOutcome, OwnerTerm, ResolvedClaim, SelectorAtom, SelectorFact,
         SelectorFactStore, SelectorProgram, SelectorTargetId, StringTerm, VariableDomain,
@@ -996,6 +1100,149 @@ mod tests {
             Some(wire::target_projection::BindingProjection::BindingConst(
                 "minA".to_string()
             ))
+        );
+    }
+
+    #[test]
+    fn problem_summary_reports_request_shape_and_domain_diagnostics() {
+        let problem = CompiledSelectorProblem {
+            value_dictionary: DomainValueDictionary {
+                owners: vec![OwnerId(10), OwnerId(20), OwnerId(30)],
+                strings: vec!["alpha".to_string(), "beta".to_string()],
+                statement_ordinals: vec![StatementOrdinal(0), StatementOrdinal(1)],
+                ..Default::default()
+            },
+            full_domains: FullDomainValues {
+                owners: vec![BackendValueId(0), BackendValueId(1), BackendValueId(2)],
+                strings: vec![BackendValueId(0), BackendValueId(1)],
+                statement_ordinals: vec![BackendValueId(0), BackendValueId(1)],
+                ..Default::default()
+            },
+            variables: vec![
+                CompiledVariable {
+                    id: ConstraintVariableId(0),
+                    source: None,
+                    domain: VariableDomain::Owner,
+                    debug_name: Some("owner_dense_a".to_string()),
+                    values: CompiledVariableDomain::Full(VariableDomain::Owner),
+                },
+                CompiledVariable {
+                    id: ConstraintVariableId(1),
+                    source: None,
+                    domain: VariableDomain::Owner,
+                    debug_name: Some("owner_dense_b".to_string()),
+                    values: CompiledVariableDomain::Full(VariableDomain::Owner),
+                },
+                CompiledVariable {
+                    id: ConstraintVariableId(2),
+                    source: None,
+                    domain: VariableDomain::Owner,
+                    debug_name: Some("owner_sparse".to_string()),
+                    values: CompiledVariableDomain::Sparse(vec![
+                        BackendValueId(0),
+                        BackendValueId(1),
+                    ]),
+                },
+                CompiledVariable {
+                    id: ConstraintVariableId(3),
+                    source: None,
+                    domain: VariableDomain::String,
+                    debug_name: Some("string_sparse".to_string()),
+                    values: CompiledVariableDomain::Sparse(vec![
+                        BackendValueId(0),
+                        BackendValueId(1),
+                    ]),
+                },
+                CompiledVariable {
+                    id: ConstraintVariableId(4),
+                    source: None,
+                    domain: VariableDomain::StatementOrdinal,
+                    debug_name: Some("ordinal_dense".to_string()),
+                    values: CompiledVariableDomain::Full(VariableDomain::StatementOrdinal),
+                },
+            ],
+            target_projections: Vec::new(),
+            allowed_tuples: Vec::new(),
+            binary_constraints: vec![CompiledBinaryConstraint {
+                left: ConstraintVariableId(0),
+                right: ConstraintVariableId(1),
+                kind: BinaryConstraintKind::NotEqual,
+            }],
+            linear_constraints: vec![CompiledLinearConstraint {
+                variables: vec![ConstraintVariableId(0), ConstraintVariableId(2)],
+                coefficients: vec![1, -1],
+                offset: 0,
+                domain: vec![0, 0],
+            }],
+            all_different: vec![CompiledAllDifferentConstraint {
+                id: AllDifferentConstraintId(0),
+                variables: vec![
+                    ConstraintVariableId(0),
+                    ConstraintVariableId(1),
+                    ConstraintVariableId(2),
+                ],
+                reason: AllDifferentReason::SelectorSemantics {
+                    label: "summary test".to_string(),
+                },
+            }],
+            known_unsat: None,
+        };
+        let request = request_from_problem(&problem).unwrap();
+        let request_encoded_bytes = request.encode_to_vec().len();
+
+        let summary = problem_summary(&problem, &request, request_encoded_bytes, Some(9));
+
+        assert_eq!(
+            summary["request_proto_bytes"],
+            serde_json::json!(request_encoded_bytes)
+        );
+        assert_eq!(
+            summary["constraint_count_by_kind"]["binary_not_equal"],
+            serde_json::json!(1)
+        );
+        assert_eq!(
+            summary["constraint_count_by_kind"]["linear"],
+            serde_json::json!(1)
+        );
+        assert_eq!(
+            summary["constraint_count_by_kind"]["all_different"],
+            serde_json::json!(1)
+        );
+        assert_eq!(
+            summary["linear_constraint_arity_histogram"]["2"],
+            serde_json::json!(1)
+        );
+        assert_eq!(
+            summary["variable_domain_encoding_count_by_domain"]["owner"]["dense"],
+            serde_json::json!(2)
+        );
+        assert_eq!(
+            summary["variable_domain_encoding_count_by_domain"]["owner"]["sparse"],
+            serde_json::json!(1)
+        );
+        assert_eq!(
+            summary["variable_domain_encoding_count_by_domain"]["string"]["sparse"],
+            serde_json::json!(1)
+        );
+        assert_eq!(
+            summary["variable_domain_sharing"]["unique_domain_count"],
+            serde_json::json!(4)
+        );
+        assert_eq!(
+            summary["variable_domain_sharing"]["shared_domain_group_count"],
+            serde_json::json!(1)
+        );
+        assert_eq!(
+            summary["variable_domain_sharing"]["by_domain"]["owner"]["unique_domain_count"],
+            serde_json::json!(2)
+        );
+        assert_eq!(
+            summary["variable_domain_sharing"]["by_domain"]["owner"]["shared_domain_group_count"],
+            serde_json::json!(1)
+        );
+        assert_eq!(
+            summary["variable_domain_sharing"]["by_domain"]["string"]["shared_domain_group_count"],
+            serde_json::json!(0)
         );
     }
 

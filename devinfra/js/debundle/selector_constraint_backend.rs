@@ -480,6 +480,57 @@ impl CompiledSelectorProblemBuilder {
         self.add_encoded_allowed_tuples_with_domains(variables, domains, tuples)
     }
 
+    pub fn restrict_variable_to_encoded_values(
+        &mut self,
+        variable: ConstraintVariableId,
+        values: impl IntoIterator<Item = BackendValueId>,
+    ) -> Result<(), CompiledSelectorProblemError> {
+        let domain = self.require_variable(variable)?.domain;
+        let mut values = values.into_iter().collect::<Vec<_>>();
+        values.sort_unstable();
+        values.dedup();
+        for value in &values {
+            self.validate_encoded_variable_domain_value(variable, domain, *value)?;
+        }
+
+        let full_domain = self.full_domains.get(domain).to_vec();
+        let empty_domain = {
+            let variable = self.require_variable_mut(variable)?;
+            match &mut variable.values {
+                CompiledVariableDomain::Full(_) => {
+                    values.retain(|value| full_domain.binary_search(value).is_ok());
+                    let empty_domain = values.is_empty();
+                    variable.values = CompiledVariableDomain::Sparse(values);
+                    empty_domain
+                }
+                CompiledVariableDomain::Sparse(existing) => {
+                    let mut restricted = Vec::new();
+                    let mut left = 0;
+                    let mut right = 0;
+                    while left < existing.len() && right < values.len() {
+                        match existing[left].cmp(&values[right]) {
+                            std::cmp::Ordering::Less => left += 1,
+                            std::cmp::Ordering::Greater => right += 1,
+                            std::cmp::Ordering::Equal => {
+                                restricted.push(existing[left]);
+                                left += 1;
+                                right += 1;
+                            }
+                        }
+                    }
+                    let empty_domain = restricted.is_empty();
+                    *existing = restricted;
+                    empty_domain
+                }
+            }
+        };
+        if empty_domain {
+            self.known_unsat
+                .get_or_insert_with(|| "variable restriction has empty domain".to_string());
+        }
+        Ok(())
+    }
+
     pub fn intern_owner(
         &mut self,
         value: OwnerId,
@@ -559,19 +610,26 @@ impl CompiledSelectorProblemBuilder {
                 });
             }
             let mut compiled = Vec::with_capacity(tuple.len());
+            let mut row_matches_variable_domains = true;
             for (column, (value_id, expected)) in tuple.into_iter().zip(domains.iter()).enumerate()
             {
-                self.validate_encoded_value(
+                self.validate_encoded_value_domain(
                     id,
                     tuple_index,
                     variables[column],
                     *expected,
                     value_id,
                 )?;
+                if !self.encoded_value_matches_variable_domain(variables[column], value_id)? {
+                    row_matches_variable_domains = false;
+                    break;
+                }
                 self.ensure_full_domain_contains(*expected, value_id);
                 compiled.push(value_id);
             }
-            compiled_tuples.push(compiled);
+            if row_matches_variable_domains {
+                compiled_tuples.push(compiled);
+            }
         }
         compiled_tuples.sort();
         compiled_tuples.dedup();
@@ -715,7 +773,7 @@ impl CompiledSelectorProblemBuilder {
             .collect()
     }
 
-    fn validate_encoded_value(
+    fn validate_encoded_value_domain(
         &self,
         id: AllowedTupleConstraintId,
         tuple_index: usize,
@@ -741,30 +799,64 @@ impl CompiledSelectorProblemBuilder {
                 value,
             });
         };
-        let variable_domain = &self.require_variable(variable)?.values;
-        match variable_domain {
-            CompiledVariableDomain::Full(_) => {
-                if index >= self.value_dictionary.domain_len(domain) {
-                    return Err(CompiledSelectorProblemError::EncodedTupleValueOutOfDomain {
-                        id,
-                        tuple_index,
-                        variable,
-                        domain,
-                        value,
-                    });
-                }
-            }
-            CompiledVariableDomain::Sparse(values) => {
-                if values.binary_search(&value).is_err() {
-                    return Err(CompiledSelectorProblemError::EncodedTupleValueOutOfDomain {
-                        id,
-                        tuple_index,
-                        variable,
-                        domain,
-                        value,
-                    });
-                }
-            }
+        if self.require_variable(variable)?.source.is_none() {
+            return Ok(());
+        }
+        if index >= self.value_dictionary.domain_len(domain) {
+            return Err(CompiledSelectorProblemError::EncodedTupleValueOutOfDomain {
+                id,
+                tuple_index,
+                variable,
+                domain,
+                value,
+            });
+        }
+        Ok(())
+    }
+
+    fn encoded_value_matches_variable_domain(
+        &self,
+        variable: ConstraintVariableId,
+        value: BackendValueId,
+    ) -> Result<bool, CompiledSelectorProblemError> {
+        match &self.require_variable(variable)?.values {
+            CompiledVariableDomain::Full(_) => Ok(true),
+            CompiledVariableDomain::Sparse(values) => Ok(values.binary_search(&value).is_ok()),
+        }
+    }
+
+    fn validate_encoded_variable_domain_value(
+        &self,
+        variable: ConstraintVariableId,
+        domain: VariableDomain,
+        value: BackendValueId,
+    ) -> Result<(), CompiledSelectorProblemError> {
+        if value.0 < 0 {
+            return Err(
+                CompiledSelectorProblemError::EncodedVariableDomainValueOutOfDomain {
+                    variable,
+                    domain,
+                    value,
+                },
+            );
+        }
+        let Ok(index) = usize::try_from(value.0) else {
+            return Err(
+                CompiledSelectorProblemError::EncodedVariableDomainValueOutOfDomain {
+                    variable,
+                    domain,
+                    value,
+                },
+            );
+        };
+        if index >= self.value_dictionary.domain_len(domain) {
+            return Err(
+                CompiledSelectorProblemError::EncodedVariableDomainValueOutOfDomain {
+                    variable,
+                    domain,
+                    value,
+                },
+            );
         }
         Ok(())
     }
@@ -935,6 +1027,15 @@ impl CompiledSelectorProblemBuilder {
             .get(variable.0)
             .ok_or(CompiledSelectorProblemError::UnknownVariable { variable })
     }
+
+    fn require_variable_mut(
+        &mut self,
+        variable: ConstraintVariableId,
+    ) -> Result<&mut CompiledVariableBuilder, CompiledSelectorProblemError> {
+        self.variables
+            .get_mut(variable.0)
+            .ok_or(CompiledSelectorProblemError::UnknownVariable { variable })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -980,6 +1081,11 @@ pub enum CompiledSelectorProblemError {
     EncodedTupleValueOutOfDomain {
         id: AllowedTupleConstraintId,
         tuple_index: usize,
+        variable: ConstraintVariableId,
+        domain: VariableDomain,
+        value: BackendValueId,
+    },
+    EncodedVariableDomainValueOutOfDomain {
         variable: ConstraintVariableId,
         domain: VariableDomain,
         value: BackendValueId,
@@ -1085,6 +1191,14 @@ impl fmt::Display for CompiledSelectorProblemError {
             } => write!(
                 f,
                 "allowed tuple constraint {id:?} row {tuple_index} variable {variable:?} has encoded value {value:?} outside {domain:?} domain"
+            ),
+            Self::EncodedVariableDomainValueOutOfDomain {
+                variable,
+                domain,
+                value,
+            } => write!(
+                f,
+                "variable {variable:?} restriction contains encoded value {value:?} outside {domain:?} domain"
             ),
             Self::BinaryDomainMismatch {
                 left,

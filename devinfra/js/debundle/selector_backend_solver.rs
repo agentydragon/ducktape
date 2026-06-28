@@ -955,10 +955,10 @@ mod tests {
             summary["compiled_problem"]["variable_count_by_domain"]["string"],
             json!(1)
         );
-        assert_eq!(summary["compiled_problem"]["allowed_table_count"], json!(2));
+        assert_eq!(summary["compiled_problem"]["allowed_table_count"], json!(1));
         assert_eq!(
             summary["compiled_problem"]["constraint_count_by_kind"]["allowed_table"],
-            json!(2)
+            json!(1)
         );
         assert_eq!(
             summary["compiled_problem"]["constraint_count_by_kind"]["linear"],

@@ -107,10 +107,9 @@ is slower and the repro can't be shared publicly.
 
 Use external profiling rather than fine-grained timing boilerplate in
 production code. The default downstream workflow is documented in
-<README.md>: use the profile sibling targets from
-`debundle_pipeline_with_profiles` so the profiling run shares the real
-Bazel action's spec paths, package roots, working directory, declared
-inputs, and debundler binary.
+<README.md>: use Bazel to build the optimized debundler and materialize
+inputs, then run host profilers outside Bazel unless the profiler is provided by
+a hermetic toolchain.
 
 Profile-mode samples answer "where is the runtime going relative to
 total time?" They are the right tool for discovering hot stack
@@ -123,10 +122,10 @@ than sprinkling more counters through the code.
 
 Do not commit ad hoc timing macros, detailed per-phase timers, or
 one-off elapsed-time counters solely for profiling. Use `perf`,
-Callgrind (`valgrind --tool=callgrind`), heaptrack, Massif, or the
-Bazel profile targets instead. If temporary instrumentation is
-unavoidable during an investigation, keep it local and remove it before
-review.
+Callgrind (`valgrind --tool=callgrind`), heaptrack, or Massif instead. Do not
+wrap host profilers in Bazel actions unless the profiler and its runtime
+dependencies are hermetic. If temporary instrumentation is unavoidable during an
+investigation, keep it local and remove it before review.
 
 Use production builds for absolute elapsed-time numbers. Symbol-heavy
 profiling flags can trade exact wall-clock comparability for better
