@@ -316,6 +316,7 @@ py_test(
     ],
     deps = [
         "//util/bazel:runfiles",
+        "@pypi//pygohcl",
         "@pypi//pytest_bazel",
     ],
 )

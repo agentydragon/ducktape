@@ -80,9 +80,11 @@ def _control_plane_nebula_ips(mesh: nebula_mesh.Mesh) -> dict[str, str]:
 
 def _terraform_control_plane_nebula_ips(path: Path) -> dict[str, str]:
     doc = pygohcl.loads(path.read_text())
-    # `locals` is one dict per `locals {}` block; gather the node-inventory maps across them.
+    # pygohcl collapses a single `locals {}` block to a dict but keeps multiple blocks as a
+    # list of dicts; normalize to a list, then gather the node-inventory maps across them.
+    blocks = doc.get("locals", [])
     nodes: dict[str, dict[str, str]] = {}
-    for block in doc.get("locals", []):
+    for block in [blocks] if isinstance(blocks, dict) else blocks:
         for local_name in _NODE_INVENTORY_LOCALS:
             nodes.update(block.get(local_name, {}))
     by_role: dict[str, dict[str, str]] = defaultdict(dict)

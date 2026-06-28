@@ -116,6 +116,11 @@ bbr build //:requirements --remote_download_regex='.*requirements\.out' --noremo
 cp bb-out/bazel-out/k8-fastbuild/bin/requirements.out requirements_bazel.txt
 # Then regenerate the gazelle manifest:
 bb run //devinfra:gazelle_python_manifest.update
+# On a host without /bin/bash (the workspace bazelrc pins --shell_executable=/bin/bash,
+# which may not exist on NixOS), the update + gazelle runs need:
+#   bb run //devinfra:gazelle_python_manifest.update \
+#     --config=nolint --norun_validations --shell_executable="$(command -v bash)"
+# (--config=nolint + --norun_validations skip the ruff lint aspect, whose sandbox lacks coreutils.)
 
 bb run //devinfra/lint:buildifier    # Format Bazel files
 ```

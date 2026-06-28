@@ -3,23 +3,26 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Any
 
+import pygohcl
 import pytest_bazel
 
 from util.bazel.runfiles import get_required_path
 
-_LOCAL_LIST_RE_TEMPLATE = r"(?ms)^\s*{name}\s*=\s*\[(?P<body>.*?)^\s*\]"
-_IP_LITERAL_RE = re.compile(r'"(?P<ip>\d+\.\d+\.\d+\.\d+)"')
-
 
 def _terraform_local_ips(path: Path, name: str) -> set[str]:
-    pattern = re.compile(_LOCAL_LIST_RE_TEMPLATE.format(name=re.escape(name)))
-    match = pattern.search(path.read_text())
-    assert match is not None, f"{path}: missing local.{name} list"
-    return {match.group("ip") for match in _IP_LITERAL_RE.finditer(match.group("body"))}
+    # pygohcl (HashiCorp's HCL2 parser) decodes the `local.<name>` IP list straight to a
+    # Python list of strings — a structural parse, not a regex over the file text.
+    doc = pygohcl.loads(path.read_text())
+    # pygohcl collapses a single `locals {}` block to a dict but keeps multiple blocks as a
+    # list of dicts; normalize to a list so either shape works.
+    blocks = doc.get("locals", [])
+    for block in [blocks] if isinstance(blocks, dict) else blocks:
+        if name in block:
+            return set(block[name])
+    raise AssertionError(f"{path}: missing local.{name} list")
 
 
 def _mesh_hosts(path: Path) -> dict[str, Any]:
