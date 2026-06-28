@@ -300,6 +300,7 @@ py_test(
     deps = [
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
+        "@pypi//pygohcl",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

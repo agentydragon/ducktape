@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import ipaddress
-import re
+from collections import defaultdict
 from pathlib import Path
 
+import pygohcl
 import pytest
 import pytest_bazel
 import yaml
@@ -13,12 +14,10 @@ import yaml
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
 
-# Node-map keys may be bare identifiers or quoted (the OVH keys are role-neutral hostnames
-# like "ovh-ns103656", which contain hyphens and so must be quoted in HCL).
-_TERRAFORM_NODE_RE = re.compile(
-    r'^    "?(?P<key>[A-Za-z0-9_-]+)"?\s*=\s*\{(?P<body>.*?)^    \}', re.MULTILINE | re.DOTALL
-)
-_TERRAFORM_STRING_ATTR_RE = re.compile(r'^\s*(?P<name>[A-Za-z0-9_]+)\s*=\s*"(?P<value>[^"]*)"', re.MULTILINE)
+# The `locals` maps in ovh-nodes.tf that carry per-node role/hostname/nebula_ip. pygohcl decodes
+# string literals to plain Python values (it wraps HashiCorp's HCL2 parser), so these fields come
+# out unquoted directly — no expression evaluation needed (the fields we read are literals).
+_NODE_INVENTORY_LOCALS = ("kimsufi_servers", "kimsufi_cp_servers")
 
 
 @pytest.fixture(scope="module")
@@ -79,22 +78,17 @@ def _control_plane_nebula_ips(mesh: nebula_mesh.Mesh) -> dict[str, str]:
     return {name: host.nebula_ip for name, host in mesh.hosts.items() if host.role == "control-plane"}
 
 
-def _string_attrs(terraform_block: str) -> dict[str, str]:
-    return {match.group("name"): match.group("value") for match in _TERRAFORM_STRING_ATTR_RE.finditer(terraform_block)}
-
-
 def _terraform_control_plane_nebula_ips(path: Path) -> dict[str, str]:
-    text = path.read_text()
-    control_planes: dict[str, str] = {}
-    for match in _TERRAFORM_NODE_RE.finditer(text):
-        attrs = _string_attrs(match.group("body"))
-        if attrs.get("role") != "controlplane":
-            continue
-        hostname = attrs.get("hostname")
-        nebula_ip = attrs.get("nebula_ip")
-        assert hostname, f"{match.group('key')}: control-plane node is missing hostname"
-        assert nebula_ip, f"{match.group('key')}: control-plane node is missing nebula_ip"
-        control_planes[hostname] = nebula_ip
+    doc = pygohcl.loads(path.read_text())
+    # `locals` is one dict per `locals {}` block; gather the node-inventory maps across them.
+    nodes: dict[str, dict[str, str]] = {}
+    for block in doc.get("locals", []):
+        for local_name in _NODE_INVENTORY_LOCALS:
+            nodes.update(block.get(local_name, {}))
+    by_role: dict[str, dict[str, str]] = defaultdict(dict)
+    for node in nodes.values():
+        by_role[node["role"]][node["hostname"]] = node["nebula_ip"]
+    control_planes = by_role["controlplane"]
     assert control_planes, f"{path}: expected at least one control-plane node"
     return control_planes
 

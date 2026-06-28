@@ -82,6 +82,10 @@ dependencies = [
     "tomlkit",
     "tomli>=2.0.0",
     "tomli-w>=1.0.0",
+    # HCL parsing: cluster/validation/test_nebula_mesh.py parses ovh-nodes.tf
+    # structurally instead of regex-scraping it. pygohcl wraps HashiCorp's Go HCL2
+    # parser, so string literals decode to plain (unquoted) Python values.
+    "pygohcl",
 
     # Accounting / finance
     # beancount: double-entry ledger model + text serializer; used by the budget

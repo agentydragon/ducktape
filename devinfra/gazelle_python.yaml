@@ -472,6 +472,7 @@ manifest:
     pyee: pyee
     pygit2: pygit2
     pygments: pygments
+    pygohcl: pygohcl
     pylab: matplotlib
     pylsqpack: pylsqpack
     pyparsing: pyparsing
@@ -549,7 +550,7 @@ manifest:
     sympy: sympy
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: takethetime
+    takethetime: TakeTheTime
     tenacity: tenacity
     terminado: terminado
     testcontainers.arangodb: testcontainers
@@ -658,4 +659,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 1674c0c8dd3285c56ac4acb34721dca759f6c1ec70b2d81b9cffd0d67d94f0ca
+integrity: 1791baa6631984d643460b7a734152ee612f713eb3d4a41be8f5eaace8c68173
