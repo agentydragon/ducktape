@@ -29,6 +29,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
+import pygit2
 import typer
 import yaml
 from pydantic import BaseModel, Field
@@ -43,7 +44,8 @@ class Token(BaseModel):
     validity: str = Field(description="Token lifetime passed to atticadm --validity (e.g. '1 year')")
     pull: list[str] = Field(description="Caches the token may pull from (atticadm --pull, repeated)")
     push: list[str] = Field(
-        default_factory=list, description="Caches the token may push to (atticadm --push, repeated); empty for read-only tokens"
+        default_factory=list,
+        description="Caches the token may push to (atticadm --push, repeated); empty for read-only tokens",
     )
 
 
@@ -61,7 +63,18 @@ class Config(BaseModel):
     rotate_below_hours: int = Field(
         default=24, description="Mint a fresh token once remaining validity drops below this"
     )
-    github_repo: str = "agentydragon/ducktape"
+    git_remote: str = Field(
+        default="https://github.com/agentydragon/ducktape.git",
+        description="Full git remote URL to clone + push (host-agnostic; any HTTPS git server works)",
+    )
+    git_username: str = Field(
+        default="x-access-token",
+        description="Username paired with the token for HTTPS auth (GitHub PATs use 'x-access-token')",
+    )
+    git_clone_depth: int | None = Field(
+        default=1,
+        description="Shallow-clone depth for git_remote; None for a full clone (the local transport can't shallow-fetch)",
+    )
     sops_config: str = Field(default=".sops.yaml", description="Repo path sops reads to pick the recipient set")
     git_author_name: str = "attic-jwt-rotation"
     git_author_email: str = "noreply@allegedly.works"
@@ -153,61 +166,75 @@ def rotate_one(token: Token, config: Config) -> bool:
     return True
 
 
-def sparse_clone(config: Config, github_pat: str) -> None:
-    """Init + sparse-fetch only .sops.yaml and the tokens' sops_files into cwd."""
-    remote = f"https://x-access-token:{github_pat}@github.com/{config.github_repo}.git"
-    sparse_paths = [config.sops_config, *(str(t.sops_file) for t in config.tokens)]
-    subprocess.run(["git", "init", "-q"], check=True)
-    subprocess.run(["git", "remote", "add", "origin", remote], check=True)
-    subprocess.run(["git", "config", "core.sparseCheckout", "true"], check=True)
-    Path(".git/info/sparse-checkout").write_text("\n".join(sparse_paths) + "\n")
-    subprocess.run(["git", "fetch", "-q", "--depth=1", "--no-tags", "origin", "devel"], check=True)
-    subprocess.run(["git", "checkout", "-q", "FETCH_HEAD"], check=True)
+def _git_callbacks(username: str, token: str) -> pygit2.RemoteCallbacks:
+    """pygit2 HTTPS credentials (username + token via UserPass)."""
+    return pygit2.RemoteCallbacks(credentials=pygit2.UserPass(username, token))
 
 
-def commit_and_push(config: Config, rotated: list[str]) -> None:
-    subprocess.run(["git", "config", "user.name", config.git_author_name], check=True)
-    subprocess.run(["git", "config", "user.email", config.git_author_email], check=True)
-    # Stage exactly the SOPS files for tokens that rotated this cycle (no `git add -A`).
-    for token in config.tokens:
-        if token.name in rotated:
-            subprocess.run(["git", "add", "--", str(token.sops_file)], check=True)
-    if subprocess.run(["git", "diff", "--cached", "--quiet"], check=False).returncode == 0:
+def clone_repo(config: Config, token: str, repo_dir: Path) -> pygit2.Repository:
+    """Clone `devel` of config.git_remote into repo_dir via pygit2.
+
+    A full clone (not sparse): the rotator's token already has repo-wide access,
+    the SOPS files are ciphertext on disk, and this matches the repo's other pygit2
+    transport users (e.g. finance/scraper). `git_clone_depth` defaults to a shallow
+    fetch over HTTPS; None does a full clone (the local transport used in tests
+    can't shallow-fetch). libgit2 does its own TLS, so CA trust is wired via
+    `pygit2.settings.set_ssl_cert_locations` in `main()` rather than
+    `GIT_SSL_CAINFO` (which libgit2 ignores).
+    """
+    kwargs: dict[str, Any] = {"checkout_branch": "devel", "callbacks": _git_callbacks(config.git_username, token)}
+    if config.git_clone_depth is not None:
+        kwargs["depth"] = config.git_clone_depth
+    return pygit2.clone_repository(config.git_remote, str(repo_dir), **kwargs)
+
+
+def commit_and_push(repo: pygit2.Repository, config: Config, rotated: list[str], token: str) -> None:
+    """Stage the rotated SOPS files, commit, and push to devel — all via pygit2."""
+    author = pygit2.Signature(config.git_author_name, config.git_author_email)
+    index = repo.index
+    # Stage exactly the SOPS files for tokens that rotated this cycle (no full-tree add).
+    for token_entry in config.tokens:
+        if token_entry.name in rotated:
+            index.add(str(token_entry.sops_file))
+    index.write()
+    tree_id = index.write_tree()
+    if tree_id == repo.head.peel(pygit2.Commit).tree_id:
         logger.info("tokens minted but SOPS files unchanged on disk (unexpected); nothing to commit")
         return
     message = f"chore: rotate attic JWTs ({datetime.now(UTC):%Y-%m-%d}): {', '.join(rotated)}"
-    subprocess.run(["git", "commit", "-q", "-m", message], check=True)
-    subprocess.run(["git", "push", "-q", "origin", "HEAD:devel"], check=True)
+    repo.create_commit("HEAD", author, author, message, tree_id, [repo.head.target])
+    repo.remotes["origin"].push(["refs/heads/devel"], callbacks=_git_callbacks(config.git_username, token))
     logger.info("pushed: %s", ", ".join(rotated))
 
 
 def main(
     config_path: Annotated[Path, typer.Option("--config", exists=True, dir_okay=False, help="rotators.yaml")],
-    github_pat_file: Annotated[Path, typer.Option("--github-pat-file")] = Path("/var/run/secrets/github-pat/token"),
+    token: Annotated[str, typer.Option("--token", envvar="GIT_TOKEN", help="Git HTTPS token (or set GIT_TOKEN)")],
     ca_bundle: Annotated[Path, typer.Option(help="CA bundle assembled for git")] = Path("/tmp/ca-bundle.crt"),
 ) -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     config = Config.model_validate(yaml.safe_load(config_path.read_text()))
-    github_pat = github_pat_file.read_text().strip()
 
     # rules_distroless doesn't run update-ca-certificates, so /etc/ssl/certs is
-    # empty. Assemble a bundle from the raw mozilla certs for git (HTTPS push).
+    # empty. Assemble a bundle from the raw mozilla certs and point libgit2 at it
+    # (libgit2 ignores GIT_SSL_CAINFO/SSL_CERT_FILE; set_ssl_cert_locations is the
+    # supported knob).
     ca_bundle.write_text(
         "".join(p.read_text() for p in sorted(Path("/usr/share/ca-certificates/mozilla").glob("*.crt")))
     )
-    os.environ["GIT_SSL_CAINFO"] = str(ca_bundle)
+    pygit2.settings.set_ssl_cert_locations(str(ca_bundle), "")
 
     repo_dir = Path("/tmp/repo")
     repo_dir.mkdir()
     os.chdir(repo_dir)
-    sparse_clone(config, github_pat)
+    repo = clone_repo(config, token, repo_dir)
 
     rotated = [t.name for t in config.tokens if rotate_one(t, config)]
 
     if not rotated:
         logger.info("no rotations needed this cycle")
         return
-    commit_and_push(config, rotated)
+    commit_and_push(repo, config, rotated, token)
 
 
 if __name__ == "__main__":

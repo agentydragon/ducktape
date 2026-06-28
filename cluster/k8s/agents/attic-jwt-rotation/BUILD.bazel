@@ -12,6 +12,7 @@ py_library(
     imports = ["."],
     deps = [
         "@pypi//pydantic",
+        "@pypi//pygit2",
         "@pypi//pyyaml",
         "@pypi//typer",
     ],
@@ -24,6 +25,7 @@ py_test(
     deps = [
         ":rotate",
         "@pypi//pydantic",
+        "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

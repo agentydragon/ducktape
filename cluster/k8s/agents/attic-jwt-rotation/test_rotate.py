@@ -2,13 +2,24 @@ import base64
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
+import pygit2
 import pytest
 import pytest_bazel
 import rotate
 import yaml
 from pydantic import ValidationError
-from rotate import Config, Token, jwt_payload, mint_attic_token, remaining_hours, rotate_one
+from rotate import (
+    Config,
+    Token,
+    clone_repo,
+    commit_and_push,
+    jwt_payload,
+    mint_attic_token,
+    remaining_hours,
+    rotate_one,
+)
 
 
 def _make_jwt(claims: dict) -> str:
@@ -165,6 +176,79 @@ def test_config_parses_tokens_and_defaults():
     assert config.server_config == "/config/server.toml"
     assert config.token_field == "attic_token"
     assert config.rotate_below_hours == 24
+
+
+# --- pygit2 git ops (clone_repo / commit_and_push) ---
+
+
+def make_token(name: str = "x", sops_file: str = "s.yaml", **kw: Any) -> Token:
+    base: dict[str, Any] = {"name": name, "sops_file": sops_file, "sub": name, "validity": "1 year", "pull": ["main"]}
+    base.update(kw)
+    return Token.model_validate(base)
+
+
+@pytest.fixture
+def upstream(tmp_path: Path) -> Path:
+    """A local bare git repo on `devel` with one commit, as the rotator's push target.
+
+    Bare so commit_and_push can push into refs/heads/devel without git's
+    receive.denyCurrentBranch refusing an update to a checked-out branch.
+    """
+    remote = tmp_path / "upstream.git"
+    repo = pygit2.init_repository(str(remote), bare=True)
+    blob = repo.create_blob(b"creation_rules: []\n")
+    builder = repo.TreeBuilder()
+    builder.insert(".sops.yaml", blob, pygit2.GIT_FILEMODE_BLOB)
+    tree = builder.write()
+    sig = pygit2.Signature("test", "test@example.com")
+    repo.create_commit("refs/heads/devel", sig, sig, "init", tree, [])
+    return remote
+
+
+def _devel_oid(path: Path) -> str:
+    return str(pygit2.Repository(str(path)).references["refs/heads/devel"].target)
+
+
+def test_clone_repo_clones_devel_from_local_remote(upstream: Path, tmp_path: Path):
+    config = Config(tokens=[], git_remote=str(upstream), git_clone_depth=None)
+    work = tmp_path / "work"
+    repo = clone_repo(config, "unused-for-local-transport", work)
+    assert (work / ".sops.yaml").read_text() == "creation_rules: []\n"
+    assert repo.head.shorthand == "devel"
+
+
+def test_commit_and_push_commits_and_pushes_rotated_files(upstream: Path, tmp_path: Path):
+    config = Config(
+        tokens=[make_token(name="wyrm2", sops_file="secrets/hosts/wyrm2-attic.yaml")],
+        git_remote=str(upstream),
+        git_clone_depth=None,
+    )
+    work = tmp_path / "work"
+    repo = clone_repo(config, "unused-for-local-transport", work)
+
+    sops_file = work / "secrets/hosts/wyrm2-attic.yaml"
+    sops_file.parent.mkdir(parents=True, exist_ok=True)
+    sops_file.write_text('attic_token: newjwt\nexpires_unencrypted: "2030-01-01T00:00:00Z"\n')
+
+    commit_and_push(repo, config, rotated=["wyrm2"], token="unused-for-local-transport")
+
+    # A fresh clone of upstream reflects the pushed commit.
+    verify = tmp_path / "verify"
+    pygit2.clone_repository(str(upstream), str(verify), checkout_branch="devel")
+    assert (verify / "secrets/hosts/wyrm2-attic.yaml").read_text() == (
+        'attic_token: newjwt\nexpires_unencrypted: "2030-01-01T00:00:00Z"\n'
+    )
+    assert "rotate attic JWTs" in pygit2.Repository(str(verify)).head.peel(pygit2.Commit).message
+
+
+def test_commit_and_push_skips_when_nothing_staged(upstream: Path, tmp_path: Path):
+    config = Config(tokens=[make_token()], git_remote=str(upstream), git_clone_depth=None)
+    work = tmp_path / "work"
+    repo = clone_repo(config, "unused-for-local-transport", work)
+
+    before = _devel_oid(upstream)
+    commit_and_push(repo, config, rotated=[], token="unused-for-local-transport")
+    assert _devel_oid(upstream) == before
 
 
 if __name__ == "__main__":

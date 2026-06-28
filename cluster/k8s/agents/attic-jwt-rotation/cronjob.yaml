@@ -18,9 +18,6 @@ spec:
           serviceAccountName: attic-jwt-rotator
           restartPolicy: OnFailure
           volumes:
-            - name: github-pat
-              secret:
-                secretName: github-secrets-sync-pat
             - name: rotators-config
               configMap:
                 name: attic-rotators-config
@@ -33,14 +30,17 @@ spec:
             - name: rotate
               image: ghcr.io/agentydragon/attic-jwt-rotation:devel-20260504011152-2b39247 # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
               args: ["--config", "/config/rotators.yaml"]
+              env:
+                - name: GIT_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: github-secrets-sync-pat
+                      key: token
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
                   drop: ["ALL"]
               volumeMounts:
-                - name: github-pat
-                  mountPath: /var/run/secrets/github-pat
-                  readOnly: true
                 - name: rotators-config
                   mountPath: /config
                   readOnly: true
