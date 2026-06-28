@@ -1,9 +1,8 @@
 # haku/console/frontend — dashboard SPA
 
 React 18 single-page app for the Haku console, bundled with esbuild and served
-same-origin by the console service. Production serves static files through nginx
-in front of the FastAPI API process; FastAPI still has a direct StaticFiles mount
-for local/dev serving. Styled with the repo's house stack — **Mantine v7**
+same-origin by the console service. The FastAPI app serves the fingerprinted
+bundle with route-specific cache headers. Styled with the repo's house stack — **Mantine v7**
 components + **Tailwind v4** utilities — modeled on
 `finance/augur/frontend` (references root `//:node_modules/*`; no per-package
 `package.json`).

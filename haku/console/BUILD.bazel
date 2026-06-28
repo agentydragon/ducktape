@@ -170,8 +170,8 @@ py_image_layer(
 )
 
 # The built React SPA, flattened to /app/web (index.html + assets/*).
-# Production nginx serves this directory; FastAPI also mounts it as a direct
-# local/dev fallback via HAKU_CONSOLE_STATIC_DIR below.
+# FastAPI serves this directory via HAKU_CONSOLE_STATIC_DIR with route-specific
+# cache headers.
 pkg_files(
     name = "web_files",
     srcs = ["//haku/console/frontend:bundle"],
