@@ -1,5 +1,5 @@
-import { type FormEvent, type KeyboardEvent, useState } from "react";
-import { ActionIcon, Button, Popover, Text, Textarea } from "@mantine/core";
+import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { ActionIcon, Button, Text, Textarea } from "@mantine/core";
 // Deep per-icon import (default export), not the barrel: the @tabler barrel makes
 // esbuild OOM tree-shaking it (~8.7 GB peak with the full node_modules tree), and
 // there's no clean per-action RAM lever (see debug/esbuild_tabler_memory.md). The
@@ -117,26 +117,52 @@ export function FeedbackForm({ minRows, placeholder, submitLabel }: FeedbackForm
 // closing would hide the only success signal (there is no success toast).
 export function FeedbackFab() {
   const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click / Esc. Done by hand (not Mantine Popover) because the
+  // button is position:fixed and Mantine's Floating-UI portal mis-anchored the
+  // dropdown to it — an explicit toggle + absolutely-positioned panel is reliable.
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: globalThis.KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
   return (
     // Fixed to the viewport (not the centered content column) so the button stays
-    // pinned bottom-right regardless of scroll. A plain div carries the fixed
-    // positioning so no Mantine component styles can override it; the Popover's
-    // dropdown is portaled to <body> and still anchors to the ActionIcon.
-    <div className="fixed bottom-6 right-6 z-50">
-      <Popover opened={open} onChange={setOpen} position="top-end" withArrow shadow="md" width={360}>
-        <Popover.Target>
-          <ActionIcon color={ACTION_COLOR} variant="filled" size="xl" radius="xl" aria-label="Note to Haku">
-            <IconMessage2 size={20} />
-          </ActionIcon>
-        </Popover.Target>
-        <Popover.Dropdown>
+    // pinned bottom-right regardless of scroll. The panel is absolutely positioned
+    // within this fixed container, so it reliably opens above the button.
+    <div ref={containerRef} className="fixed bottom-6 right-6 z-50">
+      <ActionIcon
+        onClick={() => setOpen((o) => !o)}
+        color={ACTION_COLOR}
+        variant="filled"
+        size="xl"
+        radius="xl"
+        aria-label="Note to Haku"
+        aria-expanded={open}
+      >
+        <IconMessage2 size={20} />
+      </ActionIcon>
+      {open && (
+        <div className="absolute bottom-full right-0 mb-2 w-[360px] rounded-md border border-[var(--haku-border)] bg-[var(--haku-panel-bg)] p-4 shadow-xl">
           <FeedbackForm
             minRows={4}
             placeholder="Anything for Haku to fold into its next run…"
             submitLabel="Send to Haku"
           />
-        </Popover.Dropdown>
-      </Popover>
+        </div>
+      )}
     </div>
   );
 }
