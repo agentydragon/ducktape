@@ -58,7 +58,7 @@ resources:
   # --- agents ---
   - agents/shared-rbac/flux-kustomization.yaml
   - agents/shared-secrets/flux-kustomization.yaml
-  - agents/claude-rbac/flux-kustomization.yaml
+  - agents/agent-rbac-base/flux-kustomization.yaml
   - agents/airlock/agent-rbac/flux-kustomization.yaml
   - agents/tana-mcp/agent-rbac/flux-kustomization.yaml
   - agents/claude-sandbox-secrets/flux-kustomization.yaml

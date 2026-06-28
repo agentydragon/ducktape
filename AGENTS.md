@@ -40,7 +40,7 @@ operation that the `oidc-ksbx-groups:kubectl-sandbox-users` RBAC group allows.
 It uses an in-memory kubeconfig and never triggers permission prompts.
 
 **RBAC source of truth**: keep permission details in
-<cluster/k8s/agents/claude-rbac/README.md> and the RoleBinding files it points to,
+<cluster/k8s/agents/agent-rbac-base/README.md> and the RoleBinding files it points to,
 not in this root agent file. Check those docs before assuming namespace coverage
 or write permissions.
 

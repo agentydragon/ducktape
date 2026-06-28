@@ -33,7 +33,7 @@ container `tools`.
 
 Haku already has a k8s identity: the `haku-k8s` machine principal maps to group `haku`,
 which holds a **full-CRUD `haku-sandbox` Role** plus cluster-diagnostics read (see
-`cluster/k8s/agents/claude-rbac`). The sandbox Role pattern includes `pods/exec` and
+`cluster/k8s/agents/agent-rbac-base`). The sandbox Role pattern includes `pods/exec` and
 `pods/attach` (verify the `haku-sandbox` Role lists it), so exec into the sidecar (same
 namespace) is **already within Haku's perimeter — no new RBAC**. The loop authenticates
 with the `haku-k8s` JWT, building its kubeconfig via `devinfra/k8s/kubeconfig.py` (the

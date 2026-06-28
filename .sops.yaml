@@ -501,6 +501,18 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
+  # agent-box Codex K8s bearer JWT (auto-rotated by the authentik-jwt-rotation
+  # CronJob). Decrypted by the codex user's home-manager on agent-box to render
+  # ~/.kube/config; admin + user keys retained for break-glass.
+  - path_regex: secrets/agent-box-codex-k8s-jwt\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *agent-box-codex-user
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
   # Haku read-only grocy-sf MCP bearer JWT (auto-rotated by the
   # authentik-jwt-rotation CronJob). Same readers as haku-k8s-jwt: the Haku
   # routine (haku) plus admin + user keys for break-glass.

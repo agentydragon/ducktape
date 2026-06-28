@@ -21,7 +21,7 @@ spec:
   dependsOn:
     # No storage dep (emptyDir, not a CSI PVC). Needs the Gateway for the
     # TLSRoute, the cluster-internal-ca ClusterIssuer for the mTLS Certificates,
-    # and claude-rbac for the claude-sandbox namespace the client Certificate
+    # and agent-rbac-base for the claude-sandbox namespace the client Certificate
     # lives in.
     - name: gateway
     - name: cert-manager-environment

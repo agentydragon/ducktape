@@ -157,11 +157,11 @@ See <docs/container-images.md> for build/push/tag guide and Flux image automatio
 ## Agent RBAC Architecture
 
 When adding agent read access to a new service namespace, create a new `agent-rbac/`
-directory — never add RoleBindings to `claude-rbac` or `shared-rbac`. The full
-three-layer split, permission scopes, and the sandbox quota live once in the claude-rbac
+directory — never add RoleBindings to `agent-rbac-base` or `shared-rbac`. The full
+three-layer split, permission scopes, and the sandbox quota live once in the agent RBAC base
 README, transcluded here:
 
-@k8s/agents/claude-rbac/README.md
+@k8s/agents/agent-rbac-base/README.md
 
 ## Storage Selection
 

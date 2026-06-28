@@ -11,12 +11,12 @@ Runner pods killed when wyrm2 went down left ~10 state locks. Every reconcile hi
       `harbor-oidc-config`, `ollama-bearer-token`, `litellm-api-key`, `gatus-sso`
 - [ ] Verify downstream kustomizations recover (airlock, headlamp, ollama, gatus, MCP servers)
 
-## claude-rbac Namespace References
+## Agent RBAC Base Namespace References
 
-OpenClaw namespaces were deleted during wyrm2 suspension but `claude-rbac` still references
+OpenClaw namespaces were deleted during wyrm2 suspension but the agent RBAC base still references
 them.
 
-- [ ] Update `cluster/k8s/agents/claude-rbac/` to remove or condition the `openclaw-gateway`
+- [ ] Update `cluster/k8s/agents/agent-rbac-base/` to remove or condition the `openclaw-gateway`
       RoleBinding
 - [ ] Check `agent-shared-rbac` for stale `docker-ci` namespace reference
 - [ ] Verify downstream recovers (agent-shared-secrets, kubectl-\*-mcp, tana-mcp-facade,

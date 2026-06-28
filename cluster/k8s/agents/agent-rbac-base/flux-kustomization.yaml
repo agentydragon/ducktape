@@ -1,0 +1,24 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  # TODO: migrate this live Flux object name to agent-rbac-base in a staged
+  # change. Renaming it directly would delete the old Kustomization and may prune
+  # its inventory before the replacement owns the same RBAC resources.
+  name: claude-rbac
+  namespace: flux-system
+  annotations:
+    description: Lightweight base for agent RBAC. Claude sandbox namespace + shared ClusterRoles. Must not depend on service or database kustomizations.
+spec:
+  interval: 10m
+  path: ./cluster/k8s/agents/agent-rbac-base
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 2m
+  dependsOn:
+    - name: kyverno-policies
+  healthChecks:
+    - apiVersion: v1
+      kind: Namespace
+      name: claude-sandbox

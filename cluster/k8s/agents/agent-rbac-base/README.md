@@ -1,8 +1,9 @@
-# Claude Sandbox RBAC
+# Agent RBAC Base
 
-This directory is the **lightweight base** for Claude agent sandbox RBAC. It contains only
-cluster-scoped resources (ClusterRoles) and sandbox-internal resources (namespace + RoleBindings
-within `claude-sandbox`). It must **never** depend on service or database kustomizations.
+This directory is the **lightweight base** for agent RBAC. It contains only
+cluster-scoped resources (ClusterRoles) and sandbox-internal resources
+(namespace + RoleBindings within `claude-sandbox`). It must **never** depend on
+service or database kustomizations.
 
 Namespace-scoped RoleBindings targeting other namespaces live in per-service `agent-rbac/`
 directories (see Architecture below).
@@ -15,7 +16,7 @@ here. Update this file as the single source when changing permissions or the quo
 
 Agent RBAC is split across three layers:
 
-### 1. `claude-rbac` (this directory) — lightweight base
+### 1. `agent-rbac-base` (this directory) — lightweight base
 
 Depends on: `kyverno-policies` only. No service or database dependencies.
 
@@ -29,7 +30,7 @@ Contains:
 
 ### 2. `shared-rbac` — cluster-scoped bindings
 
-Depends on: `claude-rbac`, `kyverno-policies`.
+Depends on: `agent-rbac-base`, `kyverno-policies`.
 
 Contains:
 
@@ -39,7 +40,8 @@ Contains:
 ### 3. Per-service `<service>/agent-rbac/` — namespace-scoped RoleBindings
 
 Each service that grants agent read access has its own `agent-rbac/` directory with an
-independent Flux kustomization. Depends on: `[service's namespace kustomization]` + `claude-rbac`.
+independent Flux kustomization. Depends on: `[service's namespace kustomization]` +
+the agent RBAC base Flux kustomization.
 
 This isolation ensures that missing/suspended service namespaces don't block unrelated RBAC
 from applying.
@@ -60,7 +62,7 @@ ClusterRole YAML is the resource-list source of truth.
 ### 3. Cross-namespace read
 
 Namespaced RoleBindings live in per-service `agent-rbac/` directories. Each is an independent
-Flux kustomization that depends only on the target namespace + `claude-rbac`.
+Flux kustomization that depends only on the target namespace + the agent RBAC base.
 
 ### 4. Haku background agent — diagnostics subset
 
@@ -81,14 +83,22 @@ This widens the original `haku-sandbox`-only perimeter (<../../../../haku/PLAN.m
 diagnostics; the structural fences (read-only verbs, no secret material, mitmproxy egress) are
 unchanged.
 
+### 5. agent-box Codex — diagnostics only
+
+The self-hosted Codex user on the `agent-box` VM authenticates as group
+`oidc-ksbx-groups:agent-box-codex`. Its initial access is intentionally smaller
+than Claude web or Haku: it is co-subjected only onto the secret-free
+`cluster-diagnostics-reader` binding plus the `flux-system` logs/configmaps
+binding. It does not receive a writable sandbox namespace.
+
 @permissions.md
 
 ## Adding Agent RBAC for a New Service
 
 1. Create `<service>/agent-rbac/` with:
-   - `flux-kustomization.yaml` — depends on service's namespace kustomization + `claude-rbac`
+   - `flux-kustomization.yaml` — depends on service's namespace kustomization + agent RBAC base
    - `kustomization.yaml` — lists the RoleBinding YAML(s)
-   - RoleBinding YAML(s) referencing the appropriate ClusterRole from `claude-rbac/`
+   - RoleBinding YAML(s) referencing the appropriate ClusterRole from this directory
 2. Add the `flux-kustomization.yaml` path to the root `cluster/k8s/kustomization.yaml`
 3. The service namespace kustomization has **zero coupling** to agent infrastructure
 
@@ -109,8 +119,8 @@ unchanged.
 Machine JWTs from the `kubectl-sandbox-client-credentials` provider use a
 separate explicit Authentik allowlist for effective groups. The normal provider
 client-credentials principal maps to `kubectl-sandbox-users`; the `haku-k8s`
-service account maps to `haku`; unknown machine principals receive no Kubernetes
-RBAC group.
+service account maps to `haku`; the `agent-box-codex` service account maps to
+`agent-box-codex`; unknown machine principals receive no Kubernetes RBAC group.
 
 Laptops run their own admin kubeconfig (deployed by home-manager from
 `secrets/shared/kubeconfig.yaml`) with cluster-admin-level access; it's

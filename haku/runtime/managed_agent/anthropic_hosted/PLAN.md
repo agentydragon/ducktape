@@ -21,7 +21,7 @@ empty-result deadlock,
 - **`haku` identity + RBAC**: group `haku` → `haku-sandbox-admin` (full CRUD in
   `haku-sandbox`); the `haku-k8s` machine principal
   (kubectl-sandbox-client-credentials → `groups=[haku]`) is the haku-scoped token
-  path. See <../../../../cluster/k8s/agents/claude-rbac/README.md>.
+  path. See <../../../../cluster/k8s/agents/agent-rbac-base/README.md>.
 - **The cloud control plane** (env/agent/vault/credential/deployment), managed by
   Terraform: <../../../../tf/gitops/haku-cloud-agent>, deployed by
   <../../../../cluster/k8s/haku/cloud-agent-tf>. The static_bearer credential's

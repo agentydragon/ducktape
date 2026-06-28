@@ -1,9 +1,9 @@
-# Forgejo identity + repo access for the self-hosted codex agent (agent-box VM).
+# Forgejo identity + repo access for the self-hosted Codex agent (agent-box VM).
 #
-# Provisions a `codex` service user, attaches its SSH push key
+# Provisions an `agent-box-codex` service user, attaches its SSH push key
 # (agent-box-codex-forgejo), adopts the existing `agentydragon/{ducktape,
-# gaffer-private}` repos under Terraform, grants codex write collaboration, and
-# protects the default branches so codex must open PRs while agentydragon keeps
+# gaffer-private}` repos under Terraform, grants agent-box-codex write
+# collaboration, and protects the default branches so it must open PRs while agentydragon keeps
 # direct push (push whitelist). Provider wiring mirrors tf/gitops/forgejo-claude.
 
 data "kubernetes_secret" "forgejo_admin" {
@@ -19,26 +19,26 @@ provider "forgejo" {
   password = data.kubernetes_secret.forgejo_admin.data["password"]
 }
 
-resource "random_password" "codex" {
+resource "random_password" "agent_box_codex" {
   length  = 48
   special = false
 }
 
-# The codex agent authenticates to Forgejo over SSH (key below), so the password
-# is never delivered anywhere — it just satisfies the required field.
-resource "forgejo_user" "codex" {
-  login                = "codex"
-  email                = "codex@allegedly.works"
-  password             = random_password.codex.result
+# The agent-box Codex agent authenticates to Forgejo over SSH (key below), so
+# the password is never delivered anywhere — it just satisfies the required field.
+resource "forgejo_user" "agent_box_codex" {
+  login                = "agent-box-codex"
+  email                = "agent-box-codex@allegedly.works"
+  password             = random_password.agent_box_codex.result
   must_change_password = false
   visibility           = "private"
 }
 
-# codex's git push key (private half lives on agent-box as the codex user's
-# Forgejo identity, ssh_keys/agent-box-codex-forgejo). Inlined because the
-# tofu-controller runs only this module path, so file() cannot read repo-root.
-resource "forgejo_ssh_key" "codex" {
-  user  = forgejo_user.codex.login
+# agent-box-codex's git push key (private half lives on agent-box as the codex
+# user's Forgejo identity, ssh_keys/agent-box-codex-forgejo). Inlined because
+# the tofu-controller runs only this module path, so file() cannot read repo-root.
+resource "forgejo_ssh_key" "agent_box_codex" {
+  user  = forgejo_user.agent_box_codex.login
   key   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILbs0SByOeeZOjlAdR/Oi/ijQJ2j+STf7E1F5oCQxEF3"
   title = "agent-box-codex-forgejo"
 }
@@ -76,25 +76,26 @@ import {
   id = "agentydragon/gaffer-private"
 }
 
-# --- codex write collaboration ---
-# Write (not read) so codex can push topic branches for PRs; branch protection
-# below blocks direct pushes to the default branch.
-resource "forgejo_collaborator" "codex_ducktape" {
+# --- agent-box-codex write collaboration ---
+# Write (not read) so agent-box-codex can push topic branches for PRs; branch
+# protection below blocks direct pushes to the default branch.
+resource "forgejo_collaborator" "agent_box_codex_ducktape" {
   repository_id = forgejo_repository.ducktape.id
-  user          = forgejo_user.codex.login
+  user          = forgejo_user.agent_box_codex.login
   permission    = "write"
 }
 
-resource "forgejo_collaborator" "codex_gaffer" {
+resource "forgejo_collaborator" "agent_box_codex_gaffer" {
   repository_id = forgejo_repository.gaffer_private.id
-  user          = forgejo_user.codex.login
+  user          = forgejo_user.agent_box_codex.login
   permission    = "write"
 }
 
 # --- Branch protection: PR-but-not-push for everyone except agentydragon ---
 # enable_push + push whitelist keeps agentydragon's direct pushes working while
-# forcing codex (and any other collaborator) through PRs. Forgejo always rejects
-# force-push on a protected branch, so no separate toggle is needed.
+# forcing agent-box-codex (and any other collaborator) through PRs. Forgejo
+# always rejects force-push on a protected branch, so no separate toggle is
+# needed.
 resource "forgejo_branch_protection" "ducktape_devel" {
   repository_id            = forgejo_repository.ducktape.id
   branch_name              = "devel"
@@ -111,4 +112,29 @@ resource "forgejo_branch_protection" "gaffer_main" {
   enable_push              = true
   enable_push_whitelist    = true
   push_whitelist_usernames = [data.forgejo_user.agentydragon.login]
+}
+
+moved {
+  from = random_password.codex
+  to   = random_password.agent_box_codex
+}
+
+moved {
+  from = forgejo_user.codex
+  to   = forgejo_user.agent_box_codex
+}
+
+moved {
+  from = forgejo_ssh_key.codex
+  to   = forgejo_ssh_key.agent_box_codex
+}
+
+moved {
+  from = forgejo_collaborator.codex_ducktape
+  to   = forgejo_collaborator.agent_box_codex_ducktape
+}
+
+moved {
+  from = forgejo_collaborator.codex_gaffer
+  to   = forgejo_collaborator.agent_box_codex_gaffer
 }

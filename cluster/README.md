@@ -136,7 +136,7 @@ cluster/
 ├── terraform/
 │   └── main/               # Single TF root (PG backend, all resources)
 ├── k8s/                    # Flux-managed manifests
-│   ├── agents/             # Agent infra (openclaw, airlock, claude-rbac, tana-mcp, ...)
+│   ├── agents/             # Agent infra (openclaw, airlock, agent-rbac-base, tana-mcp, ...)
 │   ├── authentik/          # SSO (app, blueprints, db, secrets, proxy-routes, ...)
 │   ├── monitoring/         # Observability (stack, loki, alloy, tempo, ...)
 │   ├── harbor/             # Registry (app, secrets, ci, webhook, ...)

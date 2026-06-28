@@ -46,9 +46,10 @@ You log in _as_ codex with your personal keys (in `authorizedKeys`); the
   CiliumEnvoyConfig on port **2201** (gecko owns `:22` on hil), DNS
   `agent-box.allegedly.works`.
 - **Forgejo (tofu)**: `tf/gitops/forgejo-codex/` + `cluster/k8s/forgejo/codex/` — creates
-  the `codex` Forgejo user + SSH key, adopts `agentydragon/{ducktape,gaffer-private}` via
-  `import {}`, grants codex `write`, and protects `devel`/`main` with a push whitelist of
-  `agentydragon` (codex must PR; agentydragon keeps direct push).
+  the `agent-box-codex` Forgejo user + SSH key, adopts
+  `agentydragon/{ducktape,gaffer-private}` via `import {}`, grants
+  agent-box-codex `write`, and protects `devel`/`main` with a push whitelist of
+  `agentydragon` (agent-box-codex must PR; agentydragon keeps direct push).
 - **SSH convenience**: `programs.ssh.matchBlocks."agent-box.allegedly.works"` in
   agentydragon's home.nix (user codex, port 2201).
 - **Attic rotator entry**: `rotators.json` mints `secrets/hosts/agent-box-attic.yaml`

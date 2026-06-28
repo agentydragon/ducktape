@@ -18,6 +18,7 @@
     ../modules/buildbuddy.nix # BuildBuddy creds -> bazelrc + BUILDBUDDY_API_KEY
     ../modules/forgejo-ssh.nix # Forgejo bot push key + git.allegedly.works ssh block
     ../modules/attic.nix # attic ~/.config/attic/config.toml (push/pull client)
+    ../modules/agent-kubeconfig.nix # agent-box-codex k8s bearer kubeconfig
   ];
 
   # home-manager sops-nix decrypts the codex user's secrets with its planted id.
@@ -28,6 +29,15 @@
     sopsFile = ../../../secrets/hosts/agent-box-attic.yaml;
   };
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/agent-box-codex-forgejo.sops.key;
+  # TODO: this simple path still requires a home-manager activation after the
+  # authentik-jwt-rotation CronJob commits a refreshed JWT. Replace with a local
+  # token refresh/apply path if rotation staleness becomes operationally annoying.
+  ducktape.agentKubeconfig = {
+    enable = true;
+    sopsFile = ../../../secrets/agent-box-codex-k8s-jwt.yaml;
+    user = "agent-box-codex";
+    namespace = "default";
+  };
 
   # This is a dedicated, scoped, isolated agent VM — let Codex run fully
   # unattended: execute everything without prompting and with no sandbox. No
@@ -51,7 +61,10 @@
     };
   };
 
-  home.packages = [ pkgs.psmisc ];
+  home.packages = [
+    pkgs.kubectl
+    pkgs.psmisc
+  ];
 
   home.username = "codex";
   home.homeDirectory = "/home/codex";

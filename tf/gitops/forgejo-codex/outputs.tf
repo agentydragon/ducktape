@@ -1,2 +1,2 @@
-# No outputs: the codex Forgejo user/repos are consumed in-cluster, not by
-# other Terraform modules.
+# No outputs: the agent-box-codex Forgejo user/repos are consumed in-cluster,
+# not by other Terraform modules.

@@ -5,7 +5,12 @@ metadata:
   namespace: agents-infra
   annotations:
     description: >-
-      Rotates every Authentik client_credentials JWT listed in rotations.yaml (claude-web k8s, haku k8s, haku grocy, alloy-otlp). Runs hourly; rotate.py reads each output's unencrypted `expires_unencrypted` field (no decryption needed) and skips entries with > rotate_below_hours remaining, so a real mint runs only ~every 44 days per token. Everything minted this cycle lands in one commit.
+      Rotates every Authentik client_credentials JWT listed in rotations.yaml
+      (claude-web k8s, haku k8s, agent-box-codex k8s, haku grocy, alloy-otlp).
+      Runs hourly; rotate.py reads each output's unencrypted `expires_unencrypted`
+      field (no decryption needed) and skips entries with > rotate_below_hours
+      remaining, so a real mint runs only ~every 44 days per token. Everything
+      minted this cycle lands in one commit.
 spec:
   schedule: "15 * * * *"
   successfulJobsHistoryLimit: 3
@@ -32,6 +37,9 @@ spec:
             - name: haku-k8s-creds
               secret:
                 secretName: haku-client-credentials
+            - name: agent-box-codex-creds
+              secret:
+                secretName: agent-box-codex-client-credentials
             - name: haku-grocy-creds
               secret:
                 secretName: haku-grocy-client-credentials
@@ -66,6 +74,9 @@ spec:
                   readOnly: true
                 - name: haku-k8s-creds
                   mountPath: /var/run/secrets/authentik/haku-k8s
+                  readOnly: true
+                - name: agent-box-codex-creds
+                  mountPath: /var/run/secrets/authentik/agent-box-codex
                   readOnly: true
                 - name: haku-grocy-creds
                   mountPath: /var/run/secrets/authentik/haku-grocy

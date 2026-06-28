@@ -12,7 +12,7 @@ Use the `kubectl-local` MCP server tools for all read queries — the SA has a
 `cluster-diagnostics-reader` ClusterRole with cluster-wide read access to nodes, pods,
 deployments, Flux kustomizations, HelmReleases, cert-manager, CNPG, metrics,
 Gateway API, Kyverno, and more (see
-<cluster/k8s/agents/claude-rbac/clusterrole-cluster-diagnostics-reader.yaml>).
+<cluster/k8s/agents/agent-rbac-base/clusterrole-cluster-diagnostics-reader.yaml>).
 It can also patch Flux Kustomizations (for manual reconciliation triggers).
 
 Fall back to `Bash(kubectl ...)` with `dangerouslyDisableSandbox: true` only for

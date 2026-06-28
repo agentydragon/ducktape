@@ -258,7 +258,7 @@ identity is the OIDC group `oidc-ksbx-groups:haku`; **discover your full perimet
 by finding every binding that subjects it** instead of trusting this list:
 `git -C <ducktape> grep -rl 'oidc-ksbx-groups:haku' cluster/k8s` enumerates them,
 and each binding's `roleRef` names the (Cluster)Role whose `rules` spell out the
-exact resources and verbs (the readers live in `cluster/k8s/agents/claude-rbac/`).
+exact resources and verbs (the readers live in `cluster/k8s/agents/agent-rbac-base/`).
 What that yields today:
 
 - `cluster/k8s/haku/rbac/` — your `haku-sandbox-admin` Role: **full CRUD inside

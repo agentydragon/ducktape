@@ -268,7 +268,7 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       for the Kimsufi worker). Also blocks `tofu init` (PG backend creds in
       `tofu-state/db/credentials.sops.yaml`). - Partial workaround for PG backend: fetch creds from k8s instead of SOPS in
       `cluster/.envrc` — `kubectl -n tofu-state get secret tofu-state-db-credentials`
-      works with current `claude-rbac`/user kubeconfig. - Real fix when wyrm2 is back: `sops updatekeys` on every file where `.sops.yaml`
+      works with current agent RBAC base/user kubeconfig. - Real fix when wyrm2 is back: `sops updatekeys` on every file where `.sops.yaml`
       lists more recipients than the file actually has. Audit with
       `for f in $(git ls-files '*.sops.*'); do jq -r '.sops.age[]?.recipient' $f; done`
       and compare to expected recipients per rule.
@@ -792,7 +792,7 @@ Options, from cheapest to cleanest:
   (`tana-mcp` nginx whitelisting `/mcp` + `/health`, `activitywatch-readonly`
   whitelisting `GET/POST /api/0/query`). Natural allowlist: the
   `namespace-diagnostics-reader` and `logs-configmaps-reader` binding sets in
-  <../k8s/agents/claude-rbac/permissions.md>.
+  <../k8s/agents/agent-rbac-base/permissions.md>.
 - **C. Loki multi-tenancy.** Set `auth_enabled: true`, route per-namespace logs to
   per-namespace tenants via Alloy/Promtail, grant tenant IDs. Touches every log
   producer; almost certainly overkill.

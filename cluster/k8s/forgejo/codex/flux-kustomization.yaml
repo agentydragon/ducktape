@@ -13,8 +13,9 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  # Wait for the Terraform apply (creates the codex Forgejo user + SSH key,
-  # adopts ducktape/gaffer-private, adds collaboration + branch protection).
+  # Wait for the Terraform apply (creates the agent-box-codex Forgejo user +
+  # SSH key, adopts ducktape/gaffer-private, adds collaboration + branch
+  # protection).
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
       kind: Terraform
