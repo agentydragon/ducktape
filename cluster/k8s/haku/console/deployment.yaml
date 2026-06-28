@@ -147,6 +147,10 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
+          volumeMounts:
+            # The nginx entrypoint writes the envsubst-rendered template here.
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -155,4 +159,6 @@ spec:
         - name: tmp
           emptyDir: {}
         - name: data
+          emptyDir: {}
+        - name: nginx-conf
           emptyDir: {}
