@@ -38,6 +38,19 @@ in
     package32 = pkgsUnstable.pkgsi686Linux.mesa;
   };
 
+  # --- Active experiment: disable PSR2 selective fetch ------------------------
+  # Half the iris aborts fire within seconds of resume-from-suspend (one is 1s
+  # post-resume; ~2.6%/resume cycle), and the boot log shows
+  #   xe 0000:00:02.0: [drm] Selective fetch area calculation failed in pipe A
+  # so PSR2 selective fetch is the targeted suspect. This disables only selective
+  # fetch — full-frame PSR still self-refreshes static content, so battery cost is
+  # ~nil. Observing naturally (no repro harness); verdict via the resumes-vs-crashes
+  # denominator in the note.
+  # EXPERIMENT(2026-06-27): if crash-free over many resume cycles, selective fetch
+  #   was the trigger — keep it, or escalate to xe.enable_psr=0 / revert if not.
+  #   Tracking: debug/rugged/gnome_shell_iris_abort.md
+  boot.kernelParams = [ "xe.enable_psr2_sel_fetch=0" ];
+
   # --- Diagnostics for the next crash -----------------------------------------
 
   # iris logs the GPU submit failure (and errno) to stderr — which lands in the

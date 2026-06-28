@@ -50,6 +50,26 @@ Jun 18 (4335), Jun 21 (2538388), Jun 27 (4434) decompressed and symbolicated wit
 `gdb` against `…gnome-shell-49.4/bin/.gnome-shell-wrapped`. Mesa is stripped, so `.cold`
 does not reveal the errno iris saw — that is the missing datum (see MESA_DEBUG below).
 
+## Trigger: suspend/resume correlation (2026-06-27)
+
+Cross-referencing the 6 crash timestamps against the journal split them into two
+populations sharing one abort sink:
+
+- **Resume-triggered (3/6)** — the abort fires seconds after a resume from suspend.
+  Smoking gun (May 25): `Finished Post-Resume Actions` at 17:47:51 → gnome-shell
+  `== Stack trace ==` + SIGABRT at 17:47:52 (**1 second** later). Same for Jun 1
+  (+8 s) and Jun 18 (+6 s). Consistent with the backtraces: the _first_ GPU work
+  after resume (first swap / fence / timestamp-query) fails.
+- **Active-use (≥3/6)** — Jun 12, 21, 27 have no resume in the prior 60 s; Jun 21
+  was active Chrome use.
+
+**Rate:** the journal holds **114 resume events** against ~3 resume-linked crashes ⇒
+**~2.6 % per resume cycle**, not "1 per 6 days". This makes the resume population
+reproducible on demand (see deferred harness) and gives natural observation a real
+denominator: after a config change, compare `journalctl | grep -c 'system is resuming'`
+against `coredumpctl list | grep -c gnome-shell` since the change. ~150 clean resume
+cycles ⇒ ~98 % confidence the change helped (`0.974¹⁵⁰ ≈ 2 %` clean-by-luck).
+
 ## Mesa version gap (checked 2026-06-27)
 
 Stable channel (`nixos-25.11`) ships **mesa 25.2.6** (Oct 2025). Latest is **26.1.3**
@@ -77,20 +97,49 @@ Scanned release notes 25.2.7 → 25.3.0 for iris/LNL fixes touching _this_ bug:
 3. **Coredump retention raised** so gnome-shell cores aren't rotated out.
 4. **xe devcoredump capture** — udev → `capture-devcoredump@.service` copies
    `/sys/class/devcoredump/*/data` to `/var/lib/devcoredump` before it self-expires.
+5. **Active experiment — `xe.enable_psr2_sel_fetch=0`** (`boot.kernelParams`). The
+   resume correlation + the boot-time `Selective fetch … pipe A` failure make PSR2
+   selective fetch the targeted suspect. Disables only selective fetch (full-frame
+   PSR still self-refreshes static content → ~nil battery cost). **Observing
+   naturally** — no repro harness for now (user preference). Verdict method: the
+   resumes-vs-crashes denominator above.
 
-## Still on the table (not yet done)
+## PSR knob reference (xe, reuses i915 display)
 
-- **Disable iris threaded context** — cheapest experiment, backtrace implicates TC.
-  Confirm the exact 25.2.6 knob (`mesa_glthread=false` covers the glthread layer; the
-  drirc `intel_disable_threaded_context` for gallium TC only exists in 25.2.8+, so the
-  Mesa bump above is a prerequisite for the clean drirc form).
-- **Disable PSR** — the boot-time `Selective fetch … pipe A` failure is the LNL display
-  workaround target.
-- Kernel 7.0.11 is already very new; try the above first.
+Graduated, cheapest first:
+
+- `xe.enable_psr2_sel_fetch=0` — disable selective fetch only (**active**). ~nil cost.
+- `xe.psr_safest_params=1` — keep PSR, safe VBT values (tests "bad VBT" hypothesis).
+- `xe.enable_psr=0` (+ `xe.enable_panel_replay=0`) — full PSR off. Only real-cost knob;
+  still sub-watt, backlight unaffected.
+
+## Deferred — pick up later
+
+**Repro harness (the keystone, not yet built).** `rtcwake -s N` loop: suspend → wake →
+check for a fresh gnome-shell core → log cycle count + active config → repeat. At
+~2.6 %/cycle, ~100 cycles ≈ 95 % chance to reproduce in 1–2 h — collapses every
+hypothesis from weeks-of-natural-observation to an afternoon, and removes the
+Mesa-vs-PSR confound by holding everything else fixed and flipping one knob at a time.
+Declined for now in favour of natural observation; build this if natural data is too
+slow or ambiguous.
+
+**Other levers (run through the harness if built):**
+
+- **Capture the kernel errno (bpftrace).** All 6 crashes show only the GJS context dump
+  then ABRT — no iris error string — so it is a hard `abort()`/assert, and `MESA_DEBUG`
+  may not surface the cause. A probe on the `xe` exec/submit ioctl return value catches
+  the exact errno iris gets before aborting.
+- **Re-mine the 3 existing cores** against Mesa 25.2.6 debug symbols → resolve
+  `_iris_batch_flush.cold` to the precise `iris_batch.c` line + failing return var.
+- **Disable iris threaded context** — backtrace has `tc_*` frames. Clean drirc
+  (`intel_disable_threaded_context`) needs Mesa ≥ 25.2.8 (so the bump is a prerequisite);
+  `mesa_glthread=false` covers only the upper glthread layer.
 
 ## After the next crash
 
 1. `journalctl _SYSTEMD_USER_UNIT=org.gnome.Shell@wayland.service` around the crash —
-   with MESA_DEBUG=1, look for the iris submit error string + errno.
+   with MESA_DEBUG=1, look for any iris submit error string + errno. Note whether a
+   resume preceded it (`grep 'system is resuming'`).
 2. `ls /var/lib/devcoredump/` for a captured kernel xe dump.
-3. If 26.1.2 stops the crashes → close out; remove the MESA_DEBUG tombstone.
+3. Update the resumes-vs-crashes denominator. If crash-free over many resume cycles →
+   `enable_psr2_sel_fetch=0` was the fix; remove the MESA_DEBUG tombstone.
