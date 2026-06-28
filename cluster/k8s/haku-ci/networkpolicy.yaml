@@ -48,6 +48,12 @@ spec:
         - matchName: files.pythonhosted.org
         # code.forgejo.org: the act_runner + forgejo job-container images.
         - matchName: code.forgejo.org
+        # data.forgejo.org: this Forgejo instance's default actions URL — the
+        # runner fetches `uses:` actions (actions/checkout, etc.) from here when
+        # they aren't hosted on the local instance. Without it, jobs fail at the
+        # action-download step (confirmed via Cilium's DNS cache: the runner
+        # connects to data.forgejo.org but it wasn't allowlisted).
+        - matchName: data.forgejo.org
       toPorts:
         - ports:
             - port: "443"
