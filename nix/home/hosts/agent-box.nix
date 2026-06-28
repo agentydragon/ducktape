@@ -30,10 +30,12 @@
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/agent-box-codex-forgejo.sops.key;
 
   # This is a dedicated, scoped, isolated agent VM — let Codex run fully
-  # unattended: execute every command without prompting and with no sandbox.
-  ducktape.codex.settings = {
-    approval_policy = "never";
-    sandbox_mode = "danger-full-access";
+  # unattended: execute everything without prompting and with no sandbox. No
+  # cluster/local models, no writable-roots list (localModels stays off, and
+  # danger-full-access drops the sandbox block entirely).
+  ducktape.codex = {
+    approvalPolicy = "never";
+    sandboxMode = "danger-full-access";
   };
 
   programs.zsh.enable = true;

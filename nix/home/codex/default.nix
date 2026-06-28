@@ -20,29 +20,13 @@ let
   # config by connector id from the tool's MCP metadata, not by display name.
   githubCodexAppsConnectorId = "connector_76869538009648d5b282a4bb21c3d157";
 
-  codexSettings = {
+  # Common base config for every host. Cluster/local (gpt-oss) model providers +
+  # profiles live in localModelSettings (opt-in via ducktape.codex.localModels);
+  # the writable-roots sandbox block is appended only under workspace-write.
+  baseSettings = {
     model = "gpt-5.5";
     model_reasoning_effort = "xhigh";
     plan_mode_reasoning_effort = "xhigh";
-
-    # Local model providers for GPT-OSS
-    model_providers = {
-      # vllm provider disabled: wire_api = "chat" is no longer supported (2026-04-21).
-      # vLLM's Responses API has incorrect GPT-OSS handling:
-      # https://github.com/vllm-project/vllm/issues/28262
-      # Re-enable with wire_api = "responses" once that issue is fixed.
-      # vllm = {
-      #   name = "vLLM Local";
-      #   base_url = "http://localhost:8000/v1";
-      #   wire_api = "responses";
-      # };
-      cluster = {
-        name = "Cluster (litellm.allegedly.works)";
-        base_url = "https://litellm.allegedly.works/v1";
-        env_key = "OLLAMA_API_KEY";
-        wire_api = "responses";
-      };
-    };
 
     features = {
       streamable_shell = true;
@@ -53,45 +37,6 @@ let
       apply_patch_freeform = true; # freeform patch syntax
       memories = true; # experimental memory read/write pipeline
       # shell_snapshot ?  (keep off unless you want offline TUI snapshots)
-    };
-    # Multiple profiles let you switch between open‑source and OpenAI models.
-    # The UI can pick a profile via the `/select_profile` command or by setting
-    # `--config profile=NAME` when launching Codex.
-    profiles = {
-      openai = {
-        model = "gpt-5.1-codex";
-        # Web search requires OpenAI backend.
-        web_search = "live";
-      };
-      # GPT-OSS-20B via vLLM with Responses API
-      gpt-oss = {
-        model = "gpt-oss-20b";
-        model_provider = "vllm";
-        model_reasoning_effort = "high";
-        web_search = "disabled";
-      };
-      # GPT-OSS-20B via Ollama
-      gpt-oss-ollama = {
-        model = "gpt-oss:20b";
-        model_provider = "ollama";
-        web_search = "disabled";
-      };
-      # GPT-OSS 20B via cluster LiteLLM (228 t/s decode, 100% GPU)
-      # Run: codex --config profile=gpt-oss-20b
-      gpt-oss-20b = {
-        model = "gpt-oss-20b-128k";
-        model_provider = "cluster";
-        model_reasoning_effort = "high";
-        web_search = "disabled";
-      };
-      # GPT-OSS 120B via cluster LiteLLM (10 t/s decode, 91% GPU)
-      # Run: codex --config profile=gpt-oss-120b
-      gpt-oss-120b = {
-        model = "gpt-oss-120b-128k";
-        model_provider = "cluster";
-        model_reasoning_effort = "high";
-        web_search = "disabled";
-      };
     };
     # Persist command history to disk.
     # "save-all" will write every turn to ~/.codex/history.jsonl
@@ -127,7 +72,7 @@ let
     # Note: a surrounding web/host harness can still override this at runtime.
     # This setting controls locally launched Codex sessions that read
     # ~/.codex/config.toml.
-    approval_policy = "on-request";
+    approval_policy = cfg.approvalPolicy;
     shell_environment_policy = {
       "inherit" = "all";
       "set" = {
@@ -138,7 +83,12 @@ let
         BAZELISK_HOME = codexBazeliskCache;
       };
     };
-    sandbox_mode = "workspace-write";
+    sandbox_mode = cfg.sandboxMode;
+  }
+  # writable_roots only apply under workspace-write; danger-full-access (an
+  # isolated agent VM) drops the whole block — everything the user can write is
+  # writable, with no list.
+  // lib.optionalAttrs (cfg.sandboxMode == "workspace-write") {
     sandbox_workspace_write = {
       writable_roots = [
         codexSccacheCache
@@ -165,12 +115,45 @@ let
     };
   };
 
-  tomlFormat = pkgs.formats.toml { };
-  # Host overrides (ducktape.codex.settings) deep-merge over the defaults, using
-  # Codex's own config.toml keys.
-  baseConfigFile = tomlFormat.generate "codex-config.nix-base" (
-    lib.recursiveUpdate codexSettings cfg.settings
+  # Cluster/local (gpt-oss) model providers + profiles. Workstation-only; agent
+  # VMs running OpenAI Codex don't need them. Opt in via ducktape.codex.localModels.
+  localModelSettings = {
+    model_providers.cluster = {
+      name = "Cluster (litellm.allegedly.works)";
+      base_url = "https://litellm.allegedly.works/v1";
+      env_key = "OLLAMA_API_KEY";
+      wire_api = "responses";
+    };
+    profiles = {
+      # GPT-OSS-20B via Ollama
+      gpt-oss-ollama = {
+        model = "gpt-oss:20b";
+        model_provider = "ollama";
+        web_search = "disabled";
+      };
+      # GPT-OSS 20B via cluster LiteLLM
+      gpt-oss-20b = {
+        model = "gpt-oss-20b-128k";
+        model_provider = "cluster";
+        model_reasoning_effort = "high";
+        web_search = "disabled";
+      };
+      # GPT-OSS 120B via cluster LiteLLM
+      gpt-oss-120b = {
+        model = "gpt-oss-120b-128k";
+        model_provider = "cluster";
+        model_reasoning_effort = "high";
+        web_search = "disabled";
+      };
+    };
+  };
+
+  codexSettings = lib.recursiveUpdate baseSettings (
+    lib.optionalAttrs cfg.localModels.enable localModelSettings
   );
+
+  tomlFormat = pkgs.formats.toml { };
+  baseConfigFile = tomlFormat.generate "codex-config.nix-base" codexSettings;
 
   useXdgDirectories = config.home.preferXdgDirectories;
   xdgConfigHomeRelative = lib.removePrefix "${config.home.homeDirectory}/" config.xdg.configHome;
@@ -219,13 +202,23 @@ let
   '';
 in
 {
-  # Per-host Codex config.toml overrides, expressed in Codex's own schema and
-  # deep-merged over the defaults above. e.g. an isolated agent VM can set
-  # `approval_policy = "never"` + `sandbox_mode = "danger-full-access"`.
-  options.ducktape.codex.settings = lib.mkOption {
-    inherit (tomlFormat) type;
-    default = { };
-    description = "Overrides deep-merged over the generated Codex config.toml, using Codex's native config keys.";
+  # Per-host knobs. Values pass straight through to Codex's config.toml keys;
+  # workstations keep the defaults, an isolated agent VM goes full-auto.
+  options.ducktape.codex = {
+    approvalPolicy = lib.mkOption {
+      type = lib.types.str;
+      default = "on-request";
+      description = "Codex `approval_policy` (e.g. \"on-request\", \"never\").";
+    };
+    sandboxMode = lib.mkOption {
+      type = lib.types.str;
+      default = "workspace-write";
+      description = ''
+        Codex `sandbox_mode` (e.g. "workspace-write", "danger-full-access").
+        Only "workspace-write" emits the writable-roots block.
+      '';
+    };
+    localModels.enable = lib.mkEnableOption "the cluster/local (gpt-oss) Codex model providers + profiles";
   };
 
   config.programs.codex = {

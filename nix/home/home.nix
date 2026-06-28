@@ -87,6 +87,8 @@ in
     ./modules/gnome-shell-keybindings.nix
     ./modules/flameshot-screenshots.nix
   ];
+  # Workstations use the cluster/local (gpt-oss) Codex model providers + profiles.
+  ducktape.codex.localModels.enable = true;
   ducktape.sopsEnv = {
     HF_TOKEN = {
       sopsFile = ../../secrets/shared/huggingface.yaml;
