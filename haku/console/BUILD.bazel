@@ -180,8 +180,8 @@ pkg_files(
 
 pkg_files(
     name = "nginx_conf_files",
-    srcs = ["default.conf"],
-    prefix = "/etc/nginx/conf.d",
+    srcs = ["default.conf.template"],
+    prefix = "/etc/nginx/templates",
     strip_prefix = strip_prefix.files_only(),
 )
 

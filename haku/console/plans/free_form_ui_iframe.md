@@ -225,11 +225,11 @@ seeded from `haku/state_template/`; the Authentik-gated `haku-ui.allegedly.works
 the console's **Free-form UI** tab embedding it as a sandboxed cross-origin iframe (`frame-src`
 CSP, `sandbox="allow-scripts allow-same-origin allow-forms"`). The de-risking
 question — _does a same-site Authentik-gated app authenticate inside the iframe?_ — is
-**answered yes**: the proxied haku-ui content is frameable; the only blocker was Authentik's
-flow page sending `X-Frame-Options: DENY`, fixed by serving
+**answered yes** once both sides permit the handshake: Authentik must serve
 `Content-Security-Policy: frame-ancestors 'self' https://haku.allegedly.works` on
-`auth.allegedly.works` so only the console may frame it. Cross-origin isolation holds, so
-`haku-ui ≠ haku-console` regardless of framing headers.
+`auth.allegedly.works`, and the console's `frame-src` must include both
+`https://haku-ui.allegedly.works` and `https://auth.allegedly.works`. Cross-origin isolation
+holds, so `haku-ui ≠ haku-console` regardless of framing headers.
 
 Also shipped: the **`postMessage` bridge** (origin-checked transport + the top-layer
 native-`<dialog>` confirm with backdrop) and the **`openLink`** affordance — scheme hard-gate

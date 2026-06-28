@@ -30,11 +30,12 @@ def test_config_returns_none_when_unconfigured(client) -> None:
 
 def test_config_haku_ui_url_surfaced_and_csp_allows_framing_it(make_client) -> None:
     ui = "https://haku-ui.example.test"
-    with make_client(haku_ui_url=ui) as c:
+    auth_origin = "https://auth.example.test"
+    with make_client(haku_ui_url=ui, auth_origin=auth_origin) as c:
         resp = c.get("/api/config")
         assert resp.json()["haku_ui_url"] == ui
         csp = resp.headers["content-security-policy"]
-        assert f"frame-src 'self' {ui}" in csp
+        assert f"frame-src 'self' {ui} {auth_origin}" in csp
         assert "frame-ancestors 'none'" in csp
 
 

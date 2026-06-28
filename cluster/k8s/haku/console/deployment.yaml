@@ -86,6 +86,8 @@ spec:
             # the haku-ui Authentik route). See haku/console/plans/free_form_ui_iframe.md.
             - name: HAKU_CONSOLE_HAKU_UI_URL
               value: https://haku-ui.allegedly.works
+            - name: HAKU_CONSOLE_AUTH_ORIGIN
+              value: https://auth.allegedly.works
           resources:
             requests:
               cpu: 50m
@@ -115,6 +117,14 @@ spec:
         - name: static
           image: ghcr.io/agentydragon/haku-console-static:devel-20260628020338-ff7fab7 # {"$imagepolicy": "flux-system:haku-console-static"}
           imagePullPolicy: Always
+          env:
+            # The nginx entrypoint renders /etc/nginx/templates/default.conf.template
+            # with these origins at startup, keeping frame-src environment-specific
+            # while the console itself remains unframeable via frame-ancestors 'none'.
+            - name: HAKU_CONSOLE_HAKU_UI_URL
+              value: https://haku-ui.allegedly.works
+            - name: HAKU_CONSOLE_AUTH_ORIGIN
+              value: https://auth.allegedly.works
           ports:
             - name: http
               containerPort: 8081

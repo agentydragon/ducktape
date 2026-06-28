@@ -60,7 +60,9 @@ no real operator behind it** (see `haku/PLAN.md` → _The agent-authored console
 The console embeds Haku's own UI service (`haku-ui.allegedly.works`, a separate
 Authentik-gated app Haku runs in `haku-sandbox`) as a **sandboxed cross-origin iframe** —
 the console never renders or even sees its content. `HAKU_CONSOLE_HAKU_UI_URL` enables it;
-when set, the response CSP adds `frame-src` for that origin (and only it).
+when set, the response CSP adds `frame-src` for that origin and Authentik's origin
+(`HAKU_CONSOLE_AUTH_ORIGIN`, default `https://auth.allegedly.works`) so the in-frame SSO
+redirect can complete.
 Containment is cross-origin isolation: the iframe can't read the console's DOM/cookies
 or act as it — so Haku's UI can't act as the console. The trusted **bridge** (`bridge.ts`)
 lets the iframe request link opens via postMessage; the shell origin-checks, schema-validates,

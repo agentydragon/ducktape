@@ -15,7 +15,9 @@ server {
   proxy_hide_header Content-Security-Policy;
   proxy_hide_header Cache-Control;
 
-  add_header Content-Security-Policy "frame-src 'self' https://haku-ui.allegedly.works; frame-ancestors 'none'" always;
+  add_header Content-Security-Policy
+    "frame-src 'self' ${HAKU_CONSOLE_HAKU_UI_URL} ${HAKU_CONSOLE_AUTH_ORIGIN}; frame-ancestors 'none'"
+    always;
   add_header Cache-Control $haku_cache_control always;
 
   proxy_http_version 1.1;
