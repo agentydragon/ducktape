@@ -12,6 +12,12 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+  # attic-reader-netrc.sops.yaml is SOPS-encrypted; without this, Flux applies
+  # the ciphertext literally and the publisher's attic auth (netrc) is garbage.
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: external-secrets-operator
     - name: seaweedfs-public-s3
