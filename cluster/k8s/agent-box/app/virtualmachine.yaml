@@ -29,7 +29,7 @@ spec:
             # IMAGE_OUTPUT=agent-box-image). The VM boots straight into the real
             # config — no bootstrap + nixos-rebuild switch. cloud-init still
             # injects the persisted host key. Repin after rebuilding the image.
-            url: "https://s3.allegedly.works/vm-images/agent-box/8e55336861b06edad2e6600a47c890eaa416fe65.qcow2"
+            url: "https://s3.allegedly.works/vm-images/agent-box/f0f148c07c3ba97f02d8ac75d78b8e3e42cabddc.qcow2"
             secretRef: agent-box-vm-images-s3-reader
         pvc:
           accessModes:
