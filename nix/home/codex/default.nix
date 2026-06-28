@@ -191,26 +191,35 @@ let
     mode = "directory-symlink";
   };
 
+  # Run in a subshell so `exit` and `set -e` stay contained. home-manager
+  # concatenates every activation snippet into one script, so a bare `exit` here
+  # terminates the WHOLE activation — skipping linkGeneration/reloadSystemd and
+  # leaving all home files + user systemd units unlinked. That bites a first-ever
+  # activation (where this snippet runs before linkGeneration has placed $BASE),
+  # e.g. a freshly-imaged headless host; it's masked on long-lived hosts where
+  # $BASE already exists from a prior generation.
   mergeScript = ''
-    set -euo pipefail
+    (
+      set -euo pipefail
 
-    CODEX_HOME='${codexHomeAbsolute}'
-    BASE='${baseFileAbsolute}'
-    LIVE='${liveFileAbsolute}'
+      CODEX_HOME='${codexHomeAbsolute}'
+      BASE='${baseFileAbsolute}'
+      LIVE='${liveFileAbsolute}'
 
-    if [ ! -f "$BASE" ]; then
-      exit 0
-    fi
+      if [ ! -f "$BASE" ]; then
+        exit 0
+      fi
 
-    mkdir -p "$CODEX_HOME"
-    mkdir -p '${codexNpmCache}'
-    mkdir -p '${codexNixCache}'
-    mkdir -p '${codexPreCommitCache}'
-    mkdir -p '${codexSccacheCache}'
-    mkdir -p '${codexBazelCache}'
-    mkdir -p '${codexBazeliskCache}'
+      mkdir -p "$CODEX_HOME"
+      mkdir -p '${codexNpmCache}'
+      mkdir -p '${codexNixCache}'
+      mkdir -p '${codexPreCommitCache}'
+      mkdir -p '${codexSccacheCache}'
+      mkdir -p '${codexBazelCache}'
+      mkdir -p '${codexBazeliskCache}'
 
-    BASE="$BASE" LIVE="$LIVE" ${pythonMerge}/bin/python ${./merge.py}
+      BASE="$BASE" LIVE="$LIVE" ${pythonMerge}/bin/python ${./merge.py}
+    )
   '';
 in
 {
