@@ -24,6 +24,7 @@ py_test(
     imports = ["."],
     deps = [
         ":rotate",
+        "@pypi//certifi",
         "@pypi//pydantic",
         "@pypi//pygit2",
         "@pypi//pytest",

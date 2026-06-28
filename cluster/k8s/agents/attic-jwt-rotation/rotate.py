@@ -207,6 +207,16 @@ def commit_and_push(repo: pygit2.Repository, config: Config, rotated: list[str],
     logger.info("pushed: %s", ", ".join(rotated))
 
 
+def _configure_ca_trust(ca_bundle: Path) -> None:
+    """Point libgit2 at the assembled CA bundle.
+
+    libgit2 ignores GIT_SSL_CAINFO/SSL_CERT_FILE, so set_ssl_cert_locations is the
+    supported knob. The dir arg must be None (NULL), not "" -- an empty string makes
+    OpenSSL reject "invalid directory" while loading the bundle.
+    """
+    pygit2.settings.set_ssl_cert_locations(str(ca_bundle), None)
+
+
 def main(
     config_path: Annotated[Path, typer.Option("--config", exists=True, dir_okay=False, help="rotators.yaml")],
     token: Annotated[str, typer.Option("--token", envvar="GIT_TOKEN", help="Git HTTPS token (or set GIT_TOKEN)")],
@@ -222,7 +232,7 @@ def main(
     ca_bundle.write_text(
         "".join(p.read_text() for p in sorted(Path("/usr/share/ca-certificates/mozilla").glob("*.crt")))
     )
-    pygit2.settings.set_ssl_cert_locations(str(ca_bundle), "")
+    _configure_ca_trust(ca_bundle)
 
     repo_dir = Path("/tmp/repo")
     repo_dir.mkdir()

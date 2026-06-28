@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import certifi
 import pygit2
 import pytest
 import pytest_bazel
@@ -13,6 +14,7 @@ from pydantic import ValidationError
 from rotate import (
     Config,
     Token,
+    _configure_ca_trust,
     clone_repo,
     commit_and_push,
     jwt_payload,
@@ -249,6 +251,12 @@ def test_commit_and_push_skips_when_nothing_staged(upstream: Path, tmp_path: Pat
     before = _devel_oid(upstream)
     commit_and_push(repo, config, rotated=[], token="unused-for-local-transport")
     assert _devel_oid(upstream) == before
+
+
+def test_configure_ca_trust_loads_a_real_bundle():
+    # Regression: the libgit2 dir arg must be None, not "" (OpenSSL rejects the
+    # empty string as "invalid directory" while loading the bundle).
+    _configure_ca_trust(Path(certifi.where()))  # must not raise
 
 
 if __name__ == "__main__":
