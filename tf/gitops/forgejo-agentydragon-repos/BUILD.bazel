@@ -11,7 +11,7 @@ tf_providers_versions(
 )
 
 tf_module(
-    name = "forgejo-codex",
+    name = "forgejo-agentydragon-repos",
     providers = [
         "forgejo",
         "kubernetes",

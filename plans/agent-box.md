@@ -45,11 +45,11 @@ You log in _as_ codex with your personal keys (in `authorizedKeys`); the
 - **KubeVirt**: `cluster/k8s/agent-box/` (clone of gecko). Public SSH via a
   CiliumEnvoyConfig on port **2201** (gecko owns `:22` on hil), DNS
   `agent-box.allegedly.works`.
-- **Forgejo (tofu)**: `tf/gitops/forgejo-codex/` + `cluster/k8s/forgejo/codex/` — creates
-  the `agent-box-codex` Forgejo user + SSH key, adopts
-  `agentydragon/{ducktape,gaffer-private}` via `import {}`, grants
-  agent-box-codex `write`, and protects `devel`/`main` with a push whitelist of
-  `agentydragon` (agent-box-codex must PR; agentydragon keeps direct push).
+- **Forgejo (tofu)**: `tf/gitops/forgejo-agentydragon-repos/` +
+  `cluster/k8s/forgejo/agentydragon-repos/` — creates the `agent-box-codex`
+  Forgejo user + SSH key, adopts `agentydragon/{ducktape,gaffer-private}` via
+  `import {}`, grants agent-box-codex `write`, and leaves default branches
+  intentionally unprotected because Forgejo branch protection blocks force-push.
 - **SSH convenience**: `programs.ssh.matchBlocks."agent-box.allegedly.works"` in
   agentydragon's home.nix (user codex, port 2201).
 - **Attic rotator entry**: `rotators.json` mints `secrets/hosts/agent-box-attic.yaml`
@@ -84,9 +84,10 @@ sync them from GitHub manually when needed.
   is wanted; the VM currently pins the same SHA as gecko.
 - Deploy: boot the VM, then `nixos-rebuild switch ...#agent-box` (pause before activating
   per house rule).
-- First `forgejo-codex` reconcile mutates the real Forgejo repos (adopt + protect) — watch
-  the initial Terraform plan/apply. Settings were matched to the live repos to keep the
-  import diff-free; branch protection + collaborators are additive.
+- First `forgejo-agentydragon-repos` reconcile mutates the real Forgejo repos
+  (adopt + collaborators) — watch the initial Terraform plan/apply. Settings
+  were matched to the live repos to keep the import diff-free; collaborator
+  grants are additive.
 - No GitHub identity for codex in v1 (Forgejo-primary). The existing `agentydragon-agent`
   machine user already gets PR-but-not-push for free via the GitHub ruleset if wired later.
 

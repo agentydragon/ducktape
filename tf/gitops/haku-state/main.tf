@@ -3,11 +3,10 @@
 #
 # Provisions a private `haku/haku-state` repo owned by a dedicated `haku`
 # service user (full read/write on its own repo; scan runs commit+push items,
-# intake, steering, and log as this user), read-only source grants for the repos
-# Haku is allowed to clone, plus a read-only grant for the `claude` agent
-# account. A Kubernetes Secret in the `haku-sandbox` namespace carries the git
-# credentials, consumed by in-cluster scan runs. Mirrors tf/gitops/augur-evidence.
-# The repo starts empty (auto_init only) — no seed.
+# intake, steering, and log as this user), plus a read-only grant for the
+# `claude` agent account. A Kubernetes Secret in the `haku-sandbox` namespace
+# carries the git credentials, consumed by in-cluster scan runs. Mirrors
+# tf/gitops/augur-evidence. The repo starts empty (auto_init only) — no seed.
 
 data "kubernetes_secret" "forgejo_admin" {
   metadata {
@@ -54,34 +53,6 @@ resource "forgejo_branch_protection" "state_main" {
   repository_id = forgejo_repository.state.id
   branch_name   = "main"
   enable_push   = true
-}
-
-locals {
-  haku_source_repos = toset([
-    "agentydragon/ducktape",
-    "agentydragon/gaffer-private",
-  ])
-}
-
-# Read existing source repos by API because forgejo_collaborator wants the
-# numeric repository ID, while the provider has no repository data source.
-data "http" "haku_source_repo" {
-  for_each = local.haku_source_repos
-
-  url    = "${var.forgejo_url}/api/v1/repos/${each.value}"
-  method = "GET"
-  request_headers = {
-    Authorization = "Basic ${base64encode("${data.kubernetes_secret.forgejo_admin.data["username"]}:${data.kubernetes_secret.forgejo_admin.data["password"]}")}"
-    Accept        = "application/json"
-  }
-}
-
-resource "forgejo_collaborator" "haku_source_read" {
-  for_each = local.haku_source_repos
-
-  repository_id = jsondecode(data.http.haku_source_repo[each.value].response_body).id
-  user          = forgejo_user.haku.login
-  permission    = "read"
 }
 
 # Read-only access for the claude agent account (user provisioned by

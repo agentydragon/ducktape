@@ -36,4 +36,4 @@ operator activation (runbook in <README.md>):
   `haku-state-git-write`. The worker currently clones the
   `agentydragon/ducktape` mirror for `haku/base` + `haku/run.md`; the `haku`
   read grants on `agentydragon/ducktape` and `agentydragon/gaffer-private` are
-  Terraform-managed in `tf/gitops/haku-state`.
+  Terraform-managed in `tf/gitops/forgejo-agentydragon-repos`.

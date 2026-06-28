@@ -191,7 +191,7 @@ resources:
   - forgejo/augur-evidence/flux-kustomization.yaml
   - forgejo/cpap-data/flux-kustomization.yaml
   - forgejo/claude/flux-kustomization.yaml
-  - forgejo/codex/flux-kustomization.yaml
+  - forgejo/agentydragon-repos/flux-kustomization.yaml
   - forgejo/agentydragon/flux-kustomization.yaml
   - forgejo/haku-state/flux-kustomization.yaml
 

@@ -23,7 +23,8 @@ and is **not** provisioned declaratively yet:
   `haku/base` / `haku/run.md` content.
 
 The `haku` Forgejo user's read grants on `agentydragon/ducktape` and
-`agentydragon/gaffer-private` are Terraform-managed by `tf/gitops/haku-state`.
+`agentydragon/gaffer-private` are Terraform-managed alongside those adopted
+Forgejo repos in `tf/gitops/forgejo-agentydragon-repos`.
 
 ## Activation runbook
 

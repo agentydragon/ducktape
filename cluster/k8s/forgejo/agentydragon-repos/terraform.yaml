@@ -1,16 +1,21 @@
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
 kind: Terraform
 metadata:
-  name: forgejo-codex
+  name: forgejo-agentydragon-repos
   namespace: flux-system
 spec:
   interval: 15m
   refreshBeforeApply: true
-  path: ./tf/gitops/forgejo-codex
+  path: ./tf/gitops/forgejo-agentydragon-repos
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
+
+  # Haku source-read collaborator grants look up the haku user provisioned by
+  # tf/gitops/haku-state.
+  dependsOn:
+    - name: haku-state
 
   serviceAccountName: tf-runner
   approvePlan: "auto"
@@ -19,6 +24,8 @@ spec:
     customConfiguration: |
       backend "pg" {
         conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+        # Historical state schema from the previous module name.
+        # Rename only with an explicit tofu-state migration.
         schema_name = "forgejo_codex"
       }
   runnerPodTemplate:

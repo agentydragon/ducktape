@@ -1,9 +1,10 @@
-# Forgejo identity + repo access for the self-hosted Codex agent (agent-box VM).
+# Forgejo repo access for agentydragon-owned source mirrors.
 #
 # Provisions an `agent-box-codex` service user, attaches its SSH push key
 # (agent-box-codex-forgejo), adopts the existing `agentydragon/{ducktape,
-# gaffer-private}` repos under Terraform, and grants agent-box-codex write
-# collaboration. Provider wiring mirrors tf/gitops/forgejo-claude.
+# gaffer-private}` repos under Terraform, grants agent-box-codex write
+# collaboration, and grants Haku read access to those same source mirrors.
+# Provider wiring mirrors tf/gitops/forgejo-claude.
 
 data "kubernetes_secret" "forgejo_admin" {
   metadata {
@@ -48,6 +49,10 @@ data "forgejo_user" "agentydragon" {
   login = "agentydragon"
 }
 
+data "forgejo_user" "haku" {
+  login = "haku"
+}
+
 # Field set matches the live repo settings (verified via the Forgejo API) so the
 # import is diff-free: both repos are private with all-default feature toggles;
 # only default_branch differs.
@@ -87,6 +92,21 @@ resource "forgejo_collaborator" "agent_box_codex_gaffer" {
   repository_id = forgejo_repository.gaffer_private.id
   user          = forgejo_user.agent_box_codex.login
   permission    = "write"
+}
+
+# --- haku read collaboration ---
+# Read-only access lets Haku clone these in-cluster source mirrors with its
+# existing haku-state-git-write basic-auth credential.
+resource "forgejo_collaborator" "haku_ducktape_read" {
+  repository_id = forgejo_repository.ducktape.id
+  user          = data.forgejo_user.haku.login
+  permission    = "read"
+}
+
+resource "forgejo_collaborator" "haku_gaffer_read" {
+  repository_id = forgejo_repository.gaffer_private.id
+  user          = data.forgejo_user.haku.login
+  permission    = "read"
 }
 
 # --- Default branches intentionally unprotected ---
