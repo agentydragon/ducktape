@@ -54,6 +54,13 @@ spec:
         # action-download step (confirmed via Cilium's DNS cache: the runner
         # connects to data.forgejo.org but it wasn't allowlisted).
         - matchName: data.forgejo.org
+        # git.allegedly.works: the Forgejo instance public URL. The dind daemon
+        # (not the job container) makes the actual HTTPS connection for docker login
+        # and docker push to git.allegedly.works. That traffic leaves from the dind
+        # pod's network namespace; git.allegedly.works resolves to OVH node public IPs
+        # (Cilium Gateway hostNetwork), which are remote-node/world — not covered by
+        # toEntities: cluster.
+        - matchName: git.allegedly.works
       toPorts:
         - ports:
             - port: "443"
