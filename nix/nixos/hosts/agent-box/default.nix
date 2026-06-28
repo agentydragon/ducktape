@@ -37,6 +37,18 @@ in
   #     sopsFile = ../../../../secrets/hosts/agent-box-attic.yaml;
   #   };
 
+  # Process KubeVirt's NoCloud seed to install the persisted Ed25519 host key
+  # (agent-box-host) before sshd starts — sops-nix decrypts the codex user key
+  # via that host key. Required because agent-box boots its OWN qcow2 image
+  # directly (no bootstrap image first), so unlike gecko it must run cloud-init
+  # itself; otherwise sshd self-generates a host key sops-nix can't match.
+  # Mirrors nix/nixos/hosts/bootstrap/default.nix.
+  services.cloud-init = {
+    enable = true;
+    network.enable = false;
+    settings.datasource_list = [ "NoCloud" ];
+  };
+
   # Passwordless sudo for read-only system inspection commands used by agents.
   ducktape.systemInspectionSudo.enable = true;
 
