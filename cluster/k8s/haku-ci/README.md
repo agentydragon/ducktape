@@ -16,8 +16,13 @@ contained to roughly Haku's existing sandbox blast radius:
   can't tamper with the runner pod or its registry/git push creds — but it is **egress-fenced**
   like haku-sandbox (`networkpolicy.yaml`: DNS + base-image registries/npm/pypi + in-cluster
   only).
-- **Rootless builder** (`docker:27-dind-rootless`, non-privileged) — a node escape would break
-  the whole Haku perimeter, so no privileged docker-in-docker (unlike the parked `docker-ci`).
+- **Rootless daemon in a privileged pod** (`docker:27-dind-rootless`, `privileged: true`). The
+  dockerd still runs **rootless** (UID 1000), so it's strictly better than classic rootful
+  dind — but `privileged: true` is the documented requirement for dind-rootless (it provides
+  `/dev/net/tun` and disables the mount masks RootlessKit needs). The non-privileged path was
+  attempted and cleared seccomp + `user.max_user_namespaces` but couldn't get past the masks
+  (see the paving section). The privileged pod's blast radius is bounded by this namespace
+  being operator-only (no Haku RBAC), pinned **off the control planes**, and egress-fenced.
 - **Repo-scoped runner** registered only to the `haku-state` repo, so it only ever runs Haku's
   jobs; `capacity: 1` (serial builds).
 - **Scoped creds**: pushes only to the `haku/*` Forgejo package namespace; commits back only to
@@ -28,12 +33,12 @@ adversarial (containment = cross-origin iframe isolation + the capability gate +
 scheme-gate). A CI-built image vs committed files doesn't widen that — it only changes _how_
 Haku produces the image, and the runner can't escape its perimeter.
 
-## ⚠️ Paving — validate the builder
+## ⚠️ Paving — validate a real build
 
-Rootless `dind` on Talos is the **main risk** and may need securityContext/seccomp tuning,
-`/dev/fuse`, or a switch to **rootless buildkit** if the daemon won't start. Check
-`kubectl -n haku-ci logs deploy/haku-runner -c dind`, run a trivial `.forgejo/workflows/`
-build, and iterate here.
+The dind daemon now starts (privileged-pod rootless, after the non-privileged path dead-ended
+on the mount masks). What's left is an end-to-end check: trigger a `.forgejo/workflows/` build
+on the runner and confirm it builds + pushes an image. Check
+`kubectl -n haku-ci logs deploy/haku-runner -c dind` (daemon up) and the runner's job logs.
 
 ## What's here
 

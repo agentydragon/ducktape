@@ -78,20 +78,25 @@ spec:
             limits:
               cpu: "1"
               memory: 1Gi
-        # Rootless Docker daemon (NOT privileged) for the builds. Listens only on
-        # localhost:2375 inside the pod. **Builder is the main iterate point** —
-        # rootless dind on Talos may need securityContext/seccomp tuning or a
-        # switch to rootless buildkit; see README.
+        # Docker daemon for the builds, listening only on localhost:2375 inside the pod.
+        # privileged: true is the documented requirement for docker:dind-rootless — it
+        # provides /dev (incl. /dev/net/tun for RootlessKit) and disables the mount masks
+        # that otherwise hide those devices from RootlessKit's nested namespaces. The
+        # non-privileged path cleared seccomp (PSA) + user.max_user_namespaces (the OVH
+        # worker sysctl) but still couldn't create the rootless TAP because of the masks.
+        # Crucially the DAEMON still runs ROOTLESS (UID 1000 via the -rootless image), so
+        # this is strictly better than classic rootful dind; the privileged POD is the
+        # price, contained by haku-ci being operator-only (no Haku RBAC), off control
+        # planes, and egress-fenced. See README.
         - name: dind
           image: docker:27-dind-rootless
           args:
             - --host=tcp://0.0.0.0:2375
             - --tls=false
           securityContext:
+            privileged: true
             runAsUser: 1000
             runAsGroup: 1000
-            seccompProfile:
-              type: Unconfined
           volumeMounts:
             - name: docker-data
               mountPath: /var/lib/docker

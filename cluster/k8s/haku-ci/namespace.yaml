@@ -5,19 +5,20 @@ metadata:
   # haku-sandbox — Haku has no RBAC here, so a prompt-injected Haku cannot tamper
   # with the runner pod or its registry/git push creds. But the runner executes
   # Haku-authored build steps (its workflow + Dockerfile), so it IS agent-controlled
-  # compute and is egress-fenced like haku-sandbox (networkpolicy.yaml) + builds
-  # rootless (no privileged escape). See README.md.
+  # compute and is egress-fenced like haku-sandbox (networkpolicy.yaml) + pinned off
+  # the control planes (deployment.yaml affinity). See README.md.
   name: haku-ci
   labels:
     name: haku-ci
     # The runner's resources are set deliberately; no VPA recommendations wanted.
     goldilocks.fairwinds.com/enabled: "false"
-    # Enforce the privileged Pod Security level. The rootless dind sidecar needs
-    # seccompProfile: Unconfined (nested-container clone/unshare), which the baseline
-    # and restricted levels both forbid. This does NOT make the pod privileged — it
-    # stays rootless (runAsUser 1000, no privileged:true, caps dropped); privileged
-    # PSA only stops *restricting* it. Safe because haku-ci is operator-only (Haku has
-    # no RBAC here; only Flux applies), so the loosened level grants Haku nothing.
+    # Enforce the privileged Pod Security level. The dind sidecar runs privileged
+    # (the documented requirement for docker:dind-rootless — it provides /dev/net/tun
+    # and disables the mount masks RootlessKit needs; the daemon itself still runs
+    # rootless as UID 1000). baseline/restricted forbid both privileged and its
+    # Unconfined seccomp, so the namespace must enforce privileged. Safe because
+    # haku-ci is operator-only (Haku has no RBAC here; only Flux applies), so the
+    # loosened level grants Haku nothing.
     pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/warn: privileged
     pod-security.kubernetes.io/audit: privileged
