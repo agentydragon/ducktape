@@ -68,24 +68,27 @@ and decides. See `console/plans/free_form_ui_iframe.md`.
 
 ## Layout
 
-| Path               | Role                                                                                                                                                                                                                 |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `app.py`           | FastAPI `create_app` + lifespan (clone). `GET /api/config`, `GET /healthz`, CSRF config, mounts the trace + capability routers. Also serves the fingerprinted SPA (`StaticFiles`) with route-specific cache headers. |
-| `trace.py`         | Trace-tier router (`/api/trace`): a single `POST` that records an opaque operator note to haku-state. Low-privilege haku-state write; reads `git_state` off `app.state`.                                             |
-| `capabilities.py`  | Capability-tier router (`/api/capabilities/*`): CSRF-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer; `GET /csrf` issues the double-submit token.            |
-| `git_state.py`     | pygit2 clone of haku-state; `reconcile` (fetch + hard-reset), `commit_push` with retry, `append_trace` (the single write path). Talks to the cluster-internal **plaintext-HTTP** Forgejo (no TLS/CA needed).         |
-| `models.py`        | Pydantic `TraceRequest` and `ConfigResponse` — the `/api` request/response models.                                                                                                                                   |
-| `config.py`        | Env settings (`HAKU_CONSOLE_*`).                                                                                                                                                                                     |
-| `export_schema.py` | Prints the OpenAPI schema; the frontend generates its TypeScript types from it.                                                                                                                                      |
-| `frontend/`        | React SPA (esbuild bundle) — see `frontend/README.md`.                                                                                                                                                               |
+| Path               | Role                                                                                                                                                                                                                  |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app.py`           | FastAPI `create_app` + lifespan (clone). `GET /api/config`, `GET /healthz`, CSRF config, mounts the trace + capability routers. It can serve the SPA for local/direct fallback when `HAKU_CONSOLE_STATIC_DIR` is set. |
+| `trace.py`         | Trace-tier router (`/api/trace`): a single `POST` that records an opaque operator note to haku-state. Low-privilege haku-state write; reads `git_state` off `app.state`.                                              |
+| `capabilities.py`  | Capability-tier router (`/api/capabilities/*`): CSRF-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer; `GET /csrf` issues the double-submit token.             |
+| `git_state.py`     | pygit2 clone of haku-state; `reconcile` (fetch + hard-reset), `commit_push` with retry, `append_trace` (the single write path). Talks to the cluster-internal **plaintext-HTTP** Forgejo (no TLS/CA needed).          |
+| `models.py`        | Pydantic `TraceRequest` and `ConfigResponse` — the `/api` request/response models.                                                                                                                                    |
+| `config.py`        | Env settings (`HAKU_CONSOLE_*`).                                                                                                                                                                                      |
+| `export_schema.py` | Prints the OpenAPI schema; the frontend generates its TypeScript types from it.                                                                                                                                       |
+| `frontend/`        | React SPA (esbuild bundle) — see `frontend/README.md`.                                                                                                                                                                |
 
 ## Perimeter / deploy
 
 Manifests live in `cluster/k8s/haku/console/` (operator-owned — the perimeter is not
 Haku's to change); the `haku-console` namespace itself is `cluster/k8s/haku/console-namespace/`.
-The image bundles the fingerprinted SPA under `/app/web`; FastAPI serves it via
-`HAKU_CONSOLE_STATIC_DIR` and sets cache policy by route (`/assets/*` immutable,
-app shell revalidated, API/health uncached).
+The deployment runs two containers in one pod: the `haku-console` FastAPI API
+image and a separate `haku-console-static` nginx image that bakes in the
+fingerprinted SPA. nginx serves `/` and `/assets/*`, proxies `/api/*` and
+`/healthz` to FastAPI on localhost, and sets cache policy by route (`/assets/*`
+immutable, app shell revalidated, API/health uncached). No runtime asset copy or
+shared web volume is used.
 Non-root, dropped caps, no service-account token. Credentials: the `haku-state-git-write`
 secret (provisioned into `haku-console` by the `tf/gitops/haku-state` module) and the
 `haku-routine-launch-token` secret (the capability tier's bearer; `HAKU_CONSOLE_LAUNCH_ROUTINE__TOKEN`).

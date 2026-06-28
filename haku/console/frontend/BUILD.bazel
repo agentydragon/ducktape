@@ -185,7 +185,7 @@ js_run_binary(
     tool = ":tailwind_cli",
 )
 
-# Everything the backend serves as the SPA docroot.
+# Everything the static frontend image serves as the SPA docroot.
 spa_bundle(
     name = "bundle",
     entry_point = "main.tsx",

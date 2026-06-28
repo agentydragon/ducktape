@@ -48,8 +48,9 @@ class Settings(BaseSettings):
 
     clone_dir: Path = Path("/data/haku-state")
 
-    # Directory holding the built React SPA (index.html + assets), served same-origin.
-    # Unset in tests (the API runs without a UI); set to the bundled dir in the image.
+    # Optional directory holding the built React SPA (index.html + assets), served
+    # same-origin by FastAPI for direct local/dev fallback. Production leaves this
+    # unset and serves the SPA from the haku-console-static nginx image.
     static_dir: Path | None = None
 
     # Capability tier. launch_routine enables POST /api/capabilities/launch-routine

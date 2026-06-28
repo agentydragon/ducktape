@@ -2,7 +2,7 @@ import createClient from "openapi-fetch";
 
 import type { components, paths } from "./api/schema";
 
-// Same-origin typed client (the FastAPI backend serves this bundle). Types are
+// Same-origin typed client (nginx serves this bundle and proxies /api). Types are
 // generated from the backend's OpenAPI schema: //haku/console/frontend:schema.
 const api = createClient<paths>({ baseUrl: "" });
 

@@ -1,4 +1,5 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
@@ -169,36 +170,40 @@ py_image_layer(
     owner = "1000",
 )
 
-# The built React SPA, flattened to /app/web (index.html + assets/*).
-# FastAPI serves this directory via HAKU_CONSOLE_STATIC_DIR with route-specific
-# cache headers.
 pkg_files(
     name = "web_files",
     srcs = ["//haku/console/frontend:bundle"],
-    prefix = "/app/web",
+    # The bundle output keeps its `dist/` directory; nginx roots at this child path.
+    prefix = "/usr/share/nginx/html",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_files(
+    name = "nginx_conf_files",
+    srcs = ["default.conf"],
+    prefix = "/etc/nginx/conf.d",
     strip_prefix = strip_prefix.files_only(),
 )
 
 pkg_tar(
-    name = "web_tar",
-    srcs = [":web_files"],
+    name = "static_tar",
+    srcs = [
+        ":nginx_conf_files",
+        ":web_files",
+    ],
 )
 
 oci_image(
     name = "server_image",
     base = "@debian_trixie_slim_linux_amd64",
     entrypoint = py_image_entrypoint("server_bin"),
-    env = dict(
-        py_image_env(binary_name = "server_bin"),
-        HAKU_CONSOLE_STATIC_DIR = "/app/web",
-    ),
+    env = py_image_env(binary_name = "server_bin"),
     labels = {
         "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
         "org.opencontainers.image.title": "haku-console",
     },
     tars = [
         ":server_layers",
-        ":web_tar",
         "@trixie_ca_certificates//:flat",
     ],
     user = "1000:1000",
@@ -209,4 +214,30 @@ oci_load(
     name = "server_load",
     image = ":server_image",
     repo_tags = ["haku-console:latest"],
+)
+
+oci_image(
+    name = "static_image",
+    base = "@nginx_unprivileged_linux_amd64",
+    exposed_ports = ["8081/tcp"],
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
+        "org.opencontainers.image.title": "haku-console-static",
+    },
+    tars = [":static_tar"],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "static_load",
+    image = ":static_image",
+    repo_tags = ["haku-console-static:latest"],
+)
+
+build_test(
+    name = "static_image_build_test",
+    targets = [
+        ":static_image",
+        ":static_image.digest",
+    ],
 )

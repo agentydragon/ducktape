@@ -1,4 +1,4 @@
-"""FastAPI app for the Haku console: JSON API + same-origin React SPA.
+"""FastAPI app for the Haku console JSON API.
 
 The console is a thin shell: the capability tier (launch-routine) + a generic
 "Note to Haku" trace box + the Free-form UI iframe. Item rendering has moved to
@@ -9,7 +9,9 @@ the **trace tier** (``haku.console.trace``) records opaque operator text into
 haku-state and is the low-privilege surface safe for agent-authored UI. The
 high-privilege **capability tier** (``haku.console.capabilities``) uses console-only
 secrets and acts on the world (launching the routine); it is CSRF-gated and audited.
-``app.py`` wires both routers, configures CSRF, and serves the config endpoint + SPA.
+``app.py`` wires both routers, configures CSRF, and serves the config endpoint. It
+can also mount the built SPA when ``static_dir`` is explicitly configured for a
+direct local/dev fallback.
 """
 
 from __future__ import annotations
@@ -97,8 +99,9 @@ def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
     app.include_router(trace.router)
     app.include_router(capabilities.router)
 
-    # The built React SPA is served same-origin for everything else. Mounted last so the
-    # API routes above take precedence; left unmounted in tests (static_dir unset).
+    # Optional direct local/dev fallback. Production serves the SPA from the
+    # haku-console-static nginx image and leaves static_dir unset on this process.
+    # Mounted last so the API routes above take precedence.
     if settings.static_dir is not None and settings.static_dir.is_dir():
         app.mount("/", StaticFiles(directory=settings.static_dir, html=True), name="spa")
 

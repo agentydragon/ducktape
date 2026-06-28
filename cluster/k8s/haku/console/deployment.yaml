@@ -1,8 +1,9 @@
-# The Haku console: reviewed FastAPI API code plus the bundled React SPA.
-# Unlike the old dashboard's nginx + git-sync shape, the app owns git itself —
-# it clones haku-state into an emptyDir at /data at startup and pushes back.
-# Access is gated by Authentik (agentydragon-only) via the proxy outpost — the
-# app has no native auth.
+# The Haku console: reviewed FastAPI API code plus a baked nginx static frontend.
+# Unlike the old dashboard's nginx + git-sync shape, the FastAPI app owns git
+# itself — it clones haku-state into an emptyDir at /data at startup and pushes
+# back. nginx only serves the bundled SPA image and proxies API calls to
+# localhost. Access is gated by Authentik (agentydragon-only) via the proxy
+# outpost — the app has no native auth.
 #
 # Trust boundary: runs in its OWN `haku-console` namespace, NOT haku-sandbox. As
 # reviewed/released ducktape code it sits outside Haku's RBAC (Haku can't read its
@@ -47,7 +48,7 @@ spec:
           image: ghcr.io/agentydragon/haku-console:devel-20260628000612-5c33640 # {"$imagepolicy": "flux-system:haku-console"}
           imagePullPolicy: Always
           ports:
-            - name: http
+            - name: api
               containerPort: 8080
           env:
             - name: HOME # libgit2/git config + temp writes land in the writable emptyDir
@@ -94,12 +95,12 @@ spec:
               memory: 512Mi
           livenessProbe:
             tcpSocket:
-              port: http
+              port: api
             initialDelaySeconds: 10
             periodSeconds: 30
           readinessProbe:
             tcpSocket:
-              port: http
+              port: api
             initialDelaySeconds: 5
             periodSeconds: 10
           volumeMounts:
@@ -107,6 +108,35 @@ spec:
               mountPath: /tmp
             - name: data # the haku-state clone
               mountPath: /data
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+        - name: static
+          image: ghcr.io/agentydragon/haku-console-static:devel-20260628000612-5c33640 # {"$imagepolicy": "flux-system:haku-console-static"}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8081
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
