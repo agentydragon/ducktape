@@ -2,8 +2,9 @@
 #
 # Provisions a private `budget-ledger/ledger` repo owned by a dedicated
 # `budget-ledger` service user (so the user has full read/write on it without a
-# separate collaborator grant), plus a Kubernetes Secret carrying that user's git
-# credentials in the `budget` namespace -- consumed by the exporter CronJob
+# separate collaborator grant), read-only collaborator grants for agent users,
+# plus a Kubernetes Secret carrying that user's git credentials in the `budget`
+# namespace -- consumed by the exporter CronJob
 # (push) and the Fava git-sync sidecar (pull). Auth is HTTPS Basic over the
 # in-cluster Forgejo service (no SSH endpoint needed).
 
@@ -50,6 +51,14 @@ resource "forgejo_repository" "ledger" {
 resource "forgejo_collaborator" "claude" {
   repository_id = forgejo_repository.ledger.id
   user          = "claude"
+  permission    = "read"
+}
+
+# Read-only access for the haku agent account (user provisioned by
+# tf/gitops/haku-state).
+resource "forgejo_collaborator" "haku" {
+  repository_id = forgejo_repository.ledger.id
+  user          = "haku"
   permission    = "read"
 }
 
