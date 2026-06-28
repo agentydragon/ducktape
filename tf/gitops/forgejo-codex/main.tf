@@ -2,9 +2,8 @@
 #
 # Provisions an `agent-box-codex` service user, attaches its SSH push key
 # (agent-box-codex-forgejo), adopts the existing `agentydragon/{ducktape,
-# gaffer-private}` repos under Terraform, grants agent-box-codex write
-# collaboration, and protects the default branches so it must open PRs while agentydragon keeps
-# direct push (push whitelist). Provider wiring mirrors tf/gitops/forgejo-claude.
+# gaffer-private}` repos under Terraform, and grants agent-box-codex write
+# collaboration. Provider wiring mirrors tf/gitops/forgejo-claude.
 
 data "kubernetes_secret" "forgejo_admin" {
   metadata {
@@ -77,8 +76,7 @@ import {
 }
 
 # --- agent-box-codex write collaboration ---
-# Write (not read) so agent-box-codex can push topic branches for PRs; branch
-# protection below blocks direct pushes to the default branch.
+# Write (not read) so agent-box-codex can push topic branches for PRs.
 resource "forgejo_collaborator" "agent_box_codex_ducktape" {
   repository_id = forgejo_repository.ducktape.id
   user          = forgejo_user.agent_box_codex.login
@@ -91,28 +89,11 @@ resource "forgejo_collaborator" "agent_box_codex_gaffer" {
   permission    = "write"
 }
 
-# --- Branch protection: PR-but-not-push for everyone except agentydragon ---
-# enable_push + push whitelist keeps agentydragon's direct pushes working while
-# forcing agent-box-codex (and any other collaborator) through PRs. Forgejo
-# always rejects force-push on a protected branch, so no separate toggle is
-# needed.
-resource "forgejo_branch_protection" "ducktape_devel" {
-  repository_id            = forgejo_repository.ducktape.id
-  branch_name              = "devel"
-  enable_push              = true
-  enable_push_whitelist    = true
-  push_whitelist_usernames = [data.forgejo_user.agentydragon.login]
-}
-
-# gaffer-private is currently empty (no `main` branch yet); the rule attaches by
-# branch name and takes effect once the first push creates main.
-resource "forgejo_branch_protection" "gaffer_main" {
-  repository_id            = forgejo_repository.gaffer_private.id
-  branch_name              = "main"
-  enable_push              = true
-  enable_push_whitelist    = true
-  push_whitelist_usernames = [data.forgejo_user.agentydragon.login]
-}
+# --- Default branches intentionally unprotected ---
+# Forgejo's protected-branch API can whitelist normal pushes, but it cannot
+# whitelist force-push. Protected branches reject `git push --force` even when
+# `agentydragon` is in `push_whitelist_usernames`, so the Forgejo mirrors leave
+# `ducktape/devel` and `gaffer-private/main` unprotected.
 
 moved {
   from = random_password.codex
