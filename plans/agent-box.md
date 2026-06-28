@@ -54,6 +54,22 @@ You log in _as_ codex with your personal keys (in `authorizedKeys`); the
 - **Attic rotator entry**: `rotators.json` mints `secrets/hosts/agent-box-attic.yaml`
   after merge.
 
+## Cloning Forgejo repos as codex
+
+The codex user can clone the repos it collaborates on over SSH using the planted
+bot key — no netrc/HTTP credential is involved:
+
+```bash
+git clone git@git.allegedly.works:agentydragon/ducktape.git
+git clone git@git.allegedly.works:agentydragon/gaffer-private.git
+```
+
+This relies on the `git.allegedly.works` matchBlock (port 2222 + the
+`agent-box-codex-forgejo` key) that `nix/home/modules/forgejo-ssh.nix` writes to
+`~/.ssh/config`. Forgejo is the working forge for codex (push topic branches,
+open PRs there); the Forgejo repos are not formal pull-mirrors of GitHub, so
+sync them from GitHub manually when needed.
+
 ## Deferred (tombstoned in-code)
 
 - **Attic substituter** on agent-box: the Nix wiring is tombstoned in
