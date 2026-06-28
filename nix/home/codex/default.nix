@@ -8,6 +8,7 @@
   ...
 }:
 let
+  cfg = config.ducktape.codex;
   execPolicyRules = import ./execpolicy-rules.nix { inherit lib; };
   codexNpmCache = "${config.xdg.cacheHome}/codex/npm";
   codexNixCache = "${config.xdg.cacheHome}/nix";
@@ -165,7 +166,11 @@ let
   };
 
   tomlFormat = pkgs.formats.toml { };
-  baseConfigFile = tomlFormat.generate "codex-config.nix-base" codexSettings;
+  # Host overrides (ducktape.codex.settings) deep-merge over the defaults, using
+  # Codex's own config.toml keys.
+  baseConfigFile = tomlFormat.generate "codex-config.nix-base" (
+    lib.recursiveUpdate codexSettings cfg.settings
+  );
 
   useXdgDirectories = config.home.preferXdgDirectories;
   xdgConfigHomeRelative = lib.removePrefix "${config.home.homeDirectory}/" config.xdg.configHome;
@@ -214,7 +219,16 @@ let
   '';
 in
 {
-  programs.codex = {
+  # Per-host Codex config.toml overrides, expressed in Codex's own schema and
+  # deep-merged over the defaults above. e.g. an isolated agent VM can set
+  # `approval_policy = "never"` + `sandbox_mode = "danger-full-access"`.
+  options.ducktape.codex.settings = lib.mkOption {
+    inherit (tomlFormat) type;
+    default = { };
+    description = "Overrides deep-merged over the generated Codex config.toml, using Codex's native config keys.";
+  };
+
+  config.programs.codex = {
     enable = true;
     # Prefer the unstable codex package if available.
     package = pkgsUnstable.codex;
@@ -222,7 +236,7 @@ in
     # The activation script below handles merging our desired settings.
   };
 
-  home = {
+  config.home = {
     file = {
       "${baseFileRelative}".source = baseConfigFile;
       "${rulesFileRelative}".text = execPolicyRules.text;
