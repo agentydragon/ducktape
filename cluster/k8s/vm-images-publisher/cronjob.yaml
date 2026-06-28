@@ -39,10 +39,18 @@ spec:
                   memory: 8Gi
               env:
                 - name: NIX_CONFIG
+                  # cache.allegedly.works/main lets the publisher substitute
+                  # host-image closures (e.g. sops-install-secrets, which is a
+                  # sops-nix package absent from cache.nixos.org) instead of
+                  # building them — the build pod has no egress for go-module
+                  # fetches. nix-attic-push builds every flake output on devel,
+                  # so the agent-box-image closure is already cached. main pubkey
+                  # SSOT: nix/attic-pubkeys.json. Auth via the mounted netrc.
                   value: |
                     experimental-features = nix-command flakes
-                    substituters = https://cache.nixos.org/
-                    trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+                    substituters = https://cache.nixos.org/ https://cache.allegedly.works/main
+                    trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= main:owYQITaq2ixR/EnqKoIQAxgjalKKVqMemFwRMaUW53U=
+                    netrc-file = /etc/nix-netrc/netrc
                     system-features = benchmark big-parallel kvm nixos-test uid-range
                     accept-flake-config = true
               envFrom:
@@ -65,6 +73,9 @@ spec:
               volumeMounts:
                 - name: scripts
                   mountPath: /scripts
+                - name: attic-netrc
+                  mountPath: /etc/nix-netrc
+                  readOnly: true
                 - name: kvm
                   mountPath: /dev/kvm
                 - name: tmp
@@ -74,6 +85,12 @@ spec:
               configMap:
                 name: vm-images-publisher-scripts
                 defaultMode: 0o555
+            - name: attic-netrc
+              secret:
+                secretName: attic-reader-netrc
+                items:
+                  - key: netrc
+                    path: netrc
             - name: kvm
               hostPath:
                 path: /dev/kvm

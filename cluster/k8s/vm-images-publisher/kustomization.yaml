@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - s3-credentials.yaml
+  - attic-reader-netrc.sops.yaml
   - cronjob.yaml
 configMapGenerator:
   - name: vm-images-publisher-scripts
