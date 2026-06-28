@@ -431,15 +431,6 @@ creation_rules:
           - *wyrm2-host
           - *rugged-host
           - *iguana-host
-  # 15 Leroy HA SSH key (user-decryptable for home-manager sops deployment)
-  - path_regex: secrets/15leroy-homeassistant-ssh\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *wyrm2-agentydragon
-          - *rugged-agentydragon
-          - *atlas-agentydragon
-          - *iguana-agentydragon
   # Dedicated PAT kept in SOPS for now even though the GitHub release-asset
   # fetch path is being removed. TODO: decide whether to keep, rotate, or
   # delete it once private-cache delivery is in place.

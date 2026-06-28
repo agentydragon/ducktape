@@ -86,9 +86,6 @@ nix/artifact-pins.json rules-lint-ignored=true
 # Golden test files - generated artifacts, not source code
 **/golden/*.dxf rules-lint-ignored=true
 
-# OrcaSlicer config - 3D printer slicer settings, not source code
-x/orcaslicer_config/** rules-lint-ignored=true
-
 # Archived/legacy code
 x/k8s_old/** rules-lint-ignored=true
 # TODO: Delete legacy_* roles once all machines switch to Nix home-manager

@@ -16,7 +16,6 @@ in
 {
   imports = [
     ../home.nix
-    ../modules/15leroy-ssh.nix
     ../modules/forgejo-ssh.nix
     ../modules/github-ssh.nix
     ../modules/kubeconfig.nix

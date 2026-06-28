@@ -12,7 +12,6 @@
     ../home.nix
     ../modules/forgejo-ssh.nix
     ../modules/no-screensaver.nix
-    ../modules/15leroy-ssh.nix
     ../modules/kubeconfig.nix
     ../modules/talosconfig.nix
     ../modules/discord-minimized-autostart.nix

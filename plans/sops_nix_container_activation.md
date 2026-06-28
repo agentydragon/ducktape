@@ -267,21 +267,20 @@ separate (HM sets `sops.age.sshKeyPaths`, container sets `SOPS_AGE_KEY` env).
 
 ### Home-manager secrets (sops-nix)
 
-| Secret               | SOPS file                                | Key                  | Output                                         | Type               | Hosts          |
-| -------------------- | ---------------------------------------- | -------------------- | ---------------------------------------------- | ------------------ | -------------- |
-| `buildbuddy_api_key` | `secrets/buildbuddy.yaml`                | `buildbuddy_api_key` | `~/.config/bazel/buildbuddy.bazelrc` + env var | template + sopsEnv | all            |
-| `kubeconfig`         | `secrets/shared/kubeconfig.yaml`         | `kubeconfig`         | `~/.kube/config`                               | raw blob           | all            |
-| `talosconfig`        | `secrets/shared/talosconfig.yaml`        | `talosconfig`        | `~/.talos/config`                              | raw blob           | all            |
-| `attic_token`        | `secrets/home/<host>/attic.yaml`         | `attic_token`        | `~/.config/attic/config.toml`                  | template           | wyrm2, rugged  |
-| `github_ssh_key`     | `secrets/home/<host>/github-ssh.yaml`    | `ssh_private_key`    | `~/.ssh/agentydragon_github_id_ed25519`        | raw file           | rugged, iguana |
-| `ha_15leroy_ssh_key` | `secrets/15leroy-homeassistant-ssh.yaml` | `ssh_private_key`    | `~/.ssh/15leroy`                               | raw file           | wyrm2, rugged  |
-| `HF_TOKEN`           | `secrets/shared/huggingface.yaml`        | `hf_token`           | env var                                        | sopsEnv            | all            |
-| `HABITIFY_API_KEY`   | `secrets/shared/habitify.yaml`           | `habitify_api_key`   | env var                                        | sopsEnv            | all            |
-| `ANTHROPIC_API_KEY`  | `secrets/home/wyrm2/anthropic.yaml`      | `anthropic_api_key`  | env var                                        | sopsEnv            | wyrm2          |
-| `OPENAI_API_KEY`     | `secrets/home/wyrm2/openai.yaml`         | `openai_api_key`     | env var                                        | sopsEnv            | wyrm2          |
-| `wyrm_ssh_key`       | `secrets/home/rugged/wyrm-ssh.yaml`      | `ssh_private_key`    | `~/.ssh/wyrm_agentydragon_user_id_ed25519`     | raw file           | rugged         |
-| `vps_root_ssh_key`   | `secrets/home/rugged/vps-root-ssh.yaml`  | `ssh_private_key`    | `~/.ssh/vps_root_id_ed25519`                   | raw file           | rugged         |
-| `vps_user_ssh_key`   | `secrets/home/rugged/vps-user-ssh.yaml`  | `ssh_private_key`    | `~/.ssh/vps_agentydragon_user_id_ed25519`      | raw file           | rugged         |
+| Secret               | SOPS file                               | Key                  | Output                                         | Type               | Hosts          |
+| -------------------- | --------------------------------------- | -------------------- | ---------------------------------------------- | ------------------ | -------------- |
+| `buildbuddy_api_key` | `secrets/buildbuddy.yaml`               | `buildbuddy_api_key` | `~/.config/bazel/buildbuddy.bazelrc` + env var | template + sopsEnv | all            |
+| `kubeconfig`         | `secrets/shared/kubeconfig.yaml`        | `kubeconfig`         | `~/.kube/config`                               | raw blob           | all            |
+| `talosconfig`        | `secrets/shared/talosconfig.yaml`       | `talosconfig`        | `~/.talos/config`                              | raw blob           | all            |
+| `attic_token`        | `secrets/home/<host>/attic.yaml`        | `attic_token`        | `~/.config/attic/config.toml`                  | template           | wyrm2, rugged  |
+| `github_ssh_key`     | `secrets/home/<host>/github-ssh.yaml`   | `ssh_private_key`    | `~/.ssh/agentydragon_github_id_ed25519`        | raw file           | rugged, iguana |
+| `HF_TOKEN`           | `secrets/shared/huggingface.yaml`       | `hf_token`           | env var                                        | sopsEnv            | all            |
+| `HABITIFY_API_KEY`   | `secrets/shared/habitify.yaml`          | `habitify_api_key`   | env var                                        | sopsEnv            | all            |
+| `ANTHROPIC_API_KEY`  | `secrets/home/wyrm2/anthropic.yaml`     | `anthropic_api_key`  | env var                                        | sopsEnv            | wyrm2          |
+| `OPENAI_API_KEY`     | `secrets/home/wyrm2/openai.yaml`        | `openai_api_key`     | env var                                        | sopsEnv            | wyrm2          |
+| `wyrm_ssh_key`       | `secrets/home/rugged/wyrm-ssh.yaml`     | `ssh_private_key`    | `~/.ssh/wyrm_agentydragon_user_id_ed25519`     | raw file           | rugged         |
+| `vps_root_ssh_key`   | `secrets/home/rugged/vps-root-ssh.yaml` | `ssh_private_key`    | `~/.ssh/vps_root_id_ed25519`                   | raw file           | rugged         |
+| `vps_user_ssh_key`   | `secrets/home/rugged/vps-user-ssh.yaml` | `ssh_private_key`    | `~/.ssh/vps_agentydragon_user_id_ed25519`      | raw file           | rugged         |
 
 ### Overlap analysis
 

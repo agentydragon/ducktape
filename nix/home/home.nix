@@ -228,12 +228,6 @@ in
     enable = true;
     enableDefaultConfig = false;
     matchBlocks = {
-      homeassistant = {
-        hostname = "10.0.0.3";
-        user = "root";
-        identityFile = "~/.ssh/15leroy";
-        port = 22;
-      };
       # agent-box VM: `ssh agent-box.allegedly.works` lands as the codex user.
       # Distinct port because gecko owns :22 on the hil nodes (see
       # cluster/k8s/agent-box/app/ciliumenvoyconfig.yaml).
@@ -244,7 +238,6 @@ in
       };
     };
   };
-
   xdg.configFile."appimagelauncher.cfg".text = ''
     [AppImageLauncher]
     %23%20%23%20additional_directories_to_watch=~/otherApplications:/even/more/applications
