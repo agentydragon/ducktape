@@ -5,24 +5,20 @@
 # operator info, so its source never leaves the cluster). The runner is rootless and
 # runs jobs in a standard "act" image (node + git + docker CLI).
 #
-# Everything talks to Forgejo over the in-cluster service: actions/checkout clones
-# from the runner's instance URL (forgejo-http.forgejo:3000), and the image is pushed
-# to that same in-cluster registry — so no build traffic hairpins out to the public
-# git.allegedly.works ingress. The dind daemon is started with
-# `--insecure-registry=forgejo-http.forgejo:3000` (see cluster/k8s/haku-ci) so the
-# HTTP registry push is allowed.
+# All Forgejo access is authenticated (no anonymous clones/pulls): actions/checkout
+# clones over the runner's in-cluster instance URL (forgejo-http.forgejo:3000) with
+# the run token, and the registry push authenticates to git.allegedly.works (HTTPS,
+# valid cert) with the same token.
 #
 # Flow:
 #   1. check out the repo
 #   2. build the image from ui/Dockerfile
 #   3. push it to the Forgejo registry as
-#      forgejo-http.forgejo:3000/haku/ui:main-<utc-timestamp>-<short-sha>
-# The image is the same per-owner Forgejo package whatever host pushed it, so it is
-# pullable as git.allegedly.works/haku/ui — which is what k8s/haku-ui/deployment.yaml
-# and the Flux ImageRepository reference. CI does NOT touch the deployment manifest:
-# Flux image automation watches the registry, picks the newest tag by its timestamp,
-# and writes it into the deployment itself (the `{"$imagepolicy": ...}` marker). So
-# there is no CI commit-back and no `[skip ci]` loop.
+#      git.allegedly.works/haku/ui:main-<utc-timestamp>-<short-sha>
+# CI does NOT touch the deployment manifest: Flux image automation watches the
+# registry, picks the newest tag by its timestamp, and writes it into the deployment
+# itself (the `{"$imagepolicy": ...}` marker). So there is no CI commit-back and no
+# `[skip ci]` loop.
 #
 # This is STARTER source Haku adopts and evolves. Heavily commented on purpose.
 
@@ -45,19 +41,21 @@ jobs:
       contents: read
       packages: write
     steps:
-      # Clones from the runner's instance URL (forgejo-http.forgejo:3000) — in-cluster.
+      # Clones from the runner's in-cluster instance URL (forgejo-http.forgejo:3000)
+      # with the run token — authenticated and in-cluster.
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Auth to the in-cluster Forgejo registry with the built-in job token
-      # (github.actor + github.token) — Forgejo mints it per run, so there's no
-      # registry password secret to provision. Fallback if a push is ever rejected
-      # (token lacks package write): provision a `forgejo_repository_action_secret`
-      # push cred in tf/gitops/haku-state and use `${{ secrets.<NAME> }}` here.
-      - name: Log in to the in-cluster Forgejo registry
+      # Auth to the Forgejo registry over HTTPS (git.allegedly.works, valid cert) with
+      # the built-in job token (github.actor + github.token) — Forgejo mints it per
+      # run, so there's no registry password secret to provision. Fallback if a push
+      # is ever rejected (token lacks package write): provision a
+      # `forgejo_repository_action_secret` push cred in tf/gitops/haku-state and use
+      # `${{ secrets.<NAME> }}` here.
+      - name: Log in to the Forgejo registry
         run: |
           echo "${{ github.token }}" \
-            | docker login forgejo-http.forgejo:3000 -u "${{ github.actor }}" --password-stdin
+            | docker login git.allegedly.works -u "${{ github.actor }}" --password-stdin
 
       # Tag pattern is what Flux image automation sorts on: a UTC timestamp makes
       # the newest build the highest tag (ImagePolicy `numerical` on the captured
@@ -65,6 +63,6 @@ jobs:
       - name: Build and push the image
         run: |
           TAG="main-$(date -u +%Y%m%d%H%M%S)-$(echo "${{ github.sha }}" | cut -c1-7)"
-          IMAGE="forgejo-http.forgejo:3000/haku/ui:${TAG}"
+          IMAGE="git.allegedly.works/haku/ui:${TAG}"
           docker build -f ui/Dockerfile -t "$IMAGE" ui
           docker push "$IMAGE"

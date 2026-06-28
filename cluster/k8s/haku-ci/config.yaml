@@ -14,7 +14,14 @@ runner:
   labels:
     - "haku-ci:docker://catthehacker/ubuntu:act-latest"
 container:
+  # How the RUNNER reaches the dind daemon: it shares the pod network namespace
+  # with the dind sidecar, so localhost works here.
   docker_host: "tcp://localhost:2375"
-  options: ""
+  # How JOB CONTAINERS reach the dind daemon. They run on a per-job docker bridge
+  # network (not the pod netns), so `localhost` is the job container itself — the
+  # default unix socket doesn't exist and `docker build`/`push` fail. Map
+  # host.docker.internal to the host-gateway (the dind/pod) and point DOCKER_HOST
+  # at it so the in-container docker CLI talks to the dind sidecar.
+  options: "--add-host host.docker.internal:host-gateway -e DOCKER_HOST=tcp://host.docker.internal:2375"
 cache:
   enabled: false
