@@ -677,7 +677,7 @@ rust_library(
         ":selector_candidate_index",
         ":selector_ir",
         ":selector_ir_lowering",
-        ":selector_ir_solver",
+        ":selector_runtime",
         ":shape_index",
         ":source_match",
         ":source_match_holes",
@@ -697,6 +697,9 @@ rust_library(
 rust_test(
     name = "selector_codemod_test",
     crate = ":selector_codemod",
+    data = [
+        "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
+    ],
     edition = "2024",
     deps = [
         "@crates//:proptest",

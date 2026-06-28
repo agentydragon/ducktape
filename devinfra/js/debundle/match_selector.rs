@@ -31,6 +31,7 @@ use analysis::{AnalysisHints, ChunkId, analyze_chunk, build_owner_graph};
 use anyhow::{Context, Result, bail};
 use selector_ir::{ClaimOutcome, ResolvedClaim, SelectorFactStore};
 use selector_ir_lowering::{MemberSelectorLoweringContext, lower_member_selector};
+use selector_runtime::solve_global_selector_program;
 use serde::Serialize;
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD,
@@ -186,7 +187,7 @@ fn resolve_match_selector(
         &selector,
     )
     .with_context(|| "lowering match-selector source_match to selector IR")?;
-    let result = selector_ir_solver::solve(&lowered.program, facts)
+    let result = solve_global_selector_program(&lowered.program, facts)
         .with_context(|| "solving match-selector source_match selector IR")?;
     let outcome = result
         .outcome_for(lowered.target)

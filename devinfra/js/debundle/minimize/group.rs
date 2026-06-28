@@ -17,7 +17,7 @@ use crate::render::{
 };
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
-    matched_binding_candidates, prove_synthesized_selector, single_ident_pat_name,
+    prove_synthesized_selector, single_ident_pat_name, solve_single_member_selector,
 };
 
 /// Candidate concrete anchors, split into preference tiers. Literal values are
@@ -170,7 +170,7 @@ fn slot_anchor_ranking(declarator: &VarDeclarator) -> Vec<AnchorSpan> {
 ///
 /// Reuses [`cover_object_slot`]'s slot-aware scoring — `(target slot not yet
 /// resolved, total matches)` via the single-binding-form matcher
-/// ([`matched_binding_candidates`]) — so an anchor that flips the target binding
+/// ([`solve_single_member_selector`]) — so an anchor that flips the target binding
 /// to the resolved one and rules out the most competitors wins. `seed` (the
 /// chunk-wide read-off spans restricted to this slot) is kept up front when
 /// non-empty: it is the index's already-ranked `selective × stable` choice, so
@@ -208,7 +208,7 @@ fn slot_minimal_anchors(
     // declarator: one match, at the target statement, bound to the target slot's
     // runtime name.
     let slot_resolves = |kept: &BTreeSet<AnchorSpan>| -> Result<bool> {
-        let matches = matched_binding_candidates(index, export, &render_slot(kept)?)?;
+        let matches = solve_single_member_selector(index, export, &render_slot(kept)?)?;
         let [m] = matches.as_slice() else {
             return Ok(false);
         };
@@ -223,7 +223,7 @@ fn slot_minimal_anchors(
             }
             let mut trial = kept.clone();
             trial.insert(anchor);
-            let matches = matched_binding_candidates(index, export, &render_slot(&trial)?)?;
+            let matches = solve_single_member_selector(index, export, &render_slot(&trial)?)?;
             let target_unresolved = !matches.iter().any(|m| m.binding.binding_name == runtime);
             let score = (target_unresolved, matches.len());
             if best.is_none_or(|(best_score, _)| score < best_score) {

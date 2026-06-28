@@ -8,21 +8,23 @@
 //! build a per-chunk declaration table and binding-name index, group requested
 //! bindings by source declaration, render a structural selector with
 //! declarator gaps for non-target siblings, then prove uniqueness with the
-//! production `source_match` matcher.
+//! production selector constraint backend.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use analysis::{AnalysisHints, ChunkId, analyze_chunk, build_owner_graph};
 use anyhow::{Context, Result, bail};
+use selector_ir::{ClaimOutcome, ResolvedClaim, SelectorFactStore, SelectorTargetId};
+use selector_ir_lowering::{
+    MemberSelectorLoweringContext, MemberSelectorProgramBuilder, lower_member_selector,
+};
+use selector_runtime::solve_global_selector_program;
 use serde::Serialize;
 use serde_yaml::Value;
 use shape_index::ShapeIndex;
-// `SelectorResolver` is the trait carrying `resolve_member_group`; `ChunkResolver`
-// is the fact-based resolver the minimizer's prove-gate and candidate-list wrappers
-// resolve against.
-use source_match::{ChunkResolver, SelectorResolver};
-use spec::{SourceMatch, SourceMatchIdentifierMode};
+use spec::{MemberSelectorSpec, SourceMatch, SourceMatchIdentifierMode};
 use spec_modules::{collect_module_files, is_module_yaml, module_path_from_file};
 use swc_common::{BytePos, DUMMY_SP, Span};
 use swc_ecma_ast::*;
@@ -606,12 +608,13 @@ struct SynthesizedDeclGroup {
 /// singleton and render everything else as selector holes.
 struct ChunkSelectorIndex {
     parsed: js_ast::ParsedJsModule,
+    facts: SelectorFactStore,
     decls: Vec<IndexedDeclaration>,
     binding_to_decl: BTreeMap<String, Vec<usize>>,
     /// Layer-1 read-off shape index (W2). Built once per chunk; the migrated
     /// forms (single-target function and var) read their minimal anchor set off
-    /// it instead of running the cover search. The fact `ChunkResolver` stays the
-    /// gate.
+    /// it instead of running the cover search. The solver-backed selector IR
+    /// stays the proof gate.
     shape_index: ShapeIndex,
 }
 
@@ -853,7 +856,7 @@ fn load_synthesis_index(config: &SelectorCodemodConfig) -> Result<ChunkSelectorI
         .with_context(|| format!("reading source file {}", source_file.display()))?;
     let parsed = js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)
         .with_context(|| format!("parsing source file {}", source_file.display()))?;
-    Ok(ChunkSelectorIndex::new(parsed))
+    ChunkSelectorIndex::new(parsed)
 }
 
 fn parse_synthesis_item(raw: &str) -> Result<SynthesisItem> {
@@ -959,7 +962,8 @@ fn add_module_prefix_files(
 }
 
 impl ChunkSelectorIndex {
-    fn new(parsed: js_ast::ParsedJsModule) -> Self {
+    fn new(parsed: js_ast::ParsedJsModule) -> Result<Self> {
+        let facts = selector_fact_store_for_module(&parsed.module)?;
         let mut decls = Vec::new();
         let mut binding_to_decl: BTreeMap<String, Vec<usize>> = BTreeMap::new();
         for (body_idx, item) in parsed.module.body.iter().enumerate() {
@@ -977,24 +981,13 @@ impl ChunkSelectorIndex {
             decls.push(indexed);
         }
         let shape_index = ShapeIndex::new(&parsed.module);
-        Self {
+        Ok(Self {
             parsed,
+            facts,
             decls,
             binding_to_decl,
             shape_index,
-        }
-    }
-
-    /// The fact-based resolver for this chunk's module. Built per call rather than
-    /// stored, because the resolver borrows `self.parsed.module` (storing it
-    /// alongside its owner would be self-referential); the EDB build is the cheap
-    /// part of a resolve (the matcher's per-candidate work dwarfs it), so the
-    /// candidate-list wrappers reconstruct it each time. It internally prefilters
-    /// via its own token index, subsuming the matcher path's `SelectorCandidateIndex`
-    /// scan-narrowing — so callers pass the whole-chunk selector, no external
-    /// `BodyIndexFilter`.
-    fn resolver(&self) -> ChunkResolver<'_> {
-        ChunkResolver::new(&self.parsed.module)
+        })
     }
 }
 
@@ -1309,6 +1302,212 @@ impl VisitMut for ShapeSignatureCanonicalizer {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SolverMemberBinding {
+    binding_name: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SolverMemberBindingMatch {
+    body_idx: usize,
+    binding: SolverMemberBinding,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct SolverMemberBindingGroup {
+    body_idx: usize,
+    bindings: BTreeMap<String, SolverMemberBinding>,
+}
+
+fn selector_fact_store_for_module(module: &Module) -> Result<SelectorFactStore> {
+    let analysis = analyze_chunk(module, &AnalysisHints::default(), None, |_| None);
+    let owner_graph = build_owner_graph(&analysis.facts)?;
+    let chunk_id = ChunkId(0);
+    let mut facts = SelectorFactStore::default();
+    facts.extend_chunk_facts(
+        chunk_id,
+        &chunk_facts::extract_facts(module).map_err(|unsupported| {
+            anyhow::anyhow!(
+                "selector AST fact extraction failed at {}; selector codemod proof needs a \
+                 complete AST EDB",
+                unsupported.context
+            )
+        })?,
+    );
+    facts.extend_owner_graph_facts(chunk_id, &owner_graph);
+    Ok(facts)
+}
+
+fn body_index_for_statement_ordinal(
+    body: &[ModuleItem],
+    statement_ordinal: usize,
+) -> Option<usize> {
+    let mut running = 0usize;
+    for (idx, item) in body.iter().enumerate() {
+        let count = js_ast::post_split_top_level_count(item);
+        if statement_ordinal < running + count {
+            return Some(idx);
+        }
+        running += count;
+    }
+    None
+}
+
+fn claim_to_member_match(
+    index: &ChunkSelectorIndex,
+    claim: &ResolvedClaim,
+) -> Result<SolverMemberBindingMatch> {
+    let body_idx =
+        body_index_for_statement_ordinal(&index.parsed.module.body, claim.statement_ordinal.0)
+            .with_context(|| {
+                format!(
+                    "selector codemod proof matched statement ordinal {} past the source body",
+                    claim.statement_ordinal.0
+                )
+            })?;
+    let binding_name = claim.binding.clone().with_context(|| {
+        format!(
+            "selector codemod proof matched body index {body_idx} but did not project a binding",
+        )
+    })?;
+    Ok(SolverMemberBindingMatch {
+        body_idx,
+        binding: SolverMemberBinding { binding_name },
+    })
+}
+
+fn claims_for_outcome(
+    outcome: &ClaimOutcome,
+    selector_label: &'static str,
+) -> Result<Vec<ResolvedClaim>> {
+    match outcome {
+        ClaimOutcome::Unique { claim } => Ok(vec![claim.clone()]),
+        ClaimOutcome::Ambiguous { candidates } => Ok(candidates.clone()),
+        ClaimOutcome::NoMatch => Ok(Vec::new()),
+        ClaimOutcome::Unsupported { message } => {
+            bail!("{selector_label} is unsupported by selector IR solver: {message}")
+        }
+        ClaimOutcome::Duplicate {
+            owner,
+            conflicting_targets,
+        } => bail!(
+            "{selector_label} produced a duplicate claim for owner {owner:?} across \
+             {conflicting_targets:?}",
+        ),
+    }
+}
+
+fn solve_single_member_selector(
+    index: &ChunkSelectorIndex,
+    export_name: &str,
+    match_source: &str,
+) -> Result<Vec<SolverMemberBindingMatch>> {
+    let selector = MemberSelectorSpec::SourceMatch(
+        SourceMatch {
+            match_source: match_source.to_string(),
+            identifiers: SourceMatchIdentifierMode::AlphaAll,
+            target_binding: Some(export_name.to_string()),
+        }
+        .selector(),
+    );
+    let lowered = lower_member_selector(
+        &MemberSelectorLoweringContext::new(ChunkId(0), "<selector-codemod>"),
+        "candidate",
+        &selector,
+    )
+    .with_context(|| "lowering selector codemod single-member source_match to selector IR")?;
+    let result = solve_global_selector_program(&lowered.program, &index.facts)
+        .with_context(|| "solving selector codemod single-member source_match selector IR")?;
+    let outcome = result
+        .outcome_for(lowered.target)
+        .with_context(|| "selector solver did not return the selector codemod target")?;
+    claims_for_outcome(outcome, "selector codemod single-member source_match")?
+        .iter()
+        .map(|claim| claim_to_member_match(index, claim))
+        .collect()
+}
+
+fn solve_member_group_selector(
+    index: &ChunkSelectorIndex,
+    targets: &[SynthesizedTargetBinding],
+    match_source: &str,
+) -> Result<SolverMemberBindingGroup> {
+    if targets.is_empty() {
+        bail!("selector synthesis group has no targets");
+    }
+    let logical_module = "<selector-codemod>";
+    let group_selector = SourceMatch {
+        match_source: match_source.to_string(),
+        identifiers: SourceMatchIdentifierMode::AlphaAll,
+        target_binding: None,
+    }
+    .selector();
+    let mut builder = MemberSelectorProgramBuilder::new(MemberSelectorLoweringContext::new(
+        ChunkId(0),
+        logical_module,
+    ));
+    let mut lowered_targets = Vec::<(String, SelectorTargetId)>::new();
+    for target in targets {
+        let mut member_selector = group_selector.clone();
+        member_selector.target_binding = Some(target.export_name.clone());
+        let target_id = builder
+            .declare_member_target_in_module(
+                logical_module,
+                &target.export_name,
+                &MemberSelectorSpec::SourceMatch(member_selector),
+            )
+            .with_context(|| {
+                format!(
+                    "declaring selector codemod binding-group target `{}`",
+                    target.export_name
+                )
+            })?;
+        lowered_targets.push((target.export_name.clone(), target_id));
+    }
+    let exports_by_target = targets
+        .iter()
+        .map(|target| (target.export_name.clone(), target.export_name.clone()))
+        .collect::<BTreeMap<_, _>>();
+    if !builder
+        .try_lower_native_source_match_group(logical_module, &group_selector, &exports_by_target)
+        .with_context(|| "lowering selector codemod binding-group source_match to selector IR")?
+    {
+        bail!("selector codemod binding-group source_match is unsupported by selector IR solver");
+    }
+    let program = builder
+        .into_program()
+        .with_context(|| "finalizing selector codemod binding-group selector IR")?;
+    let result = solve_global_selector_program(&program, &index.facts)
+        .with_context(|| "solving selector codemod binding-group source_match selector IR")?;
+
+    let mut bindings = BTreeMap::new();
+    let mut body_idx = None::<usize>;
+    for (export_name, target_id) in lowered_targets {
+        let outcome = result
+            .outcome_for(target_id)
+            .with_context(|| "selector solver did not return a binding-group target")?;
+        let claims = claims_for_outcome(outcome, "selector codemod binding-group source_match")?;
+        let [claim] = claims.as_slice() else {
+            bail!(
+                "synthesized selector target `{export_name}` matched {} candidate declaration \
+                 groups",
+                claims.len()
+            );
+        };
+        let matched = claim_to_member_match(index, claim)?;
+        body_idx = Some(
+            body_idx
+                .map(|current| current.min(matched.body_idx))
+                .unwrap_or(matched.body_idx),
+        );
+        bindings.insert(export_name, matched.binding);
+    }
+    Ok(SolverMemberBindingGroup {
+        body_idx: body_idx.unwrap_or(0),
+        bindings,
+    })
+}
+
 fn prove_synthesized_selector(
     index: &ChunkSelectorIndex,
     decl: &IndexedDeclaration,
@@ -1319,21 +1518,7 @@ fn prove_synthesized_selector(
         bail!("selector synthesis group has no targets");
     }
     if targets.len() > 1 {
-        let selector = SourceMatch {
-            match_source: match_source.to_string(),
-            identifiers: SourceMatchIdentifierMode::AlphaAll,
-            target_binding: None,
-        }
-        .selector();
-        let exports_by_target = targets
-            .iter()
-            .map(|target| (target.export_name.clone(), target.export_name.clone()))
-            .collect::<BTreeMap<_, _>>();
-        let matched = index.resolver().resolve_member_group(
-            "<selector synthesis>",
-            &selector,
-            &exports_by_target,
-        )?;
+        let matched = solve_member_group_selector(index, targets, match_source)?;
         if matched.body_idx != decl.body_idx {
             bail!(
                 "synthesized selector matched body index {} instead of intended {}",
@@ -1368,15 +1553,11 @@ fn prove_synthesized_selector(
         identifiers: SourceMatchIdentifierMode::AlphaAll,
         target_binding: Some(target.export_name.clone()),
     };
-    let selector = source_match.selector();
-    // Prove gate. The fact resolver returns every candidate the selector resolves
-    // to in the chunk (count + per-match `body_idx`/`binding`); we then require
-    // exactly one, at the intended body index, bound to the intended runtime name.
-    // The resolver prefilters internally via its token index, so existence and
-    // uniqueness are decided without scanning the whole chunk per member.
-    let matches = index
-        .resolver()
-        .member_candidates("<selector synthesis>", &selector)?;
+    // Prove gate. The solver returns every candidate the selector resolves to in
+    // the chunk (count + per-match `body_idx`/`binding`); we then require exactly
+    // one, at the intended body index, bound to the intended runtime name.
+    let matches =
+        solve_single_member_selector(index, &target.export_name, &source_match.match_source)?;
     let candidate_count = matches.len();
     let [candidate] = matches.as_slice() else {
         bail!("synthesized selector matched {candidate_count} candidate declaration groups");
@@ -1482,27 +1663,6 @@ fn synthesize_specialized_var_selector(
     minimize_var_group_selector(index, var, decl, targets)
 }
 
-/// Every `(body, binding-slot)` alignment a `target_binding` selector with
-/// `match_source` resolves to.
-///
-/// Resolved through the fact-based [`ChunkResolver::member_candidates`] — the
-/// non-categorical candidate list. The resolver prefilters internally via its own
-/// token index, so this no longer threads a scan-narrowing candidate set.
-fn matched_binding_candidates(
-    index: &ChunkSelectorIndex,
-    export_name: &str,
-    match_source: &str,
-) -> Result<Vec<source_match::MemberBindingMatch>> {
-    let source_match = SourceMatch {
-        match_source: match_source.to_string(),
-        identifiers: SourceMatchIdentifierMode::AlphaAll,
-        target_binding: Some(export_name.to_string()),
-    };
-    index
-        .resolver()
-        .member_candidates("<selector minimization>", &source_match.selector())
-}
-
 /// Distinct body indices the selector resolves to (slot alignments within one
 /// body collapse). Used by the read-off structural fast path
 /// (the bare-scaffold branch of `read_off_candidates`).
@@ -1512,7 +1672,7 @@ fn matched_body_indices(
     match_source: &str,
 ) -> Result<BTreeSet<usize>> {
     Ok(
-        matched_binding_candidates(index, export_name, match_source)?
+        solve_single_member_selector(index, export_name, match_source)?
             .iter()
             .map(|candidate| candidate.body_idx)
             .collect(),

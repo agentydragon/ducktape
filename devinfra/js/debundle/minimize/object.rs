@@ -12,7 +12,7 @@ use super::{finish_minimized_selector, hole_var_init_padded, render_var_slots};
 use crate::render::{AnchorSpan, MAX_MINIMIZER_ANCHORS, node_holds_anchor, span_key};
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
-    matched_binding_candidates, prove_synthesized_selector,
+    prove_synthesized_selector, solve_single_member_selector,
 };
 
 /// Ranked anchor spans for an object literal's key-set cover, best-first: each
@@ -81,7 +81,7 @@ fn cover_object_slot(
             let mut trial = kept.clone();
             trial.insert(anchor);
             let matches =
-                matched_binding_candidates(index, &target.export_name, &render_with(&trial)?)?;
+                solve_single_member_selector(index, &target.export_name, &render_with(&trial)?)?;
             let target_unresolved = !matches.iter().any(|m| {
                 m.body_idx == decl.body_idx && m.binding.binding_name == target.runtime_binding
             });

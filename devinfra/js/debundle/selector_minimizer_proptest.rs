@@ -437,7 +437,8 @@ proptest! {
         let outcome: Result<(), TestCaseError> = js_ast::with_swc_globals(|| {
             let parsed = js_ast::parse_js_module_consuming("<proptest>", source.clone())
                 .map_err(|err| TestCaseError::fail(format!("parse failed: {err}\n{source}")))?;
-            let index = ChunkSelectorIndex::new(parsed);
+            let index = ChunkSelectorIndex::new(parsed)
+                .map_err(|err| TestCaseError::fail(format!("index failed: {err}\n{source}")))?;
 
             let decl_idx = index
                 .binding_to_decl
