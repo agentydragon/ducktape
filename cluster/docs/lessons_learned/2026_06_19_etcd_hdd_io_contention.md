@@ -137,6 +137,16 @@ can drop onto the leader (.13) at any time and spike its fsync queue.
    normal operation. Soft (not required) because the controllers are
    `system-cluster-critical` and must retain a scheduling fallback if both workers are
    down.
+3. **Throttled kustomize-controller's dependency retry-storm.** The controllers were
+   also amplifying I/O directly: `--concurrent=16` + `--requeue-dependency=5s` made
+   unhealthy dependency followers wake every 5s and re-run the full reconcile path
+   (artifact fetch + untar + build + per-object server-side dry-run) for hundreds of
+   Kustomizations after each source revision. Set `--concurrent=8` /
+   `--requeue-dependency=30s` (`cluster/k8s/flux-system/gotk-components.yaml`) and
+   narrowed the `flux-system` GitRepository sparse checkout to `cluster/k8s/` +
+   `tf/gitops/` (was all of `cluster/` + `tf/`, dragging `debug/`/`docs/` into every
+   artifact). Per-culprit retry-storm RCAs live under
+   <../../debug/2026-06-10-etcd-io-contention/>.
 
 ### Pending
 

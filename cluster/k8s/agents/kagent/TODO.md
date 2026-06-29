@@ -56,6 +56,15 @@ behind Authentik OIDC via the chart's bundled `oauth2-proxy` subchart.
    `/api/paas/v4` endpoint at PAYG rates, or a different vendor entirely).
 4. Wait for upstream kagent to add a token-budget-aware compaction trigger.
 
+## Decommission (later)
+
+- [ ] **Delete kagent from the cluster** — CRDs, DB (`kagent-db`), secrets, the
+      `devbot` manifests, and the suspended Flux kustomizations — unless kagent
+      fixes tool-output truncation / large-MCP-output handling upstream, or the
+      project becomes active again. The platform is parked and not in use; the
+      manifests are dead weight until/unless that changes. Revisit on each kagent
+      upstream release.
+
 ## See also
 
 - <namespace/namespace.yaml> — PSS dropped to `baseline` (TODO to retighten

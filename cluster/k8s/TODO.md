@@ -177,3 +177,23 @@ Authentik route work; these tighten them (operator-approved as follow-ups):
       (Flux only pulls, but the cred is read/write — there's no separate read
       principal on the repo). Mint a read-only Forgejo deploy key for `haku-state`
       and point the GitRepository's `secretRef` at it instead.
+
+## agent-box follow-ups
+
+The agent-box VM and its `codex` user are live (see
+<agents/agent-box/README.md>). Remaining work:
+
+- [ ] **Enable the attic substituter** on agent-box: the Nix wiring is tombstoned
+      in `nix/nixos/hosts/agent-box/default.nix` + `nix/home/hosts/agent-box.nix`.
+      Flip it on once `attic-jwt-rotation` has minted+committed
+      `secrets/hosts/agent-box-attic.yaml` to devel (the path literal would
+      otherwise fail flake eval).
+- [ ] **More agent users** on agent-box: `claude`, `z-claude` — each with its own
+      login keys, `agent-box-<user>-user` age identity, scoped secrets, and home
+      dir. TODO markers in `flake.nix` and `nix/nixos/hosts/agent-box/default.nix`.
+- [ ] **Auto-provision the Codex CLI auth credential** (`~/.codex/auth.json`):
+      today the ChatGPT login is done manually via the device-code flow and is lost
+      on every image rebuild + VM recreate. Investigate SOPS-planting it (decrypted
+      with the `agent-box-codex-user` key) — caveat: the token likely carries a
+      refresh token that rotates on use, so a static plant could go stale; check
+      whether the Codex CLI rewrites `auth.json` after refresh.

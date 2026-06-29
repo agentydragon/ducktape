@@ -1,5 +1,15 @@
 # Persistent AI Agents Platform Plan
 
+> **Superseded / parked (2026-05-08).** kagent was suspended: it lacks tool-call
+> output truncation, so a single large MCP response (`kubectl get events`, full
+> pod listings) dumps enough text into the event history that the next request
+> exceeds z.ai's per-prompt cap (error `1261`), killing the session — too fragile
+> for cluster-ops use. The Vault secret backend referenced below was decommissioned
+> 2026-04-19, and the `devbot` manifests are orphaned. This file is retained only
+> as the historical design record. See `cluster/docs/plan.md` and
+> `cluster/k8s/agents/kagent/TODO.md` for the suspension rationale and the
+> decommission plan.
+
 > **Note (2026-05-17)**: This plan was written when Vault was the secret SSOT.
 > Vault has since been decommissioned (see <../../archive/2026_04_19_vault_migration.md>);
 > replace any `vault-backend` ClusterSecretStore references below with SOPS-managed

@@ -199,8 +199,7 @@ between pilots.
    tolerance, only single-node-failure tolerance."
 3. **Don't roll volume-bearing nodes from the same project that's
    also stressing the control plane.** The CNPG operator was thrashing
-   throughout the rename window (described in
-   [`plans/rename_ovh_nodes_role_neutral.md`](../../../plans/rename_ovh_nodes_role_neutral.md));
+   throughout the rename window;
    SeaweedFS rebalancing competes with that for the same
    already-stressed Talos nodes. Plan rolling-PVC operations as their
    own change window with the API server idle.

@@ -6,13 +6,9 @@ Linux by default. macOS-only components (Seatbelt, Sandboxer) are explicitly doc
 
 ## Nix Devshell / Missing Tools
 
-This repo has a Nix flake with a devshell and a `.envrc` that activates it via
-direnv. On any machine with Nix installed, all tools (`bazelisk`, `bbr`,
-`pre-commit`, `ducktape-precommit`, `rustfmt`, the repo's specific `prettier`
-with its plugins, etc.) are provided by the devshell — not installed globally.
-
-If any of these tools appear missing or not on `PATH`, the devshell is likely not
-active. The fix is to ensure direnv has loaded the `.envrc`:
+All tools (`bazelisk`, `bbr`, `pre-commit`, `ducktape-precommit`, `rustfmt`, the
+repo's pinned `prettier` + plugins, etc.) come from the Nix devshell, not global
+installs. If any are missing or not on `PATH`, the devshell isn't loaded:
 
 ```bash
 direnv allow   # if not yet allowed

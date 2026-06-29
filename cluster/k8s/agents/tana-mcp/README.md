@@ -54,7 +54,7 @@ surface.
   the resulting `tana://auth?token=...&providerId=tanaFirebaseToken` URL to
   the desktop container's localhost reseed receiver, which `exec`s Tana
   so Electron's second-instance handler routes the URL into the renderer.
-  See <../../../docs/plans/tana_mcp_sane_signin.md>. Readiness is **not** just
+  Readiness is **not** just
   `/health`: when `TANA_PAT` is set (from the PAT secret below) the sidecar also
   POSTs `/mcp initialize` with the PAT and treats a `401` as unhealthy. This
   catches the case where `/health` reports the renderer loaded but its
@@ -72,9 +72,26 @@ The deployment expects a Firebase refresh token to be present in the
 `tana-firebase-refresh-token` SOPS secret. With that in place, the resigner
 sidecar drives sign-in on every pod start — no operator action needed.
 
-To bootstrap the refresh token from a local Tana Desktop install, see
-<../../../docs/plans/tana_mcp_sane_signin.md> § "Bootstrap (no browser
-required)".
+### Bootstrap the refresh token
+
+Bootstrap the `tana-firebase-refresh-token` SOPS secret once from a local Tana
+Desktop install (no browser automation). With a signed-in local Tana Desktop,
+extract its IndexedDB refresh token:
+
+```bash
+bb run //tana/firebase_session_extractor -- \
+    ~/.config/tana-outliner/IndexedDB/https_app.tana.inc_0.indexeddb.leveldb \
+  | sops -e --input-type binary --output-type yaml /dev/stdin \
+    > cluster/k8s/agents/tana-mcp/tana-firebase-refresh-token.sops.yaml
+```
+
+`tana/firebase_session_extractor` opens Tana Desktop's leveldb, finds the
+`firebase:authUser:<API_KEY>:[DEFAULT]` record, and decodes the V8 structured-
+clone blob to pull `stsTokenManager.refreshToken`. Without a local Tana Desktop,
+fall back to devtools: in a signed-in Tana web tab run
+`JSON.stringify(window.fbauth().getAuth().currentUser.stsTokenManager.refreshToken)`
+and `sops -e` the result. The Firebase web API key (project `tagr-prod`) is a
+public identifier, not a secret.
 
 The legacy graphical-login procedure (noVNC + sign-in dialog) is kept
 below for emergency recovery if the resigner sidecar can't drive sign-in

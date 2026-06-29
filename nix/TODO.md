@@ -34,3 +34,20 @@ Evaluate whether console TTY password prompts can show visual feedback (for exam
 ## Wire Claude Code OTEL export to cluster collector
 
 Add OTEL env vars to `nix/home/claude_code/default.nix` `settings.env` block to export traces/logs/metrics to the cluster's OTEL collector endpoint. Key vars: `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_TRACES_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OTEL_METRICS_EXPORTER`. Consider also `OTEL_LOG_TOOL_CONTENT=1` and `OTEL_LOG_TOOL_DETAILS=1` for full tool visibility. The `SRT_DEBUG=1` env var (already configured) provides sandbox-level network logging; OTEL would give structured traces for API calls, tool execution, and query latency.
+
+## Roll out private-cache substituter + drivefs to remaining hosts
+
+drivefs and the `cache.allegedly.works/gaffer` substituter are wired on **wyrm2**
+only (`nix/home/hosts/wyrm2.nix` `services.google-drive.enable = true`; pin in
+`nix/gaffer-pins.json`). Roll the same wiring to **rugged, iguana, atlas**:
+
+- [ ] Each host needs its own per-host SOPS attic reader file plus a parallel
+      `attic-rotate-<host>-reader` CronJob (mirror the wyrm2 one in
+      `cluster/k8s/agents/attic-jwt-rotation/`).
+- [ ] Enable `ducktape.attic-substituter.enable = true` +
+      `services.google-drive.enable = true` per host.
+- [ ] Auto-fetch the gaffer pubkey post-cache-creation and PR it into
+      `nix/nixos/modules/attic-substituter.nix` (TODO already noted in the module + `bootstrap.sh`).
+- [ ] Split the `&ci` age recipient into `&ducktape-ci` and `&gaffer-ci` so the
+      gaffer writer token isn't decryptable by ducktape CI's age key (TODO already
+      noted in `.sops.yaml`).

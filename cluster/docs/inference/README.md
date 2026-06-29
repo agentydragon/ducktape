@@ -48,14 +48,12 @@ one deployment go here; runnable scripts live with the workload
 - <TODO.md> — prioritized next-steps list, ranked by information gain
   toward the goal above.
 
-## Current state (2026-04-28)
+## Current state
 
-- **Cluster inference**: Ollama Deployment on wyrm2, GGUF only, no tensor
-  parallel. See <../../k8s/ollama/app/deployment.yaml>.
-- **Host experiments**: `x/local_llm/` on wyrm2 (systemd-user + Docker).
-  Has working vLLM AWQ scripts but never moved to k8s.
-
-Full table in <backend_comparison.md#current-state-2026-04-28>.
+Cluster inference runs on **Ollama / GGUF on wyrm2** (no tensor parallel; see
+<../../k8s/ollama/app/deployment.yaml>). Host experiments (`x/local_llm/` on wyrm2,
+incl. vLLM AWQ scripts never moved to k8s) and the full, dated backend matrix
+live in <backend_comparison.md>.
 
 ## Tracking
 

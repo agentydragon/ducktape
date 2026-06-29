@@ -11,6 +11,10 @@ SDK worker (§4) is replaced by `ant beta:worker poll`, and the Python superviso
 Field names flagged for verification are not fully pinned in the skill docs —
 confirm against `ant <cmd> --help` before relying on them.
 
+The runtime choice itself (A vs B vs C) remains open — see
+[runtime_options.md](runtime_options.md). The `self_hosted/` code is an evaluation
+prototype of the B path, not a commitment to it.
+
 Naming below assumes: base manual baked into the worker image at `/opt/haku`
 (the PLAN's image model — base ships by image rebuild, reconciliation is against
 the image's pinned version); `haku-state` cloned at runtime to

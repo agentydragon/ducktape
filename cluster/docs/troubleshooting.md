@@ -241,6 +241,10 @@ ping 10.42.0.13                                 # talos-kimsufi-worker-0 lightho
 
 Port: UDP 4242. If down: check firewall, verify certs (`nebula-cert print -path /etc/nebula/host.crt`).
 
+If rebooting both lighthouses leaves peers stuck (tunnels reported alive, no
+re-handshake, decrypt failures), see
+<troubleshooting/nebula_lighthouse_reboot_stale_tunnel.md>.
+
 ### Proxmox CSI
 
 CSI "401 Unauthorized" usually means the token is missing in Proxmox, not an auth config error.

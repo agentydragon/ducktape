@@ -1,10 +1,12 @@
 # Haku runtime options: A / B / C
 
-Status: **design / exploring**. Three candidate runtimes for Haku beyond the v0
-Claude Code web home. This is the "which runtime" comparison; the detailed design
-of Runtime B is in [managed_agents.md](managed_agents.md) (+ its
-[artifact drafts](managed_agents_artifacts.md)). Delete or tombstone once the
-runtime is chosen.
+Status: **design / exploring — the runtime is not yet chosen.** Runtime A (Claude
+Code web routine) is the current operational path for Haku, kept despite real
+drawbacks — full Anthropic lock-in and the options it forecloses (see below) — so
+Runtimes B and C stay open as evaluation candidates. This is the "which runtime"
+comparison; the detailed design of Runtime B is in [managed_agents.md](managed_agents.md)
+(+ its [artifact drafts](managed_agents_artifacts.md)). Keep this comparison live
+until a runtime is actually committed to.
 
 ## The two layers of lock-in
 

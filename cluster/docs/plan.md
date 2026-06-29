@@ -232,10 +232,9 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       `ovh-ns103656`, `ovh-ns103711`, `ovh-ns104952`, `ovh-ns104963`. Naive edit
       forces destroy+recreate of every `for_each`-keyed resource — including
       `null_resource.install_talos_kimsufi` (which would `dd` the Talos image).
-      Use `tofu state mv` (~8 ops per node) to rekey without recreation; see
-      `plans/rename_ovh_nodes_role_neutral.md` § "Follow-up: rekey Terraform
-      local-map keys" for the procedure. No downtime if done correctly; defer
-      until all five hostname renames are stable.
+      Use `tofu state mv` (~8 ops per node) to rekey without recreation. No
+      downtime if done correctly; defer until all five hostname renames are
+      stable.
 - [ ] **Test CNPG full self-recovery from node failure** in a controlled setup.
       During the 2026-06-02 OVH node renames (see
       `debug/2026-06-02-tofu-apply-hangs-from-rugged-mtu.md`) we deleted

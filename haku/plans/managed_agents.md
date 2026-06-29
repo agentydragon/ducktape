@@ -1,10 +1,15 @@
 # Plan: Haku on Anthropic Managed Agents (self-hosted sandbox)
 
-Status: **design / exploring** — not yet decided over the Claude Code web home.
-Expands the _Alternative runtime: Anthropic Managed Agents_ section of
-<../PLAN.md> from a paragraph into a concrete migration design, and is an
-alternative to the deferred in-cluster `haku-scanner` runtime (<../TODO.md> →
-_Later_). Delete or tombstone once Haku's runtime is decided.
+Status: **design / exploring — Haku's runtime is not yet decided.** The current
+operational path is Runtime A (Claude Code web routine), kept despite its lock-in
+and the options it disallows; this is the detailed design for candidate B, kept
+open for evaluation alongside C. Expands the _Alternative runtime: Anthropic
+Managed Agents_ section of <../PLAN.md> from a paragraph into a concrete migration
+design, and is an alternative to the deferred in-cluster `haku-scanner` runtime
+(<../TODO.md> → _Later_). An experimental self-hosted worker landed at
+`haku/runtime/managed_agent/self_hosted/` (see
+[managed_agents_artifacts.md](managed_agents_artifacts.md)), but adopting B as
+Haku's runtime is not yet committed to.
 
 ## Why
 

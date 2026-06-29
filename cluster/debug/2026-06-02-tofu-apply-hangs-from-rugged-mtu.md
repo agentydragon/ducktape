@@ -3,7 +3,7 @@
 **Date**: 2026-06-02
 **Status**: Confirmed root cause. WiFi underlay fixes the apply hangs. Permanent
 fix (MSS clamping at `nebula1` egress) not yet applied.
-**Triggering work**: OVH node renames (`plans/rename_ovh_nodes_role_neutral.md`)
+**Triggering work**: OVH node renames (2026-06).
 
 ## Symptom (the headline behavior)
 
