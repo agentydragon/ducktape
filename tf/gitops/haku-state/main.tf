@@ -199,12 +199,28 @@ resource "kubernetes_secret" "forgejo_webhook_token" {
 }
 
 # Fire a webhook on container-package publish (the CI image push) so Flux reconciles the
-# haku-ui ImageRepository immediately rather than on its 5m poll. Points at the in-cluster
-# receiver service (no hairpin / TLS). The generic receiver doesn't validate a signature,
-# so the unguessable sha256(token) path is the secret — no `secret` in the webhook config.
-# NOTE (verify in the paving loop): Forgejo packages are owner-scoped; a *repo* webhook may
-# not fire for `haku/ui` package pushes. If it doesn't, the 5m ImageRepository poll still
-# covers it — the webhook is a latency optimization, not a correctness dependency.
+# haku-ui ImageRepository immediately rather than on its 5m poll. The generic receiver doesn't
+# validate a signature, so the unguessable sha256(token) path is the secret — no `secret` in
+# the webhook config.
+#
+# Targets the *public* Flux webhook host (`flux-webhook.allegedly.works`, the same HTTPRoute
+# GitHub delivers to), NOT the in-cluster ClusterIP. Why: Forgejo blocks webhook delivery to
+# private/loopback addresses by default (empty `[webhook] ALLOWED_HOST_LIST`, SSRF protection),
+# so the original internal `http://webhook-receiver.flux-system/...` URL fired but was silently
+# dropped — pickup stayed on the 5m poll (verified 2026-06-29: hook `updated_at` bumped on push,
+# receiver logged zero hits). A public host is `external` → allowed by default, no Forgejo config
+# change. The in-cluster→public hairpin is already exercised by Forgejo's OIDC to
+# auth.allegedly.works; verified the public path triggers an off-cycle scan (HTTP 200 + receiver
+# hit + immediate ImageRepository scan).
+#
+# ALSO REQUIRED: the webhook only fires while the `haku/ui` package is LINKED to this repo. It was
+# created owner-scoped + unlinked (`repository: null`), so the repo-scoped `package` event never
+# fired. Linked out-of-band via `POST /api/v1/packages/haku/container/ui/-/link/haku-state` (→201,
+# durable across pushes). The OCI `org.opencontainers.image.source` label (haku-state ui/Dockerfile)
+# is the would-be auto-linker but Forgejo 15 didn't honor it. Not codified here: the svalabs/forgejo
+# provider has no package-link resource, and the package doesn't exist until the first CI push.
+# TODO(link-as-code): a `data "http"` POST to the link endpoint (auth pattern as
+#   `haku_ci_registration_token`) would self-heal it (404 pre-first-push → 201 after); idempotent.
 resource "forgejo_repository_webhook" "haku_ui_image" {
   repository_id = forgejo_repository.state.id
   type          = "forgejo"
@@ -212,6 +228,6 @@ resource "forgejo_repository_webhook" "haku_ui_image" {
   events        = ["package"]
   config = {
     content_type = "json"
-    url          = "http://webhook-receiver.flux-system/hook/${sha256(join("", [random_password.forgejo_webhook_token.result, "haku-ui-forgejo", "flux-system"]))}"
+    url          = "https://flux-webhook.allegedly.works/hook/${sha256(join("", [random_password.forgejo_webhook_token.result, "haku-ui-forgejo", "flux-system"]))}"
   }
 }
