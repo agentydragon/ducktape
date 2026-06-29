@@ -13,7 +13,7 @@ confined to the `haku/` namespace. Source + contract: <../../../../haku/gmail_la
 - **Server → Gmail:** a `gmail.modify` access token **provisioned and rotated by Airlock**.
   Airlock holds the refresh token (`gmail-modify-tokens`, airlock ns) and writes an
   access-only secret (`gmail-modify-access-token`); ESO mirrors that into this namespace
-  (see `agents/airlock/eso-access-tokens.yaml`), and the pod mounts it at `/etc/gmail-token`.
+  (see `agents/airlock/gmail-modify-access-token-eso.yaml`), and the pod mounts it at `/etc/gmail-token`.
   The server re-reads the rotating token via google-auth's `refresh_handler` — no restart.
   This token is **never** delivered to a sandbox, so no agent holds Gmail write scope.
 

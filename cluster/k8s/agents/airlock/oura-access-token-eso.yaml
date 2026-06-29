@@ -1,0 +1,20 @@
+# Airlock writes oura-access-token into the `airlock` namespace; ESO mirrors it
+# into the sandbox namespaces where the agents read it.
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: oura-access-token
+spec:
+  namespaces:
+    - openclaw-sandbox
+    - claude-sandbox
+  externalSecretSpec:
+    refreshInterval: 1m
+    secretStoreRef:
+      name: kubernetes-airlock-secret-store
+      kind: ClusterSecretStore
+    target:
+      name: oura-access-token
+    dataFrom:
+      - extract:
+          key: oura-access-token

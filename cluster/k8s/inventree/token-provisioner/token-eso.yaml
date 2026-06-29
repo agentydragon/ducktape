@@ -2,7 +2,7 @@
 # inventree namespace into the sandbox namespaces, where the agents read it. ESO
 # replaces the kubernetes-reflector annotations the provisioner used to bake onto the
 # Secret — distribution is now a standalone, continuously-reconciled resource decoupled
-# from the provisioner (same pattern as agents/airlock/eso-access-tokens.yaml). The ESO
+# from the provisioner (same pattern as agents/airlock/google-access-token-eso.yaml). The ESO
 # ServiceAccount already has cluster-wide secret read. Lives in this (suspended) unit so
 # it activates together with InvenTree.
 apiVersion: external-secrets.io/v1
