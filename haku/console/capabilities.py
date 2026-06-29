@@ -1,6 +1,6 @@
 """Capability tier: high-privilege actions the console performs that Haku cannot.
 
-Unlike the trace tier (`haku.console.trace`), these endpoints use console-only
+This is the console's one privileged surface: these endpoints use console-only
 secrets and act on the world, so they are **CSRF-gated**, **audited** to this
 trusted namespace's logs (which Haku has no RBAC to read), and the capability set
 is a small, **PR-gated** allowlist. Today the one capability is `launch-routine`:

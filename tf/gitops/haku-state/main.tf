@@ -65,20 +65,19 @@ resource "forgejo_collaborator" "claude" {
 }
 
 # Write credentials for the haku-state git consumers, delivered to:
-#   - haku-sandbox: in-cluster scan runs / the self-hosted worker.
-#   - haku-console: the console, which lives in its own trusted namespace (NOT
-#     haku-sandbox) so it can hold secrets Haku may not read. The git creds are
-#     not such a secret (Haku writes haku-state anyway), but the console needs
-#     them there. See haku/PLAN.md → "The agent-authored console".
+#   - haku-sandbox: in-cluster scan runs / the self-hosted worker + the haku-ui
+#     backend (operator clicks/feedback → Forgejo writes).
 #   - flux-system: basic auth for the haku-state GitRepository, which the
 #     haku-state-workloads Kustomization reconciles into haku-sandbox under a
 #     constrained SA (cluster/k8s/haku/workloads). Read-only pull — Flux never
 #     pushes; the haku user is just the only principal on the repo.
-# The haku-sandbox/haku-console namespaces are each created by their own Flux
-# kustomization (the wrapping forgejo/haku-state Kustomization dependsOn them);
-# flux-system always exists. This resource retries until each namespace exists.
+# (The console no longer consumes this: it became a bare trusted shell with no
+# haku-state write path — feedback/trace moved into haku-ui.)
+# The haku-sandbox namespace is created by its own Flux kustomization (the wrapping
+# forgejo/haku-state Kustomization dependsOn it); flux-system always exists. This
+# resource retries until each namespace exists.
 resource "kubernetes_secret" "haku_state_git_write" {
-  for_each = toset(["haku-sandbox", "haku-console", "flux-system"])
+  for_each = toset(["haku-sandbox", "flux-system"])
 
   metadata {
     name      = "haku-state-git-write"

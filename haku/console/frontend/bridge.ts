@@ -8,18 +8,29 @@
 // from `haku/state_template/ui/`); this file is the source of truth — keep the two in
 // sync. See plans/free_form_ui_iframe.md → _Open questions_ (share-the-protocol TODO).
 
-// Inbound (iframe → shell). Today only `openLink` is wired; `requestCapability`
-// (perform a shell-owned action like launch-routine) is the next affordance.
-export type Inbound = { type: "openLink"; url: string };
+// Inbound (iframe → shell). The iframe may only **ask**:
+//  - `openLink`: open an external link (the iframe is sandboxed without allow-popups).
+//  - `requestLaunch`: start a Haku run with `prompt`. Firing the privileged launch
+//    capability must be a genuine operator gesture against trusted chrome, so the iframe
+//    can only request it; the shell renders its OWN confirm (showing the prompt) and only
+//    then fires. `id` correlates the eventual `launchResult`.
+export type Inbound =
+  | { type: "openLink"; url: string }
+  | { type: "requestLaunch"; id: string; prompt: string };
 
 // Outbound result (shell → iframe), so Haku's UI can react to the outcome.
-export type Outbound = { type: "openLinkResult"; url: string; opened: boolean; reason?: string };
+export type Outbound =
+  | { type: "openLinkResult"; url: string; opened: boolean; reason?: string }
+  | { type: "launchResult"; id: string; ok: boolean; sessionUrl?: string; reason?: string };
 
 // Narrow an untrusted postMessage payload to a known message, or null.
 export function parseInbound(data: unknown): Inbound | null {
   if (!data || typeof data !== "object") return null;
   const m = data as Record<string, unknown>;
   if (m.type === "openLink" && typeof m.url === "string") return { type: "openLink", url: m.url };
+  if (m.type === "requestLaunch" && typeof m.id === "string" && typeof m.prompt === "string") {
+    return { type: "requestLaunch", id: m.id, prompt: m.prompt };
+  }
   return null;
 }
 

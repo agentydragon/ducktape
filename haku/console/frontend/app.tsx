@@ -1,13 +1,14 @@
+import { Loader, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
-import { Group, Loader, Text, Title } from "@mantine/core";
 
-import { LOGO_URL } from "./assets.ts";
 import { type ConfigResponse, fetchConfig } from "./client.ts";
-import { FeedbackFab } from "./feedback.tsx";
 import { HakuUiEmbed } from "./haku_ui_embed.tsx";
-import { LaunchRoutineButton } from "./launch.tsx";
-import { toastError } from "./toast.ts";
 
+// The console is now just the trusted outer shell: a full-page frame for Haku's own UI
+// (a sandboxed cross-origin iframe) plus the bridge that brokers the iframe's privileged
+// requests (opening links, launching a run). All product chrome — title bar, the global
+// feedback button, the launch dialog — lives in haku-ui now; only the trusted confirm +
+// capability firing stay here. See README + plans/free_form_ui_iframe.md.
 export default function App() {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -26,9 +27,8 @@ export default function App() {
     };
   }, []);
 
-  // Error reporting standard: action failures (launch, trace) surface as toasts
-  // (see toast.ts). The initial config load is the one exception — a failure leaves
-  // nothing to render, so it gets a persistent page-level message.
+  // The initial config load is the one thing rendered by the shell itself; a failure
+  // leaves nothing to frame, so it gets a persistent page-level message.
   if (error)
     return (
       <Text c="red" className="mx-auto max-w-3xl p-4">
@@ -41,23 +41,14 @@ export default function App() {
         <Loader />
       </div>
     );
+  if (!config.haku_ui_url)
+    return (
+      <Text c="red" className="mx-auto max-w-3xl p-4">
+        Haku UI URL is not configured.
+      </Text>
+    );
 
-  return (
-    <>
-      <div className="mx-auto max-w-3xl px-4 py-8">
-        <Group justify="space-between" align="center" mb="xs">
-          <Group gap="sm" align="center">
-            <img src={LOGO_URL} alt="" aria-hidden="true" className="h-10 w-10 shrink-0" />
-            <Title order={1}>Haku</Title>
-          </Group>
-          <LaunchRoutineButton routineUrl={config.launch_routine_url} />
-        </Group>
-        {/* The Free-form UI is the main surface; the note-to-haku form opens from the corner button. */}
-        {config.haku_ui_url && <HakuUiEmbed uiUrl={config.haku_ui_url} />}
-      </div>
-
-      {/* Viewport-pinned (not inside the centered content column); see FeedbackFab. */}
-      <FeedbackFab />
-    </>
-  );
+  // launch_routine_url is set iff the launch capability is configured (it's the routine's
+  // page URL); pass that as whether the shell can honor a requestLaunch from the iframe.
+  return <HakuUiEmbed uiUrl={config.haku_ui_url} launchAvailable={config.launch_routine_url != null} />;
 }

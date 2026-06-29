@@ -1,7 +1,13 @@
 # Free-form agent UI via a Haku-run iframe service
 
-Status: **foundation shipped (2026-06-26); steps 1–4 remaining** — see
-_Implementation order_. This is the concrete shape for Phase 1b of `haku/PLAN.md` →
+Status: **largely realized (2026-06-29).** The console is now the bare trusted shell —
+it frames haku-ui **full-page**, the **trace tier is deleted** (operator feedback writes
+straight into haku-state from haku-ui), and the `requestCapability` affordance shipped as
+**`requestLaunch`**: haku-ui renders the launch dialog and posts the prompt; the shell pops
+its own top-layer confirm (prompt shown verbatim) and only then fires the capability.
+haku-ui also owns the title bar + the global feedback button. What remains is the
+share-the-protocol cleanup (the bridge contract is still hand-duplicated across the two
+repos — see _Open questions_). This is the concrete shape for Phase 1b of `haku/PLAN.md` →
 _The agent-authored console_ — letting Haku author increasingly free-form interactive
 UI, without the trusted console having to render or even understand it.
 

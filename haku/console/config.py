@@ -38,16 +38,6 @@ class Settings(BaseSettings):
     # HAKU_CONSOLE_LAUNCH_ROUTINE__{ROUTINE_ID,TOKEN}.
     model_config = SettingsConfigDict(env_prefix="HAKU_CONSOLE_", env_nested_delimiter="__")
 
-    # haku-state git access. The repo_url is the cluster-internal plaintext-HTTP
-    # Forgejo (no TLS, so no CA bundle needed); credentials come from the
-    # haku-state-git-write secret.
-    git_repo_url: str
-    git_username: str
-    git_password: SecretStr
-    branch: str = "main"
-
-    clone_dir: Path = Path("/data/haku-state")
-
     # Optional directory holding the built React SPA (index.html + assets), served
     # same-origin by FastAPI for direct local/dev fallback. Production leaves this
     # unset and serves the SPA from the haku-console-static nginx image.

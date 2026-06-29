@@ -25,11 +25,6 @@ export async function fetchConfig(): Promise<ConfigResponse> {
   return data;
 }
 
-export async function postTrace(text: string): Promise<void> {
-  const { error } = await api.POST("/api/trace", { body: { text } });
-  if (error) throw new Error(errorDetail(error, "Failed to send trace"));
-}
-
 // Capability tier. Fetch a CSRF token (which also sets the signed double-submit
 // cookie), then fire the routine echoing the token in X-CSRF-Token. The bearer
 // stays server-side; this only triggers the action and returns the new session URL.

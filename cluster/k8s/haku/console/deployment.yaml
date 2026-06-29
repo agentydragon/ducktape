@@ -1,9 +1,10 @@
 # The Haku console: reviewed FastAPI API code plus a baked nginx static frontend.
-# Unlike the old dashboard's nginx + git-sync shape, the FastAPI app owns git
-# itself — it clones haku-state into an emptyDir at /data at startup and pushes
-# back. nginx only serves the bundled SPA image and proxies API calls to
-# localhost. Access is gated by Authentik (agentydragon-only) via the proxy
-# outpost — the app has no native auth.
+# The console is the trusted outer shell — it serves config + the capability tier
+# (launch-routine) and frames Haku's own UI (haku-ui) as a sandboxed cross-origin
+# iframe. It holds NO haku-state git credential (feedback/trace writes moved into
+# haku-ui). nginx serves the bundled SPA image and proxies API calls to localhost.
+# Access is gated by Authentik (agentydragon-only) via the proxy outpost — the app
+# has no native auth.
 #
 # Trust boundary: runs in its OWN `haku-console` namespace, NOT haku-sandbox. As
 # reviewed/released ducktape code it sits outside Haku's RBAC (Haku can't read its
@@ -51,23 +52,6 @@ spec:
             - name: api
               containerPort: 8080
           env:
-            - name: HOME # libgit2/git config + temp writes land in the writable emptyDir
-              value: /tmp
-            - name: HAKU_CONSOLE_GIT_REPO_URL
-              valueFrom:
-                secretKeyRef:
-                  name: haku-state-git-write
-                  key: repo_url
-            - name: HAKU_CONSOLE_GIT_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: haku-state-git-write
-                  key: username
-            - name: HAKU_CONSOLE_GIT_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: haku-state-git-write
-                  key: password
             # Capability tier: the launch-routine action. The console builds both the
             # (public) fire URL and the claude.ai/code page deep-link from this routine
             # (trigger) id; the bearer comes from the haku-console-only secret so Haku
@@ -106,10 +90,8 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           volumeMounts:
-            - name: tmp # HOME=/tmp: libgit2/git config + scratch
+            - name: tmp # writable scratch (/tmp) for the app
               mountPath: /tmp
-            - name: data # the haku-state clone
-              mountPath: /data
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -158,8 +140,6 @@ spec:
               drop: ["ALL"]
       volumes:
         - name: tmp
-          emptyDir: {}
-        - name: data
           emptyDir: {}
         - name: nginx-conf
           emptyDir: {}

@@ -29,29 +29,10 @@ py_library(
 )
 
 py_library(
-    name = "git_state",
-    srcs = ["git_state.py"],
-    deps = [
-        "@pypi//pygit2",
-    ],
-)
-
-py_library(
     name = "deps",
     srcs = ["deps.py"],
     deps = [
         ":config",
-        ":git_state",
-        "@pypi//fastapi",
-    ],
-)
-
-py_library(
-    name = "trace",
-    srcs = ["trace.py"],
-    deps = [
-        ":deps",
-        ":models",
         "@pypi//fastapi",
     ],
 )
@@ -75,9 +56,7 @@ py_library(
     deps = [
         ":capabilities",
         ":config",
-        ":git_state",
         ":models",
-        ":trace",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
         "@pypi//uvicorn",
@@ -96,7 +75,6 @@ py_library(
     deps = [
         ":app",
         ":config",
-        ":git_state",
     ],
 )
 
@@ -114,10 +92,8 @@ py_library(
     deps = [
         ":app",
         ":config",
-        ":git_state",
         "@pypi//fastapi",
         "@pypi//httpx",
-        "@pypi//pygit2",
         "@pypi//pytest",
     ],
 )
@@ -128,7 +104,6 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "@pypi//pygit2",
         "@pypi//pytest_bazel",
     ],
 )
@@ -151,11 +126,9 @@ py_test(
 )
 
 # ── OCI image (the haku-console service) ──────────────────────────────────────
-# ca-certificates apt layer (@trixie_ca_certificates): pygit2's Settings() eagerly
-# loads libgit2's OpenSSL cert locations from the system trust store at *import*
-# time, so `import pygit2` raises GitError on a bare slim base before any code runs
-# — even though the haku-state remote is plaintext HTTP and the certs are never
-# used. Same fix as finance/scraper and finance/augur/api.
+# ca-certificates apt layer (@trixie_ca_certificates): the capability tier makes an
+# outbound HTTPS call to the Anthropic fire URL (api.anthropic.com), and httpx needs
+# the system trust store to verify that TLS connection — absent on a bare slim base.
 
 aspect_py_binary(
     name = "server_bin",

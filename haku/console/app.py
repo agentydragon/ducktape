@@ -1,23 +1,16 @@
 """FastAPI app for the Haku console JSON API.
 
-The console is a thin shell: the capability tier (launch-routine) + a generic
-"Note to Haku" trace box + the Free-form UI iframe. Item rendering has moved to
-``haku/state_template/ui/`` — Haku's own UI, embedded via iframe.
-
-Writes are split into tiers (see ``haku/PLAN.md`` → _The agent-authored console_):
-the **trace tier** (``haku.console.trace``) records opaque operator text into
-haku-state and is the low-privilege surface safe for agent-authored UI. The
-high-privilege **capability tier** (``haku.console.capabilities``) uses console-only
-secrets and acts on the world (launching the routine); it is CSRF-gated and audited.
-``app.py`` wires both routers, configures CSRF, and serves the config endpoint. It
-can also mount the built SPA when ``static_dir`` is explicitly configured for a
-direct local/dev fallback.
+The console is the trusted outer shell: it frames Haku's own UI (``haku/state_template/ui/``)
+full-page as a sandboxed cross-origin iframe and owns the one privileged surface — the
+**capability tier** (``haku.console.capabilities``), which uses console-only secrets and
+acts on the world (launching the routine); it is CSRF-gated and audited (see ``haku/PLAN.md``
+→ _The agent-authored console_). ``app.py`` wires that router, configures CSRF, and serves
+the config endpoint. It can also mount the built SPA when ``static_dir`` is explicitly
+configured for a direct local/dev fallback.
 """
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
 import secrets
 from collections.abc import Awaitable, Callable
@@ -29,9 +22,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
 
-from haku.console import capabilities, trace
+from haku.console import capabilities
 from haku.console.config import Settings
-from haku.console.git_state import GitState
 from haku.console.models import ConfigResponse
 
 logger = logging.getLogger(__name__)
@@ -50,16 +42,9 @@ def _cache_control_for_path(path: str) -> str:
     return APP_SHELL_CACHE_CONTROL
 
 
-def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
-    @contextlib.asynccontextmanager
-    async def lifespan(app: FastAPI):
-        # Clone is still needed for trace writes (append_trace → commit_push).
-        await asyncio.to_thread(git_state.clone_or_open)
-        yield
-
-    app = FastAPI(title="Haku console", lifespan=lifespan)
-    # Routers read git_state / settings off app.state (see haku.console.{trace,capabilities}).
-    app.state.git_state = git_state
+def create_app(settings: Settings) -> FastAPI:
+    app = FastAPI(title="Haku console")
+    # The capability router reads settings off app.state (see haku.console.capabilities).
     app.state.settings = settings
 
     # Content-Security-Policy: let the dashboard frame Haku's own UI origin (the
@@ -98,7 +83,6 @@ def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
         launch = settings.launch_routine
         return ConfigResponse(launch_routine_url=launch.page_url if launch else None, haku_ui_url=settings.haku_ui_url)
 
-    app.include_router(trace.router)
     app.include_router(capabilities.router)
 
     # Optional direct local/dev fallback. Production serves the SPA from the
@@ -112,15 +96,7 @@ def create_app(settings: Settings, *, git_state: GitState) -> FastAPI:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    settings = Settings()
-    git_state = GitState(
-        repo_url=settings.git_repo_url,
-        username=settings.git_username,
-        password=settings.git_password.get_secret_value(),
-        clone_dir=settings.clone_dir,
-        branch=settings.branch,
-    )
-    app = create_app(settings, git_state=git_state)
+    app = create_app(Settings())
     # host/port are fixed, not env-driven: under the HAKU_CONSOLE_ prefix a `port`
     # setting would read the kubelet's HAKU_CONSOLE_PORT service-link var (a URL),
     # not an int. The deployment also disables service links (enableServiceLinks: false).

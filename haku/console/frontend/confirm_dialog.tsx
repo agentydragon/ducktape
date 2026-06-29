@@ -8,6 +8,7 @@ export interface ConfirmRequest {
   title: string;
   body?: string; // what the action does, in trusted shell copy
   url?: string; // for openLink — the full URL shown verbatim
+  preview?: string; // verbatim agent-supplied text to review (e.g. a launch prompt)
   approveLabel: string;
 }
 
@@ -69,6 +70,11 @@ export function ConfirmDialog({
           {request.url && (
             <Text size="sm" className="haku-url-preview rounded p-2 font-mono break-all">
               {request.url}
+            </Text>
+          )}
+          {request.preview && (
+            <Text size="sm" className="haku-url-preview rounded p-2 break-words whitespace-pre-wrap">
+              {request.preview}
             </Text>
           )}
           <Group justify="flex-end" gap="sm" mt="xs">

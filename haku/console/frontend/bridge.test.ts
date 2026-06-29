@@ -7,12 +7,28 @@ describe("parseInbound", () => {
     expect(parseInbound({ type: "openLink", url: "https://x" })).toEqual({ type: "openLink", url: "https://x" });
   });
 
+  it("accepts a well-formed requestLaunch", () => {
+    expect(parseInbound({ type: "requestLaunch", id: "abc", prompt: "do the thing" })).toEqual({
+      type: "requestLaunch",
+      id: "abc",
+      prompt: "do the thing",
+    });
+    // an empty prompt is valid (run the default routine)
+    expect(parseInbound({ type: "requestLaunch", id: "abc", prompt: "" })).toEqual({
+      type: "requestLaunch",
+      id: "abc",
+      prompt: "",
+    });
+  });
+
   it("rejects malformed / unknown payloads", () => {
     expect(parseInbound(null)).toBeNull();
     expect(parseInbound("nope")).toBeNull();
     expect(parseInbound({ type: "openLink" })).toBeNull(); // missing url
     expect(parseInbound({ type: "openLink", url: 42 })).toBeNull(); // wrong type
-    expect(parseInbound({ type: "requestCapability", id: "x" })).toBeNull(); // not wired yet
+    expect(parseInbound({ type: "requestLaunch", id: "x" })).toBeNull(); // missing prompt
+    expect(parseInbound({ type: "requestLaunch", prompt: "x" })).toBeNull(); // missing id
+    expect(parseInbound({ type: "requestLaunch", id: 1, prompt: "x" })).toBeNull(); // wrong id type
     expect(parseInbound({ type: "evalThis", code: "x" })).toBeNull(); // unknown verb
   });
 });

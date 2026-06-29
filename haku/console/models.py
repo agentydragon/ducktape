@@ -1,17 +1,13 @@
 """Typed models for the Haku console API.
 
-The console is now item-agnostic: it records opaque operator-authored text as
-intake notes (trace tier) and surfaces config to the SPA (launch URL + Haku UI URL).
-Item rendering lives in ``haku/state_template/ui/`` — Haku's own UI embedded via iframe.
+The console is now just the trusted shell: it surfaces config to the SPA (launch URL +
+Haku UI URL) and brokers the capability tier. All product surfaces — items, feedback —
+live in ``haku/state_template/ui/`` (Haku's own UI), embedded via a sandboxed iframe.
 """
 
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
-
-
-class TraceRequest(BaseModel):
-    text: str = Field(description="Operator-authored note to append as an intake entry in haku-state")
 
 
 class ConfigResponse(BaseModel):
