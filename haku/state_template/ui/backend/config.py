@@ -17,10 +17,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="HAKU_UI_")
 
-    # haku-state via the cluster-internal plaintext-HTTP Forgejo API. The repo API root
-    # (…/api/v1/repos/<owner>/<repo>); credentials (basic auth) come from the
-    # haku-state-git-write secret.
-    forgejo_api_url: str = "http://forgejo-http.forgejo:3000/api/v1/repos/haku/haku-state"
+    # haku-state via the cluster-internal plaintext-HTTP Forgejo API: the repo API root
+    # (…/api/v1/repos/<owner>/<repo>). Deployment-specific → REQUIRED (set in the Deployment
+    # env); not defaulted here, since a default would bake one instance's URL into the generic
+    # starter. Credentials (basic auth) come from the haku-state-git-write secret.
+    forgejo_api_url: str
     git_username: str
     git_password: SecretStr
     branch: str = "main"
@@ -32,6 +33,7 @@ class Settings(BaseSettings):
     # The git commit the running image was built from (baked by CI via --build-arg GIT_SHA →
     # HAKU_UI_GIT_SHA); None in local dev. Surfaced in the UI footer as a Forgejo commit link.
     git_sha: str | None = None
-    # Public (operator-facing) Forgejo repo URL, for building commit links. NOT the internal
-    # API URL (forgejo_api_url) — that's cluster-internal plaintext HTTP.
-    repo_web_url: str = "https://git.allegedly.works/haku/haku-state"
+    # Public (operator-facing) Forgejo repo URL, for building commit links. Deployment-specific
+    # → REQUIRED (set in the Deployment env), not defaulted: NOT the internal API URL
+    # (forgejo_api_url) — that's cluster-internal plaintext HTTP.
+    repo_web_url: str

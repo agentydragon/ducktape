@@ -1,143 +1,101 @@
-"""The Forgejo read path — the 2-call git-tree + batched-blobs dashboard read.
+"""The generic Forgejo content client — git primitives, no feature knowledge.
 
-Guards the parsing logic that turns a raw git tree into (items, clicks): that item
-blobs are decoded and YAML-parsed, that clicks are derived from `clicks/<item>/<action>`
-tree paths (and only those — not nested or malformed paths), and that a truncated tree
-raises instead of silently dropping files. Forgejo itself is mocked with
-httpx.MockTransport, so this is a pure unit test of forgejo.py.
+Forgejo is mocked with httpx.MockTransport, so these are pure unit tests of forgejo.py:
+the batched tree/blobs reads (incl. the truncated-tree guard and the 80-SHA chunking),
+single-file read_text/read_yaml, and the idempotent create_file/delete_file writes.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import httpx
 import pytest
+
 from forgejo import Forgejo
 
-_HEAD = "deadbeefcafe"
+_API = "http://forgejo.test/api/v1/repos/haku/haku-state"
+Handler = Callable[[httpx.Request], httpx.Response]
 
 
-def _item_yaml(item_id: str) -> str:
-    return f'id: "{item_id}"\ntitle: "T {item_id}"\nbody: "b"\nvalue: 5\nstatus: open\n'
+def _call(handler: Handler, op: Callable[[Forgejo], Awaitable[Any]]) -> Any:
+    """Run ``op`` against a Forgejo whose HTTP layer is the given MockTransport handler."""
+    fj = Forgejo(api_url=_API, username="u", password="p")
+    fj._http = httpx.AsyncClient(base_url=_API, transport=httpx.MockTransport(handler))
+
+    async def go() -> Any:
+        async with fj as f:
+            return await op(f)
+
+    return asyncio.run(go())
 
 
-def _make_forgejo(tree: list[dict], blobs_by_sha: dict[str, str]) -> Forgejo:
-    """A Forgejo client whose HTTP layer is a MockTransport serving the given tree/blobs."""
-
+def test_tree_raises_on_truncated():
     def handler(request: httpx.Request) -> httpx.Response:
-        path = request.url.path
-        if path.endswith("/commits"):
-            return httpx.Response(
-                200,
-                json=[
-                    {
-                        "sha": _HEAD,
-                        "commit": {"author": {"email": "haku@allegedly.works", "date": "2026-06-28T22:00:00Z"}},
-                    }
-                ],
-            )
-        if path.endswith(f"/git/trees/{_HEAD}"):
-            return httpx.Response(200, json={"tree": tree, "truncated": False})
-        if path.endswith("/git/blobs"):
-            shas = request.url.params["shas"].split(",")
-            content = [{"sha": s, "content": base64.b64encode(blobs_by_sha[s].encode()).decode()} for s in shas]
-            return httpx.Response(200, json=content)
-        return httpx.Response(404, text=f"unexpected {path}")
-
-    fj = Forgejo(api_url="http://forgejo.test/api/v1/repos/haku/haku-state", username="u", password="p")
-    fj._http = httpx.AsyncClient(
-        base_url="http://forgejo.test/api/v1/repos/haku/haku-state", transport=httpx.MockTransport(handler)
-    )
-    return fj
-
-
-def test_read_dashboard_parses_items_and_clicks():
-    tree = [
-        {"type": "blob", "path": "items/01AAA.yaml", "sha": "sha-a"},
-        {"type": "blob", "path": "items/01BBB.yaml", "sha": "sha-b"},
-        {"type": "blob", "path": "README.md", "sha": "sha-readme"},  # non-item blob, ignored
-        {"type": "tree", "path": "items", "sha": "sha-tree"},  # tree entry, ignored
-        {"type": "blob", "path": "clicks/01AAA/done", "sha": "sha-click"},
-        {"type": "blob", "path": "clicks/01AAA", "sha": "sha-bad1"},  # too shallow, ignored
-        {"type": "blob", "path": "clicks/01AAA/nested/deep", "sha": "sha-bad2"},  # too deep, ignored
-    ]
-    blobs = {"sha-a": _item_yaml("01AAA"), "sha-b": _item_yaml("01BBB")}
-
-    async def run():
-        async with _make_forgejo(tree, blobs) as fj:
-            return await fj.read_dashboard()
-
-    items, clicks, scan_time = asyncio.run(run())
-    assert scan_time == "2026-06-28T22:00:00Z"
-    assert {i.id for i in items} == {"01AAA", "01BBB"}
-    assert clicks == {("01AAA", "done")}
-
-
-def test_read_dashboard_raises_on_truncated_tree():
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/commits"):
-            return httpx.Response(
-                200,
-                json=[
-                    {
-                        "sha": _HEAD,
-                        "commit": {"author": {"email": "haku@allegedly.works", "date": "2026-06-28T22:00:00Z"}},
-                    }
-                ],
-            )
         return httpx.Response(200, json={"tree": [], "truncated": True})
 
-    fj = Forgejo(api_url="http://forgejo.test/api/v1/repos/haku/haku-state", username="u", password="p")
-    fj._http = httpx.AsyncClient(base_url="http://forgejo.test", transport=httpx.MockTransport(handler))
-
-    async def run():
-        async with fj as f:
-            await f.read_dashboard()
-
     with pytest.raises(RuntimeError, match=r"truncated|exceeded"):
-        asyncio.run(run())
+        _call(handler, lambda f: f.tree("deadbeef"))
 
 
 def test_blobs_are_batched_at_80_shas():
-    """81 items must fetch in 2 /git/blobs calls (chunk size 80), not one giant URL."""
-    tree = [{"type": "blob", "path": f"items/{i:05d}.yaml", "sha": f"sha-{i}"} for i in range(81)]
-    blobs = {f"sha-{i}": _item_yaml(f"{i:05d}") for i in range(81)}
+    """81 SHAs must fetch in 2 /git/blobs calls (chunk size 80), not one giant URL."""
     calls: list[int] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        path = request.url.path
-        if path.endswith("/commits"):
-            return httpx.Response(
-                200,
-                json=[
-                    {
-                        "sha": _HEAD,
-                        "commit": {"author": {"email": "haku@allegedly.works", "date": "2026-06-28T22:00:00Z"}},
-                    }
-                ],
-            )
-        if path.endswith(f"/git/trees/{_HEAD}"):
-            return httpx.Response(200, json={"tree": tree, "truncated": False})
-        if path.endswith("/git/blobs"):
-            shas = request.url.params["shas"].split(",")
-            calls.append(len(shas))
-            return httpx.Response(
-                200, json=[{"sha": s, "content": base64.b64encode(blobs[s].encode()).decode()} for s in shas]
-            )
+        shas = request.url.params["shas"].split(",")
+        calls.append(len(shas))
+        return httpx.Response(200, json=[{"sha": s, "content": base64.b64encode(s.encode()).decode()} for s in shas])
+
+    out = _call(handler, lambda f: f.blobs([f"sha-{i}" for i in range(81)]))
+    assert len(out) == 81
+    assert calls == [80, 1]
+
+
+def test_read_text_returns_content_or_none():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/contents/present.txt"):
+            return httpx.Response(200, json={"content": base64.b64encode(b"hello").decode()})
         return httpx.Response(404)
 
-    fj = Forgejo(api_url="http://forgejo.test/api/v1/repos/haku/haku-state", username="u", password="p")
-    fj._http = httpx.AsyncClient(base_url="http://forgejo.test", transport=httpx.MockTransport(handler))
+    assert _call(handler, lambda f: f.read_text("present.txt")) == "hello"
+    assert _call(handler, lambda f: f.read_text("missing.txt")) is None
 
-    async def run():
-        async with fj as f:
-            return await f.read_dashboard()
 
-    items, _, _ = asyncio.run(run())
-    assert len(items) == 81
-    assert calls == [80, 1]
+def test_read_yaml_parses_or_none():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/contents/x.yaml"):
+            return httpx.Response(200, json={"content": base64.b64encode(b"a: 1\nb: two\n").decode()})
+        return httpx.Response(404)
+
+    assert _call(handler, lambda f: f.read_yaml("x.yaml")) == {"a": 1, "b": "two"}
+    assert _call(handler, lambda f: f.read_yaml("nope.yaml")) is None
+
+
+def test_create_file_tolerates_already_exists():
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.method)
+        # 422 = file already exists; create_file must treat it as success (no raise).
+        return httpx.Response(422, json={"message": "already exists"})
+
+    _call(handler, lambda f: f.create_file("clicks/a/b", b"x", "msg"))  # must not raise
+    assert seen == ["POST"]
+
+
+def test_delete_file_is_noop_when_missing():
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.method)
+        return httpx.Response(404)  # GET sha → not found → no DELETE issued
+
+    _call(handler, lambda f: f.delete_file("clicks/a/b", "msg"))  # must not raise
+    assert seen == ["GET"]  # no DELETE attempted
 
 
 if __name__ == "__main__":

@@ -63,6 +63,10 @@ spec:
             # can't save the short name — NO_PROXY CIDRs only match IP literals.)
             - name: HAKU_UI_FORGEJO_API_URL
               value: http://forgejo-http.forgejo.svc.cluster.local:3000/api/v1/repos/haku/haku-state
+            # Public (operator-facing) repo URL for the footer's commit links. Required by the
+            # backend (no code default) so this deployment's URL isn't baked into the starter.
+            - name: HAKU_UI_REPO_WEB_URL
+              value: https://git.allegedly.works/haku/haku-state
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

@@ -20,16 +20,18 @@ RUN npm run build
 # system libs / git needed and no writable volume — the backend keeps no local clone.
 FROM python:3.13-slim AS backend-base
 WORKDIR /app
-COPY backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# `pip install .` needs pyproject.toml + the flat modules it declares, so copy the
+# backend dir first, then install. Source changes invalidate the dep-install layer, but
+# the backend is tiny and rebuilt rarely.
 COPY backend/ ./backend/
+RUN pip install --no-cache-dir ./backend
 
 # --- stage 3: backend tests (the CI gate) -----------------------------------
 # CI builds this target FIRST (`docker build --target test`). The `RUN pytest` fails the
 # build if any test fails, so the build/push job — which `needs:` the test job — never
 # runs and no image is pushed or tagged. Test-only deps stay here, never in `runtime`.
 FROM backend-base AS test
-RUN pip install --no-cache-dir -r backend/requirements-dev.txt
+RUN pip install --no-cache-dir ./backend[dev]
 WORKDIR /app/backend
 RUN python -m pytest -q
 

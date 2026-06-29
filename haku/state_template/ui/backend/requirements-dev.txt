@@ -1,4 +1,0 @@
-# Test-only deps, installed in the Dockerfile's `test` stage (never in `runtime`).
-# Runtime deps (httpx, fastapi, pydantic) come from requirements.txt; the tests reuse
-# them (httpx.MockTransport for the Forgejo client, starlette TestClient for the app).
-pytest>=8.0

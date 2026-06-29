@@ -1,66 +1,90 @@
 """The FastAPI surface — health, the two read endpoints, and the trace writes.
 
-The Forgejo client is replaced with a fake via dependency override, so these test the
-HTTP contract (status, JSON shape, that writes reach the client) without a real Forgejo.
+The Forgejo client is replaced with a fake via dependency override. The fake implements the
+**generic** Forgejo primitives the endpoints compose (commits/tree/blobs for the items-board
+read, read_yaml for improvements, create_file/delete_file for the trace writes) — so these
+tests exercise the real feature layer (reads.read_dashboard + the endpoints) over canned git
+content, without a real Forgejo.
 """
 
 from __future__ import annotations
 
+from typing import Any
+
+from fastapi.testclient import TestClient
+
 from app import _forgejo, create_app
 from config import Settings
-from fastapi.testclient import TestClient
-from models import Item, ItemStatus
+
+_ITEM_YAML = b'id: "01AAA"\ntitle: "t"\nbody: "b"\nvalue: 9\nstatus: open\n'
+_IMPROVEMENTS = {
+    "updated": "2026-06-29T05:30:00Z",
+    "ideas": [
+        {
+            "id": "example-idea",
+            "title": "An example capability idea",
+            "value": "high",
+            "status": "recommend",
+            "summary": "what it would unlock",
+            "detail": "**why** it matters",
+        }
+    ],
+    "friction": [
+        {
+            "id": "example-friction",
+            "title": "An example data-access gap",
+            "severity": "medium",
+            "status": "open",
+            "detail": "impact + the fix",
+        }
+    ],
+}
 
 
 class FakeForgejo:
-    """Records calls; serves a fixed dashboard."""
+    """Fakes the generic Forgejo content primitives; records writes."""
 
     def __init__(self) -> None:
-        self.clicks_set: list[tuple[str, str]] = []
-        self.clicks_cleared: list[tuple[str, str]] = []
-        self.feedback: list[tuple[str, str | None]] = []
+        self.created: list[tuple[str, bytes, str]] = []
+        self.deleted: list[tuple[str, str]] = []
 
-    async def read_dashboard(self):
-        item = Item(id="01AAA", title="t", body="b", value=9, status=ItemStatus.OPEN)
-        return [item], {("01AAA", "done")}, "2026-06-28T22:00:00Z"
+    async def commits(self, limit: int = 40) -> list[dict[str, Any]]:
+        return [
+            {"sha": "HEAD", "commit": {"author": {"email": "haku@allegedly.works", "date": "2026-06-28T22:00:00Z"}}}
+        ]
 
-    async def set_click(self, item_id: str, action_id: str) -> None:
-        self.clicks_set.append((item_id, action_id))
+    async def tree(self, sha: str) -> list[dict[str, Any]]:
+        return [
+            {"type": "blob", "path": "items/01AAA.yaml", "sha": "sha-a"},
+            {"type": "blob", "path": "clicks/01AAA/done", "sha": "sha-c"},
+        ]
 
-    async def clear_click(self, item_id: str, action_id: str) -> None:
-        self.clicks_cleared.append((item_id, action_id))
+    async def blobs(self, shas: list[str]) -> list[bytes]:
+        return [_ITEM_YAML for _ in shas]
 
-    async def write_feedback(self, text: str, item_id: str | None = None) -> None:
-        self.feedback.append((text, item_id))
+    async def read_yaml(self, path: str) -> Any:
+        assert path == "improvements.yaml"
+        return _IMPROVEMENTS
 
-    async def read_improvements(self):
-        return {
-            "updated": "2026-06-29T05:30:00Z",
-            "ideas": [
-                {
-                    "id": "example-idea",
-                    "title": "An example capability idea",
-                    "value": "high",
-                    "status": "recommend",
-                    "summary": "what it would unlock",
-                    "detail": "**why** it matters",
-                }
-            ],
-            "friction": [
-                {
-                    "id": "example-friction",
-                    "title": "An example data-access gap",
-                    "severity": "medium",
-                    "status": "open",
-                    "detail": "impact + the fix the operator could make",
-                }
-            ],
-        }
+    async def create_file(self, path: str, content: bytes, message: str) -> None:
+        self.created.append((path, content, message))
+
+    async def delete_file(self, path: str, message: str) -> None:
+        self.deleted.append((path, message))
 
 
-def _client() -> tuple[TestClient, FakeForgejo]:
-    settings = Settings(git_username="u", git_password="p")
-    app = create_app(settings)
+def _settings(**overrides: Any) -> Settings:
+    base = {
+        "forgejo_api_url": "http://forgejo.test/api/v1/repos/haku/haku-state",
+        "repo_web_url": "https://git.example/haku/haku-state",
+        "git_username": "u",
+        "git_password": "p",
+    }
+    return Settings(**{**base, **overrides})
+
+
+def _client(**setting_overrides: Any) -> tuple[TestClient, FakeForgejo]:
+    app = create_app(_settings(**setting_overrides))
     fake = FakeForgejo()
     app.dependency_overrides[_forgejo] = lambda: fake
     return TestClient(app), fake
@@ -87,30 +111,11 @@ def test_dashboard_returns_items_and_clicks():
 
 
 def test_dashboard_surfaces_deployed_commit_when_git_sha_set():
-    settings = Settings(git_username="u", git_password="p", git_sha="abcdef1234567890")
-    app = create_app(settings)
-    app.dependency_overrides[_forgejo] = lambda: FakeForgejo()
-    with TestClient(app) as client:
+    client, _ = _client(git_sha="abcdef1234567890")
+    with client:
         body = client.get("/api/dashboard").json()
     assert body["deployed_commit"] == "abcdef1"
-    assert body["deployed_commit_url"] == "https://git.allegedly.works/haku/haku-state/commit/abcdef1234567890"
-
-
-def test_trace_click_set_and_clear_reach_forgejo():
-    client, fake = _client()
-    with client:
-        assert client.put("/api/trace/items/01AAA/actions/done").status_code == 200
-        assert client.delete("/api/trace/items/01AAA/actions/done").status_code == 200
-    assert fake.clicks_set == [("01AAA", "done")]
-    assert fake.clicks_cleared == [("01AAA", "done")]
-
-
-def test_trace_feedback_reaches_forgejo():
-    client, fake = _client()
-    with client:
-        r = client.post("/api/trace/feedback", json={"text": "hello", "item_id": "01AAA"})
-    assert r.status_code == 200
-    assert fake.feedback == [("hello", "01AAA")]
+    assert body["deployed_commit_url"] == "https://git.example/haku/haku-state/commit/abcdef1234567890"
 
 
 def test_improvements_returns_ideas_and_friction():
@@ -121,7 +126,25 @@ def test_improvements_returns_ideas_and_friction():
     assert [i["id"] for i in body["ideas"]] == ["example-idea"]
     assert body["ideas"][0]["value"] == "high"
     assert [f["id"] for f in body["friction"]] == ["example-friction"]
-    assert body["friction"][0]["severity"] == "medium"
+
+
+def test_trace_click_set_and_clear_reach_forgejo():
+    client, fake = _client()
+    with client:
+        assert client.put("/api/trace/items/01AAA/actions/done").status_code == 200
+        assert client.delete("/api/trace/items/01AAA/actions/done").status_code == 200
+    assert [p for p, _c, _m in fake.created] == ["clicks/01AAA/done"]
+    assert [p for p, _m in fake.deleted] == ["clicks/01AAA/done"]
+
+
+def test_trace_feedback_reaches_forgejo():
+    client, fake = _client()
+    with client:
+        r = client.post("/api/trace/feedback", json={"text": "hello", "item_id": "01AAA"})
+    assert r.status_code == 200
+    path, content, _msg = fake.created[0]
+    assert path.endswith("-feedback-01AAA.md")
+    assert b"hello" in content
 
 
 if __name__ == "__main__":

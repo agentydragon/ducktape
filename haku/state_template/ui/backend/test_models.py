@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import pytest
 import yaml
+from pydantic import ValidationError
+
 from models import (
     ClaudeHandoffAction,
     CommandAction,
@@ -20,7 +22,6 @@ from models import (
     ItemStatus,
     PreparedPrompt,
 )
-from pydantic import ValidationError
 
 # A realistic item as it appears in items/<id>.yaml, including the top-level fields the
 # UI model does NOT declare (dedup_key, source) — those must be ignored, not rejected.
