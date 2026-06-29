@@ -6,7 +6,6 @@ gate. Cluster-internal access is gated by a static bearer (see `StaticBearerGuar
 """
 
 import asyncio
-import hmac
 import logging
 import os
 import sys
@@ -19,7 +18,7 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp
 
 from gmail_api.service import build_gmail_service_from_token_dir
 from haku.gmail_labeling.backend import GmailLabelBackend
@@ -27,6 +26,7 @@ from haku.gmail_labeling.client import LabelClient
 from haku.gmail_labeling.config import Settings
 from haku.gmail_labeling.models import Label
 from haku.gmail_labeling.namespace import LabelNamespace
+from mcp_infra.static_bearer import StaticBearerGuard
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,9 @@ INSTRUCTIONS = (
 )
 
 ThreadId = Annotated[str, Field(description="Gmail thread ID to label (from Gmail search results).")]
-LabelName = Annotated[str, Field(description="Label display name; must start with the managed prefix, e.g. 'haku/triaged'.")]
+LabelName = Annotated[
+    str, Field(description="Label display name; must start with the managed prefix, e.g. 'haku/triaged'.")
+]
 
 
 def build_mcp(client: LabelClient) -> FastMCP:
@@ -77,26 +79,6 @@ def build_mcp(client: LabelClient) -> FastMCP:
         await asyncio.to_thread(client.delete_label, name)
 
     return mcp
-
-
-class StaticBearerGuard:
-    """ASGI guard requiring a fixed `Authorization: Bearer <token>` on the wrapped app.
-
-    Mirrors the cluster-internal guard in `mcp_infra.oauth_facade`; /healthz is
-    registered as an earlier route so k8s probes reach it without the token.
-    """
-
-    def __init__(self, app: ASGIApp, *, token: str) -> None:
-        self._app = app
-        self._expected = f"Bearer {token}".encode()
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http":
-            presented = dict(scope["headers"]).get(b"authorization", b"")
-            if not hmac.compare_digest(presented, self._expected):
-                await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
-                return
-        await self._app(scope, receive, send)
 
 
 def build_app(settings: Settings) -> Starlette:

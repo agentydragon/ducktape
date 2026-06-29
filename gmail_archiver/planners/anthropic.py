@@ -7,8 +7,8 @@ from decimal import Decimal
 import dateutil.parser
 from pydantic import BaseModel
 
-from gmail_archiver.date_patterns import MONTHS
 from gmail_api.labels import SystemLabel
+from gmail_archiver.date_patterns import MONTHS
 from gmail_archiver.inbox import GmailInbox
 from gmail_archiver.models import Email
 from gmail_archiver.plan import LABEL_AUTO_CLEANED, Plan

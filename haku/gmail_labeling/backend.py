@@ -4,9 +4,7 @@
 implements it over the Gmail REST API, and tests substitute an in-memory fake.
 """
 
-from typing import Protocol
-
-from googleapiclient.discovery import Resource
+from typing import Any, Protocol
 
 from gmail_api.labels import GmailLabel
 
@@ -22,9 +20,12 @@ class LabelBackend(Protocol):
 
 
 class GmailLabelBackend:
-    """`LabelBackend` over the Gmail REST API (`users.labels` + `users.threads.modify`)."""
+    """`LabelBackend` over the Gmail REST API (`users.labels` + `users.threads.modify`).
 
-    def __init__(self, service: Resource) -> None:
+    `service` is google-api-python-client's dynamically-generated, untyped Resource.
+    """
+
+    def __init__(self, service: Any) -> None:
         self._service = service
 
     def list_labels(self) -> list[GmailLabel]:

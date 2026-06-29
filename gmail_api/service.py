@@ -3,15 +3,20 @@
 import datetime as dt
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import Resource, build
+from googleapiclient.discovery import build
 
 # Read/write scope needed to create/modify labels and change label membership.
 GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify"
 
+# google-api-python-client's `Resource` is dynamically generated and untyped, so the
+# service is typed `Any` (matching gmail_archiver's GmailClient) — there is no usable
+# static type for `.users().labels()...`.
 
-def build_gmail_service(token_file: Path) -> Resource:
+
+def build_gmail_service(token_file: Path) -> Any:
     """Build a Gmail v1 service from an authorized-user OAuth token JSON.
 
     The token file is the standard google-auth authorized-user format (refresh
@@ -21,7 +26,7 @@ def build_gmail_service(token_file: Path) -> Resource:
     return build("gmail", "v1", credentials=creds, cache_discovery=False)
 
 
-def build_gmail_service_from_token_dir(token_dir: Path) -> Resource:
+def build_gmail_service_from_token_dir(token_dir: Path) -> Any:
     """Build a Gmail v1 service backed by an externally-rotated access token.
 
     `token_dir` is a mounted secret holding an `access_token` (and `expires_at`)

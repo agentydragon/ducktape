@@ -5,7 +5,8 @@ See: https://developers.google.com/gmail/api/reference/rest/v1/users.labels
 
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
 
 
 class LabelType(StrEnum):
@@ -27,32 +28,28 @@ class MessageListVisibility(StrEnum):
 class GmailLabel(BaseModel):
     """Gmail label resource."""
 
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
     id: str
     name: str
     type: LabelType | None = None
-    message_list_visibility: MessageListVisibility | None = Field(default=None, alias="messageListVisibility")
-    label_list_visibility: LabelListVisibility | None = Field(default=None, alias="labelListVisibility")
-    messages_total: int | None = Field(default=None, alias="messagesTotal")
-    messages_unread: int | None = Field(default=None, alias="messagesUnread")
-    threads_total: int | None = Field(default=None, alias="threadsTotal")
-    threads_unread: int | None = Field(default=None, alias="threadsUnread")
+    message_list_visibility: MessageListVisibility | None = None
+    label_list_visibility: LabelListVisibility | None = None
+    messages_total: int | None = None
+    messages_unread: int | None = None
+    threads_total: int | None = None
+    threads_unread: int | None = None
     color: dict | None = None
-
-    model_config = {"populate_by_name": True}
 
 
 class CreateLabelRequest(BaseModel):
     """Request body for creating a label."""
 
-    name: str
-    label_list_visibility: LabelListVisibility = Field(
-        default=LabelListVisibility.LABEL_SHOW, alias="labelListVisibility"
-    )
-    message_list_visibility: MessageListVisibility = Field(
-        default=MessageListVisibility.SHOW, alias="messageListVisibility"
-    )
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
-    model_config = {"populate_by_name": True}
+    name: str
+    label_list_visibility: LabelListVisibility = LabelListVisibility.LABEL_SHOW
+    message_list_visibility: MessageListVisibility = MessageListVisibility.SHOW
 
 
 class SystemLabel(StrEnum):

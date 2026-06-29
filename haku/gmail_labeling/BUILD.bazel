@@ -21,10 +21,7 @@ py_library(
     name = "backend",
     srcs = ["backend.py"],
     visibility = ["//:__subpackages__"],
-    deps = [
-        "//gmail_api:labels",
-        "@pypi//google_api_python_client",
-    ],
+    deps = ["//gmail_api:labels"],
 )
 
 py_library(
@@ -61,6 +58,7 @@ py_library(
         ":models",
         ":namespace",
         "//gmail_api:service",
+        "//mcp_infra:static_bearer",
         "@pypi//fastmcp",
         "@pypi//pydantic",
         "@pypi//starlette",
@@ -151,6 +149,7 @@ py_test(
         "//:conftest",
         "@pypi//fastmcp",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
