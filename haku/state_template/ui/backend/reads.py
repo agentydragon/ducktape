@@ -10,7 +10,6 @@ board needs the batched tree+blobs read, which lives here.
 from __future__ import annotations
 
 import yaml
-
 from forgejo import Forgejo
 from models import Item
 

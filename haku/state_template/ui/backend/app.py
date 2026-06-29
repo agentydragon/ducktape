@@ -33,10 +33,9 @@ from collections.abc import Awaitable, Callable
 from typing import Annotated
 
 import uvicorn
+from config import Settings
 from fastapi import Depends, FastAPI, Header, Request, Response
 from fastapi.staticfiles import StaticFiles
-
-from config import Settings
 from forgejo import Forgejo
 from models import Click, DashboardResponse, FeedbackRequest, ImprovementsBoard
 from reads import read_dashboard

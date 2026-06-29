@@ -11,10 +11,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi.testclient import TestClient
-
 from app import _forgejo, create_app
 from config import Settings
+from fastapi.testclient import TestClient
 
 _ITEM_YAML = b'id: "01AAA"\ntitle: "t"\nbody: "b"\nvalue: 9\nstatus: open\n'
 _IMPROVEMENTS = {

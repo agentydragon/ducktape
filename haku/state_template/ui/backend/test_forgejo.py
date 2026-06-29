@@ -14,7 +14,6 @@ from typing import Any
 
 import httpx
 import pytest
-
 from forgejo import Forgejo
 
 _API = "http://forgejo.test/api/v1/repos/haku/haku-state"

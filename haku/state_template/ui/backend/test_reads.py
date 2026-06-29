@@ -11,7 +11,6 @@ import asyncio
 import base64
 
 import httpx
-
 from forgejo import Forgejo
 from reads import read_dashboard
 
