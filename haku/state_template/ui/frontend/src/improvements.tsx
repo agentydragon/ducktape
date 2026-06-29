@@ -14,11 +14,11 @@ const FRICTION_RANK = { open: 0, workaround: 1, answered: 2, resolved: 3 } as co
 
 function ideaCard(idea: ImprovementIdea) {
   return (
-    <li key={idea.id} className="kitchen-line">
+    <li key={idea.id} className="board-line">
       <div>
         <strong>{idea.title}</strong>
-        <span className={`kbadge kbadge-val-${idea.value}`}>{idea.value} value</span>
-        <span className={`kbadge kbadge-st-${idea.status}`}>{idea.status}</span>
+        <span className={`chip chip-val-${idea.value}`}>{idea.value} value</span>
+        <span className={`chip chip-st-${idea.status}`}>{idea.status}</span>
         <div className="dimmed">{idea.summary}</div>
         {idea.detail ? (
           <details className="imp-detail">
@@ -33,11 +33,11 @@ function ideaCard(idea: ImprovementIdea) {
 
 function frictionCard(f: Friction) {
   return (
-    <li key={f.id} className="kitchen-line">
+    <li key={f.id} className="board-line">
       <div>
         <strong>{f.title}</strong>
-        <span className={`kbadge kbadge-sev-${f.severity}`}>{f.severity}</span>
-        <span className={`kbadge kbadge-st-${f.status}`}>{f.status}</span>
+        <span className={`chip chip-sev-${f.severity}`}>{f.severity}</span>
+        <span className={`chip chip-st-${f.status}`}>{f.status}</span>
         {f.detail ? <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(f.detail) }} /> : null}
       </div>
     </li>
@@ -62,23 +62,23 @@ export function ImprovementsPage() {
   const openCount = friction.filter((f) => f.status === "open").length;
 
   return (
-    <div className="kitchen">
+    <div className="board">
       <p className="dimmed">
         What would make me more useful, and what's getting in my way — Haku's own backlog, value-ranked.
         Steer it with a note from the Inbox tab. {data.updated ? `Updated ${new Date(data.updated).toLocaleString()}.` : null}
       </p>
 
-      <section className="kitchen-section">
+      <section className="board-section">
         <h3>💡 Capability ideas ({ideas.length})</h3>
-        <ul className="kitchen-list">{ideas.map(ideaCard)}</ul>
+        <ul className="board-list">{ideas.map(ideaCard)}</ul>
       </section>
 
-      <section className="kitchen-section">
+      <section className="board-section">
         <h3>
           🔧 Friction &amp; breakages ({friction.length}
           {openCount > 0 ? `, ${openCount} open` : ""})
         </h3>
-        <ul className="kitchen-list">{friction.map(frictionCard)}</ul>
+        <ul className="board-list">{friction.map(frictionCard)}</ul>
       </section>
     </div>
   );

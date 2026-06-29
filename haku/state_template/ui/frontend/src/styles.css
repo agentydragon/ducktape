@@ -9,6 +9,13 @@
   --teal-fg: #ffffff;
   --orange: #ea580c;
   --code-bg: #f1f5f9;
+  /* Semantic status colors (used by badges, errors, signal buttons) — one scale, no ad-hoc hex. */
+  --danger: #dc2626;
+  --warn: #d68910;
+  --success: #2b7a2b;
+  --info: #2b6cb0;
+  --neutral: rgba(127, 127, 127, 0.26);
+  --on-accent: #ffffff;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -52,10 +59,10 @@ header h1 {
   padding: 1rem;
 }
 .page-error {
-  color: #dc2626;
+  color: var(--danger);
 }
 .action-error {
-  color: #dc2626;
+  color: var(--danger);
   font-size: 0.875rem;
 }
 
@@ -148,8 +155,8 @@ header h1 {
   background: #fff7ed;
 }
 .badge-deadline.badge-overdue {
-  color: #ffffff;
-  background: #dc2626;
+  color: var(--on-accent);
+  background: var(--danger);
   font-weight: 600;
 }
 .badge-kind {
@@ -254,7 +261,7 @@ header h1 {
 }
 .error {
   font-size: 0.75rem;
-  color: #dc2626;
+  color: var(--danger);
 }
 
 .backlog {
@@ -298,37 +305,25 @@ footer {
   color: var(--teal);
 }
 
-/* --- Kitchen tab --- */
-.kitchen-section { margin: 1rem 0; }
-.kitchen-list { list-style: none; padding: 0; margin: 0; }
-.kitchen-line { display: flex; justify-content: space-between; gap: 0.75rem; align-items: flex-start;
-  padding: 0.5rem 0; border-bottom: 1px solid rgba(127,127,127,0.18); }
-.kitchen-line.acted { opacity: 0.55; }
-.kitchen-controls { display: flex; flex-wrap: wrap; gap: 0.25rem; flex-shrink: 0; }
-.ksig { font-size: 0.78rem; padding: 0.15rem 0.45rem; border: 1px solid rgba(127,127,127,0.4);
-  border-radius: 0.4rem; background: transparent; color: inherit; cursor: pointer; }
-.ksig-on { background: #2b7a2b; border-color: #2b7a2b; color: #fff; }
-.ksig:disabled { opacity: 0.5; cursor: default; }
-.kbadge { margin-left: 0.4rem; font-size: 0.7rem; padding: 0.05rem 0.4rem; border-radius: 0.4rem;
-  text-transform: uppercase; letter-spacing: 0.03em; }
-.kbadge-today, .kbadge-stale { background: #c0392b; color: #fff; }
-.kbadge-soon { background: #d68910; color: #fff; }
-.kbadge-week { background: rgba(127,127,127,0.3); }
-.subtabs { margin: 0.25rem 0 0.75rem; }
-.kbadge-tag { background: rgba(127,127,127,0.22); text-transform: none; letter-spacing: 0; }
-.kitchen-cat { margin: 0.4rem 0; border: 1px solid rgba(127,127,127,0.18); border-radius: 0.5rem; padding: 0.2rem 0.6rem; }
-.kitchen-cat > summary { cursor: pointer; font-weight: 600; padding: 0.3rem 0; }
+/* --- Board list (shared by item-board-style surfaces, e.g. the Improvements tab) --- */
+.board-section { margin: 1rem 0; }
+.board-list { list-style: none; padding: 0; margin: 0; }
+.board-line { display: flex; justify-content: space-between; gap: 0.75rem; align-items: flex-start;
+  padding: 0.5rem 0; border-bottom: 1px solid rgba(127, 127, 127, 0.18); }
 
-/* --- Improvements tab: value/severity + status badges --- */
-.kbadge-val-high, .kbadge-sev-high { background: #c0392b; color: #fff; }
-.kbadge-val-medium, .kbadge-sev-medium { background: #d68910; color: #fff; }
-.kbadge-val-low, .kbadge-sev-low { background: rgba(127,127,127,0.3); }
-/* status badges share a flat neutral look; "recommend"/"open" get an accent. */
-.kbadge-st-recommend, .kbadge-st-open { background: #2b6cb0; color: #fff; }
-.kbadge-st-idea, .kbadge-st-parked, .kbadge-st-blocked, .kbadge-st-wired,
-.kbadge-st-workaround, .kbadge-st-answered, .kbadge-st-resolved {
-  background: rgba(127,127,127,0.22); text-transform: none; letter-spacing: 0; }
-/* Disclosure widget — match the collapsible boxes used elsewhere (.kitchen-cat, .backlog)
-   so expand/collapse looks consistent across tabs. */
-.imp-detail { margin: 0.4rem 0; border: 1px solid rgba(127,127,127,0.18); border-radius: 0.5rem; padding: 0.2rem 0.6rem; }
+/* Status chips — one badge primitive, semantic color variants from the design tokens. */
+.chip { margin-left: 0.4rem; font-size: 0.7rem; padding: 0.05rem 0.4rem; border-radius: 0.4rem;
+  text-transform: uppercase; letter-spacing: 0.03em; }
+.chip-val-high, .chip-sev-high { background: var(--danger); color: var(--on-accent); }
+.chip-val-medium, .chip-sev-medium { background: var(--warn); color: var(--on-accent); }
+.chip-val-low, .chip-sev-low { background: var(--neutral); }
+/* status chips share a flat neutral look; "recommend"/"open" get an accent. */
+.chip-st-recommend, .chip-st-open { background: var(--info); color: var(--on-accent); }
+.chip-st-idea, .chip-st-parked, .chip-st-blocked, .chip-st-wired,
+.chip-st-workaround, .chip-st-answered, .chip-st-resolved {
+  background: var(--neutral); text-transform: none; letter-spacing: 0; }
+
+/* Disclosure widget — match the collapsible boxes used elsewhere (e.g. .backlog) so
+   expand/collapse looks consistent across tabs. */
+.imp-detail { margin: 0.4rem 0; border: 1px solid rgba(127, 127, 127, 0.18); border-radius: 0.5rem; padding: 0.2rem 0.6rem; }
 .imp-detail > summary { cursor: pointer; font-weight: 600; padding: 0.3rem 0; }

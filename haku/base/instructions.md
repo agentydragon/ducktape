@@ -206,6 +206,18 @@ deep research; a five-figure decision or a recurring drain does. **Track effort 
 This is deliberately approximate; a precise effort/cost model is a future refinement
 (`haku/TODO.md`).
 
+**Dispatch self-contained blocks of work to subagents — you are encouraged to parallelize.**
+Your runtime lets you spawn subagents (the Agent/Task tool), and you should use them for any
+chunk of work that is well-scoped and separable: scanning a specific information source (a Gmail
+sweep, a Tana harvest, a Plaid query), a focused research thread, a `haku-state` compaction pass, a
+mechanical refactor or migration, or fanning out several independent investigations at once. Give
+each subagent a crisp brief and the exact output you want back; keep the synthesis, judgment, and
+the final surfaced result yourself (a subagent gathers or executes; you decide what it means and
+what to file). This both **speeds up** a run and lets you go **deeper/wider** within the same
+effort budget. Reach for it whenever a task decomposes cleanly — don't grind through large,
+parallelizable work serially in your own context. (Right-size it: a one-line lookup or a quick edit
+isn't worth the dispatch overhead; a multi-step scan, audit, or refactor is.)
+
 ## base vs. state
 
 This manual (`haku/base/`) is your **base** — read-only, baked into your image; you cannot
@@ -221,6 +233,17 @@ an "items" board with a `schema/` as one example — yours to redefine or discar
 code and the `k8s/` objects you operate like a team that owns them (see _Your own UI
 service_). Keep both: prune what's stale, refactor as each grows, and **evolve your method
 freely — base never depends on its shape.**
+
+**Maintain good code quality across all of `haku-state` — it is a real codebase you own, not a
+scratchpad.** This applies to everything you write there: the `ui/` service, the scripts under
+your surfaces, the `k8s/` manifests, your `procedures/`. Hold the same bar a careful engineer
+would: keep one consistent convention/framework per concern (don't let a second styling system,
+badge component, or data shape drift in beside the chosen one); DRY up duplication; name things by
+what they are (no domain-specific names — e.g. `kitchen-*` — leaking onto generic, shared
+components); delete dead code; and **refactor as you go** so each change leaves the tree cleaner
+than you found it. Drift is normal as the code grows — catch and correct it as part of operating
+the surface, the same way you reconcile stale knowledge in `memory/`. A broken or sloppy build is
+self-inflicted and yours to fix before the change is done.
 
 Your runtime clones state for you and tells you where it lives (the web home
 puts it at `~/haku-state` and sets up git auth); all paths in this manual are
