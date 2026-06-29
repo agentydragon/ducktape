@@ -5,7 +5,8 @@ configurable namespace (`allowed_prefix`, default `haku/`). It talks to the Gmai
 REST API directly (via `gmail_api`) and exposes **only** label management.
 
 - **Contract:** `SPEC.md` — the closure invariant the server guarantees.
-- **Design & rationale, deployment open questions:** `PLAN.md`.
+- **Deployment + one-time OAuth bootstrap:** `../../cluster/k8s/agents/gmail-labeling/README.md`.
+- **Remaining work:** `../TODO.md`.
 
 ## Tools
 

@@ -75,7 +75,7 @@ SYSTEM_LABEL_IDS = frozenset(SystemLabel)
 
 def is_system_label(label_id: str) -> bool:
     """Check if a label ID is a system label."""
-    return label_id in SYSTEM_LABEL_IDS or label_id.startswith("CATEGORY_")
+    return label_id in SYSTEM_LABEL_IDS
 
 
 def resolve_label_id(name: str, label_map: dict[str, str]) -> str:

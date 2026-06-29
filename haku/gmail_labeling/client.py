@@ -19,6 +19,10 @@ class LabelClient:
         self._backend = backend
         self._ns = namespace
 
+    @property
+    def prefix(self) -> str:
+        return self._ns.prefix
+
     def _user_labels(self) -> list[GmailLabel]:
         return [label for label in self._backend.list_labels() if label.type == LabelType.USER]
 

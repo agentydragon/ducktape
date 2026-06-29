@@ -30,20 +30,20 @@ from mcp_infra.static_bearer import StaticBearerGuard
 
 logger = logging.getLogger(__name__)
 
-INSTRUCTIONS = (
-    "Manage Gmail labels confined to a configured namespace prefix (e.g. 'haku/'). "
-    "Every label name must start with that prefix; the server refuses anything else, "
-    "so you cannot touch system labels (INBOX/TRASH/SPAM/…) or the user's other labels."
-)
-
-ThreadId = Annotated[str, Field(description="Gmail thread ID to label (from Gmail search results).")]
-LabelName = Annotated[
-    str, Field(description="Label display name; must start with the managed prefix, e.g. 'haku/triaged'.")
-]
-
 
 def build_mcp(client: LabelClient) -> FastMCP:
-    mcp: FastMCP = FastMCP(name="gmail-labeling", instructions=INSTRUCTIONS)
+    prefix = client.prefix
+    instructions = (
+        f"Manage Gmail labels confined to the {prefix!r} namespace. Every label name must start "
+        f"with {prefix!r}; the server refuses anything else, so you cannot touch system labels "
+        "(INBOX/TRASH/SPAM/…) or the user's other labels."
+    )
+    thread_id_ann = Annotated[str, Field(description="Gmail thread ID to label (from Gmail search results).")]
+    label_name_ann = Annotated[
+        str, Field(description=f"Label display name; must start with {prefix!r}, e.g. {prefix + 'triaged'!r}.")
+    ]
+
+    mcp: FastMCP = FastMCP(name="gmail-labeling", instructions=instructions)
 
     @mcp.tool
     async def list_labels() -> list[Label]:
@@ -51,30 +51,30 @@ def build_mcp(client: LabelClient) -> FastMCP:
         return await asyncio.to_thread(client.list_labels)
 
     @mcp.tool
-    async def apply_label(thread_id: ThreadId, name: LabelName) -> Label:
+    async def apply_label(thread_id: thread_id_ann, name: label_name_ann) -> Label:
         """Add a managed label to a thread, creating the label if it does not exist yet."""
         return await asyncio.to_thread(client.apply_label, thread_id, name)
 
     @mcp.tool
-    async def remove_label(thread_id: ThreadId, name: LabelName) -> Label:
+    async def remove_label(thread_id: thread_id_ann, name: label_name_ann) -> Label:
         """Remove a managed label from a thread."""
         return await asyncio.to_thread(client.remove_label, thread_id, name)
 
     @mcp.tool
-    async def create_label(name: LabelName) -> Label:
+    async def create_label(name: label_name_ann) -> Label:
         """Create a managed label without applying it to any thread."""
         return await asyncio.to_thread(client.create_label, name)
 
     @mcp.tool
     async def rename_label(
-        old: Annotated[str, Field(description="Current label name; must be under the managed prefix.")],
-        new: Annotated[str, Field(description="New label name; must also be under the managed prefix.")],
+        old: Annotated[str, Field(description=f"Current label name; must be under {prefix!r}.")],
+        new: Annotated[str, Field(description=f"New label name; must also be under {prefix!r}.")],
     ) -> Label:
         """Rename a managed label. Both the old and new name must be under the namespace prefix."""
         return await asyncio.to_thread(client.rename_label, old, new)
 
     @mcp.tool
-    async def delete_label(name: LabelName) -> None:
+    async def delete_label(name: label_name_ann) -> None:
         """Delete a managed label (removes it from every thread it is on)."""
         await asyncio.to_thread(client.delete_label, name)
 
