@@ -53,7 +53,12 @@ function ActionButton({ item, action, clicked, onToggle }: ActionProps) {
   }
   const isClicked = clicked.has(clickKey(item.id, action.id));
   return (
-    <Button size="xs" color="teal" variant={isClicked ? "filled" : "outline"} onClick={() => onToggle(item.id, action.id)}>
+    <Button
+      size="xs"
+      color="teal"
+      variant={isClicked ? "filled" : "outline"}
+      onClick={() => onToggle(item.id, action.id)}
+    >
       {isClicked ? `✓ ${action.label}` : action.label}
     </Button>
   );
@@ -87,7 +92,12 @@ export function TaskCard({ item, clicked, onToggle, now }: TaskProps) {
             {item.title}
           </Text>
           {cd && (
-            <Badge color={URGENCY_COLOR[cd.urgency]} variant="filled" size="sm" style={{ fontVariantNumeric: "tabular-nums" }}>
+            <Badge
+              color={URGENCY_COLOR[cd.urgency]}
+              variant="filled"
+              size="sm"
+              style={{ fontVariantNumeric: "tabular-nums" }}
+            >
               ⏳ {cd.text}
             </Badge>
           )}

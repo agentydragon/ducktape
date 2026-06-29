@@ -34,12 +34,7 @@ from config import Settings
 from fastapi import Depends, FastAPI, Header, Request, Response
 from fastapi.staticfiles import StaticFiles
 from forgejo import Forgejo
-from models import (
-    Click,
-    DashboardResponse,
-    FeedbackRequest,
-    ImprovementsBoard,
-)
+from models import Click, DashboardResponse, FeedbackRequest, ImprovementsBoard
 
 logger = logging.getLogger(__name__)
 

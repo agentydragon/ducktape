@@ -111,5 +111,3 @@ Runtime deps land separately: the runner (`cluster/k8s/haku-ci`) and the
 `haku-forgejo-registry-pull` imagePullSecret. The registry **push** authenticates as the
 repo owner with the `REGISTRY_PUSH_TOKEN` repo Action secret (Forgejo's built-in
 `github.token` cannot push packages yet — forgejo#3571).
-
-

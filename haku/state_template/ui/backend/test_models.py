@@ -51,7 +51,8 @@ def test_parses_full_item_and_ignores_unknown_fields():
     assert item.id == "01EXAMPLE"
     assert item.status is ItemStatus.OPEN
     assert item.value == 70
-    assert item.deadline is not None and item.deadline.year == 2026
+    assert item.deadline is not None
+    assert item.deadline.year == 2026
     # dedup_key / source are not Item fields — ignored, not stored, not an error.
     assert not hasattr(item, "dedup_key")
 
@@ -64,9 +65,7 @@ def test_actions_resolve_to_their_discriminated_types():
 
 
 def test_minimal_item_has_no_action_and_no_deadline():
-    item = Item.model_validate(
-        {"id": "x", "title": "t", "body": "b", "value": 1, "status": "done"}
-    )
+    item = Item.model_validate({"id": "x", "title": "t", "body": "b", "value": 1, "status": "done"})
     assert item.action is None
     assert item.deadline is None
     assert item.actions == []
@@ -89,9 +88,7 @@ def test_prepared_prompt_primary_action():
 
 def test_invalid_status_is_rejected():
     with pytest.raises(ValidationError):
-        Item.model_validate(
-            {"id": "x", "title": "t", "body": "b", "value": 1, "status": "bogus"}
-        )
+        Item.model_validate({"id": "x", "title": "t", "body": "b", "value": 1, "status": "bogus"})
 
 
 def test_unknown_action_kind_is_rejected():
@@ -157,7 +154,8 @@ friction:
 def test_improvements_board_parses_ideas_and_friction():
     board = ImprovementsBoard.model_validate(yaml.safe_load(_IMPROVEMENTS_YAML))
     assert [i.id for i in board.ideas] == ["tana-translog-pipe"]
-    assert board.ideas[0].value == "high" and board.ideas[0].status == "recommend"
+    assert board.ideas[0].value == "high"
+    assert board.ideas[0].status == "recommend"
     assert [f.id for f in board.friction] == ["github-token-sops"]
     assert board.friction[0].severity == "medium"
 

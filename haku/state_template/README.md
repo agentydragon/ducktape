@@ -21,12 +21,12 @@ the worthwhile evolutions get carried back here, but with a hard filter:
   evolves the **whole** multi-surface UI, not a fixed board), the surfaces every instance wants
   (the **items board** + the **Improvements** self-backlog), the CI/deploy pipeline, the generic
   procedures, the item `schema`, and the `k8s` workload starter.
-- **NEVER seed the operator's personal specifics** — their actual `items/`, the *content* of
+- **NEVER seed the operator's personal specifics** — their actual `items/`, the _content_ of
   their `memory/` (operator model, situational awareness, finances, bookmarks), their logs, or
   **surfaces Haku built around one operator's particular life/accounts** (e.g. the live instance's
   `Kitchen` surface around their Grocy/Thrive, or a one-off `Tender` decision page hardcoding their
   name, CPA, and equity event). Those stay in that operator's `haku-state`; here they'd be noise at
-  best and leaked PII at worst. Seed the *pattern* ("Haku builds bespoke surfaces per the operator's
+  best and leaked PII at worst. Seed the _pattern_ ("Haku builds bespoke surfaces per the operator's
   life"), documented in prose — not the personal instance of it.
 
 The test for any change: **would it help an arbitrary new operator, with no edit?** If yes, seed
@@ -40,7 +40,7 @@ it; if it only makes sense for this person, leave it in their `haku-state`.
 | `procedures/`       | the starter passes (README + topical files)                              | Haku's playbook — read + grow (below)                         |
 | `ui/`               | the starter multi-surface UI (React SPA + FastAPI backend + Dockerfile)  | Haku's own UI service, CI-built (below)                       |
 | `items/`            | `README.md` (the example "items" model) + `.gitkeep`                     | Haku writes one `<id>.yaml` per item, if it keeps this format |
-| `improvements.yaml` | starter self-backlog (one example idea + friction) → the 💡 tab           | Haku's capability ideas + run friction, gardened each run     |
+| `improvements.yaml` | starter self-backlog (one example idea + friction) → the 💡 tab          | Haku's capability ideas + run friction, gardened each run     |
 | `schema/`           | `item.json` (validates the example item format)                          | yours to change with the model                                |
 | `.forgejo/`         | the `build-ui` Forgejo Actions workflow                                  | Haku's CI: build image → push registry (Flux bumps the tag)   |
 | `k8s/`              | the `haku-ui` workload (Deployment + Service for the CI-built image)     | Haku's GitOps workload dir (below)                            |

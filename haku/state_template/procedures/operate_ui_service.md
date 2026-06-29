@@ -74,8 +74,8 @@ extract a typed API layer before the tangle costs me; bake repeated rituals into
 ## Evolving the surface — the bar
 
 The surface's purpose is identical to mine: **make this person's life as good as it can be.** So
-every change is judged by *operator effort removed per click*, and the UI should become more
-*this person's* over time. Principles (base → _Your own UI service_):
+every change is judged by _operator effort removed per click_, and the UI should become more
+_this person's_ over time. Principles (base → _Your own UI service_):
 
 - **One-click approval of pre-done work, not display of information.** The UI is where a dreaded
   multi-hour chore arrives as a one-click yes — inline links, action buttons, `claude_handoff`
@@ -84,14 +84,14 @@ every change is judged by *operator effort removed per click*, and the UI should
 - **Calm by default; escalate only when warranted.** One big card when something is genuinely
   time-critical, the rest collapsed; adapt by who's looking and when.
 - **Right medium, not always a list** — reach for a map+route, a co-editor, a capture/photo-drop,
-  an elicitation widget that *gathers* calibration signal, or a simulator **only when it removes
+  an elicitation widget that _gathers_ calibration signal, or a simulator **only when it removes
   more operator effort than a card would.** Richness has to earn its complexity.
 - **Build bespoke surfaces per the operator's life.** The starter ships two person-agnostic
   surfaces (the items **Inbox** and the **Improvements** self-backlog). Beyond those, add a new tab
   (a `*.tsx`, a backend endpoint, a `View` entry) whenever a recurring part of the operator's life
   deserves its own shape — a shopping/kitchen board, a decision page, a tracker. Those live in this
   operator's `haku-state`, not in the ducktape starter.
-- **Privileged actions route through the trusted shell.** Any control I draw is only a *request*;
+- **Privileged actions route through the trusted shell.** Any control I draw is only a _request_;
   the operator's confirm and any real credential live in the console (`openLink` scheme/host-gates).
   I build freely — the perimeter, not my restraint, keeps it safe. I gain **no** new write reach:
   I still never act on the world; I own the surface that frames and hands off the work, and the

@@ -31,21 +31,25 @@ def _make_forgejo(tree: list[dict], blobs_by_sha: dict[str, str]) -> Forgejo:
         if path.endswith("/commits"):
             return httpx.Response(
                 200,
-                json=[{"sha": _HEAD, "commit": {"author": {"email": "haku@allegedly.works", "date": "2026-06-28T22:00:00Z"}}}],
+                json=[
+                    {
+                        "sha": _HEAD,
+                        "commit": {"author": {"email": "haku@allegedly.works", "date": "2026-06-28T22:00:00Z"}},
+                    }
+                ],
             )
         if path.endswith(f"/git/trees/{_HEAD}"):
             return httpx.Response(200, json={"tree": tree, "truncated": False})
         if path.endswith("/git/blobs"):
             shas = request.url.params["shas"].split(",")
-            content = [
-                {"sha": s, "content": base64.b64encode(blobs_by_sha[s].encode()).decode()}
-                for s in shas
-            ]
+            content = [{"sha": s, "content": base64.b64encode(blobs_by_sha[s].encode()).decode()} for s in shas]
             return httpx.Response(200, json=content)
         return httpx.Response(404, text=f"unexpected {path}")
 
     fj = Forgejo(api_url="http://forgejo.test/api/v1/repos/haku/haku-state", username="u", password="p")
-    fj._http = httpx.AsyncClient(base_url="http://forgejo.test/api/v1/repos/haku/haku-state", transport=httpx.MockTransport(handler))
+    fj._http = httpx.AsyncClient(
+        base_url="http://forgejo.test/api/v1/repos/haku/haku-state", transport=httpx.MockTransport(handler)
+    )
     return fj
 
 
@@ -75,7 +79,13 @@ def test_read_dashboard_raises_on_truncated_tree():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/commits"):
             return httpx.Response(
-                200, json=[{"sha": _HEAD, "commit": {"author": {"email": "haku@allegedly.works", "date": "2026-06-28T22:00:00Z"}}}]
+                200,
+                json=[
+                    {
+                        "sha": _HEAD,
+                        "commit": {"author": {"email": "haku@allegedly.works", "date": "2026-06-28T22:00:00Z"}},
+                    }
+                ],
             )
         return httpx.Response(200, json={"tree": [], "truncated": True})
 
@@ -86,7 +96,7 @@ def test_read_dashboard_raises_on_truncated_tree():
         async with fj as f:
             await f.read_dashboard()
 
-    with pytest.raises(RuntimeError, match="truncated|exceeded"):
+    with pytest.raises(RuntimeError, match=r"truncated|exceeded"):
         asyncio.run(run())
 
 
@@ -101,7 +111,12 @@ def test_blobs_are_batched_at_80_shas():
         if path.endswith("/commits"):
             return httpx.Response(
                 200,
-                json=[{"sha": _HEAD, "commit": {"author": {"email": "haku@allegedly.works", "date": "2026-06-28T22:00:00Z"}}}],
+                json=[
+                    {
+                        "sha": _HEAD,
+                        "commit": {"author": {"email": "haku@allegedly.works", "date": "2026-06-28T22:00:00Z"}},
+                    }
+                ],
             )
         if path.endswith(f"/git/trees/{_HEAD}"):
             return httpx.Response(200, json={"tree": tree, "truncated": False})
@@ -109,8 +124,7 @@ def test_blobs_are_batched_at_80_shas():
             shas = request.url.params["shas"].split(",")
             calls.append(len(shas))
             return httpx.Response(
-                200,
-                json=[{"sha": s, "content": base64.b64encode(blobs[s].encode()).decode()} for s in shas],
+                200, json=[{"sha": s, "content": base64.b64encode(blobs[s].encode()).decode()} for s in shas]
             )
         return httpx.Response(404)
 

@@ -22,7 +22,7 @@ document.addEventListener(
     e.preventDefault();
     void openLink(href);
   },
-  true,
+  true
 );
 
 // The sandboxed cross-origin iframe may not have same-origin storage, so never touch
@@ -41,5 +41,5 @@ if (!container) throw new Error("missing #root");
 createRoot(container).render(
   <MantineProvider theme={theme} defaultColorScheme="auto" colorSchemeManager={noopColorSchemeManager}>
     <App />
-  </MantineProvider>,
+  </MantineProvider>
 );

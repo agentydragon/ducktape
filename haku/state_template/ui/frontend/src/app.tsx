@@ -190,7 +190,14 @@ export default function App() {
       {view === "improvements" ? (
         <ImprovementsPage />
       ) : (
-        <InboxView data={data} error={error} clicked={clicked} onToggle={onToggle} actionError={actionError} now={now} />
+        <InboxView
+          data={data}
+          error={error}
+          clicked={clicked}
+          onToggle={onToggle}
+          actionError={actionError}
+          now={now}
+        />
       )}
     </Container>
   );

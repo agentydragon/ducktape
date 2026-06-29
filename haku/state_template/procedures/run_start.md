@@ -54,4 +54,4 @@ Append run content to `$LOG` throughout. Never create a new file mid-run with a 
 
 ---
 
-*After these four gates pass, proceed to the orient step in `haku/run.md`.*
+_After these four gates pass, proceed to the orient step in `haku/run.md`._
