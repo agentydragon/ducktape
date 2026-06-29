@@ -17,8 +17,6 @@ class ConfigResponse(BaseModel):
     launch_routine_url: str | None = Field(
         default=None, description="Routine page URL for reviewing past runs; None when unconfigured"
     )
-    # The Authentik-gated origin of Haku's own UI service (haku-sandbox), embedded as
-    # a sandboxed cross-origin iframe. None when unconfigured.
-    haku_ui_url: str | None = Field(
-        default=None, description="Origin of Haku's own UI service for the iframe embed; None when unconfigured"
-    )
+    # The Authentik-gated origin of Haku's own UI service (haku-sandbox), framed as a
+    # sandboxed cross-origin iframe. Always present — it's the console's whole surface.
+    haku_ui_url: str = Field(description="Origin of Haku's own UI service for the iframe embed")

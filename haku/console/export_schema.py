@@ -14,7 +14,8 @@ from haku.console.config import Settings
 
 
 def main() -> None:
-    print(json.dumps(create_app(Settings()).openapi(), indent=2))
+    # haku_ui_url is required; a placeholder suffices — only routes/models shape the schema.
+    print(json.dumps(create_app(Settings(haku_ui_url="about:blank")).openapi(), indent=2))
 
 
 if __name__ == "__main__":

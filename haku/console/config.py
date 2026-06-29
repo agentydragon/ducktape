@@ -51,11 +51,10 @@ class Settings(BaseSettings):
     launch_routine: LaunchRoutineConfig | None = None
     csrf_secret: SecretStr | None = None
 
-    # Free-form UI (Phase 1b): the Authentik-gated origin of Haku's own UI service
-    # (runs in haku-sandbox), embedded in the console as a sandboxed cross-origin
-    # iframe. When set, the dashboard surfaces the embed and the CSP allows framing
-    # that origin plus Authentik's origin for the in-iframe SSO redirect; unset →
-    # the feature is dormant. The console never renders Haku's UI itself. See
-    # haku/console/plans/free_form_ui_iframe.md.
-    haku_ui_url: str | None = None
+    # The Authentik-gated origin of Haku's own UI service (runs in haku-sandbox), which the
+    # console frames full-page as a sandboxed cross-origin iframe; the CSP allows framing it
+    # plus Authentik's origin for the in-iframe SSO redirect. Required — framing haku-ui is
+    # the console's whole job; set it to `about:blank` if there is genuinely no UI to frame.
+    # The console never renders Haku's UI itself. See plans/free_form_ui_iframe.md.
+    haku_ui_url: str
     auth_origin: str = "https://auth.allegedly.works"

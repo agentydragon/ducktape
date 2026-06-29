@@ -15,10 +15,10 @@ def test_healthz(client) -> None:
     assert client.get("/healthz").json() == {"status": "ok"}
 
 
-def test_config_returns_none_when_unconfigured(client) -> None:
+def test_config_launch_routine_none_when_unconfigured(client) -> None:
     data = client.get("/api/config").json()
-    assert data["launch_routine_url"] is None
-    assert data["haku_ui_url"] is None
+    assert data["launch_routine_url"] is None  # no launch capability configured
+    assert data["haku_ui_url"] == "https://haku-ui.test"  # required → always present
 
 
 def test_config_haku_ui_url_surfaced_and_csp_allows_framing_it(make_client) -> None:
@@ -30,13 +30,7 @@ def test_config_haku_ui_url_surfaced_and_csp_allows_framing_it(make_client) -> N
         csp = resp.headers["content-security-policy"]
         assert f"frame-src 'self' {ui} {auth_origin}" in csp
         assert "frame-ancestors 'none'" in csp
-
-
-def test_config_unconfigured_csp_denies_framing(client) -> None:
-    resp = client.get("/api/config")
-    assert resp.json()["haku_ui_url"] is None
-    assert "frame-src 'none'" in resp.headers["content-security-policy"]
-    assert resp.headers["referrer-policy"] == "no-referrer"
+        assert resp.headers["referrer-policy"] == "no-referrer"
 
 
 def test_cache_policy_splits_hashed_assets_app_shell_and_api(make_client, tmp_path: Path) -> None:

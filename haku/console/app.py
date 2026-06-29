@@ -47,12 +47,11 @@ def create_app(settings: Settings) -> FastAPI:
     # The capability router reads settings off app.state (see haku.console.capabilities).
     app.state.settings = settings
 
-    # Content-Security-Policy: let the dashboard frame Haku's own UI origin (the
-    # sandboxed cross-origin iframe) and Authentik's origin for the SSO redirect,
-    # and forbid the console itself from being framed. Only frame-* is set, so the
-    # SPA's own scripts/styles are unaffected. See haku/console/plans/free_form_ui_iframe.md.
-    frame_src = f"'self' {settings.haku_ui_url} {settings.auth_origin}" if settings.haku_ui_url else "'none'"
-    csp = f"frame-src {frame_src}; frame-ancestors 'none'"
+    # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
+    # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
+    # console itself from being framed. Only frame-* is set, so the SPA's own scripts/styles
+    # are unaffected. See haku/console/plans/free_form_ui_iframe.md.
+    csp = f"frame-src 'self' {settings.haku_ui_url} {settings.auth_origin}; frame-ancestors 'none'"
 
     @app.middleware("http")
     async def _security_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:

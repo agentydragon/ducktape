@@ -41,12 +41,6 @@ export default function App() {
         <Loader />
       </div>
     );
-  if (!config.haku_ui_url)
-    return (
-      <Text c="red" className="mx-auto max-w-3xl p-4">
-        Haku UI URL is not configured.
-      </Text>
-    );
 
   // launch_routine_url is set iff the launch capability is configured (it's the routine's
   // page URL); pass that as whether the shell can honor a requestLaunch from the iframe.
