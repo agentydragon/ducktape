@@ -2,30 +2,23 @@ import { Anchor, Badge, Card, Group, Stack, Text, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 
 import { fetchRuns } from "./client.ts";
-import { renderMarkdown } from "./markdown.ts";
-import type { PropagationTarget, RunManifest, RunSource } from "./types.ts";
-
-// updated = it landed; no_change = considered, didn't apply; n/a = surface never applies.
-const ACTION_COLOR: Record<PropagationTarget["action"], string> = {
-  updated: "teal",
-  no_change: "gray",
-  "n/a": "gray",
-};
+import { Mdx } from "./mdx.tsx";
+import type { RunManifest, RunSource } from "./types.ts";
+import { PropagationMatrix } from "./widgets.tsx";
 
 // One badge per source: how many changes it produced, or that it was skipped (with the reason
 // on hover) — so "considered every source" is legible, and a skipped source is loud, not silent.
 function sourceBadge(s: RunSource) {
-  if (s.skipped != null) {
+  if ("skipped" in s) {
     return (
       <Badge key={s.source} color="yellow" variant="light" title={s.skipped}>
         {s.source}: skipped
       </Badge>
     );
   }
-  const n = s.changes_seen ?? 0;
   return (
-    <Badge key={s.source} color={n > 0 ? "teal" : "gray"} variant="light">
-      {s.source}: {n}
+    <Badge key={s.source} color={s.changes_seen > 0 ? "teal" : "gray"} variant="light">
+      {s.source}: {s.changes_seen}
     </Badge>
   );
 }
@@ -38,7 +31,7 @@ function whenLabel(run: RunManifest): string {
 // summary (changes / surface updates / skipped sources). Click → the full per-run detail.
 function RunRow({ run, onOpen }: { run: RunManifest; onOpen: () => void }) {
   const updated = run.propagation.reduce((n, p) => n + p.surfaces.filter((s) => s.action === "updated").length, 0);
-  const skipped = run.sources.filter((s) => s.skipped != null).length;
+  const skipped = run.sources.filter((s) => "skipped" in s).length;
   return (
     <Card
       withBorder
@@ -67,8 +60,8 @@ function RunRow({ run, onOpen }: { run: RunManifest; onOpen: () => void }) {
 }
 
 // The full per-run detail: source coverage, the checklists walked, the change→surface propagation
-// matrix, and the prose notes rendered as markdown. (Phase 2 upgrades the notes render to the MDX
-// knowledge-garden renderer so a run can embed widgets like a propagation matrix.)
+// matrix (the shared widget, so structured runs and MDX-embedded matrices render identically), and
+// the prose notes rendered as MDX (so a note can embed standard garden widgets).
 function RunDetail({ run, onBack }: { run: RunManifest; onBack: () => void }) {
   return (
     <Stack gap="md">
@@ -97,30 +90,11 @@ function RunDetail({ run, onBack }: { run: RunManifest; onBack: () => void }) {
           <Title order={3} size="h6">
             Propagation
           </Title>
-          {run.propagation.map((p, i) => (
-            <div key={i}>
-              <Text size="sm" fw={600}>
-                {p.change}
-                {p.source && (
-                  <Text span size="xs" c="dimmed">
-                    {" "}
-                    ({p.source})
-                  </Text>
-                )}
-              </Text>
-              <Group gap="xs" mt={4}>
-                {p.surfaces.map((t, j) => (
-                  <Badge key={j} color={ACTION_COLOR[t.action]} variant="dot" title={t.note}>
-                    {t.surface}: {t.action}
-                  </Badge>
-                ))}
-              </Group>
-            </div>
-          ))}
+          <PropagationMatrix data={run.propagation} />
         </Stack>
       )}
 
-      {run.notes_md && <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(run.notes_md) }} />}
+      {run.notes_md && <Mdx source={run.notes_md} />}
     </Stack>
   );
 }

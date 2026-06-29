@@ -2,6 +2,7 @@ import { Container, Tabs, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 
 import { clickAction, fetchDashboard, unclickAction } from "./client.ts";
+import { GardenPage } from "./garden.tsx";
 import { ImprovementsPage } from "./improvements.tsx";
 import { InboxView } from "./inbox.tsx";
 import { RunsPage } from "./runs.tsx";
@@ -14,7 +15,7 @@ import type { DashboardResponse } from "./types.ts";
 // (e.g. a Kitchen/shopping board, a one-off decision page) by writing a new `*.tsx`, a
 // backend endpoint, and a `View` entry here. Those operator-specific surfaces live in that
 // operator's haku-state, not in this generic starter.
-type View = "inbox" | "improvements" | "runs";
+type View = "inbox" | "improvements" | "runs" | "garden";
 
 export default function App() {
   const [data, setData] = useState<DashboardResponse | null>(null);
@@ -66,6 +67,7 @@ export default function App() {
     ["inbox", "Inbox"],
     ["improvements", "💡 Improvements"],
     ["runs", "🔁 Runs"],
+    ["garden", "🌱 Garden"],
   ];
 
   return (
@@ -87,6 +89,8 @@ export default function App() {
         <ImprovementsPage />
       ) : view === "runs" ? (
         <RunsPage />
+      ) : view === "garden" ? (
+        <GardenPage />
       ) : (
         <InboxView
           data={data}

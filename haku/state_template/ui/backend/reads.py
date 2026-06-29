@@ -11,11 +11,15 @@ from __future__ import annotations
 
 import yaml
 from forgejo import Forgejo
-from models import Item, RunManifest
+from models import GardenEntry, Item, RunManifest
 
 # Haku-the-scanner commits as this author; the "last scan" time is the newest such commit
 # (NOT the UI's click/feedback writes, NOT Flux image-automation commits).
 _HAKU_AUTHOR_EMAIL = "haku@allegedly.works"
+
+# Dirs the knowledge garden may browse/render. A closed whitelist — never the whole repo
+# (keeps clicks/, intake/, and any future secret-ish path out of the browser).
+GARDEN_DIRS = ("memory", "procedures", "runs")
 
 
 async def read_dashboard(forgejo: Forgejo) -> tuple[list[Item], set[tuple[str, str]], str]:
@@ -60,9 +64,9 @@ async def read_runs(forgejo: Forgejo, limit: int = 20) -> list[RunManifest]:
             continue
         path = e["path"]
         if path.endswith(".yaml"):
-            pairs.setdefault(path[:-5], {})["yaml"] = e["sha"]
+            pairs.setdefault(path.removesuffix(".yaml"), {})["yaml"] = e["sha"]
         elif path.endswith(".md") and not path.endswith("/README.md"):
-            pairs.setdefault(path[:-3], {})["md"] = e["sha"]
+            pairs.setdefault(path.removesuffix(".md"), {})["md"] = e["sha"]
     bases = [b for b, s in pairs.items() if "yaml" in s]
     shas = [sha for b in bases for sha in (pairs[b]["yaml"], *([pairs[b]["md"]] if "md" in pairs[b] else []))]
     blobs = iter(await forgejo.blobs(shas))
@@ -73,3 +77,18 @@ async def read_runs(forgejo: Forgejo, limit: int = 20) -> list[RunManifest]:
         runs.append(RunManifest.model_validate(manifest))
     runs.sort(key=lambda m: m.started, reverse=True)
     return runs[:limit]
+
+
+async def read_garden_index(forgejo: Forgejo) -> list[GardenEntry]:
+    """All ``.md``/``.mdx`` files under the garden dirs (`GARDEN_DIRS`), sorted by path —
+    one tree read. The file bodies are fetched lazily per-open via ``forgejo.read_text``."""
+    commits = await forgejo.commits(1)
+    tree = await forgejo.tree(commits[0]["sha"])
+    prefixes = tuple(f"{d}/" for d in GARDEN_DIRS)
+    entries = [
+        GardenEntry(path=e["path"])
+        for e in tree
+        if e["type"] == "blob" and e["path"].startswith(prefixes) and e["path"].endswith((".md", ".mdx"))
+    ]
+    entries.sort(key=lambda e: e.path)
+    return entries

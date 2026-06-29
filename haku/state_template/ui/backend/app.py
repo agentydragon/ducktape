@@ -34,11 +34,11 @@ from typing import Annotated
 
 import uvicorn
 from config import Settings
-from fastapi import Depends, FastAPI, Header, Request, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from forgejo import Forgejo
-from models import Click, DashboardResponse, FeedbackRequest, ImprovementsBoard, RunsResponse
-from reads import read_dashboard, read_runs
+from models import Click, DashboardResponse, FeedbackRequest, GardenFile, GardenIndex, ImprovementsBoard, RunsResponse
+from reads import GARDEN_DIRS, read_dashboard, read_garden_index, read_runs
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,20 @@ def _forgejo(request: Request) -> Forgejo:
 
 
 ForgejoDep = Annotated[Forgejo, Depends(_forgejo)]
+
+
+def _garden_path(path: str) -> str:
+    """Validate a garden file request: a ``.md``/``.mdx`` file under a whitelisted garden dir,
+    no traversal/absolute escape. The closed read surface that keeps the garden from serving
+    arbitrary repo files. Raises a 400 (not 500) on a bad path."""
+    if (
+        path.startswith("/")
+        or ".." in path.split("/")
+        or not path.startswith(tuple(f"{d}/" for d in GARDEN_DIRS))
+        or not path.endswith((".md", ".mdx"))
+    ):
+        raise HTTPException(status_code=400, detail=f"path not in the garden: {path!r}")
+    return path
 
 
 def create_app(settings: Settings) -> FastAPI:
@@ -113,6 +127,20 @@ def create_app(settings: Settings) -> FastAPI:
         """Recent run manifests + their prose notes — proves each source was processed and shows
         how each change propagated to every surface. Read-only; empty if no runs recorded yet."""
         return RunsResponse(runs=await read_runs(forgejo))
+
+    # --- Knowledge garden: browse + render arbitrary repo markdown (whitelisted dirs) ---
+    @app.get("/api/garden")
+    async def garden(forgejo: ForgejoDep) -> GardenIndex:
+        """The garden index: every ``.md``/``.mdx`` under the whitelisted dirs, sorted by path."""
+        return GardenIndex(entries=await read_garden_index(forgejo))
+
+    @app.get("/api/garden/file")
+    async def garden_file(path: str, forgejo: ForgejoDep) -> GardenFile:
+        """One garden file's raw markdown (rendered as MDX client-side). 400 off-whitelist, 404 if gone."""
+        markdown = await forgejo.read_text(_garden_path(path))
+        if markdown is None:
+            raise HTTPException(status_code=404, detail=f"not found: {path!r}")
+        return GardenFile(path=path, markdown=markdown)
 
     # --- trace tier: operator-expressed intent recorded into haku-state ---------
     # A clicked action is the file clicks/<item_id>/<action_id> (removed on un-click); feedback

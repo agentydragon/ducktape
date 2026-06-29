@@ -1,4 +1,4 @@
-import type { DashboardResponse, ImprovementsBoard, RunsResponse } from "./types.ts";
+import type { DashboardResponse, GardenFile, GardenIndex, ImprovementsBoard, RunsResponse } from "./types.ts";
 
 // Same-origin JSON client: the FastAPI backend serves this bundle and the API.
 // FastAPI error responses are `{detail: string}`; surface that real reason.
@@ -52,4 +52,16 @@ export async function fetchRuns(): Promise<RunsResponse> {
   const res = await fetch("/api/runs");
   if (!res.ok) throw new Error(await detail(res, "Failed to load runs"));
   return (await res.json()) as RunsResponse;
+}
+
+export async function fetchGarden(): Promise<GardenIndex> {
+  const res = await fetch("/api/garden");
+  if (!res.ok) throw new Error(await detail(res, "Failed to load garden"));
+  return (await res.json()) as GardenIndex;
+}
+
+export async function fetchGardenFile(path: string): Promise<GardenFile> {
+  const res = await fetch(`/api/garden/file?path=${encodeURIComponent(path)}`);
+  if (!res.ok) throw new Error(await detail(res, "Failed to load file"));
+  return (await res.json()) as GardenFile;
 }

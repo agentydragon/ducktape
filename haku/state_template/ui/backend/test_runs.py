@@ -14,7 +14,7 @@ import base64
 import httpx
 import pytest
 from forgejo import Forgejo
-from models import RunManifest
+from models import RunManifest, ScannedSource, SkippedSource
 from pydantic import ValidationError
 from reads import read_runs
 
@@ -38,8 +38,8 @@ propagation:
       - {surface: 'kitchen/board.yaml:incoming', action: updated, note: 'added rows'}
       - {surface: 'kitchen/board.yaml:use_soon', action: no_change, note: 'not yet arrived'}
 """
-# Older run (earlier `started`) — must sort after A. Uses INT bookmarks (e.g. a stock-log id),
-# which must parse (bookmarks are heterogeneous: epoch string vs integer id).
+# Older run (earlier `started`) — must sort after A. Uses INT bookmarks (Grocy stock-log id),
+# which must parse (bookmarks are heterogeneous: Gmail epoch string vs Grocy/Tana int).
 _MANIFEST_B = """
 run_id: 01RUNBBB
 date: '2026-06-28'
@@ -91,14 +91,15 @@ def test_read_runs_pairs_yaml_and_md_sorts_newest_first_and_ignores_readme():
     a = runs[0]
     assert a.notes_md.startswith("## Run notes")
     assert [s.source for s in a.sources] == ["gmail", "tana"]
-    # skipped-with-reason: the reason is set and the bookmark/count fields stay absent
+    # discriminated union: the tana row parsed to the skipped variant (carries a reason, no count)
+    assert isinstance(a.sources[1], SkippedSource)
     assert a.sources[1].skipped is not None
-    assert a.sources[1].changes_seen is None
+    assert isinstance(a.sources[0], ScannedSource)
     assert a.checklists[0].walked is True
     assert a.propagation[0].source == "gmail"
     assert [t.action for t in a.propagation[0].surfaces] == ["updated", "no_change"]
     assert runs[1].notes_md == ""  # B has no .md sibling
-    assert runs[1].sources[0].bookmark_after == 130  # int bookmark parses
+    assert runs[1].sources[0].bookmark_after == 130  # int bookmark parses (Grocy id)
 
 
 def test_run_manifest_rejects_bad_propagation_action():
