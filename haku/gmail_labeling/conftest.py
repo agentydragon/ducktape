@@ -53,3 +53,15 @@ def make_client():
         return LabelClient(backend, LabelNamespace(prefix)), backend
 
     return _make
+
+
+@pytest.fixture
+def backend() -> FakeLabelBackend:
+    """A fresh empty backend (request alongside `client` to assert on its calls)."""
+    return FakeLabelBackend()
+
+
+@pytest.fixture
+def client(backend: FakeLabelBackend) -> LabelClient:
+    """A `LabelClient` over `backend` with the default `haku/` namespace."""
+    return LabelClient(backend, LabelNamespace("haku/"))
