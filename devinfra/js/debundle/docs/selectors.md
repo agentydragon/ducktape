@@ -52,6 +52,40 @@ to survive a future minified rebuild. Use `match-selector` to test a candidate
 and inspect over-pin slack, and use `synthesize-selectors --candidates N` as a
 ranked menu rather than an automatic accept list.
 
+## Matcher pitfalls
+
+- **`ANYTHING` is not valid in a binding-identifier or assignment-target slot** —
+  the name being declared (a function/class/variable name, an assignment target)
+  must be a real, alpha-renamable identifier; `ANYTHING`/`EXPR` holes are for
+  expression, value, statement, pattern, declarator-run, and class-rest positions.
+- **A single-statement `else`/`if`/`for`/while body takes `STMT`, not `STMT_LIST`**;
+  `STMT_LIST` is for a block body.
+- **The declaration keyword must match the source** (`var`/`let`/`const`).
+- **`match-selector` over-reports uniqueness.** A holed skeleton like
+  `function X(ANYTHING){STMT_LIST}` matches 1000+ nodes because `X` and the params
+  alpha-rename; uniqueness must come from a kept literal or rich signature, not a
+  holed shape. The byte-identical regen gate (e.g. `regen_js_test`) is the
+  authoritative arbiter of whether a selector is safe to land — not `match-selector`.
+
+## Anchor strength tiers (strongest → weakest)
+
+Anchor a name-pin on the most stable identity available, and hole the mechanism so
+the anchor is identity, not a body photograph:
+
+1. **Self-emitted literal** — error/log/event strings, thrown `Error` messages,
+   URL/route prefixes, `Symbol.for("…")`, regex literals. Minifier-immune; strongest.
+2. **Rich destructured-param signature** — `{ onOpenCommandLine, onMove, … }`;
+   distinctive prop/param names survive minification.
+3. **Stable member/property fingerprint** — `.startSpan`/`.setAttribute`,
+   distinctive option-bag keys or method names.
+4. **Adjacent-class / sibling-declaration anchor** — for boilerplate with no
+   self-identity (e.g. esbuild decorate-helper trios emitted many times): a
+   `binding_group` + `DECLARATORS_AFTER` keyed off an adjacent named class.
+
+Reject as if stable (leave a name-pin with a `note:` instead): hashed chunk URLs
+(`import("./index-<hash>.js")`), registration-roster / long-body photographs,
+neighbor-borrowed literals, and discriminators only unique deep in a nest.
+
 ## Bulk conversion loop
 
 For broad old-spec conversion passes, use an automation-first loop:

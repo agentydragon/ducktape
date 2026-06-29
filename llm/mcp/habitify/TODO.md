@@ -16,8 +16,3 @@ Verify each item is still wanted before acting.
       conversions can be consolidated further.
 - [ ] **Extract shared logging setup** (duplicated in `examples/`) into a
       `logging_config.py`.
-
-## Already done (no longer tracked)
-
-- Type hints already use modern `str | None` style (no `Optional[...]` left in the
-  code).

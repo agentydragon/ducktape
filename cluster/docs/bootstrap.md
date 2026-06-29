@@ -67,7 +67,7 @@ The bootstrap script executes a multi-phase deployment against a single TF root
 kubectl get nodes -o wide              # All nodes Ready
 flux get all                           # Flux status
 kubectl get pods -A | grep -v Running  # Non-running pods
-kubectl get storageclass               # local-path-ovh, local-path-proxmox, seaweedfs-ovh, proxmox-csi-retain (no default class)
+kubectl get storageclass               # should match the StorageClasses under k8s/ (no default class)
 ```
 
 ## Dependency Chain

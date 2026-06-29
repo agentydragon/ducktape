@@ -17,23 +17,3 @@ operator activation (runbook in <README.md>):
   `securityContext` if needed.
 - **Smoke test** — `ant beta:deployments run --deployment-id depl_011DSrUoXuhoDWJoPyDuePqR`,
   watch in the Console.
-
-## Settled (not blockers)
-
-- **Image build + push** — `nix build .#haku-worker-image` (full-NixOS,
-  `nixos.nix`) → `.github/workflows/haku-worker-image.yml` imports + pushes to
-  `ghcr.io/agentydragon/haku-worker`; Flux tracks the tag via the `haku-worker`
-  ImagePolicy.
-- **Egress** — `api.anthropic.com` is on the `haku-mitmproxy` allowlist
-  (`cluster/k8s/agents/haku-mitmproxy/cnp-haku-cloud-api-egress.yaml`); the worker
-  reaches the work queue through the TLS-terminating proxy and trusts its CA via
-  the inject policy (imported into the systemd unit).
-- **SOPS identity** — the in-cluster worker needs no `SOPS_AGE_KEY`: it uses its
-  `haku-worker` ServiceAccount for `kubectl` and reads creds from k8s secrets
-  (only the web home decrypts the public-`kubeapi` JWT via SOPS).
-- **Git sources** — haku-state plus read-only source mirrors on the in-cluster
-  Forgejo, all through the single `.netrc` written from `HAKU_GIT_HOST` +
-  `haku-state-git-write`. The worker currently clones the
-  `agentydragon/ducktape` mirror for `haku/base` + `haku/run.md`; the `haku`
-  read grants on `agentydragon/ducktape` and `agentydragon/gaffer-private` are
-  Terraform-managed in `tf/gitops/forgejo-agentydragon-repos`.

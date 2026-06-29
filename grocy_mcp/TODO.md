@@ -73,11 +73,6 @@ to log timestamps, token counts, and tool call names on every LLM
 turn. This would let us see which tool calls are slow and where time
 is spent during eval runs.
 
-## `shopping_list_clear` checks each DELETE (landed in #1345)
-
-Tombstone — keep until the next design pass so we remember it was an
-intentional fix rather than an oversight.
-
 ## File upstream Grocy bug for AddProduct freezer-branch default_best_before_days
 
 `StockService::AddProduct` (services/StockService.php:157 in v4.6.0)

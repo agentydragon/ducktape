@@ -9,22 +9,6 @@ into the event history that the next request exceeds z.ai's per-prompt cap
 cluster-ops use. See the "Tool-output robustness" section in
 <../../../../docs/self_hosted_coding_agent_platforms.md>.
 
-Originally revived on 2026-05-08. Reachable at <https://kagent.allegedly.works>
-behind Authentik OIDC via the chart's bundled `oauth2-proxy` subchart.
-
-## Working
-
-- Controller + UI + oauth2-proxy + db (CNPG `kagent-db`) all Running.
-- All 10 stock cluster-ops Agent CRDs (k8s-agent, helm-agent, istio-agent,
-  cilium-{debug,manager,policy}, kgateway-agent, observability-agent,
-  promql-agent, argo-rollouts-conversion-agent) start successfully.
-- Chat UI returns text answers via z.ai's GLM Coding Plan (`glm-5.1`) on
-  the OpenAI-compatible coding endpoint `https://api.z.ai/api/coding/paas/v4`,
-  injected via a HelmRelease postRenderer onto the chart-generated
-  `default-model-config` ModelConfig.
-- "+ new chat" affordance works against existing Agents (sessions stored in
-  the controller DB; no per-session pod).
-
 ## Rough edges (don't expect production-quality)
 
 - **No client-side context budget.** kagent has no token-counting or

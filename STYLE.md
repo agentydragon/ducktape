@@ -224,6 +224,16 @@ Backtick every code-like token in markdown prose: flags, paths, config keys, env
 globs, hostnames. Plain-text code tokens are harder to read and prettier escapes their
 special characters (`*` → `\*`).
 
+### Fenced Code Blocks
+
+- **Always specify a language** on fenced blocks (markdownlint MD040 enforces it):
+  ` ```python `, ` ```bash `, ` ```yaml `; use ` ```text ` for ASCII art/diagrams.
+- **Split logically separate content** (different tools, APIs, or categories) into
+  separate fenced blocks under markdown headings — don't mix categories or use prose
+  headers as lines inside one block.
+- Wrap structured output (JSON/YAML/command output) in a fenced block with the right
+  language; never leave raw JSON bare in prose.
+
 ### Brace-Expansion Shorthand for Lists
 
 Prefer `gitea-{namespace,secrets,db,admin-token}` over spelling out each item. Only with
