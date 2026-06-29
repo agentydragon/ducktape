@@ -1,4 +1,4 @@
-import type { DashboardResponse } from "./types.ts";
+import type { DashboardResponse, ImprovementsBoard } from "./types.ts";
 
 // Same-origin JSON client: the FastAPI backend serves this bundle and the API.
 // FastAPI error responses are `{detail: string}`; surface that real reason.
@@ -40,4 +40,10 @@ export async function sendFeedback(text: string, itemId?: string): Promise<void>
     body: JSON.stringify({ text, item_id: itemId ?? null }),
   });
   if (!res.ok) throw new Error(await detail(res, "Failed to send feedback"));
+}
+
+export async function fetchImprovements(): Promise<ImprovementsBoard> {
+  const res = await fetch("/api/improvements");
+  if (!res.ok) throw new Error(await detail(res, "Failed to load improvements"));
+  return (await res.json()) as ImprovementsBoard;
 }

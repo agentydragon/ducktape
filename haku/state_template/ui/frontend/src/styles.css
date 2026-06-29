@@ -59,6 +59,29 @@ header h1 {
   font-size: 0.875rem;
 }
 
+/* Tabs (multi-surface nav) ------------------------------------------------ */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0 0.5rem;
+}
+.tab {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dimmed);
+  cursor: pointer;
+}
+.tab-on {
+  background: var(--teal);
+  color: var(--teal-fg);
+  border-color: var(--teal);
+}
+
 /* Item card --------------------------------------------------------------- */
 .card {
   margin: 0.5rem 0;
@@ -112,13 +135,37 @@ header h1 {
   padding: 0.05rem 0.4rem;
   border-radius: 0.375rem;
 }
+/* Deadline badge, colored by urgency (see deadline.ts). */
 .badge-deadline {
+  font-variant-numeric: tabular-nums;
+}
+.badge-deadline.badge-later {
+  color: var(--dimmed);
+  background: var(--code-bg);
+}
+.badge-deadline.badge-soon {
   color: var(--orange);
   background: #fff7ed;
+}
+.badge-deadline.badge-overdue {
+  color: #ffffff;
+  background: #dc2626;
+  font-weight: 600;
 }
 .badge-kind {
   color: var(--dimmed);
   background: var(--code-bg);
+}
+
+/* Due-soon section: time-critical items pulled above the value-ranked list. */
+.due-soon {
+  margin: 0.5rem 0 1.5rem;
+}
+.due-soon h2 {
+  color: var(--orange);
+}
+.due-soon > .card {
+  border-color: var(--orange);
 }
 .card-body {
   display: flex;
@@ -210,8 +257,7 @@ header h1 {
   color: #dc2626;
 }
 
-.backlog,
-.note {
+.backlog {
   margin: 1.5rem 0;
 }
 .backlog > summary {
@@ -251,3 +297,38 @@ footer {
 .md a {
   color: var(--teal);
 }
+
+/* --- Kitchen tab --- */
+.kitchen-section { margin: 1rem 0; }
+.kitchen-list { list-style: none; padding: 0; margin: 0; }
+.kitchen-line { display: flex; justify-content: space-between; gap: 0.75rem; align-items: flex-start;
+  padding: 0.5rem 0; border-bottom: 1px solid rgba(127,127,127,0.18); }
+.kitchen-line.acted { opacity: 0.55; }
+.kitchen-controls { display: flex; flex-wrap: wrap; gap: 0.25rem; flex-shrink: 0; }
+.ksig { font-size: 0.78rem; padding: 0.15rem 0.45rem; border: 1px solid rgba(127,127,127,0.4);
+  border-radius: 0.4rem; background: transparent; color: inherit; cursor: pointer; }
+.ksig-on { background: #2b7a2b; border-color: #2b7a2b; color: #fff; }
+.ksig:disabled { opacity: 0.5; cursor: default; }
+.kbadge { margin-left: 0.4rem; font-size: 0.7rem; padding: 0.05rem 0.4rem; border-radius: 0.4rem;
+  text-transform: uppercase; letter-spacing: 0.03em; }
+.kbadge-today, .kbadge-stale { background: #c0392b; color: #fff; }
+.kbadge-soon { background: #d68910; color: #fff; }
+.kbadge-week { background: rgba(127,127,127,0.3); }
+.subtabs { margin: 0.25rem 0 0.75rem; }
+.kbadge-tag { background: rgba(127,127,127,0.22); text-transform: none; letter-spacing: 0; }
+.kitchen-cat { margin: 0.4rem 0; border: 1px solid rgba(127,127,127,0.18); border-radius: 0.5rem; padding: 0.2rem 0.6rem; }
+.kitchen-cat > summary { cursor: pointer; font-weight: 600; padding: 0.3rem 0; }
+
+/* --- Improvements tab: value/severity + status badges --- */
+.kbadge-val-high, .kbadge-sev-high { background: #c0392b; color: #fff; }
+.kbadge-val-medium, .kbadge-sev-medium { background: #d68910; color: #fff; }
+.kbadge-val-low, .kbadge-sev-low { background: rgba(127,127,127,0.3); }
+/* status badges share a flat neutral look; "recommend"/"open" get an accent. */
+.kbadge-st-recommend, .kbadge-st-open { background: #2b6cb0; color: #fff; }
+.kbadge-st-idea, .kbadge-st-parked, .kbadge-st-blocked, .kbadge-st-wired,
+.kbadge-st-workaround, .kbadge-st-answered, .kbadge-st-resolved {
+  background: rgba(127,127,127,0.22); text-transform: none; letter-spacing: 0; }
+/* Disclosure widget — match the collapsible boxes used elsewhere (.kitchen-cat, .backlog)
+   so expand/collapse looks consistent across tabs. */
+.imp-detail { margin: 0.4rem 0; border: 1px solid rgba(127,127,127,0.18); border-radius: 0.5rem; padding: 0.2rem 0.6rem; }
+.imp-detail > summary { cursor: pointer; font-weight: 600; padding: 0.3rem 0; }

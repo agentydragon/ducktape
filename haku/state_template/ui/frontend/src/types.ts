@@ -1,7 +1,6 @@
 // Wire contract with the backend's JSON API. Mirrors the Pydantic models in
 // ../../backend/models.py, which themselves mirror haku/base/schema/item.json.
-// (The console generated these from its OpenAPI schema; here we hand-maintain them
-// — keep them in sync with models.py when the item shape changes.)
+// Keep this in sync with models.py when the item shape changes.
 
 export type PrimaryAction = { kind: "suggestion" } | { kind: "prepared_prompt"; prompt: string };
 
@@ -28,7 +27,34 @@ export interface Click {
 }
 
 export interface DashboardResponse {
-  scan_time: string;
+  scan_time: string; // ISO 8601 of the last haku-state commit
+  deployed_commit: string | null; // short SHA the running image was built from
+  deployed_commit_url: string | null; // Forgejo link to that commit
   items: Item[];
   clicks: Click[];
+}
+
+// --- Improvements / friction surface (improvements.yaml) ---
+// Haku's self-backlog: capability ideas it could grow into + friction it hits during runs.
+export interface ImprovementIdea {
+  id: string;
+  title: string;
+  value: "high" | "medium" | "low";
+  status: "recommend" | "idea" | "parked" | "blocked" | "wired";
+  summary: string;
+  detail: string; // markdown
+}
+
+export interface Friction {
+  id: string;
+  title: string;
+  severity: "high" | "medium" | "low";
+  status: "open" | "workaround" | "resolved" | "answered";
+  detail: string; // markdown
+}
+
+export interface ImprovementsBoard {
+  updated: string;
+  ideas: ImprovementIdea[];
+  friction: Friction[];
 }

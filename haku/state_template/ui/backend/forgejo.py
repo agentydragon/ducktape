@@ -2,17 +2,9 @@
 
 Haku's UI records operator intent (clicks, feedback) as single-file commits the
 Forgejo server makes for us, and reads items the same way. The cluster-internal
-Forgejo is plaintext HTTP, so no TLS/CA handling. This replaces the old pygit2
-clone+reconcile+push machinery: every write is one authenticated HTTP call (Forgejo
-serializes commits server-side), so there is no working copy, no lock, and no pull
-loop. Credentials are the haku-state-git-write basic-auth pair.
-
-TODO(maybe): if we ever use a broad swath of the Forgejo API, swap this hand-rolled
-client for ``pyforgejo`` (an OpenAPI-generated async client, itself httpx+pydantic).
-For ~5 endpoints with custom 422/404 idempotency handling, hand-rolled httpx is leaner
-and avoids a single-maintainer dependency.
-
-Ported (in intent) from ``haku/console/git_state.py``.
+Forgejo is plaintext HTTP, so no TLS/CA handling. Every write is one authenticated
+HTTP call (Forgejo serializes commits server-side), so there is no working copy, no
+lock, and no pull loop. Credentials are the haku-state-git-write basic-auth pair.
 """
 
 from __future__ import annotations
@@ -30,6 +22,9 @@ logger = logging.getLogger(__name__)
 
 # Commits attributed to the UI so Haku can tell them apart from its own runs.
 _AUTHOR = {"name": "haku-ui", "email": "haku-ui@allegedly.works"}
+# Haku-the-scanner commits as this author; the "last scan" time is the newest such commit
+# (NOT the UI's click/feedback writes, NOT Flux image-automation commits).
+_HAKU_AUTHOR_EMAIL = "haku@allegedly.works"
 
 
 class Forgejo:
@@ -40,7 +35,7 @@ class Forgejo:
     """
 
     def __init__(self, *, api_url: str, username: str, password: str, branch: str = "main") -> None:
-        self._http = httpx.AsyncClient(base_url=api_url, auth=(username, password), timeout=10.0)
+        self._http = httpx.AsyncClient(base_url=api_url, auth=(username, password), timeout=30.0)
         self._branch = branch
 
     async def __aenter__(self) -> Self:
@@ -57,36 +52,82 @@ class Forgejo:
             body["sha"] = sha
         return body
 
-    async def _list_dir(self, path: str) -> list[dict[str, Any]]:
-        """Directory entries (name/type/sha/...) for ``path``; empty if it doesn't exist."""
-        r = await self._http.get(f"/contents/{path}", params={"ref": self._branch})
-        if r.status_code == httpx.codes.NOT_FOUND:
-            return []
+    async def _commits(self, limit: int = 40) -> list[dict[str, Any]]:
+        """Recent commits on the branch (newest first) — one call. Used for both the HEAD sha
+        (commits[0]) and the last *Haku-authored* scan time."""
+        r = await self._http.get("/commits", params={"sha": self._branch, "limit": str(limit)})
         r.raise_for_status()
         return r.json()
 
+    async def _tree(self, head: str) -> list[dict[str, Any]]:
+        """The given commit's full recursive git tree — one call.
+
+        Deliberately NOT the ``/contents/<dir>`` API: that computes a last-commit per entry
+        (~0.6s/entry on this CPU-bound Forgejo), so listing items/ (40+ files) serializes into
+        25s+ and times out. The git trees API is a single O(tree) read with no last-commit work.
+        """
+        r = await self._http.get(f"/git/trees/{head}", params={"recursive": "true", "per_page": "1000"})
+        r.raise_for_status()
+        body = r.json()
+        if body["truncated"]:
+            raise RuntimeError(f"haku-state tree exceeded per_page — listing would drop files ({head=})")
+        return body["tree"]
+
+    async def _blobs(self, shas: list[str]) -> list[bytes]:
+        """Decoded contents for many blob SHAs via the batch ``git/blobs`` API.
+
+        One round trip per ~80 SHAs (keeps the URL short) instead of a per-file ``/raw`` fan-out,
+        which this Forgejo serializes (~1s/blob → ~50s for the item set).
+        """
+        out: list[bytes] = []
+        for i in range(0, len(shas), 80):
+            r = await self._http.get("/git/blobs", params={"shas": ",".join(shas[i : i + 80])})
+            r.raise_for_status()
+            out.extend(base64.b64decode(b["content"]) for b in r.json())
+        return out
+
     # --- reads -------------------------------------------------------------------
 
-    async def read_items(self) -> list[Item]:
-        items: list[Item] = []
-        for entry in sorted(await self._list_dir("items"), key=lambda e: e["name"]):
-            if entry["type"] != "file" or not entry["name"].endswith(".yaml"):
-                continue
-            raw = await self._http.get(f"/raw/items/{entry['name']}", params={"ref": self._branch})
-            raw.raise_for_status()
-            items.append(Item.model_validate(yaml.safe_load(raw.text)))
-        return items
+    async def read_dashboard(self) -> tuple[list[Item], set[tuple[str, str]], str]:
+        """Items, currently-clicked (item_id, action_id) pairs, and the HEAD commit timestamp.
 
-    async def read_clicks(self) -> set[tuple[str, str]]:
-        """Currently-clicked (item_id, action_id) pairs, from the clicks/ overlay."""
+        The timestamp (ISO 8601) is when haku-state last changed — i.e. the last scan/update —
+        surfaced to the UI as the "last scan" time. Two reads beyond the commits list regardless
+        of item count: the git tree (paths + blob SHAs) and a batched ``git/blobs`` fetch. The
+        clicks/ overlay is read straight off the tree paths, no extra calls.
+        """
+        commits = await self._commits()
+        head_sha = commits[0]["sha"]
+        # "Last scan" = newest commit Haku itself authored (skip UI writes / Flux image bumps);
+        # fall back to the newest commit if none of the recent ones are Haku's.
+        scan_time = next(
+            (c["commit"]["author"]["date"] for c in commits if c["commit"]["author"]["email"] == _HAKU_AUTHOR_EMAIL),
+            commits[0]["commit"]["author"]["date"],
+        )
+        tree = await self._tree(head_sha)
+        item_shas = [
+            e["sha"]
+            for e in tree
+            if e["type"] == "blob" and e["path"].startswith("items/") and e["path"].endswith(".yaml")
+        ]
         clicks: set[tuple[str, str]] = set()
-        for item_dir in await self._list_dir("clicks"):
-            if item_dir["type"] != "dir":
-                continue
-            for click in await self._list_dir(f"clicks/{item_dir['name']}"):
-                if click["type"] == "file":
-                    clicks.add((item_dir["name"], click["name"]))
-        return clicks
+        for e in tree:
+            parts = e["path"].split("/")
+            if e["type"] == "blob" and parts[0] == "clicks" and len(parts) == 3:
+                clicks.add((parts[1], parts[2]))
+        items = [Item.model_validate(yaml.safe_load(raw)) for raw in await self._blobs(item_shas)]
+        return items, clicks, scan_time
+
+    async def read_improvements(self) -> dict[str, Any] | None:
+        """The self-backlog (`improvements.yaml`): capability ideas + friction. One file,
+        read via tree+blob like the dashboard. None if the file isn't present yet."""
+        commits = await self._commits(1)
+        tree = await self._tree(commits[0]["sha"])
+        sha = next((e["sha"] for e in tree if e["type"] == "blob" and e["path"] == "improvements.yaml"), None)
+        if sha is None:
+            return None
+        (raw,) = await self._blobs([sha])
+        return yaml.safe_load(raw)
 
     # --- writes (clicks/ overlay + free-form feedback) ---------------------------
     # The UI never edits items/ (Haku owns those). A clicked action is the file

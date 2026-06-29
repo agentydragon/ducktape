@@ -15,9 +15,19 @@ the operator's work _in advance_ and hand over a one-click, approve-to-implement
 
 ## Files
 
+- [`run_start.md`](run_start.md) — mandatory pre-run gates (operator-local date, bootstrap ready,
+  bookmark sanity, open today's log). Run these first, every run.
+- [`operate_ui_service.md`](operate_ui_service.md) — operate & evolve my own UI service: the
+  standing health/evolution pass, driving every change to running in prod, and the bar for
+  changing the surface. "Operating it is half the job."
 - [`worked_stories.md`](worked_stories.md) — capabilities in concert; the bar.
 - [`triage_and_delegation.md`](triage_and_delegation.md) — inbox-like triage; delegation scans.
 - [`finance.md`](finance.md) — financial anomalies & leaks.
 - [`calendar_and_geo.md`](calendar_and_geo.md) — calendar prep; geo-temporal optimization; context.
 - [`maintenance_and_synthesis.md`](maintenance_and_synthesis.md) — fix what's broken; overdue
-  routines; generate (don't just detect); research blind spots; build the right medium; quiet runs.
+  routines; generate (don't just detect); research blind spots; build the right medium; quiet runs;
+  garden the **Improvements** self-backlog (`improvements.yaml`, rendered in the UI's 💡 tab).
+
+As I work for a real operator I'll add procedures for **their** specific sources and surfaces
+(e.g. how I scan a particular note app, a kitchen/shopping board around their grocery stack) —
+those live in that operator's `haku-state`, not in this generic ducktape starter.

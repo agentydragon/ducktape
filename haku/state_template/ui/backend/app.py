@@ -1,27 +1,30 @@
 """FastAPI app for Haku's own UI service: JSON API + same-origin React SPA.
 
-This is **Haku-owned** starter code (ported from ``haku/console``): it runs in
-``haku-sandbox``, behind the operator-owned Authentik outpost, embedded in the
-trusted console's "Free-form UI" iframe. It reads ``items/`` + ``clicks/`` from
-haku-state and writes ``clicks/`` / ``intake/`` back on operator action (the
-conventions Haku reduces on its next run) — all through the **Forgejo API** (see
-``forgejo.py``), no local clone.
+This is **Haku-owned** starter code: it runs in ``haku-sandbox``, behind the
+operator-owned Authentik outpost, embedded in the trusted console's "Free-form UI"
+iframe. It reads ``items/`` + ``clicks/`` from haku-state and writes ``clicks/`` /
+``intake/`` back on operator action (the conventions Haku reduces on its next run) —
+all through the **Forgejo API** (see ``forgejo.py``), no local clone.
 
 Unlike the trusted console, there is **no capability tier** here — only the
 low-privilege trace surface (clicks + feedback into haku-state, which Haku already
 owns). The privileged launch-routine capability stays in the console.
 
+This starter ships two person-agnostic surfaces: the **items board** (``/api/dashboard``
++ the trace writes) and Haku's **Improvements** self-backlog (``/api/improvements``). Haku
+adds more endpoints here as it builds bespoke surfaces for its operator (a Kitchen board, a
+one-off decision page, …) — those operator-specific surfaces live in that operator's
+haku-state, not in this generic starter.
+
 **Operator authentication.** The app is only reachable through the Authentik outpost,
 which injects ``X-authentik-username``. We read it to know who acted (logged on every
 write). The header is only trustworthy once an ingress NetworkPolicy restricts the app
-to the outpost (so a sibling haku-sandbox pod can't spoof it) — see the Phase 3
-hardening note in the plan. Until then, treat the header as advisory.
+to the outpost (so a sibling haku-sandbox pod can't spoof it). Until then, treat it as advisory.
 """
 
 from __future__ import annotations
 
 import contextlib
-import datetime as dt
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Annotated
@@ -31,7 +34,12 @@ from config import Settings
 from fastapi import Depends, FastAPI, Header, Request, Response
 from fastapi.staticfiles import StaticFiles
 from forgejo import Forgejo
-from models import Click, DashboardResponse, FeedbackRequest
+from models import (
+    Click,
+    DashboardResponse,
+    FeedbackRequest,
+    ImprovementsBoard,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +75,9 @@ def create_app(settings: Settings) -> FastAPI:
     async def _response_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         response = await call_next(request)
         response.headers["Content-Security-Policy"] = "frame-ancestors https://haku.allegedly.works"
-        # The SPA shell (index.html) must always revalidate: a new build references new
-        # hashed asset filenames, so a stale-cached index.html would keep loading the old
-        # app — and the console iframe would keep showing the previous (placeholder) page.
-        # The hashed assets themselves are safe to cache (new build = new filename).
+        # The SPA shell (index.html) must always revalidate: a new build references new hashed
+        # asset filenames, so a stale-cached index.html keeps loading the old app (and the iframe
+        # keeps showing the previous page). Hashed assets themselves stay cacheable.
         if response.headers.get("content-type", "").startswith("text/html"):
             response.headers["Cache-Control"] = "no-cache"
         return response
@@ -81,12 +88,25 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/api/dashboard")
     async def dashboard(forgejo: ForgejoDep) -> DashboardResponse:
-        """Items (with their currently-clicked action ids) and the last scan time."""
-        items = await forgejo.read_items()
-        clicks = await forgejo.read_clicks()
-        scan_time = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d %H:%M UTC")
+        """Items (with their currently-clicked action ids), the last scan time, and the
+        commit the running image was built from (for the footer's Forgejo link)."""
+        items, clicks, scan_time = await forgejo.read_dashboard()
         clicked = [Click(item_id=item_id, action_id=action_id) for item_id, action_id in sorted(clicks)]
-        return DashboardResponse(scan_time=scan_time, items=items, clicks=clicked)
+        sha = settings.git_sha
+        return DashboardResponse(
+            scan_time=scan_time,
+            deployed_commit=sha[:7] if sha else None,
+            deployed_commit_url=f"{settings.repo_web_url}/commit/{sha}" if sha else None,
+            items=items,
+            clicks=clicked,
+        )
+
+    # --- Improvements / friction surface: Haku's read-only self-backlog ---------
+    @app.get("/api/improvements")
+    async def improvements(forgejo: ForgejoDep) -> ImprovementsBoard:
+        """Capability ideas + friction log (improvements.yaml). Read-only; empty board if absent."""
+        raw = await forgejo.read_improvements()
+        return ImprovementsBoard.model_validate(raw) if raw else ImprovementsBoard()
 
     # --- trace tier: operator-expressed intent recorded into haku-state ---------
     # Idempotent set → PUT; un-click → DELETE; feedback → POST. Haku reduces these.

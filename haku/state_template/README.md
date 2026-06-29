@@ -11,14 +11,36 @@ UI it serves, and one example working format (the "items" board). Base (`haku/ba
 the durable job and judgment, **item-agnostic**; the concrete method is documented here and
 is Haku's to evolve or replace. Layout mirrors `haku-state`'s root:
 
+## Principle: a generic starter, not a personal backup
+
+This directory is the **starter a brand-new haku instance scaffolds from** — it must read as
+**person-agnostic**, usable by any operator. As Haku's method evolves in a live `haku-state`,
+the worthwhile evolutions get carried back here, but with a hard filter:
+
+- **DO seed the generic, structural, high-level method** — the architecture (Haku owns and
+  evolves the **whole** multi-surface UI, not a fixed board), the surfaces every instance wants
+  (the **items board** + the **Improvements** self-backlog), the CI/deploy pipeline, the generic
+  procedures, the item `schema`, and the `k8s` workload starter.
+- **NEVER seed the operator's personal specifics** — their actual `items/`, the *content* of
+  their `memory/` (operator model, situational awareness, finances, bookmarks), their logs, or
+  **surfaces Haku built around one operator's particular life/accounts** (e.g. the live instance's
+  `Kitchen` surface around their Grocy/Thrive, or a one-off `Tender` decision page hardcoding their
+  name, CPA, and equity event). Those stay in that operator's `haku-state`; here they'd be noise at
+  best and leaked PII at worst. Seed the *pattern* ("Haku builds bespoke surfaces per the operator's
+  life"), documented in prose — not the personal instance of it.
+
+The test for any change: **would it help an arbitrary new operator, with no edit?** If yes, seed
+it; if it only makes sense for this person, leave it in their `haku-state`.
+
 | Dir                 | Starter content                                                          | After seed                                                    |
 | ------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------- |
 | `memory/`           | placeholder stubs (operator model, situational awareness, base-sync pin) | Haku's to restructure freely                                  |
 | `log/`              | empty (`.gitkeep`)                                                       | per-day run journal `log/YYYY-MM-DD.md`                       |
 | `intake/processed/` | empty (`.gitkeep`)                                                       | operator feedback lands in `intake/`; reduced → `processed/`  |
 | `procedures/`       | the starter passes (README + topical files)                              | Haku's playbook — read + grow (below)                         |
-| `ui/`               | the starter UI (React SPA + FastAPI backend + Dockerfile)                | Haku's own UI service, CI-built (below)                       |
+| `ui/`               | the starter multi-surface UI (React SPA + FastAPI backend + Dockerfile)  | Haku's own UI service, CI-built (below)                       |
 | `items/`            | `README.md` (the example "items" model) + `.gitkeep`                     | Haku writes one `<id>.yaml` per item, if it keeps this format |
+| `improvements.yaml` | starter self-backlog (one example idea + friction) → the 💡 tab           | Haku's capability ideas + run friction, gardened each run     |
 | `schema/`           | `item.json` (validates the example item format)                          | yours to change with the model                                |
 | `.forgejo/`         | the `build-ui` Forgejo Actions workflow                                  | Haku's CI: build image → push registry (Flux bumps the tag)   |
 | `k8s/`              | the `haku-ui` workload (Deployment + Service for the CI-built image)     | Haku's GitOps workload dir (below)                            |
@@ -29,15 +51,22 @@ implementation**, not a contract — Haku may redefine or discard them. There is
 does, reading this repo at request time, and the console just embeds `ui/` in its Free-form
 UI iframe. Everything Haku presents lives here and is Haku's to own and evolve.
 
-## `ui/` — Haku's own item UI service (CI-built)
+## `ui/` — Haku's own UI service (CI-built, multi-surface)
 
-The **ported** item UI (from `haku/console/`) Haku runs in `haku-sandbox`, embedded in
-the console's Free-form UI iframe. Full read+write: it reads `items/` and writes operator
-intent — `clicks/<item-id>/<action-id>` and `intake/<ts>-feedback[-<id>].md`, the
-conventions Haku reduces on its next run. It is **starter source only**: the build
-artifact is a container image produced by **Forgejo CI**, never a committed `dist/`. Haku
-adopts it into `haku-state`, **watches its Forgejo CI builds, fixes broken builds, tends
-the deployment, and evolves the UI** freely. Full detail: [`ui/README.md`](ui/README.md).
+The UI Haku runs in `haku-sandbox`, embedded in the console's Free-form UI iframe. It is a
+**multi-surface app Haku owns and evolves** — not a fixed board. The starter ships two
+**person-agnostic** surfaces: the **Inbox** (the items board) and **Improvements** (Haku's
+self-backlog, from `improvements.yaml`). It reads `items/` + `improvements.yaml` and writes
+operator intent — `clicks/<item-id>/<action-id>` and `intake/<ts>-feedback[-<id>].md`, the
+conventions Haku reduces on its next run. **Operator-specific surfaces are not seeded here**:
+in a live instance Haku adds bespoke tabs for its operator's life (a kitchen/shopping board, a
+one-off decision page, …) — those live in that operator's `haku-state`, per the _generic
+starter_ principle above.
+
+It is **starter source only**: the build artifact is a container image produced by **Forgejo
+CI**, never a committed `dist/`. Haku adopts it into `haku-state`, **watches its Forgejo CI
+builds, fixes broken builds, tends the deployment, and evolves the UI** freely. Full detail:
+[`ui/README.md`](ui/README.md).
 
 Build-via-CI flow: Haku commits `ui/` + the `.forgejo/workflows/build-ui.yaml` workflow
 → the contained, repo-scoped Forgejo runner (`cluster/k8s/haku-ci`) builds + pushes

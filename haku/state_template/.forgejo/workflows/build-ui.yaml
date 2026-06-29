@@ -1,20 +1,19 @@
-# Forgejo Actions workflow that builds Haku's UI image and ships it.
+# Forgejo Actions workflow that tests, builds, and ships Haku's UI image.
 #
 # Runs IN-CLUSTER on the contained, repo-scoped Forgejo Actions runner provided by
 # `cluster/k8s/haku-ci` — NOT on Bazel/BuildBuddy (haku-state may hold private
 # operator info, so its source never leaves the cluster). The runner is rootless and
-# runs jobs in a standard "act" image (node + git + docker CLI).
+# runs jobs in a standard "act" image (node + git + docker CLI), wired to a dind
+# sidecar so `docker build` works.
 #
-# All Forgejo access is authenticated (no anonymous clones/pulls): actions/checkout
-# clones over the runner's in-cluster instance URL (forgejo-http.forgejo:3000) with
-# the run token, and the registry push authenticates to git.allegedly.works (HTTPS,
-# valid cert) with the same token.
+# Two jobs, gated:
+#   test  — `docker build --target test` runs the backend pytest suite, and a frontend
+#           build that runs the tsc typecheck. If anything fails, the build fails.
+#   build — `needs: test`, so it only runs once tests pass. Builds the runtime image
+#           and pushes it to the Forgejo registry as
+#           git.allegedly.works/haku/ui:main-<utc-timestamp>-<short-sha>.
+# So a red test suite blocks the push and tag entirely — no image ships untested.
 #
-# Flow:
-#   1. check out the repo
-#   2. build the image from ui/Dockerfile
-#   3. push it to the Forgejo registry as
-#      git.allegedly.works/haku/ui:main-<utc-timestamp>-<short-sha>
 # CI does NOT touch the deployment manifest: Flux image automation watches the
 # registry, picks the newest tag by its timestamp, and writes it into the deployment
 # itself (the `{"$imagepolicy": ...}` marker). So there is no CI commit-back and no
@@ -26,23 +25,41 @@ name: build-ui
 on:
   push:
     branches: [main]
-    # Only rebuild when the UI source or this workflow changes.
+    # Only re-test/rebuild when the UI source or this workflow changes.
     paths:
       - "ui/**"
       - ".forgejo/workflows/build-ui.yaml"
 
 jobs:
+  # Gate: run the tests before anything is built for real or pushed. The test stage
+  # installs dev deps and runs pytest during `docker build`; a non-zero exit fails the
+  # build, fails this job, and (via `needs: test` below) stops the push.
+  test:
+    runs-on: haku-ci
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Backend unit tests: the test stage's `RUN python -m pytest -q` runs them here.
+      # `--target test` stops at that stage (no SPA/runtime layers built), so it's fast.
+      - name: Backend tests
+        run: docker build -f ui/Dockerfile --target test -t haku-ui-test ui
+
+      # Frontend typecheck + build: the frontend stage runs `tsc -b && vite build`, so
+      # a type error fails the build. Building the `frontend` target exercises that
+      # without producing a pushable image (cached, so the real build reuses it).
+      - name: Frontend typecheck and build
+        run: docker build -f ui/Dockerfile --target frontend -t haku-ui-frontend ui
+
   build:
+    needs: test
     runs-on: haku-ci # the repo-scoped, contained runner label (cluster/k8s/haku-ci)
-    # The built-in Forgejo Actions job token (github.token) authenticates both the
-    # checkout (contents:read) and the registry push (packages:write) — no separately
-    # provisioned secret.
     permissions:
       contents: read
       packages: write
     steps:
-      # Clones from the runner's in-cluster instance URL (forgejo-http.forgejo:3000)
-      # with the run token — authenticated and in-cluster.
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -58,10 +75,11 @@ jobs:
 
       # Tag pattern is what Flux image automation sorts on: a UTC timestamp makes
       # the newest build the highest tag (ImagePolicy `numerical` on the captured
-      # timestamp), and the short sha keeps it traceable to a commit.
+      # timestamp), and the short sha keeps it traceable to a commit. The runtime
+      # image reuses the layers the test job already built (dind layer cache).
       - name: Build and push the image
         run: |
           TAG="main-$(date -u +%Y%m%d%H%M%S)-$(echo "${{ github.sha }}" | cut -c1-7)"
           IMAGE="git.allegedly.works/haku/ui:${TAG}"
-          docker build -f ui/Dockerfile -t "$IMAGE" ui
+          docker build -f ui/Dockerfile --target runtime --build-arg GIT_SHA="${{ github.sha }}" -t "$IMAGE" ui
           docker push "$IMAGE"

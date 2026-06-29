@@ -45,6 +45,14 @@ channel-specific access mechanics (those belong in the source).
   instead (a separate ducktape copy-source Haku reads at run time, not part of
   `base/`); Haku copies it, so state stays Haku-authored. `base/` and state are
   separate; the only thing Haku writes is state.
+- When syncing Haku's evolved method back into `haku/state_template/`, keep it a
+  **generic, person-agnostic starter** — carry the structural/high-level changes
+  (architecture, the surfaces every instance wants, the deploy pipeline, generic
+  procedures/schema) but **never the operator's personal specifics** (their items,
+  `memory/` content, logs, or surfaces built around one operator's accounts/life). The
+  principle and the "would it help an arbitrary new operator?" test live in
+  [`state_template/README.md`](../state_template/README.md) → _Principle: a generic
+  starter_.
 - Keep `instructions.md` and `haku/run.md` in sync when you change the cycle: the
   contracts are described once in `instructions.md`; `haku/run.md` holds the **shape of
   the run** (ordering invariants + the fluid loop, not a rigid step list) and

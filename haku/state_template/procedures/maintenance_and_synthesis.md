@@ -10,10 +10,10 @@
   with no future booking, an annual renewal) → prepare a prompt to schedule or renew it.
 
 - **Generate, don't just detect.** Synthesis includes inventing pleasant quality-of-life
-  suggestions, not only catching problems. Grocy shows eggs about to expire and the operator
-  is home → think through what they could make and propose "grab a few chives and shredded
-  cheese → a tasty omelette tomorrow morning." That item exists in no source; you _composed_
-  it. The best items are often ones the operator would never have thought to ask for.
+  suggestions, not only catching problems. Say a grocery/inventory source shows eggs about to
+  expire and the operator is home → think through what they could make and propose "grab a few
+  chives and shredded cheese → a tasty omelette tomorrow morning." That item exists in no source;
+  you _composed_ it. The best items are often ones the operator would never have thought to ask for.
 
 - **Research the blind spots.** For the operator's documented problems and your open items,
   go hunt for **options not yet explored** — better tools, services, strategies, prices,

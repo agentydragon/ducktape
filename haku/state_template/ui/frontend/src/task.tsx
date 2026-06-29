@@ -1,5 +1,6 @@
 import { openLink } from "./bridge.ts";
 import { CLAUDE_NEW, ITEM_SRC, MAX_DEEPLINK } from "./constants.ts";
+import { countdown } from "./deadline.ts";
 import { FeedbackForm } from "./feedback.tsx";
 import { renderMarkdown } from "./markdown.ts";
 import type { Item, OperatorAction } from "./types.ts";
@@ -76,14 +77,15 @@ interface TaskProps {
   item: Item;
   clicked: ReadonlySet<string>;
   onToggle: (itemId: string, actionId: string) => void;
+  now: number;
 }
 
 // One collapsible task. Summary = compact row; the body (Markdown→HTML), operator
 // action toggles, the primary action button, and a per-item feedback box live only
-// inside the expanded view.
-export function TaskCard({ item, clicked, onToggle }: TaskProps) {
+// inside the expanded view. ``now`` (ms) drives the live deadline countdown.
+export function TaskCard({ item, clicked, onToggle, now }: TaskProps) {
   const [url, label] = primaryDeeplink(item);
-  const deadline = item.deadline ? item.deadline.slice(0, 10) : null;
+  const cd = item.deadline ? countdown(item.deadline, now) : null;
   return (
     <details className="card">
       <summary>
@@ -93,7 +95,7 @@ export function TaskCard({ item, clicked, onToggle }: TaskProps) {
         <span className="value">{item.value}</span>
         <span className="title">{item.title}</span>
         <span className="badges">
-          {deadline && <span className="badge badge-deadline">⏳ {deadline}</span>}
+          {cd && <span className={`badge badge-deadline badge-${cd.urgency}`}>⏳ {cd.text}</span>}
           {item.action && <span className="badge badge-kind">{item.action.kind}</span>}
         </span>
       </summary>

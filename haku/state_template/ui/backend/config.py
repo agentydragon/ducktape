@@ -28,3 +28,10 @@ class Settings(BaseSettings):
     # Directory holding the built React SPA (index.html + assets), served same-origin.
     # The Dockerfile sets this to the bundled dir; unset → API-only (e.g. local dev).
     static_dir: Path | None = None
+
+    # The git commit the running image was built from (baked by CI via --build-arg GIT_SHA →
+    # HAKU_UI_GIT_SHA); None in local dev. Surfaced in the UI footer as a Forgejo commit link.
+    git_sha: str | None = None
+    # Public (operator-facing) Forgejo repo URL, for building commit links. NOT the internal
+    # API URL (forgejo_api_url) — that's cluster-internal plaintext HTTP.
+    repo_web_url: str = "https://git.allegedly.works/haku/haku-state"

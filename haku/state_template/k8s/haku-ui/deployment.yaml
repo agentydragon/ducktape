@@ -35,7 +35,7 @@ spec:
           # The matching ImageRepository/ImagePolicy/ImageUpdateAutomation are Haku's
           # own (the sibling k8s/haku-ui-image-automation/ dir), reconciled into
           # haku-sandbox — hence the haku-sandbox:haku-ui policy ref.
-          image: git.allegedly.works/haku/ui:latest # {"$imagepolicy": "haku-sandbox:haku-ui"}
+          image: git.allegedly.works/haku/ui:main-20260629083051-85fda52 # {"$imagepolicy": "haku-sandbox:haku-ui"}
           ports:
             - containerPort: 8080
           env:
@@ -52,11 +52,15 @@ spec:
                 secretKeyRef:
                   name: haku-state-git-write
                   key: password
-            # Internal plaintext-HTTP Forgejo API. Use the FULL .svc.cluster.local
-            # name: the haku-sandbox-force-proxy-egress CNP routes egress through the
-            # haku-mitmproxy, and NO_PROXY only exempts `.svc.cluster.local` — the short
-            # name `forgejo-http.forgejo` does NOT match, so it gets forced through the
-            # proxy and times out (no items load). The FQDN matches NO_PROXY → direct.
+            # Internal plaintext-HTTP Forgejo API. MUST be the FULLY-QUALIFIED
+            # `.svc.cluster.local` name: the namespace injects HTTP(S)_PROXY →
+            # haku-mitmproxy with NO_PROXY=...,.svc.cluster.local,10.0.0.0/8. httpx
+            # matches NO_PROXY by hostname string (not resolved IP), so the short
+            # name `forgejo-http.forgejo` does NOT match the suffix and gets routed
+            # through mitmproxy, where it dial-times-out (ReadTimeout on every
+            # /contents call). The FQDN matches the `.svc.cluster.local` suffix and
+            # bypasses the proxy for a direct in-cluster connection. (10.0.0.0/8
+            # can't save the short name — NO_PROXY CIDRs only match IP literals.)
             - name: HAKU_UI_FORGEJO_API_URL
               value: http://forgejo-http.forgejo.svc.cluster.local:3000/api/v1/repos/haku/haku-state
           securityContext:

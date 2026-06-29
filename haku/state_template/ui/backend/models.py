@@ -1,4 +1,4 @@
-"""Typed models the backend reads from the haku-state clone and serves over JSON.
+"""Typed models the backend reads from haku-state and serves over JSON.
 
 Mirrors the read-relevant subset of ``haku/base/schema/item.json`` (the write-time
 JSON Schema Haku validates against). Both the item's primary ``action`` and its
@@ -8,7 +8,7 @@ combinations are unrepresentable.
 Unknown top-level fields are ignored on parse so a newer item field doesn't break a
 not-yet-rebuilt UI; typed values (enum, dates) still validate strictly.
 
-Ported from ``haku/console/models.py``. Keep the frontend's ``types.ts`` in sync.
+Keep the frontend's ``types.ts`` in sync.
 """
 
 from __future__ import annotations
@@ -94,7 +94,9 @@ class Click(BaseModel):
 
 
 class DashboardResponse(BaseModel):
-    scan_time: str
+    scan_time: str = Field(description="ISO 8601 timestamp of the last haku-state commit (the last scan/update)")
+    deployed_commit: str | None = Field(default=None, description="Short SHA the running UI image was built from")
+    deployed_commit_url: str | None = Field(default=None, description="Forgejo link to the deployed commit")
     items: list[Item]
     clicks: list[Click]
 
@@ -105,3 +107,31 @@ class FeedbackRequest(BaseModel):
         default=None,
         description="If set, the item this feedback is about (tagged in the intake note); else a global note",
     )
+
+
+# --- Improvements / friction surface (improvements.yaml) -----------------------
+# Haku's self-backlog: capability ideas + the friction it hits during runs. Read-only
+# in the UI (no operator actions) — the operator steers it via feedback / intake.
+
+
+class ImprovementIdea(BaseModel):
+    id: str
+    title: str
+    value: Literal["high", "medium", "low"]
+    status: Literal["recommend", "idea", "parked", "blocked", "wired"]
+    summary: str
+    detail: str = ""  # markdown
+
+
+class Friction(BaseModel):
+    id: str
+    title: str
+    severity: Literal["high", "medium", "low"]
+    status: Literal["open", "workaround", "resolved", "answered"]
+    detail: str = ""  # markdown: impact + fix
+
+
+class ImprovementsBoard(BaseModel):
+    updated: str = ""
+    ideas: list[ImprovementIdea] = Field(default_factory=list)
+    friction: list[Friction] = Field(default_factory=list)
