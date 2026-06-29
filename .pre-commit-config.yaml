@@ -184,13 +184,15 @@ repos:
         files: "\\.(js|mjs|cjs|jsx|ts|tsx|svelte|css|md|yaml|yml|json|html)$"
         exclude: "\\.pnpm/"
 
-      # Block non-root pyproject.toml files — all Python packaging config must live in the root pyproject.toml
+      # Block non-root pyproject.toml files — all Python packaging config must live in the root pyproject.toml.
+      # Exception: haku/state_template/ is starter code copied verbatim into a separate repo (haku-state),
+      # where its backend pyproject.toml IS that package's root — it is not part of ducktape's own packaging.
       - id: no-subdir-pyproject-toml
         name: No sub-directory pyproject.toml files
         entry: bash -c 'echo "Non-root pyproject.toml files are forbidden (use root pyproject.toml):" >&2; printf "  %s\n" "$@" >&2; exit 1' --
         language: system
         files: "pyproject\\.toml$"
-        exclude: "^pyproject\\.toml$"
+        exclude: "^(pyproject\\.toml|haku/state_template/.*pyproject\\.toml)$"
 
       # Pre-commit file validations (filenames, frozen-specimens). These are
       # git-diff-based checks with no static repo-state equivalent. Cluster
