@@ -83,14 +83,14 @@ All storage is region-local — no cross-site synchronous replication. Key
 classes below (curated — SSOT is the `StorageClass` manifests under `k8s/`,
 e.g. `k8s/{local-path-provisioner,openebs-lvm}/`, plus CSI Helm values):
 
-| StorageClass         | Provisioner            | Region    | Notes                                                                                                          |
-| -------------------- | ---------------------- | --------- | -------------------------------------------------------------------------------------------------------------- |
-| `local-path-proxmox` | local-path-provisioner | `proxmox` | Proxmox-single CNPG DBs; node-pinned app data on Proxmox nodes    |
-| `local-path-ovh`     | local-path-provisioner | `hil-ovh` | OVH-HA CNPG DBs; SeaweedFS volume servers; node-pinned app data on OVH nodes |
+| StorageClass         | Provisioner            | Region    | Notes                                                                                       |
+| -------------------- | ---------------------- | --------- | ------------------------------------------------------------------------------------------- |
+| `local-path-proxmox` | local-path-provisioner | `proxmox` | Proxmox-single CNPG DBs; node-pinned app data on Proxmox nodes                              |
+| `local-path-ovh`     | local-path-provisioner | `hil-ovh` | OVH-HA CNPG DBs; SeaweedFS volume servers; node-pinned app data on OVH nodes                |
 | `seaweedfs-ovh`      | SeaweedFS CSI          | `hil-ovh` | **Default for app data volumes** — not node-pinned, pods reschedule freely; POSIX/S3-backed |
-| `lvm-proxmox-ssd`    | OpenEBS LVM CSI        | `proxmox` | NVMe thin provisioning                          |
-| `lvm-proxmox-hdd`    | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning                           |
-| `proxmox-csi-retain` | Proxmox CSI            | `proxmox` | Block storage via Proxmox API                   |
+| `lvm-proxmox-ssd`    | OpenEBS LVM CSI        | `proxmox` | NVMe thin provisioning                                                                      |
+| `lvm-proxmox-hdd`    | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning                                                                       |
+| `proxmox-csi-retain` | Proxmox CSI            | `proxmox` | Block storage via Proxmox API                                                               |
 
 Proxmox CSI needs VLAN access to Proxmox API. OpenEBS LVM is constrained to nodes
 with the `openebs-proxmox-ssd` / `openebs-proxmox-hdd` volume groups (currently Proxmox nodes only).
