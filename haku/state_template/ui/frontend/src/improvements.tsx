@@ -1,3 +1,4 @@
+import { Badge, Card, Group, Spoiler, Stack, Text, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 
 import { fetchImprovements } from "./client.ts";
@@ -12,35 +13,61 @@ const VALUE_RANK = { high: 0, medium: 1, low: 2 } as const;
 // Open problems first; the rest are FYI / closed-loop.
 const FRICTION_RANK = { open: 0, workaround: 1, answered: 2, resolved: 3 } as const;
 
+// value/severity share one high→red, medium→orange, low→gray scale.
+const VALUE_COLOR: Record<ImprovementIdea["value"], string> = { high: "red", medium: "orange", low: "gray" };
+// recommend/open are the "act on this" statuses (blue, filled); everything else is FYI (gray, light).
+const ACTIVE_STATUSES = new Set(["recommend", "open"]);
+
+function statusBadge(status: string) {
+  return ACTIVE_STATUSES.has(status) ? (
+    <Badge size="sm" variant="filled" color="blue">
+      {status}
+    </Badge>
+  ) : (
+    <Badge size="sm" variant="light" color="gray">
+      {status}
+    </Badge>
+  );
+}
+
 function ideaCard(idea: ImprovementIdea) {
   return (
-    <li key={idea.id} className="board-line">
-      <div>
-        <strong>{idea.title}</strong>
-        <span className={`chip chip-val-${idea.value}`}>{idea.value} value</span>
-        <span className={`chip chip-st-${idea.status}`}>{idea.status}</span>
-        <div className="dimmed">{idea.summary}</div>
-        {idea.detail ? (
-          <details className="imp-detail">
-            <summary>details</summary>
-            <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(idea.detail) }} />
-          </details>
-        ) : null}
-      </div>
-    </li>
+    <Card key={idea.id} withBorder padding="sm" radius="md">
+      <Group gap="xs" wrap="wrap" align="baseline">
+        <Text fw={600} style={{ flex: 1, minWidth: 0 }}>
+          {idea.title}
+        </Text>
+        <Badge size="sm" variant="light" color={VALUE_COLOR[idea.value]}>
+          {idea.value} value
+        </Badge>
+        {statusBadge(idea.status)}
+      </Group>
+      <Text size="sm" c="dimmed" mt="xs">
+        {idea.summary}
+      </Text>
+      {idea.detail ? (
+        <Spoiler maxHeight={0} showLabel="details" hideLabel="hide" mt="xs">
+          <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(idea.detail) }} />
+        </Spoiler>
+      ) : null}
+    </Card>
   );
 }
 
 function frictionCard(f: Friction) {
   return (
-    <li key={f.id} className="board-line">
-      <div>
-        <strong>{f.title}</strong>
-        <span className={`chip chip-sev-${f.severity}`}>{f.severity}</span>
-        <span className={`chip chip-st-${f.status}`}>{f.status}</span>
-        {f.detail ? <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(f.detail) }} /> : null}
-      </div>
-    </li>
+    <Card key={f.id} withBorder padding="sm" radius="md">
+      <Group gap="xs" wrap="wrap" align="baseline">
+        <Text fw={600} style={{ flex: 1, minWidth: 0 }}>
+          {f.title}
+        </Text>
+        <Badge size="sm" variant="light" color={VALUE_COLOR[f.severity]}>
+          {f.severity}
+        </Badge>
+        {statusBadge(f.status)}
+      </Group>
+      {f.detail ? <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(f.detail) }} /> : null}
+    </Card>
   );
 }
 
@@ -54,32 +81,34 @@ export function ImprovementsPage() {
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
 
-  if (error) return <p className="page-error">Failed to load improvements: {error}</p>;
-  if (!data) return <p className="loading">Loading…</p>;
+  if (error) return <Text c="red">Failed to load improvements: {error}</Text>;
+  if (!data) return <Text c="dimmed">Loading…</Text>;
 
   const ideas = [...data.ideas].sort((a, b) => VALUE_RANK[a.value] - VALUE_RANK[b.value]);
   const friction = [...data.friction].sort((a, b) => FRICTION_RANK[a.status] - FRICTION_RANK[b.status]);
   const openCount = friction.filter((f) => f.status === "open").length;
 
   return (
-    <div className="board">
-      <p className="dimmed">
-        What would make me more useful, and what's getting in my way — Haku's own backlog, value-ranked.
-        Steer it with a note from the Inbox tab. {data.updated ? `Updated ${new Date(data.updated).toLocaleString()}.` : null}
-      </p>
+    <Stack gap="lg">
+      <Text size="sm" c="dimmed">
+        What would make me more useful, and what's getting in my way — Haku's own backlog, value-ranked. Steer it with a
+        note from the Inbox tab. {data.updated ? `Updated ${new Date(data.updated).toLocaleString()}.` : null}
+      </Text>
 
-      <section className="board-section">
-        <h3>💡 Capability ideas ({ideas.length})</h3>
-        <ul className="board-list">{ideas.map(ideaCard)}</ul>
-      </section>
+      <Stack gap="sm">
+        <Title order={3} size="h5">
+          💡 Capability ideas ({ideas.length})
+        </Title>
+        {ideas.map(ideaCard)}
+      </Stack>
 
-      <section className="board-section">
-        <h3>
+      <Stack gap="sm">
+        <Title order={3} size="h5">
           🔧 Friction &amp; breakages ({friction.length}
           {openCount > 0 ? `, ${openCount} open` : ""})
-        </h3>
-        <ul className="board-list">{friction.map(frictionCard)}</ul>
-      </section>
-    </div>
+        </Title>
+        {friction.map(frictionCard)}
+      </Stack>
+    </Stack>
   );
 }

@@ -9,16 +9,21 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "dompurify": "^3.2.4",
-    "marked": "^15.0.7",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "@mantine/core": "^9.4.1",
+    "@mantine/hooks": "^9.4.1",
+    "dompurify": "^3.4.11",
+    "marked": "^18.0.5",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^4.3.4",
-    "typescript": "^5.7.3",
-    "vite": "^6.1.0"
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "postcss": "^8.5.16",
+    "postcss-preset-mantine": "^1.18.0",
+    "postcss-simple-vars": "^7.0.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
   }
 }

@@ -1,10 +1,12 @@
+import { Accordion, Anchor, Code, Container, Stack, Tabs, Text, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 
+import { openLink } from "./bridge.ts";
 import { clickAction, fetchDashboard, unclickAction } from "./client.ts";
 import { UP_NEXT } from "./constants.ts";
 import { countdown } from "./deadline.ts";
-import { TaskCard, clickKey } from "./task.tsx";
 import { ImprovementsPage } from "./improvements.tsx";
+import { TaskCard, clickKey } from "./task.tsx";
 import type { DashboardResponse, Item } from "./types.ts";
 
 // haku-ui is a multi-surface app Haku owns and evolves — NOT a fixed dashboard. The starter
@@ -36,8 +38,18 @@ interface InboxProps {
 // The triage board: a value-ranked list of items with a time-critical "Due soon" section.
 // One surface among several (see App's tabs) — not the whole of haku-ui.
 function InboxView({ data, error, clicked, onToggle, actionError, now }: InboxProps) {
-  if (error) return <p className="page-error">Failed to load: {error}</p>;
-  if (!data) return <p className="loading">Loading…</p>;
+  if (error)
+    return (
+      <Text c="red" my="lg">
+        Failed to load: {error}
+      </Text>
+    );
+  if (!data)
+    return (
+      <Text c="dimmed" my="lg">
+        Loading…
+      </Text>
+    );
 
   const open = data.items.filter((item) => item.status === "open");
   // Time-critical first: anything overdue or within DUE_SOON_DAYS, soonest deadline on top.
@@ -51,35 +63,45 @@ function InboxView({ data, error, clicked, onToggle, actionError, now }: InboxPr
   const backlog = ranked.slice(UP_NEXT);
 
   return (
-    <>
-      {actionError && <p className="action-error">Action failed: {actionError}</p>}
+    <Stack gap="md">
+      {actionError && <Text c="red">Action failed: {actionError}</Text>}
 
       {dueSoon.length > 0 && (
-        <section className="due-soon">
-          <h2>⏰ Due soon</h2>
+        <div>
+          <Title order={2} c="orange" size="h4" mb="xs">
+            ⏰ Due soon
+          </Title>
           {dueSoon.map((item) => (
             <TaskCard key={item.id} item={item} clicked={clicked} onToggle={onToggle} now={now} />
           ))}
-        </section>
+        </div>
       )}
 
-      <h2>Up next</h2>
-      {upNext.length > 0 ? (
-        upNext.map((item) => <TaskCard key={item.id} item={item} clicked={clicked} onToggle={onToggle} now={now} />)
-      ) : (
-        <p>No open items.</p>
-      )}
+      <div>
+        <Title order={2} size="h4" mb="xs">
+          Up next
+        </Title>
+        {upNext.length > 0 ? (
+          upNext.map((item) => <TaskCard key={item.id} item={item} clicked={clicked} onToggle={onToggle} now={now} />)
+        ) : (
+          <Text>No open items.</Text>
+        )}
+      </div>
 
       {backlog.length > 0 && (
-        <details className="backlog">
-          <summary>Backlog — {backlog.length} more open item(s)</summary>
-          {backlog.map((item) => (
-            <TaskCard key={item.id} item={item} clicked={clicked} onToggle={onToggle} now={now} />
-          ))}
-        </details>
+        <Accordion variant="separated">
+          <Accordion.Item value="backlog">
+            <Accordion.Control>Backlog — {backlog.length} more open item(s)</Accordion.Control>
+            <Accordion.Panel>
+              {backlog.map((item) => (
+                <TaskCard key={item.id} item={item} clicked={clicked} onToggle={onToggle} now={now} />
+              ))}
+            </Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
       )}
 
-      <footer className="dimmed">
+      <Text size="sm" c="dimmed" mt="xl" pt="md" style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}>
         {open.length} open · {statusCounts(data.items)}
         <br />
         Last scan:{" "}
@@ -89,13 +111,13 @@ function InboxView({ data, error, clicked, onToggle, actionError, now }: InboxPr
         {data.deployed_commit && data.deployed_commit_url && (
           <>
             {" · deployed "}
-            <a href={data.deployed_commit_url}>
-              <code>{data.deployed_commit}</code>
-            </a>
+            <Anchor inherit onClick={() => void openLink(data.deployed_commit_url!)} style={{ cursor: "pointer" }}>
+              <Code>{data.deployed_commit}</Code>
+            </Anchor>
           </>
         )}
-      </footer>
-    </>
+      </Text>
+    </Stack>
   );
 }
 
@@ -151,23 +173,25 @@ export default function App() {
   ];
 
   return (
-    <div className="app">
-      <header>
-        <h1>Haku</h1>
-        <nav className="tabs">
+    <Container size={760} px="md" py="xl">
+      <Title order={1} mb="sm">
+        Haku
+      </Title>
+      <Tabs value={view} onChange={(value) => value && setView(value as View)} mb="md">
+        <Tabs.List>
           {tabs.map(([id, label]) => (
-            <button key={id} className={view === id ? "tab tab-on" : "tab"} onClick={() => setView(id)}>
+            <Tabs.Tab key={id} value={id}>
               {label}
-            </button>
+            </Tabs.Tab>
           ))}
-        </nav>
-      </header>
+        </Tabs.List>
+      </Tabs>
 
       {view === "improvements" ? (
         <ImprovementsPage />
       ) : (
         <InboxView data={data} error={error} clicked={clicked} onToggle={onToggle} actionError={actionError} now={now} />
       )}
-    </div>
+    </Container>
   );
 }

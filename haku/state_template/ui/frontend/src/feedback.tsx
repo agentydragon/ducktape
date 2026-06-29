@@ -1,3 +1,4 @@
+import { Button, Group, Text, Textarea } from "@mantine/core";
 import { type FormEvent, type KeyboardEvent, useState } from "react";
 
 import { sendFeedback } from "./client.ts";
@@ -52,10 +53,11 @@ export function FeedbackForm({ minRows, placeholder, submitLabel, itemId }: Feed
         event.preventDefault();
         send();
       }}
-      className="feedback"
+      style={{ width: "100%" }}
     >
-      <textarea
-        rows={minRows}
+      <Textarea
+        autosize
+        minRows={minRows}
         value={text}
         onChange={(event) => {
           setText(event.currentTarget.value);
@@ -65,13 +67,19 @@ export function FeedbackForm({ minRows, placeholder, submitLabel, itemId }: Feed
         placeholder={placeholder}
         disabled={sending}
       />
-      <div className="feedback-row">
-        <button type="submit" className="btn btn-primary" disabled={sending || !text.trim()}>
-          {sending ? "Sending…" : state.status === "sent" ? "Sent ✓" : submitLabel}
-        </button>
-        <span className="hint">Shift+Enter for newline</span>
-        {state.status === "error" && <span className="error">{state.message}</span>}
-      </div>
+      <Group gap="sm" mt="xs" align="center">
+        <Button type="submit" size="xs" loading={sending} disabled={sending || !text.trim()}>
+          {state.status === "sent" ? "Sent ✓" : submitLabel}
+        </Button>
+        <Text size="xs" c="dimmed">
+          Shift+Enter for newline
+        </Text>
+        {state.status === "error" && (
+          <Text size="xs" c="red">
+            {state.message}
+          </Text>
+        )}
+      </Group>
     </form>
   );
 }

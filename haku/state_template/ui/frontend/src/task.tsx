@@ -1,6 +1,9 @@
+import { Anchor, Badge, Button, Card, Collapse, Group, Stack, Text, UnstyledButton } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
+
 import { openLink } from "./bridge.ts";
 import { CLAUDE_NEW, ITEM_SRC, MAX_DEEPLINK } from "./constants.ts";
-import { countdown } from "./deadline.ts";
+import { countdown, type Urgency } from "./deadline.ts";
 import { FeedbackForm } from "./feedback.tsx";
 import { renderMarkdown } from "./markdown.ts";
 import type { Item, OperatorAction } from "./types.ts";
@@ -24,21 +27,8 @@ function primaryDeeplink(item: Item): [string, string] {
   return [itemSrcUrl(item), "Open item →"];
 }
 
-// All outbound navigation goes through the shell's openLink bridge (this UI is in a
-// popup-less sandboxed iframe; bare anchors/window.open are blocked).
-function BridgeLink({ url, className, children }: { url: string; className?: string; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      className={className}
-      onClick={() => {
-        void openLink(url);
-      }}
-    >
-      {children}
-    </button>
-  );
-}
+// Deadline urgency → Mantine palette (one semantic scale; see deadline.ts).
+const URGENCY_COLOR: Record<Urgency, string> = { overdue: "red", soon: "orange", later: "gray" };
 
 interface ActionProps {
   item: Item;
@@ -56,20 +46,16 @@ function ActionButton({ item, action, clicked, onToggle }: ActionProps) {
     const encoded = encodeURIComponent(action.prompt);
     const url = encoded.length <= MAX_DEEPLINK ? CLAUDE_NEW + encoded : itemSrcUrl(item);
     return (
-      <BridgeLink url={url} className="btn btn-handoff">
+      <Button size="xs" variant="default" onClick={() => void openLink(url)}>
         {action.label} →
-      </BridgeLink>
+      </Button>
     );
   }
   const isClicked = clicked.has(clickKey(item.id, action.id));
   return (
-    <button
-      type="button"
-      className={isClicked ? "btn btn-toggle btn-toggle-on" : "btn btn-toggle"}
-      onClick={() => onToggle(item.id, action.id)}
-    >
+    <Button size="xs" color="teal" variant={isClicked ? "filled" : "outline"} onClick={() => onToggle(item.id, action.id)}>
       {isClicked ? `✓ ${action.label}` : action.label}
-    </button>
+    </Button>
   );
 }
 
@@ -80,44 +66,59 @@ interface TaskProps {
   now: number;
 }
 
-// One collapsible task. Summary = compact row; the body (Markdown→HTML), operator
-// action toggles, the primary action button, and a per-item feedback box live only
-// inside the expanded view. ``now`` (ms) drives the live deadline countdown.
+// One collapsible task card. The header (value, title, badges) toggles the body, which
+// holds the Markdown→HTML, operator action toggles, the primary action, and a per-item
+// feedback box. ``now`` (ms) drives the live deadline countdown.
 export function TaskCard({ item, clicked, onToggle, now }: TaskProps) {
+  const [opened, { toggle }] = useDisclosure(false);
   const [url, label] = primaryDeeplink(item);
   const cd = item.deadline ? countdown(item.deadline, now) : null;
   return (
-    <details className="card">
-      <summary>
-        <span className="marker" aria-hidden="true">
-          ▸
-        </span>
-        <span className="value">{item.value}</span>
-        <span className="title">{item.title}</span>
-        <span className="badges">
-          {cd && <span className={`badge badge-deadline badge-${cd.urgency}`}>⏳ {cd.text}</span>}
-          {item.action && <span className="badge badge-kind">{item.action.kind}</span>}
-        </span>
-      </summary>
-      <div className="card-body">
-        <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(item.body) }} />
-        {item.actions.length > 0 && (
-          <div className="actions">
-            {item.actions.map((action) => (
-              <ActionButton key={action.id} item={item} action={action} clicked={clicked} onToggle={onToggle} />
-            ))}
-          </div>
-        )}
-        <div className="primary-row">
-          <BridgeLink url={url} className="btn btn-primary">
-            {label}
-          </BridgeLink>
-          <BridgeLink url={itemSrcUrl(item)} className="linklike">
-            item source →
-          </BridgeLink>
-        </div>
-        <FeedbackForm itemId={item.id} minRows={2} placeholder="Feedback on this item…" submitLabel="Send" />
-      </div>
-    </details>
+    <Card withBorder radius="md" padding="sm" mb="xs">
+      <UnstyledButton onClick={toggle} aria-expanded={opened} style={{ width: "100%" }}>
+        <Group gap="xs" wrap="wrap" align="baseline">
+          <Text c="dimmed" size="sm" aria-hidden>
+            {opened ? "▾" : "▸"}
+          </Text>
+          <Text fw={700} c="teal" size="lg" fz="1.125rem">
+            {item.value}
+          </Text>
+          <Text fw={600} style={{ flex: 1, minWidth: 0 }}>
+            {item.title}
+          </Text>
+          {cd && (
+            <Badge color={URGENCY_COLOR[cd.urgency]} variant="filled" size="sm" style={{ fontVariantNumeric: "tabular-nums" }}>
+              ⏳ {cd.text}
+            </Badge>
+          )}
+          {item.action && (
+            <Badge color="gray" variant="light" size="sm">
+              {item.action.kind}
+            </Badge>
+          )}
+        </Group>
+      </UnstyledButton>
+      <Collapse expanded={opened}>
+        <Stack gap="sm" mt="sm">
+          <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(item.body) }} />
+          {item.actions.length > 0 && (
+            <Group gap="xs">
+              {item.actions.map((action) => (
+                <ActionButton key={action.id} item={item} action={action} clicked={clicked} onToggle={onToggle} />
+              ))}
+            </Group>
+          )}
+          <Group gap="md" align="center">
+            <Button size="xs" color="teal" onClick={() => void openLink(url)}>
+              {label}
+            </Button>
+            <Anchor size="sm" c="dimmed" onClick={() => void openLink(itemSrcUrl(item))} style={{ cursor: "pointer" }}>
+              item source →
+            </Anchor>
+          </Group>
+          <FeedbackForm itemId={item.id} minRows={2} placeholder="Feedback on this item…" submitLabel="Send" />
+        </Stack>
+      </Collapse>
+    </Card>
   );
 }
