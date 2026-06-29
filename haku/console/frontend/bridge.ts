@@ -14,9 +14,7 @@
 //    capability must be a genuine operator gesture against trusted chrome, so the iframe
 //    can only request it; the shell renders its OWN confirm (showing the prompt) and only
 //    then fires. `id` correlates the eventual `launchResult`.
-export type Inbound =
-  | { type: "openLink"; url: string }
-  | { type: "requestLaunch"; id: string; prompt: string };
+export type Inbound = { type: "openLink"; url: string } | { type: "requestLaunch"; id: string; prompt: string };
 
 // Outbound result (shell → iframe), so Haku's UI can react to the outcome.
 export type Outbound =
