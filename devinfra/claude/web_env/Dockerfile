@@ -6,11 +6,6 @@
 #     --build-arg https_proxy="$https_proxy" \
 #     -t claude-code-web-recreated .
 #
-# NOTE: Docker's overlay snapshotter in gVisor is limited to ~35 lowerdir
-# entries. Ubuntu 24.04 base contributes 4 base layers, leaving ~31 slots.
-# If layers are ever added and the build fails with "mount source: overlay...
-# invalid argument", consolidate COPY/RUN instructions.
-#
 # Prerequisites:
 #   1. Proprietary binaries must be captured first (run from within live container):
 #        bazel run //claude_web_env/tools:build_and_diff -- --capture-binaries
@@ -25,7 +20,7 @@ LABEL description="Recreated Claude Code web development environment"
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
-# All ENV in one instruction to minimise overlay layer count (gVisor limit ~35).
+# Keep PATH and runtime environment in one place.
 # PATH is fully hardcoded (not referencing $PATH) to avoid expansion ambiguity.
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \

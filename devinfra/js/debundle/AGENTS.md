@@ -107,9 +107,9 @@ is slower and the repro can't be shared publicly.
 
 Use external profiling rather than fine-grained timing boilerplate in
 production code. The default downstream workflow is documented in
-<README.md>: use Bazel to build the optimized debundler and materialize
-inputs, then run host profilers outside Bazel unless the profiler is provided by
-a hermetic toolchain.
+<README.md>: use the profile sibling targets from
+`debundle_pipeline` so the profiling run shares the real Bazel action's spec
+paths, package roots, working directory, declared inputs, and debundler binary.
 
 Profile-mode samples answer "where is the runtime going relative to
 total time?" They are the right tool for discovering hot stack

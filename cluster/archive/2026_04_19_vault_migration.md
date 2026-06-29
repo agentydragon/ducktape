@@ -1,13 +1,15 @@
-# Vault Migration — Complete (2026-04-19)
+# Vault Migration (completed 2026-04-19)
 
-All secrets migrated from Vault+ESO+TF to SOPS or sso-providers TF pattern.
-Vault decommissioned. KV store emptied. Deployment deleted.
+Historical record of the migration from Vault+ESO+TF secrets to SOPS or the
+`sso-providers` TF pattern.
 
-## What happened to each secret
+Vault was decommissioned. The KV store was emptied. The deployment was deleted.
+
+## Secret Destinations
 
 | Secret                                                                                      | New home                                          |
 | ------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| SSO client secrets (Harbor, Matrix, Gitea, InvenTree, Grafana, Headlamp, OpenClaw, Airlock) | sso-providers TF → k8s secret                     |
+| SSO client secrets (Harbor, Matrix, Gitea, InvenTree, Grafana, Headlamp, OpenClaw, Airlock) | sso-providers TF -> k8s secret                    |
 | Synapse signing key, macaroon, registration secret, redis pw                                | `matrix/secrets/*.sops.yaml`                      |
 | Synapse admin credentials, openclaw-bot password                                            | `matrix/secrets/*.sops.yaml`                      |
 | Harbor admin password                                                                       | `harbor/secrets/harbor-admin-initial.sops.yaml`   |
@@ -16,7 +18,4 @@ Vault decommissioned. KV store emptied. Deployment deleted.
 | Authentik user password                                                                     | `authentik/sso-secrets/user-password.sops.yaml`   |
 | Authentik admin/secret-key/bootstrap token                                                  | `authentik/secrets/*.sops.yaml` (already was)     |
 
-## Suspended services (migrate when unsuspending)
-
-- **InvenTree**: add SOPS secrets for admin + db passwords (`kv/inventree/*`
-  values are gone — generate fresh)
+The remaining InvenTree unsuspension follow-up lives in <../k8s/TODO.md>.

@@ -42,10 +42,10 @@ update to `1048576` is applied by Flux.
 
 ### GPU vs CPU
 
-| Metric | CPU gVisor | GPU 2×5090 | Speedup |
-| ------ | ---------: | ---------: | ------: |
-| tg128  |    ~12 t/s |   ~249 t/s |    ~21× |
-| pp512  |    ~64 t/s |  ~95k t/s† |  ~1500× |
+| Metric | Older web CPU | GPU 2×5090 | Speedup |
+| ------ | ------------: | ---------: | ------: |
+| tg128  |       ~12 t/s |   ~249 t/s |    ~21× |
+| pp512  |       ~64 t/s |  ~95k t/s† |  ~1500× |
 
 † Interpolated from pp64k/pp128k.
 

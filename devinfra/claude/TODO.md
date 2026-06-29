@@ -67,8 +67,9 @@ automatic compatibility requirement.
   clean stale `/var/run/docker.pid`, set `DOCKER_HOST`, and surface Docker
   status in the session banner. Rust has no container-runtime setup path.
 - **Tmpfs setup**: Python could mount tmpfs-backed session storage and add
-  `startup --output_user_root=<session>/bazel-cache`. Rust only sizes Bazel's
-  JVM heap based on detected gVisor/Firecracker signals.
+  `startup --output_user_root=<session>/bazel-cache`. Rust no longer manages
+  tmpfs storage; it only applies Firecracker JVM heap sizing when that platform
+  is detected.
 - **Connectivity and platform diagnostics**: Python collected hostname, kernel,
   root filesystem type, PID 1 command line, Nix/nixpkgs availability, and a
   BuildBuddy reachability probe; Rust only has the minimal filesystem/container
@@ -91,16 +92,6 @@ automatic compatibility requirement.
 - **Structured error reporting**: Python's FastAPI middleware logged full
   unhandled exception tracebacks as JSON 500 responses. Rust currently reports
   most daemon failures through stderr logs and `{}` fallback from the client.
-
-## Session banner warning when `is_gvisor()` is true
-
-Sessions moved from gVisor to Firecracker microVMs (pre-2026-06 → now); the
-hook's `is_gvisor()` detection survives only for JVM heap sizing. A gVisor
-sighting today means the execution platform changed unexpectedly, so the hook
-should surface a loud warning in the SessionStart banner ("running under
-gVisor — not expected, tell the user") instead of silently picking the
-smaller heap. See `docs/docker_evaluation_results.md` and the platform note
-in `AGENTS.md`.
 
 ## Statusline: deduplicate usage display with GNOME extension
 

@@ -597,7 +597,8 @@ domain, no CSI disk hotplug). Remaining `proxmox-csi-retain` consumers on wyrm2:
 All secrets are SOPS (age-encrypted in git, decrypted by Flux). ESO is still installed
 but only with the Kubernetes provider, mirroring a small number of secrets cross-namespace
 (authentik, openclaw-gateway/sandbox, openhands). Stakater Reloader restarts pods on
-changes. Vault was decommissioned 2026-04-19 — see <../vault-migration/TODO.md>.
+changes. Vault was decommissioned 2026-04-19 — see
+<../archive/2026_04_19_vault_migration.md>.
 
 ### Google OAuth Client redirect URIs (blocked upstream)
 

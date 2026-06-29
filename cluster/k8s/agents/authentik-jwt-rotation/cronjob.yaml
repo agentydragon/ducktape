@@ -6,8 +6,8 @@ metadata:
   annotations:
     description: >-
       Rotates every Authentik client_credentials JWT listed in rotations.yaml
-      (claude-web k8s, haku k8s, agent-box-codex k8s, haku grocy, alloy-otlp).
-      Runs hourly; rotate.py reads each output's unencrypted `expires_unencrypted`
+      (the ConfigMap-mounted source of truth). Runs hourly; rotate.py reads each
+      output's unencrypted `expires_unencrypted`
       field (no decryption needed) and skips entries with > rotate_below_hours
       remaining, so a real mint runs only ~every 44 days per token. Everything
       minted this cycle lands in one commit.

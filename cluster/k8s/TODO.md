@@ -23,6 +23,12 @@ committed. `NO_PROXY` in `inject-mitmproxy.yaml` is unchanged.
 
 - [ ] `agents/openclaw/sandbox-secrets/ibkr-flex-query-credentials.sops.yaml` — consider moving `query-id` out of SOPS (not sensitive)
 
+## InvenTree secrets if unsuspending
+
+- [ ] Add SOPS secrets for InvenTree admin and database passwords before
+      unsuspending it. The old Vault `kv/inventree/*` values are gone, so
+      generate fresh values. Background: <../archive/2026_04_19_vault_migration.md>.
+
 ## Mobile Nebula phone followups
 
 - [ ] Test cluster-hosted ActivityWatch from the phone over Nebula, either by

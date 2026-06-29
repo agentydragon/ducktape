@@ -21,10 +21,10 @@ from util.oci import load_oci_image
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 
-# Required on gvisor sandboxes where IPv4 forwarding is off, so Docker
-# port publishing is a no-op and `testcontainers.get_exposed_port(80)`
-# never resolves. Outside the sandbox, the env var is absent and behaviour
-# is unchanged.
+# Required in sandboxed Docker environments where IPv4 forwarding is off, so
+# Docker port publishing is a no-op and `testcontainers.get_exposed_port(80)`
+# never resolves. Outside that mode, the env var is absent and behaviour is
+# unchanged.
 _HOST_NETWORK_ENV = "GROCY_MCP_HOST_NETWORK"
 
 

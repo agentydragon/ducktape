@@ -10,13 +10,9 @@
 
 @docs/AGENTS.md
 
-**Key agent-facing templates (transcluded):**
-
-@agents/docs/system_access.md
-@agents/docs/db/ground_truth.md.mako
-@agents/docs/db/examples.md.mako
-@agents/docs/db/evaluation_flow.md.mako
-@agents/critic_dev/authoring_agents.md.mako
+Runtime agent prompt templates live in <agents/docs/> and
+<agents/critic_dev/authoring_agents.md.mako>. Do not `@`-transclude them here;
+the critic and grader prompt templates include the runtime docs they need.
 
 ## Database Migrations (Alembic)
 

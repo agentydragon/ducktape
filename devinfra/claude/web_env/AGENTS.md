@@ -52,20 +52,18 @@ The snapshot date ensures reproducible builds long-term. To update packages:
 
 > **Keep this procedure up to date**: If the build process changes (new storage options, different flags, etc.), update both this file and `tools/build_and_diff.py`.
 
-### Tool Availability (Firecracker era, verified 2026-06-10)
+### Tool Availability (verified 2026-06-10)
 
 Sessions run on Firecracker microVMs with a real kernel (see the platform
-note in `../AGENTS.md`); the gVisor-era constraints that used to dominate
-this section are gone.
+note in `../AGENTS.md`).
 
 - **docker 29.3.1 + BuildKit**: the container runtime. No daemon.json is
   baked into the image and nothing starts dockerd for you — launch it with a
   **default config** (`nohup dockerd &`); see `../docs/docker_evaluation_results.md`.
   Full bridge networking works (user-defined networks, `internal: true`
   enforcement, `host-gateway`).
-- **podman / buildah / fuse-overlayfs**: no longer in the container (the
-  gVisor-era evaluation that compared them is archived at
-  `../docs/archive/2026_02_docker_gvisor_evaluation.md`).
+- **podman / buildah / fuse-overlayfs**: no longer in the container. Use
+  Docker for local debugging and BuildBuddy RBE for Docker-dependent tests.
 
 **Egress**: no `http_proxy`/`https_proxy` env vars exist; outbound traffic is
 transparently intercepted by a TLS-inspecting proxy (see "Networking" in
@@ -75,18 +73,14 @@ CA (host bundle: `/etc/ssl/certs/ca-certificates.crt`) — symptom otherwise is
 `build_and_diff` still forwards proxy env as `--build-arg`s when set, which
 is a no-op in current sessions.
 
-**SHELL wrapper + proxy pitfall** (historical, gVisor/JWT-proxy era): the
-Dockerfile's logging SHELL wrapper (`eval "$0"`) corrupts proxy URLs
-containing JWT tokens (`=`, `+`, `/`, `@`), breaking `apt-get update`. Only
-relevant if explicit proxy env vars ever return; the fix was a plain
-`SHELL ["/bin/bash", "-euo", "pipefail", "-c"]` around the affected layers.
-See the `/update_container_re` skill appendix.
+**SHELL wrapper + proxy pitfall**: keep the Dockerfile on the plain
+`SHELL ["/bin/bash", "-euo", "pipefail", "-c"]` form. If explicit proxy env
+vars ever return, logging wrappers that `eval "$0"` can corrupt URL-shaped
+credentials.
 
-**Layer limit**: the gVisor-era ~35-lowerdir overlay limit no longer applies —
-a 60-`RUN` image builds and runs fine on the real kernel (verified
-2026-06-10). Docker's own ~125-layer cap is the relevant bound; the
-ENV-consolidation tricks in old Dockerfile comments are harmless but no
-longer load-bearing.
+**Layer count**: Docker's own layer cap is the relevant bound. Keep adjacent
+ENV/COPY/RUN instructions grouped when it makes the Dockerfile easier to
+maintain, not because the current platform requires special layer handling.
 
 ### Container Update Procedure
 

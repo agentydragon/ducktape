@@ -1,18 +1,19 @@
-# Local LLM Benchmarks — Claude Code Web Environment
+# Local LLM Benchmarks — Older Claude Code Web Environment
 
 Benchmarks of open-weight LLMs running locally via llama.cpp on the Claude Code
-web (gVisor sandbox) CPU-only environment.
+web CPU-only environment at the time of measurement. These numbers are kept as
+historical data, not as current Firecracker platform guidance.
 
 ## Environment
 
 - **CPU**: Intel (family 6, model 207), 16 cores, 1 thread/core
 - **RAM**: 21 GiB total
 - **GPU**: None (CPU-only inference)
-- **OS**: Linux 4.4.0 (gVisor sandbox)
+- **OS**: Linux 4.4.0 as reported by the older web sandbox
 - **Runtime**: llama.cpp b7993 (commit 2cce9fd)
 
-AMX (Advanced Matrix Extensions) instructions are unavailable in the gVisor
-sandbox. Bare-metal performance would be higher.
+AMX (Advanced Matrix Extensions) instructions were unavailable in that
+environment. Bare-metal performance would be higher.
 
 ## Summary
 

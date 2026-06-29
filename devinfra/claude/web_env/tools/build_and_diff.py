@@ -41,8 +41,7 @@ def capture_proprietary_binaries(work_dir: Path) -> None:
     logger.info("Capturing proprietary binaries from live container...")
     ref_dir = work_dir / "reference"
 
-    # process_api runs as PID 1 and is only accessible via /proc/1/exe
-    # (the /process_api path is not a regular file in gVisor).
+    # process_api runs as PID 1; /proc/1/exe is the reliable live capture path.
     for src, name in [
         ("/usr/local/bin/environment-manager", "environment-manager.gz"),
         ("/proc/1/exe", "process_api.gz"),

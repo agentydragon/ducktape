@@ -205,12 +205,3 @@ only_in_built:
 
   # Build artifacts: APT retry config added during build
   - /etc/apt/apt.conf.d/80retries
-
-# ─── Comparison overrides ─────────────────────────────────────────────────
-# gVisor user namespaces map all UIDs to a single user, making ownership
-# data in the live manifest meaningless. Skip these comparisons.
-ignore_owner: true
-ignore_group: true
-# gVisor also strips SUID/SGID/sticky bits in user namespace captures,
-# so permission comparison is unreliable for the live manifest.
-ignore_perms: true

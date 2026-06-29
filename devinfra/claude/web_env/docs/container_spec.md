@@ -81,30 +81,23 @@ Measured with `dd` on a Firecracker microVM (4 vCPU, 16Gi RAM).
 | `/tmp` (disk) | ext4    | 118 MB/s  | 422 MB/s | 94 MB/s         |
 
 Disk I/O is adequate for Bazel cache (sequential reads dominate). tmpfs is
-~3-10x faster but consumes RAM. On the old gVisor/9p root, disk was ~10x
-slower, making tmpfs essential. On Firecracker ext4, tmpfs is unnecessary.
+~3-10x faster but consumes RAM. On Firecracker ext4, tmpfs is unnecessary for
+normal Bazel cache and container storage.
 
-### Historical Note: gVisor → Firecracker Migration
+### Platform Contract
 
 As of 2026-03-30, the environment runs on **Firecracker microVMs with a real
-Linux kernel**, not gVisor. The root filesystem is ext4 on a virtio block
-device, not 9p. The Rust session start hook detects the platform at runtime
-inside `devinfra/claude/claude_hook/main.rs` and adapts:
-
-- **Firecracker**: skips tmpfs mounts, uses overlay Docker storage driver
-  natively, sizes JVM heap to 8Gi for full-monorepo Skyframe analysis.
-- **gVisor** (legacy): mounts tmpfs for fast I/O, uses overlay-on-tmpfs or
-  vfs fallback, uses 4Gi JVM heap to leave room for tmpfs.
-- **Unknown platform**: logs a warning asking the agent to notify the user,
-  uses conservative defaults (no tmpfs, 4Gi heap).
+Linux kernel**. The root filesystem is ext4 on a virtio block device. The Rust
+session start hook checks PID 1 for `--firecracker-init` and, when present,
+sizes Bazel's JVM heap to 8Gi for full-monorepo Skyframe analysis. If a live
+web/remote session lacks that marker, treat it as platform drift and report it.
 
 ### Bazel JVM Heap
 
 Java auto-sizes max heap to ~25% of physical memory (~4Gi). For full-monorepo
 `bazel query` operations (6000+ packages), this is insufficient — the Skyframe
-analysis cache alone needs ~4Gi. The session bazelrc template sets `-Xmx8g` on
-Firecracker (where disk-backed cache doesn't compete for RAM) and `-Xmx4g` on
-gVisor (where tmpfs eats into available memory).
+analysis cache alone needs ~4Gi. The session bazelrc template sets `-Xmx8g`
+when it detects Firecracker.
 
 ## Anthropic-Specific Components
 

@@ -1,7 +1,7 @@
 # Authentik Terraform State Lifecycle Coupling
 
 > **HISTORICAL (infra changed since 2026-02-18).** Vault was decommissioned
-> 2026-04-19 (secrets are now SOPS-managed; see <../../vault-migration/TODO.md>),
+> 2026-04-19 (secrets are now SOPS-managed; see <../../archive/2026_04_19_vault_migration.md>),
 > and Terraform state moved off the old `tfstate-default-*` k8s secrets into the
 > `tofu-state-db` CNPG cluster (one schema per `Terraform` CR) with the
 > kubernetes-backend migration. The `tfstate-default-*` secret deletions and the

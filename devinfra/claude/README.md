@@ -126,8 +126,8 @@ Rust hook daemon files (in `/tmp/claude-hd/<session_id>/`):
 
 ## Historical Context
 
-The explicit egress proxy era (`auth_proxy/` subsystem) and the gVisor/9p origin of the
-TCP supervisor port: <archive/2026_06_12_gvisor_era_networking.md>.
+Pre-Firecracker networking and supervisor workarounds are preserved in git
+history. Current code and docs assume Firecracker sessions.
 
 ## OTEL Tracing
 

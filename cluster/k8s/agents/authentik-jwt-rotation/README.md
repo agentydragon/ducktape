@@ -1,15 +1,9 @@
 # authentik-jwt-rotation
 
 Hourly CronJob that mints Authentik `client_credentials` JWTs and commits them
-SOPS-encrypted to `secrets/`. One job rotates every token in
-<rotations.yaml>:
-
-| Rotation          | Provider                             | Output                                 | Notes                                            |
-| ----------------- | ------------------------------------ | -------------------------------------- | ------------------------------------------------ |
-| `claude-web-k8s`  | `kubectl-sandbox-client-credentials` | `secrets/claude-web-k8s-jwt.yaml`      | provider secret; group check                     |
-| `haku-k8s`        | `kubectl-sandbox-client-credentials` | `secrets/haku-k8s-jwt.yaml`            | user/password app-token; group `haku`            |
-| `agent-box-codex` | `kubectl-sandbox-client-credentials` | `secrets/agent-box-codex-k8s-jwt.yaml` | user/password app-token; group `agent-box-codex` |
-| `alloy-otlp`      | `alloy-otlp-client-credentials`      | `secrets/alloy-otlp-bearer-token.yaml` | provider secret; proxy exchange                  |
+SOPS-encrypted to `secrets/`. <rotations.yaml> is the source of truth for
+rotation names, providers, output files, credential modes, expected groups /
+audiences, and optional in-cluster Secret publication.
 
 `rotate.py` reads each output's unencrypted-by-suffix `expires_unencrypted`
 field (no decryption, no in-cluster age key), skips entries with more than
@@ -26,9 +20,9 @@ read when `exchange_scopes` is set. Consumers read the committed JWT via
 <../../../../devinfra/k8s/kubeconfig.py> (k8s token) or the Alloy OTLP bearer
 flow.
 
-`claude-web-k8s`, `haku-k8s`, and `agent-box-codex` deliberately share the same
-`kubectl-sandbox-client-credentials` issuer/audience that kube-apiserver trusts.
-Their effective Kubernetes RBAC comes from the provider's explicit Authentik
+Rotations whose `provider_slug` is `kubectl-sandbox-client-credentials`
+deliberately share the issuer/audience that kube-apiserver trusts. Their
+effective Kubernetes RBAC comes from the provider's explicit Authentik
 machine-principal allowlist, not from adding more apiserver issuer entries.
 
 The image bakes `rotate.py` (Python interpreter via `py_image_layer`), the

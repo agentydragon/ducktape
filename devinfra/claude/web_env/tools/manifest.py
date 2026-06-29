@@ -45,11 +45,6 @@ class Exclusions(BaseModel):
     # Session start hook artifacts: created by devinfra/claude at runtime,
     # not part of the base container image. Treated as expected_only_in_live.
     session_hook_artifacts: list[str] = []
-    # Skip owner/group comparison entirely (gVisor user namespaces make
-    # ownership info in the live capture meaningless — all UIDs map to one user).
-    ignore_owner: bool = False
-    ignore_group: bool = False
-    ignore_perms: bool = False
 
     def matching_skip(self, path: str) -> str | None:
         for p in self.skip_paths:

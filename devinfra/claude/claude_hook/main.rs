@@ -147,37 +147,11 @@ impl AppState {
 // Routes
 // ---------------------------------------------------------------------------
 
-/// Detect root filesystem type from /proc/mounts.
-fn detect_root_fstype() -> String {
-    std::fs::read_to_string("/proc/mounts")
-        .ok()
-        .and_then(|contents| {
-            contents.lines().find_map(|line| {
-                let mut parts = line.split_whitespace();
-                let _dev = parts.next()?;
-                let mountpoint = parts.next()?;
-                let fstype = parts.next()?;
-                (mountpoint == "/").then(|| fstype.to_string())
-            })
-        })
-        .unwrap_or_else(|| "unknown".to_string())
-}
-
 /// True when running inside a Firecracker microVM (checks PID 1 cmdline).
 fn is_firecracker() -> bool {
     const NEEDLE: &[u8] = b"--firecracker-init";
     std::fs::read("/proc/1/cmdline")
         .map(|b| b.windows(NEEDLE.len()).any(|w| w == NEEDLE))
-        .unwrap_or(false)
-}
-
-/// True when running inside gVisor (9p root or "runsc" hostname).
-fn is_gvisor() -> bool {
-    if detect_root_fstype() == "9p" {
-        return true;
-    }
-    std::fs::read_to_string("/etc/hostname")
-        .map(|h| h.trim() == "runsc")
         .unwrap_or(false)
 }
 
@@ -245,18 +219,10 @@ fn write_session_bazelrc(
     lines.push("startup --noblock_for_lock".into());
 
     // JVM heap sizing: full-monorepo bazel query loads 6000+ packages into
-    // Skyframe analysis cache. Firecracker containers have 16Gi RAM; 8Gi heap
-    // is needed to avoid OOM. gVisor containers use tmpfs (eats RAM), so use
-    // a smaller heap. Mirrors bazelrc.mako in the Python implementation.
-    let xmx = if is_firecracker() {
-        Some("8g")
-    } else if is_gvisor() {
-        Some("4g")
-    } else {
-        None
-    };
-    if let Some(size) = xmx {
-        lines.push(format!("startup --host_jvm_args=-Xmx{size}"));
+    // Skyframe analysis cache. Firecracker sessions have 16Gi RAM; 8Gi heap
+    // is needed to avoid OOM. Local CLI hosts keep Bazel's default heap.
+    if is_firecracker() {
+        lines.push("startup --host_jvm_args=-Xmx8g".into());
     }
 
     // JVM truststore: Debian's /etc/ssl/certs/java/cacerts contains the

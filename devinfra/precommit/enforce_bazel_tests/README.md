@@ -49,7 +49,7 @@ with the parent `bazel run` server. Propagates session bazelrc startup flags
 (proxy, TLS CA) to the bench's separate Bazel server. Results (stdout/stderr,
 elapsed times, target lists) are saved to `/tmp/enforce_bazel_tests_bench/runs/<timestamp>/`.
 
-## Benchmark results (2026-04-01, Bazel 8.6.0, ext4, gVisor)
+## Benchmark results (2026-04-01, Bazel 8.6.0, older web environment)
 
 Target file: `util/bazel/workspace.py` (`//util/bazel:workspace.py`).
 Detailed profile analysis: <debug/warm_query_profile.md>.

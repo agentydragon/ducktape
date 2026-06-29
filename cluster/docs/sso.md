@@ -14,7 +14,7 @@ in `authentik` namespace → Reflector mirrors to consumer namespace(s).
 
 ### Blueprint-managed providers (deprecated)
 
-Vault was decommissioned 2026-04-19 (see <../vault-migration/TODO.md>) and all SSO
+Vault was decommissioned 2026-04-19 (see <../archive/2026_04_19_vault_migration.md>) and all SSO
 providers moved to `tf/gitops/sso-providers/`. The `k8s/authentik/app/blueprints/`
 flow no longer pulls client secrets from Vault. If you see a `!Env`-tagged client
 secret in a blueprint, treat it as a bug to migrate, not a pattern to copy.

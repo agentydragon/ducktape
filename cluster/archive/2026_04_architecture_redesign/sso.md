@@ -4,7 +4,7 @@ Part of <plan.md>.
 
 > **Status (2026-04-19)**: Resolved. The cluster moved to Option B-ish (TF writes
 > Authentik providers directly, secrets in SOPS). Vault was decommissioned — see
-> <../../vault-migration/TODO.md>. The options analysis below is kept as
+> <../2026_04_19_vault_migration.md>. The options analysis below is kept as
 > historical context for the decision.
 
 ## Current Setup (Vault + tofu-controller + ESO)

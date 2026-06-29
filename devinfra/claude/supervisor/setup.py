@@ -2,8 +2,8 @@
 
 Provides functions to start and manage the supervisord daemon.
 
-Uses TCP socket (inet_http_server) instead of Unix socket to avoid 9p filesystem
-limitations in gVisor sandbox where hard linking Unix sockets fails with EOPNOTSUPP.
+Uses TCP socket (inet_http_server) because the retired container-runtime profile
+and supervisorctl config expect an HTTP endpoint.
 """
 
 import asyncio
@@ -34,8 +34,7 @@ def _write_config(paths: SessionPaths, settings: HookSettings) -> None:
     supervisor_pidfile = paths.supervisor_pidfile
 
     config = configparser.ConfigParser()
-    # Use TCP socket instead of Unix socket to avoid 9p filesystem limitations
-    # in gVisor sandbox (hard linking Unix sockets fails with EOPNOTSUPP)
+    # Use TCP socket to match the retired profile's supervisorctl config.
     config["inet_http_server"] = {"port": f"127.0.0.1:{supervisor_port}"}
     config["supervisord"] = {
         "logfile": str(supervisor_log),

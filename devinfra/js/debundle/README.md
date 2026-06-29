@@ -120,14 +120,39 @@ lowering step the full pipeline uses.
 
 ## Profiling
 
-Keep profiler execution outside Bazel unless the profiler itself is provided by
-a hermetic toolchain. Host profilers such as `perf`, Callgrind, Massif, and
-heaptrack depend on kernel settings and host binaries, so they should not run as
-cached or sandboxed Bazel actions.
+`debundle_pipeline` creates the normal pipeline target plus local profiling
+sibling targets that reuse the exact same action command, inputs, package
+roots, working directory, and debundler binary.
 
-Use Bazel to build the optimized debundler and materialize any inputs needed for
-the target corpus, then run the debundler directly under the real profiler. The
-standalone `perf_wrapper.sh` helper can still post-process `perf` output for
+```python
+load(
+    "@ducktape//devinfra/js/debundle:pipeline.bzl",
+    "debundle_pipeline",
+)
+
+debundle_pipeline(
+    name = "debundle",
+    # Pipeline attrs...
+)
+```
+
+Generated targets:
+
+- `:debundle`
+- `:debundle_profile_time`
+- `:debundle_profile_perf`
+- `:debundle_profile_massif_heap`
+- `:debundle_profile_heaptrack`
+
+Profile actions are tagged `manual` and use local/no-remote/no-cache/no-sandbox
+execution requirements. Build them with full output downloads when remote
+execution is configured:
+
+```sh
+bazel build //path/to:debundle_profile_perf --remote_download_outputs=all
+```
+
+The standalone `perf_wrapper.sh` helper can still post-process `perf` output for
 ad-hoc local runs:
 
 ```sh

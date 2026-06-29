@@ -8,7 +8,7 @@ Small Talos k8s cluster with GitOps and HTTPS.
 - CNI: Cilium VXLAN (infrastructure-managed, not GitOps)
 - Secrets: SOPS (age-encrypted in git, decrypted by Flux). ESO with the Kubernetes
   provider mirrors a few secrets cross-namespace. Vault was decommissioned 2026-04-19
-  (see <vault-migration/TODO.md>).
+  (see <archive/2026_04_19_vault_migration.md>).
 
 ## Prerequisites
 

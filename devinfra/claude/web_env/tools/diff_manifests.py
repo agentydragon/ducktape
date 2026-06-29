@@ -146,11 +146,11 @@ def diff_manifests(
             continue
 
         changes = []
-        if not excl.ignore_perms and le.perms != re.perms:
+        if le.perms != re.perms:
             changes.append(f"perms {le.perms}->{re.perms}")
-        if not excl.ignore_owner and le.owner != re.owner:
+        if le.owner != re.owner:
             changes.append(f"owner {le.owner}->{re.owner}")
-        if not excl.ignore_group and le.group != re.group:
+        if le.group != re.group:
             changes.append(f"group {le.group}->{re.group}")
         if changes:
             if volatile:

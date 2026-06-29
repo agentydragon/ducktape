@@ -307,9 +307,9 @@ These are not in SPEC.md but catch real-world failure modes. Include them
 in the report under a separate "Diagnostics" heading.
 
 **Before running D1/D2**, skim <../../docs/web-setup-debug.md>
-— it documents the historical failure modes (SHA-pinned setup URLs, gVisor
-`max-jobs=0`, the Firecracker "pin drift on persistent rootfs" class, the
-Nix 2.34.3 SIGABRT masking issue) and is the authoritative reference for
+— it documents the historical failure modes (SHA-pinned setup URLs, the
+Firecracker "pin drift on persistent rootfs" class, the Nix 2.34.3 SIGABRT
+masking issue) and is the authoritative reference for
 how `web_setup.sh` is supposed to behave. In particular, the
 **"Pin drift on persistent rootfs"** section explains why a container
 running for more than a day or two can silently have a stale `claude-hooks`

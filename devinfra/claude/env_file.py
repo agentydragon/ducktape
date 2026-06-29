@@ -33,9 +33,9 @@ def parse_env_null_delimited(raw: bytes) -> dict[str, str]:
 ENV_SESSION_BAZELRC = "SESSION_BAZELRC"
 
 
-# NO_PROXY entries that break Go module downloads in the gVisor sandbox.
-# proxy.golang.org redirects zip downloads to storage.googleapis.com;
-# if that's in NO_PROXY, Go bypasses the egress proxy and DNS fails.
+# NO_PROXY entries that break Go module downloads when Claude traffic must use
+# the managed egress path. proxy.golang.org redirects zip downloads to
+# storage.googleapis.com; if that's in NO_PROXY, Go bypasses the egress path.
 _NO_PROXY_STRIP_PATTERNS = {"*.googleapis.com", "*.google.com"}
 
 
@@ -119,12 +119,12 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     # Only the bazel wrapper overrides them for its subprocess.
     # See README.md "Our Design Principle" section.
 
-    # Fix NO_PROXY: Anthropic's container sets NO_PROXY with *.googleapis.com
+    # Fix NO_PROXY: older Anthropic containers set NO_PROXY with *.googleapis.com
     # and *.google.com, which breaks Go module downloads. The Go module proxy
     # (proxy.golang.org) redirects zip downloads to storage.googleapis.com;
-    # Go's net/http honors NO_PROXY, bypasses the egress proxy for that domain,
-    # and DNS fails (no direct internet in gVisor sandbox). Strip these entries
-    # so all external traffic goes through the proxy.
+    # Go's net/http honors NO_PROXY and bypasses the managed egress path for
+    # that domain. Strip these entries so external traffic follows the same
+    # route as the rest of the session.
     no_proxy_override = _strip_no_proxy_google()
     if no_proxy_override is not None:
         exports.extend(["", "# NO_PROXY fix: strip *.googleapis.com/*.google.com (breaks Go module downloads)"])

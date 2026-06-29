@@ -443,7 +443,7 @@ npm.npm_translate_lock(
         "//:x/study_casino/frontend/package.json",
     ],
     # Disable postinstall for packages that download binaries during lifecycle hooks.
-    # These fail in Bazel's sandboxed builds (network blocked, gVisor, RBE).
+    # These fail in Bazel's sandboxed builds (network blocked, RBE).
     lifecycle_hooks_exclude = [
         # Tries to download native bindings from npm registry. Safe to skip since
         # @storybook/test-runner (the only consumer via jest-resolve) isn't executed

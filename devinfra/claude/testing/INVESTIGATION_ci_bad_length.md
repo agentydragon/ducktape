@@ -80,7 +80,7 @@ These tests verify correctness of the proxy's forwarding but **do not distinguis
 
 ## Open Questions
 
-1. **Was `SSLWantWriteError` actually the cause?** The hypothesis is plausible but unproven. The failure could also have been caused by a transient issue in the real upstream egress proxy, a gVisor networking quirk, or something else entirely.
+1. **Was `SSLWantWriteError` actually the cause?** The hypothesis is plausible but unproven. The failure could also have been caused by a transient issue in the real upstream egress proxy, network backpressure elsewhere, or something else entirely.
 
 2. **Why was this not seen before?** Possibly it was — the test may have been flaky for a while. Or the 46MB bazelisk download is new enough (or infrequent enough in CI) that the conditions hadn't aligned before.
 
