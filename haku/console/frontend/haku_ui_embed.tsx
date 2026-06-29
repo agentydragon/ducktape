@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { type Outbound, parseInbound, vetOpenLink } from "./bridge.ts";
 import { launchRoutine } from "./client.ts";
-import { ConfirmDialog } from "./confirm_dialog.tsx";
+import { ConfirmDialog, type Escalation } from "./confirm_dialog.tsx";
 import { toastError, toastSuccess } from "./toast.ts";
 
 // Haku's own UI service — a separate, Authentik-gated origin running in haku-sandbox —
@@ -29,15 +29,11 @@ export function openExternal(url: string): boolean {
 
 const POPUP_HINT = "Allow pop-ups for this site so the console can open links.";
 
-interface PendingLaunch {
-  id: string;
-  prompt: string;
-}
-
 export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchAvailable: boolean }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [pendingUrl, setPendingUrl] = useState<string | null>(null);
-  const [pendingLaunch, setPendingLaunch] = useState<PendingLaunch | null>(null);
+  // The single escalation awaiting the operator's trusted confirm (a link to open or a run
+  // to launch). One typed action, dispatched on its `kind` — see ConfirmDialog's Escalation.
+  const [pending, setPending] = useState<Escalation | null>(null);
   const origin = new URL(uiUrl).origin;
 
   function reply(msg: Outbound) {
@@ -62,9 +58,10 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
           reply({ type: "launchResult", id: msg.id, ok: false, reason: "Launch is not configured." });
           return;
         }
-        setPendingLaunch({ id: msg.id, prompt: msg.prompt });
+        setPending({ kind: "launch", id: msg.id, prompt: msg.prompt });
         return;
       }
+      // openLink: scheme-gate + whitelist; whitelisted opens directly, off-whitelist confirms.
       const verdict = vetOpenLink(msg.url);
       if (verdict.action === "reject") {
         toastError("Link blocked", verdict.reason);
@@ -72,33 +69,24 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
       } else if (verdict.action === "open") {
         openAndReply(msg.url);
       } else {
-        setPendingUrl(msg.url); // off-whitelist → operator confirm
+        setPending({ kind: "openLink", url: msg.url });
       }
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [origin, launchAvailable]);
 
+  // The operator approved against trusted-rendered chrome — now actually perform the action
+  // (open the link / fire the capability) and report the outcome back over the bridge.
   function onApprove() {
-    const url = pendingUrl;
-    setPendingUrl(null);
-    if (url) openAndReply(url);
-  }
-
-  function onCancel() {
-    const url = pendingUrl;
-    setPendingUrl(null);
-    if (url) reply({ type: "openLinkResult", url, opened: false, reason: "cancelled" });
-  }
-
-  // Launch confirm: the operator approved against trusted-rendered chrome (the prompt is
-  // shown verbatim), so now actually fire the capability and report the outcome both as a
-  // toast and back over the bridge so the iframe's dialog can resolve.
-  function onLaunchApprove() {
-    const req = pendingLaunch;
-    setPendingLaunch(null);
-    if (!req) return;
-    void launchRoutine(req.prompt || undefined)
+    const action = pending;
+    setPending(null);
+    if (!action) return;
+    if (action.kind === "openLink") {
+      openAndReply(action.url);
+      return;
+    }
+    void launchRoutine(action.prompt || undefined)
       .then((result) => {
         toastSuccess(
           "Haku run launched",
@@ -106,19 +94,23 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
             Open session
           </Anchor>
         );
-        reply({ type: "launchResult", id: req.id, ok: true, sessionUrl: result.session_url });
+        reply({ type: "launchResult", id: action.id, ok: true, sessionUrl: result.session_url });
       })
       .catch((e: unknown) => {
-        const reason = e instanceof Error ? e.message : String(e);
         toastError("Launch failed", e);
-        reply({ type: "launchResult", id: req.id, ok: false, reason });
+        reply({ type: "launchResult", id: action.id, ok: false, reason: e instanceof Error ? e.message : String(e) });
       });
   }
 
-  function onLaunchCancel() {
-    const req = pendingLaunch;
-    setPendingLaunch(null);
-    if (req) reply({ type: "launchResult", id: req.id, ok: false, reason: "cancelled" });
+  function onCancel() {
+    const action = pending;
+    setPending(null);
+    if (!action) return;
+    if (action.kind === "openLink") {
+      reply({ type: "openLinkResult", url: action.url, opened: false, reason: "cancelled" });
+    } else {
+      reply({ type: "launchResult", id: action.id, ok: false, reason: "cancelled" });
+    }
   }
 
   return (
@@ -130,25 +122,7 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
         sandbox="allow-scripts allow-same-origin allow-forms"
         style={{ display: "block", width: "100vw", height: "100vh", border: 0 }}
       />
-      <ConfirmDialog
-        request={pendingUrl ? { title: "Open this link?", url: pendingUrl, approveLabel: "Open" } : null}
-        onApprove={onApprove}
-        onCancel={onCancel}
-      />
-      <ConfirmDialog
-        request={
-          pendingLaunch
-            ? {
-                title: "Launch a Haku run?",
-                body: "This starts a new Claude Code web session running Haku now.",
-                preview: pendingLaunch.prompt || undefined,
-                approveLabel: "Launch",
-              }
-            : null
-        }
-        onApprove={onLaunchApprove}
-        onCancel={onLaunchCancel}
-      />
+      <ConfirmDialog action={pending} onApprove={onApprove} onCancel={onCancel} />
     </>
   );
 }
