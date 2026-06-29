@@ -1,8 +1,9 @@
 # haku/gmail_labeling — namespaced Gmail label management over MCP
 
-**This doc is forward-looking** — design note for a not-yet-built Haku subcomponent.
-Once code lands, the closure invariant below becomes a `SPEC.md`, run/setup detail moves
-to `README.md`, and this file is trimmed or tombstoned.
+**Status:** the server is implemented in this directory. The closure invariant is now
+the contract in `SPEC.md`; run/setup detail is in `README.md`. This doc keeps the design
+rationale (why no Airlock, the credential model) and the remaining **deployment** open
+questions. Trim or tombstone it once the server is deployed.
 
 ## What it is
 
@@ -92,10 +93,13 @@ mailbox-write one:
    Authentik OIDC (`mcp_oauth`) mode later — same trajectory noted for `tana-mcp-ro`.
    This bearer authenticates Haku to the server; it grants **only** the namespaced
    labeling tool surface, nothing more.
-2. **Labeling server → Gmail (`gmail.modify` OAuth).** Held **only** by the server, in
-   its own namespace — _not_ `haku-sandbox`. Haku has no RBAC to read it, and its own
-   `google-access-token` stays `.readonly`, so even a fully compromised Haku cannot
-   obtain mailbox-write scope; it can only ask the server to do namespaced labeling.
+2. **Labeling server → Gmail (`gmail.modify` OAuth).** **Provisioned and rotated by
+   Airlock**, which already manages Google OAuth (it fronts `google-workspace-mcp` and
+   reflects `google-client-credentials`). The server owns no OAuth client of its own — it
+   reads the resulting token from a secret in its own namespace (_not_ `haku-sandbox`).
+   Haku has no RBAC to read it, and its own `google-access-token` stays `.readonly`, so
+   even a fully compromised Haku cannot obtain mailbox-write scope; it can only ask the
+   server to do namespaced labeling.
 
 ## Placement & trust boundary
 
@@ -132,12 +136,16 @@ recommends, and the operator hands off." Namespaced labels are the safest possib
 break that seal — private to the account, reversible, low blast radius — but it is a real
 change to Haku's contract and must land in Haku's docs/`SPEC.md`, not just here.
 
-## Open questions
+## Resolved
 
-- Should `delete_label` ship in v0, or wait until there's a demonstrated need? It's bounded
-  but it's the one irreversible-ish op (label membership is lost on delete).
-- Sibling service vs in-console (above) — default sibling. If sibling, it mirrors the
-  `tana-mcp-ro` wiring: own namespace, `gmail.modify` secret reflected in, bearer secret
-  reflected into `haku-sandbox`, registered in Haku's MCP config.
-- Where does the `gmail.modify` OAuth token come from — a dedicated client, or reuse of the
-  `google-workspace-mcp` / `google-client-credentials` setup already in the cluster?
+- **`delete_label` and `rename_label` ship in v0** — both bounded to the namespace
+  (`rename` requires both names under the prefix). `delete` is the sharpest in-namespace op.
+- **`gmail.modify` token is Airlock-provisioned/rotated** (see _Auth_ above), not a
+  dedicated OAuth client this server owns.
+
+## Open questions (deployment)
+
+- Sibling service vs in-console — default **sibling**, mirroring the `tana-mcp-ro` wiring:
+  own namespace, the Airlock-managed `gmail.modify` secret reflected in, bearer secret
+  reflected into `haku-sandbox`, registered in Haku's MCP config. Not yet built: the
+  `cluster/k8s/` manifests, the OCI image target, and the Airlock-side token provisioning.

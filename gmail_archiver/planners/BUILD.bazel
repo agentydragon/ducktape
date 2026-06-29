@@ -5,7 +5,7 @@ py_library(
     srcs = ["aliexpress.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//gmail_archiver:gmail_api_models",
+        "//gmail_api:labels",
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
         "//gmail_archiver:plan",
@@ -18,7 +18,7 @@ py_library(
     srcs = ["anthem_eob.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//gmail_archiver:gmail_api_models",
+        "//gmail_api:labels",
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
         "//gmail_archiver:plan",
@@ -31,7 +31,7 @@ py_library(
     srcs = ["anthem_reimbursement.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//gmail_archiver:gmail_api_models",
+        "//gmail_api:labels",
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
         "//gmail_archiver:plan",
@@ -44,8 +44,8 @@ py_library(
     srcs = ["anthropic.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//gmail_api:labels",
         "//gmail_archiver:date_patterns",
-        "//gmail_archiver:gmail_api_models",
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
         "//gmail_archiver:plan",
@@ -59,8 +59,8 @@ py_library(
     srcs = ["dbsa.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//gmail_api:labels",
         "//gmail_archiver:event_classifier",
-        "//gmail_archiver:gmail_api_models",
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
         "//gmail_archiver:plan",
@@ -73,7 +73,7 @@ py_library(
     srcs = ["doordash.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//gmail_archiver:gmail_api_models",
+        "//gmail_api:labels",
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
         "//gmail_archiver:plan",
@@ -87,7 +87,7 @@ py_library(
     srcs = ["one_medical.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//gmail_archiver:gmail_api_models",
+        "//gmail_api:labels",
         "//gmail_archiver:inbox",
         "//gmail_archiver:plan",
     ],
@@ -98,7 +98,7 @@ py_library(
     srcs = ["spruce.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//gmail_archiver:gmail_api_models",
+        "//gmail_api:labels",
         "//gmail_archiver:inbox",
         "//gmail_archiver:plan",
     ],
@@ -109,7 +109,7 @@ py_library(
     srcs = ["square.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//gmail_archiver:gmail_api_models",
+        "//gmail_api:labels",
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
         "//gmail_archiver:plan",
@@ -122,8 +122,8 @@ py_library(
     srcs = ["usps.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//gmail_api:labels",
         "//gmail_archiver:date_patterns",
-        "//gmail_archiver:gmail_api_models",
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
         "//gmail_archiver:plan",

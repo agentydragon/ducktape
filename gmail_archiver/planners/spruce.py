@@ -6,7 +6,7 @@ Archives all older notifications.
 
 from datetime import UTC, datetime, timedelta
 
-from gmail_archiver.gmail_api_models import SystemLabel
+from gmail_api.labels import SystemLabel
 from gmail_archiver.inbox import GmailInbox
 from gmail_archiver.plan import LABEL_AUTO_CLEANED, Plan
 

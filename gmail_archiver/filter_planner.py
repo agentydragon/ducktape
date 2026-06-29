@@ -1,6 +1,7 @@
 """FilterPlanner - integrates YAML filters with the Plan system."""
 
-from gmail_archiver.gmail_api_models import FilterCriteria, GmailFilter, SystemLabel
+from gmail_api.labels import SystemLabel
+from gmail_archiver.gmail_api_models import FilterCriteria, GmailFilter
 from gmail_archiver.gmail_yaml_filters_models import FilterRule
 from gmail_archiver.inbox import GmailInbox
 from gmail_archiver.plan import Plan

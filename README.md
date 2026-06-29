@@ -29,6 +29,7 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 | `cpap/`            | CPAP data sync and analysis skill             |
 | `difftree/`        | Tree-style git diff visualization             |
 | `gmail_archiver/`  | Gmail cleanup and filter sync tooling         |
+| `gmail_api/`       | Shared Gmail API models and service builder   |
 | `gnome/`           | GNOME desktop utilities and Shell extensions  |
 | `qr_codes/`        | Household SVG QR codes                        |
 | `idea/`            | Lightweight future project ideas              |

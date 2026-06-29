@@ -16,6 +16,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":common",
+        "//gmail_api:labels",
         "//gmail_archiver:dirs",
         "//gmail_archiver:filter_planner",
         "//gmail_archiver:filter_sync",

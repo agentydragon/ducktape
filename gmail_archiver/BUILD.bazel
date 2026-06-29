@@ -7,11 +7,11 @@ py_library(
     deps = [
         ":dirs",
         ":event_classifier",
-        ":gmail_api_models",
         ":inbox",
         ":models",
         ":plan",
         ":plan_display",
+        "//gmail_api:labels",
         "//gmail_archiver/cli:common",
         "//gmail_archiver/cli:filters",
         "//gmail_archiver/cli:labels",
@@ -74,6 +74,7 @@ py_library(
         ":gmail_yaml_filters_models",
         ":inbox",
         ":plan",
+        "//gmail_api:labels",
     ],
 )
 
@@ -85,6 +86,7 @@ py_library(
         ":filter_planner",
         ":gmail_api_models",
         ":gmail_yaml_filters_models",
+        "//gmail_api:labels",
     ],
 )
 
@@ -102,9 +104,10 @@ py_library(
     deps = [
         ":gmail_api_models",
         ":models",
+        "//gmail_api:labels",
+        "//gmail_api:service",
         "//util:fmt",
         "@pypi//google_api_python_client",
-        "@pypi//google_auth",
     ],
 )
 
@@ -165,6 +168,7 @@ py_library(
         ":gmail_api_models",
         ":inbox",
         ":plan",
+        "//gmail_api:labels",
         "@pypi//rich",
     ],
 )

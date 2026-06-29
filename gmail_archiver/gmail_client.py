@@ -11,18 +11,15 @@ from datetime import UTC, datetime
 from itertools import batched
 from pathlib import Path
 
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from gmail_api.labels import GmailLabel, SystemLabel, resolve_label_id
+from gmail_api.service import build_gmail_service
 from gmail_archiver.gmail_api_models import (
     CreateFilterRequest,
     GmailFilter,
-    GmailLabel,
     GmailMessageMinimal,
     GmailMessageWithHeaders,
-    SystemLabel,
-    resolve_label_id,
 )
 from gmail_archiver.models import Email
 from util.fmt import format_truncation_suffix
@@ -105,8 +102,7 @@ class GmailClient:
         self._label_cache: dict[str, str] | None = None  # name -> id
 
     def _build_service(self):
-        creds = Credentials.from_authorized_user_file(self.token_file)
-        return build("gmail", "v1", credentials=creds)
+        return build_gmail_service(self.token_file)
 
     def list_messages_by_labels(self, label_names: list[str], max_results: int | None = None) -> list[str]:
         """List message IDs with all given labels (AND operation)."""

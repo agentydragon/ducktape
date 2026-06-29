@@ -1,0 +1,18 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "labels",
+    srcs = ["labels.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "service",
+    srcs = ["service.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//google_api_python_client",
+        "@pypi//google_auth",
+    ],
+)
