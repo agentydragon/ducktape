@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { clickAction, fetchDashboard, unclickAction } from "./client.ts";
 import { ImprovementsPage } from "./improvements.tsx";
 import { InboxView } from "./inbox.tsx";
+import { RunsPage } from "./runs.tsx";
 import { clickKey } from "./task.tsx";
 import type { DashboardResponse } from "./types.ts";
 
@@ -13,7 +14,7 @@ import type { DashboardResponse } from "./types.ts";
 // (e.g. a Kitchen/shopping board, a one-off decision page) by writing a new `*.tsx`, a
 // backend endpoint, and a `View` entry here. Those operator-specific surfaces live in that
 // operator's haku-state, not in this generic starter.
-type View = "inbox" | "improvements";
+type View = "inbox" | "improvements" | "runs";
 
 export default function App() {
   const [data, setData] = useState<DashboardResponse | null>(null);
@@ -64,6 +65,7 @@ export default function App() {
   const tabs: [View, string][] = [
     ["inbox", "Inbox"],
     ["improvements", "💡 Improvements"],
+    ["runs", "🔁 Runs"],
   ];
 
   return (
@@ -83,6 +85,8 @@ export default function App() {
 
       {view === "improvements" ? (
         <ImprovementsPage />
+      ) : view === "runs" ? (
+        <RunsPage />
       ) : (
         <InboxView
           data={data}

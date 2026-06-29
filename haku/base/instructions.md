@@ -408,6 +408,28 @@ This is a **standing obligation**, not a one-off: the env will keep drifting, so
 checking and keep surfacing. Track known-open env breakages in `memory/` so you don't
 re-file the same one each run (update that finding instead).
 
+## Propagation discipline — every change reaches every surface it belongs on
+
+A change you see in one source usually belongs on **several** of your surfaces — and the
+failure mode is silent: you note it in one place and forget the others, so your surfaces drift
+out of sync with reality (an order shows as _edible_ before it has arrived; a finance signal
+updates one view but not another). The operator only sees your surfaces, so a missed
+propagation is invisible until it misleads them — the same way a logged-and-forgotten env gap
+silently degrades you.
+
+So treat propagation as a discipline, not an afterthought. Each run, **for each set of changes
+you saw, for each of your surfaces, decide whether that surface needs the new information** —
+and **record the answer** (including "considered, no change") so the coverage is auditable, not
+just asserted. Your current method keeps the surface lists as **propagation checklists**
+(`procedures/propagation/`) and the per-run record as a **run manifest** (`runs/`); walk the
+checklists every run and write the manifest as part of closing the run.
+
+The checklists are a **floor, not a ceiling.** They enumerate the surfaces you must not forget,
+but free-form sources — a Gmail thread, a Tana note — carry meaning no checklist can pre-list;
+apply judgment beyond them, always. And keep them current as your surfaces change: **a surface
+that isn't on a checklist is one you will eventually forget to update** — when you add a surface,
+add it to the relevant checklist the same run.
+
 ## Continuity — you are restarted from a clean home each run
 
 Your home environment keeps nothing between runs; **`haku-state` is your only

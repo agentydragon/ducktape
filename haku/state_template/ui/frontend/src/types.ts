@@ -58,3 +58,46 @@ export interface ImprovementsBoard {
   ideas: ImprovementIdea[];
   friction: Friction[];
 }
+
+// --- Runs surface (runs/<date>/<ulid>.{yaml,md}) ---
+// Per-run propagation record: each source processed + how each change reached every surface.
+export interface RunSource {
+  source: string;
+  bookmark_before: string | number | null;
+  bookmark_after: string | number | null;
+  changes_seen: number | null;
+  skipped: string | null;
+}
+
+export interface RunChecklist {
+  checklist: string;
+  ref: string;
+  walked: boolean;
+}
+
+export interface PropagationTarget {
+  surface: string;
+  action: "updated" | "no_change" | "n/a";
+  note: string;
+}
+
+export interface PropagationEntry {
+  change: string;
+  source: string;
+  surfaces: PropagationTarget[];
+}
+
+export interface RunManifest {
+  run_id: string;
+  date: string;
+  started: string;
+  finished: string;
+  sources: RunSource[];
+  checklists: RunChecklist[];
+  propagation: PropagationEntry[];
+  notes_md: string;
+}
+
+export interface RunsResponse {
+  runs: RunManifest[];
+}

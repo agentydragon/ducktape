@@ -37,8 +37,8 @@ from config import Settings
 from fastapi import Depends, FastAPI, Header, Request, Response
 from fastapi.staticfiles import StaticFiles
 from forgejo import Forgejo
-from models import Click, DashboardResponse, FeedbackRequest, ImprovementsBoard
-from reads import read_dashboard
+from models import Click, DashboardResponse, FeedbackRequest, ImprovementsBoard, RunsResponse
+from reads import read_dashboard, read_runs
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +106,13 @@ def create_app(settings: Settings) -> FastAPI:
         """Capability ideas + friction log (improvements.yaml). Read-only; empty board if absent."""
         raw = await forgejo.read_yaml("improvements.yaml")
         return ImprovementsBoard.model_validate(raw) if raw else ImprovementsBoard()
+
+    # --- Runs surface: per-run propagation record (runs/<date>/<ulid>.{yaml,md}) -
+    @app.get("/api/runs")
+    async def runs(forgejo: ForgejoDep) -> RunsResponse:
+        """Recent run manifests + their prose notes — proves each source was processed and shows
+        how each change propagated to every surface. Read-only; empty if no runs recorded yet."""
+        return RunsResponse(runs=await read_runs(forgejo))
 
     # --- trace tier: operator-expressed intent recorded into haku-state ---------
     # A clicked action is the file clicks/<item_id>/<action_id> (removed on un-click); feedback

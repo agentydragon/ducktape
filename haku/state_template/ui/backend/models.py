@@ -135,3 +135,54 @@ class ImprovementsBoard(BaseModel):
     updated: str = ""
     ideas: list[ImprovementIdea] = Field(default_factory=list)
     friction: list[Friction] = Field(default_factory=list)
+
+
+# --- Runs surface (runs/<date>/<ulid>.{yaml,md}) -------------------------------
+# Per-run propagation record: proves every source was processed and shows how each change
+# propagated to every surface. The .yaml is the machine-checkable spine; the sibling .md is
+# free-form reasoning (rendered as markdown). See procedures/propagation/ + the base
+# "Propagation discipline" obligation.
+
+
+class RunSource(BaseModel):
+    source: str
+    # Bookmarks are opaque resume tokens and differ by source (epoch string, integer id, …),
+    # so accept either an int or a string.
+    bookmark_before: int | str | None = None
+    bookmark_after: int | str | None = None
+    changes_seen: int | None = None
+    skipped: str | None = None  # set (with the reason) instead of bookmarks when a source was skipped
+
+
+class RunChecklist(BaseModel):
+    checklist: str  # filename stem under procedures/propagation/
+    ref: str = ""
+    walked: bool = False
+
+
+class PropagationTarget(BaseModel):
+    surface: str
+    # "n/a" = this surface never applies to this change; "no_change" = considered, didn't apply.
+    action: Literal["updated", "no_change", "n/a"]
+    note: str = ""
+
+
+class PropagationEntry(BaseModel):
+    change: str
+    source: str = ""  # which source the change came from
+    surfaces: list[PropagationTarget] = Field(default_factory=list)
+
+
+class RunManifest(BaseModel):
+    run_id: str
+    date: str = ""
+    started: str = ""
+    finished: str = ""
+    sources: list[RunSource] = Field(default_factory=list)
+    checklists: list[RunChecklist] = Field(default_factory=list)
+    propagation: list[PropagationEntry] = Field(default_factory=list)
+    notes_md: str = ""  # the sibling .md (raw markdown), attached by reads.read_runs
+
+
+class RunsResponse(BaseModel):
+    runs: list[RunManifest] = Field(default_factory=list)

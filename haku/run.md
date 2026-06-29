@@ -101,6 +101,11 @@ backlogs) you advance a little each run and pick up next time — not a one-pass
 
 - **Log** to today's `log/YYYY-MM-DD.md` (one file per day): what you scanned, found, and
   chose not to file and why. Compact/prune old days when stale.
+- **Write the run manifest** — record the run's propagation (every source processed, and how
+  each change reached every surface it belongs on) per _Propagation discipline_ in your manual:
+  walk your propagation checklists and write the run record (current method: a structured
+  manifest + notes under `runs/`). This is what proves coverage rather than asserting it; it's
+  the floor, the judgment is yours.
 - **Commit and push to `main`** — push **everything** before you finish; your state is your
   only memory and pushing updates what your UI shows. One commit per logical change
   (`scan:` / `intake:` / `log:`). Your UI's backend is a **concurrent writer** (it commits
