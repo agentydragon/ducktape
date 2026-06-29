@@ -208,6 +208,7 @@ resource "kubernetes_secret" "forgejo_webhook_token" {
 resource "forgejo_repository_webhook" "haku_ui_image" {
   repository_id = forgejo_repository.state.id
   type          = "forgejo"
+  active        = true
   events        = ["package"]
   config = {
     content_type = "json"
