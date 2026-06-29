@@ -17,6 +17,11 @@ infrastructure tokens. Files in `secrets/*.yaml` contain infrastructure secrets
 
 ## Age Keys
 
+Generic SOPS rules — `.sops.yaml` path matching (encrypt in-place at the final repo
+path; `sops -e /tmp/...` fails with "no matching creation rules") and `SOPS_AGE_KEY`
+derivation from `~/.ssh/id_ed25519` — live in root `AGENTS.md` § SOPS. The
+cluster-specific keys and their storage:
+
 Defined in `.sops.yaml` creation rules:
 
 | Key                              | Purpose                                       | Storage                                                                                        |

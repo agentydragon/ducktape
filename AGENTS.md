@@ -67,7 +67,7 @@ bbr query '...'
 bb run //devinfra:gazelle
 ```
 
-Remote execution (RBE) and remote caching are the **expected defaults** — do not disable them. In particular:
+Remote execution (RBE) and remote caching are the **expected defaults** — do not disable them. No workflow needs `--remote_executor=""` — see <devinfra/docs/rbe_workflows.md> for the per-workflow reasoning (gazelle, requirements, cargo repin, pnpm, syrupy). In particular:
 
 - **Browser/visual tests must run with remote execution.** RBE runner VMs have the required Docker and display stack; local machines typically do not. Never skip or stub these tests to avoid needing RBE.
 - `--noremote_cache` / `--noremote_accept_cached` are fine for forcing a fresh run; they don't break correctness.

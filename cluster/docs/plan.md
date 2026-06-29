@@ -438,17 +438,13 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       service unit) — restarts kubelet if it deadlocks
 - [ ] NVIDIA GPU monitoring: add DCGM exporter ServiceMonitor + Grafana dashboard (gnetId 12239)
 - [ ] etcd: add dedicated ServiceMonitor for full etcd metrics (current scrape is partial via apiserver, now via Alloy)
-- [ ] **Roaming node DaemonSet problem** (high priority): Offline roaming nodes
-      (iguana/rugged) cause DaemonSet pods to stay Pending, which makes Helm
-      install/upgrade timeout. Current workaround is `disableWait: true` in
-      monitoring-stack — this is unsatisfying because it suppresses all readiness
-      checking, not just for roaming nodes. Affects every HelmRelease with a
-      DaemonSet. Need a proper solution:
-  - Option A: Taint roaming nodes + add tolerations to DaemonSets that should
-    run there (node-exporter, Cilium). DaemonSets without toleration skip roaming.
-  - Option B: `nodeAffinity` on DaemonSets to exclude `roaming` region entirely.
-  - Option C: Custom Flux health check that ignores Pending pods on NotReady nodes.
-  - `rugged` already has `NoSchedule` taint; `iguana` does not — add it.
+- [ ] **Roaming node DaemonSet problem** (high priority; recurs for any DaemonSet):
+      Offline roaming nodes (iguana/rugged) leave DaemonSet pods Pending, which
+      makes Helm `--wait` time out and blocks Flux reconciliation. Current
+      workaround: `disableWait: true` on the affected HelmReleases (monitoring-stack,
+      promtail) — unsatisfying because it suppresses all readiness checking. Full
+      options, analysis, and the long-term fix (auto-remove stale NotReady nodes):
+      <docs/plans/offline_node_daemonset_health.md>.
 - [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `scanner`, `activitywatch`,
       `proxmox-proxy`, `props`/`props-registry`)
 - [ ] OpenClaw: obfuscation detection forces approval despite `security: full`

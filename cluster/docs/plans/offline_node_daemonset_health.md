@@ -1,5 +1,10 @@
 # Offline Nodes Block DaemonSet Health Checks
 
+> **Status (2026-06):** Option A (`disableWait`) is the live workaround — applied
+> to `monitoring/kube-prometheus-stack` and `loki/promtail` HelmReleases. Options
+> B–D remain unimplemented; the long-term fix is still Option B (auto-remove stale
+> NotReady nodes). Full options/analysis below.
+
 ## Problem
 
 The cluster includes roaming nodes (laptops) and a Proxmox CP node that are
