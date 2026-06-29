@@ -27,12 +27,12 @@ namespace check runs before any Gmail call.
 
 Environment variables, prefix `GMAIL_LABELING_`:
 
-| Var                | Default            | Meaning                                                       |
-| ------------------ | ------------------ | ------------------------------------------------------------- |
-| `GMAIL_TOKEN_FILE` | required           | Path to the `gmail.modify` authorized-user token JSON.        |
-| `ALLOWED_PREFIX`   | `haku/`            | Managed namespace; only labels under this prefix are touched. |
-| `STATIC_BEARER`    | unset              | If set, require `Authorization: Bearer <token>` on `/mcp`.    |
-| `HOST` / `PORT`    | `0.0.0.0` / `8080` | Bind address.                                                 |
+| Var               | Default            | Meaning                                                                                   |
+| ----------------- | ------------------ | ----------------------------------------------------------------------------------------- |
+| `GMAIL_TOKEN_DIR` | required           | Dir with the Airlock-managed `gmail.modify` access token (`access_token` + `expires_at`). |
+| `ALLOWED_PREFIX`  | `haku/`            | Managed namespace; only labels under this prefix are touched.                             |
+| `STATIC_BEARER`   | unset              | If set, require `Authorization: Bearer <token>` on `/mcp`.                                |
+| `HOST` / `PORT`   | `0.0.0.0` / `8080` | Bind address.                                                                             |
 
 ## Credentials
 
@@ -40,9 +40,12 @@ Two layers (see `SPEC.md`):
 
 - **Haku → this server:** a static bearer (the `tana-mcp-ro` pattern), so Haku's
   own Google token can stay `.readonly`.
-- **This server → Gmail:** a `gmail.modify` OAuth token, **provisioned and rotated
-  by Airlock** (which already manages Google OAuth). The server just reads the
-  resulting token file/secret; it owns no OAuth client of its own.
+- **This server → Gmail:** a `gmail.modify` access token, **provisioned and rotated
+  by Airlock** (the `gmail_modify` provider). Airlock holds the refresh token and writes
+  an access-only secret; ESO mirrors it into the server's namespace and the server
+  re-reads the rotating token via google-auth's `refresh_handler` (no restart). It owns
+  no OAuth client or refresh token of its own. Deployment + bootstrap:
+  <../../cluster/k8s/agents/gmail-labeling/README.md>.
 
 ## Run
 

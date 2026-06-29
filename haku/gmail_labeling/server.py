@@ -21,7 +21,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from gmail_api.service import build_gmail_service
+from gmail_api.service import build_gmail_service_from_token_dir
 from haku.gmail_labeling.backend import GmailLabelBackend
 from haku.gmail_labeling.client import LabelClient
 from haku.gmail_labeling.config import Settings
@@ -100,7 +100,7 @@ class StaticBearerGuard:
 
 
 def build_app(settings: Settings) -> Starlette:
-    service = build_gmail_service(settings.gmail_token_file)
+    service = build_gmail_service_from_token_dir(settings.gmail_token_dir)
     client = LabelClient(GmailLabelBackend(service), LabelNamespace(settings.allowed_prefix))
     mcp_app = build_mcp(client).http_app(path="/mcp")
 

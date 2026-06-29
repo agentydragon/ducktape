@@ -143,9 +143,17 @@ change to Haku's contract and must land in Haku's docs/`SPEC.md`, not just here.
 - **`gmail.modify` token is Airlock-provisioned/rotated** (see _Auth_ above), not a
   dedicated OAuth client this server owns.
 
-## Open questions (deployment)
+## Deployment (landed)
 
-- Sibling service vs in-console — default **sibling**, mirroring the `tana-mcp-ro` wiring:
-  own namespace, the Airlock-managed `gmail.modify` secret reflected in, bearer secret
-  reflected into `haku-sandbox`, registered in Haku's MCP config. Not yet built: the
-  `cluster/k8s/` manifests, the OCI image target, and the Airlock-side token provisioning.
+Built as a **sibling MCP service** (the `tana-mcp-ro` shape), not in the console:
+
+- Image `ghcr.io/agentydragon/gmail-labeling` (`//haku/gmail_labeling:image`), pushed by
+  `push-images.yml`, tag-tracked by Flux image automation.
+- Manifests in `cluster/k8s/agents/gmail-labeling/` (own namespace, bearer SOPS secret
+  reflected into `haku-sandbox`, public bearer-gated HTTPRoute).
+- `gmail.modify` token provisioned/rotated by a new Airlock `gmail_modify` OAuth provider;
+  the access-only token is ESO-mirrored into the `gmail-labeling` namespace (never a
+  sandbox). Deployment + one-time OAuth bootstrap: `cluster/k8s/agents/gmail-labeling/README.md`.
+
+Remaining: register the server in Haku's own MCP config (so Haku actually calls it), and the
+one-time `gmail.modify` OAuth consent at `airlock.allegedly.works/oauth/authorize/gmail_modify`.

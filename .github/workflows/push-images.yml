@@ -100,6 +100,11 @@ jobs:
             }
           - { image: "@ducktape_manifold_mcp_server//:image", image_name: manifold-mcp-server, test_target: "" }
           - {
+              image: "//haku/gmail_labeling:image",
+              image_name: gmail-labeling,
+              test_target: "//haku/gmail_labeling/... //gmail_api/...",
+            }
+          - {
               image: "//x/postscanmail_mcp_server:image",
               image_name: postscanmail-mcp-server,
               test_target: "//x/postscanmail_mcp_server/...",

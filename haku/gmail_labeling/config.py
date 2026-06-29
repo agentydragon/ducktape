@@ -9,8 +9,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="GMAIL_LABELING_")
 
-    gmail_token_file: Path = Field(
-        description="Path to the authorized-user OAuth token JSON (gmail.modify scope), provisioned and rotated by Airlock."
+    gmail_token_dir: Path = Field(
+        description="Directory holding the Airlock-managed gmail.modify access token (files: access_token, expires_at), mounted from the gmail-modify-access-token secret."
     )
     allowed_prefix: str = Field(
         default="haku/",

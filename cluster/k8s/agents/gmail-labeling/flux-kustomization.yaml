@@ -1,0 +1,28 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: gmail-labeling
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/agents/gmail-labeling
+  prune: true
+  # Deliberately not `wait: true` with a Deployment health check: the pod only
+  # becomes Ready after the one-time gmail.modify OAuth bootstrap (see README.md),
+  # which mints the gmail-modify-access-token secret ESO mirrors in. Until then the
+  # pod waits on its token volume; gating the kustomization on that would wedge it.
+  wait: false
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  dependsOn:
+    - name: airlock # writes gmail-modify-access-token + the ClusterExternalSecret mirroring it here
+    - name: external-secrets-config # ClusterSecretStore + ESO controller
+    - name: gateway # public HTTPRoute
+    - name: reflector # mirrors the bearer into haku-sandbox

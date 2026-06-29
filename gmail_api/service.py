@@ -1,5 +1,7 @@
-"""Build an authenticated Gmail API service from an OAuth token file."""
+"""Build an authenticated Gmail API service from an OAuth token."""
 
+import datetime as dt
+from collections.abc import Sequence
 from pathlib import Path
 
 from google.oauth2.credentials import Credentials
@@ -10,10 +12,44 @@ GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify"
 
 
 def build_gmail_service(token_file: Path) -> Resource:
-    """Build a Gmail v1 service client from an authorized-user OAuth token JSON.
+    """Build a Gmail v1 service from an authorized-user OAuth token JSON.
 
     The token file is the standard google-auth authorized-user format (refresh
     token + client config); google-auth refreshes the access token as needed.
     """
     creds = Credentials.from_authorized_user_file(str(token_file))
     return build("gmail", "v1", credentials=creds, cache_discovery=False)
+
+
+def build_gmail_service_from_token_dir(token_dir: Path) -> Resource:
+    """Build a Gmail v1 service backed by an externally-rotated access token.
+
+    `token_dir` is a mounted secret holding an `access_token` (and `expires_at`)
+    file, as written by Airlock and synced into the namespace by ESO. This
+    process holds no refresh_token; google-auth's `refresh_handler` re-reads the
+    directory when the access token expires, so the token Airlock rotates is
+    picked up automatically. `static_discovery=True` keeps `build()` offline.
+    """
+
+    def refresh_handler(request: object, scopes: Sequence[str] | None) -> tuple[str, dt.datetime]:
+        token = (token_dir / "access_token").read_text().strip()
+        return token, _read_expiry(token_dir / "expires_at")
+
+    creds = Credentials(token=None, scopes=[GMAIL_MODIFY_SCOPE], refresh_handler=refresh_handler)
+    return build("gmail", "v1", credentials=creds, cache_discovery=False, static_discovery=True)
+
+
+def _read_expiry(path: Path) -> dt.datetime:
+    """Token expiry as a naive UTC datetime (google-auth's convention).
+
+    Airlock writes `expires_at` as an ISO-8601 timestamp. Falls back to a
+    near-future expiry so the handler re-reads soon if it is missing/unparseable.
+    """
+    fallback = dt.datetime.now(dt.UTC).replace(tzinfo=None) + dt.timedelta(minutes=5)
+    if not path.exists():
+        return fallback
+    try:
+        parsed = dt.datetime.fromisoformat(path.read_text().strip())
+    except ValueError:
+        return fallback
+    return parsed.astimezone(dt.UTC).replace(tzinfo=None) if parsed.tzinfo is not None else parsed

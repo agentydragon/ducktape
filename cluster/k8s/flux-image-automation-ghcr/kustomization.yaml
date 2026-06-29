@@ -31,6 +31,8 @@ resources:
   - mcp-oauth-facade-image-policy.yaml
   - manifold-mcp-server-image-repository.yaml
   - manifold-mcp-server-image-policy.yaml
+  - gmail-labeling-image-repository.yaml
+  - gmail-labeling-image-policy.yaml
   - plaid-mcp-server-image-repository.yaml
   - plaid-mcp-server-image-policy.yaml
   - plaid-mcp-sync-image-repository.yaml
