@@ -11,11 +11,10 @@
 # separate environments/agents/vaults because their tool postures differ (this one
 # runs bash in-pod; the cloud one reaches the cluster via kubectl-machine-mcp).
 #
-# CAVEAT (verify on first `tofu plan`): the exact provider schema for a
-# `self_hosted` environment config and the deployment `schedule` block could not
-# be validated offline. They mirror the working imperative YAML (haku.environment
-# .yaml `{type: self_hosted}`; haku.deployment.yaml cron) and the cloud module.
-# Adjust attribute names to the provider if the first plan rejects them.
+# CAVEAT (verify on first `tofu plan`): `tofu validate` passes (the env config +
+# the deployment `schedule` block type-check against the provider schema), but the
+# API may still reject the schedule's semantics at plan/apply. The schedule mirrors
+# the working imperative haku.deployment.yaml cron; adjust if plan rejects it.
 #
 # CREATE is non-destructive: it provisions a NEW environment/agent/vault/deployment
 # in parallel with the live imperative one. The running worker is unaffected until
@@ -26,13 +25,17 @@
 # the shared haku-cloud-anthropic-api-key Secret; see the Terraform CR).
 provider "claude-managed-agents" {}
 
-# {type: self_hosted} is the entire config — egress, hardening, and networking are
-# ours (haku-mitmproxy + CCNP on the haku-sandbox/haku-worker pod), not Anthropic's.
+# Self-hosted: tool execution (and thus the real egress fence) is the haku-worker
+# pod's haku-mitmproxy + CCNP, not an Anthropic sandbox. `networking` is moot here
+# but the provider schema requires it, so mirror haku-cloud's `unrestricted`.
 resource "claude-managed-agents_environment" "haku_selfhosted" {
   name = "haku-selfhosted"
 
   config = {
     type = "self_hosted"
+    networking = {
+      type = "unrestricted"
+    }
   }
 }
 
