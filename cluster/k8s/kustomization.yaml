@@ -211,6 +211,7 @@ resources:
   - haku/console/flux-kustomization.yaml
   - haku/agent-worker/flux-kustomization.yaml # suspended; see the dir README to activate
   - haku/cloud-agent-tf/flux-kustomization.yaml # Anthropic-hosted agent via claude-managed-agents tofu provider
+  - haku/self-hosted-agent-tf/flux-kustomization.yaml # self-hosted agent (worker runs tool calls in-pod) via claude-managed-agents tofu provider
   - haku/workloads/flux-kustomization.yaml # Flux reconciles Haku's haku-state k8s/ workloads under a constrained SA
   - haku/ui-image-webhook/flux-kustomization.yaml # operator-owned Receiver: Forgejo package webhook → reconcile the (Haku-owned) haku-ui ImageRepository
 

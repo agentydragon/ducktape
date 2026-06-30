@@ -1,0 +1,19 @@
+load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+
+tf_providers_versions(
+    name = "providers",
+    providers = {
+        "claude-managed-agents": "modus-agendi/anthropic-claude-managed-agents:~>1.1",
+        "kubernetes": "hashicorp/kubernetes:~>2.38",
+    },
+    tf_version = "1.11.2",
+)
+
+tf_module(
+    name = "haku-self-hosted-agent",
+    providers = [
+        "claude-managed-agents",
+        "kubernetes",
+    ],
+    providers_versions = ":providers",
+)

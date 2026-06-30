@@ -1,0 +1,29 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: haku-self-hosted-agent
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 10m
+  path: ./cluster/k8s/haku/self-hosted-agent-tf
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: haku-self-hosted-agent
+      namespace: flux-system
+  dependsOn:
+    - name: tofu-controller
+    - name: tofu-state-db
+    # The tofu root hard-reads gmail-labeling/haku-gmail-labeling-token at apply;
+    # this kustomization applies it, so it must reconcile first.
+    - name: gmail-labeling
+    # For the shared haku-cloud-anthropic-api-key Secret its kustomization applies
+    # (the runner's ANTHROPIC_API_KEY). No own copy — see terraform.yaml.
+    - name: haku-cloud-agent

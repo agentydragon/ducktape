@@ -1,8 +1,0 @@
-# Haku's self-hosted Managed Agents environment. The agent loop runs at
-# Anthropic; tool execution (the fixed bash/read/write/edit/glob/grep set) runs
-# in the haku-worker pod in haku-sandbox. `{type: self_hosted}` is the entire
-# config — egress, hardening, and networking are ours (haku-mitmproxy + CCNP).
-#   ant beta:environments create < haku.environment.yaml
-name: haku-selfhosted
-config:
-  type: self_hosted

@@ -28,9 +28,13 @@ conflict. So the worker closure gets `anthropic` 0.111 via a `python3` override
 in `nixos.nix`, and `worker.py` is a baked script excluded from Bazel (see the
 local `BUILD.bazel`) — independent of the repo lockfile, Runtime C untouched.
 
-The **control plane** still uses `ant` (`provision.sh`,
-`ant beta:deployments run`, `…:work stats`) — only the in-pod poll loop moved to
-Python. The `anthropic-cli` package stays in the devshell.
+The **control plane is provisioned declaratively** by the `claude-managed-agents`
+tofu provider — the environment, agent, vault + MCP credentials, and the scheduled
+wake deployment all live in <../../../../tf/gitops/haku-self-hosted-agent/> and are
+applied by Flux (Terraform CR in
+<../../../../cluster/k8s/haku/self-hosted-agent-tf/>). Only the in-pod poll loop
+(`worker.py`) and observability (`ant beta:deployments run`, `…:sessions:events`)
+use `ant`; the `anthropic-cli` package stays in the devshell for those.
 
 The **warm-session supervisor is deferred**: the wake trigger is a scheduled
 deployment that fires a fresh session each tick; `haku-state` (git) is the
@@ -38,15 +42,16 @@ durable memory, so a cold session just re-orients.
 
 ## Pieces
 
-| File                    | Role                                                             | Runs on       |
-| ----------------------- | ---------------------------------------------------------------- | ------------- |
-| `haku.environment.yaml` | self-hosted environment (`ant beta:environments create`)         | control plane |
-| `haku.agent.yaml`       | agent: thin `system` pointer, fixed toolset + tana `mcp_toolset` | control plane |
-| `haku.deployment.yaml`  | scheduled-deployment wake trigger                                | control plane |
-| `provision.sh`          | one-shot: create environment/agent/vault/deployment via `ant`    | operator / CI |
-| `entrypoint.sh`         | clone ducktape + haku-state, then exec `haku-worker`             | `haku-worker` |
-| `worker.py`             | the poll loop (anthropic Python SDK `EnvironmentWorker`)         | `haku-worker` |
-| `nixos.nix`             | full-NixOS worker image (`nix build .#haku-worker-image`)        | CI / build    |
+| File            | Role                                                      | Runs on       |
+| --------------- | --------------------------------------------------------- | ------------- |
+| `entrypoint.sh` | clone ducktape + haku-state, then exec `haku-worker`      | `haku-worker` |
+| `worker.py`     | the poll loop (anthropic Python SDK `EnvironmentWorker`)  | `haku-worker` |
+| `nixos.nix`     | full-NixOS worker image (`nix build .#haku-worker-image`) | CI / build    |
+
+The control-plane definition (environment / agent / vault / deployment) is **not**
+here anymore — it's the tofu module <../../../../tf/gitops/haku-self-hosted-agent/>
+(was the imperative `provision.sh` + `haku.{environment,agent,deployment}.yaml`,
+retired when provisioning moved to TF; see git history if you need the old form).
 
 ## Trust split — keep the org key off the worker
 
@@ -54,9 +59,10 @@ durable memory, so a cold session just re-orients.
   (`sk-ant-oat01-…`, one environment's work queue). The worker authenticates
   every call with a Bearer sub-client derived from it; a prompt-injected tool
   call can't reach the control plane.
-- **Provisioning** (`provision.sh`, deployment management, `…:work stats`): the
-  org-scoped `ANTHROPIC_API_KEY`, run from CI / the operator laptop — **never**
-  on the worker host.
+- **Provisioning** (the tofu runner): the org-scoped `ANTHROPIC_API_KEY`, injected
+  into the tofu-controller runner pod (the shared `haku-cloud-anthropic-api-key`
+  Secret) — **never** on the worker host. Deployment runs / session inspection use
+  the same org key from CI / the operator laptop.
 
 ## Worker image (`nix build .#haku-worker-image`)
 
@@ -73,8 +79,8 @@ by Flux — see <../../../../cluster/docs/container-images.md>.
 
 The fixed toolset is `agent_toolset_20260401` (`bash/read/write/edit/glob/grep`);
 Haku reaches Plaid (`psql`), Google (`curl`), and the cluster (`kubectl`,
-in-cluster `haku` SA) through `bash`. Tana is a native `mcp_toolset`
-(Anthropic-side, vault auth).
+in-cluster `haku` SA) through `bash`. Tana and gmail-labeling are native
+`mcp_toolset`s (Anthropic-side, vault auth) declared in the tofu agent.
 
 ## k8s wiring
 
@@ -85,44 +91,20 @@ dir's README is the activation runbook). The worker reuses Haku's `haku-sandbox`
 perimeter (`haku-sandbox-admin` RBAC, `haku-mitmproxy` egress + CA injection,
 ResourceQuota); none of it relies on agent restraint.
 
-## Bring-up
+## Provisioning + updating the control plane (now TF)
 
-```sh
-./provision.sh                                   # org ANTHROPIC_API_KEY, outside the worker
-# generate the environment key in the Console -> ANTHROPIC_ENVIRONMENT_KEY secret
-# deploy haku-worker (env key + the HAKU_* clone/git env) in haku-sandbox
-ant beta:deployments run --deployment-id "$DEPL_ID"   # test one run, watch in Console
-```
+The environment / agent / vault / deployment are tofu resources
+(<../../../../tf/gitops/haku-self-hosted-agent/main.tf>), applied by the Flux
+Terraform CR — **not** `ant`. To change the agent (model, system pointer, tools,
+MCP servers) or the wake schedule, edit `main.tf` and let Flux apply; the
+provisioned IDs are published to the `haku-self-hosted-agent-ids` Secret
+(flux-system). First-time stand-up + the recreate-fresh cutover from the old
+imperative agent (regenerate the environment key, repoint the worker, delete the
+orphaned imperative resources) is the runbook in
+<../../../../cluster/k8s/haku/self-hosted-agent-tf/README.md>.
 
-## Updating the agent / deployment (control plane)
-
-These are **control-plane** objects at Anthropic — `haku.{agent,environment,deployment}.yaml`
-are version-controlled here but applied with `ant` (org `ANTHROPIC_API_KEY`),
-**not** Flux. Editing the YAML alone changes nothing live. The two image-side
-files (`worker.py`, `nixos.nix`, `entrypoint.sh`) are the only ones that flow
-through CI + Flux. Live IDs: agent `agent_01CV5VupX8ALuVD1dsoEzHY6`, deployment
-`depl_011DSrUoXuhoDWJoPyDuePqR` (haku-scan), environment
-`env_015uqL9WAMSDytQEWWmLG9zF`.
-
-After editing `haku.agent.yaml`, apply it and re-pin in **both** steps:
-
-```sh
-# 1. Push the new agent version. The YAML is the request body (stdin); --version
-#    is the CURRENT version (optimistic-concurrency guard) — get it from retrieve.
-cur=$(ant beta:agents retrieve --agent-id "$AGENT_ID" --transform version -r)
-ant beta:agents update --agent-id "$AGENT_ID" --version "$cur" < haku.agent.yaml
-#    -> returns the new version (e.g. 3)
-
-# 2. RE-PIN the deployment. It pins a SPECIFIC agent version, so a fresh agent
-#    version is ignored until you re-pin. A bare agent ID re-pins to latest:
-ant beta:deployments update --deployment-id "$DEPL_ID" --agent "$AGENT_ID"
-ant beta:deployments retrieve --deployment-id "$DEPL_ID" --transform '{agent}'  # confirm version bumped
-```
-
-`haku.deployment.yaml` (schedule, initial events) is likewise applied with
-`ant beta:deployments update` (flags like `--schedule`, `--initial-event`).
-
-Test + observe:
+Test + observe a deployment (org `ANTHROPIC_API_KEY`, from CI / the operator
+laptop — the `deployment_id` is in the IDs Secret):
 
 ```sh
 ant beta:deployments run --deployment-id "$DEPL_ID" --transform '{id}'  # the run's session_id is in the response
@@ -130,11 +112,6 @@ ant beta:sessions:events list "$SID"                                    # transc
 ant beta:sessions delete --session-id "$SID"  # end a stuck/parked session; the worker force-stops the
                                               # work item and returns to polling (no pod restart needed)
 ```
-
-**Gotcha:** a deployment run uses the agent version the deployment pins _at run
-time_, and a parked session keeps the version it was created with — so re-pin
-**before** triggering a wake, and start a fresh session to pick up the change
-(re-pinning doesn't migrate an in-flight session).
 
 ### Reading a session transcript
 
@@ -162,10 +139,10 @@ Event types worth knowing: `user.message` (the wake), `agent.thinking`,
 **Diagnosing a stuck session:** a `*_tool_use` whose `id` has no matching
 `user.tool_result.tool_use_id` is the pending one. If the session is idle with
 `stop_reason.type == "requires_action"`, that tool is **awaiting approval** —
-its toolset's `permission_policy` is `always_ask` (set it to `always_allow` in
-`haku.agent.yaml` for unattended runs; that is the trust-boundary posture here).
-Distinguish from the old empty-output **deadlock** (now fixed): that showed a
-`tool_use` whose result never posted because the worker 400'd on empty text —
+its toolset's `permission_policy` is `always_ask` (every toolset in the tofu
+agent uses `always_allow` for unattended runs; that is the trust-boundary posture
+here). Distinguish from the old empty-output **deadlock** (now fixed): that showed
+a `tool_use` whose result never posted because the worker 400'd on empty text —
 here results post fine (`200 OK` in the pod logs); the agent is just **waiting**.
 
 The worker-side view is the pod logs (`kubectl logs deploy/haku-worker
@@ -185,5 +162,5 @@ straight in the entry process — plus the `HTTP(S)_PROXY`/`SSL_CERT_FILE` the
 emptyDir is writable.
 
 Beta-surface field/flag names (`agent_toolset_20260401`, `vault_ids`, the
-deployment schema) follow the `ant` docs as of 2026-06 — verify with
-`ant <cmd> --help`.
+deployment/environment schema) follow the `ant` docs and the `claude-managed-agents`
+provider as of 2026-06 — verify with `ant <cmd> --help` and the first `tofu plan`.
