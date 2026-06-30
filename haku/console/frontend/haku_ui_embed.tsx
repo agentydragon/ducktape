@@ -120,7 +120,11 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
         src={uiUrl}
         title="Haku UI"
         sandbox="allow-scripts allow-same-origin allow-forms"
-        style={{ display: "block", width: "100vw", height: "100vh", border: 0 }}
+        // 100dvh (not 100vh) so on mobile the frame matches the *visible* viewport: 100vh
+        // extends under the browser's bottom toolbar, which pushed the iframe's
+        // bottom-pinned content (e.g. a position:fixed control) off-screen. width:100% (not
+        // 100vw) avoids a horizontal scrollbar from the vertical-scrollbar gutter.
+        style={{ display: "block", width: "100%", height: "100dvh", border: 0 }}
       />
       <ConfirmDialog action={pending} onApprove={onApprove} onCancel={onCancel} />
     </>
