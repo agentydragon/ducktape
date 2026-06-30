@@ -42,6 +42,8 @@ py_library(
     srcs = ["config.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//mcp_infra:persistence",
+        "//mcp_infra/authentik_auth:auth",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
     ],
@@ -58,7 +60,8 @@ py_library(
         ":models",
         ":namespace",
         "//gmail_api:service",
-        "//mcp_infra:static_bearer",
+        "//mcp_infra:persistence",
+        "//mcp_infra/authentik_auth:auth",
         "@pypi//fastmcp",
         "@pypi//pydantic",
         "@pypi//starlette",

@@ -163,6 +163,29 @@ def test_build_authentik_auth_includes_extra_jwt_issuers() -> None:
     assert "https://auth.example.com/application/o/test/" in issuer  # primary still present
 
 
+def test_build_authentik_auth_appends_extra_verifiers() -> None:
+    """extra_verifiers ride the MultiAuth after the Authentik JWTVerifier, so a
+    machine caller's StaticTokenVerifier is accepted on the same endpoint as the
+    human OAuth flow (gmail-labeling's Haku bearer + operator OAuth).
+    """
+    discovery_response = AsyncMock()
+    discovery_response.raise_for_status = lambda: discovery_response
+    discovery_response.json = lambda: {"jwks_uri": "https://auth.example.com/application/o/test/jwks/"}
+
+    sentinel = object()
+    with (
+        patch("mcp_infra.authentik_auth.auth.httpx.get", return_value=discovery_response),
+        patch("mcp_infra.authentik_auth.auth.OIDCProxy") as oidc_proxy_cls,
+        patch("mcp_infra.authentik_auth.auth.JWTVerifier") as jwt_verifier_cls,
+        patch("mcp_infra.authentik_auth.auth.MultiAuth") as multi_auth_cls,
+    ):
+        oidc_proxy_cls.return_value.client_registration_options = AsyncMock()
+        build_authentik_auth(_config(), extra_verifiers=[sentinel])
+
+    verifiers = multi_auth_cls.call_args.kwargs["verifiers"]
+    assert verifiers == [jwt_verifier_cls.return_value, sentinel]  # JWT first, extra appended
+
+
 # ── AuthentikExchangeAuth tests ───────────────────────────────────────────
 
 

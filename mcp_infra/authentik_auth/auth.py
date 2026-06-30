@@ -33,7 +33,7 @@ import httpx
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from authlib.oauth2.rfc6749.wrappers import OAuth2Token
 from fastmcp.server.auth import MultiAuth
-from fastmcp.server.auth.auth import AuthProvider
+from fastmcp.server.auth.auth import AuthProvider, TokenVerifier
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
@@ -116,7 +116,11 @@ class AuthentikAuthConfig(BaseModel):
 
 
 def build_authentik_auth(
-    config: AuthentikAuthConfig, *, valid_scopes: list[str] | None = None, client_storage: Any | None = None
+    config: AuthentikAuthConfig,
+    *,
+    valid_scopes: list[str] | None = None,
+    client_storage: Any | None = None,
+    extra_verifiers: list[TokenVerifier] | None = None,
 ) -> AuthProvider:
     """Build OIDCProxy + JWTVerifier auth for an Authentik-backed MCP server.
 
@@ -132,6 +136,10 @@ def build_authentik_auth(
         client_storage: Optional ``AsyncKeyValue`` backend for OIDCProxy state
             (DCR registrations, tokens). Defaults to FastMCP's file-based
             encrypted store under ``FASTMCP_HOME``.
+        extra_verifiers: Additional ``TokenVerifier``s appended to the MultiAuth
+            after the Authentik JWTVerifier — e.g. a ``StaticTokenVerifier`` so a
+            machine caller's fixed bearer is accepted on the same endpoint as the
+            human OAuth flow. Each is tried in turn; the first to accept wins.
     """
     issuer = config.normalized_issuer()
     config_url = f"{issuer}/.well-known/openid-configuration"
@@ -161,7 +169,10 @@ def build_authentik_auth(
     for extra in config.extra_jwt_issuers:
         bare = extra.rstrip("/")
         issuers += [bare, bare + "/"]
-    return MultiAuth(server=proxy, verifiers=[JWTVerifier(jwks_uri=jwks_uri, issuer=issuers)])
+    verifiers: list[TokenVerifier] = [JWTVerifier(jwks_uri=jwks_uri, issuer=issuers)]
+    if extra_verifiers:
+        verifiers.extend(extra_verifiers)
+    return MultiAuth(server=proxy, verifiers=verifiers)
 
 
 # ── Token exchange auth ───────────────────────────────────────────────────
