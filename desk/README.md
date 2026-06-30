@@ -44,10 +44,12 @@ listed in the next section so we don't accidentally plan around it.
 
 ## Target topology
 
-Two viable shapes given the on-hand cables. **Plan B (DP video +
-separate USB-B uplink)** is primary because it uses cables whose
-behaviour is least ambiguous; **Plan A (USB-C only)** is a possible
-simplification noted at the end.
+Two viable shapes given the on-hand cables. **Plan A (USB-C only)**
+collapses the monitor link to a single USB-C cable (video + USB hub +
+PD); **Plan B (DP video + separate USB-B uplink)** is the conservative
+two-cable shape. Both are buildable from cables already at home;
+choice depends on whether Plan A's combined DP-Alt + USB stream proves
+stable in practice — see Experiments.
 
 ```mermaid
 flowchart LR
@@ -157,6 +159,46 @@ to decide between then:
 - Colored bands at each end, color = port group (host TB / video /
   USB-downstream).
 - Numbered tags `01..NN` with the key recorded here.
+
+## Experiments
+
+### 2026-06-30 — Plan A bench test with rugged as host
+
+**Setup.** First end-to-end test of the Plan A monitor link, using
+rugged (Dell Rugged 12 tablet, per `nix/nixos/hosts/rugged/`) as a
+stand-in for the laptop slot. Wiring:
+
+- rugged TB4 (USB-C) → short TB cable → SB-TB4K host port (PC1 or PC2;
+  not recorded which).
+- SB-TB4K downstream TB4 → 20 Gb/s 8K USB-C cable → FV43U USB-C input.
+- TEX Shura plugged directly into a rugged USB-A port (KVM bypass for
+  this test).
+- Pixel 6 plugged into one of the FV43U USB-A downstream ports via a
+  USB-A → USB-C cable, to exercise the monitor's hub through the same
+  USB-C uplink.
+
+**Observations.**
+
+- Video to the FV43U: works.
+- Audio out via the monitor: works. Adjusting the monitor's volume
+  control changes the output volume — i.e. the host is targeting the
+  monitor as the sink.
+- FV43U USB hub (over USB-C uplink): works — Pixel 6 is recognized.
+- **Stability: flaky.** Link dropped a couple of times during the
+  test. Working hypothesis: the 20 Gb/s 8K USB-C cable between the
+  SB-TB4K and the monitor is currently bent, and the bend is enough to
+  marginalize the connector or shielding.
+
+**Conclusion.** Plan A's combined DP-Alt + USB-3.2 stream is
+electrically feasible through this stack of cables — but not yet
+proven reliable. Next moves:
+
+- Reroute / straighten the 20 Gb/s cable and re-test before changing
+  anything else.
+- If still flaky, swap to Plan B (Ivanky USB-C ↔ DP for video, USB
+  A→B for the hub uplink) and re-bench.
+- Independently: get the TEX Shura on a KVM USB-A port so we're
+  testing the real target topology.
 
 ## Open questions
 
