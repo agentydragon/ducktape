@@ -34,3 +34,5 @@ spec:
     - name: postscanmail-mcp-namespace
     # Same for plaid-mcp.
     - name: plaid-mcp-namespace
+    # TF writes gmail-labeling-mcp-oidc into the gmail-labeling namespace.
+    - name: gmail-labeling

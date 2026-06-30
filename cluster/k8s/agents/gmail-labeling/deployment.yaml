@@ -7,10 +7,12 @@ metadata:
     app.kubernetes.io/name: gmail-labeling
   annotations:
     description: >-
-      Namespace-scoped Gmail label MCP server for the Haku background agent. Manages only labels under the `haku/` prefix (enforced in-process), creating/applying/ removing/renaming/deleting them. Holds the Airlock-provisioned gmail.modify access token (mounted, read-only); callers authenticate with a static bearer (haku-gmail-labeling-token, reflected into haku-sandbox). Exposed publicly via a bearer-gated HTTPRoute (gmail-labeling.allegedly.works) so Haku's Claude Code web home can reach it with fastmcp.
-    # Restart only when the bearer rotates — NOT on gmail.modify token rotation, which
-    # the server picks up by re-reading the mounted secret (google-auth refresh_handler).
-    secret.reloader.stakater.com/reload: "haku-gmail-labeling-token"
+      Namespace-scoped Gmail label MCP server for the Haku background agent. Manages only labels under the `haku/` prefix (enforced in-process), creating/applying/ removing/renaming/deleting them. Holds the Airlock-provisioned gmail.modify access token (mounted, read-only). Callers authenticate on one /mcp endpoint with EITHER a static bearer (haku-gmail-labeling-token, Haku's path) OR an Authentik OAuth flow restricted to agentydragon (gmail-labeling-mcp-oidc, for attaching to claude.ai). Exposed publicly via HTTPRoute (gmail-labeling.allegedly.works).
+    # Restart when the bearer rotates or when the operator-OAuth creds
+    # (gmail-labeling-mcp-oidc, written by agent-machine-access TF) first appear /
+    # rotate — NOT on gmail.modify token rotation, which the server picks up by
+    # re-reading the mounted secret (google-auth refresh_handler).
+    secret.reloader.stakater.com/reload: "haku-gmail-labeling-token,gmail-labeling-mcp-oidc"
 spec:
   replicas: 1
   selector:
@@ -23,6 +25,10 @@ spec:
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
+      # fsGroup so the fastmcp-home emptyDir is writable by the container's gid —
+      # the OAuth OIDCProxy persists its state there (see FASTMCP_HOME below).
+      securityContext:
+        fsGroup: 1000
       containers:
         - name: server
           image: ghcr.io/agentydragon/gmail-labeling:devel-20260629234300-77ace87 # {"$imagepolicy": "flux-system:gmail-labeling"}
@@ -43,7 +49,20 @@ spec:
                 secretKeyRef:
                   name: haku-gmail-labeling-token
                   key: token
+            # Writable dir for the OAuth OIDCProxy's file-backed state store.
+            - name: FASTMCP_HOME
+              value: /var/lib/fastmcp
+          # Operator-OAuth config (GMAIL_LABELING_AUTHENTIK__*), provisioned by
+          # agent-machine-access TF. OPTIONAL: when the Secret is absent the server runs
+          # static-bearer-only (Haku's path is unaffected); when present, all four values
+          # arrive together and enable the Authentik OAuth flow on the same /mcp endpoint.
+          envFrom:
+            - secretRef:
+                name: gmail-labeling-mcp-oidc
+                optional: true
           volumeMounts:
+            - name: fastmcp-home
+              mountPath: /var/lib/fastmcp
             # gmail.modify access token (access_token + expires_at), written by Airlock
             # into the airlock namespace and mirrored here by ESO. Rotates in place;
             # the server re-reads it via google-auth's refresh_handler.
@@ -77,3 +96,5 @@ spec:
         - name: gmail-token
           secret:
             secretName: gmail-modify-access-token
+        - name: fastmcp-home
+          emptyDir: {}

@@ -5,11 +5,23 @@ confined to the `haku/` namespace. Source + contract: <../../../../haku/gmail_la
 (`SPEC.md` is the closure invariant). Deployed as a sibling MCP service (the
 `tana-mcp-ro` shape), not behind Airlock — the tool surface is safe by construction.
 
-## Credential model (two layers)
+## Credential model
 
-- **Haku → server:** static bearer `haku-gmail-labeling-token` (this dir, SOPS), reflected
-  into `haku-sandbox`. The only gate. Haku calls `https://gmail-labeling.allegedly.works/mcp`
-  with it (see `httproute.yaml`).
+Inbound `/mcp` accepts **two credentials on one endpoint** (FastMCP `MultiAuth`):
+
+- **Haku → server (static bearer):** `haku-gmail-labeling-token` (this dir, SOPS), reflected
+  into `haku-sandbox`. Haku calls `https://gmail-labeling.allegedly.works/mcp` with it (see
+  `httproute.yaml`).
+- **Operator → server (Authentik OAuth):** the `gmail-labeling-mcp` Authentik provider (app
+  restricted to agentydragon), so the operator can attach the server to claude.ai / Claude
+  Code as an OAuth connector. Provider + the `gmail-labeling-mcp-oidc` Secret are provisioned
+  by `agents/machine-access-tf` (TF: `tf/gitops/agent-machine-access`); the deployment injects
+  that Secret via an **optional** `envFrom`, so the server runs static-bearer-only until it
+  lands (Haku's path is never blocked). OAuth authenticates the _caller_; the server still
+  uses its own `gmail.modify` token below.
+
+Outbound:
+
 - **Server → Gmail:** a `gmail.modify` access token **provisioned and rotated by Airlock**.
   Airlock holds the refresh token (`gmail-modify-tokens`, airlock ns) and writes an
   access-only secret (`gmail-modify-access-token`); ESO mirrors that into this namespace
