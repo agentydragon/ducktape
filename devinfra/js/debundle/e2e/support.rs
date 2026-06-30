@@ -779,14 +779,7 @@ pub fn logical_module_with_note(
     members: &[Member],
     note: impl Into<String>,
 ) -> LogicalModuleEntry {
-    logical_module_entry_with_note(
-        path,
-        members,
-        &[],
-        Vec::new(),
-        None,
-        Some(note.into()),
-    )
+    logical_module_entry_with_note(path, members, &[], Vec::new(), None, Some(note.into()))
 }
 
 /// Like [`logical_module`] but also emits an `anonymous_statements:`
