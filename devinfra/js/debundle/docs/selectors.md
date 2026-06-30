@@ -287,6 +287,8 @@ binding_groups:
       address: systemEmailAddress
     comments:
       address: Primary address shown to operators.
+    notes:
+      domain: TODO: minimize selector once domain literals can be factored out.
 ```
 
 The `match` may also be a contiguous range of top-level declarations. This is
@@ -335,8 +337,10 @@ binding_groups:
 
 `adopt_names: [nameOne, nameTwo]` adopts only the listed selector-local
 bindings. An explicit `exports` entry on the same group overrides the adopted
-public name for that selector-local binding. `comments` is keyed by
-selector-local binding name and emits like `members[].comment` after expansion.
+public name for that selector-local binding. `comments` and `notes` are keyed by
+selector-local binding name after `exports`/`adopt_names` are applied:
+`comments` emits like `members[].comment` after expansion, while `notes` is
+YAML-only metadata for per-export debt/provenance.
 
 Binding groups claim exported bindings only. Model adjacent anonymous
 side-effect statements as separate `anonymous_statements` entries with their

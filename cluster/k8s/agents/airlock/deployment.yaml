@@ -61,6 +61,18 @@ spec:
                 secretKeyRef:
                   name: google-client-credentials
                   key: client_secret
+            # Same Google OAuth client as `google`, used for the separate
+            # gmail_modify provider (gmail.modify scope) consumed by gmail-labeling.
+            - name: GMAIL_MODIFY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: google-client-credentials
+                  key: client_id
+            - name: GMAIL_MODIFY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: google-client-credentials
+                  key: client_secret
             - name: BSC_CLIENT_ID
               valueFrom:
                 secretKeyRef:

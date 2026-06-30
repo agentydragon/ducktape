@@ -362,6 +362,18 @@ note: |
   blocked on Ducktape support for <specific matcher/tooling capability needed here>
 ```
 
+For grouped selectors, put per-export debt under `binding_groups[].notes`, keyed
+the same way as `binding_groups[].comments`. `comments` emits into generated JS;
+`notes` does not.
+
+```yaml
+binding_groups:
+  - source_match: { match: "const x = EXPR_X, y = EXPR_Y;" }
+    exports: { x: exportedX, y: exportedY }
+    notes:
+      x: "TODO: minimize selector once this helper has a narrower anchor."
+```
+
 Do not leave blocker notes for selector patterns Ducktape now supports, such
 as matching one declarator inside a multi-declarator declaration or bracketing
 object literal properties with `ANYTHING` / `OBJECT_PROPS`.

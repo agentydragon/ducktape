@@ -1334,6 +1334,42 @@ export { primary, secondary };
 }
 
 #[test]
+fn binding_group_notes_round_trip_but_do_not_emit() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"var first = 1 + 2, second = Number.parseInt("4", 10);
+console.log(first + second);
+export { first, second };
+"#,
+        vec![logical_module_with_binding_groups(
+            "pair",
+            &[],
+            &[BindingGroup::source_alpha(
+                r#"var left = EXPR_LEFT, right = EXPR_RIGHT;"#,
+                &[("left", "first_value"), ("right", "second_value")],
+            )
+            .with_notes(&[
+                ("left", "TODO: minimize left selector."),
+                ("right", "TODO: minimize right selector."),
+            ])],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "7\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/pair.js",
+        &[
+            "var first_value = 1 + 2",
+            r#"var second_value = Number.parseInt("4", 10)"#,
+        ],
+        &[
+            "TODO: minimize left selector.",
+            "TODO: minimize right selector.",
+        ],
+    );
+}
+
+#[test]
 fn binding_group_comments_reject_unknown_selector_local_key() {
     let opts = FixtureOpts::new(
         r#"const primary = 10, secondary = 20;
@@ -1359,6 +1395,38 @@ export { primary, secondary };
         &[
             "static/app::settings",
             "binding_groups[].comments",
+            "not exported by the group",
+            "secondary",
+        ],
+    );
+}
+
+#[test]
+fn binding_group_notes_reject_unknown_selector_local_key() {
+    let opts = FixtureOpts::new(
+        r#"const primary = 10, secondary = 20;
+console.log(primary + secondary);
+export { primary, secondary };
+"#,
+        vec![logical_module_with_binding_groups(
+            "settings",
+            &[],
+            &[BindingGroup::source_alpha_adopt_names(
+                r#"const primary = EXPR_PRIMARY, secondary = EXPR_SECONDARY;"#,
+                &["primary"],
+            )
+            .with_notes(&[
+                ("primary", "Primary selector debt."),
+                ("secondary", "This binding is not exported by the group."),
+            ])],
+        )],
+    );
+
+    expect_rejection_containing_all(
+        opts,
+        &[
+            "static/app::settings",
+            "binding_groups[].notes",
             "not exported by the group",
             "secondary",
         ],

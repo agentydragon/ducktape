@@ -43,6 +43,19 @@ pub fn binding_group_member_selectors(
             unknown_comments.join(", ")
         );
     }
+    let unknown_notes = group
+        .notes
+        .keys()
+        .filter(|name| !exports.contains_key(*name))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !unknown_notes.is_empty() {
+        bail!(
+            "logical_module {request_id}: binding_groups[].notes names bindings that \
+             are not exported by the group: {}",
+            unknown_notes.join(", ")
+        );
+    }
     Ok(exports
         .into_iter()
         .map(|(target_binding, export_name)| {

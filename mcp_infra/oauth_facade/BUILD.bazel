@@ -45,6 +45,7 @@ py_library(
         ":proxy",
         ":upstream_probe",
         "//mcp_infra:persistence",
+        "//mcp_infra:static_bearer",
         "//mcp_infra:tool_filter",
         "//mcp_infra/authentik_auth:auth",
         "@pypi//fastmcp",
@@ -86,6 +87,7 @@ py_test(
     deps = [
         ":config",
         ":server",
+        "//mcp_infra:static_bearer",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
         "@pypi//starlette",

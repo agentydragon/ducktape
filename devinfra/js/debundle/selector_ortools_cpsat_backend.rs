@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
@@ -32,6 +33,7 @@ const SUMMARY_JSON_ENV: &str = "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SUMMARY_JSON";
 const REQUEST_PROTO_DIR_ENV: &str = "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_REQUEST_PROTO_DIR";
 const SUMMARY_JSON_DIR_ENV: &str = "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SUMMARY_JSON_DIR";
 const DUMP_ONLY_ENV: &str = "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_DUMP_ONLY";
+const DOMAIN_SHARING_EXACT_SPARSE_LIMIT: usize = 1024;
 static DUMP_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone)]
@@ -116,6 +118,7 @@ pub enum OrToolsCpSatBackendError {
         stderr: String,
     },
     DecodeResponse(prost::DecodeError),
+    InvalidProblem(String),
     DumpSummaryJson {
         path: PathBuf,
         source: serde_json::Error,
@@ -155,6 +158,7 @@ impl fmt::Display for OrToolsCpSatBackendError {
             Self::DecodeResponse(err) => {
                 write!(f, "failed to decode CP-SAT response protobuf: {err}")
             }
+            Self::InvalidProblem(message) => write!(f, "invalid CP-SAT request model: {message}"),
             Self::DumpSummaryJson { path, source } => {
                 write!(
                     f,
@@ -207,6 +211,7 @@ impl Error for OrToolsCpSatBackendError {
             Self::DumpSummaryJson { source, .. } => Some(source),
             Self::DumpIo { source, .. } => Some(source),
             Self::IdOutOfRange { .. }
+            | Self::InvalidProblem(_)
             | Self::MissingChildStdin
             | Self::SidecarFailed { .. }
             | Self::DumpOnly { .. }
@@ -351,34 +356,43 @@ fn problem_summary(
     let total_domain_values = problem
         .variables
         .iter()
-        .map(|variable| problem.variable_domain_values(variable).len())
+        .map(|variable| problem.variable_domain_value_count(variable))
         .sum::<usize>();
     let max_domain_values = problem
         .variables
         .iter()
-        .map(|variable| problem.variable_domain_values(variable).len())
+        .map(|variable| problem.variable_domain_value_count(variable))
         .max()
         .unwrap_or(0);
     let allowed_row_count = problem
         .allowed_tuples
         .iter()
-        .map(|constraint| constraint.tuples.len())
+        .map(|constraint| problem.allowed_tuple_rows(constraint).len())
         .sum::<usize>();
     let allowed_cell_count = problem
         .allowed_tuples
         .iter()
-        .map(|constraint| {
-            constraint
-                .tuples
-                .iter()
-                .map(|tuple| tuple.len())
-                .sum::<usize>()
-        })
+        .map(|constraint| problem.allowed_tuple_rows(constraint).cell_count())
+        .sum::<usize>();
+    let shared_allowed_row_count = problem
+        .allowed_tuple_row_sets
+        .iter()
+        .map(|row_set| row_set.rows.len())
+        .sum::<usize>();
+    let shared_allowed_cell_count = problem
+        .allowed_tuple_row_sets
+        .iter()
+        .map(|row_set| row_set.rows.cell_count())
+        .sum::<usize>();
+    let shared_sparse_domain_value_count = problem
+        .shared_variable_domains
+        .iter()
+        .map(|domain| domain.values.len())
         .sum::<usize>();
     let max_allowed_rows = problem
         .allowed_tuples
         .iter()
-        .map(|constraint| constraint.tuples.len())
+        .map(|constraint| problem.allowed_tuple_rows(constraint).len())
         .max()
         .unwrap_or(0);
     let max_allowed_arity = problem
@@ -425,13 +439,13 @@ fn problem_summary(
         problem
             .variables
             .iter()
-            .map(|variable| problem.variable_domain_values(variable).len()),
+            .map(|variable| problem.variable_domain_value_count(variable)),
     );
     let domain_size_histogram_by_domain =
         grouped_usize_histogram(problem.variables.iter().map(|variable| {
             (
                 variable_domain_name(variable.domain),
-                problem.variable_domain_values(variable).len(),
+                problem.variable_domain_value_count(variable),
             )
         }));
     let allowed_table_arity_histogram = usize_histogram(
@@ -444,16 +458,39 @@ fn problem_summary(
         problem
             .allowed_tuples
             .iter()
-            .map(|constraint| constraint.tuples.len()),
+            .map(|constraint| problem.allowed_tuple_rows(constraint).len()),
     );
-    let allowed_table_cell_count_histogram =
-        usize_histogram(problem.allowed_tuples.iter().map(|constraint| {
-            constraint
-                .tuples
-                .iter()
-                .map(|tuple| tuple.len())
-                .sum::<usize>()
-        }));
+    let allowed_table_cell_count_histogram = usize_histogram(
+        problem
+            .allowed_tuples
+            .iter()
+            .map(|constraint| problem.allowed_tuple_rows(constraint).cell_count()),
+    );
+    let mut allowed_table_count_by_shape = BTreeMap::new();
+    let mut allowed_table_logical_row_count_by_shape = BTreeMap::new();
+    let mut allowed_table_logical_cell_count_by_shape = BTreeMap::new();
+    let mut allowed_table_count_by_domain_signature = BTreeMap::new();
+    let mut allowed_table_logical_cell_count_by_domain_signature = BTreeMap::new();
+    for constraint in &problem.allowed_tuples {
+        let shape = allowed_table_shape(problem, constraint);
+        let row_count = problem.allowed_tuple_rows(constraint).len();
+        let cell_count = problem.allowed_tuple_rows(constraint).cell_count();
+        *allowed_table_count_by_shape.entry(shape).or_insert(0) += 1;
+        *allowed_table_logical_row_count_by_shape
+            .entry(shape)
+            .or_insert(0) += row_count;
+        *allowed_table_logical_cell_count_by_shape
+            .entry(shape)
+            .or_insert(0) += cell_count;
+
+        let domain_signature = allowed_table_domain_signature(problem, constraint);
+        *allowed_table_count_by_domain_signature
+            .entry(domain_signature.clone())
+            .or_insert(0) += 1;
+        *allowed_table_logical_cell_count_by_domain_signature
+            .entry(domain_signature)
+            .or_insert(0) += cell_count;
+    }
     let binary_constraint_count_by_kind = keyed_count(
         problem
             .binary_constraints
@@ -493,67 +530,249 @@ fn problem_summary(
         }));
     let domain_sharing = variable_domain_sharing_summary(problem);
 
-    serde_json::json!({
-        "all_different_count": problem.all_different.len(),
-        "all_different_count_by_reason": all_different_count_by_reason,
-        "all_different_arity_histogram": all_different_arity_histogram,
-        "allowed_cell_count": allowed_cell_count,
-        "allowed_table_arity_histogram": allowed_table_arity_histogram,
-        "allowed_table_cell_count_histogram": allowed_table_cell_count_histogram,
-        "allowed_table_row_count_histogram": allowed_table_row_count_histogram,
-        "allowed_row_count": allowed_row_count,
-        "allowed_table_count": problem.allowed_tuples.len(),
-        "binary_constraint_count": problem.binary_constraints.len(),
-        "binary_constraint_count_by_kind": binary_constraint_count_by_kind,
-        "binary_equal_count": binary_equal_count,
-        "binary_not_equal_count": binary_not_equal_count,
-        "binary_ordinal_before_count": binary_ordinal_before_count,
-        "constraint_count_by_kind": constraint_count_by_kind,
-        "domain_size_histogram": domain_size_histogram,
-        "domain_size_histogram_by_domain": domain_size_histogram_by_domain,
-        "dump_sequence": dump_sequence,
-        "linear_constraint_count": problem.linear_constraints.len(),
-        "linear_constraint_arity_histogram": linear_constraint_arity_histogram,
-        "max_allowed_arity": max_allowed_arity,
-        "max_allowed_rows": max_allowed_rows,
-        "max_domain_values": max_domain_values,
-        "request_encoded_bytes": request_encoded_bytes,
-        "request_proto_bytes": request_encoded_bytes,
-        "target_projection_count": problem.target_projections.len(),
-        "total_domain_values": total_domain_values,
-        "variable_domain_encoding_count_by_domain": variable_domain_encoding_count_by_domain,
-        "variable_domain_representation_count_by_kind": variable_domain_representation_count_by_kind,
-        "variable_domain_sharing": domain_sharing,
-        "value_dictionary_count": problem.value_dictionary.total_len(),
-        "variable_count": problem.variables.len(),
-        "variable_count_by_domain": variable_count_by_domain,
-        "wire_all_different_count": request.all_different.len(),
-        "wire_allowed_table_count": request.allowed_tables.len(),
-        "wire_binary_constraint_count": request.binary_constraints.len(),
-        "wire_linear_constraint_count": request.linear_constraints.len(),
-        "wire_target_projection_count": request.target_projections.len(),
-        "wire_variable_count": request.variables.len(),
-    })
+    let mut summary = serde_json::Map::new();
+    macro_rules! field {
+        ($name:literal, $value:expr) => {
+            summary.insert($name.to_string(), serde_json::json!($value));
+        };
+    }
+
+    field!("all_different_count", problem.all_different.len());
+    field!(
+        "all_different_count_by_reason",
+        all_different_count_by_reason
+    );
+    field!(
+        "all_different_arity_histogram",
+        all_different_arity_histogram
+    );
+    field!("allowed_cell_count", allowed_cell_count);
+    field!("shared_allowed_cell_count", shared_allowed_cell_count);
+    field!("shared_allowed_row_count", shared_allowed_row_count);
+    field!(
+        "shared_sparse_domain_count",
+        problem.shared_variable_domains.len()
+    );
+    field!(
+        "shared_sparse_domain_value_count",
+        shared_sparse_domain_value_count
+    );
+    field!(
+        "allowed_row_set_count",
+        problem.allowed_tuple_row_sets.len()
+    );
+    field!(
+        "allowed_table_arity_histogram",
+        allowed_table_arity_histogram
+    );
+    field!(
+        "allowed_table_cell_count_histogram",
+        allowed_table_cell_count_histogram
+    );
+    field!(
+        "allowed_table_row_count_histogram",
+        allowed_table_row_count_histogram
+    );
+    field!("allowed_table_count_by_shape", allowed_table_count_by_shape);
+    field!(
+        "allowed_table_logical_row_count_by_shape",
+        allowed_table_logical_row_count_by_shape
+    );
+    field!(
+        "allowed_table_logical_cell_count_by_shape",
+        allowed_table_logical_cell_count_by_shape
+    );
+    field!(
+        "allowed_table_count_by_domain_signature",
+        allowed_table_count_by_domain_signature
+    );
+    field!(
+        "allowed_table_logical_cell_count_by_domain_signature",
+        allowed_table_logical_cell_count_by_domain_signature
+    );
+    field!("allowed_row_count", allowed_row_count);
+    field!("allowed_table_count", problem.allowed_tuples.len());
+    field!("binary_constraint_count", problem.binary_constraints.len());
+    field!(
+        "binary_constraint_count_by_kind",
+        binary_constraint_count_by_kind
+    );
+    field!("binary_equal_count", binary_equal_count);
+    field!("binary_not_equal_count", binary_not_equal_count);
+    field!("binary_ordinal_before_count", binary_ordinal_before_count);
+    field!("constraint_count_by_kind", constraint_count_by_kind);
+    field!("domain_size_histogram", domain_size_histogram);
+    field!(
+        "domain_size_histogram_by_domain",
+        domain_size_histogram_by_domain
+    );
+    field!("dump_sequence", dump_sequence);
+    field!("linear_constraint_count", problem.linear_constraints.len());
+    field!(
+        "linear_constraint_arity_histogram",
+        linear_constraint_arity_histogram
+    );
+    field!("max_allowed_arity", max_allowed_arity);
+    field!("max_allowed_rows", max_allowed_rows);
+    field!("max_domain_values", max_domain_values);
+    field!("request_encoded_bytes", request_encoded_bytes);
+    field!("request_proto_bytes", request_encoded_bytes);
+    field!("target_projection_count", problem.target_projections.len());
+    field!("total_domain_values", total_domain_values);
+    field!(
+        "variable_domain_encoding_count_by_domain",
+        variable_domain_encoding_count_by_domain
+    );
+    field!(
+        "variable_domain_representation_count_by_kind",
+        variable_domain_representation_count_by_kind
+    );
+    field!("variable_domain_sharing", domain_sharing);
+    field!(
+        "value_dictionary_count",
+        problem.value_dictionary.total_len()
+    );
+    field!("variable_count", problem.variables.len());
+    field!("variable_count_by_domain", variable_count_by_domain);
+    field!("wire_all_different_count", request.all_different.len());
+    field!("wire_allowed_row_set_count", request.allowed_row_sets.len());
+    field!("wire_allowed_table_count", request.allowed_tables.len());
+    field!(
+        "wire_binary_constraint_count",
+        request.binary_constraints.len()
+    );
+    field!(
+        "wire_linear_constraint_count",
+        request.linear_constraints.len()
+    );
+    field!(
+        "wire_target_projection_count",
+        request.target_projections.len()
+    );
+    field!(
+        "wire_shared_sparse_domain_count",
+        request.shared_sparse_domains.len()
+    );
+    field!("wire_variable_count", request.variables.len());
+
+    serde_json::Value::Object(summary)
+}
+
+fn allowed_table_shape(
+    problem: &CompiledSelectorProblem,
+    constraint: &CompiledAllowedTupleConstraint,
+) -> &'static str {
+    let mut source_matchish = false;
+    let mut child_list_segment = false;
+    let mut has_ast_node = false;
+    let mut all_ast_node = true;
+    let mut has_owner = false;
+    let mut has_string = false;
+    let mut has_statement_ordinal = false;
+
+    for variable_id in &constraint.variables {
+        let Some(variable) = problem.variables.get(variable_id.0) else {
+            return "invalid_variable_reference";
+        };
+        let debug_name = variable.debug_name.as_deref().unwrap_or_default();
+        source_matchish |= debug_name.contains("source_match")
+            || debug_name.contains("anonymous_statement")
+            || debug_name.starts_with("ast_child_list.segment");
+        child_list_segment |= debug_name.starts_with("ast_child_list.segment");
+        match variable.domain {
+            VariableDomain::AstNode => has_ast_node = true,
+            VariableDomain::Owner => {
+                has_owner = true;
+                all_ast_node = false;
+            }
+            VariableDomain::String => {
+                has_string = true;
+                all_ast_node = false;
+            }
+            VariableDomain::StatementOrdinal => {
+                has_statement_ordinal = true;
+                all_ast_node = false;
+            }
+        }
+    }
+
+    if source_matchish {
+        if child_list_segment {
+            "source_match_child_list_segment"
+        } else if has_owner {
+            "source_match_owner_projection"
+        } else if has_statement_ordinal {
+            "source_match_statement_ordinal"
+        } else if has_string {
+            "source_match_string_relation"
+        } else if all_ast_node && has_ast_node {
+            "source_match_ast_node_relation"
+        } else {
+            "source_match_other"
+        }
+    } else if has_owner && has_ast_node {
+        "owner_ast_node_relation"
+    } else if has_owner && has_string {
+        "owner_string_relation"
+    } else if has_owner {
+        "owner_relation"
+    } else if has_ast_node && has_string {
+        "ast_node_string_relation"
+    } else if all_ast_node && has_ast_node {
+        "ast_node_relation"
+    } else {
+        "non_source_match_other"
+    }
+}
+
+fn allowed_table_domain_signature(
+    problem: &CompiledSelectorProblem,
+    constraint: &CompiledAllowedTupleConstraint,
+) -> String {
+    let mut signature = String::new();
+    for (index, variable_id) in constraint.variables.iter().enumerate() {
+        if index > 0 {
+            signature.push(',');
+        }
+        let domain = problem
+            .variables
+            .get(variable_id.0)
+            .map(|variable| variable_domain_name(variable.domain))
+            .unwrap_or("invalid");
+        signature.push_str(domain);
+    }
+    signature
 }
 
 fn variable_domain_sharing_summary(problem: &CompiledSelectorProblem) -> serde_json::Value {
-    let mut domain_use_counts: BTreeMap<(&'static str, Vec<BackendValueId>), usize> =
-        BTreeMap::new();
+    let mut domain_use_counts: BTreeMap<
+        (&'static str, VariableDomainUseKey),
+        VariableDomainUseStats,
+    > = BTreeMap::new();
     let mut domain_use_counts_by_domain: BTreeMap<
         &'static str,
-        BTreeMap<Vec<BackendValueId>, usize>,
+        BTreeMap<VariableDomainUseKey, VariableDomainUseStats>,
     > = BTreeMap::new();
     for variable in &problem.variables {
         let domain = variable_domain_name(variable.domain);
-        let values = problem.variable_domain_values(variable);
-        *domain_use_counts
-            .entry((domain, values.clone()))
-            .or_insert(0) += 1;
-        *domain_use_counts_by_domain
+        let key = variable_domain_use_key(variable);
+        let value_count = problem.variable_domain_value_count(variable);
+        domain_use_counts
+            .entry((domain, key.clone()))
+            .or_insert(VariableDomainUseStats {
+                value_count,
+                use_count: 0,
+            })
+            .use_count += 1;
+        domain_use_counts_by_domain
             .entry(domain)
             .or_default()
-            .entry(values)
-            .or_insert(0) += 1;
+            .entry(key)
+            .or_insert(VariableDomainUseStats {
+                value_count,
+                use_count: 0,
+            })
+            .use_count += 1;
     }
 
     let by_domain = domain_use_counts_by_domain
@@ -563,8 +782,8 @@ fn variable_domain_sharing_summary(problem: &CompiledSelectorProblem) -> serde_j
                 *domain,
                 domain_sharing_stats(
                     counts
-                        .iter()
-                        .map(|(values, use_count)| (values.len(), *use_count)),
+                        .values()
+                        .map(|stats| (stats.value_count, stats.use_count)),
                 ),
             )
         })
@@ -572,13 +791,47 @@ fn variable_domain_sharing_summary(problem: &CompiledSelectorProblem) -> serde_j
     let mut summary = domain_sharing_stats(
         domain_use_counts
             .iter()
-            .map(|((_domain, values), use_count)| (values.len(), *use_count)),
+            .map(|((_domain, _key), stats)| (stats.value_count, stats.use_count)),
     );
     summary
         .as_object_mut()
         .expect("domain sharing stats should be a JSON object")
         .insert("by_domain".to_string(), serde_json::json!(by_domain));
     summary
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum VariableDomainUseKey {
+    Full,
+    SparseExact(Vec<BackendValueId>),
+    SparseFingerprint { len: usize, hash: u64 },
+    SharedSparse(usize),
+}
+
+#[derive(Debug, Clone, Copy)]
+struct VariableDomainUseStats {
+    value_count: usize,
+    use_count: usize,
+}
+
+fn variable_domain_use_key(variable: &CompiledVariable) -> VariableDomainUseKey {
+    match &variable.values {
+        CompiledVariableDomain::Full(_) => VariableDomainUseKey::Full,
+        CompiledVariableDomain::Sparse(values)
+            if values.len() <= DOMAIN_SHARING_EXACT_SPARSE_LIMIT =>
+        {
+            VariableDomainUseKey::SparseExact(values.clone())
+        }
+        CompiledVariableDomain::Sparse(values) => {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            values.hash(&mut hasher);
+            VariableDomainUseKey::SparseFingerprint {
+                len: values.len(),
+                hash: hasher.finish(),
+            }
+        }
+        CompiledVariableDomain::SharedSparse(id) => VariableDomainUseKey::SharedSparse(id.0),
+    }
 }
 
 fn domain_sharing_stats(
@@ -670,6 +923,7 @@ fn variable_domain_representation_name(values: &CompiledVariableDomain) -> &'sta
     match values {
         CompiledVariableDomain::Full(_) => "full",
         CompiledVariableDomain::Sparse(_) => "sparse",
+        CompiledVariableDomain::SharedSparse(_) => "shared_sparse",
     }
 }
 
@@ -677,6 +931,7 @@ fn variable_domain_encoding_name(values: &CompiledVariableDomain) -> &'static st
     match values {
         CompiledVariableDomain::Full(_) => "dense",
         CompiledVariableDomain::Sparse(_) => "sparse",
+        CompiledVariableDomain::SharedSparse(_) => "shared_sparse",
     }
 }
 
@@ -699,10 +954,20 @@ fn request_from_problem(
     problem: &CompiledSelectorProblem,
 ) -> Result<wire::SelectorCpSatRequest, OrToolsCpSatBackendError> {
     Ok(wire::SelectorCpSatRequest {
+        shared_sparse_domains: problem
+            .shared_variable_domains
+            .iter()
+            .map(shared_sparse_domain_from_backend)
+            .collect::<Result<Vec<_>, _>>()?,
         variables: problem
             .variables
             .iter()
             .map(|variable| variable_from_backend(problem, variable))
+            .collect::<Result<Vec<_>, _>>()?,
+        allowed_row_sets: problem
+            .allowed_tuple_row_sets
+            .iter()
+            .map(row_set_from_backend)
             .collect::<Result<Vec<_>, _>>()?,
         allowed_tables: problem
             .allowed_tuples
@@ -750,11 +1015,32 @@ fn variable_from_backend(
                 values: values.iter().map(|value| value.0).collect(),
             }))
         }
+        CompiledVariableDomain::SharedSparse(id) => {
+            let shared_domain = problem.shared_variable_domain(*id).ok_or_else(|| {
+                OrToolsCpSatBackendError::InvalidProblem(format!(
+                    "variable {:?} references unknown shared sparse domain {:?}",
+                    variable.id, id
+                ))
+            })?;
+            Some(wire::variable::Domain::SharedSparseDomainId(u32_id(
+                "variables.shared_sparse_domain_id",
+                shared_domain.id.0,
+            )?))
+        }
     };
     Ok(wire::Variable {
         id: constraint_variable_id(variable.id)?,
         debug_name: variable.debug_name.clone().unwrap_or_default(),
         domain,
+    })
+}
+
+fn shared_sparse_domain_from_backend(
+    domain: &selector_constraint_backend::CompiledSharedVariableDomain,
+) -> Result<wire::SharedSparseDomain, OrToolsCpSatBackendError> {
+    Ok(wire::SharedSparseDomain {
+        id: u32_id("shared_sparse_domains.id", domain.id.0)?,
+        values: domain.values.iter().map(|value| value.0).collect(),
     })
 }
 
@@ -769,13 +1055,18 @@ fn table_from_backend(
             .copied()
             .map(constraint_variable_id)
             .collect::<Result<Vec<_>, _>>()?,
-        allowed_rows: constraint
-            .tuples
-            .iter()
-            .map(|values| wire::Tuple {
-                values: values.iter().map(|value| value.0).collect(),
-            })
-            .collect(),
+        allowed_rows: Vec::new(),
+        row_set_id: Some(u32_id("allowed_tables.row_set_id", constraint.row_set.0)?),
+    })
+}
+
+fn row_set_from_backend(
+    row_set: &selector_constraint_backend::CompiledAllowedTupleRowSet,
+) -> Result<wire::AllowedRowSet, OrToolsCpSatBackendError> {
+    Ok(wire::AllowedRowSet {
+        id: u32_id("allowed_row_sets.id", row_set.id.0)?,
+        arity: u32_id("allowed_row_sets.arity", row_set.rows.arity())?,
+        values: row_set.rows.values().iter().map(|value| value.0).collect(),
     })
 }
 
@@ -1118,6 +1409,7 @@ mod tests {
                 statement_ordinals: vec![BackendValueId(0), BackendValueId(1)],
                 ..Default::default()
             },
+            shared_variable_domains: Vec::new(),
             variables: vec![
                 CompiledVariable {
                     id: ConstraintVariableId(0),
@@ -1162,6 +1454,7 @@ mod tests {
                 },
             ],
             target_projections: Vec::new(),
+            allowed_tuple_row_sets: Vec::new(),
             allowed_tuples: Vec::new(),
             binary_constraints: vec![CompiledBinaryConstraint {
                 left: ConstraintVariableId(0),

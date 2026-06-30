@@ -8,7 +8,8 @@ from starlette.routing import Mount, Route
 from starlette.testclient import TestClient
 
 from mcp_infra.oauth_facade.config import FacadeLoggingConfig, FacadeSettings, HttpUpstream, StaticBearerClientAuth
-from mcp_infra.oauth_facade.server import _StaticBearerGuard, build_server
+from mcp_infra.oauth_facade.server import build_server
+from mcp_infra.static_bearer import StaticBearerGuard
 
 
 def _guarded_app() -> Starlette:
@@ -18,7 +19,7 @@ def _guarded_app() -> Starlette:
     async def healthz(request: Request) -> PlainTextResponse:
         return PlainTextResponse("healthy")
 
-    guard = _StaticBearerGuard(Starlette(routes=[Route("/mcp", protected)]), token="sekret")
+    guard = StaticBearerGuard(Starlette(routes=[Route("/mcp", protected)]), token="sekret")
     return Starlette(routes=[Route("/healthz", healthz), Mount("/", app=guard)])
 
 

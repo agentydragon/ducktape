@@ -11,7 +11,8 @@ use analysis::{ChunkId, StatementKind};
 use chunk_facts::{ChunkFacts, NodeId, NodeKind};
 use selector_ir::{
     ClaimKind, ClaimOrigin, NodeTerm, OrdinalTerm, OwnerTerm, RelationalPrimitive, SelectorAtom,
-    SelectorProgram, SelectorTargetId, SelectorVariableId, StringTerm, VariableDomain,
+    SelectorProgram, SelectorProjectedValue, SelectorTargetId, SelectorVariableId, StringTerm,
+    VariableDomain,
 };
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD,
@@ -66,6 +67,33 @@ pub struct MemberSelectorProgramBuilder {
     owner_injectivity_classes: BTreeMap<SelectorVariableId, String>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum MemberSelectorSpecRef<'a> {
+    Binding(&'a BindingSelector),
+    SourceMatch(&'a AnonymousStatementSelector),
+    CrossRef(&'a spec::CrossRefTarget),
+    ReadsMember(&'a spec::ReadsMemberTarget),
+    MemberOfModule(&'a spec::MemberOfModuleTarget),
+    PassedToCall(&'a spec::PassedToCallTarget),
+    MakesDecorateCall(&'a spec::MakesDecorateCallTarget),
+    IntrinsicAlias(&'a spec::IntrinsicAliasTarget),
+}
+
+impl<'a> From<&'a MemberSelectorSpec> for MemberSelectorSpecRef<'a> {
+    fn from(selector: &'a MemberSelectorSpec) -> Self {
+        match selector {
+            MemberSelectorSpec::Binding(selector) => Self::Binding(selector),
+            MemberSelectorSpec::SourceMatch(selector) => Self::SourceMatch(selector),
+            MemberSelectorSpec::CrossRef(selector) => Self::CrossRef(selector),
+            MemberSelectorSpec::ReadsMember(selector) => Self::ReadsMember(selector),
+            MemberSelectorSpec::MemberOfModule(selector) => Self::MemberOfModule(selector),
+            MemberSelectorSpec::PassedToCall(selector) => Self::PassedToCall(selector),
+            MemberSelectorSpec::MakesDecorateCall(selector) => Self::MakesDecorateCall(selector),
+            MemberSelectorSpec::IntrinsicAlias(selector) => Self::IntrinsicAlias(selector),
+        }
+    }
+}
+
 struct NativeAstFactLowering<'a> {
     facts: &'a ChunkFacts,
     node_vars: &'a BTreeMap<NodeId, SelectorVariableId>,
@@ -113,9 +141,13 @@ impl MemberSelectorProgramBuilder {
         selector: &MemberSelectorSpec,
     ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
         let logical_module = logical_module.into();
-        let target =
-            self.declare_member_target_in_module(logical_module.clone(), export_name, selector)?;
-        self.lower_member_constraints_in_module(&logical_module, export_name, selector)?;
+        let selector = MemberSelectorSpecRef::from(selector);
+        let target = self.declare_member_target_in_module_ref(
+            logical_module.clone(),
+            export_name,
+            selector,
+        )?;
+        self.lower_member_constraints_in_module_ref(&logical_module, export_name, selector)?;
         Ok(target)
     }
 
@@ -125,11 +157,24 @@ impl MemberSelectorProgramBuilder {
         export_name: &str,
         selector: &MemberSelectorSpec,
     ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
+        self.declare_member_target_in_module_ref(
+            logical_module,
+            export_name,
+            MemberSelectorSpecRef::from(selector),
+        )
+    }
+
+    pub fn declare_member_target_in_module_ref(
+        &mut self,
+        logical_module: impl Into<String>,
+        export_name: &str,
+        selector: MemberSelectorSpecRef<'_>,
+    ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
         let logical_module = logical_module.into();
         let owner = self.owner_for_local_export(&logical_module, export_name);
         self.targeted_owners
             .insert(owner, format!("{logical_module}::{export_name}"));
-        if !matches!(selector, MemberSelectorSpec::Binding(_)) {
+        if !matches!(selector, MemberSelectorSpecRef::Binding(_)) {
             self.injective_targeted_owners.insert(owner);
         }
         self.global_owner_by_export
@@ -147,7 +192,7 @@ impl MemberSelectorProgramBuilder {
             ClaimKind::Binding {
                 export_name: Some(export_name.to_string()),
             },
-            selector_origin(selector),
+            selector_origin_ref(selector),
         ))
     }
 
@@ -196,8 +241,110 @@ impl MemberSelectorProgramBuilder {
         export_name: &str,
         selector: &MemberSelectorSpec,
     ) -> Result<(), SelectorIrLoweringError> {
+        self.lower_member_constraints_in_module_ref(
+            logical_module,
+            export_name,
+            MemberSelectorSpecRef::from(selector),
+        )
+    }
+
+    pub fn lower_member_constraints_in_module_ref(
+        &mut self,
+        logical_module: &str,
+        export_name: &str,
+        selector: MemberSelectorSpecRef<'_>,
+    ) -> Result<(), SelectorIrLoweringError> {
         let owner = self.owner_for_local_export(logical_module, export_name);
         self.lower_selector_atoms(logical_module, owner, selector)
+    }
+
+    pub fn lower_projected_source_match_candidates(
+        &mut self,
+        logical_module: &str,
+        export_name: &str,
+        candidate_rows: Vec<(analysis::OwnerId, String)>,
+    ) {
+        let owner = self.owner_for_local_export(logical_module, export_name);
+        let binding = self.program.add_variable(
+            VariableDomain::String,
+            Some(format!(
+                "{logical_module}::source_match.projected_binding.{export_name}"
+            )),
+        );
+        self.program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+            owner: owner_term(owner),
+            binding: string_term(binding),
+        });
+        self.program.add_atom(SelectorAtom::ProjectedAllowedTuples {
+            variables: vec![owner, binding],
+            rows: candidate_rows
+                .into_iter()
+                .map(|(owner, binding)| {
+                    vec![
+                        SelectorProjectedValue::Owner(owner),
+                        SelectorProjectedValue::String(binding),
+                    ]
+                })
+                .collect(),
+            reason: format!("{logical_module}::source_match.projected.{export_name}"),
+        });
+    }
+
+    pub fn lower_projected_source_match_group_candidates(
+        &mut self,
+        logical_module: &str,
+        exports_by_target: &BTreeMap<String, String>,
+        candidate_rows: Vec<BTreeMap<String, (analysis::OwnerId, String)>>,
+    ) {
+        let mut variables = Vec::new();
+        let mut target_bindings = Vec::new();
+        let injectivity_class = format!(
+            "{logical_module}|binding_group.source_match.projected|{}",
+            exports_by_target
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        for (target_binding, export_name) in exports_by_target {
+            let owner = self.owner_for_local_export(logical_module, export_name);
+            self.owner_injectivity_classes
+                .insert(owner, injectivity_class.clone());
+            let binding = self.program.add_variable(
+                VariableDomain::String,
+                Some(format!(
+                    "{logical_module}::binding_group.source_match.projected_binding.{target_binding}"
+                )),
+            );
+            self.program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+                owner: owner_term(owner),
+                binding: string_term(binding),
+            });
+            variables.push(owner);
+            variables.push(binding);
+            target_bindings.push(target_binding.clone());
+        }
+        self.program.add_atom(SelectorAtom::ProjectedAllowedTuples {
+            variables,
+            rows: candidate_rows
+                .into_iter()
+                .map(|row| {
+                    target_bindings
+                        .iter()
+                        .flat_map(|target_binding| {
+                            let (owner, binding) = row
+                                .get(target_binding)
+                                .expect("candidate rows should contain every group target");
+                            [
+                                SelectorProjectedValue::Owner(*owner),
+                                SelectorProjectedValue::String(binding.clone()),
+                            ]
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect(),
+            reason: format!("{logical_module}::binding_group.source_match.projected"),
+        });
     }
 
     pub fn into_program(mut self) -> Result<SelectorProgram, SelectorIrLoweringError> {
@@ -282,11 +429,11 @@ impl MemberSelectorProgramBuilder {
         &mut self,
         logical_module: &str,
         owner: SelectorVariableId,
-        selector: &MemberSelectorSpec,
+        selector: MemberSelectorSpecRef<'_>,
     ) -> Result<(), SelectorIrLoweringError> {
         match selector {
-            MemberSelectorSpec::Binding(binding) => self.lower_binding_selector(owner, binding),
-            MemberSelectorSpec::SourceMatch(selector) => {
+            MemberSelectorSpecRef::Binding(binding) => self.lower_binding_selector(owner, binding),
+            MemberSelectorSpecRef::SourceMatch(selector) => {
                 if !self.try_lower_native_source_match(logical_module, owner, selector)? {
                     return Err(SelectorIrLoweringError::unsupported(
                         "source_match",
@@ -295,7 +442,7 @@ impl MemberSelectorProgramBuilder {
                 }
                 Ok(())
             }
-            MemberSelectorSpec::CrossRef(target) => {
+            MemberSelectorSpecRef::CrossRef(target) => {
                 let anchor = self.owner_for_global_export(&target.anchor)?;
                 match target.relation {
                     CrossRefRelation::References => {
@@ -314,7 +461,7 @@ impl MemberSelectorProgramBuilder {
                 self.add_kind_atom(owner, target.kind);
                 Ok(())
             }
-            MemberSelectorSpec::ReadsMember(target) => {
+            MemberSelectorSpecRef::ReadsMember(target) => {
                 if let Some(object) = &target.object {
                     let object = self.owner_for_global_export(object)?;
                     self.program.add_atom(SelectorAtom::ReadsMemberOfOwner {
@@ -332,7 +479,7 @@ impl MemberSelectorProgramBuilder {
                 self.add_kind_atom(owner, target.kind);
                 Ok(())
             }
-            MemberSelectorSpec::MemberOfModule(target) => {
+            MemberSelectorSpecRef::MemberOfModule(target) => {
                 self.program.add_atom(SelectorAtom::ConsumesModuleMember {
                     owner: owner_term(owner),
                     module: const_str(&target.module),
@@ -341,7 +488,7 @@ impl MemberSelectorProgramBuilder {
                 self.add_kind_atom(owner, target.kind);
                 Ok(())
             }
-            MemberSelectorSpec::PassedToCall(target) => {
+            MemberSelectorSpecRef::PassedToCall(target) => {
                 let arg_index = optional_index(target.arg_index)?;
                 if let Some(object) = &target.object {
                     let object = self.owner_for_global_export(object)?;
@@ -362,7 +509,7 @@ impl MemberSelectorProgramBuilder {
                 self.add_kind_atom(owner, target.kind);
                 Ok(())
             }
-            MemberSelectorSpec::MakesDecorateCall(target) => {
+            MemberSelectorSpecRef::MakesDecorateCall(target) => {
                 let class_anchor = self.owner_for_global_export(&target.class)?;
                 self.program
                     .add_atom(SelectorAtom::MakesDecorateCallForOwner {
@@ -373,7 +520,7 @@ impl MemberSelectorProgramBuilder {
                 self.add_kind_atom(owner, target.kind);
                 Ok(())
             }
-            MemberSelectorSpec::IntrinsicAlias(target) => {
+            MemberSelectorSpecRef::IntrinsicAlias(target) => {
                 let referenced_by =
                     self.owner_for_local_export(logical_module, &target.referenced_by);
                 self.program.add_atom(SelectorAtom::IntrinsicAlias {
@@ -2788,8 +2935,8 @@ fn child_list_segments(
     (segments, anchored_left, anchored_right)
 }
 
-fn selector_origin(selector: &MemberSelectorSpec) -> ClaimOrigin {
-    match relation_for_selector(selector) {
+fn selector_origin_ref(selector: MemberSelectorSpecRef<'_>) -> ClaimOrigin {
+    match relation_for_selector_ref(selector) {
         Some(relation) => ClaimOrigin::RelationalSelector { relation },
         None => ClaimOrigin::MemberSelector,
     }
@@ -2901,15 +3048,15 @@ impl From<selector_ir::SelectorProgramError> for SelectorIrLoweringError {
     }
 }
 
-fn relation_for_selector(selector: &MemberSelectorSpec) -> Option<RelationalPrimitive> {
+fn relation_for_selector_ref(selector: MemberSelectorSpecRef<'_>) -> Option<RelationalPrimitive> {
     match selector {
-        MemberSelectorSpec::CrossRef(_) => Some(RelationalPrimitive::CrossRef),
-        MemberSelectorSpec::ReadsMember(_) => Some(RelationalPrimitive::ReadsMember),
-        MemberSelectorSpec::MemberOfModule(_) => Some(RelationalPrimitive::MemberOfModule),
-        MemberSelectorSpec::PassedToCall(_) => Some(RelationalPrimitive::PassedToCall),
-        MemberSelectorSpec::MakesDecorateCall(_) => Some(RelationalPrimitive::MakesDecorateCall),
-        MemberSelectorSpec::IntrinsicAlias(_) => Some(RelationalPrimitive::IntrinsicAlias),
-        MemberSelectorSpec::Binding(_) | MemberSelectorSpec::SourceMatch(_) => None,
+        MemberSelectorSpecRef::CrossRef(_) => Some(RelationalPrimitive::CrossRef),
+        MemberSelectorSpecRef::ReadsMember(_) => Some(RelationalPrimitive::ReadsMember),
+        MemberSelectorSpecRef::MemberOfModule(_) => Some(RelationalPrimitive::MemberOfModule),
+        MemberSelectorSpecRef::PassedToCall(_) => Some(RelationalPrimitive::PassedToCall),
+        MemberSelectorSpecRef::MakesDecorateCall(_) => Some(RelationalPrimitive::MakesDecorateCall),
+        MemberSelectorSpecRef::IntrinsicAlias(_) => Some(RelationalPrimitive::IntrinsicAlias),
+        MemberSelectorSpecRef::Binding(_) | MemberSelectorSpecRef::SourceMatch(_) => None,
     }
 }
 

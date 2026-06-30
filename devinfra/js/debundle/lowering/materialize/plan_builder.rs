@@ -7,7 +7,7 @@
 use super::super::ordinal::body_index_for_statement_ordinal;
 use super::*;
 use crate::plans::{AnonymousStatementRequest, RelationalSelector};
-use analysis::StatementOrdinal;
+use analysis::{OwnerId, StatementOrdinal};
 use anyhow::anyhow;
 
 #[derive(Debug, Clone)]
@@ -30,6 +30,11 @@ struct AnonymousStatementTargetInfo {
     target: SelectorTargetId,
     request_index: usize,
     statement: AnonymousStatementRequest,
+}
+
+struct SelectorFactCoverage<'a> {
+    owner_kind_by_owner: BTreeMap<OwnerId, &'a str>,
+    owners_by_binding: BTreeMap<&'a str, BTreeSet<OwnerId>>,
 }
 
 impl DuplicateBindingClaim {
@@ -55,8 +60,11 @@ use selector_ir::{
     ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
     SelectorTargetId,
 };
-use selector_ir_lowering::{MemberSelectorLoweringContext, MemberSelectorProgramBuilder};
+use selector_ir_lowering::{
+    MemberSelectorLoweringContext, MemberSelectorProgramBuilder, MemberSelectorSpecRef,
+};
 use selector_runtime::solve_global_selector_program;
+use source_match::legacy_resolver::SelectorResolver;
 
 impl From<&DuplicateClaimSite> for DuplicateClaimSiteReport {
     fn from(site: &DuplicateClaimSite) -> Self {
@@ -109,38 +117,32 @@ fn render_duplicate_binding_claims(duplicates: &[DuplicateBindingClaim]) -> Stri
     report
 }
 
-fn member_selector_spec_for_global_solver(
+fn member_selector_ref_for_global_solver(
     member: &MemberRequest,
-) -> Option<spec::MemberSelectorSpec> {
+) -> Option<MemberSelectorSpecRef<'_>> {
     if let Some(binding) = &member.binding_selector
         && !member.is_import_specifier
     {
-        return Some(spec::MemberSelectorSpec::Binding(binding.clone()));
+        return Some(MemberSelectorSpecRef::Binding(binding));
     }
 
     if let Some(selector) = &member.source_match {
-        return Some(spec::MemberSelectorSpec::SourceMatch(selector.clone()));
+        return Some(MemberSelectorSpecRef::SourceMatch(selector));
     }
 
     if let Some(relational) = &member.relational {
         return Some(match relational {
-            RelationalSelector::CrossRef(target) => {
-                spec::MemberSelectorSpec::CrossRef(target.clone())
-            }
-            RelationalSelector::ReadsMember(target) => {
-                spec::MemberSelectorSpec::ReadsMember(target.clone())
-            }
+            RelationalSelector::CrossRef(target) => MemberSelectorSpecRef::CrossRef(target),
+            RelationalSelector::ReadsMember(target) => MemberSelectorSpecRef::ReadsMember(target),
             RelationalSelector::MemberOfModule(target) => {
-                spec::MemberSelectorSpec::MemberOfModule(target.clone())
+                MemberSelectorSpecRef::MemberOfModule(target)
             }
-            RelationalSelector::PassedToCall(target) => {
-                spec::MemberSelectorSpec::PassedToCall(target.clone())
-            }
+            RelationalSelector::PassedToCall(target) => MemberSelectorSpecRef::PassedToCall(target),
             RelationalSelector::MakesDecorateCall(target) => {
-                spec::MemberSelectorSpec::MakesDecorateCall(target.clone())
+                MemberSelectorSpecRef::MakesDecorateCall(target)
             }
             RelationalSelector::IntrinsicAlias(target) => {
-                spec::MemberSelectorSpec::IntrinsicAlias(target.clone())
+                MemberSelectorSpecRef::IntrinsicAlias(target)
             }
         });
     }
@@ -150,8 +152,69 @@ fn member_selector_spec_for_global_solver(
     }
     member
         .binding_selector
-        .clone()
-        .map(spec::MemberSelectorSpec::Binding)
+        .as_ref()
+        .map(MemberSelectorSpecRef::Binding)
+}
+
+fn selector_fact_coverage(facts: &SelectorFactStore) -> SelectorFactCoverage<'_> {
+    let mut owner_kind_by_owner = BTreeMap::new();
+    let mut owners_by_binding = BTreeMap::<&str, BTreeSet<OwnerId>>::new();
+    for fact in &facts.facts {
+        match fact {
+            SelectorFact::Owner {
+                owner,
+                statement_kind,
+                ..
+            } => {
+                owner_kind_by_owner.insert(*owner, statement_kind.as_str());
+            }
+            SelectorFact::DeclaredBinding { owner, binding, .. } => {
+                owners_by_binding
+                    .entry(binding.as_str())
+                    .or_default()
+                    .insert(*owner);
+            }
+            _ => {}
+        }
+    }
+    SelectorFactCoverage {
+        owner_kind_by_owner,
+        owners_by_binding,
+    }
+}
+
+fn binding_source_kind_statement_kind(kind: spec::BindingSourceKind) -> &'static str {
+    match kind {
+        spec::BindingSourceKind::ImportSpecifier => "import",
+        spec::BindingSourceKind::VariableDeclarator => "var_decl",
+        spec::BindingSourceKind::FunctionDeclaration => "fn_decl",
+        spec::BindingSourceKind::ClassDeclaration => "class_decl",
+    }
+}
+
+fn binding_selector_has_fact_candidate(
+    coverage: &SelectorFactCoverage<'_>,
+    member: &MemberRequest,
+) -> bool {
+    let Some(selector) = &member.binding_selector else {
+        return true;
+    };
+    if member.is_import_specifier {
+        return true;
+    }
+    let Some(owners) = coverage.owners_by_binding.get(selector.name.as_str()) else {
+        return false;
+    };
+    let Some(kind) = selector.kind else {
+        return !owners.is_empty();
+    };
+    let expected = binding_source_kind_statement_kind(kind);
+    owners.iter().any(|owner| {
+        coverage
+            .owner_kind_by_owner
+            .get(owner)
+            .is_some_and(|actual| *actual == expected)
+    })
 }
 
 fn selector_fact_store_for_chunk(
@@ -583,6 +646,71 @@ fn source_match_group_assignments(
         }
     }
     assignments
+}
+
+fn owner_by_body_index_and_binding(
+    owner_graph: &analysis::OwnerGraph,
+    module: &swc_ecma_ast::Module,
+) -> BTreeMap<(usize, String), OwnerId> {
+    let mut owners = BTreeMap::new();
+    for node in owner_graph.iter_nodes() {
+        let Some(body_idx) =
+            body_index_for_statement_ordinal(&module.body, node.statement_ordinal.0)
+        else {
+            continue;
+        };
+        for binding in &node.declared {
+            owners.insert((body_idx, binding.0.as_str().to_string()), node.id);
+        }
+    }
+    owners
+}
+
+fn projected_source_match_candidate(
+    owner_by_binding: &BTreeMap<(usize, String), OwnerId>,
+    candidate: &source_match::MemberBindingMatch,
+) -> Result<(OwnerId, String)> {
+    let binding = candidate.binding.binding_name.clone();
+    let owner = owner_by_binding
+        .get(&(candidate.body_idx, binding.clone()))
+        .copied()
+        .with_context(|| {
+            format!(
+                "source_match candidate at body index {} binding `{}` \
+                 does not map to an owner-graph node",
+                candidate.body_idx, binding
+            )
+        })?;
+    Ok((owner, binding))
+}
+
+fn projected_source_match_candidate_rows(
+    owner_by_binding: &BTreeMap<(usize, String), OwnerId>,
+    candidates: Vec<source_match::MemberBindingMatch>,
+) -> Result<Vec<(OwnerId, String)>> {
+    candidates
+        .iter()
+        .map(|candidate| projected_source_match_candidate(owner_by_binding, candidate))
+        .collect()
+}
+
+fn projected_source_match_group_candidate_rows(
+    owner_by_binding: &BTreeMap<(usize, String), OwnerId>,
+    candidates: Vec<source_match::MemberBindingGroupMatch>,
+) -> Result<Vec<BTreeMap<String, (OwnerId, String)>>> {
+    candidates
+        .into_iter()
+        .map(|candidate| {
+            candidate
+                .bindings
+                .iter()
+                .map(|(target_binding, binding_match)| {
+                    projected_source_match_candidate(owner_by_binding, binding_match)
+                        .map(|row| (target_binding.clone(), row))
+                })
+                .collect()
+        })
+        .collect()
 }
 
 fn module_path_from_id(module_id: &str) -> Option<String> {
@@ -1049,9 +1177,9 @@ impl ChunkPlanBuilder {
             chunk_id_interned,
             chunk_id,
         ));
-        let mut deferred_targets = BTreeMap::<SelectorTargetId, (usize, MemberRequest)>::new();
+        let mut deferred_targets = BTreeMap::<SelectorTargetId, (usize, usize)>::new();
         let mut anonymous_statement_targets = Vec::<AnonymousStatementTargetInfo>::new();
-        let mut pending_constraints = Vec::<(String, String, spec::MemberSelectorSpec)>::new();
+        let mut pending_constraints = Vec::<(usize, usize)>::new();
         let mut pending_source_match_groups = Vec::<(String, SourceMatchGroupAssignment)>::new();
         let mut pending_source_match_group_keys =
             BTreeSet::<(String, SourceMatchGroupCacheKey)>::new();
@@ -1073,13 +1201,13 @@ impl ChunkPlanBuilder {
                             continue;
                         }
                     }
-                    let Some(selector) = member_selector_spec_for_global_solver(member) else {
+                    let Some(selector) = member_selector_ref_for_global_solver(member) else {
                         continue;
                     };
-                    let target = builder.declare_member_target_in_module(
+                    let target = builder.declare_member_target_in_module_ref(
                         &request.id,
                         &member.export_name,
-                        &selector,
+                        selector,
                     )?;
                     let group_assignment = group_assignments.get(&member_index).cloned();
                     if let Some(group) = &group_assignment {
@@ -1094,14 +1222,10 @@ impl ChunkPlanBuilder {
                             pending_source_match_groups.push((request.id.clone(), group.clone()));
                         }
                     } else {
-                        pending_constraints.push((
-                            request.id.clone(),
-                            member.export_name.clone(),
-                            selector,
-                        ));
+                        pending_constraints.push((index, member_index));
                     }
                     if member.resolves_after_chunk_analysis() {
-                        deferred_targets.insert(target, (index, member.clone()));
+                        deferred_targets.insert(target, (index, member_index));
                     }
                 }
             }
@@ -1131,7 +1255,39 @@ impl ChunkPlanBuilder {
                 }
             }
         }
+        let has_pending_source_match = !pending_source_match_groups.is_empty()
+            || pending_constraints
+                .iter()
+                .any(|(request_index, member_index)| {
+                    explicit_requests[*request_index].members[*member_index]
+                        .source_match
+                        .is_some()
+                });
+        let source_match_projection = has_pending_source_match.then(|| {
+            (
+                source_match::legacy_resolver::ChunkResolver::new(module),
+                owner_by_body_index_and_binding(owner_graph, module),
+            )
+        });
         for (logical_module, group) in pending_source_match_groups {
+            let Some((resolver, owner_by_binding)) = &source_match_projection else {
+                continue;
+            };
+            let projected_rows = resolver
+                .member_group_candidates(&logical_module, &group.selector, &group.exports_by_target)
+                .and_then(|candidates| {
+                    projected_source_match_group_candidate_rows(owner_by_binding, candidates)
+                });
+            if let Ok(rows) = projected_rows
+                && !rows.is_empty()
+            {
+                builder.lower_projected_source_match_group_candidates(
+                    &logical_module,
+                    &group.exports_by_target,
+                    rows,
+                );
+                continue;
+            }
             if builder.try_lower_native_source_match_group(
                 &logical_module,
                 &group.selector,
@@ -1145,8 +1301,37 @@ impl ChunkPlanBuilder {
             }
             .into());
         }
-        for (logical_module, export_name, selector) in pending_constraints {
-            builder.lower_member_constraints_in_module(&logical_module, &export_name, &selector)?;
+        for (request_index, member_index) in pending_constraints {
+            let request = &explicit_requests[request_index];
+            let member = &request.members[member_index];
+            if let Some(selector) = &member.source_match {
+                let Some((resolver, owner_by_binding)) = &source_match_projection else {
+                    continue;
+                };
+                let projected_rows =
+                    resolver
+                        .member_candidates(&request.id, selector)
+                        .and_then(|candidates| {
+                            projected_source_match_candidate_rows(owner_by_binding, candidates)
+                        });
+                if let Ok(rows) = projected_rows
+                    && !rows.is_empty()
+                {
+                    builder.lower_projected_source_match_candidates(
+                        &request.id,
+                        &member.export_name,
+                        rows,
+                    );
+                    continue;
+                }
+            }
+            let selector = member_selector_ref_for_global_solver(member)
+                .expect("pending selector constraint should still be lowerable");
+            builder.lower_member_constraints_in_module_ref(
+                &request.id,
+                &member.export_name,
+                selector,
+            )?;
         }
         let program = builder.into_program()?;
         if program.targets.is_empty() {
@@ -1159,6 +1344,23 @@ impl ChunkPlanBuilder {
             module,
             import_sources,
         )?;
+        let fact_coverage = selector_fact_coverage(&facts);
+        for (index, member_index) in deferred_targets.values().copied() {
+            let request = &explicit_requests[index];
+            if !request.anonymous_statements.is_empty() {
+                continue;
+            }
+            let member = &request.members[member_index];
+            if !binding_selector_has_fact_candidate(&fact_coverage, member) {
+                bail!(
+                    "logical_module {}: global selector solver found no match for selector member \
+                     `{}` ({}): None",
+                    request.id,
+                    member.export_name,
+                    member.claim_origin,
+                );
+            }
+        }
         let result = solve_global_selector_program(&program, &facts)?;
 
         for info in anonymous_statement_targets {
@@ -1233,8 +1435,9 @@ impl ChunkPlanBuilder {
             }
         }
 
-        for (target, (index, member)) in deferred_targets {
+        for (target, (index, member_index)) in deferred_targets {
             let request = &explicit_requests[index];
+            let member = &request.members[member_index];
             match result.outcome_for(target) {
                 Some(ClaimOutcome::Unique { claim }) => {
                     let binding = claim.binding.as_deref().with_context(|| {
@@ -1249,7 +1452,7 @@ impl ChunkPlanBuilder {
                     if native_selects_import {
                         self.claim_imported_binding_after_chunk_analysis(
                             request,
-                            &member,
+                            member,
                             binding,
                             index,
                             chunk_top_level_mark,
@@ -1263,7 +1466,7 @@ impl ChunkPlanBuilder {
                     }
                     self.claim_binding_after_chunk_analysis(
                         request,
-                        &member,
+                        member,
                         binding,
                         index,
                         chunk_top_level_mark,
@@ -1272,13 +1475,13 @@ impl ChunkPlanBuilder {
                     )?;
                 }
                 Some(ClaimOutcome::NoMatch) => {
-                    if let Some(message) = native_source_match_no_match_message(request, &member) {
+                    if let Some(message) = native_source_match_no_match_message(request, member) {
                         if self.keep_going {
                             self.source_match_diagnostics
                                 .push(SourceMatchDiagnostic::new(
                                     &request.id,
                                     &request.target_path,
-                                    &member,
+                                    member,
                                     Vec::new(),
                                     message,
                                 ));
@@ -1304,7 +1507,7 @@ impl ChunkPlanBuilder {
                 }
                 Some(ClaimOutcome::Ambiguous { candidates }) => {
                     let message =
-                        native_source_match_ambiguous_message(request, &member, candidates);
+                        native_source_match_ambiguous_message(request, member, candidates);
                     if let Some(message) = message {
                         if self.keep_going {
                             let body_indices = candidates
@@ -1315,7 +1518,7 @@ impl ChunkPlanBuilder {
                                 .push(SourceMatchDiagnostic::new(
                                     &request.id,
                                     &request.target_path,
-                                    &member,
+                                    member,
                                     body_indices,
                                     message,
                                 ));

@@ -1,0 +1,21 @@
+# gmail.modify access token (write) for the gmail-labeling MCP server. Airlock
+# writes it into the `airlock` namespace; ESO mirrors it ONLY into the
+# gmail-labeling namespace — deliberately NOT to any sandbox, so no agent ever
+# holds a Gmail write token directly.
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: gmail-modify-access-token
+spec:
+  namespaces:
+    - gmail-labeling
+  externalSecretSpec:
+    refreshInterval: 1m
+    secretStoreRef:
+      name: kubernetes-airlock-secret-store
+      kind: ClusterSecretStore
+    target:
+      name: gmail-modify-access-token
+    dataFrom:
+      - extract:
+          key: gmail-modify-access-token

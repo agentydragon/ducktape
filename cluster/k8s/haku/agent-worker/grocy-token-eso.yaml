@@ -1,7 +1,7 @@
 # Mirror the rotator-published grocy-sf bearer JWT into haku-sandbox, where the
 # self-hosted Haku home reads it to call the grocy-sf MCP directly (base/sources/grocy.md).
 # Same ESO pattern the airlock OAuth tokens use to reach the sandbox namespaces
-# (agents/airlock/eso-access-tokens.yaml). Decoupled from the rotator: it sources the
+# (agents/airlock/google-access-token-eso.yaml). Decoupled from the rotator: it sources the
 # flux-system Secret the rotator writes (k8s_secret output) and refreshes continuously,
 # so the rotated token propagates without any rotator-side distribution config.
 apiVersion: external-secrets.io/v1

@@ -9,6 +9,8 @@ message SelectorCpSatRequest {
   repeated AllDifferent all_different = 4;
   repeated TargetProjection target_projections = 5;
   repeated LinearConstraint linear_constraints = 6;
+  repeated AllowedRowSet allowed_row_sets = 7;
+  repeated SharedSparseDomain shared_sparse_domains = 8;
 }
 
 message Variable {
@@ -17,6 +19,7 @@ message Variable {
   oneof domain {
     DenseDomain dense_domain = 4;
     SparseDomain sparse_domain = 5;
+    uint32 shared_sparse_domain_id = 6;
   }
 }
 
@@ -28,10 +31,22 @@ message SparseDomain {
   repeated int64 values = 1;
 }
 
+message SharedSparseDomain {
+  uint32 id = 1;
+  repeated int64 values = 2;
+}
+
 message TableConstraint {
   uint32 id = 1;
   repeated uint32 variable_ids = 2;
   repeated Tuple allowed_rows = 3;
+  optional uint32 row_set_id = 4;
+}
+
+message AllowedRowSet {
+  uint32 id = 1;
+  uint32 arity = 2;
+  repeated int64 values = 3;
 }
 
 message Tuple {

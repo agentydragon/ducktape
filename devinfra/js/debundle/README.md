@@ -114,9 +114,10 @@ the CP-SAT search:
 bazel build //path/to:debundle --output_groups=selector_problem
 ```
 
-This emits `bazel-bin/path/to/debundle.selector_cpsat_request.pb` and
-`bazel-bin/path/to/debundle.selector_cpsat_summary.json` after the same selector
-lowering step the full pipeline uses.
+This emits `bazel-bin/path/to/debundle.selector_cpsat_request.pb` after the
+same selector lowering step the full pipeline uses. The protobuf is the replay
+artifact for the C++ sidecar; human-readable selector summaries remain in the
+full pipeline's `debug/selector_cpsat_summary.json` output when available.
 
 ## Profiling
 
@@ -175,7 +176,9 @@ module top, `members:`, `binding_groups:`, and `anonymous_statements:`
 — also accept a `note:` field: YAML-only scratch metadata that never
 emits (debt rationale, provenance; `modules merge` writes its
 `merged from: <sources>` provenance into the module-level `note:`,
-composing with any existing note). Edit module and member comments via
+composing with any existing note). `binding_groups:` additionally
+accepts per-export `comments:` (emitting) and `notes:` (non-emitting)
+maps keyed by selector-local binding name. Edit module and member comments via
 `debundle bindings comment` / `debundle modules comment`. See
 `docs/spec_editing.md` → "Workflow: authoring `comment:` fields" for the
 YAML schema, worked CLI examples, and the comment/`note:` move semantics.

@@ -3223,6 +3223,7 @@ fn atom_kind(atom: &SelectorAtom) -> &'static str {
         SelectorAtom::OwnerStatementOrdinal { .. } => "owner_statement_ordinal",
         SelectorAtom::OwnerTopLevelRoot { .. } => "owner_top_level_root",
         SelectorAtom::OwnerDeclaresBinding { .. } => "owner_declares_binding",
+        SelectorAtom::ProjectedAllowedTuples { .. } => "projected_allowed_tuples",
         SelectorAtom::OwnerExportName { .. } => "owner_export_name",
         SelectorAtom::OwnerReferencesBinding { .. } => "owner_references_binding",
         SelectorAtom::OwnerReferencesOwner { .. } => "owner_references_owner",

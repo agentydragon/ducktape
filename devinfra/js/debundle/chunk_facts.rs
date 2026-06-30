@@ -2671,6 +2671,36 @@ mod tests {
     }
 
     #[test]
+    fn intrinsic_alias_uses_keeps_aliases_from_decorator_helper_declarator_run() {
+        // Real bundles commonly emit the two Object intrinsic aliases and the
+        // decorator helper in one multi-declarator `var` statement. The helper body
+        // is irrelevant to alias extraction; unsupported helper internals must not
+        // make us drop the sibling alias declarators.
+        let facts = intrinsic_aliases(
+            r#"var define = Object.defineProperty,
+  descriptor = Object.getOwnPropertyDescriptor,
+  decorate = (decorators, target, key, kind) => {
+    for (var desc = descriptor(target, key), index = decorators.length - 1, fn; index >= 0; index--)
+      (fn = decorators[index]) && (desc = fn(target, key, desc) || desc);
+    return (desc && define(target, key, desc), desc);
+  };"#,
+        );
+        assert_eq!(
+            facts,
+            vec![
+                IntrinsicAliasFact {
+                    binding: "define".to_string(),
+                    property: "defineProperty".to_string(),
+                },
+                IntrinsicAliasFact {
+                    binding: "descriptor".to_string(),
+                    property: "getOwnPropertyDescriptor".to_string(),
+                },
+            ],
+        );
+    }
+
+    #[test]
     fn intrinsic_alias_uses_requires_object_base() {
         // An alias off some other identifier (a local, or another global) is not an
         // `Object` intrinsic alias — fail-closed, no row.

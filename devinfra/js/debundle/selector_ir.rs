@@ -142,6 +142,11 @@ pub enum SelectorAtom {
         owner: OwnerTerm,
         binding: StringTerm,
     },
+    ProjectedAllowedTuples {
+        variables: Vec<SelectorVariableId>,
+        rows: Vec<Vec<SelectorProjectedValue>>,
+        reason: String,
+    },
     OwnerExportName {
         owner: OwnerTerm,
         export_name: StringTerm,
@@ -294,6 +299,26 @@ pub enum SelectorAtom {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum SelectorProjectedValue {
+    Owner(OwnerId),
+    AstNode(NodeId),
+    String(String),
+    StatementOrdinal(StatementOrdinal),
+}
+
+impl SelectorProjectedValue {
+    pub fn domain(&self) -> VariableDomain {
+        match self {
+            Self::Owner(_) => VariableDomain::Owner,
+            Self::AstNode(_) => VariableDomain::AstNode,
+            Self::String(_) => VariableDomain::String,
+            Self::StatementOrdinal(_) => VariableDomain::StatementOrdinal,
+        }
+    }
+}
+
 /// Whole lowered selector program for one chunk/component solve.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SelectorProgram {
@@ -441,6 +466,42 @@ impl SelectorProgram {
             SelectorAtom::OwnerDeclaresBinding { owner, binding } => {
                 self.validate_owner_term(owner, "owner_declares_binding.owner")?;
                 self.validate_string_term(binding, "owner_declares_binding.binding")
+            }
+            SelectorAtom::ProjectedAllowedTuples {
+                variables,
+                rows,
+                reason: _,
+            } => {
+                if variables.is_empty() {
+                    return Err(SelectorProgramError::EmptyProjectedAllowedTuples);
+                }
+                let domains = variables
+                    .iter()
+                    .map(|variable| {
+                        self.require_variable(*variable, "projected_allowed_tuples.variable")
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                for (row_index, row) in rows.iter().enumerate() {
+                    if row.len() != variables.len() {
+                        return Err(SelectorProgramError::ProjectedAllowedTupleArity {
+                            row_index,
+                            expected: variables.len(),
+                            actual: row.len(),
+                        });
+                    }
+                    for (column, (value, expected)) in row.iter().zip(domains.iter()).enumerate() {
+                        let actual = value.domain();
+                        if actual != *expected {
+                            return Err(SelectorProgramError::ProjectedAllowedTupleDomain {
+                                row_index,
+                                column,
+                                expected: *expected,
+                                actual,
+                            });
+                        }
+                    }
+                }
+                Ok(())
             }
             SelectorAtom::OwnerExportName { owner, export_name } => {
                 self.validate_owner_term(owner, "owner_export_name.owner")?;
@@ -751,6 +812,18 @@ pub enum SelectorProgramError {
     DegenerateAllDifferent,
     EmptyChildListPattern,
     EmptyChildListPatternSegment,
+    EmptyProjectedAllowedTuples,
+    ProjectedAllowedTupleArity {
+        row_index: usize,
+        expected: usize,
+        actual: usize,
+    },
+    ProjectedAllowedTupleDomain {
+        row_index: usize,
+        column: usize,
+        expected: VariableDomain,
+        actual: VariableDomain,
+    },
 }
 
 impl fmt::Display for SelectorProgramError {
@@ -796,6 +869,26 @@ impl fmt::Display for SelectorProgramError {
             Self::EmptyChildListPatternSegment => {
                 write!(f, "ast_child_list_pattern segments must be non-empty")
             }
+            Self::EmptyProjectedAllowedTuples => {
+                write!(f, "projected_allowed_tuples requires at least one variable")
+            }
+            Self::ProjectedAllowedTupleArity {
+                row_index,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "projected_allowed_tuples row {row_index} has arity {actual}, expected {expected}"
+            ),
+            Self::ProjectedAllowedTupleDomain {
+                row_index,
+                column,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "projected_allowed_tuples row {row_index} column {column} has domain {actual:?}, expected {expected:?}"
+            ),
         }
     }
 }

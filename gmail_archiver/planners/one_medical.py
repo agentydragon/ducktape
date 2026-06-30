@@ -1,6 +1,6 @@
 """Planner for deduplicating One Medical action item reminders."""
 
-from gmail_archiver.gmail_api_models import SystemLabel
+from gmail_api.labels import SystemLabel
 from gmail_archiver.inbox import GmailInbox
 from gmail_archiver.plan import Plan
 

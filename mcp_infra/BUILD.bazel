@@ -121,6 +121,13 @@ py_library(
 )
 
 py_library(
+    name = "static_bearer",
+    srcs = ["static_bearer.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//starlette"],
+)
+
+py_library(
     name = "prefix",
     srcs = ["prefix.py"],
     visibility = ["//:__subpackages__"],

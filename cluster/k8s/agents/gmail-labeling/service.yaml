@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gmail-labeling
+  namespace: gmail-labeling
+  labels:
+    app.kubernetes.io/name: gmail-labeling
+spec:
+  selector:
+    app.kubernetes.io/name: gmail-labeling
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+  type: ClusterIP

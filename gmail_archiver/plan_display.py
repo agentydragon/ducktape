@@ -10,7 +10,8 @@ from typing import Protocol, runtime_checkable
 from rich.console import Console
 from rich.table import Table
 
-from gmail_archiver.gmail_api_models import GmailMessageWithHeaders, SystemLabel
+from gmail_api.labels import SystemLabel
+from gmail_archiver.gmail_api_models import GmailMessageWithHeaders
 from gmail_archiver.inbox import GmailInbox
 from gmail_archiver.plan import Plan, PlannedAction
 

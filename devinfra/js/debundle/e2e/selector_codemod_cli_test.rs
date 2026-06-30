@@ -167,15 +167,18 @@ fn synthesis_fixture(root: &Path) -> (PathBuf, PathBuf) {
         r#"members:
   - name: PrimaryConfig
     comment: Primary config comment
+    note: Primary config note
     selector:
       binding:
         name: runtimePrimary
   - name: SecondaryConfig
     comment: Secondary config comment
+    note: Secondary config note
     selector:
       binding:
         name: runtimeSecondary
   - name: FormatValue
+    note: Format value note
     selector:
       binding:
         name: runtimeFormatter
@@ -1006,6 +1009,7 @@ fn synthesize_selectors_apply_groups_multideclarator_and_preserves_comments() {
     let members = doc["members"].as_sequence().unwrap();
     assert_eq!(members.len(), 1, "{doc:?}");
     assert_eq!(members[0]["name"], "FormatValue");
+    assert_eq!(members[0]["note"], "Format value note");
     assert_eq!(
         members[0]["selector"]["source_match"]["target_binding"],
         "FormatValue"
@@ -1039,6 +1043,8 @@ fn synthesize_selectors_apply_groups_multideclarator_and_preserves_comments() {
         group["comments"]["SecondaryConfig"],
         "Secondary config comment"
     );
+    assert_eq!(group["notes"]["PrimaryConfig"], "Primary config note");
+    assert_eq!(group["notes"]["SecondaryConfig"], "Secondary config note");
 }
 
 #[test]

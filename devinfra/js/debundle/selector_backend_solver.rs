@@ -54,8 +54,8 @@ where
     let problem = compiled.problem;
     write_selector_build_summary(program, facts, Some(&compiled.summary), Some(&problem))
         .map_err(SelectorBackendSolveError::Summary)?;
-    if problem.known_unsat.is_some() {
-        return Ok(no_match_result(program));
+    if let Some(reason) = problem.known_unsat {
+        return Err(SelectorBackendSolveError::KnownUnsat { reason });
     }
     let result = backend
         .solve(&problem)
@@ -68,6 +68,9 @@ pub enum SelectorBackendSolveError<E> {
     Build(CompiledSelectorProblemBuildError),
     Backend(E),
     Summary(SelectorBuildSummaryError),
+    KnownUnsat {
+        reason: String,
+    },
     Assignment(BackendAssignmentError),
     MissingTargetProjection {
         target: SelectorTargetId,
@@ -95,6 +98,10 @@ impl<E: fmt::Display> fmt::Display for SelectorBackendSolveError<E> {
             Self::Build(err) => write!(f, "{err}"),
             Self::Backend(err) => write!(f, "selector backend failed: {err}"),
             Self::Summary(err) => write!(f, "{err}"),
+            Self::KnownUnsat { reason } => write!(
+                f,
+                "selector backend problem is unsatisfiable before backend solve: {reason}"
+            ),
             Self::Assignment(err) => {
                 write!(f, "selector backend returned invalid assignment: {err}")
             }
@@ -150,6 +157,7 @@ where
             Self::Backend(err) => Some(err),
             Self::Summary(err) => Some(err),
             Self::Assignment(err) => Some(err),
+            Self::KnownUnsat { .. } => None,
             Self::MissingTargetProjection { .. }
             | Self::MissingAssignmentVariable { .. }
             | Self::DecodedAssignmentDomainMismatch { .. }
@@ -325,6 +333,7 @@ fn model_build_summary_json(summary: &SelectorModelBuildSummary) -> serde_json::
         "domain_value_counts": summary.domain_value_counts,
         "stored_relation_counts": summary.stored_relation_counts,
         "derived_relation_counts": summary.derived_relation_counts,
+        "timings_ms": summary.timings_ms,
     })
 }
 
@@ -347,32 +356,43 @@ fn compiled_problem_summary_json(problem: &CompiledSelectorProblem) -> serde_jso
     let domain_sizes = problem
         .variables
         .iter()
-        .map(|variable| problem.variable_domain_values(variable).len())
+        .map(|variable| problem.variable_domain_value_count(variable))
         .collect::<Vec<_>>();
     let allowed_table_rows = problem
         .allowed_tuples
         .iter()
-        .map(|constraint| constraint.tuples.len())
+        .map(|constraint| problem.allowed_tuple_rows(constraint).len())
         .collect::<Vec<_>>();
     let allowed_table_cells = problem
         .allowed_tuples
         .iter()
-        .map(|constraint| {
-            constraint
-                .tuples
-                .iter()
-                .map(|tuple| tuple.len())
-                .sum::<usize>()
-        })
+        .map(|constraint| problem.allowed_tuple_rows(constraint).cell_count())
         .collect::<Vec<_>>();
+    let shared_allowed_row_count = problem
+        .allowed_tuple_row_sets
+        .iter()
+        .map(|row_set| row_set.rows.len())
+        .sum::<usize>();
+    let shared_allowed_cell_count = problem
+        .allowed_tuple_row_sets
+        .iter()
+        .map(|row_set| row_set.rows.cell_count())
+        .sum::<usize>();
+    let shared_sparse_domain_value_count = problem
+        .shared_variable_domains
+        .iter()
+        .map(|domain| domain.values.len())
+        .sum::<usize>();
 
     serde_json::json!({
         "known_unsat": problem.known_unsat.is_some(),
+        "known_unsat_reason": problem.known_unsat.as_deref(),
         "variable_count": problem.variables.len(),
         "variable_count_by_domain": keyed_count(problem.variables.iter().map(|variable| variable_domain_name(variable.domain))),
         "variable_domain_representation_count_by_kind": keyed_count(problem.variables.iter().map(|variable| match &variable.values {
             selector_constraint_backend::CompiledVariableDomain::Full(_) => "full",
             selector_constraint_backend::CompiledVariableDomain::Sparse(_) => "sparse",
+            selector_constraint_backend::CompiledVariableDomain::SharedSparse(_) => "shared_sparse",
         })),
         "domain_size_histogram": usize_histogram(domain_sizes.iter().copied()),
         "max_domain_values": domain_sizes.into_iter().max().unwrap_or(0),
@@ -383,13 +403,18 @@ fn compiled_problem_summary_json(problem: &CompiledSelectorProblem) -> serde_jso
             "statement_ordinal": problem.full_domains.statement_ordinals.len(),
         },
         "value_dictionary_count": problem.value_dictionary.total_len(),
+        "shared_sparse_domain_count": problem.shared_variable_domains.len(),
+        "shared_sparse_domain_value_count": shared_sparse_domain_value_count,
         "constraint_count_by_kind": constraint_count_by_kind,
         "allowed_table_count": problem.allowed_tuples.len(),
+        "allowed_row_set_count": problem.allowed_tuple_row_sets.len(),
         "allowed_table_arity_histogram": usize_histogram(problem.allowed_tuples.iter().map(|constraint| constraint.variables.len())),
         "allowed_table_row_count_histogram": usize_histogram(allowed_table_rows.iter().copied()),
         "allowed_table_cell_count_histogram": usize_histogram(allowed_table_cells.iter().copied()),
         "allowed_row_count": allowed_table_rows.into_iter().sum::<usize>(),
         "allowed_cell_count": allowed_table_cells.into_iter().sum::<usize>(),
+        "shared_allowed_row_count": shared_allowed_row_count,
+        "shared_allowed_cell_count": shared_allowed_cell_count,
         "binary_constraint_count": problem.binary_constraints.len(),
         "binary_constraint_count_by_kind": keyed_count(problem.binary_constraints.iter().map(|constraint| binary_constraint_kind_name(constraint.kind))),
         "linear_constraint_count": problem.linear_constraints.len(),
@@ -440,6 +465,7 @@ fn selector_atom_kind_name(atom: &SelectorAtom) -> &'static str {
         SelectorAtom::OwnerStatementOrdinal { .. } => "owner_statement_ordinal",
         SelectorAtom::OwnerTopLevelRoot { .. } => "owner_top_level_root",
         SelectorAtom::OwnerDeclaresBinding { .. } => "owner_declares_binding",
+        SelectorAtom::ProjectedAllowedTuples { .. } => "projected_allowed_tuples",
         SelectorAtom::OwnerExportName { .. } => "owner_export_name",
         SelectorAtom::OwnerReferencesBinding { .. } => "owner_references_binding",
         SelectorAtom::OwnerReferencesOwner { .. } => "owner_references_owner",

@@ -563,6 +563,7 @@ struct NameBindingMember {
     export_name: String,
     binding_name: String,
     comment: Option<String>,
+    note: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -710,6 +711,7 @@ fn rewrite_name_bindings_to_source_match(
                 export_name,
                 binding_name,
                 comment: mapping_get(member, "comment").and_then(value_as_string),
+                note: mapping_get(member, "note").and_then(value_as_string),
             });
     }
 
@@ -793,6 +795,7 @@ fn rewrite_name_bindings_to_source_match(
                 let replacement = member_with_source_match(
                     &member.export_name,
                     member.comment.clone(),
+                    member.note.clone(),
                     &synthesized.match_source,
                     &target.export_name,
                 );
@@ -1739,6 +1742,7 @@ fn synthesized_candidate(input: SynthesizedCandidateInput<'_>) -> SelectorCodemo
 fn member_with_source_match(
     export_name: &str,
     comment: Option<String>,
+    note: Option<String>,
     match_source: &str,
     target_binding: &str,
 ) -> Value {
@@ -1746,6 +1750,9 @@ fn member_with_source_match(
     member.insert(yk("name"), Value::String(export_name.to_string()));
     if let Some(comment) = comment {
         member.insert(yk("comment"), Value::String(comment));
+    }
+    if let Some(note) = note {
+        member.insert(yk("note"), Value::String(note));
     }
     let mut source_match = serde_yaml::Mapping::new();
     source_match.insert(yk("identifiers"), Value::String("alpha_all".to_string()));
@@ -1776,11 +1783,18 @@ fn binding_group_value(
         );
     }
     let mut comments = serde_yaml::Mapping::new();
+    let mut notes = serde_yaml::Mapping::new();
     for member in members {
         if let Some(comment) = &member.comment {
             comments.insert(
                 Value::String(member.export_name.clone()),
                 Value::String(comment.clone()),
+            );
+        }
+        if let Some(note) = &member.note {
+            notes.insert(
+                Value::String(member.export_name.clone()),
+                Value::String(note.clone()),
             );
         }
     }
@@ -1789,6 +1803,9 @@ fn binding_group_value(
     group.insert(yk("exports"), Value::Mapping(exports));
     if !comments.is_empty() {
         group.insert(yk("comments"), Value::Mapping(comments));
+    }
+    if !notes.is_empty() {
+        group.insert(yk("notes"), Value::Mapping(notes));
     }
     Value::Mapping(group)
 }

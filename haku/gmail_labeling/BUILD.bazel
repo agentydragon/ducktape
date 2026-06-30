@@ -1,0 +1,155 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+py_library(
+    name = "namespace",
+    srcs = ["namespace.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//fastmcp"],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "backend",
+    srcs = ["backend.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["//gmail_api:labels"],
+)
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":backend",
+        ":models",
+        ":namespace",
+        "//gmail_api:labels",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":backend",
+        ":client",
+        ":config",
+        ":models",
+        ":namespace",
+        "//gmail_api:service",
+        "//mcp_infra:static_bearer",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//starlette",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "server_cli",
+    main_module = "haku.gmail_labeling.server",
+    visibility = ["//visibility:public"],
+    deps = [":server"],
+)
+
+aspect_py_binary(
+    name = "server_bin",
+    main = "server.py",
+    deps = [":server"],
+)
+
+py_image_layer(
+    name = "server_layers",
+    binary = ":server_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_bin"),
+    env = py_image_env(binary_name = "server_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":server_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["gmail-labeling:latest"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":client",
+        ":namespace",
+        "//gmail_api:labels",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_namespace",
+    srcs = ["test_namespace.py"],
+    deps = [
+        ":namespace",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_client",
+    srcs = ["test_client.py"],
+    deps = [
+        ":client",
+        ":conftest",
+        "//gmail_api:labels",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_server",
+    srcs = ["test_server.py"],
+    deps = [
+        ":conftest",
+        ":server",
+        "//:conftest",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -11,7 +11,7 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use analysis::{
     AnalysisHints, AtomicUnitConflict, BindingKind, DepKind, KnownEffect, LocalEffectPolicy,
     LogicalModule as FactorizationLogicalModule, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
-    OwnerGraphOptions, OwnerId, RedundantPurityHint, top_level_id,
+    OwnerGraphOptions, RedundantPurityHint, top_level_id,
 };
 use gate::{ChunkFactorization, render_atomic_unit_conflict_summary, render_cycle_summary};
 use stage_one::{

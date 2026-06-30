@@ -765,6 +765,12 @@ pub struct BindingGroup {
     /// group even when `exports` renames it.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub comments: BTreeMap<String, String>,
+    /// Optional per-binding YAML-only notes keyed by selector-local binding
+    /// name. These are the non-emitting counterpart to `comments`: use them for
+    /// per-export debt/provenance that should survive spec rewrites without
+    /// appearing in generated JS.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub notes: BTreeMap<String, String>,
     /// Optional YAML-only note: provenance / honest-debt rationale (e.g. why a
     /// binding group's selector has no forward-stable anchor yet) that survives
     /// spec edits without appearing in generated JS. Ignored by the materializer
@@ -1873,6 +1879,27 @@ mod tests {
         assert!(
             round_tripped.contains(r#""note":"no stable anchor yet""#),
             "note must survive round-trip: {round_tripped}",
+        );
+    }
+
+    #[test]
+    fn binding_group_accepts_and_round_trips_per_export_notes() {
+        // `notes:` is the per-export counterpart of a binding group's emitting
+        // `comments:` map. Both maps are keyed by selector-local binding name,
+        // but notes must stay YAML-only metadata.
+        let group: BindingGroup = serde_json::from_str(
+            r#"{ "source_match": { "match": "const x = 1, y = 2;" }, "exports": { "x": "X" }, "notes": { "x": "minimize this selector" } }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            group.notes.get("x").map(String::as_str),
+            Some("minimize this selector")
+        );
+        assert!(group.comments.is_empty());
+        let round_tripped = serde_json::to_string(&group).unwrap();
+        assert!(
+            round_tripped.contains(r#""notes":{"x":"minimize this selector"}"#),
+            "per-export notes must survive round-trip: {round_tripped}",
         );
     }
 

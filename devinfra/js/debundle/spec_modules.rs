@@ -410,7 +410,7 @@ members:
     }
 
     #[test]
-    fn read_module_file_accepts_binding_group_comments() {
+    fn read_module_file_accepts_binding_group_comments_and_notes() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("x.yaml");
         fs::write(
@@ -424,6 +424,10 @@ members:
       primary: |
         Primary selected value.
       secondary: Secondary selected value.
+    notes:
+      primary: |
+        TODO: minimize primary selector.
+      secondary: Secondary selector debt.
 "#,
         )
         .unwrap();
@@ -440,6 +444,19 @@ members:
                 (
                     "secondary".to_string(),
                     "Secondary selected value.".to_string()
+                ),
+            ]),
+        );
+        assert_eq!(
+            module.binding_groups[0].notes,
+            BTreeMap::from([
+                (
+                    "primary".to_string(),
+                    "TODO: minimize primary selector.\n".to_string()
+                ),
+                (
+                    "secondary".to_string(),
+                    "Secondary selector debt.".to_string()
                 ),
             ]),
         );

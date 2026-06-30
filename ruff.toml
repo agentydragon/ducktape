@@ -141,6 +141,7 @@ known-first-party = [
     "ember",
     "finance",
     "git_commit_ai",
+    "gmail_api",
     "gmail_archiver",
     "gnome",
     "grocy_mcp",

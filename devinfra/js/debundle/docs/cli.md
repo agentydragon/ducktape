@@ -428,9 +428,11 @@ The `comment:` / `note:` schema (which levels carry them, what emits
 into generated JS vs. stays YAML-only, the no-`#`-comments rule, and
 the `modules merge` → `note:` provenance) is documented once in
 <../README.md> → "Comments". The CLI surface for editing them is the
-`bindings comment` / `modules comment` rows in the command table above;
-their comment/`note:` round-trip and auto-delete move semantics are in
-`spec_editing.md` → "Workflow: authoring `comment:` fields".
+`bindings comment` / `modules comment` rows in the command table above.
+Those commands edit emitting `comment:` fields; non-emitting `note:` /
+`notes:` fields are YAML-authored metadata that the rewriters preserve.
+Their round-trip and auto-delete move semantics are in `spec_editing.md`
+→ "Workflow: authoring `comment:` fields".
 
 ## See also
 
