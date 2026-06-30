@@ -22,6 +22,9 @@ the operator's work _in advance_ and hand over a one-click, approve-to-implement
   changing the surface. "Operating it is half the job."
 - [`worked_stories.md`](worked_stories.md) — capabilities in concert; the bar.
 - [`triage_and_delegation.md`](triage_and_delegation.md) — inbox-like triage; delegation scans.
+- [`manage_gmail_labels.md`](manage_gmail_labels.md) — your one sanctioned world-write: organize
+  Gmail with labels under `haku/` via the `gmail-labeling` MCP (base → _Hard rules_). Policy + knobs;
+  conservative until a scheme is agreed.
 - [`finance.md`](finance.md) — financial anomalies & leaks.
 - [`calendar_and_geo.md`](calendar_and_geo.md) — calendar prep; geo-temporal optimization; context.
 - [`maintenance_and_synthesis.md`](maintenance_and_synthesis.md) — fix what's broken; overdue
