@@ -10,10 +10,10 @@ Pre-build. Inventory and target topology only — no cables pulled yet.
 
 | Device              | Notes                                                                |
 | ------------------- | -------------------------------------------------------------------- |
-| atlas               | Tower, powered. GPU DP-OUT → mobo DP-IN feeds TB-OUT (internal).     |
-| AORUS FV43U         | 43" 4K monitor, powered. DP / HDMI / USB-C video in. USB-B hub uplink, USB-A hub out. |
-| Sabrent SB-TB4K     | TB4 KVM. 2 host inputs + downstream TB4 / USB-A / DP / audio. Exact port count: TBD on the unit. |
-| TEX Shura           | Mech keyboard with BT-LE module. Planned: wired USB.                 |
+| atlas               | Proxmox host, 2× RTX 5090 (per `plans/atlas_proxmox_to_nixos.md`). One GPU DP-OUT → mobo DP-IN feeds TB4-OUT (internal). |
+| AORUS FV43U         | 43" 4K@144 monitor. Inputs: 1× DP 1.4, 2× HDMI 2.1 (24 Gb/s), 1× USB-C (DP-Alt + USB data + PD). USB hub: 1× USB-B uplink, 2× USB-A downstream. 2× 3.5 mm jacks (headphone, line-out). Internal "dual-KVM" toggles which uplink (USB-B vs. USB-C) feeds the hub. |
+| Sabrent SB-TB4K     | TB4 KVM. 2× TB4 host (PC1, PC2) + 3× TB4 downstream (40 Gb/s, 60 W PD per port) + 4× USB-A 3.2 Gen 2 (10 Gb/s, 5 V / 2.4 A). **No standalone DP output** — video goes over TB4 downstream USB-C. |
+| TEX Shura           | 60% mech with trackpoint, USB-C jack at the back. Detachable cable ships in box (USB-C → USB-A, 1.5 m). BT-LE module on board (BT4+). Planned: wired USB. |
 | USB-A camera        | Model TBD.                                                           |
 | Underdesk USB-A hub | Mounted left-underside of the desk.                                  |
 | USB WiFi adapter    | Model TBD. Spare; could go into atlas as a temporary wireless NIC.   |
@@ -44,46 +44,100 @@ listed in the next section so we don't accidentally plan around it.
 
 ## Target topology
 
+Two viable shapes given the on-hand cables. **Plan B (DP video +
+separate USB-B uplink)** is primary because it uses cables whose
+behaviour is least ambiguous; **Plan A (USB-C only)** is a possible
+simplification noted at the end.
+
 ```mermaid
 flowchart LR
-    subgraph atlas[atlas tower]
-        atlas_gpu["GPU DP-OUT"]
-        atlas_mobo["mobo DP-IN → TB-OUT"]
-        atlas_gpu -- "DP m-m (internal)" --> atlas_mobo
+    subgraph atlas[atlas: Proxmox host]
+        atlas_gpu["RTX 5090 DP-OUT<br/>(slot ?)"]
+        atlas_mobo_dp["mobo DP-IN"]
+        atlas_mobo_tb["mobo TB4-OUT (USB-C)"]
+        atlas_gpu -- "DP m-m (internal)" --> atlas_mobo_dp
+        atlas_mobo_dp -. internal route .-> atlas_mobo_tb
     end
 
-    laptop[Laptop TB4]
-    kvm["Sabrent SB-TB4K"]
-    monitor["AORUS FV43U"]
-    monitor_hub["FV43U USB hub"]
-    kbd["TEX Shura"]
-    cam["USB-A camera"]
-    hub["Underdesk USB-A hub"]
+    laptop["Laptop<br/>TB4 (USB-C)"]
 
-    atlas_mobo -- "USB-C TB4 (host 1)" --> kvm
-    laptop     -- "USB-C TB4 (host 2)" --> kvm
+    subgraph kvm[Sabrent SB-TB4K]
+        kvm_pc1["host PC1 (TB4)"]
+        kvm_pc2["host PC2 (TB4)"]
+        kvm_tb_a["downstream TB4 A"]
+        kvm_tb_b["downstream TB4 B<br/>(free)"]
+        kvm_tb_c["downstream TB4 C<br/>(free)"]
+        kvm_usba1["USB-A 1"]
+        kvm_usba2["USB-A 2"]
+        kvm_usba3["USB-A 3"]
+        kvm_usba4["USB-A 4<br/>(free)"]
+    end
 
-    kvm -- "DP m-m" --> monitor
-    kvm -- "USB A → B" --> monitor_hub
-    kvm -- "USB-A" --> kbd
-    kvm -- "USB-A" --> cam
-    kvm -- "USB-A" --> hub
+    subgraph mon[AORUS FV43U]
+        mon_dp["DP 1.4 input"]
+        mon_usbb["USB-B uplink"]
+    end
+
+    kbd["TEX Shura (USB-C)"]
+    cam["USB-A camera<br/>(connector ?)"]
+    hub["Underdesk USB-A hub<br/>(uplink ?)"]
+
+    atlas_mobo_tb -- "USB-C TB4, Silkland" --> kvm_pc1
+    laptop        -- "USB-C TB4, Sabrent tag '4'" --> kvm_pc2
+
+    kvm_tb_a  -- "USB-C ↔ DP, Ivanky" --> mon_dp
+    kvm_usba1 -- "USB A → B" --> mon_usbb
+    kvm_usba2 -- "USB-A → USB-C" --> kbd
+    kvm_usba3 -- "USB-A → ?" --> cam
+    kvm_usba4 -- "USB-A → ?" --> hub
 ```
 
-## Cable plan vs. inventory
+(Mermaid edges between subgraph nodes can be finicky; ports `B`/`C` of
+the SB-TB4K and the unused USB-A 4 are drawn explicitly so the diagram
+also shows expansion headroom.)
 
-Each row is one physical link in the diagram above.
+### Port-assignment caveats
 
-| Link                          | Cable type            | Have?                                   |
-| ----------------------------- | --------------------- | --------------------------------------- |
-| atlas GPU → atlas mobo        | DP m-m                | Yes (already wired).                    |
-| atlas mobo TB-OUT → KVM host 1 | USB-C TB4 (≥ TB-class) | Yes — Silkland 40 Gb/s 240 W.           |
-| Laptop TB → KVM host 2        | USB-C TB4 (≥ TB-class) | Yes — Sabrent-looking 2 ft cable tagged "4" (verify TB4 marking). |
-| KVM DP-OUT → monitor DP-IN    | DP m-m                | Yes — Ivanky 8K DP.                     |
-| KVM USB-A → monitor USB-B in  | USB A → B             | Yes.                                    |
-| KVM USB-A → keyboard          | USB-A → USB-C        | Yes — two on hand (one tagged "keyboard", one in use). |
-| KVM USB-A → camera            | USB-A → ? (camera connector TBD) | **TBD**.                      |
-| KVM USB-A → underdesk hub     | USB-A → ? (hub uplink connector TBD) | **TBD**.                  |
+- **atlas RTX 5090 DP-OUT slot** — atlas has 2× RTX 5090. Which card
+  and which DP port feeds the internal DP m-m to the mobo isn't
+  recorded yet.
+- **FV43U DP 1.4 input** — only one DP port on the monitor, so no
+  ambiguity. HDMI 2.1 inputs are unused.
+- **SB-TB4K downstream port choice (A vs. B vs. C)** — they're
+  symmetric; any one can carry the monitor video. Pick by cable reach.
+- **`USB-A 4 unused`** in the diagram — could become a future link
+  (storage, dock, etc.).
+
+## Cable plan vs. inventory (plan B)
+
+Each row is one physical link.
+
+| Link                  | Source port                    | Destination port           | Cable                  | Have?                                                  |
+| --------------------- | ------------------------------ | -------------------------- | ---------------------- | ------------------------------------------------------ |
+| atlas internal video  | atlas RTX 5090 DP-OUT (slot ?) | atlas mobo DP-IN           | DP m-m                 | Yes (already wired).                                   |
+| atlas → KVM           | atlas mobo TB4-OUT (USB-C)     | SB-TB4K host PC1           | USB-C TB-class         | Yes — Silkland 40 Gb/s 240 W.                          |
+| Laptop → KVM          | Laptop TB4 (USB-C)             | SB-TB4K host PC2           | USB-C TB-class         | Yes — Sabrent-looking 2 ft, tag "4" (verify TB4 mark). |
+| KVM → monitor (video) | SB-TB4K downstream TB4 (USB-C) | FV43U DP 1.4 in            | USB-C ↔ DP             | Yes — Ivanky DP/USB-C cable.                           |
+| KVM → monitor (hub)   | SB-TB4K USB-A                  | FV43U USB-B uplink         | USB A → B              | Yes.                                                   |
+| KVM → keyboard        | SB-TB4K USB-A                  | TEX Shura USB-C            | USB-A → USB-C          | Yes — 3 on hand (one tagged "keyboard").               |
+| KVM → camera          | SB-TB4K USB-A                  | Camera (connector ?)       | USB-A → ?              | **TBD** (camera connector).                            |
+| KVM → underdesk hub   | SB-TB4K USB-A                  | Underdesk hub uplink (?)   | USB-A → ?              | **TBD** (hub uplink connector).                        |
+
+All host-side and core peripheral cables are on hand; only accessory
+connectors remain unknown.
+
+### Plan A — USB-C only to the monitor (simpler if it works)
+
+Use the SB-TB4K's downstream TB4 port to feed the FV43U's **USB-C**
+input instead of DP. That one cable carries DP-Alt video + USB data
+for the monitor's hub + PD — so the separate USB A→B uplink and the
+USB-C ↔ DP adapter cable both disappear.
+
+| Link                  | Source port                    | Destination port           | Cable                  | Have?                                |
+| --------------------- | ------------------------------ | -------------------------- | ---------------------- | ------------------------------------ |
+| KVM → monitor (combined) | SB-TB4K downstream TB4 (USB-C) | FV43U USB-C in           | USB-C, DP-Alt + USB3.2 | Maybe — the spare 20 Gb/s 8K USB-C cable should pass DP-Alt HBR3 + USB-3.2, but verify on first plug-in. Falls back to Plan B if not. |
+
+Spares freed if Plan A works: Ivanky 8K DP-DP, Ivanky DP↔USB-C, USB A → B.
 
 The 20 Gb/s USB 3.2 USB-C cable doesn't fit any link in this plan
 (can't host a TB switch, not needed for monitor video since we have a
@@ -106,17 +160,15 @@ to decide between then:
 
 ## Open questions
 
-- Confirm SB-TB4K downstream port count and exact mix (TB4 ×?, USB-A ×?,
-  USB-C ×?, DP ×?). The plan above assumes ≥1 DP-out, ≥4 USB-A.
-- Camera model + connector.
-- Underdesk USB-A hub uplink type (USB-A male, or captive cable?).
-- Does the FV43U USB-C input carry data + USB-PD as well as DP-Alt
-  video? If yes, a laptop plugged via the KVM still wouldn't see the
-  monitor hub through the USB-C path — the hub upstream goes via the
-  separate USB-B uplink to the KVM, so this is moot for the KVM
-  topology but worth knowing for direct-plug fallbacks.
-- Physical placement of the KVM (desktop vs. underdesk mount) — affects
-  USB-A cable lengths.
+- atlas: which RTX 5090 and which DP port feeds the internal DP m-m
+  into the mobo's DP-IN.
+- Camera model + connector (TBD pending model).
+- Underdesk USB-A hub uplink type (USB-A male plug, captive cable, or
+  USB-B socket).
+- Whether the spare 20 Gb/s 8K USB-C cable will negotiate DP-Alt HBR3
+  + USB 3.2 cleanly into the FV43U's USB-C input (Plan A viability).
+- Physical placement of the KVM (desktop vs. underdesk mount) —
+  affects all USB-A cable lengths.
 - Per-link cable-length constraints (desk-edge to under-desk, monitor
   back to KVM, KVM to camera position, etc.). Measure as we go.
 
