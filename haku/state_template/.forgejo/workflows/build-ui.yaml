@@ -7,8 +7,9 @@
 # sidecar so `docker build` works.
 #
 # Two jobs, gated:
-#   test  — `docker build --target test` runs the backend pytest suite, and a frontend
-#           build that runs the tsc typecheck. If anything fails, the build fails.
+#   test  — `docker build --target test` runs the backend pytest suite, a frontend build
+#           that runs the tsc typecheck, and `--target frontend-test` (vitest). If anything
+#           fails, the build fails.
 #   build — `needs: test`, so it only runs once tests pass. Builds the runtime image
 #           and pushes it to the Forgejo registry as
 #           git.allegedly.works/haku/ui:main-<utc-timestamp>-<short-sha>.
@@ -52,6 +53,11 @@ jobs:
       # without producing a pushable image (cached, so the real build reuses it).
       - name: Frontend typecheck and build
         run: docker build -f ui/Dockerfile --target frontend -t haku-ui-frontend ui
+
+      # Frontend unit tests: the frontend-test stage's `RUN npm run test` (vitest) runs here.
+      # Reuses the cached frontend layer, so it only adds the test execution.
+      - name: Frontend tests
+        run: docker build -f ui/Dockerfile --target frontend-test -t haku-ui-frontend-test ui
 
   build:
     needs: test

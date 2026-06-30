@@ -62,7 +62,15 @@ function RunRow({ run, onOpen }: { run: RunManifest; onOpen: () => void }) {
 // The full per-run detail: source coverage, the checklists walked, the change→surface propagation
 // matrix (the shared widget, so structured runs and MDX-embedded matrices render identically), and
 // the prose notes rendered as MDX (so a note can embed standard garden widgets).
-function RunDetail({ run, onBack }: { run: RunManifest; onBack: () => void }) {
+function RunDetail({
+  run,
+  onBack,
+  openInGarden,
+}: {
+  run: RunManifest;
+  onBack: () => void;
+  openInGarden: (path: string) => void;
+}) {
   return (
     <Stack gap="md">
       <Group justify="space-between" align="center">
@@ -94,7 +102,9 @@ function RunDetail({ run, onBack }: { run: RunManifest; onBack: () => void }) {
         </Stack>
       )}
 
-      {run.notes_md && <Mdx source={run.notes_md} />}
+      {run.notes_md && (
+        <Mdx source={run.notes_md} basePath={`runs/${run.date}/${run.run_id}.md`} onNavigate={openInGarden} />
+      )}
     </Stack>
   );
 }
@@ -102,7 +112,7 @@ function RunDetail({ run, onBack }: { run: RunManifest; onBack: () => void }) {
 // The Runs surface: a list of runs (concise structured summary) → click into the full per-run
 // propagation detail. Proves every source was processed and shows how each change reached its
 // surfaces. Read-only; backed by runs/<date>/<ulid>.{yaml,md}.
-export function RunsPage() {
+export function RunsPage({ openInGarden }: { openInGarden: (path: string) => void }) {
   const [runs, setRuns] = useState<RunManifest[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -133,7 +143,7 @@ export function RunsPage() {
     );
 
   const open = selected ? runs.find((r) => r.run_id === selected) : null;
-  if (open) return <RunDetail run={open} onBack={() => setSelected(null)} />;
+  if (open) return <RunDetail run={open} onBack={() => setSelected(null)} openInGarden={openInGarden} />;
 
   return (
     <Stack gap="md">

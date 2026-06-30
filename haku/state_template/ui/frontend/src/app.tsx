@@ -23,6 +23,13 @@ export default function App() {
   const [clicked, setClicked] = useState<ReadonlySet<string>>(new Set());
   const [actionError, setActionError] = useState<string | null>(null);
   const [view, setView] = useState<View>("inbox");
+  // The garden file currently open (null = the index). Lifted here so any surface can deep-link
+  // into a garden note (a run note → the procedure it cites, etc.).
+  const [gardenPath, setGardenPath] = useState<string | null>(null);
+  function openInGarden(path: string) {
+    setGardenPath(path);
+    setView("garden");
+  }
   // Ticks the live deadline countdowns; 30s is fine at minute granularity.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -88,9 +95,9 @@ export default function App() {
       {view === "improvements" ? (
         <ImprovementsPage />
       ) : view === "runs" ? (
-        <RunsPage />
+        <RunsPage openInGarden={openInGarden} />
       ) : view === "garden" ? (
-        <GardenPage />
+        <GardenPage path={gardenPath} onSelect={setGardenPath} />
       ) : (
         <InboxView
           data={data}
