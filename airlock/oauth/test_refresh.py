@@ -33,6 +33,7 @@ def provider() -> GenericOAuth2Provider:
         ),
         client_id="test-id",
         client_secret="test-secret",
+        default_redirect_uri="https://example.com/oauth/callback",
     )
 
 
