@@ -31,6 +31,9 @@ oauth:
         - tag
         - session
         - spo2
+      # TODO(shared-callback): migrate to the shared /oauth/callback — register
+      # https://airlock.allegedly.works/oauth/callback on the Oura OAuth app, then drop
+      # this line. Until then the legacy /oauth/callback/<name> route serves it.
       redirect_uri: https://airlock.allegedly.works/oauth/callback/oura
       refresh_secret:
         name: oura-tokens
@@ -53,6 +56,9 @@ oauth:
         - https://www.googleapis.com/auth/spreadsheets.readonly
         - https://www.googleapis.com/auth/presentations.readonly
         - https://www.googleapis.com/auth/youtube.readonly
+      # TODO(shared-callback): migrate to the shared /oauth/callback — register
+      # https://airlock.allegedly.works/oauth/callback on this Google OAuth client, then
+      # drop this line (gmail_modify piggybacks on this URI, so migrate them together).
       redirect_uri: https://airlock.allegedly.works/oauth/callback/google
       refresh_secret:
         name: google-tokens
@@ -75,9 +81,10 @@ oauth:
       token_url: https://oauth2.googleapis.com/token
       scopes:
         - https://www.googleapis.com/auth/gmail.modify
-      # No redirect_uri → uses the shared https://airlock.allegedly.works/oauth/callback
-      # (register that one URI on the Google OAuth client). oura/google/bsc keep their
-      # legacy per-provider redirect_uri for now (back-compat).
+      # Piggyback on the `google` provider's already-registered redirect URI (same OAuth
+      # client), so gmail.modify needs NO new redirect URI in the Google console. The
+      # callback resolves the provider from OAuth `state`, not this path.
+      redirect_uri: https://airlock.allegedly.works/oauth/callback/google
       refresh_secret:
         name: gmail-modify-tokens
       access_secret:
@@ -103,6 +110,9 @@ oauth:
         - interop
         - PatientEOB
         - PatientRead
+      # TODO(shared-callback): migrate to the shared /oauth/callback — register
+      # https://airlock.allegedly.works/oauth/callback on the BSC OAuth app, then drop
+      # this line. Until then the legacy /oauth/callback/<name> route serves it.
       redirect_uri: https://airlock.allegedly.works/oauth/callback/bsc
       refresh_secret:
         name: bsc-tokens

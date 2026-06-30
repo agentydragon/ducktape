@@ -45,7 +45,7 @@ def create_oauth_router(
         url = provider.build_authorize_url(state, code_challenge=code_challenge)
         return RedirectResponse(url)
 
-    async def _complete(request: Request, expected_provider: str | None) -> RedirectResponse:
+    async def _complete(request: Request) -> RedirectResponse:
         code = request.query_params.get("code")
         state_param = request.query_params.get("state")
         error = request.query_params.get("error")
@@ -55,13 +55,12 @@ def create_oauth_router(
         if not code or not state_param:
             raise HTTPException(400, "Missing code or state parameter")
 
-        # The provider is resolved from `state` (set at /authorize), so the single
-        # /oauth/callback works for every provider — no per-provider URL needed.
+        # The provider is resolved from `state` (set at /authorize), never from the URL,
+        # so any registered redirect URI works: the shared /oauth/callback, a legacy
+        # /oauth/callback/<name>, or a provider piggybacking on another's registered URI.
         pending = pending_states.pop(state_param, None)
         if pending is None:
             raise HTTPException(400, "Invalid or expired state parameter")
-        if expected_provider is not None and pending.provider_name != expected_provider:
-            raise HTTPException(400, "State/provider mismatch")
 
         provider = providers[pending.provider_name]
         token = await provider.exchange_code(code, code_verifier=pending.code_verifier)
@@ -74,18 +73,17 @@ def create_oauth_router(
 
     @router.get("/callback", response_model=None)
     async def callback(request: Request) -> RedirectResponse:
-        """Single shared OAuth callback; the provider is resolved from `state`."""
-        return await _complete(request, expected_provider=None)
+        """Shared OAuth callback; the provider is resolved from `state`."""
+        return await _complete(request)
 
-    # CLEANUP(added 2026-06-29): legacy per-provider callback path, kept so providers
-    # still configured with a `/oauth/callback/<name>` redirect_uri (and the matching
-    # URI registered in their OAuth app) keep working during the migration to the shared
-    # /oauth/callback. Remove once every provider omits `redirect_uri` and the old URIs
-    # are deregistered from the OAuth apps.
+    # CLEANUP(added 2026-06-29): legacy per-provider callback path. The {provider_name}
+    # segment is cosmetic — it only lets already-registered /oauth/callback/<name> URIs
+    # (and providers piggybacking on one, e.g. gmail_modify on google's) keep routing
+    # here; the provider is resolved from `state`. Remove once oura/google/bsc are
+    # migrated to the shared /oauth/callback (see config.yaml TODOs) and their old URIs
+    # are deregistered from their OAuth apps.
     @router.get("/callback/{provider_name}", response_model=None)
-    async def callback_legacy(provider_name: str, request: Request) -> RedirectResponse:
-        if provider_name not in providers:
-            raise HTTPException(404, f"Unknown provider: {provider_name}")
-        return await _complete(request, expected_provider=provider_name)
+    async def callback_legacy(request: Request) -> RedirectResponse:
+        return await _complete(request)
 
     return router
