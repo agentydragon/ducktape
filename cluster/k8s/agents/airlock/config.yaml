@@ -75,7 +75,9 @@ oauth:
       token_url: https://oauth2.googleapis.com/token
       scopes:
         - https://www.googleapis.com/auth/gmail.modify
-      redirect_uri: https://airlock.allegedly.works/oauth/callback/gmail_modify
+      # No redirect_uri → uses the shared https://airlock.allegedly.works/oauth/callback
+      # (register that one URI on the Google OAuth client). oura/google/bsc keep their
+      # legacy per-provider redirect_uri for now (back-compat).
       refresh_secret:
         name: gmail-modify-tokens
       access_secret:

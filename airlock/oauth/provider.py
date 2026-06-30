@@ -33,7 +33,11 @@ class TokenSecretConfig(BaseModel):
 class BaseProviderConfig(BaseModel):
     name: str = Field(description="Provider identifier used in URL paths and env var prefixes")
     display_name: str = Field(description="Human-readable provider name for the UI")
-    redirect_uri: str = Field(description="Redirect URI registered with the provider")
+    redirect_uri: str | None = Field(
+        default=None,
+        description="Legacy per-provider redirect URI. Omit to use the shared "
+        "{public_base_url}/oauth/callback (the provider is resolved from OAuth state).",
+    )
     refresh_secret: TokenSecretConfig = Field(description="Secret holding all token fields including refresh_token")
     access_secret: TokenSecretConfig = Field(description="Secret holding access_token, token_type, expires_at, scope")
 
@@ -76,16 +80,20 @@ class _BaseProvider:
 
 
 class GenericOAuth2Provider(_BaseProvider):
-    def __init__(self, config: OAuth2ProviderConfig, client_id: str, client_secret: str) -> None:
+    def __init__(
+        self, config: OAuth2ProviderConfig, client_id: str, client_secret: str, default_redirect_uri: str
+    ) -> None:
         self.config = config
         self.client_id = client_id
         self.client_secret = client_secret
+        # Per-provider redirect_uri is legacy; new providers omit it and share one URL.
+        self.redirect_uri = config.redirect_uri or default_redirect_uri
 
     def build_authorize_url(self, state: str, code_challenge: str | None = None) -> str:
         params = {
             "response_type": "code",
             "client_id": self.client_id,
-            "redirect_uri": self.config.redirect_uri,
+            "redirect_uri": self.redirect_uri,
             "scope": " ".join(self.config.scopes),
             "state": state,
             **self.config.extra_auth_params,
@@ -103,7 +111,7 @@ class GenericOAuth2Provider(_BaseProvider):
             "code": code,
             "client_id": self.client_id,
             "client_secret": self.client_secret,
-            "redirect_uri": self.config.redirect_uri,
+            "redirect_uri": self.redirect_uri,
         }
         if code_verifier is not None:
             data["code_verifier"] = code_verifier

@@ -37,7 +37,9 @@ def provider_config() -> OAuth2ProviderConfig:
 
 @pytest.fixture
 def provider(provider_config: OAuth2ProviderConfig) -> GenericOAuth2Provider:
-    return GenericOAuth2Provider(provider_config, "test-client-id", "test-client-secret")
+    return GenericOAuth2Provider(
+        provider_config, "test-client-id", "test-client-secret", "http://localhost/oauth/callback"
+    )
 
 
 def test_build_authorize_url(provider: GenericOAuth2Provider) -> None:
@@ -54,6 +56,26 @@ def test_build_authorize_url(provider: GenericOAuth2Provider) -> None:
     assert params["state"] == ["test-state"]
 
 
+def test_explicit_redirect_uri_wins(provider: GenericOAuth2Provider) -> None:
+    params = parse_qs(urlparse(provider.build_authorize_url("st")).query)
+    assert params["redirect_uri"] == ["http://localhost:8080/callback/test"]
+
+
+def test_redirect_uri_falls_back_to_shared_default() -> None:
+    config = OAuth2ProviderConfig(
+        name="new",
+        display_name="New",
+        authorize_url="https://example.com/authorize",
+        token_url="https://example.com/token",
+        scopes=["s"],
+        refresh_secret=TokenSecretConfig(name="new-tokens"),
+        access_secret=TokenSecretConfig(name="new-access"),
+    )
+    provider = GenericOAuth2Provider(config, "id", "sec", "https://airlock.example.com/oauth/callback")
+    params = parse_qs(urlparse(provider.build_authorize_url("st")).query)
+    assert params["redirect_uri"] == ["https://airlock.example.com/oauth/callback"]
+
+
 def test_build_authorize_url_with_extra_params() -> None:
     config = OAuth2ProviderConfig(
         name="google",
@@ -66,7 +88,7 @@ def test_build_authorize_url_with_extra_params() -> None:
         access_secret=TokenSecretConfig(name="google-access-token"),
         extra_auth_params={"access_type": "offline", "prompt": "consent"},
     )
-    provider = GenericOAuth2Provider(config, "gid", "gsecret")
+    provider = GenericOAuth2Provider(config, "gid", "gsecret", "http://localhost/oauth/callback")
     url = provider.build_authorize_url("state123")
     params = parse_qs(urlparse(url).query)
 
@@ -132,7 +154,7 @@ def test_build_authorize_url_with_pkce_and_aud() -> None:
         use_pkce=True,
         aud="https://fhir.example.com/r4",
     )
-    provider = GenericOAuth2Provider(config, "cid", "csec")
+    provider = GenericOAuth2Provider(config, "cid", "csec", "http://localhost/oauth/callback")
     url = provider.build_authorize_url("st", code_challenge="CHAL")
     params = parse_qs(urlparse(url).query)
 

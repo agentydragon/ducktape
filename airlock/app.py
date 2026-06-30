@@ -88,7 +88,7 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
     @contextlib.asynccontextmanager
     async def app_lifespan(app: FastAPI):
         nonlocal oauth_providers, oauth_k8s_store, oauth_target_ns
-        oauth_providers = build_oauth_providers(settings.oauth)
+        oauth_providers = build_oauth_providers(settings.oauth, f"{settings.public_base_url}/oauth/callback")
         oauth_k8s_store = await K8sTokenStore.from_incluster(managed_by=settings.oauth.managed_by)
         oauth_target_ns = settings.oauth.target_namespace or _detect_namespace()
 

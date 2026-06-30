@@ -22,6 +22,10 @@ confined to the `haku/` namespace. Source + contract: <../../../../haku/gmail_la
 The pod stays in `ContainerCreating` until `gmail-modify-access-token` exists, which needs a
 one-time browser consent for the `gmail.modify` scope:
 
+0. In Google Cloud Console → Credentials → the OAuth client backing `google-client-credentials`,
+   add the redirect URI `https://airlock.allegedly.works/oauth/callback` (the shared callback;
+   `gmail_modify` sets no per-provider `redirect_uri`). One entry covers all future providers
+   on that client.
 1. Visit `https://airlock.allegedly.works/oauth/authorize/gmail_modify` and consent as the
    target Google account. Airlock's callback writes `gmail-modify-tokens` (refresh) and
    `gmail-modify-access-token` (access-only) into the `airlock` namespace; the refresh loop
