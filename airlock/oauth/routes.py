@@ -83,7 +83,9 @@ def create_oauth_router(
     # migrated to the shared /oauth/callback (see config.yaml TODOs) and their old URIs
     # are deregistered from their OAuth apps.
     @router.get("/callback/{provider_name}", response_model=None)
-    async def callback_legacy(request: Request) -> RedirectResponse:
+    async def callback_legacy(provider_name: str, request: Request) -> RedirectResponse:
+        # `provider_name` is just the registered-URI path segment (kept so FastAPI matches
+        # the route); the actual provider is resolved from `state` in `_complete`.
         return await _complete(request)
 
     return router
