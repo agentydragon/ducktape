@@ -1,5 +1,4 @@
 {
-  "_comment": "Bazel targets, artifact outputs, and release grouping for every artifact pinned in nix/artifact-pins.json (except `bb`, which is an external buildbuddy-io binary). Single source of truth for .github/workflows/release.yml's matrix (builds + publishes each release group) and .github/workflows/nix-wheel-check.yml's PR-time imports-check gate.\n\nSchema:\n  pins: pin_name -> { target, output, release }\n    Every pin here corresponds 1:1 to a same-named entry in nix/artifact-pins.json. `target` is the Bazel label that produces `output` on RBE. `release` back-points to the release group this pin ships in.\n\n  releases: release_name -> { primaryPin, tests?, nixPackage?, bazelFlags?, releaseMetadata?, metadataPlatform? }\n    Each release entry becomes one release.yml matrix row + one gh-release call + one release tag. `primaryPin` names the pin whose sha256 drives the tag suffix — release-artifact needs a single hash source, so we pick one; from nix's point of view every pin in the release is equally real. `tests` runs before publishing. `nixPackage: true` means the release has a corresponding .#packages.x86_64-linux.<release_name> flake output that the PR gate builds + imports-checks against PR-source artifacts (every pin in the release gets its output overridden). `false` means release.yml still publishes it but the PR gate skips it — typical for binary drops (bbapi/claude-hook-rs/debundle/skills) whose nix package is a trivial install/autoPatchelfHook that bazel-ci already covers. `bazelFlags`, `releaseMetadata`, `metadataPlatform` are per-entry release.yml overrides.",
   "pins": {
     "ducktape": {
       "target": "//:wheel",
@@ -117,7 +116,6 @@
       "primaryPin": "debundle",
       "tests": "//devinfra/js/debundle/...",
       "bazelFlags": "-c opt --@rules_rust//:extra_rustc_flag=-Cdebuginfo=1",
-      "_bazelFlagsRationale": "Ship an optimized binary: opt-level=3 LLVM optimizations, debug-assertions off. Cuts `modules propose` wall on the tana corpus from ~5 min to ~45 s (7x). Debuginfo=1 (line tables only) preserves addr2line + inlined-frame resolution for downstream perf profiling at ~5-10% size cost. See devinfra/js/debundle/perf/proposer_roadmap.md (#0).",
       "releaseMetadata": true,
       "metadataPlatform": "linux-amd64",
       "nixPackage": false
