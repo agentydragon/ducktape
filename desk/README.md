@@ -115,8 +115,8 @@ Each row is one physical link.
 | Link                  | Source port                       | Destination port                     | Cable                  | Have?                                                  |
 | --------------------- | --------------------------------- | ------------------------------------ | ---------------------- | ------------------------------------------------------ |
 | atlas internal video  | atlas RTX 5090 DP-OUT (slot ?)    | atlas mobo DP-IN                     | DP m-m                 | Yes (already wired).                                   |
-| atlas → KVM           | atlas mobo TB4-OUT (USB-C)        | SB-TB4K host PC1                     | USB-C TB-class         | Yes — Sabrent-looking 2 ft, tag "4" (verify TB4 mark). Short run — KVM sits on atlas. |
-| Laptop → KVM          | Laptop TB4 (USB-C) — right-drawer position | SB-TB4K host PC2            | USB-C TB-class         | Yes — Silkland 40 Gb/s 200 W. Routed through the right-drawer grommet. |
+| atlas → KVM           | atlas mobo TB4-OUT (USB-C)        | SB-TB4K host PC1                     | USB-C TB-class         | Cabled — Sabrent-looking 2 ft, tag "4". Both ends landed (one of atlas's TB ports ↔ one of the KVM's host ports; which specific port on each is not yet recorded). TB4 icon on the connector still to be checked. |
+| Laptop → KVM          | Laptop TB4 (USB-C) — right-drawer position | SB-TB4K host PC2            | USB-C TB-class         | Cabled at KVM end — Silkland 40 Gb/s 200 W, routed through the right-drawer grommet; laptop end waits for a laptop to plug in. |
 | KVM → monitor (combined) | SB-TB4K downstream TB4 (USB-C) | FV43U USB-C in (video + hub + PD)    | USB-C, DP-Alt + USB3.2 | Yes — spare 20 Gb/s 8K USB-C. Bench-tested; flaky under cable strain, see Experiments. |
 | KVM → keyboard        | SB-TB4K USB-A                     | TEX Shura USB-C                      | USB-A → USB-C          | Yes — 3 on hand (one tagged "keyboard").               |
 | KVM → underdesk hub   | SB-TB4K USB-A                     | Hub uplink (USB-A plug)              | none (direct)          | Yes — hub plugs in. USB-A F↔M extension available if reach is short. |
@@ -224,8 +224,10 @@ the camera (model TBD) and the underdesk hub (uplink TBD).
   bench test worked but was flaky under cable strain — see
   Experiments.
 - Whether the "tag 4" ~2 ft Sabrent-looking USB-C cable is actually
-  TB4-marked (now the atlas host link).
-- Which SB-TB4K host port (PC1 vs. PC2) the Silkland is landed on.
+  TB4-marked (now the atlas host link — cabled, marking not yet
+  visually verified).
+- Which SB-TB4K host port (PC1 vs. PC2) each host cable is landed
+  on, and which of atlas's several TB ports the atlas-side is in.
 - Physical placement of the KVM (desktop vs. underdesk mount) —
   affects all USB-A cable lengths.
 - Per-link cable-length constraints (desk-edge to under-desk, monitor
