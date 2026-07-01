@@ -1,3 +1,0 @@
-# Terraform NixOS dev environment
-
-exports_files(["cloud-image.nix"])

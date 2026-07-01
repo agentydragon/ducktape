@@ -1,6 +1,0 @@
-# Example configuration for gatelet-reporter
-url = "http://localhost:8000"
-integration = "laptop"
-token = ""
-interval = 60
-battery_enabled = true

@@ -1,4 +1,0 @@
-packages:
-  - "props/frontend"
-  - "agent_server/web"
-  - "rspcache/admin_ui"

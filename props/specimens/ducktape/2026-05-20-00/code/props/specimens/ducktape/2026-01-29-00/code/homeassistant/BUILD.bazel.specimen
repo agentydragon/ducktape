@@ -1,6 +1,0 @@
-# gazelle:ignore
-# Home Assistant deps use separate @pypi_homeassistant hub, not @pypi
-
-exports_files([
-    "requirements.txt",
-])

@@ -8,6 +8,7 @@ The slug is read from the data YAML.
 from __future__ import annotations
 
 import os
+import tarfile
 
 import pytest_bazel
 
@@ -16,17 +17,21 @@ from props.db.models import Snapshot
 from props.db.sync.sync import SpecimenBundle, sync_specimen
 from util.bazel.runfiles import get_required_path
 
+_CODE_TAR = get_required_path(f"_main/{os.environ['SPECIMEN_CODE_TAR']}")
+_DATA_YAML = get_required_path(f"_main/{os.environ['SPECIMEN_DATA_YAML']}")
+
+
+def test_specimen_code_excludes_specimens_dataset() -> None:
+    """props/specimens (this dataset) must never be nested inside a specimen's code."""
+    with tarfile.open(_CODE_TAR) as tar:
+        nested = [name for name in tar.getnames() if name == "props/specimens" or name.startswith("props/specimens/")]
+    assert not nested, f"Specimen code contains nested props/specimens paths: {nested}"
+
 
 def test_specimen(db: Database) -> None:
     """Verify specimen syncs successfully and has expected content."""
-    # Resolve runfiles paths
-    code_tar_rloc = os.environ["SPECIMEN_CODE_TAR"]
-    data_yaml_rloc = os.environ["SPECIMEN_DATA_YAML"]
-    code_tar = get_required_path(f"_main/{code_tar_rloc}")
-    data_yaml = get_required_path(f"_main/{data_yaml_rloc}")
-
     # Create specimen bundle (reads slug from data YAML)
-    bundle = SpecimenBundle.from_paths(code_tar, data_yaml)
+    bundle = SpecimenBundle.from_paths(_CODE_TAR, _DATA_YAML)
 
     # Sync from bundle artifacts
     with db.session() as session:
