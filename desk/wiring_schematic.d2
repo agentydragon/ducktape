@@ -1,0 +1,94 @@
+# Desk wiring — schematic view, D2 version.
+#
+# Rendered with:
+#   d2 --layout=elk desk/wiring_schematic.d2 desk/wiring_schematic.d2.svg
+#
+# Edge colours match the eventual physical coloured-marker system.
+
+monitor: AORUS FV43U — 43\" 4K@144 monitor {
+  optical: optical S/PDIF out
+  audio: 3.5 mm audio jack
+  hdmi1: HDMI 2.1 #1
+  hdmi2: HDMI 2.1 #2
+  dp: DP 1.4
+  usbc: USB-C in — video + hub + PD
+  usbb: USB-B uplink
+  hi: USB-A upper
+  lo: USB-A lower
+}
+
+kvm: Sabrent SB-TB4K — TB4 KVM · on top of atlas {
+  power: power in
+  pc1: host PC1 (TB4)
+  pc2: host PC2 (TB4)
+  ds_a: downstream TB4 A
+  ds_b: downstream TB4 B
+  ds_c: downstream TB4 C
+  usba1: USB-A 1
+  usba2: USB-A 2
+  usba3: USB-A 3
+  usba4: USB-A 4
+}
+
+atlas: atlas — Proxmox tower · 2× RTX 5090 {
+  tb_top: mobo TB4 · top
+  tb_mid: mobo TB4 · middle
+}
+
+laptop: Laptop slot
+
+g_backright: back-right grommet {
+  shape: circle
+  style.stroke-dash: 3
+}
+g_drawer: drawer grommet {
+  shape: circle
+  style.stroke-dash: 3
+}
+
+cam: USB-A camera (atop monitor)
+kbd: TEX Shura keyboard
+hub: Under-desk USB-A hub
+
+# ── cables ──────────────────────────────────────────────────────────
+atlas.tb_top -- kvm.pc1: Sabrent tag '4'\nTB-class USB-C, short {
+  style.stroke: "#333333"
+  style.stroke-width: 2
+}
+
+laptop -- g_drawer: USB 3.2 20 Gb/s 8K {
+  style.stroke: "#c62828"
+  style.stroke-width: 2
+}
+g_drawer -- kvm.pc2 {
+  style.stroke: "#c62828"
+  style.stroke-width: 2
+}
+
+kvm.ds_a -- g_backright: Silkland\n40 Gb/s · 200 W {
+  style.stroke: "#1976d2"
+  style.stroke-width: 2
+}
+g_backright -- monitor.usbc {
+  style.stroke: "#1976d2"
+  style.stroke-width: 2
+}
+
+kvm.usba1 -- hub: direct USB-A {
+  style.stroke: "#f57c00"
+  style.stroke-width: 2
+}
+
+monitor.hi -- g_backright: USB-A → USB-C {
+  style.stroke: "#388e3c"
+  style.stroke-width: 2
+}
+g_backright -- kbd {
+  style.stroke: "#388e3c"
+  style.stroke-width: 2
+}
+
+monitor.lo -- cam: direct USB-A {
+  style.stroke: "#7b1fa2"
+  style.stroke-width: 2
+}
