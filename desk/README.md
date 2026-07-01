@@ -200,6 +200,20 @@ proven reliable. Next moves:
 - Independently: get the TEX Shura on a KVM USB-A port so we're
   testing the real target topology.
 
+### 2026-06-30 — TEX Shura on KVM USB-A
+
+**Setup.** Moved the TEX Shura off rugged's direct USB-A and onto a
+SB-TB4K downstream USB-A port (specific port number not recorded).
+USB-A → USB-C cable, same Plan A monitor link as the previous test.
+
+**Observation.** Keyboard works through the KVM.
+
+**Conclusion.** "KVM USB-A → keyboard" row of the cable plan is
+confirmed for the rugged-host case. With the keyboard now off the
+host directly, all of (video, audio, monitor hub, keyboard) are on
+the KVM-shared bus — the only target-topology link still bypassed is
+the camera (model TBD) and the underdesk hub (uplink TBD).
+
 ## Open questions
 
 - atlas: which RTX 5090 and which DP port feeds the internal DP m-m
