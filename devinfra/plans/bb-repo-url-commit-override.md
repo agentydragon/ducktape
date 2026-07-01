@@ -59,7 +59,7 @@ SHA rather than whatever `bb` auto-detects" has no knob for it.
    on `*runFromBranch != "" || *runFromCommit != ""` and returns before
    `remoteName` is ever used.
 3. Generate patches whenever `(*runFromBranch == "" && *runFromCommit == "")
-   || *applyLocalPatches` — i.e. the existing auto-detect path, plus the
+|| *applyLocalPatches` — i.e. the existing auto-detect path, plus the
    new opt-in.
 
 Design goal: **zero behavior change for existing flags.** Both new flags

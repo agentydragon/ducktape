@@ -42,12 +42,12 @@ remote` uses yet.
 Confirmed by reading `buildbuddy-io/buildbuddy@d4e8918` directly (cloned
 to a scratchpad, not vendored in-repo):
 
-| What `bb remote` does                                          | RPC                                                   | Already in `bbapi`?                                        |
-| ---------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------- |
-| Submit the run                                                 | `BuildBuddyService.Run` (`rnpb.RunRequest`)           | No — new command needed                                      |
-| Poll for completion + read exit code                            | `BuildBuddyService.GetExecution` (`execution_stats.Execution`) | **Yes** — `cmd_execution.go` already calls this and reads `.GetStage()`/`.GetStatus()`. `Execution.exit_code` (field 8) and `.stage` (`ExecutionStage.Value`, e.g. `COMPLETED`) are exactly what's needed — no need for the raw REAPI `Execution.WaitExecution` streaming call `bb`'s own client uses; polling `GetExecution` is sufficient and reuses existing code. |
-| Stream logs                                                     | `BuildBuddyService.GetEventLogChunk` (chunk-ID pagination, not real streaming) | No — new command needed, but the same simple poll-a-chunk-ID-forward pattern as `GetExecutionDownloads`'s pagination already in `cmd_execution.go` |
-| Cancel on interrupt                                             | `BuildBuddyService.CancelExecutions`                  | No — small addition                                          |
+| What `bb remote` does                | RPC                                                                            | Already in `bbapi`?                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------ | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Submit the run                       | `BuildBuddyService.Run` (`rnpb.RunRequest`)                                    | No — new command needed                                                                                                                                                                                                                                                                                                                                               |
+| Poll for completion + read exit code | `BuildBuddyService.GetExecution` (`execution_stats.Execution`)                 | **Yes** — `cmd_execution.go` already calls this and reads `.GetStage()`/`.GetStatus()`. `Execution.exit_code` (field 8) and `.stage` (`ExecutionStage.Value`, e.g. `COMPLETED`) are exactly what's needed — no need for the raw REAPI `Execution.WaitExecution` streaming call `bb`'s own client uses; polling `GetExecution` is sufficient and reuses existing code. |
+| Stream logs                          | `BuildBuddyService.GetEventLogChunk` (chunk-ID pagination, not real streaming) | No — new command needed, but the same simple poll-a-chunk-ID-forward pattern as `GetExecutionDownloads`'s pagination already in `cmd_execution.go`                                                                                                                                                                                                                    |
+| Cancel on interrupt                  | `BuildBuddyService.CancelExecutions`                                           | No — small addition                                                                                                                                                                                                                                                                                                                                                   |
 
 All the required proto messages are **already available** as Bazel targets
 in `@buildbuddy_protos` (`third_party/buildbuddy/BUILD.protos.bazel`):
@@ -79,7 +79,7 @@ Add a new `bbapi run` command (or similar) that:
    patch needed).
 2. Generates a patchset the same way `generatePatches` does.
 3. Calls `BuildBuddyService.Run` with a `RunRequest{GitRepo, RepoState,
-   ExecProperties, Steps: [{Run: "bazel ..."}], ...}`.
+ExecProperties, Steps: [{Run: "bazel ..."}], ...}`.
 4. Polls `GetExecution` (existing pattern) until `stage == COMPLETED`;
    reads `exit_code`/`status`.
 5. Polls `GetEventLogChunk` concurrently to tail logs to stdout/stderr.
