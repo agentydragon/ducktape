@@ -112,8 +112,14 @@ def check_base_branch_freshness(repo: pygit2.Repository) -> str | None:
         return None
 
     current_branch = repo.head.shorthand
-    if repo.references.get(f"refs/remotes/{remote}/{current_branch}") is not None:
-        return None  # Current branch is tracked on the BB remote; bb uses HEAD directly, not the fallback.
+    current_tracking_ref = repo.references.get(f"refs/remotes/{remote}/{current_branch}")
+    if current_tracking_ref is not None:
+        # bb only uses HEAD directly when it's an ancestor of (or equal to) the
+        # tracked commit — unpushed commits still fall through to the
+        # default-branch fallback below (see bb_remote_internals.md Phase 2).
+        ahead_of_own_branch, _ = repo.ahead_behind(repo.head.target, current_tracking_ref.target)
+        if ahead_of_own_branch == 0:
+            return None
 
     tracking_ref = repo.references.get(f"refs/remotes/{remote}/{default_branch}")
     if tracking_ref is None:

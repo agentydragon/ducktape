@@ -18,10 +18,11 @@
 #    match that literal prefix (the explicit default port, ":443" — same
 #    URL, different string).
 #
-# Also keeps the local `devel` branch tracking a real remote ref: `bb remote`
-# falls back to `<default-branch>@{upstream}` as its diff base when the
-# current branch isn't tracked on the BuildBuddy remote, and a stale local
-# tracking ref there produces a huge or unappliable patchset.
+# Also keeps the local default-branch (e.g. "devel" in this repo, but
+# determined dynamically via `git ls-remote --symref` — never assumed) tracking
+# a real remote ref: `bb remote` falls back to `<default-branch>@{upstream}` as
+# its diff base when the current branch isn't tracked on the BuildBuddy remote,
+# and a stale local tracking ref there produces a huge or unappliable patchset.
 # `devinfra/bbr.py`'s `check_base_branch_freshness` warns about this on every
 # `bbr` call without ever fetching (surprise network calls on every command
 # would be worse); this setup-time step is the one place that *does* fetch,

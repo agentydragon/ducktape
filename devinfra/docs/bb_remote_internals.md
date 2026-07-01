@@ -222,10 +222,13 @@ devel` fallback) both fail — `bazel-ci.yml` creates a local `devel` ref for PR
   builds. If `origin/devel` itself is stale, the diff base can end up hundreds of
   commits behind HEAD, producing a huge (and sometimes unappliable — see binary
   patch gotcha below) patchset instead of the small diff you expect.
-  `devinfra/bbr.py`'s `refresh_base_branch_tracking()` runs a best-effort
-  `git fetch <buildbuddy-remote> <default-branch>` before every `bbr` invocation
-  to keep this fresh automatically; a plain `bb remote` invocation (bypassing
-  `bbr`) does not get this and should `git fetch` the tracked remote first.
+  `devinfra/bbr.py`'s `check_base_branch_freshness()` runs before every `bbr`
+  invocation and prints a warning when the tracked base looks stale — it
+  deliberately never fetches (surprise network calls on every command would
+  be its own problem), so seeing the warning means you should
+  `git fetch <buildbuddy-remote> <default-branch>` yourself before retrying.
+  Session setup (`devinfra/claude/reconcile_bbr_remote.sh`) is the one place
+  that does fetch, once, when the session starts.
 - **`--run_from_commit` disables patches**: When set, the runner checks out
   exactly that commit. Patches are only generated when BOTH `--run_from_branch`
   and `--run_from_commit` are empty. Do NOT use `--run_from_commit` in wrapper

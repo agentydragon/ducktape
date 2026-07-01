@@ -341,6 +341,30 @@ class TestCheckBaseBranchFreshness:
         repo.config["buildbuddy.remote-bazel-default-branch"] = "devel"
         assert check_base_branch_freshness(repo) is None
 
+    def test_current_branch_tracked_but_ahead_falls_through_to_default_branch_check(self, tmp_path: Path) -> None:
+        """Unpushed commits on a tracked branch still fall back to `<default>@{upstream}`.
+
+        Mirrors bb's own Phase 2 logic (bb_remote_internals.md): HEAD must be
+        an ancestor of (or equal to) the tracked commit for bb to use HEAD
+        directly — merely having a tracking ref isn't enough.
+        """
+        repo, base = _repo_on_branch(tmp_path, "feature")
+        repo.references.create("refs/remotes/origin/feature", base)  # tracked, but about to fall behind HEAD
+        repo.references.create("refs/remotes/origin/devel", base)
+        parent = _commit(repo, "refs/heads/feature", "unpushed work", [base])
+        repo.config["buildbuddy.remote-bazel-default-branch"] = "devel"
+
+        # devel's tracking ref is fresh (still at base, 1 commit behind HEAD) — no warning.
+        assert check_base_branch_freshness(repo) is None
+
+        # Now make devel's tracking ref stale too — this time it should warn,
+        # proving the "tracked feature branch" check didn't short-circuit.
+        for i in range(_STALE_BASE_WARNING_THRESHOLD + 5):
+            parent = _commit(repo, "refs/heads/feature", f"c{i}", [parent])
+        warning = check_base_branch_freshness(repo)
+        assert warning is not None
+        assert "origin/devel" in warning
+
     def test_fresh_tracking_ref_returns_none(self, tmp_path: Path) -> None:
         repo, base = _repo_on_branch(tmp_path, "feature")
         repo.references.create("refs/remotes/origin/devel", base)
