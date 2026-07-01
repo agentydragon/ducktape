@@ -104,7 +104,16 @@ py_test(
 
 py_package(
     name = "aiquota_pkg",
-    packages = ["aiquota"],
+    packages = [
+        "aiquota",
+        # aiquota.providers.claude imports Spend/UsageBucket/UsageResponse
+        # from devinfra.claude.claude_api.usage — bundle those source files
+        # into the wheel. `packages` is a prefix filter and py_package only
+        # ships files also reachable through `deps`, so cli_lib's transitive
+        # graph (which already reaches //devinfra/claude/claude_api:usage)
+        # scopes what actually lands here to what aiquota uses.
+        "devinfra.claude.claude_api",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":cli_lib",
