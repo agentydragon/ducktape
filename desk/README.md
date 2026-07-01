@@ -8,12 +8,37 @@ Living doc: inventory, target topology, cable plan, mounting TODOs,
 and a running experiments log. The desk is mid-build — see
 Experiments for the current wiring state.
 
-**North star.** One-button switching between atlas (desktop) and a
-laptop, both plugged into the SB-TB4K with a single USB-C cable
-each; everything else (monitor, keyboard, camera, underdesk hub)
-downstream of the KVM. Plan A in "Target topology" describes it.
-**Achieved 2026-07-01** with rugged in the laptop slot — video and
-USB switch on the KVM button in both directions.
+**North star** — **achieved 2026-07-01**: one-button switching
+between atlas (desktop) and whatever laptop is docked, both plugged
+into the SB-TB4K with a single USB-C cable each; everything else
+(monitor, keyboard, camera, underdesk hub) downstream of the KVM.
+Plan A in "Target topology" describes the wiring.
+
+## Desired state
+
+Detailed spec the desk needs to satisfy — the "one-switch KVM" as
+intended:
+
+- **Two hosts on the SB-TB4K.**
+  - `atlas` — permanent, occupies one host port.
+  - **Laptop slot** — variable. `rugged` is currently sitting in it,
+    but the slot is designed as a rotating dock point for whatever
+    laptop is at the desk at a given time.
+- **One KVM button press switches all shared peripherals** between
+  the two hosts, atomically:
+  - AORUS FV43U monitor (video + audio).
+  - The FV43U's own built-in USB hub — reaches the active host back
+    through the monitor USB-C uplink → KVM downstream.
+  - USB-A camera on the FV43U's lower downstream USB-A port (rides
+    the monitor hub).
+  - TEX Shura keyboard on a KVM USB-A port.
+  - Underdesk USB-A hub on another KVM USB-A port.
+- **Both host ports receive PD continuously** from the SB-TB4K's own
+  PSU, whether or not that host is the currently-active host on the
+  KVM switch. Concretely: the docked laptop charges the whole time
+  it's plugged in, even while atlas is the active display target.
+  (Atlas has its own PSU so it doesn't need the PD, but the port
+  offers it anyway.)
 
 ## Devices on hand
 
