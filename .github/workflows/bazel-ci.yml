@@ -75,43 +75,43 @@ jobs:
             }
             trap finalize_bb_runner_probe EXIT
 
-            # Shadow mode (informational only): on PRs, compute the
-            # target-determinator affected set and print it. Not used for gating.
-            # Once the set is proven sane over several PRs, gating flips to only
-            # test/build affected targets on PRs; devel keeps `//...`.
-            # Gracefully skips when TD is missing from the RBE image (pin lag
-            # after devtools/rbetools#2679).
+            # Shadow mode (informational only): on PRs, compute the affected
+            # target set with bazel-diff and print it. Not used for gating.
+            # Once the set is proven sane over several PRs, gating flips to
+            # only test/build affected targets on PRs; devel keeps `//...`.
+            # Gracefully skips when bazel-diff is missing from the RBE image
+            # (pin lag after devtools/rbetools#2706).
             #
             # `set +e` inside the block: any failure in git fetch, merge-base,
-            # rev-parse, or target-determinator itself must NOT abort the CI
+            # rev-parse, checkout, or bazel-diff itself must NOT abort the CI
             # script under the outer `set -euo pipefail`. Restored after the
             # block so the real test/build stages still fail fast.
-            if [ "${{ github.event_name }}" = "pull_request" ] && command -v target-determinator >/dev/null 2>&1; then
+            if [ "${{ github.event_name }}" = "pull_request" ] && command -v bazel-diff >/dev/null 2>&1; then
               set +e
-              echo "::group::target-determinator (shadow)"
-              mkdir -p /tmp/td-cache
-              git fetch --no-tags origin devel
+              echo "::group::bazel-diff (shadow)"
+              git fetch --deepen=200 --no-tags origin devel 2>/dev/null \
+                || git fetch --no-tags origin devel
               BASE=$(git merge-base origin/devel HEAD)
               HEAD_SHA=$(git rev-parse HEAD)
               if [ -n "$BASE" ] && [ -n "$HEAD_SHA" ]; then
                 echo "before-revision: $BASE"
                 echo "head:            $HEAD_SHA"
-                # -targets is the query (default //...); the before-revision
-                # is a positional argument, NOT -before-revision.
-                #
-                # Exclude //website/...: it carries tags=["manual"] so `bazel
-                # test //...` (and its analysis) skip it, but TD's cquery
-                # doesn't respect manual-tag filtering and trips a deprecated
-                # ctx.resolve_tools call in rules_haskell during analysis of
-                # the Hakyll REPL target. Excluding matches what `bazel test
-                # //...` on devel already sees.
-                target-determinator \
-                  -cache-dir=/tmp/td-cache \
-                  -targets='//... except //website/...' \
-                  "$BASE"
+                mkdir -p /tmp/bd-cache
+                git -c advice.detachedHead=false checkout --quiet "$BASE" \
+                  && bazel-diff generate-hashes -w . -b bazelisk /tmp/bd-cache/base.json \
+                  && git -c advice.detachedHead=false checkout --quiet "$HEAD_SHA" \
+                  && bazel-diff generate-hashes -w . -b bazelisk /tmp/bd-cache/head.json \
+                  && bazel-diff get-impacted-targets \
+                       -sh /tmp/bd-cache/base.json -fh /tmp/bd-cache/head.json \
+                       > /tmp/bd-affected.txt \
+                  && echo "affected targets: $(wc -l < /tmp/bd-affected.txt)" \
+                  && sed -n '1,20p' /tmp/bd-affected.txt
               else
                 echo "could not resolve merge-base (BASE=$BASE HEAD=$HEAD_SHA); skipping"
               fi
+              # Restore checkout even on failure so bazel test/build below run
+              # against the PR head.
+              git -c advice.detachedHead=false checkout --quiet "${HEAD_SHA:-HEAD}" >/dev/null 2>&1
               echo "::endgroup::"
               set -e
             fi
