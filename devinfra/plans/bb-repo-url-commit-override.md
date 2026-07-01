@@ -42,7 +42,13 @@ SHA rather than whatever `bb` auto-detects" has no knob for it.
 - **`--repo_url`**: use this URL as the fetch URL instead of
   `determineRemote()`. Requires `--run_from_commit` (there's no local
   remote to resolve a branch/commit against once URL auto-detection is
-  skipped) — enforced with an explicit error, not a silent fallback.
+  skipped) — enforced with an explicit error, not a silent fallback. Falls
+  back to a new `buildbuddy.remote-bazel-repo-url` `.git/config` key when
+  the flag itself is unset, mirroring how `determineRemote()` already
+  caches the picked remote name under `buildbuddy.remote-bazel-remote-name`
+  — so session-setup tooling can write this once instead of every
+  `bb`/`bbr` invocation needing the flag. Flag takes precedence over the
+  config key when both are set.
 - **`--apply_local_patches`**: when combined with `--run_from_branch` or
   `--run_from_commit`, still calls `generatePatches(commit)` instead of
   skipping it. Default `false`, so existing `--run_from_commit`/
@@ -78,7 +84,9 @@ for them. A new opt-in flag is strictly safer to propose upstream.
 
 - Patch is hand-written against the real source (cloned at commit
   `d4e8918`), `gofmt`-clean, and includes new test cases
-  (`TestGitConfig_RepoURLOverride`) following the existing
+  (`TestGitConfig_RepoURLOverride`, covering the rejection case, the flag
+  with/without `--apply_local_patches`, the `.git/config` fallback, and
+  flag-over-config precedence) following the existing
   `TestGitConfig_FetchURL`/`TestGitConfig_BranchAndSha` harness style
   (`testgit.MakeTempRepo`/`MakeTempRepoClone`/`CommitFiles`).
 - **Not** compiled or run — `buildbuddy-io/buildbuddy` is a large Bazel
@@ -109,3 +117,16 @@ for them. A new opt-in flag is strictly safer to propose upstream.
    via Nix) with this patch applied, which is nontrivial and not attempted
    here. Simpler stopgap: keep using `--run_from_commit`'s existing
    clean-checkout mode (no patches) for any interim explicit-commit need.
+
+## Sequencing
+
+This PR is the patch/design proposal only — deliberately kept separate
+from the bootstrap fixes already merged via #2696, since they're
+independent and this one has no working code to run yet (there's nothing
+in the Nix devshell that consumes it). Once a patched `bb` build exists in
+the devshell (step 3 above), a follow-up PR switches
+`devinfra/claude/reconcile_bbr_remote.sh` to write
+`git config buildbuddy.remote-bazel-repo-url <url>` instead of (or
+alongside) today's `github-no-proxy` remote-name trick, and `bbr.py` can
+start using `--repo_url`/`--apply_local_patches` where useful. Not done
+here — no working `bb` build exists yet for bootstrap to target.
