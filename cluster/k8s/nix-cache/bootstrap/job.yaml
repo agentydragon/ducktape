@@ -4,8 +4,8 @@ metadata:
   name: attic-bootstrap-caches
   namespace: nix-cache
   annotations:
-    description: Idempotently ensure required Attic caches (gaffer, …) exist.
-    # Force Flux to recreate the Job when its hash (script content) changes.
+    description: Idempotently ensure required Attic caches (main, gaffer) exist and print their public keys.
+    # Force Flux to recreate the Job when its hash (image or args) changes.
     # Same pattern as cluster/k8s/atuin/user-provisioner/job.yaml.
     kustomize.toolkit.fluxcd.io/force: enabled
 spec:
@@ -17,8 +17,8 @@ spec:
     spec:
       # Reuses the attic-jwt-rotator ServiceAccount (defined alongside the
       # rotation CronJobs) — same pods/exec RBAC for invoking atticadm
-      # against deploy/attic. The bootstrap Job doesn't touch SOPS or git,
-      # so it doesn't need the rotator's github-pat.
+      # against deploy/attic. The bootstrap subcommand doesn't touch SOPS or
+      # git, so it doesn't need the rotator's github-pat.
       serviceAccountName: attic-jwt-rotator
       restartPolicy: OnFailure
       securityContext:
@@ -29,23 +29,17 @@ spec:
       containers:
         - name: bootstrap
           image: ghcr.io/agentydragon/attic-jwt-rotation:devel-20260628025924-e9b3511 # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
-          command: ["/usr/bin/bash", "/scripts/bootstrap.sh"]
+          args:
+            - "bootstrap-caches"
+            - "--cache=main"
+            - "--cache=gaffer"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-          volumeMounts:
-            - name: script
-              mountPath: /scripts
-              readOnly: true
           resources:
             requests:
               cpu: 100m
               memory: 128Mi
             limits:
               memory: 256Mi
-      volumes:
-        - name: script
-          configMap:
-            name: attic-bootstrap-script
-            defaultMode: 0o755

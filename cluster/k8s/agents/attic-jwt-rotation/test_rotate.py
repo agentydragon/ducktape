@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import certifi
+import httpx
 import pygit2
 import pytest
 import pytest_bazel
@@ -17,7 +18,9 @@ from rotate import (
     _configure_ca_trust,
     clone_repo,
     commit_and_push,
+    ensure_cache,
     jwt_payload,
+    mint_admin_jwt,
     mint_attic_token,
     remaining_hours,
     rotate_one,
@@ -257,6 +260,97 @@ def test_configure_ca_trust_loads_a_real_bundle():
     # Regression: the libgit2 dir arg must be None, not "" (OpenSSL rejects the
     # empty string as "invalid directory" while loading the bundle).
     _configure_ca_trust(Path(certifi.where()))  # must not raise
+
+
+# --- bootstrap-caches subcommand ---
+
+
+def test_mint_admin_jwt_builds_kubectl_exec_atticadm_argv(monkeypatch):
+    fake = _FakeRun(jwt="admin.jwt")
+    monkeypatch.setattr(rotate.subprocess, "run", fake)
+    assert mint_admin_jwt("nix-cache", "deploy/attic", "/config/server.toml") == "admin.jwt"
+    (call,) = fake.calls
+    assert call == [
+        "kubectl",
+        "-n",
+        "nix-cache",
+        "exec",
+        "deploy/attic",
+        "--",
+        "atticadm",
+        "-f",
+        "/config/server.toml",
+        "make-token",
+        "--sub",
+        "bootstrap-admin",
+        "--validity",
+        "5 minutes",
+        "--pull",
+        "*",
+        "--push",
+        "*",
+        "--create-cache",
+        "*",
+    ]
+
+
+class _ScriptedTransport(httpx.MockTransport):
+    """httpx transport that records incoming requests and replays scripted responses."""
+
+    def __init__(self, responses: list[httpx.Response]):
+        self._responses = list(responses)
+        self.calls: list[tuple[str, str, bytes]] = []
+        super().__init__(self._handle)
+
+    def _handle(self, request: httpx.Request) -> httpx.Response:
+        self.calls.append((request.method, str(request.url), request.content))
+        return self._responses.pop(0)
+
+
+def _client(transport: httpx.MockTransport) -> httpx.Client:
+    return httpx.Client(base_url="http://attic:8080", transport=transport)
+
+
+def test_ensure_cache_returns_public_key_when_cache_exists():
+    transport = _ScriptedTransport([httpx.Response(200, json={"public_key": "main:abc="})])
+    with _client(transport) as client:
+        assert ensure_cache(client, "main") == "main:abc="
+    (call,) = transport.calls
+    assert call[:2] == ("GET", "http://attic:8080/_api/v1/cache-config/main")
+
+
+def test_ensure_cache_creates_when_absent():
+    transport = _ScriptedTransport(
+        [
+            httpx.Response(404, text="not found"),
+            httpx.Response(201, text=""),
+            httpx.Response(200, json={"public_key": "gaffer:xyz="}),
+        ]
+    )
+    with _client(transport) as client:
+        assert ensure_cache(client, "gaffer") == "gaffer:xyz="
+    methods = [c[0] for c in transport.calls]
+    assert methods == ["GET", "POST", "GET"]
+    # Matches upstream attic's `attic cache create` default with no flags.
+    assert json.loads(transport.calls[1][2]) == {
+        "keypair": "Generate",
+        "is_public": False,
+        "store_dir": "/nix/store",
+        "priority": 41,
+        "upstream_cache_key_names": [],
+    }
+
+
+def test_ensure_cache_raises_on_unexpected_error():
+    transport = _ScriptedTransport([httpx.Response(500, text="boom")])
+    with _client(transport) as client, pytest.raises(RuntimeError, match="HTTP 500"):
+        ensure_cache(client, "main")
+
+
+def test_ensure_cache_raises_when_create_fails():
+    transport = _ScriptedTransport([httpx.Response(404, text=""), httpx.Response(403, text="denied")])
+    with _client(transport) as client, pytest.raises(RuntimeError, match=r"create failed .*HTTP 403"):
+        ensure_cache(client, "main")
 
 
 if __name__ == "__main__":

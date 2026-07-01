@@ -29,7 +29,7 @@ spec:
           containers:
             - name: rotate
               image: ghcr.io/agentydragon/attic-jwt-rotation:devel-20260628025924-e9b3511 # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
-              args: ["--config", "/config/rotators.yaml"]
+              args: ["rotate", "--config", "/config/rotators.yaml"]
               env:
                 - name: GIT_TOKEN
                   valueFrom:

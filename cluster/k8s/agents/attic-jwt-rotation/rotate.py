@@ -1,23 +1,21 @@
-"""Rotate Attic JWTs into SOPS-encrypted files.
+"""Attic ops folded into one CLI: token rotation and cache bootstrap.
 
-One run processes every token listed in the YAML config. For each token it:
+Two subcommands share the `kubectl exec deploy/attic -- atticadm make-token …`
+pattern so the HS256 signing secret never leaves the attic pod:
 
-  1. Reads the unencrypted-by-suffix `expires_unencrypted` field of the existing
-     `sops_file` (no SOPS decryption, no in-cluster age key) and skips when
-     remaining validity exceeds `rotate_below_hours`. With 1-year validity and a
-     24h threshold, a real mint runs only ~once per token per year, but a failed
-     rotation self-heals on the next hourly run.
-  2. Mints a fresh JWT via `kubectl exec deploy/attic -- atticadm -f
-     /config/server.toml make-token …`, so the HS256 signing secret never leaves
-     the attic pod. The rotator's ServiceAccount only needs `pods/exec` on the
-     attic deployment in the nix-cache namespace.
-  3. Writes `expires_unencrypted` (from the JWT's own `exp` claim, so the
-     freshness check is authoritative) plus the token, then `sops encrypt`s in
-     place.
+  * `rotate`           — mints per-token JWTs into SOPS-encrypted files and
+                         pushes the result to devel.
+  * `bootstrap-caches` — idempotently ensures each named cache exists (creating
+                         via attic's REST API when absent) and prints its public
+                         key for `nix/attic-pubkeys.json`.
 
-Everything that actually rotated this cycle lands in a single combined commit.
-The whole run operates from the clone root so SOPS creation rules (matched on
-repo-relative paths) resolve.
+`rotate` reads the unencrypted-by-suffix `expires_unencrypted` field of each
+existing `sops_file` (no SOPS decryption, no in-cluster age key) and skips when
+remaining validity exceeds `rotate_below_hours`. With 1-year validity and a 24h
+threshold, a real mint runs only ~once per token per year, but a failed
+rotation self-heals on the next hourly run. Rotated files land in a single
+combined commit; the whole run operates from the clone root so SOPS creation
+rules (matched on repo-relative paths) resolve.
 """
 
 import base64
@@ -29,12 +27,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
+import httpx
 import pygit2
 import typer
 import yaml
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+app = typer.Typer(no_args_is_help=True, add_completion=False)
 
 
 class Token(BaseModel):
@@ -217,11 +218,13 @@ def _configure_ca_trust(ca_bundle: Path) -> None:
     pygit2.settings.set_ssl_cert_locations(str(ca_bundle), None)
 
 
-def main(
+@app.command("rotate")
+def rotate_cmd(
     config_path: Annotated[Path, typer.Option("--config", exists=True, dir_okay=False, help="rotators.yaml")],
     token: Annotated[str, typer.Option("--token", envvar="GIT_TOKEN", help="Git HTTPS token (or set GIT_TOKEN)")],
     ca_bundle: Annotated[Path, typer.Option(help="CA bundle assembled for git")] = Path("/tmp/ca-bundle.crt"),
 ) -> None:
+    """Rotate every token in the rotators.yaml config; commit + push what rotated."""
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     config = Config.model_validate(yaml.safe_load(config_path.read_text()))
 
@@ -247,5 +250,104 @@ def main(
     commit_and_push(repo, config, rotated, token)
 
 
+# Default body matches `attic cache create <name>` with no flags
+# (cf. attic upstream client/src/command/cache.rs::create_cache):
+# keypair=Generate, is_public=false, store_dir=/nix/store, priority=41.
+_CREATE_BODY: dict[str, Any] = {
+    "keypair": "Generate",
+    "is_public": False,
+    "store_dir": "/nix/store",
+    "priority": 41,
+    "upstream_cache_key_names": [],
+}
+
+
+def mint_admin_jwt(namespace: str, deployment: str, server_config: str) -> str:
+    """Mint a short-lived admin JWT via `kubectl exec deploy/attic -- atticadm make-token`.
+
+    The HS256 signing secret never leaves the attic pod; this process only needs
+    `pods/exec` on the attic deployment.
+    """
+    result = subprocess.run(
+        [
+            "kubectl",
+            "-n",
+            namespace,
+            "exec",
+            deployment,
+            "--",
+            "atticadm",
+            "-f",
+            server_config,
+            "make-token",
+            "--sub",
+            "bootstrap-admin",
+            "--validity",
+            "5 minutes",
+            "--pull",
+            "*",
+            "--push",
+            "*",
+            "--create-cache",
+            "*",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    jwt = result.stdout.strip()
+    if not jwt:
+        raise RuntimeError(f"atticadm make-token returned empty output\n{result.stderr}")
+    return jwt
+
+
+def ensure_cache(client: httpx.Client, cache: str) -> str:
+    """Idempotently ensure `cache` exists on the attic server behind `client`; return its public_key.
+
+    `client` must already carry the admin Bearer token and a base URL pointing
+    at the attic server. Non-2xx from the initial GET is only tolerated on 404
+    (cache absent → create), everything else raises.
+    """
+    config_path = f"/_api/v1/cache-config/{cache}"
+    response = client.get(config_path)
+    if response.status_code == 404:
+        logger.info("cache %s: missing — creating", cache)
+        create = client.post(config_path, json=_CREATE_BODY)
+        if not create.is_success:
+            raise RuntimeError(f"cache {cache}: create failed (HTTP {create.status_code}): {create.text}")
+        response = client.get(config_path)
+    if not response.is_success:
+        raise RuntimeError(f"cache {cache}: cache-config GET failed (HTTP {response.status_code}): {response.text}")
+    public_key: str = response.json()["public_key"]
+    logger.info("cache %s: %s", cache, public_key)
+    return public_key
+
+
+@app.command("bootstrap-caches")
+def bootstrap_caches_cmd(
+    caches: Annotated[list[str], typer.Option("--cache", help="Cache name(s) to ensure; repeatable")],
+    server: Annotated[
+        str, typer.Option(help="Attic server URL reachable in-cluster")
+    ] = "http://attic.nix-cache.svc.cluster.local:8080",
+    attic_namespace: Annotated[str, typer.Option(help="Namespace of the attic deployment")] = "nix-cache",
+    attic_deployment: Annotated[str, typer.Option(help="Attic Deployment exec'd for atticadm")] = "deploy/attic",
+    server_config: Annotated[
+        str, typer.Option(help="Attic server config path inside the attic pod")
+    ] = "/config/server.toml",
+) -> None:
+    """Ensure each --cache exists on `server`; print its public_key on stdout.
+
+    Idempotent: existing caches are left alone. Public keys are printed for
+    manual paste into nix/attic-pubkeys.json (attic's public
+    /{cache}/nix-cache-info does not include the pubkey; the authenticated
+    /_api/v1/cache-config/<cache> endpoint does).
+    """
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    jwt = mint_admin_jwt(attic_namespace, attic_deployment, server_config)
+    with httpx.Client(base_url=server, headers={"Authorization": f"Bearer {jwt}"}, timeout=30.0) as client:
+        for cache in caches:
+            ensure_cache(client, cache)
+
+
 if __name__ == "__main__":
-    typer.run(main)
+    app()
