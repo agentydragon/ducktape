@@ -22,7 +22,7 @@
     5h:  24%  ↻ 1h33m  Δ-45%  leaves ~65% unused at reset
     7d:  48%  ↻ 5d12h  Δ+27%  exhausts ~3d21h before reset
   zai
-    5h:  49%  ↻ 2h45m  Δ+4%  exhausts ~24m before reset
+    5h:  49%  ↻ 2h45m  Δ+4%   exhausts ~24m before reset
     7d: 100%  ↻ 6d14h  Δ+94%  exhausts ~6d14h before reset
   '''
 # ---

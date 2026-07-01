@@ -16,6 +16,7 @@ py_library(
     deps = [
         ":base",
         "//aiquota:models",
+        "//devinfra/claude/claude_api:usage",
         "@pypi//httpx",
         "@pypi//pydantic",
     ],
@@ -54,6 +55,7 @@ py_test(
     imports = ["../.."],
     deps = [
         ":claude_lib",
+        "//devinfra/claude/claude_api:usage",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

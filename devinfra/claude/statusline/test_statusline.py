@@ -372,6 +372,27 @@ def test_format_quota_extra_usage():
     assert "extra $2317/$4600 (50%)" in result.plain
 
 
+def test_format_quota_spend_extra_usage():
+    now = datetime.now(UTC)
+    usage = UsageResponse.model_validate(
+        {
+            "seven_day": {"utilization": 100.0},
+            "extra_usage": {"is_enabled": True, "monthly_limit": 250000, "used_credits": 0.0, "utilization": None},
+            "spend": {
+                "enabled": True,
+                "limit": {"amount_minor": 250000, "currency": "USD", "exponent": 2},
+                "used": {"amount_minor": 12345, "currency": "USD", "exponent": 2},
+                "percent": 4.94,
+            },
+        }
+    )
+    cached = CachedUsage(fetched_at=now, usage=usage)
+    result = _format_quota(cached, now=now)
+    assert result is not None
+    assert "7d:100%" in result.plain
+    assert "extra $123/$2500 (5%)" in result.plain
+
+
 def test_format_quota_extra_usage_disabled_not_shown():
     now = datetime.now(UTC)
     usage = UsageResponse(

@@ -51,6 +51,17 @@ py_library(
 )
 
 py_test(
+    name = "test_usage",
+    srcs = ["test_usage.py"],
+    deps = [
+        ":usage",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_schema_equivalence",
     srcs = ["test_schema_equivalence.py"],
     data = [

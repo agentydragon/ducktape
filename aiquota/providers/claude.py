@@ -7,14 +7,14 @@ with automatic token refresh via the platform token endpoint.
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Literal
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 from aiquota.models import ExtraUsage, FetchError, FetchSuccess, ProviderFetch, QuotaWindow
 from aiquota.providers.base import Provider
+from devinfra.claude.claude_api.usage import UsageBucket, UsageResponse, normalized_extra_usage
 
 logger = logging.getLogger(__name__)
 
@@ -51,42 +51,6 @@ class _Credentials(BaseModel):
     model_config = _CAMEL
 
     claude_ai_oauth: _OAuthTokens | None = None
-
-
-class _UsageBucket(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    utilization: float
-    resets_at: str | None = None
-
-
-# Discriminated union: the API returns explicit `null` for the numeric
-# fields when extra-usage isn't entitled on the plan, so the only sane
-# representation gates them behind `is_enabled`.
-class _ExtraUsageDisabled(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    is_enabled: Literal[False] = False
-
-
-class _ExtraUsageEnabled(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    is_enabled: Literal[True]
-    monthly_limit: float
-    used_credits: float
-    utilization: float
-
-
-_ExtraUsage = Annotated[_ExtraUsageEnabled | _ExtraUsageDisabled, Field(discriminator="is_enabled")]
-
-
-class _UsageResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    five_hour: _UsageBucket | None = None
-    seven_day: _UsageBucket | None = None
-    extra_usage: _ExtraUsage | None = None
 
 
 class _TokenRefreshResponse(BaseModel):
@@ -149,19 +113,27 @@ def _token_expired(creds: _Credentials) -> bool:
     return oauth.expires_at - datetime.now(UTC).timestamp() * 1000 <= TOKEN_EXPIRY_SKEW_SECS * 1000
 
 
-def _to_window(bucket: _UsageBucket | None, window_secs: float) -> QuotaWindow | None:
+def _to_window(bucket: UsageBucket | None, window_secs: float) -> QuotaWindow | None:
     if bucket is None:
         return None
-    reset_at: datetime | None = None
+    reset_at = bucket.resets_at
     reset_secs = 0.0
-    if bucket.resets_at:
-        try:
-            reset_at = datetime.fromisoformat(bucket.resets_at)
-            reset_secs = max(0, (reset_at.timestamp() - datetime.now(UTC).timestamp()))
-        except (ValueError, OSError):
-            pass
+    if reset_at is not None:
+        reset_secs = max(0, (reset_at.timestamp() - datetime.now(UTC).timestamp()))
     return QuotaWindow(
         used_percent=bucket.utilization, reset_seconds=reset_secs, window_seconds=window_secs, reset_at=reset_at
+    )
+
+
+def _to_extra_usage(usage: UsageResponse) -> ExtraUsage | None:
+    extra = normalized_extra_usage(usage)
+    if extra is None:
+        return None
+    return ExtraUsage(
+        is_enabled=True,
+        monthly_limit_usd=extra.monthly_limit / 100,
+        used_usd=extra.used_credits / 100,
+        utilization=extra.utilization,
     )
 
 
@@ -188,21 +160,13 @@ class ClaudeProvider(Provider):
                     USAGE_URL, headers={"Authorization": f"Bearer {token}", "anthropic-beta": "oauth-2025-04-20"}
                 )
             resp.raise_for_status()
-            usage = _UsageResponse.model_validate(resp.json())
+            usage = UsageResponse.model_validate(resp.json())
         except Exception as e:
             return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "claude quota fetch"))
 
         short = _to_window(usage.five_hour, SHORT_WINDOW_SECS)
         long = _to_window(usage.seven_day, LONG_WINDOW_SECS)
-        extra: ExtraUsage | None = None
-        if isinstance(usage.extra_usage, _ExtraUsageEnabled):
-            eu = usage.extra_usage
-            extra = ExtraUsage(
-                is_enabled=True,
-                monthly_limit_usd=eu.monthly_limit / 100,
-                used_usd=eu.used_credits / 100,
-                utilization=eu.utilization,
-            )
+        extra = _to_extra_usage(usage)
         return ProviderFetch(
             fetched_at=now, result=FetchSuccess(short_window=short, long_window=long, extra_usage=extra)
         )

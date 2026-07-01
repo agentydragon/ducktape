@@ -69,6 +69,48 @@ def test_renders_both_windows_with_reset_and_pace(snapshot: SnapshotAssertion) -
     assert out == snapshot
 
 
+def test_aligns_reset_and_pace_columns_across_providers() -> None:
+    out = human.render(
+        _quotas(
+            _pq(
+                "claude",
+                _success(
+                    short_window=QuotaWindow(
+                        used_percent=14, reset_seconds=2 * 3600 + 38 * 60, window_seconds=5 * 3600
+                    ),
+                    long_window=QuotaWindow(
+                        used_percent=33, reset_seconds=2 * 86400 + 11 * 3600, window_seconds=7 * 86400
+                    ),
+                ),
+            ),
+            _pq(
+                "codex",
+                _success(
+                    short_window=QuotaWindow(used_percent=19, reset_seconds=31 * 60, window_seconds=5 * 3600),
+                    long_window=QuotaWindow(
+                        used_percent=3, reset_seconds=6 * 86400 + 19 * 3600, window_seconds=7 * 86400
+                    ),
+                ),
+            ),
+            _pq(
+                "zai",
+                _success(
+                    short_window=QuotaWindow(used_percent=0, reset_seconds=0, window_seconds=5 * 3600),
+                    long_window=QuotaWindow(
+                        used_percent=35, reset_seconds=15 * 3600 + 39 * 60, window_seconds=7 * 86400
+                    ),
+                ),
+            ),
+        ),
+        now=_FETCHED_AT,
+    )
+    lines = out.splitlines()
+    delta_columns = [line.index("Δ") for line in lines if "Δ" in line]
+    forecast_columns = [line.index("leaves") for line in lines if "leaves" in line]
+    assert len(set(delta_columns)) == 1
+    assert len(set(forecast_columns)) == 1
+
+
 def test_extra_enabled_but_prepaid_has_room_shows_normal_bars(snapshot: SnapshotAssertion) -> None:
     # extra_usage.is_enabled=True just means the feature is on; non-zero
     # used_usd is *this month's* total, not "currently burning". While the 7d

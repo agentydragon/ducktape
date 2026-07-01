@@ -19,6 +19,7 @@ py_library(
         "//devinfra/claude:session_paths",
         "//devinfra/claude/claude_api:credentials",
         "//devinfra/claude/claude_api:statusline",
+        "//devinfra/claude/claude_api:usage",
         "@pypi//rich",
     ],
 )
