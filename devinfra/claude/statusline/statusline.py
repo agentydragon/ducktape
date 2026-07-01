@@ -15,12 +15,13 @@ import socket
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 from rich.console import Console
 from rich.text import Text
 
 from aiquota.cache import QuotaService
-from aiquota.config import DEFAULT_CONFIG_PATH, load as load_config
+from aiquota.config import DEFAULT_CONFIG_PATH, Config, load as load_config
 from aiquota.models import ExtraSpend, FetchSuccess, ProviderQuota, QuotaWindow
 from devinfra.claude.claude_api.credentials import read_credentials
 from devinfra.claude.claude_api.statusline import ContextWindow, Input
@@ -86,7 +87,7 @@ def _format_quota(quota: ProviderQuota | None, *, now: datetime) -> Text | None:
                     if time_to_exhaust < remaining:
                         part += f" dry {_format_delta(time_to_exhaust)}"
         parts.append(part)
-    if extra is not None:
+    if extra is not None and extra.is_enabled:
         parts.append(_format_extra_spend(extra))
     if parts:
         age = now - fetched_at
@@ -135,7 +136,10 @@ def _is_zai_session(base_url: str) -> bool:
     z-claude points ANTHROPIC_BASE_URL at api.z.ai; the statusline then reports
     the z.ai provider's quota instead of Anthropic's.
     """
-    return "z.ai" in base_url
+    if not base_url:
+        return False
+    host = urlparse(base_url).hostname or ""
+    return host == "z.ai" or host.endswith(".z.ai")
 
 
 def render(
@@ -205,7 +209,12 @@ def main() -> None:
 
     # Quota comes from aiquota's shared cache (read + populated by fetch_all),
     # selecting the provider matching the running session.
-    service = QuotaService(config=load_config(DEFAULT_CONFIG_PATH))
+    try:
+        config = load_config(DEFAULT_CONFIG_PATH)
+    except Exception:
+        logger.debug("Failed to load aiquota config, using defaults", exc_info=True)
+        config = Config()
+    service = QuotaService(config=config)
     quotas = asyncio.run(service.fetch_all())
     provider_name = "zai" if _is_zai_session(os.environ.get("ANTHROPIC_BASE_URL", "")) else "claude"
     quota = next((pq for pq in quotas.providers if pq.provider == provider_name), None)
