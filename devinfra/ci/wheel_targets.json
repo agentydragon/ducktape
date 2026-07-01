@@ -1,0 +1,45 @@
+{
+  "_comment": "Bazel wheel targets consumed by .github/workflows/nix-wheel-check.yml (the PR-time nix imports-check gate). Keys are pin names from nix/artifact-pins.json. `target` and `output` mirror the wheel entries in .github/workflows/release.yml's matrix. `nixPackage: true` means the entry has a corresponding .#packages.x86_64-linux.<pin> flake output to imports-check; `false` means it is a companion artifact (e.g. aiquota's extension zip) that only gets consumed as an override.",
+  "pins": {
+    "ducktape": {
+      "target": "//:wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/ducktape-0.1.0-py3-none-any.whl",
+      "nixPackage": true
+    },
+    "bbr": {
+      "target": "//:bbr_wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/bbr-0.1.0-py3-none-any.whl",
+      "nixPackage": true
+    },
+    "claude-hooks": {
+      "target": "//:claude_hooks_wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl",
+      "nixPackage": true
+    },
+    "ducktape-git-hooks": {
+      "target": "//:ducktape_git_hooks_wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/ducktape_git_hooks-0.1.0-py3-none-any.whl",
+      "nixPackage": true
+    },
+    "ducktape-util": {
+      "target": "//util:wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/util/ducktape_util-0.1.0-py3-none-any.whl",
+      "nixPackage": true
+    },
+    "gterm-theme": {
+      "target": "//gnome/gterm_theme:wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/gnome/gterm_theme/gterm_theme-0.1.0-py3-none-any.whl",
+      "nixPackage": true
+    },
+    "aiquota": {
+      "target": "//aiquota:aiquota_wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/aiquota/aiquota-0.1.0-py3-none-any.whl",
+      "nixPackage": true
+    },
+    "aiquota-extension": {
+      "target": "//aiquota/gnome:aiquota_zip",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/aiquota/gnome/aiquota.zip",
+      "nixPackage": false
+    }
+  }
+}

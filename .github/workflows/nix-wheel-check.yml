@@ -7,6 +7,10 @@
 #
 # nix-attic-push.yml still does the full-fleet build against pinned artifacts on
 # push to devel/main; this workflow is the fast per-PR gate.
+#
+# Source of truth for pin → Bazel target + output: devinfra/ci/wheel_targets.json.
+# Keep it in sync with the wheel entries in release.yml's matrix (SYNC comment
+# there points here).
 name: Nix wheel check
 
 on:
@@ -43,61 +47,51 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
-      # Build every wheel + the aiquota extension zip in one bb-remote call so
-      # RBE cache hits carry across targets. Keep the target list in sync with
-      # release.yml's matrix (below in "Assemble overrides").
+      # Derive the Bazel target list + nix package list from the SSOT.
+      - name: Compute build inputs
+        id: inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          spec=devinfra/ci/wheel_targets.json
+          bazel_targets=$(jq -r '.pins | [.[] .target] | join(" ")' "$spec")
+          nix_pkgs=$(jq -r '
+            .pins | to_entries
+              | map(select(.value.nixPackage) | ".#packages.x86_64-linux.\(.key)")
+              | join(" ")
+          ' "$spec")
+          echo "bazel_targets=$bazel_targets" >> "$GITHUB_OUTPUT"
+          echo "nix_pkgs=$nix_pkgs" >> "$GITHUB_OUTPUT"
+
+      # --remote_download_outputs=toplevel keeps only the wheel/zip files
+      # (not Bazel action intermediates) coming back from RBE — same pattern
+      # as push-images.yml.
+      # run_from_commit: actions/checkout in PR mode doesn't fetch a local
+      # `devel` ref, so bb remote's default base-branch patch sync fails with
+      # `git rev-parse devel: exit status 128`. Same rationale as bazel-ci.yml.
       - name: Build wheels from source
         uses: ./.github/actions/bb-remote
         with:
-          # --remote_download_outputs=toplevel keeps only the wheel/zip files
-          # (not Bazel action intermediates) coming back from RBE — same pattern
-          # as push-images.yml.
-          args: >-
-            build
-            //:wheel
-            //:bbr_wheel
-            //:claude_hooks_wheel
-            //:ducktape_git_hooks_wheel
-            //util:wheel
-            //gnome/gterm_theme:wheel
-            //aiquota:aiquota_wheel
-            //aiquota/gnome:aiquota_zip
-            --remote_download_outputs=toplevel
-          # actions/checkout in PR mode doesn't fetch a local `devel` ref, so bb
-          # remote's default base-branch patch-sync path fails with
-          # `git rev-parse devel: exit status 128`. run_from_commit tells the
-          # runner to check out this exact commit and skip base resolution —
-          # same rationale as bazel-ci.yml.
+          args: build ${{ steps.inputs.outputs.bazel_targets }} --remote_download_outputs=toplevel
           run_from_commit: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      # Map each mkWheel pin name -> Bazel output path, verify every artifact
-      # exists, and emit the JSON blob flake.nix's artifacts logic consumes.
-      # SYNC with the ducktape wheel family in release.yml + nix/packages/default.nix.
+      # Emit the JSON blob flake.nix's artifacts logic consumes. Verifying every
+      # expected output exists here surfaces build/output-path drift with a
+      # clear error before nix reads a missing file.
       - name: Assemble artifact overrides
         id: overrides
         shell: bash
         run: |
           set -euo pipefail
-          declare -A MAP=(
-            [ducktape]=bb-out/bazel-out/k8-fastbuild/bin/ducktape-0.1.0-py3-none-any.whl
-            [bbr]=bb-out/bazel-out/k8-fastbuild/bin/bbr-0.1.0-py3-none-any.whl
-            [claude-hooks]=bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl
-            [ducktape-git-hooks]=bb-out/bazel-out/k8-fastbuild/bin/ducktape_git_hooks-0.1.0-py3-none-any.whl
-            [ducktape-util]=bb-out/bazel-out/k8-fastbuild/bin/util/ducktape_util-0.1.0-py3-none-any.whl
-            [gterm-theme]=bb-out/bazel-out/k8-fastbuild/bin/gnome/gterm_theme/gterm_theme-0.1.0-py3-none-any.whl
-            [aiquota]=bb-out/bazel-out/k8-fastbuild/bin/aiquota/aiquota-0.1.0-py3-none-any.whl
-            [aiquota-extension]=bb-out/bazel-out/k8-fastbuild/bin/aiquota/gnome/aiquota.zip
-          )
           json='{}'
-          for k in "${!MAP[@]}"; do
-            f="${MAP[$k]}"
-            if [[ ! -f "$f" ]]; then
-              echo "::error::missing artifact for pin '$k' at $f"
+          while IFS=$'\t' read -r pin rel; do
+            if [[ ! -f "$rel" ]]; then
+              echo "::error::missing artifact for pin '$pin' at $rel"
               exit 1
             fi
-            abs="$(realpath "$f")"
-            json="$(jq --arg k "$k" --arg v "$abs" '. + {($k): $v}' <<<"$json")"
-          done
+            abs=$(readlink -f "$rel")
+            json=$(jq -c --arg k "$pin" --arg v "$abs" '. + {($k): $v}' <<<"$json")
+          done < <(jq -r '.pins | to_entries[] | "\(.key)\t\(.value.output)"' devinfra/ci/wheel_targets.json)
           {
             echo 'overrides<<EOF'
             echo "$json"
@@ -109,12 +103,4 @@ jobs:
       - name: Nix build + imports check
         env:
           DUCKTAPE_ARTIFACT_OVERRIDES: ${{ steps.overrides.outputs.overrides }}
-        run: >-
-          nix build --impure --no-link --print-out-paths
-          .#packages.x86_64-linux.ducktape
-          .#packages.x86_64-linux.bbr
-          .#packages.x86_64-linux.claude-hooks
-          .#packages.x86_64-linux.ducktape-git-hooks
-          .#packages.x86_64-linux.ducktape-util
-          .#packages.x86_64-linux.gterm-theme
-          .#packages.x86_64-linux.aiquota
+        run: nix build --impure --no-link --print-out-paths ${{ steps.inputs.outputs.nix_pkgs }}

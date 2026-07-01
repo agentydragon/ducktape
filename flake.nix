@@ -91,9 +91,13 @@
         builtins.mapAttrs (
           name: spec:
           if overrides ? ${name} then
+            # Preserve the URL's basename so consumers that read the store
+            # path's suffix (aiquota's buildPythonApplication glob for *.whl,
+            # extension-zip unzip) work identically to the fetchurl path.
+            # renameWheel-based mkWheel callers are agnostic to this name.
             builtins.path {
               path = /. + overrides.${name};
-              name = "ducktape-artifact-${name}";
+              name = baseNameOf spec.url;
             }
           else
             pkgs.fetchurl {

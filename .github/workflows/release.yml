@@ -52,6 +52,9 @@ jobs:
             target: //:wheel
             # SYNC: keep this list aligned with `packages =` in //:ducktape_pkg
             # (root BUILD.bazel) so tests cover every module the wheel ships.
+            # Also SYNC the (pkg, target, bazel_output) triples across this
+            # matrix and devinfra/ci/wheel_targets.json (the SSOT the PR-time
+            # nix-wheel-check.yml gate reads).
             tests: //agent_core/... //difftree/... //git_commit_ai/... //gmail_api/... //gmail_archiver/... //mako_utils/... //mcp_infra/... //mcp_utils/... //openai_utils/... //cluster/skills/hetzner_vnc_screenshot/... //cluster/skills/proxmox_vm/...
             bazel_output: bb-out/bazel-out/k8-fastbuild/bin/ducktape-0.1.0-py3-none-any.whl
           - pkg: aiquota
