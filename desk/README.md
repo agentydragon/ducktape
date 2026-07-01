@@ -563,6 +563,26 @@ until wyrm2 boots enough to reclaim the DP-OUT.
 - Look into what caused the "violent reboot" via `journalctl -b -1`
   once SSH is up.
 
+### 2026-07-01 — waited, greeter appeared at correct resolution
+
+**Observation.** Left atlas alone on the "EFI stub" stalled screen;
+after a couple more minutes the full-size greeter appeared at the
+correct resolution — same GPU DP-OUT → FV43U DP path.
+
+**Conclusion.** VFIO cliff + slow wyrm2 autostart confirmed: the
+display is dead for the couple minutes between kernel handoff and
+guest driver claiming the DP, then normal. So the desk video path
+works — the bring-up delay is atlas config, not wiring.
+
+**Immediate next step (top priority).** Get SSH set up **while the
+greeter is live** — before the next reboot strands us. Log in →
+`sudo systemctl status ssh` → drop pubkey into `authorized_keys`
+(`curl https://github.com/agentydragon.keys >> ~/.ssh/authorized_keys`
+is one path) → `ip -brief addr` for the IP → test SSH from another
+device on the same network. Only after that, dig into
+`journalctl -b -1` for the violent-reboot cause and check wyrm2
+autostart config.
+
 ## Open questions
 
 - atlas: which RTX 5090 and which DP port feeds the internal DP m-m
