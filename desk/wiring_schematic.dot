@@ -3,25 +3,27 @@
 // Rendered with:
 //   dot -Tsvg desk/wiring_schematic.dot -o desk/wiring_schematic.svg
 //
-// Auto-layout: no rank hints, no port ordering, let dot decide.
+// Hardware nodes are uncoloured (bold header + plain port rows).
+// Wire colours are distinct per physical cable and are intended to
+// match the eventual coloured cable-marker system.
 
 digraph desk_wiring {
     graph [fontname="Helvetica"];
     node  [shape=none, fontname="Helvetica", fontsize=10];
-    edge  [fontname="Helvetica", fontsize=9, penwidth=1.6, dir=none];
+    edge  [fontname="Helvetica", fontsize=9, penwidth=1.8, dir=none];
 
     monitor [label=<
       <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6">
-        <TR><TD BGCOLOR="#4a8a4a"><FONT COLOR="white" POINT-SIZE="12"><B>AORUS FV43U</B></FONT><BR/><FONT COLOR="#e0f0e0" POINT-SIZE="9">43″ 4K@144 monitor</FONT></TD></TR>
-        <TR><TD BGCOLOR="#d9f2d9">optical S/PDIF out</TD></TR>
-        <TR><TD BGCOLOR="#d9f2d9">3.5 mm audio jack</TD></TR>
-        <TR><TD BGCOLOR="#d9f2d9">HDMI 2.1 · #1</TD></TR>
-        <TR><TD BGCOLOR="#d9f2d9">HDMI 2.1 · #2</TD></TR>
-        <TR><TD BGCOLOR="#d9f2d9">DP 1.4</TD></TR>
-        <TR><TD PORT="usbc" BGCOLOR="#d9f2d9">USB-C in — video + hub + PD</TD></TR>
-        <TR><TD BGCOLOR="#d9f2d9">USB-B uplink</TD></TR>
-        <TR><TD PORT="hi" BGCOLOR="#d9f2d9">USB-A upper</TD></TR>
-        <TR><TD PORT="lo" BGCOLOR="#d9f2d9">USB-A lower</TD></TR>
+        <TR><TD><FONT POINT-SIZE="12"><B>AORUS FV43U</B></FONT><BR/><FONT POINT-SIZE="9">43″ 4K@144 monitor</FONT></TD></TR>
+        <TR><TD>optical S/PDIF out</TD></TR>
+        <TR><TD>3.5 mm audio jack</TD></TR>
+        <TR><TD>HDMI 2.1 · #1</TD></TR>
+        <TR><TD>HDMI 2.1 · #2</TD></TR>
+        <TR><TD>DP 1.4</TD></TR>
+        <TR><TD PORT="usbc">USB-C in — video + hub + PD</TD></TR>
+        <TR><TD>USB-B uplink</TD></TR>
+        <TR><TD PORT="hi">USB-A upper</TD></TR>
+        <TR><TD PORT="lo">USB-A lower</TD></TR>
       </TABLE>
     >];
 
@@ -30,27 +32,27 @@ digraph desk_wiring {
     //   right ("host" side)      : 2× host TB4 · 2× USB-A
     kvm [label=<
       <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6">
-        <TR><TD COLSPAN="2" BGCOLOR="#2b5c9b"><FONT COLOR="white" POINT-SIZE="12"><B>Sabrent SB-TB4K</B></FONT><BR/><FONT COLOR="#dceafa" POINT-SIZE="9">TB4 KVM · on top of atlas</FONT></TD></TR>
-        <TR><TD BGCOLOR="#d6ebff">power in</TD><TD BGCOLOR="#f5f5f5"></TD></TR>
-        <TR><TD PORT="ds_a" BGCOLOR="#d6ebff">downstream TB4 A</TD><TD PORT="pc1" BGCOLOR="#d6ebff">host PC1 (TB4)</TD></TR>
-        <TR><TD BGCOLOR="#d6ebff">downstream TB4 B</TD><TD PORT="pc2" BGCOLOR="#d6ebff">host PC2 (TB4)</TD></TR>
-        <TR><TD BGCOLOR="#d6ebff">downstream TB4 C</TD><TD BGCOLOR="#f5f5f5"></TD></TR>
-        <TR><TD PORT="usba1" BGCOLOR="#d6ebff">USB-A 1</TD><TD BGCOLOR="#d6ebff">USB-A 3</TD></TR>
-        <TR><TD BGCOLOR="#d6ebff">USB-A 2</TD><TD BGCOLOR="#d6ebff">USB-A 4</TD></TR>
+        <TR><TD COLSPAN="2"><FONT POINT-SIZE="12"><B>Sabrent SB-TB4K</B></FONT><BR/><FONT POINT-SIZE="9">TB4 KVM · on top of atlas</FONT></TD></TR>
+        <TR><TD>power in</TD><TD></TD></TR>
+        <TR><TD PORT="ds_a">downstream TB4 A</TD><TD PORT="pc1">host PC1 (TB4)</TD></TR>
+        <TR><TD>downstream TB4 B</TD><TD PORT="pc2">host PC2 (TB4)</TD></TR>
+        <TR><TD>downstream TB4 C</TD><TD></TD></TR>
+        <TR><TD PORT="usba1">USB-A 1</TD><TD>USB-A 3</TD></TR>
+        <TR><TD>USB-A 2</TD><TD>USB-A 4</TD></TR>
       </TABLE>
     >];
 
     atlas [label=<
       <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6">
-        <TR><TD BGCOLOR="#a88a1a"><FONT COLOR="white" POINT-SIZE="12"><B>atlas</B></FONT><BR/><FONT COLOR="#fff2c7" POINT-SIZE="9">Proxmox tower · 2× RTX 5090</FONT></TD></TR>
-        <TR><TD PORT="tb_top" BGCOLOR="#fff7d1">mobo TB4 · top</TD></TR>
-        <TR><TD BGCOLOR="#fff7d1">mobo TB4 · middle</TD></TR>
+        <TR><TD><FONT POINT-SIZE="12"><B>atlas</B></FONT><BR/><FONT POINT-SIZE="9">Proxmox tower · 2× RTX 5090</FONT></TD></TR>
+        <TR><TD PORT="tb_top">mobo TB4 · top</TD></TR>
+        <TR><TD>mobo TB4 · middle</TD></TR>
       </TABLE>
     >];
 
     laptop [label=<
       <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6">
-        <TR><TD BGCOLOR="#c07a1a"><FONT COLOR="white" POINT-SIZE="12"><B>Laptop slot</B></FONT><BR/><FONT COLOR="#ffe4c7" POINT-SIZE="9">currently: rugged</FONT></TD></TR>
+        <TR><TD><FONT POINT-SIZE="12"><B>Laptop slot</B></FONT><BR/><FONT POINT-SIZE="9">currently: rugged</FONT></TD></TR>
       </TABLE>
     >];
 
@@ -59,44 +61,53 @@ digraph desk_wiring {
 
     cam [label=<
       <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6">
-        <TR><TD BGCOLOR="#555555"><FONT COLOR="white" POINT-SIZE="11"><B>USB-A camera</B></FONT><BR/><FONT COLOR="#dddddd" POINT-SIZE="9">atop monitor</FONT></TD></TR>
+        <TR><TD><FONT POINT-SIZE="11"><B>USB-A camera</B></FONT><BR/><FONT POINT-SIZE="9">atop monitor</FONT></TD></TR>
       </TABLE>
     >];
 
     kbd [label=<
       <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6">
-        <TR><TD BGCOLOR="#555555"><FONT COLOR="white" POINT-SIZE="11"><B>TEX Shura</B></FONT><BR/><FONT COLOR="#dddddd" POINT-SIZE="9">keyboard</FONT></TD></TR>
+        <TR><TD><FONT POINT-SIZE="11"><B>TEX Shura</B></FONT><BR/><FONT POINT-SIZE="9">keyboard</FONT></TD></TR>
       </TABLE>
     >];
 
     hub [label=<
       <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6">
-        <TR><TD BGCOLOR="#555555"><FONT COLOR="white" POINT-SIZE="11"><B>Under-desk USB-A hub</B></FONT></TD></TR>
+        <TR><TD><FONT POINT-SIZE="11"><B>Under-desk USB-A hub</B></FONT></TD></TR>
       </TABLE>
     >];
 
     // ── cables ──────────────────────────────────────────────────────────
+    // Each physical cable gets its own colour, distinct from every other
+    // cable. Colours also drive the eventual physical marker system.
+
+    // atlas ↔ KVM (dark grey)
     atlas:tb_top -> kvm:pc1
         [label="Sabrent tag '4'\nTB-class USB-C, short", color="#333333"];
 
+    // laptop ↔ KVM via drawer grommet (red)
     laptop -> g_drawer
         [label="USB 3.2 20 Gb/s 8K", color="#c62828"];
     g_drawer -> kvm:pc2
         [color="#c62828"];
 
+    // KVM ↔ monitor via back-right grommet (blue)
     kvm:ds_a -> g_backright
         [label="Silkland\n40 Gb/s · 200 W", color="#1976d2"];
     g_backright -> monitor:usbc
         [color="#1976d2"];
 
+    // KVM ↔ under-desk hub (orange)
     kvm:usba1 -> hub
         [label="direct\nUSB-A", color="#f57c00"];
 
+    // Monitor hub ↔ keyboard via back-right grommet (green)
     monitor:hi -> g_backright
         [label="USB-A → USB-C", color="#388e3c"];
     g_backright -> kbd
         [color="#388e3c"];
 
+    // Monitor hub ↔ camera (purple)
     monitor:lo -> cam
-        [label="direct\nUSB-A", color="#388e3c"];
+        [label="direct\nUSB-A", color="#7b1fa2"];
 }
