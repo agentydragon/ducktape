@@ -10,6 +10,7 @@
 {
   imports = [
     ../home.nix
+    ../modules/bazel-user-cache.nix
     ../modules/forgejo-ssh.nix
     ../modules/no-screensaver.nix
     ../modules/kubeconfig.nix
@@ -18,6 +19,7 @@
   ];
 
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/wyrm2-forgejo.sops.key;
+  ducktape.bazelUserCache.enable = true;
 
   ducktape.attic = {
     enable = true;

@@ -12,6 +12,7 @@
 {
   imports = [
     ../home.nix
+    ../modules/bazel-user-cache.nix
     ../modules/forgejo-ssh.nix
     ../modules/github-ssh.nix
     ../modules/kubeconfig.nix
@@ -20,6 +21,7 @@
 
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/iguana-forgejo.sops.key;
   ducktape.githubSsh.sopsFile = ../../../ssh_keys/iguana-github.sops.key;
+  ducktape.bazelUserCache.enable = true;
 
   # AppIndicator support — needed for timekpr-client tray icon in GNOME.
   programs.gnome-shell.extensions = [

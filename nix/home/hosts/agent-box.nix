@@ -7,6 +7,7 @@
 # Bootstrap: NixOS sops-nix plants /home/codex/.ssh/id_ed25519 (agent-box-codex-user)
 # before this activates; home-manager sops-nix below chains off that id.
 {
+  lib,
   pkgs,
   config,
   ...
@@ -14,6 +15,7 @@
 {
   imports = [
     ../codex # OpenAI Codex CLI + config
+    ../modules/bazel-user-cache.nix # Shared Bazel/Bazelisk user caches
     ../modules/sops-env.nix # ducktape.sopsEnv (BuildBuddy key reads this)
     ../modules/buildbuddy.nix # BuildBuddy creds -> bazelrc + BUILDBUDDY_API_KEY
     ../modules/forgejo-ssh.nix # Forgejo bot push key + git.allegedly.works ssh block
@@ -47,6 +49,19 @@
     approvalPolicy = "never";
     sandboxMode = "danger-full-access";
   };
+  ducktape.bazelUserCache = {
+    enable = true;
+    diskCacheMaxSize = "80G";
+  };
+
+  # agent-box deliberately does not import ../home.nix, so keep its base Bazel
+  # user rc here and let ducktape.bazelUserCache append cache flags.
+  home.file.".bazelrc".text = lib.mkBefore ''
+    common --show_progress_rate_limit=0.05
+    common --progress_in_terminal_title
+
+    try-import ${config.home.homeDirectory}/.config/bazel/buildbuddy.bazelrc
+  '';
 
   programs.zsh.enable = true;
   programs.direnv = {

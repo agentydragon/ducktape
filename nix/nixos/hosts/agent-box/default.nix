@@ -59,6 +59,35 @@ in
     priority = 100;
   };
 
+  # KubeVirt emptyDisk-backed disposable caches. The root DataVolume stays
+  # persistent; these volumes survive guest reboots but not VMI re-creation.
+  fileSystems."/home/${username}/.cache" = {
+    device = "/dev/disk/by-id/virtio-abox-cache";
+    fsType = "ext4";
+    autoFormat = true;
+    autoResize = true;
+    options = [
+      "nodev"
+      "nosuid"
+      "nofail"
+      "x-systemd.device-timeout=30s"
+    ];
+  };
+
+  fileSystems."/home/${username}/.cache/nix" = {
+    device = "/dev/disk/by-id/virtio-abox-nix-cache";
+    fsType = "ext4";
+    autoFormat = true;
+    autoResize = true;
+    depends = [ "/home/${username}/.cache" ];
+    options = [
+      "nodev"
+      "nosuid"
+      "nofail"
+      "x-systemd.device-timeout=30s"
+    ];
+  };
+
   environment.systemPackages = with pkgs; [
     neovim
     tmux
@@ -84,7 +113,18 @@ in
   # plants it at ~/.ssh/id_ed25519; home-manager (user=codex) then chains its
   # own sops-nix secrets (BuildBuddy, attic, Forgejo bot key) off this id.
   # tmpfiles pre-creates the dir codex-owned so home-manager can also write into it.
-  systemd.tmpfiles.rules = [ "d /home/${username}/.ssh 0700 ${username} users - -" ];
+  systemd.tmpfiles.rules = [
+    "d /home/${username}/.ssh 0700 ${username} users - -"
+    "d /home/${username}/.cache 0755 ${username} users - -"
+    "z /home/${username}/.cache 0755 ${username} users - -"
+    "d /home/${username}/.cache/bazel 0755 ${username} users - -"
+    "d /home/${username}/.cache/bazelisk 0755 ${username} users - -"
+    "d /home/${username}/.cache/codex 0755 ${username} users - -"
+    "d /home/${username}/.cache/nix 0755 ${username} users - -"
+    "z /home/${username}/.cache/nix 0755 ${username} users - -"
+    "d /home/${username}/.cache/pre-commit 0755 ${username} users - -"
+    "d /home/${username}/.cache/sccache 0755 ${username} users - -"
+  ];
   sops.secrets.codex_id_ed25519 = {
     sopsFile = ../../../../ssh_keys/agent-box-codex-user.sops.key;
     format = "binary";

@@ -66,6 +66,14 @@ spec:
               bootOrder: 1
               disk:
                 bus: virtio
+            - name: usercachedisk
+              serial: abox-cache
+              disk:
+                bus: virtio
+            - name: nixcachedisk
+              serial: abox-nix-cache
+              disk:
+                bus: virtio
             - name: cloudinitdisk
               disk:
                 bus: virtio
@@ -82,6 +90,12 @@ spec:
         - name: rootdisk
           dataVolume:
             name: agent-box-root
+        - name: usercachedisk
+          emptyDisk:
+            capacity: 100Gi
+        - name: nixcachedisk
+          emptyDisk:
+            capacity: 20Gi
         - name: cloudinitdisk
           cloudInitNoCloud:
             secretRef:
