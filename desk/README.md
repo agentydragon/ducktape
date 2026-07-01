@@ -271,6 +271,22 @@ atlas-side software: no display source for the Proxmox host after
 `vfio-pci` binds the GPUs, and no way to diagnose because atlas has no
 network yet.
 
+**Additional test — KVM bypass.** Reconnected the FV43U's USB-C
+directly into the same atlas TB port that had been feeding the KVM.
+Result: monitor shows a **gray screen** — link is up (EDID
+negotiated) but no useful content. Same phenomenon as with the KVM
+in-line, which rules the KVM chain out of the diagnosis; atlas itself
+is not painting pixels after the kernel takeover. User reports the
+same symptom on this hardware at the previous apartment, so this is
+a **persistent atlas-side condition**, not new-desk breakage.
+
+**Current physical state.** For local debugging:
+
+- FV43U USB-C is on atlas's TB4 port directly (KVM bypassed for
+  atlas video).
+- TEX Shura is on the FV43U's built-in USB-A hub, so the keyboard is
+  available to atlas when local console eventually recovers.
+
 **Follow-ups.**
 
 - Get network to atlas — cheapest path is the on-hand USB WiFi stick;
@@ -280,6 +296,9 @@ network yet.
   autostart state; check which GPU (bus:slot.function) is passed
   through and which physical DP port that GPU's guest driver is
   outputting to.
+- Since the KVM-in-line and direct-connect tests both produce the
+  same gray-screen state, the KVM stays out of scope for this
+  diagnosis. Debugging is atlas config, not desk wiring.
 - Longer-term: consider giving atlas a display source that survives
   `vfio-pci` binding (iGPU if the mobo has one, or a small spare GPU
   not in the passthrough set) so BIOS-only boot debugging isn't the
