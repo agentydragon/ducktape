@@ -14,8 +14,8 @@ Pre-build. Inventory and target topology only — no cables pulled yet.
 | AORUS FV43U         | 43" 4K@144 monitor. Inputs: 1× DP 1.4, 2× HDMI 2.1 (24 Gb/s), 1× USB-C (DP-Alt + USB data + PD). USB hub: 1× USB-B uplink, 2× USB-A downstream. 2× 3.5 mm jacks (headphone, line-out). Internal "dual-KVM" toggles which uplink (USB-B vs. USB-C) feeds the hub. |
 | Sabrent SB-TB4K     | TB4 KVM. 2× TB4 host (PC1, PC2) + 3× TB4 downstream (40 Gb/s, 60 W PD per port) + 4× USB-A 3.2 Gen 2 (10 Gb/s, 5 V / 2.4 A). **No standalone DP output** — video goes over TB4 downstream USB-C. |
 | TEX Shura           | 60% mech with trackpoint, USB-C jack at the back. Detachable cable ships in box (USB-C → USB-A, 1.5 m). BT-LE module on board (BT4+). Planned: wired USB. |
-| USB-A camera        | Model TBD.                                                           |
-| Underdesk USB-A hub | Mounted left-underside of the desk.                                  |
+| USB-A camera        | Model TBD. Presents a USB-A plug — plugs directly into a KVM USB-A port. |
+| Underdesk USB-A hub | Mounted left-underside of the desk. USB-A uplink plug — plugs directly into a KVM USB-A port. |
 | USB WiFi adapter    | Model TBD. Spare; could go into atlas as a temporary wireless NIC.   |
 
 ## Cables on hand
@@ -122,11 +122,12 @@ Each row is one physical link.
 | KVM → monitor (video) | SB-TB4K downstream TB4 (USB-C) | FV43U DP 1.4 in            | USB-C ↔ DP             | Yes — Ivanky DP/USB-C cable.                           |
 | KVM → monitor (hub)   | SB-TB4K USB-A                  | FV43U USB-B uplink         | USB A → B              | Yes.                                                   |
 | KVM → keyboard        | SB-TB4K USB-A                  | TEX Shura USB-C            | USB-A → USB-C          | Yes — 3 on hand (one tagged "keyboard").               |
-| KVM → camera          | SB-TB4K USB-A                  | Camera (connector ?)       | USB-A → ?              | **TBD** (camera connector).                            |
-| KVM → underdesk hub   | SB-TB4K USB-A                  | Underdesk hub uplink (?)   | USB-A → ?              | **TBD** (hub uplink connector).                        |
+| KVM → camera          | SB-TB4K USB-A                  | Camera (USB-A plug)        | none (direct)          | Yes — the camera plugs in. USB-A F↔M extension available if reach is short. |
+| KVM → underdesk hub   | SB-TB4K USB-A                  | Hub uplink (USB-A plug)    | none (direct)          | Yes — hub plugs in. USB-A F↔M extension available if reach is short. |
 
-All host-side and core peripheral cables are on hand; only accessory
-connectors remain unknown.
+All links to peripherals are now buildable with cables on hand. Only
+open cable question is length — the Silkland run to atlas and any
+under-desk USB-A reach have to be measured against real placement.
 
 ### Plan A — USB-C only to the monitor (simpler if it works)
 
@@ -218,11 +219,14 @@ the camera (model TBD) and the underdesk hub (uplink TBD).
 
 - atlas: which RTX 5090 and which DP port feeds the internal DP m-m
   into the mobo's DP-IN.
-- Camera model + connector (TBD pending model).
-- Underdesk USB-A hub uplink type (USB-A male plug, captive cable, or
-  USB-B socket).
+- Camera model.
 - Whether the spare 20 Gb/s 8K USB-C cable will negotiate DP-Alt HBR3
-  + USB 3.2 cleanly into the FV43U's USB-C input (Plan A viability).
+  + USB 3.2 cleanly into the FV43U's USB-C input reliably. Plan A
+  bench test worked but was flaky under cable strain — see
+  Experiments.
+- Whether the "tag 4" ~2 ft Sabrent-looking USB-C cable is actually
+  TB4-marked (needed for the laptop host link).
+- Silkland cable length vs. real atlas-to-KVM distance.
 - Physical placement of the KVM (desktop vs. underdesk mount) —
   affects all USB-A cable lengths.
 - Per-link cable-length constraints (desk-edge to under-desk, monitor
