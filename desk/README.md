@@ -116,7 +116,7 @@ Each row is one physical link.
 | --------------------- | --------------------------------- | ------------------------------------ | ---------------------- | ------------------------------------------------------ |
 | atlas internal video  | atlas RTX 5090 DP-OUT (slot ?)    | atlas mobo DP-IN                     | DP m-m                 | Yes (already wired).                                   |
 | atlas → KVM           | atlas mobo TB4-OUT (USB-C)        | SB-TB4K host PC1                     | USB-C TB-class         | Cabled — Sabrent-looking 2 ft, tag "4". Both ends landed (one of atlas's TB ports ↔ one of the KVM's host ports; which specific port on each is not yet recorded). TB4 icon on the connector still to be checked. |
-| Laptop → KVM          | Laptop TB4 (USB-C) — right-drawer position | SB-TB4K host PC2            | USB-C TB-class         | Cabled at KVM end — Silkland 40 Gb/s 200 W, routed through the right-drawer grommet; laptop end waits for a laptop to plug in. |
+| Laptop → KVM          | Laptop TB4 (USB-C) — right-drawer position | SB-TB4K host PC2            | USB-C TB-class         | Cabled end-to-end — Silkland 40 Gb/s 200 W, routed through the right-drawer grommet; laptop end currently occupied by rugged as a stand-in. |
 | KVM → monitor (combined) | SB-TB4K downstream TB4 (USB-C) | FV43U USB-C in (video + hub + PD)    | USB-C, DP-Alt + USB3.2 | Yes — spare 20 Gb/s 8K USB-C. Bench-tested; flaky under cable strain, see Experiments. |
 | KVM → keyboard        | SB-TB4K USB-A                     | TEX Shura USB-C                      | USB-A → USB-C          | Yes — 3 on hand (one tagged "keyboard").               |
 | KVM → underdesk hub   | SB-TB4K USB-A                     | Hub uplink (USB-A plug)              | none (direct)          | Yes — hub plugs in. USB-A F↔M extension available if reach is short. |
@@ -213,6 +213,26 @@ confirmed for the rugged-host case. With the keyboard now off the
 host directly, all of (video, audio, monitor hub, keyboard) are on
 the KVM-shared bus — the only target-topology link still bypassed is
 the camera (model TBD) and the underdesk hub (uplink TBD).
+
+### 2026-07-01 — rugged on the laptop-side slot; Plan A end-to-end
+
+**Setup.** Rugged unplugged from its earlier direct-to-KVM short TB
+cable and plugged into the **laptop end** of the Silkland cable
+(right-drawer position, cable routed through the drawer grommet, KVM
+end already landed on a SB-TB4K host port). All other Plan A links
+per the target topology.
+
+**Observations.**
+
+- Rugged switched its video output to the FV43U.
+- Audio out via the monitor still works.
+
+**Conclusion.** Validates the Silkland end-to-end (through the
+grommet + into a KVM host port + into rugged) and validates the whole
+KVM-shared-bus chain from the intended laptop position, not just from
+the earlier short-cable test rig. Still to validate: the **atlas-side**
+switch — toggle the KVM to atlas's host port and confirm atlas sees
+the FV43U as its output.
 
 ## Open questions
 
