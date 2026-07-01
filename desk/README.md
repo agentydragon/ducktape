@@ -239,6 +239,14 @@ doesn't work:
 - Use the on-hand shielded Ethernet cable if reach permits (it's short).
 - Drop the USB WiFi adapter into atlas as a stopgap wireless NIC.
 
+## Power
+
+- **SB-TB4K PSU** — currently plugged into the power strip mounted on
+  the back-underside of the desk.
+  - **TODO:** mount the PSU brick onto the Underwear 3D-printed grid
+    under the desk (so it isn't just hanging off the power-strip
+    cable).
+
 ## Out of scope (for now)
 
 - Wall power, surge protection, under-desk power routing — possible
