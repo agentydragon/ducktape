@@ -207,13 +207,13 @@ cables are pulled.
 - **Monitor → keyboard (USB-A → USB-C)** — runs from the FV43U's
   **upper** USB-A downstream port, along the desk to the keyboard
   slot, into the TEX Shura. Stays on top of the desk end-to-end.
-- **Laptop → KVM (20 Gb/s USB-C)** — the right-drawer grommet path,
-  currently occupied by the flaky-looking 20 Gb/s cable with rugged
-  as laptop stand-in. Working in this role even though it was bad on
-  the KVM → monitor leg earlier. **Oriented deliberately** with the
-  visibly-worn end at the tablet side (visible and easy to grab)
-  and the clean end at the KVM (buried under the desk), so if the
-  cable acts up we can inspect / replug the suspect end fast.
+- **KVM → laptop slot (20 Gb/s USB-C)** — cable runs from the
+  SB-TB4K under the desk, up through the **right-drawer grommet
+  hole**, and into whichever laptop is docked (currently rugged).
+  Cable is deliberately oriented with the visibly-worn end at the
+  laptop side (visible + easy to grab) and the clean end at the KVM
+  (buried under the desk), so if it acts up we can inspect / replug
+  the suspect connector fast.
 
 ## Experiments
 
@@ -722,6 +722,30 @@ test.
 **Conclusion.** North Star achieved. The full Plan A topology is
 live: two hosts on the KVM, monitor + hub + keyboard + camera
 downstream, single button switches everything.
+
+**Known gap.** When rugged is _not_ the active host on the KVM, it
+does not charge. The desired-state spec calls for both host ports to
+receive PD continuously so a docked laptop always charges — this
+requirement isn't met yet. Not critical (user is fine with it for
+now), but recorded as a known deviation.
+
+Suspects, in rough order:
+
+- The 20 Gb/s USB 3.2 Gen 2×2 cable on this leg is probably not PD
+  e-marked (USB 3.2 spec doesn't require it). Cheapest test: swap
+  the Silkland (proven 200 W) onto the laptop leg and the 20 Gb/s
+  onto the KVM → monitor leg, then check if rugged charges when
+  atlas is active.
+- The SB-TB4K may only deliver PD to the currently-active host by
+  default. Sabrent's spec page says "60 W PD 3.0" but doesn't
+  explicitly promise simultaneous on both host ports. Check the
+  manual for a hidden mode toggle (e.g. long-press on the switch
+  button).
+- If neither: something else in the negotiation.
+
+Signal that tells the two apart: does rugged charge when it _is_ the
+active host? Yes → the KVM defaults to active-only PD (or has a mode
+toggle to change that). No → the cable can't do PD at all.
 
 ### 2026-07-01 — earlier: waited, greeter appeared at correct resolution
 
