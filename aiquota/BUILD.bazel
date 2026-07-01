@@ -104,7 +104,11 @@ py_test(
 
 py_package(
     name = "aiquota_pkg",
-    packages = ["aiquota"],
+    packages = [
+        "aiquota",
+        "devinfra.claude",
+        "devinfra.claude.claude_api",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":cli_lib",
