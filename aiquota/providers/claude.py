@@ -14,7 +14,7 @@ from pydantic.alias_generators import to_camel
 
 from aiquota.models import ExtraUsage, FetchError, FetchSuccess, ProviderFetch, QuotaWindow
 from aiquota.providers.base import Provider
-from devinfra.claude.claude_api.usage import ExtraUsageTotals, UsageBucket, UsageResponse, normalized_extra_usage
+from devinfra.claude.claude_api.usage import Spend, UsageBucket, UsageResponse
 
 logger = logging.getLogger(__name__)
 
@@ -125,14 +125,16 @@ def _to_window(bucket: UsageBucket | None, window_secs: float) -> QuotaWindow | 
     )
 
 
-def _to_aiquota_extra_usage(extra: ExtraUsageTotals | None) -> ExtraUsage | None:
-    if extra is None:
+def _spend_to_extra_usage(spend: Spend | None) -> ExtraUsage | None:
+    if spend is None or not spend.has_usage_totals:
         return None
+    assert spend.limit is not None
+    assert spend.used is not None
     return ExtraUsage(
         is_enabled=True,
-        monthly_limit_usd=extra.monthly_limit / 100,
-        used_usd=extra.used_credits / 100,
-        utilization=extra.utilization,
+        monthly_limit_usd=spend.limit.major_units,
+        used_usd=spend.used.major_units,
+        utilization=spend.utilization_percent,
     )
 
 
@@ -165,7 +167,7 @@ class ClaudeProvider(Provider):
 
         short = _to_window(usage.five_hour, SHORT_WINDOW_SECS)
         long = _to_window(usage.seven_day, LONG_WINDOW_SECS)
-        extra = _to_aiquota_extra_usage(normalized_extra_usage(usage))
+        extra = _spend_to_extra_usage(usage.spend)
         return ProviderFetch(
             fetched_at=now, result=FetchSuccess(short_window=short, long_window=long, extra_usage=extra)
         )

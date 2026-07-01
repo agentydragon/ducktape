@@ -17,7 +17,7 @@ from rich.text import Text
 
 from devinfra.claude.claude_api.credentials import read_credentials
 from devinfra.claude.claude_api.statusline import ContextWindow, Input
-from devinfra.claude.claude_api.usage import ExtraUsageTotals, normalized_extra_usage
+from devinfra.claude.claude_api.usage import Spend
 from devinfra.claude.session_paths import default_cache_dir, hook_daemon_sock
 from devinfra.claude.statusline.usage_cache import CachedUsage, UsageCache
 
@@ -42,10 +42,12 @@ def _format_delta(delta: timedelta) -> str:
     return f"{total_seconds}s"
 
 
-def _format_extra_usage(extra: ExtraUsageTotals) -> str:
-    used = extra.used_credits / 100
-    limit = extra.monthly_limit / 100
-    pct = extra.utilization
+def _format_spend(spend: Spend) -> str:
+    assert spend.limit is not None
+    assert spend.used is not None
+    used = spend.used.major_units
+    limit = spend.limit.major_units
+    pct = spend.utilization_percent
     return f"extra ${used:.0f}/${limit:.0f} ({pct:.0f}%)"
 
 
@@ -73,9 +75,8 @@ def _format_quota(cached: CachedUsage | None, now: datetime) -> Text | None:
                         if time_to_exhaust < remaining:
                             part += f" dry {_format_delta(time_to_exhaust)}"
         parts.append(part)
-    extra = normalized_extra_usage(usage)
-    if extra is not None:
-        parts.append(_format_extra_usage(extra))
+    if usage.spend is not None and usage.spend.has_usage_totals:
+        parts.append(_format_spend(usage.spend))
     if parts:
         age = now - cached.fetched_at
         if age > _STALE_THRESHOLD:

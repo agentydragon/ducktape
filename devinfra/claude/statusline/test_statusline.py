@@ -11,7 +11,7 @@ from syrupy.assertion import SnapshotAssertion
 
 from devinfra.claude.claude_api.credentials import read_credentials
 from devinfra.claude.claude_api.statusline import ContextWindow, Input
-from devinfra.claude.claude_api.usage import ExtraUsage, UsageBucket, UsageResponse
+from devinfra.claude.claude_api.usage import UsageBucket, UsageResponse
 from devinfra.claude.statusline.statusline import _format_context, _format_quota, render
 from devinfra.claude.statusline.usage_cache import CACHE_TTL, CachedUsage, UsageCache
 
@@ -146,47 +146,6 @@ def test_usage_response_null_resets_at():
     assert resp.seven_day is not None
     assert resp.seven_day.utilization == 100.0
     assert resp.seven_day.resets_at is not None
-
-
-def test_usage_response_extra_usage():
-    raw = {
-        "five_hour": {"utilization": 0.0, "resets_at": None},
-        "seven_day": {"utilization": 100.0, "resets_at": "2026-05-15T16:00:00+00:00"},
-        "extra_usage": {
-            "is_enabled": True,
-            "monthly_limit": 460000,
-            "used_credits": 231689.0,
-            "utilization": 50.37,
-            "currency": "USD",
-            "disabled_reason": None,
-        },
-    }
-    resp = UsageResponse.model_validate(raw)
-    assert resp.extra_usage is not None
-    assert resp.extra_usage.is_enabled is True
-    assert resp.extra_usage.monthly_limit == 460000
-    assert resp.extra_usage.used_credits == 231689.0
-    assert resp.extra_usage.utilization == 50.37
-    assert resp.extra_usage.currency == "USD"
-    assert resp.extra_usage.disabled_reason is None
-
-
-def test_usage_response_extra_usage_disabled():
-    raw = {
-        "five_hour": {"utilization": 5.0},
-        "extra_usage": {
-            "is_enabled": False,
-            "monthly_limit": 0,
-            "used_credits": 0,
-            "utilization": 0,
-            "currency": "USD",
-            "disabled_reason": "payment_method_required",
-        },
-    }
-    resp = UsageResponse.model_validate(raw)
-    assert resp.extra_usage is not None
-    assert resp.extra_usage.is_enabled is False
-    assert resp.extra_usage.disabled_reason == "payment_method_required"
 
 
 def test_read_credentials(tmp_path: Path):
@@ -357,27 +316,11 @@ def test_format_quota_exhaustion_projection(utilization: float, resets_in: timed
         assert result.plain.endswith(expected_dry)
 
 
-def test_format_quota_extra_usage():
-    now = datetime.now(UTC)
-    usage = UsageResponse(
-        seven_day=UsageBucket(utilization=100.0),
-        extra_usage=ExtraUsage(
-            is_enabled=True, monthly_limit=460000, used_credits=231689.0, utilization=50.37, currency="USD"
-        ),
-    )
-    cached = CachedUsage(fetched_at=now, usage=usage)
-    result = _format_quota(cached, now=now)
-    assert result is not None
-    assert "7d:100%" in result.plain
-    assert "extra $2317/$4600 (50%)" in result.plain
-
-
 def test_format_quota_spend_extra_usage():
     now = datetime.now(UTC)
     usage = UsageResponse.model_validate(
         {
             "seven_day": {"utilization": 100.0},
-            "extra_usage": {"is_enabled": True, "monthly_limit": 250000, "used_credits": 0.0, "utilization": None},
             "spend": {
                 "enabled": True,
                 "limit": {"amount_minor": 250000, "currency": "USD", "exponent": 2},
@@ -393,18 +336,10 @@ def test_format_quota_spend_extra_usage():
     assert "extra $123/$2500 (5%)" in result.plain
 
 
-def test_format_quota_extra_usage_disabled_not_shown():
+def test_format_quota_disabled_spend_not_shown():
     now = datetime.now(UTC)
-    usage = UsageResponse(
-        seven_day=UsageBucket(utilization=30.0),
-        extra_usage=ExtraUsage(
-            is_enabled=False,
-            monthly_limit=0,
-            used_credits=0,
-            utilization=0,
-            currency="USD",
-            disabled_reason="payment_method_required",
-        ),
+    usage = UsageResponse.model_validate(
+        {"seven_day": {"utilization": 30.0}, "spend": {"enabled": False, "disabled_reason": "payment_method_required"}}
     )
     cached = CachedUsage(fetched_at=now, usage=usage)
     result = _format_quota(cached, now=now)
