@@ -226,13 +226,18 @@ per the target topology.
 
 - Rugged switched its video output to the FV43U.
 - Audio out via the monitor still works.
+- TEX Shura on a KVM USB-A port continues to work with rugged as the
+  active host.
+- Rugged is **charging over the TB link** — Power Delivery is passing
+  through the KVM host port and the Silkland cable.
 
 **Conclusion.** Validates the Silkland end-to-end (through the
 grommet + into a KVM host port + into rugged) and validates the whole
 KVM-shared-bus chain from the intended laptop position, not just from
-the earlier short-cable test rig. Still to validate: the **atlas-side**
-switch — toggle the KVM to atlas's host port and confirm atlas sees
-the FV43U as its output.
+the earlier short-cable test rig. Also validates PD upstream through
+the KVM host port. Still to validate: the **atlas-side** switch —
+toggle the KVM to atlas's host port and confirm atlas sees the FV43U
+as its output.
 
 ## Open questions
 
