@@ -417,13 +417,20 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     # ── Stock mutations ──────────────────────────────────────────────────
 
     async def _best_effort_new_amount(product_id: int) -> float | None:
-        """Read current stock amount after a mutation. Best-effort, never retried."""
+        """Read current stock amount after a mutation. Best-effort, never retried.
+
+        Runs under `sem` like every other Grocy request, and swallows any
+        failure (not just HTTP ones) — an unparseable response here must
+        degrade to `None`, never turn an already-successful mutation into
+        a reported error.
+        """
         try:
-            stock_r = await client.get(f"/stock/products/{product_id}")
-            stock_r.raise_for_status()
-            return float(stock_r.json().get("stock_amount", 0))
-        except (httpx.HTTPStatusError, httpx.TimeoutException):
-            logger.warning("failed to read new_amount for product %d after mutation", product_id)
+            async with sem:
+                stock_r = await client.get(f"/stock/products/{product_id}")
+                stock_r.raise_for_status()
+                return float(stock_r.json().get("stock_amount", 0))
+        except Exception:
+            logger.warning("failed to read new_amount for product %d after mutation", product_id, exc_info=True)
             return None
 
     async def _best_effort_entry_id(product_id: int, stock_id: str) -> int | None:
@@ -434,14 +441,24 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         tools key off. `stock_id` is unique per entry, so this look-up finds
         exactly the entry this call created, immune to concurrent adds racing
         on the same product.
+
+        Runs under `sem` like every other Grocy request, and swallows any
+        failure (not just HTTP ones) — a malformed response here must
+        degrade to `None`, never turn an already-successful mutation into
+        a reported error.
         """
         try:
-            r = await client.get(f"/stock/products/{product_id}/entries", params={"query[]": f"stock_id={stock_id}"})
-            r.raise_for_status()
-            entries: list[dict[str, Any]] = r.json()
-            return int(entries[0]["id"]) if entries else None
-        except (httpx.HTTPStatusError, httpx.TimeoutException):
-            logger.warning("failed to resolve entry_id for stock_id=%s (product %d)", stock_id, product_id)
+            async with sem:
+                r = await client.get(
+                    f"/stock/products/{product_id}/entries", params={"query[]": f"stock_id={stock_id}"}
+                )
+                r.raise_for_status()
+                entries: list[dict[str, Any]] = r.json()
+                return int(entries[0]["id"]) if entries else None
+        except Exception:
+            logger.warning(
+                "failed to resolve entry_id for stock_id=%s (product %d)", stock_id, product_id, exc_info=True
+            )
             return None
 
     async def _stock_mutate(item: AddItem | ConsumeItem | SetItem) -> StockOpOk | StockOpError:
@@ -557,12 +574,13 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         Returns one result per input item, in order. Each success carries
         a `transaction_id` you can pass to `transaction_undo` to revert
         that single addition, `entry_id` — the new stock entry's ID, for
-        `stock_entries_list` / `stock_entry_edit` — and `best_before_date`
-        — the date actually applied to the new entry, whether you passed
-        it explicitly or it was computed from `default_best_before_days`
-        — so you can catch surprises (e.g. "expires today") without a
-        follow-up `stock_entries_list` call. See also `stock_consume`,
-        `stock_set`, `stock_transfer`.
+        `stock_entries_list` / `stock_entry_edit` (best-effort: null if the
+        follow-up lookup fails, though the addition itself still succeeded)
+        — and `best_before_date` — the date actually applied to the new
+        entry, whether you passed it explicitly or it was computed from
+        `default_best_before_days` — so you can catch surprises (e.g.
+        "expires today") without a follow-up `stock_entries_list` call.
+        See also `stock_consume`, `stock_set`, `stock_transfer`.
         """
         _check_batch_size(items, "items")
         return list(await asyncio.gather(*[_stock_mutate(item) for item in items]))
