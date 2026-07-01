@@ -75,52 +75,72 @@ jobs:
             }
             trap finalize_bb_runner_probe EXIT
 
-            # Shadow mode (informational only): on PRs, compute the affected
-            # target set with bazel-diff and print it. Not used for gating.
-            # Once the set is proven sane over several PRs, gating flips to
-            # only test/build affected targets on PRs; devel keeps `//...`.
-            # Gracefully skips when bazel-diff is missing from the RBE image
-            # (pin lag after devtools/rbetools#2706).
+            # On PRs, test/build only the targets bazel-diff reports as
+            # affected by the diff vs. origin/devel. Devel-branch push runs
+            # below still test `//...`, so a PR that IS in the affected set
+            # of a broken area still fails as it should; PRs unrelated to
+            # the broken area are unblocked.
             #
-            # `set +e` inside the block: any failure in git fetch, merge-base,
-            # rev-parse, checkout, or bazel-diff itself must NOT abort the CI
-            # script under the outer `set -euo pipefail`. Restored after the
-            # block so the real test/build stages still fail fast.
-            if [ "${{ github.event_name }}" = "pull_request" ] && command -v bazel-diff >/dev/null 2>&1; then
-              set +e
-              echo "::group::bazel-diff (shadow)"
+            # `bazel-diff` binary comes from the RBE image via
+            # nix/packages/bazel-diff.nix (pinned to v16.0.0, same version
+            # devinfra/ci/diff_utils.py pins for the release-check flow) —
+            # keeps affected-set semantics consistent between PR gating and
+            # release detection.
+            #
+            # Fails hard on any bazel-diff error — no fallback to `//...`.
+            # bazel-diff is the source of truth for the affected set; a
+            # silent fallback would let a broken-devel failure re-block
+            # unrelated PRs, defeating the whole policy.
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              # bb-remote's runner cloned shallow (`git fetch --depth=1 <sha>`),
+              # so origin/devel has no shared ancestor with HEAD and
+              # `git merge-base` errors out. Deepen 200 commits of devel
+              # history (covers roughly a week+ of activity — enough for any
+              # non-stale PR without paying full-unshallow cost). `--deepen`
+              # errors on a non-shallow repo, hence the fallback.
               git fetch --deepen=200 --no-tags origin devel 2>/dev/null \
                 || git fetch --no-tags origin devel
-              BASE=$(git merge-base origin/devel HEAD)
-              HEAD_SHA=$(git rev-parse HEAD)
-              if [ -n "$BASE" ] && [ -n "$HEAD_SHA" ]; then
-                echo "before-revision: $BASE"
-                echo "head:            $HEAD_SHA"
-                mkdir -p /tmp/bd-cache
-                git -c advice.detachedHead=false checkout --quiet "$BASE" \
-                  && bazel-diff generate-hashes -w "$PWD" -b bazel /tmp/bd-cache/base.json \
-                  && git -c advice.detachedHead=false checkout --quiet "$HEAD_SHA" \
-                  && bazel-diff generate-hashes -w "$PWD" -b bazel /tmp/bd-cache/head.json \
-                  && bazel-diff get-impacted-targets \
-                       -sh /tmp/bd-cache/base.json -fh /tmp/bd-cache/head.json \
-                       > /tmp/bd-affected.txt \
-                  && echo "affected targets: $(wc -l < /tmp/bd-affected.txt)" \
-                  && sed -n '1,20p' /tmp/bd-affected.txt
-              else
-                echo "could not resolve merge-base (BASE=$BASE HEAD=$HEAD_SHA); skipping"
+              # If merge-base still doesn't resolve, the PR base is older
+              # than the deepened window — refuse rather than silently
+              # over-approximating the affected set. Author needs to rebase.
+              if ! BASE=$(git merge-base origin/devel HEAD 2>/dev/null); then
+                echo "::error::PR base is more than 200 commits behind origin/devel — please rebase on devel and re-push."
+                exit 1
               fi
-              # Restore checkout even on failure so bazel test/build below run
-              # against the PR head.
-              git -c advice.detachedHead=false checkout --quiet "${HEAD_SHA:-HEAD}" >/dev/null 2>&1
-              echo "::endgroup::"
-              set -e
-            fi
+              HEAD_SHA=$(git rev-parse HEAD)
+              echo "before-revision: $BASE"
+              echo "head:            $HEAD_SHA"
 
-            probe_bb_runner before-test
-            bazel test --keep_going $RBE_FLAGS //... && \
-              probe_bb_runner after-test && \
-              bazel build --keep_going $RBE_FLAGS //... && \
-              probe_bb_runner after-build
+              mkdir -p /tmp/bd-cache
+              # `bazel query` (not cquery) — cheap: no analysis, no toolchain
+              # resolution. Peak RAM ~1-2 GB per revision.
+              git -c advice.detachedHead=false checkout --quiet "$BASE"
+              bazel-diff generate-hashes -w "$PWD" -b bazel /tmp/bd-cache/base.json
+              git -c advice.detachedHead=false checkout --quiet "$HEAD_SHA"
+              bazel-diff generate-hashes -w "$PWD" -b bazel /tmp/bd-cache/head.json
+              bazel-diff get-impacted-targets \
+                -sh /tmp/bd-cache/base.json -fh /tmp/bd-cache/head.json \
+                > /tmp/affected.txt
+
+              N=$(wc -l < /tmp/affected.txt)
+              echo "affected targets: $N"
+              if [ "$N" -eq 0 ]; then
+                echo "No targets affected by this PR — skipping test/build."
+                exit 0
+              fi
+              probe_bb_runner before-test
+              bazel test --keep_going $RBE_FLAGS --target_pattern_file=/tmp/affected.txt && \
+                probe_bb_runner after-test && \
+                bazel build --keep_going $RBE_FLAGS --target_pattern_file=/tmp/affected.txt && \
+                probe_bb_runner after-build
+            else
+              # push to devel / workflow_dispatch: full sweep.
+              probe_bb_runner before-test
+              bazel test --keep_going $RBE_FLAGS //... && \
+                probe_bb_runner after-test && \
+                bazel build --keep_going $RBE_FLAGS //... && \
+                probe_bb_runner after-build
+            fi
 
       - name: Upload BuildBuddy linkage
         if: always()
