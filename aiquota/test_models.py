@@ -4,7 +4,7 @@ import pytest_bazel
 
 from aiquota.models import (
     AllQuotas,
-    ExtraUsage,
+    ExtraSpend,
     FetchError,
     FetchSuccess,
     ProviderFetch,
@@ -46,7 +46,7 @@ def test_all_quotas_roundtrip() -> None:
     payload = FetchSuccess(
         short_window=QuotaWindow(used_percent=72.0, reset_seconds=3600.0, window_seconds=18000.0, reset_at=reset_at),
         long_window=QuotaWindow(used_percent=45.0, reset_seconds=86400.0, window_seconds=604800.0),
-        extra_usage=ExtraUsage(is_enabled=True, monthly_limit_usd=100.0, used_usd=62.83, utilization=62.83),
+        extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100.0, used_usd=62.83, utilization=62.83),
     )
     quotas = AllQuotas(
         providers=[
@@ -65,8 +65,8 @@ def test_all_quotas_roundtrip() -> None:
     assert p.last_output.result.short_window is not None
     assert p.last_output.result.short_window.used_percent == 72.0
     assert p.last_output.result.short_window.reset_at == reset_at
-    assert p.last_output.result.extra_usage is not None
-    assert p.last_output.result.extra_usage.monthly_limit_usd == 100.0
+    assert p.last_output.result.extra_spend is not None
+    assert p.last_output.result.extra_spend.monthly_limit_usd == 100.0
     assert p.last_success is not None
     assert p.last_success.result.long_window is not None
     assert restored.fetched_at == quotas.fetched_at

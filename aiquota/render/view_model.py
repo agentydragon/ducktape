@@ -1,7 +1,7 @@
 """View model shared by the CLI and the GNOME extension.
 
 The extension and the CLI used to each carry their own copy of policy
-decisions like "is the user currently burning extra usage" — and predictably
+decisions like "is the user currently burning extra spend" — and predictably
 drifted (see aiquota/AGENTS.md). This module is the single source of truth
 for those derived booleans; the GNOME extension consumes them via the
 `aiquota gnome-extension-json` subcommand instead of re-deriving locally.
@@ -54,14 +54,14 @@ def _provider_view(pq: ProviderQuota) -> ProviderView:
 def currently_over_plan(out: ProviderFetch) -> bool:
     """True when the user is actively paying USD above subscription right now.
 
-    `extra_usage.is_enabled` only signals "feature enabled on the account",
-    and `extra_usage.used_usd` is a cumulative monthly tally — neither says
+    `ExtraSpend.is_enabled` only signals "feature enabled on the account",
+    and `ExtraSpend.used_usd` is a cumulative monthly tally — neither says
     anything about "right now". The real signal is *any* rate-limit window
     being exhausted (every further call now hits the monthly bill).
     """
     if not isinstance(out.result, FetchSuccess):
         return False
-    extra = out.result.extra_usage
+    extra = out.result.extra_spend
     if extra is None or not extra.is_enabled:
         return False
     short = out.result.short_window
@@ -76,7 +76,7 @@ def _extra_status(out: ProviderFetch) -> ExtraStatus:
         return "active"
     if not isinstance(out.result, FetchSuccess):
         return "none"
-    extra = out.result.extra_usage
+    extra = out.result.extra_spend
     if extra is not None and extra.is_enabled and extra.used_usd > 0:
         return "informational"
     return "none"

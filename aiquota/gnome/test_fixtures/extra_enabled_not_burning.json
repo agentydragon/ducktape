@@ -1,17 +1,13 @@
 {
-  "_comment": "Anthropic extra-usage feature is on for the account and the user has incurred extra spend earlier in the billing month, but the weekly cap still has room — so they are NOT *currently* burning extra. This regression existed before the view-model refactor: the panel pill + popup collapsed view both fired purely on extraUsage.is_enabled. The fixture pins that they only fire when long.usedPercent >= 100 (currentlyOverPlan=false here). Numbers loosely match the maintainer's real bill at the time the bug was found ($2324.85 / $4600).",
+  "_comment": "Anthropic extra-spend feature is on for the account and the user has incurred extra spend earlier in the billing month, but the weekly cap still has room — so they are NOT *currently* burning extra. This regression existed before the view-model refactor: the panel pill + popup collapsed view both fired purely on extraSpend.is_enabled. The fixture pins that they only fire when a window is exhausted (currentlyOverPlan=false here). Numbers loosely match the maintainer's real bill at the time the bug was found ($2324.85 / $4600).",
   "claude": {
     "short": { "usedPercent": 6, "resetSeconds": 7200, "windowSeconds": 18000 },
     "long": { "usedPercent": 2, "resetSeconds": 432000, "windowSeconds": 604800 },
     "lastFetch": 1,
     "error": null,
-    "extraUsage": {
+    "extraSpend": {
       "is_enabled": true,
-      "monthly_limit": 460000,
-      "used_credits": 232485.0,
       "utilization": 50.540217391304346,
-      "currency": "USD",
-      "disabled_reason": null,
       "used_usd": 2324.85,
       "monthly_limit_usd": 4600.0
     },
@@ -23,13 +19,13 @@
     "long": { "usedPercent": 30, "resetSeconds": 432000, "windowSeconds": 604800 },
     "lastFetch": 1,
     "error": null,
-    "extraUsage": null
+    "extraSpend": null
   },
   "zai": {
     "short": { "usedPercent": 20, "resetSeconds": 12600, "windowSeconds": 18000 },
     "long": { "usedPercent": 25, "resetSeconds": 432000, "windowSeconds": 604800 },
     "lastFetch": 1,
     "error": null,
-    "extraUsage": null
+    "extraSpend": null
   }
 }

@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from aiquota.models import AllQuotas, ExtraUsage, FetchSuccess, QuotaWindow, SuccessfulProviderFetch
+from aiquota.models import AllQuotas, ExtraSpend, FetchSuccess, QuotaWindow, SuccessfulProviderFetch
 from aiquota.pace import compute_pace
 from aiquota.render.format import format_age, format_duration, format_pace, format_pace_forecast
 from aiquota.render.view_model import ProviderView, to_view
@@ -53,7 +53,7 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths) -> 
     if long is not None:
         lines.append(_format_window_line(_window_row("7d", long), widths))
     if pv.extra_status == "informational" and extra is not None:
-        # Prepaid still has room, but the user incurred extra-usage spend earlier
+        # Prepaid still has room, but the user incurred billable spend earlier
         # in the billing month. Surface it so the monthly bill doesn't sneak up.
         lines.append(f"  {_format_extra_informational(extra)}")
     if len(lines) == 1:
@@ -63,12 +63,12 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths) -> 
 
 def _effective_windows(
     pv: ProviderView, now: datetime
-) -> tuple[QuotaWindow | None, QuotaWindow | None, ExtraUsage | None, str | None]:
+) -> tuple[QuotaWindow | None, QuotaWindow | None, ExtraSpend | None, str | None]:
     out_result = pv.last_output.result
     # If the latest call gave us nothing usable, fall back to the prior
     # successful snapshot — stale-but-real numbers beat "no data".
     if isinstance(out_result, FetchSuccess) and (out_result.short_window or out_result.long_window):
-        return out_result.short_window, out_result.long_window, out_result.extra_usage, None
+        return out_result.short_window, out_result.long_window, out_result.extra_spend, None
     if pv.last_success is not None:
         return _stale_windows(pv.last_success, now)
     return None, None, None, None
@@ -92,11 +92,11 @@ def _column_widths(providers: list[ProviderView], now: datetime) -> _ColumnWidth
 
 def _stale_windows(
     snap: SuccessfulProviderFetch, now: datetime
-) -> tuple[QuotaWindow | None, QuotaWindow | None, ExtraUsage | None, str]:
+) -> tuple[QuotaWindow | None, QuotaWindow | None, ExtraSpend | None, str]:
     return (
         _refreshed_window(snap.result.short_window, now),
         _refreshed_window(snap.result.long_window, now),
-        snap.result.extra_usage,
+        snap.result.extra_spend,
         format_age((now - snap.fetched_at).total_seconds()),
     )
 
@@ -123,7 +123,7 @@ def _header(provider: str, error: str | None, checked_at: datetime, now: datetim
     return "  ".join(parts)
 
 
-def _format_extra_active(extra: ExtraUsage | None) -> str:
+def _format_extra_active(extra: ExtraSpend | None) -> str:
     # `⚡` flags "paying above subscription right now" — louder than just a number.
     if extra is None:
         return "⚡ OVER PLAN"
@@ -131,7 +131,7 @@ def _format_extra_active(extra: ExtraUsage | None) -> str:
     return f"⚡ OVER PLAN — extra ${extra.used_usd:.2f}/${extra.monthly_limit_usd:.0f} ({pct}%) this month"
 
 
-def _format_extra_informational(extra: ExtraUsage) -> str:
+def _format_extra_informational(extra: ExtraSpend) -> str:
     pct = round(extra.utilization)
     return f"extra: ${extra.used_usd:.2f}/${extra.monthly_limit_usd:.0f} ({pct}%) spent this month"
 

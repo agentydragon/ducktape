@@ -5,7 +5,7 @@ from syrupy.assertion import SnapshotAssertion
 
 from aiquota.models import (
     AllQuotas,
-    ExtraUsage,
+    ExtraSpend,
     FetchError,
     FetchSuccess,
     ProviderFetch,
@@ -112,7 +112,7 @@ def test_aligns_reset_and_pace_columns_across_providers() -> None:
 
 
 def test_extra_enabled_but_prepaid_has_room_shows_normal_bars(snapshot: SnapshotAssertion) -> None:
-    # extra_usage.is_enabled=True just means the feature is on; non-zero
+    # ExtraSpend.is_enabled=True just means the feature is on; non-zero
     # used_usd is *this month's* total, not "currently burning". While the 7d
     # window still has room, render the normal bars and surface the monthly
     # spend as an informational tail line so it doesn't sneak up.
@@ -125,7 +125,7 @@ def test_extra_enabled_but_prepaid_has_room_shows_normal_bars(snapshot: Snapshot
                     long_window=QuotaWindow(
                         used_percent=2, reset_seconds=4 * 86400 + 21 * 3600, window_seconds=7 * 86400
                     ),
-                    extra_usage=ExtraUsage(
+                    extra_spend=ExtraSpend(
                         is_enabled=True, monthly_limit_usd=4600.0, used_usd=2324.85, utilization=50.54
                     ),
                 ),
@@ -149,7 +149,7 @@ def test_currently_over_plan_shows_text_only_window_resets_on_one_line(snapshot:
                     long_window=QuotaWindow(
                         used_percent=100, reset_seconds=6 * 86400 + 10 * 3600, window_seconds=7 * 86400
                     ),
-                    extra_usage=ExtraUsage(
+                    extra_spend=ExtraSpend(
                         is_enabled=True, monthly_limit_usd=4600.0, used_usd=3120.50, utilization=67.84
                     ),
                 ),

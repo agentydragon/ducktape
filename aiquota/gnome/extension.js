@@ -82,19 +82,19 @@ function formatAge(seconds) {
 }
 
 // Pick the state to render: prefer the latest fetch, but fall back to the
-// last successful snapshot (windows + extraUsage) when the latest call
+// last successful snapshot (windows + extraSpend) when the latest call
 // returned nothing usable. `staleAge` is null when no fallback was needed.
 function effectiveState(state) {
   if (state.short != null || state.long != null) {
     const staleAge = state.error && state.lastFetch != null ? Math.max(0, (Date.now() - state.lastFetch) / 1000) : null;
-    return { short: state.short, long: state.long, extraUsage: state.extraUsage, staleAge };
+    return { short: state.short, long: state.long, extraSpend: state.extraSpend, staleAge };
   }
   const snap = state.lastSuccess;
   if (!snap || (snap.short == null && snap.long == null)) {
-    return { short: null, long: null, extraUsage: null, staleAge: null };
+    return { short: null, long: null, extraSpend: null, staleAge: null };
   }
   const ageSeconds = snap.fetchedAt != null ? Math.max(0, (Date.now() - snap.fetchedAt) / 1000) : null;
-  return { short: snap.short, long: snap.long, extraUsage: snap.extraUsage, staleAge: ageSeconds };
+  return { short: snap.short, long: snap.long, extraSpend: snap.extraSpend, staleAge: ageSeconds };
 }
 
 function formatFreshness(lastFetch) {
@@ -183,7 +183,7 @@ function formatCompactDollars(usd) {
 // (see aiquota/render/view_model.py) and is delivered to us by
 // `aiquota gnome-extension-json` as state.currentlyOverPlan. Don't
 // reintroduce a local copy: see aiquota/AGENTS.md.
-function formatExtraUsage(extra) {
+function formatExtraSpend(extra) {
   if (!extra || !extra.is_enabled || !(extra.used_usd > 0)) return null;
   const used = extra.used_usd;
   const limit = extra.monthly_limit_usd;
@@ -208,11 +208,11 @@ function emptyProviderState() {
     lastFetch: null,
     lastCheck: null,
     error: null,
-    extraUsage: null,
+    extraSpend: null,
     currentlyOverPlan: false,
     extraStatus: "none",
     // Last successful fetch — populated when the most recent attempt failed
-    // but a prior good snapshot exists. {short, long, extraUsage, fetchedAt}.
+    // but a prior good snapshot exists. {short, long, extraSpend, fetchedAt}.
     lastSuccess: null,
   };
 }
@@ -299,7 +299,7 @@ const QuotaIndicator = GObject.registerClass(
         return {
           short: snap.short ?? null,
           long: snap.long ?? null,
-          extraUsage: snap.extraUsage ?? null,
+          extraSpend: snap.extraSpend ?? null,
           fetchedAt,
         };
       };
@@ -312,7 +312,7 @@ const QuotaIndicator = GObject.registerClass(
           lastFetch,
           lastCheck,
           error: node?.error ?? null,
-          extraUsage: node?.extraUsage ?? null,
+          extraSpend: node?.extraSpend ?? null,
           currentlyOverPlan: node?.currentlyOverPlan === true,
           extraStatus: node?.extraStatus ?? "none",
           lastSuccess: loadLastSuccess(node?.lastSuccess),
@@ -470,7 +470,7 @@ const QuotaIndicator = GObject.registerClass(
       };
     }
 
-    _mapExtraUsage(extra) {
+    _mapExtraSpend(extra) {
       if (!extra) return null;
       return {
         is_enabled: extra.is_enabled,
@@ -486,7 +486,7 @@ const QuotaIndicator = GObject.registerClass(
       return {
         short: this._mapWindow(snap.result.short_window),
         long: this._mapWindow(snap.result.long_window),
-        extraUsage: this._mapExtraUsage(snap.result.extra_usage),
+        extraSpend: this._mapExtraSpend(snap.result.extra_spend),
         fetchedAt: snap.fetched_at ? new Date(snap.fetched_at).getTime() : null,
       };
     }
@@ -511,7 +511,7 @@ const QuotaIndicator = GObject.registerClass(
           lastFetch: isSuccess ? lastCheck : (lastSuccess?.fetchedAt ?? null),
           lastCheck,
           error: isSuccess ? null : (result.error ?? null),
-          extraUsage: isSuccess ? this._mapExtraUsage(result.extra_usage) : null,
+          extraSpend: isSuccess ? this._mapExtraSpend(result.extra_spend) : null,
           // Derived policy bits from the Python view model — single source of truth.
           currentlyOverPlan: pq.currently_over_plan === true,
           extraStatus: pq.extra_status ?? "none",
@@ -561,7 +561,7 @@ const QuotaIndicator = GObject.registerClass(
       this._setTint(icon, paceLabel, tint);
       const paceText = formatPace(longPace) ?? "";
       if (overPlan) {
-        paceLabel.set_text(`${formatCompactDollars(state.extraUsage.used_usd)} ⚡`);
+        paceLabel.set_text(`${formatCompactDollars(state.extraSpend.used_usd)} ⚡`);
       } else {
         paceLabel.set_text(paceText);
       }
@@ -589,7 +589,7 @@ const QuotaIndicator = GObject.registerClass(
       item.label.remove_style_class_name("quota-popup-header-error");
       item.label.remove_style_class_name("quota-popup-header-stale");
 
-      const { short, long, extraUsage, staleAge } = effectiveState(state);
+      const { short, long, extraSpend, staleAge } = effectiveState(state);
       const haveWindows = short != null || long != null;
       const parts = [title];
       if (state.error) {
@@ -599,7 +599,7 @@ const QuotaIndicator = GObject.registerClass(
         item.label.add_style_class_name("quota-popup-header-stale");
       }
       if (staleAge != null) parts.push(`(stale ${formatAge(staleAge)})`);
-      const extraStr = formatExtraUsage(extraUsage);
+      const extraStr = formatExtraSpend(extraSpend);
       if (extraStr) parts.push(extraStr);
       if (!state.error) parts.push(formatFreshness(state.lastFetch));
       item.label.set_text(parts.join(" · "));

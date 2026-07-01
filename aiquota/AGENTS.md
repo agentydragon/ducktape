@@ -12,10 +12,10 @@ The CLI default output and the GNOME popup are two presentations of the same
 state. **Any presentation change to one must be mirrored in the other.** That
 includes:
 
-- What counts as "currently over plan" / "extra usage active" (single signal —
+- What counts as "currently over plan" / "extra spend active" (single signal —
   do not let the two surfaces drift apart on this).
 - Window-row layout (label, used %, reset, pace, forecast).
-- Header structure (provider name, error/stale annotations, extra-usage tail).
+- Header structure (provider name, error/stale annotations, extra-spend tail).
 - Collapsed-view behavior when the user is currently burning extra.
 
 If you change one and not the other, the user will report it as a bug. The
@@ -31,10 +31,10 @@ the snake_case fields silently parse as `None` and the CLI degrades to
 adding a new provider, default to the same alias config and write a test
 that round-trips a realistic API response.
 
-`extra_usage.is_enabled` from the Claude API only signals "feature enabled
-on this account", not "currently paying above subscription". The
-"currently over plan" signal is `long_window.used_percent >= 100`.
-`extra_usage.used_usd` is cumulative across the billing month, not a
-right-now indicator. Both surfaces consume this rule via the same helper
-(`_currently_over_plan` in `render/human.py`, `currentlyOverPlan` in
-`gnome/extension.js`).
+Claude's `spend.enabled`, surfaced internally as `ExtraSpend.is_enabled`,
+only signals "feature enabled on this account", not "currently paying above
+subscription". The "currently over plan" signal is any window at or above
+100% usage. `ExtraSpend.used_usd` is cumulative across the billing month,
+not a right-now indicator. Both surfaces consume this rule via the shared
+Python view model (`currently_over_plan` / `extra_status` in
+`render/view_model.py`).

@@ -5,20 +5,20 @@
     "long": null,
     "lastFetch": null,
     "error": "HTTP 401 invalid_request: invalid_token",
-    "extraUsage": null
+    "extraSpend": null
   },
   "codex": {
     "short": { "usedPercent": 60, "resetSeconds": 9000, "windowSeconds": 18000 },
     "long": { "usedPercent": 15, "resetSeconds": 423360, "windowSeconds": 604800 },
     "lastFetch": 1,
     "error": null,
-    "extraUsage": null
+    "extraSpend": null
   },
   "zai": {
     "short": { "usedPercent": 90, "resetSeconds": 9000, "windowSeconds": 18000 },
     "long": { "usedPercent": 30, "resetSeconds": 423360, "windowSeconds": 604800 },
     "lastFetch": 1,
     "error": null,
-    "extraUsage": null
+    "extraSpend": null
   }
 }

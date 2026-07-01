@@ -18,7 +18,9 @@ class PaceResult(BaseModel):
     stable: bool
 
 
-class ExtraUsage(BaseModel):
+class ExtraSpend(BaseModel):
+    """Internal summary of billable spend above the subscription quota."""
+
     is_enabled: bool
     monthly_limit_usd: float
     used_usd: float
@@ -36,7 +38,7 @@ class FetchSuccess(BaseModel):
     kind: Literal["success"] = "success"
     short_window: QuotaWindow | None = None
     long_window: QuotaWindow | None = None
-    extra_usage: ExtraUsage | None = None
+    extra_spend: ExtraSpend | None = None
 
 
 class FetchError(BaseModel):

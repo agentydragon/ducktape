@@ -22,9 +22,9 @@ multiple tints simultaneously (providers can have different short vs long states
   empty                       all providers null                                — unknown/no-data state
   tints                       claude=error; codex=warn-short/cool-long;        — error, warn, cool, hot(absolute), ok
                               zai=absolute-hot-short/ok-long
-  hot                         claude=pace-hot-short/long-100%+extra-usage(⚡); — hot(pace), one-line reset row, extra usage header + ⚡ icon
+  hot                         claude=pace-hot-short/long-100%+extra-spend(⚡); — hot(pace), one-line reset row, extra spend header + ⚡ icon
                               codex=ok/ok; zai=null-short/warn-long
-  extra_enabled_not_burning   claude has extra-usage on with $2324.85 already   — pins the regression where the popup
+  extra_enabled_not_burning   claude has extra-spend on with $2324.85 already   — pins the regression where the popup
                               spent this month, but long=2% — must NOT collapse  collapsed purely on is_enabled
 
 Update flow when the rendering changes intentionally:

@@ -6,11 +6,11 @@
     "lastFetch": 1,
     "lastCheckAgeSeconds": 120,
     "error": "HTTP 503 Service Unavailable",
-    "extraUsage": null,
+    "extraSpend": null,
     "lastSuccess": {
       "short": { "usedPercent": 35, "resetSeconds": 7920, "windowSeconds": 18000 },
       "long": { "usedPercent": 72, "resetSeconds": 442800, "windowSeconds": 604800 },
-      "extraUsage": null,
+      "extraSpend": null,
       "ageSeconds": 86400
     }
   },
@@ -19,13 +19,13 @@
     "long": { "usedPercent": 30, "resetSeconds": 423360, "windowSeconds": 604800 },
     "lastFetch": 1,
     "error": null,
-    "extraUsage": null
+    "extraSpend": null
   },
   "zai": {
     "short": null,
     "long": null,
     "lastFetch": null,
     "error": null,
-    "extraUsage": null
+    "extraSpend": null
   }
 }

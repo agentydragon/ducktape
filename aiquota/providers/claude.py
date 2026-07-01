@@ -12,7 +12,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
-from aiquota.models import ExtraUsage, FetchError, FetchSuccess, ProviderFetch, QuotaWindow
+from aiquota.models import ExtraSpend, FetchError, FetchSuccess, ProviderFetch, QuotaWindow
 from aiquota.providers.base import Provider
 from devinfra.claude.claude_api.usage import Spend, UsageBucket, UsageResponse
 
@@ -125,12 +125,12 @@ def _to_window(bucket: UsageBucket | None, window_secs: float) -> QuotaWindow | 
     )
 
 
-def _spend_to_extra_usage(spend: Spend | None) -> ExtraUsage | None:
+def _spend_to_extra_spend(spend: Spend | None) -> ExtraSpend | None:
     if spend is None or not spend.has_usage_totals:
         return None
     assert spend.limit is not None
     assert spend.used is not None
-    return ExtraUsage(
+    return ExtraSpend(
         is_enabled=True,
         monthly_limit_usd=spend.limit.major_units,
         used_usd=spend.used.major_units,
@@ -167,7 +167,7 @@ class ClaudeProvider(Provider):
 
         short = _to_window(usage.five_hour, SHORT_WINDOW_SECS)
         long = _to_window(usage.seven_day, LONG_WINDOW_SECS)
-        extra = _spend_to_extra_usage(usage.spend)
+        extra = _spend_to_extra_spend(usage.spend)
         return ProviderFetch(
-            fetched_at=now, result=FetchSuccess(short_window=short, long_window=long, extra_usage=extra)
+            fetched_at=now, result=FetchSuccess(short_window=short, long_window=long, extra_spend=extra)
         )
