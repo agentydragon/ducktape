@@ -12,8 +12,8 @@ Experiments for the current wiring state.
 laptop, both plugged into the SB-TB4K with a single USB-C cable
 each; everything else (monitor, keyboard, camera, underdesk hub)
 downstream of the KVM. Plan A in "Target topology" describes it.
-**Currently blocked** on getting atlas itself stably usable with any
-display + keyboard — see the atlas boot / VFIO experiments.
+**Achieved 2026-07-01** with rugged in the laptop slot — video and
+USB switch on the KVM button in both directions.
 
 ## Devices on hand
 
@@ -32,20 +32,20 @@ display + keyboard — see the atlas boot / VFIO experiments.
 Cables physically present at home. Anything in the storage unit is
 listed in the next section so we don't accidentally plan around it.
 
-| Qty | Cable                               | Vendor   | Current state                                                                       |
-| --- | ----------------------------------- | -------- | ----------------------------------------------------------------------------------- |
-| 1   | DP male-male                        | —        | In use: atlas GPU DP-OUT → mobo DP-IN.                                              |
-| 1   | DP male-male, 8K                    | Ivanky   | Spare.                                                                              |
-| 1   | USB A → USB B                       | —        | Spare.                                                                              |
-| 1   | USB-C, 40 Gb/s, 200 W (TB-class)    | Silkland | In use: KVM downstream TB4 → FV43U USB-C (video + hub + PD).                        |
-| 1   | USB-C, USB 3.2 Gen 2×2, 20 Gb/s, 8K | —        | Spare. Visibly damaged near one connector — do not use for load-bearing links.      |
-| 1   | Shielded Ethernet, ~1 ft            | —        | Spare. Known-good but almost certainly too short to reach atlas from the wall jack. |
-| 1   | USB-A extension (female ↔ male)     | —        | Previously ran to the monitor; repositionable.                                      |
-| 1   | USB-A → USB-C                       | —        | Tagged green, label "keyboard". Spare.                                              |
-| 1   | USB-A → USB-C                       | —        | Untagged. Currently in use with the TEX Shura.                                      |
-| 1   | USB-A → USB-C                       | —        | Spare.                                                                              |
-| 1   | DP ↔ USB-C                          | Ivanky   | Spare. Passive DP-Alt adapter cable.                                                |
-| 1   | Thunderbolt USB-C, ~2 ft            | Sabrent? | Spare. Tagged "4". Likely a TB4 cable bundled with the SB-TB4K. Verify the marking. |
+| Qty | Cable                               | Vendor   | Current state                                                                                                 |
+| --- | ----------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------- |
+| 1   | DP male-male                        | —        | In use: atlas GPU DP-OUT → mobo DP-IN.                                                                        |
+| 1   | DP male-male, 8K                    | Ivanky   | Spare.                                                                                                        |
+| 1   | USB A → USB B                       | —        | Spare.                                                                                                        |
+| 1   | USB-C, 40 Gb/s, 200 W (TB-class)    | Silkland | In use: KVM downstream TB4 → FV43U USB-C (video + hub + PD).                                                  |
+| 1   | USB-C, USB 3.2 Gen 2×2, 20 Gb/s, 8K | —        | In use: laptop-side host link (rugged ↔ SB-TB4K PC2). Visibly worn on one connector but working in this role. |
+| 1   | Shielded Ethernet, ~1 ft            | —        | Spare. Known-good but almost certainly too short to reach atlas from the wall jack.                           |
+| 1   | USB-A extension (female ↔ male)     | —        | Previously ran to the monitor; repositionable.                                                                |
+| 1   | USB-A → USB-C                       | —        | Tagged green, label "keyboard". Spare.                                                                        |
+| 1   | USB-A → USB-C                       | —        | Untagged. Currently in use with the TEX Shura.                                                                |
+| 1   | USB-A → USB-C                       | —        | Spare.                                                                                                        |
+| 1   | DP ↔ USB-C                          | Ivanky   | Spare. Passive DP-Alt adapter cable.                                                                          |
+| 1   | Thunderbolt USB-C, ~2 ft            | Sabrent? | Spare. Tagged "4". Likely a TB4 cable bundled with the SB-TB4K. Verify the marking.                           |
 
 ## In storage (not available now)
 
@@ -95,7 +95,7 @@ flowchart LR
     hub["Underdesk USB-A hub"]
 
     atlas_mobo_tb -- "USB-C TB4, Sabrent tag '4'" --> kvm_pc1
-    laptop        -- "(no cable yet)" --> kvm_pc2
+    laptop        -- "USB-C 20 Gb/s 8K (currently: rugged)" --> kvm_pc2
 
     kvm_tb_a    -- "USB-C TB4, Silkland" --> mon_usbc
     kvm_usba1   -- "USB-A → USB-C" --> kbd
@@ -125,7 +125,7 @@ Each row is one physical link.
 | ------------------------ | ------------------------------------------ | --------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | atlas internal video     | atlas RTX 5090 DP-OUT (slot ?)             | atlas mobo DP-IN                  | DP m-m         | Yes (already wired).                                                                                                                                                       |
 | atlas → KVM              | atlas mobo TB4-OUT (**middle** port)       | SB-TB4K host PC1                  | USB-C TB-class | Cabled — Sabrent-looking 2 ft, tag "4". Atlas's top TB port carries BIOS video but not kernel DP-Alt; middle port works after kernel takeover, so the cable belongs there. |
-| Laptop → KVM             | Laptop TB4 (USB-C) — right-drawer position | SB-TB4K host PC2                  | USB-C TB-class | **No cable in place** — Silkland was reassigned to the KVM → monitor link. Slot open until another TB-class USB-C cable is on hand.                                        |
+| Laptop → KVM             | Laptop TB4 (USB-C) — right-drawer position | SB-TB4K host PC2                  | USB-C          | In use — 20 Gb/s USB 3.2 Gen 2×2 cable, currently plugged into rugged as laptop stand-in. Not TB4, but the SB-TB4K accepts it and switches cleanly.                        |
 | KVM → monitor (combined) | SB-TB4K downstream TB4 (USB-C)             | FV43U USB-C in (video + hub + PD) | USB-C TB-class | In use — Silkland 40 Gb/s 200 W. Replaces the visibly damaged 20 Gb/s cable that was flaky under strain.                                                                   |
 | KVM → keyboard           | SB-TB4K USB-A                              | TEX Shura USB-C                   | USB-A → USB-C  | Yes — 3 on hand (one tagged "keyboard").                                                                                                                                   |
 | KVM → underdesk hub      | SB-TB4K USB-A                              | Hub uplink (USB-A plug)           | none (direct)  | Yes — hub plugs in. USB-A F↔M extension available if reach is short.                                                                                                       |
@@ -165,8 +165,10 @@ cables are pulled.
 
 - **KVM → monitor (Silkland USB-C)** — routed through the
   **back-right grommet hole**.
-- **Right-drawer grommet** — currently empty. Reserved for the
-  future laptop-side USB-C cable when one is on hand.
+- **Laptop → KVM (20 Gb/s USB-C)** — the right-drawer grommet path,
+  currently occupied by the flaky-looking 20 Gb/s cable with rugged
+  as laptop stand-in. Working in this role even though it was bad on
+  the KVM → monitor leg earlier.
 
 ## Experiments
 
@@ -651,6 +653,30 @@ press and reboot: put the KVM back inline.
 **Conclusion.** Plan A is functionally live on the atlas side. Only
 the laptop-side host link is missing (needs another TB-class USB-C
 cable; the right-drawer grommet is reserved for it).
+
+### 2026-07-01 — North Star: both hosts on the KVM, one-button switching works
+
+**Setup.** Filled the laptop-side slot with the previously-retired
+20 Gb/s USB 3.2 Gen 2×2 USB-C cable, from SB-TB4K host PC2 to
+rugged. Cable was flagged as visibly damaged and had been unreliable
+on the KVM → monitor leg; put it here as a "does it work at all"
+test.
+
+**Observations.**
+
+- With KVM toggled to laptop: rugged's video reaches the FV43U;
+  mouse events reach rugged.
+- Press the KVM toggle: atlas becomes the active host; its video
+  reaches the FV43U; mouse events reach atlas.
+- The 20 Gb/s cable works fine in this role, contrary to its earlier
+  behaviour on the KVM → monitor leg. Either the KVM handshake is
+  more forgiving than the FV43U's USB-C input, or the earlier
+  flakiness was really about how the cable was bent, not the cable
+  itself.
+
+**Conclusion.** North Star achieved. The full Plan A topology is
+live: two hosts on the KVM, monitor + hub + keyboard + camera
+downstream, single button switches everything.
 
 ### 2026-07-01 — earlier: waited, greeter appeared at correct resolution
 
