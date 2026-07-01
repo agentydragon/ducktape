@@ -98,9 +98,16 @@ jobs:
                 echo "head:            $HEAD_SHA"
                 # -targets is the query (default //...); the before-revision
                 # is a positional argument, NOT -before-revision.
+                #
+                # Exclude //website/...: it carries tags=["manual"] so `bazel
+                # test //...` (and its analysis) skip it, but TD's cquery
+                # doesn't respect manual-tag filtering and trips a deprecated
+                # ctx.resolve_tools call in rules_haskell during analysis of
+                # the Hakyll REPL target. Excluding matches what `bazel test
+                # //...` on devel already sees.
                 target-determinator \
                   -cache-dir=/tmp/td-cache \
-                  -targets=//... \
+                  -targets='//... except //website/...' \
                   "$BASE"
               else
                 echo "could not resolve merge-base (BASE=$BASE HEAD=$HEAD_SHA); skipping"
