@@ -24,53 +24,58 @@ We already worked around the URL half of this in `agentydragon/ducktape`
 (`devinfra/claude/reconcile_bbr_remote.sh`): point a dedicated
 `github-no-proxy` remote at a real, direct GitHub URL and tell `bb` to use
 it via the `buildbuddy.remote-bazel-remote-name` git-config key that
-`determineRemote()` already reads. That's sufficient for our current use
-case and needs no upstream change.
-
-What it can't do: pin an **explicit commit** while still applying local
-patches. Today that's an all-or-nothing choice between "auto-detect
-everything, including patches" and "explicit ref, no patches." A workflow
-that wants "run my dirty working tree, but diffed against this specific
-SHA rather than whatever `bb` auto-detects" has no knob for it.
+`determineRemote()` already reads. That works, but it means keeping a
+second git remote around just to give `bb` a URL it can reach — the
+existing `origin` remote's tracking refs, branch/commit auto-detection,
+and patch generation are all otherwise perfectly fine as-is.
 
 ## Proposed patch
 
 `devinfra/plans/bb_repo_url_commit_override.patch` (generated against
 `buildbuddy-io/buildbuddy@d4e8918`, `cli/remotebazel/remotebazel.go` +
-`remotebazel_test.go`). Adds two new flags to the existing `RemoteFlagset`:
+`remotebazel_test.go`). Adds two new, independent, opt-in flags to the
+existing `RemoteFlagset`:
 
-- **`--repo_url`**: use this URL as the fetch URL instead of
-  `determineRemote()`. Requires `--run_from_commit` (there's no local
-  remote to resolve a branch/commit against once URL auto-detection is
-  skipped) — enforced with an explicit error, not a silent fallback. Falls
-  back to a new `buildbuddy.remote-bazel-repo-url` `.git/config` key when
-  the flag itself is unset, mirroring how `determineRemote()` already
-  caches the picked remote name under `buildbuddy.remote-bazel-remote-name`
-  — so session-setup tooling can write this once instead of every
-  `bb`/`bbr` invocation needing the flag. Flag takes precedence over the
-  config key when both are set.
-- **`--apply_local_patches`**: when combined with `--run_from_branch` or
-  `--run_from_commit`, still calls `generatePatches(commit)` instead of
+- **`--repo_url`**: use this URL when fetching on the remote runner,
+  instead of the local remote's own URL. This is a **pure URL
+  substitution** — `determineRemote()` still runs exactly as before to
+  pick which local remote's tracking refs to use (so multi-remote
+  prompting/caching via `buildbuddy.remote-bazel-remote-name` is
+  untouched), and `determineDefaultBranch()`/`getBaseBranchAndCommit()`
+  still auto-detect branch/commit/patches against that remote's own
+  `refs/remotes/<name>/...` state exactly as today. Only the final
+  `RepoConfig.URL` string sent to the runner is swapped. This means no
+  `--run_from_commit` is needed just to use a different URL: `bb test`
+  and `bb build` keep working with zero extra flags once the override is
+  set, the same as any normal invocation — you just get `origin`'s
+  ordinary auto-detected branch/commit/patches, fetched from a different
+  URL. Falls back to a new `buildbuddy.remote-bazel-repo-url` `.git/config`
+  key when the flag itself is unset, mirroring how `determineRemote()`
+  already caches the picked remote name under
+  `buildbuddy.remote-bazel-remote-name` — so session-setup tooling can
+  write this once instead of every `bb`/`bbr` invocation needing the flag.
+  Flag takes precedence over the config key when both are set.
+- **`--apply_local_patches`**: a separate, orthogonal feature for a
+  different case — when combined with `--run_from_branch` or
+  `--run_from_commit` (i.e. you _do_ want to pin an explicit ref rather
+  than auto-detect), still calls `generatePatches(commit)` instead of
   skipping it. Default `false`, so existing `--run_from_commit`/
   `--run_from_branch` users keep today's clean-checkout behavior — this is
   purely additive.
 
-`Config()` changes to:
+`Config()` changes to compute `fetchURL` via a new `repoFetchURL(remote)`
+helper (flag, then `.git/config`, then `remote.url` as the default) in
+place of the current unconditional `fetchURL := remote.url`, and to
+generate patches whenever `(*runFromBranch == "" && *runFromCommit == "")
+|| *applyLocalPatches` instead of only in the auto-detect case. Everything
+else in `Config()` — `determineRemote`, `determineDefaultBranch`,
+`getBaseBranchAndCommit` — is untouched.
 
-1. Use `*repoURL` as `fetchURL` when set, skipping `determineRemote()`
-   (and `determineDefaultBranch()`, which only makes sense relative to a
-   resolved git remote).
-2. Pass an empty `remoteName` into `getBaseBranchAndCommit()` in that case
-   — safe, because that function's very first branch already short-circuits
-   on `*runFromBranch != "" || *runFromCommit != ""` and returns before
-   `remoteName` is ever used.
-3. Generate patches whenever `(*runFromBranch == "" && *runFromCommit == "")
-|| *applyLocalPatches` — i.e. the existing auto-detect path, plus the
-   new opt-in.
-
-Design goal: **zero behavior change for existing flags.** Both new flags
-are opt-in and additive; nobody using `--run_from_commit` today for a clean
-checkout is affected.
+Design goal: **zero behavior change for existing flags, and no new flags
+required for the common case.** `--repo_url`/`--apply_local_patches` are
+opt-in and additive; nobody using today's flags is affected, and using
+`--repo_url` alone (or its `.git/config` fallback) doesn't require
+learning or passing any other new flag.
 
 ### Why not just change `--run_from_commit`'s existing behavior?
 
@@ -84,9 +89,10 @@ for them. A new opt-in flag is strictly safer to propose upstream.
 
 - Patch is hand-written against the real source (cloned at commit
   `d4e8918`), `gofmt`-clean, and includes new test cases
-  (`TestGitConfig_RepoURLOverride`, covering the rejection case, the flag
-  with/without `--apply_local_patches`, the `.git/config` fallback, and
-  flag-over-config precedence) following the existing
+  (`TestGitConfig_RepoURLOverride`, covering: the flag substituting the
+  URL while branch/commit/patches still auto-detect normally, the
+  `.git/config` fallback, flag-over-config precedence, and the
+  no-override-set default) following the existing
   `TestGitConfig_FetchURL`/`TestGitConfig_BranchAndSha` harness style
   (`testgit.MakeTempRepo`/`MakeTempRepoClone`/`CommitFiles`).
 - **Not** compiled or run — `buildbuddy-io/buildbuddy` is a large Bazel
@@ -99,24 +105,24 @@ for them. A new opt-in flag is strictly safer to propose upstream.
 
 ## To use this
 
-1. **Before upstream accepts it**: nothing needed for our current use
-   case — the `github-no-proxy` remote-name workaround already covers
-   repo-URL selection, and we don't currently have a workflow that needs
-   an explicit-commit-plus-patches run. This patch is for a future need,
-   not blocking anything today.
+1. **Before upstream accepts it**: nothing needed right now — the
+   `github-no-proxy` remote-name workaround already covers repo-URL
+   selection today. But this patch is a strictly nicer replacement for it
+   whenever it lands: one `git config buildbuddy.remote-bazel-repo-url
+<url>` on the existing `origin` remote, instead of maintaining a whole
+   second remote just to give `bb` a reachable URL.
 2. **To submit upstream**: fork `buildbuddy-io/buildbuddy`, apply
    `bb_repo_url_commit_override.patch`, get it building/passing under
-   their Bazel setup, open a PR referencing this use case (decoupling
-   local git remote/branch state from the runner's checkout target for
-   sandboxed/proxied CI environments).
+   their Bazel setup, open a PR referencing this use case (decoupling the
+   URL the runner fetches from from the URL used for local git
+   operations, for sandboxed/proxied CI environments).
 3. **To consume locally before upstream merges** (if a real need shows
    up): `nix/packages/bb.nix` currently installs a prebuilt release binary
    (`artifacts.bb`), not a from-source build — there's no patch hook today.
    Using a patched `bb` locally would mean switching that derivation to
    build from source (e.g. `buildGoModule` or vendoring their Bazel build
    via Nix) with this patch applied, which is nontrivial and not attempted
-   here. Simpler stopgap: keep using `--run_from_commit`'s existing
-   clean-checkout mode (no patches) for any interim explicit-commit need.
+   here.
 
 ## Sequencing
 
@@ -126,7 +132,7 @@ independent and this one has no working code to run yet (there's nothing
 in the Nix devshell that consumes it). Once a patched `bb` build exists in
 the devshell (step 3 above), a follow-up PR switches
 `devinfra/claude/reconcile_bbr_remote.sh` to write
-`git config buildbuddy.remote-bazel-repo-url <url>` instead of (or
-alongside) today's `github-no-proxy` remote-name trick, and `bbr.py` can
-start using `--repo_url`/`--apply_local_patches` where useful. Not done
-here — no working `bb` build exists yet for bootstrap to target.
+`git config buildbuddy.remote-bazel-repo-url <url>` on the existing
+`origin` remote instead of maintaining the separate `github-no-proxy`
+remote, and `bbr.py`/CI can drop the second-remote setup entirely. Not
+done here — no working `bb` build exists yet for bootstrap to target.
