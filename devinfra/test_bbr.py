@@ -14,7 +14,16 @@ import pygit2
 import pytest
 import pytest_bazel
 
-from devinfra.bbr import RepoConfig, _bazelrc_args, _env_args, _read_repo_config, build_command, find_verb_index
+from devinfra.bbr import (
+    _STALE_BASE_WARNING_THRESHOLD,
+    RepoConfig,
+    _bazelrc_args,
+    _env_args,
+    _read_repo_config,
+    build_command,
+    check_base_branch_freshness,
+    find_verb_index,
+)
 
 BB = "/usr/bin/bb"
 IMAGE = "ghcr.io/test/rbe@sha256:deadbeef"
@@ -300,6 +309,85 @@ class TestBuildCommand:
         monkeypatch.delenv("BBR_BAZELRC", raising=False)
         cmd = build_command(repo, ["test", "//foo"])
         assert cmd == [BB, "remote", _inv_id_file(), "test", "//foo"]
+
+
+def _commit(repo: pygit2.Repository, ref: str, message: str, parents: list) -> pygit2.Oid:
+    sig = pygit2.Signature("test", "test@test.com")
+    tree = repo.TreeBuilder().write()
+    return repo.create_commit(ref, sig, sig, message, tree, parents)
+
+
+def _repo_on_branch(tmp_path: Path, branch: str) -> tuple[pygit2.Repository, pygit2.Oid]:
+    """A fresh repo with one commit on `branch`, checked out."""
+    repo = pygit2.init_repository(str(tmp_path / "repo"))
+    base = _commit(repo, f"refs/heads/{branch}", "init", [])
+    repo.set_head(f"refs/heads/{branch}")
+    return repo, base
+
+
+class TestCheckBaseBranchFreshness:
+    """`check_base_branch_freshness` is a no-network sanity check on bb
+    remote's likely `<default-branch>@{upstream}` diff base (see
+    devinfra/docs/bb_remote_internals.md) — it never fetches, only warns.
+    """
+
+    def test_no_bb_config_returns_none(self, tmp_path: Path) -> None:
+        repo, _base = _repo_on_branch(tmp_path, "devel")
+        assert check_base_branch_freshness(repo) is None
+
+    def test_current_branch_tracked_on_remote_returns_none(self, tmp_path: Path) -> None:
+        repo, base = _repo_on_branch(tmp_path, "feature")
+        repo.references.create("refs/remotes/origin/feature", base)
+        repo.config["buildbuddy.remote-bazel-default-branch"] = "devel"
+        assert check_base_branch_freshness(repo) is None
+
+    def test_fresh_tracking_ref_returns_none(self, tmp_path: Path) -> None:
+        repo, base = _repo_on_branch(tmp_path, "feature")
+        repo.references.create("refs/remotes/origin/devel", base)
+        _commit(repo, "refs/heads/feature", "work", [base])
+        repo.config["buildbuddy.remote-bazel-default-branch"] = "devel"
+        assert check_base_branch_freshness(repo) is None
+
+    def test_stale_tracking_ref_warns(self, tmp_path: Path) -> None:
+        repo, base = _repo_on_branch(tmp_path, "feature")
+        repo.references.create("refs/remotes/origin/devel", base)
+        parent = base
+        for i in range(_STALE_BASE_WARNING_THRESHOLD + 5):
+            parent = _commit(repo, "refs/heads/feature", f"c{i}", [parent])
+        repo.config["buildbuddy.remote-bazel-default-branch"] = "devel"
+
+        warning = check_base_branch_freshness(repo)
+
+        assert warning is not None
+        assert "origin/devel" in warning
+        assert "git fetch origin devel" in warning
+
+    def test_respects_configured_remote_and_branch(self, tmp_path: Path) -> None:
+        repo, base = _repo_on_branch(tmp_path, "feature")
+        repo.references.create("refs/remotes/upstream/main", base)
+        parent = base
+        for i in range(_STALE_BASE_WARNING_THRESHOLD + 5):
+            parent = _commit(repo, "refs/heads/feature", f"c{i}", [parent])
+        repo.config["buildbuddy.remote-bazel-remote-name"] = "upstream"
+        repo.config["buildbuddy.remote-bazel-default-branch"] = "main"
+
+        warning = check_base_branch_freshness(repo)
+
+        assert warning is not None
+        assert "upstream/main" in warning
+
+    def test_missing_tracking_ref_returns_none(self, tmp_path: Path) -> None:
+        repo, _base = _repo_on_branch(tmp_path, "feature")
+        repo.config["buildbuddy.remote-bazel-default-branch"] = "devel"
+        # No refs/remotes/origin/devel at all — nothing to compare against.
+        assert check_base_branch_freshness(repo) is None
+
+    def test_detached_head_returns_none(self, tmp_path: Path) -> None:
+        repo, base = _repo_on_branch(tmp_path, "devel")
+        repo.references.create("refs/remotes/origin/devel", base)
+        repo.config["buildbuddy.remote-bazel-default-branch"] = "devel"
+        repo.set_head(base)
+        assert check_base_branch_freshness(repo) is None
 
 
 if __name__ == "__main__":

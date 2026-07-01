@@ -35,9 +35,22 @@ through literally to the runner.
 > (notably Claude sessions, where the session-installed trust store never
 > loads). Workaround + proper shim fix in <bb_bazelrc_startup.md>.
 
-**bb remote flags** (partial list): `--runner_exec_properties`,
-`--run_from_commit`, `--run_from_branch`, `--remote_run_header`,
-`--container_image`, `--os`, `--arch`, `--timeout`, `--script`, `--env`.
+**bb remote flags** (verified via `bb help remote` on our pinned `bb 5.0.387`,
+2026-07-01 — run `bb help remote` yourself to get the current set for
+whatever version is pinned): `--runner_exec_properties`, `--run_from_commit`,
+`--run_from_branch`, `--run_from_snapshot`, `--remote_run_header`,
+`--remote_runner`, `--container_image`, `--os`, `--arch`, `--timeout`,
+`--script`, `--env`, `--invocation_id_file`, `--run_remotely`,
+`--disable_retry`, `--skip_auto_checkout`, `--use_system_git_credentials`.
+The last two are relevant to git-state sync specifically:
+`--skip_auto_checkout` skips the runner's automatic GitHub checkout step
+entirely (untested here — likely means "run in whatever the container image
+already has", not "checkout HEAD without patches"); `--use_system_git_credentials`
+tells the runner to use its own pre-configured GitHub auth instead of
+requiring `--repo.url`-embedded HTTPS + token. Neither has been used to fix
+the `github-no-proxy`/insteadOf collision below — the URL-suffix fix was
+simpler and didn't require touching runner-side auth config — but either
+could be a cleaner long-term fix if revisited.
 
 **NOT a bb flag**: `--remote_header` is a Bazel flag. It must go after the
 subcommand, otherwise bb puts it in Bazel startup options and Bazel rejects it.
@@ -120,6 +133,16 @@ bb remote build //devinfra:gazelle --config=nolint --config=rbe
 
 Source: `cli/remotebazel/remotebazel.go`, `Config()` line 368
 
+BuildBuddy's own docs (<https://www.buildbuddy.io/docs/remote-bazel/>) call
+this **"automatic git-state mirroring"** — same mechanism described here, just
+their user-facing name for it. Their docs corroborate the staleness gotcha
+below verbatim: "If your branch hasn't been recently rebased against the
+default branch, this patchset can be large, slowing down the CLI." Their
+docs also name `--run_from_branch`/`--run_from_commit` as the way to disable
+mirroring and pin to a specific ref instead (see the flags list above — do
+NOT use `--run_from_commit` in wrapper scripts per the gotcha below, it drops
+uncommitted changes).
+
 `bb remote` mirrors your local working tree to the runner as a base commit +
 patchset. The logic has three phases:
 
@@ -196,14 +219,40 @@ fails if absent: that is the CI case the `bazel-ci.yml` workaround handles.)
   `devel` branch with tracking config. A CI checkout (`actions/checkout`) creates
   only `origin/devel`, not a local branch, so `@{upstream}` (and the `git rev-parse
 devel` fallback) both fail — `bazel-ci.yml` creates a local `devel` ref for PR
-  builds. If `origin/devel` itself is stale, `git fetch` first.
+  builds. If `origin/devel` itself is stale, the diff base can end up hundreds of
+  commits behind HEAD, producing a huge (and sometimes unappliable — see binary
+  patch gotcha below) patchset instead of the small diff you expect.
+  `devinfra/bbr.py`'s `refresh_base_branch_tracking()` runs a best-effort
+  `git fetch <buildbuddy-remote> <default-branch>` before every `bbr` invocation
+  to keep this fresh automatically; a plain `bb remote` invocation (bypassing
+  `bbr`) does not get this and should `git fetch` the tracked remote first.
 - **`--run_from_commit` disables patches**: When set, the runner checks out
   exactly that commit. Patches are only generated when BOTH `--run_from_branch`
   and `--run_from_commit` are empty. Do NOT use `--run_from_commit` in wrapper
   scripts — it silently drops all uncommitted local changes.
 - **Large patchsets**: All untracked files are included. A stale `bazel-bin`
   symlink or large generated files can bloat the patchset (though
-  `.gitignore`'d files are excluded via `--exclude-standard`).
+  `.gitignore`'d files are excluded via `--exclude-standard`). A patchset that's
+  huge because of base-commit staleness (above) can also fail outright with
+  `error: cannot apply binary patch ... without full index line` when it spans
+  binary-file history it shouldn't need to touch.
+- **Repo-scoped Claude sessions' git `insteadOf` rewrite defeats the
+  `github-no-proxy` remote**: Claude Code web sessions rewrite `origin` to a
+  local git-mirroring proxy (`http://127.0.0.1:<port>/git/...`) so the cloud
+  runner can't fetch from it directly — `devinfra/claude/web_setup.sh` and
+  `devinfra/codex_cloud/setup.sh` work around this with a `github-no-proxy`
+  remote pointing straight at GitHub, selected via
+  `buildbuddy.remote-bazel-remote-name` (bb resolves the URL via
+  `git remote get-url`, which applies the effective config, not the literal
+  one). Some sessions ALSO install a **global**
+  `url."http://local_proxy@127.0.0.1:<port>/git/".insteadOf = https://github.com/`
+  rule (repo-access scoping) — this rewrites **any** remote whose URL has that
+  literal prefix, including `github-no-proxy`'s, silently routing it back
+  through the same unreachable local proxy and reintroducing the original
+  failure. Fix: give `github-no-proxy` a URL that's real but doesn't textually
+  match the rewrite's prefix, e.g. `https://github.com:443/<owner>/<repo>` (the
+  explicit default port changes nothing functionally but isn't the literal
+  string `https://github.com/`, so `insteadOf` skips it).
 
 ## Flag taxonomy
 
