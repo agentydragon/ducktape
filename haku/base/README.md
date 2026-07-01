@@ -13,6 +13,9 @@ ducktape and letting the image rebuild (Flux image automation bumps the CronJob 
   its state. Haku reads this as itself at run time.
 - `AGENTS.md` — instructions for agents that **edit** this directory (not
   Haku's runtime manual).
+- `SECURITY.md` — the **security model**: threat model, the full enforcement-mechanism
+  inventory (RBAC, egress, closures, UI containment), and the invariants any change must
+  preserve. The index a security review starts from.
 - `sources/` — Haku's **information sources** (the operator-linked channels it reads:
   gmail, calendar, drive, tasks, tana, plaid, ducktape) — what each channel tells you +
   how to read it. Inputs/reference, not a checklist.
