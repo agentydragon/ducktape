@@ -457,6 +457,7 @@ proptest! {
                     export_name: format!("Export{member_index}"),
                     binding_name: binding.clone(),
                     comment: None,
+                    note: None,
                 })
                 .collect();
 
