@@ -455,6 +455,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             stock_amount = input_amount * rqu.conversion_factor
 
             body: dict[str, Any] = {"location_id": location.id}
+            applied_best_before_date: date | None = None
             match item:
                 case AddItem():
                     endpoint = "add"
@@ -473,6 +474,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                         body["best_before_date"] = _compute_default_bbd(
                             product_row, is_freezer=bool(int(location_row.get("is_freezer") or 0))
                         )
+                    applied_best_before_date = _parse_date(body["best_before_date"])
                     if item.price is not None:
                         body["price"] = item.price
                     if item.note is not None:
@@ -510,6 +512,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 qu_name=rqu.name,
                 stock_qu_name=rqu.stock_qu_name if rqu.conversion_factor != 1.0 else None,
                 location_name=location.name,
+                best_before_date=applied_best_before_date,
             )
         except Exception as e:
             return StockOpError(error=_format_exc(e))
@@ -527,7 +530,11 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
         Returns one result per input item, in order. Each success carries
         a `transaction_id` you can pass to `transaction_undo` to revert
-        that single addition. See also `stock_consume`,
+        that single addition, and `best_before_date` — the date actually
+        applied to the new entry, whether you passed it explicitly or it
+        was computed from `default_best_before_days` — so you can catch
+        surprises (e.g. "expires today") without a follow-up
+        `stock_entries_list` call. See also `stock_consume`,
         `stock_set`, `stock_transfer`.
         """
         _check_batch_size(items, "items")

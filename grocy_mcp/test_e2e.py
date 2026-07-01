@@ -493,7 +493,9 @@ async def test_stock_add_applies_default_best_before_days(mcp_client: Client, re
         )
     )
     assert ops[0]["kind"] == "ok", ops
-    assert await _latest_bbd() == (date.today() + timedelta(days=300)).isoformat()
+    expected_case1 = (date.today() + timedelta(days=300)).isoformat()
+    assert ops[0]["best_before_date"] == expected_case1
+    assert await _latest_bbd() == expected_case1
 
     # Case 2: non-freezer, default_best_before_days=-1 → 2999-12-31.
     edit = unwrap_result(
@@ -506,6 +508,7 @@ async def test_stock_add_applies_default_best_before_days(mcp_client: Client, re
         )
     )
     assert ops[0]["kind"] == "ok", ops
+    assert ops[0]["best_before_date"] == "2999-12-31"
     assert await _latest_bbd() == "2999-12-31"
 
     # Case 3 (regression for the reported bug): freezer location,
@@ -528,6 +531,7 @@ async def test_stock_add_applies_default_best_before_days(mcp_client: Client, re
     )
     assert ops[0]["kind"] == "ok", ops
     expected = (date.today() + timedelta(days=300)).isoformat()
+    assert ops[0]["best_before_date"] == expected
     actual = await _latest_bbd()
     assert actual == expected, (
         f"Freezer-location stock_add with default_best_before_days=300 and "
@@ -554,6 +558,7 @@ async def test_stock_add_applies_default_best_before_days(mcp_client: Client, re
         )
     )
     assert ops[0]["kind"] == "ok", ops
+    assert ops[0]["best_before_date"] == override.isoformat()
     assert await _latest_bbd() == override.isoformat()
 
 

@@ -34,21 +34,6 @@ remainder needs a bit more care:
   `stock_entries` filtered by product. Worth thinking about whether to
   promote to a batch tool that groups with `stock_*`.
 
-## Echo server-computed values in mutation responses
-
-Stock mutations (e.g. `stock_add`) let Grocy compute derived values
-like `best_before_date` (from `default_best_before_days`). The current
-response only returns `new_amount` — the agent can't see what
-best-before date Grocy assigned without a follow-up `stock_entries_list`
-call. Echoing computed values back (best-before date, resolved location,
-etc.) would let the agent catch surprises (e.g. "expires today" when it
-expected no expiry) without extra round-trips.
-
-Needs design thought: Grocy's `POST /stock/products/{id}/add` response
-includes a list of created stock entries with their IDs but not the full
-entry bodies. We'd need to either fetch entries by ID after the mutation
-or parse the transaction log. Figure out the cleanest approach.
-
 ## Consider per-test container isolation for e2e tests
 
 Tests currently share a session-scoped Grocy container and use uuid

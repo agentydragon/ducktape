@@ -248,6 +248,14 @@ class StockOpOk(BaseModel):
     location_name: str = Field(
         description="Name of the storage location. For `stock_transfer`, formatted as `from -> to`."
     )
+    best_before_date: date | None = Field(
+        default=None,
+        description=(
+            "The best-before date applied to the new stock entry — whichever you passed explicitly, "
+            "or the one computed from `default_best_before_days` when you omitted it. `stock_add` "
+            "only; null for `stock_consume`/`stock_set`/`stock_transfer`, which don't create dated entries."
+        ),
+    )
 
 
 class StockOpError(BaseModel):

@@ -167,6 +167,11 @@ that don't expire (salt, vinegar, etc.), set
 `default_best_before_days = -1` at creation time, or pass
 `best_before_date = "2999-12-31"` on every `stock_add`.
 
+`stock_add` echoes the date it actually applied back as
+`best_before_date` on each result — whether you passed it explicitly or
+it was computed from `default_best_before_days` — so check that field
+for surprises instead of following up with `stock_entries_list`.
+
 **`due_type`** on a product (settable via `products_edit` or
 `entity_update`) controls how Grocy treats the best-before date:
 
