@@ -15,17 +15,7 @@ the open popup menu below it. The crop spans from the menu's left edge
 to the right edge of the screen and from the top of the panel to the
 bottom of the menu — so reviewers see the indicator's icons / pace
 labels and the menu's headers / bars / forecast strings in one image.
-
-The fixture matrix uses mixed per-provider state so each render exercises
-multiple tints simultaneously (providers can have different short vs long states):
-
-  empty                       all providers null                                — unknown/no-data state
-  tints                       claude=error; codex=warn-short/cool-long;        — error, warn, cool, hot(absolute), ok
-                              zai=absolute-hot-short/ok-long
-  hot                         claude=pace-hot-short/long-100%+extra-spend(⚡); — hot(pace), one-line reset row, extra spend header + ⚡ icon
-                              codex=ok/ok; zai=null-short/warn-long
-  extra_enabled_not_burning   claude has extra-spend on with $2324.85 already   — pins the regression where the popup
-                              spent this month, but long=2% — must NOT collapse  collapsed purely on is_enabled
+The fixtures themselves document the scenario each golden covers.
 
 Update flow when the rendering changes intentionally:
 
@@ -34,7 +24,7 @@ Update flow when the rendering changes intentionally:
         --remote_upload_local_results=false --nocache_test_results
 
     INV=<invocation-id from build output>
-    for f in empty tints hot extra_enabled_not_burning; do
+    for f in empty tints hot extra_enabled_not_burning stale_fallback; do
       bbapi artifact download "$INV" "test.outputs/$f.png" \\
         -o "aiquota/gnome/__snapshots__/$f.png"
     done
@@ -44,6 +34,7 @@ Update flow when the rendering changes intentionally:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -60,6 +51,7 @@ import pytest_bazel
 from PIL import Image
 from testcontainers.core.container import DockerContainer
 
+from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_fixture_data
 from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
 from util.testing.png_diff import assert_png_matches_golden
@@ -81,8 +73,6 @@ _EXTENSION_STATE_ENABLED = 1
 _TEST_DBUS_DEST = "works.allegedly.AiQuotaTest"
 _TEST_DBUS_PATH = "/works/allegedly/AiQuotaTest"
 
-_FIXTURES = ["empty", "tints", "hot", "extra_enabled_not_burning", "stale_fallback"]
-
 
 @pytest.fixture(scope="module")
 def gnome_shell_test_image() -> str:
@@ -99,8 +89,19 @@ def extension_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture(scope="module")
+def fixture_json_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Materialize YAML source fixtures as JSON for the GNOME JS test hook."""
+    dest = tmp_path_factory.mktemp("ai-quota-fixtures")
+    for fixture_name in FIXTURE_NAMES:
+        src = get_required_path(f"_main/aiquota/testing/fixtures/{fixture_name}.yaml")
+        data = load_fixture_data(src)
+        (dest / f"{fixture_name}.json").write_text(json.dumps(data, indent=2) + "\n")
+    return dest
+
+
+@pytest.fixture(scope="module")
 def render_session(
-    gnome_shell_test_image: str, extension_dir: Path, tmp_path_factory: pytest.TempPathFactory
+    gnome_shell_test_image: str, extension_dir: Path, fixture_json_dir: Path, tmp_path_factory: pytest.TempPathFactory
 ) -> Iterator[tuple[docker.models.containers.Container, Path]]:
     """Long-lived container + gnome-shell shared across the whole matrix.
 
@@ -111,13 +112,12 @@ def render_session(
     handle + host-side output directory. Each parametrized test calls
     Reload + screenshots, leaving the shell process alone.
     """
-    fixtures_dir = get_required_path(f"_main/aiquota/gnome/test_fixtures/{_FIXTURES[0]}.json").parent
     out_dir = tmp_path_factory.mktemp("ai-quota-renders")
     out_dir.chmod(0o777)  # gnome-shell writes the screenshot as a different uid
 
     container = DockerContainer(gnome_shell_test_image)
     container.with_volume_mapping(str(extension_dir), f"/usr/share/gnome-shell/extensions/{_EXTENSION_UUID}", "ro")
-    container.with_volume_mapping(str(fixtures_dir), "/fixtures", "ro")
+    container.with_volume_mapping(str(fixture_json_dir), "/fixtures", "ro")
     container.with_volume_mapping(str(out_dir), "/out", "rw")
 
     with container:
@@ -137,7 +137,7 @@ def render_session(
             )
 
         try:
-            _start_gnome_shell(raw, f"/fixtures/{_FIXTURES[0]}.json")
+            _start_gnome_shell(raw, f"/fixtures/{FIXTURE_NAMES[0]}.json")
             _wait_for_shell_bus(raw)
             _wait_for_extension_enabled(raw, _EXTENSION_UUID)
             _wait_for_test_dbus(raw)
@@ -317,7 +317,7 @@ def _crop_combined(full: Image.Image, menu_geom: tuple[int, int, int, int]) -> I
     return full.crop((left, 0, right, bottom))
 
 
-@pytest.mark.parametrize("fixture_name", _FIXTURES)
+@pytest.mark.parametrize("fixture_name", FIXTURE_NAMES)
 def test_render(
     render_session: tuple[docker.models.containers.Container, Path],
     undeclared_dir: Path,

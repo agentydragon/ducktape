@@ -1,0 +1,32 @@
+# Pace-based hot with Anthropic extra spend burning.
+# claude: short=hot(dev+20, 50% used at 30% elapsed), long=100%.
+# That means extra spend is active: panel shows the spend pill with ⚡ and
+# the popup collapses to a one-line 5h/7d reset row without bars.
+# extraSpend uses aiquota's ExtraSpend fields. The spend ratio is deliberately
+# memorable: 314159 / 500000 = pi digits.
+# codex: both ok(dev+0) -> panel ok.
+# zai: short=null (off-peak), long=warn(dev+10, 40% at 30%) -> panel warn.
+claude:
+  short: { usedPercent: 50, resetSeconds: 12600, windowSeconds: 18000 }
+  long: { usedPercent: 100, resetSeconds: 423360, windowSeconds: 604800 }
+  lastFetch: 1
+  error: null
+  extraSpend:
+    is_enabled: true
+    utilization: 62.8318
+    used_usd: 3141.59
+    monthly_limit_usd: 5000.0
+  currentlyOverPlan: true
+  extraStatus: active
+codex:
+  short: { usedPercent: 30, resetSeconds: 12600, windowSeconds: 18000 }
+  long: { usedPercent: 30, resetSeconds: 423360, windowSeconds: 604800 }
+  lastFetch: 1
+  error: null
+  extraSpend: null
+zai:
+  short: null
+  long: { usedPercent: 40, resetSeconds: 423360, windowSeconds: 604800 }
+  lastFetch: 1
+  error: null
+  extraSpend: null

@@ -59,11 +59,17 @@ py_test(
 py_test(
     name = "test_human",
     srcs = ["test_human.py"],
-    data = ["__snapshots__/test_human.ambr"],
+    data = [
+        "__snapshots__/test_human.ambr",
+        "//aiquota/testing:fixtures",
+    ],
     uses_syrupy = True,
     deps = [
         ":human_lib",
         "//aiquota:models",
+        "//aiquota/testing:quota_fixtures",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//syrupy",
     ],

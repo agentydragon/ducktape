@@ -1,0 +1,24 @@
+# All named tints in one render.
+# claude: error.
+# codex: short=warn(dev+10, 60% used at 50% elapsed),
+#        long=cool(dev-15, 15% used at 30% elapsed) -> panel warn.
+# zai: short=absolute-hot(90% >= 85), long=ok(dev+0) -> panel hot "+0%",
+#      demonstrating that the label comes from long even when short drives tint.
+claude:
+  short: null
+  long: null
+  lastFetch: null
+  error: "HTTP 401 invalid_request: invalid_token"
+  extraSpend: null
+codex:
+  short: { usedPercent: 60, resetSeconds: 9000, windowSeconds: 18000 }
+  long: { usedPercent: 15, resetSeconds: 423360, windowSeconds: 604800 }
+  lastFetch: 1
+  error: null
+  extraSpend: null
+zai:
+  short: { usedPercent: 90, resetSeconds: 9000, windowSeconds: 18000 }
+  long: { usedPercent: 30, resetSeconds: 423360, windowSeconds: 604800 }
+  lastFetch: 1
+  error: null
+  extraSpend: null

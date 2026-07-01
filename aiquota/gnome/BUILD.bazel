@@ -33,12 +33,6 @@ pkg_zip(
 )
 
 filegroup(
-    name = "fixtures",
-    testonly = True,
-    srcs = glob(["test_fixtures/*.json"]),
-)
-
-filegroup(
     name = "snapshots",
     testonly = True,
     srcs = glob(
@@ -53,12 +47,13 @@ py_test(
     srcs = ["test_render.py"],
     data = [
         ":aiquota_zip",
-        ":fixtures",
         ":snapshots",
+        "//aiquota/testing:fixtures",
         "//gnome/test_image:gnome_shell_test",
     ],
     requires_docker = True,
     deps = [
+        "//aiquota/testing:quota_fixtures",
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:png_diff",

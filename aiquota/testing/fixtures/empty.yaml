@@ -1,0 +1,21 @@
+# Initial state before any fetch.
+# short/long are null on all providers, with no error. The renderer takes
+# the no-data branch: unknown tint, empty pace label, and "no data" menu rows.
+claude:
+  short: null
+  long: null
+  lastFetch: null
+  error: null
+  extraSpend: null
+codex:
+  short: null
+  long: null
+  lastFetch: null
+  error: null
+  extraSpend: null
+zai:
+  short: null
+  long: null
+  lastFetch: null
+  error: null
+  extraSpend: null

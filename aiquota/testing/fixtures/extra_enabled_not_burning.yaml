@@ -1,0 +1,34 @@
+# Anthropic extra-spend is enabled and the account has already incurred
+# billable spend this month, but the weekly cap still has room. The user is
+# NOT currently burning extra.
+#
+# This pins the pre-view-model regression where the panel pill and collapsed
+# popup fired purely on extraSpend.is_enabled. They should fire only when a
+# window is exhausted; currentlyOverPlan=false here.
+#
+# Numbers loosely match the maintainer's real bill when the bug was found:
+# $2324.85 / $4600.
+claude:
+  short: { usedPercent: 6, resetSeconds: 7200, windowSeconds: 18000 }
+  long: { usedPercent: 2, resetSeconds: 432000, windowSeconds: 604800 }
+  lastFetch: 1
+  error: null
+  extraSpend:
+    is_enabled: true
+    utilization: 50.540217391304346
+    used_usd: 2324.85
+    monthly_limit_usd: 4600.0
+  currentlyOverPlan: false
+  extraStatus: informational
+codex:
+  short: { usedPercent: 30, resetSeconds: 12600, windowSeconds: 18000 }
+  long: { usedPercent: 30, resetSeconds: 432000, windowSeconds: 604800 }
+  lastFetch: 1
+  error: null
+  extraSpend: null
+zai:
+  short: { usedPercent: 20, resetSeconds: 12600, windowSeconds: 18000 }
+  long: { usedPercent: 25, resetSeconds: 432000, windowSeconds: 604800 }
+  lastFetch: 1
+  error: null
+  extraSpend: null

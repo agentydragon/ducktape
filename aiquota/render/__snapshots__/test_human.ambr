@@ -1,21 +1,4 @@
 # serializer version: 1
-# name: test_currently_over_plan_shows_text_only_window_resets_on_one_line
-  '''
-  claude  ⚡ OVER PLAN — extra $3120.50/$4600 (68%) this month
-    5h:  99% ↻ 1h00m  7d: 100% ↻ 6d10h
-  '''
-# ---
-# name: test_error_only_when_no_data
-  'zai  check failed 0s ago: no api key path configured'
-# ---
-# name: test_extra_enabled_but_prepaid_has_room_shows_normal_bars
-  '''
-  claude
-    5h:   6%  ↻ 2h05m  Δ-52%  leaves ~90% unused at reset
-    7d:   2%  ↻ 4d21h  Δ-28%  leaves ~93% unused at reset
-    extra: $2324.85/$4600 (51%) spent this month
-  '''
-# ---
 # name: test_renders_both_windows_with_reset_and_pace
   '''
   codex
@@ -24,5 +7,63 @@
   zai
     5h:  49%  ↻ 2h45m  Δ+4%   exhausts ~24m before reset
     7d: 100%  ↻ 6d14h  Δ+94%  exhausts ~6d14h before reset
+  '''
+# ---
+# name: test_renders_shared_fixture[empty]
+  '''
+  claude
+    no data
+  codex
+    no data
+  zai
+    no data
+  '''
+# ---
+# name: test_renders_shared_fixture[extra_enabled_not_burning]
+  '''
+  claude
+    5h:   6%  ↻ 2h00m  Δ-54%  leaves ~90% unused at reset
+    7d:   2%  ↻ 5d0h   Δ-27%  leaves ~93% unused at reset
+    extra: $2324.85/$4600 (51%) spent this month
+  codex
+    5h:  30%  ↻ 3h30m  Δ+0%   on pace
+    7d:  30%  ↻ 5d0h   Δ+1%   exhausts ~8h00m before reset
+  zai
+    5h:  20%  ↻ 3h30m  Δ-10%  leaves ~33% unused at reset
+    7d:  25%  ↻ 5d0h   Δ-4%   leaves ~12% unused at reset
+  '''
+# ---
+# name: test_renders_shared_fixture[hot]
+  '''
+  claude  ⚡ OVER PLAN — extra $3141.59/$5000 (63%) this month
+    5h:  50% ↻ 3h30m  7d: 100% ↻ 4d21h
+  codex
+    5h:  30%  ↻ 3h30m  Δ+0%   on pace
+    7d:  30%  ↻ 4d21h  Δ+0%   on pace
+  zai
+    7d:  40%  ↻ 4d21h  Δ+10%  exhausts ~1d18h before reset
+  '''
+# ---
+# name: test_renders_shared_fixture[stale_fallback]
+  '''
+  claude  last refresh failed 2m ago: HTTP 503 Service Unavailable  (stale 1d0h)
+    5h:  35%  ↻ 2h12m  Δ-21%  leaves ~38% unused at reset
+    7d:  72%  ↻ 5d3h   Δ+45%  exhausts ~4d9h before reset
+  codex
+    5h:  30%  ↻ 3h30m  Δ+0%   on pace
+    7d:  30%  ↻ 4d21h  Δ+0%   on pace
+  zai
+    no data
+  '''
+# ---
+# name: test_renders_shared_fixture[tints]
+  '''
+  claude  check failed 0s ago: HTTP 401 invalid_request: invalid_token
+  codex
+    5h:  60%  ↻ 2h30m  Δ+10%  exhausts ~50m before reset
+    7d:  15%  ↻ 4d21h  Δ-15%  leaves ~50% unused at reset
+  zai
+    5h:  90%  ↻ 2h30m  Δ+40%  exhausts ~2h13m before reset
+    7d:  30%  ↻ 4d21h  Δ+0%   on pace
   '''
 # ---
