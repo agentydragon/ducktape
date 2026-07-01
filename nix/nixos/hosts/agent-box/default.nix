@@ -59,9 +59,8 @@ in
     priority = 100;
   };
 
-  # KubeVirt emptyDisk-backed disposable user caches. The root DataVolume
-  # stays persistent, including /nix; this cache volume survives guest reboots
-  # but not VMI re-creation.
+  # KubeVirt emptyDisk-backed disposable user caches. The root DataVolume stays
+  # persistent; this cache volume survives guest reboots but not VMI re-creation.
   fileSystems."/home/${username}/.cache" = {
     device = "/dev/disk/by-id/virtio-abox-cache";
     fsType = "ext4";
