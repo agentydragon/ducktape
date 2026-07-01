@@ -307,14 +307,19 @@ repos:
   # CLUSTER-SPECIFIC HOOKS (external repos, scoped to cluster/ directory)
   # ============================================================================
 
-  # Checkov security scanner for Terraform
-  - repo: https://github.com/bridgecrewio/checkov
-    rev: 3.2.513
+  # Checkov security scanner for Terraform — checkov provided by devShell / web-session
+  # via Nix (pkgs.checkov). Local hook (not repo: github) so pre-commit needn't clone
+  # the checkov repo, which web sessions cannot fetch through the egress proxy.
+  # Mirrors the upstream checkov_diff hook: `entry: checkov` + pass_filenames with `-f`.
+  - repo: local
     hooks:
       - id: checkov_diff
+        name: checkov (terraform)
+        language: system
+        entry: checkov
         args: ["--framework", "terraform", "--skip-check", "CKV_TF_1,CKV2_AWS_23", "-f"]
         files: "^(cluster/terraform|tf)/.*\\.tf$"
-        additional_dependencies: ["urllib3", "python-dateutil"]
+        require_serial: true
 
   # TFLint - Terraform linter — tflint provided by devShell / web-session via Nix
   # Config: cluster/.tflint.hcl; plugins cached in ~/.tflint.d/plugins
