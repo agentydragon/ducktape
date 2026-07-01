@@ -34,20 +34,20 @@ bazel-repo-cache-<hash of MODULE.bazel + MODULE.bazel.lock>
 
 ## Cache flow
 
-```
-compute-targets job
+```text
+bazel-ci job (.github/workflows/bazel-ci.yml)
   ├── restore repository_cache (setup-bazel action)
-  ├── bazel-diff queries (fetches external repos into repository_cache)
+  ├── bb-remote --script:
+  │     ├── (PR only) target-determinator computes affected target set
+  │     └── bazel test + build (`//...` on devel, affected-only on PRs)
   └── post step: save repository_cache (automatic, only on exact-key miss)
-
-  downstream jobs (bazel-check, bazel-test, ...)
-    └── restore repository_cache (setup-bazel → bazel-repo-cache)
-        post step: save skipped (exact-key hit from compute-targets)
 ```
 
 The `setup-bazel` action uses the unified `actions/cache@v4`, which saves the cache as a post step on job success. The unified action only saves when the exact key was NOT found during restore, avoiding duplicate entries.
 
-There is **no prewarm step**. The `compute-targets` job runs `bazel query` via `bazel-diff`, which fetches all external repos during analysis. Downstream jobs benefit from the cache saved by `compute-targets`.
+There is **no prewarm step**. The single `bazel-ci` job populates the repository_cache during its own analysis phase; there are no downstream Bazel jobs sharing that cache within a single CI run.
+
+On PRs, `bazel-ci` first invokes `target-determinator` (packaged in `.#rbetools`) to compute the set of targets affected by the diff vs. `origin/devel`, and passes that set to `bazel test`/`bazel build` via `--target_pattern_file`. Devel-branch push runs test/build `//...`. See `.github/workflows/bazel-ci.yml` for the current script.
 
 ## Duplicate-key problem (historical)
 
@@ -71,4 +71,3 @@ The `_bazel_runner` segment assumes the GHA runner username is `runner` (standar
 | Cache `repository_cache` only (current)    | ~2GB   | Simple, within limit | Extraction cost on miss      |
 | `bazel-contrib/setup-bazel` external-cache | Varies | Per-repo granularity | LLVM still 8.2GB             |
 | No GHA cache, BuildBuddy only              | 0      | Simplest             | ~5 min repo fetching per-job |
-| Prewarm in compute-targets + save          | ~2GB   | Seeds cache once     | +4.5 min critical path       |
