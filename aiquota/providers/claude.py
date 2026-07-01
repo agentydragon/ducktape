@@ -14,7 +14,7 @@ from pydantic.alias_generators import to_camel
 
 from aiquota.models import ExtraUsage, FetchError, FetchSuccess, ProviderFetch, QuotaWindow
 from aiquota.providers.base import Provider
-from devinfra.claude.claude_api.usage import UsageBucket, UsageResponse, normalized_extra_usage
+from devinfra.claude.claude_api.usage import ExtraUsageTotals, UsageBucket, UsageResponse, normalized_extra_usage
 
 logger = logging.getLogger(__name__)
 
@@ -125,8 +125,7 @@ def _to_window(bucket: UsageBucket | None, window_secs: float) -> QuotaWindow | 
     )
 
 
-def _to_extra_usage(usage: UsageResponse) -> ExtraUsage | None:
-    extra = normalized_extra_usage(usage)
+def _to_aiquota_extra_usage(extra: ExtraUsageTotals | None) -> ExtraUsage | None:
     if extra is None:
         return None
     return ExtraUsage(
@@ -166,7 +165,7 @@ class ClaudeProvider(Provider):
 
         short = _to_window(usage.five_hour, SHORT_WINDOW_SECS)
         long = _to_window(usage.seven_day, LONG_WINDOW_SECS)
-        extra = _to_extra_usage(usage)
+        extra = _to_aiquota_extra_usage(normalized_extra_usage(usage))
         return ProviderFetch(
             fetched_at=now, result=FetchSuccess(short_window=short, long_window=long, extra_usage=extra)
         )

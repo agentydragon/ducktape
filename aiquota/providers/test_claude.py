@@ -2,8 +2,8 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from aiquota.providers.claude import _to_extra_usage
-from devinfra.claude.claude_api.usage import UsageResponse
+from aiquota.providers.claude import _to_aiquota_extra_usage
+from devinfra.claude.claude_api.usage import UsageResponse, normalized_extra_usage
 
 if __name__ == "__main__":
     pytest_bazel.main()
@@ -38,7 +38,7 @@ def test_extra_usage_enabled_allows_null_utilization() -> None:
         "extra_usage": {"is_enabled": True, "monthly_limit": 250000, "used_credits": 125000, "utilization": None}
     }
     usage = UsageResponse.model_validate(payload)
-    extra = _to_extra_usage(usage)
+    extra = _to_aiquota_extra_usage(normalized_extra_usage(usage))
     assert extra is not None
     assert extra.monthly_limit_usd == 2500.0
     assert extra.used_usd == 1250.0
@@ -63,7 +63,7 @@ def test_spend_shape_drives_extra_usage() -> None:
         },
     }
     usage = UsageResponse.model_validate(payload)
-    extra = _to_extra_usage(usage)
+    extra = _to_aiquota_extra_usage(normalized_extra_usage(usage))
     assert extra is not None
     assert extra.monthly_limit_usd == 2500.0
     assert extra.used_usd == 123.45
