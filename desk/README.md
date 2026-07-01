@@ -606,6 +606,32 @@ until wyrm2 boots enough to reclaim the DP-OUT.
   touching anything else. This finally breaks the "can't fix atlas
   because I can't get into atlas" loop.
 
+### 2026-07-01 — atlas SSH-able via wyrm2 as a jump host
+
+**Path taken.** Wifi stick was USB-passed-through to wyrm2, so wyrm2
+came online but atlas host stayed offline. Both `vmbr0` on atlas and
+`ens18` on wyrm2 were UP but had no IPv4. Assigned matching static
+addresses (`192.168.100.1/24` on atlas `vmbr0`, `192.168.100.2/24` on
+wyrm2 `ens18`), got ping, then SSH-as-root from wyrm2 to atlas
+(user's key already authorised).
+
+**Consequence.** The dependency loop that has blocked atlas debugging
+all day (need input to fix atlas, need atlas working to have input)
+is now broken. All further atlas work can happen over SSH from
+wyrm2 (or via wyrm2 as a jump host from any other machine wyrm2 can
+be reached from — LAN, Nebula mesh, etc.).
+
+**Follow-ups.**
+
+- Persist the atlas `vmbr0` IP so this doesn't vanish on the next
+  reboot (edit `/etc/network/interfaces` static stanza — see also
+  what the Proxmox web UI was expecting on that bridge normally).
+- Sort atlas's own outbound networking so it doesn't need wyrm2 to be
+  up (or accept that wyrm2 is the jump-host of record for the desk).
+- Now, at leisure: `journalctl -b -1` for the violent reboot cause,
+  wyrm2 autostart config, why input was silent in the earlier
+  wiring, and return to Plan A KVM wiring for the desk itself.
+
 ### 2026-07-01 — earlier: waited, greeter appeared at correct resolution
 
 **Observation.** Left atlas alone on the "EFI stub" stalled screen;
