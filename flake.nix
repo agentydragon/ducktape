@@ -320,6 +320,7 @@
         pkgs.shfmt
         pkgs.buildifier
         pkgs.gofumpt
+        pkgs.markdownlint-cli2
         ducktapePkgs.prettier
         pkgs.openssl
         # Codex setup materializes kubeconfig via devinfra/k8s/kubeconfig.py;

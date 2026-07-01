@@ -96,17 +96,17 @@ All hooks respect `.gitattributes` and `.pre-commit-config.yaml` exclusions.
 
 Key hooks in `.pre-commit-config.yaml`:
 
-| Hook                 | Source                       | Purpose                           |
-| -------------------- | ---------------------------- | --------------------------------- |
-| `ruff-check`         | astral-sh/ruff-pre-commit    | Python linting                    |
-| `ruff-format`        | astral-sh/ruff-pre-commit    | Python formatting                 |
-| `buildifier`         | keith/pre-commit-buildifier  | Starlark formatting               |
-| `buildifier-lint`    | keith/pre-commit-buildifier  | Starlark linting                  |
-| `ducktape-precommit` | local (system)               | Filename + frozen-specimen checks |
-| `prettier`           | local (node)                 | JS/TS/MD/YAML formatting          |
-| `rustfmt`            | local (system)               | Rust formatting                   |
-| `nixfmt`             | local (static binary)        | Nix formatting                    |
-| `markdownlint-cli2`  | DavidAnson/markdownlint-cli2 | Markdown linting                  |
+| Hook                 | Source                      | Purpose                           |
+| -------------------- | --------------------------- | --------------------------------- |
+| `ruff-check`         | astral-sh/ruff-pre-commit   | Python linting                    |
+| `ruff-format`        | astral-sh/ruff-pre-commit   | Python formatting                 |
+| `buildifier`         | keith/pre-commit-buildifier | Starlark formatting               |
+| `buildifier-lint`    | keith/pre-commit-buildifier | Starlark linting                  |
+| `ducktape-precommit` | local (system)              | Filename + frozen-specimen checks |
+| `prettier`           | local (node)                | JS/TS/MD/YAML formatting          |
+| `rustfmt`            | local (system)              | Rust formatting                   |
+| `nixfmt`             | local (static binary)       | Nix formatting                    |
+| `markdownlint-cli2`  | local (system)              | Markdown linting                  |
 
 Cluster-specific hooks run only on `cluster/` files:
 

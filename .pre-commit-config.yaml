@@ -99,14 +99,17 @@ repos:
         types: [nix]
         pass_filenames: false
 
-  # Markdown linting. Scoped to staged files via `files:` regex below; the
-  # markdownlint-cli2 config (.markdownlint-cli2.jsonc) has no globs of its
-  # own, so pre-commit's positional args (= staged files) are the only inputs.
-  - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.22.0
+  # Markdown linting — markdownlint-cli2 provided by devShell / web-session via
+  # Nix (avoids a git clone of the hook's repo just to install it). Scoped to
+  # staged files via `files:` regex below; the markdownlint-cli2 config
+  # (.markdownlint-cli2.jsonc) has no globs of its own, so pre-commit's
+  # positional args (= staged files) are the only inputs.
+  - repo: local
     hooks:
       - id: markdownlint-cli2
-        args: [--fix]
+        name: markdownlint-cli2
+        entry: markdownlint-cli2 --fix
+        language: system
         files: ^(cluster|website)/.*\.md$
 
   # NOTE: ESLint and svelte-check are handled by Bazel:
