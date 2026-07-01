@@ -36,8 +36,9 @@ POST https://app.buildbuddy.io/rpc/BuildBuddyService/<Method>
 with `x-buildbuddy-api-key` auth, `protojson` marshal/unmarshal. This is
 the exact same `BuildBuddyService` that `bb remote` talks to over raw gRPC
 (`cli/remotebazel/remotebazel.go`'s `bbspb.NewBuildBuddyServiceClient`) —
-Twirp services speak both protocols, we just haven't needed the RPCs `bb
-remote` uses yet.
+BuildBuddy exposes the same proto service via both a Twirp-JSON endpoint
+(`bbapi`'s codepath) and a gRPC client codepath (`bb remote`'s), we just
+haven't needed the RPCs `bb remote` uses yet.
 
 Confirmed by reading `buildbuddy-io/buildbuddy@d4e8918` directly (cloned
 to a scratchpad, not vendored in-repo):
