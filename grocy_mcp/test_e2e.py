@@ -213,7 +213,7 @@ async def test_product_lifecycle(mcp_client: Client, refunwrap_result: RefData) 
     )
     assert edit_results[0]["kind"] == "ok"
     # TODO: test batch edit (multiple items in one call)
-    # TODO: test editing due_type, default_best_before_days, clear_fields
+    # TODO: test editing due_type, clear_fields
     # TODO: test that clear_fields nulls product_group while preserving other fields
 
     products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
@@ -226,6 +226,51 @@ async def test_product_lifecycle(mcp_client: Client, refunwrap_result: RefData) 
     for name in (new_name, refunwrap_result.products[1]):
         del_result = unwrap_result(await mcp_client.call_tool("product_delete", {"product": name}))
         assert del_result["kind"] == "ok", f"product_delete({name}) failed: {del_result}"
+
+
+# -- default_best_before_days: required on create, preserved on edit --------
+
+
+async def test_products_create_requires_default_best_before_days(mcp_client: Client) -> None:
+    """`products_create` rejects an item that omits `default_best_before_days`.
+
+    Omission used to silently store 0 (best-before today), indistinguishable
+    from a caller who deliberately chose same-day best-before — the field
+    must be required with no default.
+    """
+    with pytest.raises(Exception, match="default_best_before_days"):
+        await mcp_client.call_tool(
+            "products_create", {"items": [{"name": "MissingBBD", "stock_qu": "Piece", "location": "Pantry"}]}
+        )
+
+
+async def test_products_edit_preserves_default_best_before_days_when_omitted(
+    mcp_client: Client, refunwrap_result: RefData
+) -> None:
+    """`products_edit` omitting `default_best_before_days` leaves it unchanged.
+
+    Unlike `products_create` (which now requires the field explicitly),
+    omission on edit means "leave the existing value alone" — the two
+    endpoints must not share the same omission semantics.
+    """
+    product = refunwrap_result.products[0]
+
+    edit = unwrap_result(
+        await mcp_client.call_tool("products_edit", {"items": [{"product": product, "default_best_before_days": 42}]})
+    )
+    assert edit[0]["kind"] == "ok", edit
+
+    # Edit an unrelated field, omitting default_best_before_days.
+    unrelated_edit = unwrap_result(
+        await mcp_client.call_tool(
+            "products_edit", {"items": [{"product": product, "description": "unrelated change"}]}
+        )
+    )
+    assert unrelated_edit[0]["kind"] == "ok", unrelated_edit
+
+    products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
+    our_product = next(p for p in products if p["name"] == product)
+    assert int(our_product["default_best_before_days"]) == 42
 
 
 # -- entity_update PATCH semantics -------------------------------------------

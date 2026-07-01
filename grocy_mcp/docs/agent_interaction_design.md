@@ -81,11 +81,13 @@ Agent: quantity_units_list()
 Agent: create_product(
     name: "Cucumbers",
     stock_qu: "Kilogram",
-    location: "Fridge"
+    location: "Fridge",
+    default_best_before_days: 7
   )
   Response:
     {product_id: 42, name: "Cucumbers",
-     stock_qu: "Kilogram", default_location: "Fridge"}
+     stock_qu: "Kilogram", default_location: "Fridge",
+     default_best_before_days: 7}
 
   Notes on this tool:
   - `stock_qu` accepts a name (or ID). It's required — no default.
