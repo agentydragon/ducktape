@@ -239,6 +239,52 @@ the KVM host port. Still to validate: the **atlas-side** switch —
 toggle the KVM to atlas's host port and confirm atlas sees the FV43U
 as its output.
 
+### 2026-07-01 — atlas first boot on the KVM chain: BIOS/GRUB visible, then "USB-C no signal"
+
+**Setup.** atlas powered on for the first time with Plan A wiring, KVM
+toggled to the atlas-side host port. No network to atlas: USB WiFi
+stick not installed yet, no ethernet reachable, current apartment's
+WiFi SSID not configured on atlas.
+
+**Observations.**
+
+- BIOS splash: visible on the FV43U.
+- GRUB menu: visible.
+- A few lines of early kernel syslog scroll: visible.
+- Then the monitor drops to "USB-C no signal" and stays there.
+
+**Interpretation (working hypothesis).** BIOS / GRUB / early kernel
+paint on one RTX 5090's firmware framebuffer, which does reach the
+monitor via the mobo DP-IN → TB-OUT → KVM → 20 Gb/s USB-C → FV43U
+USB-C. Once the Linux kernel finishes loading and `vfio-pci` binds
+both RTX 5090s for wyrm2 passthrough, the framebuffer handoff drops
+atlas's console output — that's the "no signal" moment. If wyrm2
+autostarts and its guest driver outputs on the same physical DP port,
+video should come back; in this test it didn't (within the time we
+watched), so wyrm2 either isn't autostarting or is outputting to a
+different DP.
+
+**Conclusion.** The whole desk-side wiring — mobo TB-OUT → Sabrent
+tag "4" → KVM PC port → 20 Gb/s USB-C → FV43U USB-C — is confirmed
+end-to-end for atlas up through kernel boot. The remaining blocker is
+atlas-side software: no display source for the Proxmox host after
+`vfio-pci` binds the GPUs, and no way to diagnose because atlas has no
+network yet.
+
+**Follow-ups.**
+
+- Get network to atlas — cheapest path is the on-hand USB WiFi stick;
+  fallback is a rescue USB to drop new WiFi creds into
+  `wpa_supplicant.conf` or an SSH key into `authorized_keys`.
+- Once SSH-able: check `virsh list --all` / `qm list` for wyrm2's
+  autostart state; check which GPU (bus:slot.function) is passed
+  through and which physical DP port that GPU's guest driver is
+  outputting to.
+- Longer-term: consider giving atlas a display source that survives
+  `vfio-pci` binding (iGPU if the mobo has one, or a small spare GPU
+  not in the passthrough set) so BIOS-only boot debugging isn't the
+  only console option.
+
 ## Open questions
 
 - atlas: which RTX 5090 and which DP port feeds the internal DP m-m
