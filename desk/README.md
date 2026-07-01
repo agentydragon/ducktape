@@ -315,6 +315,39 @@ paints only middle).
   passthrough set) so console debugging isn't dependent on TB port
   choice.
 
+### 2026-07-01 — regression: direct middle port stops working; 20 Gb/s cable visibly damaged
+
+**Setup.** Same direct-connect wiring as the earlier middle-port
+success: FV43U USB-C ↔ 20 Gb/s USB-C ↔ atlas middle TB port. No KVM.
+
+**Observation.** Monitor now shows "no USB-C signal" from that path,
+even though the identical wiring worked earlier in the session. The
+20 Gb/s USB-C cable is **visibly wonky on one end** — likely
+mechanical damage at the connector.
+
+**Reframing.** This calls the earlier "middle port works, top port
+doesn't" experiment into question. If the 20 Gb/s cable is
+intermittent, some of that session's signal / no-signal outcomes may
+have been aliased by cable behaviour rather than by which TB port on
+atlas we were trying. The "atlas via KVM (middle port) → no signal"
+result from the KVM-inline retry is also probably contaminated: the
+20 Gb/s cable is on the KVM → monitor leg there.
+
+**Follow-ups.**
+
+- Swap the 20 Gb/s cable out for a known-good USB-C. Cheapest test:
+  temporarily grab the Silkland from the laptop-side Silkland run
+  (rugged isn't being used) and put it on atlas ↔ FV43U USB-C.
+- Or: try the Ivanky USB-C ↔ DP cable into the FV43U's DP1 input for
+  a fully independent path.
+- Once cable-quality noise is removed, re-run both port variants
+  (top and middle) direct-connect, then rebuild the KVM chain and
+  redo the atlas-via-KVM test. That's the point at which any port
+  distinction should be believable.
+- Retire the 20 Gb/s cable from load-bearing links; it may still be
+  usable as a low-stakes spare, but not for anything that has to be
+  stable.
+
 ### 2026-07-01 — KVM back in the chain, atlas on middle port
 
 **Setup.** Sabrent tag "4" cable moved to atlas's **middle** TB port
