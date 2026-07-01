@@ -1,0 +1,130 @@
+diff --git a/cli/remotebazel/remotebazel.go b/cli/remotebazel/remotebazel.go
+index 74e60ab..ba7a0a6 100644
+--- a/cli/remotebazel/remotebazel.go
++++ b/cli/remotebazel/remotebazel.go
+@@ -89,6 +89,8 @@ var (
+ 	useSystemGitCredentials = RemoteFlagset.Bool("use_system_git_credentials", false, "Whether to use github auth pre-configured on the remote runner. If false, require https and an access token for git access.")
+ 	runFromBranch           = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
+ 	runFromCommit           = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
++	repoURL                 = RemoteFlagset.String("repo_url", "", "If set, use this URL as the repo to fetch on the remote runner instead of auto-detecting one from `git remote -v`. Requires --run_from_commit (there is no local git remote to resolve a branch/commit against).")
++	applyLocalPatches       = RemoteFlagset.Bool("apply_local_patches", false, "If set together with --run_from_branch or --run_from_commit, also mirror local working-tree changes as a patchset on top of the resolved base commit, instead of the default clean-checkout behavior for those flags.")
+ 	// From a shell, pass the JSON in single quotes.
+ 	// Ex. --run_from_snapshot='{"snapshotId":"XXX","instanceName":""}'
+ 	runFromSnapshot = RemoteFlagset.String("run_from_snapshot", "", "JSON for a snapshot key that the remote runner should be resumed from. If unset, the snapshot key is determined programatically.")
+@@ -367,19 +369,32 @@ func diffUntrackedFile(path string) (string, error) {
+ }
+ 
+ func Config() (*RepoConfig, error) {
+-	remote, err := determineRemote()
+-	if err != nil {
+-		return nil, status.WrapError(err, "determine remote")
++	var remote *gitRemote
++	fetchURL := *repoURL
++	if fetchURL == "" {
++		var err error
++		remote, err = determineRemote()
++		if err != nil {
++			return nil, status.WrapError(err, "determine remote")
++		}
++		fetchURL = remote.url
++	} else if *runFromCommit == "" {
++		return nil, status.InvalidArgumentErrorf("--repo_url requires --run_from_commit: there is no local git remote to resolve a branch or commit against")
+ 	}
+-	fetchURL := remote.url
+ 	log.Debugf("Using fetch URL: %s", fetchURL)
+ 
+-	defaultBranch, err := determineDefaultBranch(remote.name)
+-	if err != nil {
+-		return nil, status.WrapError(err, "get default branch")
++	var defaultBranch string
++	remoteName := ""
++	if remote != nil {
++		remoteName = remote.name
++		var err error
++		defaultBranch, err = determineDefaultBranch(remoteName)
++		if err != nil {
++			return nil, status.WrapError(err, "get default branch")
++		}
+ 	}
+ 
+-	branch, commit, err := getBaseBranchAndCommit(remote.name, defaultBranch)
++	branch, commit, err := getBaseBranchAndCommit(remoteName, defaultBranch)
+ 	if err != nil {
+ 		return nil, status.WrapError(err, "get base branch and commit")
+ 	}
+@@ -391,7 +406,7 @@ func Config() (*RepoConfig, error) {
+ 		DefaultBranch: defaultBranch,
+ 	}
+ 
+-	if *runFromBranch == "" && *runFromCommit == "" {
++	if (*runFromBranch == "" && *runFromCommit == "") || *applyLocalPatches {
+ 		patches, err := generatePatches(commit)
+ 		if err != nil {
+ 			return nil, status.WrapError(err, "generate patches")
+diff --git a/cli/remotebazel/remotebazel_test.go b/cli/remotebazel/remotebazel_test.go
+index acca665..33432a7 100644
+--- a/cli/remotebazel/remotebazel_test.go
++++ b/cli/remotebazel/remotebazel_test.go
+@@ -560,6 +560,62 @@ func TestGitConfig_FetchURL(t *testing.T) {
+ 	}
+ }
+ 
++func TestGitConfig_RepoURLOverride(t *testing.T) {
++	remoteRepoPath, originalMasterHeadCommit := testgit.MakeTempRepo(t, map[string]string{"hello.txt": "exit 0"})
++	remoteURL := "file://" + remoteRepoPath
++
++	localRepoPath := testgit.MakeTempRepoClone(t, remoteRepoPath)
++	err := os.Chdir(localRepoPath)
++	require.NoError(t, err)
++	resetRepoRootPathForTest(t)
++
++	t.Run("repo_url without run_from_commit is rejected", func(t *testing.T) {
++		*repoURL = remoteURL
++		defer func() { *repoURL = "" }()
++
++		_, err := Config()
++		require.Error(t, err)
++		require.Contains(t, err.Error(), "--run_from_commit")
++	})
++
++	t.Run("repo_url with run_from_commit uses the override URL, no patches by default", func(t *testing.T) {
++		testgit.CommitFiles(t, localRepoPath, map[string]string{"dirty.txt": "exit 0"})
++
++		*repoURL = remoteURL
++		*runFromCommit = originalMasterHeadCommit
++		defer func() {
++			*repoURL = ""
++			*runFromCommit = ""
++		}()
++
++		config, err := Config()
++		require.NoError(t, err)
++		require.Equal(t, remoteURL, config.URL)
++		require.Equal(t, originalMasterHeadCommit, config.CommitSHA)
++		require.Empty(t, config.Patches)
++	})
++
++	t.Run("repo_url with run_from_commit and apply_local_patches mirrors local changes", func(t *testing.T) {
++		testgit.CommitFiles(t, localRepoPath, map[string]string{"dirty2.txt": "exit 0"})
++
++		*repoURL = remoteURL
++		*runFromCommit = originalMasterHeadCommit
++		*applyLocalPatches = true
++		defer func() {
++			*repoURL = ""
++			*runFromCommit = ""
++			*applyLocalPatches = false
++		}()
++
++		config, err := Config()
++		require.NoError(t, err)
++		require.Equal(t, remoteURL, config.URL)
++		require.Equal(t, originalMasterHeadCommit, config.CommitSHA)
++		require.NotEmpty(t, config.Patches)
++		require.Contains(t, string(config.Patches[0]), "dirty2.txt")
++	})
++}
++
+ func TestGeneratingPatches(t *testing.T) {
+ 	// Setup the "remote" repo
+ 	remoteRepoPath, _ := testgit.MakeTempRepo(t, map[string]string{
