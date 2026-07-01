@@ -74,16 +74,32 @@
       # Use Nixpkgs fetchurl derivations, not builtins.fetchurl: hosts behind
       # restricted egress can substitute these fixed-output paths from Attic
       # instead of doing evaluator-time downloads from GitHub Releases.
+      #
+      # PR-time override: DUCKTAPE_ARTIFACT_OVERRIDES (JSON object of pin
+      # name -> absolute file path) swaps the fetched wheel for a local one.
+      # Set by .github/workflows/nix-wheel-check.yml so the imports check runs
+      # against the PR's freshly-built wheel instead of the last released pin —
+      # that is what catches "wheel forgot a package" regressions like the
+      # gmail_api / ducktape_pkg drift in #2669. Requires --impure (getEnv).
+      # Empty in normal use; behaviour is identical to the pre-override flake.
       artifacts =
         let
           data = builtins.fromJSON (builtins.readFile ./nix/artifact-pins.json);
+          rawOverrides = builtins.getEnv "DUCKTAPE_ARTIFACT_OVERRIDES";
+          overrides = if rawOverrides == "" then { } else builtins.fromJSON rawOverrides;
         in
         builtins.mapAttrs (
-          _: spec:
-          pkgs.fetchurl {
-            inherit (spec) url;
-            hash = "sha256-${spec.sha256}";
-          }
+          name: spec:
+          if overrides ? ${name} then
+            builtins.path {
+              path = /. + overrides.${name};
+              name = "ducktape-artifact-${name}";
+            }
+          else
+            pkgs.fetchurl {
+              inherit (spec) url;
+              hash = "sha256-${spec.sha256}";
+            }
         ) data.pins;
 
       # all_skills.skill (a zip) unpacked into a flat directory of skill subdirs.

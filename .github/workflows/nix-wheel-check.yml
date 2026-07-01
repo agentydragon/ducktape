@@ -1,0 +1,114 @@
+# Rebuild ducktape's own Python wheels from PR source and imports-check them
+# via the flake. On PRs, DUCKTAPE_ARTIFACT_OVERRIDES (see flake.nix) swaps the
+# released pin for the freshly-Bazel-built wheel so nix's `mkWheel` imports
+# check runs against PR source — catches "wheel forgot a package" bugs like
+# gmail_api / ducktape_pkg drift in #2669 at PR time, before release.yml
+# publishes a broken wheel and sync-pins.yml rotates the pin onto it.
+#
+# nix-attic-push.yml still does the full-fleet build against pinned artifacts on
+# push to devel/main; this workflow is the fast per-PR gate.
+name: Nix wheel check
+
+on:
+  push:
+    branches: [main, devel]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: nix-wheel-check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GIT_REPO_DEFAULT_BRANCH: devel
+
+jobs:
+  nix-wheel-check:
+    name: Build wheels + imports check
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      # Build every wheel + the aiquota extension zip in one bb-remote call so
+      # RBE cache hits carry across targets. Keep the target list in sync with
+      # release.yml's matrix (below in "Assemble overrides").
+      - name: Build wheels from source
+        uses: ./.github/actions/bb-remote
+        with:
+          # --remote_download_outputs=toplevel keeps only the wheel/zip files
+          # (not Bazel action intermediates) coming back from RBE — same pattern
+          # as push-images.yml.
+          args: >-
+            build
+            //:wheel
+            //:bbr_wheel
+            //:claude_hooks_wheel
+            //:ducktape_git_hooks_wheel
+            //util:wheel
+            //gnome/gterm_theme:wheel
+            //aiquota:aiquota_wheel
+            //aiquota/gnome:aiquota_zip
+            --remote_download_outputs=toplevel
+
+      # Map each mkWheel pin name -> Bazel output path, verify every artifact
+      # exists, and emit the JSON blob flake.nix's artifacts logic consumes.
+      # SYNC with the ducktape wheel family in release.yml + nix/packages/default.nix.
+      - name: Assemble artifact overrides
+        id: overrides
+        shell: bash
+        run: |
+          set -euo pipefail
+          declare -A MAP=(
+            [ducktape]=bb-out/bazel-out/k8-fastbuild/bin/ducktape-0.1.0-py3-none-any.whl
+            [bbr]=bb-out/bazel-out/k8-fastbuild/bin/bbr-0.1.0-py3-none-any.whl
+            [claude-hooks]=bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl
+            [ducktape-git-hooks]=bb-out/bazel-out/k8-fastbuild/bin/ducktape_git_hooks-0.1.0-py3-none-any.whl
+            [ducktape-util]=bb-out/bazel-out/k8-fastbuild/bin/util/ducktape_util-0.1.0-py3-none-any.whl
+            [gterm-theme]=bb-out/bazel-out/k8-fastbuild/bin/gnome/gterm_theme/gterm_theme-0.1.0-py3-none-any.whl
+            [aiquota]=bb-out/bazel-out/k8-fastbuild/bin/aiquota/aiquota-0.1.0-py3-none-any.whl
+            [aiquota-extension]=bb-out/bazel-out/k8-fastbuild/bin/aiquota/gnome/aiquota.zip
+          )
+          json='{}'
+          for k in "${!MAP[@]}"; do
+            f="${MAP[$k]}"
+            if [[ ! -f "$f" ]]; then
+              echo "::error::missing artifact for pin '$k' at $f"
+              exit 1
+            fi
+            abs="$(realpath "$f")"
+            json="$(jq --arg k "$k" --arg v "$abs" '. + {($k): $v}' <<<"$json")"
+          done
+          {
+            echo 'overrides<<EOF'
+            echo "$json"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      # Drives each mkWheel's `importsCheck` (nix/packages/default.nix) against
+      # the PR-source wheel. --impure is required for the getEnv override read.
+      - name: Nix build + imports check
+        env:
+          DUCKTAPE_ARTIFACT_OVERRIDES: ${{ steps.overrides.outputs.overrides }}
+        run: >-
+          nix build --impure --no-link --print-out-paths
+          .#packages.x86_64-linux.ducktape
+          .#packages.x86_64-linux.bbr
+          .#packages.x86_64-linux.claude-hooks
+          .#packages.x86_64-linux.ducktape-git-hooks
+          .#packages.x86_64-linux.ducktape-util
+          .#packages.x86_64-linux.gterm-theme
+          .#packages.x86_64-linux.aiquota
