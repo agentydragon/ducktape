@@ -22,14 +22,14 @@ pkgs.stdenvNoCC.mkDerivation {
   nativeBuildInputs = [ pkgs.makeWrapper ];
   installPhase = ''
     install -Dm644 $src $out/share/java/bazel-diff.jar
-    makeWrapper ${pkgs.jdk_headless}/bin/java $out/bin/bazel-diff \
+    makeWrapper ${pkgs.jre_headless}/bin/java $out/bin/bazel-diff \
       --add-flags "-jar $out/share/java/bazel-diff.jar"
   '';
   meta = {
     description = "Merkle-hash based Bazel target diff (query, not cquery)";
     homepage = "https://github.com/Tinder/bazel-diff";
-    license = lib.licenses.mit;
+    license = lib.licenses.bsd3;
     mainProgram = "bazel-diff";
-    platforms = [ "x86_64-linux" ];
+    platforms = lib.platforms.linux;
   };
 }
