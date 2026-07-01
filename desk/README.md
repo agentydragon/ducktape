@@ -8,6 +8,13 @@ Living doc: inventory, target topology, cable plan, mounting TODOs,
 and a running experiments log. The desk is mid-build — see
 Experiments for the current wiring state.
 
+**North star.** One-button switching between atlas (desktop) and a
+laptop, both plugged into the SB-TB4K with a single USB-C cable
+each; everything else (monitor, keyboard, camera, underdesk hub)
+downstream of the KVM. Plan A in "Target topology" describes it.
+**Currently blocked** on getting atlas itself stably usable with any
+display + keyboard — see the atlas boot / VFIO experiments.
+
 ## Devices on hand
 
 | Device              | Notes                                                                                                                                                                                                                                                            |
@@ -516,6 +523,45 @@ eliminate.
   the shortest possible cable path — no more variables to blame —
   and the next step becomes "boot without VFIO for one cycle to fix
   the wyrm2 config".
+
+### 2026-07-01 — direct DP boot: greeter, violent reboot, EFI-stub-then-artifact stall
+
+**Observations.**
+
+- First boot with GPU → DP → FV43U direct produced BIOS, GRUB, the
+  full kernel boot log, and eventually **a greeter**. So atlas can
+  paint the monitor via this GPU's DP-OUT all the way to a login
+  prompt — which strongly suggests wyrm2 autostarted and drove the
+  DP through VFIO passthrough (the Proxmox host itself has no
+  console GPU, so the greeter has to be coming from the guest).
+- Then atlas **rebooted "violently"** — could be an unattended
+  update install, a wyrm2 guest kernel panic taking the host video
+  with it, or a hardware reset. Not yet clear which.
+- Second boot got as far as `EFI stub: Loaded initrd from
+LINUX_EFI_INITRD_MEDIA_GUID device path`, then the framebuffer
+  froze with faint horizontal purple/green artifact lines and
+  stayed there for at least a minute. That's the firmware
+  framebuffer going stale as the kernel takes over, with no repaint
+  yet from either the kernel or the guest.
+
+**Interpretation.** VFIO cliff confirmed on the direct-DP path;
+wyrm2's guest is the only thing painting video on this box, and it
+takes a while to come up after Proxmox boots. The greeter on boot 1
+is the important positive datapoint — it means the whole video path
+works when the guest is running. The stall on boot 2 is expected
+until wyrm2 boots enough to reclaim the DP-OUT.
+
+**Follow-ups.**
+
+- **Wait 2–3 minutes** on any given boot before concluding it's dead.
+- If the display stays stuck past that: **cable-hotplug the DP** at
+  either end to force a re-negotiation once the guest is up.
+- Once a greeter appears again, **first** action is to open a
+  terminal, drop an SSH authorized_key, ensure the SSH service is
+  running, and grab the IP — before any other work, so the next
+  reboot doesn't strand us.
+- Look into what caused the "violent reboot" via `journalctl -b -1`
+  once SSH is up.
 
 ## Open questions
 
