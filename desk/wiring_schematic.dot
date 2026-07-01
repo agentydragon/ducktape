@@ -1,80 +1,112 @@
-// Desk wiring — schematic view. Rendered with:
+// Desk wiring — schematic view, physical-layout-inspired.
+//
+//   Row 1 (back of desk):  camera · monitor · back-right grommet
+//   Row 2 (desk surface):  keyboard · KVM (sits on top of atlas)
+//   Row 3 (floor / drawer): atlas tower · drawer grommet · laptop slot
+//   Under-desk hub sits with atlas in row 3.
+//
+// Rendered with:
 //   dot -Tsvg desk/wiring_schematic.dot -o desk/wiring_schematic.svg
 //
-// Reflects the current live wiring (Plan A with atlas + rugged on the KVM,
-// keyboard and camera riding the FV43U's own USB-A hub). Edge colours are
-// intended to match future physical coloured cable markers 1:1.
+// Edge colours track the eventual physical coloured-marker system.
 
 digraph desk_wiring {
-    rankdir = LR;
-    graph [splines=ortho, nodesep=0.5, ranksep=1.0, fontname="Helvetica"];
-    node  [shape=box, style="rounded,filled", fillcolor="#f5f5f5",
-           fontname="Helvetica", fontsize=10];
+    rankdir = TB;
+    graph [splines=ortho, nodesep=0.6, ranksep=0.9, fontname="Helvetica"];
+    node  [shape=none, fontname="Helvetica", fontsize=10];
     edge  [fontname="Helvetica", fontsize=9, penwidth=1.6];
 
-    // ── atlas ─────────────────────────────────────────────────────────
-    subgraph cluster_atlas {
-        label="atlas (Proxmox tower)";
-        style="rounded,filled"; fillcolor="#fff7d1"; fontsize=12;
-        atlas_tb_top [label="mobo TB4\n(top port)"];
-        atlas_tb_mid [label="mobo TB4\n(middle port)", style="rounded,dashed,filled", fillcolor="white"];
-    }
+    // ── device nodes (HTML tables so ports are addressable) ────────────
+    monitor [label=<
+      <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="#f5f5f5">
+        <TR><TD COLSPAN="2" BGCOLOR="#d9f2d9"><B>AORUS FV43U</B><BR/><FONT POINT-SIZE="9">43″ 4K@144</FONT></TD></TR>
+        <TR>
+          <TD PORT="usbc">USB-C in<BR/><FONT POINT-SIZE="8">video + hub + PD</FONT></TD>
+          <TD PORT="hi">USB-A upper</TD>
+        </TR>
+        <TR>
+          <TD PORT="lo">USB-A lower</TD>
+          <TD BGCOLOR="white"><FONT COLOR="#888888" POINT-SIZE="8">DP · 2× HDMI 2.1 ·<BR/>USB-B (free)</FONT></TD>
+        </TR>
+      </TABLE>
+    >];
 
-    // ── KVM ──────────────────────────────────────────────────────────
-    subgraph cluster_kvm {
-        label="Sabrent SB-TB4K KVM";
-        style="rounded,filled"; fillcolor="#d6ebff"; fontsize=12;
-        kvm_pc1      [label="host PC1\n(TB4)"];
-        kvm_pc2      [label="host PC2\n(TB4)"];
-        kvm_ds_a     [label="downstream TB4 A"];
-        kvm_ds_bc    [label="downstream TB4 B/C\n(free)", style="rounded,dashed,filled", fillcolor="white"];
-        kvm_usba1    [label="USB-A 1"];
-        kvm_usba_free[label="USB-A 2/3/4\n(free)", style="rounded,dashed,filled", fillcolor="white"];
-    }
+    kvm [label=<
+      <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="#f5f5f5">
+        <TR><TD COLSPAN="2" BGCOLOR="#d6ebff"><B>Sabrent SB-TB4K</B><BR/><FONT POINT-SIZE="9">KVM · on top of atlas</FONT></TD></TR>
+        <TR>
+          <TD PORT="pc1">host PC1 (TB4)</TD>
+          <TD PORT="pc2">host PC2 (TB4)</TD>
+        </TR>
+        <TR>
+          <TD PORT="ds_a">downstream TB4 A</TD>
+          <TD BGCOLOR="white"><FONT COLOR="#888888" POINT-SIZE="8">TB4 B/C free</FONT></TD>
+        </TR>
+        <TR>
+          <TD PORT="usba1">USB-A 1</TD>
+          <TD BGCOLOR="white"><FONT COLOR="#888888" POINT-SIZE="8">USB-A 2/3/4 free</FONT></TD>
+        </TR>
+      </TABLE>
+    >];
 
-    // ── Monitor ──────────────────────────────────────────────────────
-    subgraph cluster_mon {
-        label="AORUS FV43U (43″ 4K@144)";
-        style="rounded,filled"; fillcolor="#d9f2d9"; fontsize=12;
-        mon_usbc [label="USB-C in\n(video + hub + PD)"];
-        mon_hi   [label="USB-A\nupper"];
-        mon_lo   [label="USB-A\nlower"];
-        mon_free [label="DP · 2× HDMI 2.1 ·\nUSB-B uplink (free)", style="rounded,dashed,filled", fillcolor="white"];
-    }
+    atlas [label=<
+      <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="#f5f5f5">
+        <TR><TD COLSPAN="2" BGCOLOR="#fff7d1"><B>atlas</B><BR/><FONT POINT-SIZE="9">Proxmox tower · 2× RTX 5090</FONT></TD></TR>
+        <TR>
+          <TD PORT="tb_top">mobo TB4 (top)</TD>
+          <TD BGCOLOR="white"><FONT COLOR="#888888" POINT-SIZE="8">mobo TB4 (middle, unused)</FONT></TD>
+        </TR>
+      </TABLE>
+    >];
 
-    // ── Grommet holes (pass-through nodes) ───────────────────────────
-    g_backright [label="Back-right\ngrommet",  shape=circle, style=dashed, fillcolor=white, fontsize=9, width=0.9];
-    g_drawer    [label="Right-drawer\ngrommet", shape=circle, style=dashed, fillcolor=white, fontsize=9, width=0.9];
+    laptop [label=<
+      <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="#ffe4b3">
+        <TR><TD><B>Laptop slot</B><BR/><FONT POINT-SIZE="9">currently: rugged</FONT></TD></TR>
+      </TABLE>
+    >];
 
-    // ── Peripherals ──────────────────────────────────────────────────
-    laptop [label="Laptop slot\n(currently: rugged)", style="rounded,filled", fillcolor="#ffe4b3"];
-    kbd    [label="TEX Shura\nkeyboard"];
-    cam    [label="USB-A camera\n(atop monitor)"];
-    hub    [label="Under-desk\nUSB-A hub"];
+    // ── grommet pass-through nodes ──────────────────────────────────────
+    g_backright [shape=circle, style=dashed, label=<<B>back-right</B><BR/>grommet>, fontsize=9, width=1.0, height=1.0];
+    g_drawer    [shape=circle, style=dashed, label=<<B>drawer</B><BR/>grommet>,    fontsize=9, width=1.0, height=1.0];
 
-    // ── Cables — colour = eventual physical marker colour ────────────
-    // (edge labels use xlabel so ortho routing keeps them.)
-    // host links
-    atlas_tb_top -> kvm_pc1
+    // ── peripherals (simple boxes) ──────────────────────────────────────
+    cam [shape=box, style="rounded,filled", fillcolor="#f5f5f5", label="USB-A camera\n(atop monitor)"];
+    kbd [shape=box, style="rounded,filled", fillcolor="#f5f5f5", label="TEX Shura\nkeyboard"];
+    hub [shape=box, style="rounded,filled", fillcolor="#f5f5f5", label="Under-desk\nUSB-A hub"];
+
+    // ── row constraints (physical layout) ───────────────────────────────
+    { rank=same; cam; monitor; g_backright; }                 // row 1: back of desk
+    { rank=same; kbd; kvm; }                                  // row 2: desk surface
+    { rank=same; hub; atlas; g_drawer; laptop; }              // row 3: floor / drawer
+
+    // ── cables (colour = eventual physical marker) ──────────────────────
+    // host: atlas ↔ KVM (very short, both physically adjacent)
+    atlas:tb_top -> kvm:pc1
         [xlabel="Sabrent tag '4'\nTB-class USB-C, short", color="#333333"];
-    laptop  -> g_drawer
-        [xlabel="USB 3.2 20 Gb/s 8K\nUSB-C (worn end at laptop)", color="#c62828", dir=none];
-    g_drawer -> kvm_pc2
+
+    // host: laptop ↔ KVM via drawer grommet
+    laptop -> g_drawer
+        [xlabel="USB 3.2 20 Gb/s 8K", color="#c62828", dir=none];
+    g_drawer -> kvm:pc2
         [color="#c62828"];
 
-    // monitor link
-    kvm_ds_a -> g_backright
+    // KVM ↔ monitor via back-right grommet
+    kvm:ds_a -> g_backright
         [xlabel="Silkland\n40 Gb/s · 200 W", color="#1976d2"];
-    g_backright -> mon_usbc
+    g_backright -> monitor:usbc
         [color="#1976d2"];
 
-    // peripherals
-    kvm_usba1 -> hub
+    // KVM ↔ under-desk hub (direct, no grommet)
+    kvm:usba1 -> hub
         [xlabel="direct\n(USB-A plug)", color="#f57c00"];
-    mon_hi    -> g_backright
+
+    // Monitor hub ↔ keyboard via back-right grommet
+    monitor:hi -> g_backright
         [xlabel="USB-A → USB-C", color="#388e3c"];
     g_backright -> kbd
         [color="#388e3c"];
-    mon_lo    -> cam
+
+    // Monitor hub ↔ camera (direct, both atop monitor)
+    monitor:lo -> cam
         [xlabel="direct\n(USB-A plug)", color="#388e3c"];
 }
