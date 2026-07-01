@@ -1,5 +1,5 @@
 diff --git a/cli/remotebazel/remotebazel.go b/cli/remotebazel/remotebazel.go
-index 74e60ab..7b4ad5e 100644
+index 74e60ab..fecbcb4 100644
 --- a/cli/remotebazel/remotebazel.go
 +++ b/cli/remotebazel/remotebazel.go
 @@ -62,6 +62,7 @@ const (
@@ -10,16 +10,15 @@ index 74e60ab..7b4ad5e 100644
  
  	// Name of the dir where the remote runner should write bazel run scripts
  	// (used to facilitate building a target remotely and running it locally).
-@@ -89,6 +90,8 @@ var (
+@@ -89,6 +90,7 @@ var (
  	useSystemGitCredentials = RemoteFlagset.Bool("use_system_git_credentials", false, "Whether to use github auth pre-configured on the remote runner. If false, require https and an access token for git access.")
  	runFromBranch           = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
  	runFromCommit           = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 +	repoURL                 = RemoteFlagset.String("repo_url", "", "If set, use this URL when fetching on the remote runner instead of the local git remote's own URL. Branch/commit auto-detection and local-diff patching still run exactly as if this flag were unset -- they're based on the local remote's tracking refs, not on its URL. Use this when the URL reachable locally (e.g. through a sandboxing proxy) differs from the URL the runner needs (a real, directly-reachable one) but both point at the same repo/history. Falls back to the `buildbuddy.remote-bazel-repo-url` .git/config key if unset, so it can be configured once instead of passed on every invocation.")
-+	applyLocalPatches       = RemoteFlagset.Bool("apply_local_patches", false, "If set together with --run_from_branch or --run_from_commit, also mirror local working-tree changes as a patchset on top of the resolved base commit, instead of the default clean-checkout behavior for those flags.")
  	// From a shell, pass the JSON in single quotes.
  	// Ex. --run_from_snapshot='{"snapshotId":"XXX","instanceName":""}'
  	runFromSnapshot = RemoteFlagset.String("run_from_snapshot", "", "JSON for a snapshot key that the remote runner should be resumed from. If unset, the snapshot key is determined programatically.")
-@@ -371,7 +374,7 @@ func Config() (*RepoConfig, error) {
+@@ -371,7 +373,7 @@ func Config() (*RepoConfig, error) {
  	if err != nil {
  		return nil, status.WrapError(err, "determine remote")
  	}
@@ -28,16 +27,7 @@ index 74e60ab..7b4ad5e 100644
  	log.Debugf("Using fetch URL: %s", fetchURL)
  
  	defaultBranch, err := determineDefaultBranch(remote.name)
-@@ -391,7 +394,7 @@ func Config() (*RepoConfig, error) {
- 		DefaultBranch: defaultBranch,
- 	}
- 
--	if *runFromBranch == "" && *runFromCommit == "" {
-+	if (*runFromBranch == "" && *runFromCommit == "") || *applyLocalPatches {
- 		patches, err := generatePatches(commit)
- 		if err != nil {
- 			return nil, status.WrapError(err, "generate patches")
-@@ -402,6 +405,29 @@ func Config() (*RepoConfig, error) {
+@@ -402,6 +404,29 @@ func Config() (*RepoConfig, error) {
  	return repoConfig, nil
  }
  
