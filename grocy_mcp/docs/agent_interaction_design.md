@@ -90,10 +90,12 @@ Agent: create_product(
   Notes on this tool:
   - `stock_qu` accepts a name (or ID). It's required — no default.
   - `location` is the default storage location. Required — no default.
+  - `default_best_before_days` (auto-calculates expiry on add) is
+    required — no default. Forces the agent to decide the product's
+    shelf-life policy instead of one being silently applied.
   - purchase_qu defaults to stock_qu (90% of the time they're the same).
     Agent can override: `purchase_qu: "Crate"` if buying in bulk units.
   - Optional fields: `min_stock_amount` (for low-stock alerts),
-    `default_best_before_days` (auto-calculates expiry on add),
     `product_group` (int|str), `description`.
   - Response confirms what was created with names, not just IDs.
 
@@ -417,12 +419,12 @@ Notes:
 
 ### Product Management
 
-| Tool             | Purpose                  | Required Params          | Notes                                                                            |
-| ---------------- | ------------------------ | ------------------------ | -------------------------------------------------------------------------------- |
-| `products_list`  | All products             | (none)                   | `detail: "brief"\|"full"`, default brief (id + name)                             |
-| `create_product` | Create a new product     | name, stock_qu, location | Optional: min_stock_amount, default_best_before_days, product_group, description |
-| `products_edit`  | Partial-update a product | product + changed fields |                                                                                  |
-| `product_delete` | Delete a product         | product                  |                                                                                  |
+| Tool             | Purpose                  | Required Params                                    | Notes                                                  |
+| ---------------- | ------------------------ | -------------------------------------------------- | ------------------------------------------------------ |
+| `products_list`  | All products             | (none)                                             | `detail: "brief"\|"full"`, default brief (id + name)   |
+| `create_product` | Create a new product     | name, stock_qu, location, default_best_before_days | Optional: min_stock_amount, product_group, description |
+| `products_edit`  | Partial-update a product | product + changed fields                           |                                                        |
+| `product_delete` | Delete a product         | product                                            |                                                        |
 
 ### Reference Data
 

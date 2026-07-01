@@ -81,9 +81,15 @@ async def create_refunwrap_result(client: Client) -> RefData:
                         "stock_qu": qu_name,
                         "location": loc_name,
                         "min_stock_amount": 1,
+                        "default_best_before_days": 0,
                         "description": "Test product for e2e",
                     },
-                    {"name": product_names[1], "stock_qu": qu_name, "location": loc_name},
+                    {
+                        "name": product_names[1],
+                        "stock_qu": qu_name,
+                        "location": loc_name,
+                        "default_best_before_days": 0,
+                    },
                 ]
             },
         )

@@ -156,10 +156,14 @@ sentinel is `2999-12-31`.
 `stock_add` omits `best_before_date`:
 
 - `-1` → never expires (`2999-12-31`)
-- `0` (default) → **today** (not "disabled" — stock appears due immediately)
+- `0` → **today** (not "disabled" — stock appears due immediately)
 - `N > 0` → today + N days
 
-For products that don't expire (salt, vinegar, etc.), set
+`products_create` requires this field on every item — there is no
+default. Decide the product's shelf-life policy at creation time
+instead of leaving it to chance; `0` is a valid, deliberate choice
+(same-day), not a fallback for "didn't think about it". For products
+that don't expire (salt, vinegar, etc.), set
 `default_best_before_days = -1` at creation time, or pass
 `best_before_date = "2999-12-31"` on every `stock_add`.
 

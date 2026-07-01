@@ -914,7 +914,10 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     ) -> list[CreateOk | CreateError]:
         """Create one or more products.
 
-        Each item needs `name`, `stock_qu`, and `location`. All entity
+        Each item needs `name`, `stock_qu`, `location`, and
+        `default_best_before_days` — the last one is required with no
+        default so you have to decide the product's shelf-life policy
+        up front rather than one silently getting applied. All entity
         references (`stock_qu`, `location`, `purchase_qu`, `product_group`)
         take names or IDs and resolve via `quantity_units_list` /
         `locations_list` / `product_groups_list`. `purchase_qu` defaults to
