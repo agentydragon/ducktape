@@ -66,9 +66,14 @@ in
       ]
     );
 
-    home.activation.bazelUserDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      mkdir -p '${bazelCacheRoot}' '${bazeliskCache}' ${lib.optionalString userCache.enable "'${bazelRepoContentsCache}' '${bazelDiskCache}'"}
-    '';
+    ducktape.cacheDirs = [
+      bazelCacheRoot
+      bazeliskCache
+    ]
+    ++ lib.optionals userCache.enable [
+      bazelRepoContentsCache
+      bazelDiskCache
+    ];
 
     home.sessionVariables.BAZELISK_HOME = bazeliskCache;
   };

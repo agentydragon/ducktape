@@ -15,6 +15,7 @@
   imports = [
     ../codex # OpenAI Codex CLI + config
     ../modules/bazel.nix # User-level Bazel config and shared caches
+    ../modules/cache-dirs.nix # Shared cache directory materialization
     ../modules/sops-env.nix # ducktape.sopsEnv (BuildBuddy key reads this)
     ../modules/buildbuddy.nix # BuildBuddy creds -> bazelrc + BUILDBUDDY_API_KEY
     ../modules/forgejo-ssh.nix # Forgejo bot push key + git.allegedly.works ssh block

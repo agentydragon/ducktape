@@ -16,18 +16,6 @@ let
   codexBazeliskCache = "${config.xdg.cacheHome}/bazelisk";
   codexPreCommitCache = "${config.xdg.cacheHome}/pre-commit";
   codexSccacheCache = "${config.xdg.cacheHome}/sccache";
-  bazelModuleOwnsCacheDirs = config.ducktape.bazel.enable or false;
-  codexCacheDirs = [
-    codexHomeAbsolute
-    codexNpmCache
-    codexNixCache
-    codexPreCommitCache
-    codexSccacheCache
-  ]
-  ++ lib.optionals (!bazelModuleOwnsCacheDirs) [
-    codexBazelCache
-    codexBazeliskCache
-  ];
   # Current Codex host-owned GitHub app connector id. Codex matches app approval
   # config by connector id from the tool's MCP metadata, not by display name.
   githubCodexAppsConnectorId = "connector_76869538009648d5b282a4bb21c3d157";
@@ -199,10 +187,6 @@ let
   # on long-lived hosts where $BASE already exists.) merge.py already no-ops when
   # the base config isn't present, so no shell guard is needed.
   mergeScript = ''
-    for dir in ${lib.escapeShellArgs codexCacheDirs}; do
-      mkdir -p "$dir"
-    done
-
     BASE='${baseFileAbsolute}' LIVE='${liveFileAbsolute}' ${pythonMerge}/bin/python ${./merge.py}
   '';
 in
@@ -225,6 +209,16 @@ in
     };
     localModels.enable = lib.mkEnableOption "the cluster/local (gpt-oss) Codex model providers + profiles";
   };
+
+  config.ducktape.cacheDirs = [
+    codexHomeAbsolute
+    codexNpmCache
+    codexNixCache
+    codexBazelCache
+    codexBazeliskCache
+    codexPreCommitCache
+    codexSccacheCache
+  ];
 
   config.programs.codex = {
     enable = true;
@@ -269,7 +263,7 @@ in
       '';
     }
     // skillFiles;
-    activation.codexConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] mergeScript;
+    activation.codexConfig = lib.hm.dag.entryAfter [ "ducktapeCacheDirs" ] mergeScript;
     sessionVariables = lib.mkIf useXdgDirectories {
       CODEX_HOME = "${config.xdg.configHome}/codex";
     };

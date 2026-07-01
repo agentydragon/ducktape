@@ -81,6 +81,7 @@ in
     ./modules/atuin.nix
     ./modules/bazel.nix
     ./modules/buildbuddy.nix
+    ./modules/cache-dirs.nix
     ./modules/datetime-format.nix
     ./modules/sops-env.nix
     ./modules/ssh.nix
