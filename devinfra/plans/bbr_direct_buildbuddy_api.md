@@ -1,6 +1,6 @@
 # Plan: `bbr` talks to BuildBuddy directly, bypassing `bb remote`
 
-Alternative to <bb-repo-url-commit-override.md> (the recommended, much
+Alternative to <bb_repo_url_commit_override.md> (the recommended, much
 smaller primary approach: patch `bb` upstream). This doc is a shelved plan,
 not a recommendation to build now — see "Recommendation" at the end.
 
@@ -11,7 +11,7 @@ pinned as a prebuilt binary (`nix/packages/bb.nix`, `artifacts.bb`). Fully
 replacing that dependency would give us:
 
 - Direct control over the repo-URL/commit/patch decision (the thing that
-  motivated <bb-repo-url-commit-override.md>) without needing any upstream
+  motivated <bb_repo_url_commit_override.md>) without needing any upstream
   change at all.
 - No dependency on `bb`'s binary release cadence or its own bugs (we've
   already hit and worked around two: the `insteadOf`/`github-no-proxy`
@@ -148,7 +148,7 @@ Even with the smaller build cost, bypassing `bb` means:
 **Don't build this now.** The actual motivating gap — pinning an explicit
 repo URL/commit while keeping local patches — is better closed by the
 small, backward-compatible upstream patch in
-<bb-repo-url-commit-override.md>, which costs a few hours instead of a
+<bb_repo_url_commit_override.md>, which costs a few hours instead of a
 few days and doesn't take on any ongoing API-maintenance burden. Revisit
 this plan only if a stronger reason to drop the `bb` binary dependency
 shows up (e.g., accumulating more `bb`-specific paper cuts, or wanting

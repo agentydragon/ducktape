@@ -35,7 +35,7 @@ SHA rather than whatever `bb` auto-detects" has no knob for it.
 
 ## Proposed patch
 
-`devinfra/plans/bb-repo-url-commit-override.patch` (generated against
+`devinfra/plans/bb_repo_url_commit_override.patch` (generated against
 `buildbuddy-io/buildbuddy@d4e8918`, `cli/remotebazel/remotebazel.go` +
 `remotebazel_test.go`). Adds two new flags to the existing `RemoteFlagset`:
 
@@ -105,7 +105,7 @@ for them. A new opt-in flag is strictly safer to propose upstream.
    an explicit-commit-plus-patches run. This patch is for a future need,
    not blocking anything today.
 2. **To submit upstream**: fork `buildbuddy-io/buildbuddy`, apply
-   `bb-repo-url-commit-override.patch`, get it building/passing under
+   `bb_repo_url_commit_override.patch`, get it building/passing under
    their Bazel setup, open a PR referencing this use case (decoupling
    local git remote/branch state from the runner's checkout target for
    sandboxed/proxied CI environments).
