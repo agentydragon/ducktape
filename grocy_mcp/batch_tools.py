@@ -428,7 +428,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             async with sem:
                 stock_r = await client.get(f"/stock/products/{product_id}")
                 stock_r.raise_for_status()
-                return float(stock_r.json().get("stock_amount", 0))
+                return float(stock_r.json()["stock_amount"])
         except Exception:
             logger.warning("failed to read new_amount for product %d after mutation", product_id, exc_info=True)
             return None
