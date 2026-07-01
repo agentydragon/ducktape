@@ -438,6 +438,57 @@ swaps means whatever wedged, stayed wedged.
 **In parallel.** User is still hunting for the USB WiFi stick; plan
 B once video is back is to tether atlas to a phone hotspot.
 
+### 2026-07-01 — isolate: keyboard-into-atlas + DP off a non-loopback GPU port
+
+Two isolation tests to rule out simpler explanations.
+
+**Test A — keyboard directly into atlas.** Moved TEX Shura off the
+FV43U hub and into a rear USB-A port on atlas itself, with the FV43U
+USB-C into atlas's top TB port. Mashing keys did not wake anything up
+on the monitor: same "USB-C no signal". So the gray/no-signal isn't
+"display server idle-blanked, needs input" — atlas is not painting
+video regardless of input.
+
+**Test B — DP off a different GPU port.** Cabled DP from a second
+DP-OUT on one of the RTX 5090s (a port that is _not_ the one feeding
+the mobo's internal DP-IN loopback) into the FV43U's DP 1.4 input.
+No signal there either.
+
+**Interpretation.** Combined with the earlier findings:
+
+- BIOS/GRUB/early kernel _did_ light up the monitor (via the mobo TB
+  loopback). So one GPU + its DP-OUT does produce a valid signal
+  during firmware framebuffer.
+- Once the kernel finishes booting: nothing on the mobo TB output at
+  any port, nothing on a direct DP-OUT off the same GPU family, and
+  no wake-on-USB input either.
+
+This is strongly consistent with the original `vfio-pci` hypothesis
+that we prematurely dismissed: both RTX 5090s get bound to `vfio-pci`
+for wyrm2 passthrough at kernel boot, all their outputs go dark
+because atlas Proxmox itself has no console GPU left, and — because
+wyrm2 either doesn't autostart or is configured to output on some
+port we haven't tried yet — nothing else drives the display either.
+The earlier "middle vs. top TB port" and cable-quality distinctions
+look like noise on top of that root cause.
+
+**Follow-ups.**
+
+- Once atlas is on the network (USB WiFi stick or phone tether):
+  - `qm list --full` (or `virsh list --all`) — is wyrm2 running?
+    `qm config <wyrm2 vmid>` — is `onboot: 1`? Which DP output does
+    its guest driver target?
+  - `lspci -nnk | grep -A3 -Ei 'nvidia|thunderbolt'` — driver
+    binding on the RTX 5090s post-boot.
+  - `dmesg -T | grep -Ei 'vfio|thunderbolt|drm|nouveau|nvidia'` —
+    the exact handoff moment.
+- Before SSH: try DP from _each_ DP-OUT on _each_ RTX 5090 to the
+  FV43U DP input in turn. If wyrm2 _is_ up but outputting to a
+  specific port, one of the eight-or-so ports will show something.
+- Ultimate fallback: rescue USB, mount `/`, either
+  disable-vfio-in-GRUB for one boot, or fix `wyrm2` autostart config
+  from the recovered filesystem.
+
 ## Open questions
 
 - atlas: which RTX 5090 and which DP port feeds the internal DP m-m
