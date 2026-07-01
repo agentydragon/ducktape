@@ -13,63 +13,27 @@
 digraph desk_wiring {
     rankdir = TB;
     graph [splines=ortho, nodesep=0.6, ranksep=0.9, fontname="Helvetica"];
-    node  [shape=none, fontname="Helvetica", fontsize=10];
+    node  [fontname="Helvetica", fontsize=10];
     edge  [fontname="Helvetica", fontsize=9, penwidth=1.6];
 
-    // ── device nodes (HTML tables so ports are addressable) ────────────
-    monitor [label=<
-      <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="#f5f5f5">
-        <TR><TD COLSPAN="2" BGCOLOR="#d9f2d9"><B>AORUS FV43U</B><BR/><FONT POINT-SIZE="9">43″ 4K@144</FONT></TD></TR>
-        <TR>
-          <TD PORT="usbc">USB-C in<BR/><FONT POINT-SIZE="8">video + hub + PD</FONT></TD>
-          <TD PORT="hi">USB-A upper</TD>
-        </TR>
-        <TR>
-          <TD PORT="lo">USB-A lower</TD>
-          <TD BGCOLOR="white"><FONT COLOR="#888888" POINT-SIZE="8">DP · 2× HDMI 2.1 ·<BR/>USB-B (free)</FONT></TD>
-        </TR>
-      </TABLE>
-    >];
+    // ── device nodes (Mrecord: single vertical column of ports) ────────
+    monitor [shape=Mrecord, style=filled, fillcolor="#d9f2d9",
+             label="{ AORUS FV43U (43″ 4K@144) | <usbc> USB-C in — video + hub + PD | <hi> USB-A upper | <lo> USB-A lower | DP · 2× HDMI 2.1 · USB-B (free) }"];
 
-    kvm [label=<
-      <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="#f5f5f5">
-        <TR><TD COLSPAN="2" BGCOLOR="#d6ebff"><B>Sabrent SB-TB4K</B><BR/><FONT POINT-SIZE="9">KVM · on top of atlas</FONT></TD></TR>
-        <TR>
-          <TD PORT="pc1">host PC1 (TB4)</TD>
-          <TD PORT="pc2">host PC2 (TB4)</TD>
-        </TR>
-        <TR>
-          <TD PORT="ds_a">downstream TB4 A</TD>
-          <TD BGCOLOR="white"><FONT COLOR="#888888" POINT-SIZE="8">TB4 B/C free</FONT></TD>
-        </TR>
-        <TR>
-          <TD PORT="usba1">USB-A 1</TD>
-          <TD BGCOLOR="white"><FONT COLOR="#888888" POINT-SIZE="8">USB-A 2/3/4 free</FONT></TD>
-        </TR>
-      </TABLE>
-    >];
+    kvm [shape=Mrecord, style=filled, fillcolor="#d6ebff",
+         label="{ Sabrent SB-TB4K (KVM · on top of atlas) | <pc1> host PC1 (TB4) | <pc2> host PC2 (TB4) | <ds_a> downstream TB4 A | downstream TB4 B/C (free) | <usba1> USB-A 1 | USB-A 2/3/4 (free) }"];
 
-    atlas [label=<
-      <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="#f5f5f5">
-        <TR><TD COLSPAN="2" BGCOLOR="#fff7d1"><B>atlas</B><BR/><FONT POINT-SIZE="9">Proxmox tower · 2× RTX 5090</FONT></TD></TR>
-        <TR>
-          <TD PORT="tb_top">mobo TB4 (top)</TD>
-          <TD BGCOLOR="white"><FONT COLOR="#888888" POINT-SIZE="8">mobo TB4 (middle, unused)</FONT></TD>
-        </TR>
-      </TABLE>
-    >];
+    atlas [shape=Mrecord, style=filled, fillcolor="#fff7d1",
+           label="{ atlas (Proxmox tower · 2× RTX 5090) | <tb_top> mobo TB4 (top) | mobo TB4 (middle, unused) }"];
 
-    laptop [label=<
-      <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" BGCOLOR="#ffe4b3">
-        <TR><TD><B>Laptop slot</B><BR/><FONT POINT-SIZE="9">currently: rugged</FONT></TD></TR>
-      </TABLE>
-    >];
+    laptop [shape=Mrecord, style=filled, fillcolor="#ffe4b3",
+            label="{ Laptop slot | currently: rugged }"];
 
     // ── grommet pass-through nodes ──────────────────────────────────────
-    g_backright [shape=circle, style=dashed, label=<<B>back-right</B><BR/>grommet>, fontsize=9, width=1.0, height=1.0];
-    g_drawer    [shape=circle, style=dashed, label=<<B>drawer</B><BR/>grommet>,    fontsize=9, width=1.0, height=1.0];
+    g_backright [shape=circle, style=dashed, label="back-right\ngrommet", fontsize=9, width=1.0, height=1.0];
+    g_drawer    [shape=circle, style=dashed, label="drawer\ngrommet",    fontsize=9, width=1.0, height=1.0];
 
-    // ── peripherals (simple boxes) ──────────────────────────────────────
+    // ── peripherals ──────────────────────────────────────────────────────
     cam [shape=box, style="rounded,filled", fillcolor="#f5f5f5", label="USB-A camera\n(atop monitor)"];
     kbd [shape=box, style="rounded,filled", fillcolor="#f5f5f5", label="TEX Shura\nkeyboard"];
     hub [shape=box, style="rounded,filled", fillcolor="#f5f5f5", label="Under-desk\nUSB-A hub"];
