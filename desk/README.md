@@ -115,7 +115,7 @@ Each row is one physical link.
 | Link                  | Source port                       | Destination port                     | Cable                  | Have?                                                  |
 | --------------------- | --------------------------------- | ------------------------------------ | ---------------------- | ------------------------------------------------------ |
 | atlas internal video  | atlas RTX 5090 DP-OUT (slot ?)    | atlas mobo DP-IN                     | DP m-m                 | Yes (already wired).                                   |
-| atlas → KVM           | atlas mobo TB4-OUT (USB-C)        | SB-TB4K host PC1                     | USB-C TB-class         | Cabled — Sabrent-looking 2 ft, tag "4". Both ends landed (one of atlas's TB ports ↔ one of the KVM's host ports; which specific port on each is not yet recorded). TB4 icon on the connector still to be checked. |
+| atlas → KVM           | atlas mobo TB4-OUT (**middle** port) | SB-TB4K host PC1                  | USB-C TB-class         | Cabled — Sabrent-looking 2 ft, tag "4". Atlas's top TB port carries BIOS video but not kernel DP-Alt; middle port works after kernel takeover, so the cable belongs there. |
 | Laptop → KVM          | Laptop TB4 (USB-C) — right-drawer position | SB-TB4K host PC2            | USB-C TB-class         | Cabled end-to-end — Silkland 40 Gb/s 200 W, routed through the right-drawer grommet; laptop end currently occupied by rugged as a stand-in. |
 | KVM → monitor (combined) | SB-TB4K downstream TB4 (USB-C) | FV43U USB-C in (video + hub + PD)    | USB-C, DP-Alt + USB3.2 | Yes — spare 20 Gb/s 8K USB-C. Bench-tested; flaky under cable strain, see Experiments. |
 | KVM → keyboard        | SB-TB4K USB-A                     | TEX Shura USB-C                      | USB-A → USB-C          | Yes — 3 on hand (one tagged "keyboard").               |
@@ -272,20 +272,29 @@ atlas-side software: no display source for the Proxmox host after
 network yet.
 
 **Additional test — KVM bypass.** Reconnected the FV43U's USB-C
-directly into the same atlas TB port that had been feeding the KVM.
-Result: monitor shows a **gray screen** — link is up (EDID
-negotiated) but no useful content. Same phenomenon as with the KVM
-in-line, which rules the KVM chain out of the diagnosis; atlas itself
-is not painting pixels after the kernel takeover. User reports the
-same symptom on this hardware at the previous apartment, so this is
-a **persistent atlas-side condition**, not new-desk breakage.
+directly into the same atlas TB port that had been feeding the KVM
+(the **top** TB port on atlas). Result: monitor shows a **gray
+screen** — link is up (EDID negotiated) but no useful content. Same
+phenomenon as with the KVM in-line, so the KVM chain is out of the
+diagnosis. User reports the same symptom on this hardware at the
+previous apartment.
 
-**Current physical state.** For local debugging:
+**Additional test — different atlas TB port.** Moved the direct-
+connect FV43U USB-C from atlas's **top** TB port to atlas's **middle**
+TB port. This works: **atlas is signed in with the desktop console
+live on the FV43U** and the keyboard usable via the monitor's built-in
+USB-A hub. So the earlier "gray screen" wasn't a `vfio-pci` /
+framebuffer-handoff issue after all — it was port-selection. The
+mobo's TB DP-Alt output is only wired to the middle TB port after the
+kernel initialises, not the top one (BIOS paints all ports; kernel
+paints only middle).
 
-- FV43U USB-C is on atlas's TB4 port directly (KVM bypassed for
-  atlas video).
-- TEX Shura is on the FV43U's built-in USB-A hub, so the keyboard is
-  available to atlas when local console eventually recovers.
+**Current physical state.** For local atlas setup:
+
+- FV43U USB-C is on atlas's **middle** TB port directly (KVM still
+  bypassed for atlas video).
+- TEX Shura is on the FV43U's built-in USB-A hub, giving atlas the
+  keyboard.
 
 **Follow-ups.**
 
@@ -299,10 +308,15 @@ a **persistent atlas-side condition**, not new-desk breakage.
 - Since the KVM-in-line and direct-connect tests both produce the
   same gray-screen state, the KVM stays out of scope for this
   diagnosis. Debugging is atlas config, not desk wiring.
-- Longer-term: consider giving atlas a display source that survives
-  `vfio-pci` binding (iGPU if the mobo has one, or a small spare GPU
-  not in the passthrough set) so BIOS-only boot debugging isn't the
-  only console option.
+- **Next:** re-run the KVM chain with atlas's **middle** TB port as
+  the source (not the top port). Expected outcome: atlas console
+  reaches the FV43U via the KVM the same way rugged did.
+- Longer-term: understand *why* only the middle TB port carries kernel
+  DP-Alt (BIOS setting? mobo silkscreen? IOMMU group of the top port
+  is passed through?). Could also give atlas a display source that
+  survives full VFIO passthrough (iGPU or spare GPU outside the
+  passthrough set) so console debugging isn't dependent on TB port
+  choice.
 
 ## Open questions
 
@@ -316,8 +330,9 @@ a **persistent atlas-side condition**, not new-desk breakage.
 - Whether the "tag 4" ~2 ft Sabrent-looking USB-C cable is actually
   TB4-marked (now the atlas host link — cabled, marking not yet
   visually verified).
-- Which SB-TB4K host port (PC1 vs. PC2) each host cable is landed
-  on, and which of atlas's several TB ports the atlas-side is in.
+- Which SB-TB4K host port (PC1 vs. PC2) each host cable is landed on.
+  Atlas-side TB port is now known: **middle** on the mobo silkscreen
+  (top port carries BIOS video but drops after kernel init).
 - Physical placement of the KVM (desktop vs. underdesk mount) —
   affects all USB-A cable lengths.
 - Per-link cable-length constraints (desk-edge to under-desk, monitor
