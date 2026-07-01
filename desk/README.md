@@ -159,6 +159,14 @@ to decide between then:
   USB-downstream).
 - Numbered tags `01..NN` with the key recorded here.
 
+## Cable routing
+
+Physical paths cables take through / around the desk. Grows as more
+cables are pulled.
+
+- **KVM → monitor (20 Gb/s 8K USB-C)** — routed through the
+  **back-right grommet hole**.
+
 ## Experiments
 
 ### 2026-06-30 — Plan A bench test with rugged as host
