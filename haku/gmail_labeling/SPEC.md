@@ -23,7 +23,8 @@ Consequences the operator can rely on:
   read-only. The agent cannot bypass the server to reach Gmail directly.
 
 Enforcement is structural: it lives in reviewed code (`LabelClient`, checked
-before any Gmail call), not in the agent's instructions.
+before any Gmail call), not in the agent's instructions. In Haku's security
+model this is the one sanctioned world-write — <../base/SECURITY.md>.
 
 ## No human-in-the-loop
 

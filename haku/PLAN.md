@@ -41,6 +41,10 @@ below.
 
 ## Durable doctrine (keep honoring this as the system grows)
 
+The doctrine's concrete realization — threat model, every enforcement mechanism with its
+source-of-truth file, and the invariants edits must preserve — is indexed in
+<base/SECURITY.md>; start a security review there.
+
 - **The container is the trust boundary.** Assume anything reachable from Haku's
   container is fully available to the agent, and that prompt-injected instructions in
   any source (an email body, a transaction memo, a Tana note) can invoke anything Haku

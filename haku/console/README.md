@@ -15,7 +15,8 @@ namespace Haku has full CRUD over. Haku therefore has no RBAC to read the consol
 secrets/logs or patch it, and the console sits outside the `haku-mitmproxy` egress
 fence (that fence keys on `haku-sandbox`). This is the confidentiality boundary that
 lets the console hold secrets Haku may not read (e.g. the Claude Code web session
-bearer). See `haku/PLAN.md` → _The agent-authored console_.
+bearer). See `haku/PLAN.md` → _The agent-authored console_. Haku's full security model
+(threat model, enforcement inventory, invariants): <../base/SECURITY.md>.
 
 ## The capability tier — privileged actions, operator-gated
 
