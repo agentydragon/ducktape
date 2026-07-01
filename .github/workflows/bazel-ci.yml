@@ -96,10 +96,12 @@ jobs:
               if [ -n "$BASE" ] && [ -n "$HEAD_SHA" ]; then
                 echo "before-revision: $BASE"
                 echo "head:            $HEAD_SHA"
+                # -targets is the query (default //...); the before-revision
+                # is a positional argument, NOT -before-revision.
                 target-determinator \
                   -cache-dir=/tmp/td-cache \
-                  -before-revision="$BASE" \
-                  //...
+                  -targets=//... \
+                  "$BASE"
               else
                 echo "could not resolve merge-base (BASE=$BASE HEAD=$HEAD_SHA); skipping"
               fi
