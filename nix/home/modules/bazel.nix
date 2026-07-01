@@ -6,12 +6,13 @@
 }:
 let
   cfg = config.ducktape.bazel;
+  inherit (config.ducktape) cachePaths;
   inherit (cfg) userCache;
-  bazelCacheRoot = "${config.xdg.cacheHome}/bazel";
+  bazelCacheRoot = cachePaths.bazel;
   bazelOutputUserRoot = "${bazelCacheRoot}/_bazel_${config.home.username}";
   bazelRepoContentsCache = "${bazelOutputUserRoot}/cache/repo-contents";
   bazelDiskCache = "${bazelOutputUserRoot}/cache/disk";
-  bazeliskCache = "${config.xdg.cacheHome}/bazelisk";
+  bazeliskCache = cachePaths.bazelisk;
 in
 {
   options.ducktape.bazel = {

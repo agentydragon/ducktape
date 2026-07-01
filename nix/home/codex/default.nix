@@ -9,12 +9,8 @@
 }:
 let
   cfg = config.ducktape.codex;
+  inherit (config.ducktape) cachePaths;
   execPolicyRules = import ./execpolicy-rules.nix { inherit lib; };
-  codexNpmCache = "${config.xdg.cacheHome}/codex/npm";
-  codexNixCache = "${config.xdg.cacheHome}/nix";
-  codexBazelCache = "${config.xdg.cacheHome}/bazel";
-  codexBazeliskCache = "${config.xdg.cacheHome}/bazelisk";
-  codexPreCommitCache = "${config.xdg.cacheHome}/pre-commit";
   # Current Codex host-owned GitHub app connector id. Codex matches app approval
   # config by connector id from the tool's MCP metadata, not by display name.
   githubCodexAppsConnectorId = "connector_76869538009648d5b282a4bb21c3d157";
@@ -78,8 +74,8 @@ let
         CODEX_AGENT = "1";
         # Keep npm installs from node-based pre-commit hooks inside a
         # Codex-owned cache that is writable from the sandbox.
-        NPM_CONFIG_CACHE = codexNpmCache;
-        BAZELISK_HOME = codexBazeliskCache;
+        NPM_CONFIG_CACHE = cachePaths.codexNpm;
+        BAZELISK_HOME = cachePaths.bazelisk;
       };
     };
     sandbox_mode = cfg.sandboxMode;
@@ -90,7 +86,7 @@ let
   // lib.optionalAttrs (cfg.sandboxMode == "workspace-write") {
     sandbox_workspace_write = {
       writable_roots = [
-        codexNixCache
+        cachePaths.nix
         # Do not add /nix here. Codex/bubblewrap prepares synthetic mount
         # blockers below writable roots, including .git sentinels such as
         # /nix/.git, to keep repository metadata from leaking into the
@@ -98,14 +94,14 @@ let
         # it writable makes sandbox startup fail before the requested command
         # runs. Use the user-owned ~/.cache/nix cache for sandboxed Nix state;
         # run real Nix store writes outside the sandbox.
-        codexPreCommitCache
+        cachePaths.preCommit
         # Writable roots must be directories. The pre-commit hook log is a file;
         # listing it directly makes sandbox startup inspect
         # ~/.cache/pre-commit/pre-commit.log/.codex and fail with ENOTDIR. The
         # parent directory above is enough for pre-commit to update the log.
-        codexNpmCache
-        codexBazelCache
-        codexBazeliskCache
+        cachePaths.codexNpm
+        cachePaths.bazel
+        cachePaths.bazelisk
       ];
       network_access = true;
       exclude_tmpdir_env_var = false;
@@ -210,11 +206,11 @@ in
 
   config.ducktape.cacheDirs = [
     codexHomeAbsolute
-    codexNpmCache
-    codexNixCache
-    codexBazelCache
-    codexBazeliskCache
-    codexPreCommitCache
+    cachePaths.codexNpm
+    cachePaths.nix
+    cachePaths.bazel
+    cachePaths.bazelisk
+    cachePaths.preCommit
   ];
 
   config.programs.codex = {

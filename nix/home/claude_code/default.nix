@@ -312,8 +312,8 @@
 }:
 let
   cfg = config.programs.claude-code;
+  inherit (config.ducktape) cachePaths;
   allowed = import ../allowed-commands.nix;
-  bazeliskCache = "${config.xdg.cacheHome}/bazelisk";
 
   # Gmail MCP Server - pinned to specific commit for security
   gmail-mcp-server = import ../../packages/gmail-mcp.nix { inherit pkgs lib; };
@@ -582,9 +582,9 @@ in
         excludedCommands = [ "nvidia-smi" ];
         filesystem = {
           allowWrite = [
-            "~/.cache/bazel"
-            "~/.cache/bazelisk"
-            "~/.cache/pre-commit"
+            cachePaths.bazel
+            cachePaths.bazelisk
+            cachePaths.preCommit
           ];
         };
       };
@@ -592,7 +592,7 @@ in
       # Enable sandbox-runtime debug logging so network allow/deny decisions
       # (e.g. "Denied by config rule: telemetry.aspect.build:443") appear in
       # ~/.claude/debug/ session logs.
-      env.BAZELISK_HOME = bazeliskCache;
+      env.BAZELISK_HOME = cachePaths.bazelisk;
       env.SRT_DEBUG = "1";
       env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
 
