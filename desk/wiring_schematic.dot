@@ -1,113 +1,31 @@
-// Desk wiring — schematic view.
-//
-// Rendered with:
-//   dot -Tsvg desk/wiring_schematic.dot -o desk/wiring_schematic.svg
-//
-// Hardware nodes are uncoloured (bold header + plain port rows).
-// Wire colours are distinct per physical cable and are intended to
-// match the eventual coloured cable-marker system.
-
 digraph desk_wiring {
     graph [fontname="Helvetica"];
-    node  [shape=none, fontname="Helvetica", fontsize=10];
+    node  [shape=Mrecord, fontname="Helvetica", fontsize=10];
     edge  [fontname="Helvetica", fontsize=9, penwidth=1.8, dir=none];
 
-    monitor [label=<
-      <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6">
-        <TR><TD><FONT POINT-SIZE="12"><B>AORUS FV43U</B></FONT><BR/><FONT POINT-SIZE="9">43″ 4K@144 monitor</FONT></TD></TR>
-        <TR><TD>optical S/PDIF out</TD></TR>
-        <TR><TD>3.5 mm audio jack</TD></TR>
-        <TR><TD>HDMI 2.1 · #1</TD></TR>
-        <TR><TD>HDMI 2.1 · #2</TD></TR>
-        <TR><TD>DP 1.4</TD></TR>
-        <TR><TD PORT="usbc">USB-C in — video + hub + PD</TD></TR>
-        <TR><TD>USB-B uplink</TD></TR>
-        <TR><TD PORT="hi">USB-A upper</TD></TR>
-        <TR><TD PORT="lo">USB-A lower</TD></TR>
-      </TABLE>
-    >];
+    monitor [label="{ AORUS FV43U — 43″ 4K@144 monitor | optical S/PDIF out | 3.5 mm audio jack | HDMI 2.1 · #1 | HDMI 2.1 · #2 | DP 1.4 | <usbc> USB-C in — video + hub + PD | USB-B uplink | <hi> USB-A upper | <lo> USB-A lower }"];
 
-    // KVM ports laid out to match the physical back of the box:
-    //   left  ("peripheral" side): power · 3× downstream TB4 · 2× USB-A
-    //   right ("host" side)      : 2× host TB4 · 2× USB-A
-    kvm [label=<
-      <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6">
-        <TR><TD COLSPAN="2"><FONT POINT-SIZE="12"><B>Sabrent SB-TB4K</B></FONT><BR/><FONT POINT-SIZE="9">TB4 KVM · on top of atlas</FONT></TD></TR>
-        <TR><TD>power in</TD><TD></TD></TR>
-        <TR><TD PORT="ds_a">downstream TB4 A</TD><TD PORT="pc1">host PC1 (TB4)</TD></TR>
-        <TR><TD>downstream TB4 B</TD><TD PORT="pc2">host PC2 (TB4)</TD></TR>
-        <TR><TD>downstream TB4 C</TD><TD></TD></TR>
-        <TR><TD PORT="usba1">USB-A 1</TD><TD>USB-A 3</TD></TR>
-        <TR><TD>USB-A 2</TD><TD>USB-A 4</TD></TR>
-      </TABLE>
-    >];
+    // KVM: header row, then two vertical columns side by side (peripheral / host)
+    kvm [label="{ Sabrent SB-TB4K — TB4 KVM · on top of atlas | { { power in | <ds_a> downstream TB4 A | downstream TB4 B | downstream TB4 C | <usba1> USB-A 1 | USB-A 2 } | { <pc1> host PC1 (TB4) | <pc2> host PC2 (TB4) | USB-A 3 | USB-A 4 } } }"];
 
-    atlas [label=<
-      <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6">
-        <TR><TD><FONT POINT-SIZE="12"><B>atlas</B></FONT><BR/><FONT POINT-SIZE="9">Proxmox tower · 2× RTX 5090</FONT></TD></TR>
-        <TR><TD PORT="tb_top">mobo TB4 · top</TD></TR>
-        <TR><TD>mobo TB4 · middle</TD></TR>
-      </TABLE>
-    >];
+    atlas [label="{ atlas — Proxmox tower · 2× RTX 5090 | <tb_top> mobo TB4 · top | mobo TB4 · middle }"];
 
-    laptop [label=<
-      <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6">
-        <TR><TD><FONT POINT-SIZE="12"><B>Laptop slot</B></FONT><BR/><FONT POINT-SIZE="9">currently: rugged</FONT></TD></TR>
-      </TABLE>
-    >];
+    laptop [label="Laptop slot — currently: rugged"];
 
     g_backright [shape=circle, style=dashed, label="back-right\ngrommet", fontsize=9, width=1.2, height=1.2];
     g_drawer    [shape=circle, style=dashed, label="drawer\ngrommet",    fontsize=9, width=1.2, height=1.2];
 
-    cam [label=<
-      <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6">
-        <TR><TD><FONT POINT-SIZE="11"><B>USB-A camera</B></FONT><BR/><FONT POINT-SIZE="9">atop monitor</FONT></TD></TR>
-      </TABLE>
-    >];
+    cam [label="USB-A camera\natop monitor"];
+    kbd [label="TEX Shura\nkeyboard"];
+    hub [label="Under-desk USB-A hub"];
 
-    kbd [label=<
-      <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6">
-        <TR><TD><FONT POINT-SIZE="11"><B>TEX Shura</B></FONT><BR/><FONT POINT-SIZE="9">keyboard</FONT></TD></TR>
-      </TABLE>
-    >];
-
-    hub [label=<
-      <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6">
-        <TR><TD><FONT POINT-SIZE="11"><B>Under-desk USB-A hub</B></FONT></TD></TR>
-      </TABLE>
-    >];
-
-    // ── cables ──────────────────────────────────────────────────────────
-    // Each physical cable gets its own colour, distinct from every other
-    // cable. Colours also drive the eventual physical marker system.
-
-    // atlas ↔ KVM (dark grey)
-    atlas:tb_top -> kvm:pc1
-        [label="Sabrent tag '4'\nTB-class USB-C, short", color="#333333"];
-
-    // laptop ↔ KVM via drawer grommet (red)
-    laptop -> g_drawer
-        [label="USB 3.2 20 Gb/s 8K", color="#c62828"];
-    g_drawer -> kvm:pc2
-        [color="#c62828"];
-
-    // KVM ↔ monitor via back-right grommet (blue)
-    kvm:ds_a -> g_backright
-        [label="Silkland\n40 Gb/s · 200 W", color="#1976d2"];
-    g_backright -> monitor:usbc
-        [color="#1976d2"];
-
-    // KVM ↔ under-desk hub (orange)
-    kvm:usba1 -> hub
-        [label="direct\nUSB-A", color="#f57c00"];
-
-    // Monitor hub ↔ keyboard via back-right grommet (green)
-    monitor:hi -> g_backright
-        [label="USB-A → USB-C", color="#388e3c"];
-    g_backright -> kbd
-        [color="#388e3c"];
-
-    // Monitor hub ↔ camera (purple)
-    monitor:lo -> cam
-        [label="direct\nUSB-A", color="#7b1fa2"];
+    atlas:tb_top -> kvm:pc1 [label="Sabrent tag '4'\nTB-class USB-C, short", color="#333333"];
+    laptop -> g_drawer      [label="USB 3.2 20 Gb/s 8K", color="#c62828"];
+    g_drawer -> kvm:pc2     [color="#c62828"];
+    kvm:ds_a -> g_backright [label="Silkland\n40 Gb/s · 200 W", color="#1976d2"];
+    g_backright -> monitor:usbc [color="#1976d2"];
+    kvm:usba1 -> hub        [label="direct\nUSB-A", color="#f57c00"];
+    monitor:hi -> g_backright [label="USB-A → USB-C", color="#388e3c"];
+    g_backright -> kbd      [color="#388e3c"];
+    monitor:lo -> cam       [label="direct\nUSB-A", color="#7b1fa2"];
 }
