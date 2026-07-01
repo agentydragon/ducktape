@@ -16,12 +16,18 @@ build --incompatible_strict_action_env
 build --per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations
 build --host_per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations
 
-# Suppress -Wsign-compare from OR-Tools' own sources. The current 9.15 release
-# emits signed/unsigned comparison warnings in external/or-tools+/, which are
-# upstream code rather than something this repo can fix. Keep this scoped to
-# OR-Tools so repo code still uses the normal warning policy.
-build --per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare
-build --host_per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare
+# Suppress noisy warnings from OR-Tools' own sources — upstream code rather
+# than something this repo can fix. Keep this scoped to OR-Tools so repo code
+# still uses the normal warning policy.
+# -Wsign-compare: signed/unsigned comparisons throughout the 9.15 release.
+# -Wrange-loop-construct: `for (const auto [a, b] : container)` over containers
+#   of std::pair/tuple copies the structured binding instead of binding a
+#   reference (ortools/sat/precedences.cc, linear_propagation.cc, diffn_util.cc,
+#   pseudo_costs.cc, etc.).
+# -Wcomment: ASCII-art diagrams in comments (ortools/util/fixed_shape_binary_tree.h)
+#   contain backslashes gcc parses as line-continuations.
+build --per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment
+build --host_per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment
 
 # Reduce runfiles disk usage (prevents "No space left on device" on CI runners).
 # Each py_test creates a runfiles tree with ~2,458 symlinks for the Python toolchain;
