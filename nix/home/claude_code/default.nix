@@ -524,7 +524,7 @@ in
     plugins = [
       "frontend-design@claude-plugins-official"
       "pyright-lsp@claude-plugins-official"
-      # Configured via repo-level rust-analyzer.toml (linkedProjects + no sccache).
+      # Configured via repo-level rust-analyzer.toml (linkedProjects).
       "rust-analyzer-lsp@claude-plugins-official"
     ];
 

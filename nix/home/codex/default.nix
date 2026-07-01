@@ -15,7 +15,6 @@ let
   codexBazelCache = "${config.xdg.cacheHome}/bazel";
   codexBazeliskCache = "${config.xdg.cacheHome}/bazelisk";
   codexPreCommitCache = "${config.xdg.cacheHome}/pre-commit";
-  codexSccacheCache = "${config.xdg.cacheHome}/sccache";
   # Current Codex host-owned GitHub app connector id. Codex matches app approval
   # config by connector id from the tool's MCP metadata, not by display name.
   githubCodexAppsConnectorId = "connector_76869538009648d5b282a4bb21c3d157";
@@ -91,7 +90,6 @@ let
   // lib.optionalAttrs (cfg.sandboxMode == "workspace-write") {
     sandbox_workspace_write = {
       writable_roots = [
-        codexSccacheCache
         codexNixCache
         # Do not add /nix here. Codex/bubblewrap prepares synthetic mount
         # blockers below writable roots, including .git sentinels such as
@@ -217,7 +215,6 @@ in
     codexBazelCache
     codexBazeliskCache
     codexPreCommitCache
-    codexSccacheCache
   ];
 
   config.programs.codex = {

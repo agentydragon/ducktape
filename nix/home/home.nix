@@ -289,7 +289,6 @@ in
       cargo
       clippy
       rust-analyzer
-      sccache
       gcc
 
       (writeShellScriptBin "z-claude" ''
