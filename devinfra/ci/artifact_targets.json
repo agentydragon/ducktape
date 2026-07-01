@@ -1,5 +1,5 @@
 {
-  "_comment": "Bazel wheel targets consumed by .github/workflows/nix-wheel-check.yml (the PR-time nix imports-check gate). Keys are pin names from nix/artifact-pins.json. `target` and `output` mirror the wheel entries in .github/workflows/release.yml's matrix. `nixPackage: true` means the entry has a corresponding .#packages.x86_64-linux.<pin> flake output to imports-check; `false` means it is a companion artifact (e.g. aiquota's extension zip) that only gets consumed as an override.",
+  "_comment": "Bazel targets that produce the artifacts nix/artifact-pins.json pins, consumed by .github/workflows/nix-wheel-check.yml (the PR-time nix imports-check gate). Keys are pin names from nix/artifact-pins.json. `target` and `output` mirror the entries in .github/workflows/release.yml's matrix. `nixPackage: true` means the entry has a corresponding .#packages.x86_64-linux.<pin> flake output to build; `false` means it is a companion artifact (e.g. aiquota's GNOME Shell extension zip) that only gets consumed as an override into another package.",
   "pins": {
     "ducktape": {
       "target": "//:wheel",

@@ -1,16 +1,17 @@
-# Rebuild ducktape's own Python wheels from PR source and imports-check them
-# via the flake. On PRs, DUCKTAPE_ARTIFACT_OVERRIDES (see flake.nix) swaps the
-# released pin for the freshly-Bazel-built wheel so nix's `mkWheel` imports
-# check runs against PR source — catches "wheel forgot a package" bugs like
+# Rebuild ducktape's own pinned artifacts (Python wheels + aiquota's GNOME
+# Shell extension zip) from PR source and run each nix package's importsCheck
+# against them. DUCKTAPE_ARTIFACT_OVERRIDES (see flake.nix) swaps the released
+# pin for the freshly-Bazel-built artifact so nix's `mkWheel` imports check
+# runs against PR source — catches "wheel forgot a package" bugs like the
 # gmail_api / ducktape_pkg drift in #2669 at PR time, before release.yml
-# publishes a broken wheel and sync-pins.yml rotates the pin onto it.
+# publishes a broken artifact and sync-pins.yml rotates the pin onto it.
 #
 # nix-attic-push.yml still does the full-fleet build against pinned artifacts on
 # push to devel/main; this workflow is the fast per-PR gate.
 #
-# Source of truth for pin → Bazel target + output: devinfra/ci/wheel_targets.json.
-# Keep it in sync with the wheel entries in release.yml's matrix (SYNC comment
-# there points here).
+# Source of truth for pin → Bazel target + output: devinfra/ci/artifact_targets.json.
+# Keep it in sync with the artifact entries in release.yml's matrix (SYNC
+# comment there points here).
 name: Nix wheel check
 
 on:
@@ -31,7 +32,7 @@ env:
 
 jobs:
   nix-wheel-check:
-    name: Build wheels + imports check
+    name: Build artifacts + imports check
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -53,7 +54,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          spec=devinfra/ci/wheel_targets.json
+          spec=devinfra/ci/artifact_targets.json
           bazel_targets=$(jq -r '.pins | [.[] .target] | join(" ")' "$spec")
           nix_pkgs=$(jq -r '
             .pins | to_entries
@@ -69,7 +70,7 @@ jobs:
       # run_from_commit: actions/checkout in PR mode doesn't fetch a local
       # `devel` ref, so bb remote's default base-branch patch sync fails with
       # `git rev-parse devel: exit status 128`. Same rationale as bazel-ci.yml.
-      - name: Build wheels from source
+      - name: Build artifacts from source
         uses: ./.github/actions/bb-remote
         with:
           args: build ${{ steps.inputs.outputs.bazel_targets }} --remote_download_outputs=toplevel
@@ -91,7 +92,7 @@ jobs:
             fi
             abs=$(readlink -f "$rel")
             json=$(jq -c --arg k "$pin" --arg v "$abs" '. + {($k): $v}' <<<"$json")
-          done < <(jq -r '.pins | to_entries[] | "\(.key)\t\(.value.output)"' devinfra/ci/wheel_targets.json)
+          done < <(jq -r '.pins | to_entries[] | "\(.key)\t\(.value.output)"' devinfra/ci/artifact_targets.json)
           {
             echo 'overrides<<EOF'
             echo "$json"
@@ -99,7 +100,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # Drives each mkWheel's `importsCheck` (nix/packages/default.nix) against
-      # the PR-source wheel. --impure is required for the getEnv override read.
+      # the PR-source artifact. --impure is required for the getEnv override read.
       - name: Nix build + imports check
         env:
           DUCKTAPE_ARTIFACT_OVERRIDES: ${{ steps.overrides.outputs.overrides }}
