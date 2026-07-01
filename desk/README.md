@@ -161,15 +161,15 @@ USB-B uplink.
 
 Each row is one physical link.
 
-| Link                     | Source port                                | Destination port                  | Cable          | Have?                                                                                                                                                                            |
-| ------------------------ | ------------------------------------------ | --------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| atlas internal video     | atlas RTX 5090 DP-OUT (slot ?)             | atlas mobo DP-IN                  | DP m-m         | Yes (already wired).                                                                                                                                                             |
-| atlas → KVM              | atlas mobo TB4-OUT (**middle** port)       | SB-TB4K host PC1                  | USB-C TB-class | Cabled — Sabrent-looking 2 ft, tag "4". Atlas's top TB port carries BIOS video but not kernel DP-Alt; middle port works after kernel takeover, so the cable belongs there.       |
-| Laptop → KVM             | Laptop TB4 (USB-C) — right-drawer position | SB-TB4K host PC2                  | USB-C          | In use — 20 Gb/s USB 3.2 Gen 2×2 cable, currently plugged into rugged as laptop stand-in. Not TB4, but the SB-TB4K accepts it and switches cleanly.                              |
-| KVM → monitor (combined) | SB-TB4K downstream TB4 (USB-C)             | FV43U USB-C in (video + hub + PD) | USB-C TB-class | In use — Silkland 40 Gb/s 200 W. Replaces the visibly damaged 20 Gb/s cable that was flaky under strain.                                                                         |
-| Monitor hub → keyboard   | FV43U USB-A downstream (upper)             | TEX Shura USB-C                   | USB-A → USB-C  | In use — the keyboard is on the monitor hub, not the KVM directly. Cable runs monitor → desk keyboard slot → keyboard. Still switches with the KVM via the monitor USB-C uplink. |
-| KVM → underdesk hub      | SB-TB4K USB-A                              | Hub uplink (USB-A plug)           | none (direct)  | Yes — hub plugs in. USB-A F↔M extension available if reach is short.                                                                                                             |
-| Monitor hub → camera     | FV43U USB-A downstream (lower)             | Camera (USB-A plug)               | none (direct)  | Yes — camera plugs in.                                                                                                                                                           |
+| Link                     | Source port                                | Destination port                  | Cable          | Have?                                                                                                                                                                                         |
+| ------------------------ | ------------------------------------------ | --------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| atlas internal video     | atlas RTX 5090 DP-OUT (slot ?)             | atlas mobo DP-IN                  | DP m-m         | Yes (already wired).                                                                                                                                                                          |
+| atlas → KVM              | atlas mobo TB4-OUT (**middle** port)       | SB-TB4K host PC1                  | USB-C TB-class | Cabled — Sabrent-looking 2 ft, tag "4". Atlas's top TB port carries BIOS video but not kernel DP-Alt; middle port works after kernel takeover, so the cable belongs there.                    |
+| Laptop → KVM             | Laptop TB4 (USB-C) — right-drawer position | SB-TB4K host PC2                  | USB-C          | In use — 20 Gb/s USB 3.2 Gen 2×2 cable, currently plugged into rugged as laptop stand-in. Not TB4, but the SB-TB4K accepts it and switches cleanly.                                           |
+| KVM → monitor (combined) | SB-TB4K downstream TB4 (USB-C)             | FV43U USB-C in (video + hub + PD) | USB-C TB-class | In use — Silkland 40 Gb/s 200 W. Replaces the visibly damaged 20 Gb/s cable that was flaky under strain.                                                                                      |
+| Monitor hub → keyboard   | FV43U USB-A downstream (upper)             | TEX Shura USB-C                   | USB-A → USB-C  | In use — the keyboard is on the monitor hub, not the KVM directly. Cable runs monitor → back-right grommet → under-desk → keyboard. Still switches with the KVM via the monitor USB-C uplink. |
+| KVM → underdesk hub      | SB-TB4K USB-A                              | Hub uplink (USB-A plug)           | none (direct)  | Yes — hub plugs in. USB-A F↔M extension available if reach is short.                                                                                                                          |
+| Monitor hub → camera     | FV43U USB-A downstream (lower)             | Camera (USB-A plug)               | none (direct)  | Yes — camera plugs in.                                                                                                                                                                        |
 
 All links buildable with cables on hand. Remaining cable-side
 questions: the tag-4 cable's TB4 marking (atlas host link) and the
@@ -208,8 +208,9 @@ cables are pulled.
   **back-right grommet hole** on the desk. The monitor end sits at
   the FV43U's USB-C input; the KVM end drops under the desk.
 - **Monitor → keyboard (USB-A → USB-C)** — runs from the FV43U's
-  **upper** USB-A downstream port, along the desk to the keyboard
-  slot, into the TEX Shura. Stays on top of the desk end-to-end.
+  **upper** USB-A downstream port down through the **back-right
+  grommet hole** (same one the Silkland uses), under the desk, and
+  up to the TEX Shura in the keyboard slot.
 - **KVM → laptop slot (20 Gb/s USB-C)** — cable runs from the
   SB-TB4K under the desk, up through the **right-drawer grommet
   hole**, and into whichever laptop is docked (currently rugged).

@@ -71,8 +71,10 @@ digraph desk_wiring {
     // peripherals
     kvm_usba1 -> hub
         [xlabel="direct\n(USB-A plug)", color="#f57c00"];
-    mon_hi    -> kbd
-        [xlabel="USB-A → USB-C\n(desk-top)", color="#388e3c"];
+    mon_hi    -> g_backright
+        [xlabel="USB-A → USB-C", color="#388e3c"];
+    g_backright -> kbd
+        [color="#388e3c"];
     mon_lo    -> cam
         [xlabel="direct\n(USB-A plug)", color="#388e3c"];
 }
