@@ -168,7 +168,10 @@ cables are pulled.
 - **Laptop → KVM (20 Gb/s USB-C)** — the right-drawer grommet path,
   currently occupied by the flaky-looking 20 Gb/s cable with rugged
   as laptop stand-in. Working in this role even though it was bad on
-  the KVM → monitor leg earlier.
+  the KVM → monitor leg earlier. **Oriented deliberately** with the
+  visibly-worn end at the tablet side (visible and easy to grab)
+  and the clean end at the KVM (buried under the desk), so if the
+  cable acts up we can inspect / replug the suspect end fast.
 
 ## Experiments
 
