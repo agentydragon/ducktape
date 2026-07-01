@@ -28,7 +28,11 @@ class MoneyAmount(BaseModel):
 
     @property
     def major_units(self) -> float:
-        return self.amount_minor / (10**self.exponent)
+        # `10 ** int` returns `int | Any` (typeshed overloads a negative-
+        # exponent branch that returns float), so `float / (10**int)` widens
+        # to `Any` and trips mypy's warn_return_any. `10.0 ** int` returns
+        # float unconditionally, keeping the division typed.
+        return self.amount_minor / (10.0**self.exponent)
 
 
 class Spend(BaseModel):
