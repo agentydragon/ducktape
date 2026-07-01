@@ -63,6 +63,12 @@ jobs:
             //aiquota:aiquota_wheel
             //aiquota/gnome:aiquota_zip
             --remote_download_outputs=toplevel
+          # actions/checkout in PR mode doesn't fetch a local `devel` ref, so bb
+          # remote's default base-branch patch-sync path fails with
+          # `git rev-parse devel: exit status 128`. run_from_commit tells the
+          # runner to check out this exact commit and skip base resolution —
+          # same rationale as bazel-ci.yml.
+          run_from_commit: ${{ github.event.pull_request.head.sha || github.sha }}
 
       # Map each mkWheel pin name -> Bazel output path, verify every artifact
       # exists, and emit the JSON blob flake.nix's artifacts logic consumes.
