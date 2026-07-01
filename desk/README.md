@@ -4,7 +4,9 @@ Working notes for the home desk setup. Goal: hang every peripheral off
 a Thunderbolt KVM so one button-press swaps the whole desk between
 **atlas** (see top-level <../README.md>) and a hot-plug laptop.
 
-Pre-build. Inventory and target topology only — no cables pulled yet.
+Living doc: inventory, target topology, cable plan, mounting TODOs,
+and a running experiments log. The desk is mid-build — see
+Experiments for the current wiring state.
 
 ## Devices on hand
 
@@ -430,7 +432,7 @@ Current physical state and mounting TODOs.
     tape is the leading candidate.
 - **SB-TB4K PSU.** Plugged into the power strip mounted on the
   back-underside of the desk.
-  - **TODO:** mount the PSU brick onto the Underwear 3D-printed grid
+  - **TODO:** mount the PSU brick onto the Underware 3D-printed grid
     under the desk (so it isn't just hanging off the power-strip
     cable).
 
