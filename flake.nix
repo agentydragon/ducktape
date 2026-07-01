@@ -317,6 +317,7 @@
         pkgs.sops
         pkgs.ssh-to-age
         ducktapePkgs.kubernetes-mcp-server
+        ducktapePkgs.target-determinator
       ];
       # Rust claude-hook is the active hook/shim implementation. The statusline
       # remains Python, exposed through a package that does not put the legacy
