@@ -112,18 +112,15 @@ in
   # the VM's host key. NixOS sops-nix decrypts it via the persisted host key and
   # plants it at ~/.ssh/id_ed25519; home-manager (user=codex) then chains its
   # own sops-nix secrets (BuildBuddy, attic, Forgejo bot key) off this id.
-  # tmpfiles pre-creates the dir codex-owned so home-manager can also write into it.
+  # tmpfiles pre-creates the SSH directory and cache volume mount roots
+  # codex-owned so home-manager can write into them. Cache subdirectories are
+  # created by the Home Manager modules that own those tools.
   systemd.tmpfiles.rules = [
     "d /home/${username}/.ssh 0700 ${username} users - -"
     "d /home/${username}/.cache 0755 ${username} users - -"
     "z /home/${username}/.cache 0755 ${username} users - -"
-    "d /home/${username}/.cache/bazel 0755 ${username} users - -"
-    "d /home/${username}/.cache/bazelisk 0755 ${username} users - -"
-    "d /home/${username}/.cache/codex 0755 ${username} users - -"
     "d /home/${username}/.cache/nix 0755 ${username} users - -"
     "z /home/${username}/.cache/nix 0755 ${username} users - -"
-    "d /home/${username}/.cache/pre-commit 0755 ${username} users - -"
-    "d /home/${username}/.cache/sccache 0755 ${username} users - -"
   ];
   sops.secrets.codex_id_ed25519 = {
     sopsFile = ../../../../ssh_keys/agent-box-codex-user.sops.key;

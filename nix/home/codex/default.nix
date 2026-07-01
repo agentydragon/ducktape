@@ -16,6 +16,18 @@ let
   codexBazeliskCache = "${config.xdg.cacheHome}/bazelisk";
   codexPreCommitCache = "${config.xdg.cacheHome}/pre-commit";
   codexSccacheCache = "${config.xdg.cacheHome}/sccache";
+  bazelModuleOwnsCacheDirs = config.ducktape.bazel.enable or false;
+  codexCacheDirs = [
+    codexHomeAbsolute
+    codexNpmCache
+    codexNixCache
+    codexPreCommitCache
+    codexSccacheCache
+  ]
+  ++ lib.optionals (!bazelModuleOwnsCacheDirs) [
+    codexBazelCache
+    codexBazeliskCache
+  ];
   # Current Codex host-owned GitHub app connector id. Codex matches app approval
   # config by connector id from the tool's MCP metadata, not by display name.
   githubCodexAppsConnectorId = "connector_76869538009648d5b282a4bb21c3d157";
@@ -187,14 +199,7 @@ let
   # on long-lived hosts where $BASE already exists.) merge.py already no-ops when
   # the base config isn't present, so no shell guard is needed.
   mergeScript = ''
-    for dir in \
-      '${codexHomeAbsolute}' \
-      '${codexNpmCache}' \
-      '${codexNixCache}' \
-      '${codexPreCommitCache}' \
-      '${codexSccacheCache}' \
-      '${codexBazelCache}' \
-      '${codexBazeliskCache}'; do
+    for dir in ${lib.escapeShellArgs codexCacheDirs}; do
       mkdir -p "$dir"
     done
 

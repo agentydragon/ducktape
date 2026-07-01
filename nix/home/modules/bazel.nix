@@ -67,7 +67,7 @@ in
     );
 
     home.activation.bazelUserDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      mkdir -p '${bazeliskCache}' ${lib.optionalString userCache.enable "'${bazelRepoContentsCache}' '${bazelDiskCache}'"}
+      mkdir -p '${bazelCacheRoot}' '${bazeliskCache}' ${lib.optionalString userCache.enable "'${bazelRepoContentsCache}' '${bazelDiskCache}'"}
     '';
 
     home.sessionVariables.BAZELISK_HOME = bazeliskCache;

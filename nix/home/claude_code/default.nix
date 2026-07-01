@@ -631,10 +631,6 @@ in
   # Add gmail-mcp-server to PATH for auth setup command
   config.home.packages = [ gmail-mcp-server ];
 
-  config.home.activation.claudeCodeBazeliskCacheDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    mkdir -p '${bazeliskCache}'
-  '';
-
   # Deploy skills and plugin cache.
   config.home.file =
     skillFiles
