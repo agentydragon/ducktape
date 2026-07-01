@@ -76,3 +76,14 @@ py_test(
         "@pypi//respx",
     ],
 )
+
+py_test(
+    name = "test_zai",
+    srcs = ["test_zai.py"],
+    imports = ["../.."],
+    deps = [
+        ":zai_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

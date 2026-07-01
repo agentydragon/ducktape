@@ -1,25 +1,14 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
-    name = "usage_cache",
-    srcs = ["usage_cache.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//devinfra/claude/claude_api:usage",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "statusline_lib",
     srcs = ["statusline.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":usage_cache",
+        "//aiquota:cache",
         "//devinfra/claude:session_paths",
         "//devinfra/claude/claude_api:credentials",
         "//devinfra/claude/claude_api:statusline",
-        "//devinfra/claude/claude_api:usage",
         "@pypi//rich",
     ],
 )
@@ -38,7 +27,7 @@ py_test(
     uses_syrupy = True,
     deps = [
         ":statusline_lib",
-        ":usage_cache",
+        "//aiquota:models",
         "//devinfra/claude/claude_api:credentials",
         "//devinfra/claude/claude_api:statusline",
         "@pypi//pytest",

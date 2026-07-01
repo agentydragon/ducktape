@@ -1,10 +1,12 @@
 """z.ai quota provider.
 
 Fetches 5-hour and 7-day token limits from the z.ai monitor API.
-Auth via API key read from a configurable file path.
+Auth via API key from a configurable file path, falling back to $ZAI_API_KEY
+(so the z-claude wrapper, which sets the key in the env, works with no config).
 """
 
 import logging
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -67,6 +69,23 @@ def _to_window(limit: _Limit | None, window_secs: float) -> QuotaWindow | None:
     )
 
 
+def _resolve_api_key(settings: ZaiSettings) -> str | None:
+    """API key from the configured file, else $ZAI_API_KEY.
+
+    z-claude puts the key in the environment rather than a file, so the env
+    var lets it work with zero aiquota config. The file takes precedence.
+    """
+    path = settings.api_key_path
+    if path is not None:
+        try:
+            key = path.expanduser().read_text().strip()
+        except OSError:
+            key = None
+        if key:
+            return key
+    return os.environ.get("ZAI_API_KEY")
+
+
 class ZaiProvider(Provider):
     name = "zai"
 
@@ -75,16 +94,11 @@ class ZaiProvider(Provider):
 
     async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
-        path = self.settings.api_key_path
-        if path is None:
-            return ProviderFetch(fetched_at=now, result=FetchError(error="no api key path configured"))
-
-        try:
-            key = path.expanduser().read_text().strip()
-        except OSError as e:
-            return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "reading z.ai API key"))
+        key = _resolve_api_key(self.settings)
         if not key:
-            return ProviderFetch(fetched_at=now, result=FetchError(error="api key file is empty"))
+            return ProviderFetch(
+                fetched_at=now, result=FetchError(error="no z.ai API key (set api_key_path or ZAI_API_KEY)")
+            )
 
         try:
             async with httpx.AsyncClient(timeout=API_TIMEOUT_SECS) as client:

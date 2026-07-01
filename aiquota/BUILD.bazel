@@ -5,7 +5,7 @@ py_library(
     name = "models",
     srcs = ["models.py"],
     imports = [".."],
-    visibility = ["//aiquota:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = ["@pypi//pydantic"],
 )
 
@@ -21,6 +21,7 @@ py_library(
     name = "cache",
     srcs = ["cache.py"],
     imports = [".."],
+    visibility = ["//visibility:public"],
     deps = [
         ":config",
         ":models",
@@ -36,6 +37,7 @@ py_library(
     name = "config",
     srcs = ["config.py"],
     imports = [".."],
+    visibility = ["//visibility:public"],
     deps = [
         "//aiquota/providers:claude_lib",
         "//aiquota/providers:codex_lib",

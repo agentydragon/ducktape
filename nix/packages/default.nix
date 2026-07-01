@@ -248,12 +248,18 @@ rec {
     # The wheel declares pip-level deps; this list provides Nix-level equivalents.
     # When adding a dependency, update BOTH places.
     #
-    propagatedBuildInputs = with python3Packages; [
+    # `aiquota` (the derivation, not a python3Packages attr) provides the aiquota
+    # module the statusline imports for quota data; it propagates its own deps
+    # (typer, atomicwrites, ...) so they don't need listing here.
+    propagatedBuildInputs = [
+      aiquota
+    ]
+    ++ (with python3Packages; [
       httpx
       platformdirs
       pydantic
       rich
-    ];
+    ]);
   };
 
   # Expose only the Python statusline command. Active Claude hook dispatch is the

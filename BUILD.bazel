@@ -267,7 +267,11 @@ py_wheel(
     # (claude-hooks). The Nix derivation provides these at runtime on NixOS/devShell.
     # When adding a dependency, update BOTH places.
     #
+    # `aiquota` is the local artifact-pinned wheel (not on PyPI); the statusline
+    # imports it for quota data. Nix provides it via the aiquota derivation in
+    # propagatedBuildInputs (which also brings typer/atomicwrites transitively).
     requires = [
+        "aiquota",
         "httpx",
         "platformdirs",
         "pydantic>=2.0",
