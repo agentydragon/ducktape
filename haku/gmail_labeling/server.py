@@ -50,7 +50,7 @@ def build_mcp(client: LabelClient) -> FastMCP:
         str, Field(description=f"Label display name; must start with {prefix!r}, e.g. {prefix + 'triaged'!r}.")
     ]
     add_ann = Annotated[
-        list[str] | None,
+        set[str] | None,
         Field(
             default=None,
             description=f"Label names to add to every thread; each must start with {prefix!r}. Creates a label "
@@ -58,7 +58,7 @@ def build_mcp(client: LabelClient) -> FastMCP:
         ),
     ]
     remove_ann = Annotated[
-        list[str] | None,
+        set[str] | None,
         Field(
             default=None,
             description=f"Label names to remove from every thread; each must start with {prefix!r} and already "
@@ -82,7 +82,7 @@ def build_mcp(client: LabelClient) -> FastMCP:
         Mirrors Gmail's own batchModify shape (a set of IDs, labels to add, labels to remove)
         so labeling many threads costs one call instead of one per thread.
         """
-        return await asyncio.to_thread(client.modify_labels, thread_ids, add=add or [], remove=remove or [])
+        return await asyncio.to_thread(client.modify_labels, thread_ids, add=add or set(), remove=remove or set())
 
     @mcp.tool
     async def create_label(name: label_name_ann) -> Label:

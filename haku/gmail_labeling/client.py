@@ -39,7 +39,7 @@ class LabelClient:
         created = self._backend.create_label(name)
         return Label(name=created.name, id=created.id)
 
-    def modify_labels(self, thread_ids: list[str], *, add: list[str], remove: list[str]) -> ModifyLabelsResult:
+    def modify_labels(self, thread_ids: list[str], *, add: set[str], remove: set[str]) -> ModifyLabelsResult:
         """Add and/or remove labels across a batch of threads in one call.
 
         Mirrors Gmail's own `batchModify` shape: one set of IDs, one set of labels to add,
@@ -49,9 +49,9 @@ class LabelClient:
             raise ToolError("thread_ids must be non-empty")
         if not add and not remove:
             raise ToolError("must specify at least one label in `add` or `remove`")
-        for name in (*add, *remove):
+        for name in add | remove:
             self._ns.require(name)
-        if overlap := set(add) & set(remove):
+        if overlap := add & remove:
             raise ToolError(f"label(s) {sorted(overlap)} cannot be both added and removed in the same call")
 
         existing = self._name_to_id()
