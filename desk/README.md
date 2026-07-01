@@ -239,10 +239,21 @@ doesn't work:
 - Use the on-hand shielded Ethernet cable if reach permits (it's short).
 - Drop the USB WiFi adapter into atlas as a stopgap wireless NIC.
 
-## Power
+## Placement & mounting
 
-- **SB-TB4K PSU** — currently plugged into the power strip mounted on
-  the back-underside of the desk.
+Current physical state and mounting TODOs.
+
+- **SB-TB4K KVM box.** Sitting on top of the atlas tower for now — a
+  temporary perch, not a good long-term spot.
+  - **TODO:** mount it to the desk (or the under-desk grid).
+    Candidate: magnetic tape on a ferromagnetic surface, otherwise
+    Velcro / 3M-Command style adhesive.
+- **KVM toggle switch (wired remote button).** Routed to sit next to
+  the keyboard so it's within thumb reach.
+  - **TODO:** mount it. The toggle body is ferromagnetic, so magnetic
+    tape is the leading candidate.
+- **SB-TB4K PSU.** Plugged into the power strip mounted on the
+  back-underside of the desk.
   - **TODO:** mount the PSU brick onto the Underwear 3D-printed grid
     under the desk (so it isn't just hanging off the power-strip
     cable).
