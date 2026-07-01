@@ -1,73 +1,120 @@
 {
-  "_comment": "Single source of truth for the Bazel targets that produce each artifact pinned in nix/artifact-pins.json. Consumed by .github/workflows/release.yml's matrix (which builds + publishes each artifact) and .github/workflows/nix-wheel-check.yml's PR-time imports-check gate (which rebuilds artifacts from PR source and feeds them into `nix build .#packages.x86_64-linux.<pin>` via DUCKTAPE_ARTIFACT_OVERRIDES). Keys are pin names from nix/artifact-pins.json. `target` is one or more space-separated Bazel labels. `output` is the primary artifact path under bb-out/. `tests` (optional) runs before releasing. `extraOutputs` (optional) uploads additional files under the same release tag. `bazelFlags`, `releaseMetadata`, `metadataPlatform` (optional) are release.yml customizations. `nixPackage: true` means the entry has a corresponding .#packages.x86_64-linux.<pin> flake output that the PR gate imports-checks; `false` means release.yml still publishes it but the PR gate skips it (typical for binary drops with no meaningful nix-side check beyond autoPatchelfHook). `companions` (optional) lists sibling artifacts that ride on this entry's release tag — no independent Bazel target, no independent nix package, but still valid override pins the PR gate consumes.",
+  "_comment": "Bazel targets, artifact outputs, and release grouping for every artifact pinned in nix/artifact-pins.json (except `bb`, which is an external buildbuddy-io binary). Single source of truth for .github/workflows/release.yml's matrix (builds + publishes each release group) and .github/workflows/nix-wheel-check.yml's PR-time imports-check gate.\n\nSchema:\n  pins: pin_name -> { target, output, release }\n    Every pin here corresponds 1:1 to a same-named entry in nix/artifact-pins.json. `target` is the Bazel label that produces `output` on RBE. `release` back-points to the release group this pin ships in.\n\n  releases: release_name -> { primaryPin, tests?, nixPackage?, bazelFlags?, releaseMetadata?, metadataPlatform? }\n    Each release entry becomes one release.yml matrix row + one gh-release call + one release tag. `primaryPin` names the pin whose sha256 drives the tag suffix — release-artifact needs a single hash source, so we pick one; from nix's point of view every pin in the release is equally real. `tests` runs before publishing. `nixPackage: true` means the release has a corresponding .#packages.x86_64-linux.<release_name> flake output that the PR gate builds + imports-checks against PR-source artifacts (every pin in the release gets its output overridden). `false` means release.yml still publishes it but the PR gate skips it — typical for binary drops (bbapi/claude-hook-rs/debundle/skills) whose nix package is a trivial install/autoPatchelfHook that bazel-ci already covers. `bazelFlags`, `releaseMetadata`, `metadataPlatform` are per-entry release.yml overrides.",
   "pins": {
     "ducktape": {
       "target": "//:wheel",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/ducktape-0.1.0-py3-none-any.whl",
-      "tests": "//agent_core/... //difftree/... //git_commit_ai/... //gmail_api/... //gmail_archiver/... //mako_utils/... //mcp_infra/... //mcp_utils/... //openai_utils/... //cluster/skills/hetzner_vnc_screenshot/... //cluster/skills/proxmox_vm/...",
-      "nixPackage": true
+      "release": "ducktape"
     },
     "bbr": {
       "target": "//:bbr_wheel",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/bbr-0.1.0-py3-none-any.whl",
-      "tests": "//devinfra:test_bbr",
-      "nixPackage": true
+      "release": "bbr"
     },
     "claude-hooks": {
       "target": "//:claude_hooks_wheel",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl",
-      "tests": "//devinfra/claude/...",
-      "nixPackage": true
+      "release": "claude-hooks"
     },
     "ducktape-git-hooks": {
       "target": "//:ducktape_git_hooks_wheel",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/ducktape_git_hooks-0.1.0-py3-none-any.whl",
-      "tests": "//devinfra/precommit/... //cluster/validation/...",
-      "nixPackage": true
+      "release": "ducktape-git-hooks"
     },
     "ducktape-util": {
       "target": "//util:wheel",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/util/ducktape_util-0.1.0-py3-none-any.whl",
-      "tests": "//util/...",
-      "nixPackage": true
+      "release": "ducktape-util"
     },
     "gterm-theme": {
       "target": "//gnome/gterm_theme:wheel",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/gnome/gterm_theme/gterm_theme-0.1.0-py3-none-any.whl",
-      "tests": "",
-      "nixPackage": true
+      "release": "gterm-theme"
     },
     "aiquota": {
-      "target": "//aiquota:aiquota_wheel //aiquota/gnome:aiquota_zip",
+      "target": "//aiquota:aiquota_wheel",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/aiquota/aiquota-0.1.0-py3-none-any.whl",
-      "extraOutputs": "bb-out/bazel-out/k8-fastbuild/bin/aiquota/gnome/aiquota.zip",
-      "tests": "//aiquota/...",
-      "nixPackage": true,
-      "companions": {
-        "aiquota-extension": "bb-out/bazel-out/k8-fastbuild/bin/aiquota/gnome/aiquota.zip"
-      }
+      "release": "aiquota"
+    },
+    "aiquota-extension": {
+      "target": "//aiquota/gnome:aiquota_zip",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/aiquota/gnome/aiquota.zip",
+      "release": "aiquota"
     },
     "skills": {
       "target": "//skills:all_skills",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/all_skills.skill",
-      "tests": "//skills/... //cluster/skills/...",
-      "nixPackage": false
+      "release": "skills"
     },
     "bbapi": {
       "target": "//devinfra/buildbuddy_cli:bbapi",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/buildbuddy_cli/bbapi_/bbapi",
-      "tests": "//devinfra/buildbuddy_cli/...",
-      "nixPackage": false
+      "release": "bbapi"
     },
     "claude-hook-rs": {
       "target": "//devinfra/claude/claude_hook:claude_hook",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/claude/claude_hook/claude_hook",
-      "tests": "//devinfra/claude/claude_hook/...",
-      "nixPackage": false
+      "release": "claude-hook-rs"
     },
     "debundle": {
       "target": "//devinfra/js/debundle:debundle",
       "output": "bb-out/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle",
+      "release": "debundle"
+    }
+  },
+  "releases": {
+    "ducktape": {
+      "primaryPin": "ducktape",
+      "tests": "//agent_core/... //difftree/... //git_commit_ai/... //gmail_api/... //gmail_archiver/... //mako_utils/... //mcp_infra/... //mcp_utils/... //openai_utils/... //cluster/skills/hetzner_vnc_screenshot/... //cluster/skills/proxmox_vm/...",
+      "nixPackage": true
+    },
+    "bbr": {
+      "primaryPin": "bbr",
+      "tests": "//devinfra:test_bbr",
+      "nixPackage": true
+    },
+    "claude-hooks": {
+      "primaryPin": "claude-hooks",
+      "tests": "//devinfra/claude/...",
+      "nixPackage": true
+    },
+    "ducktape-git-hooks": {
+      "primaryPin": "ducktape-git-hooks",
+      "tests": "//devinfra/precommit/... //cluster/validation/...",
+      "nixPackage": true
+    },
+    "ducktape-util": {
+      "primaryPin": "ducktape-util",
+      "tests": "//util/...",
+      "nixPackage": true
+    },
+    "gterm-theme": {
+      "primaryPin": "gterm-theme",
+      "tests": "",
+      "nixPackage": true
+    },
+    "aiquota": {
+      "primaryPin": "aiquota",
+      "tests": "//aiquota/...",
+      "nixPackage": true
+    },
+    "skills": {
+      "primaryPin": "skills",
+      "tests": "//skills/... //cluster/skills/...",
+      "nixPackage": false
+    },
+    "bbapi": {
+      "primaryPin": "bbapi",
+      "tests": "//devinfra/buildbuddy_cli/...",
+      "nixPackage": false
+    },
+    "claude-hook-rs": {
+      "primaryPin": "claude-hook-rs",
+      "tests": "//devinfra/claude/claude_hook/...",
+      "nixPackage": false
+    },
+    "debundle": {
+      "primaryPin": "debundle",
       "tests": "//devinfra/js/debundle/...",
       "bazelFlags": "-c opt --@rules_rust//:extra_rustc_flag=-Cdebuginfo=1",
       "_bazelFlagsRationale": "Ship an optimized binary: opt-level=3 LLVM optimizations, debug-assertions off. Cuts `modules propose` wall on the tana corpus from ~5 min to ~45 s (7x). Debuginfo=1 (line tables only) preserves addr2line + inlined-frame resolution for downstream perf profiling at ~5-10% size cost. See devinfra/js/debundle/perf/proposer_roadmap.md (#0).",

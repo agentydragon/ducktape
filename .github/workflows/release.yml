@@ -4,7 +4,7 @@
 #
 # The matrix is derived from devinfra/ci/artifact_targets.json — the same SSOT
 # .github/workflows/nix-wheel-check.yml reads. See the schema note at the top
-# of that file for field semantics (target/output/tests/extraOutputs/... etc.).
+# of that file for field semantics (pins ↔ releases, primaryPin, etc.).
 name: Release
 
 on:
@@ -38,22 +38,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Companions (aiquota-extension) ship on their host's release tag —
-          # they don't get their own matrix row. Every other pin does.
-          matrix=$(jq -c '{
-            include: (
-              .pins | to_entries | map({
-                pkg: .key,
-                target: .value.target,
-                bazel_output: .value.output,
-                tests: (.value.tests // ""),
-                extra_outputs: (.value.extraOutputs // ""),
-                bazel_flags: (.value.bazelFlags // ""),
-                release_metadata: ((.value.releaseMetadata // false) | tostring),
-                metadata_platform: (.value.metadataPlatform // "")
-              })
-            )
-          }' devinfra/ci/artifact_targets.json)
+          # One matrix row per release. Aggregate every pin whose
+          # `.release == <name>`: join their targets for the Bazel build,
+          # take primaryPin's output as bazel_output (release-artifact
+          # needs a single hash source for the release tag), space-join
+          # the others as extra_outputs.
+          matrix=$(jq -c '
+            . as $doc |
+            {
+              include: (
+                $doc.releases | to_entries | map(
+                  .key as $rname |
+                  .value.primaryPin as $primary |
+                  ([$doc.pins | to_entries[] | select(.value.release == $rname)]) as $ps |
+                  {
+                    pkg: $rname,
+                    target: ([$ps[] | .value.target] | join(" ")),
+                    bazel_output: ([$ps[] | select(.key == $primary) | .value.output][0]),
+                    tests: (.value.tests // ""),
+                    extra_outputs: ([$ps[] | select(.key != $primary) | .value.output] | join(" ")),
+                    bazel_flags: (.value.bazelFlags // ""),
+                    release_metadata: ((.value.releaseMetadata // false) | tostring),
+                    metadata_platform: (.value.metadataPlatform // "")
+                  }
+                )
+              )
+            }
+          ' devinfra/ci/artifact_targets.json)
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   release:
