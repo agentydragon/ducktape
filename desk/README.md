@@ -388,6 +388,56 @@ candidates:
   thread to get atlas on the network and merge the current doc as a
   base for further troubleshooting.
 
+### 2026-07-01 — Silkland cable direct-connect, both atlas ports; same "no USB-C signal"
+
+**Setup.** Freed the Silkland cable from the rugged/KVM path and put
+it directly between atlas's TB port and the FV43U's USB-C input.
+Tried atlas's middle TB port first, then the top port. Atlas was not
+restarted between any of the cable / port changes in this session.
+
+**Observations.**
+
+- Monitor detects a connection each time (link-layer up — user notes
+  "obviously there's some kind of electricity going around").
+- Monitor reports "USB-C no signal" on both ports with the Silkland
+  cable, i.e. no video packets are being sent.
+
+**Reframing.** This exonerates the cable — the Silkland is confirmed
+TB-class and worked end-to-end with rugged earlier. And it's not just
+the top port that's broken, both ports behave the same. So the
+"middle works, top doesn't" finding really was aliased by the 20 Gb/s
+cable's flakiness; on this pass with a good cable, neither port
+paints video.
+
+**Leading hypothesis.** Atlas's TB port(s) are stuck in a bad DP-Alt
+state after the earlier KVM + hot-plug shuffles. TB controllers can
+fail to renegotiate DP-Alt on the next connect once they've been
+hot-unplugged via a switch — the kernel driver still "owns" the
+port but nothing is drawing to it. No atlas reboot between the port
+swaps means whatever wedged, stayed wedged.
+
+**Follow-ups (before waiting on SSH).**
+
+- Cable **source-side hotplug**: unplug at the atlas side (not just
+  the monitor), wait 10 s, replug. Some TB controllers only
+  renegotiate DP-Alt on source-side re-insertion.
+- If that doesn't clear it, **reboot atlas**. BIOS/GRUB will paint
+  on whatever port carries firmware framebuffer (previously the top
+  port), which unblocks direct console access without needing the
+  network.
+
+**Follow-ups (after SSH).**
+
+- `dmesg -T | grep -Ei 'thunderbolt|drm|nouveau|nvidia|vfio' | tail -100`
+  to see the TB / display-driver state around the last connect
+  attempt.
+- Check `/sys/bus/thunderbolt/devices/` and
+  `/sys/class/drm/*/status` to see whether the kernel currently
+  believes anything is plugged into the port.
+
+**In parallel.** User is still hunting for the USB WiFi stick; plan
+B once video is back is to tether atlas to a phone hotspot.
+
 ## Open questions
 
 - atlas: which RTX 5090 and which DP port feeds the internal DP m-m
