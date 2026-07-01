@@ -75,52 +75,61 @@ jobs:
             }
             trap finalize_bb_runner_probe EXIT
 
-            # Shadow mode (informational only): on PRs, compute the
-            # target-determinator affected set and print it. Not used for gating.
-            # Once the set is proven sane over several PRs, gating flips to only
-            # test/build affected targets on PRs; devel keeps `//...`.
-            # Gracefully skips when TD is missing from the RBE image (pin lag
-            # after devtools/rbetools#2679).
+            # On PRs, test/build only the targets affected by the diff vs.
+            # origin/devel — computed by target-determinator (packaged in
+            # #2679, shadow-validated in #2680). Devel-branch push runs still
+            # test `//...` below, so a PR that IS in the affected set of a
+            # broken area still fails as it should; PRs unrelated to the
+            # broken area are unblocked.
             #
-            # `set +e` inside the block: any failure in git fetch, merge-base,
-            # rev-parse, or target-determinator itself must NOT abort the CI
-            # script under the outer `set -euo pipefail`. Restored after the
-            # block so the real test/build stages still fail fast.
-            if [ "${{ github.event_name }}" = "pull_request" ] && command -v target-determinator >/dev/null 2>&1; then
-              set +e
-              echo "::group::target-determinator (shadow)"
+            # Fails hard on any TD error — no fallback to `//...`. TD is the
+            # source of truth for the affected set; a silent fallback would
+            # let broken-devel failures re-block unrelated PRs, defeating the
+            # whole policy.
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
               mkdir -p /tmp/td-cache
-              git fetch --no-tags origin devel
-              BASE=$(git merge-base origin/devel HEAD)
-              HEAD_SHA=$(git rev-parse HEAD)
-              if [ -n "$BASE" ] && [ -n "$HEAD_SHA" ]; then
-                echo "before-revision: $BASE"
-                echo "head:            $HEAD_SHA"
-                # -targets is the query (default //...); the before-revision
-                # is a positional argument, NOT -before-revision.
-                #
-                # Exclude //website/...: it carries tags=["manual"] so `bazel
-                # test //...` (and its analysis) skip it, but TD's cquery
-                # doesn't respect manual-tag filtering and trips a deprecated
-                # ctx.resolve_tools call in rules_haskell during analysis of
-                # the Hakyll REPL target. Excluding matches what `bazel test
-                # //...` on devel already sees.
-                target-determinator \
-                  -cache-dir=/tmp/td-cache \
-                  -targets='//... except //website/...' \
-                  "$BASE"
-              else
-                echo "could not resolve merge-base (BASE=$BASE HEAD=$HEAD_SHA); skipping"
+              # bb-remote's runner cloned shallow (`git fetch --depth=1 <sha>`),
+              # so origin/devel has no shared ancestor with HEAD and
+              # `git merge-base` errors out. Deepen 200 commits of devel
+              # history (covers roughly a week+ of activity — enough for any
+              # non-stale PR without paying full-unshallow cost). `--deepen`
+              # errors on a non-shallow repo, hence the fallback.
+              git fetch --deepen=200 --no-tags origin devel 2>/dev/null \
+                || git fetch --no-tags origin devel
+              # If merge-base still doesn't resolve, the PR base is older
+              # than the deepened window — refuse rather than silently
+              # over-approximating the affected set. Author needs to rebase.
+              if ! BASE=$(git merge-base origin/devel HEAD 2>/dev/null); then
+                echo "::error::PR base is more than 200 commits behind origin/devel — please rebase on devel and re-push."
+                exit 1
               fi
-              echo "::endgroup::"
-              set -e
+              echo "before-revision: $BASE"
+              echo "head:            $(git rev-parse HEAD)"
+              # target-determinator: -targets is the query (default //...);
+              # the before-revision is a positional argument, NOT -before-revision.
+              target-determinator \
+                -cache-dir=/tmp/td-cache \
+                "$BASE" \
+                > /tmp/affected.txt
+              N=$(wc -l < /tmp/affected.txt)
+              echo "affected targets: $N"
+              if [ "$N" -eq 0 ]; then
+                echo "No targets affected by this PR — skipping test/build."
+                exit 0
+              fi
+              probe_bb_runner before-test
+              bazel test --keep_going $RBE_FLAGS --target_pattern_file=/tmp/affected.txt && \
+                probe_bb_runner after-test && \
+                bazel build --keep_going $RBE_FLAGS --target_pattern_file=/tmp/affected.txt && \
+                probe_bb_runner after-build
+            else
+              # push to devel / workflow_dispatch: full sweep.
+              probe_bb_runner before-test
+              bazel test --keep_going $RBE_FLAGS //... && \
+                probe_bb_runner after-test && \
+                bazel build --keep_going $RBE_FLAGS //... && \
+                probe_bb_runner after-build
             fi
-
-            probe_bb_runner before-test
-            bazel test --keep_going $RBE_FLAGS //... && \
-              probe_bb_runner after-test && \
-              bazel build --keep_going $RBE_FLAGS //... && \
-              probe_bb_runner after-build
 
       - name: Upload BuildBuddy linkage
         if: always()
