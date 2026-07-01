@@ -1,6 +1,10 @@
 # Release artifacts to GitHub via per-artifact build + gh release.
 # Each matrix entry builds its artifact on RBE, computes SHA, and creates
 # a GitHub Release if the content changed.
+#
+# The matrix is derived from devinfra/ci/artifact_targets.json — the same SSOT
+# .github/workflows/nix-wheel-check.yml reads. See the schema note at the top
+# of that file for field semantics (target/output/tests/extraOutputs/... etc.).
 name: Release
 
 on:
@@ -20,73 +24,46 @@ env:
   GIT_REPO_DEFAULT_BRANCH: devel
 
 jobs:
+  matrix:
+    name: Compute release matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+      # jq is preinstalled on ubuntu-latest runners; no nix bootstrap needed
+      # here (the matrix job just parses JSON and emits a matrix.include).
+      - id: gen
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Companions (aiquota-extension) ship on their host's release tag —
+          # they don't get their own matrix row. Every other pin does.
+          matrix=$(jq -c '{
+            include: (
+              .pins | to_entries | map({
+                pkg: .key,
+                target: .value.target,
+                bazel_output: .value.output,
+                tests: (.value.tests // ""),
+                extra_outputs: (.value.extraOutputs // ""),
+                bazel_flags: (.value.bazelFlags // ""),
+                release_metadata: ((.value.releaseMetadata // false) | tostring),
+                metadata_platform: (.value.metadataPlatform // "")
+              })
+            )
+          }' devinfra/ci/artifact_targets.json)
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
   release:
+    needs: [matrix]
     name: Release ${{ matrix.pkg }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - pkg: bbr
-            target: //:bbr_wheel
-            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/bbr-0.1.0-py3-none-any.whl
-            tests: //devinfra:test_bbr
-          - pkg: claude-hooks
-            target: //:claude_hooks_wheel
-            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl
-            tests: //devinfra/claude/...
-          - pkg: ducktape-git-hooks
-            target: //:ducktape_git_hooks_wheel
-            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/ducktape_git_hooks-0.1.0-py3-none-any.whl
-            tests: //devinfra/precommit/... //cluster/validation/...
-          - pkg: claude-hook-rs
-            target: //devinfra/claude/claude_hook:claude_hook
-            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/devinfra/claude/claude_hook/claude_hook
-            tests: //devinfra/claude/claude_hook/...
-          - pkg: ducktape-util
-            target: //util:wheel
-            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/util/ducktape_util-0.1.0-py3-none-any.whl
-            tests: //util/...
-          - pkg: ducktape
-            target: //:wheel
-            # SYNC: keep this list aligned with `packages =` in //:ducktape_pkg
-            # (root BUILD.bazel) so tests cover every module the wheel ships.
-            # Also SYNC the (pkg, target, bazel_output) triples across this
-            # matrix and devinfra/ci/artifact_targets.json (the SSOT the PR-time
-            # nix-wheel-check.yml gate reads).
-            tests: //agent_core/... //difftree/... //git_commit_ai/... //gmail_api/... //gmail_archiver/... //mako_utils/... //mcp_infra/... //mcp_utils/... //openai_utils/... //cluster/skills/hetzner_vnc_screenshot/... //cluster/skills/proxmox_vm/...
-            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/ducktape-0.1.0-py3-none-any.whl
-          - pkg: aiquota
-            target: //aiquota:aiquota_wheel //aiquota/gnome:aiquota_zip
-            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/aiquota/aiquota-0.1.0-py3-none-any.whl
-            extra_outputs: bb-out/bazel-out/k8-fastbuild/bin/aiquota/gnome/aiquota.zip
-            tests: //aiquota/...
-          - pkg: gterm-theme
-            target: //gnome/gterm_theme:wheel
-            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/gnome/gterm_theme/gterm_theme-0.1.0-py3-none-any.whl
-            tests: ""
-          - pkg: skills
-            target: //skills:all_skills
-            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/skills/all_skills.skill
-            tests: //skills/... //cluster/skills/...
-          - pkg: bbapi
-            target: //devinfra/buildbuddy_cli:bbapi
-            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/devinfra/buildbuddy_cli/bbapi_/bbapi
-            tests: //devinfra/buildbuddy_cli/...
-          - pkg: debundle
-            target: //devinfra/js/debundle:debundle
-            # Ship an optimized binary: opt-level=3 LLVM optimizations,
-            # debug-assertions off. Cuts `modules propose` wall on the
-            # tana corpus from ~5 min to ~45 s (7x). Debuginfo=1 (line
-            # tables only) preserves addr2line + inlined-frame resolution
-            # for downstream perf profiling at ~5-10% size cost.
-            # See devinfra/js/debundle/perf/proposer_roadmap.md (#0).
-            bazel_flags: "-c opt --@rules_rust//:extra_rustc_flag=-Cdebuginfo=1"
-            bazel_output: bb-out/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle
-            tests: //devinfra/js/debundle/...
-            release_metadata: true
-            metadata_platform: linux-amd64
+      matrix: ${{ fromJSON(needs.matrix.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -112,8 +89,8 @@ jobs:
           pkg: ${{ matrix.pkg }}
           bazel_target: ${{ matrix.target }}
           bazel_output: ${{ matrix.bazel_output }}
-          bazel_flags: ${{ matrix.bazel_flags || '' }}
-          extra_outputs: ${{ matrix.extra_outputs || '' }}
-          release_metadata: ${{ matrix.release_metadata || 'false' }}
-          metadata_platform: ${{ matrix.metadata_platform || '' }}
+          bazel_flags: ${{ matrix.bazel_flags }}
+          extra_outputs: ${{ matrix.extra_outputs }}
+          release_metadata: ${{ matrix.release_metadata }}
+          metadata_platform: ${{ matrix.metadata_platform }}
           rbe_image: ${{ inputs.rbe_image }}

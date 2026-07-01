@@ -49,13 +49,21 @@ jobs:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
       # Derive the Bazel target list + nix package list from the SSOT.
+      # Filter to nixPackage entries: the non-wheel binaries (bbapi,
+      # claude-hook-rs, debundle, skills) go through mkBinaryArtifact whose
+      # nix build is a trivial install/autoPatchelfHook — bazel-ci already
+      # rebuilds them, so the PR gate skips them to keep wall-time bounded.
       - name: Compute build inputs
         id: inputs
         shell: bash
         run: |
           set -euo pipefail
           spec=devinfra/ci/artifact_targets.json
-          bazel_targets=$(jq -r '.pins | [.[] .target] | join(" ")' "$spec")
+          bazel_targets=$(jq -r '
+            .pins | to_entries
+              | map(select(.value.nixPackage) | .value.target)
+              | join(" ")
+          ' "$spec")
           nix_pkgs=$(jq -r '
             .pins | to_entries
               | map(select(.value.nixPackage) | ".#packages.x86_64-linux.\(.key)")
@@ -76,9 +84,11 @@ jobs:
           args: build ${{ steps.inputs.outputs.bazel_targets }} --remote_download_outputs=toplevel
           run_from_commit: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      # Emit the JSON blob flake.nix's artifacts logic consumes. Verifying every
-      # expected output exists here surfaces build/output-path drift with a
-      # clear error before nix reads a missing file.
+      # Emit the JSON blob flake.nix's artifacts logic consumes. Covers each
+      # nixPackage pin plus its companions (aiquota's extension zip rides on
+      # aiquota's Bazel build). Verifying every expected output exists here
+      # surfaces build/output-path drift with a clear error before nix reads
+      # a missing file.
       - name: Assemble artifact overrides
         id: overrides
         shell: bash
@@ -92,7 +102,12 @@ jobs:
             fi
             abs=$(readlink -f "$rel")
             json=$(jq -c --arg k "$pin" --arg v "$abs" '. + {($k): $v}' <<<"$json")
-          done < <(jq -r '.pins | to_entries[] | "\(.key)\t\(.value.output)"' devinfra/ci/artifact_targets.json)
+          done < <(jq -r '
+            .pins | to_entries[]
+              | select(.value.nixPackage)
+              | ( "\(.key)\t\(.value.output)",
+                  ( .value.companions // {} | to_entries[] | "\(.key)\t\(.value)" ) )
+          ' devinfra/ci/artifact_targets.json)
           {
             echo 'overrides<<EOF'
             echo "$json"
