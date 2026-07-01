@@ -10,7 +10,7 @@ digraph desk_wiring {
 
     atlas [label="{ atlas — Proxmox tower · 2× RTX 5090 | <tb_top> mobo TB4 · top | mobo TB4 · middle }"];
 
-    laptop [label="Laptop slot — currently: rugged"];
+    laptop [label="Laptop slot"];
 
     g_backright [shape=circle, style=dashed, label="back-right\ngrommet", fontsize=9, width=1.2, height=1.2];
     g_drawer    [shape=circle, style=dashed, label="drawer\ngrommet",    fontsize=9, width=1.2, height=1.2];
