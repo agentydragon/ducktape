@@ -563,7 +563,50 @@ until wyrm2 boots enough to reclaim the DP-OUT.
 - Look into what caused the "violent reboot" via `journalctl -b -1`
   once SSH is up.
 
-### 2026-07-01 — waited, greeter appeared at correct resolution
+### 2026-07-01 — correction + new attempt: no loopback, monitor on top TB, keyboard in back USB-A
+
+**Corrections to earlier hypotheses.**
+
+- The greeter I was calling "wyrm2's guest" was atlas's own Proxmox
+  desktop greeter. So atlas keeps a GPU available for its own console
+  — the sweeping "VFIO killed all video" story was wrong. Every
+  "signal comes then goes" observation earlier was a symptom of some
+  other layer (cable strain / port renegotiation / DPMS blanking),
+  not the VFIO cliff I kept invoking.
+- The "keyboard doesn't work in atlas" was tested against known-good
+  hardware: swapped in a Das Keyboard (verified working on rugged with
+  the same cable), same silence. So the earlier no-input state was
+  not Shura-specific.
+
+**New wiring for this attempt.**
+
+- Removed the internal GPU DP-OUT → mobo DP-IN loopback.
+- Monitor USB-C → atlas's **top** TB port (was previously the
+  "doesn't work after kernel" port; retrying without the loopback in
+  play).
+- Das Keyboard in a rear USB-A port on atlas.
+
+**Progress so far.**
+
+- BIOS logo visible.
+- GRUB visible; **Enter registers from the keyboard** — first
+  concrete positive on input reaching the box at any stage.
+- Kernel boots for a while, then does a mode-switch to a full-size
+  resolution — DRM driver is actively painting through the top TB
+  port, not just firmware framebuffer.
+- Currently: `Atlas booting…` messages, waiting for greeter.
+
+**Immediate next step (as soon as greeter appears).**
+
+- Confirm keyboard input in the login box.
+- Log in.
+- Set up SSH: `sudo systemctl enable --now ssh`;
+  `curl https://github.com/agentydragon.keys >> ~/.ssh/authorized_keys`;
+  `ip -brief addr` for the IP; SSH-test from another device before
+  touching anything else. This finally breaks the "can't fix atlas
+  because I can't get into atlas" loop.
+
+### 2026-07-01 — earlier: waited, greeter appeared at correct resolution
 
 **Observation.** Left atlas alone on the "EFI stub" stalled screen;
 after a couple more minutes the full-size greeter appeared at the
