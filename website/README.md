@@ -14,12 +14,15 @@ Hosted on my VPS.
 
 # Develop
 
-To build:
+`//website` is a nested Bazel module (its own `MODULE.bazel`), listed in the
+root `.bazelignore` so the root workspace doesn't need `rules_haskell` /
+GHC just to expand `//...`. Build the site from inside this directory:
 
 ```bash
-sass css/default.scss > css/default.css
 cd website
-../bazel-bin/website/site build
+sass css/default.scss > css/default.css
+bazelisk build //:site
+./bazel-bin/site build
 ```
 
 To push:

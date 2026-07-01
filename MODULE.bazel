@@ -615,106 +615,11 @@ crate.from_cargo(
 # expose the generated repo (↑ name="crates")
 use_repo(crate, "crates")
 
-# ─ Haskell ───────────────────────────────────────────────────────────────────
-bazel_dep(name = "rules_haskell", version = "1.0")
-
-# rules_haskell BCR 1.0 imports get_cpu_value from
-# @bazel_tools//tools/cpp:lib_cc_configure.bzl (removed in Bazel 8).
-# Master (post-PR #2348) vendors get_cpu_value locally.
-archive_override(
-    module_name = "rules_haskell",
-    sha256 = "a64e81f48e775bdbb8562f58aa53fd8f896649129a1f46bd7d97f9eced8ada0c",
-    strip_prefix = "rules_haskell-60d787cad638370663758b37f880e56a8249786f",
-    urls = ["https://github.com/tweag/rules_haskell/archive/60d787cad638370663758b37f880e56a8249786f.tar.gz"],
-)
-
-# rules_haskell pins rules_sh 0.4.0 which also imports get_cpu_value from
-# the removed location. rules_sh 0.5.0 vendors it locally.
-single_version_override(
-    module_name = "rules_sh",
-    version = "0.5.0",
-)
-
-# ─ GHC toolchain (binary bindist) ───────────────────────────────────────────
-haskell_toolchains = use_extension(
-    "@rules_haskell//extensions:haskell_toolchains.bzl",
-    "haskell_toolchains",
-)
-haskell_toolchains.bindists(version = "9.0.2")
-
-# ─ third-party Hackage packages via Stackage snapshot ───────────────────────
-stack = use_extension(
-    "@rules_haskell//extensions:stack_snapshot.bzl",
-    "stack_snapshot",
-)
-
-# Define the Stackage snapshot
-stack.snapshot(
-    name = "lts-19.17",  # This is the snapshot name
-)
-
-# Declare the packages we need
-stack.package(
-    name = "base",
-)
-stack.package(
-    name = "hakyll",
-)
-
-# Add required dependency packages for xml-conduit
-# Configure attoparsec with its internal components
-stack.package(
-    name = "attoparsec",
-    components = [
-        "lib:attoparsec",
-        "lib:attoparsec-internal",
-    ],
-    components_dependencies = {"lib:attoparsec": ["lib:attoparsec-internal"]},
-)
-stack.package(
-    name = "blaze-html",
-)
-stack.package(
-    name = "blaze-markup",
-)
-stack.package(
-    name = "conduit",
-)
-stack.package(
-    name = "conduit-extra",
-)
-stack.package(
-    name = "data-default-class",
-)
-stack.package(
-    name = "resourcet",
-)
-stack.package(
-    name = "xml-types",
-)
-
-# Set up xml-conduit override
-stack.package(
-    name = "xml-conduit",
-    vendored = "@xml_conduit//:xml-conduit",
-)
-
-# expose the repos the two extensions create
-use_repo(
-    haskell_toolchains,
-    "all_bindist_toolchains",
-)
-
-register_toolchains("@all_bindist_toolchains//:all")  # makes the toolchain visible
-
-use_repo(
-    stack,
-    "stackage",  # The repository for the pinned snapshot
-)
-
-# ─ one-off override for xml-conduit ─────────────────────────────────────────
-extra_deps = use_extension("//third_party:xml_conduit_deps.bzl", "xml_conduit_deps")
-use_repo(extra_deps, "xml_conduit")
+# Haskell + Hakyll (rules_haskell, stackage snapshot, xml-conduit override, GHC
+# toolchain) is scoped to the //website nested module. See website/MODULE.bazel
+# and website/README.md. Keeping it out of the root module means the root
+# workspace doesn't need to fetch @rules_haskell and build GHC on every
+# `bazel query //...`.
 
 # ─ External binaries via http_archive ────────────────────────────────────────
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")

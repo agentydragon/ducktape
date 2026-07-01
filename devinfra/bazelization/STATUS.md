@@ -41,10 +41,10 @@ Shell script categories: CI/Ansible (`.github/scripts/`, `ansible/scripts/`), Do
 
 ### Manual Targets (require special environment)
 
-| Target                  | Reason                      |
-| ----------------------- | --------------------------- |
-| `//gnome/gterm_theme:*` | Requires DBUS/GNOME session |
-| `//website:*`           | Haskell/stack build system  |
+| Target                   | Reason                                                                       |
+| ------------------------ | ---------------------------------------------------------------------------- |
+| `//gnome/gterm_theme:*`  | Requires DBUS/GNOME session                                                  |
+| `website/` nested module | Haskell/stack build system; build via `cd website && bazelisk build //:site` |
 
 ## Reference
 

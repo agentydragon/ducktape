@@ -1,0 +1,2 @@
+# Package marker so `//third_party:xml_conduit_deps.bzl` resolves as a load()
+# target from the nested website module's MODULE.bazel.
