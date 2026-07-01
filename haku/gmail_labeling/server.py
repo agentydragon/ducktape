@@ -28,7 +28,7 @@ from gmail_api.service import build_gmail_service_from_token_dir
 from haku.gmail_labeling.backend import GmailLabelBackend
 from haku.gmail_labeling.client import LabelClient
 from haku.gmail_labeling.config import Settings
-from haku.gmail_labeling.models import Label
+from haku.gmail_labeling.models import Label, ModifyLabelsResult
 from haku.gmail_labeling.namespace import LabelNamespace
 from mcp_infra.authentik_auth.auth import build_authentik_auth
 from mcp_infra.persistence import build_client_storage
@@ -43,9 +43,27 @@ def build_mcp(client: LabelClient) -> FastMCP:
         f"with {prefix!r}; the server refuses anything else, so you cannot touch system labels "
         "(INBOX/TRASH/SPAM/…) or the user's other labels."
     )
-    thread_id_ann = Annotated[str, Field(description="Gmail thread ID to label (from Gmail search results).")]
+    thread_ids_ann = Annotated[
+        list[str], Field(description="Gmail thread IDs to modify in one batch (from Gmail search results).")
+    ]
     label_name_ann = Annotated[
         str, Field(description=f"Label display name; must start with {prefix!r}, e.g. {prefix + 'triaged'!r}.")
+    ]
+    add_ann = Annotated[
+        list[str] | None,
+        Field(
+            default=None,
+            description=f"Label names to add to every thread; each must start with {prefix!r}. Creates a label "
+            "that doesn't exist yet. Omit or leave empty if only removing.",
+        ),
+    ]
+    remove_ann = Annotated[
+        list[str] | None,
+        Field(
+            default=None,
+            description=f"Label names to remove from every thread; each must start with {prefix!r} and already "
+            "exist. Omit or leave empty if only adding.",
+        ),
     ]
 
     mcp: FastMCP = FastMCP(name="gmail-labeling", instructions=instructions)
@@ -56,14 +74,15 @@ def build_mcp(client: LabelClient) -> FastMCP:
         return await asyncio.to_thread(client.list_labels)
 
     @mcp.tool
-    async def apply_label(thread_id: thread_id_ann, name: label_name_ann) -> Label:
-        """Add a managed label to a thread, creating the label if it does not exist yet."""
-        return await asyncio.to_thread(client.apply_label, thread_id, name)
+    async def modify_labels(
+        thread_ids: thread_ids_ann, add: add_ann = None, remove: remove_ann = None
+    ) -> ModifyLabelsResult:
+        """Add and/or remove managed labels across a batch of threads in one call.
 
-    @mcp.tool
-    async def remove_label(thread_id: thread_id_ann, name: label_name_ann) -> Label:
-        """Remove a managed label from a thread."""
-        return await asyncio.to_thread(client.remove_label, thread_id, name)
+        Mirrors Gmail's own batchModify shape (a set of IDs, labels to add, labels to remove)
+        so labeling many threads costs one call instead of one per thread.
+        """
+        return await asyncio.to_thread(client.modify_labels, thread_ids, add=add or [], remove=remove or [])
 
     @mcp.tool
     async def create_label(name: label_name_ann) -> Label:

@@ -123,7 +123,9 @@ py_test(
     name = "test_namespace",
     srcs = ["test_namespace.py"],
     deps = [
+        ":conftest",
         ":namespace",
+        "//:conftest",
         "@pypi//fastmcp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -134,10 +136,22 @@ py_test(
     name = "test_client",
     srcs = ["test_client.py"],
     deps = [
-        ":client",
         ":conftest",
+        "//:conftest",
         "//gmail_api:labels",
         "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_backend",
+    srcs = ["test_backend.py"],
+    deps = [
+        ":backend",
+        ":conftest",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -152,6 +166,9 @@ py_test(
         "//:conftest",
         "@pypi//fastmcp",
         "@pypi//pytest",
+        # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
+        # needs the plugin importable at runtime for its entry-point autoload; Gazelle
+        # can't see that and will try to drop this dep on regen.
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],

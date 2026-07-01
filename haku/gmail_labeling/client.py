@@ -10,7 +10,7 @@ from fastmcp.exceptions import ToolError
 
 from gmail_api.labels import GmailLabel, LabelType
 from haku.gmail_labeling.backend import LabelBackend
-from haku.gmail_labeling.models import Label
+from haku.gmail_labeling.models import Label, ModifyLabelsResult
 from haku.gmail_labeling.namespace import LabelNamespace
 
 
@@ -39,17 +39,37 @@ class LabelClient:
         created = self._backend.create_label(name)
         return Label(name=created.name, id=created.id)
 
-    def apply_label(self, thread_id: str, name: str) -> Label:
-        self._ns.require(name)
-        label_id = self._resolve_or_create(name)
-        self._backend.modify_thread(thread_id, add=[label_id], remove=[])
-        return Label(name=name, id=label_id)
+    def modify_labels(self, thread_ids: list[str], *, add: list[str], remove: list[str]) -> ModifyLabelsResult:
+        """Add and/or remove labels across a batch of threads in one call.
 
-    def remove_label(self, thread_id: str, name: str) -> Label:
-        self._ns.require(name)
-        label_id = self._require_existing(name)
-        self._backend.modify_thread(thread_id, add=[], remove=[label_id])
-        return Label(name=name, id=label_id)
+        Mirrors Gmail's own `batchModify` shape: one set of IDs, one set of labels to add,
+        one set of labels to remove -- applied identically to every thread in `thread_ids`.
+        """
+        if not thread_ids:
+            raise ToolError("thread_ids must be non-empty")
+        if not add and not remove:
+            raise ToolError("must specify at least one label in `add` or `remove`")
+        for name in (*add, *remove):
+            self._ns.require(name)
+        if overlap := set(add) & set(remove):
+            raise ToolError(f"label(s) {sorted(overlap)} cannot be both added and removed in the same call")
+
+        existing = self._name_to_id()
+        if missing := [name for name in remove if name not in existing]:
+            raise ToolError(f"label(s) {missing} do not exist")
+
+        added = [self._get_or_create(name, existing) for name in add]
+        removed = [Label(name=name, id=existing[name]) for name in remove]
+        self._backend.modify_threads(
+            thread_ids, add=[label.id for label in added], remove=[label.id for label in removed]
+        )
+        return ModifyLabelsResult(added=added, removed=removed)
+
+    def _get_or_create(self, name: str, existing: dict[str, str]) -> Label:
+        if label_id := existing.get(name):
+            return Label(name=name, id=label_id)
+        created = self._backend.create_label(name)
+        return Label(name=created.name, id=created.id)
 
     def rename_label(self, old: str, new: str) -> Label:
         self._ns.require(old)
@@ -65,12 +85,6 @@ class LabelClient:
     def delete_label(self, name: str) -> None:
         self._ns.require(name)
         self._backend.delete_label(self._require_existing(name))
-
-    def _resolve_or_create(self, name: str) -> str:
-        existing = self._name_to_id()
-        if name in existing:
-            return existing[name]
-        return self._backend.create_label(name).id
 
     def _require_existing(self, name: str) -> str:
         existing = self._name_to_id()

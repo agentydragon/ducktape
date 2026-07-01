@@ -12,14 +12,20 @@ REST API directly (via `gmail_api`) and exposes **only** label management.
 
 All mutating tools reject any label name outside `allowed_prefix`.
 
-| Tool           | Effect                                                         |
-| -------------- | -------------------------------------------------------------- |
-| `list_labels`  | List managed labels (those under the prefix).                  |
-| `apply_label`  | Add a managed label to a thread (creates the label if needed). |
-| `remove_label` | Remove a managed label from a thread.                          |
-| `create_label` | Create a managed label without applying it.                    |
-| `rename_label` | Rename a managed label (both names must be under the prefix).  |
-| `delete_label` | Delete a managed label (drops it from every thread).           |
+| Tool            | Effect                                                                  |
+| --------------- | ----------------------------------------------------------------------- |
+| `list_labels`   | List managed labels (those under the prefix).                           |
+| `modify_labels` | Add and/or remove managed labels across a batch of threads in one call. |
+| `create_label`  | Create a managed label without applying it.                             |
+| `rename_label`  | Rename a managed label (both names must be under the prefix).           |
+| `delete_label`  | Delete a managed label (drops it from every thread).                    |
+
+`modify_labels` takes `thread_ids` plus `add`/`remove` label-name lists, mirroring
+Gmail's own `batchModify` request shape (a set of IDs, labels to add, labels to
+remove). Gmail has no `threads.batchModify` endpoint, so the backend folds the
+per-thread `threads.modify` calls into as few HTTP requests as possible via Gmail's
+generic batch-request mechanism (`GmailLabelBackend.modify_threads`, `backend.py`)
+instead of one round trip per thread.
 
 Enforcement lives in `client.py` (`LabelClient`), not in the agent's prompt — the
 namespace check runs before any Gmail call.

@@ -28,14 +28,16 @@ fastmcp list "$URL" --auth "$TOKEN" --transport http --input-schema   # tools + 
 
 Reference `"$TOKEN"`, never the literal value, so the bearer stays out of your transcript.
 
-| Tool           | Effect                                                         |
-| -------------- | -------------------------------------------------------------- |
-| `list_labels`  | List managed labels (those under `haku/`).                     |
-| `apply_label`  | Add a managed label to a thread (creates the label if needed). |
-| `remove_label` | Remove a managed label from a thread.                          |
-| `create_label` | Create a managed label without applying it.                    |
-| `rename_label` | Rename a managed label (both names must be under `haku/`).     |
-| `delete_label` | Delete a managed label (drops it from every thread).           |
+| Tool            | Effect                                                                  |
+| --------------- | ----------------------------------------------------------------------- |
+| `list_labels`   | List managed labels (those under `haku/`).                              |
+| `modify_labels` | Add and/or remove managed labels across a batch of threads in one call. |
+| `create_label`  | Create a managed label without applying it.                             |
+| `rename_label`  | Rename a managed label (both names must be under `haku/`).              |
+| `delete_label`  | Delete a managed label (drops it from every thread).                    |
+
+`modify_labels` takes a list of `thread_ids` plus `add`/`remove` label lists (Gmail's
+own `batchModify` shape) — label many threads at once instead of one call per thread.
 
 ## Current policy
 
@@ -67,7 +69,8 @@ made, so the policy is explicit and auditable:
 - **Log every labeling action** in the day's run log (`log/YYYY-MM-DD.md`): which threads,
   which labels, why. This is your audit trail for a capability that changes the operator's
   mailbox.
-- **Reversibility first** — prefer schemes you can cleanly undo (`remove_label` / `delete_label`
-  stay within the same bound). Confirm a rule on a handful of threads before any breadth.
+- **Reversibility first** — prefer schemes you can cleanly undo (`modify_labels` removal /
+  `delete_label` stay within the same bound). Confirm a rule on a handful of threads before
+  any breadth.
 - **Surface, don't hide** — when you run a labeling pass, put a short summary on the dashboard
   so the operator always sees what you changed.

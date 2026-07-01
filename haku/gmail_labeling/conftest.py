@@ -1,5 +1,7 @@
 """Shared test fakes/fixtures for gmail_labeling."""
 
+from collections.abc import Sequence
+
 import pytest
 
 from gmail_api.labels import GmailLabel, LabelType
@@ -17,7 +19,7 @@ class FakeLabelBackend:
     def __init__(self, labels: list[GmailLabel] | None = None) -> None:
         self._labels: dict[str, GmailLabel] = {label.id: label for label in (labels or [])}
         self._created = 0
-        self.thread_mods: list[tuple[str, list[str], list[str]]] = []
+        self.thread_mods: list[tuple[list[str], list[str], list[str]]] = []
 
     def list_labels(self) -> list[GmailLabel]:
         return list(self._labels.values())
@@ -36,8 +38,8 @@ class FakeLabelBackend:
     def delete_label(self, label_id: str) -> None:
         del self._labels[label_id]
 
-    def modify_thread(self, thread_id: str, *, add: list[str], remove: list[str]) -> None:
-        self.thread_mods.append((thread_id, add, remove))
+    def modify_threads(self, thread_ids: Sequence[str], *, add: list[str], remove: list[str]) -> None:
+        self.thread_mods.append((list(thread_ids), add, remove))
 
 
 def user_label(name: str, label_id: str) -> GmailLabel:
