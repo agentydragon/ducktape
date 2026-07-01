@@ -489,6 +489,34 @@ look like noise on top of that root cause.
   disable-vfio-in-GRUB for one boot, or fix `wyrm2` autostart config
   from the recovered filesystem.
 
+### 2026-07-01 — planned test: pull the DP loopback, DP straight from GPU to monitor, cold-boot atlas
+
+Immediate objective narrowed to "get atlas connected to monitor +
+keyboard". Everything KVM- / TB- / hub-shaped is now variable to
+eliminate.
+
+**Planned setup.**
+
+- Remove the internal DP m-m between the RTX 5090 DP-OUT and the
+  mobo's DP-IN (i.e. dismantle the TB loopback source).
+- Cable that same GPU DP-OUT directly to the FV43U's DP 1.4 input.
+- TEX Shura stays on a rear USB-A port on atlas itself.
+- Reboot atlas from cold.
+
+**Expected outcomes.**
+
+- BIOS / GRUB / early kernel should paint on the FV43U via straight
+  DP (same framebuffer path that was reaching us over the TB
+  loopback earlier). If _that_ doesn't happen, something else is
+  wrong with the GPU or its DP-OUT.
+- Handoff moment: if the display stays lit past kernel init, then
+  either `vfio-pci` isn't binding that GPU or wyrm2 is up and
+  driving it via passthrough. Either way, we're in.
+- If the display dies at handoff, we've confirmed the VFIO cliff on
+  the shortest possible cable path — no more variables to blame —
+  and the next step becomes "boot without VFIO for one cycle to fix
+  the wyrm2 config".
+
 ## Open questions
 
 - atlas: which RTX 5090 and which DP port feeds the internal DP m-m
