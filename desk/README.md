@@ -28,7 +28,7 @@ listed in the next section so we don't accidentally plan around it.
 | 1   | DP male-male                           | —        | In use: atlas GPU DP-OUT → mobo DP-IN.       |
 | 1   | DP male-male, 8K                       | Ivanky   | Spare.                                       |
 | 1   | USB A → USB B                          | —        | Spare.                                       |
-| 1   | USB-C, 40 Gb/s, 240 W (TB-class)       | Silkland | Spare. Active, USB4/TB4-grade.               |
+| 1   | USB-C, 40 Gb/s, 200 W (TB-class)       | Silkland | In use: laptop-side host link (routed through right-drawer grommet). |
 | 1   | USB-C, USB 3.2 Gen 2×2, 20 Gb/s, 8K    | —        | Spare. Not TB; OK for DP-Alt video + USB data only. |
 | 1   | Shielded Ethernet, ~1 ft               | —        | Spare. Known-good but almost certainly too short to reach atlas from the wall jack. |
 | 1   | USB-A extension (female ↔ male)        | —        | Previously ran to the monitor; repositionable. |
@@ -85,8 +85,8 @@ flowchart LR
     cam["USB-A camera<br/>(atop monitor)"]
     hub["Underdesk USB-A hub"]
 
-    atlas_mobo_tb -- "USB-C TB4, Silkland" --> kvm_pc1
-    laptop        -- "USB-C TB4, Sabrent tag '4'" --> kvm_pc2
+    atlas_mobo_tb -- "USB-C TB4, Sabrent tag '4'" --> kvm_pc1
+    laptop        -- "USB-C TB4, Silkland (right-drawer grommet)" --> kvm_pc2
 
     kvm_tb_a    -- "USB-C 20 Gb/s 8K" --> mon_usbc
     kvm_usba1   -- "USB-A → USB-C" --> kbd
@@ -115,16 +115,16 @@ Each row is one physical link.
 | Link                  | Source port                       | Destination port                     | Cable                  | Have?                                                  |
 | --------------------- | --------------------------------- | ------------------------------------ | ---------------------- | ------------------------------------------------------ |
 | atlas internal video  | atlas RTX 5090 DP-OUT (slot ?)    | atlas mobo DP-IN                     | DP m-m                 | Yes (already wired).                                   |
-| atlas → KVM           | atlas mobo TB4-OUT (USB-C)        | SB-TB4K host PC1                     | USB-C TB-class         | Yes — Silkland 40 Gb/s 240 W.                          |
-| Laptop → KVM          | Laptop TB4 (USB-C)                | SB-TB4K host PC2                     | USB-C TB-class         | Yes — Sabrent-looking 2 ft, tag "4" (verify TB4 mark). |
+| atlas → KVM           | atlas mobo TB4-OUT (USB-C)        | SB-TB4K host PC1                     | USB-C TB-class         | Yes — Sabrent-looking 2 ft, tag "4" (verify TB4 mark). Short run — KVM sits on atlas. |
+| Laptop → KVM          | Laptop TB4 (USB-C) — right-drawer position | SB-TB4K host PC2            | USB-C TB-class         | Yes — Silkland 40 Gb/s 200 W. Routed through the right-drawer grommet. |
 | KVM → monitor (combined) | SB-TB4K downstream TB4 (USB-C) | FV43U USB-C in (video + hub + PD)    | USB-C, DP-Alt + USB3.2 | Yes — spare 20 Gb/s 8K USB-C. Bench-tested; flaky under cable strain, see Experiments. |
 | KVM → keyboard        | SB-TB4K USB-A                     | TEX Shura USB-C                      | USB-A → USB-C          | Yes — 3 on hand (one tagged "keyboard").               |
 | KVM → underdesk hub   | SB-TB4K USB-A                     | Hub uplink (USB-A plug)              | none (direct)          | Yes — hub plugs in. USB-A F↔M extension available if reach is short. |
 | Monitor hub → camera  | FV43U USB-A downstream (lower)    | Camera (USB-A plug)                  | none (direct)          | Yes — camera plugs in.                                 |
 
-All links buildable with cables on hand. Only cable-side questions left
-are length (Silkland reach to atlas, USB-A reach under-desk) and the
-tag-4 cable's TB4 marking.
+All links buildable with cables on hand. Remaining cable-side
+questions: the tag-4 cable's TB4 marking (atlas host link) and the
+underdesk USB-A reach.
 
 ### Plan B — fallback if Plan A's USB-C link won't hold
 
@@ -139,16 +139,6 @@ swap the "KVM → monitor (combined)" row for two links:
 Camera stays on the FV43U USB-A downstream either way. Consequences of
 switching: burns one extra KVM USB-A port (the USB-B uplink); the
 20 Gb/s USB-C cable and the FV43U USB-C input become spare.
-
-The 20 Gb/s USB 3.2 USB-C cable doesn't fit any link in this plan
-(can't host a TB switch, not needed for monitor video since we have a
-DP-DP). Keep as a spare — useful for a direct laptop-to-monitor
-fallback if the KVM is ever bypassed.
-
-With the Sabrent-looking 2 ft TB cable added, both host links are
-covered (Silkland for the longer atlas run, short Sabrent for laptop).
-Remaining unknowns are accessory-side cables for the camera and
-underdesk hub, which depend on connectors we haven't confirmed yet.
 
 ## Cable marking
 
@@ -166,6 +156,9 @@ cables are pulled.
 
 - **KVM → monitor (20 Gb/s 8K USB-C)** — routed through the
   **back-right grommet hole**.
+- **Laptop → KVM (Silkland USB-C)** — routed through the grommet hole
+  on the back of the **right drawer**, where the laptop sits. The
+  KVM-side end is plugged into a SB-TB4K host (PC1/PC2) port.
 
 ## Experiments
 
@@ -231,8 +224,8 @@ the camera (model TBD) and the underdesk hub (uplink TBD).
   bench test worked but was flaky under cable strain — see
   Experiments.
 - Whether the "tag 4" ~2 ft Sabrent-looking USB-C cable is actually
-  TB4-marked (needed for the laptop host link).
-- Silkland cable length vs. real atlas-to-KVM distance.
+  TB4-marked (now the atlas host link).
+- Which SB-TB4K host port (PC1 vs. PC2) the Silkland is landed on.
 - Physical placement of the KVM (desktop vs. underdesk mount) —
   affects all USB-A cable lengths.
 - Per-link cable-length constraints (desk-edge to under-desk, monitor
