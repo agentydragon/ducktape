@@ -16,6 +16,7 @@ from typing import Annotated
 import uvicorn
 from fastmcp import FastMCP
 from fastmcp.server.auth import MultiAuth
+from fastmcp.server.auth.auth import TokenVerifier
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 from pydantic import Field
 from starlette.applications import Starlette
@@ -96,7 +97,11 @@ def build_app(settings: Settings) -> Starlette:
     # it — so Haku's static bearer rides as a verifier alongside the OAuth flow (there
     # can only be one OAuth server). With no Authentik config, the static bearer is the
     # sole verifier and there's no OAuth flow.
-    verifiers = [StaticTokenVerifier({settings.static_bearer: {"client_id": "haku"}})] if settings.static_bearer else []
+    # Annotated as list[TokenVerifier] (not the inferred list[StaticTokenVerifier]) — list
+    # is invariant, so the concrete type wouldn't satisfy MultiAuth/build_authentik_auth.
+    verifiers: list[TokenVerifier] = (
+        [StaticTokenVerifier({settings.static_bearer: {"client_id": "haku"}})] if settings.static_bearer else []
+    )
     if settings.authentik:
         mcp.auth = build_authentik_auth(
             settings.authentik, client_storage=build_client_storage(settings.persistence), extra_verifiers=verifiers
