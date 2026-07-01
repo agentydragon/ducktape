@@ -25,10 +25,6 @@ spec:
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
-      # fsGroup so the fastmcp-home emptyDir is writable by the container's gid —
-      # the OAuth OIDCProxy persists its state there (see FASTMCP_HOME below).
-      securityContext:
-        fsGroup: 1000
       containers:
         - name: server
           image: ghcr.io/agentydragon/gmail-labeling:devel-20260629234300-77ace87 # {"$imagepolicy": "flux-system:gmail-labeling"}
@@ -49,9 +45,13 @@ spec:
                 secretKeyRef:
                   name: haku-gmail-labeling-token
                   key: token
-            # Writable dir for the OAuth OIDCProxy's file-backed state store.
-            - name: FASTMCP_HOME
-              value: /var/lib/fastmcp
+            # OAuth OIDCProxy state (DCR registrations + tokens) → Valkey, so the
+            # operator's claude.ai connector survives pod restarts. Only used when the
+            # Authentik OAuth path is active (valkey-ovh-instance.yaml); harmless otherwise.
+            - name: GMAIL_LABELING_PERSISTENCE__KIND
+              value: valkey
+            - name: GMAIL_LABELING_PERSISTENCE__HOST
+              value: gmail-labeling-valkey-ovh-master.gmail-labeling.svc.cluster.local
           # Operator-OAuth config (GMAIL_LABELING_AUTHENTIK__*), provisioned by
           # agent-machine-access TF. OPTIONAL: when the Secret is absent the server runs
           # static-bearer-only (Haku's path is unaffected); when present, all four values
@@ -61,8 +61,6 @@ spec:
                 name: gmail-labeling-mcp-oidc
                 optional: true
           volumeMounts:
-            - name: fastmcp-home
-              mountPath: /var/lib/fastmcp
             # gmail.modify access token (access_token + expires_at), written by Airlock
             # into the airlock namespace and mirrored here by ESO. Rotates in place;
             # the server re-reads it via google-auth's refresh_handler.
@@ -96,5 +94,3 @@ spec:
         - name: gmail-token
           secret:
             secretName: gmail-modify-access-token
-        - name: fastmcp-home
-          emptyDir: {}

@@ -26,3 +26,4 @@ spec:
     - name: external-secrets-config # ClusterSecretStore + ESO controller
     - name: gateway # public HTTPRoute
     - name: reflector # mirrors the bearer into haku-sandbox
+    - name: valkey # RedisReplication operator (OAuth-state store for the OIDCProxy)

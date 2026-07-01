@@ -15,6 +15,7 @@ from typing import Annotated
 
 import uvicorn
 from fastmcp import FastMCP
+from fastmcp.server.auth import MultiAuth
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 from pydantic import Field
 from starlette.applications import Starlette
@@ -89,21 +90,19 @@ def build_app(settings: Settings) -> Starlette:
     client = LabelClient(GmailLabelBackend(service), LabelNamespace(settings.allowed_prefix))
     mcp = build_mcp(client)
 
-    # One endpoint, up to two accepted credentials. Haku's fixed bearer is a
-    # StaticTokenVerifier; the operator's interactive OAuth (claude.ai) is the
-    # Authentik flow. When both are configured they share one MultiAuth — the
-    # static token rides as an extra verifier alongside the Authentik JWTVerifier.
-    static_verifier = (
-        StaticTokenVerifier({settings.static_bearer: {"client_id": "haku"}}) if settings.static_bearer else None
-    )
+    # One endpoint, up to two accepted credentials, always composed with FastMCP's
+    # MultiAuth. MultiAuth is asymmetric: one `server` owns the OAuth routes/metadata
+    # (the Authentik OIDCProxy) and the `verifiers` are token validators tried after
+    # it — so Haku's static bearer rides as a verifier alongside the OAuth flow (there
+    # can only be one OAuth server). With no Authentik config, the static bearer is the
+    # sole verifier and there's no OAuth flow.
+    verifiers = [StaticTokenVerifier({settings.static_bearer: {"client_id": "haku"}})] if settings.static_bearer else []
     if settings.authentik:
         mcp.auth = build_authentik_auth(
-            settings.authentik,
-            client_storage=build_client_storage(settings.persistence),
-            extra_verifiers=[static_verifier] if static_verifier else None,
+            settings.authentik, client_storage=build_client_storage(settings.persistence), extra_verifiers=verifiers
         )
-    elif static_verifier:
-        mcp.auth = static_verifier
+    elif verifiers:
+        mcp.auth = MultiAuth(verifiers=verifiers)
     else:
         logger.warning("no auth configured — /mcp is unauthenticated (local/dev only)")
 

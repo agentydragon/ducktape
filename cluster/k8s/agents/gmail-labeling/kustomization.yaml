@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - haku-gmail-labeling-token.sops.yaml
+  - valkey-ovh-instance.yaml
   - deployment.yaml
   - service.yaml
   - httproute.yaml
