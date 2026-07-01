@@ -1,5 +1,5 @@
 digraph desk_wiring {
-    graph [fontname="Helvetica"];
+    graph [fontname="Helvetica", nodesep=0.6, ranksep=1.0];
     node  [shape=Mrecord, fontname="Helvetica", fontsize=10];
     edge  [fontname="Helvetica", fontsize=9, penwidth=1.8, dir=none];
 
@@ -19,13 +19,15 @@ digraph desk_wiring {
     kbd [label="TEX Shura\nkeyboard"];
     hub [label="Under-desk USB-A hub"];
 
-    atlas:tb_top -> kvm:pc1 [label="Sabrent tag '4'\nTB-class USB-C, short", color="#333333"];
-    laptop -> g_drawer      [label="USB 3.2 20 Gb/s 8K", color="#c62828"];
+    // xlabel keeps labels near edges without forcing the router to bend
+    // cables around them.
+    atlas:tb_top -> kvm:pc1 [xlabel="Sabrent tag '4'\nTB-class USB-C, short", color="#333333"];
+    laptop -> g_drawer      [xlabel="USB 3.2 20 Gb/s 8K", color="#c62828"];
     g_drawer -> kvm:pc2     [color="#c62828"];
-    kvm:ds_a -> g_backright [label="Silkland\n40 Gb/s · 200 W", color="#1976d2"];
+    kvm:ds_a -> g_backright [xlabel="Silkland\n40 Gb/s · 200 W", color="#1976d2"];
     g_backright -> monitor:usbc [color="#1976d2"];
-    kvm:usba1 -> hub        [label="direct\nUSB-A", color="#f57c00"];
-    monitor:hi -> g_backright [label="USB-A → USB-C", color="#388e3c"];
+    kvm:usba1 -> hub        [xlabel="direct\nUSB-A", color="#f57c00"];
+    monitor:hi -> g_backright [xlabel="USB-A → USB-C", color="#388e3c"];
     g_backright -> kbd      [color="#388e3c"];
-    monitor:lo -> cam       [label="direct\nUSB-A", color="#7b1fa2"];
+    monitor:lo -> cam       [xlabel="direct\nUSB-A", color="#7b1fa2"];
 }
