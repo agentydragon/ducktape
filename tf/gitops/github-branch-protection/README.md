@@ -60,6 +60,11 @@ access control plus the `ducktape-automation` App for GitOps writes.
 
 ## Remaining Cleanup
 
+- Add `Build artifacts + imports check` (the `Nix wheel check` workflow's job
+  name; see <../../../.github/workflows/nix-wheel-check.yml>) to
+  `required_status_checks` once it has ~a week of green runs on devel — the
+  workflow landed with #2678 and needs some soak time to shake out any RBE
+  peer-exhaustion / nix substituter flakes before it becomes a merge gate.
 - Verify whether GitHub Secret Protection covers push protection on private
   personal-account repos now, then enable or explicitly reject it for
   `gaffer-private`.
