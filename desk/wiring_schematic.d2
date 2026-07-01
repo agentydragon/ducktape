@@ -6,6 +6,7 @@
 # Edge colours match the eventual physical coloured-marker system.
 
 monitor: AORUS FV43U — 43\" 4K@144 monitor {
+  grid-columns: 1
   optical: optical S/PDIF out
   audio: 3.5 mm audio jack
   hdmi1: HDMI 2.1 #1
@@ -17,20 +18,31 @@ monitor: AORUS FV43U — 43\" 4K@144 monitor {
   lo: USB-A lower
 }
 
+# KVM: two physical sides side by side.
+#   Left  ("peripheral"): power + 3× downstream TB4 + 2× USB-A
+#   Right ("host")     : 2× host TB4 + 2× USB-A
 kvm: Sabrent SB-TB4K — TB4 KVM · on top of atlas {
-  power: power in
-  pc1: host PC1 (TB4)
-  pc2: host PC2 (TB4)
-  ds_a: downstream TB4 A
-  ds_b: downstream TB4 B
-  ds_c: downstream TB4 C
-  usba1: USB-A 1
-  usba2: USB-A 2
-  usba3: USB-A 3
-  usba4: USB-A 4
+  grid-columns: 2
+  peripheral: peripheral side {
+    grid-columns: 1
+    power: power in
+    ds_a: downstream TB4 A
+    ds_b: downstream TB4 B
+    ds_c: downstream TB4 C
+    usba1: USB-A 1
+    usba2: USB-A 2
+  }
+  host: host side {
+    grid-columns: 1
+    pc1: host PC1 (TB4)
+    pc2: host PC2 (TB4)
+    usba3: USB-A 3
+    usba4: USB-A 4
+  }
 }
 
 atlas: atlas — Proxmox tower · 2× RTX 5090 {
+  grid-columns: 1
   tb_top: mobo TB4 · top
   tb_mid: mobo TB4 · middle
 }
@@ -51,7 +63,7 @@ kbd: TEX Shura keyboard
 hub: Under-desk USB-A hub
 
 # ── cables ──────────────────────────────────────────────────────────
-atlas.tb_top -- kvm.pc1: Sabrent tag '4'\nTB-class USB-C, short {
+atlas.tb_top -- kvm.host.pc1: Sabrent tag '4'\nTB-class USB-C, short {
   style.stroke: "#333333"
   style.stroke-width: 2
 }
@@ -60,12 +72,12 @@ laptop -- g_drawer: USB 3.2 20 Gb/s 8K {
   style.stroke: "#c62828"
   style.stroke-width: 2
 }
-g_drawer -- kvm.pc2 {
+g_drawer -- kvm.host.pc2 {
   style.stroke: "#c62828"
   style.stroke-width: 2
 }
 
-kvm.ds_a -- g_backright: Silkland\n40 Gb/s · 200 W {
+kvm.peripheral.ds_a -- g_backright: Silkland\n40 Gb/s · 200 W {
   style.stroke: "#1976d2"
   style.stroke-width: 2
 }
@@ -74,7 +86,7 @@ g_backright -- monitor.usbc {
   style.stroke-width: 2
 }
 
-kvm.usba1 -- hub: direct USB-A {
+kvm.peripheral.usba1 -- hub: direct USB-A {
   style.stroke: "#f57c00"
   style.stroke-width: 2
 }
