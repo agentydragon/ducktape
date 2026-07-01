@@ -79,6 +79,7 @@ in
     ./modules/gnome-custom-keybindings.nix
     ./modules/attic.nix
     ./modules/atuin.nix
+    ./modules/bazel.nix
     ./modules/buildbuddy.nix
     ./modules/datetime-format.nix
     ./modules/sops-env.nix
@@ -104,6 +105,8 @@ in
   home.homeDirectory = "/home/agentydragon";
 
   programs.home-manager.enable = true;
+
+  ducktape.bazel.enable = true;
 
   xdg.userDirs = {
     enable = true;
@@ -247,13 +250,6 @@ in
     ask_to_move=true
     destination=/home/agentydragon/.local/appimages
     enable_daemon=true
-  '';
-
-  home.file.".bazelrc".text = ''
-    common --show_progress_rate_limit=0.05
-    common --progress_in_terminal_title
-
-    try-import ${config.home.homeDirectory}/.config/bazel/buildbuddy.bazelrc
   '';
 
   home.packages =

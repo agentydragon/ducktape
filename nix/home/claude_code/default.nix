@@ -313,6 +313,7 @@
 let
   cfg = config.programs.claude-code;
   allowed = import ../allowed-commands.nix;
+  bazeliskCache = "${config.xdg.cacheHome}/bazelisk";
 
   # Gmail MCP Server - pinned to specific commit for security
   gmail-mcp-server = import ../../packages/gmail-mcp.nix { inherit pkgs lib; };
@@ -582,6 +583,7 @@ in
         filesystem = {
           allowWrite = [
             "~/.cache/bazel"
+            "~/.cache/bazelisk"
             "~/.cache/pre-commit"
           ];
         };
@@ -590,6 +592,7 @@ in
       # Enable sandbox-runtime debug logging so network allow/deny decisions
       # (e.g. "Denied by config rule: telemetry.aspect.build:443") appear in
       # ~/.claude/debug/ session logs.
+      env.BAZELISK_HOME = bazeliskCache;
       env.SRT_DEBUG = "1";
       env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
 
@@ -627,6 +630,10 @@ in
 
   # Add gmail-mcp-server to PATH for auth setup command
   config.home.packages = [ gmail-mcp-server ];
+
+  config.home.activation.claudeCodeBazeliskCacheDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    mkdir -p '${bazeliskCache}'
+  '';
 
   # Deploy skills and plugin cache.
   config.home.file =

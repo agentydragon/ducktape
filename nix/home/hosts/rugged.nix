@@ -8,7 +8,6 @@
 {
   imports = [
     ../home.nix
-    ../modules/bazel-user-cache.nix
     ../modules/forgejo-ssh.nix
     ../modules/github-ssh.nix
     ../modules/kubeconfig.nix
@@ -31,7 +30,7 @@
     };
   };
 
-  ducktape.bazelUserCache.enable = true;
+  ducktape.bazel.userCache.enable = true;
 
   # SSH keys for wyrm and vps, decrypted from SOPS binary at activation time.
   sops.secrets =
