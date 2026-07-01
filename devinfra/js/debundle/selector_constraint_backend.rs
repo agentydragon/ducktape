@@ -1531,8 +1531,7 @@ impl CompiledSelectorProblemBuilder {
         if kept_rows.is_empty() {
             self.known_unsat.get_or_insert_with(|| {
                 format!(
-                    "allowed tuple constraint over {:?} has no rows after domain pruning",
-                    variables
+                    "allowed tuple constraint over {variables:?} has no rows after domain pruning"
                 )
             });
             return Ok(None);
@@ -1670,8 +1669,7 @@ impl CompiledSelectorProblemBuilder {
                         if !fixed_values.insert(*value) {
                             self.known_unsat.get_or_insert_with(|| {
                                 format!(
-                                    "all_different has duplicate fixed value {:?} for variable {:?}",
-                                    value, variable
+                                    "all_different has duplicate fixed value {value:?} for variable {variable:?}"
                                 )
                             });
                         }
