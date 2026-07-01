@@ -248,6 +248,15 @@ class StockOpOk(BaseModel):
     location_name: str = Field(
         description="Name of the storage location. For `stock_transfer`, formatted as `from -> to`."
     )
+    entry_id: int | None = Field(
+        default=None,
+        description=(
+            "ID of the newly created stock entry — pass to `stock_entries_list(entry_ids=...)` or "
+            "`stock_entry_edit` to look up or adjust it further. `stock_add` only (best-effort: null "
+            "if the follow-up lookup fails); null for `stock_consume`/`stock_set`/`stock_transfer`, "
+            "which don't create a new entry."
+        ),
+    )
     best_before_date: date | None = Field(
         default=None,
         description=(

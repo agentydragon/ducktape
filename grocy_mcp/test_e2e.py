@@ -457,6 +457,30 @@ async def test_stock_set_qu_optional_when_zeroing(mcp_client: Client, refunwrap_
     assert set_ops[0]["new_amount"] == 3.0
 
 
+# -- stock_add: entry_id -----------------------------------------------------
+
+
+async def test_stock_add_returns_entry_id(mcp_client: Client, refunwrap_result: RefData) -> None:
+    """`stock_add` echoes the new stock entry's `entry_id`, usable without a follow-up list call."""
+    product = refunwrap_result.products[0]
+    qu = refunwrap_result.qu
+    loc = refunwrap_result.location
+
+    ops = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_add", {"items": [{"product": product, "amount": 1, "qu": qu, "location": loc}]}
+        )
+    )
+    assert ops[0]["kind"] == "ok", ops
+    entry_id = ops[0]["entry_id"]
+    assert entry_id is not None, ops
+
+    entries = unwrap_result(await mcp_client.call_tool("stock_entries_list", {"entry_ids": [entry_id]}))
+    assert entries[0]["kind"] == "ok", entries
+    assert entries[0]["entry"]["product_name"] == product
+    assert float(entries[0]["entry"]["amount"]) == 1.0
+
+
 # -- stock_add: default_best_before_days -----------------------------------
 
 

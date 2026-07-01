@@ -426,6 +426,24 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             logger.warning("failed to read new_amount for product %d after mutation", product_id)
             return None
 
+    async def _best_effort_entry_id(product_id: int, stock_id: str) -> int | None:
+        """Resolve a new stock entry's `entry_id` from its `stock_id`. Best-effort, never retried.
+
+        Grocy's `/add` response carries `stock_id` — an opaque UUID identifying
+        the entry for its lifetime — not the integer `id` our other stock
+        tools key off. `stock_id` is unique per entry, so this look-up finds
+        exactly the entry this call created, immune to concurrent adds racing
+        on the same product.
+        """
+        try:
+            r = await client.get(f"/stock/products/{product_id}/entries", params={"query[]": f"stock_id={stock_id}"})
+            r.raise_for_status()
+            entries: list[dict[str, Any]] = r.json()
+            return int(entries[0]["id"]) if entries else None
+        except (httpx.HTTPStatusError, httpx.TimeoutException):
+            logger.warning("failed to resolve entry_id for stock_id=%s (product %d)", stock_id, product_id)
+            return None
+
     async def _stock_mutate(item: AddItem | ConsumeItem | SetItem) -> StockOpOk | StockOpError:
         """Shared implementation for stock_add / stock_consume / stock_set."""
         try:
@@ -494,16 +512,23 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                     if item.price is not None:
                         body["price"] = item.price
 
-            async def _do_post() -> tuple[str | None, float | None]:
+            async def _do_post() -> tuple[str | None, float | None, str | None]:
                 r = await client.post(f"/stock/products/{product.id}/{endpoint}", json=body)
                 r.raise_for_status()
                 entries: list[dict[str, Any]] = r.json()
                 tx_id = entries[0]["transaction_id"] if entries else None
+                stock_id = entries[0].get("stock_id") if entries else None
                 amount_delta = sum(float(e.get("amount", 0)) for e in entries) if entries else None
-                return tx_id, amount_delta
+                return tx_id, amount_delta, stock_id
 
-            tx_id, amount_delta = await _retry(_do_post)
-            new_amount = await _best_effort_new_amount(product.id)
+            tx_id, amount_delta, stock_id = await _retry(_do_post)
+            if isinstance(item, AddItem) and stock_id is not None:
+                new_amount, entry_id = await asyncio.gather(
+                    _best_effort_new_amount(product.id), _best_effort_entry_id(product.id, stock_id)
+                )
+            else:
+                new_amount = await _best_effort_new_amount(product.id)
+                entry_id = None
             return StockOpOk(
                 product_name=product.name,
                 transaction_id=tx_id,
@@ -512,6 +537,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 qu_name=rqu.name,
                 stock_qu_name=rqu.stock_qu_name if rqu.conversion_factor != 1.0 else None,
                 location_name=location.name,
+                entry_id=entry_id,
                 best_before_date=applied_best_before_date,
             )
         except Exception as e:
@@ -530,11 +556,12 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
         Returns one result per input item, in order. Each success carries
         a `transaction_id` you can pass to `transaction_undo` to revert
-        that single addition, and `best_before_date` — the date actually
-        applied to the new entry, whether you passed it explicitly or it
-        was computed from `default_best_before_days` — so you can catch
-        surprises (e.g. "expires today") without a follow-up
-        `stock_entries_list` call. See also `stock_consume`,
+        that single addition, `entry_id` — the new stock entry's ID, for
+        `stock_entries_list` / `stock_entry_edit` — and `best_before_date`
+        — the date actually applied to the new entry, whether you passed
+        it explicitly or it was computed from `default_best_before_days`
+        — so you can catch surprises (e.g. "expires today") without a
+        follow-up `stock_entries_list` call. See also `stock_consume`,
         `stock_set`, `stock_transfer`.
         """
         _check_batch_size(items, "items")
