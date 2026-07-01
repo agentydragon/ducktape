@@ -35,12 +35,14 @@ intended:
     downstream), so a single upstream cable brings the keyboard
     with the KVM switch instead of an additional KVM USB-A run.
   - Underdesk USB-A hub on a KVM USB-A port.
-- **Both host ports receive PD continuously** from the SB-TB4K's own
-  PSU, whether or not that host is the currently-active host on the
-  KVM switch. Concretely: the docked laptop charges the whole time
-  it's plugged in, even while atlas is the active display target.
-  (Atlas has its own PSU so it doesn't need the PD, but the port
-  offers it anyway.)
+- ~~**Both host ports receive PD continuously**~~ **Not achievable
+  with the SB-TB4K.** Per Sabrent's own forum, delivering PD to
+  both host ports simultaneously would violate Thunderbolt 4
+  certification, so the switch only charges the currently-active
+  host by design. See the gap discussion in the North-Star
+  experiment. Workaround: if the docked laptop needs to charge
+  while atlas is the active host, plug its own AC adapter alongside
+  the KVM cable.
 
 ### Future desiderata (not blocking Plan A)
 
@@ -729,23 +731,26 @@ receive PD continuously so a docked laptop always charges — this
 requirement isn't met yet. Not critical (user is fine with it for
 now), but recorded as a known deviation.
 
-Suspects, in rough order:
+**Diagnosis (confirmed).** Rugged _does_ charge while it's the
+active host, but stops charging when the KVM is toggled to atlas.
+That rules out the cable and localises the problem to the KVM's
+default PD-routing behaviour: only the active host gets PD.
 
-- The 20 Gb/s USB 3.2 Gen 2×2 cable on this leg is probably not PD
-  e-marked (USB 3.2 spec doesn't require it). Cheapest test: swap
-  the Silkland (proven 200 W) onto the laptop leg and the 20 Gb/s
-  onto the KVM → monitor leg, then check if rugged charges when
-  atlas is active.
-- The SB-TB4K may only deliver PD to the currently-active host by
-  default. Sabrent's spec page says "60 W PD 3.0" but doesn't
-  explicitly promise simultaneous on both host ports. Check the
-  manual for a hidden mode toggle (e.g. long-press on the switch
-  button).
-- If neither: something else in the negotiation.
+**Root cause (confirmed via Sabrent).** The SB-TB4K only delivers
+PD to the currently-active host by design. Per Sabrent's community
+forum, dual-host simultaneous charging would violate Thunderbolt 4
+certification, so it isn't a firmware/mode limitation — it's the
+hardware.
 
-Signal that tells the two apart: does rugged charge when it _is_ the
-active host? Yes → the KVM defaults to active-only PD (or has a mode
-toggle to change that). No → the cable can't do PD at all.
+- <https://sabrent.com/community/xenforum/topic/152900/thunderbolt-4-kvm-charging>
+- <https://sabrent.com/community/xenforum/topic/128405/sb-tb4k-pd-power>
+
+**Resolution.** Retired the "both hosts get continuous PD" clause
+from the desired-state spec — it's unachievable with this KVM.
+Workaround for the docked laptop: plug its own AC adapter alongside
+the KVM cable when it needs to charge while atlas is active. If
+this ever needs to be a hard requirement, we'd need a different
+switch (probably a non-TB-certified USB-C dock).
 
 ### 2026-07-01 — earlier: waited, greeter appeared at correct resolution
 
