@@ -63,21 +63,9 @@ All PostgreSQL tests (both `props/` and `gatelet/`) use **testcontainers** for h
 
 ### Workflow Dispatch
 
-Current approach in `ci.yml`:
+Top-level `ci.yml` calls `bazel-ci.yml` on every push and pull request. `bazel-ci.yml` runs one `bb-remote --script` step that invokes `bazel test` and `bazel build`. On pushes to `devel` the pattern is `//...`; on PRs it is the target-determinator affected set vs. `origin/devel` (see `.github/workflows/bazel-ci.yml` and `devinfra/docs/bazel_caching.md`). E2E tests are selected in-place by Bazel test tags (`requires_docker`, `e2e`, etc.); there is no per-tag dispatcher job.
 
-1. `compute-targets` job computes affected targets and sets boolean flags
-2. Individual workflow files are called based on flags
-3. Each E2E workflow has its own setup/teardown logic
-
-**Improvements made:**
-
-- Docker tests now share utilities via `//test_util`
-- Props E2E tests use testcontainers for hermetic infrastructure
-- Non-Docker tests no longer depend on Docker fixtures
-
-**Remaining issues:**
-
-1. **No tag validation**: Nothing prevents tests from having tags without matching CI support
+Tags are not validated against CI support — nothing prevents a test from carrying a tag no workflow honors.
 
 ## Industry Patterns
 
