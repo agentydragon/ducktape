@@ -93,55 +93,15 @@ listed in the next section so we don't accidentally plan around it.
 
 ## Target topology
 
-Plan A (USB-C only) is what's currently wired and drawn below — the
-monitor link is a single USB-C cable carrying DP-Alt video + USB hub
-data + PD, which lets the camera ride the FV43U's own USB-A hub back
-up to the KVM-switched bus. Plan B (DP video + a separate USB A→B
-hub uplink) is a fallback, described after; the cables for it are on
-hand either way.
+Plan A (USB-C only) is what's currently wired — the monitor link is a
+single USB-C cable carrying DP-Alt video + USB hub data + PD, which
+lets the camera ride the FV43U's own USB-A hub back up to the
+KVM-switched bus. Plan B (DP video + a separate USB A→B hub uplink)
+is a fallback, described after; the cables for it are on hand either
+way.
 
-```mermaid
-flowchart LR
-    subgraph atlas[atlas: Proxmox host]
-        atlas_gpu["RTX 5090 DP-OUT<br/>(slot ?)"]
-        atlas_mobo_dp["mobo DP-IN"]
-        atlas_mobo_tb["mobo TB4-OUT (USB-C)"]
-        atlas_gpu -- "DP m-m (internal)" --> atlas_mobo_dp
-        atlas_mobo_dp -. internal route .-> atlas_mobo_tb
-    end
-
-    laptop["Laptop<br/>TB4 (USB-C)"]
-
-    subgraph kvm[Sabrent SB-TB4K]
-        kvm_pc1["host PC1 (TB4)"]
-        kvm_pc2["host PC2 (TB4)"]
-        kvm_tb_a["downstream TB4 A"]
-        kvm_tb_b["downstream TB4 B<br/>(free)"]
-        kvm_tb_c["downstream TB4 C<br/>(free)"]
-        kvm_usba1["USB-A 1"]
-        kvm_usba2["USB-A 2"]
-        kvm_usba3["USB-A 3<br/>(free)"]
-        kvm_usba4["USB-A 4<br/>(free)"]
-    end
-
-    subgraph mon[AORUS FV43U]
-        mon_usbc["USB-C in<br/>(video + hub + PD)"]
-        mon_usba_lo["USB-A downstream (lower)"]
-        mon_usba_hi["USB-A downstream (upper)"]
-    end
-
-    kbd["TEX Shura (USB-C)"]
-    cam["USB-A camera<br/>(atop monitor)"]
-    hub["Underdesk USB-A hub"]
-
-    atlas_mobo_tb -- "USB-C TB4, Sabrent tag '4'" --> kvm_pc1
-    laptop        -- "USB-C 20 Gb/s 8K (currently: rugged)" --> kvm_pc2
-
-    kvm_tb_a    -- "USB-C TB4, Silkland" --> mon_usbc
-    kvm_usba1   -- "direct" --> hub
-    mon_usba_hi -- "USB-A → USB-C" --> kbd
-    mon_usba_lo -- "direct" --> cam
-```
+The physical schematic — devices, ports, cables, grommets, colour
+map — lives in <wiring_schematic.svg> (source: <wiring_schematic.dot>).
 
 Free after Plan A wiring: SB-TB4K downstream TB4 ports B and C,
 SB-TB4K USB-A 2 / 3 / 4, FV43U DP 1.4, FV43U 2× HDMI 2.1, FV43U
