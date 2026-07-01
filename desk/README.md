@@ -308,15 +308,50 @@ paints only middle).
 - Since the KVM-in-line and direct-connect tests both produce the
   same gray-screen state, the KVM stays out of scope for this
   diagnosis. Debugging is atlas config, not desk wiring.
-- **Next:** re-run the KVM chain with atlas's **middle** TB port as
-  the source (not the top port). Expected outcome: atlas console
-  reaches the FV43U via the KVM the same way rugged did.
 - Longer-term: understand *why* only the middle TB port carries kernel
   DP-Alt (BIOS setting? mobo silkscreen? IOMMU group of the top port
   is passed through?). Could also give atlas a display source that
   survives full VFIO passthrough (iGPU or spare GPU outside the
   passthrough set) so console debugging isn't dependent on TB port
   choice.
+
+### 2026-07-01 — KVM back in the chain, atlas on middle port
+
+**Setup.** Sabrent tag "4" cable moved to atlas's **middle** TB port
+on one end, SB-TB4K host port on the other. Rugged still on the
+Silkland at the drawer position. KVM downstream → 20 Gb/s USB-C →
+FV43U USB-C unchanged.
+
+**Observations.**
+
+- Rugged → KVM → FV43U: works.
+- Atlas → KVM → FV43U (middle port via Sabrent tag "4"): "no USB-C
+  signal".
+
+**Interpretation.** Direct-connect from atlas's middle port to the
+FV43U via the 20 Gb/s USB-C cable worked. Add the KVM + swap the
+inline cable to Sabrent tag "4" and it doesn't. Two likely
+candidates:
+
+- The Sabrent tag "4" cable can't carry DP-Alt at whatever rate atlas
+  is trying to negotiate from the middle port (even though it did
+  carry BIOS-era video from the *top* port earlier — top port likely
+  negotiated a lower link rate). This is the leading suspicion; the
+  tag "4" TB4 marking has never been visually verified.
+- The KVM host port that atlas is on isn't tolerating atlas's TB
+  handshake. Less likely given rugged negotiates fine on the other
+  host port.
+
+**Follow-ups.**
+
+- **Swap-cable test:** put the 20 Gb/s USB-C cable on atlas → KVM
+  (middle port) and put the Sabrent tag "4" cable on KVM downstream →
+  FV43U. If atlas video reaches the FV43U through the KVM in that
+  configuration, the tag "4" cable is at fault at the source-side
+  link rate.
+- Prioritize this after atlas is SSH-able; user is pausing this
+  thread to get atlas on the network and merge the current doc as a
+  base for further troubleshooting.
 
 ## Open questions
 
