@@ -192,3 +192,5 @@ litellm_settings:
   callbacks:
     - langfuse_otel
     - prometheus
+general_settings:
+  store_model_in_db: false

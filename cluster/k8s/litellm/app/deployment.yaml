@@ -2,9 +2,13 @@
 # The chart handled Deployment, Service, ServiceAccount, ConfigMap, and optional DB/HPA/KEDA/ServiceMonitor.
 # We only used the core subset; hand-written manifests are simpler and avoid the Helm indirection.
 #
-# TODO: LiteLLM supports virtual key management, per-key spend limits, and rate limiting via
-# a PostgreSQL database. Consider enabling when multi-user/multi-team API key isolation is needed.
-# See: https://docs.litellm.ai/docs/proxy/virtual_keys
+# Virtual keys / per-key budgets are enabled: DATABASE_URL points at the litellm-db
+# CNPG cluster (../db/). LiteLLM runs the Prisma schema migration on startup; the
+# RollingUpdate maxSurge:0/maxUnavailable:1 strategy below means pods restart one at a
+# time, and Prisma's advisory lock covers the rare both-pods-restart case. Keys are
+# minted declaratively by tf/gitops/litellm-keys (see haku/plans/multi_agent.md).
+# Models deliberately stay in the generated config, NOT the DB — see
+# general_settings.store_model_in_db in generate_litellm.py.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -95,6 +99,20 @@ spec:
                 secretKeyRef:
                   name: litellm-master-key
                   key: api-key
+            # Virtual-key/spend DB (CNPG cluster litellm-db; secret auto-generated
+            # by CNPG). Enables /key/generate, per-key budgets, kill-switch.
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-db-app
+                  key: uri
+            # Encrypts credential material LiteLLM stores in the DB. Set once,
+            # NEVER rotate — rotating orphans everything already encrypted with it.
+            - name: LITELLM_SALT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-salt-key
+                  key: key
             # z.ai (GLM) key for the z.ai upstream models in proxy-config.yaml.
             - name: ZAI_API_KEY
               valueFrom:

@@ -282,6 +282,7 @@ resources:
   - litellm/namespace/flux-kustomization.yaml
   - litellm/agent-rbac/flux-kustomization.yaml
   - litellm/secrets/flux-kustomization.yaml
+  - litellm/db/flux-kustomization.yaml
   - litellm/app/flux-kustomization.yaml
   - litellm/tana/flux-kustomization.yaml
   - litellm/servicemonitor/flux-kustomization.yaml

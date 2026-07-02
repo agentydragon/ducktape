@@ -13,5 +13,6 @@ spec:
   timeout: 10m
   dependsOn:
     - name: litellm-secrets
+    - name: litellm-db
     - name: gateway
     - name: cert-manager-environment
