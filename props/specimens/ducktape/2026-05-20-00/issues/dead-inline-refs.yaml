@@ -18,16 +18,27 @@ rationale: |
 should_flag: true
 occurrences:
   - occurrence_id: occ-0
+    note: |
+      In inline_refs.py: the duplicated NODE_SPAN_PATTERN/DATE_SPAN_PATTERN regexes
+      and the dead replace_inline_refs / find_inline_node_refs functions have no
+      callers; only parse_inline_date is live.
     files:
       tana/render/inline_refs.py:
         - [10, 11]
         - [33, 52]
+    critic_scopes_expected_to_recall:
+      - [tana/render/inline_refs.py]
     match_file_restriction:
       - tana/render/inline_refs.py
   - occurrence_id: occ-1
+    note: |
+      In html_utils.py: process_inline_refs and find_inline_date_refs have no
+      callers.
     files:
       tana/render/html_utils.py:
         - [84, 109]
         - [116, 117]
+    critic_scopes_expected_to_recall:
+      - [tana/render/html_utils.py]
     match_file_restriction:
       - tana/render/html_utils.py
