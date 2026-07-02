@@ -22,6 +22,11 @@ first-party LOC) is squarely in scope.
   limited to current-state cross-session boundary analysis.
 - **Scope note:** findings already remediated are omitted; this report lists only
   outstanding issues.
+- **`x/` is experimental:** everything under an `x/` tree (notably `x/agent_server`,
+  `x/gatelet`, `x/study_casino`, `x/editor_agent`, `x/claude_linter_v2`) is in-flux,
+  pre-stabilization code. Findings there are **lower priority** than the same class
+  of defect in deployed first-party code, and their severity labels should be read
+  with that discount.
 
 ## Executive summary
 
@@ -41,9 +46,10 @@ branch logic that approximates rather than implements** (the policy engine's
 deny-continue path), **silent value-dropping at cross-session module boundaries**
 (gmail filter sync, grocy price/location handling), and **statistical/money math
 that is subtly wrong** (augur dilution Jacobian, props recall mean-of-means). The
-most urgent open items are the policy-engine deny-continue bypass (a denied tool
-call is still executed) and scoping down the `kubeapi_admin` ServiceAccount from
-`cluster-admin`.
+most urgent open item in deployed code is scoping down the `kubeapi_admin`
+ServiceAccount from `cluster-admin`; the policy-engine deny-continue bypass (a
+denied tool call is still executed) is the highest-severity defect but lives in
+experimental `x/agent_server`, so it is lower priority until that code deploys.
 
 | Severity   | Count | Definition (adapted from framework Part V)                                                                              |
 | ---------- | ----- | ----------------------------------------------------------------------------------------------------------------------- |
