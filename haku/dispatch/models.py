@@ -6,12 +6,6 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 
-class Zone(StrEnum):
-    """Worker zone = per-provider trust track. Namespace/model wiring in config.py."""
-
-    ZAI = "zai"
-
-
 class JobStatus(StrEnum):
     CREATED = "created"
     COMPLETED = "completed"
@@ -27,7 +21,7 @@ class JobRequest(BaseModel):
             "look anything up, so all context must be inline."
         )
     )
-    zone: Zone
+    zone: str = Field(description="Zone name; must exist in the dispatcher's zones.yaml.")
     model: str = Field(description="Model name on the workers-LiteLLM; must be in the zone's allowlist.")
     max_budget_usd: float = Field(gt=0, le=5, description="Per-job LiteLLM key budget.")
     idempotency_key: str = Field(
@@ -39,7 +33,7 @@ class JobRequest(BaseModel):
 
 class JobRecord(BaseModel):
     id: str = Field(description="k8s Job name, derived from the idempotency key.")
-    zone: Zone
+    zone: str
     model: str
     status: JobStatus
     prompt: str

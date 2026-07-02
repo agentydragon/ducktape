@@ -19,8 +19,6 @@ from typing import Any, cast
 import yaml
 from kubernetes_asyncio import client
 
-from haku.dispatch.models import Zone
-
 
 def job_name(idempotency_key: str) -> str:
     return f"job-{hashlib.sha256(idempotency_key.encode()).hexdigest()[:16]}"
@@ -32,14 +30,9 @@ def job_name(idempotency_key: str) -> str:
 _PLACEHOLDER = re.compile(r"\$\{[A-Z_]+\}")
 
 
-def render_job(template_text: str, *, name: str, namespace: str, zone: Zone, model: str) -> dict:
+def render_job(template_text: str, *, name: str, namespace: str, zone: str, model: str) -> dict:
     rendered = template_text
-    for token, value in {
-        "${JOB_NAME}": name,
-        "${NAMESPACE}": namespace,
-        "${ZONE}": str(zone),
-        "${MODEL}": model,
-    }.items():
+    for token, value in {"${JOB_NAME}": name, "${NAMESPACE}": namespace, "${ZONE}": zone, "${MODEL}": model}.items():
         rendered = rendered.replace(token, value)
     if leftover := _PLACEHOLDER.search(rendered):
         raise ValueError(f"unfilled template placeholder {leftover.group()}")
@@ -72,7 +65,7 @@ class ZoneJobStamper:
         return True
 
     async def create(
-        self, *, name: str, namespace: str, zone: Zone, model: str, prompt: str, litellm_key: str, result_token: str
+        self, *, name: str, namespace: str, zone: str, model: str, prompt: str, litellm_key: str, result_token: str
     ) -> None:
         secret = render_secret(
             name=name, namespace=namespace, prompt=prompt, litellm_key=litellm_key, result_token=result_token

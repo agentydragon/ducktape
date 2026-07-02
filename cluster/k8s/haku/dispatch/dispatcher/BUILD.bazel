@@ -1,6 +1,9 @@
 # The Job template is data for haku/dispatch's stamping parity test.
 exports_files(
-    ["job-template.yaml"],
+    [
+        "job-template.yaml",
+        "zones.yaml",
+    ],
     visibility = ["//haku/dispatch:__pkg__"],
 )
 

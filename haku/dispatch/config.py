@@ -5,28 +5,31 @@ spec — pod specs are L0-visible via cluster-diagnostics-reader):
 
   DATABASE_URL                 — dispatcher database in the haku-dispatch-db CNPG cluster
   WORKERS_LITELLM_MASTER_KEY   — mints per-job virtual keys on the workers-LiteLLM
-  ANTHROPIC_API_KEY            — classifier calls (ESO-mirrored haku-cloud key)
+  ANTHROPIC_API_KEY            — classifier virtual key on the main LiteLLM
   HAKU_API_TOKEN               — bearer Haku presents on /jobs endpoints
   RESULT_TOKEN_SECRET          — HMAC key for per-job result-submission tokens
+
+Zone wiring (namespace + model allowlist per zone) is runtime config —
+zones.yaml, configMapGenerator-mounted from
+cluster/k8s/haku/dispatch/dispatcher/ next to the Job template. Its model lists
+must match the zone key minted in tf/gitops/litellm-keys/main.tf and the
+workers-LiteLLM config (parity-tested in test_zones_config.py).
 """
 
 from pathlib import Path
 
-from pydantic import Field
+import yaml
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
-from haku.dispatch.models import Zone
 
-# Zone wiring. Model allowlists must match the zone key minted in
-# tf/gitops/litellm-keys/main.tf and the model_name entries in
-# cluster/k8s/haku/dispatch/litellm/workers-litellm-config.yaml.
-ZONE_NAMESPACES: dict[Zone, str] = {Zone.ZAI: "haku-sandbox-zai"}
-ZONE_MODELS: dict[Zone, set[str]] = {
-    Zone.ZAI: {
-        f"{m}-anthropic"
-        for m in ["glm-4.5", "glm-4.5-air", "glm-4.6", "glm-4.7", "glm-5", "glm-5-turbo", "glm-5.1", "glm-5.2"]
-    }
-}
+class ZoneConfig(BaseModel):
+    namespace: str = Field(description="Zone namespace validator-stamped Jobs land in.")
+    models: set[str] = Field(description="workers-LiteLLM model_name allowlist for this zone's per-job keys.")
+
+
+def load_zones(path: Path) -> dict[str, ZoneConfig]:
+    return {name: ZoneConfig.model_validate(cfg) for name, cfg in yaml.safe_load(path.read_text()).items()}
 
 
 class Settings(BaseSettings):
@@ -54,6 +57,19 @@ class Settings(BaseSettings):
         default=Path("/etc/dispatcher/job-template.yaml"),
         validation_alias="JOB_TEMPLATE_PATH",
         description="Reviewed k8s Job template (configMapGenerator-mounted from cluster/k8s/haku/dispatch/dispatcher/).",
+    )
+    zones_config_path: Path = Field(
+        default=Path("/etc/dispatcher/zones.yaml"),
+        validation_alias="ZONES_CONFIG_PATH",
+        description="Zone wiring (namespace + model allowlist per zone), mounted next to the Job template.",
+    )
+    classifier_context_path: Path = Field(
+        default=Path("/etc/dispatcher-classifier-context/context.md"),
+        validation_alias="CLASSIFIER_CONTEXT_PATH",
+        description=(
+            "Optional operator-provided classifier context (private names/identifiers, known-public "
+            "repos), mounted from an optional Secret; missing file = base policy only."
+        ),
     )
     job_key_ttl: str = Field(
         default="24h",

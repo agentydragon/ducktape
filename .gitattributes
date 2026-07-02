@@ -86,6 +86,8 @@ cluster/k8s/agents/attic-jwt-rotation/rotators.yaml cluster-manifest-ignored=tru
 cluster/k8s/grocy/user-perms-base/policy.yaml cluster-manifest-ignored=true
 # dispatcher Job template (${...} placeholders), mounted via configMapGenerator — not a live manifest.
 cluster/k8s/haku/dispatch/dispatcher/job-template.yaml cluster-manifest-ignored=true
+# dispatcher zone wiring, mounted via configMapGenerator — not a K8s manifest.
+cluster/k8s/haku/dispatch/dispatcher/zones.yaml cluster-manifest-ignored=true
 
 # Dotfiles/dotdirs follow their own naming conventions
 .* filename-conventions-ignored=true

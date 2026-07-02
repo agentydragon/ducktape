@@ -291,6 +291,7 @@ repos:
             cluster/k8s/haku/dispatch/litellm/workers-litellm-config\.yaml|
             # dispatcher Job template with ${...} placeholders, mounted via configMapGenerator
             cluster/k8s/haku/dispatch/dispatcher/job-template\.yaml|
+            cluster/k8s/haku/dispatch/dispatcher/zones\.yaml|
             # Helm values files consumed via configMapGenerator, not K8s manifests
             cluster/k8s/.*/ccm-values\.yaml|
             # rotate.py rotation list, mounted via configMapGenerator, not a K8s manifest

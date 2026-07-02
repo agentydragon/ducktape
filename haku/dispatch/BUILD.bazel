@@ -16,6 +16,7 @@ py_library(
         ":models",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -167,6 +168,18 @@ py_test(
     deps = [
         ":k8s_jobs",
         ":models",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_zones_config",
+    srcs = ["test_zones_config.py"],
+    data = ["//cluster/k8s/haku/dispatch/dispatcher:zones.yaml"],
+    deps = [
+        ":config",
+        "//cluster/k8s/haku/dispatch/litellm:generate_workers_litellm",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],

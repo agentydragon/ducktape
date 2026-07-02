@@ -8,7 +8,8 @@ resources:
   - service.yaml
   - cnp-dispatcher.yaml
 configMapGenerator:
-  - name: dispatcher-job-template
+  - name: dispatcher-config
     namespace: haku-dispatch
     files:
       - job-template.yaml
+      - zones.yaml

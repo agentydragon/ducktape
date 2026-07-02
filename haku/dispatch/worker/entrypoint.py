@@ -63,9 +63,11 @@ def main() -> None:
 
     exit_code = _run_harness(os.environ["HARNESS"], prompt, os.environ["MODEL"])
 
-    result = _OUTPUT.read_text() if _OUTPUT.exists() else ""
-    if not result:
-        logger.warning("agent wrote no /output/result.md; submitting empty result")
+    if _OUTPUT.exists():
+        result = _OUTPUT.read_text()
+    else:
+        result = f"(agent did not write {_OUTPUT}; see pod log for harness output)"
+        logger.warning("agent wrote no %s; submitting placeholder text", _OUTPUT)
     _submit(os.environ["DISPATCHER_URL"], job_id, os.environ["RESULT_TOKEN"], result, exit_code)
     sys.exit(exit_code)
 

@@ -4,7 +4,6 @@ a parity check that the template and the stamper agree on placeholders."""
 import pytest_bazel
 
 from haku.dispatch.k8s_jobs import job_name, render_job, render_secret
-from haku.dispatch.models import Zone
 from util.bazel.runfiles import get_required_path
 
 _TEMPLATE = get_required_path("_main/cluster/k8s/haku/dispatch/dispatcher/job-template.yaml").read_text()
@@ -20,7 +19,7 @@ def test_job_name_deterministic_and_dns_safe():
 
 def _render() -> dict:
     return render_job(
-        _TEMPLATE, name="job-0123456789abcdef", namespace="haku-sandbox-zai", zone=Zone.ZAI, model="glm-5.2-anthropic"
+        _TEMPLATE, name="job-0123456789abcdef", namespace="haku-sandbox-zai", zone="zai", model="glm-5.2-anthropic"
     )
 
 

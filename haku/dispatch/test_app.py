@@ -52,6 +52,12 @@ async def test_post_is_idempotent(client, haku_headers, keys):
     assert len(keys.minted) == 1
 
 
+async def test_unknown_zone_rejected(client, haku_headers):
+    response = await client.post("/jobs", json=_REQUEST | {"zone": "oai"}, headers=haku_headers)
+    assert response.status_code == 422
+    assert "unknown zone" in response.json()["detail"]
+
+
 async def test_model_outside_zone_allowlist_rejected(client, haku_headers):
     response = await client.post("/jobs", json=_REQUEST | {"model": "gpt-5.5-chatgpt"}, headers=haku_headers)
     assert response.status_code == 422

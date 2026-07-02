@@ -5,6 +5,7 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 py_library(
     name = "generate_workers_litellm",
     srcs = ["generate_workers_litellm.py"],
+    visibility = ["//haku/dispatch:__pkg__"],
     deps = [
         "//cluster/k8s/litellm/app:generate_litellm",
         "//devinfra:prettier",

@@ -29,7 +29,7 @@ from sqlalchemy.exc import IntegrityError
 
 from haku.dispatch import db, k8s_jobs, prompt_lint, result_tokens
 from haku.dispatch.classifier import ClassifyFn, make_classifier
-from haku.dispatch.config import ZONE_MODELS, ZONE_NAMESPACES, Settings
+from haku.dispatch.config import Settings, ZoneConfig, load_zones
 from haku.dispatch.litellm_keys import LiteLLMKeyClient
 from haku.dispatch.models import (
     ClassifierVerdict,
@@ -53,6 +53,7 @@ class AppResources:
     stamper: k8s_jobs.ZoneJobStamper
     keys: LiteLLMKeyClient
     classify: ClassifyFn
+    zones: dict[str, ZoneConfig]
 
 
 def _settings(request: Request) -> Settings:
@@ -100,11 +101,15 @@ def create_app(settings: Settings, resources: AppResources) -> FastAPI:
         settings: Annotated[Settings, Depends(_settings)],
         res: Annotated[AppResources, Depends(_resources)],
     ) -> JobRecord:
-        if request.model not in ZONE_MODELS[request.zone]:
+        if (zone := res.zones.get(request.zone)) is None:
+            raise HTTPException(
+                status_code=422, detail=f"unknown zone {request.zone!r}; configured: {sorted(res.zones)}"
+            )
+        if request.model not in zone.models:
             raise HTTPException(status_code=422, detail=f"model {request.model!r} not in zone {request.zone} allowlist")
 
         name = k8s_jobs.job_name(request.idempotency_key)
-        namespace = ZONE_NAMESPACES[request.zone]
+        namespace = zone.namespace
 
         async with res.sessionmaker() as session:
             if (existing := await db.get_job(session, name)) is not None:
@@ -121,9 +126,7 @@ def create_app(settings: Settings, resources: AppResources) -> FastAPI:
         # A pre-existing k8s Job without a DB row means a previous attempt died
         # between stamping and inserting — adopt it instead of re-stamping.
         if not await res.stamper.job_exists(namespace, name):
-            litellm_key = await res.keys.mint(
-                name, sorted(ZONE_MODELS[request.zone]), request.max_budget_usd, settings.job_key_ttl
-            )
+            litellm_key = await res.keys.mint(name, sorted(zone.models), request.max_budget_usd, settings.job_key_ttl)
             await res.stamper.create(
                 name=name,
                 namespace=namespace,
@@ -164,7 +167,7 @@ def create_app(settings: Settings, resources: AppResources) -> FastAPI:
         async with res.sessionmaker() as session:
             if (row := await db.get_job(session, job_id)) is None:
                 raise HTTPException(status_code=404, detail="no such job")
-            await res.stamper.delete(ZONE_NAMESPACES[row.zone], job_id)
+            await res.stamper.delete(res.zones[row.zone].namespace, job_id)
             await res.keys.revoke(job_id)
             await db.mark_killed(session, row)
             return db.to_record(row)
@@ -196,6 +199,9 @@ async def _serve(settings: Settings) -> None:
     k8s_config.load_incluster_config()
     api_client = k8s_client.ApiClient()
     keys = LiteLLMKeyClient(settings.workers_litellm_url, settings.workers_litellm_master_key)
+    operator_context = (
+        settings.classifier_context_path.read_text() if settings.classifier_context_path.exists() else None
+    )
     resources = AppResources(
         sessionmaker=db.make_sessionmaker(engine),
         stamper=k8s_jobs.ZoneJobStamper(api_client, settings.job_template_path.read_text()),
@@ -203,7 +209,9 @@ async def _serve(settings: Settings) -> None:
         classify=make_classifier(
             AsyncAnthropic(api_key=settings.anthropic_api_key, base_url=settings.anthropic_base_url),
             settings.classifier_model,
+            operator_context,
         ),
+        zones=load_zones(settings.zones_config_path),
     )
     try:
         config = uvicorn.Config(create_app(settings, resources), host=settings.host, port=settings.port)

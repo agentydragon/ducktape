@@ -14,7 +14,7 @@ from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from haku.dispatch.models import JobRecord, JobStatus, Zone
+from haku.dispatch.models import JobRecord, JobStatus
 
 SessionMaker = async_sessionmaker[AsyncSession]
 
@@ -33,7 +33,7 @@ class JobRow(Base):
     __tablename__ = "jobs"
 
     id: Mapped[str] = mapped_column(String(63), primary_key=True)
-    zone: Mapped[Zone] = mapped_column(_str_enum(Zone))
+    zone: Mapped[str] = mapped_column(String(32))
     model: Mapped[str] = mapped_column(String(100))
     prompt: Mapped[str] = mapped_column(Text)
     status: Mapped[JobStatus] = mapped_column(_str_enum(JobStatus), index=True)

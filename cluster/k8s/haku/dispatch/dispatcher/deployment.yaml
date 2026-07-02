@@ -83,10 +83,22 @@ spec:
               cpu: 500m
               memory: 512Mi
           volumeMounts:
-            - name: job-template
+            - name: config
               mountPath: /etc/dispatcher
               readOnly: true
+            - name: classifier-context
+              mountPath: /etc/dispatcher-classifier-context
+              readOnly: true
       volumes:
-        - name: job-template
+        - name: config
           configMap:
-            name: dispatcher-job-template
+            name: dispatcher-config
+        # Operator-provided private classifier context (names/identifiers that
+        # must never appear in prompts, repos known public). Optional: absent
+        # secret = base policy only. To provide it, author a Secret
+        # `dispatcher-classifier-context` with key `context.md` as SOPS
+        # (sops -e -i) in this directory — never plaintext in git.
+        - name: classifier-context
+          secret:
+            secretName: dispatcher-classifier-context
+            optional: true

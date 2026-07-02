@@ -5,10 +5,10 @@ import pytest
 
 from haku.dispatch import db
 from haku.dispatch.app import AppResources, create_app
-from haku.dispatch.config import Settings
+from haku.dispatch.config import Settings, ZoneConfig
 from haku.dispatch.k8s_jobs import ZoneJobStamper
 from haku.dispatch.litellm_keys import LiteLLMKeyClient
-from haku.dispatch.models import ClassifierVerdict, Zone
+from haku.dispatch.models import ClassifierVerdict
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -25,7 +25,7 @@ class FakeStamper(ZoneJobStamper):
         return (namespace, name) in self.jobs
 
     async def create(
-        self, *, name: str, namespace: str, zone: Zone, model: str, prompt: str, litellm_key: str, result_token: str
+        self, *, name: str, namespace: str, zone: str, model: str, prompt: str, litellm_key: str, result_token: str
     ) -> None:
         self.jobs[(namespace, name)] = {
             "zone": zone,
@@ -85,11 +85,15 @@ async def client(
     engine = db.make_engine(settings.database_url)
     await db.create_schema(engine)
 
-    async def classify(zone: Zone, prompt: str) -> ClassifierVerdict:
+    async def classify(zone: str, prompt: str) -> ClassifierVerdict:
         return classifier_verdict
 
+    zones = {"zai": ZoneConfig(namespace="haku-sandbox-zai", models={"glm-5.2-anthropic", "glm-5.1-anthropic"})}
     app = create_app(
-        settings, AppResources(sessionmaker=db.make_sessionmaker(engine), stamper=stamper, keys=keys, classify=classify)
+        settings,
+        AppResources(
+            sessionmaker=db.make_sessionmaker(engine), stamper=stamper, keys=keys, classify=classify, zones=zones
+        ),
     )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://validator") as client:
