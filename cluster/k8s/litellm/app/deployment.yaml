@@ -16,11 +16,17 @@ metadata:
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
-  # RWO PVC (litellm-chatgpt-auth) can only be mounted by one pod; a RollingUpdate
-  # would deadlock the new pod on volume attach and briefly run two writers of the
-  # token file. Recreate guarantees a single writer.
+  # RWO PVC (litellm-chatgpt-auth) can only be mounted by one pod, so the rollout
+  # must never run two pods at once (attach deadlock + two writers of the token
+  # file). maxSurge:0 tears the old pod down before starting the new one — single
+  # writer, and unlike `type: Recreate` it doesn't require a destroy/recreate to
+  # transition the already-RollingUpdate live Deployment (server-side apply rejects
+  # setting type:Recreate while the API-defaulted rollingUpdate block is present).
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: litellm
