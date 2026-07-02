@@ -69,16 +69,16 @@ but is a paid product.
 
 ## Open-Source Building Blocks
 
-| Component                 | Project                                                                     | Notes                           |
-| ------------------------- | --------------------------------------------------------------------------- | ------------------------------- |
-| Firecracker VMM           | [firecracker](https://github.com/firecracker-microvm/firecracker)           | Apache 2.0, mature              |
-| GHA runner on Firecracker | [Fireactions](https://github.com/hostinger/fireactions)                     | Ephemeral runners, no snapshots |
-| GHA runner on Firecracker | [appsignal/actions-runner](https://github.com/appsignal/actions-runner)     | Simpler, single-org             |
-| Container → rootfs        | [firecracker-init-lab](https://github.com/alexellis/firecracker-init-lab)   | OCI image → Firecracker rootfs  |
-| Remote cache              | [bazel-remote](https://github.com/buchgr/bazel-remote)                      | Go, single binary               |
-| Remote cache + RBE        | [BuildBuddy OSS](https://github.com/buildbuddy-io/buildbuddy)               | Go, includes UI + executors     |
-| Remote cache + RBE        | [NativeLink](https://github.com/TraceMachina/nativelink)                    | Rust, FSL-1.1 license           |
-| Affected targets          | [bazel-diff](https://github.com/Tinder/bazel-diff)                          | Merkle-hash based; `bazel query` (no analysis) |
+| Component                 | Project                                                                   | Notes                                          |
+| ------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------- |
+| Firecracker VMM           | [firecracker](https://github.com/firecracker-microvm/firecracker)         | Apache 2.0, mature                             |
+| GHA runner on Firecracker | [Fireactions](https://github.com/hostinger/fireactions)                   | Ephemeral runners, no snapshots                |
+| GHA runner on Firecracker | [appsignal/actions-runner](https://github.com/appsignal/actions-runner)   | Simpler, single-org                            |
+| Container → rootfs        | [firecracker-init-lab](https://github.com/alexellis/firecracker-init-lab) | OCI image → Firecracker rootfs                 |
+| Remote cache              | [bazel-remote](https://github.com/buchgr/bazel-remote)                    | Go, single binary                              |
+| Remote cache + RBE        | [BuildBuddy OSS](https://github.com/buildbuddy-io/buildbuddy)             | Go, includes UI + executors                    |
+| Remote cache + RBE        | [NativeLink](https://github.com/TraceMachina/nativelink)                  | Rust, FSL-1.1 license                          |
+| Affected targets          | [bazel-diff](https://github.com/Tinder/bazel-diff)                        | Merkle-hash based; `bazel query` (no analysis) |
 
 ## Recommendation
 
