@@ -15,23 +15,13 @@ first-party LOC) is squarely in scope.
 - **Method:** parallel read-only auditors, one per rubric pass, each required to
   cite a real `file:line` and trace the code path before reporting. The async
   pass independently re-verified its sub-agent claims and rejected 3 false
-  positives; the airlock auth bypass was independently reported by 3 separate
+  positives; the highest-severity finding was independently reported by 3 separate
   auditors. Findings below were spot-checked against source.
 - **Shallow-clone limitation:** the working clone is ~50 commits deep, so Pass 6.1
   before/after git-history regression analysis was not possible; Pass 6 is
   limited to current-state cross-session boundary analysis.
-
-## Remediation status (updated 2026-07-02)
-
-- ✅ **Critical #1 — airlock unauthenticated REST API: FIXED** and merged in
-  PR #2713. Every `/api/*` route now verifies the same JWKS `JWTVerifier` as
-  `/mcp` (`read` for GETs, `decide` for approve/reject; 401/403 on
-  missing/invalid/under-scoped tokens). Documented as a true-positive specimen
-  issue (`ducktape/2026-05-20-00/issues/missing-rest-auth.yaml`, PR #2715).
-  **Still open:** scoping the `kubeapi_admin` ServiceAccount down from
-  `cluster-admin` (the High blast-radius item below).
-- ⬜ **Critical #2 — policy-engine "deny but continue" executes the call:** open.
-- ⬜ All other High/Medium/Low findings below: open unless annotated otherwise.
+- **Scope note:** findings already remediated are omitted; this report lists only
+  outstanding issues.
 
 ## Executive summary
 
@@ -45,22 +35,19 @@ surfaces found); and several services show genuinely complete security controls
 (the agent-server policy gateway is server-side enforced, grocy_mcp is properly
 OAuth-gated, study_casino uses argon2 + HMAC-audited RNG).
 
-That said, the audit surfaced **2 Critical and a cluster of High** issues
-concentrated in exactly the places the framework predicts: **auth applied at one
-surface but not its sibling** (airlock), **security-critical branch logic that
-approximates rather than implements** (the policy engine's deny-continue path),
-**silent value-dropping at cross-session module boundaries** (gmail filter sync,
-grocy price/location handling), and **statistical/money math that is subtly wrong**
-(augur dilution Jacobian, props recall mean-of-means). The single most urgent item
-was the airlock unauthenticated approval REST API, which defeated a human-in-the-loop
-gate fronting a cluster-admin-bound `kubectl exec` backend — now **fixed (PR #2713)**;
-see the Remediation status above. The next-most-urgent open items are the
-policy-engine deny-continue bypass and scoping down that `kubeapi_admin`
-cluster-admin binding.
+That said, the audit surfaced a **Critical plus a cluster of High** issues
+concentrated in exactly the places the framework predicts: **security-critical
+branch logic that approximates rather than implements** (the policy engine's
+deny-continue path), **silent value-dropping at cross-session module boundaries**
+(gmail filter sync, grocy price/location handling), and **statistical/money math
+that is subtly wrong** (augur dilution Jacobian, props recall mean-of-means). The
+most urgent open items are the policy-engine deny-continue bypass (a denied tool
+call is still executed) and scoping down the `kubeapi_admin` ServiceAccount from
+`cluster-admin`.
 
 | Severity   | Count | Definition (adapted from framework Part V)                                                                              |
 | ---------- | ----- | ----------------------------------------------------------------------------------------------------------------------- |
-| Critical   | 2     | Auth bypass / approval-gate bypass reachable from untrusted input                                                       |
+| Critical   | 1     | Approval-gate bypass reachable from untrusted input                                                                     |
 | High       | ~26   | Exploitable secret exposure, over-deletion, wrong money/scoring math, production-path swallowed errors, lifecycle hangs |
 | Medium     | ~35   | Incomplete controls, silent value drops, races that self-heal, orphan-state teardown bugs                               |
 | Low / Info | ~40   | Dead code, cosmetic abstractions, duplication, stale docs/comments                                                      |
@@ -70,28 +57,6 @@ Numbers are approximate; the detailed findings below are the source of truth.
 ---
 
 ## Critical
-
-- **[Critical]** `airlock/app.py:154-165` — **The operator approval REST API has no
-  server-side authentication**, defeating the human-in-the-loop gate on a
-  cluster-admin-bound backend. `GET /api/actions` (lists every pending action with
-  its `session_key`/`action_seq`), `POST /api/actions/{key}/{seq}/approve`, and
-  `/reject` are mounted on the outer FastAPI app with no `Depends`/`Security`,
-  while only the `/mcp` sub-app is JWT-gated. The SPA _sends_ `Authorization:
-Bearer` (`frontend/api.ts:19`) but the server never validates it, and
-  `cluster/k8s/agents/airlock/httproute.yaml` exposes the service at
-  `airlock.allegedly.works` with "no proxy outpost." The proxied `kubeapi_admin`
-  backend's ServiceAccount is bound to **cluster-admin**
-  (`cluster/k8s/agents/airlock/kubeapi-admin-exec-mcp-rbac.yaml`). An
-  unauthenticated internet caller can `GET /api/actions` to enumerate pending
-  actions and `POST .../approve` to execute a queued cluster-admin `kubectl exec`.
-  _Independently reported by 3 auditors; verified._
-  **Fix:** apply the same JWKS `JWTVerifier` used for `/mcp` as a FastAPI
-  dependency on every `/api/*` route (`decide` scope for approve/reject, `read`
-  for the rest); add tests asserting 401 on missing/invalid tokens. Separately,
-  scope the `kubeapi_admin` ClusterRole down from `cluster-admin`.
-  **Status: FIXED (PR #2713, merged).** The `/api/*` auth is in place with the
-  scope model above and 401/403 tests. The `kubeapi_admin` cluster-admin
-  scope-down remains open.
 
 - **[Critical]** `x/agent_server/mcp/approval_policy/engine.py:517-520` — **Answering
   "deny but continue" on a pending tool call executes the denied call.** The
@@ -112,9 +77,10 @@ Bearer` (`frontend/api.ts:19`) but the server never validates it, and
 
 - **[High]** `cluster/k8s/agents/airlock/kubeapi-admin-exec-mcp-rbac.yaml:8-14` — the
   ServiceAccount backing the kubectl-exec MCP is bound directly to `cluster-admin`;
-  this is the blast radius that makes the airlock auth gap catastrophic. **Fix:**
-  scope the ClusterRole to the specific verbs/resources the exec MCP needs, or
-  fence behind Kyverno dual-control.
+  any path that reaches this backend (e.g. an approved airlock tool call) inherits
+  full cluster control, so this is an oversized blast radius. **Fix:** scope the
+  ClusterRole to the specific verbs/resources the exec MCP needs, or fence behind
+  Kyverno dual-control.
 - **[High]** `mcp_infra/authentik_auth/auth.py:172` (and airlock fallback
   `airlock/app.py:237`) — **JWTs are verified for signature and issuer but never for
   audience.** No `audience=` is passed to any `JWTVerifier` in the repo, and
@@ -801,10 +767,9 @@ sandbox boundaries`; a sandboxed agent can exfiltrate any host-readable file via
 ## Prioritized remediation
 
 1. **Immediate (block/hotfix):**
-   - ✅ Authenticate airlock `/api/*` (Critical) — **done, PR #2713 merged.** Still
-     scope down the `kubeapi_admin` cluster-admin binding (High).
    - Fix the policy-engine deny-continue path so a denied call is not executed
      (Critical).
+   - Scope down the `kubeapi_admin` cluster-admin binding (High).
 2. **This week (security):** JWT audience validation; remove the `dev-salt` and
    `hunter2` secret fallbacks (require at startup); delete the OpenAI-key and
    admin-token log lines; fail-closed on unset `FC_MANAGER_AUTH_TOKEN`; fix the
@@ -848,12 +813,12 @@ the existing aspect-based CI.
 
 This audit ran the framework's six passes as parallel read-only auditors, each
 required to cite and trace a real `file:line`. Confidence is highest on the security,
-async, and money-math findings (spot-checked against source; the airlock Critical and
-the deny-continue Critical were re-verified directly). The rubric is a heuristic tuned
+async, and money-math findings (spot-checked against source; the deny-continue
+Critical was re-verified directly). The rubric is a heuristic tuned
 for typical AI slop, and several of its predicted anti-patterns **did not hold** here —
 which is itself a result worth recording: dependency hygiene, test quality, secret
 management, and comment discipline are all strong. The real risk profile is not "AI
 slop everywhere" but a smaller set of **incomplete security controls and
 silent-value-drop boundaries** — precisely the failure mode the framework's Part VI
 ("do not trust appearance of correctness") is designed to surface, and the reason the
-two Criticals sat behind code that looks correct and passes its tests.
+Critical findings sit behind code that looks correct and passes its tests.
