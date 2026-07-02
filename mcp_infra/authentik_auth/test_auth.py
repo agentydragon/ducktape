@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 import pytest_bazel
+from authlib.oauth2 import OAuth2Error
 from authlib.oauth2.rfc6749.wrappers import OAuth2Token
 from fastmcp.server.auth.auth import TokenVerifier
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
@@ -439,13 +440,20 @@ async def test_resilient_proxy_retries_then_succeeds(proxy: ResilientOIDCProxy) 
     assert upstream.call_count == 2
 
 
-async def test_resilient_proxy_genuine_oauth_error_stays_invalid_grant(proxy: ResilientOIDCProxy) -> None:
-    """Authentik actually rejecting the grant (4xx OAuth error response) must
+@pytest.mark.parametrize(
+    "upstream_rejection",
+    [_http_error(400), OAuth2Error(description="Token is invalid or expired")],
+    ids=["http-4xx", "authlib-oauth2error"],
+)
+async def test_resilient_proxy_genuine_oauth_error_stays_invalid_grant(
+    proxy: ResilientOIDCProxy, upstream_rejection: Exception
+) -> None:
+    """Authentik actually rejecting the grant (4xx / OAuth error response) must
     still surface as invalid_grant so the client knows to re-authenticate."""
     before = _failures("oauth")
     with (
         patch.object(
-            OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=_invalid_grant_from(_http_error(400)))
+            OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=_invalid_grant_from(upstream_rejection))
         ) as upstream,
         pytest.raises(TokenError),
     ):
@@ -456,13 +464,16 @@ async def test_resilient_proxy_genuine_oauth_error_stays_invalid_grant(proxy: Re
 
 async def test_resilient_proxy_local_token_errors_pass_through(proxy: ResilientOIDCProxy) -> None:
     """TokenErrors with no upstream cause (unknown refresh token, missing JTI
-    mapping) are genuine invalid_grant — re-raised untouched, no retry."""
+    mapping) are local invalid_grant — re-raised untouched, no retry, and NOT
+    counted as an upstream failure (they'd false-fire the alert)."""
+    before = _failures("oauth")
     with (
         patch.object(OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=_invalid_grant_from(None))) as upstream,
         pytest.raises(TokenError),
     ):
         await proxy.exchange_refresh_token(AsyncMock(), AsyncMock(), [])
     assert upstream.call_count == 1
+    assert _failures("oauth") == before  # local churn never reached Authentik
 
 
 if __name__ == "__main__":

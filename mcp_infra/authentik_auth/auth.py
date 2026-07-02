@@ -31,6 +31,7 @@ from urllib.parse import urlparse, urlunparse
 
 import httpx
 from authlib.integrations.httpx_client import AsyncOAuth2Client
+from authlib.oauth2 import OAuth2Error
 from authlib.oauth2.rfc6749.wrappers import OAuth2Token
 from fastmcp.server.auth import MultiAuth
 from fastmcp.server.auth.auth import AuthProvider, TokenVerifier
@@ -141,6 +142,18 @@ def _is_transient_token_error(exc: BaseException) -> bool:
     return isinstance(exc, TokenError) and _transient_upstream_error(exc.__cause__)
 
 
+def _upstream_oauth_rejection(exc: BaseException | None) -> bool:
+    """True when Authentik itself answered the refresh with an OAuth rejection.
+
+    authlib raises OAuth2Error subclasses for error-body responses; a
+    non-5xx HTTPStatusError is an upstream rejection without a parseable
+    body. TokenErrors with any other cause (or none) are local — unknown
+    refresh token, missing JTI mapping — i.e. normal client churn that never
+    reached Authentik, and must not fire the upstream-failure alert.
+    """
+    return isinstance(exc, OAuth2Error | httpx.HTTPStatusError)
+
+
 class ResilientOIDCProxy(OIDCProxy):
     """OIDCProxy that doesn't convert transient upstream failures into invalid_grant.
 
@@ -189,7 +202,8 @@ class ResilientOIDCProxy(OIDCProxy):
                     detail="Upstream authorization server temporarily unavailable; retry later.",
                     headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
                 ) from e.__cause__
-            UPSTREAM_REFRESH_FAILURES.labels(outcome="oauth").inc()
+            if _upstream_oauth_rejection(e.__cause__):
+                UPSTREAM_REFRESH_FAILURES.labels(outcome="oauth").inc()
             raise
         raise AssertionError("unreachable")  # the retry loop always returns or raises
 

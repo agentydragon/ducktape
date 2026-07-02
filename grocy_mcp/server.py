@@ -137,7 +137,7 @@ def main() -> None:
     app = mcp.http_app(path="/mcp")
     # Metrics (incl. mcp_auth_upstream_refresh_failures_total) on a dedicated
     # cluster-internal port, off the public HTTPRoute.
-    start_http_server(settings.metrics_port)
+    start_http_server(settings.metrics_port, addr=settings.host)
     logger.info("grocy-mcp listening on %s:%d, metrics on :%d", settings.host, settings.port, settings.metrics_port)
     uvicorn.run(app, host=settings.host, port=settings.port, log_level="info")
 
