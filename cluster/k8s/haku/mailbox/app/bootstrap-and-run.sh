@@ -28,10 +28,22 @@ sed -e "s|@@TLS_CERT@@|$(pem_json /tls/tls.crt)|" \
   -e "s|@@TLS_KEY@@|$(pem_json /tls/tls.key)|" \
   /etc/stalwart/mailbox-plan.ndjson.tmpl >"$RUN/plan.ndjson"
 
+# The recovery server's output goes to a file, not straight to stdout: on
+# failure it is printed LAST so it survives the 2KiB terminationMessage tail
+# (pods/log here is operator-only; that tail is the agent-visible channel).
 STALWART_RECOVERY_MODE=1 \
   STALWART_RECOVERY_ADMIN="admin:${STALWART_ADMIN_PASSWORD}" \
-  stalwart --config /etc/stalwart/config.json &
+  stalwart --config /etc/stalwart/config.json >"$RUN/recovery.log" 2>&1 &
 recovery_pid=$!
+
+fail() {
+  {
+    echo "$1"
+    echo "--- recovery server log (tail) ---"
+    tail -c 1600 "$RUN/recovery.log"
+  } >&2
+  exit 1
+}
 
 # stalwart-cli doubles as the readiness probe: apply fails (and is retried)
 # while the recovery listener is still coming up.
@@ -39,14 +51,19 @@ export STALWART_URL=http://127.0.0.1:8080
 export STALWART_USER=admin
 export STALWART_PASSWORD="${STALWART_ADMIN_PASSWORD}"
 tries=0
-until stalwart-cli apply --file "$RUN/plan.ndjson" --quiet; do
+until stalwart-cli apply --file "$RUN/plan.ndjson" --quiet >"$RUN/apply.log" 2>&1; do
+  kill -0 "$recovery_pid" 2>/dev/null || fail "recovery server exited before provisioning completed"
   tries=$((tries + 1))
   if [ "$tries" -ge 30 ]; then
-    echo "provisioning apply did not succeed after ${tries} attempts" >&2
-    exit 1
+    {
+      echo "--- last apply output (tail) ---"
+      tail -c 400 "$RUN/apply.log"
+    } >&2
+    fail "provisioning apply did not succeed after ${tries} attempts"
   fi
   sleep 2
 done
+cat "$RUN/apply.log"
 unset STALWART_URL STALWART_USER STALWART_PASSWORD
 
 kill "$recovery_pid"
