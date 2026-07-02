@@ -628,7 +628,7 @@ knowledge in `memory/`; see _base vs. state_). Run it like a team that owns the 
   parent over `postMessage`; the trusted shell vets the scheme/host and opens it.
 
 Full build flow + protocol: `haku/state_template/ui/README.md` and
-`haku/console/plans/free_form_ui_iframe.md`.
+`haku/console/docs/containment.md`.
 
 ## Information sources
 

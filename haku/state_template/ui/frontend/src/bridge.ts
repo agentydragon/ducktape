@@ -12,7 +12,7 @@ import { SHELL_ORIGIN } from "./constants.ts";
 // hand-maintained copy of the AUTHORITATIVE protocol in ducktape's
 // haku/console/frontend/bridge.ts (the shell side). Keep the two in sync by hand.
 // TODO: share one protocol definition instead of duplicating it (see
-// haku/console/plans/free_form_ui_iframe.md → Open questions). See also the demo
+// haku/PLAN.md → Not yet built, share-the-protocol). See also the demo
 // in haku/state_template/k8s/haku-ui/index.html.
 
 interface OpenLinkResult {

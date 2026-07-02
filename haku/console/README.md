@@ -58,7 +58,7 @@ Containment is cross-origin isolation: the iframe can't read the console's DOM/c
 act as it. The trusted **bridge** (`bridge.ts`) lets the iframe _request_ two things via
 postMessage — opening a link (`openLink`) and launching a run (`requestLaunch`); the shell
 origin-checks, schema-validates, and decides/confirms before acting. See
-`console/plans/free_form_ui_iframe.md`.
+`console/docs/containment.md`.
 
 ## Layout
 

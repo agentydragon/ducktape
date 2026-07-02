@@ -67,7 +67,7 @@ spec:
             # service (haku-sandbox). The console embeds it in a sandboxed cross-origin
             # iframe and sets a CSP frame-src for it; it never renders Haku's UI itself.
             # Lights up once the haku-ui workload serves (cluster/k8s/haku/workloads +
-            # the haku-ui Authentik route). See haku/console/plans/free_form_ui_iframe.md.
+            # the haku-ui Authentik route). See haku/console/docs/containment.md.
             - name: HAKU_CONSOLE_HAKU_UI_URL
               value: https://haku-ui.allegedly.works
             - name: HAKU_CONSOLE_AUTH_ORIGIN

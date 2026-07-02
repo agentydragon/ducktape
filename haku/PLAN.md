@@ -16,7 +16,7 @@ rationale:
   <docs/security.md> — the durable doctrine's canonical home; start a security review there.
 - The run procedure: `haku/run.md`; the web runtime: `haku/runtime/claude_web_env/`.
 - The trusted console (capability tier + iframe shell): `haku/console/README.md`;
-  containment doctrine: `haku/console/plans/free_form_ui_iframe.md`. Alternative runtimes
+  containment contract: `haku/console/docs/containment.md`. Alternative runtimes
   (Managed Agents): `haku/runtime/managed_agent/` + `haku/plans/`.
 - Cluster wiring (RBAC, mitmproxy egress, secrets): `cluster/k8s/haku/` and
   `cluster/k8s/agents/haku-mitmproxy/`.
@@ -65,7 +65,7 @@ Haku's method until what it surfaces is genuinely good, plus the items below.
 - **Share the iframe bridge protocol** instead of hand-duplicating the message shapes
   between `haku/console/frontend/bridge.ts` (authoritative) and Haku's UI — a tiny shared
   package or a sync-checked artifact. (The remaining cleanup from the realized free-form
-  UI design; see `console/plans/free_form_ui_iframe.md` → _Open questions_.)
+  UI design; see `console/docs/containment.md` → _The bridge protocol_.)
 - **In-cluster runtime** (the `haku-scanner` CronJob / self-hosted Managed-Agents
   worker) as an alternative to the web home — deferred; see `TODO.md` → _Later_ and
   `haku/runtime/managed_agent/`. Revisit if scanner-image upkeep or the

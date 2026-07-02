@@ -40,7 +40,7 @@ function render(action: Escalation): Rendered {
 // arbitrary element into the browser top layer. The `::backdrop` dims the agent UI so
 // "the shell is talking now" is unambiguous. The approve button stays disabled for a
 // beat so a baited click-through can't land on a freshly-rendered confirm. See
-// plans/free_form_ui_iframe.md → "The shell as a thin trusted layer".
+// docs/containment.md → "The shell as a thin trusted layer".
 const ARM_DELAY_MS = 400;
 
 function pointerDownOutsideDialog(e: PointerEvent<HTMLDialogElement>): boolean {

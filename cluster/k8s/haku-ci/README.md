@@ -4,7 +4,7 @@ Operator-owned, contained CI runner that builds **Haku's own UI image** from `ha
 source, entirely in-cluster. `haku-state` may hold private operator data, so its builds must
 never touch BuildBuddy/RBE or any external CI — this runner keeps everything inside the
 cluster (it pulls source + pushes the image to the in-cluster Forgejo registry). See
-`haku/PLAN.md` and `haku/console/plans/free_form_ui_iframe.md`.
+`haku/PLAN.md` and `haku/console/docs/containment.md`.
 
 ## Trust model — this is agent-controlled compute
 

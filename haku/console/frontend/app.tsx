@@ -8,7 +8,7 @@ import { HakuUiEmbed } from "./haku_ui_embed.tsx";
 // (a sandboxed cross-origin iframe) plus the bridge that brokers the iframe's privileged
 // requests (opening links, launching a run). All product chrome — title bar, the global
 // feedback button, the launch dialog — lives in haku-ui now; only the trusted confirm +
-// capability firing stay here. See README + plans/free_form_ui_iframe.md.
+// capability firing stay here. See README + docs/containment.md.
 export default function App() {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [error, setError] = useState<string | null>(null);

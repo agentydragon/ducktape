@@ -50,7 +50,7 @@ def create_app(settings: Settings) -> FastAPI:
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
     # console itself from being framed. Only frame-* is set, so the SPA's own scripts/styles
-    # are unaffected. See haku/console/plans/free_form_ui_iframe.md.
+    # are unaffected. See haku/console/docs/containment.md.
     csp = f"frame-src 'self' {settings.haku_ui_url} {settings.auth_origin}; frame-ancestors 'none'"
 
     @app.middleware("http")

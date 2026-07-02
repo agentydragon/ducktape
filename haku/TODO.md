@@ -106,7 +106,7 @@ safe-by-construction boundary, so wiring one on is a deliberate doctrine change 
 ## Console — operator-facing dashboard
 
 The console design + action model live in `console/README.md`; the free-form-UI
-direction in `console/plans/free_form_ui_iframe.md`. (The launch-routine button itself
+contract in `console/docs/containment.md`. (The launch-routine button itself
 has shipped on the capability tier — see the README.)
 
 - **Recent routine executions + one-in-flight guard.** A read-only panel listing recent

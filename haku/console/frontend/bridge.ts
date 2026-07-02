@@ -1,12 +1,12 @@
 // postMessage protocol between the trusted shell (this console) and Haku's
 // agent-authored UI iframe. The iframe may only **request**; the shell decides and
 // acts. Every inbound message is origin-checked and schema-validated.
-// See plans/free_form_ui_iframe.md → "The protocol".
+// See docs/containment.md → "The bridge protocol".
 //
 // AUTHORITATIVE COPY of the iframe protocol contract. Haku's UI (the client side)
 // keeps a hand-maintained DUPLICATE of the message shapes in `haku-state` (seeded
 // from `haku/state_template/ui/`); this file is the source of truth — keep the two in
-// sync. See plans/free_form_ui_iframe.md → _Open questions_ (share-the-protocol TODO).
+// sync. See haku/PLAN.md → _Not yet built_ (share-the-protocol TODO).
 
 // Inbound (iframe → shell). The iframe may only **ask**:
 //  - `openLink`: open an external link (the iframe is sandboxed without allow-popups).

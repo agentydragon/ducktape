@@ -13,7 +13,7 @@ import { toastError, toastSuccess } from "./toast.ts";
 // or `requestLaunch` via postMessage, but only the shell decides and acts (origin-checked
 // + schema-validated). `allow-same-origin`/`allow-forms` are needed for the framed app's
 // own Authentik auth; **no `allow-popups`** (only the shell opens links) and **no
-// `allow="fullscreen"`**. See plans/free_form_ui_iframe.md.
+// `allow="fullscreen"`**. See docs/containment.md.
 
 // `noopener`/`noreferrer` force window.open() to return null even when the tab
 // opened, so open a same-origin blank tab first. The handle is the only reliable

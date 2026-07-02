@@ -55,6 +55,6 @@ class Settings(BaseSettings):
     # console frames full-page as a sandboxed cross-origin iframe; the CSP allows framing it
     # plus Authentik's origin for the in-iframe SSO redirect. Required — framing haku-ui is
     # the console's whole job; set it to `about:blank` if there is genuinely no UI to frame.
-    # The console never renders Haku's UI itself. See plans/free_form_ui_iframe.md.
+    # The console never renders Haku's UI itself. See docs/containment.md.
     haku_ui_url: str
     auth_origin: str = "https://auth.allegedly.works"

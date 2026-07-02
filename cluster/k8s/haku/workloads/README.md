@@ -29,4 +29,4 @@ read-only deploy key would be tighter; deferred.
 
 Until Haku first seeds `k8s/`, `haku-state-workloads` is `NotReady` (path not found) —
 expected pre-first-run. First workload: the `haku-ui` placeholder
-(`haku/console/plans/free_form_ui_iframe.md`).
+(`haku/console/docs/containment.md`).
