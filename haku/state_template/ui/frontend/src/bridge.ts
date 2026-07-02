@@ -36,3 +36,12 @@ export function openLink(url: string): Promise<OpenLinkResult> {
     window.parent.postMessage({ type: "openLink", url }, SHELL_ORIGIN);
   });
 }
+
+// Fire-and-forget: mirror the current hash route into the console shell's own URL
+// fragment so F5 / deep-links of the console restore this view (shell contract:
+// ducktape haku/console/docs/containment.md → `routeChanged`). `path` is the hash minus
+// the "#" (always "/"-prefixed); the shell validates it as a strict path before
+// replaceState. Unframed (top-level) the targetOrigin check drops the self-post.
+export function notifyRouteChanged(path: string): void {
+  window.parent.postMessage({ type: "routeChanged", path }, SHELL_ORIGIN);
+}

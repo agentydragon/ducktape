@@ -1,11 +1,12 @@
 import { Container, Tabs, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 
+import { notifyRouteChanged } from "./bridge.ts";
 import { clickAction, fetchDashboard, unclickAction } from "./client.ts";
 import { GardenPage } from "./garden.tsx";
 import { ImprovementsPage } from "./improvements.tsx";
 import { InboxView } from "./inbox.tsx";
-import { useHashRoute } from "./routes.ts";
+import { formatHash, useHashRoute } from "./routes.ts";
 import type { View } from "./routes.ts";
 import { RunsPage } from "./runs.tsx";
 import { clickKey } from "./task.tsx";
@@ -27,6 +28,11 @@ export default function App() {
   // F5, permalinks, and back/forward come from the browser (routes.ts → useHashRoute).
   const [route, navigate] = useHashRoute();
   const { view, gardenPath } = route;
+  // Mirror every route change (and the initial route) to the console shell so its URL
+  // fragment tracks this view — the shell restores it into the iframe src on reload.
+  useEffect(() => {
+    notifyRouteChanged(formatHash(route).slice(1));
+  }, [route]);
   function openInGarden(path: string) {
     navigate({ view: "garden", gardenPath: path });
   }
