@@ -25,7 +25,9 @@ deliberately tiny (its documented declarative-deployments workflow):
   (pre-created so inbound RCPT resolves before first login — required for
   OIDC directories), the Authentik OIDC directory, the DMARC-gated
   whitelist Sieve script wired to the SMTP DATA stage, the two listeners
-  (SMTP :2525 STARTTLS, HTTP :8080), and the TLS certificate. The
+  (SMTP :2525 STARTTLS, HTTP :8080), an `MtaStageAuth` override so the
+  DNAT'ed :2525 listener accepts unauthenticated MX traffic (the upstream
+  default requires SMTP AUTH off port 25), and the TLS certificate. The
   certificate is a `File` reference to the mounted cert-manager secret
   (`/tls/tls.{crt,key}`), so the plan is fully static and the upsert is
   idempotent across renewals — a renewal just restarts the pod (reloader)
