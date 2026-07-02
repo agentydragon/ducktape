@@ -539,6 +539,18 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
+  # Haku mailbox (Stalwart) bearer JWT (auto-rotated by the authentik-jwt-rotation
+  # CronJob). Same readers as haku-grocy-jwt: the Haku routine (haku) plus admin +
+  # user keys for break-glass.
+  - path_regex: secrets/haku-mail-jwt\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *haku
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
   # Shared claude-web Attic reader token (auto-rotated by attic-token-rotation
   # CronJob). Used by all claude-web sessions to substitute from
   # cache.allegedly.works/{main,gaffer}.

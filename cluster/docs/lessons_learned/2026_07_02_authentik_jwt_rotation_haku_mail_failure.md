@@ -39,36 +39,7 @@ logging each failure and continuing, committing whatever succeeded, still
 exiting non-zero (Job stays `Failed`, alerting stays intact) if anything
 failed.
 
-## Root cause #2 (still open): why does haku-mail's own mint fail?
-
-Not yet confirmed. Everything checked so far shows no config mismatch:
-
-- The `stalwart_haku` Authentik provider/application Terraform resources
-  (`tf/gitops/agent-machine-access/main.tf`) are byte-for-byte structurally
-  identical to the already-working `grocy_mcp_haku_sf` provider (same SA,
-  same `user_password` credential mode, same `implicit_consent` authorization
-  flow, same property mappings, same 30d validity, same
-  `client_type = "confidential"`).
-- `haku-mail` and `haku-grocy` share the exact same underlying `haku`
-  service-account app-password (`authentik_token.haku_grocy`), so credential
-  value can't differ.
-- The `stalwart-haku` OIDC discovery endpoint
-  (`https://auth.allegedly.works/application/o/stalwart-haku/.well-known/openid-configuration`)
-  resolves correctly and matches `grocy-mcp-haku-sf`'s shape exactly.
-- The `haku-mail-client-credentials` k8s Secret exists and mounts cleanly
-  (confirmed via `kubectl` events — no `FailedMount`), which also proves the
-  Terraform apply for the Authentik provider succeeded (the k8s Secret's
-  `client_id` is computed from the provider resource, so Terraform couldn't
-  have created one without the other).
-- `Push authentik-jwt-rotation` in CI succeeded on the relevant commit, so
-  the deployed image wasn't stale/broken.
-- #2760 independently ruled out: tofu drift, credentials-secret shape, and
-  the token endpoint's `invalid_grant` behavior matching the working
-  provider exactly (both reject bogus creds identically) — plus confirmed
-  the missing seed SOPS file (`secrets/haku-mail-jwt.yaml` never committed)
-  is the expected "first-ever mint" case, not a bug.
-
-## Blocker (fixed, this change): no RBAC to read the pod's logs
+## Blocker (fixed, #2766): no RBAC to read the pod's logs
 
 `agents-infra` had **no `agent-rbac/` directory at all** — every agent
 identity (Claude web, Haku, agent-box Codex) only had
@@ -76,25 +47,66 @@ identity (Claude web, Haku, agent-box Codex) only had
 `agent-rbac-base/README.md`). `kubectl auth can-i get pods/log -n
 agents-infra` misleadingly reports `yes` (it only checks whether _any_ rule
 matches the resource type, not the specific object), but actual
-`kubectl logs` calls 403 unconditionally. `kubectl exec`/`port-forward` are
-also unavailable (RBAC-denied, separately from the historical
+`kubectl logs` calls 403'd unconditionally. `kubectl exec`/`port-forward`
+were also unavailable (RBAC-denied, separately from the historical
 `kubeapi-proxy` WebSocket-upgrade issue in
 <2026_06_18_kubectl_exec_websocket_kubeapi_proxy.md>, which is already
-fixed). Loki is unreachable from the `claude-sandbox` pod network (egress
+fixed). Loki was unreachable from the `claude-sandbox` pod network (egress
 NetworkPolicy blocks it).
 
-Added `cluster/k8s/agents/authentik-jwt-rotation/agent-rbac/`
+Fixed by adding `cluster/k8s/agents/authentik-jwt-rotation/agent-rbac/`
 (`logs-configmaps-reader` RoleBinding for `agents-infra`), mirroring the
-`kube-system`/`monitoring` agent-rbac pattern exactly. Once this merges to
-`devel` and Flux reconciles, an agent can `kubectl logs` the next failing
-`authentik-jwt-rotation` (or `attic-jwt-rotation`, which shares the
-namespace) pod directly instead of racing the ~30s window before the Job
-controller deletes it.
+`kube-system`/`monitoring` agent-rbac pattern exactly. Once live, `kubectl
+logs -n agents-infra <pod>` on the next failing run finally surfaced the real
+traceback below.
 
-## Next step
+## Root cause #2 (fixed, this change): `.sops.yaml` has no creation rule for `secrets/haku-mail-jwt.yaml`
 
-Once this RBAC fix lands **and** #2760's fixed image is built and rolled out
-by Flux image automation: catch the pod on the next hourly run
-(`kubectl logs -n agents-infra <pod>` and/or `--previous`, ideally within a
-few seconds of the `SuccessfulCreate` event — `backoffLimit: 2` gives a very
-short window) and read the actual traceback for `haku-mail`'s mint failure.
+The actual traceback, captured live from the pod once #2766's RBAC landed:
+
+```text
+haku-mail: rotating (remaining=none)
+HTTP Request: POST https://auth.allegedly.works/application/o/token/ "HTTP/1.1 200 OK"
+error loading config: no matching creation rules found
+haku-mail: rotation failed; continuing with remaining entries
+Traceback (most recent call last):
+  File ".../rotate.py", line 363, in main
+    if rotate_one(client, rotation, config):
+  File ".../rotate.py", line 267, in rotate_one
+    subprocess.run(["sops", "encrypt", "--in-place", str(rotation.sops_file)], check=True)
+subprocess.CalledProcessError: Command '['sops', 'encrypt', '--in-place', 'secrets/haku-mail-jwt.yaml']' returned non-zero exit status 1.
+```
+
+The mint itself always succeeded (`200 OK` from Authentik — confirming
+everything checked in root cause #1's investigation was in fact fine: the
+`stalwart_haku` provider, the credentials secret, the SA, all correctly
+configured). The failure was purely local: `secrets/haku-mail-jwt.yaml` was a
+**brand new file** (`haku-mail` is the only rotation that's never minted
+before), and `.sops.yaml` had a dedicated `path_regex` creation rule for
+every _other_ rotation's output file (`claude-web-k8s-jwt.yaml`,
+`haku-k8s-jwt.yaml`, `agent-box-codex-k8s-jwt.yaml`, `haku-grocy-jwt.yaml`,
+`alloy-otlp-bearer-token.yaml`, ...) but **no rule was ever added for
+`secrets/haku-mail-jwt.yaml`** when the `haku-mail` entry landed in
+`rotations.yaml` (#2724). With no matching creation rule, `sops encrypt`
+refuses to run at all — reproduced locally with the exact same command
+(`sops encrypt --in-place secrets/haku-mail-jwt.yaml`), which fails
+identically outside the cluster.
+
+Fixed by adding the missing rule to `.sops.yaml`, mirroring
+`secrets/haku-grocy-jwt.yaml`'s recipients exactly (admin + `haku` + all
+user keys for break-glass — `haku` is the only agent identity that needs to
+read this token; other agents don't).
+
+## Takeaway
+
+Adding a new `authentik-jwt-rotation` entry whose `sops_file` doesn't exist
+yet requires a matching `.sops.yaml` creation rule in the _same_ change —
+there's no generic catch-all for `secrets/*.yaml`, only per-file rules. This
+is easy to miss because everything else about the rotation (Terraform,
+credentials, RBAC) can be entirely correct and the failure only surfaces at
+mint time, in a pod whose logs are hard to reach and whose crash message
+(`no matching creation rules found`) doesn't obviously point at the
+`rotations.yaml` diff that caused it. Consider a `cluster/validation` check
+that every rotation's `sops_file` (and `k8s_secret.path`) matches some
+`.sops.yaml` creation rule, so this class of bug fails CI instead of the
+CronJob.
