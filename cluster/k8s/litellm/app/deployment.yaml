@@ -166,6 +166,15 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 12
+          resources:
+            requests:
+              cpu: 100m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              # LiteLLM 1.90.2 with the virtual-key DB idles at ~1020Mi
+              # (measured); this deployment previously ran uncapped.
+              memory: 4Gi
           volumeMounts:
             - name: config
               mountPath: /etc/litellm

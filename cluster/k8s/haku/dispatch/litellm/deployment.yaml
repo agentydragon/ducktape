@@ -87,10 +87,13 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 512Mi
+              memory: 1Gi
             limits:
               cpu: "1"
-              memory: 1Gi
+              # LiteLLM 1.90.2 with the virtual-key DB idles at ~1020Mi — the
+              # original 1Gi limit OOMKilled this pod at startup (operator:
+              # give it real headroom).
+              memory: 4Gi
           volumeMounts:
             - name: config
               mountPath: /etc/litellm
