@@ -38,15 +38,24 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
-    # haku-dispatch: workers-LiteLLM (LLM calls with the per-job key) and the
-    # gate-validator (result submission with the job token).
+    # haku-dispatch: exactly the two dispatch services, selected by app label so
+    # other workloads landing in the namespace stay unreachable — workers-LiteLLM
+    # (LLM calls with the per-job key) and the gate-validator (result submission
+    # with the job token).
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: haku-dispatch
+            k8s:app.kubernetes.io/name: workers-litellm
       toPorts:
         - ports:
             - port: "4000"
               protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-dispatch
+            k8s:app.kubernetes.io/name: gate-validator
+      toPorts:
+        - ports:
             - port: "8000"
               protocol: TCP
     # In-cluster Forgejo HTTP — workers push branches to the ducktape mirror
