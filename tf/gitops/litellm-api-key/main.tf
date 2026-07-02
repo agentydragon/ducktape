@@ -56,7 +56,8 @@ resource "random_password" "salt_key" {
   special = false
 
   lifecycle {
-    ignore_changes = [length, special]
+    ignore_changes  = [length, special]
+    prevent_destroy = true
   }
 }
 
@@ -68,6 +69,10 @@ resource "kubernetes_secret" "litellm_salt_key" {
 
   data = {
     key = random_password.salt_key.result
+  }
+
+  lifecycle {
+    prevent_destroy = true
   }
 }
 

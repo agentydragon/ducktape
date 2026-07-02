@@ -82,16 +82,21 @@ resource "litellm_key" "haku_lane_oai" {
   }
 }
 
-# Staged in the litellm namespace until the lane namespaces
-# (haku-sandbox-{zai,oai}) exist; then reflect each into its lane for the lane
-# llm-proxy to mount.
+# Each key reflects into exactly its lane namespace (haku-sandbox-{zai,oai}) for
+# the lane llm-proxy to mount. The reflector annotations are inert until the lane
+# namespace exists, so declaring them now means the key appears there the moment
+# the lane lands — no follow-up change needed here.
 
 resource "kubernetes_secret" "haku_lane_zai" {
   metadata {
     name      = "litellm-key-haku-lane-zai"
     namespace = "litellm"
     annotations = {
-      description = "LiteLLM virtual key for the haku zai worker lane (GLM models only); to be reflected into haku-sandbox-zai for its lane llm-proxy"
+      description                                                      = "LiteLLM virtual key for the haku zai worker lane (GLM models only); reflected into haku-sandbox-zai for its lane llm-proxy"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"             = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"  = "haku-sandbox-zai"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"        = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"     = "haku-sandbox-zai"
     }
   }
 
@@ -105,7 +110,11 @@ resource "kubernetes_secret" "haku_lane_oai" {
     name      = "litellm-key-haku-lane-oai"
     namespace = "litellm"
     annotations = {
-      description = "LiteLLM virtual key for the haku oai worker lane (chatgpt models only); to be reflected into haku-sandbox-oai for its lane llm-proxy"
+      description                                                      = "LiteLLM virtual key for the haku oai worker lane (chatgpt models only); reflected into haku-sandbox-oai for its lane llm-proxy"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"             = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"  = "haku-sandbox-oai"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"        = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"     = "haku-sandbox-oai"
     }
   }
 
