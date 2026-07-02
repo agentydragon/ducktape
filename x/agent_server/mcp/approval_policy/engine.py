@@ -250,6 +250,28 @@ def _raise_if_reserved_code(e: McpError, name: str) -> None:
         )
 
 
+def _remap_reserved_backend_error(e: Exception, name: str) -> None:
+    """Remap a backend error that spoofs a reserved policy code/message.
+
+    `McpError`s go through `_raise_if_reserved_code`; a plain exception whose string
+    carries a reserved policy message is remapped to `POLICY_BACKEND_RESERVED_MISUSE`
+    so a backend cannot forge a policy denial. Returns without raising for a genuine
+    (non-spoofing) failure, so the caller re-raises the original.
+    """
+    if isinstance(e, McpError):
+        _raise_if_reserved_code(e, name)
+        return
+    s = str(e)
+    if (POLICY_DENIED_ABORT_MSG in s) or (POLICY_DENIED_CONTINUE_MSG in s) or (POLICY_EVALUATOR_ERROR_MSG in s):
+        raise McpError(
+            ErrorData(
+                code=POLICY_BACKEND_RESERVED_MISUSE_CODE,
+                message=POLICY_BACKEND_RESERVED_MISUSE_MSG,
+                data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "backend_code": "unknown"},
+            )
+        ) from e
+
+
 _DENIAL_MAP: dict[ApprovalDecision, tuple[int, str]] = {
     ApprovalDecision.DENY_ABORT: (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_ABORT_MSG),
     ApprovalDecision.DENY_CONTINUE: (POLICY_DENIED_CONTINUE_CODE, POLICY_DENIED_CONTINUE_MSG),
@@ -332,23 +354,8 @@ class _PolicyGatewayMiddleware(Middleware):
             self._inflight[call_id] = tool_key
             try:
                 return await call_next(context)
-            except McpError as e:
-                _raise_if_reserved_code(e, name)
-                raise
             except Exception as e:
-                s = str(e)
-                if (
-                    (POLICY_DENIED_ABORT_MSG in s)
-                    or (POLICY_DENIED_CONTINUE_MSG in s)
-                    or (POLICY_EVALUATOR_ERROR_MSG in s)
-                ):
-                    raise McpError(
-                        ErrorData(
-                            code=POLICY_BACKEND_RESERVED_MISUSE_CODE,
-                            message=POLICY_BACKEND_RESERVED_MISUSE_MSG,
-                            data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "backend_code": "unknown"},
-                        )
-                    ) from e
+                _remap_reserved_backend_error(e, name)
                 raise
             finally:
                 self._inflight.pop(call_id, None)
@@ -376,8 +383,8 @@ class _PolicyGatewayMiddleware(Middleware):
                 await self._record(call_id, tool_key, ApprovalOutcome.POLICY_ALLOW)
             try:
                 return await call_next(context)
-            except McpError as e:
-                _raise_if_reserved_code(e, name)
+            except Exception as e:
+                _remap_reserved_backend_error(e, name)
                 raise
         if isinstance(decision_obj, DenyContinueDecision):
             if self._record is not None:
