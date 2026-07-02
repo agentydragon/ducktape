@@ -945,6 +945,18 @@ go_deps.module_override(
     path = "github.com/buildbuddy-io/buildbuddy",
 )
 
+# prometheus/client_model v0.6.2 ships both the canonical proto package
+# (io/prometheus/client) and a deprecated compat shim at the repo root (go/)
+# that re-exports the same importpath -- gazelle auto-generates a BUILD
+# target for each, and the linker rejects two targets claiming the same Go
+# import path. Exclude the legacy shim; nothing needs it directly. Declared
+# here (not in //third_party/buildbuddy_cli) since gazelle_override, like
+# module_override, is forbidden in non-root modules.
+go_deps.gazelle_override(
+    directives = ["gazelle:exclude go"],
+    path = "github.com/prometheus/client_model",
+)
+
 # ─ redress + GoReSym (reverse engineering tools) ─────────────────────────────
 go_deps.module(
     path = "github.com/TcM1911/r2g2",
