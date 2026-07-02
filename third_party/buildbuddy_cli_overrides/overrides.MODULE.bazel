@@ -98,6 +98,17 @@ go_deps.module_override(
         # alone. This is real .proto *content* (not BUILD-file organization),
         # so it stays necessary regardless of build_file_generation below.
         "//third_party/buildbuddy_cli_overrides:bb_devshell_strip_vtproto_and_kythe_messages.patch",
+        # STILL needed even with build_file_generation = "on" below, and
+        # even combined with the search.proto edit above: go_repository
+        # runs gazelle to (re)generate BUILD files *before* applying any of
+        # our patches (see gazelle+/internal/go_repository.bzl), using
+        # search.proto's original, not-yet-patched kythe imports -- so
+        # gazelle (re)computes proto/BUILD's search_go_proto/
+        # kythe_service_go_proto deps to include kythe regardless of what
+        # the search.proto patch later strips. Confirmed empirically:
+        # removing this patch reproduces the exact "No sum for kythe.io"
+        # fetch failure it was originally written to fix.
+        "//third_party/buildbuddy_cli_overrides:bb_devshell_strip_kythe.patch",
         # build_file_generation = "on" below makes go_repository auto-create
         # its own REPO.bazel + inject a gazelle_generated_package_info target
         # into the root BUILD file (see gazelle+/internal/go_repository.bzl),
