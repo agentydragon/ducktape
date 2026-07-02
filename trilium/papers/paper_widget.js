@@ -103,7 +103,6 @@ Existing topics:
     const OPENAI_API_KEY = await api.runOnBackend(() => {
       return api.searchForNote("#openaiApiKey").getContent();
     }, []);
-    console.log("OPENAI API KEY:", OPENAI_API_KEY);
     const prefix = '["';
     const openaiPrompt = (await this.makePrompt()) + prefix;
 

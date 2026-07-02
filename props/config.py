@@ -129,6 +129,9 @@ class PropsConfig(LLMProxyConfig):
     executor: ExecutorConfig = Field(default_factory=DockerExecutorConfig)
     auto_migrate: bool = False
     auto_sync_specimens: bool = False
+    # Dev-only conveniences (never enable in the cluster deployment): logs the
+    # admin token and a ready-to-use admin URL at startup.
+    dev_mode: bool = False
 
 
 def load_config(path: Path) -> PropsConfig:
