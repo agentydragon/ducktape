@@ -69,10 +69,11 @@ def test_unlisted_users_untouched():
     assert fake.user_permissions["bystander"] == {2}
 
 
-def test_unknown_permission_name_raises():
-    fake = FakeGrocy({"agentydragon": {1}})
-    with pytest.raises(KeyError, match="NOT_A_PERMISSION"):
-        reconcile(make_client(fake), Policy(users={"agentydragon": {"NOT_A_PERMISSION"}}))
+def test_unknown_permission_name_rejected_before_any_write():
+    fake = FakeGrocy({"agentydragon": {1}, "haku": {2}})
+    with pytest.raises(ValueError, match="NOT_A_PERMISSION"):
+        reconcile(make_client(fake), Policy(users={"agentydragon": {"NOT_A_PERMISSION"}, "haku": set()}))
+    assert fake.puts == {}
 
 
 if __name__ == "__main__":

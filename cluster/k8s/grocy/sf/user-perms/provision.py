@@ -43,11 +43,13 @@ def wait_for_schema(client: httpx.Client) -> None:
     hasn't run, then poll the JSON `/api/users` until the schema exists.
     """
     for _ in range(30):
-        with contextlib.suppress(httpx.HTTPError):
+        # Transient connection errors and non-JSON bodies (mid-migration HTML)
+        # are all just "not ready yet" — keep polling.
+        with contextlib.suppress(httpx.HTTPError, ValueError):
             client.get("/")
-        resp = client.get("/api/users")
-        if resp.status_code == 200 and isinstance(resp.json(), list):
-            return
+            resp = client.get("/api/users")
+            if resp.status_code == 200 and isinstance(resp.json(), list):
+                return
         time.sleep(2)
     raise RuntimeError("Grocy schema not ready in time")
 
@@ -61,6 +63,9 @@ def get_json(client: httpx.Client, path: str) -> Any:
 def reconcile(client: httpx.Client, policy: Policy) -> None:
     # Grocy serializes SQLite rows with numeric columns as strings — int() them.
     permission_ids = {row["name"]: int(row["id"]) for row in get_json(client, "/api/objects/permission_hierarchy")}
+    # Validate every name upfront so a typo can't leave the policy half-applied.
+    if unknown := {name for names in policy.users.values() for name in names} - permission_ids.keys():
+        raise ValueError(f"unknown permission names {sorted(unknown)}; valid: {sorted(permission_ids)}")
     for username in policy.users:
         # Reverse-proxy auth auto-creates the user on the first request bearing its
         # username; default-deny means it is born with no permissions.
