@@ -84,6 +84,22 @@ PROPOSE_SCOPE = "propose"
 DECIDE_SCOPE = "decide"
 READ_SCOPE = "read"
 
+
+class ActionNotFoundError(ValueError):
+    """An action key does not resolve to a stored action.
+
+    Subclasses ``ValueError`` so existing callers (and FastMCP's exception→error
+    conversion) keep working; the REST layer maps it to HTTP 404.
+    """
+
+
+class ActionNotDecidableError(ValueError):
+    """An action exists but is not in a state that accepts the decision.
+
+    Not pending, or no longer awaiting a human decision. Subclasses
+    ``ValueError``; the REST layer maps it to HTTP 409.
+    """
+
 _INSTRUCTIONS_TEMPLATE = Path(__file__).parent / "instructions.mako"
 
 
@@ -484,17 +500,20 @@ class AirlockServer(EnhancedFastMCP):
     async def decide(self, key: ActionKey, decision: OperatorDecision) -> None:
         """Inject an operator decision for an action awaiting human input.
 
-        Raises ValueError if the action does not exist, is not pending, or is not
-        awaiting a human decision (e.g. still processing an auto-predicate).
+        Raises ActionNotFoundError if the action does not exist, or
+        ActionNotDecidableError if it is not pending / not awaiting a human
+        decision (e.g. still processing an auto-predicate).
         """
         action = await self._req_storage.get_action(key)
         if action is None:
-            raise ValueError(f"Action not found: {key.session_key}/{key.action_seq}")
+            raise ActionNotFoundError(f"Action not found: {key.session_key}/{key.action_seq}")
         if not isinstance(action.state, PendingState):
-            raise ValueError(f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})")
+            raise ActionNotDecidableError(
+                f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})"
+            )
         fut = self._pending_decisions.get(key)
         if fut is None or fut.done():
-            raise ValueError(f"Action {key.session_key}/{key.action_seq} is not awaiting a human decision")
+            raise ActionNotDecidableError(f"Action {key.session_key}/{key.action_seq} is not awaiting a human decision")
         fut.set_result(decision)
 
     async def withdraw(self, key: ActionKey) -> Action:
@@ -504,9 +523,11 @@ class AirlockServer(EnhancedFastMCP):
         """
         action = await self._req_storage.get_action(key)
         if action is None:
-            raise ValueError(f"Action not found: {key.session_key}/{key.action_seq}")
+            raise ActionNotFoundError(f"Action not found: {key.session_key}/{key.action_seq}")
         if not isinstance(action.state, PendingState):
-            raise ValueError(f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})")
+            raise ActionNotDecidableError(
+                f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})"
+            )
         result = await self._update_and_notify(key, WithdrawnState(), WithdrawnDetail())
         fut = self._pending_decisions.pop(key, None)
         if fut is not None and not fut.done():

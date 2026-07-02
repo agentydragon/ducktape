@@ -60,7 +60,14 @@ from airlock.oauth.provider import GenericOAuth2Provider
 from airlock.oauth.refresh import token_refresh_loop
 from airlock.oauth.routes import create_oauth_router
 from airlock.predicates import load_predicate
-from airlock.proxy_server import DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE, AirlockServer
+from airlock.proxy_server import (
+    DECIDE_SCOPE,
+    PROPOSE_SCOPE,
+    READ_SCOPE,
+    ActionNotDecidableError,
+    ActionNotFoundError,
+    AirlockServer,
+)
 from mcp_infra.authentik_auth.auth import AuthentikAuthConfig, build_authentik_auth
 
 logger = logging.getLogger(__name__)
@@ -189,18 +196,28 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
             raise HTTPException(status_code=404, detail="Action not found")
         return action
 
+    async def _apply_decision(key: ActionKey, decision: ApproveDecision | DenyDecision) -> Response:
+        """Inject a decision, translating domain errors to HTTP client errors.
+
+        ``server.decide`` raises for bad input; without this the REST endpoint
+        would 500 on an unknown/already-decided action instead of a 404/409.
+        """
+        try:
+            await server.decide(key, decision)
+        except ActionNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e)) from e
+        except ActionNotDecidableError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        return Response(status_code=204)
+
     @app.post("/api/actions/{session_key}/{action_seq}/approve", status_code=204, dependencies=[require_decide])
     async def approve_action(session_key: str, action_seq: int) -> Response:
-        key = ActionKey(session_key=session_key, action_seq=action_seq)
-        await server.decide(key, ApproveDecision())
-        return Response(status_code=204)
+        return await _apply_decision(ActionKey(session_key=session_key, action_seq=action_seq), ApproveDecision())
 
     @app.post("/api/actions/{session_key}/{action_seq}/reject", status_code=204, dependencies=[require_decide])
     async def reject_action(session_key: str, action_seq: int, body: RejectBody | None = None) -> Response:
         key = ActionKey(session_key=session_key, action_seq=action_seq)
-        reason = body.reason if body else None
-        await server.decide(key, DenyDecision(reason=reason))
-        return Response(status_code=204)
+        return await _apply_decision(key, DenyDecision(reason=body.reason if body else None))
 
     @app.get("/api/events", dependencies=[require_read])
     async def events() -> StreamingResponse:

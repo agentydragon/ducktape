@@ -259,8 +259,10 @@ async def test_api_enforces_auth_and_scopes(rsa_key_pair: RSAKeyPair, predicate_
         # Read-only token → can read, cannot decide.
         assert (await http.get("/api/actions", headers=reader)).status_code == 200
         assert (await http.post(approve_path, headers=reader)).status_code == 403
-        # Operator token is accepted on the read surface (decide path proven via 403 above).
+        # Operator token is accepted and reaches the handler: approving an unknown
+        # action is a client error (404), not an auth failure (401/403) or a 500.
         assert (await http.get("/api/actions", headers=operator)).status_code == 200
+        assert (await http.post(approve_path, headers=operator)).status_code == 404
 
 
 if __name__ == "__main__":
