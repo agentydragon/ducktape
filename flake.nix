@@ -339,7 +339,6 @@
         pkgs.sops
         pkgs.ssh-to-age
         ducktapePkgs.kubernetes-mcp-server
-        ducktapePkgs.target-determinator
         ducktapePkgs.bazel-diff
       ];
       # Rust claude-hook is the active hook/shim implementation. The statusline

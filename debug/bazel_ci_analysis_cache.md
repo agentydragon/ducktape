@@ -78,8 +78,7 @@ but is a paid product.
 | Remote cache              | [bazel-remote](https://github.com/buchgr/bazel-remote)                      | Go, single binary               |
 | Remote cache + RBE        | [BuildBuddy OSS](https://github.com/buildbuddy-io/buildbuddy)               | Go, includes UI + executors     |
 | Remote cache + RBE        | [NativeLink](https://github.com/TraceMachina/nativelink)                    | Rust, FSL-1.1 license           |
-| Affected targets          | [target-determinator](https://github.com/bazel-contrib/target-determinator) | Only build/test what changed    |
-| Affected targets          | [bazel-diff](https://github.com/Tinder/bazel-diff)                          | Tinder, handles large projects  |
+| Affected targets          | [bazel-diff](https://github.com/Tinder/bazel-diff)                          | Merkle-hash based; `bazel query` (no analysis) |
 
 ## Recommendation
 

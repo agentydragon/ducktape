@@ -20,9 +20,9 @@ on:
     # rbe-worker's Dockerfile COPYs flake.nix + nix/packages/** + the two
     # pins JSONs and runs `nix build .#rbetools`, so the image's content
     # depends on those trees, not just devinfra/rbe_image/**. Missing them
-    # here means a nix/packages change (e.g. #2679 adding
-    # target-determinator) doesn't rebuild the image and image_pins.json
-    # falls out of date; the next `bazel-ci` run silently uses the old image.
+    # here means a nix/packages change (e.g. #2706 adding bazel-diff)
+    # doesn't rebuild the image and image_pins.json falls out of date;
+    # the next `bazel-ci` run silently uses the old image.
     paths:
       - "devinfra/rbe_image/**"
       - "flake.nix"
