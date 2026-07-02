@@ -106,13 +106,13 @@ def normalize_yaml_rule(rule: FilterRule) -> NormalizedFilter:
 
     # from/to/subject and has/does_not_have accept compound (any/all/not) conditions
     # in the YAML model, but NormalizedFilter can only carry plain string criteria.
-    for name, value in [("from", rule.from_), ("to", rule.to), ("subject", rule.subject)]:
-        if isinstance(value, CompoundCondition):
-            raise ValueError(
-                f"FilterRule criterion {name!r} uses a compound (any/all/not) condition, "
-                "which cannot be synced to Gmail filters"
-            )
-    for name, value in [("has", rule.has), ("does_not_have", rule.does_not_have)]:
+    for name, value in [
+        ("from", rule.from_),
+        ("to", rule.to),
+        ("subject", rule.subject),
+        ("has", rule.has),
+        ("does_not_have", rule.does_not_have),
+    ]:
         if isinstance(value, CompoundCondition):
             raise ValueError(
                 f"FilterRule criterion {name!r} uses a compound (any/all/not) condition, "
