@@ -17,6 +17,14 @@ describe("parseHash", () => {
     expect(parseHash("#/improvements")).toEqual({ view: "improvements", gardenPath: null });
   });
 
+  it("treats a trailing slash as the garden index, not an empty file", () => {
+    expect(parseHash("#/garden/")).toEqual({ view: "garden", gardenPath: null });
+  });
+
+  it("falls back to Inbox on malformed percent-encoding instead of throwing", () => {
+    expect(parseHash("#/garden/%E0%A4%A")).toEqual(HOME);
+  });
+
   it("parses the garden index vs a garden file", () => {
     expect(parseHash("#/garden")).toEqual({ view: "garden", gardenPath: null });
     expect(parseHash("#/garden/memory/operator.md")).toEqual({

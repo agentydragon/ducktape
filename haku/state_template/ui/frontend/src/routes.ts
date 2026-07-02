@@ -30,8 +30,16 @@ export function parseHash(hash: string): Route {
   const path = hash.replace(/^#\/?/, "");
   if (!path) return HOME;
   const [head, ...rest] = path.split("/");
-  if (head === "garden" && rest.length > 0) {
-    return { view: "garden", gardenPath: rest.map(decodeURIComponent).join("/") };
+  if (head === "garden") {
+    const segments = rest.filter((s) => s.length > 0); // "#/garden/" or "//" collapse to the index
+    if (segments.length === 0) return { view: "garden", gardenPath: null };
+    try {
+      return { view: "garden", gardenPath: segments.map(decodeURIComponent).join("/") };
+    } catch {
+      // Malformed percent-encoding in a user-edited URL — same contract as any other
+      // unparseable route: fall back, never throw (this runs in the useState initializer).
+      return HOME;
+    }
   }
   if ((VIEWS as readonly string[]).includes(head)) {
     return { view: head as View, gardenPath: null };
