@@ -15,13 +15,23 @@ metadata:
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
-  replicas: 1
-  # The chatgpt-auth PVC is RWX, but LiteLLM rewrites auth.json in place on token
-  # refresh, so two overlapping pods would race that file. maxSurge:0 tears the old
-  # pod down before starting the new one — single writer. Preferred over
-  # `type: Recreate` because server-side apply rejects transitioning the
-  # already-RollingUpdate live Deployment to type:Recreate while the API-defaulted
-  # rollingUpdate block is present, which would abort the whole apply.
+  replicas: 2
+  # 2 replicas for HA. Ollama/z.ai/Langfuse are all remote, so those are cleanly
+  # stateless. The one exception is the chatgpt provider's auth.json on the RWX
+  # chatgpt-auth PVC: both replicas share it and either may refresh+rewrite it.
+  #
+  # TODO(chatgpt-token-race): shared-token concurrency hazard. LiteLLM rewrites
+  # auth.json in place on refresh; with >1 replica two pods can refresh the same
+  # account concurrently and, because OpenAI rotates refresh tokens, invalidate
+  # each other's token — taking chatgpt models down until the seed is refreshed.
+  # Accepted for now: access tokens last ~10 days so the race window is a few
+  # seconds per refresh. Proper fix if it bites: move the chatgpt provider into a
+  # dedicated single-replica proxy and route chatgpt models to it from here.
+  #
+  # maxSurge:0/maxUnavailable:1 keeps >=1 pod serving during rollout and caps
+  # concurrent pods (writers) at replicas. type:Recreate is avoided because
+  # server-side apply rejects transitioning the already-RollingUpdate live
+  # Deployment to Recreate while the API-defaulted rollingUpdate block is present.
   strategy:
     type: RollingUpdate
     rollingUpdate:
