@@ -93,10 +93,6 @@ Numbers are approximate; the detailed findings below are the source of truth.
   `extra_jwt_issuers` deliberately widens accepted issuers to sibling Authentik
   apps — so a token minted for any other app sharing the signing key is accepted.
   **Fix:** pass each resource's expected `audience`.
-- **[High]** `llm/html/llm_html/server.py:45` — token-signing secret defaults to
-  `"hunter2"` (`TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "hunter2")`), used to
-  sign/verify auth tokens; the README documents the default. **Fix:** raise at
-  startup if unset.
 - **[Medium]** `devinfra/firecracker/manager/service.py:38-43` — an unset
   `FC_MANAGER_AUTH_TOKEN` makes `_require_auth` return immediately, silently
   disabling all auth on the VM-manager API with no log line. **Fix:** fail closed or
@@ -723,9 +719,9 @@ sandbox boundaries`; a sandboxed agent can exfiltrate any host-readable file via
    - Fix the policy-engine deny-continue path so a denied call is not executed
      (Critical).
    - Scope down the `kubeapi_admin` cluster-admin binding (High).
-2. **This week (security):** JWT audience validation; remove the `hunter2` secret
-   fallback (require at startup); fail-closed on unset `FC_MANAGER_AUTH_TOKEN`; fix the
-   `read_image` sandbox-boundary escape or disable the tool.
+2. **This week (security):** JWT audience validation; fail-closed on unset
+   `FC_MANAGER_AUTH_TOKEN`; fix the `read_image` sandbox-boundary escape or disable
+   the tool.
 3. **This week (correctness):** gmail filter-sync ForEachRule deletion (over-deletion
    risk); props recall mean-of-means + missing `snapshot_slug`; augur dilution
    Jacobian; plaid `sync_all` abort-on-first-failure.
