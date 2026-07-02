@@ -162,8 +162,18 @@ jobs:
               bazel build --keep_going $RBE_FLAGS $TARGETS && \
                 probe_bb_runner after-build
             else
-              bazel test --keep_going $RBE_FLAGS $TARGETS && \
-                probe_bb_runner after-test && \
+              # `bazel test` still hard-fails with exit 4 ("no test targets were
+              # found") when every test in the affected set is filtered out by
+              # --test_tag_filters -- e.g. a PR that only touches `manual`-tagged
+              # tests. The TEST_TARGET_COUNT probe above counts test *rules* and
+              # can't see tag filters, so it can't pre-empt this. Treat exit 4 as
+              # benign (nothing to run) and still build.
+              test_rc=0
+              bazel test --keep_going $RBE_FLAGS $TARGETS || test_rc=$?
+              if [ "$test_rc" -ne 0 ] && [ "$test_rc" -ne 4 ]; then
+                exit "$test_rc"
+              fi
+              probe_bb_runner after-test && \
                 bazel build --keep_going $RBE_FLAGS $TARGETS && \
                 probe_bb_runner after-build
             fi
