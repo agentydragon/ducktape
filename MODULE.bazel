@@ -945,15 +945,17 @@ go_deps.module_override(
     path = "github.com/buildbuddy-io/buildbuddy",
 )
 
-# prometheus/client_model v0.6.2 ships both the canonical proto package
-# (io/prometheus/client) and a deprecated compat shim at the repo root (go/)
-# that re-exports the same importpath -- gazelle auto-generates a BUILD
-# target for each, and the linker rejects two targets claiming the same Go
-# import path. Exclude the legacy shim; nothing needs it directly. Declared
-# here (not in //third_party/buildbuddy_cli) since gazelle_override, like
-# module_override, is forbidden in non-root modules.
+# prometheus/client_model v0.6.2 ships its generated package at the
+# repo-root go/ directory (importpath github.com/prometheus/client_model/go
+# -- what every actual importer, e.g. prometheus/client_golang, uses) and
+# also under io/prometheus/client/ (a newer canonical layout, declaring the
+# same importpath via an explicit `option go_package`). Gazelle generates a
+# BUILD target for both, and the linker rejects two targets claiming the
+# same Go import path. Exclude the unused io/ copy. Declared here (not in
+# //third_party/buildbuddy_cli) since gazelle_override, like module_override,
+# is forbidden in non-root modules.
 go_deps.gazelle_override(
-    directives = ["gazelle:exclude go"],
+    directives = ["gazelle:exclude io"],
     path = "github.com/prometheus/client_model",
 )
 
