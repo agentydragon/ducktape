@@ -2,6 +2,7 @@
 """FastAPI server for LLM instructions with token generation."""
 
 import asyncio
+import functools
 import logging
 import os
 import sys
@@ -42,7 +43,33 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Global configuration
-TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "hunter2").encode()
+
+# Insecure placeholder secret used only when LLM_HTML_DEV=1 (local dev). The tokens
+# this signs are trivially forgeable, so it must never be used in a real deployment.
+_DEV_TOKEN_SECRET = b"llm-html-insecure-dev-secret"
+
+
+def _resolve_token_secret() -> bytes:
+    """The HMAC secret that signs/verifies page tokens.
+
+    Raises if `TOKEN_SECRET` is unset so a real deployment can never silently fall
+    back to a known secret. Set `LLM_HTML_DEV=1` to run locally without one.
+    """
+    secret = os.environ.get("TOKEN_SECRET")
+    if secret:
+        return secret.encode()
+    if os.environ.get("LLM_HTML_DEV") == "1":
+        logger.warning(
+            "TOKEN_SECRET unset; using an insecure dev secret because LLM_HTML_DEV=1. Never use in production."
+        )
+        return _DEV_TOKEN_SECRET
+    raise RuntimeError("TOKEN_SECRET is required. Set it, or set LLM_HTML_DEV=1 for local development.")
+
+
+@functools.cache
+def token_secret() -> bytes:
+    return _resolve_token_secret()
+
 
 # Content directory: where .md, .html, .css files live.
 # Defaults to parent of this module's directory (i.e., llm/html/).
@@ -136,7 +163,7 @@ async def index():
     """Serve the main page with rendered markdown."""
     try:
         text = await asyncio.to_thread((CONTENT_DIR / "index.md").read_text)
-        ts = TokenScheme(TOKEN_SECRET, text)
+        ts = TokenScheme(token_secret(), text)
 
         # Use configured timezone
         current_time = datetime.now(TIMEZONE)
@@ -194,7 +221,7 @@ async def analyze_page_tokens(
 
         if is_index:
             # Step 2: Render template variables for index
-            ts = TokenScheme(TOKEN_SECRET, text)
+            ts = TokenScheme(token_secret(), text)
             current_time = datetime.now(TIMEZONE)
             prefix, bits = ts.make_token(current_time)
             tpl = env.get_template("index.md")
@@ -296,7 +323,7 @@ async def verify_token(request: Request, token: str = ""):
         try:
             # Read the source index.md file (not rendered)
             text = await asyncio.to_thread((CONTENT_DIR / "index.md").read_text)
-            ts = TokenScheme(TOKEN_SECRET, text)
+            ts = TokenScheme(token_secret(), text)
 
             ts.verify_token(token)
             result = {"status": "success", "message": "Token is valid ✅"}

@@ -58,6 +58,10 @@ py_image_layer(
 py_test(
     name = "test_html_rendering",
     srcs = ["test_html_rendering.py"],
+    # Exercises request handlers that need a token secret; run in dev mode so no
+    # real TOKEN_SECRET is required. The requires-secret path is covered by a
+    # monkeypatch test that clears the flag.
+    env = {"LLM_HTML_DEV": "1"},
     deps = [
         ":server",
         ":token_scheme",
