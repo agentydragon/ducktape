@@ -9,10 +9,15 @@ overwhelm Grocy's PHP/SQLite backend or the Authentik token exchange endpoint
 (each request triggers a per-user JWT exchange). Transient errors (timeouts,
 5xx) are retried with exponential backoff.
 
-IMPORTANT: Only idempotent/read operations go inside _retry(). Mutating POSTs
-are retried only for the mutation itself — the follow-up GET (to read new_amount)
-is best-effort outside the retry loop. This prevents retry-induced stock inflation
-(see 2026-04-17 incident: products 90, 95, 97).
+IMPORTANT: reads/GETs go through _retry(), which retries transient errors
+including timeouts. Mutating requests go through _retry_mutation(), which NEVER
+retries a timeout — a mutating request that times out may already have been
+applied server-side, so a blind re-POST double-applies it (the 2026-04-17
+stock-inflation incident: products 90, 95, 97). On such a timeout it raises
+MutationMayHaveAppliedError so the caller can verify state before retrying
+manually. Server-side rejections (429/5xx) stay retryable there since the request
+was received but not applied. The follow-up GET that reads new_amount is
+best-effort, outside any retry loop.
 """
 
 from __future__ import annotations
@@ -129,13 +134,26 @@ def _compute_default_bbd(product: dict[str, Any], *, is_freezer: bool) -> str:
     return (date.today() + timedelta(days=days)).isoformat()
 
 
+class MutationMayHaveAppliedError(Exception):
+    """A mutating request timed out before Grocy responded.
+
+    Grocy may or may not have applied the mutation, so it must never be
+    auto-retried — a blind re-POST double-applies it (the 2026-04-17
+    stock-inflation incident: products 90, 95, 97). Surfaced to the caller with
+    instructions to verify state before retrying manually.
+    """
+
+
 def _format_exc(e: Exception) -> str:
     """Format exceptions for tool error payloads.
 
     For ``HTTPStatusError``, return a compact, user-facing message with:
     HTTP status, method, URL, and Grocy response body (when present).
+    For ``MutationMayHaveAppliedError``, return its explanatory message.
     For all other exception types, keep the full traceback.
     """
+    if isinstance(e, MutationMayHaveAppliedError):
+        return str(e)
     if isinstance(e, httpx.HTTPStatusError):
         status = e.response.status_code
         reason = e.response.reason_phrase
@@ -150,9 +168,21 @@ def _format_exc(e: Exception) -> str:
 
 
 def _is_retryable(exc: BaseException) -> bool:
-    """Whether an exception is transient and worth retrying."""
+    """Whether an exception is transient and worth retrying (reads/GETs)."""
     if isinstance(exc, httpx.TimeoutException):
         return True
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {429, 500, 502, 503, 504}
+
+
+def _is_retryable_mutation(exc: BaseException) -> bool:
+    """Retry predicate for mutating requests.
+
+    Deviation from ``_is_retryable``: timeouts are NOT retryable. A mutating
+    request that times out may already have been applied server-side, so a
+    retry risks double-applying it. Server-side error responses (429/5xx) stay
+    retryable (matching prior behavior) — the request reached Grocy but was
+    rejected, so no mutation was applied to duplicate.
+    """
     return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {429, 500, 502, 503, 504}
 
 
@@ -180,6 +210,34 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             ):
                 with attempt:
                     return await fn()
+        raise AssertionError("unreachable")
+
+    async def _retry_mutation[T](fn: Callable[[], Awaitable[T]], *, describe: str) -> T:
+        """Run a mutating request under semaphore, never re-sending on timeout.
+
+        Unlike `_retry`, a timeout is not retried: the mutation may already have
+        been applied server-side, and a blind re-POST double-applies it (the
+        2026-04-17 incident). On timeout, raise `MutationMayHaveAppliedError`
+        telling the caller to verify state before retrying manually. Server-side
+        errors (429/5xx) are still retried — the request was rejected, not applied.
+        """
+        async with sem:
+            try:
+                async for attempt in AsyncRetrying(
+                    retry=retry_if_exception(_is_retryable_mutation),
+                    stop=stop_after_attempt(1 + settings.max_retries),
+                    wait=wait_exponential(multiplier=settings.retry_base_delay, exp_base=2),
+                    reraise=True,
+                ):
+                    with attempt:
+                        return await fn()
+            except httpx.TimeoutException as e:
+                raise MutationMayHaveAppliedError(
+                    f"{describe} timed out before Grocy responded; the mutation may or may not "
+                    "have been applied. Do NOT retry blindly — that risks double-applying it. "
+                    "Verify current state (e.g. the stock_log entity via entities_list, or "
+                    "stock_get) before retrying manually."
+                ) from e
         raise AssertionError("unreachable")
 
     # ── Helpers ──────────────────────────────────────────────────────────
@@ -272,7 +330,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                     raw_id = data.get("created_object_id")
                     return CreateOk(created_object_id=int(raw_id) if raw_id is not None else None)
 
-                return await _retry(_do)
+                return await _retry_mutation(_do, describe=f"create {item.entity_type}")
             except Exception as e:
                 return CreateError(error=_format_exc(e))
 
@@ -538,7 +596,9 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 amount_delta = sum(float(e.get("amount", 0)) for e in entries) if entries else None
                 return tx_id, amount_delta, stock_id
 
-            tx_id, amount_delta, stock_id = await _retry(_do_post)
+            tx_id, amount_delta, stock_id = await _retry_mutation(
+                _do_post, describe=f"stock {endpoint} of {input_amount} {rqu.name} for product {product.name!r}"
+            )
             if isinstance(item, AddItem) and stock_id is not None:
                 new_amount, entry_id = await asyncio.gather(
                     _best_effort_new_amount(product.id), _best_effort_entry_id(product.id, stock_id)
@@ -875,7 +935,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                     raw_id = r.json().get("created_object_id")
                     return CreateOk(created_object_id=int(raw_id) if raw_id is not None else None)
 
-                return await _retry(_do)
+                return await _retry_mutation(_do, describe=f"create at {entity_path}")
             except Exception as e:
                 return CreateError(error=_format_exc(e))
 
@@ -1028,7 +1088,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                     raw_id = r.json().get("created_object_id")
                     return CreateOk(created_object_id=int(raw_id) if raw_id is not None else None)
 
-                return await _retry(_do)
+                return await _retry_mutation(_do, describe=f"create product {item.name!r}")
             except Exception as e:
                 return CreateError(error=_format_exc(e))
 

@@ -97,6 +97,41 @@ async def test_add_stock_post_retried_on_transient_failure(mcp_client: tuple[Cli
     assert post_route.call_count == 2  # first attempt failed, second succeeded
 
 
+async def test_mutating_post_not_retried_on_timeout(mcp_client: tuple[Client, respx.Router]) -> None:
+    """A timeout on a mutating POST must NOT re-send — a re-POST would double-apply it."""
+    client, router = mcp_client
+
+    post_route = router.post("/stock/products/1/consume").mock(side_effect=httpx.ReadTimeout("simulated timeout"))
+
+    result = await client.call_tool(
+        "stock_consume", {"items": [{"product": 1, "amount": 5, "qu": "pieces", "location": "TestLoc"}]}
+    )
+    sc = result.structured_content
+    assert sc is not None
+    op = sc["result"][0]
+    assert op["kind"] == "error", f"expected error, got: {op}"
+    assert post_route.call_count == 1, "mutating POST must be sent exactly once on timeout"
+    error = op["error"]
+    assert "consume" in error, "error should name the endpoint"
+    assert "may or may not" in error, "error should say the mutation may or may not have applied"
+    assert "double-appl" in error, "error should warn against a blind retry"
+
+
+async def test_read_get_still_retried_on_timeout(mcp_client: tuple[Client, respx.Router]) -> None:
+    """Regression guard: reads/GETs still retry on timeout (only mutations changed)."""
+    client, router = mcp_client
+
+    stock_route = router.get("/stock").mock(
+        side_effect=[httpx.ReadTimeout("simulated timeout"), httpx.Response(200, json=[])]
+    )
+
+    result = await client.call_tool("stock_get", {"products": [], "locations": []})
+    sc = result.structured_content
+    assert sc is not None
+    assert sc["result"] == []
+    assert stock_route.call_count == 2, "read GET should retry after a timeout"
+
+
 async def test_unit_validation_rejects_wrong_qu(mcp_client: tuple[Client, respx.Router]) -> None:
     """Specifying a QU with no conversion to stock QU should fail validation."""
     client, _router = mcp_client
