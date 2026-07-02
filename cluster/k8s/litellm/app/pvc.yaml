@@ -10,8 +10,11 @@ metadata:
       rewrites this file, so it must survive restarts (refresh tokens rotate).
       Seeded copy-if-absent from the litellm-chatgpt-auth-seed secret.
 spec:
+  # RWX on SeaweedFS (a distributed FS) so the pod reschedules/rolls without RWO
+  # single-attach handoff friction. Concurrent-writer safety of auth.json is
+  # handled by the Deployment's maxSurge:0 (single writer), not the access mode.
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   storageClassName: seaweedfs-ovh
   resources:
     requests:
