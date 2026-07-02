@@ -76,7 +76,9 @@ def _make_settings(
 
 
 @pytest.mark.usefixtures("_mock_k8s_store")
-async def test_airlock_starts_with_backend_down(rsa_key_pair, agent_jwt: str, predicate_file: Path, db_url: str):
+async def test_airlock_starts_with_backend_down(
+    rsa_key_pair, agent_jwt: str, predicate_file: Path, db_url: str, operator_headers: dict[str, str]
+):
     """Airlock starts and serves /mcp even when a backend URL is unreachable."""
     dead_port = pick_free_port()
     gate_port = pick_free_port()
@@ -90,7 +92,10 @@ async def test_airlock_starts_with_backend_down(rsa_key_pair, agent_jwt: str, pr
     )
     app = create_app(settings, auth=auth, include_static=False)
 
-    async with serve_app(app, port=gate_port), httpx.AsyncClient(base_url=f"http://127.0.0.1:{gate_port}") as http:
+    async with (
+        serve_app(app, port=gate_port),
+        httpx.AsyncClient(base_url=f"http://127.0.0.1:{gate_port}", headers=operator_headers) as http,
+    ):
         r = await http.get("/healthz")
         assert r.status_code == 200
 
@@ -113,7 +118,7 @@ async def test_airlock_starts_with_backend_down(rsa_key_pair, agent_jwt: str, pr
 
 @pytest.mark.usefixtures("_mock_k8s_store")
 async def test_api_backends_connected_when_backend_up(
-    rsa_key_pair, predicate_file: Path, db_url: str, echo_backend: EchoBackend
+    rsa_key_pair, predicate_file: Path, db_url: str, echo_backend: EchoBackend, operator_headers: dict[str, str]
 ):
     """GET /api/backends reports connected when backend is reachable."""
     echo_port = pick_free_port()
@@ -133,7 +138,7 @@ async def test_api_backends_connected_when_backend_up(
     async with (
         serve_app(echo_app, port=echo_port),
         serve_app(app, port=gate_port),
-        httpx.AsyncClient(base_url=f"http://127.0.0.1:{gate_port}") as http,
+        httpx.AsyncClient(base_url=f"http://127.0.0.1:{gate_port}", headers=operator_headers) as http,
     ):
         r = await http.get("/api/backends")
         assert r.status_code == 200
@@ -144,7 +149,12 @@ async def test_api_backends_connected_when_backend_up(
 
 @pytest.mark.usefixtures("_mock_k8s_store")
 async def test_backend_reconnects_when_available(
-    rsa_key_pair, agent_jwt: str, predicate_file: Path, db_url: str, echo_backend: EchoBackend
+    rsa_key_pair,
+    agent_jwt: str,
+    predicate_file: Path,
+    db_url: str,
+    echo_backend: EchoBackend,
+    operator_headers: dict[str, str],
 ):
     """After airlock starts with a dead backend, it reconnects once the backend comes up."""
     echo_port = pick_free_port()
@@ -165,14 +175,14 @@ async def test_backend_reconnects_when_available(
 
     async with serve_app(app, port=gate_port):
         # Initially degraded — no tools from test namespace.
-        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{gate_port}") as http:
+        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{gate_port}", headers=operator_headers) as http:
             r = await http.get("/api/backends")
             assert r.json()[0]["connection_status"]["state"] == "degraded"
 
         # Bring backend up.
         async with serve_app(echo_starlette, port=echo_port):
             # Poll until airlock detects the backend (up to 5s).
-            async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{gate_port}") as http:
+            async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{gate_port}", headers=operator_headers) as http:
                 with anyio.fail_after(5.0):
                     while True:
                         r = await http.get("/api/backends")
@@ -188,7 +198,13 @@ async def test_backend_reconnects_when_available(
 
 @pytest.mark.usefixtures("_mock_k8s_store")
 async def test_approved_action_errors_when_backend_unavailable(
-    rsa_key_pair, agent_jwt: str, operator_jwt: str, predicate_file: Path, db_url: str, echo_backend: EchoBackend
+    rsa_key_pair,
+    agent_jwt: str,
+    operator_jwt: str,
+    predicate_file: Path,
+    db_url: str,
+    echo_backend: EchoBackend,
+    operator_headers: dict[str, str],
 ):
     """When a backend goes down after tools are registered, approved actions complete
     with isError=true rather than getting stuck in EXECUTING."""
@@ -236,7 +252,7 @@ async def test_approved_action_errors_when_backend_unavailable(
             await operator.approve(created_key)
 
         # Poll until the action reaches DONE (background pipeline runs asynchronously).
-        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{gate_port}") as http:
+        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{gate_port}", headers=operator_headers) as http:
             with anyio.fail_after(5.0):
                 while True:
                     r = await http.get(f"/api/actions/{created_key.session_key}/{created_key.action_seq}")

@@ -250,6 +250,16 @@ def operator_jwt(rsa_key_pair):
 
 
 @pytest.fixture
+def operator_headers(operator_jwt: str) -> dict[str, str]:
+    """Authorization header carrying an operator JWT (scopes: decide, read).
+
+    The /api/* REST routes now require a valid Bearer token; use this on httpx
+    clients that hit them.
+    """
+    return {"Authorization": f"Bearer {operator_jwt}"}
+
+
+@pytest.fixture
 async def storage(db_url: str) -> AsyncGenerator[ActionStorage]:
     """Per-test ActionStorage backed by an isolated PostgreSQL database."""
     store = await ActionStorage.initialize(db_url)
