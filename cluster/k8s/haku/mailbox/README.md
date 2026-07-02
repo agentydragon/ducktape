@@ -26,7 +26,10 @@ deliberately tiny (its documented declarative-deployments workflow):
   OIDC directories), the Authentik OIDC directory, the DMARC-gated
   whitelist Sieve script wired to the SMTP DATA stage, the two listeners
   (SMTP :2525 STARTTLS, HTTP :8080), and the TLS certificate (PEM pushed
-  from the cert-manager secret).
+  from the cert-manager secret). The certificate upsert matches on the PEM
+  itself: a cert-manager renewal creates a fresh Certificate object and
+  repoints `defaultCertificateId`; superseded cert objects accumulate
+  (one per ~60-day renewal) — harmless.
 - `app/bootstrap-and-run.sh` — pod entrypoint: renders the plan (cert PEMs),
   applies it against a temporary recovery-mode instance, then execs the
   normal server. Every pod start reconciles config; the reloader annotation
