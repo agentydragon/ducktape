@@ -391,15 +391,19 @@
           # MCP-client CLI (the fastmcp `call`/`list` commands, with
           # `--auth <bearer>`), so the background agent can talk to in-cluster
           # MCP facades (tana-mcp-ro) without a runtime `pip install` or a
-          # hand-rolled JSON-RPC handshake. This is NOT a devtools fork — it
-          # composes the one `.#devtools` and adds fastmcp on top. Installed by
-          # web_setup.sh when DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku (set in
+          # hand-rolled JSON-RPC handshake, and himalaya, the mail CLI for
+          # Haku's own mailbox (IMAP + OAUTHBEARER against haku-mailbox;
+          # usage in haku/base/sources/mailbox.md). This is NOT a devtools
+          # fork — it composes the one `.#devtools` and adds agent tools on
+          # top. Installed by web_setup.sh when
+          # DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku (set in
           # haku/runtime/claude_web_env/setup.sh).
           agent-haku = pkgs.symlinkJoin {
             name = "ducktape-agent-haku";
             paths = [
               self.packages.${system}.devtools
               ducktapePkgs.fastmcp
+              pkgs.himalaya
             ];
           };
           # home-manager CLI, pinned to our flake input (release-25.11). Used by

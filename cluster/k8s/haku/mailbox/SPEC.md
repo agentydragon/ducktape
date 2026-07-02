@@ -14,8 +14,10 @@ A Stalwart mailserver serving `allegedly.works` mail, whose single mailbox
   `haku-mailbox` namespace through its RBAC.
 - **Haku authenticates only with its Authentik identity.** The server's OIDC
   directory validates bearer tokens against the dedicated `stalwart-haku`
-  provider and rejects tokens minted for any other audience. No mailbox
-  password exists.
+  provider and rejects tokens minted for any other audience — on every
+  reading channel (JMAP over the public route, IMAP cluster-internal via
+  SASL OAUTHBEARER). No mailbox password exists, and the directory
+  structurally rejects password authentication.
 - **The mailbox is Haku's to manage.** Read, organize, delete — the contents
   are agent-owned state (not operator-audited, unlike the old spool design).
 - **Receive-only.** No submission or relay service is configured; the server

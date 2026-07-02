@@ -38,9 +38,10 @@ metadata:
   namespace: haku-mailbox
   annotations:
     description: >-
-      Stalwart's HTTP listener (JMAP + management API), cluster-internal only —
-      exposed exclusively via the cluster-gateway HTTPRoute
-      (haku-mailbox.allegedly.works).
+      Stalwart's cluster-internal listeners: HTTP (JMAP + management API,
+      exposed publicly only via the cluster-gateway HTTPRoute
+      haku-mailbox.allegedly.works) and plaintext IMAP for haku-sandbox
+      clients (himalaya) — no route, no externalIPs, OAUTHBEARER-only auth.
 spec:
   selector:
     app.kubernetes.io/name: haku-mailbox
@@ -48,3 +49,6 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+    - name: imap
+      port: 1143
+      targetPort: imap

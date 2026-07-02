@@ -24,8 +24,9 @@ deliberately tiny (its documented declarative-deployments workflow):
   `stalwart-cli apply` plan of `upsert`s: domain, the `haku` account
   (pre-created so inbound RCPT resolves before first login — required for
   OIDC directories), the Authentik OIDC directory, the DMARC-gated
-  whitelist Sieve script wired to the SMTP DATA stage, the two listeners
-  (SMTP :2525 STARTTLS, HTTP :8080), an `MtaStageAuth` override so the
+  whitelist Sieve script wired to the SMTP DATA stage, the three listeners
+  (SMTP :2525 STARTTLS, HTTP :8080, IMAP :1143 — the latter two plaintext,
+  cluster-internal only), an `MtaStageAuth` override so the
   DNAT'ed :2525 listener accepts unauthenticated MX traffic (the upstream
   default demands SMTP AUTH on every port except 25), and the TLS
   certificate. The
@@ -79,6 +80,12 @@ the tofu provider lands and the rotation CronJob first runs.
 - **HTTPS**: `haku-mailbox.allegedly.works` HTTPRoute → Stalwart's HTTP
   listener (JMAP + management API; management requires the admin credential
   Haku can't read).
+- **IMAP (cluster-internal only)**: the `haku-mailbox` ClusterIP Service's
+  :1143 — no route, no externalIPs. Consumed by himalaya from `haku-sandbox`
+  (whose egress CCNP already allows cluster-internal traffic) with SASL
+  OAUTHBEARER; the OIDC directory structurally rejects password (PLAIN)
+  auth, so bearer tokens remain the only way in. Client setup:
+  `haku/base/sources/mailbox.md`.
 
 ## Post-deploy verification
 

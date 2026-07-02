@@ -59,6 +59,8 @@ spec:
               containerPort: 2525
             - name: http
               containerPort: 8080
+            - name: imap
+              containerPort: 1143
           env:
             - name: STALWART_DB_PASSWORD
               valueFrom:
