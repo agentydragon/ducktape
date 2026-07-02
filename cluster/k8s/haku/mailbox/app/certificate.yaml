@@ -1,0 +1,17 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: mx-allegedly-works
+  namespace: haku-mailbox
+  annotations:
+    description: >-
+      STARTTLS certificate for the inbound SMTP listener (mx.allegedly.works).
+      Sending MTAs (Gmail) use opportunistic TLS; the reloader annotation on the
+      deployment restarts the receiver when cert-manager rotates this.
+spec:
+  secretName: mx-allegedly-works-tls
+  dnsNames:
+    - mx.allegedly.works
+  issuerRef:
+    name: "${LETSENCRYPT_ISSUER}"
+    kind: ClusterIssuer

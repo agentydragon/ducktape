@@ -1,0 +1,25 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: haku-mailbox
+  namespace: haku-mailbox
+  annotations:
+    description: >-
+      Public route to Stalwart's HTTP listener: JMAP for haku (authenticated
+      with its Authentik-issued bearer, validated by the server's OIDC
+      directory) plus the management API/WebUI (admin credential only, which
+      haku cannot read). SMTP (:25) enters via the Service externalIPs, not
+      the gateway.
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "haku-mailbox.allegedly.works"
+  rules:
+    - backendRefs:
+        - name: haku-mailbox
+          port: 8080
+      timeouts:
+        request: "60s"
+        backendRequest: "60s"

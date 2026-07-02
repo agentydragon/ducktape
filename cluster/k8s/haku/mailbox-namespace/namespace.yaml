@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  # The Haku mailbox's own trusted namespace — deliberately NOT haku-sandbox.
+  # The Stalwart mailserver here enforces the inbound-email perimeter (DMARC-
+  # gated sender whitelist, operator-owned provisioning plan), so it sits
+  # OUTSIDE Haku's RBAC and OUTSIDE the haku-mitmproxy egress fence: Haku must
+  # not be able to patch the server, edit the whitelist, read the admin/TLS
+  # secrets, or touch the CNPG store. Haku is a mail *user* only, authenticated
+  # via its Authentik-issued bearer. See cluster/k8s/haku/mailbox/README.md.
+  name: haku-mailbox
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: "auto"
+    name: haku-mailbox

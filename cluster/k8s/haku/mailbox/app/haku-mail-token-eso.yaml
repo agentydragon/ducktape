@@ -1,0 +1,25 @@
+# Mirror the rotator-published mailbox JWT into haku-sandbox, where Haku reads
+# it to authenticate to its mailbox over JMAP (base/sources/mailbox.md). Same
+# ESO pattern as the grocy-sf token (haku/agent-worker/grocy-token-eso.yaml):
+# it sources the flux-system Secret the rotator writes (k8s_secret output) and
+# refreshes continuously, so the rotated token propagates without any
+# rotator-side distribution config.
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: haku-mail-token
+spec:
+  namespaces:
+    - haku-sandbox
+  externalSecretSpec:
+    refreshInterval: 1m
+    secretStoreRef:
+      name: kubernetes-flux-system-secret-store
+      kind: ClusterSecretStore
+    target:
+      name: haku-mail-token
+    data:
+      - secretKey: jwt
+        remoteRef:
+          key: haku-mail-token
+          property: jwt

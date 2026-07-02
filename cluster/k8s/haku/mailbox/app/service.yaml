@@ -1,0 +1,48 @@
+# Two Services on purpose: externalIPs exposes EVERY port of a Service on the
+# public node IPs, so SMTP gets its own externalIPs Service while the HTTP
+# listener (JMAP + management API) stays ClusterIP-only, reachable solely
+# through the cluster-gateway HTTPRoute.
+apiVersion: v1
+kind: Service
+metadata:
+  name: haku-mailbox-smtp
+  namespace: haku-mailbox
+  annotations:
+    description: >-
+      Inbound SMTP entrypoint: externalIPs on the public OVH gateway nodes make
+      port 25 on any of them DNAT (via Cilium kube-proxy replacement) to the
+      Stalwart pod, so MX -> mx.allegedly.works (the wildcard/apex A records)
+      works regardless of which node the pod runs on.
+spec:
+  selector:
+    app.kubernetes.io/name: haku-mailbox
+  ports:
+    - name: smtp
+      port: 25
+      targetPort: smtp
+  # Keep in sync with public_gateway_ips in tf/gitops/dns-records/main.tf
+  # (the same public-OVH-node roster the wildcard A records point at).
+  externalIPs:
+    - 147.135.37.175 # ovh-ns102453
+    - 147.135.39.162 # ovh-ns103656
+    - 147.135.39.176 # ovh-ns103711
+    - 147.135.104.5 # ovh-ns104952
+    - 147.135.104.16 # ovh-ns104963
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: haku-mailbox
+  namespace: haku-mailbox
+  annotations:
+    description: >-
+      Stalwart's HTTP listener (JMAP + management API), cluster-internal only —
+      exposed exclusively via the cluster-gateway HTTPRoute
+      (haku-mailbox.allegedly.works).
+spec:
+  selector:
+    app.kubernetes.io/name: haku-mailbox
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

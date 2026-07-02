@@ -34,9 +34,12 @@ does the work under its own permissions). Haku executing things itself is a late
 direction (see _Future_), not the current contract.
 
 Status: v0 is live end-to-end — the Claude Code web home runs the loop scheduled, the
-data plane (scoped k8s identity, the sandbox, read-only source mirrors, `haku-state`) is
-landed, and Haku owns its UI service and method. Current work is iterating base and
-Haku's method until what it surfaces is genuinely good, plus the items below.
+data plane (scoped k8s identity, the sandbox, read-only source mirrors, `haku-state`,
+the mailbox — `haku@allegedly.works` on a self-hosted Stalwart, delivery DMARC-gated to
+whitelisted senders in operator-owned config, read over JMAP with a dedicated Authentik
+identity; `cluster/k8s/haku/mailbox/`) is landed, and Haku owns its UI service and
+method. Current work is iterating base and Haku's method until what it surfaces is
+genuinely good, plus the items below.
 
 ## Not yet built
 
@@ -93,6 +96,13 @@ Sketch to design out later (a real mechanism-design + security effort, not built
   research") that Haku may exercise only under defined, limited circumstances — a
   capability, not standing privilege; explicit, narrow, revocable. The default stays
   read-only.
+- **Outbound mail to the operator** is the exception that may not need a grant at
+  all: enabling submission on the mailserver (`cluster/k8s/haku/mailbox/`, currently
+  receive-only) with a server-enforced recipient allowlist (`To: <operator>` only)
+  has a blast radius of "can email the operator" — safe as standing capability.
+  Needs deliverability work first: update the apex SPF `-all` / DMARC `reject`
+  records in `tf/gitops/dns-records/`, OVH rDNS for the gateway IPs, and Gmail may
+  still junk a fresh sender for a while.
 - **Transparency by construction.** Every elevated action is logged and surfaced (what
   it did, under which grant, why), so the operator-facing surface is the accountability
   surface — same as recommendations are today.

@@ -1,0 +1,36 @@
+# Store for the Stalwart mailserver (data + blobs + search + settings all live
+# in Postgres — no PVC on the app; see ../README.md). OVH-HA CNPG profile per
+# cluster/docs/cnpg_conventions.md: mail must stay OVH-resilient.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: haku-mailbox-db
+  namespace: haku-mailbox
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+
+  # CNPG 1.27+ kills isolated primaries by default (liveness probe).
+  # Disable to prevent false positives from transient network blips.
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    topologyKey: kubernetes.io/hostname
+
+  storage:
+    storageClass: local-path-ovh
+    size: 10Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  bootstrap:
+    initdb:
+      database: stalwart
+      owner: stalwart
+      # CNPG auto-generates credentials in secret haku-mailbox-db-app

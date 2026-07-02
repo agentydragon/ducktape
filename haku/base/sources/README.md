@@ -35,6 +35,10 @@ grows its own techniques and records them in its state `memory/`.
 - [`grocy`](grocy.md) — the operator's household stock (expiring /
   below-minimum items, shopping suggestions); reached via the grocy-sf MCP
   (`fastmcp`), read-only because the `haku` Grocy user has empty permissions.
+- [`mailbox`](mailbox.md) — **your own mailbox** (`haku@allegedly.works`, a real
+  mail account you manage): mail the operator sends directly to you (requests,
+  context, forwards). Delivery is DMARC-gated to whitelisted senders at the server;
+  read over JMAP with your Authentik mail JWT.
 - [`ducktape`](ducktape.md) — the operator's recent repo work
   (always reachable; you have the checkout). The **cluster** is likewise a standing
   source — see `../instructions.md` → _How you reason_ (read-only diagnostics).

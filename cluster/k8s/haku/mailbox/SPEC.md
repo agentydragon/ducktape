@@ -1,0 +1,26 @@
+# haku mailbox — SPEC
+
+A Stalwart mailserver serving `allegedly.works` mail, whose single mailbox
+(`haku@allegedly.works`) belongs to Haku. Promises:
+
+- **Only verified operator mail is delivered.** At the SMTP DATA stage the
+  server rejects (550) any message that fails DMARC verification or whose
+  `From` address is not on the operator whitelist. Mail from a spoofed
+  whitelisted address fails DMARC alignment and never lands.
+- **Policy is operator-owned.** The whitelist, listeners, directory, and
+  every other server setting live in the provisioning plan in this directory
+  (applied idempotently at pod start); changing any of it is a ducktape PR.
+  Haku is a mail _user_ — it holds no admin credential and cannot reach the
+  `haku-mailbox` namespace through its RBAC.
+- **Haku authenticates only with its Authentik identity.** The server's OIDC
+  directory validates bearer tokens against the dedicated `stalwart-haku`
+  provider and rejects tokens minted for any other audience. No mailbox
+  password exists.
+- **The mailbox is Haku's to manage.** Read, organize, delete — the contents
+  are agent-owned state (not operator-audited, unlike the old spool design).
+- **Receive-only.** No submission or relay service is configured; the server
+  cannot send outbound mail, and the domain publishes SPF `-all` /
+  DMARC `reject`.
+- **Authenticated envelope, not content.** Delivery verifies the sending
+  address; quoted/forwarded text inside a verified message is still
+  third-party data.

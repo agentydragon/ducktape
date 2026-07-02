@@ -1,0 +1,8 @@
+{
+  "@type": "PostgreSql",
+  "host": "haku-mailbox-db-rw.haku-mailbox.svc.cluster.local",
+  "port": 5432,
+  "database": "stalwart",
+  "authUsername": "stalwart",
+  "authSecret": { "@type": "EnvironmentVariable", "variableName": "STALWART_DB_PASSWORD" }
+}

@@ -43,6 +43,9 @@ spec:
             - name: haku-grocy-creds
               secret:
                 secretName: haku-grocy-client-credentials
+            - name: haku-mail-creds
+              secret:
+                secretName: haku-mail-client-credentials
             - name: alloy-otlp-creds
               secret:
                 secretName: alloy-otlp-client-credentials
@@ -80,6 +83,9 @@ spec:
                   readOnly: true
                 - name: haku-grocy-creds
                   mountPath: /var/run/secrets/authentik/haku-grocy
+                  readOnly: true
+                - name: haku-mail-creds
+                  mountPath: /var/run/secrets/authentik/haku-mail
                   readOnly: true
                 - name: alloy-otlp-creds
                   mountPath: /var/run/secrets/authentik/alloy-otlp

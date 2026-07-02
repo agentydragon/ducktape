@@ -1,0 +1,130 @@
+# Stalwart mailserver: haku's mailbox (haku@allegedly.works), receive-only.
+# Haku is a mail *user*, never the server admin: all policy (the DMARC-gated
+# sender whitelist, listeners, the OIDC directory) is the operator-owned
+# provisioning plan in this directory, applied idempotently on every pod start
+# by bootstrap-and-run.sh. Authentication is exclusively Authentik OIDC bearer
+# tokens (the stalwart-haku provider); no mailbox password exists.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haku-mailbox
+  namespace: haku-mailbox
+  labels:
+    app.kubernetes.io/name: haku-mailbox
+  annotations:
+    # Restart on rotation of the mounted STARTTLS certificate / admin secret /
+    # DB credentials — the startup wrapper re-applies the plan (and with it the
+    # fresh certificate PEM) on every start.
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-mailbox
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-mailbox
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector:
+        # OVH-only resilience: inbound mail must not depend on Proxmox, and the
+        # CNPG store is pinned to hil-ovh — co-locate with it (same pin as
+        # other OVH-pinned apps, e.g. paperless).
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      initContainers:
+        # The provisioning plan is applied with stalwart-cli, which ships as a
+        # separate image; copy the binary into a shared volume for the wrapper.
+        - name: fetch-cli
+          image: ghcr.io/stalwartlabs/cli:1.0.10
+          command: ["/bin/sh", "-c", 'cp "$(command -v stalwart-cli)" /cli/stalwart-cli']
+          volumeMounts:
+            - name: cli
+              mountPath: /cli
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: stalwart
+          image: stalwartlabs/stalwart:v0.16.11
+          command: ["/bin/sh", "/etc/stalwart/bootstrap-and-run.sh"]
+          ports:
+            - name: smtp
+              containerPort: 2525
+            - name: http
+              containerPort: 8080
+          env:
+            - name: STALWART_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-mailbox-db-app # CNPG-generated app credentials
+                  key: password
+            - name: STALWART_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-mailbox-admin
+                  key: password
+            - name: STALWART_PUBLIC_URL
+              value: https://haku-mailbox.allegedly.works
+          volumeMounts:
+            - name: config
+              mountPath: /etc/stalwart
+              readOnly: true
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            - name: cli
+              mountPath: /cli
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          # The recovery+apply phase runs before the normal server comes up;
+          # give startup some headroom before liveness kicks in.
+          startupProbe:
+            httpGet:
+              path: /healthz/live
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz/live
+              port: http
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz/ready
+              port: http
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: haku-mailbox-config
+            defaultMode: 0555
+        - name: tls
+          secret:
+            secretName: mx-allegedly-works-tls
+        - name: cli
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

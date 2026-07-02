@@ -77,6 +77,26 @@ rotations:
       path: cluster/k8s/haku/cloud-agent-tf/haku-grocy-sf-token.sops.yaml
       name: haku-cloud-grocy-sf-token
       namespace: flux-system
+  - name: haku-mail
+    # JWT for haku's mailbox (Stalwart, cluster/k8s/haku/mailbox). The server's
+    # OIDC directory validates tokens against the dedicated stalwart-haku
+    # provider and pins requireAudience to its client_id; haku presents this as
+    # an HTTP bearer on JMAP. Same `haku` SA/app-password as haku-grocy; the
+    # provider determines the audience.
+    provider_slug: stalwart-haku
+    scopes: openid profile email
+    credential_mode: user_password
+    expected_audiences:
+      - stalwart-haku
+    credentials_dir: /var/run/secrets/authentik/haku-mail
+    sops_file: secrets/haku-mail-jwt.yaml
+    token_field: jwt
+    # Publish as an in-cluster Secret; the haku-mail-token ClusterExternalSecret
+    # (cluster/k8s/haku/mailbox/app) mirrors it into haku-sandbox for Haku.
+    k8s_secret:
+      path: cluster/k8s/haku/mailbox/app/haku-mail-token.sops.yaml
+      name: haku-mail-token
+      namespace: flux-system
   - name: alloy-otlp
     provider_slug: alloy-otlp-client-credentials
     scopes: openid profile email

@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: haku-mail-token
+    namespace: flux-system
+    annotations:
+        description: Authentik JWT for haku's mailbox (stalwart-haku provider), minted by authentik-jwt-rotation (rotated ~biweekly). Seed; rotator overwrites at next mint. Mirrored into haku-sandbox by the haku-mail-token ClusterExternalSecret.
+type: Opaque
+stringData:
+    jwt: ENC[AES256_GCM,data:DWoP0KllPLgEaUm2L0BkRaqMf0uxJzREKQkK+3gNHz8=,iv:KubPUG0ccrLmYMlSp+BUddTb/KiP7zWIjZfXrD8ZAHM=,tag:1aDYQSE2rqcHZs09Cpuh3A==,type:str]
+    token-exp: ENC[AES256_GCM,data:bA==,iv:jz0WABtCWZbkRpMdbPfVUBVasGOuaIVIKVHMeSkEC9w=,tag:LiGuG87ALn9WeR/QW/XL/g==,type:str]
+sops:
+    age:
+        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBtNTFhMTVYNVNWditwdFlQ
+            MmcxbitRK0RJdlpzUUc1MWpLUkpQTGZEZGc4CmRTemJUUjdtdWFVeXlVUHRYUjdD
+            MElPbCtpS2d2amJIU1dsRmU0SmUrQTAKLS0tIDIyQkpxa1dnRWIxN3I2WHJxWjF2
+            WnZJbkZsZmtMSEhCcFIzek1JaGFqN1kKKDbkVYbyd18vWt+/NOLkv4js3ZrNqs0o
+            KL8E6MCpM+EWxLYSqI4qU1YxotPXYjcCYeesFIMS6Yfc3mrKChpoRQ==
+            -----END AGE ENCRYPTED FILE-----
+        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBiYytqNTI3S2I1dTB2dHJa
+            Y01vb3B5eGJWSU1Id2M2dktPT2V3NUFkZHpNCkZaVVJKRm9za2lTNGRDQW1PUXpL
+            ZWdxQ2EydlZHK3NmTHhjTEJLZ25rVjAKLS0tIC8rNGhGL0lyK1FmTGxpR0UxeSsr
+            Wjk5Ny9YanArMHFQZ2QwWFdLOHhLQUkKU1YrffzcU265Yqkj+BXqgF/8bQmy+Jq7
+            JATnhS1AfiZ7/NMCR0frzBRM0As3d8C/b5yosvjhBGtV1RNLk/hNPA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-07-02T06:46:47Z"
+    mac: ENC[AES256_GCM,data:YeXSUZhURsyHkewy+ppefHRdSzbPBSCx/zapudYo/GM5XgVi2lGFoinsi402lzx6q84o0tsMJUk/Uo9PxeUhTXo66fxtsFOE2VAkx3Eto3pJ6dMgERl0AZ0IvVLDD/k2wmyVfwDWN5WQJqBNSqqXXU5Bsv5UCh7i89DVdAsBF3Y=,iv:ikpdGWoSbOzZnfqGpto+3/6T6RYp5OC4TjqqMOZg248=,tag:kGDcoaE5/q8kU2VCQzIsKA==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

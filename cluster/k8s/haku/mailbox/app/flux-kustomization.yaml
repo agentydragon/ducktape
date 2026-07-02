@@ -1,0 +1,29 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: haku-mailbox
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  path: ./cluster/k8s/haku/mailbox/app
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  dependsOn:
+    - name: haku-mailbox-namespace
+    - name: haku-mailbox-db # CNPG store (haku-mailbox-db-app credentials)
+    - name: cert-manager # Certificate CRD + the Let's Encrypt ClusterIssuers
+    - name: gateway # HTTPRoute parent for the JMAP/management API
+    - name: external-secrets-config # ClusterSecretStore + CRDs (token mirror)
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config # ${LETSENCRYPT_ISSUER}

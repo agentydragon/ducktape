@@ -82,6 +82,53 @@ resource "aws_route53_record" "apex" {
   allow_overwrite = true
 }
 
+# --- Inbound mail (the Haku mailbox, haku/mailbox/) ---------------------------
+#
+# mx.allegedly.works is already covered by the wildcard, but MX targets should
+# not depend on wildcard semantics — keep an explicit A record on the same
+# public-gateway roster. Port 25 on any of these nodes reaches the mailserver
+# via the haku-mailbox-smtp Service's externalIPs
+# (cluster/k8s/haku/mailbox/app/service.yaml).
+resource "aws_route53_record" "mx_host" {
+  #checkov:skip=CKV2_AWS_23:A records point to external public gateway nodes, not AWS resources
+  zone_id         = var.route53_zone_id
+  name            = "mx.${local.domain}"
+  type            = "A"
+  ttl             = 300
+  records         = local.public_gateway_ips
+  allow_overwrite = true
+}
+
+resource "aws_route53_record" "apex_mx" {
+  zone_id         = var.route53_zone_id
+  name            = local.domain
+  type            = "MX"
+  ttl             = 300
+  records         = ["10 mx.${local.domain}"]
+  allow_overwrite = true
+}
+
+# The domain receives mail but sends none: publish SPF -all + DMARC reject so
+# nobody can spoof @allegedly.works senders. Revisit both if Haku ever gets an
+# outbound-mail path on this domain.
+resource "aws_route53_record" "apex_spf" {
+  zone_id         = var.route53_zone_id
+  name            = local.domain
+  type            = "TXT"
+  ttl             = 300
+  records         = ["v=spf1 -all"]
+  allow_overwrite = true
+}
+
+resource "aws_route53_record" "dmarc" {
+  zone_id         = var.route53_zone_id
+  name            = "_dmarc.${local.domain}"
+  type            = "TXT"
+  ttl             = 300
+  records         = ["v=DMARC1; p=reject; adkim=s; aspf=s"]
+  allow_overwrite = true
+}
+
 # Kubernetes API A record. This intentionally overrides the wildcard record
 # because kubeconfigs connect to api.allegedly.works:6443.
 resource "aws_route53_record" "api" {
