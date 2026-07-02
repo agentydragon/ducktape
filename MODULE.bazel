@@ -945,17 +945,20 @@ go_deps.module_override(
     path = "github.com/buildbuddy-io/buildbuddy",
 )
 
-# prometheus/client_model v0.6.2 ships its generated package at the
-# repo-root go/ directory (importpath github.com/prometheus/client_model/go
-# -- what every actual importer, e.g. prometheus/client_golang, uses) and
-# also under io/prometheus/client/ (a newer canonical layout, declaring the
-# same importpath via an explicit `option go_package`). Gazelle generates a
-# BUILD target for both, and the linker rejects two targets claiming the
-# same Go import path. Exclude the unused io/ copy. Declared here (not in
-# //third_party/buildbuddy_cli) since gazelle_override, like module_override,
-# is forbidden in non-root modules.
+# prometheus/client_model v0.6.2's io/prometheus/client/metrics.proto
+# declares `option go_package = "github.com/prometheus/client_model/go;..."`
+# -- i.e. the proto source (at io/prometheus/client/) and the checked-in
+# generated code (at go/metrics.pb.go) both claim the same Go import path by
+# design (the repo-root go/ package IS metrics.proto's compiled output,
+# committed so consumers don't need to run protoc). Gazelle doesn't know
+# that and additionally generates a go_proto_library from the .proto file
+# itself, so the linker sees two targets for the same import path. Disable
+# gazelle's proto generation for this repo so it just treats go/metrics.pb.go
+# as plain Go source, matching how every real importer already expects to
+# consume it. Declared here (not in //third_party/buildbuddy_cli) since
+# gazelle_override, like module_override, is forbidden in non-root modules.
 go_deps.gazelle_override(
-    directives = ["gazelle:exclude io"],
+    directives = ["gazelle:proto disable"],
     path = "github.com/prometheus/client_model",
 )
 
