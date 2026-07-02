@@ -123,7 +123,8 @@ def load_page_titles():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load page titles on startup."""
+    """Resolve the token secret (fail fast if misconfigured) and load page titles."""
+    token_secret()  # raise at startup if TOKEN_SECRET is unset and not in dev mode
     load_page_titles()
     yield
 
