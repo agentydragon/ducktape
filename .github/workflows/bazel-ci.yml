@@ -98,9 +98,9 @@ jobs:
                 echo "head:            $HEAD_SHA"
                 mkdir -p /tmp/bd-cache
                 git -c advice.detachedHead=false checkout --quiet "$BASE" \
-                  && bazel-diff generate-hashes -w . -b bazel /tmp/bd-cache/base.json \
+                  && bazel-diff generate-hashes -w "$PWD" -b bazel /tmp/bd-cache/base.json \
                   && git -c advice.detachedHead=false checkout --quiet "$HEAD_SHA" \
-                  && bazel-diff generate-hashes -w . -b bazel /tmp/bd-cache/head.json \
+                  && bazel-diff generate-hashes -w "$PWD" -b bazel /tmp/bd-cache/head.json \
                   && bazel-diff get-impacted-targets \
                        -sh /tmp/bd-cache/base.json -fh /tmp/bd-cache/head.json \
                        > /tmp/bd-affected.txt \
