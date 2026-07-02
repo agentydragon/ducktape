@@ -40,7 +40,10 @@ fail() {
   {
     echo "$1"
     echo "--- recovery server log (tail) ---"
-    tail -c 1600 "$RUN/recovery.log"
+    # Non-fatal + explicit newline: a tail failure or a cut-off last line must
+    # not truncate the failure report this function exists to emit.
+    tail -c 1600 "$RUN/recovery.log" || true
+    echo
   } >&2
   exit 1
 }
@@ -57,7 +60,8 @@ until stalwart-cli apply --file "$RUN/plan.ndjson" --quiet >"$RUN/apply.log" 2>&
   if [ "$tries" -ge 30 ]; then
     {
       echo "--- last apply output (tail) ---"
-      tail -c 400 "$RUN/apply.log"
+      tail -c 400 "$RUN/apply.log" || true
+      echo
     } >&2
     fail "provisioning apply did not succeed after ${tries} attempts"
   fi
