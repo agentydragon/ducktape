@@ -4,7 +4,6 @@ resources:
   - serviceaccount.yaml
   - rbac-zone-zai.yaml
   - credentials.yaml
-  - anthropic-key-eso.yaml
   - deployment.yaml
   - service.yaml
   - cnp-dispatcher.yaml

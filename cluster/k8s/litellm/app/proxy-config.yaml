@@ -187,6 +187,20 @@ model_list:
       model: chatgpt/gpt-5.3-codex-spark
     model_info:
       mode: responses
+  - model_name: claude-sonnet-5
+    litellm_params:
+      model: anthropic/claude-sonnet-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+  - model_name: claude-haiku-4-5
+    litellm_params:
+      model: anthropic/claude-haiku-4-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
 litellm_settings:
   drop_params: true
   callbacks:

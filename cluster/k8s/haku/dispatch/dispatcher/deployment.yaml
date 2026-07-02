@@ -40,13 +40,16 @@ spec:
                 secretKeyRef:
                   name: workers-litellm-master-key
                   key: api-key
-            # Classifier calls — ESO mirror of Haku's spend-capped workspace key
-            # (anthropic-key-eso.yaml); the classifier is the only external
-            # LLM call this service makes.
+            # Classifier calls go through the main LiteLLM with a claude-*-only
+            # virtual key (tf/gitops/litellm-keys, reflected from the litellm
+            # namespace) — Langfuse logging, budget, and kill switch for free;
+            # this service holds no raw provider credential.
+            - name: ANTHROPIC_BASE_URL
+              value: http://litellm.litellm.svc.cluster.local:4000
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: dispatcher-anthropic-api-key
+                  name: litellm-key-dispatcher-classifier
                   key: api-key
             - name: HAKU_API_TOKEN
               valueFrom:

@@ -1,7 +1,7 @@
 # Dispatcher reachability: Haku (haku-sandbox) dispatches and kills; zone workers
 # turn in results. Egress = exactly its dependencies — key minting on the
 # workers-LiteLLM, its database, the kube-apiserver for Job stamping, and
-# api.anthropic.com for the classifier. No path to haku-state, Forgejo, or
+# the main LiteLLM for the classifier. No path to haku-state, Forgejo, or
 # anything else.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -30,7 +30,7 @@ spec:
             - port: "8000"
               protocol: TCP
   egress:
-    # Cilium FQDN egress rules need this pod to query CoreDNS first.
+    # DNS (service name resolution).
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: kube-system
@@ -39,9 +39,6 @@ spec:
         - ports:
             - port: "53"
               protocol: ANY
-          rules:
-            dns:
-              - matchPattern: "*"
     # Per-job key minting (/key/generate, /key/delete).
     - toEndpoints:
         - matchLabels:
@@ -63,10 +60,13 @@ spec:
     # Job/Secret stamping into zone namespaces.
     - toEntities:
         - kube-apiserver
-    # Classifier calls.
-    - toFQDNs:
-        - matchName: api.anthropic.com
+    # Classifier calls — the main LiteLLM (claude-*-allowlisted virtual key);
+    # no direct provider egress from this pod.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: litellm
+            k8s:app.kubernetes.io/name: litellm
       toPorts:
         - ports:
-            - port: "443"
+            - port: "4000"
               protocol: TCP

@@ -38,7 +38,15 @@ class Settings(BaseSettings):
         default="http://workers-litellm.haku-dispatch.svc.cluster.local:4000", validation_alias="WORKERS_LITELLM_URL"
     )
     workers_litellm_master_key: str = Field(validation_alias="WORKERS_LITELLM_MASTER_KEY")
-    anthropic_api_key: str = Field(validation_alias="ANTHROPIC_API_KEY")
+    anthropic_base_url: str = Field(
+        default="http://litellm.litellm.svc.cluster.local:4000",
+        validation_alias="ANTHROPIC_BASE_URL",
+        description="Classifier calls go through the main LiteLLM (Anthropic /v1/messages passthrough).",
+    )
+    anthropic_api_key: str = Field(
+        validation_alias="ANTHROPIC_API_KEY",
+        description="LiteLLM virtual key allowlisted to claude-* (litellm-key-dispatcher-classifier).",
+    )
     haku_api_token: str = Field(validation_alias="HAKU_API_TOKEN")
     result_token_secret: str = Field(validation_alias="RESULT_TOKEN_SECRET")
     classifier_model: str = Field(default="claude-sonnet-5", validation_alias="CLASSIFIER_MODEL")

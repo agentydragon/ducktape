@@ -29,11 +29,10 @@ terraform {
 # cluster/docs/troubleshooting.md § "Resource ID Desync After Wiping a Backing
 # Datastore".
 #
-# Deliberately NOT minted yet: an L0 (Haku orchestrator) key — no Anthropic models
-# are registered in LiteLLM, and L0 must never be allowlisted for GLM (that would
-# hand a confused L0 a personal-data egress path to z.ai); and a gate-validator
-# classifier key, for the same no-Anthropic-models reason. Both arrive with the
-# models they need.
+# Deliberately NOT minted yet: a Haku (orchestrator) key — Haku must never be
+# allowlisted for GLM (that would hand a confused Haku a personal-data egress
+# path to z.ai); it arrives with its own claude-* allowlist when Haku's LLM
+# path moves behind LiteLLM.
 
 data "kubernetes_secret" "litellm_master_key" {
   metadata {
@@ -60,6 +59,9 @@ locals {
     for m in ["gpt-5.4", "gpt-5.5", "gpt-5.3-codex-spark"] :
     "${m}-chatgpt"
   ]
+  # Real Anthropic models (ANTHROPIC_MODELS in generate_litellm.py) — the
+  # dispatcher's classifier gate.
+  classifier_models = ["claude-sonnet-5", "claude-haiku-4-5"]
 }
 
 # One static key per worker lane, held by that lane's llm-proxy (never by workers —
@@ -174,5 +176,37 @@ resource "kubernetes_secret" "workers_litellm_salt_key" {
 
   lifecycle {
     prevent_destroy = true
+  }
+}
+
+# The dispatcher's classifier key: claude-* only, so the classifier gate runs
+# through LiteLLM (Langfuse logging, budget, kill switch) instead of the
+# dispatcher holding a raw Anthropic key. Reflected into haku-dispatch.
+
+resource "litellm_key" "dispatcher_classifier" {
+  key_alias       = "haku-dispatcher-classifier"
+  models          = local.classifier_models
+  max_budget      = 10
+  budget_duration = "30d"
+  metadata = {
+    consumer = "haku-dispatcher"
+  }
+}
+
+resource "kubernetes_secret" "dispatcher_classifier" {
+  metadata {
+    name      = "litellm-key-dispatcher-classifier"
+    namespace = "litellm"
+    annotations = {
+      description                                                     = "LiteLLM virtual key for the haku dispatcher's classifier gate (claude-* only); reflected into haku-dispatch"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-dispatch"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-dispatch"
+    }
+  }
+
+  data = {
+    api-key = litellm_key.dispatcher_classifier.key
   }
 }

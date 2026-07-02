@@ -78,6 +78,23 @@ ZAI_ANTHROPIC_MODELS: list[str] = [
 _CHATGPT_MODELS: list[str] = ["gpt-5.4", "gpt-5.5", "gpt-5.3-codex-spark"]
 
 
+# Real Anthropic API (plain claude-* names — the "-anthropic" suffix above means
+# "Anthropic SHAPE via z.ai", not this). Key: litellm-anthropic-key, an ESO
+# mirror of the spend-capped haku-cloud workspace key. Consumers: the haku
+# dispatcher's classifier virtual key (tf/gitops/litellm-keys) — main LiteLLM is
+# cluster-reachable, so access control is per-key model allowlists.
+ANTHROPIC_MODELS: list[str] = ["claude-sonnet-5", "claude-haiku-4-5"]
+
+
+def _anthropic_entries() -> Iterator[dict]:
+    for model in ANTHROPIC_MODELS:
+        yield {
+            "model_name": model,
+            "litellm_params": {"model": f"anthropic/{model}", "api_key": "os.environ/ANTHROPIC_API_KEY"},
+            "model_info": {"mode": "chat", "supports_function_calling": True},
+        }
+
+
 def _chatgpt_entries() -> Iterator[dict]:
     for model in _CHATGPT_MODELS:
         yield {
@@ -131,6 +148,7 @@ def generate() -> str:
         model_list.extend(_model_entries(tag, ctx_variants))
     model_list.extend(_zai_anthropic_entries())
     model_list.extend(_chatgpt_entries())
+    model_list.extend(_anthropic_entries())
 
     # Master key and Langfuse credentials are injected as env vars in the
     # Deployment; not repeated here.

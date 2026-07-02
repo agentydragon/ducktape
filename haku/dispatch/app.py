@@ -200,7 +200,10 @@ async def _serve(settings: Settings) -> None:
         sessionmaker=db.make_sessionmaker(engine),
         stamper=k8s_jobs.ZoneJobStamper(api_client, settings.job_template_path.read_text()),
         keys=keys,
-        classify=make_classifier(AsyncAnthropic(api_key=settings.anthropic_api_key), settings.classifier_model),
+        classify=make_classifier(
+            AsyncAnthropic(api_key=settings.anthropic_api_key, base_url=settings.anthropic_base_url),
+            settings.classifier_model,
+        ),
     )
     try:
         config = uvicorn.Config(create_app(settings, resources), host=settings.host, port=settings.port)

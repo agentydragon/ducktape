@@ -119,6 +119,13 @@ spec:
                 secretKeyRef:
                   name: litellm-zai-key
                   key: ZAI_API_KEY
+            # Anthropic key for the claude-* upstream models (ESO mirror of the
+            # spend-capped haku-cloud workspace key; see secrets/anthropic-api-key-eso.yaml).
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-anthropic-key
+                  key: api-key
             - name: LANGFUSE_OTEL_HOST
               value: "http://langfuse-web.langfuse.svc.cluster.local:3000"
             - name: LANGFUSE_PUBLIC_KEY
