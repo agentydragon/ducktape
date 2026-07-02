@@ -4,8 +4,9 @@ metadata:
   name: grocy-sf-user-perms-provisioner
   namespace: grocy-sf
   annotations:
-    # One-shot: runs once per cluster bootstrap (Flux applies it after grocy is up).
-    # The Job spec is immutable, so let Flux recreate it when the image bumps.
+    # One-shot: runs at cluster bootstrap and again whenever the policy ConfigMap
+    # (hash-suffixed by kustomize) or the image changes. The Job spec is
+    # immutable, so let Flux recreate it.
     kustomize.toolkit.fluxcd.io/force: enabled
 spec:
   backoffLimit: 10
@@ -23,11 +24,24 @@ spec:
         runAsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
+      volumes:
+        - name: policy
+          configMap:
+            name: grocy-sf-user-perms-policy
       containers:
         - name: provisioner
           # Script baked in via Bazel (//cluster/k8s/grocy/sf/user-perms:image).
           image: ghcr.io/agentydragon/grocy-sf-user-perms-provisioner:devel-20260626195242-4cbec4e # {"$imagepolicy": "flux-system:grocy-sf-user-perms-provisioner"}
           imagePullPolicy: Always
+          args:
+            - --policy
+            - /config/policy.yaml
+            - --grocy-url
+            - http://grocy.grocy-sf.svc.cluster.local
+          volumeMounts:
+            - name: policy
+              mountPath: /config
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

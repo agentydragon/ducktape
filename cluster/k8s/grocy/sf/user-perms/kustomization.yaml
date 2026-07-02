@@ -4,3 +4,10 @@ namespace: grocy-sf
 resources:
   - networkpolicy.yaml
   - job.yaml
+  - cronjob.yaml
+configMapGenerator:
+  # Hash-suffixed: a policy edit changes the Job spec, which (with the force
+  # annotation) makes Flux recreate the one-shot Job — immediate convergence.
+  - name: grocy-sf-user-perms-policy
+    files:
+      - policy.yaml

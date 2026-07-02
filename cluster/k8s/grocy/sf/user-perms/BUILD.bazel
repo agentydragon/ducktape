@@ -1,18 +1,39 @@
-"""grocy-sf user-perms provisioner OCI image — ensures SF operators have ADMIN."""
+"""grocy-sf user-perms reconciler OCI image — converges Grocy user permissions to policy.yaml."""
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
+# imports=["."] puts this (kebab-cased, non-importable-as-a-package) directory on
+# sys.path so provision.py is importable as the top-level module `provision`.
 py_library(
     name = "provision",
     srcs = ["provision.py"],
-    deps = ["@pypi//httpx"],
+    imports = ["."],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//typer",
+    ],
+)
+
+py_test(
+    name = "test_provision",
+    srcs = ["test_provision.py"],
+    imports = ["."],
+    deps = [
+        ":provision",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 aspect_py_binary(
     name = "provision_bin",
+    imports = ["."],
     main = "provision.py",
     deps = [":provision"],
 )
