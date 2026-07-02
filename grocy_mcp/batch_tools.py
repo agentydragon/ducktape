@@ -12,7 +12,7 @@ overwhelm Grocy's PHP/SQLite backend or the Authentik token exchange endpoint
 IMPORTANT: reads/GETs go through _retry(), which retries transient errors
 including timeouts. Mutating requests go through _retry_mutation(), which NEVER
 retries a timeout — a mutating request that times out may already have been
-applied server-side, so a blind re-POST double-applies it (the 2026-04-17
+applied server-side, so a blind re-send double-applies it (the 2026-04-17
 stock-inflation incident: products 90, 95, 97). On such a timeout it raises
 MutationMayHaveAppliedError so the caller can verify state before retrying
 manually. Server-side rejections (429/5xx) stay retryable there since the request
@@ -138,7 +138,7 @@ class MutationMayHaveAppliedError(Exception):
     """A mutating request timed out before Grocy responded.
 
     Grocy may or may not have applied the mutation, so it must never be
-    auto-retried — a blind re-POST double-applies it (the 2026-04-17
+    auto-retried — a blind re-send double-applies it (the 2026-04-17
     stock-inflation incident: products 90, 95, 97). Surfaced to the caller with
     instructions to verify state before retrying manually.
     """
@@ -216,7 +216,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         """Run a mutating request under semaphore, never re-sending on timeout.
 
         Unlike `_retry`, a timeout is not retried: the mutation may already have
-        been applied server-side, and a blind re-POST double-applies it (the
+        been applied server-side, and a blind re-send double-applies it (the
         2026-04-17 incident). On timeout, raise `MutationMayHaveAppliedError`
         telling the caller to verify state before retrying manually. Server-side
         errors (429/5xx) are still retried — the request was rejected, not applied.
@@ -1206,10 +1206,16 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 "location_id_from": from_loc.id,
                 "location_id_to": to_loc.id,
             }
-            r = await client.post(f"/stock/products/{prod.id}/transfer", json=body)
-            r.raise_for_status()
-            entries: list[dict[str, Any]] = r.json()
-            tx_id = entries[0]["transaction_id"] if entries else None
+
+            async def _do() -> str | None:
+                r = await client.post(f"/stock/products/{prod.id}/transfer", json=body)
+                r.raise_for_status()
+                entries: list[dict[str, Any]] = r.json()
+                return entries[0]["transaction_id"] if entries else None
+
+            tx_id = await _retry_mutation(
+                _do, describe=f"stock transfer of {amount} {rqu.name} for product {prod.name!r}"
+            )
 
             return StockOpOk(
                 product_name=prod.name,
@@ -1313,14 +1319,14 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 if item.note is not None:
                     body["note"] = item.note
 
-                r = await client.post("/objects/shopping_list", json=body)
-                r.raise_for_status()
-                data = r.json()
+                async def _do() -> int:
+                    r = await client.post("/objects/shopping_list", json=body)
+                    r.raise_for_status()
+                    return int(r.json().get("created_object_id", 0))
+
+                item_id = await _retry_mutation(_do, describe=f"add item to shopping list {item.shopping_list!r}")
                 return ShoppingListItemOk(
-                    item_id=int(data.get("created_object_id", 0)),
-                    product_name=product_name,
-                    amount=item.amount,
-                    qu_name=qu_name,
+                    item_id=item_id, product_name=product_name, amount=item.amount, qu_name=qu_name
                 )
             except Exception as e:
                 return ShoppingListItemError(error=_format_exc(e))
