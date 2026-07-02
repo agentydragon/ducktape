@@ -1,4 +1,5 @@
-"""Validates public DNS records against the cluster node roster."""
+"""Validates public DNS records (and their externalIPs consumers) against the
+cluster node roster."""
 
 from __future__ import annotations
 
@@ -7,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest_bazel
+import yaml
+from more_itertools import one
 
 from cluster.validation.terraform_hcl import locals_blocks
 from util.bazel.runfiles import get_required_path
@@ -66,6 +69,24 @@ def test_wildcard_dns_records_match_public_kubernetes_nodes() -> None:
     expected = _public_kubernetes_node_ips(hosts)
     assert expected, "nebula-mesh.json should contain at least one public Kubernetes node"
     assert _terraform_local_ips(dns_records_tf, "public_gateway_ips") == expected
+
+
+def _service_external_ips(path: Path, service_name: str) -> set[str]:
+    docs = [doc for doc in yaml.safe_load_all(path.read_text()) if doc]
+    service = one(doc for doc in docs if doc["kind"] == "Service" and doc["metadata"]["name"] == service_name)
+    return set(service["spec"]["externalIPs"])
+
+
+def test_mailbox_smtp_external_ips_match_public_kubernetes_nodes() -> None:
+    """The inbound-SMTP Service must expose port 25 on the same public nodes the
+    MX / wildcard A records point at (externalIPs only accepts literal IPs, so the
+    manifest hand-duplicates the roster — this pins it to the SSOT)."""
+    hosts = _mesh_hosts(get_required_path("_main/nebula-mesh.json"))
+    service_yaml = get_required_path("_main/cluster/k8s/haku/mailbox/app/service.yaml")
+
+    expected = _public_kubernetes_node_ips(hosts)
+    assert expected, "nebula-mesh.json should contain at least one public Kubernetes node"
+    assert _service_external_ips(service_yaml, "haku-mailbox-smtp") == expected
 
 
 def test_api_dns_record_matches_public_control_plane_nodes() -> None:

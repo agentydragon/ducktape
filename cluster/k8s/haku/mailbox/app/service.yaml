@@ -20,8 +20,10 @@ spec:
     - name: smtp
       port: 25
       targetPort: smtp
-  # Keep in sync with public_gateway_ips in tf/gitops/dns-records/main.tf
-  # (the same public-OVH-node roster the wildcard A records point at).
+  # The same public-OVH-node roster as public_gateway_ips in
+  # tf/gitops/dns-records/main.tf (externalIPs accepts only literal IPs, so the
+  # list is duplicated); cluster/validation/test_dns_records.py pins both
+  # copies to the nebula-mesh.json roster.
   externalIPs:
     - 147.135.37.175 # ovh-ns102453
     - 147.135.39.162 # ovh-ns103656

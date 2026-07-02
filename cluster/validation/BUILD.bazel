@@ -318,12 +318,15 @@ py_test(
     srcs = ["test_dns_records.py"],
     data = [
         "//:nebula-mesh.json",
+        "//cluster/k8s:cluster_all_files",
         "//tf/gitops/dns-records:main.tf",
     ],
     deps = [
         ":terraform_hcl",
         "//util/bazel:runfiles",
+        "@pypi//more_itertools",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
