@@ -941,6 +941,16 @@ go_deps.module_override(
         # registered, so these can't be avoided by trimming cli/cli_command
         # alone.
         "//third_party/buildbuddy_cli:bb_devshell_strip_vtproto_and_kythe_messages.patch",
+        # buildbuddy's checked-in BUILD files reference
+        # @com_github_prometheus_client_model//io/prometheus/client:go for
+        # the client_model proto types (a target name matching buildbuddy's
+        # own real gazelle setup, which we don't import). Since our gazelle
+        # only generates that package's targets from the .proto source
+        # (disabled below, see the gazelle_override for this module) and not
+        # from the checked-in go/metrics.pb.go, the label doesn't resolve
+        # here; redirect the 6 references to the working go:go target
+        # instead (same generated types either way).
+        "//third_party/buildbuddy_cli:bb_devshell_fix_client_model_go_label.patch",
     ],
     path = "github.com/buildbuddy-io/buildbuddy",
 )
