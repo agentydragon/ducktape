@@ -40,42 +40,22 @@ surfaces found); and several services show genuinely complete security controls
 (the agent-server policy gateway is server-side enforced, grocy_mcp is properly
 OAuth-gated, study_casino uses argon2 + HMAC-audited RNG).
 
-That said, the audit surfaced a **Critical plus a cluster of High** issues
-concentrated in exactly the places the framework predicts: **security-critical
-branch logic that approximates rather than implements** (the policy engine's
-deny-continue path), **silent value-dropping at cross-session module boundaries**
-(grocy price/location handling), and **statistical/money math
+That said, the audit surfaced a **cluster of High** issues concentrated in exactly
+the places the framework predicts: **security-critical branch logic that
+approximates rather than implements**, **silent value-dropping at cross-session
+module boundaries** (grocy price/location handling), and **statistical/money math
 that is subtly wrong** (augur dilution Jacobian, props recall mean-of-means). The
 most urgent open item in deployed code is scoping down the `kubeapi_admin`
-ServiceAccount from `cluster-admin`; the policy-engine deny-continue bypass (a
-denied tool call is still executed) is the highest-severity defect but lives in
-experimental `x/agent_server`, so it is lower priority until that code deploys.
+ServiceAccount from `cluster-admin`.
 
 | Severity   | Count | Definition (adapted from framework Part V)                                                                              |
 | ---------- | ----- | ----------------------------------------------------------------------------------------------------------------------- |
-| Critical   | 1     | Approval-gate bypass reachable from untrusted input                                                                     |
+| Critical   | 0     | Approval-gate bypass reachable from untrusted input                                                                     |
 | High       | ~26   | Exploitable secret exposure, over-deletion, wrong money/scoring math, production-path swallowed errors, lifecycle hangs |
 | Medium     | ~35   | Incomplete controls, silent value drops, races that self-heal, orphan-state teardown bugs                               |
 | Low / Info | ~40   | Dead code, cosmetic abstractions, duplication, stale docs/comments                                                      |
 
 Numbers are approximate; the detailed findings below are the source of truth.
-
----
-
-## Critical
-
-- **[Critical]** `x/agent_server/mcp/approval_policy/engine.py:517-520` — **Answering
-  "deny but continue" on a pending tool call executes the denied call.** The
-  `DENY_CONTINUE` branch of `PolicyAdminServer.decide_call` resolves the pending
-  future with `ContinueDecision()` — byte-identical to the `APPROVE` branch
-  (513-514) — and the gateway ASK path treats any `ContinueDecision` as approval,
-  recording `POLICY_ALLOW` and running `call_next(context)` (lines 358-362). The
-  inline comment claims "The call is skipped but turn continues," but the code does
-  not skip. (The static-policy path at line 345 correctly raises a denial; only the
-  human-decision hub path is wrong.) _Verified._
-  **Fix:** add a distinct `DenyContinueDecision` variant and map it to
-  `_policy_denied_error(ApprovalDecision.DENY_CONTINUE, ...)` in the middleware so
-  the call is denied but the turn proceeds.
 
 ---
 
@@ -525,7 +505,7 @@ The genuinely destructive surfaces are filter deletion, label deletion, and loca
   skips holey windows. **Fix:** require full window coverage unless the observed
   extremum already decides the outcome.
 
-### x/agent_server policy (beyond the Critical)
+### x/agent_server policy
 
 - **[High]** `x/agent_server/runtime/container.py:327` — active policy is never
   rehydrated from persistence (`get_latest_policy` has zero production callers), so
@@ -703,21 +683,18 @@ sandbox boundaries`; a sandboxed agent can exfiltrate any host-readable file via
   duplicate). A handful of trivial one-line docstrings restate the function name.
 - **Iteration depth (0.3):** not analyzable — shallow clone. The heavy agent-authorship
   ratio (~2,700 PRs) is exactly the profile the framework flags for feedback-loop
-  regression risk, which is why the security-control-completeness findings (the two
-  Criticals, JWT audience, deny-continue) matter most.
+  regression risk, which is why the security-control-completeness findings (JWT
+  audience, non-constant-time token compare) matter most.
 - **Security-control completeness (6.2):** the agent-server policy gateway is a
   notably **complete** control (server-side enforced, blocks reserved-code spoofing) —
-  the single most positive security finding. The gaps are the deny-continue variant
-  (Critical), missing audience (High), and the non-constant-time token compare
-  (Medium), all documented above.
+  the single most positive security finding. The remaining gaps are missing audience
+  (High) and the non-constant-time token compare (Medium), documented above.
 
 ---
 
 ## Prioritized remediation
 
 1. **Immediate (block/hotfix):**
-   - Fix the policy-engine deny-continue path so a denied call is not executed
-     (Critical).
    - Scope down the `kubeapi_admin` cluster-admin binding (High).
 2. **This week (security):** JWT audience validation; fail-closed on unset
    `FC_MANAGER_AUTH_TOKEN`; fix the `read_image` sandbox-boundary escape or disable
