@@ -120,6 +120,18 @@ go_deps.module_override(
         # removing this patch reproduces the exact "No sum for kythe.io"
         # fetch failure it was originally written to fix.
         "//third_party/buildbuddy_cli_overrides:bb_devshell_strip_kythe.patch",
+        # STILL needed even with build_file_generation = "on" below:
+        # buildbuddy's gazelle-regenerated server/interfaces/BUILD (and 5
+        # others) resolves the client_model import to
+        # @com_github_prometheus_client_model//io/prometheus/client (the
+        # .proto *source* package path) rather than .../go (the compiled
+        # output path) -- it has no knowledge of the separate gazelle:proto
+        # disable override set for client_model's own repo below, which is
+        # what makes only the go/ package exist there. Confirmed
+        # empirically: removing this patch reproduces the exact "no such
+        # package '...io/prometheus/client'" error it was originally
+        # written to fix.
+        "//third_party/buildbuddy_cli_overrides:bb_devshell_fix_client_model_go_label.patch",
         # build_file_generation = "on" below makes go_repository auto-create
         # its own REPO.bazel + inject a gazelle_generated_package_info target
         # into the root BUILD file (see gazelle+/internal/go_repository.bzl),
