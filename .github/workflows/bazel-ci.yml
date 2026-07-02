@@ -128,19 +128,17 @@ jobs:
                 echo "No targets affected by this PR — skipping test/build."
                 exit 0
               fi
-              probe_bb_runner before-test
-              bazel test --keep_going $RBE_FLAGS --target_pattern_file=/tmp/affected.txt && \
-                probe_bb_runner after-test && \
-                bazel build --keep_going $RBE_FLAGS --target_pattern_file=/tmp/affected.txt && \
-                probe_bb_runner after-build
+              TARGETS="--target_pattern_file=/tmp/affected.txt"
             else
               # push to devel / workflow_dispatch: full sweep.
-              probe_bb_runner before-test
-              bazel test --keep_going $RBE_FLAGS //... && \
-                probe_bb_runner after-test && \
-                bazel build --keep_going $RBE_FLAGS //... && \
-                probe_bb_runner after-build
+              TARGETS="//..."
             fi
+
+            probe_bb_runner before-test
+            bazel test --keep_going $RBE_FLAGS $TARGETS && \
+              probe_bb_runner after-test && \
+              bazel build --keep_going $RBE_FLAGS $TARGETS && \
+              probe_bb_runner after-build
 
       - name: Upload BuildBuddy linkage
         if: always()
