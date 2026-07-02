@@ -87,12 +87,6 @@ Numbers are approximate; the detailed findings below are the source of truth.
   `extra_jwt_issuers` deliberately widens accepted issuers to sibling Authentik
   apps — so a token minted for any other app sharing the signing key is accepted.
   **Fix:** pass each resource's expected `audience`.
-- **[High]** `props/orchestration/agent_credentials.py:37` — agent DB password salt
-  falls back to the constant `"dev-salt-change-in-production"`; no chart/compose/k8s
-  manifest sets `PROPS_AGENT_PASSWORD_SALT`, and passwords are deterministic
-  `HMAC(salt, agent_run_id)` — so production agent Postgres passwords are derivable
-  from the public repo. **Fix:** require the var at startup; provision it in the
-  helm secret.
 - **[High]** `llm/html/llm_html/server.py:45` — token-signing secret defaults to
   `"hunter2"` (`TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "hunter2")`), used to
   sign/verify auth tokens; the README documents the default. **Fix:** raise at
@@ -770,8 +764,8 @@ sandbox boundaries`; a sandboxed agent can exfiltrate any host-readable file via
    - Fix the policy-engine deny-continue path so a denied call is not executed
      (Critical).
    - Scope down the `kubeapi_admin` cluster-admin binding (High).
-2. **This week (security):** JWT audience validation; remove the `dev-salt` and
-   `hunter2` secret fallbacks (require at startup); delete the OpenAI-key and
+2. **This week (security):** JWT audience validation; remove the `hunter2` secret
+   fallback (require at startup); delete the OpenAI-key and
    admin-token log lines; fail-closed on unset `FC_MANAGER_AUTH_TOKEN`; fix the
    `read_image` sandbox-boundary escape or disable the tool.
 3. **This week (correctness):** gmail filter-sync criteria-dropping + ForEachRule
@@ -799,7 +793,7 @@ Rust `claude_hook` linter. Highest-leverage additions, mapped to the passes:
 | ruff `DTZ` (flake8-datetimez)                                                                                                                                                      | 4/6  | Bare `datetime.now()` / `utcnow()` at boundaries                                   |
 | A vulture / custom orphan-module gate in CI                                                                                                                                        | 1    | The dead-module cluster (keep `docs/dead_code_*.md` enforced, not just documented) |
 | Gitleaks / TruffleHog pre-commit                                                                                                                                                   | 3    | Committed key/token logging + hardcoded secret defaults                            |
-| A "no secret default" lint (`os.environ.get(x, <secret-literal>)`)                                                                                                                 | 3/5  | `dev-salt`, `hunter2`, `FC_MANAGER_AUTH_TOKEN`                                     |
+| A "no secret default" lint (`os.environ.get(x, <secret-literal>)`)                                                                                                                 | 3/5  | `hunter2`, `FC_MANAGER_AUTH_TOKEN`                                                 |
 | Semgrep custom rules: unauth FastAPI routes on an app that also mounts an auth'd sub-app; `allow_origins=["*"]` + `allow_credentials=True`; `JWTVerifier(...)` without `audience=` | 3    | The airlock auth gap, the CORS footgun, the missing-audience class                 |
 | A duplication gate (jscpd/`pylint --disable=all --enable=duplicate-code`) at a loose threshold                                                                                     | 5    | The retry/migration/subprocess/logging duplicates                                  |
 
