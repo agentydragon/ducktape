@@ -5,6 +5,8 @@ import { clickAction, fetchDashboard, unclickAction } from "./client.ts";
 import { GardenPage } from "./garden.tsx";
 import { ImprovementsPage } from "./improvements.tsx";
 import { InboxView } from "./inbox.tsx";
+import { useHashRoute } from "./routes.ts";
+import type { View } from "./routes.ts";
 import { RunsPage } from "./runs.tsx";
 import { clickKey } from "./task.tsx";
 import type { DashboardResponse } from "./types.ts";
@@ -13,22 +15,20 @@ import type { DashboardResponse } from "./types.ts";
 // ships two person-agnostic surfaces: the **Inbox** (the items board) and **Improvements**
 // (Haku's self-backlog). Haku adds more tabs as bespoke surfaces for its operator's life
 // (e.g. a Kitchen/shopping board, a one-off decision page) by writing a new `*.tsx`, a
-// backend endpoint, and a `View` entry here. Those operator-specific surfaces live in that
-// operator's haku-state, not in this generic starter.
-type View = "inbox" | "improvements" | "runs" | "garden";
+// backend endpoint, and a `View` entry in routes.ts. Those operator-specific surfaces live
+// in that operator's haku-state, not in this generic starter.
 
 export default function App() {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [clicked, setClicked] = useState<ReadonlySet<string>>(new Set());
   const [actionError, setActionError] = useState<string | null>(null);
-  const [view, setView] = useState<View>("inbox");
-  // The garden file currently open (null = the index). Lifted here so any surface can deep-link
-  // into a garden note (a run note → the procedure it cites, etc.).
-  const [gardenPath, setGardenPath] = useState<string | null>(null);
+  // The URL hash is the source of truth for which surface (and which garden file) is open —
+  // F5, permalinks, and back/forward come from the browser (routes.ts → useHashRoute).
+  const [route, navigate] = useHashRoute();
+  const { view, gardenPath } = route;
   function openInGarden(path: string) {
-    setGardenPath(path);
-    setView("garden");
+    navigate({ view: "garden", gardenPath: path });
   }
   // Ticks the live deadline countdowns; 30s is fine at minute granularity.
   const [now, setNow] = useState(() => Date.now());
@@ -82,7 +82,7 @@ export default function App() {
       <Title order={1} mb="sm">
         Haku
       </Title>
-      <Tabs value={view} onChange={(value) => value && setView(value as View)} mb="md">
+      <Tabs value={view} onChange={(value) => value && navigate({ view: value as View, gardenPath: null })} mb="md">
         <Tabs.List>
           {tabs.map(([id, label]) => (
             <Tabs.Tab key={id} value={id}>
@@ -97,7 +97,7 @@ export default function App() {
       ) : view === "runs" ? (
         <RunsPage openInGarden={openInGarden} />
       ) : view === "garden" ? (
-        <GardenPage path={gardenPath} onSelect={setGardenPath} />
+        <GardenPage path={gardenPath} onSelect={(path) => navigate({ view: "garden", gardenPath: path })} />
       ) : (
         <InboxView
           data={data}

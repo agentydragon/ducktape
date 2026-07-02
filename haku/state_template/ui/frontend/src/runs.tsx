@@ -17,7 +17,8 @@ function sourceBadge(s: RunSource) {
     );
   }
   return (
-    <Badge key={s.source} color={s.changes_seen > 0 ? "teal" : "gray"} variant="light">
+    // Prose changes_seen (a summary instead of a count) means something happened — teal.
+    <Badge key={s.source} color={s.changes_seen !== 0 ? "teal" : "gray"} variant="light">
       {s.source}: {s.changes_seen}
     </Badge>
   );

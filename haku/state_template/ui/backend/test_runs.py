@@ -102,6 +102,19 @@ def test_read_runs_pairs_yaml_and_md_sorts_newest_first_and_ignores_readme():
     assert runs[1].sources[0].bookmark_after == 130  # int bookmark parses (Grocy id)
 
 
+def test_run_manifest_accepts_prose_changes_seen_and_created_action():
+    # Real manifests carry prose where a count would mislead, and surfaces that were created.
+    m = RunManifest.model_validate(
+        {
+            "run_id": "x",
+            "sources": [{"source": "base-git", "changes_seen": "2 commits, neither touches base"}],
+            "propagation": [{"change": "c", "surfaces": [{"surface": "s", "action": "created"}]}],
+        }
+    )
+    assert m.sources[0].changes_seen == "2 commits, neither touches base"
+    assert m.propagation[0].surfaces[0].action == "created"
+
+
 def test_run_manifest_rejects_bad_propagation_action():
     # CI schema floor: an unknown propagation action is a hard error.
     with pytest.raises(ValidationError):
