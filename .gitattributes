@@ -73,7 +73,7 @@ cluster/k8s/agents/authentik-jwt-rotation/rotations.yaml cluster-manifest-ignore
 # rotate.py's token list, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/agents/attic-jwt-rotation/rotators.yaml cluster-manifest-ignored=true
 # provision.py's user→permission policy, mounted via configMapGenerator — not a K8s manifest.
-cluster/k8s/grocy/sf/user-perms/policy.yaml cluster-manifest-ignored=true
+cluster/k8s/grocy/user-perms-base/policy.yaml cluster-manifest-ignored=true
 
 # Dotfiles/dotdirs follow their own naming conventions
 .* filename-conventions-ignored=true

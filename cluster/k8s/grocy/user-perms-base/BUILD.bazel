@@ -1,4 +1,8 @@
-"""grocy-sf user-perms reconciler OCI image — converges Grocy user permissions to policy.yaml."""
+"""grocy user-perms reconciler OCI image — converges Grocy user permissions to policy.yaml.
+
+Household-agnostic: each grocy household overlay (../{sf,vallejo}/user-perms)
+instantiates the same Job/CronJob/policy in its own namespace.
+"""
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
@@ -58,7 +62,7 @@ oci_image(
 oci_load(
     name = "load",
     image = ":image",
-    repo_tags = ["grocy-sf-user-perms-provisioner:latest"],
+    repo_tags = ["grocy-user-perms-provisioner:latest"],
 )
 
 # Cluster manifests for cluster/validation's flux-build test (the

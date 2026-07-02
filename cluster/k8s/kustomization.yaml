@@ -306,6 +306,7 @@ resources:
   - grocy/sf/user-perms/flux-kustomization.yaml
   - grocy/vallejo/app/flux-kustomization.yaml
   - grocy/vallejo/agent-rbac/flux-kustomization.yaml
+  - grocy/vallejo/user-perms/flux-kustomization.yaml
 
   # --- tandoor ---
   - tandoor/namespace/flux-kustomization.yaml

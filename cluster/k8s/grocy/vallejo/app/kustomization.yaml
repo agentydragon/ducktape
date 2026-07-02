@@ -23,3 +23,19 @@ patches:
           spec:
             nodeSelector:
               topology.kubernetes.io/zone: hil-ovh
+  # Default new (auto-created) Grocy users to NO permissions = read-only, so any
+  # machine identity (haku) or unknown login is read-only by default — the safe
+  # failure mode. Grocy's built-in default is ADMIN; "none" matches no
+  # permission_hierarchy row, so CreateUser inserts an empty permission set (a safe
+  # no-op in LessQL). Operators are elevated explicitly by the user-perms
+  # reconciler (../user-perms).
+  - target:
+      kind: ConfigMap
+      name: grocy-settingoverrides
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: grocy-settingoverrides
+      data:
+        DEFAULT_PERMISSIONS.txt: "none"

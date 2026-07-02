@@ -22,5 +22,5 @@ spec:
   healthChecks:
     - apiVersion: batch/v1
       kind: Job
-      name: grocy-sf-user-perms-provisioner
+      name: grocy-user-perms-provisioner
       namespace: grocy-sf

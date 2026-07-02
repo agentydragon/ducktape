@@ -1,8 +1,7 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: grocy-sf-user-perms-reconciler
-  namespace: grocy-sf
+  name: grocy-user-perms-reconciler
   annotations:
     description: >-
       Daily drift correction for the user→permission policy in policy.yaml. The one-shot provisioner Job converges at bootstrap and on policy changes; this CronJob re-asserts the same policy so manual permission edits in the Grocy UI (e.g. elevating haku) converge back within a day.
@@ -19,7 +18,7 @@ spec:
           labels:
             # Same label as the provisioner Job's pods — the sibling
             # NetworkPolicy admits it to grocy:80.
-            app.kubernetes.io/name: grocy-sf-user-perms-provisioner
+            app.kubernetes.io/name: grocy-user-perms-provisioner
         spec:
           restartPolicy: OnFailure
           enableServiceLinks: false
@@ -33,17 +32,19 @@ spec:
           volumes:
             - name: policy
               configMap:
-                name: grocy-sf-user-perms-policy
+                name: grocy-user-perms-policy
           containers:
             - name: reconciler
-              # Script baked in via Bazel (//cluster/k8s/grocy/sf/user-perms:image).
-              image: ghcr.io/agentydragon/grocy-sf-user-perms-provisioner:devel-20260702043158-66d9a31 # {"$imagepolicy": "flux-system:grocy-sf-user-perms-provisioner"}
+              # Script baked in via Bazel (//cluster/k8s/grocy/user-perms-base:image).
+              image: ghcr.io/agentydragon/grocy-user-perms-provisioner:devel-20260702043158-66d9a31 # {"$imagepolicy": "flux-system:grocy-user-perms-provisioner"}
               imagePullPolicy: Always
               args:
                 - --policy
                 - /config/policy.yaml
+                # Namespace-local Service name — resolves to the household's own
+                # grocy instance in whichever grocy-* namespace this runs in.
                 - --grocy-url
-                - http://grocy.grocy-sf.svc.cluster.local
+                - http://grocy
               volumeMounts:
                 - name: policy
                   mountPath: /config

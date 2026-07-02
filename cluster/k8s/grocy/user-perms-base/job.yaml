@@ -1,8 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: grocy-sf-user-perms-provisioner
-  namespace: grocy-sf
+  name: grocy-user-perms-provisioner
   annotations:
     # One-shot: runs at cluster bootstrap and again whenever the policy ConfigMap
     # (hash-suffixed by kustomize) or the image changes. The Job spec is
@@ -13,7 +12,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: grocy-sf-user-perms-provisioner
+        app.kubernetes.io/name: grocy-user-perms-provisioner
     spec:
       restartPolicy: OnFailure
       enableServiceLinks: false
@@ -27,17 +26,19 @@ spec:
       volumes:
         - name: policy
           configMap:
-            name: grocy-sf-user-perms-policy
+            name: grocy-user-perms-policy
       containers:
         - name: provisioner
-          # Script baked in via Bazel (//cluster/k8s/grocy/sf/user-perms:image).
-          image: ghcr.io/agentydragon/grocy-sf-user-perms-provisioner:devel-20260702043158-66d9a31 # {"$imagepolicy": "flux-system:grocy-sf-user-perms-provisioner"}
+          # Script baked in via Bazel (//cluster/k8s/grocy/user-perms-base:image).
+          image: ghcr.io/agentydragon/grocy-user-perms-provisioner:devel-20260702043158-66d9a31 # {"$imagepolicy": "flux-system:grocy-user-perms-provisioner"}
           imagePullPolicy: Always
           args:
             - --policy
             - /config/policy.yaml
+            # Namespace-local Service name — resolves to the household's own
+            # grocy instance in whichever grocy-* namespace this Job runs in.
             - --grocy-url
-            - http://grocy.grocy-sf.svc.cluster.local
+            - http://grocy
           volumeMounts:
             - name: policy
               mountPath: /config

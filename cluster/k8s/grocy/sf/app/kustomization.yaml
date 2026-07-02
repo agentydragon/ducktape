@@ -27,8 +27,8 @@ patches:
   # machine identity (haku) or unknown login is read-only by default — the safe
   # failure mode. Grocy's built-in default is ADMIN; "none" matches no
   # permission_hierarchy row, so CreateUser inserts an empty permission set (a safe
-  # no-op in LessQL). The human operator is elevated to ADMIN explicitly (Terraform,
-  # follow-up). SF only — vallejo keeps the ADMIN default.
+  # no-op in LessQL). Operators are elevated explicitly by the user-perms
+  # reconciler (../user-perms).
   - target:
       kind: ConfigMap
       name: grocy-settingoverrides
