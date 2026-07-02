@@ -596,8 +596,8 @@ the 5× tier if this becomes a real zone); dispatch should be quota-aware (exten
    **streaming-only** (the request-shape caveat, documented in `generate_litellm.py`) —
    which the oai zone absorbs by using Codex CLI as its harness. Residue: an end-to-end
    Codex-CLI-against-LiteLLM smoke test, naturally part of worker bring-up (step 3/5).
-3. **Zone + dispatch infrastructure — 🔄 IN REVIEW** (PR
-   [#2748](https://github.com/agentydragon/ducktape/pull/2748), CI green): (a)
+3. **Zone + dispatch infrastructure — ✅ LANDED** (PR
+   [#2748](https://github.com/agentydragon/ducktape/pull/2748), merged 2026-07-02): (a)
    `haku-sandbox-zai` perimeter: namespace, quota/limits, no-grants worker SA, shared
    `haku-zones-mitmproxy` (haku-mitmproxy pattern minus the Google FQDNs; CCNP with NO
    `toEntities: cluster` and NO kube-apiserver — much tighter than haku-sandbox's
@@ -607,8 +607,8 @@ the 5× tier if this becomes a real zone); dispatch should be quota-aware (exten
    parity-tested, plus a cross-check against the TF zone-key allowlist), CNP admitting
    only zone pods + the dispatcher, CNPG `haku-dispatch-db` + salt/master-key TF.
    Residue: the two-hop native-endpoint streaming spike at rollout.
-4. **Dispatcher v0 + worker image — 🔄 IN REVIEW** (PR
-   [#2754](https://github.com/agentydragon/ducktape/pull/2754), stacked on #2748):
+4. **Dispatcher v0 + worker image — ✅ LANDED** (PR
+   [#2754](https://github.com/agentydragon/ducktape/pull/2754), merged 2026-07-02):
    dispatcher (`haku/dispatch/`: lint → classifier → per-job key mint → Job stamp;
    result turn-in; `DELETE /jobs/<id>` kill), worker image
    (`ghcr.io/agentydragon/haku-zone-worker`: Claude Code CLI + Codex CLI + git,
