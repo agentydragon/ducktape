@@ -48,6 +48,12 @@ spec:
                 secretKeyRef:
                   name: props-db-app
                   key: password
+            # Salt for deriving deterministic per-agent DB passwords (required; no default).
+            - name: PROPS_AGENT_PASSWORD_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: props-agent-password-salt
+                  key: salt
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
