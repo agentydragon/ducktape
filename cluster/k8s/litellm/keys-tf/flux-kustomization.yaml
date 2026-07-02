@@ -1,0 +1,31 @@
+# The litellm-keys Terraform CR lives DOWNSTREAM of the litellm app, not in
+# litellm-secrets: minting virtual keys needs a serving LiteLLM with its
+# virtual-key DB. Coupling the TF's health into litellm-secrets (the app's
+# dependency) deadlocked the 2026-07-02 rollout — the app never applied the
+# DATABASE_URL deployment because its secrets layer waited on a TF apply that
+# needed the app. Dependency direction here is the fix.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: litellm-keys-tf
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 10m
+  path: ./cluster/k8s/litellm/keys-tf
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: litellm-keys
+      namespace: flux-system
+  dependsOn:
+    # The app must serve (with its DB) before keys can mint.
+    - name: litellm
+    - name: tofu-controller
+    - name: tofu-state-db

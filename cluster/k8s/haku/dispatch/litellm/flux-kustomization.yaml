@@ -16,3 +16,5 @@ spec:
     - name: haku-dispatch-namespace
     - name: haku-dispatch-db
     - name: litellm
+    # Mounts the TF-minted zone key + workers master/salt keys.
+    - name: litellm-keys-tf
