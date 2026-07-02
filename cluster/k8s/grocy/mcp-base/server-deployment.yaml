@@ -29,6 +29,10 @@ spec:
             - name: http
               containerPort: 8765
               protocol: TCP
+            # Prometheus metrics, cluster-internal only (not on the HTTPRoute).
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
           env:
             - name: LOG_LEVEL
               value: "DEBUG"

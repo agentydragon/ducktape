@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - control-plane-io-prometheus-rule.yaml
   - flux-prometheus-rule.yaml
+  - mcp-auth-prometheus-rule.yaml

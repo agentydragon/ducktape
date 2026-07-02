@@ -1,21 +1,29 @@
-"""Tests for AuthentikAuthConfig and AuthentikExchangeAuth."""
+"""Tests for AuthentikAuthConfig, AuthentikExchangeAuth, and ResilientOIDCProxy."""
 
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 import pytest_bazel
 from authlib.oauth2.rfc6749.wrappers import OAuth2Token
+from fastmcp.server.auth.auth import TokenVerifier
+from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from key_value.aio.stores.memory import MemoryStore
+from mcp.server.auth.provider import TokenError
+from prometheus_client import REGISTRY
+from starlette.exceptions import HTTPException
+from tenacity import wait_none
 
 from mcp_infra.authentik_auth.auth import (
     _EXCHANGE_TOKEN_COLLECTION,
     _EXPIRY_LEEWAY,
     AuthentikAuthConfig,
     AuthentikExchangeAuth,
+    ResilientOIDCProxy,
     _cache_key,
     build_authentik_auth,
 )
@@ -94,7 +102,7 @@ def test_build_authentik_auth_uses_jwks_uri_from_discovery() -> None:
 
     with (
         patch("mcp_infra.authentik_auth.auth.httpx.get", return_value=discovery_response) as http_get,
-        patch("mcp_infra.authentik_auth.auth.OIDCProxy") as oidc_proxy_cls,
+        patch("mcp_infra.authentik_auth.auth.ResilientOIDCProxy") as oidc_proxy_cls,
         patch("mcp_infra.authentik_auth.auth.JWTVerifier") as jwt_verifier_cls,
         patch("mcp_infra.authentik_auth.auth.MultiAuth"),
     ):
@@ -124,7 +132,7 @@ def test_build_authentik_auth_accepts_issuer_with_trailing_slash() -> None:
 
     with (
         patch("mcp_infra.authentik_auth.auth.httpx.get", return_value=discovery_response),
-        patch("mcp_infra.authentik_auth.auth.OIDCProxy") as oidc_proxy_cls,
+        patch("mcp_infra.authentik_auth.auth.ResilientOIDCProxy") as oidc_proxy_cls,
         patch("mcp_infra.authentik_auth.auth.JWTVerifier") as jwt_verifier_cls,
         patch("mcp_infra.authentik_auth.auth.MultiAuth"),
     ):
@@ -150,7 +158,7 @@ def test_build_authentik_auth_includes_extra_jwt_issuers() -> None:
     )
     with (
         patch("mcp_infra.authentik_auth.auth.httpx.get", return_value=discovery_response),
-        patch("mcp_infra.authentik_auth.auth.OIDCProxy") as oidc_proxy_cls,
+        patch("mcp_infra.authentik_auth.auth.ResilientOIDCProxy") as oidc_proxy_cls,
         patch("mcp_infra.authentik_auth.auth.JWTVerifier") as jwt_verifier_cls,
         patch("mcp_infra.authentik_auth.auth.MultiAuth"),
     ):
@@ -172,10 +180,10 @@ def test_build_authentik_auth_appends_extra_verifiers() -> None:
     discovery_response.raise_for_status = lambda: discovery_response
     discovery_response.json = lambda: {"jwks_uri": "https://auth.example.com/application/o/test/jwks/"}
 
-    sentinel = object()
+    sentinel = cast("TokenVerifier", object())
     with (
         patch("mcp_infra.authentik_auth.auth.httpx.get", return_value=discovery_response),
-        patch("mcp_infra.authentik_auth.auth.OIDCProxy") as oidc_proxy_cls,
+        patch("mcp_infra.authentik_auth.auth.ResilientOIDCProxy") as oidc_proxy_cls,
         patch("mcp_infra.authentik_auth.auth.JWTVerifier") as jwt_verifier_cls,
         patch("mcp_infra.authentik_auth.auth.MultiAuth") as multi_auth_cls,
     ):
@@ -355,6 +363,106 @@ async def test_exchange_auth_works_without_store() -> None:
         assert fetch.call_count == 1
 
     await auth.aclose()
+
+
+# ── ResilientOIDCProxy tests ──────────────────────────────────────────────
+#
+# These pin the load-bearing assumption that fastmcp's OAuthProxy raises its
+# blanket TokenError("invalid_grant") `from` the original httpx exception
+# (fastmcp 3.1.0 oauth_proxy/proxy.py exchange_refresh_token) — and that our
+# subclass reclassifies transient upstream failures instead of surfacing the
+# terminal invalid_grant that makes claude.ai permanently drop the connector.
+
+
+@pytest.fixture
+def proxy(monkeypatch: pytest.MonkeyPatch) -> ResilientOIDCProxy:
+    # exchange_refresh_token (the code under test) only calls super() and module
+    # globals; OIDCProxy.__init__ would fetch the OIDC discovery URL over the
+    # network, so skip it. No waiting between retries in tests.
+    monkeypatch.setattr(ResilientOIDCProxy, "refresh_retry_wait", wait_none())
+    return object.__new__(ResilientOIDCProxy)
+
+
+def _invalid_grant_from(cause: BaseException | None) -> TokenError:
+    # TokenError is a frozen dataclass — __cause__ can't be assigned directly.
+    # `raise ... from` sets it at the interpreter level, exactly like fastmcp does.
+    try:
+        raise TokenError("invalid_grant", "Upstream refresh failed: boom") from cause
+    except TokenError as raised:
+        return raised
+
+
+def _http_error(status: int) -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", "https://auth.example.com/application/o/token/")
+    return httpx.HTTPStatusError(f"HTTP {status}", request=request, response=httpx.Response(status, request=request))
+
+
+def _failures(outcome: str) -> float:
+    return REGISTRY.get_sample_value("mcp_auth_upstream_refresh_failures_total", {"outcome": outcome}) or 0.0
+
+
+async def test_resilient_proxy_transient_5xx_becomes_503(proxy: ResilientOIDCProxy) -> None:
+    """Authentik down (gateway 503) must NOT surface as invalid_grant."""
+    before = _failures("transient")
+    with (
+        patch.object(
+            OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=_invalid_grant_from(_http_error(503)))
+        ) as upstream,
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await proxy.exchange_refresh_token(AsyncMock(), AsyncMock(), [])
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.headers is not None
+    assert "Retry-After" in exc_info.value.headers
+    assert upstream.call_count == 3  # stop_after_attempt(3)
+    assert _failures("transient") == before + 1
+
+
+async def test_resilient_proxy_dns_failure_becomes_503(proxy: ResilientOIDCProxy) -> None:
+    """DNS resolution failure (cluster DNS outage) is transient, not invalid_grant."""
+    dns_error = httpx.ConnectError("[Errno -3] Temporary failure in name resolution")
+    with (
+        patch.object(OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=_invalid_grant_from(dns_error))),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await proxy.exchange_refresh_token(AsyncMock(), AsyncMock(), [])
+    assert exc_info.value.status_code == 503
+
+
+async def test_resilient_proxy_retries_then_succeeds(proxy: ResilientOIDCProxy) -> None:
+    """A blip on the first attempt is absorbed by the in-process retry."""
+    token = object()
+    with patch.object(
+        OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=[_invalid_grant_from(_http_error(503)), token])
+    ) as upstream:
+        assert await proxy.exchange_refresh_token(AsyncMock(), AsyncMock(), []) is token
+    assert upstream.call_count == 2
+
+
+async def test_resilient_proxy_genuine_oauth_error_stays_invalid_grant(proxy: ResilientOIDCProxy) -> None:
+    """Authentik actually rejecting the grant (4xx OAuth error response) must
+    still surface as invalid_grant so the client knows to re-authenticate."""
+    before = _failures("oauth")
+    with (
+        patch.object(
+            OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=_invalid_grant_from(_http_error(400)))
+        ) as upstream,
+        pytest.raises(TokenError),
+    ):
+        await proxy.exchange_refresh_token(AsyncMock(), AsyncMock(), [])
+    assert upstream.call_count == 1  # no retry for genuine rejections
+    assert _failures("oauth") == before + 1
+
+
+async def test_resilient_proxy_local_token_errors_pass_through(proxy: ResilientOIDCProxy) -> None:
+    """TokenErrors with no upstream cause (unknown refresh token, missing JTI
+    mapping) are genuine invalid_grant — re-raised untouched, no retry."""
+    with (
+        patch.object(OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=_invalid_grant_from(None))) as upstream,
+        pytest.raises(TokenError),
+    ):
+        await proxy.exchange_refresh_token(AsyncMock(), AsyncMock(), [])
+    assert upstream.call_count == 1
 
 
 if __name__ == "__main__":

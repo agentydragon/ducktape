@@ -1,0 +1,14 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: postscanmail-mcp
+  namespace: postscanmail-mcp
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postscanmail-mcp
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

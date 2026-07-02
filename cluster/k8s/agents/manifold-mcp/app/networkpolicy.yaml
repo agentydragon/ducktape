@@ -18,3 +18,11 @@ spec:
         - ports:
             - port: "8765"
               protocol: TCP
+    # monitoring: Prometheus metrics scraping
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP

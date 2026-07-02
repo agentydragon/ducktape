@@ -8,8 +8,12 @@ py_library(
         "@pypi//authlib",
         "@pypi//fastmcp",
         "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//prometheus_client",
         "@pypi//py_key_value_aio",
         "@pypi//pydantic",
+        "@pypi//starlette",
+        "@pypi//tenacity",
     ],
 )
 
@@ -30,9 +34,15 @@ py_test(
         ":auth",
         ":conftest",
         "@pypi//authlib",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//prometheus_client",
         "@pypi//py_key_value_aio",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+        "@pypi//starlette",
+        "@pypi//tenacity",
     ],
 )

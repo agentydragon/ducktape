@@ -87,6 +87,7 @@ py_library(
         "//util/bazel:runfiles",
         "@pypi//fastmcp",
         "@pypi//httpx",
+        "@pypi//prometheus_client",
         "@pypi//pydantic",
         "@pypi//uvicorn",
     ],

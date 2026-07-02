@@ -28,6 +28,7 @@ import uvicorn
 from fastmcp import FastMCP
 from fastmcp.server.providers.openapi import MCPType, OpenAPIResource, OpenAPIResourceTemplate, OpenAPITool, RouteMap
 from fastmcp.utilities.openapi import HTTPRoute
+from prometheus_client import start_http_server
 from pydantic.networks import AnyUrl
 
 from grocy_mcp.batch_tools import register_batch_tools
@@ -134,7 +135,10 @@ def main() -> None:
     settings = ServerSettings()
     mcp = build_server(settings)
     app = mcp.http_app(path="/mcp")
-    logger.info("grocy-mcp listening on %s:%d", settings.host, settings.port)
+    # Metrics (incl. mcp_auth_upstream_refresh_failures_total) on a dedicated
+    # cluster-internal port, off the public HTTPRoute.
+    start_http_server(settings.metrics_port)
+    logger.info("grocy-mcp listening on %s:%d, metrics on :%d", settings.host, settings.port, settings.metrics_port)
     uvicorn.run(app, host=settings.host, port=settings.port, log_level="info")
 
 

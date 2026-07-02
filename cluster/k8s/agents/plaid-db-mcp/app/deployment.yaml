@@ -73,6 +73,10 @@ spec:
             - name: http
               containerPort: 8765
               protocol: TCP
+            # Prometheus metrics, cluster-internal only (not on the HTTPRoute).
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
           envFrom:
             - configMapRef:
                 name: plaid-db-mcp-config
