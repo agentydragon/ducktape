@@ -44,7 +44,7 @@ That said, the audit surfaced a **Critical plus a cluster of High** issues
 concentrated in exactly the places the framework predicts: **security-critical
 branch logic that approximates rather than implements** (the policy engine's
 deny-continue path), **silent value-dropping at cross-session module boundaries**
-(gmail filter sync, grocy price/location handling), and **statistical/money math
+(grocy price/location handling), and **statistical/money math
 that is subtly wrong** (augur dilution Jacobian, props recall mean-of-means). The
 most urgent open item in deployed code is scoping down the `kubeapi_admin`
 ServiceAccount from `cluster-admin`; the policy-engine deny-continue bypass (a
@@ -145,9 +145,6 @@ operator-controlled dev tooling, not network-reachable; no SQL injection surface
 
 ### Dead / orphan modules (several already flagged in the repo's own `docs/dead_code_2026_01_30.md`)
 
-- **[Medium]** `mcp_infra/client_helpers.py:7` and
-  `mcp_infra/authentik_auth/store.py:15` — both modules have zero importers and zero
-  Bazel reverse-deps. **Fix:** delete.
 - **[Medium]** devinfra Python-ported-to-Rust leftovers — `claude/shell.py`,
   `claude/streaming.py`, `claude/supervisor/service_utils.py`,
   `claude/env_file.py:95` (`write_env_file`, ported to `env_file.rs`),
@@ -159,10 +156,6 @@ operator-controlled dev tooling, not network-reachable; no SQL injection surface
   `tana/export/headless_autoexport/record_from_profile.py` — three dead modules
   also flagged in `docs/dead_code_2026_01_30.md`; `sample.py` executes at import
   with a hardcoded personal path. **Fix:** delete + BUILD targets.
-- **[Medium]** `tana/render/inline_refs.py` — `replace_inline_refs`,
-  `process_inline_refs`, `find_inline_date_refs` and duplicated regexes have zero
-  callers; the two render modules duplicate each other. **Fix:** keep the one live
-  symbol (`parse_inline_date`), delete the rest.
 - **[Medium]** `props/orchestration/agent_registry.py:791` — `AgentRegistry.get`,
   `list_recent`, and their `AgentRunView`/`from_orm` product have zero callers.
   **Fix:** delete.
@@ -425,12 +418,6 @@ reversible `batchModify` label changes and `autoclean-inbox` defaults to dry-run
 The genuinely destructive surfaces are filter deletion, label deletion, and local
 `.eml` deletion — all three have defects._
 
-- **[High]** `gmail_archiver/filter_sync.py:114` — `normalize_yaml_rule` silently
-  drops criteria it can't represent (`CompoundCondition` for from/to/subject → None;
-  `bcc,cc,list,is,category,larger,smaller,...` never read), so `filters sync` creates
-  a filter with **broader** criteria than the YAML — including for `trash`-action
-  rules, over-deleting mail matching the residual criteria. **Fix:** raise on any
-  unrepresentable criteria field.
 - **[High]** `gmail_archiver/cli/filters.py:49` — `load_yaml_filters` keeps only
   `isinstance(rule, FilterRule)`, silently discarding `ForEachRule`, and no
   `for_each` expansion exists — so `sync` classifies every filter created from a
@@ -461,12 +448,6 @@ The genuinely destructive surfaces are filter deletion, label deletion, and loca
 
 ### grocy_mcp (stock math / unit conversions)
 
-- **[High]** `grocy_mcp/batch_tools.py:541` — mutating stock POSTs (`/add`,
-  `/consume`, `/inventory`) run inside `_retry`, which retries on
-  `httpx.TimeoutException`: a POST Grocy applied but whose response timed out is
-  re-sent, double-applying the mutation — the same stock-inflation class as the
-  module's own documented 2026-04-17 incident. **Fix:** retry mutating POSTs on
-  429/5xx only, or verify via stock-log before re-posting.
 - **[High]** `grocy_mcp/batch_tools.py:398` — `stock_get`'s `locations` filter and
   `location_name` use the product's **default** location (`/stock` rows carry no
   per-location amounts), while the docstring tells agents to use this tool to choose
@@ -517,12 +498,6 @@ The genuinely destructive surfaces are filter deletion, label deletion, and loca
 
 ### props orchestration (deployment/logic)
 
-- **[High]** `props/backend/app.py:141` — the documented compose deployment can't
-  boot: startup hard-requires `config.llm_proxy_url`, but the checked-in compose
-  config never sets it and has no llm-proxy service, so the backend `os._exit(1)`s in
-  a loop; the `config.py:124` comment still claims a removed `backend_url` fallback.
-  **Fix:** add `llm_proxy_url` + an llm-proxy service to compose (or restore the
-  fallback) and fix the comment.
 - **[Medium]** `props/orchestration/docker_executor.py:161` — `PodInfo.image` means
   different things per executor: Docker reports the image **ID**, which can never
   equal the OCI ref compared in `grader_supervisor.py:268`, so on Docker every
@@ -547,11 +522,6 @@ The genuinely destructive surfaces are filter deletion, label deletion, and loca
 
 ### loom (scoring)
 
-- **[High]** `loom/gym/inspect_harness.py:296` — `headline_metric` has no categorical
-  branch: for `kind == "categorical"` it returns `"mean_pinball"`, but
-  `_score_categorical` produces only `{log_loss, brier[, rps]}`, so the lookup at
-  line 334 (outside the `try`) raises `KeyError` and crashes the scorer for **every**
-  categorical task. **Fix:** categorical → `"log_loss"`; add a categorical scorer test.
 - **[Medium]** `loom/gym/series_tasks.py:125` — ceiling/floor ground truth is resolved
   from partially-observed windows (`max/min_observed_between` skip missing months and
   require only one observation), so an interior data gap can mint a wrong
@@ -756,11 +726,9 @@ sandbox boundaries`; a sandboxed agent can exfiltrate any host-readable file via
 2. **This week (security):** JWT audience validation; remove the `hunter2` secret
    fallback (require at startup); fail-closed on unset `FC_MANAGER_AUTH_TOKEN`; fix the
    `read_image` sandbox-boundary escape or disable the tool.
-3. **This week (correctness):** gmail filter-sync criteria-dropping + ForEachRule
-   deletion (over-deletion risk); grocy retry double-apply on mutating POSTs;
-   props recall mean-of-means + missing `snapshot_slug`; loom categorical
-   `KeyError` crash; augur dilution Jacobian; plaid `sync_all` abort-on-first-failure;
-   props compose `llm_proxy_url` boot failure.
+3. **This week (correctness):** gmail filter-sync ForEachRule deletion (over-deletion
+   risk); props recall mean-of-means + missing `snapshot_slug`; augur dilution
+   Jacobian; plaid `sync_all` abort-on-first-failure.
 4. **This sprint (async/lifecycle):** airlock fire-and-forget approval tasks, reconnect
    loop, shutdown hang, and frontend SSE promise-poisoning; policy rehydration on
    restart; the fire-and-forget-task done-callback pattern (adopt one `_spawn` helper).
