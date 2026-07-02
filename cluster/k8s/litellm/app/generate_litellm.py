@@ -48,7 +48,7 @@ _MODELS: list[tuple[str, list[tuple[str, int | None]]]] = [
 # in favor of this one.
 _ZAI_ANTHROPIC_BASE = "https://api.z.ai/api/anthropic"
 # Full GLM matrix z.ai serves on the Anthropic endpoint (per /api/anthropic/v1/models, 2026-06).
-_ZAI_ANTHROPIC_MODELS: list[str] = [
+ZAI_ANTHROPIC_MODELS: list[str] = [
     "glm-4.5",
     "glm-4.5-air",
     "glm-4.6",
@@ -88,7 +88,7 @@ def _chatgpt_entries() -> Iterator[dict]:
 
 
 def _zai_anthropic_entries() -> Iterator[dict]:
-    for model in _ZAI_ANTHROPIC_MODELS:
+    for model in ZAI_ANTHROPIC_MODELS:
         yield {
             "model_name": f"{model}-anthropic",
             "litellm_params": {

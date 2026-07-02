@@ -3,10 +3,10 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
-    name = "generate_litellm",
-    srcs = ["generate_litellm.py"],
-    visibility = ["//cluster/k8s/haku/dispatch/litellm:__pkg__"],
+    name = "generate_workers_litellm",
+    srcs = ["generate_workers_litellm.py"],
     deps = [
+        "//cluster/k8s/litellm/app:generate_litellm",
         "//devinfra:prettier",
         "//util/bazel:workspace",
         "@pypi//pyyaml",
@@ -14,17 +14,20 @@ py_library(
 )
 
 py_binary(
-    name = "generate_litellm_bin",
-    main_module = "cluster.k8s.litellm.app.generate_litellm",
-    deps = [":generate_litellm"],
+    name = "generate_workers_litellm_bin",
+    main_module = "cluster.k8s.haku.dispatch.litellm.generate_workers_litellm",
+    deps = [":generate_workers_litellm"],
 )
 
 py_test(
-    name = "test_generate_litellm",
-    srcs = ["test_generate_litellm.py"],
-    data = ["proxy-config.yaml"],
+    name = "test_generate_workers_litellm",
+    srcs = ["test_generate_workers_litellm.py"],
+    data = [
+        "workers-litellm-config.yaml",
+        "//tf/gitops/litellm-keys:main.tf",
+    ],
     deps = [
-        ":generate_litellm",
+        ":generate_workers_litellm",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -40,7 +43,7 @@ filegroup(
         ["**"],
         exclude = [
             "BUILD.bazel",
-            "test_*.py",
+            "*.py",
         ],
     ),
     visibility = ["//cluster/validation:__pkg__"],

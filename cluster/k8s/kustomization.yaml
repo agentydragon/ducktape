@@ -226,6 +226,7 @@ resources:
   - haku/ui-image-webhook/flux-kustomization.yaml # operator-owned Receiver: Forgejo package webhook → reconcile the (Haku-owned) haku-ui ImageRepository
   # --- haku worker zones + dispatch (haku/plans/multi_agent.md) ---
   - haku/zones/zai/flux-kustomization.yaml # z.ai/GLM worker zone (pure perimeter; Jobs only)
+  - haku/zones/policies/flux-kustomization.yaml # Kyverno proxy/CA injection for zone pods
   - haku/dispatch/namespace/flux-kustomization.yaml
   - haku/dispatch/db/flux-kustomization.yaml # CNPG: workers-LiteLLM key DB (+ validator DB later)
   - haku/dispatch/litellm/flux-kustomization.yaml # second-layer workers-LiteLLM (zone keys upstream; CNP: zone pods only)
