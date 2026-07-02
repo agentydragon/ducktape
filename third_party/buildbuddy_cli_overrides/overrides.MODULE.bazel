@@ -61,6 +61,17 @@ go_deps.module_override(
     patches = [
         "//third_party/buildbuddy_cli_overrides:bb_repo_url_commit_override.patch",
         "//third_party/buildbuddy_cli_overrides:bb_devshell_strip_js_protogen.patch",
+        # STILL needed even with build_file_generation = "on": gazelle's
+        # "fix" mode only regenerates standard go_library/go_proto_library
+        # targets -- confirmed empirically (see bazelisk-naming, kythe
+        # below) that it leaves hand-written non-standard rule kinds
+        # (config_setting, alias, platform, pkg_tar, select()) completely
+        # untouched, so the original rationale for these patches still
+        # applies unchanged.
+        "//third_party/buildbuddy_cli_overrides:bb_devshell_strip_root_build.patch",
+        "//third_party/buildbuddy_cli_overrides:bb_devshell_strip_cli_py.patch",
+        "//third_party/buildbuddy_cli_overrides:bb_devshell_strip_version_platform_alias.patch",
+        "//third_party/buildbuddy_cli_overrides:bb_devshell_strip_bazel_pkg_tar.patch",
         # STILL needed even with build_file_generation = "on" below: gazelle
         # regeneration does not normalize cli/bazelisk/BUILD's existing
         # `go_default_library`-style label for its bazelisk dep to match our
