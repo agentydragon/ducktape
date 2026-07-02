@@ -52,7 +52,7 @@ spec:
         # if absent — LiteLLM refreshes/rotates the token in place, and the seed
         # secret is not updated after rotation, so we must never clobber the live file.
         - name: seed-chatgpt-auth
-          image: litellm/litellm:1.86.3
+          image: litellm/litellm:1.90.2
           command:
             - sh
             - -c
@@ -79,7 +79,7 @@ spec:
                       - proxmox
       containers:
         - name: litellm
-          image: litellm/litellm:1.86.3
+          image: litellm/litellm:1.90.2
           args: ["--config", "/etc/litellm/config.yaml"]
           ports:
             - name: http

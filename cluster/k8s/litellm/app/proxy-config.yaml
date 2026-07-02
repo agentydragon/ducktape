@@ -177,34 +177,14 @@ model_list:
       model: chatgpt/gpt-5.4
     model_info:
       mode: responses
-  - model_name: gpt-5.4-pro-chatgpt
+  - model_name: gpt-5.5-chatgpt
     litellm_params:
-      model: chatgpt/gpt-5.4-pro
-    model_info:
-      mode: responses
-  - model_name: gpt-5.3-codex-chatgpt
-    litellm_params:
-      model: chatgpt/gpt-5.3-codex
+      model: chatgpt/gpt-5.5
     model_info:
       mode: responses
   - model_name: gpt-5.3-codex-spark-chatgpt
     litellm_params:
       model: chatgpt/gpt-5.3-codex-spark
-    model_info:
-      mode: responses
-  - model_name: gpt-5.3-instant-chatgpt
-    litellm_params:
-      model: chatgpt/gpt-5.3-instant
-    model_info:
-      mode: responses
-  - model_name: gpt-5.3-chat-latest-chatgpt
-    litellm_params:
-      model: chatgpt/gpt-5.3-chat-latest
-    model_info:
-      mode: responses
-  - model_name: gpt-5.5-chatgpt
-    litellm_params:
-      model: chatgpt/gpt-5.5
     model_info:
       mode: responses
 litellm_settings:
