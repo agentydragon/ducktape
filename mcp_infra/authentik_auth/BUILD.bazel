@@ -14,15 +14,6 @@ py_library(
 )
 
 py_library(
-    name = "store",
-    srcs = ["store.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//py_key_value_aio",
-    ],
-)
-
-py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],

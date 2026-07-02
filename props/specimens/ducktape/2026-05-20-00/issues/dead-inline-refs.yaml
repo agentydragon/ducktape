@@ -1,0 +1,33 @@
+rationale: |
+  `tana/render/inline_refs.py` and `tana/render/html_utils.py` duplicate each
+  other's inline-reference helpers, and only one symbol is actually live. The sole
+  consumer, `tana/export/convert.py`, imports `parse_inline_date` from
+  `inline_refs.py` and imports `NODE_SPAN_PATTERN`, `DATE_SPAN_PATTERN`,
+  `find_inline_node_refs`, and `html_to_markdown` from `html_utils.py`. Everything
+  else is dead:
+
+  - In `inline_refs.py`, the module-level `NODE_SPAN_PATTERN`/`DATE_SPAN_PATTERN`
+    regexes are byte-for-byte copies of the ones in `html_utils.py` and are only
+    referenced by this module's own dead functions; `replace_inline_refs` and
+    `find_inline_node_refs` have zero callers (`convert.py` uses the `html_utils.py`
+    copy of `find_inline_node_refs`).
+  - In `html_utils.py`, `process_inline_refs` and `find_inline_date_refs` have zero
+    callers.
+
+  Keep the one live symbol (`parse_inline_date`) and delete the rest.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      tana/render/inline_refs.py:
+        - [10, 11]
+        - [33, 52]
+    match_file_restriction:
+      - tana/render/inline_refs.py
+  - occurrence_id: occ-1
+    files:
+      tana/render/html_utils.py:
+        - [84, 109]
+        - [116, 117]
+    match_file_restriction:
+      - tana/render/html_utils.py

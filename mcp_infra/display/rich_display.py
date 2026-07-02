@@ -562,7 +562,7 @@ class CompactDisplayHandler(BaseHandler):
             if is_error:
                 text.append("  ⎿ ✗ ", style="bold red")
                 # TODO: Bad pattern - guessing at error structure. Should use typed error models
-                # or just display raw structured content. See client_helpers.py TODO.
+                # or just display raw structured content.
                 error_content = display_data.get("structuredContent", {})
                 if isinstance(error_content, dict):
                     error_msg = error_content.get("error") or error_content.get("message") or str(error_content)

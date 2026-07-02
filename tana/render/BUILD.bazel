@@ -10,8 +10,5 @@ py_library(
     name = "html_utils",
     srcs = ["html_utils.py"],
     visibility = ["//:__subpackages__"],
-    deps = [
-        ":inline_refs",
-        "//tana/domain:types",
-    ],
+    deps = ["//tana/domain:types"],
 )

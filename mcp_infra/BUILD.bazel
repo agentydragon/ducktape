@@ -49,15 +49,6 @@ py_library(
 )
 
 py_library(
-    name = "client_helpers",
-    srcs = ["client_helpers.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//fastmcp",
-    ],
-)
-
-py_library(
     name = "config_loader",
     srcs = ["config_loader.py"],
     visibility = ["//:__subpackages__"],

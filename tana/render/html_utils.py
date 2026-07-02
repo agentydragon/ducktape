@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import html
 import re
-from collections.abc import Callable
 from html.parser import HTMLParser
 from io import StringIO
 
 from tana.domain.types import NodeId
-from tana.render.inline_refs import parse_inline_date
 
 # Regex patterns for Tana-specific HTML elements
 NODE_SPAN_PATTERN = re.compile(r'<span data-inlineref-node="([^"]+)"></span>')
@@ -81,37 +78,5 @@ def html_to_markdown(html_text: str) -> str:
     return parser.get_markdown()
 
 
-def process_inline_refs(
-    text: str,
-    node_formatter: Callable[[str], str] | None = None,
-    date_formatter: Callable[[str], str] | None = None,
-    *,
-    unescape: bool = True,
-) -> str:
-    """node_formatter takes node ID, date_formatter takes ISO date string."""
-    # Process node references
-    if node_formatter:
-        text = NODE_SPAN_PATTERN.sub(lambda m: node_formatter(m.group(1)), text)
-
-    # Process date references
-    if date_formatter:
-
-        def date_sub(m):
-            iso_date = parse_inline_date(m.group(1))
-            return date_formatter(iso_date)
-
-        text = DATE_SPAN_PATTERN.sub(date_sub, text)
-
-    # Unescape HTML entities if requested
-    if unescape:
-        text = html.unescape(text)
-
-    return text
-
-
 def find_inline_node_refs(text: str) -> list[NodeId]:
     return [NodeId(match) for match in NODE_SPAN_PATTERN.findall(text)]
-
-
-def find_inline_date_refs(text: str) -> list[str]:
-    return DATE_SPAN_PATTERN.findall(text)
