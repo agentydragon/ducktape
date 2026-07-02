@@ -1,7 +1,7 @@
 """Reconcile Grocy user permissions against a declarative policy file.
 
 Read-only is the default in every grocy household instance (DEFAULT_PERMISSIONS=none,
-see ../{sf,vallejo}/app), so every auto-created user is born with no permissions.
+see ../app-base), so every auto-created user is born with no permissions.
 This reconciler converges
 each user listed in the policy to exactly its declared permission set (creating
 the user via reverse-proxy auth if absent); unlisted users are left untouched.
