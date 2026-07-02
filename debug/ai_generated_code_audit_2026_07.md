@@ -21,6 +21,18 @@ first-party LOC) is squarely in scope.
   before/after git-history regression analysis was not possible; Pass 6 is
   limited to current-state cross-session boundary analysis.
 
+## Remediation status (updated 2026-07-02)
+
+- ✅ **Critical #1 — airlock unauthenticated REST API: FIXED** and merged in
+  PR #2713. Every `/api/*` route now verifies the same JWKS `JWTVerifier` as
+  `/mcp` (`read` for GETs, `decide` for approve/reject; 401/403 on
+  missing/invalid/under-scoped tokens). Documented as a true-positive specimen
+  issue (`ducktape/2026-05-20-00/issues/missing-rest-auth.yaml`, PR #2715).
+  **Still open:** scoping the `kubeapi_admin` ServiceAccount down from
+  `cluster-admin` (the High blast-radius item below).
+- ⬜ **Critical #2 — policy-engine "deny but continue" executes the call:** open.
+- ⬜ All other High/Medium/Low findings below: open unless annotated otherwise.
+
 ## Executive summary
 
 The codebase is, overall, **well above the framework's baseline expectations for
@@ -40,8 +52,11 @@ approximates rather than implements** (the policy engine's deny-continue path),
 **silent value-dropping at cross-session module boundaries** (gmail filter sync,
 grocy price/location handling), and **statistical/money math that is subtly wrong**
 (augur dilution Jacobian, props recall mean-of-means). The single most urgent item
-is the airlock unauthenticated approval REST API, which defeats a human-in-the-loop
-gate fronting a cluster-admin-bound `kubectl exec` backend.
+was the airlock unauthenticated approval REST API, which defeated a human-in-the-loop
+gate fronting a cluster-admin-bound `kubectl exec` backend — now **fixed (PR #2713)**;
+see the Remediation status above. The next-most-urgent open items are the
+policy-engine deny-continue bypass and scoping down that `kubeapi_admin`
+cluster-admin binding.
 
 | Severity   | Count | Definition (adapted from framework Part V)                                                                              |
 | ---------- | ----- | ----------------------------------------------------------------------------------------------------------------------- |
@@ -74,6 +89,9 @@ Bearer` (`frontend/api.ts:19`) but the server never validates it, and
   dependency on every `/api/*` route (`decide` scope for approve/reject, `read`
   for the rest); add tests asserting 401 on missing/invalid tokens. Separately,
   scope the `kubeapi_admin` ClusterRole down from `cluster-admin`.
+  **Status: FIXED (PR #2713, merged).** The `/api/*` auth is in place with the
+  scope model above and 401/403 tests. The `kubeapi_admin` cluster-admin
+  scope-down remains open.
 
 - **[Critical]** `x/agent_server/mcp/approval_policy/engine.py:517-520` — **Answering
   "deny but continue" on a pending tool call executes the denied call.** The
@@ -783,8 +801,8 @@ sandbox boundaries`; a sandboxed agent can exfiltrate any host-readable file via
 ## Prioritized remediation
 
 1. **Immediate (block/hotfix):**
-   - Authenticate airlock `/api/*` (Critical) and scope down the `kubeapi_admin`
-     cluster-admin binding (High).
+   - ✅ Authenticate airlock `/api/*` (Critical) — **done, PR #2713 merged.** Still
+     scope down the `kubeapi_admin` cluster-admin binding (High).
    - Fix the policy-engine deny-continue path so a denied call is not executed
      (Critical).
 2. **This week (security):** JWT audience validation; remove the `dev-salt` and
