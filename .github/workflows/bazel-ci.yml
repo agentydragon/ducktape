@@ -129,16 +129,40 @@ jobs:
                 exit 0
               fi
               TARGETS="--target_pattern_file=/tmp/affected.txt"
+              # `bazel query` has no --target_pattern_file flag (only
+              # build/test/etc. do), so the affected set can't be handed to
+              # `tests(...)` the same way it's handed to `bazel test`.
+              # set(...) embeds the same patterns directly in the query
+              # expression instead.
+              QUERY_TARGETS="set($(tr '\n' ' ' < /tmp/affected.txt))"
             else
               # push to devel / workflow_dispatch: full sweep.
               TARGETS="//..."
+              QUERY_TARGETS="//..."
             fi
 
+            # `bazel test` requires the resolved pattern to include at least
+            # one *_test rule -- unlike `bazel build`, it hard-fails ("No
+            # test targets were found, yet testing was requested", exit 4)
+            # if the affected set is all non-test files (e.g. a PR that only
+            # touches BUILD-file-exported source/patch files). tests(...)
+            # is Bazel's own query for "just the test rules in this target
+            # set" (it expands test_suite too), so this check stays exactly
+            # in sync with what `bazel test` would itself select.
+            TEST_TARGET_COUNT=$(bazel query "tests($QUERY_TARGETS)" 2>/dev/null | wc -l)
+            echo "test targets in scope: $TEST_TARGET_COUNT"
+
             probe_bb_runner before-test
-            bazel test --keep_going $RBE_FLAGS $TARGETS && \
-              probe_bb_runner after-test && \
+            if [ "$TEST_TARGET_COUNT" -eq 0 ]; then
+              echo "No test targets in scope -- skipping bazel test."
               bazel build --keep_going $RBE_FLAGS $TARGETS && \
-              probe_bb_runner after-build
+                probe_bb_runner after-build
+            else
+              bazel test --keep_going $RBE_FLAGS $TARGETS && \
+                probe_bb_runner after-test && \
+                bazel build --keep_going $RBE_FLAGS $TARGETS && \
+                probe_bb_runner after-build
+            fi
 
       - name: Upload BuildBuddy linkage
         if: always()
