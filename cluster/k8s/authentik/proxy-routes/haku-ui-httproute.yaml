@@ -28,9 +28,10 @@ spec:
     # for Mantine's injected <style> tags; everything the SPA legitimately loads is
     # self-hosted (widen img-src by proxying, never by allowlisting third-party hosts);
     # frame-ancestors permits only the trusted console (and self, for direct visits);
-    # `webrtc 'block'` is CSP3 — enforced by Chromium (closing the WebRTC data-channel
-    # bypass of connect-src there), ignored harmlessly by Firefox/Safari.
-    # See haku/docs/security.md § Browser-side exfiltration.
+    # `webrtc 'block'` is CSP3 future-proofing only — no current browser enforces it
+    # (Chromium 141 logs "Unrecognized Content-Security-Policy directive 'webrtc'";
+    # Firefox/Safari never shipped it), so the WebRTC channel is an accepted residual.
+    # See haku/docs/security.md § Browser-side exfiltration + § Known gaps.
     - filters:
         - type: ResponseHeaderModifier
           responseHeaderModifier:
