@@ -61,38 +61,6 @@ go_deps.module_override(
     patches = [
         "//third_party/buildbuddy_cli_overrides:bb_repo_url_commit_override.patch",
         "//third_party/buildbuddy_cli_overrides:bb_devshell_strip_js_protogen.patch",
-        "//third_party/buildbuddy_cli_overrides:bb_devshell_strip_root_build.patch",
-        # cli/bazelisk/BUILD hardcodes legacy `go_default_library`-style target
-        # names for its bazelisk dep; our freshly-fetched bazelisk repo
-        # defaults to the modern (directory-matching) naming convention instead.
-        "//third_party/buildbuddy_cli_overrides:bb_devshell_fix_bazelisk_naming.patch",
-        # proto/BUILD's search/kythe_service targets depend on @io_kythe, whose
-        # go.mod `replace kythe.io => github.com/buildbuddy-io/kythe` isn't
-        # honored by go_deps.from_file, leaving no resolvable repo for that
-        # label -- and an unresolvable label anywhere in a BUILD file blocks
-        # *loading* the whole file, not just building that target. Unrelated
-        # to cli/cmd/bb (server-side code search), so just drop the kythe deps.
-        "//third_party/buildbuddy_cli_overrides:bb_devshell_strip_kythe.patch",
-        # cli/BUILD's release/test targets need @rules_python and @rules_shell,
-        # neither reachable from this fetched repo's context (module-extension-
-        # generated repos don't inherit repo-mapping visibility from bazel_dep
-        # entries declared by whichever module's tags produced them -- adding
-        # rules_python as a bazel_dep here or in the submodule doesn't help).
-        # cli/update:copy_install's srcs cross-reference //cli:install.sh, which
-        # forces this package to load even though cli/cmd/bb doesn't need any of
-        # its other targets, so strip it down to just the exports_files it needs.
-        "//third_party/buildbuddy_cli_overrides:bb_devshell_strip_cli_py.patch",
-        # server/version/BUILD's populate_version/populate_commit aliases use
-        # with_cfg.bzl's linux_x86_64_alias (a platform-pinning wrapper, pure
-        # build-cache optimization) -- same unresolvable-repo problem as above.
-        # Swap in a plain alias(); it's needed transitively via
-        # cli/cmd/sidecar -> server/backends/disk_cache -> server/util/statusz.
-        "//third_party/buildbuddy_cli_overrides:bb_devshell_strip_version_platform_alias.patch",
-        # server/util/bazel/BUILD's bazel_binaries_tar (test-infra tarball of
-        # prebuilt bazel binaries, unrelated to the `bazel` go_library that
-        # cli/remotebazel actually imports) needs @rules_pkg -- same
-        # unresolvable-repo problem, so drop the unused target.
-        "//third_party/buildbuddy_cli_overrides:bb_devshell_strip_bazel_pkg_tar.patch",
         # cli/fix (the `bb fix` subcommand) embeds a full copy of gazelle's
         # main.go/update-repos.go plus buildifier internals, both pinned to a
         # different gazelle major version (bazel-contrib/bazel-gazelle v2) and
@@ -114,25 +82,33 @@ go_deps.module_override(
         # protoc can't find it here; drop the option/import instead.
         # search.proto's ExtendedXrefsReply/ExtendedDocumentationReply/
         # KytheRequest/KytheResponse messages use actual kythe.proto.* field
-        # types (not just BUILD-level deps, already handled by the kythe
-        # patch above) -- drop those messages and the KytheProxy RPC that
+        # types -- drop those messages and the KytheProxy RPC that
         # references them from buildbuddy_service.proto/codesearch_service.proto.
         # All of buildbuddy_service_go_proto (needed by cli/remotebazel) pulls
         # in every proto in this file regardless of which CLI commands are
         # registered, so these can't be avoided by trimming cli/cli_command
-        # alone.
+        # alone. This is real .proto *content* (not BUILD-file organization),
+        # so it stays necessary regardless of build_file_generation below.
         "//third_party/buildbuddy_cli_overrides:bb_devshell_strip_vtproto_and_kythe_messages.patch",
-        # buildbuddy's checked-in BUILD files reference
-        # @com_github_prometheus_client_model//io/prometheus/client:go for
-        # the client_model proto types (a target name matching buildbuddy's
-        # own real gazelle setup, which we don't import). Since our gazelle
-        # only generates that package's targets from the .proto source
-        # (disabled below, see the gazelle_override for this module) and not
-        # from the checked-in go/metrics.pb.go, the label doesn't resolve
-        # here; redirect the 6 references to the working go:go target
-        # instead (same generated types either way).
-        "//third_party/buildbuddy_cli_overrides:bb_devshell_fix_client_model_go_label.patch",
     ],
+    path = "github.com/buildbuddy-io/buildbuddy",
+)
+
+# EXPERIMENT: force gazelle to generate fresh, minimal BUILD files for this
+# repo from its .go/.proto source (matching how every other go_repository
+# dependency in this repo is built) instead of using buildbuddy's own
+# checked-in BUILD files (which encode buildbuddy's *entire* build graph --
+# kythe, vtproto codegen, JS/TS proto codegen, release tooling -- none of it
+# relevant to cli/cmd/bb). This is why build_file_generation defaults to
+# "auto": since buildbuddy's repo root already has a BUILD file, "auto" was
+# using their checked-in ones verbatim, which is what forced most of the
+# now-removed strip_* patches above (root_build, cli_py,
+# strip_version_platform_alias, strip_bazel_pkg_tar, strip_kythe,
+# fix_client_model_go_label, fix_bazelisk_naming) to exist in the first
+# place -- they were all patching hand-written BUILD content that gazelle
+# regeneration should make moot.
+go_deps.gazelle_override(
+    build_file_generation = "on",
     path = "github.com/buildbuddy-io/buildbuddy",
 )
 
