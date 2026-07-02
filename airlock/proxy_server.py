@@ -100,6 +100,7 @@ class ActionNotDecidableError(ValueError):
     ``ValueError``; the REST layer maps it to HTTP 409.
     """
 
+
 _INSTRUCTIONS_TEMPLATE = Path(__file__).parent / "instructions.mako"
 
 
