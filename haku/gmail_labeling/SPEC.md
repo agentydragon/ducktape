@@ -30,6 +30,6 @@ model this is the one sanctioned world-write — <../base/SECURITY.md>.
 
 Because the surface is safe by construction, every call is auto-allowed — there is
 no Airlock approval gate in front of this server. This is rung 2 ("filter the tool
-surface") of Haku's safety doctrine (`haku/PLAN.md`), not rung 3 (human-in-the-loop):
+surface") of Haku's safety doctrine (<../base/SECURITY.md>), not rung 3 (human-in-the-loop):
 the surface is narrow enough that there is no decision left for a human to make, so an
 Airlock predicate in front would be an always-`Approved` no-op.

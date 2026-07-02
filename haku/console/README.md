@@ -15,14 +15,14 @@ namespace Haku has full CRUD over. Haku therefore has no RBAC to read the consol
 secrets/logs or patch it, and the console sits outside the `haku-mitmproxy` egress
 fence (that fence keys on `haku-sandbox`). This is the confidentiality boundary that
 lets the console hold secrets Haku may not read (e.g. the Claude Code web session
-bearer). See `haku/PLAN.md` → _The agent-authored console_. Haku's full security model
+bearer). Haku's full security model
 (threat model, enforcement inventory, invariants): <../base/SECURITY.md>.
 
 ## The capability tier — privileged actions, operator-gated
 
 The console exposes exactly one privileged surface: the **capability tier**
 (`capabilities.py`, `/api/capabilities/*`). It uses console-only secrets and acts on the
-world, so it's gated hard (see `haku/PLAN.md` → _The agent-authored console_):
+world, so it's gated hard (see <../base/SECURITY.md> → enforcement inventory #11):
 
 - **CSRF-gated.** A header-located double-submit token: the SPA fetches it from
   `GET /api/capabilities/csrf` (which also sets the signed cookie) and echoes it in
@@ -86,7 +86,7 @@ Non-root, dropped caps, no service-account token. Credentials: just the
 It no longer holds a haku-state git credential — feedback/trace writes moved into haku-ui.
 As trusted ducktape code in its own namespace it is **not** behind the `haku-mitmproxy`
 fence — it gets ordinary cluster egress (which the capability tier needs to reach the
-Anthropic fire URL). Design + roadmap: `haku/PLAN.md` and the
+Anthropic fire URL). Security model: `haku/base/SECURITY.md`; roadmap: `haku/PLAN.md` and the
 `haku-state` repo's `plans/dashboard-arm.md`.
 
 ## Test

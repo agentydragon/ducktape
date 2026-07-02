@@ -7,8 +7,8 @@ straight into haku-state from haku-ui), and the `requestCapability` affordance s
 its own top-layer confirm (prompt shown verbatim) and only then fires the capability.
 haku-ui also owns the title bar + the global feedback button. What remains is the
 share-the-protocol cleanup (the bridge contract is still hand-duplicated across the two
-repos — see _Open questions_). This is the concrete shape for Phase 1b of `haku/PLAN.md` →
-_The agent-authored console_ — letting Haku author increasingly free-form interactive
+repos — see _Open questions_). This is the realized design for the agent-authored console direction (roadmap remnants:
+`haku/PLAN.md` → _Not yet built_) — letting Haku author increasingly free-form interactive
 UI, without the trusted console having to render or even understand it.
 
 ## The shift
@@ -56,7 +56,7 @@ secret, and the public door_; Haku owns _the picture inside the frame_.
 ## Containment invariants (the load-bearing part)
 
 The iframe content is **100% Haku-controlled and is assumed adversarial** (a
-prompt-injected Haku could author hostile UI — see `haku/PLAN.md` doctrine, "the
+prompt-injected Haku could author hostile UI — see `haku/base/SECURITY.md`, "the
 container is the trust boundary"). Safety comes from the perimeter, not from
 trusting the content:
 
@@ -274,15 +274,12 @@ the default passes moved out of `haku/base/` into agent-owned `haku-state` (seed
 operator's life go well; surface what's useful to act on_ — and **no schema**: it decides
 what the abstraction is, how to present it, and evolves it freely.
 
-Remaining to reach the full end state:
-
-- The UI's **styling, compilation, and image automation** become fully agent-owned — Haku's
-  UI service builds and serves its own assets (CI lives in `haku-state`); no ducktape
-  rebuild for a UI or format change. The Flux image-automation wiring is the open piece
-  (see `haku/PLAN.md` → _Haku UI paving_).
-- The **trace tier retires** — Haku's own backend records operator intent (it already owns
-  `haku-state`); the trusted console's only remaining write path is the opaque "Note to
-  Haku".
+**Both former "remaining" items have since landed (2026-06-29):** the UI's styling,
+compilation, and image automation are fully agent-owned (Forgejo CI in `haku-state` builds
+and pushes the image; Flux image automation + the package webhook roll it out, verified
+end-to-end — ducktape PR #2663 fixed the webhook delivery), and the **trace tier is
+retired** — Haku's own backend records operator intent, and the console holds no
+haku-state credential at all (see `../README.md`).
 
 What's left in ducktape is the **irreducible trusted core, and nothing else**:
 
