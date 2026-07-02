@@ -49,6 +49,11 @@ spec:
           # (the initial placeholder resolves after the first devel push).
           image: ghcr.io/agentydragon/stalwart:devel-20260702101457-150370a # {"$imagepolicy": "flux-system:stalwart"}
           command: ["/bin/sh", "/etc/stalwart/bootstrap-and-run.sh"]
+          # Surface crash output in pod status (.lastState.terminated.message):
+          # pods/log in this namespace is RBAC-fenced to the operator, but pod
+          # status is diagnostics-readable — without this, a bootstrap failure
+          # is a black box to agent sessions.
+          terminationMessagePolicy: FallbackToLogsOnError
           ports:
             - name: smtp
               containerPort: 2525
