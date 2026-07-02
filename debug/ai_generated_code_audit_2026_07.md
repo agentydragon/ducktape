@@ -73,10 +73,6 @@ Numbers are approximate; the detailed findings below are the source of truth.
   `extra_jwt_issuers` deliberately widens accepted issuers to sibling Authentik
   apps — so a token minted for any other app sharing the signing key is accepted.
   **Fix:** pass each resource's expected `audience`.
-- **[Medium]** `devinfra/firecracker/manager/service.py:38-43` — an unset
-  `FC_MANAGER_AUTH_TOKEN` makes `_require_auth` return immediately, silently
-  disabling all auth on the VM-manager API with no log line. **Fix:** fail closed or
-  log loudly at startup.
 - **[Medium]** `x/agent_server/mcp_bridge/auth.py:131-134` /
   `server/mcp_routing.py:80` — bearer tokens (long-lived static secrets from YAML,
   no expiry/rotation) are compared via plain `dict.get`, not constant-time;
@@ -683,12 +679,10 @@ sandbox boundaries`; a sandboxed agent can exfiltrate any host-readable file via
 
 1. **Immediate (block/hotfix):**
    - Scope down the `kubeapi_admin` cluster-admin binding (High).
-2. **This week (security):** JWT audience validation; fail-closed on unset
-   `FC_MANAGER_AUTH_TOKEN`; fix the `read_image` sandbox-boundary escape or disable
-   the tool.
-3. **This week (correctness):** gmail filter-sync ForEachRule deletion (over-deletion
-   risk); props recall mean-of-means + missing `snapshot_slug`; augur dilution
-   Jacobian; plaid `sync_all` abort-on-first-failure.
+2. **This week (security):** JWT audience validation; fix the `read_image`
+   sandbox-boundary escape or disable the tool.
+3. **This week (correctness):** props recall mean-of-means + missing `snapshot_slug`;
+   augur dilution Jacobian; plaid `sync_all` abort-on-first-failure.
 4. **This sprint (async/lifecycle):** airlock fire-and-forget approval tasks, reconnect
    loop, shutdown hang, and frontend SSE promise-poisoning; policy rehydration on
    restart; the fire-and-forget-task done-callback pattern (adopt one `_spawn` helper).
