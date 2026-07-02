@@ -32,11 +32,22 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from props.db.config import DatabaseConfig
 
-# Salt for deriving deterministic agent passwords.
-# Set PROPS_AGENT_PASSWORD_SALT in production; uses default for development.
-AGENT_PASSWORD_SALT = os.environ.get("PROPS_AGENT_PASSWORD_SALT", "dev-salt-change-in-production")
+_SALT_ENV_VAR = "PROPS_AGENT_PASSWORD_SALT"
 
 logger = logging.getLogger(__name__)
+
+
+def _require_password_salt() -> str:
+    """Return the agent-password salt from the environment, or fail loudly.
+
+    Agent DB passwords are HMAC(salt, agent_run_id); a missing or empty salt
+    would make every agent's password predictable, so refuse to run without it
+    rather than falling back to a shared default.
+    """
+    salt = os.environ.get(_SALT_ENV_VAR)
+    if not salt:
+        raise RuntimeError(f"{_SALT_ENV_VAR} must be set — agent database passwords are derived from it")
+    return salt
 
 
 def _quote_ident(identifier: str) -> str:
@@ -62,14 +73,15 @@ class AgentCredentials:
     password: str
 
 
-def derive_agent_password(agent_run_id: UUID, salt: str = AGENT_PASSWORD_SALT) -> str:
+def derive_agent_password(agent_run_id: UUID, salt: str | None = None) -> str:
     """Derive a deterministic password for an agent from salt and run ID.
 
     Uses HMAC-SHA256 for secure key derivation, then base64-encodes the result.
     The same agent_run_id always produces the same password (given the same salt),
-    enabling agents to reconnect with consistent credentials.
+    enabling agents to reconnect with consistent credentials. The salt defaults to
+    the required ``PROPS_AGENT_PASSWORD_SALT`` environment variable.
     """
-    key = salt.encode("utf-8")
+    key = (salt or _require_password_salt()).encode("utf-8")
     msg = str(agent_run_id).encode("utf-8")
     digest = hmac.new(key, msg, hashlib.sha256).digest()
     return urlsafe_b64encode(digest).decode("ascii").rstrip("=")
