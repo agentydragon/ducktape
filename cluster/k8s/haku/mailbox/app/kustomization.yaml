@@ -25,5 +25,5 @@ configMapGenerator:
         kustomize.toolkit.fluxcd.io/substitute: disabled
     files:
       - config.json
-      - mailbox-plan.ndjson.tmpl
+      - mailbox-plan.ndjson
       - bootstrap-and-run.sh

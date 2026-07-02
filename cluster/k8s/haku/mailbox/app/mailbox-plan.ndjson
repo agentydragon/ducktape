@@ -1,4 +1,4 @@
-{"@type":"upsert","object":"Certificate","matchOn":["certificate"],"value":{"cert-mx":{"certificate":"@@TLS_CERT@@","privateKey":"@@TLS_KEY@@"}}}
+{"@type":"upsert","object":"Certificate","matchOn":["certificate"],"value":{"cert-mx":{"certificate":{"@type":"File","filePath":"/tls/tls.crt"},"privateKey":{"@type":"File","filePath":"/tls/tls.key"}}}}
 {"@type":"upsert","object":"Domain","matchOn":["name"],"value":{"dom":{"name":"allegedly.works","description":"Haku mailbox domain"}}}
 {"@type":"upsert","object":"Account","matchOn":["name"],"value":{"acct-haku":{"@type":"User","name":"haku","domainId":"#dom","description":"Haku background agent (auth: Authentik OIDC bearer only)"}}}
 {"@type":"upsert","object":"Directory","matchOn":["description"],"value":{"dir-authentik":{"@type":"Oidc","description":"Authentik (stalwart-haku provider)","issuerUrl":"https://auth.allegedly.works/application/o/stalwart-haku/","requireAudience":"stalwart-haku","requireScopes":["openid","email"],"claimUsername":"preferred_username","usernameDomain":"allegedly.works","claimName":"name"}}}
