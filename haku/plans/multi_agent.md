@@ -582,11 +582,15 @@ the 5× tier if this becomes a real zone); dispatch should be quota-aware (exten
    annotations already target the future zone namespaces. (These merged artifacts —
    `key_alias`, secret names `litellm-key-haku-lane-*`, TF `metadata.lane` — carry the
    pre-rename "lane" term; rename to `-zone-` opportunistically in a small follow-up
-   or live with it.) **Deliberately deferred**: Haku and dispatcher-classifier keys (no
-   Anthropic models registered; Haku must never be GLM-allowlisted). **Residue still
-   open**: the `haku-workers` Langfuse project + per-key routing + viewer key (see
-   _Monitoring affordances_); verify at rollout that the 1.90.2 image ran the Prisma
-   migration and the `litellm-keys` Terraform CR reaches `Applied`.
+   or live with it.) **Deliberately deferred**: a Haku key (Haku must never be
+   GLM-allowlisted; it arrives with its own claude-\* allowlist when Haku's LLM path
+   moves behind LiteLLM). The dispatcher-classifier key landed with step 4: real
+   Anthropic models (`claude-{sonnet-5,haiku-4-5}`) registered on the main LiteLLM
+   (upstream key = ESO mirror of the spend-capped haku-cloud workspace key), classifier
+   virtual key claude-\*-only, reflected into `haku-dispatch`. **Residue still open**:
+   the `haku-workers` Langfuse project + per-key routing + viewer key (see _Monitoring
+   affordances_); verify at rollout that the 1.90.2 image ran the Prisma migration and
+   the `litellm-keys` Terraform CR reaches `Applied`.
 2. **`chatgpt` provider — ✅ LANDED** (independently on devel): provider + auth-seed +
    PVC wired in `cluster/k8s/litellm/`; only the three Codex-backend models serve, and
    **streaming-only** (the request-shape caveat, documented in `generate_litellm.py`) —
@@ -615,9 +619,12 @@ the 5× tier if this becomes a real zone); dispatch should be quota-aware (exten
    `haku_reader` with ESO-generated passwords. The operator-driven redesign is in: the
    API is `POST /jobs`, `POST /jobs/<id>/result`, `DELETE /jobs/<id>` (no GET surface),
    the job input is `JobRequest.prompt`, and Haku reads the jobs/results tables via
-   `haku_reader` (member of `pg_read_all_data`, fully declarative). Residue: first
-   prompts = two or three ducktape chores from the Tana backlog, end to end, at
-   rollout.
+   `haku_reader` (member of `pg_read_all_data`, fully declarative). The classifier
+   runs **through the main LiteLLM** (operator, 2026-07-02): claude-\* models
+   registered there, dispatcher holds only a claude-\*-allowlisted virtual key —
+   Langfuse logging, budget, and kill switch for free, and no raw provider credential
+   in `haku-dispatch`. Residue: first prompts = two or three ducktape chores from the
+   Tana backlog, end to end, at rollout.
 5. **`haku-sandbox-oai`** — one more perimeter namespace + a CNP entry on the
    workers-LiteLLM + chatgpt models in its config; same image, Codex CLI harness.
 6. **Sensors + affordances** — changedetection.io + webhook→intake; Forgejo ducktape
