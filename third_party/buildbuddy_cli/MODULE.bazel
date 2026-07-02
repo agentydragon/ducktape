@@ -1,0 +1,58 @@
+module(
+    name = "ducktape_buildbuddy_cli",
+    version = "0.1.0",
+)
+
+# Self-contained: builds a patched `bb` (BuildBuddy's remote-bazel CLI) from
+# source, isolated from the root module's own Go dependency graph. See
+# devinfra/plans/bb_repo_url_commit_override.md for why.
+
+bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "gazelle", version = "0.47.0", repo_name = "bazel_gazelle")
+
+# The Go SDK version is a single, global toolchain resolution across the
+# whole build -- declaring it here has no effect; the root MODULE.bazel's
+# go_sdk.download() version (bumped to >= 1.26.4 for this dependency) wins.
+#
+# Note on repo visibility: BUILD/bzl files inside the fetched
+# com_github_buildbuddy_io_buildbuddy repo can only resolve `@repo` labels
+# that are visible to *bazel_gazelle's own* MODULE.bazel (e.g.
+# @io_bazel_rules_go, since gazelle itself depends on rules_go under that
+# exact repo_name) -- NOT labels from bazel_dep entries declared here or in
+# the root module. Bazel derives a module-extension-generated repo's repo
+# mapping from the module that hosts the extension's implementation
+# (bazel_gazelle, since go_deps is `@bazel_gazelle//:extensions.bzl%go_deps`),
+# not from whichever module's tags caused that particular repo to be
+# fetched. Confirmed empirically: adding rules_python/rules_pkg/with_cfg.bzl
+# as bazel_dep here did not make them resolvable from buildbuddy's BUILD
+# files ("unknown repo" persisted); the fix is always to patch out the
+# reference instead (see the strip_* patches in root MODULE.bazel's
+# module_override for this path).
+
+go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
+
+# buildbuddy-io/buildbuddy's own go.mod/go.sum (copied verbatim from their
+# repo at the pinned commit below) as the source of truth for the full
+# transitive Go dependency closure `cli/cmd/bb` needs -- this resolves
+# everything their go.mod declares in one shot via MVS, rather than
+# individually pinning each transitive dep by hand.
+go_deps.from_file(go_mod = "//:go.mod")
+
+# `from_file` fetches everything buildbuddy's go.mod *requires*, but not
+# buildbuddy itself (from_file treats the declaring go.mod's own module path
+# as first-party, not fetchable) -- so buildbuddy-io/buildbuddy needs its own
+# explicit entry, at the exact commit `go.mod`/`go.sum` above were copied
+# from. The actual --repo_url patch (module_override) is declared in the
+# *root* MODULE.bazel instead of here: bzlmod forbids go_deps.module_override
+# in non-root modules (deliberately -- a dependency module isn't allowed to
+# silently patch another dependency's source without the root author's
+# explicit say-so).
+go_deps.module(
+    path = "github.com/buildbuddy-io/buildbuddy",
+    sum = "h1:ytSDPAfYKTA0SH4+hcjBHEikSg08iZUA+/zelNYMQU4=",
+    version = "v1.9.3-0.20260701003052-d4e8918ba8d8",
+)
+use_repo(
+    go_deps,
+    "com_github_buildbuddy_io_buildbuddy",
+)

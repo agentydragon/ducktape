@@ -1,0 +1,24 @@
+diff --git a/server/util/bazel/BUILD b/server/util/bazel/BUILD
+index 1b93732..904684d 100644
+--- a/server/util/bazel/BUILD
++++ b/server/util/bazel/BUILD
+@@ -1,19 +1,4 @@
+ load("@io_bazel_rules_go//go:def.bzl", "go_library")
+-load(":defs.bzl", "bazel_pkg_tar")
+-
+-bazel_pkg_tar(
+-    name = "bazel_binaries_tar",
+-    versions = [
+-        "6.5.0",
+-        "7.7.1",
+-        "8.3.1",
+-        "8.4.2",
+-        "8.5.0",
+-        "9.0.0rc3",
+-        "9.1.1",  # used by testbazel
+-    ],
+-    visibility = ["//visibility:public"],
+-)
+ 
+ go_library(
+     name = "bazel",

@@ -1,0 +1,28 @@
+diff --git a/server/version/BUILD b/server/version/BUILD
+index 5e2b1f8..932275d 100644
+--- a/server/version/BUILD
++++ b/server/version/BUILD
+@@ -1,5 +1,4 @@
+ load("@io_bazel_rules_go//go:def.bzl", "go_library")
+-load("//rules:platform_transitions.bzl", "linux_x86_64_alias")
+ 
+ # These stamped files are platform-independent, so pin them to one target
+ # platform instead of regenerating them once per consuming platform.
+@@ -19,7 +18,7 @@ genrule(
+     tags = ["manual"],
+ )
+ 
+-linux_x86_64_alias(
++alias(
+     name = "populate_version",
+     actual = ":populate_version_impl",
+ )
+@@ -39,7 +38,7 @@ genrule(
+     tags = ["manual"],
+ )
+ 
+-linux_x86_64_alias(
++alias(
+     name = "populate_commit",
+     actual = ":populate_commit_impl",
+ )

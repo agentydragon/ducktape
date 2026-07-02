@@ -1,0 +1,21 @@
+exports_files([
+    "go.mod",
+    "go.sum",
+    "bb_repo_url_commit_override.patch",
+    "bb_devshell_strip_js_protogen.patch",
+    "bb_devshell_strip_root_build.patch",
+    "bb_devshell_fix_bazelisk_naming.patch",
+    "bb_devshell_strip_kythe.patch",
+    "bb_devshell_strip_cli_py.patch",
+    "bb_devshell_strip_version_platform_alias.patch",
+    "bb_devshell_strip_bazel_pkg_tar.patch",
+    "bb_devshell_gazelle_add_googleapis_dep.patch",
+    "bb_devshell_drop_fix_and_index_commands.patch",
+    "bb_devshell_strip_vtproto_and_kythe_messages.patch",
+])
+
+alias(
+    name = "bb",
+    actual = "@com_github_buildbuddy_io_buildbuddy//cli/cmd/bb:bb-linux-amd64",
+    visibility = ["//visibility:public"],
+)

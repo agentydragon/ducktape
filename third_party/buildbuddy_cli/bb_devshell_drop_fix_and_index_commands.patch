@@ -1,0 +1,52 @@
+diff --git a/cli/cli_command/register/BUILD b/cli/cli_command/register/BUILD
+index 0860de8..d498573 100644
+--- a/cli/cli_command/register/BUILD
++++ b/cli/cli_command/register/BUILD
+@@ -18,8 +18,6 @@ go_library(
+         "//cli/execute",
+         "//cli/execution",
+         "//cli/explain",
+-        "//cli/fix",
+-        "//cli/index",
+         "//cli/login",
+         "//cli/plugin",
+         "//cli/printlog",
+diff --git a/cli/cli_command/register/register.go b/cli/cli_command/register/register.go
+index 89798d2..c3c4454 100644
+--- a/cli/cli_command/register/register.go
++++ b/cli/cli_command/register/register.go
+@@ -13,8 +13,6 @@ import (
+ 	"github.com/buildbuddy-io/buildbuddy/cli/execute"
+ 	"github.com/buildbuddy-io/buildbuddy/cli/execution"
+ 	"github.com/buildbuddy-io/buildbuddy/cli/explain"
+-	"github.com/buildbuddy-io/buildbuddy/cli/fix"
+-	"github.com/buildbuddy-io/buildbuddy/cli/index"
+ 	"github.com/buildbuddy-io/buildbuddy/cli/login"
+ 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
+ 	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
+@@ -91,12 +89,6 @@ func register() {
+ 			Handler: execution.HandleExecution,
+ 			Flags:   execution.Flags,
+ 		},
+-		{
+-			Name:    "fix",
+-			Help:    "Applies fixes to WORKSPACE and BUILD files.",
+-			Handler: fix.HandleFix,
+-			Flags:   fix.Flags,
+-		},
+ 		// Handle 'help' command separately to avoid circular dependency with `cli_command`
+ 		// package
+ 		{
+@@ -158,12 +150,6 @@ func register() {
+ 			Handler: ssh_server.HandleSSHServer,
+ 			Flags:   ssh_server.Flags,
+ 		},
+-		{
+-			Name:    "index",
+-			Help:    "Sends updates to the remote codesearch index.",
+-			Handler: index.HandleIndex,
+-			Flags:   index.Flags,
+-		},
+ 		{
+ 			Name:    "ui",
+ 			Help:    "Opens an interactive terminal UI for viewing builds.",

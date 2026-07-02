@@ -1,0 +1,24 @@
+diff --git a/cli/bazelisk/BUILD b/cli/bazelisk/BUILD
+index aa05154..be5d933 100644
+--- a/cli/bazelisk/BUILD
++++ b/cli/bazelisk/BUILD
+@@ -1,7 +1,7 @@
+ load("@io_bazel_rules_go//go:def.bzl", "go_library")
+ 
+-# gazelle:resolve go github.com/bazelbuild/bazelisk/core @com_github_bazelbuild_bazelisk//core:go_default_library
+-# gazelle:resolve go github.com/bazelbuild/bazelisk/repositories @com_github_bazelbuild_bazelisk//repositories:go_default_library
++# gazelle:resolve go github.com/bazelbuild/bazelisk/core @com_github_bazelbuild_bazelisk//core
++# gazelle:resolve go github.com/bazelbuild/bazelisk/repositories @com_github_bazelbuild_bazelisk//repositories
+ 
+ package(default_visibility = ["//cli:__subpackages__"])
+ 
+@@ -13,7 +13,7 @@ go_library(
+         "//cli/log",
+         "//cli/workspace",
+         "@com_github_bazelbuild_bazelisk//config",
+-        "@com_github_bazelbuild_bazelisk//core:go_default_library",
+-        "@com_github_bazelbuild_bazelisk//repositories:go_default_library",
++        "@com_github_bazelbuild_bazelisk//core",
++        "@com_github_bazelbuild_bazelisk//repositories",
+     ],
+ )
