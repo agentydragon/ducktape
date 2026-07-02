@@ -79,9 +79,14 @@ def derive_agent_password(agent_run_id: UUID, salt: str | None = None) -> str:
     Uses HMAC-SHA256 for secure key derivation, then base64-encodes the result.
     The same agent_run_id always produces the same password (given the same salt),
     enabling agents to reconnect with consistent credentials. The salt defaults to
-    the required ``PROPS_AGENT_PASSWORD_SALT`` environment variable.
+    the required ``PROPS_AGENT_PASSWORD_SALT`` environment variable; an explicitly
+    passed salt must be non-empty (an empty one is a caller bug, not a fallback).
     """
-    key = (salt or _require_password_salt()).encode("utf-8")
+    if salt is None:
+        salt = _require_password_salt()
+    elif not salt:
+        raise ValueError("explicit salt must be non-empty")
+    key = salt.encode("utf-8")
     msg = str(agent_run_id).encode("utf-8")
     digest = hmac.new(key, msg, hashlib.sha256).digest()
     return urlsafe_b64encode(digest).decode("ascii").rstrip("=")
