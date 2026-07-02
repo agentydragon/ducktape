@@ -61,6 +61,14 @@ go_deps.module_override(
     patches = [
         "//third_party/buildbuddy_cli_overrides:bb_repo_url_commit_override.patch",
         "//third_party/buildbuddy_cli_overrides:bb_devshell_strip_js_protogen.patch",
+        # STILL needed even with build_file_generation = "on" below: gazelle
+        # regeneration does not normalize cli/bazelisk/BUILD's existing
+        # `go_default_library`-style label for its bazelisk dep to match our
+        # freshly-fetched bazelisk repo's modern (directory-matching) naming
+        # convention -- confirmed empirically, removing this patch
+        # reproduces the exact "no such target ...core:go_default_library"
+        # error it was originally written to fix.
+        "//third_party/buildbuddy_cli_overrides:bb_devshell_fix_bazelisk_naming.patch",
         # cli/fix (the `bb fix` subcommand) embeds a full copy of gazelle's
         # main.go/update-repos.go plus buildifier internals, both pinned to a
         # different gazelle major version (bazel-contrib/bazel-gazelle v2) and
