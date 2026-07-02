@@ -1,0 +1,61 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: grocy-user-perms-reconciler
+  annotations:
+    description: >-
+      Daily drift correction for the user→permission policy in policy.yaml. The one-shot provisioner Job converges at bootstrap and on policy changes; this CronJob re-asserts the same policy so manual permission edits in the Grocy UI (e.g. elevating haku) converge back within a day.
+spec:
+  schedule: "40 4 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            # Same label as the provisioner Job's pods — the sibling
+            # NetworkPolicy admits it to grocy:80.
+            app.kubernetes.io/name: grocy-user-perms-provisioner
+        spec:
+          restartPolicy: OnFailure
+          enableServiceLinks: false
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+            - name: policy
+              configMap:
+                name: grocy-user-perms-policy
+          containers:
+            - name: reconciler
+              # Script baked in via Bazel (//cluster/k8s/grocy/user-perms-base:image).
+              image: ghcr.io/agentydragon/grocy-user-perms-provisioner:devel-20260702062831-ae8ee8a # {"$imagepolicy": "flux-system:grocy-user-perms-provisioner"}
+              imagePullPolicy: Always
+              args:
+                - --policy
+                - /config/policy.yaml
+                # Namespace-local Service name — resolves to the household's own
+                # grocy instance in whichever grocy-* namespace this runs in.
+                - --grocy-url
+                - http://grocy
+              volumeMounts:
+                - name: policy
+                  mountPath: /config
+                  readOnly: true
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 64Mi
+                limits:
+                  memory: 128Mi

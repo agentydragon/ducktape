@@ -1,8 +1,8 @@
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImageRepository
 metadata:
-  name: grocy-sf-user-perms-provisioner
+  name: grocy-user-perms-provisioner
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/grocy-sf-user-perms-provisioner
+  image: ghcr.io/agentydragon/grocy-user-perms-provisioner
   interval: 5m

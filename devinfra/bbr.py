@@ -19,6 +19,10 @@ import pygit2
 _INVOCATION_ID_DIR = Path.home() / ".cache" / "bbr"
 _INVOCATION_ID_FILE = _INVOCATION_ID_DIR / "last_invocation_id"
 
+# Commits HEAD can be ahead of the likely bb-remote diff base before we warn
+# that it looks stale (see check_base_branch_freshness).
+_STALE_BASE_WARNING_THRESHOLD = 30
+
 # Bazel commands recognized by bb remote (from BuildBuddy cli/parser/bazelrc).
 _BAZEL_COMMANDS = frozenset(
     {
@@ -74,6 +78,63 @@ def _find_bb() -> str:
         return path
     print("bbr: 'bb' not found on PATH.", file=sys.stderr)
     sys.exit(1)
+
+
+def _config_get(repo: pygit2.Repository, key: str) -> str | None:
+    """Read a single (layered local+global) git config value, or None if unset."""
+    try:
+        return repo.config[key]
+    except KeyError:
+        return None
+
+
+def check_base_branch_freshness(repo: pygit2.Repository) -> str | None:
+    """Best-effort, no-network check on bb remote's likely diff base.
+
+    `bb remote` mirrors local git state to the runner as a base commit +
+    patchset (see devinfra/docs/bb_remote_internals.md). When the current
+    branch has no tracking ref on the BuildBuddy remote, it falls back to
+    `<default-branch>@{upstream}` as the base — if that local tracking ref
+    is stale (no recent `git fetch`), the patchset balloons and can even fail
+    outright (unappliable binary patches on a huge diff). This deliberately
+    never fetches — bbr running network calls on every invocation would be
+    its own surprise — it only inspects locally-known refs, so a warning here
+    means "you should `git fetch`", not "bbr already tried and failed".
+
+    The default branch name comes only from `buildbuddy.remote-bazel-default-branch`,
+    which `bb remote` itself detects and caches on every run — never a
+    hardcoded guess. Returns a warning to print, or None if there's nothing to
+    flag (including "couldn't tell" — silence, not a guess).
+    """
+    remote = _config_get(repo, "buildbuddy.remote-bazel-remote-name") or "origin"
+    default_branch = _config_get(repo, "buildbuddy.remote-bazel-default-branch")
+    if default_branch is None or repo.head_is_detached:
+        return None
+
+    current_branch = repo.head.shorthand
+    current_tracking_ref = repo.references.get(f"refs/remotes/{remote}/{current_branch}")
+    if current_tracking_ref is not None:
+        # bb only uses HEAD directly when it's an ancestor of (or equal to) the
+        # tracked commit — unpushed commits still fall through to the
+        # default-branch fallback below (see bb_remote_internals.md Phase 2).
+        ahead_of_own_branch, _ = repo.ahead_behind(repo.head.target, current_tracking_ref.target)
+        if ahead_of_own_branch == 0:
+            return None
+
+    tracking_ref = repo.references.get(f"refs/remotes/{remote}/{default_branch}")
+    if tracking_ref is None:
+        return None
+
+    ahead, _behind = repo.ahead_behind(repo.head.target, tracking_ref.target)
+    if ahead <= _STALE_BASE_WARNING_THRESHOLD:
+        return None
+
+    return (
+        f"bbr: HEAD is {ahead} commits ahead of {remote}/{default_branch}, "
+        f"bb remote's likely diff base for this branch. If {remote}/{default_branch} "
+        f"is stale, the patchset it generates may be huge or fail to apply. Consider: "
+        f"git fetch {remote} {default_branch}"
+    )
 
 
 def _env_args(var: str) -> list[str]:
@@ -209,6 +270,8 @@ def main() -> None:
         args.remove("--dry-run")
 
     repo = pygit2.Repository(".")
+    if warning := check_base_branch_freshness(repo):
+        print(warning, file=sys.stderr)
     cmd = build_command(repo, args)
 
     if dry_run:

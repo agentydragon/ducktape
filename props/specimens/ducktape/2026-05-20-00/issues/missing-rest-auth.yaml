@@ -1,0 +1,32 @@
+rationale: |
+  The operator REST API is registered on the outer FastAPI app with no
+  authentication. `create_app` mounts the MCP surface at `/mcp` behind the
+  `AuthProvider` (JWTVerifier) — and the MCP tools are scope-gated in
+  proxy_server.py (`list_actions` requires `read`; `approve_action` /
+  `reject_action` require `decide`). But the parallel `/api/*` routes are
+  declared with no dependency/auth: `GET /api/actions`,
+  `GET /api/actions/{session_key}/{action_seq}`, `POST .../approve`,
+  `POST .../reject`, `GET /api/events`, `GET /api/backends`, and
+  `GET /api/oauth/providers`.
+
+  So any client that can reach the HTTP port can `GET /api/actions` to
+  enumerate every queued action (including its `session_key`/`action_seq`) and
+  `POST .../approve` or `.../reject` to decide it. Airlock's whole purpose is a
+  human-in-the-loop approval layer in front of backend MCP servers, so
+  unauthenticated approve/reject lets a caller execute or reject queued backend
+  tool calls, defeating the gate that the MCP path enforces via the `decide`
+  scope. Only `/mcp` (line 106) is authenticated; the `/api/*` block
+  (lines 122-184) is not.
+
+  Fix: verify the same `AuthProvider` JWT on every `/api/*` route — require
+  `read` for the GET endpoints and `decide` for approve/reject — so the REST
+  surface enforces the same scopes as the MCP tools.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      airlock/app.py:
+        - [106, 106]
+        - [122, 184]
+    match_file_restriction:
+      - airlock/app.py

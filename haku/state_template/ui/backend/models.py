@@ -152,7 +152,9 @@ class ScannedSource(BaseModel):
     # so accept either an int or a string.
     bookmark_before: int | str | None = None
     bookmark_after: int | str | None = None
-    changes_seen: int = 0  # a real count (0 = scanned, nothing new), not absence
+    # A real count when countable (0 = scanned, nothing new); a short prose summary when a
+    # count would be misleading (e.g. "2 commits, neither touches base"). Never absence.
+    changes_seen: int | str = 0
 
 
 class SkippedSource(BaseModel):
@@ -183,8 +185,9 @@ class RunChecklist(BaseModel):
 
 class PropagationTarget(BaseModel):
     surface: str
-    # "n/a" = this surface never applies to this change; "no_change" = considered, didn't apply.
-    action: Literal["updated", "no_change", "n/a"]
+    # "created" = a new entry/file was made on the surface; "n/a" = this surface never
+    # applies to this change; "no_change" = considered, didn\'t apply.
+    action: Literal["created", "updated", "no_change", "n/a"]
     note: str = ""
 
 

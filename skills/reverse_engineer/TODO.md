@@ -1,5 +1,28 @@
 # reverse_engineer skill — open work
 
+## `test_binary_diff_demo` pins toolchain-specific golden values
+
+`examples/binary_diff_recipe.sh` hardcodes exact instruction PCs and instruction
+bytes for three functions (`assert_eq` on literal hex). These are artifacts of
+the Go compiler's codegen, not of the diffing technique — they broke and needed
+regenerating when this repo's `go_sdk` toolchain version bumped (1.26.2 →
+1.26.4), and will break again on any future Go/garble version change.
+
+String VMAs and garbled function names proved toolchain-stable across that bump
+(`.rodata` layout and garble's seed+symbol-based naming didn't move) — only the
+PC/instruction-bytes assertions are fragile.
+
+See if it's worth replacing the exact-byte assertions with structural/invariant
+checks instead: verify the found bytes match the `lea reg, [rip+disp32]` opcode
+shape (`48 8d 05 XX XX XX XX`, not literal `XX` values) and that decoding the
+little-endian displacement plus `PC+7` reproduces the target VMA. That proves
+the technique correctly locates and decodes the instruction without pinning to
+one compiler's output. Tradeoff: the script's header comment currently doubles
+as a worked-example reference with fixed numbers for a human reading along;
+decoupling from hardcoded values means those become "whatever this run
+computed" rather than a citable snapshot — a fine trade for CI robustness, but
+worth deciding deliberately rather than doing by default.
+
 ## Undefeated garble techniques in environment-manager
 
 `environment-manager` uses garble with default flags (confirmed by binary analysis):

@@ -3,8 +3,8 @@
 The console is the trusted outer shell: it frames Haku's own UI (``haku/state_template/ui/``)
 full-page as a sandboxed cross-origin iframe and owns the one privileged surface — the
 **capability tier** (``haku.console.capabilities``), which uses console-only secrets and
-acts on the world (launching the routine); it is CSRF-gated and audited (see ``haku/PLAN.md``
-→ _The agent-authored console_). ``app.py`` wires that router, configures CSRF, and serves
+acts on the world (launching the routine); it is CSRF-gated and audited (see
+``haku/docs/security.md`` → enforcement inventory #11). ``app.py`` wires that router, configures CSRF, and serves
 the config endpoint. It can also mount the built SPA when ``static_dir`` is explicitly
 configured for a direct local/dev fallback.
 """
@@ -50,7 +50,7 @@ def create_app(settings: Settings) -> FastAPI:
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
     # console itself from being framed. Only frame-* is set, so the SPA's own scripts/styles
-    # are unaffected. See haku/console/plans/free_form_ui_iframe.md.
+    # are unaffected. See haku/console/docs/containment.md.
     csp = f"frame-src 'self' {settings.haku_ui_url} {settings.auth_origin}; frame-ancestors 'none'"
 
     @app.middleware("http")

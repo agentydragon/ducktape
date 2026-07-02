@@ -26,7 +26,7 @@ spec:
         topology.kubernetes.io/zone: hil-ovh
       containers:
         - name: llm-proxy
-          image: ghcr.io/agentydragon/props-llm-proxy:devel-20260620001309-6511951 # {"$imagepolicy": "flux-system:props-llm-proxy"}
+          image: ghcr.io/agentydragon/props-llm-proxy:devel-20260702070034-030ac56 # {"$imagepolicy": "flux-system:props-llm-proxy"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

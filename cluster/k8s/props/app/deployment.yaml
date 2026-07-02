@@ -26,13 +26,13 @@ spec:
       # reached through the standalone props-registry-proxy service.
       containers:
         - name: props
-          image: ghcr.io/agentydragon/props-backend:devel-20260620001347-6511951 # {"$imagepolicy": "flux-system:props-backend"}
+          image: ghcr.io/agentydragon/props-backend:devel-20260702065534-030ac56 # {"$imagepolicy": "flux-system:props-backend"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
           env:
             - name: PROPS_IMAGE_TAG
-              value: devel-20260620001347-6511951 # {"$imagepolicy": "flux-system:props-backend:tag"}
+              value: devel-20260702065534-030ac56 # {"$imagepolicy": "flux-system:props-backend:tag"}
             - name: PROPS_CONFIG_FILE
               value: /etc/props/config.toml
             - name: PGHOST
@@ -48,6 +48,12 @@ spec:
                 secretKeyRef:
                   name: props-db-app
                   key: password
+            # Salt for deriving deterministic per-agent DB passwords (required; no default).
+            - name: PROPS_AGENT_PASSWORD_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: props-agent-password-salt
+                  key: salt
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:

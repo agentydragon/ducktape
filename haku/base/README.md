@@ -11,6 +11,8 @@ ducktape and letting the image rebuild (Flux image automation bumps the CronJob 
   continuity, and that it maintains its own UI and procedures. **Item-agnostic** — no item
   schema, no board spec; how Haku presents what it surfaces is its own implementation, in
   its state. Haku reads this as itself at run time.
+- The **security model** (threat model, enforcement inventory, invariants) lives in
+  <../docs/security.md> — not in base, since it spans console and cluster wiring too.
 - `AGENTS.md` — instructions for agents that **edit** this directory (not
   Haku's runtime manual).
 - `sources/` — Haku's **information sources** (the operator-linked channels it reads:

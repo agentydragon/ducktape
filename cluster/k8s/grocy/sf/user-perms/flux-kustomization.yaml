@@ -13,13 +13,14 @@ spec:
   path: ./cluster/k8s/grocy/sf/user-perms
   prune: true
   # Run only after grocy-sf is up (and self-migrated via its postStart hook); the
-  # Job-completion healthcheck makes this kustomization Ready only once the operator
-  # elevation has actually run — so a fresh cluster converges to operators=ADMIN.
+  # Job-completion healthcheck makes this kustomization Ready only once the policy
+  # in policy.yaml has actually been applied — so a fresh cluster converges to the
+  # committed user→permission policy.
   wait: true
   dependsOn:
     - name: grocy-sf
   healthChecks:
     - apiVersion: batch/v1
       kind: Job
-      name: grocy-sf-user-perms-provisioner
+      name: grocy-user-perms-provisioner
       namespace: grocy-sf

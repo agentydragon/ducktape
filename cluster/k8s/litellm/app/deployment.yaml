@@ -16,6 +16,11 @@ metadata:
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
+  # RWO PVC (litellm-chatgpt-auth) can only be mounted by one pod; a RollingUpdate
+  # would deadlock the new pod on volume attach and briefly run two writers of the
+  # token file. Recreate guarantees a single writer.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: litellm
@@ -26,6 +31,22 @@ spec:
     spec:
       serviceAccountName: litellm
       terminationGracePeriodSeconds: 90
+      initContainers:
+        # Seed the ChatGPT provider's OAuth token onto the writable PVC, but only
+        # if absent — LiteLLM refreshes/rotates the token in place, and the seed
+        # secret is not updated after rotation, so we must never clobber the live file.
+        - name: seed-chatgpt-auth
+          image: litellm/litellm:1.86.3
+          command:
+            - sh
+            - -c
+            - test -f /data/chatgpt/auth.json || cp /seed/auth.json /data/chatgpt/auth.json
+          volumeMounts:
+            - name: chatgpt-auth
+              mountPath: /data/chatgpt
+            - name: chatgpt-auth-seed
+              mountPath: /seed
+              readOnly: true
       # Prefer the Proxmox GPU host (co-located with ollama for its fallback
       # paths), but allow scheduling elsewhere (e.g. OVH) so external-provider
       # models (z.ai/GLM) keep serving when the home node is offline — ollama
@@ -76,6 +97,10 @@ spec:
                 secretKeyRef:
                   name: langfuse-secrets
                   key: LANGFUSE_INIT_PROJECT_SECRET_KEY
+            # ChatGPT provider reads/writes $CHATGPT_TOKEN_DIR/auth.json on the
+            # litellm-chatgpt-auth PVC (writable; auto-refreshed & rewritten).
+            - name: CHATGPT_TOKEN_DIR
+              value: /data/chatgpt
           livenessProbe:
             httpGet:
               path: /health/liveliness
@@ -104,6 +129,8 @@ spec:
             - name: config
               mountPath: /etc/litellm
               readOnly: true
+            - name: chatgpt-auth
+              mountPath: /data/chatgpt
       volumes:
         - name: config
           configMap:
@@ -111,3 +138,9 @@ spec:
             items:
               - key: config.yaml
                 path: config.yaml
+        - name: chatgpt-auth
+          persistentVolumeClaim:
+            claimName: litellm-chatgpt-auth
+        - name: chatgpt-auth-seed
+          secret:
+            secretName: litellm-chatgpt-auth-seed

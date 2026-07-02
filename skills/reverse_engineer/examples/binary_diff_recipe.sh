@@ -10,9 +10,9 @@
 #   → instruction PC → pclntool maps PC to garbled function name
 #
 # Golden values (seed=ZHVja3RhcGU=, i.e. base64("ducktape")):
-#   connectToServer  string VMA 0x51a851  PC 0x4dfccd  → main.h8n9KNzKUCmw
-#   loadConfig       string VMA 0x5162ef  PC 0x4dfdc2  → main.bhY2uMqP4
-#   validateConfig   string VMA 0x518f8a  PC 0x4dfb9c  → main.epq7tEoS
+#   connectToServer  string VMA 0x51a851  PC 0x4dff2d  → main.h8n9KNzKUCmw
+#   loadConfig       string VMA 0x5162ef  PC 0x4e0022  → main.bhY2uMqP4
+#   validateConfig   string VMA 0x518f8a  PC 0x4dfdfc  → main.epq7tEoS
 #
 # Prerequisites:
 #   - 'v1_plain'   in cwd — Go binary built without garble (has pclntab + symbols)
@@ -113,13 +113,13 @@ echo "  main.validateConfig absent from v1 (new in v2)"
 echo "=== string→fn mapping ==="
 S1="connection refused: server not accepting connections"
 echo "Locating '$S1':"
-# Expected: string VMA 0x51a851, lea at PC 0x4dfccd, bytes 48 8d 05 7d ab 03 00
-fn1_v2=$(fn_for_string_v2 "$S1" "0x51a851" "0x4dfccd" "48 8d 05 7d ab 03 00" "main.h8n9KNzKUCmw")
+# Expected: string VMA 0x51a851, lea at PC 0x4dff2d, bytes 48 8d 05 1d a9 03 00
+fn1_v2=$(fn_for_string_v2 "$S1" "0x51a851" "0x4dff2d" "48 8d 05 1d a9 03 00" "main.h8n9KNzKUCmw")
 echo "  → $fn1_v2"
 S2="failed to read config file"
 echo "Locating '$S2':"
-# Expected: string VMA 0x5162ef, lea at PC 0x4dfdc2, bytes 48 8d 05 26 65 03 00
-fn2_v2=$(fn_for_string_v2 "$S2" "0x5162ef" "0x4dfdc2" "48 8d 05 26 65 03 00" "main.bhY2uMqP4")
+# Expected: string VMA 0x5162ef, lea at PC 0x4e0022, bytes 48 8d 05 c6 62 03 00
+fn2_v2=$(fn_for_string_v2 "$S2" "0x5162ef" "0x4e0022" "48 8d 05 c6 62 03 00" "main.bhY2uMqP4")
 echo "  → $fn2_v2"
 [ "$fn1_v2" != "$fn2_v2" ] \
   || fail "connectToServer and loadConfig garbled to same name ($fn1_v2)"
@@ -130,8 +130,8 @@ S_NEW="invalid port: must be between 1 and 65535"
   || fail "'$S_NEW' found in v1_plain — expected only in v2"
 echo "'$S_NEW': absent from v1 (validateConfig only exists in v2)"
 echo "Locating '$S_NEW' in v2_garbled:"
-# Expected: string VMA 0x518f8a, lea at PC 0x4dfb9c, bytes 48 8d 05 e7 93 03 00
-fn_new=$(fn_for_string_v2 "$S_NEW" "0x518f8a" "0x4dfb9c" "48 8d 05 e7 93 03 00" "main.epq7tEoS")
+# Expected: string VMA 0x518f8a, lea at PC 0x4dfdfc, bytes 48 8d 05 87 91 03 00
+fn_new=$(fn_for_string_v2 "$S_NEW" "0x518f8a" "0x4dfdfc" "48 8d 05 87 91 03 00" "main.epq7tEoS")
 echo "  → $fn_new"
 [ "$fn_new" != "$fn1_v2" ] \
   || fail "validateConfig collides with connectToServer garbled name"
@@ -139,7 +139,7 @@ echo "  → $fn_new"
   || fail "validateConfig collides with loadConfig garbled name"
 echo "PASS: three distinct garbled names for three distinct source functions"
 echo "=== summary ==="
-echo "  connectToServer  string VMA 0x51a851  PC 0x4dfccd  →  $fn1_v2"
-echo "  loadConfig       string VMA 0x5162ef  PC 0x4dfdc2  →  $fn2_v2"
-echo "  validateConfig   string VMA 0x518f8a  PC 0x4dfb9c  →  $fn_new  (v2-only)"
+echo "  connectToServer  string VMA 0x51a851  PC 0x4dff2d  →  $fn1_v2"
+echo "  loadConfig       string VMA 0x5162ef  PC 0x4e0022  →  $fn2_v2"
+echo "  validateConfig   string VMA 0x518f8a  PC 0x4dfdfc  →  $fn_new  (v2-only)"
 echo "All assertions passed."

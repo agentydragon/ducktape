@@ -23,6 +23,9 @@ log() {
   printf '[codex-cloud %s] %s\n' "$MODE" "$*"
 }
 
+# shellcheck source=../claude/reconcile_bbr_remote.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../claude" && pwd)/reconcile_bbr_remote.sh"
+
 readonly NIX_DAEMON_PROFILE_SH="/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh"
 readonly BAZELRC_DIR="${HOME}/.config/bazel"
 readonly BBR_BAZELRC_PATH="${BAZELRC_DIR}/bbr.bazelrc"
@@ -71,83 +74,6 @@ source_nix_profile_if_present() {
     # shellcheck disable=SC1091
     . "$NIX_DAEMON_PROFILE_SH"
   fi
-}
-
-reconcile_buildbuddy_remote() {
-  # Prefer origin when it already points directly at GitHub. Fallback to
-  # github-no-proxy only for proxied origin URLs.
-  local github_remote_url="https://github.com/agentydragon/ducktape"
-  if git remote get-url origin >/dev/null 2>&1; then
-    local origin_url
-    origin_url="$(git remote get-url origin)"
-    if [[ "$origin_url" == *"github.com"* ]]; then
-      log "origin is GitHub; using origin for BuildBuddy remote"
-      git config buildbuddy.remote-bazel-remote-name origin
-    else
-      if git remote get-url github-no-proxy >/dev/null 2>&1; then
-        log "origin is proxied; github-no-proxy already present"
-      else
-        git remote add github-no-proxy "$github_remote_url"
-        log "origin is proxied; added github-no-proxy remote"
-      fi
-      git config buildbuddy.remote-bazel-remote-name github-no-proxy
-    fi
-  else
-    if git remote get-url github-no-proxy >/dev/null 2>&1; then
-      log "origin remote missing; github-no-proxy already present"
-    else
-      git remote add github-no-proxy "$github_remote_url"
-      log "origin remote missing; added github-no-proxy remote"
-    fi
-    git config buildbuddy.remote-bazel-remote-name github-no-proxy
-    log "origin remote missing; using github-no-proxy for BuildBuddy remote"
-  fi
-}
-
-ensure_bbr_base_branch() {
-  # bbr expects a local `devel` branch reference for base-branch calculations.
-  # Prefer tracking the selected BuildBuddy remote's devel branch.
-  local preferred_remote
-  preferred_remote="$(git config --get buildbuddy.remote-bazel-remote-name || true)"
-  if [ -z "$preferred_remote" ]; then
-    preferred_remote="origin"
-  fi
-
-  local remote_ref=""
-  if git ls-remote --exit-code --heads "$preferred_remote" devel >/dev/null 2>&1; then
-    git fetch "$preferred_remote" devel >/dev/null 2>&1 || true
-    if git show-ref --verify --quiet "refs/remotes/${preferred_remote}/devel"; then
-      remote_ref="${preferred_remote}/devel"
-    fi
-  fi
-
-  if [ -z "$remote_ref" ] && git show-ref --verify --quiet refs/remotes/origin/devel; then
-    remote_ref="origin/devel"
-  fi
-  if [ -z "$remote_ref" ] && git show-ref --verify --quiet refs/remotes/github-no-proxy/devel; then
-    remote_ref="github-no-proxy/devel"
-  fi
-
-  if [ -z "$remote_ref" ]; then
-    log "local 'devel' branch missing and no remote devel ref found; bbr may fail"
-    return 0
-  fi
-
-  local existing_upstream=""
-  existing_upstream="$(git for-each-ref --format='%(upstream:short)' refs/heads/devel 2>/dev/null || true)"
-
-  if git rev-parse --verify devel >/dev/null 2>&1; then
-    if [ "$existing_upstream" = "$remote_ref" ]; then
-      log "local 'devel' branch already tracks ${remote_ref}"
-      return 0
-    fi
-    git branch --set-upstream-to="$remote_ref" devel >/dev/null 2>&1 || true
-    log "configured local 'devel' branch to track ${remote_ref}"
-    return 0
-  fi
-
-  git branch --track devel "$remote_ref" >/dev/null 2>&1 || git branch devel "$remote_ref" >/dev/null 2>&1 || true
-  log "created local 'devel' branch tracking ${remote_ref} for bbr compatibility"
 }
 
 install_nix_if_missing() {
@@ -262,8 +188,7 @@ run_common_setup_steps() {
   run_buildbuddy_setup
   install_precommit_hooks
   write_codex_bazelrcs
-  reconcile_buildbuddy_remote
-  ensure_bbr_base_branch
+  reconcile_bbr_remote "$REPO_ROOT"
   materialize_kubeconfig_if_possible
 }
 

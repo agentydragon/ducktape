@@ -25,7 +25,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: airlock
-          image: ghcr.io/agentydragon/airlock:devel-20260701004807-87b1fc0 # {"$imagepolicy": "flux-system:airlock"}
+          image: ghcr.io/agentydragon/airlock:devel-20260702043037-66d9a31 # {"$imagepolicy": "flux-system:airlock"}
           imagePullPolicy: Always
           ports:
             - name: http
@@ -33,7 +33,7 @@ spec:
               protocol: TCP
           env:
             - name: AIRLOCK_IMAGE_TAG
-              value: devel-20260701004807-87b1fc0 # {"$imagepolicy": "flux-system:airlock:tag"}
+              value: devel-20260702043037-66d9a31 # {"$imagepolicy": "flux-system:airlock:tag"}
             - name: CONFIG_PATH
               value: "/etc/airlock/config.yaml"
             - name: EXEC_BACKEND_TOKEN

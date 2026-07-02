@@ -60,6 +60,32 @@ _ZAI_ANTHROPIC_MODELS: list[str] = [
 ]
 
 
+# ChatGPT subscription via LiteLLM's native `chatgpt/` provider (ChatGPT backend-api /
+# Codex OAuth). No API key: auth is a flat auth.json (access_token/refresh_token/id_token,
+# with expires_at/account_id auto-derived) on a writable PVC, seeded from the
+# litellm-chatgpt-auth-seed secret; see deployment.yaml. The provider refreshes the access
+# token on demand and rewrites that file, so the mount must be read-write. `drop_params`
+# (below) strips the max_tokens/metadata fields this backend rejects.
+_CHATGPT_MODELS: list[str] = [
+    "gpt-5.4",
+    "gpt-5.4-pro",
+    "gpt-5.3-codex",
+    "gpt-5.3-codex-spark",
+    "gpt-5.3-instant",
+    "gpt-5.3-chat-latest",
+    "gpt-5.5",
+]
+
+
+def _chatgpt_entries() -> Iterator[dict]:
+    for model in _CHATGPT_MODELS:
+        yield {
+            "model_name": f"{model}-chatgpt",
+            "litellm_params": {"model": f"chatgpt/{model}"},
+            "model_info": {"mode": "responses"},
+        }
+
+
 def _zai_anthropic_entries() -> Iterator[dict]:
     for model in _ZAI_ANTHROPIC_MODELS:
         yield {
@@ -103,6 +129,7 @@ def generate() -> str:
     for tag, ctx_variants in _MODELS:
         model_list.extend(_model_entries(tag, ctx_variants))
     model_list.extend(_zai_anthropic_entries())
+    model_list.extend(_chatgpt_entries())
 
     # Master key and Langfuse credentials are injected as env vars in the
     # Deployment; not repeated here.

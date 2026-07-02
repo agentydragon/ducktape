@@ -17,7 +17,8 @@ function sourceBadge(s: RunSource) {
     );
   }
   return (
-    <Badge key={s.source} color={s.changes_seen > 0 ? "teal" : "gray"} variant="light">
+    // Prose changes_seen (a summary instead of a count) means something happened — teal.
+    <Badge key={s.source} color={s.changes_seen !== 0 ? "teal" : "gray"} variant="light">
       {s.source}: {s.changes_seen}
     </Badge>
   );
@@ -30,7 +31,11 @@ function whenLabel(run: RunManifest): string {
 // A concise, clickable row in the runs list: when, the source-coverage badges, and a one-line
 // summary (changes / surface updates / skipped sources). Click → the full per-run detail.
 function RunRow({ run, onOpen }: { run: RunManifest; onOpen: () => void }) {
-  const updated = run.propagation.reduce((n, p) => n + p.surfaces.filter((s) => s.action === "updated").length, 0);
+  // "created" is a surface update too (a new entry/file landed on the surface).
+  const updated = run.propagation.reduce(
+    (n, p) => n + p.surfaces.filter((s) => s.action === "updated" || s.action === "created").length,
+    0
+  );
   const skipped = run.sources.filter((s) => "skipped" in s).length;
   return (
     <Card

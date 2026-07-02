@@ -335,10 +335,12 @@
         pkgs.kubeconform
         pkgs.opentofu
         pkgs.tflint
+        pkgs.checkov # Terraform security scanner; backs the checkov_diff pre-commit hook
         pkgs.sops
         pkgs.ssh-to-age
         ducktapePkgs.kubernetes-mcp-server
         ducktapePkgs.target-determinator
+        ducktapePkgs.bazel-diff
       ];
       # Rust claude-hook is the active hook/shim implementation. The statusline
       # remains Python, exposed through a package that does not put the legacy

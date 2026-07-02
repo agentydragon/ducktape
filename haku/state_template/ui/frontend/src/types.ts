@@ -67,7 +67,7 @@ export interface ScannedSource {
   source: string;
   bookmark_before: string | number | null;
   bookmark_after: string | number | null;
-  changes_seen: number;
+  changes_seen: number | string;
 }
 
 export interface SkippedSource {
@@ -85,7 +85,7 @@ export interface RunChecklist {
 
 export interface PropagationTarget {
   surface: string;
-  action: "updated" | "no_change" | "n/a";
+  action: "created" | "updated" | "no_change" | "n/a";
   note: string;
 }
 

@@ -67,7 +67,9 @@ def mock_k8s_store():
 
 
 @pytest.mark.usefixtures("mock_k8s_store")
-async def test_rest_api_works_after_startup(rsa_key_pair: RSAKeyPair, predicate_file: Path, db_url: str):
+async def test_rest_api_works_after_startup(
+    rsa_key_pair: RSAKeyPair, predicate_file: Path, db_url: str, operator_headers: dict[str, str]
+):
     """GET /api/actions returns 200 immediately — no MCP client needed."""
     port = pick_free_port()
     settings = Settings(
@@ -87,7 +89,7 @@ async def test_rest_api_works_after_startup(rsa_key_pair: RSAKeyPair, predicate_
         assert r.status_code == 200
 
         # This is the exact request that was returning 500 before the fix.
-        r = await http.get("/api/actions")
+        r = await http.get("/api/actions", headers=operator_headers)
         assert r.status_code == 200
         assert r.json() == []
 
@@ -98,6 +100,7 @@ async def test_oauth_providers_reports_expired_token_status(
     db_url: str,
     monkeypatch: pytest.MonkeyPatch,
     mock_k8s_store: MagicMock,
+    operator_headers: dict[str, str],
 ):
     monkeypatch.setenv("TEST_CLIENT_ID", "test-client-id")
     monkeypatch.setenv("TEST_CLIENT_SECRET", "test-client-secret")
@@ -154,7 +157,7 @@ async def test_oauth_providers_reports_expired_token_status(
     with patch("airlock.app.token_refresh_loop", side_effect=fake_token_refresh_loop):
         app = create_app(settings, auth=auth, include_static=False)
         async with serve_app(app, port=port), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
-            r = await http.get("/api/oauth/providers")
+            r = await http.get("/api/oauth/providers", headers=operator_headers)
 
     assert r.status_code == 200
     providers = r.json()
@@ -169,7 +172,9 @@ async def test_oauth_providers_reports_expired_token_status(
 
 
 @pytest.mark.usefixtures("mock_k8s_store")
-async def test_mcp_action_visible_via_rest(rsa_key_pair: RSAKeyPair, predicate_file: Path, db_url: str):
+async def test_mcp_action_visible_via_rest(
+    rsa_key_pair: RSAKeyPair, predicate_file: Path, db_url: str, operator_headers: dict[str, str]
+):
     """An action created via MCP appears in GET /api/actions."""
     port = pick_free_port()
     echo = FastMCP("echo")
@@ -211,11 +216,53 @@ async def test_mcp_action_visible_via_rest(rsa_key_pair: RSAKeyPair, predicate_f
 
         # Verify action is visible via REST.
         async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
-            r = await http.get("/api/actions")
+            r = await http.get("/api/actions", headers=operator_headers)
             assert r.status_code == 200
             actions = r.json()
             assert len(actions) == 1
             assert actions[0]["call"]["tool_name"] == "echo_tool"
+
+
+@pytest.mark.usefixtures("mock_k8s_store")
+async def test_api_enforces_auth_and_scopes(rsa_key_pair: RSAKeyPair, predicate_file: Path, db_url: str):
+    """Every /api/* route requires a valid Bearer JWT; approve/reject need `decide`.
+
+    Regression guard for the unauthenticated-approval bypass: the operator REST
+    API must enforce the same JWT + scopes as the /mcp mount.
+    """
+    port = pick_free_port()
+    settings = Settings(
+        backends={},
+        public_base_url=f"http://127.0.0.1:{port}",
+        db_url=db_url,
+        predicate_path=predicate_file,
+        oidc_issuer="https://unused.example.com",
+        oidc_client_id="test",
+        oauth=OAuthConfig(providers=[]),
+        port=port,
+    )
+    auth = JWTVerifier(public_key=rsa_key_pair.public_key)
+    app = create_app(settings, auth=auth, include_static=False)
+
+    reader_jwt = rsa_key_pair.create_token(subject="agent", scopes=["read"])
+    operator_jwt = rsa_key_pair.create_token(subject="operator", scopes=["decide", "read"])
+    reader = {"Authorization": f"Bearer {reader_jwt}"}
+    operator = {"Authorization": f"Bearer {operator_jwt}"}
+    approve_path = "/api/actions/00000000-0000-0000-0000-000000000001/0/approve"
+
+    async with serve_app(app, port=port), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
+        # No token → 401 on both read and decide surfaces.
+        assert (await http.get("/api/actions")).status_code == 401
+        assert (await http.post(approve_path)).status_code == 401
+        # Garbage token → 401.
+        assert (await http.get("/api/actions", headers={"Authorization": "Bearer not-a-jwt"})).status_code == 401
+        # Read-only token → can read, cannot decide.
+        assert (await http.get("/api/actions", headers=reader)).status_code == 200
+        assert (await http.post(approve_path, headers=reader)).status_code == 403
+        # Operator token is accepted and reaches the handler: approving an unknown
+        # action is a client error (404), not an auth failure (401/403) or a 500.
+        assert (await http.get("/api/actions", headers=operator)).status_code == 200
+        assert (await http.post(approve_path, headers=operator)).status_code == 404
 
 
 if __name__ == "__main__":

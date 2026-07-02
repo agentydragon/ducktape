@@ -88,7 +88,7 @@ just ad-hoc `kubectl apply`) without being able to widen its own perimeter.
 The starter holds one workload, `haku-ui` — the Deployment + Service for the CI-built
 image (`git.allegedly.works/haku/ui:<tag>`, the tag Flux image automation writes), served behind the
 operator-owned, Authentik-gated `haku-ui.allegedly.works` route and embedded in the
-console iframe (see `haku/console/plans/free_form_ui_iframe.md`). It pulls via the
+console iframe (see `haku/console/docs/containment.md`). It pulls via the
 `haku-forgejo-registry-pull` imagePullSecret (operator-provisioned) and mounts the
 `haku-state-git-write` secret as the backend's Forgejo API credentials. Haku evolves the
 UI and adds more workloads as sibling dirs under `k8s/`.

@@ -1,0 +1,37 @@
+# Validate the state files the UI backend reads live from HEAD (items/, runs/, and any
+# surface you add) against the backend's own Pydantic models — the actual read contract.
+# The backend has no build step for data (it parses these at request time), so without
+# this gate a malformed commit only surfaces when the dashboard 500s or silently renders
+# wrong. Runs on EVERY push to main — data commits vastly outnumber ui/ commits and are
+# not covered by build-ui.yaml's path filter.
+#
+# Kept deliberately light: models.py imports only pydantic + stdlib, so this installs
+# just pydantic + pyyaml (~seconds), not the whole backend.
+name: validate-state
+on:
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: haku-ci
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # `docker build` (not `docker run -v`): the runner's docker daemon is a dind sidecar,
+      # so a -v bind mount resolves on the SIDECAR's filesystem (empty), not the job
+      # container's checkout. Building streams the repo as context — same pattern as
+      # build-ui.yaml. The RUN validation failing fails the build, which fails the job.
+      - name: Validate state files against ui/backend/models.py
+        run: |
+          docker build -f - . <<'EOF'
+          FROM python:3.13-slim
+          RUN pip install --quiet --no-cache-dir "pydantic>=2" pyyaml
+          WORKDIR /repo
+          COPY . .
+          ENV PYTHONPATH=/repo/ui/backend
+          RUN python tools/validate_state.py
+          EOF

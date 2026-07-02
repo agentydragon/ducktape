@@ -44,6 +44,7 @@ export function StatusBadge({ status, color = "gray" }: { status: string; color?
 
 // updated = it landed; no_change = considered, didn't apply; n/a = surface never applies.
 const ACTION_COLOR: Record<PropagationTarget["action"], string> = {
+  created: "teal",
   updated: "teal",
   no_change: "gray",
   "n/a": "gray",

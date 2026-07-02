@@ -6,6 +6,7 @@ to these fixtures.
 """
 
 import logging
+import os
 from collections.abc import Generator
 
 import pytest
@@ -78,6 +79,13 @@ def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-asyncio auto mode and register custom markers."""
     config.option.asyncio_mode = "auto"
     configure_tracing(config)
+
+    # Agent DB passwords derive from PROPS_AGENT_PASSWORD_SALT, which is required
+    # in production (no insecure default). Provide a fixed value for tests; set it
+    # when unset OR empty so the run stays hermetic (setdefault would keep an empty
+    # value and trip the fail-closed path).
+    if not os.environ.get("PROPS_AGENT_PASSWORD_SALT"):
+        os.environ["PROPS_AGENT_PASSWORD_SALT"] = "test-agent-password-salt"
 
     # Enable live logging by attaching pytest's log_cli_handler to root logger
     # This replicates what log_cli=true does, but programmatically

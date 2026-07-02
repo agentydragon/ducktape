@@ -81,7 +81,7 @@ reuses the same three ClusterRoles:
 
 This widens the original `haku-sandbox`-only perimeter (<../../../../haku/PLAN.md>) to read-only
 diagnostics; the structural fences (read-only verbs, no secret material, mitmproxy egress) are
-unchanged.
+unchanged. Haku's full enforcement inventory: <../../../../haku/docs/security.md>.
 
 ### 5. agent-box Codex — diagnostics only
 

@@ -161,8 +161,8 @@ jobs:
               test_target: "",
             }
           - {
-              image: "//cluster/k8s/grocy/sf/user-perms:image",
-              image_name: grocy-sf-user-perms-provisioner,
+              image: "//cluster/k8s/grocy/user-perms-base:image",
+              image_name: grocy-user-perms-provisioner,
               test_target: "",
             }
           - { image: "//devinfra/firecracker/manager:image", image_name: firecracker-manager, test_target: "" }

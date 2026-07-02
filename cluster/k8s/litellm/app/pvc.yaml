@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: litellm-chatgpt-auth
+  namespace: litellm
+  annotations:
+    description: >-
+      Writable, durable store for the ChatGPT provider's OAuth token file
+      ($CHATGPT_TOKEN_DIR/auth.json). LiteLLM refreshes the access token and
+      rewrites this file, so it must survive restarts (refresh tokens rotate).
+      Seeded copy-if-absent from the litellm-chatgpt-auth-seed secret.
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: seaweedfs-ovh
+  resources:
+    requests:
+      storage: 1Gi

@@ -160,10 +160,14 @@ def _make_lifespan(deps: BackendDeps):
             else:
                 logger.info("Grader supervisor disabled (grader_model not set in config)")
 
-            admin_token = db_config.basic_auth_token
-            protocol = "https" if deps.port == 443 else "http"
-            logger.info(f"Admin token: {admin_token}")
-            logger.info(f"Admin URL: {protocol}://{deps.host}:{deps.port}/?token={admin_token}")
+            # The admin token is a credential; k8s log access is broader than
+            # admin access, so only surface it under an explicit dev-mode flag
+            # (off in the cluster deployment).
+            if deps.config.dev_mode:
+                admin_token = db_config.basic_auth_token
+                protocol = "https" if deps.port == 443 else "http"
+                logger.info(f"Admin token: {admin_token}")
+                logger.info(f"Admin URL: {protocol}://{deps.host}:{deps.port}/?token={admin_token}")
             logger.info("Props backend ready")
             app.state.startup_complete = True
 

@@ -155,7 +155,7 @@ bypassing Authentik (`cluster/k8s/gateway/gateway.yaml` listeners are all `allow
 namespaces: from: All`) — is **already fenced**: the `restrict-agent-gateway-routes`
 Kyverno ClusterPolicy denies route/Gateway creation in the agent namespaces, and
 `haku-sandbox-admin`/`claude-sandbox-admin` omit `httproutes`/`gateways` anyway. So the
-hole the agent-authored Haku UI (`haku/console/plans/free_form_ui_iframe.md`) relies on
+hole the agent-authored Haku UI (`haku/console/docs/containment.md`) relies on
 staying closed is closed. What's left is the gateway-layer belt-and-suspenders:
 
 - [ ] **Still want the `allowedRoutes` Selector eventually** (at the gateway layer

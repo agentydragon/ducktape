@@ -322,6 +322,7 @@ rec {
   prettier = pkgs.callPackage ./prettier/prettier.nix { };
   kubernetes-mcp-server = pkgs.callPackage ./kubernetes-mcp-server.nix { };
   target-determinator = pkgs.callPackage ./target-determinator.nix { };
+  bazel-diff = pkgs.callPackage ./bazel-diff.nix { };
   # Anthropic CLI (`ant`): Claude API / Managed Agents control plane. Not in
   # nixpkgs; vendored static release binary. Used by haku/runtime/managed_agent/self_hosted.
   anthropic-cli = pkgs.callPackage ./anthropic-cli.nix { };

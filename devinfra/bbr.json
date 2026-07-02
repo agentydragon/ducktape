@@ -8,6 +8,6 @@
     "remote-snapshot-save-policy": "always",
     "snapshot-read-policy": "newest"
   },
-  "container_image": "ghcr.io/agentydragon/rbe-worker@sha256:ae5a08abe49d2984a244b6ec3fa35fb0838126df5e75297e7a5942efd2bb2f28",
+  "container_image": "ghcr.io/agentydragon/rbe-worker@sha256:a75f85ce3d49290383c8f5617c14d32835eb20380c4d686f5fc5435caa906122",
   "bazel_args": ["--config=rbe"]
 }

@@ -340,7 +340,9 @@ async def test_jwt_verifier_fallback(oidc_key_pair, predicate_file: Path, db_url
                 assert action.state.status.value == "pending"
 
             async with httpx.AsyncClient(base_url=airlock_url) as http:
-                r = await http.get("/api/actions")
+                # The same directly-signed agent JWT (read scope) that the extra
+                # JWTVerifier accepts must also authenticate the REST API.
+                r = await http.get("/api/actions", headers={"Authorization": f"Bearer {agent_jwt}"})
                 assert r.status_code == 200
                 actions = r.json()
                 assert len(actions) == 1

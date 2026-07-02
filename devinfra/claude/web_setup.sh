@@ -277,30 +277,12 @@ done
 
 PROJECT_DIR="${FLAKE#path:}"
 
-# --- Step 3: Add github-no-proxy remote for bbr ---
-# Claude Code web sessions use a local git proxy as 'origin'
-# (http://127.0.0.1:<port>/git/...). When 'bb remote' sends a RunRequest to
-# the BuildBuddy cloud runner, it embeds the selected remote's URL in
-# RepoState.repo.url. The runner then fetches from that URL. The local proxy
-# URL is unreachable from the cloud runner, so bbr fails.
-#
-# Fix: add a 'github-no-proxy' remote that points directly at GitHub.
-#
-# bb source: https://github.com/buildbuddy-io/buildbuddy (cli/remotebazel/)
-#
-# bb auto-selects a single remote without prompting. With 2+ remotes, in TTY
-# mode it shows a selection TUI; in non-TTY mode (pre-commit hooks, CI) it
-# reads buildbuddy.remote-bazel-remote-name and uses the named remote directly.
-# Value must be a remote NAME (not a URL) — bb resolves the URL from git config.
-GITHUB_REMOTE_URL="https://github.com/agentydragon/ducktape"
-if git -C "$PROJECT_DIR" remote get-url github-no-proxy &>/dev/null; then
-  log "git remote 'github-no-proxy' already exists, skipping."
-else
-  git -C "$PROJECT_DIR" remote add github-no-proxy "$GITHUB_REMOTE_URL"
-  log "Added git remote 'github-no-proxy' -> $GITHUB_REMOTE_URL"
-fi
-git -C "$PROJECT_DIR" config buildbuddy.remote-bazel-remote-name github-no-proxy
-log "Set buildbuddy.remote-bazel-remote-name=github-no-proxy"
+# --- Step 3: Reconcile the BuildBuddy remote for bbr ---
+# See devinfra/claude/reconcile_bbr_remote.sh for what this fixes and why
+# (shared with devinfra/codex_cloud/setup.sh).
+# shellcheck source=reconcile_bbr_remote.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/reconcile_bbr_remote.sh"
+reconcile_bbr_remote "$PROJECT_DIR"
 
 # --- Step 4: Symlink skills into ~/.claude/skills/ ---
 # Per-skill symlinks instead of replacing the directory, so Anthropic's

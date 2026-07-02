@@ -1,7 +1,8 @@
 # Haku Mitmproxy Trust Management
 
 This mirrors `../mitmproxy`, but uses a separate CA and proxy namespace for
-`haku-sandbox`.
+`haku-sandbox`. It is Haku's egress fence — enforcement inventory #5 in
+<../../../../haku/docs/security.md>.
 
 - cert-manager creates `Secret/haku-mitmproxy-ca` in `haku-mitmproxy`.
 - haku-mitmproxy mounts that Secret and builds mitmproxy's CA file from

@@ -7,3 +7,10 @@ data:
   # Grocy reads this via PSR-7 getHeader(), which uses the raw HTTP header name.
   AUTH_CLASS.txt: "Grocy\\Middleware\\ReverseProxyAuthMiddleware"
   REVERSE_PROXY_AUTH_HEADER.txt: "X-authentik-username"
+  # Default new (auto-created) Grocy users to NO permissions = read-only, so any
+  # machine identity (haku) or unknown login is read-only by default — the safe
+  # failure mode. Grocy's built-in default is ADMIN; "none" matches no
+  # permission_hierarchy row, so CreateUser inserts an empty permission set (a safe
+  # no-op in LessQL). Operators are elevated explicitly by the user-perms
+  # reconciler (../user-perms-base, instantiated per household).
+  DEFAULT_PERMISSIONS.txt: "none"
