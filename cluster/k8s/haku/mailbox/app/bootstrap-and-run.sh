@@ -4,9 +4,9 @@
 # Stalwart's declarative-deployments workflow), then exec the normal server.
 # TODO: this dance is ugly but currently irreducible — see the README's
 # "Future" section for the revisit gates (tofu provider coverage, upstream
-# declarative bootstrap, native ACME).
+# declarative bootstrap).
 # Running on every pod start makes the plan the reconcile loop. The TLS
-# certificate is File-referenced (/tls/*.pem paths in the plan), so a
+# certificate is File-referenced (/tls/tls.{crt,key} in the plan), so a
 # reloader-triggered restart after cert-manager renews mx-allegedly-works-tls
 # simply re-reads the fresh PEMs — no plan change involved.
 set -eu

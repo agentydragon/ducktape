@@ -10,7 +10,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from enum import StrEnum
 from importlib import resources
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 import aiodocker
 import pydantic_core
@@ -149,6 +149,22 @@ class PendingCallsResponse(BaseModel):
 # ---- Private ApprovalHub (internal to PolicyEngine) ----
 
 
+class DenyContinueDecision(BaseModel):
+    """Deny the pending call but let the turn continue.
+
+    Distinct from ContinueDecision (which approves and executes the call): a human
+    answering "deny but continue" must not run the denied call. The middleware maps
+    this to a DENY_CONTINUE denial error, mirroring the static-policy path.
+    """
+
+    action: Literal["deny_continue"] = "deny_continue"
+    reason: str | None = None
+
+
+# Human decisions the approval hub can deliver for a pending ASK.
+HubDecision = ContinueDecision | DenyContinueDecision | AbortTurnDecision
+
+
 class _ApprovalHub:
     """In-process rendezvous for pending approval/decision events.
 
@@ -156,7 +172,7 @@ class _ApprovalHub:
     """
 
     def __init__(self, on_change: Callable[[], None]) -> None:
-        self._futures: dict[str, asyncio.Future[ContinueDecision | AbortTurnDecision]] = {}
+        self._futures: dict[str, asyncio.Future[HubDecision]] = {}
         self._requests: dict[str, ApprovalRequest] = {}
         self._lock = asyncio.Lock()
         self._on_change = on_change
@@ -164,7 +180,7 @@ class _ApprovalHub:
     def _notify_change(self) -> None:
         self._on_change()
 
-    async def await_decision(self, call_id: str, request: ApprovalRequest) -> ContinueDecision | AbortTurnDecision:
+    async def await_decision(self, call_id: str, request: ApprovalRequest) -> HubDecision:
         async with self._lock:
             self._requests[call_id] = request
             fut = self._futures.get(call_id)
@@ -174,7 +190,7 @@ class _ApprovalHub:
             self._notify_change()
         return await fut
 
-    def resolve(self, call_id: str, decision: ContinueDecision | AbortTurnDecision) -> None:
+    def resolve(self, call_id: str, decision: HubDecision) -> None:
         fut = self._futures.pop(call_id, None)
         self._requests.pop(call_id, None)
         if fut is not None and not fut.done():
@@ -232,6 +248,28 @@ def _raise_if_reserved_code(e: McpError, name: str) -> None:
                 data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "backend_code": code},
             )
         )
+
+
+def _remap_reserved_backend_error(e: Exception, name: str) -> None:
+    """Remap a backend error that spoofs a reserved policy code/message.
+
+    `McpError`s go through `_raise_if_reserved_code`; a plain exception whose string
+    carries a reserved policy message is remapped to `POLICY_BACKEND_RESERVED_MISUSE`
+    so a backend cannot forge a policy denial. Returns without raising for a genuine
+    (non-spoofing) failure, so the caller re-raises the original.
+    """
+    if isinstance(e, McpError):
+        _raise_if_reserved_code(e, name)
+        return
+    s = str(e)
+    if (POLICY_DENIED_ABORT_MSG in s) or (POLICY_DENIED_CONTINUE_MSG in s) or (POLICY_EVALUATOR_ERROR_MSG in s):
+        raise McpError(
+            ErrorData(
+                code=POLICY_BACKEND_RESERVED_MISUSE_CODE,
+                message=POLICY_BACKEND_RESERVED_MISUSE_MSG,
+                data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "backend_code": "unknown"},
+            )
+        ) from e
 
 
 _DENIAL_MAP: dict[ApprovalDecision, tuple[int, str]] = {
@@ -316,23 +354,8 @@ class _PolicyGatewayMiddleware(Middleware):
             self._inflight[call_id] = tool_key
             try:
                 return await call_next(context)
-            except McpError as e:
-                _raise_if_reserved_code(e, name)
-                raise
             except Exception as e:
-                s = str(e)
-                if (
-                    (POLICY_DENIED_ABORT_MSG in s)
-                    or (POLICY_DENIED_CONTINUE_MSG in s)
-                    or (POLICY_EVALUATOR_ERROR_MSG in s)
-                ):
-                    raise McpError(
-                        ErrorData(
-                            code=POLICY_BACKEND_RESERVED_MISUSE_CODE,
-                            message=POLICY_BACKEND_RESERVED_MISUSE_MSG,
-                            data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "backend_code": "unknown"},
-                        )
-                    ) from e
+                _remap_reserved_backend_error(e, name)
                 raise
             finally:
                 self._inflight.pop(call_id, None)
@@ -360,9 +383,13 @@ class _PolicyGatewayMiddleware(Middleware):
                 await self._record(call_id, tool_key, ApprovalOutcome.POLICY_ALLOW)
             try:
                 return await call_next(context)
-            except McpError as e:
-                _raise_if_reserved_code(e, name)
+            except Exception as e:
+                _remap_reserved_backend_error(e, name)
                 raise
+        if isinstance(decision_obj, DenyContinueDecision):
+            if self._record is not None:
+                await self._record(call_id, tool_key, ApprovalOutcome.POLICY_DENY_CONTINUE)
+            raise _policy_denied_error(ApprovalDecision.DENY_CONTINUE, name, decision_obj.reason)
         if isinstance(decision_obj, AbortTurnDecision):
             if self._record is not None:
                 await self._record(call_id, tool_key, ApprovalOutcome.POLICY_DENY_ABORT)
@@ -515,9 +542,9 @@ class PolicyAdminServer(EnhancedFastMCP):
             elif decision == CallDecision.DENY_ABORT:
                 engine._hub.resolve(call_id, AbortTurnDecision(reason="user_denied"))
             elif decision == CallDecision.DENY_CONTINUE:
-                # Continue without executing - resolve with continue decision
-                # The call is skipped but turn continues
-                engine._hub.resolve(call_id, ContinueDecision())
+                # Deny the call but let the turn continue. Must NOT resolve with
+                # ContinueDecision (that would execute the denied call).
+                engine._hub.resolve(call_id, DenyContinueDecision(reason="user_denied"))
             return SimpleOk()
 
         async def decide_proposal(input: DecideProposalArgs) -> SimpleOk:

@@ -161,6 +161,45 @@ async def test_policy_gateway_middleware_ask_then_allow(
         assert call_ids, "pending call should have been recorded"
 
 
+async def test_policy_gateway_middleware_ask_then_deny_continue(
+    make_policy_gateway_compositor, make_decision_engine, make_simple_mcp
+):
+    """ASK then human 'deny but continue': the denied call must NOT execute.
+
+    Regression for the deny-continue bypass — resolving the pending future with a
+    plain ContinueDecision made the gateway run the denied call.
+    """
+    engine = await make_decision_engine(ApprovalDecision.ASK)
+
+    async with (
+        make_policy_gateway_compositor({"backend": make_simple_mcp}, policy_engine=engine) as comp,
+        Client(comp) as sess,
+    ):
+        call_task = asyncio.create_task(
+            sess.call_tool(build_mcp_function(MCPMountPrefix("backend"), "echo"), {"text": "3"})
+        )
+
+        async with Client(comp._approval_engine.reader) as reader:
+            pending_data: PendingCallsResponse
+            for _ in range(30):  # up to ~3s
+                pending_data = await read_text_json_typed(
+                    reader, PolicyReaderServer.PENDING_CALLS_URI, PendingCallsResponse
+                )
+                if len(pending_data.pending) > 0:
+                    break
+                await asyncio.sleep(0.1)
+            assert len(pending_data.pending) > 0, "Expected at least one pending call"
+            call_id = pending_data.pending[0].call_id
+
+        async with Client(comp._approval_engine.admin) as admin:
+            await admin.call_tool("decide_call", arguments={"call_id": call_id, "decision": CallDecision.DENY_CONTINUE})
+
+        # The call must be denied (turn continues), not executed and returned.
+        with pytest.raises(ToolError) as ei:
+            await call_task
+        assert POLICY_DENIED_CONTINUE_MSG in str(ei.value)
+
+
 async def test_raise_if_reserved_code_remaps_stamped_upstream() -> None:
     e = McpError(
         mtypes.ErrorData(code=-32000, message="upstream_error", data={POLICY_GATEWAY_STAMP_KEY: True, "note": "spoof"})
