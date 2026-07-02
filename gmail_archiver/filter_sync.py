@@ -8,7 +8,7 @@ from typing import Self
 from gmail_api.labels import GmailLabel, SystemLabel, resolve_label_id
 from gmail_archiver.filter_planner import criteria_to_gmail_query
 from gmail_archiver.gmail_api_models import CreateFilterRequest, FilterAction, FilterCriteria, GmailFilter
-from gmail_archiver.gmail_yaml_filters_models import FilterRule
+from gmail_archiver.gmail_yaml_filters_models import CompoundCondition, FilterRule
 
 
 def _strip_gmail_quotes(s: str | None) -> str | None:
@@ -69,7 +69,56 @@ def normalize_gmail_filter(gmail_filter: GmailFilter, labels_by_id: dict[str, st
 
 
 def normalize_yaml_rule(rule: FilterRule) -> NormalizedFilter:
-    """Convert FilterRule from YAML to normalized form."""
+    """Convert FilterRule from YAML to normalized form.
+
+    Raises ValueError if the rule uses criteria that NormalizedFilter cannot
+    represent. Silently dropping such criteria would produce a Gmail filter that
+    matches a *broader* set of messages than the YAML intended -- and for
+    trash/delete rules that over-deletes mail matching the residual criteria.
+    """
+    # Criteria fields NormalizedFilter has no slot for. Dropping any would broaden
+    # the synced filter beyond what the YAML specified.
+    unrepresentable = [
+        name
+        for name, value in [
+            ("match", rule.match),
+            ("missing", rule.missing),
+            ("no_match", rule.no_match),
+            ("bcc", rule.bcc),
+            ("cc", rule.cc),
+            ("list", rule.list),
+            ("labeled", rule.labeled),
+            ("is", rule.is_),
+            ("category", rule.category),
+            ("deliveredto", rule.deliveredto),
+            ("filename", rule.filename),
+            ("larger", rule.larger),
+            ("smaller", rule.smaller),
+            ("size", rule.size),
+            ("rfc822msgid", rule.rfc822msgid),
+        ]
+        if value is not None
+    ]
+    if unrepresentable:
+        raise ValueError(
+            f"FilterRule uses criteria that cannot be synced to Gmail filters: {', '.join(unrepresentable)}"
+        )
+
+    # from/to/subject and has/does_not_have accept compound (any/all/not) conditions
+    # in the YAML model, but NormalizedFilter can only carry plain string criteria.
+    for name, value in [("from", rule.from_), ("to", rule.to), ("subject", rule.subject)]:
+        if isinstance(value, CompoundCondition):
+            raise ValueError(
+                f"FilterRule criterion {name!r} uses a compound (any/all/not) condition, "
+                "which cannot be synced to Gmail filters"
+            )
+    for name, value in [("has", rule.has), ("does_not_have", rule.does_not_have)]:
+        if isinstance(value, CompoundCondition):
+            raise ValueError(
+                f"FilterRule criterion {name!r} uses a compound (any/all/not) condition, "
+                "which cannot be synced to Gmail filters"
+            )
+
     add_labels = frozenset(
         label
         for label, condition in [

@@ -181,3 +181,15 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_filter_sync",
+    srcs = ["test_filter_sync.py"],
+    deps = [
+        ":filter_sync",
+        ":gmail_yaml_filters_models",
+        "//gmail_api:labels",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
