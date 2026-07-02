@@ -117,5 +117,11 @@ common:quiet --show_progress_rate_limit=30
 # CI and AI agent modes both use quiet output.
 common:ci --config=quiet
 common:ci --announce_rc
-test:ci --test_tag_filters=-live_openai_api
+# -manual so manual tests never run in CI. On push CI expands `//...`, which
+# already skips manual-tagged targets; but PR CI runs an explicit target list
+# from bazel-diff, and the `manual` tag only excludes from wildcard expansion —
+# not explicit labels — so without this filter a PR that touches a widely-depended
+# file drags manual tests (e.g. the Playwright e2e tests, which aren't wired for
+# hermetic Chromium) into the run and fails on them.
+test:ci --test_tag_filters=-live_openai_api,-manual
 common:ai_agent --config=quiet
