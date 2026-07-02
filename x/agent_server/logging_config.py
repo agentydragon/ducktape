@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from agent_core.logging_utils import configure_logging
+from util.logging import configure_logging
 
 
 def configure_logging_info(*, set_stream_handler_level: bool = True) -> None:

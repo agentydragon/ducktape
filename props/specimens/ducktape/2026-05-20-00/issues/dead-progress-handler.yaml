@@ -1,0 +1,13 @@
+rationale: |
+  `agent_core/progress.py` defines a single class, `OneLineProgressHandler`, that
+  is never imported anywhere in the snapshot (its Bazel target `//agent_core:progress`
+  has no reverse deps, and no module imports `agent_core.progress`). Dead module —
+  remove it.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_core/progress.py:
+        - [1, 67]
+    match_file_restriction:
+      - agent_core/progress.py

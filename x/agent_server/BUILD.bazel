@@ -156,7 +156,7 @@ py_library(
     name = "logging_config",
     srcs = ["logging_config.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["//agent_core:logging_utils"],
+    deps = ["//util:logging"],
 )
 
 py_library(
