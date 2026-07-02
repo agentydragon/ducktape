@@ -46,7 +46,7 @@ Fragile.
   commit that contains just `hashes.json`. Uses `ducktape-automation` App
   token (same pattern as `sync-pins.yml` / `pin-digests`).
 - **Consumer** (bb-remote script): `git fetch --depth=1 origin
-  refs/tags/bazel-diff-hashes/$BASE` and `git show tag:hashes.json > /tmp/bd-cache/base.json`.
+refs/tags/bazel-diff-hashes/$BASE` and `git show tag:hashes.json > /tmp/bd-cache/base.json`.
 
 Pros: uses existing git infrastructure, no new secrets, works inside
 `run_from_commit` because the VM has `git`. Cons: tag namespace grows
@@ -94,7 +94,7 @@ on:
     branches: [devel]
 concurrency:
   group: bazel-diff-hashes-${{ github.ref }}
-  cancel-in-progress: false  # each SHA gets its own tag; don't cancel
+  cancel-in-progress: false # each SHA gets its own tag; don't cancel
 permissions:
   contents: write
 jobs:
@@ -107,7 +107,7 @@ jobs:
           fetch-depth: 1
       - uses: ./.github/actions/setup-nix-devtools
         with:
-          package: citools  # provides bazel-diff, bazelisk
+          package: citools # provides bazel-diff, bazelisk
       - uses: ./.github/actions/mint-automation-token
         id: app
         with:
