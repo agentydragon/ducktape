@@ -146,19 +146,6 @@ operator-controlled dev tooling, not network-reachable; no SQL injection surface
   `loom/gym/analyze_baselines.py`, `devinfra/js/debundle/live_proxy/browser_runner.py`
   — orphan modules with no Bazel target/consumer; unbuilt and unlinted. **Fix:** add a
   `py_binary` (matching each file's own docstring) or delete.
-- **[Medium]** augur dead schema/sampler modules (each verified zero importers
-  repo-wide): `finance/augur/api/accounting.py:24` (5 wire models),
-  `finance/augur/model/poisson_events.py:24` (`sample_events` + single-member
-  `ScalarEventSpec` union), `finance/augur/model/path_models/_density.py:10`
-  (`gaussian_logpdf*`), plus write-only fields `calibration/calibration.py:147`
-  (`resolution_criterion`), and the duplicated/dead tax helpers in
-  `sim/runtime.py:32` (`estimated_tax_quarter` duplicated verbatim in
-  `compiler/obligations.py:67`; the rest of runtime.py's tax surface unreferenced).
-  A further cluster of unused exports (`fixed_point.py:64` `quanta_to_quantity`,
-  `round_float_array_to_int64`; `model/conditioning.py:55` `iter_observations`; etc.)
-  and a second RNG-substream convention (`trained_private_equity.py:187` `seed ^
-0x5EED` vs the canonical `derive_stream_rollout_seeds`). **Fix:** delete the dead
-  modules/fields/helpers; unify the RNG derivation.
 - **[Low]** `devinfra/claude/claude_api/profile.py:43`,
   `mcp_infra/compositor/server.py:259` (`extract_tool_*schemas` pure-delegation
   wrappers), `agent_core/handler.py:109` (`SequenceHandler`), `airlock/storage.py`
