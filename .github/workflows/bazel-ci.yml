@@ -166,11 +166,16 @@ jobs:
               # found") when every test in the affected set is filtered out by
               # --test_tag_filters -- e.g. a PR that only touches `manual`-tagged
               # tests. The TEST_TARGET_COUNT probe above counts test *rules* and
-              # can't see tag filters, so it can't pre-empt this. Treat exit 4 as
-              # benign (nothing to run) and still build.
+              # can't see tag filters, so it can't pre-empt this. Tolerate exit 4
+              # ONLY on the PR affected-set path; on the full `//...` sweep it would
+              # mean every test was filtered out -- a real problem we must not mask.
               test_rc=0
               bazel test --keep_going $RBE_FLAGS $TARGETS || test_rc=$?
-              if [ "$test_rc" -ne 0 ] && [ "$test_rc" -ne 4 ]; then
+              if [ "$test_rc" -eq 4 ] && [ "$TARGETS" != "//..." ]; then
+                echo "No runnable tests after tag filtering in the affected set; continuing to build."
+                test_rc=0
+              fi
+              if [ "$test_rc" -ne 0 ]; then
                 exit "$test_rc"
               fi
               probe_bb_runner after-test && \
