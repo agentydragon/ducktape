@@ -352,13 +352,26 @@ def main(
     os.chdir(repo_dir)
     sparse_clone(config, github_pat)
 
+    # Isolate entries: one broken rotation must not starve the others (a bad
+    # entry otherwise stalls every token in the cluster until someone notices).
+    # Failures still fail the Job at the end, after healthy entries commit.
+    rotated: list[str] = []
+    failed: list[str] = []
     with httpx.Client(verify=str(ca_bundle), timeout=30) as client:
-        rotated = [r.name for r in config.rotations if rotate_one(client, r, config)]
+        for rotation in config.rotations:
+            try:
+                if rotate_one(client, rotation, config):
+                    rotated.append(rotation.name)
+            except Exception:
+                logger.exception("%s: rotation failed; continuing with remaining entries", rotation.name)
+                failed.append(rotation.name)
 
-    if not rotated:
+    if rotated:
+        commit_and_push(config, rotated)
+    else:
         logger.info("no rotations needed this cycle")
-        return
-    commit_and_push(config, rotated)
+    if failed:
+        raise SystemExit(f"rotations failed: {', '.join(failed)}")
 
 
 if __name__ == "__main__":
