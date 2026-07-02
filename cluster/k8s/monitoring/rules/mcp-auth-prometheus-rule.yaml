@@ -1,0 +1,33 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: mcp-auth-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: mcp-auth
+      rules:
+        # An OIDCProxy-fronted MCP server (oauth facades, grocy-mcp) failed to
+        # refresh a client's token against Authentik. Before the
+        # ResilientOIDCProxy fix this instantly killed the claude.ai connector
+        # (invalid_grant is terminal); now transient failures answer 503, but
+        # each one still means claude.ai saw an error and the connector may
+        # need a manual Reconnect. RCA:
+        # debug/2026_06_claude_ai_connector_deauth.md
+        - alert: McpUpstreamTokenRefreshFailed
+          expr: increase(mcp_auth_upstream_refresh_failures_total[1h]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "MCP server {{ $labels.namespace }}/{{ $labels.pod }} failed an upstream token refresh (outcome: {{ $labels.outcome }})"
+            description: >
+              {{ $value | printf "%.0f" }} upstream token refresh failure(s) in
+              the last hour on {{ $labels.namespace }}/{{ $labels.pod }}
+              (outcome={{ $labels.outcome }}). outcome=transient means Authentik
+              was unreachable/5xx (client got 503 and may recover on its own);
+              outcome=oauth means Authentik genuinely rejected a grant — the
+              claude.ai connector is likely dead until manually reconnected.
+              Check Settings → Connectors in claude.ai and authentik-server
+              health.

@@ -1,0 +1,37 @@
+# LiteLLM's virtual-key/spend database (Prisma-managed schema; LiteLLM migrates it
+# on startup). OVH-HA profile per docs/cnpg_conventions.md: LiteLLM must keep serving
+# external-provider models (z.ai/GLM, chatgpt) during a home outage, so its DB lives
+# on the always-on OVH nodes. The litellm Deployment deliberately floats
+# (prefers proxmox, allows OVH — see app/deployment.yaml); DB traffic is light
+# (key lookups + spend writes), so the possible cross-site hop is acceptable.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: litellm-db
+  namespace: litellm
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    topologyKey: kubernetes.io/hostname
+
+  storage:
+    storageClass: local-path-ovh
+    size: 5Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  bootstrap:
+    initdb:
+      database: litellm
+      owner: litellm
+      # CNPG auto-generates credentials in secret litellm-db-app

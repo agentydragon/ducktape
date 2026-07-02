@@ -1,0 +1,43 @@
+"""Stalwart server image with stalwart-cli layered in.
+
+Upstream ships the CLI only as a distroless image (a bare static binary — no
+shell to copy it out of in an initContainer) and as release tarballs; the
+server image carries no CLI at all. The haku-mailbox bootstrap
+(../app/bootstrap-and-run.sh) needs both binaries in one filesystem, so this
+repack layers the pinned static CLI onto the pinned upstream server image.
+Both pins live in MODULE.bazel (`stalwart` oci.pull, `stalwart_cli`
+http_archive) — bump them together on Stalwart upgrades.
+
+Load for local testing:
+  bb run //cluster/k8s/haku/mailbox/image:load
+"""
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+pkg_files(
+    name = "cli_files",
+    srcs = ["@stalwart_cli//:stalwart-cli"],
+    attributes = pkg_attributes(mode = "0755"),
+    prefix = "/usr/local/bin",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "cli_layer",
+    srcs = [":cli_files"],
+)
+
+oci_image(
+    name = "image",
+    base = "@stalwart_linux_amd64",
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":cli_layer"],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["ghcr.io/agentydragon/stalwart:latest"],
+)

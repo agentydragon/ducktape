@@ -27,7 +27,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: server
-          image: ghcr.io/agentydragon/gmail-labeling:devel-20260701104648-00fd36a # {"$imagepolicy": "flux-system:gmail-labeling"}
+          image: ghcr.io/agentydragon/gmail-labeling:devel-20260702102507-a96a5ca # {"$imagepolicy": "flux-system:gmail-labeling"}
           imagePullPolicy: Always
           ports:
             - name: http

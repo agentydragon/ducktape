@@ -65,3 +65,5 @@ resources:
   - study-casino-image-policy.yaml
   - wayback-archive-image-repository.yaml
   - wayback-archive-image-policy.yaml
+  - stalwart-image-repository.yaml
+  - stalwart-image-policy.yaml

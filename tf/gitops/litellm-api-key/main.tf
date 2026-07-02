@@ -48,6 +48,34 @@ resource "kubernetes_secret" "litellm_master_key" {
   }
 }
 
+# LITELLM_SALT_KEY — encrypts credential material LiteLLM stores in its virtual-key
+# DB. Set once, NEVER rotate: rotating orphans everything already encrypted with it
+# (the lifecycle block guards against accidental regeneration).
+resource "random_password" "salt_key" {
+  length  = 48
+  special = false
+
+  lifecycle {
+    ignore_changes  = [length, special]
+    prevent_destroy = true
+  }
+}
+
+resource "kubernetes_secret" "litellm_salt_key" {
+  metadata {
+    name      = "litellm-salt-key"
+    namespace = "litellm"
+  }
+
+  data = {
+    key = random_password.salt_key.result
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 # Gatus needs the key as LITELLM_API_KEY env var (via envFrom).
 resource "kubernetes_secret" "litellm_api_key_gatus" {
   metadata {

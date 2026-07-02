@@ -43,6 +43,9 @@ class ServerSettings(BaseSettings):
     grocy_url: str = Field(description="URL of the Grocy instance. For production this is the outpost-protected URL.")
     host: str = "0.0.0.0"
     port: int = 8765
+    metrics_port: int = Field(
+        default=9090, description="Prometheus metrics port (cluster-internal, not on the HTTPRoute)."
+    )
 
     grocy_timeout: float = Field(default=30.0, description="Timeout (seconds) for Grocy API requests.")
     max_batch_size: int = Field(default=MAX_BATCH_SIZE, description="Maximum items per batch tool call.")

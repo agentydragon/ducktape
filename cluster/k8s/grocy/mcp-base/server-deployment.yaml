@@ -23,11 +23,15 @@ spec:
       enableServiceLinks: false
       containers:
         - name: server
-          image: ghcr.io/agentydragon/grocy-mcp:devel-20260701103509-515c933 # {"$imagepolicy": "flux-system:grocy-mcp-oidc-server"}
+          image: ghcr.io/agentydragon/grocy-mcp:devel-20260702103237-a96a5ca # {"$imagepolicy": "flux-system:grocy-mcp-oidc-server"}
           imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8765
+              protocol: TCP
+            # Prometheus metrics, cluster-internal only (not on the HTTPRoute).
+            - name: metrics
+              containerPort: 9090
               protocol: TCP
           env:
             - name: LOG_LEVEL

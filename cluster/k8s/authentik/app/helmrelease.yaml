@@ -101,8 +101,19 @@ spec:
 
       # Default 3s timeout is too tight — outpost API calls regularly take
       # 1s+ even with OVH-local PostgreSQL. Give enough headroom.
+      #
+      # Authentik's /-/health/live/ returns 500 whenever PostgreSQL is
+      # unreachable, so with the default failureThreshold every transient
+      # DB/DNS blip (CNPG failover, node churn) liveness-killed a healthy
+      # server and turned a seconds-long blip into a ~90s reboot — the 503
+      # windows that killed claude.ai MCP connectors
+      # (debug/2026_06_claude_ai_connector_deauth.md). Ride out ~2min of DB
+      # unavailability before restarting; readiness stays fast so the pod
+      # drops out of the Service immediately.
       livenessProbe:
         timeoutSeconds: 10
+        periodSeconds: 15
+        failureThreshold: 8
       readinessProbe:
         timeoutSeconds: 10
 

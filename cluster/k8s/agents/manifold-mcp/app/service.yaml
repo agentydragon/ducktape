@@ -13,4 +13,8 @@ spec:
       port: 8765
       targetPort: http
       protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP
   type: ClusterIP

@@ -80,7 +80,9 @@ resources:
   - agents/kagent/crds/flux-kustomization.yaml
   - agents/kagent/app/flux-kustomization.yaml
   - grocy/sf/mcp/flux-kustomization.yaml
+  - grocy/sf/mcp-servicemonitor/flux-kustomization.yaml
   - grocy/vallejo/mcp/flux-kustomization.yaml
+  - grocy/vallejo/mcp-servicemonitor/flux-kustomization.yaml
   - agents/kubectl-passthrough-mcp/namespace/flux-kustomization.yaml
   - agents/kubectl-passthrough-mcp/app/flux-kustomization.yaml
   - agents/kubectl-sandbox-mcp/namespace/flux-kustomization.yaml
@@ -89,13 +91,16 @@ resources:
   - agents/kubectl-machine-mcp/app/flux-kustomization.yaml
   - agents/manifold-mcp/namespace/flux-kustomization.yaml
   - agents/manifold-mcp/app/flux-kustomization.yaml
+  - agents/manifold-mcp/servicemonitor/flux-kustomization.yaml
   - agents/plaid-mcp/namespace/flux-kustomization.yaml
   - agents/plaid-mcp/db/flux-kustomization.yaml
   - agents/plaid-mcp/app/flux-kustomization.yaml
   - agents/plaid-db-mcp/app/flux-kustomization.yaml
+  - agents/plaid-db-mcp/servicemonitor/flux-kustomization.yaml
   - agents/plaid-mcp/agent-rbac/flux-kustomization.yaml
   - agents/postscanmail-mcp/namespace/flux-kustomization.yaml
   - agents/postscanmail-mcp/app/flux-kustomization.yaml
+  - agents/postscanmail-mcp/servicemonitor/flux-kustomization.yaml
   - agents/homeassistant-proxy/flux-kustomization.yaml
   - agents/openclaw/operator/flux-kustomization.yaml
   - agents/openclaw/gateway-namespace/flux-kustomization.yaml
@@ -282,6 +287,7 @@ resources:
   - litellm/namespace/flux-kustomization.yaml
   - litellm/agent-rbac/flux-kustomization.yaml
   - litellm/secrets/flux-kustomization.yaml
+  - litellm/db/flux-kustomization.yaml
   - litellm/app/flux-kustomization.yaml
   - litellm/tana/flux-kustomization.yaml
   - litellm/servicemonitor/flux-kustomization.yaml

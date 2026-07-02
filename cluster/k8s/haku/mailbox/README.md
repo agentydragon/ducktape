@@ -6,10 +6,11 @@ Haku (`haku@allegedly.works`) over an authenticated channel — contract in
 
 ## Layout
 
-| Path   | Role                                                                                           |
-| ------ | ---------------------------------------------------------------------------------------------- |
-| `db/`  | CNPG Postgres (OVH-HA profile) — Stalwart's data/blob/search/settings store; no PVC on the app |
-| `app/` | Stalwart Deployment + provisioning plan + Service/HTTPRoute/Certificate/secrets                |
+| Path     | Role                                                                                               |
+| -------- | -------------------------------------------------------------------------------------------------- |
+| `db/`    | CNPG Postgres (OVH-HA profile) — Stalwart's data/blob/search/settings store; no PVC on the app     |
+| `app/`   | Stalwart Deployment + provisioning plan + Service/HTTPRoute/Certificate/secrets                    |
+| `image/` | Bazel repack of upstream Stalwart with `stalwart-cli` layered in (`ghcr.io/agentydragon/stalwart`) |
 
 ## Configuration model
 
@@ -19,17 +20,27 @@ deliberately tiny (its documented declarative-deployments workflow):
 - `app/config.json` — the DataStore object only (Postgres via the
   CNPG-generated `haku-mailbox-db-app` credentials; password injected as an
   env var).
-- `app/mailbox-plan.ndjson.tmpl` — everything else, as an idempotent
+- `app/mailbox-plan.ndjson` — everything else, as an idempotent
   `stalwart-cli apply` plan of `upsert`s: domain, the `haku` account
   (pre-created so inbound RCPT resolves before first login — required for
   OIDC directories), the Authentik OIDC directory, the DMARC-gated
   whitelist Sieve script wired to the SMTP DATA stage, the two listeners
-  (SMTP :2525 STARTTLS, HTTP :8080), and the TLS certificate (PEM pushed
-  from the cert-manager secret).
-- `app/bootstrap-and-run.sh` — pod entrypoint: renders the plan (cert PEMs),
-  applies it against a temporary recovery-mode instance, then execs the
-  normal server. Every pod start reconciles config; the reloader annotation
-  makes cert-manager renewals trigger exactly such a restart.
+  (SMTP :2525 STARTTLS, HTTP :8080), and the TLS certificate. The
+  certificate is a `File` reference to the mounted cert-manager secret
+  (`/tls/tls.{crt,key}`), so the plan is fully static and the upsert is
+  idempotent across renewals — a renewal just restarts the pod (reloader)
+  and the server re-reads the PEMs.
+- `app/bootstrap-and-run.sh` — pod entrypoint: applies the plan against a
+  temporary recovery-mode instance, then execs the normal server. Every pod
+  start reconciles config; the reloader annotation makes cert-manager
+  renewals trigger exactly such a restart.
+- The pod image is the in-repo repack from `image/BUILD.bazel` — upstream
+  server + the pinned static `stalwart-cli` (upstream ships the CLI only as
+  a distroless image, unusable from the pod). Published as
+  `ghcr.io/agentydragon/stalwart` by the push-images workflow, tag tracked
+  by Flux image automation. Upgrading Stalwart = bumping the `stalwart`
+  `oci.pull` (tag + digest) and, on CLI releases, the `stalwart_cli`
+  `http_archive` sha in `MODULE.bazel`.
 
 **Deviation** from stock Stalwart: no setup wizard, no WebUI-managed state —
 the plan is the single source of truth. Interactive admin (rarely needed)
@@ -77,11 +88,9 @@ TOK=$(kubectl -n haku-sandbox get secret haku-mail-token -o jsonpath='{.data.jwt
 curl -s -H "Authorization: Bearer $TOK" https://haku-mailbox.allegedly.works/.well-known/jmap | head
 ```
 
-First-deploy items to watch: the `fetch-cli` initContainer assumes
-`ghcr.io/stalwartlabs/cli` has a shell + `cp` (swap for a copy-compatible
-approach if it's distroless), and the plan's object shapes were authored
-against the v0.16 docs — `stalwart-cli apply` errors name the offending
-field if the schema drifts.
+First-deploy item to watch: the plan's object shapes were authored against
+the v0.16 docs — `stalwart-cli apply` errors name the offending field if the
+schema drifts.
 
 ## Future
 
@@ -99,6 +108,4 @@ field if the schema drifts.
   `MtaStageData`, the `Authentication`/`SystemSettings` singletons, and
   `Certificate` (as of 2026-07, `flungo/stalwart` v0.1.0 covers
   accounts/domains/directories/listeners only); (b) upstream grows a
-  file-based/declarative bootstrap; (c) if only the cert-push half hurts,
-  Stalwart-native ACME (`AcmeProvider` + Route 53 DNS-01) can delete the PEM
-  templating at the cost of the cert-manager convention.
+  file-based/declarative bootstrap.

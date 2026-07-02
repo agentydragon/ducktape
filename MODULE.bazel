@@ -139,6 +139,12 @@ tf.download(
         "http": "hashicorp/http:3.6.0",
         "kubernetes": "hashicorp/kubernetes:2.38.0",
         "libvirt": "dmacvicar/libvirt:0.9.3",
+        # CAUTION: low-user-count community provider that authenticates with the
+        # LiteLLM master key (tf/gitops/litellm-keys). On every version bump,
+        # manually review the source diff since the last pinned tag (focus:
+        # request construction/egress and release workflow) BEFORE updating.
+        # Do not auto-merge Renovate/update_deps bumps.
+        "litellm": "ncecere/litellm:2.0.1",
         "local": "hashicorp/local:2.5.3",
         "null": "hashicorp/null:3.2.4",
         "ovh": "ovh/ovh:2.13.1",
@@ -289,7 +295,18 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "1.27-alpine",
 )
-use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "mitmproxy", "mitmproxy_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_13_slim", "python_3_13_slim_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
+
+# Stalwart mailserver — base for the haku-mailbox repack (server + stalwart-cli,
+# //cluster/k8s/haku/mailbox/image). To repin:
+#   crane digest --platform linux/amd64 docker.io/stalwartlabs/stalwart:<tag>
+oci.pull(
+    name = "stalwart",
+    digest = "sha256:d928787a9089575245c7f1c8811e49ac301b0c2a6d86fdd3e84835b45794f7ef",
+    image = "mirror.gcr.io/stalwartlabs/stalwart",
+    platforms = ["linux/amd64"],
+    tag = "v0.16.11",
+)
+use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "mitmproxy", "mitmproxy_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_13_slim", "python_3_13_slim_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
 
 # Container image pins from devinfra/image_pins.json.
 # - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants
@@ -692,6 +709,19 @@ http_file(
     executable = True,
     sha256 = "5488e32bc471de7982ad895dd054bbab3ab91c417a118426134551e9626e4e85",
     urls = ["https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.amd64"],
+)
+
+# stalwart-cli — Stalwart's management CLI, layered onto the server image for
+# the haku-mailbox provisioning bootstrap. Upstream ships it only as a
+# distroless image (bare binary, no shell to copy it out of in an
+# initContainer) and as release tarballs; the server image carries no CLI.
+# Build target: //cluster/k8s/haku/mailbox/image
+http_archive(
+    name = "stalwart_cli",
+    build_file_content = 'exports_files(["stalwart-cli"])',
+    sha256 = "d1713cd4e00908af02d372d1a9e44e9df69182ab5caf8481557f0eb1b22ea5f5",
+    strip_prefix = "stalwart-cli-x86_64-unknown-linux-musl",
+    urls = ["https://github.com/stalwartlabs/cli/releases/download/v1.0.10/stalwart-cli-x86_64-unknown-linux-musl.tar.xz"],
 )
 
 # Adoptium Temurin JDK 21 — provides keytool and cacerts for claude tests.

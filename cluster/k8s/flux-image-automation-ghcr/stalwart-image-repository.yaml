@@ -1,0 +1,13 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: stalwart
+  namespace: flux-system
+  annotations:
+    description: >-
+      In-repo repack of the Stalwart mailserver with stalwart-cli layered in
+      (//cluster/k8s/haku/mailbox/image), consumed by the haku-mailbox
+      Deployment.
+spec:
+  image: ghcr.io/agentydragon/stalwart
+  interval: 5m

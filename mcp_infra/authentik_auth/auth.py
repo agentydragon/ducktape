@@ -31,6 +31,7 @@ from urllib.parse import urlparse, urlunparse
 
 import httpx
 from authlib.integrations.httpx_client import AsyncOAuth2Client
+from authlib.oauth2 import OAuth2Error
 from authlib.oauth2.rfc6749.wrappers import OAuth2Token
 from fastmcp.server.auth import MultiAuth
 from fastmcp.server.auth.auth import AuthProvider, TokenVerifier
@@ -38,10 +39,17 @@ from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
 from key_value.aio.protocols import AsyncKeyValue
+from mcp.server.auth.provider import TokenError
+from prometheus_client import Counter
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.exceptions import HTTPException
+from tenacity import AsyncRetrying, before_sleep_log, retry_if_exception, stop_after_attempt, wait_exponential
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
+
+    from mcp.server.auth.provider import RefreshToken
+    from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +120,94 @@ class AuthentikAuthConfig(BaseModel):
         return urlunparse(parsed._replace(path=f"{prefix}{marker}token/"))
 
 
+# ── Resilient refresh proxy ───────────────────────────────────────────────
+
+UPSTREAM_REFRESH_FAILURES = Counter(
+    "mcp_auth_upstream_refresh_failures_total",
+    "MCP client token refreshes that failed at the upstream Authentik token endpoint",
+    ["outcome"],  # transient (upstream unreachable/5xx) | oauth (real OAuth error response)
+)
+
+_RETRY_AFTER_SECONDS = 60
+
+
+def _transient_upstream_error(exc: BaseException | None) -> bool:
+    """True for upstream failures that say nothing about the grant's validity."""
+    if isinstance(exc, httpx.TransportError):  # DNS, connect, timeout, protocol errors
+        return True
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code >= 500
+
+
+def _is_transient_token_error(exc: BaseException) -> bool:
+    return isinstance(exc, TokenError) and _transient_upstream_error(exc.__cause__)
+
+
+def _upstream_oauth_rejection(exc: BaseException | None) -> bool:
+    """True when Authentik itself answered the refresh with an OAuth rejection.
+
+    authlib raises OAuth2Error subclasses for error-body responses; a
+    non-5xx HTTPStatusError is an upstream rejection without a parseable
+    body. TokenErrors with any other cause (or none) are local — unknown
+    refresh token, missing JTI mapping — i.e. normal client churn that never
+    reached Authentik, and must not fire the upstream-failure alert.
+    """
+    return isinstance(exc, OAuth2Error | httpx.HTTPStatusError)
+
+
+class ResilientOIDCProxy(OIDCProxy):
+    """OIDCProxy that doesn't convert transient upstream failures into invalid_grant.
+
+    Stock fastmcp (3.1.0, oauth_proxy/proxy.py `exchange_refresh_token`) wraps the
+    upstream refresh call in a blanket `except Exception` and raises
+    `TokenError("invalid_grant")`. Per RFC 6749 §5.2, invalid_grant tells the client
+    its refresh token is revoked — claude.ai correctly treats it as terminal, flips
+    the connector to "Reconnect", and never retries. A single Authentik restart
+    (503) or DNS blip therefore permanently killed connectors
+    (see debug/2026_06_claude_ai_connector_deauth.md).
+
+    This subclass retries transient upstream failures briefly, and if they persist
+    answers HTTP 503 + Retry-After (via Starlette's default HTTPException handler)
+    instead of invalid_grant. Genuine upstream OAuth error responses (Authentik
+    actually rejecting the grant) still surface as invalid_grant.
+
+    Detection relies on fastmcp raising its TokenError `from` the original httpx
+    exception — pinned by test_auth.py against the vendored fastmcp version.
+    """
+
+    # Short on purpose: retries only bridge sub-second blips; longer outages are
+    # answered with 503 so the client may retry. Class attrs so tests can drop
+    # the wait.
+    refresh_retry_stop = stop_after_attempt(3)
+    refresh_retry_wait = wait_exponential(multiplier=0.5, max=2)
+
+    async def exchange_refresh_token(
+        self, client: OAuthClientInformationFull, refresh_token: RefreshToken, scopes: list[str]
+    ) -> OAuthToken:
+        try:
+            async for attempt in AsyncRetrying(
+                retry=retry_if_exception(_is_transient_token_error),
+                stop=self.refresh_retry_stop,
+                wait=self.refresh_retry_wait,
+                before_sleep=before_sleep_log(logger, logging.WARNING),
+                reraise=True,
+            ):
+                with attempt:
+                    return await super().exchange_refresh_token(client, refresh_token, scopes)
+        except TokenError as e:
+            if _is_transient_token_error(e):
+                UPSTREAM_REFRESH_FAILURES.labels(outcome="transient").inc()
+                logger.exception("Upstream auth server unavailable during token refresh")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Upstream authorization server temporarily unavailable; retry later.",
+                    headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
+                ) from e.__cause__
+            if _upstream_oauth_rejection(e.__cause__):
+                UPSTREAM_REFRESH_FAILURES.labels(outcome="oauth").inc()
+            raise
+        raise AssertionError("unreachable")  # the retry loop always returns or raises
+
+
 # ── Auth builder ──────────────────────────────────────────────────────────
 
 
@@ -145,7 +241,7 @@ def build_authentik_auth(
     config_url = f"{issuer}/.well-known/openid-configuration"
     discovery = httpx.get(config_url, timeout=10.0).raise_for_status().json()
     jwks_uri = discovery["jwks_uri"]
-    proxy = OIDCProxy(
+    proxy = ResilientOIDCProxy(
         config_url=config_url,
         client_id=config.oidc_client_id,
         client_secret=config.oidc_client_secret,
