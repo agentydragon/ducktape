@@ -23,19 +23,52 @@ def test_representable_rule_normalizes():
     )
 
 
-def test_compound_from_condition_raises():
-    """A compound `from` condition cannot be represented and must raise."""
-    rule = FilterRule(from_=CompoundCondition(any=["a@example.com", "b@example.com"]))
+# Every criteria field NormalizedFilter cannot represent: setting any of them must
+# fail closed rather than silently broaden the synced filter. Parameterized so a
+# typo/omission in the reject list regresses a test. (attr, expected-name-in-error)
+UNREPRESENTABLE_FIELDS = [
+    ("match", "match"),
+    ("missing", "missing"),
+    ("no_match", "no_match"),
+    ("bcc", "bcc"),
+    ("cc", "cc"),
+    ("list", "list"),
+    ("labeled", "labeled"),
+    ("is_", "is"),
+    ("category", "category"),
+    ("deliveredto", "deliveredto"),
+    ("filename", "filename"),
+    ("larger", "larger"),
+    ("smaller", "smaller"),
+    ("size", "size"),
+    ("rfc822msgid", "rfc822msgid"),
+]
 
-    with pytest.raises(ValueError, match="from"):
+
+@pytest.mark.parametrize(("attr", "error_name"), UNREPRESENTABLE_FIELDS)
+def test_unrepresentable_field_raises(attr: str, error_name: str):
+    rule = FilterRule(**{attr: "x"}, trash=True)
+
+    with pytest.raises(ValueError, match=error_name):
         normalize_yaml_rule(rule)
 
 
-def test_unrepresentable_cc_field_raises():
-    """A criteria field the normalizer cannot represent (cc) must raise."""
-    rule = FilterRule(cc="boss@example.com", trash=True)
+# from/to/subject/has/does_not_have accept plain strings (representable) but also
+# compound any/all/not conditions, which NormalizedFilter cannot carry.
+COMPOUND_FIELDS = [
+    ("from_", "from"),
+    ("to", "to"),
+    ("subject", "subject"),
+    ("has", "has"),
+    ("does_not_have", "does_not_have"),
+]
 
-    with pytest.raises(ValueError, match="cc"):
+
+@pytest.mark.parametrize(("attr", "error_name"), COMPOUND_FIELDS)
+def test_compound_condition_raises(attr: str, error_name: str):
+    rule = FilterRule(**{attr: CompoundCondition(any=["a@example.com", "b@example.com"])})
+
+    with pytest.raises(ValueError, match=f"'{error_name}'"):
         normalize_yaml_rule(rule)
 
 
