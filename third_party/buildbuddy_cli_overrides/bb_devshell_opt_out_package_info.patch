@@ -1,0 +1,13 @@
+diff --git a/REPO.bazel b/REPO.bazel
+new file mode 100644
+index 0000000..0000001
+--- /dev/null
++++ b/REPO.bazel
+@@ -0,0 +1,7 @@
++# Empty REPO.bazel: opts this fetched repo out of go_repository's automatic
++# gazelle_generated_package_info/package_metadata generation (see
++# gazelle+/internal/go_repository.bzl's _go_repository_impl -- it only
++# creates its own REPO.bazel "if not repo_file.exists"). That generated
++# target needs @aspect_bazel_lib, which isn't visible from this
++# module-extension-fetched repo's context (same class of problem as the
++# other visibility issues documented in overrides.MODULE.bazel).

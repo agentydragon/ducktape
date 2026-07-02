@@ -90,6 +90,15 @@ go_deps.module_override(
         # alone. This is real .proto *content* (not BUILD-file organization),
         # so it stays necessary regardless of build_file_generation below.
         "//third_party/buildbuddy_cli_overrides:bb_devshell_strip_vtproto_and_kythe_messages.patch",
+        # build_file_generation = "on" below makes go_repository auto-create
+        # its own REPO.bazel + inject a gazelle_generated_package_info target
+        # into the root BUILD file (see gazelle+/internal/go_repository.bzl),
+        # which depends on @aspect_bazel_lib -- not visible from this
+        # module-extension-fetched repo's context. Pre-supplying an empty
+        # REPO.bazel opts out of that generation entirely (the mechanism's
+        # own doc comment: "provides a way for users to opt out of
+        # Gazelle-generated package_info").
+        "//third_party/buildbuddy_cli_overrides:bb_devshell_opt_out_package_info.patch",
     ],
     path = "github.com/buildbuddy-io/buildbuddy",
 )
