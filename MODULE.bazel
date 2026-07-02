@@ -139,6 +139,12 @@ tf.download(
         "http": "hashicorp/http:3.6.0",
         "kubernetes": "hashicorp/kubernetes:2.38.0",
         "libvirt": "dmacvicar/libvirt:0.9.3",
+        # CAUTION: low-user-count community provider that authenticates with the
+        # LiteLLM master key (tf/gitops/litellm-keys). On every version bump,
+        # manually review the source diff since the last pinned tag (focus:
+        # request construction/egress and release workflow) BEFORE updating.
+        # Do not auto-merge Renovate/update_deps bumps.
+        "litellm": "ncecere/litellm:2.0.1",
         "local": "hashicorp/local:2.5.3",
         "null": "hashicorp/null:3.2.4",
         "ovh": "ovh/ovh:2.13.1",
