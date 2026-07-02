@@ -374,6 +374,18 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_headline_metric",
+    srcs = ["test_headline_metric.py"],
+    deps = [
+        ":inspect_harness",
+        ":scoring",
+        ":task",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # ── OCI image (driver for the in-cluster forecasting-eval Job) ────────────────
 #
 # Bundles the Python eval driver with the `docker` CLI + `docker compose` v2

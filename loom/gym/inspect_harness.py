@@ -291,7 +291,10 @@ def sample_for_task(task: Task, dossier: dict[str, str], compose_path: Path, *, 
 
 
 def headline_metric(metrics: dict[str, float], kind: str) -> str:
-    if kind == "binary":
+    # binary and categorical scoring both emit log_loss; quantile (scalar) emits
+    # mean_pinball[_log]. Categorical must not fall through to mean_pinball — it
+    # isn't a key _score_categorical produces, so the lookup would KeyError.
+    if kind in ("binary", "categorical"):
         return "log_loss"
     return "mean_pinball_log" if "mean_pinball_log" in metrics else "mean_pinball"
 
