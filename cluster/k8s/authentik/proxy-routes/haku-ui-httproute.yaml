@@ -3,7 +3,7 @@
 # (Service haku-ui in haku-sandbox, via the provider's internal_host).
 # Operator-owned by construction: Kyverno forbids Haku creating routes in
 # haku-sandbox, so this authentik-namespace route is the only public path to haku-ui.
-# Security model: haku/base/SECURITY.md (enforcement inventory #9; the CSP below
+# Security model: haku/docs/security.md (enforcement inventory #9; the CSP below
 # closes the browser-side exfiltration channel).
 ---
 apiVersion: gateway.networking.k8s.io/v1
@@ -30,7 +30,7 @@ spec:
     # frame-ancestors permits only the trusted console (and self, for direct visits);
     # `webrtc 'block'` is CSP3 — enforced by Chromium (closing the WebRTC data-channel
     # bypass of connect-src there), ignored harmlessly by Firefox/Safari.
-    # See haku/base/SECURITY.md § Browser-side exfiltration.
+    # See haku/docs/security.md § Browser-side exfiltration.
     - filters:
         - type: ResponseHeaderModifier
           responseHeaderModifier:

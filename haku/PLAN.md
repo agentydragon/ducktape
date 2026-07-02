@@ -13,7 +13,7 @@ rationale:
   current working method — its presentation format, procedures, and UI — lives in its
   `haku-state` repo (seeded from `haku/state_template/`), not base.
 - **Threat model, enforcement inventory, and the invariants edits must preserve:**
-  <base/SECURITY.md> — the durable doctrine's canonical home; start a security review there.
+  <docs/security.md> — the durable doctrine's canonical home; start a security review there.
 - The run procedure: `haku/run.md`; the web runtime: `haku/runtime/claude_web_env/`.
 - The trusted console (capability tier + iframe shell): `haku/console/README.md`;
   containment doctrine: `haku/console/plans/free_form_ui_iframe.md`. Alternative runtimes
@@ -84,7 +84,7 @@ allowed now — e.g. _draft an email_ (into Drafts, not send), _explore less-res
 websites_ for research, and similar low-blast-radius moves — without giving up the
 transparency and containment that make the read-only posture safe. (The `gmail-labeling`
 closure server was the first realized instance of the pattern: a narrow write surface
-made safe by construction — see `base/SECURITY.md` inventory #7.)
+made safe by construction — see `docs/security.md` inventory #7.)
 
 Sketch to design out later (a real mechanism-design + security effort, not built):
 
@@ -96,7 +96,7 @@ Sketch to design out later (a real mechanism-design + security effort, not built
 - **Transparency by construction.** Every elevated action is logged and surfaced (what
   it did, under which grant, why), so the operator-facing surface is the accountability
   surface — same as recommendations are today.
-- **Enforced by the perimeter, not by trust.** Per `base/SECURITY.md`, an elevation
+- **Enforced by the perimeter, not by trust.** Per `docs/security.md`, an elevation
   must be enforced by what the token actually unlocks (the mechanism), never by trusting
   Haku to stay in bounds. Drafting (write to Drafts, no send) and sandboxed browsing
   are good first candidates — small, reviewable blast radius.

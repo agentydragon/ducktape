@@ -6,7 +6,7 @@ trusted namespace's logs (which Haku has no RBAC to read), and the capability se
 is a small, **PR-gated** allowlist. Today the one capability is `launch-routine`:
 firing the Haku "claude-code-web routine" via its public Anthropic fire URL with
 the bearer from the `haku-routine-launch-token` secret. The bearer never leaves
-this process. See `haku/base/SECURITY.md` → enforcement inventory #11.
+this process. See `haku/docs/security.md` → enforcement inventory #11.
 """
 
 from __future__ import annotations

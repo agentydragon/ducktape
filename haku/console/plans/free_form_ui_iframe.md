@@ -56,7 +56,7 @@ secret, and the public door_; Haku owns _the picture inside the frame_.
 ## Containment invariants (the load-bearing part)
 
 The iframe content is **100% Haku-controlled and is assumed adversarial** (a
-prompt-injected Haku could author hostile UI — see `haku/base/SECURITY.md`, "the
+prompt-injected Haku could author hostile UI — see `haku/docs/security.md`, "the
 container is the trust boundary"). Safety comes from the perimeter, not from
 trusting the content:
 

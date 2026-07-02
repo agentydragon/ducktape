@@ -4,7 +4,7 @@ The console is the trusted outer shell: it frames Haku's own UI (``haku/state_te
 full-page as a sandboxed cross-origin iframe and owns the one privileged surface — the
 **capability tier** (``haku.console.capabilities``), which uses console-only secrets and
 acts on the world (launching the routine); it is CSRF-gated and audited (see
-``haku/base/SECURITY.md`` → enforcement inventory #11). ``app.py`` wires that router, configures CSRF, and serves
+``haku/docs/security.md`` → enforcement inventory #11). ``app.py`` wires that router, configures CSRF, and serves
 the config endpoint. It can also mount the built SPA when ``static_dir`` is explicitly
 configured for a direct local/dev fallback.
 """
