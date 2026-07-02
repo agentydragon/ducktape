@@ -91,13 +91,6 @@ Numbers are approximate; the detailed findings below are the source of truth.
   `"hunter2"` (`TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "hunter2")`), used to
   sign/verify auth tokens; the README documents the default. **Fix:** raise at
   startup if unset.
-- **[High]** `trilium/papers/paper_widget.js:106` (also
-  `trilium/issue_tracker/issue_widget.js:151`) — OpenAI API key logged verbatim:
-  `console.log("OPENAI API KEY:", OPENAI_API_KEY)`. **Fix:** delete both log lines.
-- **[High]** `props/backend/app.py:165-166` — admin token written to pod logs at INFO
-  (`logger.info(f"Admin token: {admin_token}")` + admin URL with `?token=`); k8s log
-  access is broader than admin-token access. **Fix:** remove or gate behind an
-  explicit dev-mode flag.
 - **[Medium]** `devinfra/firecracker/manager/service.py:38-43` — an unset
   `FC_MANAGER_AUTH_TOKEN` makes `_require_auth` return immediately, silently
   disabling all auth on the VM-manager API with no log line. **Fix:** fail closed or
@@ -146,13 +139,6 @@ operator-controlled dev tooling, not network-reachable; no SQL injection surface
 
 ### Dead / orphan modules (several already flagged in the repo's own `docs/dead_code_2026_01_30.md`)
 
-- **[Medium]** `agent_core/progress.py:16` — `OneLineProgressHandler` has zero
-  importers/BUILD deps; already listed in `docs/dead_code_2026_01_30.md` 5 months
-  ago. **Fix:** delete the module + `py_library`.
-- **[Medium]** `agent_core/logging_utils.py:16` — `configure_logging` is a divergent
-  near-copy of `util/logging.py`'s, its only consumer being
-  `x/agent_server/logging_config.py`; both retain a stale `MINICODEX_DEBUG` env
-  switch. **Fix:** point the consumer at `util.logging` and delete.
 - **[Medium]** `mcp_infra/client_helpers.py:7` and
   `mcp_infra/authentik_auth/store.py:15` — both modules have zero importers and zero
   Bazel reverse-deps. **Fix:** delete.
@@ -633,9 +619,6 @@ NULLed for n<2).
 
 ### Duplication (cross-session lost-context artifacts)
 
-- **[Medium]** `agent_core/logging_utils.py` ↔ `util/logging.py` — ~45 lines of
-  logging bootstrap duplicated (identical `dictConfig`/structlog, both with a stale
-  `MINICODEX_DEBUG` knob). **Fix:** keep `util/logging.py`, delete the copy.
 - **[Medium]** `props/agents/runtime.py:100-115` ↔
   `x/editor_agent/agent_pkg/output.py:69-85` — Mako template-context builder
   duplicated cross-package and already diverging. **Fix:** extract a shared module.
@@ -765,8 +748,7 @@ sandbox boundaries`; a sandboxed agent can exfiltrate any host-readable file via
      (Critical).
    - Scope down the `kubeapi_admin` cluster-admin binding (High).
 2. **This week (security):** JWT audience validation; remove the `hunter2` secret
-   fallback (require at startup); delete the OpenAI-key and
-   admin-token log lines; fail-closed on unset `FC_MANAGER_AUTH_TOKEN`; fix the
+   fallback (require at startup); fail-closed on unset `FC_MANAGER_AUTH_TOKEN`; fix the
    `read_image` sandbox-boundary escape or disable the tool.
 3. **This week (correctness):** gmail filter-sync criteria-dropping + ForEachRule
    deletion (over-deletion risk); grocy retry double-apply on mutating POSTs;
