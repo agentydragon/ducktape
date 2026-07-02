@@ -97,9 +97,10 @@ class TrainedPrivateEquityModel(FrozenModel):
         else:
             level_seeds = derive_stream_rollout_seeds(request.rollout_seeds, stream_id=f"{issuer}:pe_level")
             event_seeds = derive_stream_rollout_seeds(request.rollout_seeds, stream_id=f"{issuer}:pe_event")
+            noise_seeds = derive_stream_rollout_seeds(request.rollout_seeds, stream_id=f"{issuer}:pe_event_noise")
             levels = _sample_levels(self.artifact, rollout_seeds=level_seeds, horizon_months=horizon_months)
             events = _sample_tender_events(self.artifact, rollout_seeds=event_seeds, horizon_months=horizon_months)
-            _apply_event_price_noise(self.artifact, levels=levels, events=events, rollout_seeds=event_seeds)
+            _apply_event_price_noise(self.artifact, levels=levels, events=events, rollout_seeds=noise_seeds)
             levels = observed_private_equity_mark_matrix(levels, events)
 
         return SampledExogenousBundle(
@@ -184,7 +185,7 @@ def _apply_event_price_noise(
     if artifact.tender_price_log_discount_sigma == 0 and artifact.tender_price_log_discount_mu == 0:
         return
     for rollout_idx, seed in enumerate(rollout_seeds):
-        rng = np.random.default_rng(seed ^ 0x5EED)
+        rng = np.random.default_rng(seed)
         event_months = np.flatnonzero(events[rollout_idx])
         if event_months.size == 0:
             continue

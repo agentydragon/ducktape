@@ -146,15 +146,6 @@ py_library(
 )
 
 py_library(
-    name = "poisson_events",
-    srcs = ["poisson_events.py"],
-    deps = [
-        "@pypi//numpy",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "series_model",
     srcs = ["series_model.py"],
     deps = [
@@ -162,7 +153,6 @@ py_library(
         ":exogenous",
         ":gbm",
         ":level_series_groups",
-        ":poisson_events",
         ":series",
         "//finance/augur:frames",
         "@pypi//numpy",

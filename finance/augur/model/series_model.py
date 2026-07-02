@@ -38,11 +38,9 @@ from finance.augur.model.level_series_groups import (
     LevelSeriesMagisteria,
     PropertyValueGroups,
 )
-from finance.augur.model.poisson_events import PoissonEvents
 from finance.augur.model.series import IssuerId, LevelSeriesKey
 
 ScalarSeriesSpec = Annotated[Constant | Deterministic | GeometricBrownian, Field(discriminator="kind")]
-ScalarEventSpec = Annotated[PoissonEvents, Field(discriminator="kind")]
 
 
 def sample_independent_levels(

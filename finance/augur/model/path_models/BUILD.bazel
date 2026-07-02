@@ -10,9 +10,3 @@ py_library(
         "@pypi//numpy",
     ],
 )
-
-py_library(
-    name = "_density",
-    srcs = ["_density.py"],
-    deps = ["@pypi//numpy"],
-)

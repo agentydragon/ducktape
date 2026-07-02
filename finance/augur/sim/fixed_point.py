@@ -61,10 +61,6 @@ def quantity_to_quanta(value: Any, *, scale: int) -> np.int64:
     return np.int64(quanta)
 
 
-def quanta_to_quantity(value: Any, *, scale: int) -> float:
-    return float(np.asarray(value, dtype=np.float64) / float(scale))
-
-
 def quantity_array_to_quanta(values: Any, *, scale: int) -> NDArray[np.int64]:
     arr = np.asarray(values)
     out = np.empty(arr.shape, dtype=np.int64)
@@ -75,11 +71,3 @@ def quantity_array_to_quanta(values: Any, *, scale: int) -> NDArray[np.int64]:
 
 def quanta_array_to_quantity(values: Any, *, scale: int) -> NDArray[np.float64]:
     return np.asarray(values, dtype=np.float64) / float(scale)
-
-
-def round_float_array_to_int64(values: Any) -> NDArray[np.int64]:
-    arr = np.asarray(values)
-    out = np.empty(arr.shape, dtype=np.int64)
-    for idx in np.ndindex(arr.shape):
-        out[idx] = np.int64(_decimal(arr[idx]).quantize(Decimal(1), rounding=ROUND_HALF_UP))
-    return out

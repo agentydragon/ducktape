@@ -141,10 +141,9 @@ class CleanRow(BaseModel):
     """An apples-to-apples comparison: a market augur models as an event."""
 
     market_id: str
-    # Title + verbatim resolution criterion, fetched LIVE from the platform (the catalog no longer
-    # stores them, so they can't drift); `None` when the platform response carried none.
+    # Title fetched LIVE from the platform (the catalog no longer stores it, so it can't
+    # drift); `None` when the platform response carried none.
     question: str | None = None
-    resolution_criterion: str | None = None
     url: str
     platform: str
     # The model channel that scored this market: a PE issuer id (for event markets) or a
@@ -168,7 +167,6 @@ class SurfacedRow(BaseModel):
 
     market_id: str
     question: str | None = None
-    resolution_criterion: str | None = None
     url: str
     platform: str
     mappability: str
@@ -247,7 +245,6 @@ def _clean_row(market: ExactMarket, counts: ResolutionCounts, live: Market, *, c
     return CleanRow(
         market_id=market.market_id,
         question=live.title,
-        resolution_criterion=live.rules,
         url=live.url,
         platform=market.platform,
         channel=channel,
@@ -811,7 +808,6 @@ def _surfaced_row(
     return SurfacedRow(
         market_id=market.market_id,
         question=live.title,
-        resolution_criterion=live.rules,
         url=live.url,
         platform=market.platform,
         mappability=market.mappability,
@@ -869,7 +865,6 @@ def _unmodeled_row(market: ExactMarket, live: Market, target: str) -> SurfacedRo
     return SurfacedRow(
         market_id=market.market_id,
         question=live.title,
-        resolution_criterion=live.rules,
         url=live.url,
         platform=market.platform,
         mappability="unmodeled",

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
 
@@ -39,31 +37,6 @@ class ExogenousConditioningContext(FrozenModel):
         }
         object.__setattr__(self, "observations", ordered)
         return self
-
-
-@dataclass(frozen=True)
-class NormalizedObservation:
-    series_id: str
-    value: float
-    observed_at: date
-    source_id: str
-    treatment: ObservationTreatment
-    log_sigma: float | None
-    notes: str = ""
-
-
-def iter_observations(context: ExogenousConditioningContext) -> Iterator[NormalizedObservation]:
-    for series_id, points in context.observations.items():
-        for point in points:
-            yield NormalizedObservation(
-                series_id=series_id,
-                value=point.value,
-                observed_at=point.observed_at,
-                source_id=point.source_id,
-                treatment=point.treatment,
-                log_sigma=point.log_sigma,
-                notes=point.notes,
-            )
 
 
 def latest_observations_by_series(context: ExogenousConditioningContext) -> dict[str, ExogenousObservedPoint]:
