@@ -1,3 +1,6 @@
+# TODO: unrunnable in CI — agent_server has no Bazel-built served frontend, so
+# this browser E2E test can't serve the UI on RBE. Tagged `manual`; runs locally
+# only. See BUILD.bazel for how to enable it.
 from __future__ import annotations
 
 import asyncio

@@ -1,4 +1,19 @@
-# Agent server E2E tests (manual, require Playwright).
+# Agent server browser E2E tests. Tagged `manual` and NOT run in CI — they are
+# currently unrunnable there: agent_server has no Bazel-built served frontend
+# (`//x/agent_server/web:bundle` sets `index_html = None` and there is no
+# `server/static/`), so `create_app(require_static_assets=True)` can't serve the
+# UI these tests drive with Playwright. They only run locally against a
+# hand-built frontend + a locally-installed Playwright browser.
+#
+# TODO: make these runnable on RBE (mirror //x/study_casino/tests:test_e2e_browser):
+#   1. make `web:bundle` served-ready — `index_html = "index.html"` and convert
+#      web/index.html to the served form (`/main.js`, `#root`) without breaking
+#      the Vite dev server;
+#   2. add a static-dir override to `create_app` (like study_casino's
+#      `frontend_dist_dir`) and point it at the bundle via `//util/bazel:runfiles`;
+#   3. add `@playwright_browsers//:chromium-headless-shell` (+ CHROMIUM_HEADLESS_SHELL
+#      env) and `requires_docker = True`, then drop `manual`.
+# Until then these tests silently do not protect against regressions.
 
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
