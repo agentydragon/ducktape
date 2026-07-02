@@ -13,8 +13,16 @@ resources:
   - haku-mail-token-eso.yaml
 configMapGenerator:
   # Hash-suffixed name: config/plan/wrapper changes roll the deployment.
+  # Flux post-build substitution is disabled for this ConfigMap: the embedded
+  # shell/sieve content uses ${...} forms (${STALWART_ADMIN_PASSWORD},
+  # ${env.dmarc.result}) that envsubst would blank or choke on ("missing
+  # closing brace" — dots are invalid in its variable names). Only
+  # certificate.yaml needs ${LETSENCRYPT_ISSUER} substituted.
   - name: haku-mailbox-config
     namespace: haku-mailbox
+    options:
+      annotations:
+        kustomize.toolkit.fluxcd.io/substitute: disabled
     files:
       - config.json
       - mailbox-plan.ndjson.tmpl
