@@ -39,10 +39,12 @@ _AUTH_TOKEN = os.environ.get("FC_MANAGER_AUTH_TOKEN", "")
 
 
 async def _require_auth(request: Request) -> None:
-    if not _AUTH_TOKEN:
-        return
+    # No bypass for an unset token: fail closed. `main()` also refuses to start
+    # without FC_MANAGER_AUTH_TOKEN, so an empty _AUTH_TOKEN never matches a real
+    # bearer here (and would reject every request even if the app were served
+    # without going through main()).
     credentials: HTTPAuthorizationCredentials | None = await _auth_scheme(request)
-    if credentials is None or not secrets.compare_digest(credentials.credentials, _AUTH_TOKEN):
+    if credentials is None or not (_AUTH_TOKEN and secrets.compare_digest(credentials.credentials, _AUTH_TOKEN)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
@@ -174,6 +176,9 @@ async def restore(snapshot_name: str, req: RestoreRequest, config: Config, k8s: 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+    if not _AUTH_TOKEN:
+        raise SystemExit("FC_MANAGER_AUTH_TOKEN is not set; refusing to start with authentication disabled.")
 
     config_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/etc/firecracker-manager/config.yaml")
     logger.info("Loading config from %s", config_path)
