@@ -1,0 +1,60 @@
+# Egress fence for ALL Haku worker-zone namespaces. Much tighter than
+# haku-sandbox's fence (deviation from agents/haku-mitmproxy): NO
+# `toEntities: cluster` (workers get no blanket in-cluster reach) and NO
+# kube-apiserver (workers never call the k8s API; their ServiceAccount has no
+# grants anyway). Workers may reach exactly: DNS, the shared zones proxy, the
+# haku-dispatch services (workers-LiteLLM :4000, validator :8000), and the
+# in-cluster Forgejo HTTP (branch pushes to the ducktape mirror).
+# Add each new zone namespace to the endpointSelector values list.
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: haku-zones-force-proxy-egress
+spec:
+  endpointSelector:
+    matchExpressions:
+      - key: "k8s:io.kubernetes.pod.namespace"
+        operator: In
+        values:
+          - haku-sandbox-zai
+  egress:
+    # DNS resolution (CoreDNS in kube-system)
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Shared zones proxy — all external traffic goes through here.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-zones-mitmproxy
+            k8s:app.kubernetes.io/name: haku-zones-mitmproxy
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    # haku-dispatch: workers-LiteLLM (LLM calls with the per-job key) and the
+    # gate-validator (result submission with the job token).
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-dispatch
+      toPorts:
+        - ports:
+            - port: "4000"
+              protocol: TCP
+            - port: "8000"
+              protocol: TCP
+    # In-cluster Forgejo HTTP — workers push branches to the ducktape mirror
+    # under the haku-worker bot identity (external git goes via the proxy).
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: forgejo
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP

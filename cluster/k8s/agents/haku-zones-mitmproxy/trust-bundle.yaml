@@ -1,0 +1,27 @@
+# Trust bundle for all Haku worker-zone namespaces (haku/plans/multi_agent.md).
+# Add each new zone namespace to the matchExpressions values list.
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: haku-zones-mitmproxy-ca-cert
+spec:
+  sources:
+    - useDefaultCAs: true
+    - secret:
+        name: cluster-root-ca-secret
+        key: ca.crt
+    - secret:
+        name: haku-zones-mitmproxy-ca
+        key: tls.crt
+  target:
+    configMap:
+      key: ca-certificates.crt
+      metadata:
+        annotations:
+          description: Trust bundle for haku-zones-mitmproxy-inspected worker HTTPS traffic
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - haku-sandbox-zai

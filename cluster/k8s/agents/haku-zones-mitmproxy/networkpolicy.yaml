@@ -1,0 +1,29 @@
+# Allow zone-namespace proxy clients to reach mitmproxy (port 8080) and the
+# Authentik outpost to reach the mitmweb UI (port 8081). Add each new zone
+# namespace to the ingress from-list.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-zones-mitmproxy-ingress
+  namespace: haku-zones-mitmproxy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-zones-mitmproxy
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: haku-sandbox-zai
+      ports:
+        - port: 8080
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+      ports:
+        - port: 8081
+          protocol: TCP
+  policyTypes:
+    - Ingress

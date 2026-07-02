@@ -288,6 +288,7 @@ repos:
             cluster/k8s/haku-ci/config\.yaml|
             cluster/k8s/litellm/app/proxy-config\.yaml|
             cluster/k8s/litellm/tana/proxy-config\.yaml|
+            cluster/k8s/haku/dispatch/litellm/workers-litellm-config\.yaml|
             # Helm values files consumed via configMapGenerator, not K8s manifests
             cluster/k8s/.*/ccm-values\.yaml|
             # rotate.py rotation list, mounted via configMapGenerator, not a K8s manifest

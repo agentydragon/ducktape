@@ -1,0 +1,49 @@
+# External endpoints Haku worker-zone jobs may reach through the shared proxy.
+# Deviation from agents/haku-mitmproxy: NO Google APIs (the whole point of the
+# zones — see haku/plans/multi_agent.md trust model), no api.anthropic.com
+# (workers' LLM path is in-cluster via the haku-dispatch workers-LiteLLM), no
+# image registries (kubelet pulls images at the node, not through pod egress).
+# v1 allowlist = git hosting + package indexes for in-job tooling; widen only
+# with evidence (each addition is a reviewable diff here).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-haku-zones-egress
+  namespace: haku-zones-mitmproxy
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-zones-mitmproxy
+  egress:
+    # Cilium FQDN egress rules need the proxy pod to query CoreDNS first.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    # GitHub — ducktape chores clone from and push branches to github.com.
+    - toFQDNs:
+        - matchName: github.com
+        - matchName: api.github.com
+        - matchName: codeload.github.com
+        - matchName: objects.githubusercontent.com
+        - matchName: raw.githubusercontent.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Package indexes for ad-hoc in-job tooling (pip install / npx).
+    - toFQDNs:
+        - matchName: pypi.org
+        - matchName: files.pythonhosted.org
+        - matchName: registry.npmjs.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

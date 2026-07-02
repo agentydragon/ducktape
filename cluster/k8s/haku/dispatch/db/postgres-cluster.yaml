@@ -1,0 +1,37 @@
+# Shared CNPG cluster for the dispatch layer: the workers-LiteLLM virtual-key
+# database now; the gate-validator's jobs/results database joins as a second
+# database when the validator lands (declared then — CNPG Database CR or
+# app-owned CREATE DATABASE, decided in that PR). OVH-HA profile per
+# docs/cnpg_conventions.md: dispatch must keep serving external-provider zones
+# during a home outage.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: haku-dispatch-db
+  namespace: haku-dispatch
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    topologyKey: kubernetes.io/hostname
+
+  storage:
+    storageClass: local-path-ovh
+    size: 5Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  bootstrap:
+    initdb:
+      database: litellm_workers
+      owner: litellm_workers
+      # CNPG auto-generates credentials in secret haku-dispatch-db-app

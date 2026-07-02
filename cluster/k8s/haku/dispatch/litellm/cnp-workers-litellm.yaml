@@ -1,0 +1,61 @@
+# The load-bearing reachability policy (haku/plans/multi_agent.md → key
+# containment): only worker-zone pods may talk to the workers-LiteLLM. L0
+# (haku-sandbox) is deliberately NOT admitted — a per-job key leaked through
+# worker output is unusable from anywhere that matters. The validator (same
+# namespace) is admitted for /key/generate. Add each new zone namespace to the
+# ingress list.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: workers-litellm-zone-pods-only
+  namespace: haku-dispatch
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: workers-litellm
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-sandbox-zai
+      toPorts:
+        - ports:
+            - port: "4000"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-dispatch
+            k8s:app.kubernetes.io/name: gate-validator
+      toPorts:
+        - ports:
+            - port: "4000"
+              protocol: TCP
+  egress:
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Upstream: the main LiteLLM only.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: litellm
+            k8s:app.kubernetes.io/name: litellm
+      toPorts:
+        - ports:
+            - port: "4000"
+              protocol: TCP
+    # Its virtual-key database (same namespace).
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-dispatch
+            k8s:cnpg.io/cluster: haku-dispatch-db
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP

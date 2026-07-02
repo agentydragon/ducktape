@@ -82,21 +82,21 @@ resource "litellm_key" "haku_lane_oai" {
   }
 }
 
-# Each key reflects into exactly its lane namespace (haku-sandbox-{zai,oai}) for
-# the lane llm-proxy to mount. The reflector annotations are inert until the lane
-# namespace exists, so declaring them now means the key appears there the moment
-# the lane lands — no follow-up change needed here.
+# Both zone keys reflect into haku-dispatch, where the shared workers-LiteLLM
+# mounts them as upstream credentials (haku/plans/multi_agent.md → key
+# containment). Worker pods never see them — workers hold only per-job virtual
+# keys minted on the workers-LiteLLM.
 
 resource "kubernetes_secret" "haku_lane_zai" {
   metadata {
     name      = "litellm-key-haku-lane-zai"
     namespace = "litellm"
     annotations = {
-      description                                                     = "LiteLLM virtual key for the haku zai worker lane (GLM models only); reflected into haku-sandbox-zai for its lane llm-proxy"
+      description                                                     = "LiteLLM virtual key for the haku zai worker zone (GLM models only); reflected into haku-dispatch as the workers-LiteLLM upstream credential"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-sandbox-zai"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-dispatch"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-sandbox-zai"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-dispatch"
     }
   }
 
@@ -110,15 +110,65 @@ resource "kubernetes_secret" "haku_lane_oai" {
     name      = "litellm-key-haku-lane-oai"
     namespace = "litellm"
     annotations = {
-      description                                                     = "LiteLLM virtual key for the haku oai worker lane (chatgpt models only); reflected into haku-sandbox-oai for its lane llm-proxy"
+      description                                                     = "LiteLLM virtual key for the haku oai worker zone (chatgpt models only); reflected into haku-dispatch as the workers-LiteLLM upstream credential"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-sandbox-oai"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-dispatch"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-sandbox-oai"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-dispatch"
     }
   }
 
   data = {
     api-key = litellm_key.haku_lane_oai.key
+  }
+}
+
+# Control credentials for the second-layer workers-LiteLLM (haku-dispatch): its
+# master key (held by it and by the gate-validator, which mints per-job virtual
+# keys with it — never by workers or L0) and its salt key (encrypts key material
+# in haku-dispatch-db; set once, NEVER rotate).
+
+resource "random_password" "workers_litellm_master_key" {
+  length  = 48
+  special = false
+
+  lifecycle {
+    ignore_changes = [length, special]
+  }
+}
+
+resource "kubernetes_secret" "workers_litellm_master_key" {
+  metadata {
+    name      = "workers-litellm-master-key"
+    namespace = "haku-dispatch"
+  }
+
+  data = {
+    api-key = random_password.workers_litellm_master_key.result
+  }
+}
+
+resource "random_password" "workers_litellm_salt_key" {
+  length  = 48
+  special = false
+
+  lifecycle {
+    ignore_changes  = [length, special]
+    prevent_destroy = true
+  }
+}
+
+resource "kubernetes_secret" "workers_litellm_salt_key" {
+  metadata {
+    name      = "workers-litellm-salt-key"
+    namespace = "haku-dispatch"
+  }
+
+  data = {
+    key = random_password.workers_litellm_salt_key.result
+  }
+
+  lifecycle {
+    prevent_destroy = true
   }
 }

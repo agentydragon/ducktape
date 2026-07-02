@@ -1,0 +1,161 @@
+# Auto-inject the shared haku-zones-mitmproxy proxy config into all pods in the
+# Haku worker-zone namespaces (add each new zone to every rule's namespaces
+# list). Mirrors inject-haku-mitmproxy but points at the zones' shared proxy +
+# CA (haku/plans/multi_agent.md).
+#
+# Uses RFC 6902 JSON patches (not patchStrategicMerge) to avoid volume merge
+# conflicts with Kyverno autogen + Flux server-side dry-run on Deployments.
+#
+# Autogen is disabled: JSON patch "add /-" always appends, so if autogen
+# mutates the Deployment template AND the Pod-level rule fires at Pod
+# creation, volumes/env/mounts get duplicated. With autogen off, only
+# Pod admission is mutated.
+#
+# All rules restrict to CREATE operations only: the "add /-" append has no
+# idempotency check, so re-evaluating on UPDATE would duplicate volume/env/mount
+# entries and the API server would reject the request (and break the Job
+# controller's finalizer PATCH). Injection only needs to happen at pod creation.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: inject-haku-zones-mitmproxy
+  annotations:
+    pod-policies.kyverno.io/autogen-controllers: none
+    policies.kyverno.io/title: Inject haku-zones-mitmproxy
+    policies.kyverno.io/category: Networking
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Mutates pods in the Haku worker-zone namespaces to inject the shared
+      haku-zones-mitmproxy proxy env vars (HTTP_PROXY, HTTPS_PROXY, NO_PROXY,
+      SSL_CERT_FILE, CURL_CA_BUNDLE, REQUESTS_CA_BUNDLE, NODE_EXTRA_CA_CERTS)
+      and mount the haku-zones-mitmproxy trust bundle at /mitmproxy-ca/ca-certificates.crt.
+spec:
+  mutateExistingOnPolicyUpdate: false
+  rules:
+    - name: add-proxy-volume
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [haku-sandbox-zai]
+              operations: [CREATE]
+      mutate:
+        patchesJson6902: |-
+          - op: add
+            path: "/spec/volumes/-"
+            value:
+              name: haku-zones-mitmproxy-ca-cert
+              configMap:
+                name: haku-zones-mitmproxy-ca-cert
+
+    - name: add-proxy-env-and-mount-containers
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [haku-sandbox-zai]
+              operations: [CREATE]
+      mutate:
+        foreach:
+          - list: "request.object.spec.containers"
+            patchesJson6902: |-
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTP_PROXY
+                  value: "http://haku-zones-mitmproxy.haku-zones-mitmproxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTPS_PROXY
+                  value: "http://haku-zones-mitmproxy.haku-zones-mitmproxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: NO_PROXY
+                  value: "127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8"
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: SSL_CERT_FILE
+                  value: /mitmproxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: CURL_CA_BUNDLE
+                  value: /mitmproxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: REQUESTS_CA_BUNDLE
+                  value: /mitmproxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: NODE_EXTRA_CA_CERTS
+                  value: /mitmproxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/volumeMounts/-"
+                value:
+                  name: haku-zones-mitmproxy-ca-cert
+                  mountPath: /mitmproxy-ca
+                  readOnly: true
+
+    - name: add-proxy-env-and-mount-init-containers
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [haku-sandbox-zai]
+              operations: [CREATE]
+      preconditions:
+        any:
+          - key: "{{ (request.object.spec.initContainers || `[]`) | length(@) }}"
+            operator: GreaterThanOrEquals
+            value: 1
+      mutate:
+        foreach:
+          - list: "request.object.spec.initContainers"
+            patchesJson6902: |-
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTP_PROXY
+                  value: "http://haku-zones-mitmproxy.haku-zones-mitmproxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTPS_PROXY
+                  value: "http://haku-zones-mitmproxy.haku-zones-mitmproxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: NO_PROXY
+                  value: "127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8"
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: SSL_CERT_FILE
+                  value: /mitmproxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: CURL_CA_BUNDLE
+                  value: /mitmproxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: REQUESTS_CA_BUNDLE
+                  value: /mitmproxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: NODE_EXTRA_CA_CERTS
+                  value: /mitmproxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/volumeMounts/-"
+                value:
+                  name: haku-zones-mitmproxy-ca-cert
+                  mountPath: /mitmproxy-ca
+                  readOnly: true
