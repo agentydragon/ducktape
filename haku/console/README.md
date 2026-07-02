@@ -59,7 +59,7 @@ act as it. The trusted **bridge** (`bridge.ts`) lets the iframe _request_ two th
 postMessage — opening a link (`openLink`) and launching a run (`requestLaunch`); the shell
 origin-checks, schema-validates, and decides/confirms before acting. It also mirrors the
 iframe's hash route (`routeChanged`, validated as a path) into the console's own URL
-fragment so refresh and deep links restore the view. See `console/docs/containment.md`.
+fragment so refresh and deep links restore the view. See <docs/containment.md>.
 
 ## Layout
 

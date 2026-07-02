@@ -36,6 +36,8 @@ describe("parseInbound", () => {
     expect(parseInbound({ type: "routeChanged", path: "//evil.example/x" })).toBeNull(); // protocol-relative
     expect(parseInbound({ type: "routeChanged", path: "https://evil.example" })).toBeNull(); // a URL, not a path
     expect(parseInbound({ type: "routeChanged", path: "/has space" })).toBeNull(); // outside the charset
+    expect(parseInbound({ type: "routeChanged", path: "/garden/%2G" })).toBeNull(); // malformed %-escape
+    expect(parseInbound({ type: "routeChanged", path: "/garden/x%" })).toBeNull(); // trailing bare %
     expect(parseInbound({ type: "routeChanged", path: `/${"a".repeat(600)}` })).toBeNull(); // over the length cap
   });
 

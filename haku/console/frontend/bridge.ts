@@ -30,10 +30,11 @@ export type Outbound =
 // A mirrored route is strictly a PATH, never a URL: leading `/` (but not a
 // protocol-relative `//`, so the value stays inert even if a future caller drops it into
 // a URL context), a length cap, and a conservative charset — `/` plus what haku-ui's
-// per-segment encodeURIComponent can emit — so a hostile iframe can't put arbitrary
-// content in the console's URL bar.
+// per-segment encodeURIComponent can emit, so `%` only as a well-formed `%XX` escape
+// (malformed escapes get normalized inconsistently by URL serializers) — so a hostile
+// iframe can't put arbitrary content in the console's URL bar.
 export const ROUTE_PATH_MAX_LENGTH = 512;
-const ROUTE_PATH_RE = /^\/[A-Za-z0-9/._~%!'()*-]*$/;
+const ROUTE_PATH_RE = /^\/(?:[A-Za-z0-9/._~!'()*-]|%[0-9A-Fa-f]{2})*$/;
 export function isRoutePath(path: string): boolean {
   return path.length <= ROUTE_PATH_MAX_LENGTH && !path.startsWith("//") && ROUTE_PATH_RE.test(path);
 }
