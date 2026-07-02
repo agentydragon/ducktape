@@ -80,6 +80,39 @@ services:
       timeout: 5s
       retries: 5
 
+  # LLM proxy data plane — agents reach the LLM through here (auth + budget +
+  # cost + upstream routing), split out of the backend so the API can roll
+  # without disrupting in-flight agents. config.toml's llm_proxy_url points
+  # agents at this service. Mirrors cluster/k8s/props/app/llm-proxy-deployment.yaml.
+  llm-proxy:
+    image: props-llm-proxy:latest
+    container_name: props-llm-proxy
+    volumes:
+      - ./config.toml:/etc/props/config.toml:ro
+    environment:
+      PROPS_CONFIG_FILE: /etc/props/config.toml
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: https://api.openai.com/v1
+      PGHOST: props-postgres
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: ${PGPASSWORD}
+      PGDATABASE: eval_results
+    networks:
+      # props-agents: agents resolve `props-llm-proxy` here and it reaches the
+      # upstream LLM (this network has egress; props-internal does not).
+      # props-internal: reach props-postgres for auth/budget/cost queries.
+      - props-internal
+      - props-agents
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   props_eval_results_data:
   props_registry_data:

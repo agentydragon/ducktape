@@ -121,7 +121,8 @@ class PropsConfig(LLMProxyConfig):
 
     backend_url: str
     # Base URL agents use for the LLM proxy (split out of the backend); agents get
-    # OPENAI_BASE_URL = <llm_proxy_url>/v1. None falls back to backend_url.
+    # OPENAI_BASE_URL = <llm_proxy_url>/v1. Required for agent runs: the backend
+    # raises at startup if it's None (there is no backend_url fallback).
     llm_proxy_url: str | None = None
     grader_model: str | None = None
     agent_env: dict[str, str]

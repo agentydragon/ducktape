@@ -53,10 +53,11 @@ cd props
 # 1. Allow direnv (generates PGPASSWORD, sets env vars)
 direnv allow
 
-# 2. Build and load backend image (includes frontend)
+# 2. Build and load backend image (includes frontend) and the LLM proxy image
 bazelisk run //props/backend:load
+bazelisk run //props/llm_proxy:load
 
-# 3. Start infrastructure (postgres, registry, backend+frontend)
+# 3. Start infrastructure (postgres, registry, backend+frontend, llm-proxy)
 docker compose up -d
 
 # 4. Initialize database (runs migrations, syncs specimens)
