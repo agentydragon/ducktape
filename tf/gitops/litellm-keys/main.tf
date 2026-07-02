@@ -92,11 +92,11 @@ resource "kubernetes_secret" "haku_lane_zai" {
     name      = "litellm-key-haku-lane-zai"
     namespace = "litellm"
     annotations = {
-      description                                                      = "LiteLLM virtual key for the haku zai worker lane (GLM models only); reflected into haku-sandbox-zai for its lane llm-proxy"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"             = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"  = "haku-sandbox-zai"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"        = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"     = "haku-sandbox-zai"
+      description                                                     = "LiteLLM virtual key for the haku zai worker lane (GLM models only); reflected into haku-sandbox-zai for its lane llm-proxy"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-sandbox-zai"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-sandbox-zai"
     }
   }
 
@@ -110,11 +110,11 @@ resource "kubernetes_secret" "haku_lane_oai" {
     name      = "litellm-key-haku-lane-oai"
     namespace = "litellm"
     annotations = {
-      description                                                      = "LiteLLM virtual key for the haku oai worker lane (chatgpt models only); reflected into haku-sandbox-oai for its lane llm-proxy"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"             = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"  = "haku-sandbox-oai"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"        = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"     = "haku-sandbox-oai"
+      description                                                     = "LiteLLM virtual key for the haku oai worker lane (chatgpt models only); reflected into haku-sandbox-oai for its lane llm-proxy"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-sandbox-oai"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-sandbox-oai"
     }
   }
 
