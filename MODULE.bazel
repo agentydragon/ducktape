@@ -53,7 +53,7 @@ single_version_override(
 single_version_override(
     module_name = "gazelle",
     patch_strip = 1,
-    patches = ["//third_party/buildbuddy_cli:bb_devshell_gazelle_add_googleapis_dep.patch"],
+    patches = ["//third_party/patches:bb_devshell_gazelle_add_googleapis_dep.patch"],
     version = "0.47.0",
 )
 
@@ -878,20 +878,20 @@ go_deps.module_override(
 go_deps.module_override(
     patch_strip = 1,
     patches = [
-        "//third_party/buildbuddy_cli:bb_repo_url_commit_override.patch",
-        "//third_party/buildbuddy_cli:bb_devshell_strip_js_protogen.patch",
-        "//third_party/buildbuddy_cli:bb_devshell_strip_root_build.patch",
+        "//third_party/patches:bb_repo_url_commit_override.patch",
+        "//third_party/patches:bb_devshell_strip_js_protogen.patch",
+        "//third_party/patches:bb_devshell_strip_root_build.patch",
         # cli/bazelisk/BUILD hardcodes legacy `go_default_library`-style target
         # names for its bazelisk dep; our freshly-fetched bazelisk repo
         # defaults to the modern (directory-matching) naming convention instead.
-        "//third_party/buildbuddy_cli:bb_devshell_fix_bazelisk_naming.patch",
+        "//third_party/patches:bb_devshell_fix_bazelisk_naming.patch",
         # proto/BUILD's search/kythe_service targets depend on @io_kythe, whose
         # go.mod `replace kythe.io => github.com/buildbuddy-io/kythe` isn't
         # honored by go_deps.from_file, leaving no resolvable repo for that
         # label -- and an unresolvable label anywhere in a BUILD file blocks
         # *loading* the whole file, not just building that target. Unrelated
         # to cli/cmd/bb (server-side code search), so just drop the kythe deps.
-        "//third_party/buildbuddy_cli:bb_devshell_strip_kythe.patch",
+        "//third_party/patches:bb_devshell_strip_kythe.patch",
         # cli/BUILD's release/test targets need @rules_python and @rules_shell,
         # neither reachable from this fetched repo's context (module-extension-
         # generated repos don't inherit repo-mapping visibility from bazel_dep
@@ -900,18 +900,18 @@ go_deps.module_override(
         # cli/update:copy_install's srcs cross-reference //cli:install.sh, which
         # forces this package to load even though cli/cmd/bb doesn't need any of
         # its other targets, so strip it down to just the exports_files it needs.
-        "//third_party/buildbuddy_cli:bb_devshell_strip_cli_py.patch",
+        "//third_party/patches:bb_devshell_strip_cli_py.patch",
         # server/version/BUILD's populate_version/populate_commit aliases use
         # with_cfg.bzl's linux_x86_64_alias (a platform-pinning wrapper, pure
         # build-cache optimization) -- same unresolvable-repo problem as above.
         # Swap in a plain alias(); it's needed transitively via
         # cli/cmd/sidecar -> server/backends/disk_cache -> server/util/statusz.
-        "//third_party/buildbuddy_cli:bb_devshell_strip_version_platform_alias.patch",
+        "//third_party/patches:bb_devshell_strip_version_platform_alias.patch",
         # server/util/bazel/BUILD's bazel_binaries_tar (test-infra tarball of
         # prebuilt bazel binaries, unrelated to the `bazel` go_library that
         # cli/remotebazel actually imports) needs @rules_pkg -- same
         # unresolvable-repo problem, so drop the unused target.
-        "//third_party/buildbuddy_cli:bb_devshell_strip_bazel_pkg_tar.patch",
+        "//third_party/patches:bb_devshell_strip_bazel_pkg_tar.patch",
         # cli/fix (the `bb fix` subcommand) embeds a full copy of gazelle's
         # main.go/update-repos.go plus buildifier internals, both pinned to a
         # different gazelle major version (bazel-contrib/bazel-gazelle v2) and
@@ -923,7 +923,7 @@ go_deps.module_override(
         # individually doesn't scale, and neither subcommand is related to
         # `bb remote` (this patch set's actual goal), so drop both
         # registrations instead of patching around their internals.
-        "//third_party/buildbuddy_cli:bb_devshell_drop_fix_and_index_commands.patch",
+        "//third_party/patches:bb_devshell_drop_fix_and_index_commands.patch",
         # zip.proto/eventlog.proto/storage.proto/distributed_cache.proto use
         # vtprotobuf's `(vtproto.mempool) = true` option (a marshal/pooling
         # perf annotation, not a message-shape change) via `import
@@ -940,7 +940,7 @@ go_deps.module_override(
         # in every proto in this file regardless of which CLI commands are
         # registered, so these can't be avoided by trimming cli/cli_command
         # alone.
-        "//third_party/buildbuddy_cli:bb_devshell_strip_vtproto_and_kythe_messages.patch",
+        "//third_party/patches:bb_devshell_strip_vtproto_and_kythe_messages.patch",
         # buildbuddy's checked-in BUILD files reference
         # @com_github_prometheus_client_model//io/prometheus/client:go for
         # the client_model proto types (a target name matching buildbuddy's
@@ -950,7 +950,7 @@ go_deps.module_override(
         # from the checked-in go/metrics.pb.go, the label doesn't resolve
         # here; redirect the 6 references to the working go:go target
         # instead (same generated types either way).
-        "//third_party/buildbuddy_cli:bb_devshell_fix_client_model_go_label.patch",
+        "//third_party/patches:bb_devshell_fix_client_model_go_label.patch",
     ],
     path = "github.com/buildbuddy-io/buildbuddy",
 )
