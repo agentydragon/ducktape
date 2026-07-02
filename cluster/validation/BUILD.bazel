@@ -373,6 +373,7 @@ py_test(
         "//cluster/k8s/agents/attic-jwt-rotation:manifests",
         "//cluster/k8s/agents/authentik-jwt-rotation:manifests",
         "//cluster/k8s/grocy/user-perms-base:manifests",
+        "//cluster/k8s/haku/dispatch/dispatcher:manifests",
         "//cluster/k8s/haku/dispatch/litellm:manifests",
         "//cluster/k8s/inventree/token-provisioner:manifests",
         "//cluster/k8s/litellm/app:manifests",

@@ -1,0 +1,14 @@
+# The dispatcher's jobs/results database — declared as a CNPG Database CR
+# (first use in this repo; the alternative was app-owned CREATE DATABASE, but
+# the CR keeps database existence declarative like everything else here).
+# Owner is the `dispatcher` managed role from postgres-cluster.yaml.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: haku-dispatch-db-dispatcher-db
+  namespace: haku-dispatch
+spec:
+  cluster:
+    name: haku-dispatch-db
+  name: dispatcher
+  owner: dispatcher

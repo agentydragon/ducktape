@@ -1,9 +1,8 @@
 # Shared CNPG cluster for the dispatch layer: the workers-LiteLLM virtual-key
-# database now; the gate-validator's jobs/results database joins as a second
-# database when the validator lands (declared then — CNPG Database CR or
-# app-owned CREATE DATABASE, decided in that PR). OVH-HA profile per
-# docs/cnpg_conventions.md: dispatch must keep serving external-provider zones
-# during a home outage.
+# database (initdb) plus the dispatcher's jobs/results database
+# (dispatcher-database.yaml Database CR, owned by the `dispatcher` managed role
+# below). OVH-HA profile per docs/cnpg_conventions.md: dispatch must keep
+# serving external-provider zones during a home outage.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -35,3 +34,24 @@ spec:
       database: litellm_workers
       owner: litellm_workers
       # CNPG auto-generates credentials in secret haku-dispatch-db-app
+
+  managed:
+    roles:
+      # Owner of the `dispatcher` database (dispatcher-database.yaml).
+      - name: dispatcher
+        ensure: present
+        login: true
+        passwordSecret:
+          name: haku-dispatch-db-dispatcher
+      # Haku's read-only role (reads the dispatcher's jobs/results via SQL
+      # instead of a GET API). pg_read_all_data spans every database in the
+      # cluster the role can connect to — including litellm_workers, where it
+      # exposes only hashed virtual keys and spend logs, never plaintext
+      # credentials. Fully declarative; no app-side GRANT management.
+      - name: haku_reader
+        ensure: present
+        login: true
+        inRoles:
+          - pg_read_all_data
+        passwordSecret:
+          name: haku-dispatch-db-haku-reader

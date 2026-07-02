@@ -1,0 +1,25 @@
+# Mirror Haku's spend-capped Anthropic workspace key (flux-system) into
+# haku-dispatch for the dispatcher's classifier calls — the same
+# flux-system-store ESO pattern haku's grocy/mail tokens use. Sharing the
+# workspace key is deliberate v1: both consumers are trusted-middle,
+# operator-owned, and covered by the same spend cap; a dedicated classifier
+# key needs an operator trip to the Anthropic console.
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: dispatcher-anthropic-api-key
+spec:
+  namespaces:
+    - haku-dispatch
+  externalSecretSpec:
+    refreshInterval: 1m
+    secretStoreRef:
+      name: kubernetes-flux-system-secret-store
+      kind: ClusterSecretStore
+    target:
+      name: dispatcher-anthropic-api-key
+    data:
+      - secretKey: api-key
+        remoteRef:
+          key: haku-cloud-anthropic-api-key
+          property: api-key

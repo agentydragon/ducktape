@@ -17,3 +17,5 @@ spec:
     - name: haku-dispatch-namespace
     - name: cnpg
     - name: local-path-provisioner
+    # ESO Password generator + ExternalSecret (db-role-secrets.yaml).
+    - name: external-secrets-config

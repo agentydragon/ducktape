@@ -1,0 +1,29 @@
+# The dispatcher's write grant INTO the zai zone: exactly what job stamping
+# needs (Jobs + the same-named per-job Secrets), nothing else — no pods/log,
+# no exec, no configmaps. One copy of this file per zone namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dispatcher-job-stamper
+  namespace: haku-sandbox-zai
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dispatcher-job-stamper
+  namespace: haku-sandbox-zai
+subjects:
+  - kind: ServiceAccount
+    name: dispatcher
+    namespace: haku-dispatch
+roleRef:
+  kind: Role
+  name: dispatcher-job-stamper
+  apiGroup: rbac.authorization.k8s.io

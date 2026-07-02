@@ -1,0 +1,89 @@
+# The dispatcher (haku/dispatch/, haku/plans/multi_agent.md → components):
+# classifier-gated POST /jobs stamping worker Jobs into zone namespaces, worker
+# result turn-in, kill switch. All credentials via secretKeyRef — pod specs are
+# Haku-visible through cluster-diagnostics-reader.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dispatcher
+  namespace: haku-dispatch
+  labels:
+    app.kubernetes.io/name: dispatcher
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dispatcher
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dispatcher
+    spec:
+      serviceAccountName: dispatcher
+      containers:
+        - name: dispatcher
+          image: ghcr.io/agentydragon/dispatcher:latest # {"$imagepolicy": "flux-system:dispatcher"}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: haku-dispatch-db-dispatcher
+                  key: uri
+            - name: WORKERS_LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: workers-litellm-master-key
+                  key: api-key
+            # Classifier calls — ESO mirror of Haku's spend-capped workspace key
+            # (anthropic-key-eso.yaml); the classifier is the only external
+            # LLM call this service makes.
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dispatcher-anthropic-api-key
+                  key: api-key
+            - name: HAKU_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dispatcher-haku-token
+                  key: token
+            - name: RESULT_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dispatcher-result-hmac
+                  key: secret
+            - name: JOB_TEMPLATE_PATH
+              value: /etc/dispatcher/job-template.yaml
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: job-template
+              mountPath: /etc/dispatcher
+              readOnly: true
+      volumes:
+        - name: job-template
+          configMap:
+            name: dispatcher-job-template

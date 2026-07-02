@@ -1,6 +1,6 @@
 # Second-layer LiteLLM serving Haku's worker zones. Holds the static zone keys
 # as upstream credentials; issues/enforces per-job virtual keys (minted by the
-# gate-validator via this instance's master key). Reachability is the security
+# dispatcher via this instance's master key). Reachability is the security
 # property: the CNPs in this directory admit only zone-namespace pods — never
 # haku-sandbox (L0) — so leaked per-job keys are unusable outside the zones.
 apiVersion: apps/v1

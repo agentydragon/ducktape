@@ -3,7 +3,7 @@
 # `toEntities: cluster` (workers get no blanket in-cluster reach) and NO
 # kube-apiserver (workers never call the k8s API; their ServiceAccount has no
 # grants anyway). Workers may reach exactly: DNS, the shared zones proxy, the
-# haku-dispatch services (workers-LiteLLM :4000, validator :8000), and the
+# haku-dispatch services (workers-LiteLLM :4000, dispatcher :8000), and the
 # in-cluster Forgejo HTTP (branch pushes to the ducktape mirror).
 # Add each new zone namespace to the endpointSelector values list.
 apiVersion: cilium.io/v2
@@ -40,7 +40,7 @@ spec:
               protocol: TCP
     # haku-dispatch: exactly the two dispatch services, selected by app label so
     # other workloads landing in the namespace stay unreachable — workers-LiteLLM
-    # (LLM calls with the per-job key) and the gate-validator (result submission
+    # (LLM calls with the per-job key) and the dispatcher (result submission
     # with the job token).
     - toEndpoints:
         - matchLabels:
@@ -53,7 +53,7 @@ spec:
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: haku-dispatch
-            k8s:app.kubernetes.io/name: gate-validator
+            k8s:app.kubernetes.io/name: dispatcher
       toPorts:
         - ports:
             - port: "8000"

@@ -1,0 +1,29 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: haku-dispatcher
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/haku/dispatch/dispatcher
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: dispatcher
+      namespace: haku-dispatch
+  dependsOn:
+    - name: haku-dispatch-namespace
+    - name: haku-dispatch-db
+    # Key minting target; also transitively orders the zone keys.
+    - name: haku-dispatch-litellm
+    # rbac-zone-zai.yaml creates a Role inside the zone namespace.
+    - name: haku-zone-zai
+    # ESO generators + the flux-system mirror store.
+    - name: external-secrets-config

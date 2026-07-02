@@ -1,0 +1,72 @@
+# Dispatcher reachability: Haku (haku-sandbox) dispatches and kills; zone workers
+# turn in results. Egress = exactly its dependencies — key minting on the
+# workers-LiteLLM, its database, the kube-apiserver for Job stamping, and
+# api.anthropic.com for the classifier. No path to haku-state, Forgejo, or
+# anything else.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: dispatcher
+  namespace: haku-dispatch
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: dispatcher
+  ingress:
+    # Haku: POST /jobs, DELETE /jobs/<id>.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-sandbox
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+    # Zone workers: POST /jobs/<id>/result with the job-scoped token.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-sandbox-zai
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+  egress:
+    # Cilium FQDN egress rules need this pod to query CoreDNS first.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    # Per-job key minting (/key/generate, /key/delete).
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-dispatch
+            k8s:app.kubernetes.io/name: workers-litellm
+      toPorts:
+        - ports:
+            - port: "4000"
+              protocol: TCP
+    # Its jobs/results database.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-dispatch
+            k8s:cnpg.io/cluster: haku-dispatch-db
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    # Job/Secret stamping into zone namespaces.
+    - toEntities:
+        - kube-apiserver
+    # Classifier calls.
+    - toFQDNs:
+        - matchName: api.anthropic.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
