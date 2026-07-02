@@ -90,3 +90,15 @@ field if the schema drifts.
   rDNS. Tracked in `haku/PLAN.md`.
 - **Backups**: CNPG cluster; wire into the standard pg_dump/backup strategy
   if mailbox contents become worth keeping.
+- **TODO: replace the recovery-mode bootstrap dance** (`bootstrap-and-run.sh`:
+  background recovery server → retried `stalwart-cli apply` → kill → exec).
+  It is upstream's documented headless path and the ugliness is irreducible
+  today — config lives in the DB, the management API is the only config
+  surface, and an empty DB serves no API — but revisit when any of these
+  gates opens: (a) a Stalwart tofu provider covers `SieveSystemScript`,
+  `MtaStageData`, the `Authentication`/`SystemSettings` singletons, and
+  `Certificate` (as of 2026-07, `flungo/stalwart` v0.1.0 covers
+  accounts/domains/directories/listeners only); (b) upstream grows a
+  file-based/declarative bootstrap; (c) if only the cert-push half hurts,
+  Stalwart-native ACME (`AcmeProvider` + Route 53 DNS-01) can delete the PEM
+  templating at the cost of the cert-manager convention.

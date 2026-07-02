@@ -2,6 +2,9 @@
 # Startup wrapper for the Stalwart mailserver: render the provisioning plan,
 # apply it against a temporary recovery-mode instance (idempotent upserts, per
 # Stalwart's declarative-deployments workflow), then exec the normal server.
+# TODO: this dance is ugly but currently irreducible — see the README's
+# "Future" section for the revisit gates (tofu provider coverage, upstream
+# declarative bootstrap, native ACME).
 # Running on every pod start makes the plan the reconcile loop — a
 # reloader-triggered restart after cert-manager renews mx-allegedly-works-tls
 # re-pushes the fresh certificate.
