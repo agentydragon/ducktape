@@ -123,6 +123,19 @@ popups). Rules:
   pop-ups for `haku.allegedly.works`") — postMessage-relayed opens lose user activation.
   The iframe still cannot open anything itself.
 
+### `routeChanged` — mirror the route for refresh/deep-links
+
+haku-ui posts `{type: "routeChanged", path}` on hash-route changes; the shell
+`history.replaceState`s the path into its **own** URL fragment, and on load carries its
+fragment back into the frame `src` so F5 / a deep link restores the view. Rules:
+
+- **The path is never a URL.** `isRoutePath` (bridge.ts) enforces a leading `/` (not
+  `//`), a conservative charset, and a length cap; the shell only ever puts the value in
+  a fragment, and the restored `src` is always `uiUrl` with only its fragment replaced —
+  the frame origin cannot be steered.
+- Fragments never reach servers, so the mirrored route leaks nothing to the SSO hop and
+  survives the in-frame Authentik 302 chain when a session exists.
+
 ## Operator identity — forward-auth headers, made trustworthy
 
 Haku's backend reads `X-authentik-username` on requests arriving through its gated route.

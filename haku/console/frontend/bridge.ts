@@ -14,12 +14,29 @@
 //    capability must be a genuine operator gesture against trusted chrome, so the iframe
 //    can only request it; the shell renders its OWN confirm (showing the prompt) and only
 //    then fires. `id` correlates the eventual `launchResult`.
-export type Inbound = { type: "openLink"; url: string } | { type: "requestLaunch"; id: string; prompt: string };
+//  - `routeChanged`: mirror the iframe's current hash route into the console's own URL
+//    fragment so refresh/deep-links restore the view. Strictly a validated path
+//    (`isRoutePath`), never a URL — the shell only ever puts it in a fragment.
+export type Inbound =
+  | { type: "openLink"; url: string }
+  | { type: "requestLaunch"; id: string; prompt: string }
+  | { type: "routeChanged"; path: string };
 
 // Outbound result (shell → iframe), so Haku's UI can react to the outcome.
 export type Outbound =
   | { type: "openLinkResult"; url: string; opened: boolean; reason?: string }
   | { type: "launchResult"; id: string; ok: boolean; sessionUrl?: string; reason?: string };
+
+// A mirrored route is strictly a PATH, never a URL: leading `/` (but not a
+// protocol-relative `//`, so the value stays inert even if a future caller drops it into
+// a URL context), a length cap, and a conservative charset — `/` plus what haku-ui's
+// per-segment encodeURIComponent can emit — so a hostile iframe can't put arbitrary
+// content in the console's URL bar.
+export const ROUTE_PATH_MAX_LENGTH = 512;
+const ROUTE_PATH_RE = /^\/[A-Za-z0-9/._~%!'()*-]*$/;
+export function isRoutePath(path: string): boolean {
+  return path.length <= ROUTE_PATH_MAX_LENGTH && !path.startsWith("//") && ROUTE_PATH_RE.test(path);
+}
 
 // Narrow an untrusted postMessage payload to a known message, or null.
 export function parseInbound(data: unknown): Inbound | null {
@@ -28,6 +45,9 @@ export function parseInbound(data: unknown): Inbound | null {
   if (m.type === "openLink" && typeof m.url === "string") return { type: "openLink", url: m.url };
   if (m.type === "requestLaunch" && typeof m.id === "string" && typeof m.prompt === "string") {
     return { type: "requestLaunch", id: m.id, prompt: m.prompt };
+  }
+  if (m.type === "routeChanged" && typeof m.path === "string" && isRoutePath(m.path)) {
+    return { type: "routeChanged", path: m.path };
   }
   return null;
 }

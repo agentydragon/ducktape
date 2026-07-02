@@ -1,7 +1,7 @@
 import { Anchor } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 
-import { type Outbound, parseInbound, vetOpenLink } from "./bridge.ts";
+import { isRoutePath, type Outbound, parseInbound, vetOpenLink } from "./bridge.ts";
 import { launchRoutine } from "./client.ts";
 import { ConfirmDialog, type Escalation } from "./confirm_dialog.tsx";
 import { toastError, toastSuccess } from "./toast.ts";
@@ -29,11 +29,27 @@ export function openExternal(url: string): boolean {
 
 const POPUP_HINT = "Allow pop-ups for this site so the console can open links.";
 
+// Restore the route the console URL carries into the frame on first mount. The console
+// hash is treated strictly as a validated path, never a URL: the src is always `uiUrl`
+// with only its fragment replaced, so the frame origin stays pinned. Fragments never
+// reach servers and survive the in-frame Authentik 302 chain when an SSO session already
+// exists; an interactive login may drop the fragment (degrades to haku-ui's home view).
+export function initialFrameSrc(uiUrl: string, consoleHash: string): string {
+  const path = consoleHash.replace(/^#/, "");
+  if (!isRoutePath(path)) return uiUrl;
+  const src = new URL(uiUrl);
+  src.hash = path;
+  return src.toString();
+}
+
 export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchAvailable: boolean }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   // The single escalation awaiting the operator's trusted confirm (a link to open or a run
   // to launch). One typed action, dispatched on its `kind` — see ConfirmDialog's Escalation.
   const [pending, setPending] = useState<Escalation | null>(null);
+  // Computed once: later routeChanged mirroring must not rewrite `src` (that would
+  // reload the frame); the iframe navigates itself, the console only reflects.
+  const [frameSrc] = useState(() => initialFrameSrc(uiUrl, window.location.hash));
   const origin = new URL(uiUrl).origin;
 
   function reply(msg: Outbound) {
@@ -59,6 +75,13 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
           return;
         }
         setPending({ kind: "launch", id: msg.id, prompt: msg.prompt });
+        return;
+      }
+      if (msg.type === "routeChanged") {
+        // Mirror the iframe's route into the console's own fragment so refresh/deep-links
+        // restore the view. replaceState, not pushState: the iframe's hash navigations
+        // already create joint-session-history entries, so Back works via the frame.
+        history.replaceState(null, "", `#${msg.path}`);
         return;
       }
       // openLink: scheme-gate + whitelist; whitelisted opens directly, off-whitelist confirms.
@@ -117,7 +140,7 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
     <>
       <iframe
         ref={iframeRef}
-        src={uiUrl}
+        src={frameSrc}
         title="Haku UI"
         sandbox="allow-scripts allow-same-origin allow-forms"
         style={{ display: "block", width: "100vw", height: "100vh", border: 0 }}

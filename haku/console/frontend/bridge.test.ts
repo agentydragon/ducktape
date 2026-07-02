@@ -21,6 +21,24 @@ describe("parseInbound", () => {
     });
   });
 
+  it("accepts a well-formed routeChanged", () => {
+    expect(parseInbound({ type: "routeChanged", path: "/" })).toEqual({ type: "routeChanged", path: "/" });
+    expect(parseInbound({ type: "routeChanged", path: "/garden/notes%2Ffoo.md" })).toEqual({
+      type: "routeChanged",
+      path: "/garden/notes%2Ffoo.md",
+    });
+  });
+
+  it("rejects routeChanged payloads that aren't validated route paths", () => {
+    expect(parseInbound({ type: "routeChanged" })).toBeNull(); // missing path
+    expect(parseInbound({ type: "routeChanged", path: 42 })).toBeNull(); // wrong type
+    expect(parseInbound({ type: "routeChanged", path: "runs" })).toBeNull(); // no leading slash
+    expect(parseInbound({ type: "routeChanged", path: "//evil.example/x" })).toBeNull(); // protocol-relative
+    expect(parseInbound({ type: "routeChanged", path: "https://evil.example" })).toBeNull(); // a URL, not a path
+    expect(parseInbound({ type: "routeChanged", path: "/has space" })).toBeNull(); // outside the charset
+    expect(parseInbound({ type: "routeChanged", path: `/${"a".repeat(600)}` })).toBeNull(); // over the length cap
+  });
+
   it("rejects malformed / unknown payloads", () => {
     expect(parseInbound(null)).toBeNull();
     expect(parseInbound("nope")).toBeNull();
