@@ -15,6 +15,7 @@ from rotate import (
     mint_jwt,
     remaining_hours,
     stamped_audiences,
+    stamped_claims,
     token_audiences,
 )
 
@@ -87,6 +88,21 @@ def test_stamped_audiences_absent_is_none(tmp_path: Path):
     assert stamped_audiences(tmp_path / "absent.yaml") is None
 
 
+def test_stamped_claims_reads_yaml_dict(tmp_path: Path):
+    f = tmp_path / "t.yaml"
+    f.write_text(
+        'expires_unencrypted: "2030-01-01T00:00:00Z"\nclaims_unencrypted:\n  email: haku@allegedly.works\njwt: abc\n'
+    )
+    assert stamped_claims(f) == {"email": "haku@allegedly.works"}
+
+
+def test_stamped_claims_absent_is_none(tmp_path: Path):
+    f = tmp_path / "t.yaml"
+    f.write_text("jwt: abc\n")
+    assert stamped_claims(f) is None
+    assert stamped_claims(tmp_path / "absent.yaml") is None
+
+
 def test_rotation_expected_audiences_defaults_none_and_parses_list():
     base = {
         "name": "haku-k8s",
@@ -101,6 +117,20 @@ def test_rotation_expected_audiences_defaults_none_and_parses_list():
         base | {"expected_audiences": ["kubectl-sandbox-client-credentials", "kubectl-passthrough-mcp"]}
     )
     assert with_aud.expected_audiences == ["kubectl-sandbox-client-credentials", "kubectl-passthrough-mcp"]
+
+
+def test_rotation_expected_claims_defaults_none_and_parses_dict():
+    base = {
+        "name": "haku-mail",
+        "provider_slug": "stalwart-haku",
+        "scopes": "openid profile email",
+        "credentials_dir": "/creds",
+        "sops_file": "secrets/haku-mail-jwt.yaml",
+        "token_field": "jwt",
+    }
+    assert Rotation.model_validate(base).expected_claims is None
+    with_claims = Rotation.model_validate(base | {"expected_claims": {"email": "haku@allegedly.works"}})
+    assert with_claims.expected_claims == {"email": "haku@allegedly.works"}
 
 
 def test_rotation_k8s_secret_defaults_none_and_parses():

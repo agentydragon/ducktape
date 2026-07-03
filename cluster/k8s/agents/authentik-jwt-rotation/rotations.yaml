@@ -88,6 +88,14 @@ rotations:
     credential_mode: user_password
     expected_audiences:
       - stalwart-haku
+    # Stalwart's OIDC directory requires a non-empty "email" claim to resolve
+    # a JWT to a mailbox account (requireScopes.email); an empty claim 403s at
+    # /jmap/session even though the token authenticates fine. Asserting it here
+    # fails the mint loudly instead of silently shipping a broken token, and
+    # forces a re-mint if the stamped claim ever stops matching (e.g. if the
+    # Authentik user's email attribute is unset again).
+    expected_claims:
+      email: haku@allegedly.works
     credentials_dir: /var/run/secrets/authentik/haku-mail
     sops_file: secrets/haku-mail-jwt.yaml
     token_field: jwt

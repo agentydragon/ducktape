@@ -8,14 +8,16 @@ One run processes every rotation listed in the YAML config. For each rotation it
      happens only every ~44 days (45d validity - 1d threshold), but a failed
      rotation self-heals on the next hourly run.
   2. Mints a fresh JWT via `client_credentials`, verifies its issuer, an
-     optional group claim, and an optional set of expected audiences on the
-     final token, and — for proxy-fronted consumers — exchanges it into a
-     proxy-provider-scoped token (the JWT-bearer two-hop pattern the Authentik
-     outposts in this repo require).
+     optional group claim, an optional set of expected audiences, and optional
+     expected claims (e.g. email) on the final token, and — for proxy-fronted
+     consumers — exchanges it into a proxy-provider-scoped token (the
+     JWT-bearer two-hop pattern the Authentik outposts in this repo require).
   3. Writes `expires_unencrypted` (from the final token's own `exp` claim, so
      the freshness check is authoritative), an `audiences_unencrypted` stamp
-     when audiences are expected (so the next run can force a re-mint if the
-     expectation changes), plus the token, then `sops encrypt`s in place.
+     when audiences are expected and a `claims_unencrypted` stamp when claims
+     are expected (so the next run can force a re-mint if either expectation
+     changes — e.g. an Authentik service account's email gets fixed), plus the
+     token, then `sops encrypt`s in place.
 
 Everything that actually rotated this cycle lands in a single combined commit.
 The whole run operates from the clone root so SOPS creation rules (matched on
@@ -84,6 +86,14 @@ class Rotation(BaseModel):
         "Asserted on every mint, and forces a re-mint when the stored token's "
         "audiences_unencrypted stamp does not already cover them — so adding an audience "
         "rolls out on the next run instead of waiting for expiry.",
+    )
+    expected_claims: dict[str, str] | None = Field(
+        default=None,
+        description="Other claims (e.g. email) that must equal the given value on the final "
+        "written token. Asserted on every mint, and forces a re-mint when the stored token's "
+        "claims_unencrypted stamp does not already match — so fixing the upstream Authentik "
+        "attribute (e.g. a service account's missing email) rolls out on the next run instead "
+        "of waiting for expiry.",
     )
     exchange_scopes: str | None = Field(
         default=None,
@@ -159,6 +169,15 @@ def stamped_audiences(sops_file: Path) -> list[str] | None:
     return unencrypted_stamps(sops_file).get("audiences_unencrypted")
 
 
+def stamped_claims(sops_file: Path) -> dict[str, str] | None:
+    """Claims from the plaintext `claims_unencrypted` stamp, or None if absent.
+
+    Lets the freshness check notice a claim-expectation change (e.g. an Authentik
+    service account's email getting fixed) without decrypting the token.
+    """
+    return unencrypted_stamps(sops_file).get("claims_unencrypted")
+
+
 def mint_jwt(client: httpx.Client, rotation: Rotation) -> str:
     client_id = (rotation.credentials_dir / "client_id").read_text().strip()
     data = {"grant_type": "client_credentials", "scope": rotation.scopes}
@@ -216,6 +235,19 @@ def rotate_one(client: httpx.Client, rotation: Rotation, config: Config) -> bool
                 rotation.expected_audiences,
             )
             fresh = False
+    # Same idea as the audiences check above, for arbitrary claims (e.g. email):
+    # a stored token minted before an upstream Authentik fix landed would otherwise
+    # keep being treated as fresh until its ~44-day expiry.
+    if fresh and rotation.expected_claims:
+        stored_claims = stamped_claims(rotation.sops_file)
+        if stored_claims is None or stored_claims != rotation.expected_claims:
+            logger.info(
+                "%s: stored claims %s do not match expected %s; forcing re-mint",
+                rotation.name,
+                stored_claims,
+                rotation.expected_claims,
+            )
+            fresh = False
     if fresh:
         logger.info(
             "%s: %.0fh remaining > %dh threshold; skipping", rotation.name, remaining, config.rotate_below_hours
@@ -250,6 +282,17 @@ def rotate_one(client: httpx.Client, rotation: Rotation, config: Config) -> bool
                 f"{rotation.name}: minted token missing expected audiences {sorted(missing)} "
                 f"(got {final_audiences!r}); check the Authentik provider's audience mapping"
             )
+    if rotation.expected_claims:
+        mismatched = {
+            claim: (expected, final_payload.get(claim))
+            for claim, expected in rotation.expected_claims.items()
+            if final_payload.get(claim) != expected
+        }
+        if mismatched:
+            raise RuntimeError(
+                f"{rotation.name}: minted token claims mismatch {mismatched} "
+                f"(expected -> got); check the Authentik user/scope-mapping attributes"
+            )
 
     # `exp` from the token we actually write — the proxy provider's lifetime can
     # differ from the source provider's, so freshness must key off the final token.
@@ -261,6 +304,8 @@ def rotate_one(client: httpx.Client, rotation: Rotation, config: Config) -> bool
     stamps: dict[str, Any] = {"expires_unencrypted": expires_iso}
     if rotation.expected_audiences:
         stamps["audiences_unencrypted"] = final_audiences
+    if rotation.expected_claims:
+        stamps["claims_unencrypted"] = {claim: final_payload.get(claim) for claim in rotation.expected_claims}
     stamps[rotation.token_field] = final_jwt
     rotation.sops_file.parent.mkdir(parents=True, exist_ok=True)
     rotation.sops_file.write_text(yaml.safe_dump(stamps, sort_keys=False, width=2**31))
