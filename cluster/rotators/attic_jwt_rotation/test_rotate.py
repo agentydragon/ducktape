@@ -10,10 +10,11 @@ import httpx
 import pygit2
 import pytest
 import pytest_bazel
-import rotate
 import yaml
 from pydantic import ValidationError
-from rotate import (
+
+from cluster.rotators.attic_jwt_rotation import rotate
+from cluster.rotators.attic_jwt_rotation.rotate import (
     Config,
     Token,
     _configure_ca_trust,

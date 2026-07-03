@@ -6,7 +6,8 @@ import json
 import httpx
 import pytest
 import pytest_bazel
-from provision import Policy, reconcile
+
+from cluster.provisioners.grocy_user_perms.provision import Policy, reconcile
 
 PERMISSION_HIERARCHY = [{"id": "1", "name": "ADMIN"}, {"id": "2", "name": "MASTER_DATA_EDIT"}]
 

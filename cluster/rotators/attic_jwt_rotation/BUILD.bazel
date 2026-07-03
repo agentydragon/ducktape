@@ -4,12 +4,9 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
-# imports=["."] puts this directory on sys.path so rotate.py is importable as
-# the top-level module `rotate` (matches the CronJob image's own entrypoint).
 py_library(
     name = "rotate",
     srcs = ["rotate.py"],
-    imports = ["."],
     deps = [
         "@pypi//httpx",
         "@pypi//pydantic",
@@ -22,7 +19,6 @@ py_library(
 py_test(
     name = "test_rotate",
     srcs = ["test_rotate.py"],
-    imports = ["."],
     deps = [
         ":rotate",
         "@pypi//certifi",
@@ -37,7 +33,6 @@ py_test(
 
 aspect_py_binary(
     name = "rotate_bin",
-    imports = ["."],
     main = "rotate.py",
     deps = [":rotate"],
 )
