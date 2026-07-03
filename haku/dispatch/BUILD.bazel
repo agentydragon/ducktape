@@ -44,6 +44,11 @@ py_library(
     srcs = ["db.py"],
     deps = [
         ":models",
+        # asyncpg is imported dynamically by SQLAlchemy's postgresql+asyncpg
+        # dialect — without the explicit dep it's absent from the image
+        # (ModuleNotFoundError at startup; tests run sqlite+aiosqlite and
+        # can't catch it).
+        "@pypi//asyncpg",
         "@pypi//sqlalchemy",
     ],
 )
