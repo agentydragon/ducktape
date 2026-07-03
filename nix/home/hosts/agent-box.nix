@@ -14,11 +14,14 @@
 {
   imports = [
     ../codex # OpenAI Codex CLI + config
+    ../modules/bazel.nix # User-level Bazel config and shared caches
+    ../modules/cache-dirs.nix # Shared cache directory materialization
     ../modules/sops-env.nix # ducktape.sopsEnv (BuildBuddy key reads this)
     ../modules/buildbuddy.nix # BuildBuddy creds -> bazelrc + BUILDBUDDY_API_KEY
     ../modules/forgejo-ssh.nix # Forgejo bot push key + git.allegedly.works ssh block
     ../modules/attic.nix # attic ~/.config/attic/config.toml (push/pull client)
     ../modules/agent-kubeconfig.nix # agent-box-codex k8s bearer kubeconfig
+    ../modules/ssh.nix # Shared SSH client defaults
   ];
 
   # home-manager sops-nix decrypts the codex user's secrets with its planted id.
@@ -29,6 +32,7 @@
     sopsFile = ../../../secrets/hosts/agent-box-attic.yaml;
   };
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/agent-box-codex-forgejo.sops.key;
+  ducktape.ssh.enable = true;
   # TODO: this simple path still requires a home-manager activation after the
   # authentik-jwt-rotation CronJob commits a refreshed JWT. Replace with a local
   # token refresh/apply path if rotation staleness becomes operationally annoying.
@@ -46,6 +50,13 @@
   ducktape.codex = {
     approvalPolicy = "never";
     sandboxMode = "danger-full-access";
+  };
+  ducktape.bazel = {
+    enable = true;
+    userCache = {
+      enable = true;
+      diskCacheMaxSize = "80G";
+    };
   };
 
   programs.zsh.enable = true;

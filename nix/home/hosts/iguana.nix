@@ -20,6 +20,7 @@
 
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/iguana-forgejo.sops.key;
   ducktape.githubSsh.sopsFile = ../../../ssh_keys/iguana-github.sops.key;
+  ducktape.bazel.userCache.enable = true;
 
   # AppIndicator support — needed for timekpr-client tray icon in GNOME.
   programs.gnome-shell.extensions = [

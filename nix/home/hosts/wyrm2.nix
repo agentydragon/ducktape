@@ -18,6 +18,7 @@
   ];
 
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/wyrm2-forgejo.sops.key;
+  ducktape.bazel.userCache.enable = true;
 
   ducktape.attic = {
     enable = true;

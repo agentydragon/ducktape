@@ -79,9 +79,12 @@ in
     ./modules/gnome-custom-keybindings.nix
     ./modules/attic.nix
     ./modules/atuin.nix
+    ./modules/bazel.nix
     ./modules/buildbuddy.nix
+    ./modules/cache-dirs.nix
     ./modules/datetime-format.nix
     ./modules/sops-env.nix
+    ./modules/ssh.nix
     ./services/activitywatch.nix
     ./opencode
     ./modules/gnome-shell-keybindings.nix
@@ -104,6 +107,9 @@ in
   home.homeDirectory = "/home/agentydragon";
 
   programs.home-manager.enable = true;
+
+  ducktape.bazel.enable = true;
+  ducktape.ssh.enable = true;
 
   xdg.userDirs = {
     enable = true;
@@ -226,18 +232,14 @@ in
 
   sops.age.sshKeyPaths = [ "${config.home.homeDirectory}/.ssh/id_ed25519" ];
 
-  programs.ssh = {
-    enable = true;
-    enableDefaultConfig = false;
-    matchBlocks = {
-      # agent-box VM: `ssh agent-box.allegedly.works` lands as the codex user.
-      # Distinct port because gecko owns :22 on the hil nodes (see
-      # cluster/k8s/agent-box/app/ciliumenvoyconfig.yaml).
-      "agent-box.allegedly.works" = {
-        hostname = "agent-box.allegedly.works";
-        user = "codex";
-        port = 2201;
-      };
+  programs.ssh.matchBlocks = {
+    # agent-box VM: `ssh agent-box.allegedly.works` lands as the codex user.
+    # Distinct port because gecko owns :22 on the hil nodes (see
+    # cluster/k8s/agent-box/app/ciliumenvoyconfig.yaml).
+    "agent-box.allegedly.works" = {
+      hostname = "agent-box.allegedly.works";
+      user = "codex";
+      port = 2201;
     };
   };
   xdg.configFile."appimagelauncher.cfg".text = ''
@@ -247,13 +249,6 @@ in
     ask_to_move=true
     destination=/home/agentydragon/.local/appimages
     enable_daemon=true
-  '';
-
-  home.file.".bazelrc".text = ''
-    common --show_progress_rate_limit=0.05
-    common --progress_in_terminal_title
-
-    try-import ${config.home.homeDirectory}/.config/bazel/buildbuddy.bazelrc
   '';
 
   home.packages =
@@ -294,7 +289,6 @@ in
       cargo
       clippy
       rust-analyzer
-      sccache
       gcc
 
       (writeShellScriptBin "z-claude" ''
