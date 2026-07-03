@@ -29,7 +29,7 @@ spec:
             name: grocy-user-perms-policy
       containers:
         - name: provisioner
-          # Script baked in via Bazel (//cluster/k8s/grocy/user-perms-base:image).
+          # Script baked in via Bazel (//cluster/provisioners/grocy_user_perms:image).
           image: ghcr.io/agentydragon/grocy-user-perms-provisioner:devel-20260702062831-ae8ee8a # {"$imagepolicy": "flux-system:grocy-user-perms-provisioner"}
           imagePullPolicy: Always
           args:

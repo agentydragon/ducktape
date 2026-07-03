@@ -333,13 +333,9 @@ py_test(
 py_test(
     name = "test_cluster_integration",
     srcs = ["test_cluster_integration.py"],
-    # The grocy user-perms overlays (in cluster_all_files) reference the
-    # user-perms-base sub-package, which the glob stops at — bring it in via its
-    # :manifests filegroup so their kustomize builds resolve.
     data = [
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s:flux_bootstrap_files",
-        "//cluster/k8s/grocy/user-perms-base:manifests",
         "@multitool//tools/kustomize",
     ],
     deps = [
@@ -370,10 +366,8 @@ py_test(
     data = [
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s:flux_system_files",
-        "//cluster/k8s/grocy/user-perms-base:manifests",
         "//cluster/k8s/haku/dispatch/dispatcher:manifests",
         "//cluster/k8s/haku/dispatch/litellm:manifests",
-        "//cluster/k8s/inventree/token-provisioner:manifests",
         "//cluster/k8s/litellm/app:manifests",
         "//cluster/k8s/litellm/tana:manifests",
         "//cluster/k8s/talos-cloud-controller-manager:manifests",

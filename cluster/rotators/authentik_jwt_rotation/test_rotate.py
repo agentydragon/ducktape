@@ -1,5 +1,6 @@
 import base64
 import json
+import textwrap
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -63,7 +64,12 @@ def test_remaining_hours_unstamped_file_is_none(tmp_path: Path):
 def test_remaining_hours_reads_unencrypted_expiry(tmp_path: Path):
     expires = datetime.now(UTC) + timedelta(hours=10)
     f = tmp_path / "t.yaml"
-    f.write_text(f'expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"\njwt: abc\n')
+    f.write_text(
+        textwrap.dedent(f"""\
+            expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"
+            jwt: abc
+            """)
+    )
     remaining = remaining_hours(f)
     assert remaining is not None
     assert 9 < remaining < 11
@@ -77,7 +83,15 @@ def test_token_audiences_normalizes_string_list_and_missing():
 
 def test_stamped_audiences_reads_yaml_list(tmp_path: Path):
     f = tmp_path / "t.yaml"
-    f.write_text('expires_unencrypted: "2030-01-01T00:00:00Z"\naudiences_unencrypted:\n  - a\n  - b\njwt: abc\n')
+    f.write_text(
+        textwrap.dedent("""\
+            expires_unencrypted: "2030-01-01T00:00:00Z"
+            audiences_unencrypted:
+              - a
+              - b
+            jwt: abc
+            """)
+    )
     assert stamped_audiences(f) == ["a", "b"]
 
 
@@ -91,7 +105,12 @@ def test_stamped_audiences_absent_is_none(tmp_path: Path):
 def test_stamped_claims_reads_yaml_dict(tmp_path: Path):
     f = tmp_path / "t.yaml"
     f.write_text(
-        'expires_unencrypted: "2030-01-01T00:00:00Z"\nclaims_unencrypted:\n  email: haku@allegedly.works\njwt: abc\n'
+        textwrap.dedent("""\
+            expires_unencrypted: "2030-01-01T00:00:00Z"
+            claims_unencrypted:
+              email: haku@allegedly.works
+            jwt: abc
+            """)
     )
     assert stamped_claims(f) == {"email": "haku@allegedly.works"}
 

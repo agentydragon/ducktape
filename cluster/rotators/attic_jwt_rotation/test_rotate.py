@@ -1,5 +1,6 @@
 import base64
 import json
+import textwrap
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -70,7 +71,12 @@ def test_remaining_hours_unstamped_file_is_none(tmp_path: Path):
 def test_remaining_hours_reads_unencrypted_expiry(tmp_path: Path):
     expires = datetime.now(UTC) + timedelta(hours=10)
     f = tmp_path / "t.yaml"
-    f.write_text(f'expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"\nattic_token: abc\n')
+    f.write_text(
+        textwrap.dedent(f"""\
+            expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"
+            attic_token: abc
+            """)
+    )
     remaining = remaining_hours(f)
     assert remaining is not None
     assert 9 < remaining < 11
@@ -123,7 +129,12 @@ def test_mint_attic_token_empty_output_raises(monkeypatch):
 def test_rotate_one_skips_when_fresh(monkeypatch, tmp_path: Path):
     sops_file = tmp_path / "t.yaml"
     expires = datetime.now(UTC) + timedelta(hours=48)
-    sops_file.write_text(f'expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"\nattic_token: old\n')
+    sops_file.write_text(
+        textwrap.dedent(f"""\
+            expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"
+            attic_token: old
+            """)
+    )
     token = Token(name="x", sops_file=sops_file, sub="x", validity="1 year", pull=[], push=[])
     fake = _FakeRun(jwt="should-not-be-used")
     monkeypatch.setattr(rotate.subprocess, "run", fake)
@@ -233,16 +244,18 @@ def test_commit_and_push_commits_and_pushes_rotated_files(upstream: Path, tmp_pa
 
     sops_file = work / "secrets/hosts/wyrm2-attic.yaml"
     sops_file.parent.mkdir(parents=True, exist_ok=True)
-    sops_file.write_text('attic_token: newjwt\nexpires_unencrypted: "2030-01-01T00:00:00Z"\n')
+    contents = textwrap.dedent("""\
+        attic_token: newjwt
+        expires_unencrypted: "2030-01-01T00:00:00Z"
+        """)
+    sops_file.write_text(contents)
 
     commit_and_push(repo, config, rotated=["wyrm2"], token="unused-for-local-transport")
 
     # A fresh clone of upstream reflects the pushed commit.
     verify = tmp_path / "verify"
     pygit2.clone_repository(str(upstream), str(verify), checkout_branch="devel")
-    assert (verify / "secrets/hosts/wyrm2-attic.yaml").read_text() == (
-        'attic_token: newjwt\nexpires_unencrypted: "2030-01-01T00:00:00Z"\n'
-    )
+    assert (verify / "secrets/hosts/wyrm2-attic.yaml").read_text() == contents
     assert "rotate attic JWTs" in pygit2.Repository(str(verify)).head.peel(pygit2.Commit).message
 
 

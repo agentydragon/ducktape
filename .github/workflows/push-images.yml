@@ -157,12 +157,12 @@ jobs:
             }
           - { image: "//cluster/rotators/attic_jwt_rotation:image", image_name: attic-jwt-rotation, test_target: "" }
           - {
-              image: "//cluster/k8s/inventree/token-provisioner:image",
+              image: "//cluster/provisioners/inventree_token_provisioner:image",
               image_name: inventree-token-provisioner,
               test_target: "",
             }
           - {
-              image: "//cluster/k8s/grocy/user-perms-base:image",
+              image: "//cluster/provisioners/grocy_user_perms:image",
               image_name: grocy-user-perms-provisioner,
               test_target: "",
             }
