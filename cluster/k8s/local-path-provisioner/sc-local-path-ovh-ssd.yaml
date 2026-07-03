@@ -1,0 +1,23 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-ovh-ssd
+  annotations:
+    description: OVH HIL node-local data disk, NVMe/SSD-backed (KS-GAME second NVMe). Media-scoped via storage-tier=ssd.
+provisioner: cluster.local/local-path-provisioner
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+# Media is enforced by allowedTopologies on the storage-tier node label (set in
+# cluster/terraform/main/ovh-nodes.tf, keyed to the actual data-disk hardware),
+# NOT by the class name or PVC size. A PVC here can only bind on a KS-GAME NVMe
+# node; if none is schedulable the PVC stays Pending (loud) rather than silently
+# provisioning on rust. See cluster/docs/ovh_storage_tiering.md.
+#
+# Capacity note: the KS-GAME data NVMe is ~450 GB. This tier is for small,
+# fsync-sensitive data (SeaweedFS SSD volume-topology group, hot DBs) — not bulk
+# blob storage, which stays on the HDD tier.
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: storage-tier
+        values:
+          - ssd

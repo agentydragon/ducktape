@@ -42,11 +42,15 @@ spec:
           - /var/local-path-provisioner
       # OVH Kimsufi nodes carve a dedicated XFS data disk via Talos
       # UserVolumeConfig (cluster/terraform/main/ovh-nodes.tf), mounted at
-      # /var/mnt/seaweedfs-data. The local-path-ovh StorageClass
-      # (allowedTopologies zone=hil-ovh) routes OVH-local PVCs here.
+      # /var/mnt/seaweedfs-data. All OVH-local SCs route here; which physical
+      # media a PVC lands on is decided by the SC's allowedTopologies on the
+      # `storage-tier` node label, not by the path:
+      #   - local-path-ovh-hdd → storage-tier=hdd → KS-5 /dev/sdb (HDD)
+      #   - local-path-ovh-ssd → storage-tier=ssd → KS-GAME 2nd NVMe (SSD)
+      #   - local-path-ovh     → deprecated alias, now pinned to storage-tier=hdd
+      # See cluster/docs/ovh_storage_tiering.md.
       #
-      # KS-5 nodes use /dev/sdb; KS-GAME nodes use their second NVMe. List
-      # every node that should be eligible for local-path-ovh placement.
+      # List every node that should be eligible for OVH-local placement.
       - node: ovh-ns103656
         paths:
           - /var/mnt/seaweedfs-data/local-path

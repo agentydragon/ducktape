@@ -1,0 +1,18 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-ovh-hdd
+  annotations:
+    description: OVH HIL node-local data disk, HDD-backed (KS-5 /dev/sdb). Media-scoped via storage-tier=hdd.
+provisioner: cluster.local/local-path-provisioner
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+# Media is enforced by allowedTopologies on the storage-tier node label (set in
+# cluster/terraform/main/ovh-nodes.tf, keyed to the actual data-disk hardware),
+# NOT by the class name or PVC size. A PVC here can only bind on a KS-5 node.
+# See cluster/docs/ovh_storage_tiering.md.
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: storage-tier
+        values:
+          - hdd

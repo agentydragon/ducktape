@@ -169,7 +169,8 @@ identical`runnerPodTemplate.spec.env`with the`tofu-state-db-credentials`
    the KS-GAME workers (.16/.17) have NVMe. Either re-designate the NVMe nodes as
    control-plane (quorum migration via Talos machine config), or obtain SSD-backed OVH CP
    boxes. Large topology change — plan separately. Until then, defrag + keeping competing
-   I/O off the CP spindles is the best available mitigation.
+   I/O off the CP spindles is the best available mitigation. Staged plan (Stage 2 promotes
+   the NVMe KS-GAME nodes into the quorum): <../ovh_storage_tiering.md>.
 
 ## Centralizing the Terraform CR runner template
 
