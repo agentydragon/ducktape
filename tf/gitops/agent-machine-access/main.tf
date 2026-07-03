@@ -1050,8 +1050,12 @@ resource "kubernetes_secret" "agent_box_codex_client_credentials" {
 resource "authentik_user" "haku_grocy" {
   username = "haku"
   name     = "Haku grocy read-only service account"
-  type     = "service_account"
-  path     = "goauthentik.io/service-accounts"
+  # Required for the same SA's stalwart-haku provider (below): Stalwart's OIDC
+  # directory requires the "email" scope/claim and rejects an empty one, so
+  # /jmap/session 403s without this even though the token authenticates fine.
+  email = "haku@allegedly.works"
+  type  = "service_account"
+  path  = "goauthentik.io/service-accounts"
 }
 
 # App-password token, used as the password in the client_credentials
