@@ -31,7 +31,7 @@ All paths are relative to your `haku-state` checkout. This is **not a rigid sequ
 it's a few ordering **invariants** around a **fluid understand→synthesize loop**. Honor
 the invariants; run the loop with judgment. (The contracts each part must honor live in
 the manual; this is just the shape.) Where this procedure names concrete shapes (`items/`,
-`clicks/`, `dedup_key`, `value`, `snoozed_until`), those are **your current method** —
+`responses/`, item slugs, `value`, `snoozed_until`), those are **your current method** —
 defined in your state, seeded from `state_template/`, and yours to evolve; operate whatever
 your state actually defines, and if you've changed the format this loop's _shape_ still
 applies.
@@ -42,8 +42,8 @@ applies.
    the live situational-awareness note, how far you got last time), your recent `log/`
    files, and **all of your existing working set** (today: every file in `items/`, terminal
    ones included — they encode what the operator already decided). **Finish this before you
-   scan or record anything**: load what you already have first (today: every `dedup_key`), so
-   you advance what's there instead of duplicating it. Check your watch-list and anything
+   scan or record anything**: load what you already have first (today: every item slug under
+   `items/`), so you advance what's there instead of duplicating it. Check your watch-list and anything
    deferred (today: `snoozed` items) for **wake triggers that have now arrived**. **Confirm
    this isn't a false first run:** if your working set looks empty, verify the **remote** is
    genuinely seedless rather than a partial/mid-bootstrap checkout (re-pull / wait for the
@@ -60,10 +60,12 @@ applies.
 3. **Process operator feedback.** For each file in `intake/` (not `processed/`): fold
    standing guidance into `memory/` (note expiry if time-bound), apply feedback that targets
    something you surfaced to that thing, then move it to `intake/processed/` with a note on
-   how you read it. Then reduce the action markers your UI recorded (today: each
-   `clicks/<item-id>/<action-id>`): carry out that action's intent (today e.g. `snooze` →
-   `status: snoozed` + `snoozed_until`; `reject` → `rejected` + reason; a custom command → do
-   the research/follow-up), then **clear the marker**.
+   how you read it. Then reduce the operator responses your UI recorded (today: each
+   `responses/<scope>/<field>.yaml` the UI wrote, e.g. `responses/<item>/status`): reconcile
+   each into the thing it targets (today e.g. `status: snoozed` → set the item `snoozed` +
+   `snoozed_until`; `status: rejected` → `rejected` + reason; a custom field → do the
+   research/follow-up). The response file **is** the current answer (its git history is the log);
+   you don't delete it — you act on it and let the item's own state become the truth.
 
 ### The work — a continuous understand → synthesize loop
 
@@ -80,10 +82,10 @@ backlogs) you advance a little each run and pick up next time — not a one-pass
   reprioritize (down-rank what they can't act on now; surface what's useful given where/when
   they are). Honor the operator guidance in `memory/`.
 - **Act — record & curate your working set as you go** (no separate write-then-curate phase):
-  - New findings → record them in your format (today: `items/<id>.yaml`); aim for a **deep
+  - New findings → record them in your format (today: `items/<slug>.md`); aim for a **deep
     backlog**, no minimum to surface. Update existing entries when evidence changed; never
-    duplicate (today: a `dedup_key`); don't re-raise a rejected idea without materially new
-    evidence (say what's new).
+    duplicate (today: match against the existing item slugs); don't re-raise a rejected idea
+    without materially new evidence (say what's new).
   - Re-rank; retire what's elapsed (today: `expired` past-`deadline` entries); **promote**
     anything deferred whose wake trigger arrived; **defer** anything whose only next step is
     to wait (today: `snooze`); keep valid lower-priority work as backlog.
@@ -109,7 +111,7 @@ backlogs) you advance a little each run and pick up next time — not a one-pass
 - **Commit and push to `main`** — push **everything** before you finish; your state is your
   only memory and pushing updates what your UI shows. One commit per logical change
   (`scan:` / `intake:` / `log:`). Your UI's backend is a **concurrent writer** (it commits
-  operator clicks/intake), so commit, then `git pull --rebase` before pushing (retry if it
+  operator responses/intake), so commit, then `git pull --rebase` before pushing (retry if it
   raced — races are rare and rarely
   conflict). **Checkpoint long work:** if a research/synthesis stretch runs long (say >5 min
   or >~100 steps) and has committable sub-steps, commit them as you go — so a run killed
