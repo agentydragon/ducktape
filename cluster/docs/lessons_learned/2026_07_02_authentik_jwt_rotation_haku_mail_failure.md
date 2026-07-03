@@ -60,6 +60,13 @@ Fixed by adding `cluster/k8s/agents/authentik-jwt-rotation/agent-rbac/`
 logs -n agents-infra <pod>` on the next failing run finally surfaced the real
 traceback below.
 
+**Removed again once root cause #2 was confirmed fixed and the CronJob
+verified green** (operator judgment call: standing `pods/log` + `configmaps`
+read access to a credential-handling namespace is broader than this specific
+incident warranted once the actual bug was found). If `agents-infra` needs
+agent-readable logs again for a future incident, re-add the same
+`agent-rbac/` directory — the pattern above still applies.
+
 ## Root cause #2 (fixed, this change): `.sops.yaml` has no creation rule for `secrets/haku-mail-jwt.yaml`
 
 The actual traceback, captured live from the pod once #2766's RBAC landed:
