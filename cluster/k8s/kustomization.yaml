@@ -228,6 +228,7 @@ resources:
   - haku/zones/zai/flux-kustomization.yaml # z.ai/GLM worker zone (pure perimeter; Jobs only)
   - haku/zones/policies/flux-kustomization.yaml # Kyverno proxy/CA injection for zone pods
   - haku/dispatch/namespace/flux-kustomization.yaml
+  - haku/dispatch/agent-rbac/flux-kustomization.yaml # logs/configmaps read for rollout debugging (dispatcher logs = controller diagnostics)
   - haku/dispatch/db/flux-kustomization.yaml # CNPG: workers-LiteLLM key DB (+ validator DB later)
   - haku/dispatch/litellm/flux-kustomization.yaml # second-layer workers-LiteLLM (zone keys upstream; CNP: zone pods only)
   - haku/dispatch/dispatcher/flux-kustomization.yaml # dispatcher: classifier gate + Job stamping + result turn-in
