@@ -1,9 +1,12 @@
 # authentik-jwt-rotation
 
 Hourly CronJob that mints Authentik `client_credentials` JWTs and commits them
-SOPS-encrypted to `secrets/`. <rotations.yaml> is the source of truth for
-rotation names, providers, output files, credential modes, expected groups /
-audiences / claims, and optional in-cluster Secret publication.
+SOPS-encrypted to `secrets/`. Deployed from
+<../../k8s/agents/authentik-jwt-rotation/> (manifests only — this directory is
+the rotator's source).
+<../../k8s/agents/authentik-jwt-rotation/rotations.yaml> is the source of
+truth for rotation names, providers, output files, credential modes, expected
+groups / audiences / claims, and optional in-cluster Secret publication.
 
 `rotate.py` reads each output's unencrypted-by-suffix `expires_unencrypted`
 field (no decryption, no in-cluster age key), skips entries with more than
@@ -26,7 +29,7 @@ secret. The default `credential_mode` reads `client_id` + `client_secret`;
 `credential_mode: user_password` reads `client_id` + `username` + `password`
 for Authentik service-account app-password grants. `proxy_client_id` is also
 read when `exchange_scopes` is set. Consumers read the committed JWT via
-<../../../../devinfra/k8s/kubeconfig.py> (k8s token) or the Alloy OTLP bearer
+<../../../devinfra/k8s/kubeconfig.py> (k8s token) or the Alloy OTLP bearer
 flow.
 
 Rotations whose `provider_slug` is `kubectl-sandbox-client-credentials`

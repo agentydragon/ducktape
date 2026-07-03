@@ -4,8 +4,8 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
-# imports=["."] puts this (kebab-cased, non-importable-as-a-package) directory on
-# sys.path so rotate.py is importable as the top-level module `rotate`.
+# imports=["."] puts this directory on sys.path so rotate.py is importable as
+# the top-level module `rotate` (matches the CronJob image's own entrypoint).
 py_library(
     name = "rotate",
     srcs = ["rotate.py"],
@@ -13,6 +13,7 @@ py_library(
     deps = [
         "@pypi//httpx",
         "@pypi//pydantic",
+        "@pypi//pygit2",
         "@pypi//pyyaml",
         "@pypi//typer",
     ],
@@ -24,9 +25,13 @@ py_test(
     imports = ["."],
     deps = [
         ":rotate",
+        "@pypi//certifi",
+        "@pypi//httpx",
         "@pypi//pydantic",
+        "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -44,6 +49,16 @@ pkg_tar(
     package_dir = "/usr/local/bin",
 )
 
+# kubectl binary layer — placed at /usr/local/bin/kubectl.
+# The rotator exec's the running attic pod to mint JWTs:
+# `kubectl exec deploy/attic -- atticadm make-token …` (so atticadm runs in its
+# native nix environment and the HS256 signing secret never leaves the attic pod).
+pkg_tar(
+    name = "kubectl_layer",
+    srcs = ["@kubectl_linux_amd64//file:kubectl"],
+    package_dir = "/usr/local/bin",
+)
+
 py_image_layer(
     name = "layers",
     binary = ":rotate_bin",
@@ -57,11 +72,13 @@ oci_image(
     entrypoint = py_image_entrypoint("rotate_bin"),
     env = py_image_env(binary_name = "rotate_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    # @trixie_authentik_rotation provides git + ca-certificates (HTTPS push);
-    # sops_layer the sops binary; layers the Python app + interpreter.
+    # @trixie_attic_rotation provides git + ca-certificates (HTTPS push); sops_layer
+    # the sops binary; kubectl_layer the kubectl binary; layers the Python app +
+    # interpreter.
     tars = [
-        "@trixie_authentik_rotation//:flat",
+        "@trixie_attic_rotation//:flat",
         ":sops_layer",
+        ":kubectl_layer",
         ":layers",
     ],
 )
@@ -69,19 +86,5 @@ oci_image(
 oci_load(
     name = "load",
     image = ":image",
-    repo_tags = ["authentik-jwt-rotation:latest"],
-)
-
-# Cluster manifests for cluster/validation's flux-build test (the
-# //cluster/k8s:cluster_all_files glob stops at this package boundary).
-filegroup(
-    name = "manifests",
-    srcs = glob(
-        ["**"],
-        exclude = [
-            "BUILD.bazel",
-            "test_*.py",
-        ],
-    ),
-    visibility = ["//cluster/validation:__pkg__"],
+    repo_tags = ["attic-jwt-rotation:latest"],
 )

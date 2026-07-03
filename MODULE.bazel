@@ -354,15 +354,15 @@ apt.install(
 # authentik-jwt-rotation CronJob (Authentik client_credentials exchange + commit).
 apt.install(
     name = "trixie_authentik_rotation",
-    lock = "//cluster/k8s/agents/authentik-jwt-rotation:trixie_authentik_rotation.lock.json",
-    manifest = "//cluster/k8s/agents/authentik-jwt-rotation:trixie_authentik_rotation.yaml",
+    lock = "//cluster/rotators/authentik_jwt_rotation:trixie_authentik_rotation.lock.json",
+    manifest = "//cluster/rotators/authentik_jwt_rotation:trixie_authentik_rotation.yaml",
 )
 
 # attic-jwt-rotation CronJob (kubectl exec into attic pod for atticadm + commit).
 apt.install(
     name = "trixie_attic_rotation",
-    lock = "//cluster/k8s/agents/attic-jwt-rotation:trixie_attic_rotation.lock.json",
-    manifest = "//cluster/k8s/agents/attic-jwt-rotation:trixie_attic_rotation.yaml",
+    lock = "//cluster/rotators/attic_jwt_rotation:trixie_attic_rotation.lock.json",
+    manifest = "//cluster/rotators/attic_jwt_rotation:trixie_attic_rotation.yaml",
 )
 
 # gnome-shell + Xvfb + dbus on debian:trixie-slim for the aiquota

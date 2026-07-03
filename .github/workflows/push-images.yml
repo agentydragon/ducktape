@@ -151,11 +151,11 @@ jobs:
           # compares != "" truthy, so we'd accidentally run an empty
           # `bb remote test` on these rows otherwise.
           - {
-              image: "//cluster/k8s/agents/authentik-jwt-rotation:image",
+              image: "//cluster/rotators/authentik_jwt_rotation:image",
               image_name: authentik-jwt-rotation,
-              test_target: "//cluster/k8s/agents/authentik-jwt-rotation/...",
+              test_target: "//cluster/rotators/authentik_jwt_rotation/...",
             }
-          - { image: "//cluster/k8s/agents/attic-jwt-rotation:image", image_name: attic-jwt-rotation, test_target: "" }
+          - { image: "//cluster/rotators/attic_jwt_rotation:image", image_name: attic-jwt-rotation, test_target: "" }
           - {
               image: "//cluster/k8s/inventree/token-provisioner:image",
               image_name: inventree-token-provisioner,

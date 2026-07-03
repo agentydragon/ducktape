@@ -370,8 +370,6 @@ py_test(
     data = [
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s:flux_system_files",
-        "//cluster/k8s/agents/attic-jwt-rotation:manifests",
-        "//cluster/k8s/agents/authentik-jwt-rotation:manifests",
         "//cluster/k8s/grocy/user-perms-base:manifests",
         "//cluster/k8s/haku/dispatch/dispatcher:manifests",
         "//cluster/k8s/haku/dispatch/litellm:manifests",
