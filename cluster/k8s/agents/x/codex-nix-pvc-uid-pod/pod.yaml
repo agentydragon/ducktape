@@ -1,0 +1,131 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: codex-nix-pvc-uid-pod
+  namespace: codex-nix-pvc-uid-pod
+  labels:
+    app.kubernetes.io/name: codex-nix-pvc-uid-pod
+spec:
+  restartPolicy: Always
+  automountServiceAccountToken: false
+  nodeSelector:
+    topology.kubernetes.io/region: hil
+  securityContext:
+    fsGroup: 1000
+    fsGroupChangePolicy: OnRootMismatch
+  initContainers:
+    - name: seed-nix
+      image: docker.io/nixos/nix:latest
+      imagePullPolicy: IfNotPresent
+      command:
+        - /root/.nix-profile/bin/nix
+      args:
+        - shell
+        - nixpkgs#bash
+        - nixpkgs#coreutils
+        - nixpkgs#gnutar
+        - -c
+        - bash
+        - /run/codex-pod-scripts/seed-nix.sh
+      env:
+        - name: NIX_CONFIG
+          value: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+      volumeMounts:
+        - name: nix-store
+          mountPath: /nix-pvc
+        - name: home
+          mountPath: /home-codex
+          subPath: home
+        - name: codex-bootstrap-identity
+          mountPath: /run/codex-bootstrap
+          readOnly: true
+        - name: codex-pod-scripts
+          mountPath: /run/codex-pod-scripts
+          readOnly: true
+  containers:
+    - name: shell
+      image: docker.io/nixos/nix:latest
+      imagePullPolicy: IfNotPresent
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
+      command:
+        - /nix/var/nix/profiles/default/bin/nix
+      args:
+        - shell
+        - nixpkgs#bash
+        - nixpkgs#busybox
+        - nixpkgs#coreutils
+        - nixpkgs#openssh
+        - -c
+        - bash
+        - /run/codex-pod-scripts/start-sshd.sh
+      env:
+        - name: HOME
+          value: /home/codex
+        - name: USER
+          value: codex
+        - name: XDG_CACHE_HOME
+          value: /tmp/xdg-cache
+        - name: NIX_CONFIG
+          value: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+      volumeMounts:
+        - name: codex-user
+          mountPath: /etc/passwd
+          subPath: passwd
+          readOnly: true
+        - name: codex-user
+          mountPath: /etc/group
+          subPath: group
+          readOnly: true
+        - name: codex-user
+          mountPath: /etc/ssh/authorized_keys/codex
+          subPath: authorized_keys
+          readOnly: true
+        - name: nix-store
+          mountPath: /nix
+        - name: home
+          mountPath: /home/codex
+          subPath: home
+        - name: home
+          mountPath: /workspace
+          subPath: workspace
+        - name: codex-pod-scripts
+          mountPath: /run/codex-pod-scripts
+          readOnly: true
+      resources:
+        requests:
+          cpu: "500m"
+          memory: 1Gi
+          ephemeral-storage: 20Gi
+        limits:
+          cpu: "4"
+          memory: 8Gi
+          ephemeral-storage: 80Gi
+  volumes:
+    - name: codex-user
+      configMap:
+        name: codex-user
+    - name: codex-bootstrap-identity
+      secret:
+        secretName: codex-bootstrap-identity
+    - name: codex-pod-scripts
+      configMap:
+        name: codex-pod-scripts
+    - name: nix-store
+      emptyDir:
+        sizeLimit: 80Gi
+    - name: home
+      persistentVolumeClaim:
+        claimName: codex-home

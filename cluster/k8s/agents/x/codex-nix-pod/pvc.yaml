@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: codex-nix-store
+  namespace: codex-nix-pod
+  annotations:
+    description: "Writable /nix volume for the codex-nix-pod spike."
+spec:
+  storageClassName: local-path-ovh
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 80Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: codex-home
+  namespace: codex-nix-pod
+  annotations:
+    description: "Persistent home and workspace volume for the codex-nix-pod spike."
+spec:
+  storageClassName: local-path-ovh
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 80Gi

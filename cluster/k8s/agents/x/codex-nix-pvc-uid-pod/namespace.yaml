@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: codex-nix-pvc-uid-pod
+  annotations:
+    description: "Manual x/ spike for running a non-root Codex-like pod with persistent writable /nix."
+  labels:
+    app.kubernetes.io/name: codex-nix-pvc-uid-pod

@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: codex-user
+  namespace: codex-nix-pvc-uid-pod
+  annotations:
+    description: "Minimal passwd/group entries for the non-root UID 1000 spike."
+data:
+  passwd: |
+    root:x:0:0:root:/root:/bin/sh
+    codex:x:1000:1000:Codex:/home/codex:/bin/sh
+  group: |
+    root:x:0:
+    codex:x:1000:
+  authorized_keys: |
+    ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFfzLZ7zOOMviYrrxeh1nSXdwu9uveSXr07EJI5NwFau agentydragon@wyrm2
+    ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBoGigbjJZfs1+M6yUCJSBzUlu2mFcakFTmuxrN425fO agentydragon@atlas
+    ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICweiJQQidbhojDI7tXuSuntptCc6Dy4stIGzDlI9z0b agentydragon@rugged

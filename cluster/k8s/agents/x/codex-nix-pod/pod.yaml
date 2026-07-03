@@ -1,0 +1,55 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: codex-nix-pod
+  namespace: codex-nix-pod
+  labels:
+    app.kubernetes.io/name: codex-nix-pod
+spec:
+  restartPolicy: Always
+  nodeSelector:
+    topology.kubernetes.io/region: hil
+  containers:
+    - name: shell
+      image: docker.io/nixos/nix:latest
+      imagePullPolicy: IfNotPresent
+      command:
+        - /bin/sh
+        - -lc
+        - |
+          set -eu
+          mkdir -p /workspace /home/codex/.cache /home/codex/.config/direnv
+          chmod 0755 /workspace /home/codex /home/codex/.cache /home/codex/.config /home/codex/.config/direnv
+          tail -f /dev/null
+      env:
+        - name: HOME
+          value: /home/codex
+        - name: USER
+          value: codex
+        - name: NIX_CONFIG
+          value: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+      volumeMounts:
+        - name: nix-store
+          mountPath: /nix
+        - name: home
+          mountPath: /home/codex
+          subPath: home
+        - name: home
+          mountPath: /workspace
+          subPath: workspace
+      resources:
+        requests:
+          cpu: "500m"
+          memory: 1Gi
+        limits:
+          cpu: "4"
+          memory: 8Gi
+  volumes:
+    - name: nix-store
+      persistentVolumeClaim:
+        claimName: codex-nix-store
+    - name: home
+      persistentVolumeClaim:
+        claimName: codex-home

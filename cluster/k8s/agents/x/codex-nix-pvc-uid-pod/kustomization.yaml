@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: codex-nix-pvc-uid-pod
+generatorOptions:
+  disableNameSuffixHash: true
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - codex-bootstrap-identity.sops.yaml
+  - pvc.yaml
+  - pod.yaml
+configMapGenerator:
+  - name: codex-pod-scripts
+    options:
+      annotations:
+        description: "Startup scripts for the Codex pod spike."
+    files:
+      - seed-nix.sh=scripts/seed-nix.sh
+      - start-sshd.sh=scripts/start-sshd.sh
