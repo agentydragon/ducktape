@@ -18,6 +18,9 @@ volumeBindingMode: WaitForFirstConsumer
 # provisioning time); this constrains only new provisioning, to the same KS-5
 # HDD nodes these consumers already run on.
 #
+# Both keys AND together (same term): OVH HIL zone + HDD media, matching
+# local-path-ovh-hdd. The zone key preserves this class's original OVH-scoping.
+#
 # APPLY ORDERING (allowedTopologies is immutable on a StorageClass):
 #   1. Apply the storage-tier node labels first (bazel run //cluster:bootstrap,
 #      or talosctl apply-config), and verify: kubectl get nodes -L storage-tier
@@ -26,6 +29,9 @@ volumeBindingMode: WaitForFirstConsumer
 #      immutable field in place). Bound PVCs survive the SC delete.
 allowedTopologies:
   - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - hil-ovh
       - key: storage-tier
         values:
           - hdd

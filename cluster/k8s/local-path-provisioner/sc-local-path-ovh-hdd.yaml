@@ -9,10 +9,15 @@ reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
 # Media is enforced by allowedTopologies on the storage-tier node label (set in
 # cluster/terraform/main/ovh-nodes.tf, keyed to the actual data-disk hardware),
-# NOT by the class name or PVC size. A PVC here can only bind on a KS-5 node.
+# NOT by the class name or PVC size. Both keys AND together (same term), so a PVC
+# here binds only on an OVH HIL node whose data disk is HDD (a KS-5). The zone key
+# keeps this class OVH-scoped even if storage-tier is used elsewhere (e.g. wyrm2).
 # See cluster/docs/ovh_storage_tiering.md.
 allowedTopologies:
   - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - hil-ovh
       - key: storage-tier
         values:
           - hdd

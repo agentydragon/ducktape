@@ -36,15 +36,18 @@ its role — so it stays correct when a KS-GAME node is later re-designated
 control-plane (Stage 2).
 
 Three StorageClasses (<../k8s/local-path-provisioner/>), all sharing the one
-provisioner + nodePathMap; media differs only by `allowedTopologies`:
+provisioner + nodePathMap; media differs only by `allowedTopologies`. Each class
+ANDs two keys in the same topology term — `topology.kubernetes.io/zone=hil-ovh`
+(keeps the class OVH-scoped, so it never places on a non-OVH SSD node such as
+wyrm2) **and** `storage-tier`:
 
-- `local-path-ovh-hdd` → `storage-tier=hdd` (KS-5)
-- `local-path-ovh-ssd` → `storage-tier=ssd` (KS-GAME)
-- `local-path-ovh` → deprecated alias, re-pinned to `storage-tier=hdd`
+- `local-path-ovh-hdd` → zone `hil-ovh` + `storage-tier=hdd` (KS-5)
+- `local-path-ovh-ssd` → zone `hil-ovh` + `storage-tier=ssd` (KS-GAME)
+- `local-path-ovh` → deprecated alias, re-pinned to the same as `-hdd`
 
 Because binding follows the pod under `WaitForFirstConsumer`, a PVC on the SSD
-class can only bind where an SSD node is schedulable; if none is, the PVC stays
-**Pending (loud)** instead of silently landing on HDD.
+class can only bind where an OVH SSD node is schedulable; if none is, the PVC
+stays **Pending (loud)** instead of silently landing on HDD.
 
 ### Robustness layers
 
