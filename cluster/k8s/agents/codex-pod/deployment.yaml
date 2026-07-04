@@ -66,6 +66,17 @@ spec:
                   name: buildbuddy-api-key
                   key: api-key
                   optional: true
+            # LiteLLM virtual key (chatgpt/ oai models) minted by
+            # tf/gitops/litellm-keys and reflected into this namespace. Codex's
+            # baked config.toml points its `litellm` model_provider at this via
+            # env_key=LITELLM_API_KEY, so codex routes to LiteLLM instead of a
+            # ChatGPT sign-in. Optional during the pre-reflection window.
+            - name: LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-key-codex-pod
+                  key: api-key
+                  optional: true
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

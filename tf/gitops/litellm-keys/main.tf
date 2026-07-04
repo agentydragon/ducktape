@@ -216,6 +216,42 @@ resource "kubernetes_secret" "dispatcher_classifier" {
 }
 
 # ============================================================================
+# codex-pod — OpenAI/ChatGPT-backend key for the interactive codex agent pod
+# ============================================================================
+# Routes the codex-pod agent's Codex CLI at LiteLLM's chatgpt/ (Codex-account)
+# models instead of an interactive ChatGPT sign-in. Scoped to the same oai lane
+# models as the haku oai lane (gpt-5.4/5.5/codex-spark-chatgpt); deleting this is
+# the kill switch. Reflected into codex-pod, consumed as LITELLM_API_KEY.
+
+resource "litellm_key" "codex_pod" {
+  key_alias       = "codex-pod"
+  models          = local.oai_lane_models
+  max_budget      = 50
+  budget_duration = "30d"
+  metadata = {
+    consumer = "codex-pod"
+  }
+}
+
+resource "kubernetes_secret" "codex_pod" {
+  metadata {
+    name      = "litellm-key-codex-pod"
+    namespace = "litellm"
+    annotations = {
+      description                                                     = "LiteLLM virtual key for the codex-pod agent (chatgpt/ oai models only); reflected into codex-pod as LITELLM_API_KEY"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "codex-pod"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "codex-pod"
+    }
+  }
+
+  data = {
+    api-key = litellm_key.codex_pod.key
+  }
+}
+
+# ============================================================================
 # zai-clients — z.ai-scoped key for interactive Claude-Code-on-GLM clients
 # ============================================================================
 # A LiteLLM virtual key for the laptop `z-claude` alias (nix/home/home.nix) and the
