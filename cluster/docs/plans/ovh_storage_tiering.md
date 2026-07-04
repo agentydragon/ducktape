@@ -129,10 +129,12 @@ help). The SSD tier therefore can't be "added beside" the flat block; the whole 
 must move to `volumeTopology` (an `hdd` group + an `ssd` group), which is a data migration —
 see the rewritten Stage 1 below. Two hard rehearsal findings drive the procedure:
 
-- **`spec.volume` must stay in the CR.** Removing it while adding `volumeTopology` **panics
-  the operator** (nil deref in `buildVolumeServerStartupScriptWithTopology`, which reads
-  `m.Spec.Volume.*` for topology defaults). Keep `spec.volume` as a defaults stub — in
+- **`spec.volume` must stay in the CR (on 1.0.19).** Removing it while adding `volumeTopology`
+  **panics the operator** (nil deref in `buildVolumeServerStartupScriptWithTopology`, which
+  reads `m.Spec.Volume.*` for topology defaults). Keep `spec.volume` as a defaults stub — in
   topology mode the operator ignores it for server creation but still reads it for defaults.
+  Fixed upstream in **1.0.20** (nil-safe fallback); the stub is dropped in Phase 2.5 after the
+  operator upgrade.
 - Each topology group **requires `dataCenter` and `rack`** (CRD-required fields).
 
 The good news, also rehearsed: flipping to `volumeTopology` **leaves the existing flat
@@ -467,11 +469,27 @@ drops below 2 copies). All from a master pod; mutating commands need the admin `
    - Delete PVCs `mount0-seaweedfs-volume-{0,1,2}` (reclaimPolicy `Delete` frees the local-path
      dirs). **Irreversible** — the old copies are gone; do it only after G-swfs confirms the
      data is on the `hdd` group.
-   - `spec.volume` stays in the CR (removing it panics the operator) — now a pure stub that
-     creates no servers.
+   - `spec.volume` stays in the CR (removing it panics the operator on 1.0.19) — now a pure
+     stub that creates no servers. Dropped in Phase 2.5 after the operator upgrade.
 
 **Post:** `cluster.check` shows 5 volume servers (3 `hdd` + 2 `ssd`); **G-swfs** green; bulk on
 `hdd`, `ssd` servers empty (until Phase 3). ~hours over nebula.
+
+**Phase 2.5 — upgrade seaweedfs-operator, then drop the `spec.volume` stub.** We run 1.0.19
+(chart 0.1.22); upstream is 1.0.30 (chart 0.1.33). Two fixes land in this range that retire our
+workarounds, so do the upgrade _after_ the manual evacuation (don't change the operator while
+data is in flight), as its own reviewable PR:
+
+- **1.0.20** — `nil-safe spec.volume fallback in topology startup script` + `nil-safe
+BaseVolumeSpec for topology-only deployments`. Removes the nil-panic, so the `spec.volume`
+  stub can be deleted (see the `CLEANUP` tombstone in `seaweed.yaml`).
+- **1.0.28** — native `volume_evacuation.go` controller (`feat: evacuate volume servers before
+scale-down`, PR #300). On ≥1.0.28, retiring a volume server becomes "lower the group's
+  `replicas`, operator drains first" — the manual `volume.move` script
+  (<../../scripts/seaweedfs_evacuate_flat_volume.py>) is no longer needed for future ops.
+
+**Post:** operator on 1.0.30; `spec.volume` removed from the CR; **G-swfs** green (no server
+churn — the stub removal is a no-op in topology mode).
 
 **Phase 3 — migrate Forgejo git → SSD** (copy-cutover runbook below). Its `seaweedfs-ovh-ssd`
 PVC (`diskType: ssd`) places git volumes on the `ssd` group. **Post-checks:** **G-public** (a

@@ -137,6 +137,10 @@ spec:
   #   1. spec.volume MUST stay above (removing it nil-panics the operator, which
   #      reads m.Spec.Volume.* for topology defaults). It is now a defaults stub;
   #      no flat StatefulSet is created while volumeTopology is set.
+  #      CLEANUP(added 2026-07-04): drop the spec.volume stub once the operator
+  #        is upgraded to >=1.0.20 — 1.0.20 landed "nil-safe spec.volume fallback
+  #        in topology startup script" + "nil-safe BaseVolumeSpec for
+  #        topology-only deployments", removing the nil-panic. We run 1.0.19.
   #   2. Each group requires dataCenter + rack.
   #
   # Migration (Phase 2, run by hand, G-swfs-gated): the pre-existing flat
