@@ -39,7 +39,11 @@ spec:
     # All cluster-internal traffic (bypasses the proxy via NO_PROXY). This is how
     # the runner reaches the in-cluster Forgejo git + OCI registry
     # (forgejo-http.forgejo:3000) it clones source from, pushes images to, and
-    # long-polls for jobs.
+    # long-polls for jobs, plus the oci-cache Zot mirror for dind base-image pulls.
+    # GOTCHA: Cilium's socket-LB translates a ClusterIP:port to backend podIP:targetPort
+    # *before* egress policy is enforced, so the port here must be the backend
+    # targetPort, not the Service port. oci-cache's Service is :80 but its pods listen
+    # on 5000 — hence 5000, not 80, is what unblocks dind→oci-cache.
     - toEntities:
         - cluster
       toPorts:
@@ -49,6 +53,8 @@ spec:
             - port: "443"
               protocol: TCP
             - port: "3000"
+              protocol: TCP
+            - port: "5000"
               protocol: TCP
     # haku-egress-proxy — all external internet traffic must go through here.
     - toEndpoints:

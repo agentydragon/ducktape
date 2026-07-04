@@ -9,9 +9,12 @@ spec:
   selector:
     app.kubernetes.io/name: zot
   ports:
-    # Exposed on 80 (→ container 5000) so port-restricted in-cluster consumers
-    # like haku-ci — whose egress allows cluster traffic on 80/443/3000 — can
-    # reach the mirror without a NetworkPolicy change. Plain HTTP.
+    # Exposed on 80 (→ container 5000) for conventional registry addressing by
+    # unrestricted consumers. NOTE: this does NOT let a port-restricted egress
+    # policy reach the mirror on :80 — Cilium's socket-LB enforces egress on the
+    # backend targetPort (5000), not this Service port. So haku-ci's force-proxy
+    # egress allows 5000 explicitly (see cluster/k8s/haku-ci/ccnp-force-proxy-egress.yaml).
+    # Plain HTTP.
     - name: http
       port: 80
       targetPort: http
