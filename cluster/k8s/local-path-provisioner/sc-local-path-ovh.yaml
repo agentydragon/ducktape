@@ -2,36 +2,17 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: local-path-ovh
-  annotations:
-    description: DEPRECATED alias of local-path-ovh-hdd. Existing consumers only; new PVCs should use local-path-ovh-hdd or local-path-ovh-ssd.
 provisioner: cluster.local/local-path-provisioner
 reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
-# CLEANUP(added 2026-07-03): Remove this class once no manifest references
-# `local-path-ovh` (migrate each stateful consumer to local-path-ovh-hdd via a
-# data-migrating cutover — storageClassName is immutable on existing PVCs/STS).
-# Tracking + migration order: cluster/docs/ovh_storage_tiering.md.
-#
-# Re-pinned from zone=hil-ovh to storage-tier=hdd so this media-blind alias can
-# no longer place NEW volumes on the KS-GAME NVMe nodes (which are reserved for
-# the SSD tier). Existing bound PVs are unaffected (SC is only consulted at
-# provisioning time); this constrains only new provisioning, to the same KS-5
-# HDD nodes these consumers already run on.
-#
-# Both keys AND together (same term): OVH HIL zone + HDD media, matching
-# local-path-ovh-hdd. The zone key preserves this class's original OVH-scoping.
-#
-# APPLY ORDERING (allowedTopologies is immutable on a StorageClass):
-#   1. Apply the storage-tier node labels first (bazel run //cluster:bootstrap,
-#      or talosctl apply-config), and verify: kubectl get nodes -L storage-tier
-#   2. Then one-time `kubectl delete storageclass local-path-ovh` so Flux
-#      recreates it with the new allowedTopologies (SSA can't mutate the
-#      immutable field in place). Bound PVCs survive the SC delete.
+# TODO(2026-05-28): Decide whether to split OVH local storage into separate
+# HDD-backed KS-5 and SSD/NVMe-backed KS-GAME storage classes. For now,
+# local-path-ovh means "OVH HIL node-local data disk" regardless of media.
+# zone (not region): keep this tied to OVH nodes even if other HIL capacity
+# appears later. The user volume at /var/mnt/seaweedfs-data is declared via
+# Talos UserVolumeConfig in cluster/terraform/main/ovh-nodes.tf.
 allowedTopologies:
   - matchLabelExpressions:
       - key: topology.kubernetes.io/zone
         values:
           - hil-ovh
-      - key: storage-tier
-        values:
-          - hdd

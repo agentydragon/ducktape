@@ -4,6 +4,4 @@ resources:
   - namespace.yaml
   - helmrelease.yaml
   - sc-local-path-ovh.yaml
-  - sc-local-path-ovh-hdd.yaml
-  - sc-local-path-ovh-ssd.yaml
   - sc-local-path-proxmox.yaml

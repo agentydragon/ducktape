@@ -51,8 +51,8 @@ stays **Pending (loud)** instead of silently landing on HDD.
 
 ### Robustness layers
 
-1. **Now (this change):** hard `storage-tier` labels + media-scoped SCs. A
-   consumer of `-ssd` cannot provision on HDD.
+1. **Foundation:** hard `storage-tier` labels + media-scoped SCs — a consumer of
+   `-ssd` cannot provision on HDD.
 2. **Now:** the SeaweedFS SSD volume-topology group (below) also carries a hard
    `required` nodeAffinity on `storage-tier=ssd` — belt-and-suspenders so the
    pod, not just the volume, is media-locked.
@@ -182,22 +182,29 @@ starting a stage and after each node op; the others gate specific step types.
 - **G-public** — Gatus green + blackbox: `git.allegedly.works`,
   `auth.allegedly.works` reachable; a test `git clone` succeeds.
 
-### Stage 0 — foundation (this PR): `storage-tier` labels + media-scoped SCs
+### Stage 0 — foundation: `storage-tier` labels (this PR) + media-scoped SCs (follow-up)
 
-Declarative only; nothing moves. Apply ordering (SC `allowedTopologies` is
-immutable):
+Split into two PRs so nothing activates on merge unexpectedly:
 
-1. Apply the `storage-tier` node labels: `bazel run //cluster:bootstrap` (or
-   `talosctl apply-config`). Verify: `kubectl get nodes -L storage-tier`.
-2. The two new SCs apply cleanly via Flux (additive). The **re-pinned
-   `local-path-ovh`** changes an immutable field, so SSA can't mutate it in
-   place — do a one-time `kubectl delete storageclass local-path-ovh` and let
-   Flux recreate it. Bound PVCs survive the SC delete (the SC is only consulted
-   at provisioning time).
+- **This PR** ships only the `storage-tier` labels (Terraform/Talos in
+  `ovh-nodes.tf`) + this plan. Merging it changes nothing on its own — the labels
+  are inert until applied via Terraform, and the SCs that would consume them
+  aren't here.
+- **Follow-up PR** ships the StorageClass manifests (`local-path-ovh-{hdd,ssd}` +
+  the `local-path-ovh` repin). These are Flux-reconciled, so they take effect on
+  merge — hence they land _after_ the labels are live.
 
-Do steps 1 → 2 in order: if the re-pinned SC reconciles before the labels exist,
-new `local-path-ovh` provisioning stalls Pending (existing bound volumes are
-fine).
+Apply order (declarative only; nothing moves):
+
+1. Apply the labels: `bazel run //cluster:bootstrap` (or `talosctl
+apply-config`). Verify: `kubectl get nodes -L storage-tier`.
+2. Merge the follow-up SC PR. Flux creates `local-path-ovh-{hdd,ssd}` and re-pins
+   the `local-path-ovh` alias; `allowedTopologies` is immutable, so the repin
+   needs a one-time `kubectl delete storageclass local-path-ovh` for Flux to
+   recreate it (bound PVCs survive — the SC is only read at provision time).
+
+Do 1 → 2 in order: the repin references `storage-tier=hdd`, which no node has
+until the labels are applied.
 
 ### Stage 0 post-checks
 
