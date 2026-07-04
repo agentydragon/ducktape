@@ -91,6 +91,19 @@ ANTHROPIC_MODELS: list[str] = ["claude-sonnet-5", "claude-haiku-4-5"]
 GROQ_CHAT_MODELS: list[str] = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
 GROQ_WHISPER_MODELS: list[str] = ["whisper-large-v3", "whisper-large-v3-turbo"]
 
+# Google AI (Gemini). Key from the GEMINI_API_KEY env var (litellm-gemini-key
+# secret). Current chat lineup per generativelanguage.googleapis.com/v1beta/models
+# (2026-07): gemini-3.x previews + gemini-3.5-flash, the stable 2.5 pair, and the
+# -latest aliases that auto-point at the newest generation.
+GEMINI_MODELS: list[str] = [
+    "gemini-3.1-pro-preview",
+    "gemini-3.5-flash",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-pro-latest",
+    "gemini-flash-latest",
+]
+
 
 def _anthropic_entries() -> Iterator[dict]:
     for model in ANTHROPIC_MODELS:
@@ -113,6 +126,15 @@ def _groq_entries() -> Iterator[dict]:
             "model_name": model,
             "litellm_params": {"model": f"groq/{model}", "api_key": "os.environ/GROQ_API_KEY"},
             "model_info": {"mode": "audio_transcription"},
+        }
+
+
+def _gemini_entries() -> Iterator[dict]:
+    for model in GEMINI_MODELS:
+        yield {
+            "model_name": model,
+            "litellm_params": {"model": f"gemini/{model}", "api_key": "os.environ/GEMINI_API_KEY"},
+            "model_info": {"mode": "chat", "supports_function_calling": True},
         }
 
 
@@ -171,6 +193,7 @@ def generate() -> str:
     model_list.extend(_chatgpt_entries())
     model_list.extend(_anthropic_entries())
     model_list.extend(_groq_entries())
+    model_list.extend(_gemini_entries())
 
     # Master key and Langfuse credentials are injected as env vars in the
     # Deployment; not repeated here.

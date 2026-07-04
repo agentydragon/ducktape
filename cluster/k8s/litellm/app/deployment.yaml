@@ -132,6 +132,12 @@ spec:
                 secretKeyRef:
                   name: litellm-groq-key
                   key: GROQ_API_KEY
+            # Google AI (Gemini) key for the gemini upstream chat models.
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-gemini-key
+                  key: GEMINI_API_KEY
             - name: LANGFUSE_OTEL_HOST
               value: "http://langfuse-web.langfuse.svc.cluster.local:3000"
             - name: LANGFUSE_PUBLIC_KEY
