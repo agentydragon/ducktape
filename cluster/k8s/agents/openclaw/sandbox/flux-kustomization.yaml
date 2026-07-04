@@ -4,7 +4,7 @@ metadata:
   name: openclaw-sandbox
   namespace: flux-system
 spec:
-  suspend: false
+  suspend: true
   interval: 10m
   path: ./cluster/k8s/agents/openclaw/sandbox
   prune: true
