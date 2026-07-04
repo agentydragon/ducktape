@@ -3,6 +3,6 @@ kind: Namespace
 metadata:
   name: codex-pod
   annotations:
-    description: "Codex agent pod running the Nix-built codex-pod image (see cluster/docs/plans/codex_pod.md)."
+    description: "Codex agent pod running the Nix-built codex-pod image (see cluster/k8s/agents/codex-pod/README.md)."
   labels:
     app.kubernetes.io/name: codex-pod

@@ -2,8 +2,9 @@
 
 Codex agent pod running the Nix-built `codex-pod` image
 (`x/codex_pod_image/`, `.#codex-pod-image`). Edit the tool set in that `buildEnv`
-→ CI builds+pushes the image → Flux image automation rolls this Deployment. Full
-design: <../../../docs/plans/codex_pod.md>.
+→ CI builds+pushes the image → Flux image automation rolls this Deployment.
+Registry-hosting rationale (why Forgejo over GHCR) + the general pattern:
+<../../../docs/container-images.md> § Forgejo-hosted images.
 
 ## Pieces
 
@@ -63,5 +64,19 @@ config files at boot (the pod analog of the sops-nix templates):
   (`cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml`) is reflected
   into `codex-pod` — no per-pod key, just the one shared key.
 
-Still to port when needed: **Attic** (`~/.config/attic/config.toml` +
-`~/.config/nix/netrc` from a minted token) — same rendering approach.
+## Follow-ups
+
+- **Attic** — `~/.config/attic/config.toml` + `~/.config/nix/netrc` from a minted
+  token, rendered at boot like the others (not wired yet).
+- **Push-time reconcile** — a Forgejo `package`-webhook receiver (copy
+  `cluster/k8s/haku/ui-image-webhook/receiver.yaml`) to replace the 5m
+  `ImageRepository` poll.
+- **Generalize** — once proven, move other `ghcr.io/agentydragon` app images to
+  Forgejo image-by-image (weigh the per-image pull-availability tradeoff — an
+  in-cluster registry outage means those pods can't pull), and retire Harbor.
+- **Exposure** — SSH-over-`kubectl exec` (current) vs a real Service / Cilium
+  listener.
+- **Bring-up watch** — the `forgejo-images` Terraform reads the credential in the
+  new `forgejo-images` namespace; if the first apply errors on RBAC, widen the
+  `tf-runner` role (`forgejo-props` reads the `forgejo` ns, so cross-ns reads
+  work, but the new ns wasn't verified).

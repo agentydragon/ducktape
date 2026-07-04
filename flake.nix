@@ -422,7 +422,7 @@
           # Load:  docker load < result
           nix-rbe-image = import ./x/nix_rbe_image { inherit pkgs; };
           # Codex pod image (plain Docker, no NixOS/systemd). Tool set is a
-          # buildEnv; see cluster/docs/plans/codex_pod.md.
+          # buildEnv; see cluster/k8s/agents/codex-pod/README.md.
           # Build: nix build .#codex-pod-image
           # Load:  docker load < result
           codex-pod-image = import ./x/codex_pod_image { inherit pkgs pkgsUnstable; };
