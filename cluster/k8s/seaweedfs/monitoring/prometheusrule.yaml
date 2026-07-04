@@ -1,0 +1,36 @@
+# SeaweedFS replication alert. SeaweedFS does NOT auto-re-replicate
+# under-replicated volumes (neither the operator nor the master self-heals);
+# restoring replica count is the manual `weed shell volume.fix.replication
+# -apply`. Without this alert an unplanned volume-server/node loss silently
+# leaves volumes at 1 copy (replication 001) until a human notices.
+#
+# `SeaweedFS_master_replica_placement_mismatch` is a leader-only, per-volume
+# gauge (labels: collection, id) = 1 when a volume's replica count/placement
+# does not match its target (under- or over-replicated), else 0. Only the
+# leader emits it, so `sum()` counts mismatched volumes cluster-wide.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: seaweedfs-replication
+  namespace: seaweedfs
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: seaweedfs-replication
+      rules:
+        - alert: SeaweedFSReplicaPlacementMismatch
+          expr: sum(SeaweedFS_master_replica_placement_mismatch) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "SeaweedFS has {{ $value }} volume(s) off their replica count"
+            description: >-
+              {{ $value }} SeaweedFS volume(s) have not matched their target
+              replica placement for 15m (replication 001 = 2 copies).
+              SeaweedFS does not self-heal — diagnose with `volume.list` and
+              re-replicate with `volume.fix.replication -apply` from a master
+              pod (`weed shell` reads commands on stdin). Re-replication needs a
+              volume server with a free volume slot, so also check for
+              slot-exhausted servers.

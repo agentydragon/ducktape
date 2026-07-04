@@ -4,8 +4,10 @@
 #
 # Metrics ports configured on the Seaweed CR (cluster/seaweed.yaml):
 #   master 9321, volume 9325, filer 9326, s3 9327
-# Each component's Service includes the metrics port; the operator names it
-# "metrics" by default.
+# The seaweedfs-operator names each component's metrics Service port
+# `<component>-metrics` (e.g. `master-metrics`), NOT `metrics` — so each
+# endpoint below must reference that exact name or the ServiceMonitor matches
+# no port and nothing is scraped.
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -18,7 +20,7 @@ spec:
       app.kubernetes.io/component: master
       app.kubernetes.io/name: seaweedfs
   endpoints:
-    - port: metrics
+    - port: master-metrics
       interval: 30s
 ---
 apiVersion: monitoring.coreos.com/v1
@@ -32,7 +34,7 @@ spec:
       app.kubernetes.io/component: volume
       app.kubernetes.io/name: seaweedfs
   endpoints:
-    - port: metrics
+    - port: volume-metrics
       interval: 30s
 ---
 apiVersion: monitoring.coreos.com/v1
@@ -46,7 +48,7 @@ spec:
       app.kubernetes.io/component: filer
       app.kubernetes.io/name: seaweedfs
   endpoints:
-    - port: metrics
+    - port: filer-metrics
       interval: 30s
 ---
 apiVersion: monitoring.coreos.com/v1
@@ -60,5 +62,5 @@ spec:
       app.kubernetes.io/component: s3
       app.kubernetes.io/name: seaweedfs
   endpoints:
-    - port: metrics
+    - port: s3-metrics
       interval: 30s
