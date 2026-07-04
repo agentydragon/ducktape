@@ -1,13 +1,14 @@
-"""Frontmatter models the validate-state gate checks — item docs + the improvements backlog.
+"""Models the validate-state gate checks — item docs, the improvements backlog, run manifests.
 
-The bug class these guard: a malformed frontmatter file silently parsing into a wrong shape, or a
-bad enum/out-of-range value slipping through (items/ + memory/improvements/ are hand/Haku-authored).
+The bug class these guard: a malformed authored file silently parsing into a wrong shape, or a bad
+enum/out-of-range value slipping through (items/, memory/improvements/, and runs/ are hand/
+Haku-authored, parsed live at read time / in CI, never build-checked).
 """
 
 from __future__ import annotations
 
 import pytest
-from models import ImprovementDoc, ItemDoc, ItemStatus
+from models import ImprovementDoc, ItemDoc, ItemStatus, RunManifest
 from pydantic import ValidationError
 
 # --- item frontmatter (items/<slug>.md) ---------------------------------------
@@ -46,6 +47,32 @@ def test_improvement_doc_rejects_bad_weight_kind_and_class():
     for bad in ({"weight": "huge"}, {"kind": "note"}, {"class": "bug"}):
         with pytest.raises(ValidationError):
             ImprovementDoc.model_validate({**base, **bad})
+
+
+# --- run manifests (runs/<date>/<ulid>.yaml) ----------------------------------
+# The runs surface is composed on the frontend now (client.ts pairs each manifest with its .md over
+# the tree+blobs proxy); this schema stays the floor those manifests must satisfy.
+
+
+def test_run_manifest_accepts_prose_changes_seen_and_created_action():
+    # Real manifests carry prose where a count would mislead, and surfaces that were created.
+    m = RunManifest.model_validate(
+        {
+            "run_id": "x",
+            "sources": [{"source": "ducktape-git", "changes_seen": "2 commits, neither touches base"}],
+            "propagation": [{"change": "c", "surfaces": [{"surface": "s", "action": "created"}]}],
+        }
+    )
+    assert m.sources[0].changes_seen == "2 commits, neither touches base"
+    assert m.propagation[0].surfaces[0].action == "created"
+
+
+def test_run_manifest_rejects_bad_propagation_action():
+    # CI schema floor: an unknown propagation action is a hard error.
+    with pytest.raises(ValidationError):
+        RunManifest.model_validate(
+            {"run_id": "x", "propagation": [{"change": "c", "surfaces": [{"surface": "s", "action": "bogus"}]}]}
+        )
 
 
 if __name__ == "__main__":

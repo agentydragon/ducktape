@@ -3,7 +3,7 @@ import { MantineProvider } from "@mantine/core";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { trackGit } from "./git_progress.ts";
+import { gitProgress } from "./git_progress.ts";
 import { GitProgressBar } from "./git_progress_bar.tsx";
 
 window.matchMedia ??= ((query: string) => ({
@@ -46,8 +46,8 @@ describe("GitProgressBar", () => {
     let opA!: Promise<void>;
     let opB!: Promise<void>;
     act(() => {
-      opA = trackGit(1, () => a.promise); // tree
-      opB = trackGit(8, () => b.promise); // a blob chunk
+      opA = gitProgress.track(1, () => a.promise); // tree
+      opB = gitProgress.track(8, () => b.promise); // a blob chunk
     });
     // In flight → the bar appears with the ops + objects summary.
     expect(screen.getByRole("progressbar")).toBeTruthy();

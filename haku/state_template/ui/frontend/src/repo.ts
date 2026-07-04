@@ -10,7 +10,7 @@
 // where several widgets mount at once and each want the tree.
 
 import { type FrontMatter, parseFrontmatter } from "./frontmatter.ts";
-import { trackGit } from "./git_progress.ts";
+import { gitProgress } from "./git_progress.ts";
 import type { RepoBlob, RepoTree, RepoTreeEntry } from "./types.ts";
 
 const blobCache = new Map<string, string>();
@@ -35,7 +35,7 @@ export function repoTree(): Promise<RepoTree> {
   treeAt = Date.now();
   // A tree read is one git object; the shared in-flight promise means concurrent callers
   // ride one fetch, so it registers with the tracker exactly once.
-  treeInFlight = trackGit(1, async () => {
+  treeInFlight = gitProgress.track(1, async () => {
     const res = await fetch("/api/repo/tree");
     if (!res.ok) {
       invalidateTree(); // don't cache a failure
@@ -54,7 +54,7 @@ export function repoTree(): Promise<RepoTree> {
 export async function repoBlobs(shas: string[]): Promise<RepoBlob[]> {
   const missing = shas.filter((s) => !blobCache.has(s));
   if (missing.length > 0) {
-    await trackGit(missing.length, async () => {
+    await gitProgress.track(missing.length, async () => {
       const res = await fetch(`/api/repo/blobs?shas=${missing.join(",")}`);
       if (!res.ok) throw new Error(`repo blobs: ${res.status}`);
       for (const b of (await res.json()) as RepoBlob[]) blobCache.set(b.sha, b.content);
