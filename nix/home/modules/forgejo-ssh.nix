@@ -28,6 +28,10 @@ in
     # matchBlock is silently dropped and git falls back to port 22 + the default
     # key (Permission denied). mkDefault lets home.nix's explicit value still win.
     programs.ssh.enable = lib.mkDefault true;
+    # Silence the home-manager "default values will be removed" warning: the only ssh
+    # config these slim agent profiles need is the matchBlock below; the system
+    # /etc/ssh/ssh_config covers the rest.
+    programs.ssh.enableDefaultConfig = lib.mkDefault false;
 
     programs.ssh.matchBlocks."git.allegedly.works" = {
       hostname = "git.allegedly.works";

@@ -636,6 +636,7 @@ creation_rules:
           - *claude-web
           - *codex-cloud-agent
           - *agent-box-codex-user
+          - *agent-box-zai-user
           - *haku
           - *ci
   # Hetzner Robot webservice credentials (admin + all user keys)
