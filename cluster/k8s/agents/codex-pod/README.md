@@ -9,29 +9,36 @@ design: <../../../docs/plans/codex_pod.md>.
 
 - **Image + env**: `x/codex_pod_image/default.nix` (codex + shell/dev tools).
 - **CI**: `.github/workflows/codex-pod-image.yml` builds `.#codex-pod-image` and
-  `skopeo copy`s a `devel-<ts>-<sha7>` tag to `ghcr.io/agentydragon/codex-pod`.
-- **Auto-roll**: `ImageRepository` + `ImagePolicy` in
-  `cluster/k8s/flux-image-automation-ghcr/`; the cluster-wide `all-images`
+  `skopeo copy`s a `devel-<ts>-<sha7>` tag to our Forgejo registry
+  `git.allegedly.works/ducktape-ci/codex-pod` (as the `ducktape-ci` tenant).
+- **Auto-roll**: `ImageRepository` (authenticated `secretRef`) + `ImagePolicy` in
+  `cluster/k8s/flux-image-automation-forgejo/`; the cluster-wide `all-images`
   `ImageUpdateAutomation` writes the resolved tag into `deployment.yaml`'s
   `{"$imagepolicy": "flux-system:codex-pod"}` marker.
+- **Registry credential**: `cluster/k8s/forgejo-images/` provisions the
+  `ducktape-ci` Forgejo user (Terraform) and a `forgejo-images-creds` Secret
+  reflected into `flux-system` (scan) + `codex-pod` (`imagePullSecrets`).
 - **Runtime**: non-root UID 1000, `codex-home` PVC (`seaweedfs-ovh`), `sshd` on
   `127.0.0.1:2222` reachable via `kubectl exec` ProxyCommand (see the
   `codex-nix-pvc-uid-pod` spike for the ProxyCommand block).
 
 ## Bring-up
 
-Flux-wired (in `cluster/k8s/kustomization.yaml`). On merge to `devel`:
+Flux-wired (in `cluster/k8s/kustomization.yaml`). Hosting on our own Forgejo
+registry means **no manual "make public" step** (the pull credential is
+provisioned in code — that's the whole point of the GHCR→Forgejo move). On merge
+to `devel`:
 
-1. CI builds + pushes the first `ghcr.io/agentydragon/codex-pod:devel-*` image.
-2. **Make the GHCR package public** — one-time manual step; cluster nodes pull
-   without credentials (see <../../../docs/container-images.md>). Until then the
-   `ImageRepository` scan fails and the pod stays `ImagePullBackOff` on the
-   placeholder `:devel` tag.
-3. Once public, the `ImagePolicy` resolves the newest tag, the `all-images`
-   `ImageUpdateAutomation` writes it into the Deployment marker, and the pod runs.
-4. Optional: add the `codex-pod` `ImageRepository` to
-   `cluster/k8s/flux-webhook/github-webhook-receiver.yaml` for push-time pickup
-   instead of the 5m poll.
+1. `forgejo-images` Terraform provisions the `ducktape-ci` Forgejo user;
+   reflector mirrors `forgejo-images-creds` into `flux-system` + `codex-pod`.
+2. CI builds + pushes the first
+   `git.allegedly.works/ducktape-ci/codex-pod:devel-*` image.
+3. The `ImagePolicy` resolves the newest tag (authenticated scan), `all-images`
+   writes it into the Deployment marker, and the pod pulls with its
+   `imagePullSecrets` and runs.
+4. Optional: add a Forgejo `package`-webhook receiver (copy
+   `cluster/k8s/haku/ui-image-webhook/receiver.yaml`) for push-time pickup
+   instead of the 5m `ImageRepository` poll.
 
 ## Identity + credentials
 

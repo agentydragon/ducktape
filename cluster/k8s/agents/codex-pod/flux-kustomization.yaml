@@ -17,6 +17,10 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   timeout: 2m
+  dependsOn:
+    # Forgejo registry credential must be reflected into codex-pod (imagePullSecret)
+    # and flux-system (image scan) before the pod can pull.
+    - name: forgejo-images
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment

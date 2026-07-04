@@ -1,10 +1,13 @@
-# Build the codex-pod image (x/codex_pod_image) with Nix and push it to GHCR.
+# Build the codex-pod image (x/codex_pod_image) with Nix and push it to our
+# Forgejo OCI registry (git.allegedly.works/ducktape-ci/codex-pod) — not GHCR, so
+# the pull credential is provisioned in code (tf/gitops/forgejo-images +
+# forgejo-images-creds) rather than a manual "make public" GHCR click.
 #
 # Like haku-worker-image.yml this is a Nix flake output rather than a Dockerfile
 # build, but `.#codex-pod-image` is a dockerTools.buildLayeredImage docker
 # archive (not a NixOS rootfs tar), so it is `skopeo copy`-ed to the registry.
 # Flux picks up the pushed `devel-<ts>-<sha7>` tag via the codex-pod ImagePolicy
-# (cluster/k8s/flux-image-automation-ghcr/).
+# (cluster/k8s/flux-image-automation-forgejo/).
 name: codex-pod image
 
 on:
@@ -18,7 +21,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   build-push:
@@ -26,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/codex-pod
+      IMAGE: git.allegedly.works/ducktape-ci/codex-pod
     steps:
       - uses: actions/checkout@v6
 
@@ -47,6 +49,7 @@ jobs:
             extra-substituters = https://cache.allegedly.works/main
             fallback = true
 
+      # Decrypts secrets/ci/* → exports ATTIC_TOKEN + FORGEJO_IMAGES_{USERNAME,PASSWORD}.
       - uses: ./.github/actions/setup-ci-secrets
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
@@ -69,11 +72,12 @@ jobs:
 
       # Gate the push to devel so feature branches don't publish tags the Flux
       # ImagePolicy would immediately deploy (matches push-images.yml).
-      - name: Push to GHCR
+      - name: Push to Forgejo
         if: github.ref_name == 'devel'
         run: |
-          echo "${{ github.token }}" | skopeo login ghcr.io -u "${{ github.actor }}" --password-stdin
           ref="$IMAGE:${{ steps.meta.outputs.pin_tag }}"
           # result is a dockerTools.buildLayeredImage docker archive (gzip tar).
-          skopeo copy --insecure-policy "docker-archive:$(readlink -f result)" "docker://$ref"
+          skopeo copy --insecure-policy \
+            --dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \
+            "docker-archive:$(readlink -f result)" "docker://$ref"
           echo "pushed \`$ref\`" >> "$GITHUB_STEP_SUMMARY"

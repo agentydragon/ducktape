@@ -1,9 +1,16 @@
 # Container Images
 
-All ducktape project images are published to GHCR at `ghcr.io/agentydragon/<image>`.
-GHCR packages must be public (no pull credentials on cluster nodes).
+Most ducktape project images are published to GHCR at `ghcr.io/agentydragon/<image>`.
+GHCR packages must be public (no pull credentials on cluster nodes) — and because
+GitHub exposes **no API to set package visibility**, a new GHCR package must be
+flipped public **once, by hand, in the UI** (the `check public images` CI guard
+detects any that aren't). To avoid that toil, new in-cluster images can instead be
+hosted in **our own Forgejo registry** (`git.allegedly.works`) as a private
+package pulled with a bot credential provisioned in code — see
+[Forgejo-hosted images](#forgejo-hosted-images) below.
 
-Props agent images are still published to Harbor (`registry.allegedly.works/props`).
+Props agent runtime images are published to the Forgejo registry via the props
+registry proxy (`props.allegedly.works` → `git.allegedly.works/props/*`).
 
 ## Adding a new container image
 
@@ -38,3 +45,29 @@ Props agent images are still published to Harbor (`registry.allegedly.works/prop
 **Gotcha — Flux image automation race**: When renaming image paths, push at least one
 image to the new path before updating `ImageRepository` resources. Otherwise Flux reverts
 to the old path.
+
+## Forgejo-hosted images
+
+For a **private** image in our own registry (no GHCR "make public" toil, credential
+provisioned in code), host it in Forgejo. Reference implementation: `codex-pod`.
+
+1. **Tenant + credential** — `cluster/k8s/forgejo-images/` provisions the
+   `ducktape-ci` Forgejo user (`tf/gitops/forgejo-images`, password from the SOPS
+   `forgejo-images-creds` Secret) and reflects that Secret (dockerconfigjson) into
+   `flux-system` (Flux scan `secretRef`) and consuming namespaces (kubelet
+   `imagePullSecrets`). CI reads the same creds from
+   `secrets/ci/forgejo-images-registry.sops.yaml` (via `setup-ci-secrets`).
+2. **Push** — `skopeo copy … docker://git.allegedly.works/ducktape-ci/<image>:<tag>
+--dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD"` (same
+   `{branch}-{timestamp}-{sha7}` tag). Direct to Forgejo — no proxy (unlike props).
+3. **Auto-roll** — add `ImageRepository` (with `secretRef: forgejo-images-creds`)
+   - `ImagePolicy` under `cluster/k8s/flux-image-automation-forgejo/`, and the
+     `{"$imagepolicy": "flux-system:<name>"}` marker on the image field. The
+     cluster-wide `all-images` `ImageUpdateAutomation` updates it.
+4. **Consume** — image `git.allegedly.works/ducktape-ci/<image>` +
+   `imagePullSecrets: [{name: forgejo-images-creds}]`; the app's Flux Kustomization
+   `dependsOn: forgejo-images`.
+
+**Tradeoff**: unlike GHCR (external) or the Talos→Harbor pull-through mirror (which
+falls back upstream), a Forgejo outage means these pods can't pull. Fine for
+non-critical workloads (agent pods); weigh per-image before moving pull-critical ones.

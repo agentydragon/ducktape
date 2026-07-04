@@ -8,6 +8,7 @@ resources:
   - flux-monitoring/flux-kustomization.yaml
   - flux-grafana-secrets/flux-kustomization.yaml
   - flux-image-automation-ghcr/flux-kustomization.yaml
+  - flux-image-automation-forgejo/flux-kustomization.yaml
   - gaffer-private-source/flux-kustomization.yaml
   - gaffer-private-ghcr-pull/flux-kustomization.yaml
 

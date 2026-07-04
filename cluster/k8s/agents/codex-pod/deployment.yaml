@@ -18,6 +18,10 @@ spec:
         app.kubernetes.io/name: codex-pod
     spec:
       automountServiceAccountToken: false
+      # Private Forgejo package — ducktape-ci credential reflected into this
+      # namespace from cluster/k8s/forgejo-images/.
+      imagePullSecrets:
+        - name: forgejo-images-creds
       nodeSelector:
         topology.kubernetes.io/region: hil
       securityContext:
@@ -34,7 +38,7 @@ spec:
         # root is needed). The main container then sees ~/.ssh/id_ed25519.
         - name: plant-identity
           # {"$imagepolicy": "flux-system:codex-pod"}
-          image: ghcr.io/agentydragon/codex-pod:devel
+          image: git.allegedly.works/ducktape-ci/codex-pod:devel
           command: ["/bin/bash", "-lc"]
           args:
             - |
@@ -53,7 +57,7 @@ spec:
       containers:
         - name: codex
           # {"$imagepolicy": "flux-system:codex-pod"}
-          image: ghcr.io/agentydragon/codex-pod:devel
+          image: git.allegedly.works/ducktape-ci/codex-pod:devel
           command: ["/bin/bash", "/run/codex-pod-scripts/start-sshd.sh"]
           securityContext:
             allowPrivilegeEscalation: false
