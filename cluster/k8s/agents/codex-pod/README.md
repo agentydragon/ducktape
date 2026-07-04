@@ -57,13 +57,13 @@ config files at boot (the pod analog of the sops-nix templates):
   (topic-branch PRs, same as `agent-box-codex`;
   `tf/gitops/forgejo-agentydragon-repos`). `start-sshd.sh` writes the
   `git.allegedly.works` ssh matchBlock. No new secret.
-- **BuildBuddy** — the shared `buildbuddy-api-key` Secret, mounted (optional) at
-  `/run/codex-creds/buildbuddy`; `start-sshd.sh` renders
-  `~/.config/bazel/buildbuddy.bazelrc` + exports `BUILDBUDDY_API_KEY`.
+- **BuildBuddy** — `BUILDBUDDY_API_KEY` is set on the container from the shared
+  `buildbuddy-api-key` Secret via `secretKeyRef` (`optional: true`); `bbr` reads
+  it, and `start-sshd.sh` forwards it to ssh sessions via `SetEnv`.
   **One-time step (needs the cluster key):** add `codex-pod` to the reflector
   `reflection-{allowed,auto}-namespaces` annotations on
   `cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml` (via `sops`),
-  so it reflects here. Until then the mount is empty and the pod runs without it.
+  so it reflects here. Until then the env var is empty and the pod runs without it.
 
 Still to port when needed: **Attic** (`~/.config/attic/config.toml` +
 `~/.config/nix/netrc` from a minted token) — same rendering approach.
