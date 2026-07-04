@@ -5,6 +5,9 @@ import { openLink, requestLaunch, type LaunchResult } from "./bridge.ts";
 import { clearResponse, readResponse, sendFeedback, setResponse } from "./client.ts";
 import { notifyError } from "./errors.ts";
 import { ItemScopeContext } from "./item_scope.ts";
+import { logger } from "./log.ts";
+
+const log = logger("affordances");
 
 // Affordance widgets — a growing library of reviewed, embeddable action buttons Haku can drop
 // free-form into any item/note body (via the garden renderer's registry), instead of a rigid
@@ -270,7 +273,10 @@ export function SignalToggle({
       (v) => {
         if (live) setSelected(v);
       },
-      () => {} // prefill is best-effort; a read failure just leaves the slot unanswered
+      (e: unknown) => {
+        // Prefill is best-effort — a read failure just leaves the slot unanswered — but log it.
+        log.warn(`signal-toggle prefill read failed for ${resolvedScope}/${field}`, e);
+      }
     );
     return () => {
       live = false;

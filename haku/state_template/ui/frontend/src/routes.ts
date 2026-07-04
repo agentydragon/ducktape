@@ -12,6 +12,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { logger } from "./log.ts";
+
+const log = logger("routes");
+
 export type View = "inbox" | "improvements" | "runs" | "garden";
 
 export interface Route {
@@ -33,9 +37,10 @@ export function parseHash(hash: string): Route {
     if (segments.length === 0) return { view: "garden", gardenPath: null };
     try {
       return { view: "garden", gardenPath: segments.map(decodeURIComponent).join("/") };
-    } catch {
-      // Malformed percent-encoding in a user-edited URL — same contract as any other
-      // unparseable route: fall back, never throw (this runs in the useState initializer).
+    } catch (e) {
+      // Malformed percent-encoding in a user-edited URL — same contract as any other unparseable
+      // route: fall back, never throw (this runs in the useState initializer) — but log it.
+      log.warn("malformed garden path in URL, falling back to home", e);
       return HOME;
     }
   }

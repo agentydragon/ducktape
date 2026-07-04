@@ -10,11 +10,14 @@ import { GardenPage } from "./garden.tsx";
 import { ImprovementBoard } from "./improvement_board.tsx";
 import { InboxView } from "./inbox.tsx";
 import { LaunchButton } from "./launch.tsx";
+import { logger } from "./log.ts";
 import { type Doc, docsUnder } from "./repo.ts";
 import { formatHash, useHashRoute } from "./routes.ts";
 import type { View } from "./routes.ts";
 import { RunsPage } from "./runs.tsx";
 import type { MetaResponse } from "./types.ts";
+
+const log = logger("app");
 
 export default function App() {
   // Items are read straight from `items/*.md`; `meta` is just the footer's freshness/deploy stamp.
@@ -48,7 +51,7 @@ export default function App() {
     // Footer metadata is best-effort — the board still renders without it.
     fetchMeta()
       .then((m) => alive && setMeta(m))
-      .catch(() => {});
+      .catch((e: unknown) => log.warn("footer meta failed to load (scan time / deployed commit)", e));
     return () => {
       alive = false;
     };

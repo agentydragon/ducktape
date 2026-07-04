@@ -3,17 +3,19 @@
 // build on: `docsUnder` loads every .md under a directory in exactly two calls (one tree, one
 // bulk blobs), parsing each file's frontmatter. New directories/views need no backend work.
 //
-// Session read caches (content-addressing makes this nearly free): blobs are immutable by sha, so
-// they're cached permanently; the tree (HEAD's entries) is cached with a short TTL and invalidated
-// on any local write (client.ts write helpers call `invalidateTree`), so a write's new blob sha is
-// discovered on the next read. Concurrent callers share one in-flight tree fetch — the common case
-// where several widgets mount at once and each want the tree.
+// Read caches (content-addressing makes this nearly free): blobs are immutable by sha, so they're
+// cached permanently and persisted across reloads (blob_cache.ts: memory + localStorage). The tree
+// (HEAD's entries) is fetched as "current HEAD", not by sha — so it can't be a by-sha persistent
+// cache — and is kept only in-memory with a short TTL, invalidated on any local write (client.ts
+// write helpers call `invalidateTree`) so a write's new blob sha is discovered on the next read.
+// Concurrent callers share one in-flight tree fetch — the common case where several widgets mount
+// at once and each want the tree.
 
+import { clearBlobCache, getBlob, hasBlob, setBlob } from "./blob_cache.ts";
 import { type FrontMatter, parseFrontmatter } from "./frontmatter.ts";
 import { gitProgress } from "./git_progress.ts";
 import type { RepoBlob, RepoTree, RepoTreeEntry } from "./types.ts";
 
-const blobCache = new Map<string, string>();
 let treeInFlight: Promise<RepoTree> | null = null;
 let treeAt = 0;
 const TREE_TTL_MS = 15_000;
@@ -24,10 +26,10 @@ export function invalidateTree(): void {
   treeAt = 0;
 }
 
-// Full reset (tree + the immutable blob cache) — for tests, and available for a session/HEAD reset.
+// Full reset (tree + the immutable blob cache, memory + persisted) — for tests and a session reset.
 export function resetRepoCache(): void {
   invalidateTree();
-  blobCache.clear();
+  clearBlobCache();
 }
 
 export function repoTree(): Promise<RepoTree> {
@@ -52,20 +54,20 @@ export function repoTree(): Promise<RepoTree> {
 // means a truncation slipped through (a proxy dropping the query, say). Surface it — never yield ""
 // for a dropped blob, which would silently render an item blank.
 export async function repoBlobs(shas: string[]): Promise<RepoBlob[]> {
-  const missing = shas.filter((s) => !blobCache.has(s));
+  const missing = shas.filter((s) => !hasBlob(s)); // hasBlob promotes a persisted hit into memory
   if (missing.length > 0) {
     await gitProgress.track(missing.length, async () => {
       const res = await fetch(`/api/repo/blobs?shas=${missing.join(",")}`);
       if (!res.ok) throw new Error(`repo blobs: ${res.status}`);
-      for (const b of (await res.json()) as RepoBlob[]) blobCache.set(b.sha, b.content);
+      for (const b of (await res.json()) as RepoBlob[]) setBlob(b.sha, b.content);
     });
-    const dropped = missing.filter((s) => !blobCache.has(s));
+    const dropped = missing.filter((s) => !hasBlob(s));
     if (dropped.length > 0)
       throw new Error(
         `repo blobs: ${dropped.length}/${missing.length} missing from response (${dropped.slice(0, 3).join(", ")})`
       );
   }
-  return shas.map((sha) => ({ sha, content: blobCache.get(sha)! }));
+  return shas.map((sha) => ({ sha, content: getBlob(sha)! }));
 }
 
 // One repo blob resolved to its path + text content — the unit `readBlobs` yields.
@@ -82,8 +84,8 @@ const BLOB_CHUNK = 50;
 // THE shared high-level read over the git store: the text of every tree blob matching `select`, in
 // one tree read + chunked bulk-blob reads (all tracked by git_progress.ts, none silently dropped —
 // see repoBlobs). Blobs come back in tree order; the optional `onBatch` fires after each chunk with
-// everything read so far, for progressive rendering. Every surface — items, garden, runs, responses
-// — composes over this instead of re-implementing tree-filtering, sha-mapping, chunking.
+// everything read so far, for progressive rendering. Every surface — items, garden, kitchen, runs,
+// responses — composes over this instead of re-implementing tree-filtering, sha-mapping, chunking.
 export async function readBlobs(
   select: (e: RepoTreeEntry) => boolean,
   onBatch?: (soFar: Blob[]) => void
