@@ -41,11 +41,12 @@ spec:
           # authorized_keys) are baked into the image by home-manager. Runtime
           # steps: (1) plant the outbound SSH private key (secret → 0600; a mount
           # can't satisfy ssh's ownership/perms); (2) ensure a persistent host key
-          # on the PVC; (3) run sshd as the main process — it keeps the container
-          # alive and serves inbound `ssh codex-pod` over `kubectl exec` (127.0.0.1
-          # only; see the ProxyCommand matchBlock in nix/home/home.nix). `kubectl
-          # exec` still works too.
-          command: ["/bin/bash", "-c"]
+          # on the PVC; (3) run sshd as the long-lived process — it keeps the
+          # container alive and serves inbound `ssh codex-pod` over `kubectl exec`
+          # (127.0.0.1 only; see the ProxyCommand matchBlock in nix/home/home.nix).
+          # `kubectl exec` still works too. tini is PID 1 (reaps zombies orphaned by
+          # exec/ssh sessions — sshd wouldn't; forwards signals for clean shutdown).
+          command: ["/bin/tini", "--", "/bin/bash", "-c"]
           args:
             - |
               install -D -m600 /run/codex-secret/id_ed25519 "$HOME/.ssh/id_ed25519"

@@ -38,6 +38,7 @@ let
       pkgs.git
       pkgs.openssh # ssh client + sshd (inbound `ssh codex-pod` over kubectl exec)
       pkgs.socat # relay for the ssh-over-kubectl-exec ProxyCommand
+      pkgs.tini # PID 1 init: reaps zombies from exec/ssh sessions, forwards signals
       pkgs.curl
       pkgs.jq
       pkgs.ripgrep
