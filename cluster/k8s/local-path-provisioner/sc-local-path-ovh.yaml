@@ -10,9 +10,9 @@ volumeBindingMode: WaitForFirstConsumer
 # this stays only for the ~40 existing bound PVCs referencing it. Adding the
 # `storage.allegedly.works/tier=hdd` key means a re-provisioned PVC can only land
 # on an OVH hdd node, not silently on a KS-GAME NVMe. `allowedTopologies` is
-# immutable, so applying this needs a one-time
-# `kubectl delete storageclass local-path-ovh` for Flux to recreate it (bound
-# PVCs survive — the SC is only read at provision time).
+# mutable (only provisioner/parameters/reclaimPolicy/volumeBindingMode are
+# immutable on a StorageClass), so Flux updates it in place — no delete needed.
+# Existing bound PVCs are unaffected (the SC is only read at provision time).
 # See cluster/docs/plans/ovh_storage_tiering.md.
 allowedTopologies:
   - matchLabelExpressions:

@@ -373,9 +373,11 @@ Apply order (declarative only; nothing moves):
    **Until this runs, the SC PR must not merge** — the `-hdd` repin references `tier=hdd`,
    which no node has yet, so new `local-path-ovh` PVCs would go Pending (existing bound PVs
    are unaffected).
-2. Merge the SC PR. `allowedTopologies` is immutable, so the repin needs a one-time
-   `kubectl delete storageclass local-path-ovh` for Flux to recreate it (bound PVCs
-   survive — the SC is only read at provision time).
+2. Merge the SC PR. `allowedTopologies` is **mutable** (only
+   provisioner/parameters/reclaimPolicy/volumeBindingMode are immutable on a StorageClass),
+   so Flux updates the `local-path-ovh` repin in place — no `kubectl delete` needed.
+   Existing bound PVCs are unaffected (the SC is only read at provision time). (Verified
+   2026-07-04: the repin reconciled in place, creationTimestamp unchanged.)
 
 **Stage 0 post-checks:** **G-flux** green and `kubectl get sc local-path-ovh{,-hdd,-ssd}`
 shows each with the expected `allowedTopologies`. No workload moved.
