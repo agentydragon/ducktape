@@ -17,6 +17,12 @@ spec:
       metadata:
         annotations:
           description: Trust bundle for haku-mitmproxy-inspected sandbox HTTPS traffic
+    # haku-ci egresses through this same proxy (its Bazel/toolchain builds), so it
+    # needs the same CA to trust the intercepted TLS.
     namespaceSelector:
-      matchLabels:
-        kubernetes.io/metadata.name: haku-sandbox
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - haku-sandbox
+            - haku-ci

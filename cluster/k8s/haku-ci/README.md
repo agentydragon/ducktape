@@ -14,8 +14,13 @@ contained to roughly Haku's existing sandbox blast radius:
 
 - **Not in `haku-sandbox`.** It lives in its own namespace where Haku has **no RBAC**, so Haku
   can't tamper with the runner pod or its registry/git push creds — but it is **egress-fenced**
-  like haku-sandbox (`networkpolicy.yaml`: DNS + base-image registries/npm/pypi + in-cluster
-  only).
+  through the **same `haku-mitmproxy`** that fences haku-sandbox: `ccnp-force-proxy-egress.yaml`
+  permits only DNS, cluster-internal (the in-cluster Forgejo git + registry), and
+  `haku-mitmproxy:8080`. All external egress (base images, npm/pypi, Bazel/toolchain,
+  Forgejo actions) flows through the proxy's allowlist
+  (`agents/haku-mitmproxy/cnp-haku-cloud-api-egress.yaml`), where the caching addon caches
+  immutable build-dep GETs. The proxy CA is trusted by the runner + dind (Deployment env/mounts)
+  and injected into job containers via `config.yaml`.
 - **Rootless daemon in a privileged pod** (`docker:27-dind-rootless`, `privileged: true`). The
   dockerd still runs **rootless** (UID 1000), so it's strictly better than classic rootful
   dind — but `privileged: true` is the documented requirement for dind-rootless (it provides
@@ -42,12 +47,12 @@ on the runner and confirm it builds + pushes an image. Check
 
 ## What's here
 
-| File                 | Role                                                                                     |
-| -------------------- | ---------------------------------------------------------------------------------------- |
-| `namespace.yaml`     | the `haku-ci` namespace                                                                  |
-| `networkpolicy.yaml` | egress fence (DNS + registries/npm/pypi + in-cluster)                                    |
-| `config.yaml`        | the act_runner config (labels, dind `DOCKER_HOST`, capacity), via a `configMapGenerator` |
-| `deployment.yaml`    | the act_runner + rootless `dind` sidecar                                                 |
+| File                           | Role                                                                                                             |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `namespace.yaml`               | the `haku-ci` namespace                                                                                          |
+| `ccnp-force-proxy-egress.yaml` | egress fence: DNS + in-cluster + `haku-mitmproxy:8080` only (all external egress via the proxy)                  |
+| `config.yaml`                  | the act_runner config (labels, dind `DOCKER_HOST`, capacity, job-container proxy/CA), via a `configMapGenerator` |
+| `deployment.yaml`              | the act_runner + rootless `dind` sidecar (proxy env + mitmproxy CA mount)                                        |
 
 The registration-token Secret (`haku-ci-runner-token`) is provisioned by `tf/gitops/haku-state`
 (a `hashicorp/http` GET of the repo's runner registration-token API, written to the Secret) —
