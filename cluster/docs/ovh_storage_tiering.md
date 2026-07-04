@@ -108,11 +108,15 @@ one-node-at-a-time wipe** is safe and not painful.
    idiom as `kimsufi_eno1_peer_route_enabled_nodes` in `ovh-nodes.tf`): the
    UserVolume is renamed only for nodes in the set, so an empty set is a no-op
    and you roll by adding one node at a time.
-3. **Migrate or accept the single-copy disks first.** Not replicated, would be
-   lost: `agent-box/agent-box-root`, `gecko/gecko-root`,
-   `codex-nix-pod/codex-home`, `codex-nix-pod/codex-nix-store` (experimental
-   agent/VM sandboxes). Confirm each is disposable or move it before wiping its
-   node.
+3. **Warn before wiping any single-copy disk.** These local-path PVCs are not
+   replicated and would be lost. They are pre-accepted as **disposable** (fine to
+   lose), but the per-node preflight (Stage 2) must **list them and halt for
+   explicit acknowledgment** before the wipe — and must **halt on any single-copy
+   disk _not_ on this list**, so a newly-created one is never destroyed silently:
+   - `agent-box/agent-box-root`
+   - `gecko/gecko-root`
+   - `codex-nix-pod/codex-home`
+   - `codex-nix-pod/codex-nix-store`
 
 The per-node rename procedure and its health gates are folded into **Stage 2**
 of the execution plan below (it pairs with the control-plane reshuffle, which
@@ -268,10 +272,30 @@ etcd (which lives on the system disk), so R and the CP-promote are separate ops.
 
 Before starting: `etcdctl move-leader` off `103656` onto `102453` (the anchor
 member that stays control-plane throughout), so no membership step ever touches
-the leader. Handle the single-copy sandbox disks (`agent-box`, `gecko`,
-`codex-nix`) first — migrate or accept-loss per the rename rules above.
+the leader.
 
-Per-node order — each fenced by **G-all** (all gates green) before and after:
+**G-losable — single-copy-disk warning (run before wiping each node `N`).** List
+the local-path volumes pinned to `N` and confirm the only non-replicated ones are
+the pre-accepted disposable disks (rename rule 3):
+
+```bash
+node=<N>
+kubectl get pv -o json | jq -r --arg n "$node" '
+  .items[]
+  | select((.spec.storageClassName // "") | test("local-path"))
+  | select([ .spec.nodeAffinity.required.nodeSelectorTerms[]?.matchExpressions[]?
+             | select(.key == "kubernetes.io/hostname") | .values[] ] | index($n))
+  | "\(.spec.claimRef.namespace)/\(.spec.claimRef.name)\t\(.spec.storageClassName)"'
+```
+
+Everything CNPG (`cnpg.io/cluster`) re-clones and every SeaweedFS volume
+re-replicates; Loki/Mimir/Tempo are S3-backed and Valkey is cache. Anything left
+that is **not** on the accepted-disposable list **halts the roll** — investigate
+or migrate it first. Otherwise print the disposable disks about to be destroyed
+and get an explicit ack before wiping.
+
+Per-node order — each fenced by **G-all** (all gates green) + **G-losable**
+before and after:
 
 1. **`ovh-ns104952` → SSD control-plane.** Verify re-clone sources exist
    (**G-cnpg**), cordon+drain (CNPG re-clones its instances onto survivors).
