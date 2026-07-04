@@ -12,6 +12,7 @@
   "dependencies": {
     "@mantine/core": "^9.4.1",
     "@mantine/hooks": "^9.4.1",
+    "@mantine/notifications": "^9.4.1",
     "dompurify": "^3.4.11",
     "marked": "^18.0.5",
     "react": "^19.2.7",

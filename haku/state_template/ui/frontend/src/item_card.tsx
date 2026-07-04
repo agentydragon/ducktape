@@ -3,6 +3,7 @@ import { useDisclosure } from "@mantine/hooks";
 import { useEffect, useState } from "react";
 
 import { countdown, type Urgency } from "./deadline.ts";
+import { errText } from "./errors.ts";
 import { parseFrontmatter } from "./frontmatter.ts";
 import { ItemScopeContext } from "./item_scope.ts";
 import { Mdx } from "./mdx.tsx";
@@ -109,7 +110,7 @@ export function ItemCardById({
         if (live) setState(content === null ? { error: `item not found: ${id}` } : parseFrontmatter(content));
       },
       (e: unknown) => {
-        if (live) setState({ error: e instanceof Error ? e.message : String(e) });
+        if (live) setState({ error: errText(e) });
       }
     );
     return () => {

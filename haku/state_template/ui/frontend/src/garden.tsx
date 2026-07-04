@@ -1,6 +1,8 @@
 import { Anchor, Group, NavLink, Stack, Text, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 
+import { errText } from "./errors.ts";
+import { LoadError } from "./load_error.tsx";
 import { Mdx } from "./mdx.tsx";
 import { repoFile, repoTree } from "./repo.ts";
 
@@ -27,18 +29,13 @@ function FileView({ path, onNavigate }: { path: string; onNavigate: (path: strin
     setError(null);
     repoFile(path)
       .then((md) => alive && (md === null ? setError("not found") : setMarkdown(md)))
-      .catch((e: unknown) => alive && setError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => alive && setError(errText(e)));
     return () => {
       alive = false;
     };
   }, [path]);
 
-  if (error)
-    return (
-      <Text c="red">
-        Failed to load {path}: {error}
-      </Text>
-    );
+  if (error) return <LoadError what={path} error={error} />;
   if (markdown === null) return <Text c="dimmed">Loading…</Text>;
   return <Mdx source={markdown} basePath={path} onNavigate={onNavigate} />;
 }
@@ -61,7 +58,7 @@ export function GardenPage({ path, onSelect }: { path: string | null; onSelect: 
             .sort()
         )
       )
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => setError(errText(e)));
   }, []);
 
   // A selected file renders independently of the index (so a deep-link works before it loads).
@@ -80,7 +77,7 @@ export function GardenPage({ path, onSelect }: { path: string | null; onSelect: 
       </Stack>
     );
 
-  if (error) return <Text c="red">Failed to load garden: {error}</Text>;
+  if (error) return <LoadError what="the garden" error={error} />;
   if (!paths) return <Text c="dimmed">Loading…</Text>;
   if (paths.length === 0) return <Text c="dimmed">The garden is empty.</Text>;
 

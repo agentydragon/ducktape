@@ -67,6 +67,6 @@ describe("InboxView", () => {
         <InboxView docItems={null} meta={null} error="boom" now={0} />
       </MantineProvider>
     );
-    expect(screen.getByText(/Failed to load: boom/)).toBeTruthy();
+    expect(screen.getByText(/Failed to load items: boom/)).toBeTruthy();
   });
 });

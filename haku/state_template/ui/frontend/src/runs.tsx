@@ -2,6 +2,8 @@ import { Anchor, Group, Stack, Table, Text, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 
 import { fetchRuns } from "./client.ts";
+import { errText } from "./errors.ts";
+import { LoadError } from "./load_error.tsx";
 import { Mdx } from "./mdx.tsx";
 import type { RunManifest, RunSource, ScannedSource } from "./types.ts";
 import { PropagationMatrix } from "./widgets.tsx";
@@ -204,15 +206,10 @@ export function RunsPage({ openInGarden }: { openInGarden: (path: string) => voi
   useEffect(() => {
     fetchRuns()
       .then((r) => setRuns(r.runs))
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => setError(errText(e)));
   }, []);
 
-  if (error)
-    return (
-      <Text c="red" my="lg">
-        Failed to load runs: {error}
-      </Text>
-    );
+  if (error) return <LoadError what="runs" error={error} />;
   if (!runs)
     return (
       <Text c="dimmed" my="lg">

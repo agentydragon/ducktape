@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { createElement, Fragment, useMemo } from "react";
 
 import { Choice, Choices, Feedback, Handoff, Launch, SignalToggle } from "./affordances.tsx";
+import { errText } from "./errors.ts";
 import { ItemCardById } from "./item_card.tsx";
 import { ImprovementBoard } from "./improvement_board.tsx";
 import { Callout, StatusBadge } from "./widgets.tsx";
@@ -194,7 +195,7 @@ export function Mdx({
       ));
       return { tree };
     } catch (e) {
-      return { error: e instanceof Error ? e.message : String(e) };
+      return { error: errText(e) };
     }
   }, [source, basePath, onNavigate]);
 

@@ -3,6 +3,7 @@ import { Children, createContext, useContext, useEffect, useState, type ReactNod
 
 import { openLink, requestLaunch, type LaunchResult } from "./bridge.ts";
 import { clearResponse, readResponse, sendFeedback, setResponse } from "./client.ts";
+import { notifyError } from "./errors.ts";
 import { ItemScopeContext } from "./item_scope.ts";
 
 // Affordance widgets — a growing library of reviewed, embeddable action buttons Haku can drop
@@ -89,7 +90,7 @@ export function Launch({ prompt, label = "Launch run" }: { prompt: string; label
 // text="not useful" label="👎 not useful"></feedback>` — instead of a free-form box. Optional
 // `item` scopes the feedback to an item id.
 export function Feedback({ text, label = "Send feedback", item }: { text: string; label?: string; item?: string }) {
-  const [state, setState] = useState<"idle" | "sending" | "sent" | { error: string }>("idle");
+  const [state, setState] = useState<"idle" | "sending" | "sent">("idle");
   if (state === "sent")
     return (
       <Text size="xs" c="teal">
@@ -97,27 +98,23 @@ export function Feedback({ text, label = "Send feedback", item }: { text: string
       </Text>
     );
   return (
-    <Group gap="xs">
-      <Button
-        size="xs"
-        variant="default"
-        loading={state === "sending"}
-        onClick={() => {
-          setState("sending");
-          void sendFeedback(text, item).then(
-            () => setState("sent"),
-            (e: unknown) => setState({ error: e instanceof Error ? e.message : String(e) })
-          );
-        }}
-      >
-        {label}
-      </Button>
-      {typeof state === "object" && (
-        <Text size="xs" c="red">
-          {state.error}
-        </Text>
-      )}
-    </Group>
+    <Button
+      size="xs"
+      variant="default"
+      loading={state === "sending"}
+      onClick={() => {
+        setState("sending");
+        void sendFeedback(text, item).then(
+          () => setState("sent"),
+          (e: unknown) => {
+            notifyError("Couldn't send feedback", e);
+            setState("idle");
+          }
+        );
+      }}
+    >
+      {label}
+    </Button>
   );
 }
 
@@ -150,7 +147,6 @@ const ChoicesContext = createContext<ChoicesCtx | null>(null);
 export function Choices({ item, prompt, children }: { item?: string; prompt?: string; children?: ReactNode }) {
   const [recorded, setRecorded] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null); // value of the answer currently sending
-  const [error, setError] = useState<string | null>(null);
   const [otherOpen, setOtherOpen] = useState(false);
   const [otherText, setOtherText] = useState("");
 
@@ -158,7 +154,6 @@ export function Choices({ item, prompt, children }: { item?: string; prompt?: st
   // answered, then the answer; `recordedLabel` is what we echo back to the operator.
   function submit(key: string, recordedLabel: string, answer: string) {
     setPending(key);
-    setError(null);
     void sendFeedback(prompt ? `${prompt} → ${answer}` : answer, item).then(
       () => {
         setRecorded(recordedLabel);
@@ -166,7 +161,7 @@ export function Choices({ item, prompt, children }: { item?: string; prompt?: st
         setOtherOpen(false);
       },
       (e: unknown) => {
-        setError(e instanceof Error ? e.message : String(e));
+        notifyError("Couldn't record your answer", e);
         setPending(null);
       }
     );
@@ -215,11 +210,6 @@ export function Choices({ item, prompt, children }: { item?: string; prompt?: st
             Send
           </Button>
         </Group>
-      )}
-      {error && (
-        <Text size="xs" c="red">
-          {error}
-        </Text>
       )}
     </Stack>
   );
@@ -272,7 +262,6 @@ export function SignalToggle({
   const resolvedScope = scope || itemScope;
   const [selected, setSelected] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!resolvedScope) return;
@@ -299,7 +288,6 @@ export function SignalToggle({
   function pick(value: string) {
     const clearing = selected === value; // re-picking the active answer retracts it
     setPending(value);
-    setError(null);
     const op = clearing ? clearResponse(activeScope, field) : setResponse(activeScope, field, value);
     void op.then(
       () => {
@@ -307,7 +295,7 @@ export function SignalToggle({
         setPending(null);
       },
       (e: unknown) => {
-        setError(e instanceof Error ? e.message : String(e));
+        notifyError("Couldn't save your answer", e);
         setPending(null);
       }
     );
@@ -323,11 +311,6 @@ export function SignalToggle({
       <Group gap="xs">
         <ChoicesContext.Provider value={{ pick, pending, selected }}>{children}</ChoicesContext.Provider>
       </Group>
-      {error && (
-        <Text size="xs" c="red">
-          {error}
-        </Text>
-      )}
     </Stack>
   );
 }

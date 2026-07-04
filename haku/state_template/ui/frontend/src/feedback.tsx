@@ -2,15 +2,13 @@ import { Button, Group, Text, Textarea } from "@mantine/core";
 import { type FormEvent, type KeyboardEvent, useState } from "react";
 
 import { sendFeedback } from "./client.ts";
+import { notifyError } from "./errors.ts";
 import type { FeedbackContext } from "./types.ts";
 
 // Submit lifecycle as a closed union so the spinner/disabled states can't be
-// combined into something nonsensical.
-type SubmitState =
-  | { status: "idle" }
-  | { status: "sending" }
-  | { status: "sent" }
-  | { status: "error"; message: string };
+// combined into something nonsensical. Failure surfaces as a toast (notifyError), not a fourth
+// state — the box returns to idle so the operator can retry with their text intact.
+type SubmitState = { status: "idle" } | { status: "sending" } | { status: "sent" };
 
 interface FeedbackFormProps {
   minRows: number;
@@ -40,7 +38,8 @@ export function FeedbackForm({ minRows, placeholder, submitLabel, itemId, contex
         setState({ status: "sent" });
       })
       .catch((e: unknown) => {
-        setState({ status: "error", message: e instanceof Error ? e.message : String(e) });
+        notifyError("Couldn't send your note", e);
+        setState({ status: "idle" });
       });
   }
 
@@ -85,11 +84,6 @@ export function FeedbackForm({ minRows, placeholder, submitLabel, itemId, contex
         <Text size="xs" c="dimmed">
           Shift+Enter for newline
         </Text>
-        {state.status === "error" && (
-          <Text size="xs" c="red">
-            {state.message}
-          </Text>
-        )}
       </Group>
     </form>
   );

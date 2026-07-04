@@ -5,6 +5,7 @@ import { openLink } from "./bridge.ts";
 import { UP_NEXT } from "./constants.ts";
 import { countdown } from "./deadline.ts";
 import { ItemCard } from "./item_card.tsx";
+import { LoadError } from "./load_error.tsx";
 import type { Doc } from "./repo.ts";
 import type { MetaResponse } from "./types.ts";
 
@@ -52,12 +53,7 @@ interface InboxProps {
 // The triage board: a value-ranked list of items with a time-critical "Due soon" section.
 // One surface among several (see App's tabs) — not the whole of haku-ui.
 export function InboxView({ docItems, meta, error, now, onNavigate }: InboxProps) {
-  if (error)
-    return (
-      <Text c="red" my="lg">
-        Failed to load: {error}
-      </Text>
-    );
+  if (error) return <LoadError what="items" error={error} />;
   if (!docItems)
     return (
       <Text c="dimmed" my="lg">

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { notifyRouteChanged } from "./bridge.ts";
 import { fetchMeta } from "./client.ts";
 import { NoteToHaku } from "./feedback_button.tsx";
+import { errText } from "./errors.ts";
 import { GitProgressBar } from "./git_progress_bar.tsx";
 import { GardenPage } from "./garden.tsx";
 import { ImprovementBoard } from "./improvement_board.tsx";
@@ -43,7 +44,7 @@ export default function App() {
     let alive = true;
     docsUnder("items")
       .then((docs) => alive && setDocItems(docs))
-      .catch((e: unknown) => alive && setError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => alive && setError(errText(e)));
     // Footer metadata is best-effort — the board still renders without it.
     fetchMeta()
       .then((m) => alive && setMeta(m))

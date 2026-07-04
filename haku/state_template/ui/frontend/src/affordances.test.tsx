@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { MantineProvider } from "@mantine/core";
+import { cleanNotifications, Notifications } from "@mantine/notifications";
 import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -27,12 +28,19 @@ window.matchMedia ??= ((query: string) => ({
   dispatchEvent: () => false,
 })) as typeof window.matchMedia;
 
+// Mount <Notifications> so a failure toast (notifyError) actually renders into the DOM.
 function render(ui: ReactElement) {
-  return rtlRender(<MantineProvider>{ui}</MantineProvider>);
+  return rtlRender(
+    <MantineProvider>
+      <Notifications />
+      {ui}
+    </MantineProvider>
+  );
 }
 
 afterEach(() => {
   cleanup();
+  cleanNotifications(); // the notifications store is module-global — clear it between tests
   vi.clearAllMocks();
 });
 

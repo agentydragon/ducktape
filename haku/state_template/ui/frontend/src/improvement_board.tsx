@@ -2,6 +2,8 @@ import { Badge, Card, Group, Stack, Text, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 
 import { Disclosure } from "./disclosure.tsx";
+import { errText } from "./errors.ts";
+import { LoadError } from "./load_error.tsx";
 import { renderMarkdown } from "./markdown.ts";
 import { type Doc, docsUnder } from "./repo.ts";
 
@@ -104,10 +106,10 @@ export function ImprovementBoard() {
   useEffect(() => {
     docsUnder("memory/improvements")
       .then((entries) => setDocs(entries.map(toDoc).filter((d): d is ImprovementDoc => d !== null)))
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => setError(errText(e)));
   }, []);
 
-  if (error) return <Text c="red">Failed to load improvements: {error}</Text>;
+  if (error) return <LoadError what="improvements" error={error} />;
   if (!docs) return <Text c="dimmed">Loading…</Text>;
 
   const ideas = docs.filter((d) => d.cls === "idea").sort((a, b) => rank(a) - rank(b));
