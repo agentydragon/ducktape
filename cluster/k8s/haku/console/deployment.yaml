@@ -8,7 +8,7 @@
 #
 # Trust boundary: runs in its OWN `haku-console` namespace, NOT haku-sandbox. As
 # reviewed/released ducktape code it sits outside Haku's RBAC (Haku can't read its
-# secrets/logs or patch it) and outside the haku-mitmproxy egress fence (which keys
+# secrets/logs or patch it) and outside the haku-squid egress fence (which keys
 # on the haku-sandbox namespace) — so it gets ordinary egress and can later hold
 # secrets Haku may not read. See haku/PLAN.md → "The agent-authored console". It
 # still runs locked down (uid/gid 1000, non-root, no service-account token, all

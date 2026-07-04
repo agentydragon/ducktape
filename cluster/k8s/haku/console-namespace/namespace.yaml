@@ -3,7 +3,7 @@ kind: Namespace
 metadata:
   # The Haku console's own trusted namespace — deliberately NOT haku-sandbox.
   # The console is reviewed/released ducktape code, so it sits OUTSIDE Haku's
-  # RBAC (no `haku` RoleBinding here) and OUTSIDE the haku-mitmproxy egress fence
+  # RBAC (no `haku` RoleBinding here) and OUTSIDE the haku-squid egress fence
   # (the fence's CiliumClusterwideNetworkPolicy keys on the haku-sandbox
   # namespace; this one gets ordinary egress). This is the confidentiality
   # boundary that lets the console later hold secrets Haku may not read — e.g.
