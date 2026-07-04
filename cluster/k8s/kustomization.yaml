@@ -55,6 +55,7 @@ resources:
   - docker-ci/flux-kustomization.yaml
   - docker-ci/agent-rbac/flux-kustomization.yaml
   - haku-ci/flux-kustomization.yaml # Forgejo Actions runner for Haku's in-cluster image builds
+  - haku-ci/agent-rbac/flux-kustomization.yaml # read-only logs/configmaps for Haku to debug its CI
 
   # --- agents ---
   - agents/shared-rbac/flux-kustomization.yaml
