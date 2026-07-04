@@ -293,54 +293,11 @@ Shows critique run's reported issues overlaid on snapshot files:
 - Cross-referencing: click matched occurrence to jump to ground truth view
 - Navigation: "Issue 7/15" counter, next/prev buttons, jump dropdown, filter by match status
 
-### Visual Design
-
-| Element                   | Color                               |
-| ------------------------- | ----------------------------------- |
-| TP occurrence             | Green (#dcfce7 bg, #16a34a border)  |
-| FP occurrence             | Red (#fee2e2 bg, #dc2626 border)    |
-| Critique issue (TP match) | Blue (#dbeafe bg, #2563eb border)   |
-| Critique issue (FP match) | Orange (#fed7aa bg, #ea580c border) |
-| Novel finding             | Gray (#f3f4f6 bg, #6b7280 border)   |
-
 ### Line Indexing
 
 - Database stores 0-based line numbers
 - Display shows 1-based line numbers
 - File slicing uses 0-based
-
-### Component Hierarchy
-
-```
-SnapshotDetailPage
-├── SnapshotHeader (stats, metadata)
-├── SnapshotBrowser
-│   ├── FileTree
-│   │   ├── DirectoryEntry (with issue counts)
-│   │   └── FileEntry (with issue counts)
-│   └── FileViewer
-│       ├── CodeDisplay (syntax highlighted)
-│       ├── LineGutter (line numbers + issue markers)
-│       └── IssueOverlay
-│           ├── OccurrenceMarker (TP/FP, with inline credit badge)
-│           └── OccurrenceDetail (expandable)
-│               ├── AllFileLocations
-│               ├── OccurrenceStats
-│               └── CopyUrlButton
-├── DetectionStatsTab (aggregated occurrence stats table)
-│   └── Per-occurrence: mean/min/max credit, run count
-└── IssueNavigator (next/prev controls)
-
-CritiqueDetailPage
-├── CritiqueHeader
-├── FileViewer (with critiqueIssues + gradingEdges props)
-│   ├── CodeDisplay
-│   ├── IssueMarker (TP/FP/Critique)
-│   └── IssueDetail
-│       ├── MatchedOccurrenceLink
-│       └── CopyUrlButton
-└── IssueNavigator
-```
 
 ### Issue Rollup Statistics
 
@@ -467,12 +424,3 @@ The `props stats` CLI command and its subcommands (`critic-leaderboard`, `exampl
 - List snapshots with metadata
 - Fetch new snapshots from git
 - View file tree for snapshot
-
-### Implementation Phases (Snapshot/Critique Viewer)
-
-1. **Backend API** — extract files from tar snapshots, serve content and directory tree
-2. **Basic Snapshot Browser** — file tree, navigation, syntax highlighting, issue badges
-3. **Issue Overlay** — occurrence markers on code, visual distinction, expandable details, copy URL
-4. **Statistics Integration** — occurrence-level stats, credit distributions, aggregation
-5. **Critique Viewer** — critique overlay, GT cross-referencing, navigation, match indicators
-6. **Polish** — responsive design, loading states, error handling

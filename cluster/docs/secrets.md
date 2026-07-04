@@ -64,15 +64,11 @@ file based on its path. Commit and push — Flux deploys automatically.
 **Cause**: Cluster age key in `flux-system/sops-age-cluster-secrets` doesn't
 match the key used to encrypt the file.
 
-**Fix**:
+**Fix**: the deployed cluster age key is stale. Confirm it's present, then
+re-encrypt and redeploy per [Rotating the Cluster Age Key](#rotating-the-cluster-age-key):
 
 ```bash
-# Verify the key exists in-cluster
 kubectl get secret sops-age-cluster-secrets -n flux-system
-# Re-encrypt all cluster SOPS files with the current keys
-for f in $(find cluster/k8s -name '*.sops.yaml'); do sops updatekeys "$f"; done
-# Redeploy the age key from tofu state
-cd terraform/main && tofu apply -target=kubernetes_secret.sops_age_cluster_secrets
 ```
 
 ### OpenTofu State Lost
