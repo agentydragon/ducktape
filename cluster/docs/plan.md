@@ -98,7 +98,10 @@ returns (not independently parked):
       Hub pull-through cache: transparent via the dind `--registry-mirror` (Harbor's
       proxy-cache can't act as a root mirror, and Harbor is currently down anyway),
       then drop the docker.com CDN allows. Bonus: caching + Docker Hub rate-limit
-      relief.
+      relief. - The in-cluster mirror now exists: `oci-cache` (Zot), phase 1 landed 2026-07 —
+      see <../k8s/oci-cache/README.md>. Remaining work here is pointing the haku-ci
+      dind `--registry-mirror` at its ClusterIP, adding a NetworkPolicy egress allow to
+      `oci-cache`, and dropping the docker.com CDN FQDNs (phase 2, item 4 in that README).
 - [ ] **Investigate whether to re-enable VPA/Goldilocks recommendations.**
       Forgejo's namespace is Goldilocks-enabled and has a generated
       `goldilocks-forgejo` VPA, but the VPA control-plane deployments in
@@ -290,7 +293,10 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       and (b) props agent image storage. Candidates: [Zot](https://zotregistry.dev/) (single binary,
       multi-upstream proxy + private images), or separate `registry:2` per upstream + GHCR for props.
       Would drop the Harbor Helm chart, CNPG cluster, 32Gi HDD PVC, ~700Mi RAM, and all
-      Harbor-specific TF modules.
+      Harbor-specific TF modules. - Phase 1 landed 2026-07: `oci-cache` (Zot on SeaweedFS S3 + Valkey dedupe, no PVC,
+      unpinned) covers the pull-through role — see <../k8s/oci-cache/README.md>. Still
+      ClusterIP-only; the authenticated public endpoint + Talos containerd mirrors that
+      would let Harbor's proxy-cache be retired are phase 2 in that README.
 
 - [ ] Verify dmeventd thin pool monitoring after wyrm2 reboot: NixOS config changed
       `pkgs.lvm2` → `pkgs.lvm2_dmeventd` so `lvchange --monitor y` actually registers
