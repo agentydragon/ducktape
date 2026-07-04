@@ -23,7 +23,6 @@ _CLOUD = pygohcl.loads(get_required_path("_main/tf/gitops/haku-cloud-agent/main.
 ]["haku_cloud"]
 
 _SURFACES = {"self_hosted": _SELF_HOSTED, "cloud": _CLOUD}
-_surface = pytest.mark.parametrize("surface", _SURFACES.values(), ids=list(_SURFACES))
 
 
 def _mcp_urls(agent: dict) -> dict[str, str]:
@@ -48,18 +47,10 @@ def _builtin_toolsets(agent: dict) -> dict[str, str]:
     }
 
 
-@_surface
-def test_model_matches_ssot(surface):
+@pytest.mark.parametrize("surface", _SURFACES.values(), ids=list(_SURFACES))
+def test_surface_matches_ssot(surface):
     assert surface["model"] == _SHARED["model"]
-
-
-@_surface
-def test_mcp_servers_match_ssot(surface):
     assert _mcp_urls(surface) == {n: s["url"] for n, s in _SHARED["mcp_servers"].items()}
-
-
-@_surface
-def test_toolset_policies_match_ssot(surface):
     assert _toolset_policies(surface) == {n: s["toolset_permission_policy"] for n, s in _SHARED["mcp_servers"].items()}
     # The built-in agent_toolset is shared too (always_allow in both).
     assert _builtin_toolsets(surface) == {_SHARED["agent_toolset"]: "always_allow"}
