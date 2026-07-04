@@ -115,19 +115,28 @@ def check_goldilocks_explicit_decision(cluster: ParsedCluster) -> list[str]:
 
 def check_sops_decryption_blocks(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
     """Active Flux Kustomizations that render a SOPS-encrypted Secret must declare
-    spec.decryption.provider: sops, or Flux applies the ENC[...] ciphertext literally
-    (silently — no error). Build-level: inspects what Flux actually applies, so it
-    neither over-counts SOPS files in sibling/child kustomizations nor misses those
-    pulled in via nested kustomize refs."""
+    spec.decryption with provider: sops AND a secretRef.name — otherwise Flux applies
+    the ENC[...] ciphertext literally (no provider) or has no age key to decrypt with
+    (no secretRef). Both fail silently. Build-level: inspects what Flux actually
+    applies, so it neither over-counts SOPS files in sibling/child kustomizations nor
+    misses those pulled in via nested kustomize refs."""
     errors: list[str] = []
     for name, resources in cluster.flux_kust_resources(k8s_dir).items():
         if not any(isinstance(r, SecretResource) and r.sops is not None for r in resources):
             continue
         spec = cluster.active_flux_kustomizations[name]
-        if spec.decryption is None or spec.decryption.provider != "sops":
+        dec = spec.decryption
+        if dec is None or dec.provider != "sops":
             errors.append(
                 f"Flux Kustomization '{name}' renders a SOPS-encrypted Secret but has no "
                 f"spec.decryption.provider: sops. Without it Flux applies the ENC[...] "
                 f"ciphertext literally — add a decryption block pointing at sops-age-cluster-secrets."
+            )
+        elif dec.secret_ref is None or not dec.secret_ref.name:
+            errors.append(
+                f"Flux Kustomization '{name}' declares decryption.provider: sops but no "
+                f"spec.decryption.secretRef.name — Flux has no age key to decrypt with, so the "
+                f"Secret's ENC[...] ciphertext is applied literally. Add a secretRef pointing at "
+                f"sops-age-cluster-secrets."
             )
     return errors

@@ -12,7 +12,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
-from cluster.validation.k8s import Condition, parse_k8s_resources
+from cluster.validation.k8s import Condition, SecretRef, parse_k8s_resources
 from cluster.validation.tool_resolve import resolve_tool
 
 
@@ -37,12 +37,15 @@ class HealthCheck(BaseModel):
 
 class Decryption(BaseModel):
     """Flux Kustomization spec.decryption — declares how Flux decrypts SOPS
-    Secrets under the path. `provider: sops` is required for any SOPS-encrypted
-    Secret to apply as plaintext instead of literal ENC[...] ciphertext."""
+    Secrets under the path. A SOPS-encrypted Secret needs both `provider: sops`
+    and a `secretRef.name` pointing at the age-key Secret: without the provider
+    Flux applies ENC[...] ciphertext literally; without the secretRef it has no
+    key to decrypt with. Both fail silently."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
 
     provider: str = ""
+    secret_ref: SecretRef | None = None
 
 
 class FluxKustomizationSpec(BaseModel):
