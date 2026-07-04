@@ -18,8 +18,8 @@ rationale:
 - The trusted console (capability tier + iframe shell): `haku/console/README.md`;
   containment contract: `haku/console/docs/containment.md`. Alternative runtimes
   (Managed Agents): `haku/runtime/managed_agent/` + `haku/plans/`.
-- Cluster wiring (RBAC, mitmproxy egress, secrets): `cluster/k8s/haku/` and
-  `cluster/k8s/agents/haku-mitmproxy/`.
+- Cluster wiring (RBAC, egress proxy, secrets): `cluster/k8s/haku/` and
+  `cluster/k8s/agents/haku-egress-proxy/`.
 - The **actionable build checklist is `TODO.md`.**
 
 ## Goal

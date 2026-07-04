@@ -104,7 +104,7 @@ Image contents (becomes a Bazel `oci_image` per
 <../../cluster/docs/container-images.md>; shown as a Dockerfile for clarity):
 
 ```dockerfile
-# Runs in haku-sandbox as non-root, behind haku-mitmproxy egress.
+# Runs in haku-sandbox as non-root, behind haku-egress-proxy egress.
 FROM python:3.13-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git curl ca-certificates postgresql-client bash \
@@ -291,7 +291,7 @@ Two Deployments in `haku-sandbox`, secrets split by trust:
 
 - **`haku-worker`** — the worker image; mounts only `ANTHROPIC_ENVIRONMENT_KEY`
   (+ `ANTHROPIC_ENVIRONMENT_ID`) and the `K8S_*` env the existing profile uses to
-  materialize the haku JWT kubeconfig. Non-root, behind `haku-mitmproxy`, scoped
+  materialize the haku JWT kubeconfig. Non-root, behind `haku-egress-proxy`, scoped
   RBAC + quota — unchanged perimeter.
 - **`haku-supervisor`** — the supervisor; mounts the org-scoped
   `ANTHROPIC_API_KEY` (**kept off the worker host** so agent tool calls can't read

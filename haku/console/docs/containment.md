@@ -59,7 +59,7 @@ Haku could author hostile UI). Safety comes from the perimeter, not from trustin
    operator's browser: the route **injects a strict CSP** on every haku-ui response
    (`connect-src 'self'`, …), fencing silent subresource beacons from outside Haku's write
    scope; navigation is fenced by the shell's `frame-src` + the sandbox + the `openLink`
-   gate (below). Outbound from the backend: the `haku-mitmproxy` egress allowlist. Channel
+   gate (below). Outbound from the backend: the `haku-egress-proxy` egress allowlist. Channel
    table: <../../docs/security.md> § _Browser-side exfiltration_.
 3. **The agent cannot create public routes.** Haku's `haku-sandbox-admin` Role omits
    `httproutes`/`gateways` (do not add them), and the `restrict-agent-gateway-routes`

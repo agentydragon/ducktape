@@ -148,9 +148,9 @@ secrets.**
 | base read from the ducktape checkout, reconciled via `memory/base-sync`        | unchanged — worker clones ducktape; agent `system` is a thin pointer ("read the manual + run procedure, then run") so base stays single-sourced and reconciliation still works |
 
 The worker pod keeps the Ember posture intact: non-root, behind the existing
-dedicated `haku-mitmproxy` egress, scoped `haku-sandbox` RBAC, ResourceQuota —
+dedicated `haku-egress-proxy` egress, scoped `haku-sandbox` RBAC, ResourceQuota —
 none of it relying on agent restraint. Egress is ours in self-hosted, which the
-`haku-mitmproxy` + CCNP already enforce.
+`haku-egress-proxy` + CCNP already enforce.
 
 ## Artifacts to build
 
@@ -184,7 +184,7 @@ beta:agents create|update`): `model: claude-opus-4-8`, thin pointer `system`,
 A working v1 is **a few focused days**; robustness + per-source MCP exposure is
 the longer tail. Reused vs. new:
 
-- **Reused, near-zero change**: `bootstrap.sh`, the `haku-mitmproxy` egress, the
+- **Reused, near-zero change**: `bootstrap.sh`, the `haku-egress-proxy` egress, the
   `haku-sandbox` RBAC/quota, `haku-state`, the base manual + run procedure, the
   incremental-scan discipline. Haku's actual logic doesn't change.
 - **New**: worker image + entrypoint (~½–1d, repo already builds `oci_image`s),

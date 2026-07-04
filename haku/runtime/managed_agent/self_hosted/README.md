@@ -29,7 +29,7 @@ anthropic api: status=400 type=invalid_request_error
 message=config.networking: Extra inputs are not permitted
 ```
 
-For self-hosted, egress is _ours_ (the haku-worker pod's `haku-mitmproxy` + CCNP),
+For self-hosted, egress is _ours_ (the haku-worker pod's `haku-egress-proxy` + CCNP),
 so `{type: self_hosted}` is the entire config — no `networking`. The `ant` CLI
 sends exactly that, so the imperative path works (it created the live env,
 `env_015uqL9WAMSDytQEWWmLG9zF`); the provider cannot express it. We briefly
@@ -124,7 +124,7 @@ The `haku-worker` Deployment, its `haku-worker` ServiceAccount (bound to
 `haku-sandbox-admin`), the `ANTHROPIC_ENVIRONMENT_KEY` secret stub, and the
 clone/git env live in <../../../../cluster/k8s/haku/agent-worker/README.md> (that
 dir's README is the activation runbook). The worker reuses Haku's `haku-sandbox`
-perimeter (`haku-sandbox-admin` RBAC, `haku-mitmproxy` egress + CA injection,
+perimeter (`haku-sandbox-admin` RBAC, `haku-egress-proxy` egress + CA injection,
 ResourceQuota); none of it relies on agent restraint.
 
 ## Bring-up

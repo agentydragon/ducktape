@@ -75,7 +75,7 @@ infinity`), and `bbr build` then GHCR push plus Flux.
 ## k8s wiring (`cluster/k8s/haku/runtime/agent/`) — operator-owned
 
 - **Deployment** `haku-agent` in `haku-sandbox`: two containers (loop, tools) sharing an
-  `emptyDir` at `/workspace`, non-root, behind `haku-mitmproxy`.
+  `emptyDir` at `/workspace`, non-root, behind `haku-egress-proxy`.
 - **haku-k8s kubeconfig** mounted in the loop (the existing JWT secret) so `run_command`
   can exec — reuses the existing `haku` RBAC.
 - **Valkey** with **AOF (`appendonly yes`, `everysec`) on a PVC** for durable history;

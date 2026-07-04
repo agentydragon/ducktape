@@ -12,7 +12,7 @@ bridge that brokers the iframe's privileged requests. It holds no haku-state wri
 **Trust boundary:** the console is reviewed/released ducktape code, so it runs in
 its **own `haku-console` namespace** — deliberately _not_ `haku-sandbox`, the
 namespace Haku has full CRUD over. Haku therefore has no RBAC to read the console's
-secrets/logs or patch it, and the console sits outside the `haku-mitmproxy` egress
+secrets/logs or patch it, and the console sits outside the `haku-egress-proxy` egress
 fence (that fence keys on `haku-sandbox`). This is the confidentiality boundary that
 lets the console hold secrets Haku may not read (e.g. the Claude Code web session
 bearer). Haku's full security model
@@ -85,7 +85,7 @@ shared web volume is used.
 Non-root, dropped caps, no service-account token. Credentials: just the
 `haku-routine-launch-token` secret (the capability tier's bearer; `HAKU_CONSOLE_LAUNCH_ROUTINE__TOKEN`).
 It no longer holds a haku-state git credential — feedback/trace writes moved into haku-ui.
-As trusted ducktape code in its own namespace it is **not** behind the `haku-mitmproxy`
+As trusted ducktape code in its own namespace it is **not** behind the `haku-egress-proxy`
 fence — it gets ordinary cluster egress (which the capability tier needs to reach the
 Anthropic fire URL). Security model: `haku/docs/security.md`; roadmap: `haku/PLAN.md` and the
 `haku-state` repo's `plans/dashboard-arm.md`.

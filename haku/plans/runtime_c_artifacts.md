@@ -189,7 +189,7 @@ exec uvicorn supervisor:app --host 0.0.0.0 --port 8080
 ## 4. k8s wiring (`cluster/k8s/haku/`)
 
 A single `haku-agent` Deployment (no worker/supervisor split), in `haku-sandbox`,
-non-root, behind `haku-mitmproxy`, scoped RBAC — same perimeter as today.
+non-root, behind `haku-egress-proxy`, scoped RBAC — same perimeter as today.
 
 ```yaml
 apiVersion: apps/v1
