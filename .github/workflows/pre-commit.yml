@@ -67,7 +67,24 @@ jobs:
           # Unset NODE_OPTIONS to avoid global-agent requirement in pre-commit's
           # isolated node environments (markdownlint-cli2 hook uses npm)
           unset NODE_OPTIONS
-          pre-commit run --all-files --show-diff-on-failure -v
+
+          # PRs: check only files changed in the PR (fast feedback).
+          # Branch pushes + manual runs: check all files (full gate before merge).
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            # GITHUB_BASE_REF is only set on pull_request events. A depth-1 fetch is
+            # enough: git diff compares the two trees directly (no merge-base needed).
+            git fetch --depth=1 origin "$GITHUB_BASE_REF"
+            mapfile -t changed < <(git diff --name-only --diff-filter=d "origin/$GITHUB_BASE_REF" HEAD)
+            if [ "${#changed[@]}" -eq 0 ]; then
+              echo "No files changed; nothing for pre-commit to check."
+              exit 0
+            fi
+            echo "Running pre-commit on ${#changed[@]} changed file(s):"
+            printf '  %s\n' "${changed[@]}"
+            pre-commit run --files "${changed[@]}" --show-diff-on-failure -v
+          else
+            pre-commit run --all-files --show-diff-on-failure -v
+          fi
 
       # ============================================================================
       # CACHE SAVES
