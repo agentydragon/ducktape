@@ -36,7 +36,8 @@ let
       pkgs.which
       pkgs.psmisc
       pkgs.git
-      pkgs.openssh
+      pkgs.openssh # ssh client + sshd (inbound `ssh codex-pod` over kubectl exec)
+      pkgs.socat # relay for the ssh-over-kubectl-exec ProxyCommand
       pkgs.curl
       pkgs.jq
       pkgs.ripgrep

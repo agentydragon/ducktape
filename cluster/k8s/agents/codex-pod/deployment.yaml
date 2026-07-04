@@ -37,15 +37,22 @@ spec:
           # Flux image-automation setter: the marker MUST be a trailing comment on
           # the image line (kyaml Setters ignores an own-line comment above it).
           image: git.allegedly.works/ducktape-ci/codex-pod:devel-20260704064328-2c474db # {"$imagepolicy": "flux-system:codex-pod"}
-          # HOME (/home/codex) + all static config are baked into the image by
-          # home-manager. The only runtime step is planting the SSH private key
-          # (secret → 0600; a mount can't satisfy ssh's ownership/perms). Access
-          # is via `kubectl exec`, which inherits the container env.
+          # HOME (/home/codex) + all static config (incl. sshd_config +
+          # authorized_keys) are baked into the image by home-manager. Runtime
+          # steps: (1) plant the outbound SSH private key (secret → 0600; a mount
+          # can't satisfy ssh's ownership/perms); (2) ensure a persistent host key
+          # on the PVC; (3) run sshd as the main process — it keeps the container
+          # alive and serves inbound `ssh codex-pod` over `kubectl exec` (127.0.0.1
+          # only; see the ProxyCommand matchBlock in nix/home/home.nix). `kubectl
+          # exec` still works too.
           command: ["/bin/bash", "-c"]
           args:
             - |
               install -D -m600 /run/codex-secret/id_ed25519 "$HOME/.ssh/id_ed25519"
-              exec sleep infinity
+              install -d -m700 /workspace/.sshd
+              [ -f /workspace/.sshd/ssh_host_ed25519_key ] \
+                || ssh-keygen -q -t ed25519 -N "" -f /workspace/.sshd/ssh_host_ed25519_key
+              exec sshd -D -e -f "$HOME/.ssh/sshd_config"
           env:
             # Shared BuildBuddy key (bbr reads BUILDBUDDY_API_KEY), reflected into
             # this namespace from shared-secrets/buildbuddy-api-key. Optional so a

@@ -32,8 +32,13 @@ Registry-hosting rationale (why Forgejo over GHCR) + the general pattern:
   holds the work tree plus `XDG_CACHE_HOME` (`/workspace/.cache`) for build caches.
   `CODEX_HOME` is left at its default (`~/.codex`, baked); Codex's own state
   (history/sessions) is ephemeral there — durable state is the git work tree on the
-  PVC. Access is `kubectl exec` (no sshd) — the container's baked env carries into
-  exec sessions.
+  PVC.
+- **Access**: `kubectl exec` (env inherited), or `ssh codex-pod` — the container's
+  main process is `sshd -D` on `127.0.0.1:2222`, reached via a `kubectl exec` +
+  `socat` `ProxyCommand` (baked into `nix/home/home.nix`; no exposed port, no
+  Service). kube RBAC gates the transport; sshd adds pubkey auth (workstation keys
+  baked into `~/.ssh/authorized_keys`) so ssh-native tooling (rsync/scp/git/VS Code
+  Remote) works. The sshd host key persists on the PVC (`/workspace/.sshd`).
 
 ## Bring-up
 
