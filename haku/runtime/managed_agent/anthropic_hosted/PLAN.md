@@ -1,9 +1,52 @@
 # Build plan — Managed Agents, Anthropic-hosted sandbox
 
-Status: **P0 shipped** (control plane provisioned via Terraform; the agent runs a
+Status: **PARKED (2026-07-04)** — the cloud control-plane objects
+(env/agent/vault/credential/deployment) were **deleted at Anthropic by the operator**, and
+`cluster/k8s/haku/cloud-agent-tf` is now `suspend: true` (PR #2790). Resuming this plan means
+first resolving the decision in [Resuming: recreate-via-provider vs retire the
+provider](#resuming-recreate-via-provider-vs-retire-the-provider) below. The P0/P1–P3 build
+notes that follow are **historical** (they describe the pre-deletion Terraform path).
+
+_Historical:_ **P0 shipped** (control plane provisioned via Terraform; the agent runs a
 connectivity test). Architecture + rationale are in <README.md>; this is the
 actionable build/test plan for what's left (P1–P3). Delete or tombstone once the
 full run loop is running.
+
+## Resuming: recreate-via-provider vs retire the provider
+
+Before rebuilding the cloud agent, decide **whether to keep using the
+`claude-managed-agents` OpenTofu provider at all.** It has now bitten in three distinct ways:
+
+1. **No `self_hosted` support** — forced the self-hosted agent off TF entirely (reverted to
+   imperative `ant`, PR #2780); `networking` is `Required` but the API rejects it for
+   `type=self_hosted`.
+2. **`Read` doesn't detect deletions** — after the objects were deleted, tofu-controller kept
+   reporting `Plan no changes` / Ready against phantom state. Recovery needs `state rm`/`-replace`,
+   not a normal reconcile.
+3. **Supply-chain caution** — single-maintainer, low-download third party holding an org API key;
+   every version bump needs a manual source-diff review (we are not the maintainer).
+
+**Option A — unsuspend + recreate via the provider.** Lowest immediate effort: `state rm` the
+phantom resources, unsuspend, let it re-apply (fresh env/agent/vault/deployment IDs → the
+`haku-cloud-agent-ids` output Secret refreshes → the parked shared-vault cutover from PR #2788
+becomes possible). Keeps GitOps declarative reconciliation for the cloud agent, but keeps all
+three liabilities above, and the drift-blindness means future silent breakage is likely.
+
+**Option B — retire the provider; manage the cloud agent imperatively too.** The self-hosted
+agent already runs this way (`provision.sh` + `ant`). Doing the same for cloud drops the provider,
+its supply-chain surface, and the repin-review burden, and makes both agents consistent. Cost:
+the cloud agent loses GitOps declarative reconciliation (same trade the self-hosted one already
+made). **Coupling to note:** PR #2788's shared vault lives _in the TF module_ and self-hosted
+reads its ID from the TF output Secret — so retiring the provider also unwinds the "vault in TF"
+decision; the shared vault would move to imperative provisioning (or a small SDK-based tool),
+and the SSOT/parity test (`//haku/base:test_agent_config_ssot`) stays valid regardless.
+
+**Lean:** given the provider has produced two _silent-failure_ bugs and we've already proven the
+imperative path works for self-hosted, **B is the stronger long-term bet** unless declarative
+GitOps for the cloud agent specifically is worth the ongoing liability. Next step is a short spike,
+not a rewrite: `state rm` + unsuspend to get a working baseline (Option A as a stopgap), then
+evaluate porting cloud to imperative. See the ACMA provider caution + the deleted-object IDs in
+the session memory.
 
 Goal: run Haku on a **cloud** Managed Agents sandbox (Anthropic operates the
 hands), reaching the cluster through the public, Authentik-authed
