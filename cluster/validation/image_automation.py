@@ -38,7 +38,10 @@ def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
         for resource in result.resources:
             if isinstance(resource, ImageRepositoryResource):
                 image_repos.add(resource.name)
-                if resource.spec.image.startswith("ghcr.io/"):
+                # The registry host is the first path component of the OCI ref.
+                # Compare it exactly (not a substring/prefix match) so a repo like
+                # `git.allegedly.works/…` can't be mistaken for GHCR.
+                if resource.spec.image.split("/", 1)[0] == "ghcr.io":
                     ghcr_repos.add(resource.name)
             elif isinstance(resource, ImagePolicyResource):
                 policy_refs[resource.name] = resource.spec.image_repository_ref.name

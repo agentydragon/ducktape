@@ -3,8 +3,7 @@
 # bootstrap script for static config. Secrets are NOT here — they come from k8s
 # (BUILDBUDDY_API_KEY env, the id_ed25519 plant, ESO-templated files); so no
 # sops-nix, no systemd, non-root.
-_:
-{
+_: {
   home.username = "codex";
   home.homeDirectory = "/home/codex";
   home.stateVersion = "25.11";
