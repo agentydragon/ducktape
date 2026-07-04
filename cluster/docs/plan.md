@@ -82,17 +82,24 @@ returns (not independently parked):
       (its `region=proxmox` preference for ollama co-location pulled a replica onto
       wyrm2 with the `chatgpt-auth` PVC). **Interim (done):** pin the affected consumer
       to `zone=hil-ovh` via `nodeSelector` — but that's **per-consumer duplication**.
-      Less-duplicative + more-capable fixes to evaluate, in rough order:
-  - **Run seaweedfs-csi on wyrm2** (relax the DaemonSet's `hil-ovh` zone affinity,
-    confirm the mount reaches the OVH filer over nebula) — then `seaweedfs-ovh` RWX PVCs
-    work there too, and litellm can go back to preferring proxmox for ollama co-location
-    (drop the interim `nodeSelector`). This is the direction the goal actually wants.
-  - **Give seaweedfs-csi topology** so `allowedTopologies` on the SC steers the scheduler
-    from one place. **Needs upstream/forked driver code** — v1.4.14 implements no topology
-    (no `accessible_topology` in `NodeGetInfo`, no flag, registers `topologyKeys=null`),
-    so it is not configurable; and it formalizes "hil-ovh only", the opposite of the above.
-  - A **Kyverno mutating policy** injecting the `zone=hil-ovh` constraint for any pod that
-    mounts a `seaweedfs-ovh*` PVC — zero driver changes, one place; the pragmatic middle.
+      **Locality caveat:** wyrm2 is in SF, hil-ovh in Oregon, so a `seaweedfs-ovh` mount
+      on wyrm2 does its I/O **cross-DC over nebula**. So "CSI only in hil-ovh" is partly a
+      _feature_ (keeps SeaweedFS I/O in-DC); the actual bug is only the ugly failure mode
+      (stuck Pending) instead of a clean "keep it in-DC" scheduling rule. For most
+      consumers, staying in hil-ovh **is** correct — litellm especially, since its Postgres
+      (`litellm-db`, `local-path-ovh`) is in-DC and hit per request; ollama fallback calls
+      crossing the mesh from hil-ovh is the cheaper trade than a cross-DC DB. Fixes:
+  - **Kyverno mutating policy** injecting `zone=hil-ovh` for any pod mounting a
+    `seaweedfs-ovh*` PVC — zero driver changes, one place, and it encodes the correct
+    default (keep SeaweedFS consumers in-DC). Preferred.
+  - **Give seaweedfs-csi topology** so `allowedTopologies` on the SC does the same from the
+    SC. **Needs upstream/forked driver code** — v1.4.14 implements no topology (no
+    `accessible_topology` in `NodeGetInfo`, no flag, registers `topologyKeys=null`), so it
+    is not configurable.
+  - **Run seaweedfs-csi on wyrm2** — only worth it for **tiny/occasional-I/O** volumes
+    (e.g. the codex/chatgpt `auth.json`, read at startup + rare refresh) where cross-DC
+    latency is negligible AND you specifically want the wyrm2 pod (e.g. ollama
+    co-location). **Not** a blanket enable — heavy or DB-hot workloads must stay in-DC.
 
 - [ ] **etcd lease-PUT latency / control-plane HDD I/O contention.** etcd runs on
       rotational HDDs on the KS-5 control planes (no SSD there; the NVMe is on the
