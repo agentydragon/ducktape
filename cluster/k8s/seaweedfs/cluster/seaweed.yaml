@@ -147,8 +147,20 @@ spec:
     hdd:
       # 3 servers on the KS-5 HDD nodes; destination for the migrated bulk.
       # -disk=hdd matches the flat servers' default disk type ("" == hdd,
-      # verified in seaweedfs 4.29 ToDiskType). Same rack as the flat servers
-      # so replication 001 places 2 copies across 2 KS-5 hosts.
+      # verified in seaweedfs 4.29 ToDiskType).
+      #
+      # TODO(rack label is logical, not physical — current state is weird): OVH
+      # actually racks these boxes across THREE racks (verified via the
+      # ovh_dedicated_server data source): 102453=H109A09, 103656+103711=H109B04,
+      # and the ssd nodes 104952+104963=H108B01. This hdd group carries ONE rack
+      # label (matching the flat servers, so volume.move doesn't create transient
+      # same-rack placement mismatches during Phase 2). So `hil-ovh-h109b04` is
+      # accurate for 103656/103711 but WRONG for 102453 (really H109A09). Kept as
+      # a single label deliberately: repl 001 (same-rack, 2 nodes) needs ≥2 nodes
+      # per rack, so a faithful per-rack split would strand the singleton H109A09
+      # (102453, the 3.6 TB disk) with no bulk. Real rack-fault tolerance = split
+      # HDD + repl 010 for bulk ("Path B"), deferred. See
+      # cluster/docs/plans/ovh_storage_tiering.md.
       replicas: 3
       dataCenter: "hil"
       rack: "hil-ovh-h109b04"
@@ -181,7 +193,11 @@ spec:
       # seaweedfs-ovh-ssd StorageClass (diskType=ssd -> -disk=ssd).
       replicas: 2
       dataCenter: "hil"
-      rack: "hil-ovh-ssd"
+      # Real OVH rack — both KS-GAME nodes (104952, 104963) are physically in
+      # H108B01 (verified via the ovh_dedicated_server data source). This is the
+      # one group whose rack label matches physical topology; repl 001 places the
+      # 2 git copies across the 2 nodes in this rack.
+      rack: "hil-ovh-h108b01"
       priorityClassName: stateful-infra
       requests:
         storage: 250Gi
