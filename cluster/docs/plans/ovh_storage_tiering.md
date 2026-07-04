@@ -167,6 +167,21 @@ count** (`-max=0` → disk size ÷ `volumeSizeLimitMB`, 16 GB here), not raw spa
 419 GB NVMe yields only ~24 slots. Re-replication needs a server with a **free slot**, so a
 slot-full server (`volume-0` at 24/24) cannot receive replicas even with disk free.
 
+**GOTCHA — never delete a volume server before its clients re-resolve (bit us 2026-07-04).**
+`weed mount` FUSE clients cache each volume's location and only re-look-up gracefully when the
+old server is **alive** and returns "volume not found"; a **deleted** server (DNS `no such
+host`) leaves the cache permanently stale, so reads I/O-error and git's `mmap` turns that into
+**SIGBUS** (`unpack-objects died of signal 7`). After `volume.move` + deleting the flat
+`seaweedfs-volume` StatefulSet, both Forgejo replicas' mounts kept pointing moved chunks at the
+gone `seaweedfs-volume-{1,2}` and pushes/clones failed intermittently. So server deletion is the
+**last, quiescence-gated** step: (1) move data off (server stays running, empty); (2) verify
+2-copy (**G-swfs**); (3) refresh clients **while the emptied server is still alive** — roll the
+consumer pods (NodeUnpublish→NodePublish respawns the mount with a fresh vidMap) or let them
+self-heal via the alive-empty server's 404→re-lookup; (4) confirm the emptied server logs no
+more volume-data requests; (5) **only then** delete the StatefulSet + PVCs. **Stage 2 retires
+and re-provisions volume-server nodes again — it must follow this order.** Full RCA:
+<../lessons_learned/2026_07_04_seaweedfs_stale_mount_cache_after_evacuation.md>.
+
 ## Data-disk mount rename (fixing the backwards `/var/mnt/seaweedfs-data` path)
 
 Today the OVH data disk is a UserVolume named `seaweedfs-data`, and the general

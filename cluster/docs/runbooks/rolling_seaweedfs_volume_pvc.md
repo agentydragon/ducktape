@@ -123,6 +123,26 @@ rack tolerance**. Treat **any concurrent loss of two volume-server pods or
 their PVCs in the same tier as a data-loss event** regardless of what the
 policy nominally says.
 
+## Caveat: retiring a volume server (refresh FUSE clients before you delete it)
+
+The steps above **roll** a PVC — the volume-server pod keeps its identity, so its
+hostname keeps resolving. **Deleting a volume server outright** (removing its
+StatefulSet, e.g. retiring the flat servers or reprovisioning a node in Stage 2 of
+the tiering plan) is different and bit us on 2026-07-04: long-lived `weed mount`
+FUSE clients cache each volume's location and only re-resolve gracefully when the
+old server is **alive** and returns "volume not found". A **deleted** server (DNS
+`no such host`) leaves the cache permanently stale → reads I/O-error → git `mmap`
+→ **SIGBUS** (`unpack-objects died of signal 7`).
+
+So make server deletion the **last, quiescence-gated** step: move the data off
+(server stays running, empty) → verify 2-copy → **refresh the FUSE clients while
+the emptied server is still alive** (roll the consumer pods, or let them self-heal
+on the alive-empty server's 404→re-lookup) → confirm the emptied server logs no
+more volume-data requests → _only then_ delete the StatefulSet + PVCs. Recovery if
+you already deleted too early: `kubectl rollout restart` the consumer workloads
+(NodeUnpublish→NodePublish respawns each mount with a fresh vidMap). Full RCA:
+<../lessons_learned/2026_07_04_seaweedfs_stale_mount_cache_after_evacuation.md>.
+
 ## Quick sanity checks
 
 ```bash
