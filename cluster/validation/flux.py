@@ -35,6 +35,16 @@ class HealthCheck(BaseModel):
     namespace: str = ""
 
 
+class Decryption(BaseModel):
+    """Flux Kustomization spec.decryption — declares how Flux decrypts SOPS
+    Secrets under the path. `provider: sops` is required for any SOPS-encrypted
+    Secret to apply as plaintext instead of literal ENC[...] ciphertext."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    provider: str = ""
+
+
 class FluxKustomizationSpec(BaseModel):
     """Parsed spec from a Flux Kustomization CR."""
 
@@ -46,6 +56,7 @@ class FluxKustomizationSpec(BaseModel):
     retry_interval: str | None = None
     wait: bool = False
     suspend: bool = False
+    decryption: Decryption | None = None
 
     def local_dir(self, k8s_dir: Path, k8s_subpath: str = "cluster/k8s") -> Path | None:
         """Resolve spec.path to a local directory under k8s_dir, or None if external."""

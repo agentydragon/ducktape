@@ -26,6 +26,7 @@ from cluster.validation.checks import (
     check_duplicate_external_secrets,
     check_goldilocks_explicit_decision,
     check_goldilocks_namespace_labels,
+    check_sops_decryption_blocks,
     find_orphaned_files,
 )
 from cluster.validation.cluster import ParsedCluster, parse_cluster
@@ -127,6 +128,12 @@ def test_image_automation_webhook_consistency(cluster: ParsedCluster) -> None:
 def test_flux_bootstrap_auth_split(cluster: ParsedCluster, k8s_dir: Path) -> None:
     """Cold bootstrap sources must not depend on Flux-decrypted auth; write sources must."""
     errors = check_flux_bootstrap_auth(cluster, k8s_dir)
+    assert not errors, "\n".join(errors)
+
+
+def test_sops_secrets_have_decryption_block(cluster: ParsedCluster, k8s_dir: Path) -> None:
+    """Active flux kustomizations rendering a SOPS Secret must declare decryption.provider: sops."""
+    errors = check_sops_decryption_blocks(cluster, k8s_dir)
     assert not errors, "\n".join(errors)
 
 

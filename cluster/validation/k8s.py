@@ -164,6 +164,22 @@ class ReceiverResource(K8sResource):
     spec: ReceiverSpec = Field(default_factory=ReceiverSpec)
 
 
+class SopsMetadata(BaseModel):
+    """The `sops:` block on a SOPS-encrypted document. Only presence is read by
+    validation: a rendered Secret carrying it is ciphertext Flux cannot apply
+    without a `decryption` block. Inner fields (mac, age recipients, lastmodified)
+    are ignored — model them only if a future check consumes them."""
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class SecretResource(K8sResource):
+    """A `Secret`. `sops` is set when the source document carries a SOPS metadata
+    block, i.e. the rendered Secret is still ENC[...] ciphertext."""
+
+    sops: SopsMetadata | None = None
+
+
 _KIND_MODELS: dict[str, type[K8sResource]] = {
     "GitRepository": GitRepositoryResource,
     "ImageUpdateAutomation": ImageUpdateAutomationResource,
@@ -172,6 +188,7 @@ _KIND_MODELS: dict[str, type[K8sResource]] = {
     "ImageRepository": ImageRepositoryResource,
     "ImagePolicy": ImagePolicyResource,
     "Receiver": ReceiverResource,
+    "Secret": SecretResource,
 }
 
 

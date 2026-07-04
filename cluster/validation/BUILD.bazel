@@ -357,6 +357,20 @@ py_test(
 )
 
 py_test(
+    name = "test_sops_decryption",
+    srcs = ["test_sops_decryption.py"],
+    deps = [
+        ":checks",
+        ":cluster",
+        ":flux",
+        ":k8s",
+        ":kustomize",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_flux_build",
     srcs = ["test_flux_build.py"],
     # validate_flux_build needs the whole tree the root kustomization references.

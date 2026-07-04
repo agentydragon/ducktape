@@ -6,7 +6,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from cluster.validation.cluster import ParsedCluster
-from cluster.validation.k8s import HelmReleaseResource, K8sResource
+from cluster.validation.k8s import HelmReleaseResource, K8sResource, SecretResource
 from cluster.validation.kustomize import KustomizeBuildResult
 
 
@@ -109,5 +109,25 @@ def check_goldilocks_explicit_decision(cluster: ParsedCluster) -> list[str]:
             errors.append(
                 f"Namespace '{ns}' has workloads but is missing explicit "
                 f'{_GOLDILOCKS_ENABLED_LABEL} label (set to "true" or "false")'
+            )
+    return errors
+
+
+def check_sops_decryption_blocks(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
+    """Active Flux Kustomizations that render a SOPS-encrypted Secret must declare
+    spec.decryption.provider: sops, or Flux applies the ENC[...] ciphertext literally
+    (silently — no error). Build-level: inspects what Flux actually applies, so it
+    neither over-counts SOPS files in sibling/child kustomizations nor misses those
+    pulled in via nested kustomize refs."""
+    errors: list[str] = []
+    for name, resources in cluster.flux_kust_resources(k8s_dir).items():
+        if not any(isinstance(r, SecretResource) and r.sops is not None for r in resources):
+            continue
+        spec = cluster.active_flux_kustomizations[name]
+        if spec.decryption is None or spec.decryption.provider != "sops":
+            errors.append(
+                f"Flux Kustomization '{name}' renders a SOPS-encrypted Secret but has no "
+                f"spec.decryption.provider: sops. Without it Flux applies the ENC[...] "
+                f"ciphertext literally — add a decryption block pointing at sops-age-cluster-secrets."
             )
     return errors
