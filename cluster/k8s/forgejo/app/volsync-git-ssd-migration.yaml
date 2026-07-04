@@ -1,0 +1,86 @@
+# One-time migration of Forgejo git repos from seaweedfs-ovh (HDD tier) to
+# seaweedfs-ovh-ssd (KS-GAME NVMe) — Phase 3 of
+# cluster/docs/plans/ovh_storage_tiering.md. Same VolSync rsync-TLS pattern as
+# cluster/k8s/grocy/*/app/volsync-backup.yaml.
+#
+# copyMethod: Direct — no VolumeSnapshotClass is installed for SeaweedFS, so the
+# source mover bind-mounts the live git PVC. The ReplicationSource ships paused:
+#   - pre-seed (Forgejo live): set paused:false — rsyncs the ~1 GiB hdd->ssd with
+#     zero downtime; a torn pack here is corrected by the final sync.
+#   - cutover: scale Forgejo to 0, bump trigger.manual -> a fast delta sync against
+#     a now-quiescent source, then repoint the HelmRelease claimName to
+#     forgejo-git-rwx-ssd. Runbook: the plan's Phase 3.
+#
+# mover UID/GID 1000 matches Forgejo's git user (pod fsGroup=1000) so the copied
+# repos stay readable. Delete these three objects (and the old forgejo-git-rwx
+# PVC) once the cutover is verified.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: forgejo-git-rwx-ssd
+  namespace: forgejo
+  annotations:
+    description: Forgejo git repos on the SeaweedFS SSD tier (Phase 3 target; replaces forgejo-git-rwx on HDD)
+spec:
+  accessModes: ["ReadWriteMany"]
+  storageClassName: seaweedfs-ovh-ssd
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationDestination
+metadata:
+  name: forgejo-git-ssd-migration
+  namespace: forgejo
+spec:
+  rsyncTLS:
+    destinationPVC: forgejo-git-rwx-ssd
+    copyMethod: Direct
+    serviceType: ClusterIP
+    moverSecurityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+    moverAffinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: topology.kubernetes.io/zone
+                  operator: In
+                  values: ["hil-ovh"]
+---
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationSource
+metadata:
+  name: forgejo-git-ssd-migration
+  namespace: forgejo
+spec:
+  sourcePVC: forgejo-git-rwx
+  # Inert until the migration: unpause to pre-seed, bump trigger.manual to cut over.
+  paused: true
+  trigger:
+    manual: preseed-1
+  rsyncTLS:
+    copyMethod: Direct
+    keySecret: volsync-rsync-tls-forgejo-git-ssd-migration
+    address: volsync-rsync-tls-dst-forgejo-git-ssd-migration.forgejo.svc
+    port: 8000
+    moverSecurityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+    moverAffinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: topology.kubernetes.io/zone
+                  operator: In
+                  values: ["hil-ovh"]

@@ -5,5 +5,6 @@ resources:
   - httproute.yaml
   - ciliumenvoyconfig.yaml
   - git-storage-pvc.yaml
+  - volsync-git-ssd-migration.yaml
   - poddisruptionbudget.yaml
 # OAuth OIDC credentials provisioned by tf/gitops/sso-providers/ as a k8s Secret.
