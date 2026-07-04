@@ -84,7 +84,7 @@ const BLOB_CHUNK = 50;
 // THE shared high-level read over the git store: the text of every tree blob matching `select`, in
 // one tree read + chunked bulk-blob reads (all tracked by git_progress.ts, none silently dropped —
 // see repoBlobs). Blobs come back in tree order; the optional `onBatch` fires after each chunk with
-// everything read so far, for progressive rendering. Every surface — items, garden, kitchen, runs,
+// everything read so far, for progressive rendering. Every surface — items, garden, runs,
 // responses — composes over this instead of re-implementing tree-filtering, sha-mapping, chunking.
 export async function readBlobs(
   select: (e: RepoTreeEntry) => boolean,

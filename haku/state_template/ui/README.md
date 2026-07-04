@@ -17,7 +17,7 @@ the Forgejo CI **test gate** (see _Tests_ below).
 | `frontend/`                           | React + TypeScript SPA (standard Vite). Value-ranked **Up next** (top 7) + collapsible **Backlog**, collapsible item cards, `marked`+`dompurify` markdown bodies rendering inline affordance widgets (`<signal-toggle>`, `<handoff>`, `<launch>`, `<feedback>`), per-item + global feedback. |
 | `backend/`                            | FastAPI app (no build step). Talks to the **Forgejo contents API** (no local clone): a generic content proxy (tree + bulk blobs) the SPA composes to read `items/*.md`, serves the SPA + a JSON API, and writes operator intent (`responses/`, `intake/`) back to `haku-state`.              |
 | `Dockerfile`                          | Multi-stage: `frontend` builds the SPA → `backend-base` installs deps → `test` runs pytest → `runtime` runs uvicorn on `:8080` as non-root with the built SPA copied in.                                                                                                                     |
-| `backend/test_*.py`                   | Backend pytest suite (models parsing, the Forgejo read path, the FastAPI endpoints). Run during the CI test gate; dev-only deps in `backend/requirements-dev.txt`.                                                                                                                           |
+| `backend/test_*.py`                   | Backend pytest suite (models parsing, the Forgejo read path, the FastAPI endpoints). Run during the CI test gate; dev-only deps via `backend/pyproject.toml`'s `[dev]` extra.                                                                                                                |
 | `../.forgejo/workflows/build-ui.yaml` | Forgejo Actions workflow: **test** (gate) → **build** push `forgejo.example.com/haku/ui:main-<utc>-<sha>`. Flux image automation (not CI) then writes the tag into `../k8s/haku-ui/deployment.yaml`.                                                                                         |
 | `../k8s/haku-ui/`                     | Deployment (the built image, registry-pull imagePullSecret, `haku-state-git-write` env) + Service (`80` → `8080`).                                                                                                                                                                           |
 
@@ -35,9 +35,9 @@ npm run dev     # local dev server; proxies /api to a backend on :8080
 
 Repo reads all funnel through the two git primitives in `src/repo.ts` (recursive tree, bulk
 blobs). Both register with a central tracker (`src/git_progress.ts`), and `src/git_progress_bar.tsx`
-renders one app-wide top progress bar mirroring git's object-transfer count (`done/total`) whenever
-any read — from any surface — is in flight; per-view "Loading…" text stays as each surface's
-first-paint skeleton.
+renders one app-wide bottom-fixed progress bar mirroring git's object-transfer count (`done/total`)
+whenever any read — from any surface — is in flight; per-view "Loading…" text stays as each
+surface's first-paint skeleton.
 
 Because this UI runs **inside** the console's sandboxed iframe (no `allow-popups`),
 it cannot open links itself. All outbound navigation (`<handoff>` deep-links, item source)
@@ -53,8 +53,8 @@ FastAPI, port `8080`. Endpoints:
 - `GET /api/meta` — footer freshness (last Haku scan time) + which commit the running image was
   built from.
 - `GET /api/repo/tree` + `GET /api/repo/blobs` — the generic read-only content proxy the SPA
-  composes to read `items/*.md`, `memory/improvements/*.md`, and any repo markdown at HEAD.
-- `GET /api/runs` — recent run manifests + their prose notes (`runs/<date>/<ulid>.{yaml,md}`).
+  composes to read `items/*.md`, `memory/improvements/*.md`, the run manifests
+  (`runs/<date>/<ulid>.{yaml,md}`, paired on the frontend), and any repo markdown at HEAD.
 - `PUT/DELETE /api/responses/{scope}/{field}` — record/clear an operator response
   (item status, form answer) as `responses/<scope>/<field>.yaml`.
 - `POST /api/trace/feedback` — append an intake note (`text`, optional `item_id`).
@@ -81,7 +81,7 @@ internal Forgejo API root
 
 ```bash
 cd backend
-pip install -r requirements.txt
+pip install .
 HAKU_UI_GIT_USERNAME=… HAKU_UI_GIT_PASSWORD=… HAKU_UI_FORGEJO_API_URL=… python app.py
 ```
 
@@ -103,7 +103,7 @@ Run the backend tests locally:
 
 ```bash
 cd backend
-pip install -r requirements.txt -r requirements-dev.txt
+pip install .[dev]
 python -m pytest -q
 ```
 

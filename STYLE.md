@@ -65,11 +65,11 @@ instead, so they load on demand.
     only for cleanup-then-`raise` (e.g. `__exit__`).
   - **Degrade loud, not silent**: when a fallback genuinely is correct (best-effort
     cache write, optional prefill, non-critical fetch, graceful UI degradation), the
-    `catch` still **logs the exception** — module logger (`logging.getLogger(__name__)`;
-    frontend `log.ts`) at `warning`/`error`, never a bare `console.*`. No empty
-    `catch {}`, comment-only catch, or `.catch(() => {})`. The only exception is when the
-    failure already surfaces through another path (e.g. the caller re-throws with the
-    detail) — then a second log is noise.
+    `catch` still **logs the exception** via a module-level logger
+    (`logging.getLogger(__name__)`, or the component's frontend logging wrapper) at
+    `warning`/`error`. No empty `catch {}`, comment-only catch, or `.catch(() => {})`.
+    The only exception is when the failure already surfaces through another path (e.g. the
+    caller re-throws with the detail) — then a second log is noise.
   - **Raise, don't return error lists**, from validation/precondition checks.
   - **Let them propagate** to the single error boundary (CLI wrapper, request
     middleware, FastMCP handler — FastMCP already converts unhandled exceptions to MCP
