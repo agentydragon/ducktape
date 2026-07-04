@@ -180,7 +180,7 @@ Authentik route work; these tighten them (operator-approved as follow-ups):
 
 ## agent-box follow-ups
 
-The agent-box VM and its `codex` user are live (see
+The agent-box VM and its `codex` + `zai` users are live (see
 <agents/agent-box/README.md>). Remaining work:
 
 - [ ] **Enable the attic substituter** on agent-box: the Nix wiring is tombstoned
@@ -192,6 +192,25 @@ The agent-box VM and its `codex` user are live (see
       (the `agentUsers` list + a per-user HM module under `nix/home/hosts/agent-box/`),
       but running Claude Code against Anthropic directly (not via LiteLLM/z.ai).
 - [ ] **Auto-provision the Codex CLI auth credential** (`~/.codex/auth.json`):
+      today the ChatGPT login is done manually via the device-code flow and is lost
+      on every image rebuild + VM recreate. Investigate SOPS-planting it (decrypted
+      with the `agent-box-codex-user` key) — caveat: the token likely carries a
+      refresh token that rotates on use, so a static plant could go stale; check
+      whether the Codex CLI rewrites `auth.json` after refresh.
+
+## SOPS recipient coverage check
+
+When a `.sops.yaml` creation rule gains a new recipient (e.g. `agent-box-zai-user`
+added to the buildbuddy/attic rules), the actual SOPS-encrypted file must also be
+re-encrypted (`sops updatekeys -y <file>`) — otherwise the consumer's home-manager
+sops-nix fails at activation with "0 successful groups". This bit us twice
+(buildbuddy #2800, attic #2804).
+
+Consider a check that verifies every SOPS file's embedded `sops.age.recipients`
+includes all recipients from its matching `.sops.yaml` creation rule. The check is
+repo-wide static analysis (parse `.sops.yaml` rules + each file's recipient block;
+no decryption needed) — not a natural fit for Bazel sandboxing (can't walk the repo
+tree), but could work as a pre-commit hook or a CI-side script.
       today the ChatGPT login is done manually via the device-code flow and is lost
       on every image rebuild + VM recreate. Investigate SOPS-planting it (decrypted
       with the `agent-box-codex-user` key) — caveat: the token likely carries a
