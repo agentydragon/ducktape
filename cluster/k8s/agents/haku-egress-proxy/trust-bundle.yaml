@@ -17,6 +17,13 @@ spec:
       metadata:
         annotations:
           description: Trust bundle for haku-egress-proxy-inspected sandbox HTTPS traffic
+    # Written into both haku-sandbox and haku-ci — the latter's Forgejo runner +
+    # dind + job containers mount this ConfigMap to trust the egress-proxy's
+    # TLS-interception CA (cluster/k8s/haku-ci/).
     namespaceSelector:
-      matchLabels:
-        kubernetes.io/metadata.name: haku-sandbox
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - haku-sandbox
+            - haku-ci

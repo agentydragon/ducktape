@@ -1,0 +1,61 @@
+# Force all external egress from the haku-ci runner (agent-controlled build
+# compute) through haku-egress-proxy — the same chokepoint haku-sandbox uses. Allows:
+# DNS, cluster-internal traffic (the in-cluster Forgejo git + OCI registry it
+# clones/pushes/long-polls), and haku-egress-proxy port 8080. Blocks all direct external
+# internet — the base-image registries, npm/pypi, Bazel/toolchain, and
+# Forgejo-action hosts now flow through the proxy's allowlist
+# (agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml).
+#
+# Deviation from haku-sandbox's force-egress: no kube-apiserver rule — haku-ci runs
+# with automountServiceAccountToken:false and has no RBAC, so it never calls the
+# k8s API.
+#
+# This is the SOLE egress policy for haku-ci: any Cilium egress rule flips the
+# selected pods to default-deny egress, so this replaces the old per-namespace
+# CiliumNetworkPolicy (which listed direct external FQDNs).
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: haku-ci-force-proxy-egress
+spec:
+  endpointSelector:
+    matchExpressions:
+      - key: "k8s:io.kubernetes.pod.namespace"
+        operator: In
+        values:
+          - haku-ci
+  egress:
+    # DNS resolution (CoreDNS in kube-system)
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # All cluster-internal traffic (bypasses the proxy via NO_PROXY). This is how
+    # the runner reaches the in-cluster Forgejo git + OCI registry
+    # (forgejo-http.forgejo:3000) it clones source from, pushes images to, and
+    # long-polls for jobs.
+    - toEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+            - port: "3000"
+              protocol: TCP
+    # haku-egress-proxy — all external internet traffic must go through here.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-egress-proxy
+            k8s:app.kubernetes.io/name: haku-egress-proxy
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP

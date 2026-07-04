@@ -1,15 +1,19 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-# Stamp the namespace on every resource — crucially the generated ConfigMap below,
-# which otherwise lands namespaceless and makes Flux fail the whole apply ("namespace
-# not specified"), so the runner Deployment never reconciles. (Skipped for the
-# cluster-scoped Namespace; idempotent for the others, which already set it.)
-namespace: haku-ci
+# No top-level `namespace:` transformer: ccnp-force-proxy-egress.yaml is a
+# cluster-scoped CiliumClusterwideNetworkPolicy and must NOT be stamped with a
+# namespace. deployment.yaml already sets `namespace: haku-ci` explicitly, and the
+# generated ConfigMap (which would otherwise land namespaceless and make Flux fail
+# the whole apply with "namespace not specified") gets its namespace from the
+# per-generator field below.
 resources:
   - namespace.yaml
-  - networkpolicy.yaml
+  - ccnp-force-proxy-egress.yaml
   - deployment.yaml
 configMapGenerator:
+  # Hashed name (kustomize rewrites the Deployment's volume reference) so editing
+  # config.yaml rolls the runner — it carries no reloader annotation.
   - name: haku-runner-config
+    namespace: haku-ci
     files:
       - config.yaml

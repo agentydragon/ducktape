@@ -22,6 +22,22 @@ container:
   # default unix socket doesn't exist and `docker build`/`push` fail. Map
   # host.docker.internal to the host-gateway (the dind/pod) and point DOCKER_HOST
   # at it so the in-container docker CLI talks to the dind sidecar.
-  options: "--add-host host.docker.internal:host-gateway -e DOCKER_HOST=tcp://host.docker.internal:2375"
+  #
+  # The build steps (bazel/bazelisk, npm, pip, git) run INSIDE these job
+  # containers, so their external egress must also go through haku-egress-proxy and trust
+  # its CA. `-e HTTP_PROXY/HTTPS_PROXY/NO_PROXY` route egress (NO_PROXY keeps dind +
+  # the in-cluster Forgejo registry direct); the two `-v` mounts inject the
+  # haku-egress-proxy CA bundle — the source path is on the DIND daemon's filesystem, where
+  # the CA volume is mounted (deployment.yaml) — both at the env-pointed path and
+  # over the system trust store (/etc/ssl/certs/ca-certificates.crt) so tools that
+  # only read the system bundle trust it too. The per-tool CA env vars cover
+  # git/curl/python/node. NOTE: Bazel's Java repository downloader does NOT read
+  # these (it uses the JDK truststore) — the haku-state build image must import the
+  # CA into cacerts (e.g. `keytool -importcert` / `update-ca-certificates`).
+  options: "--add-host host.docker.internal:host-gateway -e DOCKER_HOST=tcp://host.docker.internal:2375 -e HTTP_PROXY=http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080 -e HTTPS_PROXY=http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080 -e NO_PROXY=127.0.0.1,localhost,host.docker.internal,forgejo-http.forgejo,forgejo-http.forgejo.svc.cluster.local,.forgejo,.svc.cluster.local,10.0.0.0/8 -e SSL_CERT_FILE=/egress-proxy-ca/ca-certificates.crt -e CURL_CA_BUNDLE=/egress-proxy-ca/ca-certificates.crt -e GIT_SSL_CAINFO=/egress-proxy-ca/ca-certificates.crt -e REQUESTS_CA_BUNDLE=/egress-proxy-ca/ca-certificates.crt -e NODE_EXTRA_CA_CERTS=/egress-proxy-ca/ca-certificates.crt -v /egress-proxy-ca/ca-certificates.crt:/egress-proxy-ca/ca-certificates.crt:ro -v /egress-proxy-ca/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro"
+  # Allow the runner's own CA bind mounts above through act_runner's volume gate
+  # (a Haku-authored workflow still cannot mount arbitrary dind-host paths).
+  valid_volumes:
+    - /egress-proxy-ca/ca-certificates.crt
 cache:
   enabled: false
