@@ -1,7 +1,7 @@
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
 metadata:
-  name: haku-mitmproxy-ca-cert
+  name: haku-egress-proxy-ca-cert
 spec:
   sources:
     - useDefaultCAs: true
@@ -9,14 +9,14 @@ spec:
         name: cluster-root-ca-secret
         key: ca.crt
     - secret:
-        name: haku-mitmproxy-ca
+        name: haku-egress-proxy-ca
         key: tls.crt
   target:
     configMap:
       key: ca-certificates.crt
       metadata:
         annotations:
-          description: Trust bundle for haku-mitmproxy-inspected sandbox HTTPS traffic
+          description: Trust bundle for haku-egress-proxy-inspected sandbox HTTPS traffic
     namespaceSelector:
       matchLabels:
         kubernetes.io/metadata.name: haku-sandbox

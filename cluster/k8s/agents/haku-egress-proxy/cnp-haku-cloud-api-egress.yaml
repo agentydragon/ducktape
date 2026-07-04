@@ -1,4 +1,4 @@
-# Allow the haku-mitmproxy egress to the external endpoints Haku workloads need.
+# Allow the haku-egress-proxy egress to the external endpoints Haku workloads need.
 # Additive with the operator's default-deny NetworkPolicy.
 #
 # The registry FQDNs (ghcr.io, *.githubusercontent.com, Docker Hub) cover
@@ -10,11 +10,11 @@ apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: allow-haku-cloud-api-egress
-  namespace: haku-mitmproxy
+  namespace: haku-egress-proxy
 spec:
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: haku-mitmproxy
+      app.kubernetes.io/name: haku-egress-proxy
   egress:
     # Cilium FQDN egress rules need the proxy pod to query CoreDNS first.
     - toEndpoints:

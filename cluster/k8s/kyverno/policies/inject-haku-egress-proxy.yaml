@@ -1,4 +1,4 @@
-# Auto-inject the dedicated haku-mitmproxy proxy config into all pods in the
+# Auto-inject the dedicated haku-egress-proxy proxy config into all pods in the
 # haku-sandbox namespace. Mirrors inject-mitmproxy (claude-sandbox et al.) but
 # points at haku-sandbox's own proxy + CA so the two sandboxes stay isolated.
 #
@@ -17,18 +17,18 @@
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
-  name: inject-haku-mitmproxy
+  name: inject-haku-egress-proxy
   annotations:
     pod-policies.kyverno.io/autogen-controllers: none
-    policies.kyverno.io/title: Inject haku-mitmproxy
+    policies.kyverno.io/title: Inject haku-egress-proxy
     policies.kyverno.io/category: Networking
     policies.kyverno.io/severity: medium
     policies.kyverno.io/subject: Pod
     policies.kyverno.io/description: >-
       Mutates pods in haku-sandbox to automatically inject the dedicated
-      haku-mitmproxy proxy env vars (HTTP_PROXY, HTTPS_PROXY, NO_PROXY,
+      haku-egress-proxy proxy env vars (HTTP_PROXY, HTTPS_PROXY, NO_PROXY,
       SSL_CERT_FILE, CURL_CA_BUNDLE, REQUESTS_CA_BUNDLE, NODE_EXTRA_CA_CERTS)
-      and mount the haku-mitmproxy trust bundle at /mitmproxy-ca/ca-certificates.crt.
+      and mount the haku-egress-proxy trust bundle at /egress-proxy-ca/ca-certificates.crt.
 spec:
   mutateExistingOnPolicyUpdate: false
   rules:
@@ -44,9 +44,9 @@ spec:
           - op: add
             path: "/spec/volumes/-"
             value:
-              name: haku-mitmproxy-ca-cert
+              name: haku-egress-proxy-ca-cert
               configMap:
-                name: haku-mitmproxy-ca-cert
+                name: haku-egress-proxy-ca-cert
 
     - name: add-proxy-env-and-mount-containers
       match:
@@ -63,12 +63,12 @@ spec:
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
                   name: HTTP_PROXY
-                  value: "http://haku-mitmproxy.haku-mitmproxy.svc.cluster.local:8080"
+                  value: "http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080"
               - op: add
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
                   name: HTTPS_PROXY
-                  value: "http://haku-mitmproxy.haku-mitmproxy.svc.cluster.local:8080"
+                  value: "http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080"
               - op: add
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
@@ -78,27 +78,27 @@ spec:
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
                   name: SSL_CERT_FILE
-                  value: /mitmproxy-ca/ca-certificates.crt
+                  value: /egress-proxy-ca/ca-certificates.crt
               - op: add
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
                   name: CURL_CA_BUNDLE
-                  value: /mitmproxy-ca/ca-certificates.crt
+                  value: /egress-proxy-ca/ca-certificates.crt
               - op: add
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
                   name: REQUESTS_CA_BUNDLE
-                  value: /mitmproxy-ca/ca-certificates.crt
+                  value: /egress-proxy-ca/ca-certificates.crt
               - op: add
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
                   name: NODE_EXTRA_CA_CERTS
-                  value: /mitmproxy-ca/ca-certificates.crt
+                  value: /egress-proxy-ca/ca-certificates.crt
               - op: add
                 path: "/spec/containers/{{elementIndex}}/volumeMounts/-"
                 value:
-                  name: haku-mitmproxy-ca-cert
-                  mountPath: /mitmproxy-ca
+                  name: haku-egress-proxy-ca-cert
+                  mountPath: /egress-proxy-ca
                   readOnly: true
 
     - name: add-proxy-env-and-mount-init-containers
@@ -121,12 +121,12 @@ spec:
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
                   name: HTTP_PROXY
-                  value: "http://haku-mitmproxy.haku-mitmproxy.svc.cluster.local:8080"
+                  value: "http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080"
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
                   name: HTTPS_PROXY
-                  value: "http://haku-mitmproxy.haku-mitmproxy.svc.cluster.local:8080"
+                  value: "http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080"
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
@@ -136,25 +136,25 @@ spec:
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
                   name: SSL_CERT_FILE
-                  value: /mitmproxy-ca/ca-certificates.crt
+                  value: /egress-proxy-ca/ca-certificates.crt
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
                   name: CURL_CA_BUNDLE
-                  value: /mitmproxy-ca/ca-certificates.crt
+                  value: /egress-proxy-ca/ca-certificates.crt
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
                   name: REQUESTS_CA_BUNDLE
-                  value: /mitmproxy-ca/ca-certificates.crt
+                  value: /egress-proxy-ca/ca-certificates.crt
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
                   name: NODE_EXTRA_CA_CERTS
-                  value: /mitmproxy-ca/ca-certificates.crt
+                  value: /egress-proxy-ca/ca-certificates.crt
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/volumeMounts/-"
                 value:
-                  name: haku-mitmproxy-ca-cert
-                  mountPath: /mitmproxy-ca
+                  name: haku-egress-proxy-ca-cert
+                  mountPath: /egress-proxy-ca
                   readOnly: true

@@ -1,18 +1,18 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: haku-mitmproxy
+  name: haku-egress-proxy
   namespace: flux-system
 spec:
   interval: 10m
-  path: ./cluster/k8s/agents/haku-mitmproxy
+  path: ./cluster/k8s/agents/haku-egress-proxy
   prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
   timeout: 5m
   dependsOn:
-    - name: haku-mitmproxy-namespace
+    - name: haku-egress-proxy-namespace
     - name: cert-manager-environment
     - name: cert-manager-trust
     - name: reflector

@@ -1,6 +1,6 @@
 # Force all external egress from the haku-sandbox namespace through the
-# dedicated haku-mitmproxy. Allows: DNS, cluster-internal traffic,
-# kube-apiserver, haku-mitmproxy port 8080. Blocks: direct external
+# dedicated haku-egress-proxy. Allows: DNS, cluster-internal traffic,
+# kube-apiserver, haku-egress-proxy port 8080. Blocks: direct external
 # internet access.
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy
@@ -36,11 +36,11 @@ spec:
         - ports:
             - port: "6443"
               protocol: TCP
-    # haku-mitmproxy — all external internet traffic must go through here.
+    # haku-egress-proxy — all external internet traffic must go through here.
     - toEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: haku-mitmproxy
-            k8s:app.kubernetes.io/name: haku-mitmproxy
+            k8s:io.kubernetes.pod.namespace: haku-egress-proxy
+            k8s:app.kubernetes.io/name: haku-egress-proxy
       toPorts:
         - ports:
             - port: "8080"

@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: haku-worker
   annotations:
-    description: "Anthropic Managed Agents self-hosted worker (Runtime B; ducktape haku/runtime/managed_agent/self_hosted). Long-polls Anthropic's work queue (worker.py on the anthropic Python SDK) and runs tool calls in-sandbox. The haku-sandbox perimeter (haku-mitmproxy egress, RBAC, ResourceQuota) is the fence; the worker holds only the environment key, never the org API key."
+    description: "Anthropic Managed Agents self-hosted worker (Runtime B; ducktape haku/runtime/managed_agent/self_hosted). Long-polls Anthropic's work queue (worker.py on the anthropic Python SDK) and runs tool calls in-sandbox. The haku-sandbox perimeter (haku-egress-proxy egress, RBAC, ResourceQuota) is the fence; the worker holds only the environment key, never the org API key."
 spec:
   replicas: 1
   strategy:
