@@ -55,13 +55,11 @@ config files at boot (the pod analog of the sops-nix templates):
 
 - **Forgejo git** — the planted `~/.ssh/id_ed25519` pubkey is registered on a
   dedicated `codex-pod` Forgejo user with **read-only** on `agentydragon/ducktape`
-  (`tf/gitops/forgejo-agentydragon-repos`). Read-only + **fork model**: codex
-  forks the repo and opens PRs from its fork, so it can't push upstream / advance
-  `devel` (all agent users follow this — see that module's header). `start-sshd.sh`
-  writes the `git.allegedly.works` ssh matchBlock (push to the fork uses the same
-  key/host); `FORGEJO_{USERNAME,PASSWORD,URL}` (from `codex-pod-forgejo-creds`,
-  also written by that TF) give the agent the API creds SSH can't provide, to
-  create the fork + open the PR.
+  (`tf/gitops/forgejo-agentydragon-repos`). Read-only + **AGit**: codex proposes
+  changes with `git push origin HEAD:refs/for/devel -o topic=<t>`, which opens/
+  updates a PR using only read access — no write, no fork, no API token; the SSH
+  key is the only credential (all agent users follow this — see that module's
+  header). `start-sshd.sh` writes the `git.allegedly.works` ssh matchBlock.
 - **BuildBuddy** — `BUILDBUDDY_API_KEY` is set on the container from the shared
   `buildbuddy-api-key` Secret via `secretKeyRef` (`optional: true`); `bbr` reads
   it, and `start-sshd.sh` forwards it to ssh sessions via `SetEnv`. That Secret

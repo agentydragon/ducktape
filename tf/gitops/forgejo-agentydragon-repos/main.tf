@@ -5,14 +5,15 @@
 # `agentydragon/{ducktape,gaffer-private}` repos under Terraform, and grants Haku
 # read access. Provider wiring mirrors tf/gitops/forgejo-claude.
 #
-# CONVENTION — agents are READ-only + fork-based. No agent gets write on the
-# upstream repos, so none can advance `devel`/`main` (branch protection can't help
-# here: Forgejo has no force-push allowlist, and the GitHub→Forgejo mirror
+# CONVENTION — agents are READ-only and open PRs via AGit. No agent gets write on
+# the upstream repos, so none can advance `devel`/`main` (branch protection can't
+# help here: Forgejo has no force-push allowlist, and the GitHub→Forgejo mirror
 # force-pushes those branches, so they must stay unprotected — see the note at the
-# bottom). Instead each agent forks the repo (the fork is created by the agent on
-# first use — the provider has no fork resource) and opens PRs from its fork;
-# read access is all Forgejo needs to fork + open a cross-repo PR. Every future
-# on-box AI provider follows this pattern.
+# bottom). Instead each agent proposes changes with Forgejo's AGit flow —
+# `git push origin HEAD:refs/for/<branch> -o topic=<t>` over its SSH key — which
+# opens/updates a PR with only read access, no fork and no API token (the SSH key
+# they already have is the only credential). Every future on-box AI provider
+# follows this pattern.
 
 data "kubernetes_secret" "forgejo_admin" {
   metadata {
@@ -167,22 +168,6 @@ resource "forgejo_collaborator" "codex_pod_ducktape" {
   repository_id = forgejo_repository.ducktape.id
   user          = forgejo_user.codex_pod.login
   permission    = "read"
-}
-
-# codex-pod's Forgejo credentials, for the API operations SSH can't do (create
-# the fork, open the cross-repo PR). Delivered to the codex-pod namespace (the
-# resource retries until that namespace exists, like the claude/props secrets).
-resource "kubernetes_secret" "codex_pod_forgejo_creds" {
-  metadata {
-    name      = "codex-pod-forgejo-creds"
-    namespace = "codex-pod"
-  }
-
-  data = {
-    username = forgejo_user.codex_pod.login
-    password = random_password.codex_pod.result
-    url      = "https://git.allegedly.works"
-  }
 }
 
 # --- haku read collaboration ---

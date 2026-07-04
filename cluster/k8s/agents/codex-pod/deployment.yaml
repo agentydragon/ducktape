@@ -69,27 +69,6 @@ spec:
                   name: buildbuddy-api-key
                   key: api-key
                   optional: true
-            # codex-pod's own Forgejo credentials (read-only on ducktape) — for the
-            # fork/PR API calls SSH can't make. From codex-pod-forgejo-creds,
-            # written by tf/gitops/forgejo-agentydragon-repos. Optional until it lands.
-            - name: FORGEJO_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: codex-pod-forgejo-creds
-                  key: username
-                  optional: true
-            - name: FORGEJO_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: codex-pod-forgejo-creds
-                  key: password
-                  optional: true
-            - name: FORGEJO_URL
-              valueFrom:
-                secretKeyRef:
-                  name: codex-pod-forgejo-creds
-                  key: url
-                  optional: true
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
