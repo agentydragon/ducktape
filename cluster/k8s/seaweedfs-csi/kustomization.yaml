@@ -4,3 +4,4 @@ resources:
   - namespace.yaml
   - gitrepository.yaml
   - helmrelease.yaml
+  - sc-seaweedfs-ovh-ssd.yaml
