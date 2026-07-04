@@ -53,31 +53,31 @@
           "urls": ["https://registry-1.docker.io"],
           "onDemand": true,
           "tlsVerify": true,
-          "content": [{ "prefix": "/docker-hub/**", "destination": "/", "stripPrefix": true }]
+          "content": [{ "prefix": "**", "destination": "/docker-hub" }]
         },
         {
           "urls": ["https://ghcr.io"],
           "onDemand": true,
           "tlsVerify": true,
-          "content": [{ "prefix": "/ghcr/**", "destination": "/", "stripPrefix": true }]
+          "content": [{ "prefix": "**", "destination": "/ghcr" }]
         },
         {
           "urls": ["https://quay.io"],
           "onDemand": true,
           "tlsVerify": true,
-          "content": [{ "prefix": "/quay/**", "destination": "/", "stripPrefix": true }]
+          "content": [{ "prefix": "**", "destination": "/quay" }]
         },
         {
           "urls": ["https://registry.k8s.io"],
           "onDemand": true,
           "tlsVerify": true,
-          "content": [{ "prefix": "/k8s/**", "destination": "/", "stripPrefix": true }]
+          "content": [{ "prefix": "**", "destination": "/k8s" }]
         },
         {
           "urls": ["https://gcr.io"],
           "onDemand": true,
           "tlsVerify": true,
-          "content": [{ "prefix": "/gcr/**", "destination": "/", "stripPrefix": true }]
+          "content": [{ "prefix": "**", "destination": "/gcr" }]
         }
       ]
     }
