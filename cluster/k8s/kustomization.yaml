@@ -188,6 +188,7 @@ resources:
   # --- oci-cache (Zot pull-through mirror for docker.io/ghcr.io/quay.io/etc.) ---
   - oci-cache/namespace/flux-kustomization.yaml
   - oci-cache/app/flux-kustomization.yaml
+  - oci-cache/agent-rbac/flux-kustomization.yaml
 
   # --- firecrawl ---
   - firecrawl/namespace/flux-kustomization.yaml
