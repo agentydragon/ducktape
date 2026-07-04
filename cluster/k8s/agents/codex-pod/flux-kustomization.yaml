@@ -1,0 +1,20 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: codex-pod
+  namespace: flux-system
+  annotations:
+    description: Codex agent pod running the Nix-built codex-pod image, auto-rolled by Flux image automation.
+spec:
+  interval: 10m
+  path: ./cluster/k8s/agents/codex-pod
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 2m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: codex-pod
+      namespace: codex-pod

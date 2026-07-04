@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: codex-pod
+generatorOptions:
+  disableNameSuffixHash: true
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - deployment.yaml
+configMapGenerator:
+  - name: codex-pod-authorized-keys
+    files:
+      - authorized_keys
+  - name: codex-pod-scripts
+    files:
+      - scripts/start-sshd.sh

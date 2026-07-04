@@ -105,6 +105,8 @@ pkgs.dockerTools.buildLayeredImage {
       "GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt"
       "NIX_CONFIG=experimental-features = nix-command flakes\naccept-flake-config = true"
     ];
+    # Links the GHCR package to the repo (required on first push).
+    Labels."org.opencontainers.image.source" = "https://github.com/agentydragon/ducktape";
     # No entrypoint: the Deployment sets the command (start sshd). Default to a
     # shell for `docker run`/ad-hoc use.
     Cmd = [ "/bin/bash" ];

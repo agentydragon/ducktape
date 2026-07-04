@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: codex-pod
+  annotations:
+    description: "Codex agent pod running the Nix-built codex-pod image (see cluster/docs/plans/codex_pod.md)."
+  labels:
+    app.kubernetes.io/name: codex-pod

@@ -1,0 +1,79 @@
+# Build the codex-pod image (x/codex_pod_image) with Nix and push it to GHCR.
+#
+# Like haku-worker-image.yml this is a Nix flake output rather than a Dockerfile
+# build, but `.#codex-pod-image` is a dockerTools.buildLayeredImage docker
+# archive (not a NixOS rootfs tar), so it is `skopeo copy`-ed to the registry.
+# Flux picks up the pushed `devel-<ts>-<sha7>` tag via the codex-pod ImagePolicy
+# (cluster/k8s/flux-image-automation-ghcr/).
+name: codex-pod image
+
+on:
+  push:
+    branches: [devel]
+    paths:
+      - "x/codex_pod_image/**"
+      - "flake.lock"
+      - ".github/workflows/codex-pod-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-push:
+    name: Build & push codex-pod
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/codex-pod
+    steps:
+      - uses: actions/checkout@v6
+
+      # Attic trusted pubkeys (SSOT) — read with jq before Nix is installed,
+      # since extra_nix_config below is a static field.
+      - name: Load Attic trusted pubkeys
+        id: attic_keys
+        run: echo "value=$(jq -r 'join(" ")' nix/attic-pubkeys.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes fetch-closure
+            netrc-file = /home/runner/.config/nix/netrc
+            extra-trusted-public-keys = ${{ steps.attic_keys.outputs.value }}
+            extra-substituters = https://cache.allegedly.works/main
+            fallback = true
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Write Nix netrc for cache.allegedly.works
+        run: |
+          mkdir -p /home/runner/.config/nix
+          umask 077
+          printf 'machine cache.allegedly.works password %s\n' "$ATTIC_TOKEN" \
+            > /home/runner/.config/nix/netrc
+
+      - name: Build image
+        run: nix build .#codex-pod-image --print-build-logs
+
+      - name: Compute tag
+        id: meta
+        run: |
+          SHA="${{ github.sha }}"
+          echo "pin_tag=${GITHUB_REF_NAME}-$(date -u +%Y%m%d%H%M%S)-${SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      # Gate the push to devel so feature branches don't publish tags the Flux
+      # ImagePolicy would immediately deploy (matches push-images.yml).
+      - name: Push to GHCR
+        if: github.ref_name == 'devel'
+        run: |
+          echo "${{ github.token }}" | skopeo login ghcr.io -u "${{ github.actor }}" --password-stdin
+          ref="$IMAGE:${{ steps.meta.outputs.pin_tag }}"
+          # result is a dockerTools.buildLayeredImage docker archive (gzip tar).
+          skopeo copy --insecure-policy "docker-archive:$(readlink -f result)" "docker://$ref"
+          echo "pushed \`$ref\`" >> "$GITHUB_STEP_SUMMARY"
