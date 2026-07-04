@@ -132,6 +132,39 @@ resource "forgejo_collaborator" "agent_box_zai_gaffer" {
   permission    = "write"
 }
 
+# --- codex-pod (in-cluster Nix-image codex agent) ---
+# Same shape and privileges as agent-box-codex: a service user that pushes topic
+# branches to agentydragon/ducktape for PRs, authenticating over SSH.
+resource "random_password" "codex_pod" {
+  length  = 48
+  special = false
+}
+
+# Authenticates over SSH (key below); the password just satisfies the required field.
+resource "forgejo_user" "codex_pod" {
+  login                = "codex-pod"
+  email                = "codex-pod@allegedly.works"
+  password             = random_password.codex_pod.result
+  must_change_password = false
+  visibility           = "private"
+}
+
+# codex-pod's git push key — the same id_ed25519 planted into the pod from the
+# codex-bootstrap-identity Secret (cluster/k8s/agents/codex-pod). Inlined because
+# the tofu-controller runs only this module path, so file() cannot read repo-root.
+resource "forgejo_ssh_key" "codex_pod" {
+  user  = forgejo_user.codex_pod.login
+  key   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHc/XFJXzEigh9Y7K70CcQHCpuQLDvAK5UsAFU/aPaFE codex-pod"
+  title = "codex-pod"
+}
+
+# Write (not read) so codex-pod can push topic branches for PRs.
+resource "forgejo_collaborator" "codex_pod_ducktape" {
+  repository_id = forgejo_repository.ducktape.id
+  user          = forgejo_user.codex_pod.login
+  permission    = "write"
+}
+
 # --- haku read collaboration ---
 # Read-only access lets Haku clone these in-cluster source mirrors with its
 # existing haku-state-git-write basic-auth credential.

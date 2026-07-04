@@ -48,9 +48,22 @@ to `devel`:
 `ssh-keygen -y` on the decrypted secret and register it wherever codex must
 authenticate.
 
-Still **no other credentials** — the pod can't use BuildBuddy or push to Attic
-yet. Unlike `agent-box` (NixOS + home-manager sops-nix chaining off this key),
-this is an image pod with no sops-nix activation, so BuildBuddy/Attic/Forgejo-bot
-creds must be provided as their own secrets/env rather than derived from the
-planted key. Port from the `agent-box` codex user
-(<../../../../nix/home/hosts/agent-box.nix>) as a follow-up.
+Unlike `agent-box` (NixOS + home-manager sops-nix), this is an image pod with no
+sops-nix, so creds are delivered as k8s Secrets and `start-sshd.sh` renders the
+config files at boot (the pod analog of the sops-nix templates):
+
+- **Forgejo git** — the planted `~/.ssh/id_ed25519` pubkey is registered on a
+  dedicated `codex-pod` Forgejo user with **write** on `agentydragon/ducktape`
+  (topic-branch PRs, same as `agent-box-codex`;
+  `tf/gitops/forgejo-agentydragon-repos`). `start-sshd.sh` writes the
+  `git.allegedly.works` ssh matchBlock. No new secret.
+- **BuildBuddy** — the shared `buildbuddy-api-key` Secret, mounted (optional) at
+  `/run/codex-creds/buildbuddy`; `start-sshd.sh` renders
+  `~/.config/bazel/buildbuddy.bazelrc` + exports `BUILDBUDDY_API_KEY`.
+  **One-time step (needs the cluster key):** add `codex-pod` to the reflector
+  `reflection-{allowed,auto}-namespaces` annotations on
+  `cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml` (via `sops`),
+  so it reflects here. Until then the mount is empty and the pod runs without it.
+
+Still to port when needed: **Attic** (`~/.config/attic/config.toml` +
+`~/.config/nix/netrc` from a minted token) — same rendering approach.

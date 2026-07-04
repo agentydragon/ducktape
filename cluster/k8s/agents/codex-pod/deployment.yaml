@@ -73,6 +73,13 @@ spec:
             - name: scripts
               mountPath: /run/codex-pod-scripts
               readOnly: true
+            # Shared BuildBuddy api key, reflected into this namespace. Optional:
+            # the pod starts without it (buildbuddy.bazelrc is rendered only if
+            # present) until codex-pod is added to the buildbuddy-api-key
+            # reflector annotation.
+            - name: buildbuddy-creds
+              mountPath: /run/codex-creds/buildbuddy
+              readOnly: true
           resources:
             requests:
               cpu: "500m"
@@ -97,3 +104,7 @@ spec:
           configMap:
             name: codex-pod-scripts
             defaultMode: 0555
+        - name: buildbuddy-creds
+          secret:
+            secretName: buildbuddy-api-key
+            optional: true
