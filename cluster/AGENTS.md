@@ -202,6 +202,7 @@ Read these on demand when the task requires them:
 - <docs/secrets.md> — SOPS procedures, adding/rotating secrets, age key management
 - <docs/bootstrap_dependencies.md> — full dependency graph for bootstrap recovery
 - <docs/cnpg_conventions.md> — CloudNativePG rules (2 profiles, storage, region pinning)
-- <docs/troubleshooting.md> — diagnosis recipes for Talos, Cilium, secrets, DNS, and
-  log retrieval (use Loki for logs of pods that no longer exist — `kubectl logs` can't)
+- <docs/troubleshooting.md> — diagnosis recipes for Talos, Cilium, tofu-controller,
+  secrets, DNS, and log retrieval (use Loki for logs of pods that no longer exist —
+  `kubectl logs` can't)
 - <docs/lessons_learned/> — past incident postmortems (ESO desync, MTU, hostname loss, etc.)

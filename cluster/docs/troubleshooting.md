@@ -126,6 +126,30 @@ helm get values cilium -n kube-system
 
 See <lessons_learned/2026_02_11_cilium_mtu_cross_node_packet_loss.md>.
 
+### `Policy denied` / ClusterIP Timeout During Control-Plane Instability (usually transient)
+
+**Symptoms**: A Flux controller (or similar) times out reaching a ClusterIP / pod
+(`dial ... i/o timeout`, e.g. tofu-controller → source-controller `ArtifactFailed`);
+`cilium-dbg monitor --type drop` shows `Policy denied` (`bpf_lxc.c` ingress). Often
+coincident with etcd/apiserver `context deadline exceeded` and controllers losing leader
+election.
+
+**Do not immediately chase the datapath.** Two traps:
+
+- A `Policy denied` drop from a pod that has **no business** reaching the target (e.g.
+  `litellm` → `source-controller:9090`) is **correct enforcement**, not a fault — easy to
+  misread as a blackhole. Verify the source's Cilium identity is one the target's ingress
+  policy _should_ allow before suspecting Cilium (`cilium-dbg endpoint get <id>`,
+  `identity list`).
+- When the apiserver/etcd is unstable (the recurring etcd-on-HDD contention), Cilium
+  identity/policy **realization lags**, transiently dropping traffic that is normally
+  allowed. This self-resolves once etcd settles — check `kubectl logs ... | grep
+"etcdserver: request timed out"` first.
+
+**Fix**: Address the control-plane instability (etcd contention); the drops clear on their
+own. See the "Compounding Factor" section of
+<lessons_learned/2026_07_03_tofu_controller_runner_rpc_hang.md>.
+
 ## tofu-controller Issues
 
 ### TLS Secret Cache Desync (Startup GC Bug)
@@ -148,6 +172,30 @@ kubectl delete pods -n flux-system -l app.kubernetes.io/name=tf-runner
 If that fails, suspend all Terraform resources first, restart, then resume.
 
 See <lessons_learned/2025_11_19_tofu_controller_tls_cache_desync.md>.
+
+### Reconcile Hang After a Node Reboot (Runner Died Mid-Init)
+
+**Symptoms**: One or more `Terraform` CRs stuck `Ready=Unknown` / `Initializing`, not
+advancing; controller logs go **silent** for those objects (their last line is
+`"generated template"`); **no `tf-runner` pods `Running`** anywhere; stale `*-tf-runner`
+pods left in `Error` (`phase=Failed`). Correlates with a worker-node reboot/eviction
+(especially wyrm2 — all runners schedule there, so one reboot wedges the whole TF fleet).
+
+**Cause**: Upstream bug — the reconcile goroutine parks **forever** in the runner `Init`
+gRPC (`waitForReady:true` on a deadline-less context) when the runner pod dies
+mid-reconcile; controller-runtime never re-runs that key, so it never self-heals and a
+worker slot is leaked. Deleting the dead runner pods alone does **not** unwedge it.
+
+**Fix** (restart the controller to clear the parked goroutines):
+
+```bash
+kubectl -n flux-system rollout restart deploy/tofu-controller
+kubectl -n flux-system rollout status  deploy/tofu-controller --timeout=90s
+kubectl -n flux-system delete pod -l app.kubernetes.io/name=tf-runner --field-selector status.phase=Failed
+```
+
+See <lessons_learned/2026_07_03_tofu_controller_runner_rpc_hang.md> (upstream fix:
+`flux-iac/tofu-controller#1838`).
 
 ### Stale State Locks (historical — kubernetes backend only)
 
