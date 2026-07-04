@@ -14,21 +14,19 @@
 # Secret); both agents reference it. (Runtime C, haku/runtime/agent, is env-driven via
 # HAKU_MODEL — a separate architecture, not covered here.)
 model: claude-sonnet-4-6
-# The fixed in-sandbox bash/read/write/edit/glob/grep toolset (always_allow — the
-# execution sandbox is the trust boundary in both runtimes).
-agent_toolset: agent_toolset_20260401
-# Every MCP server + its mcp_toolset permission policy. All always_allow; each is
-# bounded server-side (read-only facades, or gmail-labeling's `haku/`-prefix closure).
-mcp_servers:
-  kubectl-machine:
-    url: https://kubectl-machine-mcp.allegedly.works/mcp
-    toolset_permission_policy: always_allow
-  grocy-sf:
-    url: https://grocy-mcp-sf.allegedly.works/mcp
-    toolset_permission_policy: always_allow
-  tana-ro:
-    url: https://tana-mcp-ro.allegedly.works/mcp
-    toolset_permission_policy: always_allow
-  gmail-labeling:
-    url: https://gmail-labeling.allegedly.works/mcp
-    toolset_permission_policy: always_allow
+# Every toolset -> permission policy: mcp toolsets keyed by MCP server name, the
+# fixed in-sandbox bash/read/write/edit/glob/grep toolset by its type. All
+# always_allow — the execution sandbox is the trust boundary, and each MCP is bounded
+# server-side (read-only facades, or gmail-labeling's `haku/`-prefix closure).
+toolset_policies:
+  agent_toolset_20260401: always_allow
+  kubectl-machine: always_allow
+  grocy-sf: always_allow
+  tana-ro: always_allow
+  gmail-labeling: always_allow
+# MCP server name -> URL.
+mcp_urls:
+  kubectl-machine: https://kubectl-machine-mcp.allegedly.works/mcp
+  grocy-sf: https://grocy-mcp-sf.allegedly.works/mcp
+  tana-ro: https://tana-mcp-ro.allegedly.works/mcp
+  gmail-labeling: https://gmail-labeling.allegedly.works/mcp

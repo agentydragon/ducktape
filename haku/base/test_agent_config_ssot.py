@@ -25,35 +25,24 @@ _CLOUD = pygohcl.loads(get_required_path("_main/tf/gitops/haku-cloud-agent/main.
 _SURFACES = {"self_hosted": _SELF_HOSTED, "cloud": _CLOUD}
 
 
-def _mcp_urls(agent: dict) -> dict[str, str]:
-    return {s["name"]: s["url"] for s in agent["mcp_servers"]}
-
-
-def _toolset_policies(agent: dict) -> dict[str, str]:
-    """mcp_server_name -> permission-policy type, for every mcp_toolset."""
+def _normalize(surface: dict) -> dict:
+    """Re-express a parsed surface (YAML or HCL) in agent_shared.yaml's shape. An
+    mcp_toolset is keyed by its MCP server name, the built-in toolset by its type."""
     return {
-        t["mcp_server_name"]: t["default_config"]["permission_policy"]["type"]
-        for t in agent["tools"]
-        if t["type"] == "mcp_toolset"
-    }
-
-
-def _builtin_toolsets(agent: dict) -> dict[str, str]:
-    """non-mcp toolset type -> permission-policy type (e.g. agent_toolset_20260401)."""
-    return {
-        t["type"]: t["default_config"]["permission_policy"]["type"]
-        for t in agent["tools"]
-        if t["type"] != "mcp_toolset"
+        "model": surface["model"],
+        "toolset_policies": {
+            (t["mcp_server_name"] if t["type"] == "mcp_toolset" else t["type"]): t["default_config"][
+                "permission_policy"
+            ]["type"]
+            for t in surface["tools"]
+        },
+        "mcp_urls": {s["name"]: s["url"] for s in surface["mcp_servers"]},
     }
 
 
 @pytest.mark.parametrize("surface", _SURFACES.values(), ids=list(_SURFACES))
 def test_surface_matches_ssot(surface):
-    assert surface["model"] == _SHARED["model"]
-    assert _mcp_urls(surface) == {n: s["url"] for n, s in _SHARED["mcp_servers"].items()}
-    assert _toolset_policies(surface) == {n: s["toolset_permission_policy"] for n, s in _SHARED["mcp_servers"].items()}
-    # The built-in agent_toolset is shared too (always_allow in both).
-    assert _builtin_toolsets(surface) == {_SHARED["agent_toolset"]: "always_allow"}
+    assert _normalize(surface) == _SHARED
 
 
 if __name__ == "__main__":
