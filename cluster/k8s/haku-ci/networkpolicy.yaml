@@ -1,8 +1,10 @@
 # Egress fence for the Haku CI runner. The runner builds Haku-authored images, so
 # it's agent-controlled compute — contain its egress to only what a build needs:
-# DNS, base-image registries + npm/pypi (to pull base images and deps), and
-# in-cluster services (the Forgejo git + registry it pulls source from and pushes
-# images to). Having any egress rule flips the selected pods to default-deny egress.
+# DNS, base-image registries + npm/pypi (to pull base images and deps), the Bazel
+# build/toolchain hosts (haku-state builds with Bazel, no RBE, so the runner fetches
+# its own Bazel + toolchains), and in-cluster services (the Forgejo git + registry it
+# pulls source from and pushes images to). Having any egress rule flips the selected
+# pods to default-deny egress.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -54,6 +56,23 @@ spec:
         # action-download step (confirmed via Cilium's DNS cache: the runner
         # connects to data.forgejo.org but it wasn't allowlisted).
         - matchName: data.forgejo.org
+        # Bazel build hosts (haku-state is Bazelified; `bazel build //...` runs in
+        # this runner without BuildBuddy/RBE, so it fetches its own toolchains). This
+        # deliberately widens the fence beyond "just a container build" — accepted so
+        # the build graph (deps, codegen, image) is dependency-correct and hermetic.
+        # The host set is best-effort until the first real build confirms the DNS hits;
+        # add any that surface. npm/pypi/ghcr/docker (above) already cover JS/Py/image deps.
+        - matchName: releases.bazel.build # the Bazel binary (bazelisk downloads it)
+        - matchName: bcr.bazel.build # the bzlmod module registry (metadata + some archives)
+        # BCR module source archives + rules_python's python-build-standalone interpreter
+        # + rules_nodejs assets are hosted on GitHub releases/archives.
+        - matchName: github.com
+        - matchName: codeload.github.com
+        - matchName: objects.githubusercontent.com
+        - matchName: release-assets.githubusercontent.com
+        - matchName: raw.githubusercontent.com
+        # Node.js toolchain for aspect_rules_js / rules_nodejs.
+        - matchName: nodejs.org
       toPorts:
         - ports:
             - port: "443"

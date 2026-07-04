@@ -14,8 +14,8 @@ contained to roughly Haku's existing sandbox blast radius:
 
 - **Not in `haku-sandbox`.** It lives in its own namespace where Haku has **no RBAC**, so Haku
   can't tamper with the runner pod or its registry/git push creds — but it is **egress-fenced**
-  like haku-sandbox (`networkpolicy.yaml`: DNS + base-image registries/npm/pypi + in-cluster
-  only).
+  like haku-sandbox (`networkpolicy.yaml`: DNS + base-image registries/npm/pypi + the Bazel
+  build/toolchain hosts + in-cluster only).
 - **Rootless daemon in a privileged pod** (`docker:27-dind-rootless`, `privileged: true`). The
   dockerd still runs **rootless** (UID 1000), so it's strictly better than classic rootful
   dind — but `privileged: true` is the documented requirement for dind-rootless (it provides
@@ -45,7 +45,7 @@ on the runner and confirm it builds + pushes an image. Check
 | File                 | Role                                                                                     |
 | -------------------- | ---------------------------------------------------------------------------------------- |
 | `namespace.yaml`     | the `haku-ci` namespace                                                                  |
-| `networkpolicy.yaml` | egress fence (DNS + registries/npm/pypi + in-cluster)                                    |
+| `networkpolicy.yaml` | egress fence (DNS + registries/npm/pypi + Bazel toolchain hosts + in-cluster)            |
 | `config.yaml`        | the act_runner config (labels, dind `DOCKER_HOST`, capacity), via a `configMapGenerator` |
 | `deployment.yaml`    | the act_runner + rootless `dind` sidecar                                                 |
 
