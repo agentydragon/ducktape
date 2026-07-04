@@ -47,6 +47,7 @@
   },
   "extensions": {
     "sync": {
+      "downloadDir": "/var/lib/zot/.sync",
       "registries": [
         {
           "urls": ["https://registry-1.docker.io"],
