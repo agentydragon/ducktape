@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: codex-home
+  name: codex-workspace
   namespace: codex-pod
   annotations:
-    description: "Persistent home + workspace for the codex pod."
+    description: "Persistent /workspace (work tree + codex state) for the codex pod. HOME is baked into the image, so this is only the work dir."
 spec:
   accessModes:
     - ReadWriteOnce

@@ -8,7 +8,10 @@ Registry-hosting rationale (why Forgejo over GHCR) + the general pattern:
 
 ## Pieces
 
-- **Image + env**: `x/codex_pod_image/default.nix` (codex + shell/dev tools).
+- **Image + env**: `x/codex_pod_image/default.nix` — a `buildEnv` tool set on
+  `/bin` plus the user's static dotfiles baked from a home-manager config
+  (`x/codex_pod_image/home.nix`). No runtime bootstrap script; all static config
+  is Nix-built and baked into the image.
 - **CI**: `.github/workflows/codex-pod-image.yml` builds `.#codex-pod-image` and
   `skopeo copy`s a `devel-<ts>-<sha7>` tag to our Forgejo registry
   `git.allegedly.works/ducktape-ci/codex-pod` (as the `ducktape-ci` tenant).
@@ -19,9 +22,12 @@ Registry-hosting rationale (why Forgejo over GHCR) + the general pattern:
 - **Registry credential**: `cluster/k8s/forgejo-images/` provisions the
   `ducktape-ci` Forgejo user (Terraform) and a `forgejo-images-creds` Secret
   reflected into `flux-system` (scan) + `codex-pod` (`imagePullSecrets`).
-- **Runtime**: non-root UID 1000, `codex-home` PVC (`seaweedfs-ovh`), `sshd` on
-  `127.0.0.1:2222` reachable via `kubectl exec` ProxyCommand (see the
-  `codex-nix-pvc-uid-pod` spike for the ProxyCommand block).
+- **Runtime**: non-root UID 1000. `HOME=/home/codex` (the baked dotfiles) is
+  distinct from the work dir: the `codex-workspace` PVC (`seaweedfs-ovh`) mounts at
+  `/workspace` so it doesn't shadow the baked home, and holds the work tree,
+  `CODEX_HOME` (`/workspace/.codex`), and `XDG_CACHE_HOME` (`/workspace/.cache`).
+  Access is `kubectl exec` (no sshd) — the container's baked env carries into exec
+  sessions.
 
 ## Bring-up
 
@@ -43,41 +49,42 @@ to `devel`:
 
 ## Identity + credentials
 
-`codex-bootstrap-identity.sops.yaml` is a SOPS Secret holding a **freshly minted
-`codex-pod` SSH key**; the `plant-identity` init container installs it at
-`/home/codex/.ssh/id_ed25519` (0600, 1000:1000). Derive its public key with
-`ssh-keygen -y` on the decrypted secret and register it wherever codex must
-authenticate.
+Config is baked (home-manager, in the image); only **secrets** arrive at runtime,
+from k8s — the image carries no sops-nix (that needs a systemd user manager, which
+this non-root image pod has not) and no boot-time render script:
 
-Unlike `agent-box` (NixOS + home-manager sops-nix), this is an image pod with no
-sops-nix, so creds are delivered as k8s Secrets and `start-sshd.sh` renders the
-config files at boot (the pod analog of the sops-nix templates):
-
-- **Forgejo git** — the planted `~/.ssh/id_ed25519` pubkey is registered on a
-  dedicated `codex-pod` Forgejo user with **read-only** on `agentydragon/ducktape`
+- **SSH key** — `codex-bootstrap-identity.sops.yaml` is a SOPS Secret holding a
+  **freshly minted `codex-pod` SSH key**, mounted read-only at `/run/codex-secret`.
+  The container's one runtime step plants it:
+  `install -D -m600 /run/codex-secret/id_ed25519 "$HOME/.ssh/id_ed25519"` (ssh
+  demands 0600 owned by the user, which a mount can't satisfy). Derive its public
+  key with `ssh-keygen -y` on the decrypted secret.
+- **Forgejo git** — the planted key's pubkey is registered on a dedicated
+  `codex-pod` Forgejo user with **read-only** on `agentydragon/ducktape`
   (`tf/gitops/forgejo-agentydragon-repos`). Read-only + **AGit**: codex proposes
   changes with `git push origin HEAD:refs/for/devel -o topic=<t>`, which opens/
   updates a PR using only read access — no write, no fork, no API token; the SSH
   key is the only credential (all agent users follow this — see that module's
-  header). `start-sshd.sh` writes the `git.allegedly.works` ssh matchBlock.
+  header). The `git.allegedly.works` ssh matchBlock is baked by home-manager
+  (`home.nix`), not rendered at boot.
 - **BuildBuddy** — `BUILDBUDDY_API_KEY` is set on the container from the shared
   `buildbuddy-api-key` Secret via `secretKeyRef` (`optional: true`); `bbr` reads
-  it, and `start-sshd.sh` forwards it to ssh sessions via `SetEnv`. That Secret
+  it. That Secret
   (`cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml`) is reflected
   into `codex-pod` — no per-pod key, just the one shared key.
 
 ## Follow-ups
 
 - **Attic** — `~/.config/attic/config.toml` + `~/.config/nix/netrc` from a minted
-  token, rendered at boot like the others (not wired yet).
+  token. The static parts belong in `home.nix`; the token would come from k8s via
+  an ESO `ExternalSecret` `spec.target.template` that renders the netrc (precedent:
+  `cluster/k8s/props/app/registry-pull-secret.yaml`) — not wired yet.
 - **Push-time reconcile** — a Forgejo `package`-webhook receiver (copy
   `cluster/k8s/haku/ui-image-webhook/receiver.yaml`) to replace the 5m
   `ImageRepository` poll.
 - **Generalize** — once proven, move other `ghcr.io/agentydragon` app images to
   Forgejo image-by-image (weigh the per-image pull-availability tradeoff — an
   in-cluster registry outage means those pods can't pull), and retire Harbor.
-- **Exposure** — SSH-over-`kubectl exec` (current) vs a real Service / Cilium
-  listener.
 - **Bring-up watch** — the `forgejo-images` Terraform reads the credential in the
   new `forgejo-images` namespace; if the first apply errors on RBAC, widen the
   `tf-runner` role (`forgejo-props` reads the `forgejo` ns, so cross-ns reads

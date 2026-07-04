@@ -8,7 +8,7 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate # single RWO home PVC — don't run two pods against it
+    type: Recreate # single RWO workspace PVC — don't run two pods against it
   selector:
     matchLabels:
       app.kubernetes.io/name: codex-pod
@@ -32,33 +32,19 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        # Plant the SOPS-decrypted codex identity into the home PVC as
-        # 0600 1000:1000 (fsGroup makes the PVC group-writable by 1000, so no
-        # root is needed). The main container then sees ~/.ssh/id_ed25519.
-        - name: plant-identity
-          # {"$imagepolicy": "flux-system:codex-pod"}
-          image: git.allegedly.works/ducktape-ci/codex-pod:devel
-          command: ["/bin/bash", "-lc"]
-          args:
-            - |
-              install -d -m 0700 /home/codex/.ssh
-              install -m 0600 /run/codex-bootstrap/id_ed25519 /home/codex/.ssh/id_ed25519
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-          volumeMounts:
-            - name: home
-              mountPath: /home/codex
-            - name: bootstrap-identity
-              mountPath: /run/codex-bootstrap
-              readOnly: true
       containers:
         - name: codex
           # {"$imagepolicy": "flux-system:codex-pod"}
           image: git.allegedly.works/ducktape-ci/codex-pod:devel
-          command: ["/bin/bash", "/run/codex-pod-scripts/start-sshd.sh"]
+          # HOME (/home/codex) + all static config are baked into the image by
+          # home-manager. The only runtime step is planting the SSH private key
+          # (secret → 0600; a mount can't satisfy ssh's ownership/perms). Access
+          # is via `kubectl exec`, which inherits the container env.
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              install -D -m600 /run/codex-secret/id_ed25519 "$HOME/.ssh/id_ed25519"
+              exec sleep infinity
           env:
             # Shared BuildBuddy key (bbr reads BUILDBUDDY_API_KEY), reflected into
             # this namespace from shared-secrets/buildbuddy-api-key. Optional so a
@@ -74,14 +60,10 @@ spec:
             capabilities:
               drop: ["ALL"]
           volumeMounts:
-            - name: home
-              mountPath: /home/codex
-            - name: authorized-keys
-              mountPath: /etc/ssh/authorized_keys/codex
-              subPath: authorized_keys
-              readOnly: true
-            - name: scripts
-              mountPath: /run/codex-pod-scripts
+            - name: workspace
+              mountPath: /workspace
+            - name: identity
+              mountPath: /run/codex-secret
               readOnly: true
           resources:
             requests:
@@ -93,17 +75,10 @@ spec:
               memory: 8Gi
               ephemeral-storage: 20Gi
       volumes:
-        - name: home
+        - name: workspace
           persistentVolumeClaim:
-            claimName: codex-home
-        - name: bootstrap-identity
+            claimName: codex-workspace
+        - name: identity
           secret:
             secretName: codex-bootstrap-identity
             defaultMode: 0444
-        - name: authorized-keys
-          configMap:
-            name: codex-pod-authorized-keys
-        - name: scripts
-          configMap:
-            name: codex-pod-scripts
-            defaultMode: 0555
