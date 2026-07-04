@@ -67,20 +67,17 @@ spec:
             - name: chatgpt-auth-seed
               mountPath: /seed
               readOnly: true
-      # Prefer the Proxmox GPU host (co-located with ollama for its fallback
-      # paths), but allow scheduling elsewhere (e.g. OVH) so external-provider
-      # models (z.ai/GLM) keep serving when the home node is offline — ollama
-      # is unreachable during a home outage regardless of where litellm runs.
-      affinity:
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              preference:
-                matchExpressions:
-                  - key: topology.kubernetes.io/region
-                    operator: In
-                    values:
-                      - proxmox
+      # Must run on hil-ovh. The chatgpt-auth PVC is seaweedfs-ovh, and the SeaweedFS
+      # CSI node plugin only runs on OVH nodes (zone hil-ovh) and reports no topology
+      # keys — so allowedTopologies can't steer the scheduler and a pod that lands
+      # elsewhere can't mount the PVC and hangs Pending. The old `prefer region=proxmox`
+      # affinity (for ollama GPU co-location) did exactly that, wedging a replica on
+      # wyrm2. Losing co-location is acceptable: ollama calls just cross the mesh, and
+      # external-provider models keep serving when home is offline either way.
+      # TODO(seaweedfs-csi-on-wyrm2): once the CSI runs on wyrm2, restore the proxmox
+      # preference — see cluster/docs/plan.md Next Actions.
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       containers:
         - name: litellm
           image: litellm/litellm:1.90.2

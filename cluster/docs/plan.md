@@ -72,6 +72,23 @@ returns (not independently parked):
 
 ## Next Actions
 
+- [ ] **SeaweedFS CSI node coverage — `seaweedfs-ovh` consumers can't schedule off
+      hil-ovh.** The `seaweedfs-csi-driver-node` DaemonSet is pinned to
+      `topology.kubernetes.io/zone=hil-ovh` and reports **no topology keys**
+      (`CSINode ... topologyKeys=null`), so `allowedTopologies` on the SeaweedFS
+      StorageClasses is a **no-op** — the scheduler can place a pod with a
+      `seaweedfs-ovh` PVC anywhere (e.g. wyrm2), where the CSI is absent and the PVC
+      then fails to attach (stuck `Pending`, `FailedAttachVolume`). Hit by litellm
+      (its `region=proxmox` preference for ollama co-location pulled a replica onto
+      wyrm2 with the `chatgpt-auth` PVC). **Interim (done):** pin the affected consumer
+      to `zone=hil-ovh` via `nodeSelector` — but that's **per-consumer duplication**.
+      Evaluate a less-duplicative + more-capable fix, roughly in order: 1. **Run seaweedfs-csi on wyrm2** (relax the DaemonSet's `hil-ovh` zone affinity,
+      confirm the mount reaches the OVH filer over nebula) — then `seaweedfs-ovh`
+      RWX PVCs work there too, and litellm can go back to preferring proxmox for
+      ollama co-location (drop the interim `nodeSelector`). 2. **Give seaweedfs-csi topology** so `allowedTopologies` on the SC steers the
+      scheduler from one place instead of a `nodeSelector` on every consumer. 3. Failing both, a **Kyverno mutating policy** injecting the `zone=hil-ovh`
+      constraint for any pod that mounts a `seaweedfs-ovh*` PVC.
+
 - [ ] **etcd lease-PUT latency / control-plane HDD I/O contention.** etcd runs on
       rotational HDDs on the KS-5 control planes (no SSD there; the NVMe is on the
       KS-GAME workers). **Recurred 2026-06-28 as a full outage** (two CPs NotReady,
