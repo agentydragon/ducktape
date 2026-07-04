@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { MantineProvider } from "@mantine/core";
 import { act, cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { trackGit } from "./git_progress.ts";
 import { GitProgressBar } from "./git_progress_bar.tsx";
@@ -25,10 +25,14 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-afterEach(cleanup);
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe("GitProgressBar", () => {
-  it("shows a bar only while a git read is in flight, then hides when the burst drains", async () => {
+  it("shows a bar while a git read is in flight, then hides once the burst settles", async () => {
     render(
       <MantineProvider>
         <GitProgressBar />
@@ -50,7 +54,13 @@ describe("GitProgressBar", () => {
       d.resolve();
       await op;
     });
-    // Drained → hidden again.
+    // Drained but settling → still shown at 100%.
+    expect(screen.getByLabelText(/Fetching repository content: 2\/2 objects/)).toBeTruthy();
+
+    // Settle window elapses → hidden again.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
     expect(screen.queryByRole("progressbar")).toBeNull();
   });
 });
