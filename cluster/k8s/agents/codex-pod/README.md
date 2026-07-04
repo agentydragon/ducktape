@@ -104,13 +104,6 @@ this non-root image pod has not) and no boot-time render script:
   side once the rotated secret exists: mount it, add the substituters +
   `trusted-public-keys` (`main:owYQ…`, `gaffer:78zV…`, SSOT `nix/attic-pubkeys.json`)
   - `netrc-file` to the baked `~/.config/nix/nix.conf`.
-- **Push-time reconcile** — a Forgejo `package`-webhook receiver (copy
-  `cluster/k8s/haku/ui-image-webhook/receiver.yaml`) to replace the 5m
-  `ImageRepository` poll.
 - **Generalize** — once proven, move other `ghcr.io/agentydragon` app images to
   Forgejo image-by-image (weigh the per-image pull-availability tradeoff — an
   in-cluster registry outage means those pods can't pull), and retire Harbor.
-- **Bring-up watch** — the `forgejo-images` Terraform reads the credential in the
-  new `forgejo-images` namespace; if the first apply errors on RBAC, widen the
-  `tf-runner` role (`forgejo-props` reads the `forgejo` ns, so cross-ns reads
-  work, but the new ns wasn't verified).
