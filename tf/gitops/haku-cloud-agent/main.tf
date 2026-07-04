@@ -41,8 +41,10 @@ resource "claude-managed-agents_environment" "haku_cloud" {
 # SYNC: the shared bits below — `model`, and the `tana-ro` + `gmail-labeling` MCP
 # servers/toolsets (URLs + always_allow) — are duplicated in the self-hosted surface,
 # <../../../haku/runtime/managed_agent/self_hosted/haku.agent.yaml> (YAML applied via `ant`).
-# No SSOT (this tofu module can't read repo-wide files from the runner), so keep the two in
-# step by hand. Cloud-only here: kubectl-machine + grocy-sf MCPs and networking.
+# SSOT is <../../../haku/base/agent_shared.yaml>, enforced by
+# //haku/base:test_agent_config_ssot (fails on drift) — no live codegen (this module can't
+# read repo-wide files from the runner), so update this + haku.agent.yaml to match the SSOT.
+# Cloud-only here: kubectl-machine + grocy-sf MCPs and networking.
 resource "claude-managed-agents_agent" "haku_cloud" {
   name  = "haku-cloud"
   model = "claude-sonnet-4-6" # TEMP(bring-up): revisit (opus) once the cloud runtime is proven. SYNC model with self_hosted/haku.agent.yaml.

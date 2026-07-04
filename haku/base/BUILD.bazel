@@ -1,0 +1,18 @@
+# gazelle:ignore
+load("//devinfra/python:defs.bzl", "py_test")
+
+py_test(
+    name = "test_agent_config_ssot",
+    srcs = ["test_agent_config_ssot.py"],
+    data = [
+        "agent_shared.yaml",
+        "//haku/runtime/managed_agent/self_hosted:haku.agent.yaml",
+        "//tf/gitops/haku-cloud-agent:main.tf",
+    ],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pygohcl",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

@@ -5,9 +5,11 @@
 #
 # SYNC: the shared bits below — `model`, and the `tana-ro` + `gmail-labeling` MCP
 # servers/toolsets (URLs + always_allow) — are duplicated in the cloud surface,
-# <../../../../tf/gitops/haku-cloud-agent/main.tf> (HCL). No SSOT (the tofu-controller
-# runner can't read repo-wide files), so keep the two in step by hand. Runtime C
-# (haku/runtime/agent, env-driven via HAKU_MODEL) is a separate architecture, not a copy.
+# <../../../../tf/gitops/haku-cloud-agent/main.tf> (HCL). SSOT is
+# <../../../base/agent_shared.yaml>, enforced by //haku/base:test_agent_config_ssot
+# (fails on drift) — no live codegen (the tofu-controller runner can't read repo-wide
+# files), so update this + main.tf to match the SSOT. Runtime C (haku/runtime/agent,
+# env-driven via HAKU_MODEL) is a separate architecture, not a copy.
 name: haku
 # TEMP(debugging): Sonnet while we shake out the self-hosted worker; restore
 # claude-opus-4-8 once sessions run end-to-end. SYNC model with haku-cloud-agent/main.tf.

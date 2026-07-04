@@ -6,3 +6,6 @@
 # the mypy aspect on `import anthropic.lib.environments`. It's a baked script
 # like entrypoint.sh; ruff still lints it via pre-commit.
 # gazelle:exclude worker.py
+
+# Read by //haku/base:test_agent_config_ssot (SSOT drift guard).
+exports_files(["haku.agent.yaml"])

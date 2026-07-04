@@ -1,5 +1,8 @@
 load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
 
+# Read by //haku/base:test_agent_config_ssot (SSOT drift guard).
+exports_files(["main.tf"])
+
 tf_providers_versions(
     name = "providers",
     providers = {

@@ -1,0 +1,20 @@
+# Single source of truth for the Haku agent-config fields that are duplicated
+# across the two managed-agent surfaces:
+#   - cloud (Anthropic-hosted): ../../tf/gitops/haku-cloud-agent/main.tf (HCL)
+#   - self-hosted:              ../runtime/managed_agent/self_hosted/haku.agent.yaml (YAML)
+#
+# test_agent_config_ssot.py parses both surfaces and fails if either drifts from
+# the values here — so edit these, then update both surfaces to match.
+#
+# Only genuinely-shared, static fields belong here. Surface-specific wiring stays
+# per-surface: cloud-only kubectl-machine/grocy-sf MCPs, networking, and the vault
+# credentials that read live k8s secrets; self-hosted's in-pod agent_toolset.
+# (Runtime C, haku/runtime/agent, is env-driven via HAKU_MODEL — not covered here.)
+model: claude-sonnet-4-6
+mcp_servers:
+  tana-ro:
+    url: https://tana-mcp-ro.allegedly.works/mcp
+    toolset_permission_policy: always_allow
+  gmail-labeling:
+    url: https://gmail-labeling.allegedly.works/mcp
+    toolset_permission_policy: always_allow
