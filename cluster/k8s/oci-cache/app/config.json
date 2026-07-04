@@ -78,6 +78,12 @@
           "onDemand": true,
           "tlsVerify": true,
           "content": [{ "prefix": "**", "destination": "/gcr" }]
+        },
+        {
+          "urls": ["https://registry-1.docker.io"],
+          "onDemand": true,
+          "tlsVerify": true,
+          "content": [{ "prefix": "**", "destination": "/" }]
         }
       ]
     }

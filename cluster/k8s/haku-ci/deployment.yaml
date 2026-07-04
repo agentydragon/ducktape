@@ -118,6 +118,15 @@ spec:
           args:
             - --host=tcp://0.0.0.0:2375
             - --tls=false
+            # Pull Docker Hub base images through the in-cluster oci-cache Zot mirror
+            # instead of docker.io (+ its CDN fronts) directly — that's why the Docker
+            # Hub FQDNs are gone from the haku-egress-proxy allowlist. The mirror serves
+            # Docker Hub at its root and fetches from origin under oci-cache's own egress.
+            # `.svc.cluster.local` so NO_PROXY routes it direct (not via the proxy);
+            # insecure-registry because oci-cache is plain HTTP on :80. Classic dockerd
+            # only mirrors Docker Hub — ghcr/quay still go direct via the proxy.
+            - --registry-mirror=http://oci-cache.oci-cache.svc.cluster.local
+            - --insecure-registry=oci-cache.oci-cache.svc.cluster.local
           # --tls=false alone isn't enough: the dind entrypoint defaults DOCKER_TLS_CERTDIR
           # to /certs and re-enables TLS on 2375, so the runner's plain-HTTP client hits
           # "HTTP request to an HTTPS server". Emptying it disables TLS so 2375 is plain HTTP

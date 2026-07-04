@@ -31,24 +31,16 @@ spec:
     - toFQDNs:
         # Container image registries (base-image + tooling pulls: dind base images,
         # ghcr tools).
-        # TODO(pull-through-cache): these OCI-registry hosts can leave this allowlist
-        #   entirely once an in-cluster pull-through mirror exists again — the mirror
-        #   fetches from origin under ITS own egress and dind points at it via
-        #   `--registry-mirror`, so the runner/proxy no longer needs Docker Hub / ghcr
-        #   here. (This re-homes the `haku-ci-pull-through-cache` TODO deleted with
-        #   haku-ci/networkpolicy.yaml; tracked in cluster/docs/plan.md. registry:2 is
-        #   single-upstream, so Docker Hub and ghcr need one proxy each — or Harbor
-        #   proxy-cache projects, once Harbor is back.)
+        # Docker Hub is gone from this allowlist: haku-ci's dind pulls Docker Hub
+        # through the in-cluster oci-cache Zot mirror (`--registry-mirror`, see
+        # cluster/k8s/oci-cache/), which fetches from origin under its OWN namespace
+        # egress — so the runner no longer needs registry-1.docker.io / auth.docker.io /
+        # the cloudflare+cloudfront blob fronts / index.docker.io here.
+        # ghcr stays until dind can mirror it too (needs containerd hosts.toml /
+        # buildkit — classic dockerd only mirrors Docker Hub). See the oci-cache README
+        # "Phase 2" + cluster/docs/plan.md.
         - matchName: ghcr.io
         - matchName: pkg-containers.githubusercontent.com
-        - matchName: registry-1.docker.io
-        - matchName: auth.docker.io
-        - matchName: production.cloudflare.docker.com
-        # Docker Hub 307-redirects blob/config GETs to BOTH cloudFLARE and
-        # cloudFRONT fronts — both required (the easily-confused pair; missing
-        # cloudfront makes blob pulls dial-timeout with "No such image").
-        - matchName: production.cloudfront.docker.com
-        - matchName: index.docker.io
         - matchName: gmail.googleapis.com
         - matchName: www.googleapis.com
         # Google Tasks API — Haku reads the operator's task list (the Tasks

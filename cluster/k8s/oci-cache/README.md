@@ -30,6 +30,19 @@ is plain HTTP on port 80, so clients need an `http://` endpoint / insecure-regis
 
 e.g. `docker.io/library/nginx` → `oci-cache.oci-cache.svc/docker-hub/library/nginx`.
 
+Docker Hub is **also** served at the **root** (`oci-cache.oci-cache.svc/library/nginx`),
+so it works with Docker's `--registry-mirror` (which is Hub-only and can't take a path
+prefix). Note the root is a catch-all — it's listed last so the prefixed registries match
+first.
+
+## Consumers
+
+- **haku-ci dind** pulls Docker Hub base images via `--registry-mirror` (see
+  `cluster/k8s/haku-ci/deployment.yaml`); the Docker Hub FQDNs are consequently dropped
+  from the `haku-egress-proxy` allowlist. ghcr/quay aren't mirrored yet — classic dockerd
+  only mirrors Docker Hub; collapsing those needs containerd `hosts.toml` / buildkit
+  (Phase 2).
+
 ## Eviction
 
 Time/count-based, **not** a hard byte cap. A cached tag is kept if pulled within the
