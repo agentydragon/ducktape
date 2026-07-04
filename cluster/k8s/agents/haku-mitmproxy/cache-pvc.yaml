@@ -1,0 +1,17 @@
+# Backing store for the mitmproxy build-dependency cache addon (cache_addon.py).
+# seaweedfs-ovh (the cluster default for app data): not node-pinned, so the proxy
+# pod can reschedule and keep its cache. Content is only immutable public
+# artifacts (see cache_addon.py allowlist) — losing it costs a cold re-fetch, never
+# correctness.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: haku-mitmproxy-cache
+  namespace: haku-mitmproxy
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: seaweedfs-ovh
+  resources:
+    requests:
+      storage: 25Gi

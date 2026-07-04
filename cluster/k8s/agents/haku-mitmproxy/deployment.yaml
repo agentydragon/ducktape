@@ -9,6 +9,10 @@ metadata:
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
+  # RWO cache PVC: a RollingUpdate would try to mount it on the new pod before the
+  # old pod releases it (multi-attach deadlock). Recreate serializes the swap.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: haku-mitmproxy
@@ -67,6 +71,14 @@ spec:
             #   passthrough (and whether to inspect the rest).
             - --ignore-hosts
             - api\.anthropic\.com
+            # URL-keyed cache for immutable build-dependency downloads (Bazel /
+            # toolchain / package fetches from the haku-ci runner, which has no
+            # RBE). Strict host allowlist inside the script — see cache_addon.py.
+            - -s
+            - /addons/cache_addon.py
+          env:
+            - name: CACHE_DIR
+              value: /cache
           ports:
             - name: proxy
               containerPort: 8080
@@ -75,6 +87,11 @@ spec:
           volumeMounts:
             - name: mitmproxy-data
               mountPath: /mitmproxy-data
+            - name: cache-addon
+              mountPath: /addons
+              readOnly: true
+            - name: cache-data
+              mountPath: /cache
           resources:
             requests:
               cpu: 50m
@@ -88,3 +105,9 @@ spec:
             secretName: haku-mitmproxy-ca
         - name: mitmproxy-data
           emptyDir: {}
+        - name: cache-addon
+          configMap:
+            name: haku-mitmproxy-cache-addon
+        - name: cache-data
+          persistentVolumeClaim:
+            claimName: haku-mitmproxy-cache
