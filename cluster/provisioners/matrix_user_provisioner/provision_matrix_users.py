@@ -16,6 +16,7 @@ import hashlib
 import hmac
 import os
 import urllib.parse
+from typing import Protocol
 
 import httpx
 
@@ -26,7 +27,16 @@ BOT_DISPLAYNAME = "OpenClaw"
 SERVER_NAME = "allegedly.works"
 
 
-def register_admin(client: httpx.Client, registration_secret: str, admin_password: str) -> None:
+class SynapseClient(Protocol):
+    """The subset of httpx.Client's interface this module needs — lets tests
+    inject a lightweight fake without subclassing httpx.Client."""
+
+    def get(self, url: str, *, headers: dict[str, str] | None = None) -> httpx.Response: ...
+    def post(self, url: str, *, json: dict | None = None) -> httpx.Response: ...
+    def put(self, url: str, *, json: dict | None = None, headers: dict[str, str] | None = None) -> httpx.Response: ...
+
+
+def register_admin(client: SynapseClient, registration_secret: str, admin_password: str) -> None:
     """Phase 1: Register provisioner as admin via shared-secret."""
     register_url = f"{SYNAPSE_URL}/_synapse/admin/v1/register"
     nonce = client.get(register_url).json()["nonce"]
@@ -50,7 +60,7 @@ def _admin_user_url(encoded_mxid: str) -> str:
     return f"{SYNAPSE_URL}/_synapse/admin/v2/users/{encoded_mxid}"
 
 
-def _bot_exists(client: httpx.Client, access_token: str, encoded_mxid: str) -> bool:
+def _bot_exists(client: SynapseClient, access_token: str, encoded_mxid: str) -> bool:
     """Check if bot user already exists in Synapse."""
     resp = client.get(_admin_user_url(encoded_mxid), headers={"Authorization": f"Bearer {access_token}"})
     if resp.status_code == 404:
@@ -61,7 +71,7 @@ def _bot_exists(client: httpx.Client, access_token: str, encoded_mxid: str) -> b
     return "name" in resp.json()
 
 
-def upsert_bot(client: httpx.Client, admin_password: str, bot_password: str) -> None:
+def upsert_bot(client: SynapseClient, admin_password: str, bot_password: str) -> None:
     """Phase 2: Log in as admin, then ensure bot user exists via admin API."""
     login_resp = client.post(
         f"{SYNAPSE_URL}/_matrix/client/v3/login",
