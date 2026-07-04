@@ -104,6 +104,17 @@ this non-root image pod has not) and no boot-time render script:
   side once the rotated secret exists: mount it, add the substituters +
   `trusted-public-keys` (`main:owYQ…`, `gaffer:78zV…`, SSOT `nix/attic-pubkeys.json`)
   - `netrc-file` to the baked `~/.config/nix/nix.conf`.
+- **Push-time reconcile — not wired (5m poll is fine)** — a Forgejo `package`
+  webhook would give instant pickup instead of the 5m `ImageRepository` poll, but
+  there's no clean path: the `svalabs/forgejo` provider only has
+  `forgejo_repository_webhook`, while codex-pod's image is a `ducktape-ci` **user**
+  package with no repo — so the right primitive (a user/org `package` webhook) has
+  no resource. The workarounds are bespoke/fragile: a raw-API `data http` POST
+  creating a `ducktape-ci` user webhook (no provider resource ⇒ no drift detection
+  or clean delete), or giving `ducktape-ci` a repo + linking the package to it
+  (haku's painful path — `cluster/k8s/haku/ui-image-webhook` +
+  `tf/gitops/haku-state`, incl. the out-of-band package-link). Not worth it for a
+  dev pod; revisit if the provider gains a user/org webhook resource.
 - **Generalize** — once proven, move other `ghcr.io/agentydragon` app images to
   Forgejo image-by-image (weigh the per-image pull-availability tradeoff — an
   in-cluster registry outage means those pods can't pull), and retire Harbor.
