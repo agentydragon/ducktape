@@ -55,6 +55,10 @@ spec:
       # s3 gateway on stale identities until a manual restart (the 2026-06-08 attic
       # `InvalidAccessKeyId` incident). Opt a workload out with
       # `reloader.stakater.com/auto: "false"`.
+      # CAVEAT: for seaweedfs-s3 this still isn't reliable — Reloader fires but the
+      # SeaweedFS operator reconciles the Deployment back, reverting the env-var patch,
+      # so a manual pod restart is still needed after adding a tenant. Full RCA + fix
+      # options: <../../docs/lessons_learned/2026_07_04_seaweedfs_s3_identity_stale_after_tenant_add.md>.
       autoReloadAll: true
       deployment:
         resources:
