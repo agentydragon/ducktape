@@ -14,7 +14,7 @@ spec:
   chart:
     spec:
       chart: seaweedfs-operator
-      version: "0.1.22" # operator v1.0.19, latest stable as of 2026-05-15
+      version: "0.1.33" # operator v1.0.30 (latest stable as of 2026-07-04)
       sourceRef:
         kind: HelmRepository
         name: seaweedfs-operator
