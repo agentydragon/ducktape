@@ -22,7 +22,22 @@ in
   programs.home-manager.enable = true;
   targets.genericLinux.enable = true;
 
-  programs.bash.enable = true;
+  programs.bash = {
+    enable = true;
+    # Codex has no global "trust all": its directory-trust prompt is gated
+    # per-directory (exact-match `[projects."<path>"]`, no ancestor/global option),
+    # and it can't even persist a "Yes" here because config.toml is a read-only
+    # /nix/store symlink. So wrap `codex` to auto-mark the launch dir (git repo
+    # root, else cwd) trusted via `-c`, and never prompt. This is an isolated YOLO
+    # agent pod (danger-full-access, approval=never) — trusting everything is intended.
+    initExtra = ''
+      codex() {
+        local d
+        d="$(command git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PWD")"
+        command codex -c "projects.\"$d\".trust_level=\"trusted\"" "$@"
+      }
+    '';
+  };
   programs.git = {
     enable = true;
     settings.user = {
