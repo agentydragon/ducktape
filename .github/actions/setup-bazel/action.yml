@@ -1,5 +1,5 @@
 # Setup Bazel with BuildBuddy remote cache + GHA repository cache.
-# See .github/docs/bazel-caching.md for design rationale.
+# See devinfra/docs/bazel_caching.md for design rationale.
 name: Setup Bazel
 description: Setup Bazel with BuildBuddy remote cache and GitHub Actions local cache
 

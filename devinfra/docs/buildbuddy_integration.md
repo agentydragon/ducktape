@@ -3,7 +3,8 @@
 BuildBuddy credential setup is separated from repo-aware RBE opt-in:
 
 - `devinfra/setup_buildbuddy.sh` writes `~/.config/bazel/buildbuddy.bazelrc`
-  with the API key and `build --shell_executable=/bin/bash`.
+  with the API key and `build --shell_executable=/bin/bash` (required on NixOS,
+  which has no `/bin/bash`; see <nixos_bazel_rbe.md>).
 - Repo-aware entrypoints decide whether to add `build --config=rbe`.
 
 ## Setup Chain
