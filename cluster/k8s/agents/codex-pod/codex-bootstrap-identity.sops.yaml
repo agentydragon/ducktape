@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: codex-bootstrap-identity
+    namespace: codex-pod
+    annotations:
+        description: Codex pod SSH identity (id_ed25519), planted into /home/codex/.ssh by the init container. Freshly minted for codex-pod; register the pubkey where codex must authenticate.
+type: Opaque
+data:
+    id_ed25519: ENC[AES256_GCM,data:RpXSP66ERtZ4tyk9VmW1IxAzBH2V6c4BKAqKNaZ0BB6JnS9siPT/akIqNaHtOXFcQUCsFR/tAtVQNlNC1qTB42b2Kbesuq7rGlZuNlPFYbk3iVNm11SbLeLXLLzfWXNiUdLJY1L3lUoEIgryx9NoNMl2TlBHieBoakudwSQeLOXhWsxHQRkaibBicpl2IYc0YSQUWZTiE6C6P0lRYbaYd6rbJbYrDru11jEAZM+9h6flqG0uHT4IXBhrpL7Ce1g/62mjW2VP7ivvT83CjRmeIpYiUPZOc9f+fWru8ez1cDsa4daGXlpy8y3G1j+HV18RW0QywBj98Yt6MdnopmOy7RDPXhagM3MZl5nIh/YQgdKiedDy8CwMceXLO/fDm2YSSBMd3eB6jKXBKICxmA+zdyTLNgVMAruFEUamV0YA78b2wPzlAbN+MsTpdk+wf1LP7UK0lA4w7gW8G+RNiZlcctRJvlGoOWHpuV3sqdGh1Tskhp1aJ+GZSC/IyTfT7i8A59bpZa0VPHtL1Wc2WyiqX1QuJyNUkA1f2sWqlZ7VjMjOndB4aD/rmUYKI32fo7R11zwm2bezM6iVTGYPhpjk3lMBTVj/rzLMbPJ2rmsogl5N21rlrB8Aaxk8ROC8ZXrhLE4q5h1XDs2iWb2hx4+YdbKjNpnJh7a0NdYf5/cbGKE0Ot1hy+Qm+fDJJpN+C9tYjXlvNw==,iv:IuoU28A/6vp+UhwGyFyUfp3s784Jzro12yPlqEKyxvw=,tag:VcC7JBpegqwQYJxdQZ7VRg==,type:str]
+sops:
+    age:
+        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBGZWFKa0puSmJabDJMcmRx
+            MjRtNVczN1kzTHJocFp6L25BZnRWUytIQWdjCjBQQWFNV0t2TE9OaGFtU3dNL1Fh
+            WnB2L0srWkFESE1XR09ZOHF2UzZoa3cKLS0tIFdZeHhQUXdrckVSOWpBOHM0UVVa
+            RUI3OU9RbGtSVnJWWE1hdGV0bVNQMFEKI7klZf2AzvgjWmEme70oqsQWcWktuSv6
+            z2lcLEAV92sbf+vFTWBTpM+R2OjWtQyLEKJdaI4D1sYicT2D7rWHaA==
+            -----END AGE ENCRYPTED FILE-----
+        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAzczl2eWl3YStCQmtrRklY
+            T3BmbkVjK0JoTUExdGp2b0lKczFEOEd0V0hzClo1Z0tWeWZpL3lvaDlldUd5aHA3
+            Wit3NjFZWWJ0RDdHSE1xZFNxMmNENVEKLS0tIFNFSHY3MFFQb0tJci94bmpEbWUw
+            VGpUOXlJQTdUcFpYRm1iSkFmZnhIcEUKmMSdr/+MYNWjf+9aNhQ06+fzPsyoHJss
+            SPD8eVj569r16nD5gfKyxABPC5B4q98Mfsi2dHVAhOlwDe1OUHLSjw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-07-04T01:21:36Z"
+    mac: ENC[AES256_GCM,data:k2BbYuBaJlTc2d8DuHLa+8qzX56R0vkL6hkSCz5JWBDB7UCJjL9fsjjOE5yjYznbHYJ881Q7q7vGcPgJTUPZ4O40C2ajyZQU68uMxc1CTD+lib/LPd7RTVFDVtGsTXli/xtJGpYIaSeaDcbAbyr9V0P2ShewhzSPkeaAF/Rtmyw=,iv:S+brKAyuaqjKsjrG4XTAO/yJzl9kdHOyEerv8ooJvlI=,tag:MZBoa43rUnkVYeUydQK52A==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

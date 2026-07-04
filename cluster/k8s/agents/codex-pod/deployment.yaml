@@ -28,6 +28,28 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        # Plant the SOPS-decrypted codex identity into the home PVC as
+        # 0600 1000:1000 (fsGroup makes the PVC group-writable by 1000, so no
+        # root is needed). The main container then sees ~/.ssh/id_ed25519.
+        - name: plant-identity
+          # {"$imagepolicy": "flux-system:codex-pod"}
+          image: ghcr.io/agentydragon/codex-pod:devel
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              install -d -m 0700 /home/codex/.ssh
+              install -m 0600 /run/codex-bootstrap/id_ed25519 /home/codex/.ssh/id_ed25519
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: home
+              mountPath: /home/codex
+            - name: bootstrap-identity
+              mountPath: /run/codex-bootstrap
+              readOnly: true
       containers:
         - name: codex
           # {"$imagepolicy": "flux-system:codex-pod"}
@@ -60,6 +82,10 @@ spec:
         - name: home
           persistentVolumeClaim:
             claimName: codex-home
+        - name: bootstrap-identity
+          secret:
+            secretName: codex-bootstrap-identity
+            defaultMode: 0444
         - name: authorized-keys
           configMap:
             name: codex-pod-authorized-keys

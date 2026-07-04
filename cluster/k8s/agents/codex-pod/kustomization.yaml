@@ -6,6 +6,7 @@ generatorOptions:
 resources:
   - namespace.yaml
   - pvc.yaml
+  - codex-bootstrap-identity.sops.yaml
   - deployment.yaml
 configMapGenerator:
   - name: codex-pod-authorized-keys

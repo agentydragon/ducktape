@@ -33,15 +33,17 @@ Flux-wired (in `cluster/k8s/kustomization.yaml`). On merge to `devel`:
    `cluster/k8s/flux-webhook/github-webhook-receiver.yaml` for push-time pickup
    instead of the 5m poll.
 
-## Follow-ups (credentials)
+## Identity + credentials
 
-The first cut runs `sshd` + `codex` but has **no codex identity/credentials** —
-it can't push to Forgejo, use BuildBuddy, or push to Attic yet. To make it useful
-for real work, port from the `agent-box` codex user
-(<../../../../nix/home/hosts/agent-box.nix>):
+`codex-bootstrap-identity.sops.yaml` is a SOPS Secret holding a **freshly minted
+`codex-pod` SSH key**; the `plant-identity` init container installs it at
+`/home/codex/.ssh/id_ed25519` (0600, 1000:1000). Derive its public key with
+`ssh-keygen -y` on the decrypted secret and register it wherever codex must
+authenticate.
 
-- a SOPS bootstrap identity Secret for `/home/codex/.ssh/id_ed25519` (mint a fresh
-  `codex-pod` key or reuse `agent-box-codex-user`; register the pubkey in Forgejo)
-  - an init container that plants it 0600/1000:1000 (as in the spike);
-- BuildBuddy API key, Attic token, Forgejo bot key, kubeconfig — the same
-  home-manager modules `agent-box.nix` imports, or their in-cluster equivalents.
+Still **no other credentials** — the pod can't use BuildBuddy or push to Attic
+yet. Unlike `agent-box` (NixOS + home-manager sops-nix chaining off this key),
+this is an image pod with no sops-nix activation, so BuildBuddy/Attic/Forgejo-bot
+creds must be provided as their own secrets/env rather than derived from the
+planted key. Port from the `agent-box` codex user
+(<../../../../nix/home/hosts/agent-box.nix>) as a follow-up.
