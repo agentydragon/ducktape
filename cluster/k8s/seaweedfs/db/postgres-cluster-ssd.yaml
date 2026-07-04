@@ -1,0 +1,67 @@
+# SSD migration target for the SeaweedFS filer metadata DB (OVH storage tiering,
+# CNPG Case B — see cluster/docs/plans/ovh_storage_tiering.md). filer-db metadata
+# is on the critical path of every SeaweedFS/git op but currently lives on HDD
+# (KS-5 nodes); moving it to the KS-GAME NVMe tier is the remaining git-latency win
+# after Phase 3 put git blobs on SSD. This is independent of the Stage 2 etcd/CP
+# reshuffle — local-path-ovh-ssd + the KS-GAME NVMe already work today.
+#
+# Migration via the CNPG standalone-replica pattern (skills/cnpg_region_switch):
+#   1. (this manifest) bootstrap seaweedfs-filer-db-ssd as a streaming replica of
+#      seaweedfs-filer-db on local-path-ovh-ssd — NON-disruptive, source untouched.
+#   2. verify lag ~0, promote (spec.replica.enabled: false),
+#   3. repoint the filer's postgres2 host + app-secret to -ssd (brief filer
+#      reconnect — coordinated, filer-db is the metadata SSOT with no PITR backup),
+#   4. delete the old seaweedfs-filer-db.
+# imageName pinned to match the source exactly (physical replication requirement).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: seaweedfs-filer-db-ssd
+  namespace: seaweedfs
+  annotations:
+    description: Streaming replica of seaweedfs-filer-db on the SSD tier, to be promoted (Case B git-latency migration)
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    # One instance per KS-GAME node for HA (local-path-ovh-ssd pins the tier).
+    topologyKey: kubernetes.io/hostname
+
+  storage:
+    storageClass: local-path-ovh-ssd
+    size: 2Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  replica:
+    enabled: true
+    source: seaweedfs-filer-db
+
+  bootstrap:
+    pg_basebackup:
+      source: seaweedfs-filer-db
+
+  externalClusters:
+    - name: seaweedfs-filer-db
+      connectionParameters:
+        host: seaweedfs-filer-db-rw.seaweedfs.svc.cluster.local
+        user: streaming_replica
+        dbname: postgres
+      sslKey:
+        name: seaweedfs-filer-db-replication
+        key: tls.key
+      sslCert:
+        name: seaweedfs-filer-db-replication
+        key: tls.crt
+      sslRootCert:
+        name: seaweedfs-filer-db-ca
+        key: ca.crt
