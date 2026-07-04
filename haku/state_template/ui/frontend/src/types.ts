@@ -19,7 +19,7 @@ export interface MetaResponse {
 // Improvements are a content collection (memory/improvements/<id>.md) rendered by the
 // <improvement-board/> widget — no wire type; the widget parses frontmatter itself.
 
-// --- Runs surface (runs/<date>/<ulid>.{yaml,md}) ---
+// --- Runs surface (runs/<date>/<ulid>.md) ---
 // Per-run propagation record: each source processed + how each change reached every surface.
 // A source was either scanned (bookmarks + count) or skipped (reason) — a discriminated union
 // (mirrors the backend's ScannedSource | SkippedSource); discriminate on the `skipped` key.

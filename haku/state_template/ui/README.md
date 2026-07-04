@@ -54,7 +54,7 @@ FastAPI, port `8080`. Endpoints:
   built from.
 - `GET /api/repo/tree` + `GET /api/repo/blobs` — the generic read-only content proxy the SPA
   composes to read `items/*.md`, `memory/improvements/*.md`, the run manifests
-  (`runs/<date>/<ulid>.{yaml,md}`, paired on the frontend), and any repo markdown at HEAD.
+  (`runs/<date>/<ulid>.md`, frontmatter + body parsed on the frontend), and any repo markdown at HEAD.
 - `PUT/DELETE /api/responses/{scope}/{field}` — record/clear an operator response
   (item status, form answer) as `responses/<scope>/<field>.yaml`.
 - `POST /api/trace/feedback` — append an intake note (`text`, optional `item_id`).

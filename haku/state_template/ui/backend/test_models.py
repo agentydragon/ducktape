@@ -49,9 +49,9 @@ def test_improvement_doc_rejects_bad_weight_kind_and_class():
             ImprovementDoc.model_validate({**base, **bad})
 
 
-# --- run manifests (runs/<date>/<ulid>.yaml) ----------------------------------
-# The runs surface is composed on the frontend now (client.ts pairs each manifest with its .md over
-# the tree+blobs proxy); this schema stays the floor those manifests must satisfy.
+# --- run manifests (runs/<date>/<ulid>.md frontmatter) ------------------------
+# The runs surface is composed on the frontend now (client.ts reads each run's frontmatter + prose
+# body over the tree+blobs proxy); this schema stays the floor those manifests must satisfy.
 
 
 def test_run_manifest_accepts_prose_changes_seen_and_created_action():

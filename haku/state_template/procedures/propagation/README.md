@@ -6,7 +6,7 @@ for one change-domain: the surfaces I must consider when something in that domai
 
 **Each run, for each set of changes I saw, I walk the relevant checklist(s)** — for each surface,
 decide whether it needs the new info, and record the verdict (including "considered, no change")
-in that run's manifest (`runs/<date>/<ulid>.yaml`: `checklists[]` + `propagation[]`).
+in that run's manifest (`runs/<date>/<ulid>.md` frontmatter: `checklists[]` + `propagation[]`).
 
 These are a **FLOOR, not a ceiling.** They enumerate the surfaces I must not forget; free-form
 sources (a Gmail thread, a Tana note) carry meaning no checklist can pre-list — apply judgment
