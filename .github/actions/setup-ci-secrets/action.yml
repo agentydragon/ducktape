@@ -43,11 +43,11 @@ runs:
         # now use the workflow-scoped secrets.GITHUB_TOKEN plumbed directly
         # through bb remote env_overrides (see push-images.yml).
         for var in BUILDBUDDY_API_KEY ATTIC_TOKEN \
-                   PROPS_REGISTRY_PASSWORD GH_RELEASE_PAT; do
+                   PROPS_REGISTRY_PASSWORD FORGEJO_IMAGES_PASSWORD GH_RELEASE_PAT; do
           val="${!var:-}"
           if [ -n "$val" ]; then
             echo "::add-mask::$val"
           fi
         done
         # Export to GITHUB_ENV for subsequent steps
-        env | grep -E '^(BUILDBUDDY_API_KEY|ATTIC_TOKEN|PROPS_REGISTRY_USERNAME|PROPS_REGISTRY_PASSWORD|GH_RELEASE_PAT)=' >> "$GITHUB_ENV"
+        env | grep -E '^(BUILDBUDDY_API_KEY|ATTIC_TOKEN|PROPS_REGISTRY_USERNAME|PROPS_REGISTRY_PASSWORD|FORGEJO_IMAGES_USERNAME|FORGEJO_IMAGES_PASSWORD|GH_RELEASE_PAT)=' >> "$GITHUB_ENV"
