@@ -34,6 +34,10 @@ spec:
         - matchName: registry-1.docker.io
         - matchName: auth.docker.io
         - matchName: production.cloudflare.docker.com
+        # Docker Hub 307-redirects blob/config GETs to BOTH cloudFLARE and
+        # cloudFRONT fronts — both required (the easily-confused pair; missing
+        # cloudfront makes blob pulls dial-timeout with "No such image").
+        - matchName: production.cloudfront.docker.com
         - matchName: index.docker.io
         - matchName: gmail.googleapis.com
         - matchName: www.googleapis.com
@@ -69,6 +73,32 @@ spec:
         - matchName: cache.nixos.org
         - matchName: nixos.org
         - matchName: channels.nixos.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Bazel registry + release artifacts, GitHub source/release archives, and the
+    # Node.js toolchain — the haku-ci Bazel cold-fetch closure (NO RBE). Added ahead
+    # of the haku-ci rehoming (next PR) so the proxy allowlist is ready when the
+    # runner starts egressing through it.
+    - toFQDNs:
+        - matchName: releases.bazel.build
+        - matchName: bcr.bazel.build
+        - matchName: github.com
+        - matchName: codeload.github.com
+        - matchName: objects.githubusercontent.com
+        - matchName: release-assets.githubusercontent.com
+        - matchName: raw.githubusercontent.com
+        - matchName: nodejs.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Forgejo Actions: `uses:` actions from data.forgejo.org, act_runner +
+    # job-container images from code.forgejo.org.
+    - toFQDNs:
+        - matchName: code.forgejo.org
+        - matchName: data.forgejo.org
       toPorts:
         - ports:
             - port: "443"
