@@ -93,4 +93,14 @@ describe("docsUnder + read caches", () => {
     await repoBlobs(["a1"]);
     expect(blobCalls(fetchMock)).toBe(1);
   });
+
+  it("throws — never yields '' — when the backend omits a requested blob (no silent truncation)", async () => {
+    // Backend responds 200 but drops one of the two requested shas (a proxy truncating the query,
+    // a short git/blobs response that slipped the backend's guard, …).
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([{ sha: "a1", content: "x" }]) } as Response))
+    );
+    await expect(repoBlobs(["a1", "b2"])).rejects.toThrow(/missing from response/);
+  });
 });

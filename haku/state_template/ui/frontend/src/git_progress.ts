@@ -1,26 +1,29 @@
 // Central progress tracker for the repo's git primitives (repo.ts). Every tree/blob read registers
 // here, so one global indicator can mirror git's own object-transfer progress ("Fetching objects:
 // n/m") across the whole app — instead of each view spinning its own local bar. The two git
-// primitives (recursive tree, bulk blobs) are the only I/O the UI does, so wrapping them captures
-// all of it — item reads, garden files, improvements, responses, kitchen — at one choke point.
+// primitives (recursive tree, bulk blobs) are the only content I/O the UI does, and every surface
+// composes over them (items, garden, improvements, kitchen, runs, responses), so wrapping them
+// captures all of it at one choke point.
 //
-// A *burst* is a run of activity: its object counts accumulate (a tree is one object; a bulk-blob
-// read is one per sha) and the bar climbs done/total as each fetch resolves. When the last fetch
-// completes the burst doesn't reset instantly — it lingers for SETTLE_MS. A `docsUnder` read fires
-// its tree then several ≤50-blob chunks back-to-back with only synchronous gaps between them, so
-// the settle window keeps them in ONE burst: the bar fills smoothly to 100% instead of sawtoothing
-// per chunk. If nothing new starts, the settle fires and clears the bar. Counters are plain module
+// A *burst* is a run of activity. Two things accumulate over it: the operation count (each
+// trackGit call — a tree read or one ≤50-blob chunk — is one operation) and the git-object count
+// (a tree is one object; a bulk-blob read is one per sha). The bar fills doneObjects/totalObjects
+// and the summary reports operations in-flight vs done. When the last op finishes the burst doesn't
+// reset instantly — it lingers for SETTLE_MS. A `docsUnder` read fires its tree then several blob
+// chunks back-to-back with only synchronous gaps between them, so the settle window keeps them in
+// ONE burst: the bar fills smoothly instead of restarting per chunk. Counters are plain module
 // state mutated synchronously in start/finally, consistent under JS's single thread.
 
 import { useSyncExternalStore } from "react";
 
 export interface GitProgress {
-  inFlight: number; // active tree/blob fetches
-  total: number; // git objects requested in the current burst
-  done: number; // objects whose fetch has resolved (or errored out)
+  activeOps: number; // tree/blob fetches currently in flight
+  doneOps: number; // fetches completed this burst
+  totalObjects: number; // git objects requested this burst (tree = 1, blobs = one per sha)
+  doneObjects: number; // git objects whose fetch has resolved (or errored out)
 }
 
-const IDLE: GitProgress = { inFlight: 0, total: 0, done: 0 };
+const IDLE: GitProgress = { activeOps: 0, doneOps: 0, totalObjects: 0, doneObjects: 0 };
 const SETTLE_MS = 150;
 
 let state: GitProgress = IDLE;
@@ -54,16 +57,21 @@ export async function trackGit<T>(objects: number, run: () => Promise<T>): Promi
     clearTimeout(settleTimer);
     settleTimer = null;
   }
-  set({ inFlight: state.inFlight + 1, total: state.total + objects, done: state.done });
+  set({ ...state, activeOps: state.activeOps + 1, totalObjects: state.totalObjects + objects });
   try {
     return await run();
   } finally {
-    const inFlight = state.inFlight - 1;
-    set({ inFlight, total: state.total, done: state.done + objects });
-    if (inFlight === 0) {
+    const activeOps = state.activeOps - 1;
+    set({
+      activeOps,
+      doneOps: state.doneOps + 1,
+      totalObjects: state.totalObjects,
+      doneObjects: state.doneObjects + objects,
+    });
+    if (activeOps === 0) {
       settleTimer = setTimeout(() => {
         settleTimer = null;
-        if (state.inFlight === 0) set(IDLE); // still idle after the window → end the burst
+        if (state.activeOps === 0) set(IDLE); // still idle after the window → end the burst
       }, SETTLE_MS);
     }
   }

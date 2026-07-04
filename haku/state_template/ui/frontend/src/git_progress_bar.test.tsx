@@ -32,7 +32,7 @@ afterEach(() => {
 });
 
 describe("GitProgressBar", () => {
-  it("shows a bar while a git read is in flight, then hides once the burst settles", async () => {
+  it("shows the bar + ops summary while reads are in flight, then hides once the burst settles", async () => {
     render(
       <MantineProvider>
         <GitProgressBar />
@@ -41,21 +41,31 @@ describe("GitProgressBar", () => {
     // Idle → renders nothing.
     expect(screen.queryByRole("progressbar")).toBeNull();
 
-    const d = deferred<void>();
-    let op!: Promise<void>;
+    const a = deferred<void>();
+    const b = deferred<void>();
+    let opA!: Promise<void>;
+    let opB!: Promise<void>;
     act(() => {
-      op = trackGit(2, () => d.promise);
+      opA = trackGit(1, () => a.promise); // tree
+      opB = trackGit(8, () => b.promise); // a blob chunk
     });
-    // In flight → the bar appears, labelled with the object counts.
+    // In flight → the bar appears with the ops + objects summary.
     expect(screen.getByRole("progressbar")).toBeTruthy();
-    expect(screen.getByLabelText(/Fetching repository content: 0\/2 objects/)).toBeTruthy();
+    expect(screen.getByText(/2 in progress · 0 done · 0\/9 objects/)).toBeTruthy();
 
     await act(async () => {
-      d.resolve();
-      await op;
+      a.resolve();
+      await opA;
     });
-    // Drained but settling → still shown at 100%.
-    expect(screen.getByLabelText(/Fetching repository content: 2\/2 objects/)).toBeTruthy();
+    // One op done, one still going.
+    expect(screen.getByText(/1 in progress · 1 done · 1\/9 objects/)).toBeTruthy();
+
+    await act(async () => {
+      b.resolve();
+      await opB;
+    });
+    // Drained but settling → shown at completion.
+    expect(screen.getByText(/0 in progress · 2 done · 9\/9 objects/)).toBeTruthy();
 
     // Settle window elapses → hidden again.
     await act(async () => {

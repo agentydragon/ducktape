@@ -1,7 +1,7 @@
 import { parse } from "yaml";
 
-import { invalidateTree, repoFile } from "./repo.ts";
-import type { FeedbackContext, MetaResponse, RunsResponse } from "./types.ts";
+import { invalidateTree, readBlobs, repoFile } from "./repo.ts";
+import type { FeedbackContext, MetaResponse, RunManifest, RunsResponse } from "./types.ts";
 
 // Same-origin JSON client: the FastAPI backend serves this bundle and the API.
 // FastAPI error responses are `{detail: string}`; surface that real reason.
@@ -68,11 +68,40 @@ export async function readResponse(scope: string, field: string): Promise<string
   return typeof parsed.value === "string" ? parsed.value : null;
 }
 
-export async function fetchRuns(): Promise<RunsResponse> {
-  const res = await fetch("/api/runs");
-  if (!res.ok) throw new Error(await detail(res, "Failed to load runs"));
-  return (await res.json()) as RunsResponse;
+// Recent per-run propagation manifests, composed over the shared git-store reader (no bespoke
+// /api/runs): pair each `runs/<date>/<ulid>.yaml` with its sibling `.md` prose notes (README.md
+// and dangling `.md` ignored), newest-first by `started`. Missing optional fields default (mirrors
+// the backend RunManifest) so one lean manifest can't crash the table.
+const EMPTY_RUN: Omit<RunManifest, "run_id" | "notes_md"> = {
+  date: "",
+  started: "",
+  finished: "",
+  sources: [],
+  checklists: [],
+  propagation: [],
+};
+
+export async function fetchRuns(limit = 20): Promise<RunsResponse> {
+  const blobs = await readBlobs(
+    (e) =>
+      e.path.startsWith("runs/") &&
+      (e.path.endsWith(".yaml") || (e.path.endsWith(".md") && !e.path.endsWith("/README.md")))
+  );
+  // Pair each runs/<date>/<ulid>.yaml manifest with its sibling .md notes (by shared base path).
+  const yamls = new Map<string, string>(); // base → manifest yaml
+  const notes = new Map<string, string>(); // base → prose notes
+  for (const b of blobs) {
+    if (b.path.endsWith(".yaml")) yamls.set(b.path.slice(0, -".yaml".length), b.content);
+    else notes.set(b.path.slice(0, -".md".length), b.content);
+  }
+  const runs = [...yamls]
+    .map(([base, yamlText]): RunManifest => {
+      const m = (parse(yamlText) ?? {}) as Partial<RunManifest>;
+      return { ...EMPTY_RUN, ...m, run_id: m.run_id ?? base, notes_md: notes.get(base) ?? "" };
+    })
+    .sort((a, b) => b.started.localeCompare(a.started));
+  return { runs: runs.slice(0, limit) };
 }
 
-// Garden browse + file read now compose over the generic content proxy (repo.ts:
-// repoTree/repoFile) — no bespoke garden endpoints.
+// Garden browse + file read compose over the shared git-store reader (repo.ts: readBlobs/repoFile)
+// — no bespoke garden endpoints.

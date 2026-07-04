@@ -36,8 +36,8 @@ from config import Settings
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from forgejo import Forgejo
-from models import FeedbackRequest, MetaResponse, RepoBlob, RepoTree, RepoTreeEntry, ResponseRequest, RunsResponse
-from reads import read_runs, read_scan_time
+from models import FeedbackRequest, MetaResponse, RepoBlob, RepoTree, RepoTreeEntry, ResponseRequest
+from reads import read_scan_time
 
 logger = logging.getLogger(__name__)
 
@@ -141,12 +141,9 @@ def create_app(settings: Settings) -> FastAPI:
     # generic tree+blobs proxy and rendered by the <improvement-board/> garden widget — no
     # bespoke endpoint. See plans/garden-gradient.md → Settled mechanism.
 
-    # --- Runs surface: per-run propagation record (runs/<date>/<ulid>.{yaml,md}) -
-    @app.get("/api/runs")
-    async def runs(forgejo: ForgejoDep) -> RunsResponse:
-        """Recent run manifests + their prose notes — proves each source was processed and shows
-        how each change propagated to every surface. Read-only; empty if no runs recorded yet."""
-        return RunsResponse(runs=await read_runs(forgejo))
+    # The runs surface (runs/<date>/<ulid>.{yaml,md}) composes over the generic tree+blobs proxy —
+    # the frontend pairs each manifest with its prose notes and parses them (client.ts:fetchRuns).
+    # No bespoke endpoint. RunManifest/RunsResponse stay in models.py as the wire contract.
 
     # The knowledge garden (browse + file read) now composes over the generic content proxy
     # below — the frontend filters the tree to the curated dirs and fetches blobs. No bespoke

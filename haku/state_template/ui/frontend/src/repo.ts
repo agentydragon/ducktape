@@ -11,7 +11,7 @@
 
 import { type FrontMatter, parseFrontmatter } from "./frontmatter.ts";
 import { trackGit } from "./git_progress.ts";
-import type { RepoBlob, RepoTree } from "./types.ts";
+import type { RepoBlob, RepoTree, RepoTreeEntry } from "./types.ts";
 
 const blobCache = new Map<string, string>();
 let treeInFlight: Promise<RepoTree> | null = null;
@@ -46,26 +46,62 @@ export function repoTree(): Promise<RepoTree> {
   return treeInFlight;
 }
 
-// Blobs by sha, in input order. Content-addressed → cached permanently; only uncached shas are fetched.
+// Blobs by sha, in input order. Content-addressed → cached permanently; only uncached shas fetched.
+// The backend returns every requested blob or errors (it chunks below Forgejo's 50-blob cap and
+// raises on a short response — see ui/backend/forgejo.py), so a sha still missing after the fetch
+// means a truncation slipped through (a proxy dropping the query, say). Surface it — never yield ""
+// for a dropped blob, which would silently render an item blank.
 export async function repoBlobs(shas: string[]): Promise<RepoBlob[]> {
   const missing = shas.filter((s) => !blobCache.has(s));
-  // Only a real fetch registers with the tracker — a fully-cached read (missing empty) does no I/O.
   if (missing.length > 0) {
     await trackGit(missing.length, async () => {
       const res = await fetch(`/api/repo/blobs?shas=${missing.join(",")}`);
       if (!res.ok) throw new Error(`repo blobs: ${res.status}`);
       for (const b of (await res.json()) as RepoBlob[]) blobCache.set(b.sha, b.content);
     });
+    const dropped = missing.filter((s) => !blobCache.has(s));
+    if (dropped.length > 0)
+      throw new Error(
+        `repo blobs: ${dropped.length}/${missing.length} missing from response (${dropped.slice(0, 3).join(", ")})`
+      );
   }
-  return shas.map((sha) => ({ sha, content: blobCache.get(sha) ?? "" }));
+  return shas.map((sha) => ({ sha, content: blobCache.get(sha)! }));
 }
 
-// One file's text by exact repo path — resolves its blob sha via the tree, then fetches it.
-// `null` if the path isn't a blob in the tree. Both reads hit the caches above.
+// One repo blob resolved to its path + text content — the unit `readBlobs` yields.
+export interface Blob {
+  path: string;
+  content: string;
+}
+
+// We read blobs in ≤50-sha chunks: it bounds the request URL (no proxy silently truncating a huge
+// query string) and doubles as the batching unit for streaming partial renders. The backend chunks
+// again below Forgejo's own 50-blob cap.
+const BLOB_CHUNK = 50;
+
+// THE shared high-level read over the git store: the text of every tree blob matching `select`, in
+// one tree read + chunked bulk-blob reads (all tracked by git_progress.ts, none silently dropped —
+// see repoBlobs). Blobs come back in tree order; the optional `onBatch` fires after each chunk with
+// everything read so far, for progressive rendering. Every surface — items, garden, runs, responses
+// — composes over this instead of re-implementing tree-filtering, sha-mapping, chunking.
+export async function readBlobs(
+  select: (e: RepoTreeEntry) => boolean,
+  onBatch?: (soFar: Blob[]) => void
+): Promise<Blob[]> {
+  const entries = (await repoTree()).entries.filter((e) => e.type === "blob" && select(e));
+  const out: Blob[] = [];
+  for (let i = 0; i < entries.length; i += BLOB_CHUNK) {
+    const chunk = entries.slice(i, i + BLOB_CHUNK);
+    const bySha = new Map((await repoBlobs(chunk.map((e) => e.sha))).map((b) => [b.sha, b.content] as const));
+    for (const e of chunk) out.push({ path: e.path, content: bySha.get(e.sha)! });
+    onBatch?.(out);
+  }
+  return out;
+}
+
+// One file's text by exact repo path, or `null` if the path isn't a blob in the tree.
 export async function repoFile(path: string): Promise<string | null> {
-  const entry = (await repoTree()).entries.find((e) => e.type === "blob" && e.path === path);
-  if (!entry) return null;
-  const [blob] = await repoBlobs([entry.sha]);
+  const [blob] = await readBlobs((e) => e.path === path);
   return blob?.content ?? null;
 }
 
@@ -73,15 +109,23 @@ export interface Doc extends FrontMatter {
   path: string;
 }
 
-// Every `.md` file directly-or-deeper under `dir` with its parsed frontmatter + body, sorted by
-// path. The trailing "/" on the dir match keeps a sibling like `memory/improvements-archive` out of
-// `memory/improvements`.
-export async function docsUnder(dir: string): Promise<Doc[]> {
-  const tree = await repoTree();
-  const under = tree.entries.filter((e) => e.type === "blob" && e.path.endsWith(".md") && e.path.startsWith(`${dir}/`));
-  const blobs = await repoBlobs(under.map((e) => e.sha));
-  const bySha = new Map(blobs.map((b): [string, string] => [b.sha, b.content]));
-  return under
-    .map((e) => ({ path: e.path, ...parseFrontmatter(bySha.get(e.sha) ?? "") }))
-    .sort((a, b) => a.path.localeCompare(b.path));
+// Streaming hook for `docsUnder`: `onDocs` gets the accumulated (path-sorted) docs after each blob
+// chunk so a view can render items as they stream in. Load progress itself is not reported here —
+// the git-object transfer is tracked centrally (git_progress.ts) and shown by the one global bar.
+export interface DocsUnderOpts {
+  onDocs?: (docs: Doc[]) => void;
+}
+
+const toDocs = (blobs: Blob[]): Doc[] =>
+  blobs.map((b) => ({ path: b.path, ...parseFrontmatter(b.content) })).sort((a, b) => a.path.localeCompare(b.path));
+
+// Every `.md` file directly-or-deeper under `dir` with its parsed frontmatter + body, path-sorted.
+// The trailing "/" on the dir match keeps a sibling like `memory/improvements-archive` out of
+// `memory/improvements`. Composes over readBlobs; `onDocs` streams the accumulated set per chunk.
+export async function docsUnder(dir: string, opts: DocsUnderOpts = {}): Promise<Doc[]> {
+  const blobs = await readBlobs(
+    (e) => e.path.endsWith(".md") && e.path.startsWith(`${dir}/`),
+    opts.onDocs ? (soFar) => opts.onDocs!(toDocs(soFar)) : undefined
+  );
+  return toDocs(blobs);
 }
