@@ -39,6 +39,15 @@ applied for this reason, so it was reverted. Revisit only if the provider gains
 issue is the path there. The **cloud** agent stays on TF — the provider handles
 `type = "cloud"` fine.
 
+Only the **environment / agent / deployment** are imperative. The **vault + all MCP
+credentials are declarative and shared**: the cloud agent module
+(`tf/gitops/haku-cloud-agent`) owns one vault used by both agents, publishing its ID
+to the `haku-cloud-agent-ids` Secret; `provision.sh` reads that ID instead of creating
+its own vault, so tana-ro/gmail-labeling/kubectl-machine/grocy-sf tokens get TF
+drift-detection + rotation for the self-hosted agent too. The agent's toolset is
+identical to the cloud agent's — kept in step by
+`//haku/base:test_agent_config_ssot`.
+
 ## The worker is `worker.py` on the anthropic Python SDK (not `ant`)
 
 The poll loop is `worker.py`, built on the official `anthropic` Python SDK's
@@ -71,9 +80,9 @@ durable memory, so a cold session just re-orients.
 | File                    | Role                                                                                 | Runs on       |
 | ----------------------- | ------------------------------------------------------------------------------------ | ------------- |
 | `haku.environment.yaml` | self-hosted environment (`ant beta:environments create`)                             | control plane |
-| `haku.agent.yaml`       | agent: thin `system` pointer, fixed toolset + tana-ro & gmail-labeling `mcp_toolset` | control plane |
+| `haku.agent.yaml`       | agent: thin `system` pointer, fixed toolset + 4 MCP `mcp_toolset`s (= cloud agent)   | control plane |
 | `haku.deployment.yaml`  | scheduled-deployment wake trigger                                                    | control plane |
-| `provision.sh`          | one-shot: create environment/agent/vault/deployment via `ant`                        | operator / CI |
+| `provision.sh`          | one-shot: create environment/agent/deployment via `ant` (vault is the shared TF one) | operator / CI |
 | `entrypoint.sh`         | clone ducktape + haku-state, then exec `haku-worker`                                 | `haku-worker` |
 | `worker.py`             | the poll loop (anthropic Python SDK `EnvironmentWorker`)                             | `haku-worker` |
 | `nixos.nix`             | full-NixOS worker image (`nix build .#haku-worker-image`)                            | CI / build    |
@@ -103,9 +112,11 @@ by Flux — see <../../../../cluster/docs/container-images.md>.
 
 The fixed toolset is `agent_toolset_20260401` (`bash/read/write/edit/glob/grep`);
 Haku reaches Plaid (`psql`), Google (`curl`), and the cluster (`kubectl`,
-in-cluster `haku` SA) through `bash`. Tana (read-only) and gmail-labeling (Haku's
-one sanctioned world-write, bounded server-side to labels under `haku/`) are
-native `mcp_toolset`s (Anthropic-side, vault auth).
+in-cluster `haku` SA) through `bash`. On top of that it has four native
+`mcp_toolset`s (Anthropic-side, shared-vault auth), identical to the cloud agent:
+`tana-ro` (read-only Tana), `gmail-labeling` (the one sanctioned world-write,
+bounded to `haku/` labels), `grocy-sf` (read-only grocy), and `kubectl-machine`
+(a machine-JWT cluster path — redundant here with in-pod `kubectl`, kept for parity).
 
 ## k8s wiring
 
@@ -135,11 +146,12 @@ through CI + Flux. Live IDs: agent `agent_01CV5VupX8ALuVD1dsoEzHY6`, deployment
 `depl_011DSrUoXuhoDWJoPyDuePqR` (haku-scan), environment
 `env_015uqL9WAMSDytQEWWmLG9zF`.
 
-Enabling gmail-labeling on the **live** agent (added after first bring-up) is the
-same two-step: create the gmail-labeling vault credential (the new block in
-`provision.sh`, or `ant beta:vaults:credentials create --vault-id <VAULT_ID>`
-against the live vault), then push the new agent version below so the
-`gmail-labeling` `mcp_toolset` takes effect.
+The MCP **credentials** live in the shared TF vault (`tf/gitops/haku-cloud-agent`),
+so enabling a new MCP on the live agent no longer means creating a credential here —
+Flux applies it on the shared vault. You only push the new agent version (below) so
+the `mcp_toolset` takes effect, and re-point the deployment at the shared vault once
+(`ant beta:deployments update --deployment-id <id> --vault-id <shared-vault-id>`,
+from the `haku-cloud-agent-ids` Secret).
 
 After editing `haku.agent.yaml`, apply it and re-pin in **both** steps:
 

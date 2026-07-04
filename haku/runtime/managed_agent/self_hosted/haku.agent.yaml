@@ -3,20 +3,15 @@
 # behavior stays single-sourced in haku/base + haku/run.md, which the worker
 # clones into the agent workdir at startup (see entrypoint.sh).
 #
-# SYNC: the shared bits below — `model`, and the `tana-ro` + `gmail-labeling` MCP
-# servers/toolsets (URLs + always_allow) — are duplicated in the cloud surface,
-# <../../../../tf/gitops/haku-cloud-agent/main.tf> (HCL). SSOT is
-# <../../../base/agent_shared.yaml>, enforced by //haku/base:test_agent_config_ssot
-# (fails on drift) — no live codegen (the tofu-controller runner can't read repo-wide
-# files), so update this + main.tf to match the SSOT. Runtime C (haku/runtime/agent,
-# env-driven via HAKU_MODEL) is a separate architecture, not a copy.
-# Agent object name (matches the `haku-selfhosted` environment; sibling is `haku-cloud`).
-# The persona is still "Haku" (see `system` below); this is just the control-plane name.
+# SYNC: `model` + full toolset are identical to the cloud agent
+# (<../../../../tf/gitops/haku-cloud-agent/main.tf>). SSOT haku/base/agent_shared.yaml,
+# parity enforced by //haku/base:test_agent_config_ssot — a red run shows any drift.
+#
+# `name`: the control-plane object name (matches the `haku-selfhosted` environment;
+# sibling `haku-cloud`). Persona stays "Haku" (see `system`).
 name: haku-selfhosted
 # TEMP(debugging): Sonnet while we shake out the self-hosted worker; restore
-# claude-opus-4-8 once sessions run end-to-end. `model` is SSOT'd in
-# haku/base/agent_shared.yaml (//haku/base:test_agent_config_ssot enforces) — change
-# it there and in the cloud main.tf together, or the test fails.
+# claude-opus-4-8 once sessions run end-to-end.
 model: claude-sonnet-4-6
 system: |
   You are Haku, the operator's tireless background executive assistant. A worker
@@ -31,6 +26,10 @@ system: |
   Read the manual and the run procedure, then execute the run procedure end to
   end. Each user message is a wake: do one scan pass, commit and push haku-state,
   then stop and wait for the next wake.
+# The MCP-credential auth for every mcp_toolset below is injected at Anthropic's
+# egress from the SHARED, TF-managed vault (tf/gitops/haku-cloud-agent; both agents
+# reference it) — the pod never sees a token. Toolset set is identical to the cloud
+# agent; keep it that way (test_agent_config_ssot).
 tools:
   # Fixed built-in toolset, supplied by the `ant` worker in the pod. The Pod is
   # the trust boundary (Ember posture), so everything is auto-allowed.
@@ -39,21 +38,33 @@ tools:
       enabled: true
       permission_policy:
         type: always_allow
-  # Tana (read-only) as a native MCP tool; auth is injected at Anthropic's egress
-  # from the vault credential (provision.sh), so the pod never sees the token.
-  # Auto-allow like the bash toolset: it's the read-only Tana facade and the pod
-  # is the trust boundary — without this the mcp_toolset defaults to always_ask,
-  # which parks an unattended scan on the first Tana call awaiting approval.
+  # kubectl-machine — cluster access via the machine-JWT MCP. Redundant with this
+  # runtime's in-pod kubectl (in-cluster SA), but kept for parity with the cloud
+  # agent; Anthropic calls the MCP, so no pod egress is involved.
+  - type: mcp_toolset
+    mcp_server_name: kubectl-machine
+    default_config:
+      enabled: true
+      permission_policy:
+        type: always_allow
+  # grocy-sf — read-only grocy facade.
+  - type: mcp_toolset
+    mcp_server_name: grocy-sf
+    default_config:
+      enabled: true
+      permission_policy:
+        type: always_allow
+  # tana-ro — read-only Tana facade. Auto-allow (read-only facade + trust boundary);
+  # without it the mcp_toolset defaults to always_ask and parks an unattended scan.
   - type: mcp_toolset
     mcp_server_name: tana-ro
     default_config:
       enabled: true
       permission_policy:
         type: always_allow
-  # gmail-labeling toolset — write, but bounded by construction to `haku/` labels
-  # (closure invariant enforced server-side before any Gmail call), so always_allow
-  # is safe; the server, not in-agent gating, is the fence. Haku's ONE sanctioned
-  # world-write. Bearer-gated by the gmail-labeling vault credential (provision.sh).
+  # gmail-labeling — write, but bounded by construction to `haku/` labels (closure
+  # invariant enforced server-side), so always_allow is safe; the server is the
+  # fence. Haku's ONE sanctioned world-write.
   - type: mcp_toolset
     mcp_server_name: gmail-labeling
     default_config:
@@ -61,6 +72,12 @@ tools:
       permission_policy:
         type: always_allow
 mcp_servers:
+  - type: url
+    name: kubectl-machine
+    url: https://kubectl-machine-mcp.allegedly.works/mcp
+  - type: url
+    name: grocy-sf
+    url: https://grocy-mcp-sf.allegedly.works/mcp
   - type: url
     name: tana-ro
     url: https://tana-mcp-ro.allegedly.works/mcp

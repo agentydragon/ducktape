@@ -1,17 +1,31 @@
-# Single source of truth for the Haku agent-config fields that are duplicated
-# across the two managed-agent surfaces:
+# Single source of truth for the shared Haku agent config. The two managed-agent
+# surfaces are now identical on everything below — same model, same toolset:
 #   - cloud (Anthropic-hosted): ../../tf/gitops/haku-cloud-agent/main.tf (HCL)
 #   - self-hosted:              ../runtime/managed_agent/self_hosted/haku.agent.yaml (YAML)
 #
-# test_agent_config_ssot.py parses both surfaces and fails if either drifts from
-# the values here — so edit these, then update both surfaces to match.
+# test_agent_config_ssot.py parses both surfaces and asserts (a) each matches these
+# values and (b) the two are identical to each other (toolset parity). Edit here,
+# then update both surfaces, or the test fails.
 #
-# Only genuinely-shared, static fields belong here. Surface-specific wiring stays
-# per-surface: cloud-only kubectl-machine/grocy-sf MCPs, networking, and the vault
-# credentials that read live k8s secrets; self-hosted's in-pod agent_toolset.
-# (Runtime C, haku/runtime/agent, is env-driven via HAKU_MODEL — not covered here.)
+# What stays per-surface (NOT here): `name` (haku-cloud vs haku-selfhosted), the
+# `system` bootstrap prose, the `environment` (cloud+networking vs self_hosted), and
+# how each reaches its vault. The vault + all four MCP credentials are one shared,
+# TF-managed vault (tf/gitops/haku-cloud-agent, published to the haku-cloud-agent-ids
+# Secret); both agents reference it. (Runtime C, haku/runtime/agent, is env-driven via
+# HAKU_MODEL — a separate architecture, not covered here.)
 model: claude-sonnet-4-6
+# The fixed in-sandbox bash/read/write/edit/glob/grep toolset (always_allow — the
+# execution sandbox is the trust boundary in both runtimes).
+agent_toolset: agent_toolset_20260401
+# Every MCP server + its mcp_toolset permission policy. All always_allow; each is
+# bounded server-side (read-only facades, or gmail-labeling's `haku/`-prefix closure).
 mcp_servers:
+  kubectl-machine:
+    url: https://kubectl-machine-mcp.allegedly.works/mcp
+    toolset_permission_policy: always_allow
+  grocy-sf:
+    url: https://grocy-mcp-sf.allegedly.works/mcp
+    toolset_permission_policy: always_allow
   tana-ro:
     url: https://tana-mcp-ro.allegedly.works/mcp
     toolset_permission_policy: always_allow

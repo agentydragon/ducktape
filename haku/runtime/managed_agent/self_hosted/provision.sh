@@ -22,34 +22,14 @@ echo "     secret on the haku-worker Deployment (it is never created via the API
 AGENT_ID=$(ant beta:agents create --transform id -r <"$here/haku.agent.yaml")
 echo "agent: $AGENT_ID"
 
-# Vault for MCP credentials. Each static bearer is read from the owning namespace
-# and piped via stdin, never argv. Anthropic injects it at egress; the pod never
-# sees it.
-VAULT_ID=$(ant beta:vaults create --display-name haku-mcp --transform id -r)
-echo "vault: $VAULT_ID"
-
-# tana-mcp-ro: read-only Tana facade. Bearer already reflected into haku-sandbox.
-TANA_TOKEN=$(kubectl -n haku-sandbox get secret haku-tana-ro-token -o jsonpath='{.data.token}' | base64 -d)
-ant beta:vaults:credentials create --vault-id "$VAULT_ID" >/dev/null <<YAML
-display_name: tana-mcp-ro (read-only)
-auth:
-  type: static_bearer
-  mcp_server_url: https://tana-mcp-ro.allegedly.works/mcp
-  token: ${TANA_TOKEN}
-YAML
-echo "  -> tana-mcp-ro credential stored in vault $VAULT_ID"
-
-# gmail-labeling: Haku's ONE sanctioned world-write, bounded server-side to
-# labels under `haku/`. The MCP's static client bearer lives in its own namespace.
-GMAIL_TOKEN=$(kubectl -n gmail-labeling get secret haku-gmail-labeling-token -o jsonpath='{.data.token}' | base64 -d)
-ant beta:vaults:credentials create --vault-id "$VAULT_ID" >/dev/null <<YAML
-display_name: gmail-labeling (managed labels under haku/)
-auth:
-  type: static_bearer
-  mcp_server_url: https://gmail-labeling.allegedly.works/mcp
-  token: ${GMAIL_TOKEN}
-YAML
-echo "  -> gmail-labeling credential stored in vault $VAULT_ID"
+# Shared vault: the vault + ALL MCP credentials (kubectl-machine, grocy-sf, tana-ro,
+# gmail-labeling) are TF-managed by the cloud agent module (tf/gitops/haku-cloud-agent)
+# and published to the haku-cloud-agent-ids Secret. Both agents reference the same
+# vault, so this agent no longer creates its own — read the shared ID. (The vault +
+# creds are the one part of the self-hosted agent that IS declarative; only the
+# environment/agent/deployment stay imperative, since the provider can't do self_hosted.)
+VAULT_ID=$(kubectl -n flux-system get secret haku-cloud-agent-ids -o jsonpath='{.data.vault_id}' | base64 -d)
+echo "shared vault: $VAULT_ID"
 
 # Scheduled deployment = the wake trigger (one fresh session per fire).
 DEPL_ID=$(ant beta:deployments create \
