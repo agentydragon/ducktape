@@ -61,11 +61,12 @@ metadata:
   namespace: forgejo
 spec:
   sourcePVC: forgejo-git-rwx
-  # Pre-seed running (Forgejo live). Cut over by bumping trigger.manual with
-  # Forgejo scaled to 0, then repoint the HelmRelease claimName.
+  # Read-zero-downtime cutover: pushes frozen (coordinated), this final delta sync
+  # (trigger.manual=cutover-1) runs against the quiescent tree, then the HelmRelease
+  # claimName rolls to forgejo-git-rwx-ssd (RollingUpdate maxUnavailable=0 keeps reads up).
   paused: false
   trigger:
-    manual: preseed-1
+    manual: cutover-1
   rsyncTLS:
     copyMethod: Direct
     keySecret: volsync-rsync-tls-forgejo-git-ssd-migration
