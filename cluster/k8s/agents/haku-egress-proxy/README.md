@@ -49,7 +49,7 @@ with the new signing key.
 - **Host allowlist** (`allowed` dstdomain, default-deny): the union of the
   haku-sandbox set (image registries, pypi/npm, nix, Google APIs, the Haku mailbox,
   Anthropic) and the `haku-ci` Bazel/toolchain + Forgejo hosts. `http_access allow
-  allowed` / `http_access deny all`. This set MUST equal the pod-egress CNP's
+allowed` / `http_access deny all`. This set MUST equal the pod-egress CNP's
   `toFQDNs` (cnp-haku-cloud-api-egress.yaml) — enforced by
   <../../../validation/test_haku_egress_proxy_consistency.py>.
 - **Cache**: `cache_dir` on the 25Gi seaweedfs PVC. Credentialed / user-data hosts
