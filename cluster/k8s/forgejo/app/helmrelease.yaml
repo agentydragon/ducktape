@@ -259,7 +259,9 @@ spec:
       # migration cutover. (The old gitea-shared-storage PVC has the chart's
       # helm.sh/resource-policy:keep annotation, so it survives as a rollback.)
       create: false
-      claimName: forgejo-git-rwx
+      # git repos on the SeaweedFS SSD tier (Phase 3, ovh_storage_tiering.md). Migrated
+      # from forgejo-git-rwx (HDD) via VolSync rsync-TLS; read-zero-downtime rolling repoint.
+      claimName: forgejo-git-rwx-ssd
       # The chart refuses replicaCount > 1 unless accessModes[0] is ReadWriteMany
       # (a guard against a single-writer FS under multiple replicas). create:false
       # means the chart won't actually create a PVC from this — our git-storage-pvc.yaml
