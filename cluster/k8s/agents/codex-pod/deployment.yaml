@@ -53,7 +53,9 @@ spec:
               install -d -m700 /workspace/.sshd
               [ -f /workspace/.sshd/ssh_host_ed25519_key ] \
                 || ssh-keygen -q -t ed25519 -N "" -f /workspace/.sshd/ssh_host_ed25519_key
-              exec sshd -D -e -f "$HOME/.ssh/sshd_config"
+              # sshd re-execs itself for privsep, so it refuses a PATH-resolved
+              # invocation ("sshd requires execution with an absolute path").
+              exec /bin/sshd -D -e -f "$HOME/.ssh/sshd_config"
           env:
             # Shared BuildBuddy key (bbr reads BUILDBUDDY_API_KEY), reflected into
             # this namespace from shared-secrets/buildbuddy-api-key. Optional so a
