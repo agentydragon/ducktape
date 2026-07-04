@@ -1,0 +1,14 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: registry-cache
+  namespace: seaweedfs
+spec:
+  name: registry-cache
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  reclaimPolicy: Retain
+  access:
+    - user: registry-cache
+      actions: [Read, Write, List, Tagging]

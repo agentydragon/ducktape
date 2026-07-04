@@ -1,0 +1,57 @@
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  name: oci-cache-valkey
+  namespace: oci-cache
+  annotations:
+    description: >-
+      Shared dedupe/metadata cache for the Zot OCI pull-through cache. Zot's
+      cacheDriver points here (remoteCache); the durable content lives in S3, so
+      this holds only the regenerable dedupe index — safe to lose (Zot rebuilds
+      from the bucket). On seaweedfs-ovh (networked, not node-pinned) so it
+      reschedules freely.
+spec:
+  clusterSize: 2
+  kubernetesConfig:
+    image: valkey/valkey:8-alpine
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+  redisConfig:
+    maxMemoryPercentOfLimit: 80
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: seaweedfs-ovh
+        resources:
+          requests:
+            storage: 2Gi
+  affinity:
+    nodeAffinity:
+      # Soft off control-plane nodes (their etcd is on a rotational HDD;
+      # co-located I/O starves etcd fsync — 2026-06-28 outage), and soft-prefer
+      # the OVH region to sit near the SeaweedFS backend. Not hard-pinned.
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+        - weight: 50
+          preference:
+            matchExpressions:
+              - key: topology.kubernetes.io/region
+                operator: In
+                values: ["hil"]
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: oci-cache-valkey
+          topologyKey: kubernetes.io/hostname

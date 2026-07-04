@@ -185,6 +185,10 @@ resources:
   - harbor/servicemonitor/flux-kustomization.yaml
   - harbor/oidc-config/flux-kustomization.yaml
 
+  # --- oci-cache (Zot pull-through mirror for docker.io/ghcr.io/quay.io/etc.) ---
+  - oci-cache/namespace/flux-kustomization.yaml
+  - oci-cache/app/flux-kustomization.yaml
+
   # --- firecrawl ---
   - firecrawl/namespace/flux-kustomization.yaml
   - firecrawl/db/flux-kustomization.yaml
@@ -399,6 +403,7 @@ resources:
   - seaweedfs/drivefs-artifacts-bucket/flux-kustomization.yaml
   - seaweedfs/forgejo-bucket/flux-kustomization.yaml
   - seaweedfs/langfuse-bucket/flux-kustomization.yaml
+  - seaweedfs/registry-cache-bucket/flux-kustomization.yaml
   - seaweedfs/loom-gym-bucket/flux-kustomization.yaml
   - seaweedfs/wayback-archive-bucket/flux-kustomization.yaml
   - seaweedfs/public-s3/flux-kustomization.yaml
