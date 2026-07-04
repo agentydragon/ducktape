@@ -2,9 +2,15 @@
 # `ant beta:agents {create,update}`). The `system` prompt is a thin pointer —
 # behavior stays single-sourced in haku/base + haku/run.md, which the worker
 # clones into the agent workdir at startup (see entrypoint.sh).
+#
+# SYNC: the shared bits below — `model`, and the `tana-ro` + `gmail-labeling` MCP
+# servers/toolsets (URLs + always_allow) — are duplicated in the cloud surface,
+# <../../../../tf/gitops/haku-cloud-agent/main.tf> (HCL). No SSOT (the tofu-controller
+# runner can't read repo-wide files), so keep the two in step by hand. Runtime C
+# (haku/runtime/agent, env-driven via HAKU_MODEL) is a separate architecture, not a copy.
 name: haku
 # TEMP(debugging): Sonnet while we shake out the self-hosted worker; restore
-# claude-opus-4-8 once sessions run end-to-end.
+# claude-opus-4-8 once sessions run end-to-end. SYNC model with haku-cloud-agent/main.tf.
 model: claude-sonnet-4-6
 system: |
   You are Haku, the operator's tireless background executive assistant. A worker
