@@ -23,27 +23,49 @@ container:
   # host.docker.internal to the host-gateway (the dind/pod) and point DOCKER_HOST
   # at it so the in-container docker CLI talks to the dind sidecar.
   #
-  # The build steps (bazel/bazelisk, npm, pip, git) run INSIDE these job
-  # containers, so their external egress must also go through haku-egress-proxy and trust
-  # its CA. `-e HTTP_PROXY/HTTPS_PROXY/NO_PROXY` route egress (NO_PROXY keeps dind +
-  # the in-cluster Forgejo registry direct); the two `-v` mounts inject the
-  # haku-egress-proxy CA bundle — the source path is on the DIND daemon's filesystem, where
-  # the CA volume is mounted (deployment.yaml) — both at the env-pointed path and
-  # over the system trust store (/etc/ssl/certs/ca-certificates.crt) so tools that
-  # only read the system bundle trust it too. The per-tool CA env vars cover
-  # git/curl/python/node. NOTE: Bazel's Java repository downloader does NOT read
-  # these (it uses the JDK truststore) — the haku-state build image must import the
-  # CA into cacerts (e.g. `keytool -importcert` / `update-ca-certificates`).
-  # CLEANUP(added 2026-07-04): this CA env list is deliberately padded. Once the
-  #   first green haku-ci build shows which tools actually do TLS here, trim to the
-  #   load-bearing subset — the system-store readers (SSL_CERT_FILE/CURL_CA_BUNDLE/
-  #   GIT_SSL_CAINFO) are redundant given the /etc/ssl/certs mount, leaving at most
-  #   REQUESTS_CA_BUNDLE/NODE_EXTRA_CA_CERTS — or bake a custom job image (CA via
-  #   update-ca-certificates + proxy ENV) so `options` collapses to --add-host +
-  #   DOCKER_HOST. Proxy vars stay: act does not forward them to jobs (nektos/act#1578).
+  # The build steps (bazel/bazelisk, npm, pip, git) run INSIDE these job containers,
+  # so their egress must go through haku-egress-proxy and trust its CA. A folded
+  # scalar (>-) can't carry inline comments (they'd become literal args), so the
+  # per-arg rationale — each entry is either load-bearing (why) or a trim candidate
+  # (TODO) — lives here, arg-group by arg-group:
+  #
+  #   --add-host + -e DOCKER_HOST  → REQUIRED. Reach dind from the per-job bridge net
+  #     (see the DOCKER_HOST note above); nothing to trim.
+  #   -e HTTP_PROXY / HTTPS_PROXY  → REQUIRED. act/forgejo-runner do NOT forward the
+  #     runner's own proxy env into job containers (nektos/act#1578), so egress has to
+  #     be injected per-job here. Can only disappear by baking them into a custom job
+  #     image's ENV.
+  #   -e NO_PROXY  → REQUIRED (keeps dind + the in-cluster Forgejo git/registry direct),
+  #     but the LIST is a trim candidate. TODO(check): confirm each entry is load-bearing
+  #     — loopback + host.docker.internal are; `10.0.0.0/8` and the explicit
+  #     forgejo-http.forgejo{,.svc.cluster.local} may be redundant with the `.forgejo` /
+  #     `.svc.cluster.local` suffixes (NO_PROXY suffix-match semantics differ per tool —
+  #     Go vs curl vs python — so verify against a real job before dropping any).
+  #   -e SSL_CERT_FILE / CURL_CA_BUNDLE / GIT_SSL_CAINFO  → belt-and-suspenders, likely
+  #     TRIMMABLE. These point curl/git/openssl at the CA, but the `/etc/ssl/certs` mount
+  #     below already makes it the system default those tools read. TODO(after 1st green):
+  #     drop.
+  #   -e REQUESTS_CA_BUNDLE / NODE_EXTRA_CA_CERTS  → needed ONLY by tools that ignore the
+  #     system store (python-requests, node). TODO(after 1st green): a pure Bazel build
+  #     may never invoke either (Bazel fetches via its JDK downloader → cacerts, handled
+  #     in the build image, NOT here); drop whichever the build doesn't touch.
+  #   -v …:/egress-proxy-ca/ca-certificates.crt  → provides the path the CA env vars point
+  #     at; trim together with those env vars.
+  #   -v …:/etc/ssl/certs/ca-certificates.crt  → REQUIRED. Overlays the CA onto the system
+  #     trust store so system-store readers (curl/git) trust the proxy's bumped TLS with no
+  #     per-tool var — this is the mount that makes the three env vars above redundant.
+  #
+  # NOTE: Bazel's Java repository downloader reads none of these (it uses the JDK
+  # truststore) — the haku-state build image must import the CA into cacerts
+  # (`keytool -importcert` / `update-ca-certificates`).
+  #
+  # The clean end-state that erases most of this: a custom job image with the CA baked
+  # in (update-ca-certificates) + proxy ENV, collapsing `options` to --add-host +
+  # -e DOCKER_HOST. Deferred pending the first green build (operator decision, PR #2799).
+  #
   # Folded scalar (>-): reads as one arg per line but act_runner sees a single
-  # space-joined string. One `-e`/`-v` per line — keep them contiguous (a blank
-  # line in a folded scalar becomes a newline and would corrupt the options string).
+  # space-joined string. One `-e`/`-v` per line — keep them contiguous (a blank line in
+  # a folded scalar becomes a newline and would corrupt the options string).
   options: >-
     --add-host host.docker.internal:host-gateway
     -e DOCKER_HOST=tcp://host.docker.internal:2375
