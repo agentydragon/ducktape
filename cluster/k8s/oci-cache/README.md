@@ -69,14 +69,25 @@ The public, authenticated endpoint and node-level pull-through are deliberately 
    change needed: the Service is on port 80, which haku-ci's `toEntities: cluster` rule
    already permits (the claude/haku sandboxes have unrestricted cluster egress).
 
-## Verify before trusting it
+## Verified working (2026-07-04)
 
-Config points not smoke-tested at authoring time (no live cluster access): the pinned
-Zot image tag (`v2.1.11`), the exact S3 `storageDriver` keys against this Zot version
-(see [zot#3571](https://github.com/project-zot/zot/issues/3571) re 2.1.10 S3 config
-drift), and the `sync` prefix/`stripPrefix` routing. Smoke test:
+Confirmed live end-to-end: image tag `v2.1.11` runs with the `sync` extension, the S3
+`storageDriver` keys are correct, the `prefix`/`destination` routing resolves
+(`docker-hub/library/busybox` → `docker.io/library/busybox`), Docker Hub anonymous pull
+works, and a fresh image **persists to the SeaweedFS bucket** (`successfully synced image`
+in Zot's log; tag reads back). Getting here took three fixes on top of the initial deploy:
+`sync.downloadDir` (crashloop), the `prefix:"**"` + `destination` routing (was mapping
+backwards), and a `seaweedfs-s3` gateway restart so it loaded the `registry-cache` identity
+(see the SeaweedFS S3 identity RCA in `../../docs/lessons_learned/`).
+
+Smoke test (use a **fresh** tag — an image pulled during the pre-fix window can be stuck in
+Zot's metadb as "already synced"; clear with `kubectl -n oci-cache rollout restart
+deploy/zot` + a Valkey flush):
 
 ```bash
 kubectl -n oci-cache run probe --rm -it --image=curlimages/curl --restart=Never -- \
-  curl -sS http://oci-cache/v2/docker-hub/library/alpine/manifests/latest -I
+  curl -sS http://oci-cache/v2/docker-hub/library/busybox/manifests/latest -I
 ```
+
+Known cosmetic quirk: `GET /v2/_catalog` lists empty even for cached repos (clients pull by
+name, not via the catalog, so pulls are unaffected).

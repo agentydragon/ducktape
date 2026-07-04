@@ -74,18 +74,33 @@ until one of the durable fixes below lands.
 The operator is already on the latest (v1.0.30 / chart 0.1.33) — there is no newer-version
 fix. The static-`configSecret` model is the constraint.
 
-1. **Reloader `reloadStrategy: annotations`.** The operator preserves pod-template
-   _annotations_ (it kept a `restartedAt` from a manual restart) but strips Reloader's
-   default _env-var_ patch. Switching Reloader's global strategy to `annotations` may make
-   its reloads survive reconciliation. Global setting — validate against all Reloader-managed
-   workloads before adopting.
-2. **Filer-backed dynamic identities.** SeaweedFS hot-reloads identities managed via the
-   filer (`weed shell s3.configure` / the embedded IAM API / credential manager) with no
-   restart. This is the "proper" fix but an architecture change away from the static
-   `configSecret`, with known upstream footguns
+1. **Reloader `reloadStrategy: annotations`** — cheapest; try first. Evidence it should
+   work: when Reloader fired we watched the operator revert its default _env-var_ patch (the
+   fresh RS scaled to 0), yet a `restartedAt` _annotation_ (not in the CR) survived on the
+   same pod template. So the operator overwrites container spec but **merges** pod-template
+   annotations — an annotation-mode patch should survive reconciliation and roll the gateway.
+   One-line change in `cluster/k8s/reloader/reloader.yaml`. Caveats: `reloadStrategy` is a
+   **global** Reloader setting (affects every managed workload — `annotations` is a common,
+   low-risk mode though), and it's unproven here, so validate on the next tenant add.
+2. **Automate the restart** (the guaranteed fallback if A doesn't survive the operator). A
+   small reconciler in `cluster/provisioners/` (matching grocy/inventree/matrix) that hashes
+   `seaweedfs-s3-config` and, on change, runs `kubectl delete pod -l
+app.kubernetes.io/component=s3` — pod deletion is _not_ reverted by the operator. Isolated
+   to seaweedfs; costs a new moving part + up to one poll-interval of lag.
+3. **Filer-backed dynamic identities** (the "proper" fix, biggest lift). SeaweedFS
+   hot-reloads identities stored in the filer (`weed shell s3.configure` / the embedded IAM
+   API / credential manager) with no restart. But: the operator has **no identity CRD** (only
+   `Seaweed` + `Bucket`), so identities would be provisioned _outside_ it — a `provisioners/`
+   Job upserting each tenant into the filer from the SOPS `s3-identity-*` secrets. The
+   **load-bearing unknown** is whether `weed s3` can be pointed at the filer credential store
+   under this operator (the CR wires `configSecret → -config` with no obvious knob; may need
+   `additionalArgs`/a patch). Go **fully** filer-backed, not half — mixing static + dynamic
+   auth has upstream footguns
    ([#8331](https://github.com/seaweedfs/seaweedfs/issues/8331),
    [#6442](https://github.com/seaweedfs/seaweedfs/issues/6442),
-   [#6130](https://github.com/seaweedfs/seaweedfs/issues/6130)).
-3. **Automate the restart.** A small controller/Job that deletes `seaweedfs-s3` pods when
-   `seaweedfs-s3-config` changes — closes the gap without the operator conflict, at the cost
-   of a moving part.
+   [#6130](https://github.com/seaweedfs/seaweedfs/issues/6130)). Only worth it if S3-tenant
+   churn becomes frequent.
+
+**Recommended order:** try (1) — one line, evidence-backed; fall back to (2) — guaranteed —
+if the operator strips annotations too; reach for (3) only if tenant churn makes the manual
+restart a real tax.
