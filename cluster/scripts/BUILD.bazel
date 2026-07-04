@@ -33,10 +33,3 @@ py_binary(
         "@pypi//pyyaml",
     ],
 )
-
-# Evacuate a flat SeaweedFS volume server onto the hdd volumeTopology group
-# (OVH storage tiering Stage 1 Phase 2; see cluster/docs/plans/ovh_storage_tiering.md).
-py_binary(
-    name = "seaweedfs_evacuate_flat_volume",
-    srcs = ["seaweedfs_evacuate_flat_volume.py"],
-)

@@ -1,13 +1,19 @@
 # Plan: OVH storage tiering (HDD bulk vs SSD hot) + etcd onto NVMe
 
-**Status: active.** Done: the `storage.allegedly.works/tier` node labels + media-scoped
-StorageClasses (`local-path-ovh-{hdd,ssd}`, `seaweedfs-ovh-ssd`), and the SeaweedFS
-volume-layer migration to `volumeTopology` — the whole bulk is now 2-copy on the `hdd` group
-(3× KS-5), both the flat volume servers and their PVCs are retired, and the `ssd` group is up
-and empty. Remaining, in order: **Phase 2.5** (upgrade seaweedfs-operator, drop the
-`spec.volume` stub), **Phase 3** (Forgejo git → `seaweedfs-ovh-ssd`, the Haku-dashboard fix),
-then **Stage 2** (mount rename + etcd onto NVMe, the rolling destructive part), then the
-optional **Stage 3**.
+**Status: active — Stage 1 complete, Stage 2 is the active front.** Done (2026-07): tier node
+labels + media-scoped StorageClasses; the SeaweedFS volume layer migrated to `volumeTopology`
+(`hdd` 3× KS-5, `ssd` 2× KS-GAME) with the flat servers retired; operator upgraded to 1.0.30
+and the `spec.volume` stub dropped; and **Forgejo git cut over to `seaweedfs-ovh-ssd`**
+(read-zero-downtime via VolSync). Lessons + reusable procedure extracted:
+<../lessons_learned/2026_07_04_seaweedfs_volumetopology_and_operator.md>,
+<../lessons_learned/2026_07_04_seaweedfs_stale_mount_cache_after_evacuation.md>,
+<../runbooks/seaweedfs_pvc_storageclass_migration.md>.
+
+**Remaining:** **Stage 2** (mount rename + etcd onto NVMe — the rolling destructive part:
+Talos CP reshuffle + the CNPG Case B moves `forgejo-db`/`filer-db` → SSD, which fully unlocks
+git latency since the filer metadata DB is still on HDD), then the optional **Stage 3**.
+Plus a one-off Phase-3 cleanup: delete the old `forgejo-git-rwx` PVC + the three VolSync
+objects once satisfied (rollback until then = revert the `claimName` commit).
 
 ## Goal
 
@@ -123,12 +129,6 @@ would still provision at whatever path that node has.
 **Guardrail:** since `-disk` tags are unverified, alert if a SeaweedFS `ssd`
 volume-server pod is not on a `tier=ssd` node.
 
-**`volumeTopology` is all-or-nothing (not additive).** Once set, the operator reconciles only
-the topology groups and stops touching the flat `spec.volume` StatefulSet. On our operator
-(1.0.19) `spec.volume` must stay in the CR as a defaults stub: removing it nil-panics
-`buildVolumeServerStartupScriptWithTopology`. Fixed upstream in **1.0.20**; the stub is dropped
-in Phase 2.5 after the operator upgrade.
-
 **Verified — no control-plane taint trap.** OVH control planes run with
 `allowSchedulingOnControlPlanes = true` (ovh-nodes.tf), and live OVH nodes carry no
 control-plane taint. So when the KS-GAME nodes are promoted (Stage 2) they stay
@@ -167,19 +167,14 @@ count** (`-max=0` → disk size ÷ `volumeSizeLimitMB`, 16 GB here), not raw spa
 419 GB NVMe yields only ~24 slots. Re-replication needs a server with a **free slot**, so a
 slot-full server (`volume-0` at 24/24) cannot receive replicas even with disk free.
 
-**GOTCHA — never delete a volume server before its clients re-resolve (bit us 2026-07-04).**
-`weed mount` FUSE clients cache each volume's location and only re-look-up gracefully when the
-old server is **alive** and returns "volume not found"; a **deleted** server (DNS `no such
-host`) leaves the cache permanently stale, so reads I/O-error and git's `mmap` turns that into
-**SIGBUS** (`unpack-objects died of signal 7`). After `volume.move` + deleting the flat
-`seaweedfs-volume` StatefulSet, both Forgejo replicas' mounts kept pointing moved chunks at the
-gone `seaweedfs-volume-{1,2}` and pushes/clones failed intermittently. So server deletion is the
-**last, quiescence-gated** step: (1) move data off (server stays running, empty); (2) verify
-2-copy (**G-swfs**); (3) refresh clients **while the emptied server is still alive** — roll the
-consumer pods (NodeUnpublish→NodePublish respawns the mount with a fresh vidMap) or let them
-self-heal via the alive-empty server's 404→re-lookup; (4) confirm the emptied server logs no
-more volume-data requests; (5) **only then** delete the StatefulSet + PVCs. **Stage 2 retires
-and re-provisions volume-server nodes again — it must follow this order.** Full RCA:
+**GOTCHA — refresh FUSE clients before deleting a volume server (Stage 2 retires and
+re-provisions volume-server nodes, so it must follow this).** `weed mount` clients cache
+volume locations and only re-resolve off an **alive** server's "volume not found"; a
+**deleted** server (DNS `no such host`) leaves the cache stale → I/O errors / SIGBUS on
+consumers. So make server deletion the **last, quiescence-gated** step: move data off (server
+stays running, empty) → verify 2-copy (**G-swfs**) → refresh clients while the emptied server
+is still alive (roll consumers, or let them self-heal via its 404→re-lookup) → confirm it's
+idle → **only then** delete. Full RCA:
 <../lessons_learned/2026_07_04_seaweedfs_stale_mount_cache_after_evacuation.md>.
 
 ## Data-disk mount rename (fixing the backwards `/var/mnt/seaweedfs-data` path)
@@ -369,34 +364,6 @@ tolerates 1 down). All 3 KS-5 then workers/bulk.
 - **G-public** — Gatus green + blackbox: `git.allegedly.works`, `auth.allegedly.works`
   reachable; a test `git clone` succeeds.
 
-### Stage 1 — SSD SeaweedFS tier for Forgejo git (fixes the Haku dashboard)
-
-No control-plane change, no new hardware. The volume-layer migration is done: SeaweedFS runs
-two `volumeTopology` groups (`hdd` on KS-5, `ssd` on KS-GAME), the ~237 GiB of bulk is 2-copy
-on the `hdd` servers, and the flat `spec.volume` StatefulSet + PVCs are retired (`spec.volume`
-kept as a defaults stub, dropped in Phase 2.5). Remaining Stage-1 work: the operator upgrade
-(Phase 2.5) and the Forgejo git cutover (Phase 3).
-
-**Phase 2.5 — upgrade seaweedfs-operator, then drop the `spec.volume` stub.** We run 1.0.19
-(chart 0.1.22); upstream is 1.0.30 (chart 0.1.33). Two fixes land in this range that retire our
-workarounds, so do the upgrade _after_ the manual evacuation (don't change the operator while
-data is in flight), as its own reviewable PR:
-
-- **1.0.20** — `nil-safe spec.volume fallback in topology startup script` + `nil-safe
-BaseVolumeSpec for topology-only deployments`. Removes the nil-panic, so the `spec.volume`
-  stub can be deleted (see the `CLEANUP` tombstone in `seaweed.yaml`).
-- **1.0.28** — native `volume_evacuation.go` controller (`feat: evacuate volume servers before
-scale-down`, PR #300). On ≥1.0.28, retiring a volume server becomes "lower the group's
-  `replicas`, operator drains first" — the manual `volume.move` script
-  (<../../scripts/seaweedfs_evacuate_flat_volume.py>) is no longer needed for future ops.
-
-**Post:** operator on 1.0.30; `spec.volume` removed from the CR; **G-swfs** green (no server
-churn — the stub removal is a no-op in topology mode).
-
-**Phase 3 — migrate Forgejo git → SSD** (copy-cutover runbook below). Its `seaweedfs-ovh-ssd`
-PVC (`diskType: ssd`) places git volumes on the `ssd` group. **Post-checks:** **G-public** (a
-`git clone`/push works) and the new PVC bound on `seaweedfs-ovh-ssd`.
-
 ### Stage 2 — mount rename + etcd onto NVMe (rolling, node-by-node)
 
 Two rolls interleaved per node: **(E)** move the etcd quorum from
@@ -467,37 +434,7 @@ Buy 1 NVMe OVH box; add as control-plane (learner → voter), then remove `10365
 HDD etcd seat) → all-NVMe 3-member quorum; bump the SeaweedFS `ssd` group to `replicas: 3`. Same
 one-member-at-a-time **G-etcd** discipline.
 
-## Forgejo git → SSD migration runbook (Stage 1, Phase 3)
+## Forgejo git → SSD migration (done)
 
-`storageClassName` is immutable on a PVC, so this is a copy-cutover. We use **VolSync
-rsync-TLS** (the cluster's PVC-migration tool, cf. `k8s/grocy/*/app/volsync-backup.yaml`)
-with a pre-seed, and cut over **read-zero-downtime**: reads/clones stay up the whole time,
-only writes (pushes) freeze for ~1–2 min. A consistent cross-class swap needs a
-write-freeze point — an in-flight push during the cutover would split-brain the two PVCs —
-but reads never have to drop.
-
-Scaffolding (committed, inert until triggered): dest PVC `forgejo-git-rwx-ssd` +
-`ReplicationDestination`/`ReplicationSource` (ships `paused`) in
-<../../k8s/forgejo/app/volsync-git-ssd-migration.yaml>. Mover UID/GID 1000 matches
-Forgejo's git user (pod `fsGroup=1000`); `copyMethod: Direct` (no SeaweedFS
-`VolumeSnapshotClass`, so the source mover bind-mounts the live git PVC over RWX).
-
-1. **Pre-seed (zero downtime):** set the ReplicationSource `paused: false` → rsyncs ~1 GiB
-   hdd→ssd while Forgejo serves. A torn pack here is corrected by the final sync. Verify the
-   git collection's volumes appear on `seaweedfs-volume-ssd-*`.
-2. **Write-freeze:** hold pushes (personal cluster — operator + any push automation pause;
-   optionally block HTTP `git-receive-pack` at the HTTPRoute). Reads/clones keep working.
-   SSH is L4 (port 2222 via CiliumEnvoyConfig) so it can't be selectively push-blocked —
-   coordinate the window instead.
-3. **Final delta sync:** bump the ReplicationSource `trigger.manual` → fast delta against
-   the now-quiescent source. Verify repo count + a `git fsck` sample on the dest.
-4. **Rolling repoint (reads stay up):** commit `persistence.claimName` → `forgejo-git-rwx-ssd`
-   in <../../k8s/forgejo/app/helmrelease.yaml>. The Deployment RollingUpdate (`maxUnavailable`
-   0 + PDB) keeps ≥1 replica serving; with writes frozen, hdd and ssd hold identical data so
-   pods swap PVCs with no split-brain. **Do NOT scale to 0** — that drops reads and needs
-   explicit go-ahead (no-Forgejo-downtime rule).
-5. **Unfreeze + verify:** allow pushes; confirm a `git.allegedly.works` clone/push, the new
-   PVC `Bound` on `seaweedfs-ovh-ssd`, and the git collection on `seaweedfs-volume-ssd-*`.
-6. **Cleanup (after a few days):** delete the old `forgejo-git-rwx` PVC + the three VolSync
-   objects. Rollback before cleanup = revert the `claimName` commit (the source PVC is
-   untouched by `Direct` reads).
+Completed 2026-07-04, read-zero-downtime via VolSync. The reusable procedure is now a
+runbook: <../runbooks/seaweedfs_pvc_storageclass_migration.md>.
