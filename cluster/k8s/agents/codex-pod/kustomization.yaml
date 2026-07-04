@@ -7,4 +7,5 @@ resources:
   - namespace.yaml
   - pvc.yaml
   - codex-bootstrap-identity.sops.yaml
+  - forgejo-tea.sops.yaml
   - deployment.yaml

@@ -25,6 +25,7 @@ in
       gitEmail = "zai@allegedly.works";
       kubeconfigUser = "agent-box-zai";
       forgejoKeySopsFile = ../../../../ssh_keys/agent-box-zai-forgejo.sops.key;
+      forgejoTeaSopsFile = ../../../../secrets/agent-box-zai-forgejo-tea-token.yaml;
       kubeJwtSopsFile = ../../../../secrets/agent-box-zai-k8s-jwt.yaml;
     })
   ];

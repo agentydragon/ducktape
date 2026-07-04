@@ -48,6 +48,7 @@ let
     openssl
     cacert
     git
+    tea
     kubectl
     postgresql # psql (Plaid, reached cluster-internally)
     fastmcp # in-cluster MCP facades (tana-mcp-ro, …)

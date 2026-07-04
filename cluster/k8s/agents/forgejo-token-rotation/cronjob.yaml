@@ -1,0 +1,89 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: forgejo-token-rotation
+  namespace: agents-infra
+  annotations:
+    description: >-
+      Mints full-account Forgejo API tokens for agent service accounts, commits
+      SOPS-encrypted raw-token files plus pod-ready tea config Secrets, then
+      prunes older rotator-created tokens after the Git push succeeds.
+spec:
+  schedule: "35 * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          # No Kubernetes API access; all source credentials arrive as mounted Secrets.
+          serviceAccountName: ""
+          automountServiceAccountToken: false
+          restartPolicy: OnFailure
+          volumes:
+            - name: rotations-config
+              configMap:
+                name: forgejo-token-rotations-config
+            - name: github-pat
+              secret:
+                secretName: github-secrets-sync-pat
+            - name: haku-forgejo
+              secret:
+                secretName: forgejo-token-mint-haku
+            - name: claude-forgejo
+              secret:
+                secretName: forgejo-token-mint-claude
+            - name: agent-box-codex-forgejo
+              secret:
+                secretName: forgejo-token-mint-agent-box-codex
+            - name: agent-box-zai-forgejo
+              secret:
+                secretName: forgejo-token-mint-agent-box-zai
+            - name: codex-pod-forgejo
+              secret:
+                secretName: forgejo-token-mint-codex-pod
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: rotate
+              # Initial placeholder matching the ImagePolicy filterTags regex
+              # (^devel-\d{14}-[0-9a-f]{7}$). Flux rewrites the field after CI
+              # publishes ghcr.io/agentydragon/forgejo-token-rotation.
+              image: ghcr.io/agentydragon/forgejo-token-rotation:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:forgejo-token-rotation"}
+              args: ["--config", "/config/tokens.yaml"]
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: rotations-config
+                  mountPath: /config
+                  readOnly: true
+                - name: github-pat
+                  mountPath: /var/run/secrets/github-pat
+                  readOnly: true
+                - name: haku-forgejo
+                  mountPath: /var/run/secrets/forgejo/haku
+                  readOnly: true
+                - name: claude-forgejo
+                  mountPath: /var/run/secrets/forgejo/claude
+                  readOnly: true
+                - name: agent-box-codex-forgejo
+                  mountPath: /var/run/secrets/forgejo/agent-box-codex
+                  readOnly: true
+                - name: agent-box-zai-forgejo
+                  mountPath: /var/run/secrets/forgejo/agent-box-zai
+                  readOnly: true
+                - name: codex-pod-forgejo
+                  mountPath: /var/run/secrets/forgejo/codex-pod
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi

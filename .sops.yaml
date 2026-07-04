@@ -517,6 +517,18 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
+  # Claude web Forgejo tea token (auto-rotated by forgejo-token-rotation).
+  # Same service account as claude-forgejo-credentials, but stored as an API
+  # token so `tea` can use the account directly.
+  - path_regex: secrets/claude-forgejo-tea-token\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *claude-web
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
   # Private half of the haku age keypair. Encrypted only to agentydragon's
   # user ssh keys (+ admin) so the operator can retrieve it for the Haku routine's
   # env; haku itself is deliberately NOT a reader (it would be circular).
@@ -540,10 +552,33 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
+  # Haku Forgejo tea token (auto-rotated by forgejo-token-rotation). Decrypted
+  # by the Haku routine directly and also materialized as a k8s Secret for web
+  # bootstrap + the self-hosted worker.
+  - path_regex: secrets/haku-forgejo-tea-token\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *haku
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
   # agent-box Codex K8s bearer JWT (auto-rotated by the authentik-jwt-rotation
   # CronJob). Decrypted by the codex user's home-manager on agent-box to render
   # ~/.kube/config; admin + user keys retained for break-glass.
   - path_regex: secrets/agent-box-codex-k8s-jwt\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *agent-box-codex-user
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+  # agent-box Codex Forgejo tea token (auto-rotated by forgejo-token-rotation).
+  # Decrypted by the codex user's home-manager to render ~/.config/tea/config.yml.
+  - path_regex: secrets/agent-box-codex-forgejo-tea-token\.yaml$
     key_groups:
       - age:
           - *admin
@@ -560,6 +595,28 @@ creation_rules:
       - age:
           - *admin
           - *agent-box-zai-user
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+  # agent-box zai Forgejo tea token (auto-rotated by forgejo-token-rotation).
+  # Decrypted by the zai user's home-manager to render ~/.config/tea/config.yml.
+  - path_regex: secrets/agent-box-zai-forgejo-tea-token\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *agent-box-zai-user
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+  # codex-pod Forgejo tea token (auto-rotated by forgejo-token-rotation). The pod
+  # consumes the cluster/k8s Secret manifest; this bare SOPS file is the rotator's
+  # encrypted stamp/raw-token output and operator break-glass copy.
+  - path_regex: secrets/codex-pod-forgejo-tea-token\.yaml$
+    key_groups:
+      - age:
+          - *admin
           - *wyrm2-agentydragon
           - *rugged-agentydragon
           - *atlas-agentydragon

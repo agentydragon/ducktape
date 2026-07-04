@@ -19,6 +19,7 @@
   gitEmail,
   kubeconfigUser,
   forgejoKeySopsFile,
+  forgejoTeaSopsFile,
   kubeJwtSopsFile,
 }:
 {
@@ -31,6 +32,7 @@
     ../../modules/sops-env.nix # ducktape.sopsEnv
     ../../modules/buildbuddy.nix # BuildBuddy creds -> bazelrc + BUILDBUDDY_API_KEY
     ../../modules/forgejo-ssh.nix # Forgejo bot push key + git.allegedly.works ssh block
+    ../../modules/forgejo-tea.nix # Forgejo API token -> ~/.config/tea/config.yml
     ../../modules/attic.nix # attic ~/.config/attic/config.toml (push/pull client)
     ../../modules/agent-kubeconfig.nix # agent-box-<user> k8s bearer kubeconfig
   ];
@@ -43,6 +45,12 @@
     sopsFile = ../../../../secrets/hosts/agent-box-attic.yaml;
   };
   ducktape.forgejoSsh.sopsFile = forgejoKeySopsFile;
+  # TODO: like the kubeconfig JWT path below, this relies on a home-manager
+  # activation after forgejo-token-rotation commits a refreshed SOPS file.
+  ducktape.forgejoTea = {
+    enable = true;
+    sopsFile = forgejoTeaSopsFile;
+  };
   # TODO: this simple path still requires a home-manager activation after the
   # authentik-jwt-rotation CronJob commits a refreshed JWT. Replace with a local
   # token refresh/apply path if rotation staleness becomes operationally annoying.

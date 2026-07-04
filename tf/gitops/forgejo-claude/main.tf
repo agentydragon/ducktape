@@ -49,3 +49,20 @@ resource "kubernetes_secret" "claude_forgejo_credentials" {
     internal_url = "http://forgejo-http.forgejo:3000"
   }
 }
+
+# Source credential for forgejo-token-rotation. The rotator mints the API token
+# that `tea` consumes, while this Terraform root remains the owner of the
+# account password.
+resource "kubernetes_secret" "claude_forgejo_token_mint" {
+  metadata {
+    name      = "forgejo-token-mint-claude"
+    namespace = "agents-infra"
+  }
+
+  data = {
+    username     = forgejo_user.claude.login
+    password     = random_password.claude.result
+    url          = "https://git.allegedly.works"
+    internal_url = var.forgejo_url
+  }
+}

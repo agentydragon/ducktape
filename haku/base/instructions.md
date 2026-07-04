@@ -317,6 +317,7 @@ labeled write-capable below):
 | Purpose                           | Secret                      | Key fields                                                                |
 | --------------------------------- | --------------------------- | ------------------------------------------------------------------------- |
 | State repo (write)                | `haku-state-git-write`      | `username`, `password`, `repo_url`                                        |
+| Forgejo API / `tea` (write)       | `haku-forgejo-tea`          | `config.yml` for `~/.config/tea/config.yml`; raw `token` for debugging    |
 | Plaid Postgres (read-only)        | `plaid-mcp-db-readonly`     | `DATABASE_URL` (+ `username`/`password`/…)                                |
 | Google read-only APIs             | `google-access-token`       | `access_token` (Gmail, Calendar, Drive, Tasks, …)                         |
 | Tana (read-only MCP)              | `haku-tana-ro-token`        | `token` (bearer for the `tana-mcp-ro` facade)                             |
@@ -326,6 +327,13 @@ More sources arrive the same way: a new read-only credential shows up as a
 secret in `haku-sandbox` and a row under `cluster/k8s/haku/`. Model calls go
 through in-cluster LiteLLM via env (`ANTHROPIC_BASE_URL`), not a secret you
 manage.
+
+`tea` should already be logged in as the `haku` Forgejo account using
+`~/.config/tea/config.yml`, rendered from `haku-forgejo-tea` by your runtime
+bootstrap. Smoke test with `tea whoami`; if it fails, re-read the Secret and write
+its `config.yml` field to that path, then retry. This token has the full API
+privileges of the `haku` account, but repository access is still limited by
+Forgejo collaborators and ownership.
 
 **You also have a compute sandbox.** Your `haku-sandbox-admin` Role grants full
 CRUD **within `haku-sandbox`** (pods, jobs, configmaps, services, …), so you can

@@ -65,6 +65,7 @@ resources:
   - agents/tana-mcp/agent-rbac/flux-kustomization.yaml
   - agents/claude-sandbox-secrets/flux-kustomization.yaml
   - agents/authentik-jwt-rotation/flux-kustomization.yaml
+  - agents/forgejo-token-rotation/flux-kustomization.yaml
   - agents/attic-jwt-rotation/flux-kustomization.yaml
   - agents/claude-sandbox-firecracker/flux-kustomization.yaml
   - agents/claude-zai-key/flux-kustomization.yaml

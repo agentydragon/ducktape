@@ -296,6 +296,7 @@ repos:
             cluster/k8s/.*/ccm-values\.yaml|
             # rotate.py rotation list, mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/agents/authentik-jwt-rotation/rotations\.yaml|
+            cluster/k8s/agents/forgejo-token-rotation/tokens\.yaml|
             # rotate.py token list, mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/agents/attic-jwt-rotation/rotators\.yaml|
             # provision.py user→permission policy, mounted via configMapGenerator, not a K8s manifest

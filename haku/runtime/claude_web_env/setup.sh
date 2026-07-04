@@ -14,9 +14,8 @@
 set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 # Install Haku's agent closure (.#agent-haku), which composes the shared
-# `.#devtools` and adds the fastmcp MCP-client CLI — so Haku can talk to
-# in-cluster MCP facades (tana-mcp-ro) turnkey-ly via
-# `fastmcp call <url> --auth <bearer>`, no runtime pip install. Claude web
+# `.#devtools` and adds Haku-only CLIs: fastmcp for in-cluster MCP facades,
+# himalaya for the mailbox, and tea for Gitea/Forgejo workflows. Claude web
 # installs the lean default `.#devtools`.
 export DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku
 exec bash "${repo_root}/devinfra/claude/web_setup.sh"

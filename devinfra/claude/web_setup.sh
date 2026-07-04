@@ -86,13 +86,15 @@ esac
 # Which flake output to `nix profile install`. Default is the lean `.#devtools`
 # (Claude web). Haku sets DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku (in
 # haku/runtime/claude_web_env/setup.sh) to get `.#agent-haku`, which composes `.#devtools`
-# and adds the fastmcp MCP-client CLI. Only honored in `profile` install mode.
+# and adds agent-only CLIs such as fastmcp and tea. Only honored in `profile`
+# install mode.
 WEB_SETUP_OUTPUT="${DUCKTAPE_WEB_SETUP_OUTPUT:-devtools}"
 # Self-heal the Haku web home. DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku is set inside
 # haku/runtime/claude_web_env/setup.sh (the init-script path), but the Setup-hook
 # path (web_setup_hook.sh → this script) and resume-cached sessions run WITHOUT it
 # — so they would reinstall the lean .#devtools and clobber the .#agent-haku
-# (fastmcp) the init script installed, silently breaking Haku's Tana access. The
+# agent tools the init script installed, silently breaking Haku's Tana/Forgejo
+# access. The
 # hooks profile IS visible on both paths (UI env var), so when it's Haku's profile
 # and no explicit output was requested, default to agent-haku. (Explicit
 # DUCKTAPE_WEB_SETUP_OUTPUT always wins.)

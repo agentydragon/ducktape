@@ -91,6 +91,23 @@ resource "kubernetes_secret" "haku_state_git_write" {
   }
 }
 
+# Source credential for forgejo-token-rotation. The rotator uses Basic auth only
+# to mint full-account API tokens, then writes the distributed `tea` configs as
+# SOPS outputs in git.
+resource "kubernetes_secret" "haku_forgejo_token_mint" {
+  metadata {
+    name      = "forgejo-token-mint-haku"
+    namespace = "agents-infra"
+  }
+
+  data = {
+    username     = forgejo_user.haku.login
+    password     = random_password.haku.result
+    url          = "https://git.allegedly.works"
+    internal_url = var.forgejo_url
+  }
+}
+
 # dockerconfigjson for the private git.allegedly.works/haku/ui package, in haku-sandbox:
 #   - the imagePullSecret Haku's UI Deployment uses to pull the image its Forgejo CI builds
 #     (kubelet pulls over HTTPS via the public host — node-level, not subject to the pod's

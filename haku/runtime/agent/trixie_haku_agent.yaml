@@ -9,6 +9,11 @@
 # trixie main — if the shell route needs `kubectl`, add it from an upstream static
 # binary (cf. loom/gym's docker CLI), not here.
 #
+# TODO: decide whether this Runtime C image should also carry `tea`. The Nix-built
+# agent surfaces (`.#agent-haku`, agent-box, codex-pod, and haku-worker) include it
+# for Forgejo/Gitea issue/PR/release workflows, but this apt-locked Debian image
+# intentionally diverges until we regenerate and validate the apt lock.
+#
 # Regenerate the lock after any change. NOTE: this needs the apt index over the network,
 # which is 403 in the Claude-web sandbox — run it on CI / a full-network machine:
 #   bazel run @trixie_haku_agent//:lock

@@ -155,6 +155,11 @@ jobs:
               image_name: authentik-jwt-rotation,
               test_target: "//cluster/rotators/authentik_jwt_rotation/...",
             }
+          - {
+              image: "//cluster/rotators/forgejo_token_rotation:image",
+              image_name: forgejo-token-rotation,
+              test_target: "//cluster/rotators/forgejo_token_rotation/...",
+            }
           - { image: "//cluster/rotators/attic_jwt_rotation:image", image_name: attic-jwt-rotation, test_target: "" }
           - {
               image: "//cluster/provisioners/inventree_token_provisioner:image",

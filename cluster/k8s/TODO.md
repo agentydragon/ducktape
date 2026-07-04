@@ -23,6 +23,14 @@ committed. `NO_PROXY` in `inject-mitmproxy.yaml` is unchanged.
 
 - [ ] `agents/openclaw/sandbox-secrets/ibkr-flex-query-credentials.sops.yaml` — consider moving `query-id` out of SOPS (not sensitive)
 
+## Secret layout
+
+- [ ] Restructure the flat agent token files under `secrets/` into clearer
+      ownership folders (for example per-agent or per-rotator). Current
+      rotators write paths like `secrets/*-k8s-jwt.yaml` and
+      `secrets/*-forgejo-tea-token.yaml`; keep `.sops.yaml`, home-manager
+      modules, and rotator configs in sync when moving them.
+
 ## InvenTree secrets if unsuspending
 
 - [ ] Add SOPS secrets for InvenTree admin and database passwords before

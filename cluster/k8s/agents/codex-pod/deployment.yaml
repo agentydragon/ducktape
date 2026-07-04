@@ -94,6 +94,9 @@ spec:
             - name: identity
               mountPath: /run/codex-secret
               readOnly: true
+            - name: forgejo-tea
+              mountPath: /home/codex/.config/tea
+              readOnly: true
           resources:
             requests:
               cpu: "500m"
@@ -110,4 +113,8 @@ spec:
         - name: identity
           secret:
             secretName: codex-bootstrap-identity
+            defaultMode: 0444
+        - name: forgejo-tea
+          secret:
+            secretName: forgejo-tea
             defaultMode: 0444

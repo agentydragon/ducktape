@@ -28,6 +28,23 @@ provider "forgejo" {
   password = data.kubernetes_secret.forgejo_admin.data["password"]
 }
 
+locals {
+  forgejo_token_mint_users = {
+    agent-box-codex = {
+      username = forgejo_user.agent_box_codex.login
+      password = random_password.agent_box_codex.result
+    }
+    agent-box-zai = {
+      username = forgejo_user.agent_box_zai.login
+      password = random_password.agent_box_zai.result
+    }
+    codex-pod = {
+      username = forgejo_user.codex_pod.login
+      password = random_password.codex_pod.result
+    }
+  }
+}
+
 resource "random_password" "agent_box_codex" {
   length  = 48
   special = false
@@ -168,6 +185,24 @@ resource "forgejo_collaborator" "codex_pod_ducktape" {
   repository_id = forgejo_repository.ducktape.id
   user          = forgejo_user.codex_pod.login
   permission    = "read"
+}
+
+# Source credentials for forgejo-token-rotation. The passwords still originate
+# here; the rotator converts them into API tokens and tea configs for consumers.
+resource "kubernetes_secret" "forgejo_token_mint" {
+  for_each = local.forgejo_token_mint_users
+
+  metadata {
+    name      = "forgejo-token-mint-${each.key}"
+    namespace = "agents-infra"
+  }
+
+  data = {
+    username     = each.value.username
+    password     = each.value.password
+    url          = "https://git.allegedly.works"
+    internal_url = var.forgejo_url
+  }
 }
 
 # --- haku read collaboration ---

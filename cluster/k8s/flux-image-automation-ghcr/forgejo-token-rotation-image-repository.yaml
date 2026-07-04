@@ -1,0 +1,8 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: forgejo-token-rotation
+  namespace: flux-system
+spec:
+  image: ghcr.io/agentydragon/forgejo-token-rotation
+  interval: 5m

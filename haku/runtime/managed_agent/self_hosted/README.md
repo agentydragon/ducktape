@@ -101,7 +101,7 @@ durable memory, so a cold session just re-orients.
 
 A full-NixOS rootfs (`nixos.nix`, declaratively consistent with the fleet)
 carrying `bash`, `git`, `kubectl`, `postgresql` (`psql`), `curl`, `jq`, `cacert`,
-`fastmcp`, and `haku-worker` (the pinned `python3` + `anthropic` 0.111 running
+`fastmcp`, `tea`, and `haku-worker` (the pinned `python3` + `anthropic` 0.111 running
 `worker.py`). We do **not** boot it: booting systemd PID 1 in an unprivileged
 container can't mount the API filesystems, so the pod runs the closure
 **directly** — k8s execs `/sw/bin/haku-worker-run` (a wrapper that puts the tool
@@ -109,6 +109,11 @@ closure on PATH and execs `entrypoint.sh`) as the non-root `haku` uid with all
 caps dropped. Build the uncompressed rootfs tarball with `nix build
 .#haku-worker-image`; CI imports it (`podman import`) and pushes to GHCR, pinned
 by Flux — see <../../../../cluster/docs/container-images.md>.
+
+`tea` is available in the image and logged in via the `haku-forgejo-tea` Secret
+mounted at `/home/haku/.config/tea/config.yml`. The token is minted by
+`forgejo-token-rotation` with the full privileges of the `haku` Forgejo account;
+check it in a worker session with `tea whoami`.
 
 The fixed toolset is `agent_toolset_20260401` (`bash/read/write/edit/glob/grep`);
 Haku reaches Plaid (`psql`), Google (`curl`), and the cluster (`kubectl`,

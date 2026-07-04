@@ -90,6 +90,7 @@ in
     strace
     lsof
     git
+    tea
     sops
     ssh-to-age
     home-manager

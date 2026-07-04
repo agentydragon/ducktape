@@ -16,6 +16,9 @@ environment-neutral `haku/run.md`.
   for `git.allegedly.works`, so you can `git -C ~/haku-state pull/commit/push`
   with no credentials to manage. (If `~/haku-state` is somehow missing, re-run
   `haku/runtime/claude_web_env/bootstrap.sh`.)
+- `tea` is installed and should be logged in as the `haku` Forgejo account via
+  `~/.config/tea/config.yml` from `haku-sandbox/haku-forgejo-tea`. Check with
+  `tea whoami`; if missing, re-run `haku/runtime/claude_web_env/bootstrap.sh`.
 - Discover your other credentials from `haku-sandbox` secrets and your full
   cluster perimeter from the ducktape repo you have checked out — grep
   `oidc-ksbx-groups:haku` under `cluster/k8s` for every binding (write CRUD in

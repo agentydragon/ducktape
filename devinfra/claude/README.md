@@ -219,8 +219,11 @@ at the `home-manager.yaml` sibling.
 `web_setup.sh` installs `.#devtools` by default, or the output named by
 `DUCKTAPE_WEB_SETUP_OUTPUT`. Haku's <../../haku/runtime/claude_web_env/setup.sh> sets
 `DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku` to get `.#agent-haku`, which composes
-`.#devtools` and adds the fastmcp MCP-client CLI (`fastmcp call <url> --auth
-<bearer>`) for talking to in-cluster MCP facades; Claude web uses the lean default.
+`.#devtools` and adds Haku-only CLIs: fastmcp (`fastmcp call <url> --auth
+<bearer>`) for in-cluster MCP facades, himalaya for mailbox access, and tea for
+Gitea/Forgejo workflows. Haku's profile materializes tea config from
+`haku-forgejo-tea`; generic Claude sessions can fetch `claude-forgejo-tea` from
+`claude-sandbox` when they need a `tea` login. Claude web uses the lean default.
 
 Secrets are **not** decrypted by `web_setup.sh`. `SOPS_AGE_KEY` is a user UI env var
 delivered only to the interactive Claude Code process — not to the setup script. All

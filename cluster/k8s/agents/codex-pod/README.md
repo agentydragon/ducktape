@@ -78,6 +78,11 @@ this non-root image pod has not) and no boot-time render script:
   key is the only credential (all agent users follow this — see that module's
   header). The `git.allegedly.works` ssh matchBlock is baked by home-manager
   (`home.nix`), not rendered at boot.
+- **Forgejo API / `tea`** — `forgejo-token-rotation` mints a full-account API
+  token for the `codex-pod` Forgejo user and writes a pod-ready Secret
+  (`forgejo-tea`) mounted at `/home/codex/.config/tea/config.yml`. Smoke test with
+  `tea whoami`. The token does not expand repository permissions; it follows the
+  account's existing collaborator grants.
 - **BuildBuddy** — `BUILDBUDDY_API_KEY` is set on the container from the shared
   `buildbuddy-api-key` Secret via `secretKeyRef` (`optional: true`); `bbr` reads
   it. That Secret

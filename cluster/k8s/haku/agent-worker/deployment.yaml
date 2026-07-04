@@ -108,6 +108,9 @@ spec:
               mountPath: /workspace
             - name: home # $HOME (.netrc, .gitconfig, ant config) — see HOME env
               mountPath: /home/haku
+            - name: forgejo-tea # ~/.config/tea/config.yml from forgejo-token-rotation
+              mountPath: /home/haku/.config/tea
+              readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
@@ -118,5 +121,9 @@ spec:
         # writable emptyDir there (fsGroup 100 makes it haku-writable).
         - name: home
           emptyDir: {}
+        - name: forgejo-tea
+          secret:
+            secretName: haku-forgejo-tea
+            defaultMode: 0444
         - name: tmp
           emptyDir: {}

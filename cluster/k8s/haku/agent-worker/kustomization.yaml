@@ -4,5 +4,6 @@ resources:
   - serviceaccount.yaml
   - rolebinding.yaml
   - environment-key.sops.yaml
+  - haku-forgejo-tea.sops.yaml
   - deployment.yaml
   - grocy-token-eso.yaml

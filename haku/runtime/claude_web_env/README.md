@@ -29,33 +29,39 @@ here (on Anthropic infra) and drives the cluster over `kubectl`; the
 
 - `setup.sh` — environment setup script; delegates to `devinfra/claude/web_setup.sh`,
   setting `DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku` so Haku installs `.#agent-haku`
-  (the shared `.#devtools` plus the fastmcp MCP-client CLI, `fastmcp call <url>
---auth <bearer>`) for `tana-mcp-ro`.
+  (the shared `.#devtools` plus fastmcp for MCP facades, himalaya for mailbox
+  access, and tea for Gitea/Forgejo issue/PR/release workflows).
 - `profile.yaml` — the claude-hook profile. Sets the `K8S_*` overrides (→ group
   `haku` / `haku-sandbox`) and runs `bootstrap.sh` as its background command.
 - `bootstrap.sh` — profile background command: materializes `~/.kube/config`
   from the haku JWT, writes `~/.netrc` from the `haku-state-git-write` secret,
-  and clones `haku-state` into `~/haku-state`.
+  writes `~/.config/tea/config.yml` from `haku-forgejo-tea` when the rotator has
+  published it, and clones `haku-state` into `~/haku-state`.
+- `tea` is present in the installed closure and logs in from the
+  forgejo-token-rotation output (`haku-sandbox/haku-forgejo-tea`). Smoke test:
+  `tea whoami`.
 - `run.md` — the web entrypoint: bootstrap recap + concrete paths, then defers
   to the environment-neutral `haku/run.md` for the run procedure.
 
 ## How a session boots
 
 1. `setup.sh` (env creation) → shared web setup installing `.#agent-haku`
-   (`.#devtools` plus the fastmcp MCP-client CLI), claude-hook daemon, certs,
-   git remotes.
+   (`.#devtools` plus fastmcp, himalaya, and tea), claude-hook daemon, certs, git
+   remotes.
 2. `profile.yaml` runs `bootstrap.sh` (each session start): it materializes
    `~/.kube/config` from the SOPS-encrypted haku JWT, then — with cluster access
-   in hand — writes `~/.netrc` and clones `haku-state` into `~/haku-state`.
+   in hand — writes `~/.netrc`, writes tea's config from `haku-forgejo-tea` if
+   present, and clones `haku-state` into `~/haku-state`.
 3. The `Execute haku/runtime/claude_web_env/run.md` prompt runs a scan and pushes state.
 
 Depends on `secrets/haku-k8s-jwt.yaml` existing (minted by the
 `authentik-jwt-rotation` CronJob) — that JWT is what the kubeconfig is built from.
 
-## Gotcha: the Setup hook can clobber `.#agent-haku` (fastmcp/Tana)
+## Gotcha: the Setup hook can clobber `.#agent-haku` tools
 
 `web_setup.sh` runs **twice** per fresh session: once as the init script (via
-`setup.sh`, which sets `DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku` → installs fastmcp)
+`setup.sh`, which sets `DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku` → installs Haku's
+extra tools)
 and once as the **Setup hook** (`web_setup_hook.sh` → `web_setup.sh`), which does
 **not** carry that env var. The Setup-hook run was defaulting to `.#devtools` and
 running `nix profile remove agent-haku`, **wiping fastmcp** and leaving a dangling
@@ -65,7 +71,7 @@ at all.
 
 Fix (in `devinfra/claude/web_setup.sh`): when `DUCKTAPE_WEB_SETUP_OUTPUT` is unset
 but `DUCKTAPE_CLAUDE_HOOKS_PROFILE` points at a Haku profile, it now defaults to
-`agent-haku` — so **both** paths install fastmcp consistently — and it prunes
+`agent-haku` — so **both** paths install the Haku-only tools consistently — and it prunes
 dangling `/usr/local/bin` symlinks before re-bridging. Setting
 `DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku` as a web-UI env var is an equally valid
 explicit override. (Tana also has a `curl` fallback in the base instructions, so a
