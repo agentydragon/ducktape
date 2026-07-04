@@ -1,18 +1,6 @@
 # Guard: every in-cluster GHCR image must be pullable WITHOUT credentials, so
-# Talos nodes (which have no pull secret) can pull it. New GHCR packages default
-# to private, and GitHub has no API to set visibility
-# (docs.github.com/en/rest/packages/packages is GET/DELETE/restore only) — so
-# this can only *detect* and fail loudly, not auto-fix. Flip the package to
-# public in the UI when it fails.
-#
-# We test anonymous pullability directly against the registry rather than the
-# packages API: the packages API requires auth even for public packages (401),
-# whereas an anonymous ghcr.io pull token grants `tags/list` (200) only for a
-# public package (403 for private or not-yet-pushed) — which is exactly the
-# property the nodes rely on, and needs no secret.
-#
-# SSOT for "which images must be public" = the ImageRepository manifests under
-# cluster/k8s/flux-image-automation-ghcr/ (spec.image), filtered to ghcr.io.
+# Talos nodes (which have no pull secret) can pull it. Detection only — GitHub
+# exposes no API to set package visibility. Logic + rationale live in the script.
 name: check public images
 
 on:
@@ -20,6 +8,7 @@ on:
     branches: [devel]
     paths:
       - "cluster/k8s/flux-image-automation-ghcr/**"
+      - ".github/scripts/check_public_images.py"
       - ".github/workflows/check-public-images.yml"
   schedule:
     - cron: "0 7 * * *" # daily drift check
@@ -35,51 +24,11 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-
-      - name: Check anonymous pullability
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install --quiet pyyaml
+      - name: Check GHCR packages are anonymously pullable
         env:
           OWNER: ${{ github.repository_owner }}
-        run: |
-          set -uo pipefail
-
-          # ghcr.io/<owner>/<pkg> image names from the ImageRepository manifests
-          # (package name may contain slashes). Harbor images
-          # (registry.allegedly.works/...) are not GHCR, so they're excluded.
-          mapfile -t images < <(
-            grep -rhoE "ghcr\.io/${OWNER}/[A-Za-z0-9._/-]+" \
-              cluster/k8s/flux-image-automation-ghcr/ \
-              | sed "s#ghcr.io/${OWNER}/##" | sort -u
-          )
-          [ "${#images[@]}" -gt 0 ] || { echo "No ghcr.io/${OWNER} images found." >&2; exit 1; }
-
-          echo "Checking ${#images[@]} in-cluster GHCR packages are anonymously pullable:"
-          bad=()
-          for pkg in "${images[@]}"; do
-            # Anonymous pull token; tags/list is 200 only for a public package.
-            tok=$(curl -sS "https://ghcr.io/token?scope=repository:${OWNER}/${pkg}:pull" | jq -r '.token // empty')
-            code=$(curl -sS -o /dev/null -w '%{http_code}' \
-              -H "Authorization: Bearer ${tok}" \
-              "https://ghcr.io/v2/${OWNER}/${pkg}/tags/list")
-            if [ "$code" = 200 ]; then
-              echo "  ok      ${pkg}"
-            else
-              echo "  NOT OK  ${pkg} (anonymous pull http ${code})"
-              bad+=("${pkg}")
-            fi
-          done
-
-          if [ "${#bad[@]}" -gt 0 ]; then
-            {
-              echo "### ❌ GHCR packages not anonymously pullable"
-              echo
-              echo "Cluster nodes pull without credentials, so each must be public"
-              echo "(or, if brand new, pushed at least once then flipped public)."
-              echo "GitHub has no API to set visibility — fix each in the UI:"
-              echo
-              for p in "${bad[@]}"; do
-                echo "- \`${p}\` — https://github.com/users/${OWNER}/packages/container/${p}/settings"
-              done
-            } | tee -a "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-          echo "All ${#images[@]} packages are anonymously pullable. ✅"
+        run: python3 .github/scripts/check_public_images.py
