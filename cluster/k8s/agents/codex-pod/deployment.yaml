@@ -53,6 +53,13 @@ spec:
               install -d -m700 /workspace/.sshd
               [ -f /workspace/.sshd/ssh_host_ed25519_key ] \
                 || ssh-keygen -q -t ed25519 -N "" -f /workspace/.sshd/ssh_host_ed25519_key
+              # sshd strips env; expose the secret env to ssh sessions via
+              # ~/.ssh/environment (sshd_config: PermitUserEnvironment yes). kubectl
+              # exec already inherits the container env, so this is ssh-only.
+              install -m600 /dev/null "$HOME/.ssh/environment"
+              for v in LITELLM_API_KEY BUILDBUDDY_API_KEY; do
+                [ -n "${!v:-}" ] && printf '%s=%s\n' "$v" "${!v}" >>"$HOME/.ssh/environment"
+              done
               # sshd re-execs itself for privsep, so it refuses a PATH-resolved
               # invocation ("sshd requires execution with an absolute path").
               exec /bin/sshd -D -e -f "$HOME/.ssh/sshd_config"

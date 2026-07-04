@@ -94,6 +94,11 @@ in
     UsePAM no
     PidFile /tmp/sshd.pid
     Subsystem sftp internal-sftp
+    # sshd sanitizes the environment, so ssh sessions don't inherit the container's
+    # secret env (LITELLM_API_KEY, BUILDBUDDY_API_KEY). The entrypoint writes those
+    # into ~/.ssh/environment at startup; read them here so `codex`/`bbr` work over
+    # ssh (kubectl exec already inherits the container env).
+    PermitUserEnvironment yes
     # sshd sanitizes the environment; pass the tools + trust store that the
     # container Env sets, so ssh sessions match `kubectl exec`.
     SetEnv PATH=/bin SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt XDG_CACHE_HOME=/workspace/.cache
