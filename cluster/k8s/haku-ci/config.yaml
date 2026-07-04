@@ -34,6 +34,13 @@ container:
   # git/curl/python/node. NOTE: Bazel's Java repository downloader does NOT read
   # these (it uses the JDK truststore) — the haku-state build image must import the
   # CA into cacerts (e.g. `keytool -importcert` / `update-ca-certificates`).
+  # CLEANUP(added 2026-07-04): this CA env list is deliberately padded. Once the
+  #   first green haku-ci build shows which tools actually do TLS here, trim to the
+  #   load-bearing subset — the system-store readers (SSL_CERT_FILE/CURL_CA_BUNDLE/
+  #   GIT_SSL_CAINFO) are redundant given the /etc/ssl/certs mount, leaving at most
+  #   REQUESTS_CA_BUNDLE/NODE_EXTRA_CA_CERTS — or bake a custom job image (CA via
+  #   update-ca-certificates + proxy ENV) so `options` collapses to --add-host +
+  #   DOCKER_HOST. Proxy vars stay: act does not forward them to jobs (nektos/act#1578).
   # Folded scalar (>-): reads as one arg per line but act_runner sees a single
   # space-joined string. One `-e`/`-v` per line — keep them contiguous (a blank
   # line in a folded scalar becomes a newline and would corrupt the options string).
