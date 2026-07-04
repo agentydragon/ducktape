@@ -29,7 +29,7 @@ locals {
       data_disk_match = "disk.dev_path == '/dev/sdb'"
       zone            = "hil-ovh"
       # Media of the data disk (/var/mnt/seaweedfs-data). Drives the
-      # `storage-tier` node label; keyed to hardware, NOT role, so it stays
+      # `storage.allegedly.works/tier` node label; keyed to hardware, NOT role, so it stays
       # correct if this node is later re-designated control-plane/worker.
       storage_tier = "hdd"
     }
@@ -322,12 +322,12 @@ locals {
         # ExternalIP / providerID when `--cloud-provider=external` is in the kubelet
         # extraArgs (see `kimsufi_cloud_provider_external_enabled_nodes` below); the
         # CCM transformation matches on `region=hil` set here.
-        # `storage-tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
+        # `storage.allegedly.works/tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
         # (cluster/k8s/local-path-provisioner); see cluster/docs/ovh_storage_tiering.md.
         nodeLabels = {
           "topology.kubernetes.io/region" = "hil"
           "topology.kubernetes.io/zone"   = v.zone
-          "storage-tier"                  = v.storage_tier
+          "storage.allegedly.works/tier"  = v.storage_tier
         }
       })
       cluster = local.kimsufi_controlplane_cluster_config_by_node[k]
@@ -350,12 +350,12 @@ locals {
           "user.max_user_namespaces" = "1048576"
         }
         # Topology labels set explicitly — no CCM for OVH bare metal.
-        # `storage-tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
+        # `storage.allegedly.works/tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
         # (cluster/k8s/local-path-provisioner); see cluster/docs/ovh_storage_tiering.md.
         nodeLabels = {
           "topology.kubernetes.io/region" = "hil"
           "topology.kubernetes.io/zone"   = v.zone
-          "storage-tier"                  = v.storage_tier
+          "storage.allegedly.works/tier"  = v.storage_tier
         }
       })
       cluster = local.worker_cluster_config
@@ -477,12 +477,12 @@ locals {
         # ExternalIP / providerID when `--cloud-provider=external` is in the kubelet
         # extraArgs (see `kimsufi_cloud_provider_external_enabled_nodes` below); the
         # CCM transformation matches on `region=hil` set here.
-        # `storage-tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
+        # `storage.allegedly.works/tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
         # (cluster/k8s/local-path-provisioner); see cluster/docs/ovh_storage_tiering.md.
         nodeLabels = {
           "topology.kubernetes.io/region" = "hil"
           "topology.kubernetes.io/zone"   = v.zone
-          "storage-tier"                  = v.storage_tier
+          "storage.allegedly.works/tier"  = v.storage_tier
         }
       })
       cluster = local.kimsufi_controlplane_cluster_config_by_node[k]

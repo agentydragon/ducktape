@@ -8,10 +8,10 @@ data stays on the KS-5 HDDs. Motivated by slow Forgejo (SeaweedFS-over-FUSE on
 
 ## Hardware recap
 
-| Nodes                                          | Box                  | Data disk (`/var/mnt/seaweedfs-data`) | `storage-tier` |
-| ---------------------------------------------- | -------------------- | ------------------------------------- | -------------- |
-| `ovh-ns102453`, `ovh-ns103656`, `ovh-ns103711` | KS-5 (control plane) | `/dev/sdb`, 2 TB 7200rpm **HDD**      | `hdd`          |
-| `ovh-ns104952`, `ovh-ns104963`                 | KS-GAME (worker)     | 2nd Intel NVMe ~450 GB **SSD**        | `ssd`          |
+| Nodes                                          | Box                  | Data disk (`/var/mnt/seaweedfs-data`) | `storage.allegedly.works/tier` |
+| ---------------------------------------------- | -------------------- | ------------------------------------- | ------------------------------ |
+| `ovh-ns102453`, `ovh-ns103656`, `ovh-ns103711` | KS-5 (control plane) | `/dev/sdb`, 2 TB 7200rpm **HDD**      | `hdd`                          |
+| `ovh-ns104952`, `ovh-ns104963`                 | KS-GAME (worker)     | 2nd Intel NVMe ~450 GB **SSD**        | `ssd`                          |
 
 Only a few hundred GB of fsync-sensitive data needs SSD (etcd DB ~76 MB, Forgejo
 git PVC 50 GB, hot CNPG DBs). The ~1.8 TB SeaweedFS bulk (LFS, registry, Mimir,
@@ -30,7 +30,7 @@ a hard, explicit constraint.
 
 ## Design: media as a node label + allowedTopologies
 
-`storage-tier` node label, set in <../terraform/main/ovh-nodes.tf> and keyed to
+`storage.allegedly.works/tier` node label, set in <../terraform/main/ovh-nodes.tf> and keyed to
 the node's actual data-disk hardware (a per-node `storage_tier` field), **not**
 its role — so it stays correct when a KS-GAME node is later re-designated
 control-plane (Stage 2).
@@ -39,10 +39,10 @@ Three StorageClasses (<../k8s/local-path-provisioner/>), all sharing the one
 provisioner + nodePathMap; media differs only by `allowedTopologies`. Each class
 ANDs two keys in the same topology term — `topology.kubernetes.io/zone=hil-ovh`
 (keeps the class OVH-scoped, so it never places on a non-OVH SSD node such as
-wyrm2) **and** `storage-tier`:
+wyrm2) **and** `storage.allegedly.works/tier`:
 
-- `local-path-ovh-hdd` → zone `hil-ovh` + `storage-tier=hdd` (KS-5)
-- `local-path-ovh-ssd` → zone `hil-ovh` + `storage-tier=ssd` (KS-GAME)
+- `local-path-ovh-hdd` → zone `hil-ovh` + `storage.allegedly.works/tier=hdd` (KS-5)
+- `local-path-ovh-ssd` → zone `hil-ovh` + `storage.allegedly.works/tier=ssd` (KS-GAME)
 - `local-path-ovh` → deprecated alias, re-pinned to the same as `-hdd`
 
 Because binding follows the pod under `WaitForFirstConsumer`, a PVC on the SSD
@@ -51,21 +51,21 @@ stays **Pending (loud)** instead of silently landing on HDD.
 
 ### Robustness layers
 
-1. **Foundation:** hard `storage-tier` labels + media-scoped SCs — a consumer of
+1. **Foundation:** hard `storage.allegedly.works/tier` labels + media-scoped SCs — a consumer of
    `-ssd` cannot provision on HDD.
 2. **Now:** the SeaweedFS SSD volume-topology group (below) also carries a hard
-   `required` nodeAffinity on `storage-tier=ssd` — belt-and-suspenders so the
+   `required` nodeAffinity on `storage.allegedly.works/tier=ssd` — belt-and-suspenders so the
    pod, not just the volume, is media-locked.
 
 The **hard media gate is layers 1–2** (allowedTopologies + the hardware-keyed
-`storage-tier` label). The data-disk mount rename below is **naming/clarity, not
+`storage.allegedly.works/tier` label). The data-disk mount rename below is **naming/clarity, not
 a third enforcement layer**: local-path-provisioner's `nodePathMap` is keyed by
 node, not by StorageClass, so a mis-scheduled pod would still provision at
 whatever path that node has — it does not make the SSD tier "physically
 impossible" on a KS-5.
 
 **Guardrail:** since `-disk` tags are unverified, alert if a SeaweedFS `ssd`
-volume-server pod is not on a `storage-tier=ssd` node.
+volume-server pod is not on a `storage.allegedly.works/tier=ssd` node.
 
 ## Data-disk mount rename (fixing the backwards `/var/mnt/seaweedfs-data` path)
 
@@ -182,11 +182,11 @@ starting a stage and after each node op; the others gate specific step types.
 - **G-public** — Gatus green + blackbox: `git.allegedly.works`,
   `auth.allegedly.works` reachable; a test `git clone` succeeds.
 
-### Stage 0 — foundation: `storage-tier` labels (this PR) + media-scoped SCs (follow-up)
+### Stage 0 — foundation: `storage.allegedly.works/tier` labels (this PR) + media-scoped SCs (follow-up)
 
 Split into two PRs so nothing activates on merge unexpectedly:
 
-- **This PR** ships only the `storage-tier` labels (Terraform/Talos in
+- **This PR** ships only the `storage.allegedly.works/tier` labels (Terraform/Talos in
   `ovh-nodes.tf`) + this plan. Merging it changes nothing on its own — the labels
   are inert until applied via Terraform, and the SCs that would consume them
   aren't here.
@@ -197,13 +197,13 @@ Split into two PRs so nothing activates on merge unexpectedly:
 Apply order (declarative only; nothing moves):
 
 1. Apply the labels: `bazel run //cluster:bootstrap` (or `talosctl
-apply-config`). Verify: `kubectl get nodes -L storage-tier`.
+apply-config`). Verify: `kubectl get nodes -L storage.allegedly.works/tier`.
 2. Merge the follow-up SC PR. Flux creates `local-path-ovh-{hdd,ssd}` and re-pins
    the `local-path-ovh` alias; `allowedTopologies` is immutable, so the repin
    needs a one-time `kubectl delete storageclass local-path-ovh` for Flux to
    recreate it (bound PVCs survive — the SC is only read at provision time).
 
-Do 1 → 2 in order: the repin references `storage-tier=hdd`, which no node has
+Do 1 → 2 in order: the repin references `storage.allegedly.works/tier=hdd`, which no node has
 until the labels are applied.
 
 ### Stage 0 post-checks
@@ -244,13 +244,13 @@ volumeTopology:
     extraArgs: ["-disk=ssd"] # operator appends this to `weed volume`; no first-class diskType field
     priorityClassName: stateful-infra
     metricsPort: 9328
-    nodeSelector: { storage-tier: ssd }
+    nodeSelector: { storage.allegedly.works/tier: ssd }
     affinity:
       nodeAffinity: # hard: never land on non-SSD
         requiredDuringSchedulingIgnoredDuringExecution:
           nodeSelectorTerms:
             - matchExpressions:
-                - { key: storage-tier, operator: In, values: ["ssd"] }
+                - { key: storage.allegedly.works/tier, operator: In, values: ["ssd"] }
       podAntiAffinity: # one per host
         requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
@@ -323,7 +323,7 @@ before and after:
    etcd / `/dev/sda`. Drain its `/dev/sdb` local-path PVs, wipe+rename →
    `local-path-ovh-hdd` (R). **Post:** **G-swfs**/**G-cnpg** green.
 6. **Pin hot DBs to SSD.** Set `forgejo-db` + `seaweedfs-filer-db`
-   `storageClass: local-path-ovh-ssd` + nodeSelector `storage-tier=ssd`; roll
+   `storageClass: local-path-ovh-ssd` + nodeSelector `storage.allegedly.works/tier=ssd`; roll
    each CNPG instance one at a time (**G-cnpg** between). Re-check Nebula
    lighthouse placement now that `103656`/`103711` are workers.
 
