@@ -11,6 +11,7 @@
 { pkgs }:
 pkgs.writeShellScriptBin "z-claude" ''
   exec env \
+    IS_DEMO=1 \
     ANTHROPIC_BASE_URL=https://litellm.allegedly.works \
     ANTHROPIC_AUTH_TOKEN="$LITELLM_ZAI_KEY" \
     ANTHROPIC_MODEL=glm-5.2-anthropic \

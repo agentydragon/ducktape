@@ -1,12 +1,16 @@
 # zai agent user on agent-box: Claude Code routed to z.ai's GLM via the cluster
-# LiteLLM proxy (Anthropic /v1/messages shape, model glm-5.2-anthropic) — NOT z.ai
-# directly. So this user holds only the z.ai-scoped LiteLLM virtual key
-# (LITELLM_ZAI_KEY), never the raw z.ai key (which stays cluster-side as the
-# litellm-zai-key secret). See ./common.nix for the shared base; this file adds
-# Claude Code + the zai wrapper + unattended config.
+# LiteLLM proxy (Anthropic /v1/messages shape, model glm-5.2-anthropic). This user
+# holds only the z.ai-scoped LiteLLM virtual key (LITELLM_ZAI_KEY), never the raw
+# z.ai key (which stays cluster-side as litellm-zai-key). See ./common.nix for the
+# shared base.
+#
+# Claude Code is configured MINIMALLY here — NOT via ../../claude_code (that module
+# carries ~260 workstation permission rules, MCP servers, skills, sandbox defaults
+# etc. that are wrong for a fully-open unattended agent VM). This user runs everything
+# without prompts, sandbox, or permission checks.
 {
   pkgs,
-  lib,
+  pkgsUnstable,
   ...
 }:
 let
@@ -23,7 +27,6 @@ in
       forgejoKeySopsFile = ../../../../ssh_keys/agent-box-zai-forgejo.sops.key;
       kubeJwtSopsFile = ../../../../secrets/agent-box-zai-k8s-jwt.yaml;
     })
-    ../../claude_code # Claude Code CLI + skills/config
   ];
 
   # z.ai-scoped LiteLLM virtual key (SSOT in tf/gitops/litellm-keys/litellm-zai-clients-key.yaml,
@@ -35,19 +38,21 @@ in
     key = "litellm_zai_key";
   };
 
-  # Isolated agent VM: run Claude Code fully unattended, mirroring codex's
-  # approvalPolicy="never" + danger-full-access. mkForce overrides the workstation
-  # defaults in ../../claude_code (defaultMode="default", sandbox.enabled=true).
-  programs.claude-code.settings = {
-    permissions.defaultMode = lib.mkForce "bypassPermissions";
-    permissions.skipDangerousModePermissionPrompt = true;
-    sandbox.enabled = lib.mkForce false;
+  # Minimal Claude Code config for the agent-box zai user — fully open, unattended.
+  programs.claude-code = {
+    enable = true;
+    package = pkgsUnstable.claude-code;
+    settings = {
+      theme = "auto";
+      permissions.defaultMode = "bypassPermissions";
+      permissions.skipDangerousModePermissionPrompt = true;
+      sandbox.enabled = false;
+    };
   };
 
   home.packages = [
-    # z-claude: same wrapper the laptops use (nix/home/home.nix) — Claude Code on
-    # glm-5.2-anthropic via LiteLLM, reading $LITELLM_ZAI_KEY. See
-    # ../../claude_code/z-claude.nix.
+    # z-claude: same wrapper the laptops use — Claude Code on glm-5.2-anthropic via
+    # LiteLLM, reading $LITELLM_ZAI_KEY. See ../../claude_code/z-claude.nix.
     zClaude
   ];
 }
