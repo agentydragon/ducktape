@@ -74,14 +74,18 @@ until one of the durable fixes below lands.
 The operator is already on the latest (v1.0.30 / chart 0.1.33) — there is no newer-version
 fix. The static-`configSecret` model is the constraint.
 
-1. **Reloader `reloadStrategy: annotations`** — cheapest; try first. Evidence it should
-   work: when Reloader fired we watched the operator revert its default _env-var_ patch (the
-   fresh RS scaled to 0), yet a `restartedAt` _annotation_ (not in the CR) survived on the
-   same pod template. So the operator overwrites container spec but **merges** pod-template
-   annotations — an annotation-mode patch should survive reconciliation and roll the gateway.
-   One-line change in `cluster/k8s/reloader/reloader.yaml`. Caveats: `reloadStrategy` is a
-   **global** Reloader setting (affects every managed workload — `annotations` is a common,
-   low-risk mode though), and it's unproven here, so validate on the next tenant add.
+1. **Reloader `reloadStrategy: annotations`** — cheapest and now validated. When
+   Reloader fired with its default _env-var_ patch, we watched the operator revert the
+   container-spec drift (fresh RS scaled to 0), yet a `restartedAt` _annotation_ (not in
+   the CR) survived on the same pod template. A 2026-07-04 throwaway Seaweed experiment
+   confirmed the annotation strategy works: changing a disposable `seaweedfs-s3-config`
+   Secret made Reloader add `reloader.stakater.com/last-reloaded-from` to the generated
+   S3 Deployment's pod template, Kubernetes rolled to a new ReplicaSet, and forced
+   Seaweed operator reconciles preserved the annotation and active RS. The one-line
+   durable fix lives in `cluster/k8s/reloader/reloader.yaml`. Caveat: `reloadStrategy`
+   is a **global** Reloader setting (affects every managed workload), but `annotations`
+   is the less invasive patch mode for operator-owned workloads because it avoids
+   mutating container specs.
 2. **Automate the restart** (the guaranteed fallback if A doesn't survive the operator). A
    small reconciler in `cluster/provisioners/` (matching grocy/inventree/matrix) that hashes
    `seaweedfs-s3-config` and, on change, runs `kubectl delete pod -l
