@@ -94,17 +94,6 @@ this non-root image pod has not) and no boot-time render script:
 
 ## Follow-ups
 
-- **Verify LiteLLM on a real codex task** — the `litellm` model_provider
-  (`gpt-5.5-chatgpt`) is only smoke-tested (`reply → READY`). LiteLLM's `chatgpt/`
-  backend is streaming-only with a documented non-streaming-empty-output gotcha
-  (`cluster/k8s/litellm/app/generate_litellm.py`). Run a real coding turn (edit,
-  `apply_patch`, multi-turn, tool calls) through the pod and confirm it holds up;
-  fall back to another model if `gpt-5.5-chatgpt` misbehaves.
-- **Autonomous operation (or decide interactive-only)** — the pod is currently an
-  interactive box you `ssh`/`kubectl exec` into. The original goal was "git push to
-  `devel` → auto-migrating pod that _autonomously sends PRs_"; no trigger / schedule
-  / task-input is wired. Decide: build the autonomous loop (what kicks off a run —
-  cron? task queue? webhook?) or accept interactive-only and adjust the framing.
 - **Attic cache (auto-rotated)** — wire `cache.allegedly.works/{main,gaffer}` as
   substituters so the pod's nix/bazel builds reuse our closures. Both caches need a
   reader JWT (`main:r,gaffer:r`); neither is public-read. Do it _right_: extend
