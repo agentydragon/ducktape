@@ -102,10 +102,10 @@ in
       sopsFile = ../../secrets/shared/habitify.yaml;
       key = "habitify_api_key";
     };
-    # z.ai-scoped LiteLLM virtual key (SSOT in secrets/litellm-zai-clients-key.yaml)
+    # z.ai-scoped LiteLLM virtual key (SSOT in tf/gitops/litellm-keys/litellm-zai-clients-key.yaml)
     # powering the `z-claude` Claude-Code-on-GLM alias below.
     LITELLM_ZAI_KEY = {
-      sopsFile = ../../secrets/litellm-zai-clients-key.yaml;
+      sopsFile = ../../tf/gitops/litellm-keys/litellm-zai-clients-key.yaml;
       key = "litellm_zai_key";
     };
   };

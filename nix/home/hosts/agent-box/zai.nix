@@ -26,12 +26,12 @@ in
     ../../claude_code # Claude Code CLI + skills/config
   ];
 
-  # z.ai-scoped LiteLLM virtual key (SSOT in secrets/litellm-zai-clients-key.yaml,
+  # z.ai-scoped LiteLLM virtual key (SSOT in tf/gitops/litellm-keys/litellm-zai-clients-key.yaml,
   # shared with the laptop z-claude alias). LiteLLM's Anthropic /v1/messages routes to
   # z.ai GLM; the raw z.ai key stays cluster-side. Exported as an env var so the
   # z-claude wrapper below (and z-claude.nix) can read it.
   ducktape.sopsEnv.LITELLM_ZAI_KEY = {
-    sopsFile = ../../../../secrets/litellm-zai-clients-key.yaml;
+    sopsFile = ../../../../tf/gitops/litellm-keys/litellm-zai-clients-key.yaml;
     key = "litellm_zai_key";
   };
 

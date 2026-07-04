@@ -30,7 +30,7 @@ keys:
   # as its age decryption identity (mirrors agent-box-codex-user above).
   - &agent-box-zai-user age14zkdx3rku2yp9zv8ejrlv0yd53yx7rmmtfzxmxhawvc5hp2gxf7sxnv4sv
   # Dedicated, narrow age key for the litellm-zai-clients virtual-key SSOT
-  # (secrets/litellm-zai-clients-key.yaml). Its private half lives ONLY in the
+  # (tf/gitops/litellm-keys/litellm-zai-clients-key.yaml). Its private half lives ONLY in the
   # litellm-keys tf-runner (SOPS_AGE_KEY, via the litellm-zai-clients-sops-age-key
   # Secret) so TF can decrypt this one file via sops_external — it is NOT the broad
   # cluster SOPS key, so the runner can decrypt nothing else.
@@ -570,7 +570,7 @@ creation_rules:
   # laptop z-claude alias + the agent-box zai user (ducktape.sopsEnv.LITELLM_ZAI_KEY).
   # Recipients: admin + the narrow runner key + laptops + agent-box-zai (NOT the
   # broad cluster key).
-  - path_regex: secrets/litellm-zai-clients-key\.yaml$
+  - path_regex: tf/gitops/litellm-keys/litellm-zai-clients-key\.yaml$
     key_groups:
       - age:
           - *admin

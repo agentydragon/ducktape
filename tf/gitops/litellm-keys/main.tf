@@ -224,18 +224,16 @@ resource "kubernetes_secret" "dispatcher_classifier" {
 # stays cluster-side as litellm-zai-key, used upstream by the glm-*-anthropic routes).
 # No budget — interactive, user-driven use; the model scope is the guardrail.
 #
-# KEY SSOT: the value lives in a git SOPS file (secrets/litellm-zai-clients-key.yaml),
-# NOT a cluster Secret. This module reads it via the sops_file data source
-# (source_file, NOT file() — the SSOT lives outside this module, at repo root, and
-# file() can't escape path.module; source_file is a path the provider opens only at
-# plan/apply, when the tf-runner has the repo checked out), decrypting with a
-# dedicated narrow age key (litellm-zai-clients) mounted as SOPS_AGE_KEY into this
-# module's tf-runner (see the litellm-keys Terraform CR) — NOT the broad cluster SOPS
-# key, so the runner can decrypt only this one file. Laptops/agent-box read the same
-# SOPS file via ducktape.sopsEnv (LITELLM_ZAI_KEY).
+# KEY SSOT: the value lives in a git SOPS file (litellm-zai-clients-key.yaml, in this
+# module dir — co-located because the tf-runner's tofu only sees the module path, not
+# the repo root), NOT a cluster Secret. This module reads it via the sops_file data
+# source (source_file), decrypting with a dedicated narrow age key (litellm-zai-clients)
+# mounted as SOPS_AGE_KEY into this module's tf-runner (see the litellm-keys Terraform
+# CR) — NOT the broad cluster SOPS key, so the runner can decrypt only this one file.
+# Laptops/agent-box read the same SOPS file via ducktape.sopsEnv (LITELLM_ZAI_KEY).
 
 data "sops_file" "zai_clients_key" {
-  source_file = "${path.module}/../../../secrets/litellm-zai-clients-key.yaml"
+  source_file = "${path.module}/litellm-zai-clients-key.yaml"
 }
 
 resource "litellm_key" "zai_clients" {
