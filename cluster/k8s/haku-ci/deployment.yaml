@@ -62,6 +62,28 @@ spec:
               value: haku-ci
             - name: DOCKER_HOST
               value: tcp://localhost:2375
+            # Route the runner's external egress (fetching `uses:` actions from
+            # data.forgejo.org, etc.) through haku-squid — the sole external door
+            # (ccnp-force-proxy-egress.yaml). NO_PROXY keeps in-cluster Forgejo
+            # (git + registry, long-poll) and the localhost dind socket direct. The
+            # haku-squid CA (mounted below) is trusted via the standard per-tool CA
+            # env vars.
+            - name: HTTP_PROXY
+              value: http://haku-squid.haku-squid.svc.cluster.local:3128
+            - name: HTTPS_PROXY
+              value: http://haku-squid.haku-squid.svc.cluster.local:3128
+            - name: NO_PROXY
+              value: 127.0.0.1,localhost,host.docker.internal,forgejo-http.forgejo,forgejo-http.forgejo.svc.cluster.local,.forgejo,.svc.cluster.local,10.0.0.0/8
+            - name: SSL_CERT_FILE
+              value: /squid-ca/ca-certificates.crt
+            - name: CURL_CA_BUNDLE
+              value: /squid-ca/ca-certificates.crt
+            - name: GIT_SSL_CAINFO
+              value: /squid-ca/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /squid-ca/ca-certificates.crt
+            - name: NODE_EXTRA_CA_CERTS
+              value: /squid-ca/ca-certificates.crt
           volumeMounts:
             - name: config
               mountPath: /config
@@ -71,6 +93,9 @@ spec:
               readOnly: true
             - name: runner-data
               mountPath: /data
+            - name: squid-ca
+              mountPath: /squid-ca
+              readOnly: true
           resources:
             requests:
               cpu: 50m
@@ -101,6 +126,20 @@ spec:
           env:
             - name: DOCKER_TLS_CERTDIR
               value: ""
+            # dockerd pulls base images through haku-squid. Docker >=23 reads these
+            # proxy vars from the daemon environment for registry pulls; NO_PROXY
+            # keeps the in-cluster Forgejo registry push direct. dockerd is Go, so
+            # SSL_CERT_FILE points its registry-TLS trust at the haku-squid CA
+            # bundle (a full bundle incl. system + cluster roots), so it validates
+            # the intercepted registry TLS.
+            - name: HTTP_PROXY
+              value: http://haku-squid.haku-squid.svc.cluster.local:3128
+            - name: HTTPS_PROXY
+              value: http://haku-squid.haku-squid.svc.cluster.local:3128
+            - name: NO_PROXY
+              value: 127.0.0.1,localhost,host.docker.internal,forgejo-http.forgejo,forgejo-http.forgejo.svc.cluster.local,.forgejo,.svc.cluster.local,10.0.0.0/8
+            - name: SSL_CERT_FILE
+              value: /squid-ca/ca-certificates.crt
           securityContext:
             privileged: true
             runAsUser: 1000
@@ -108,6 +147,9 @@ spec:
           volumeMounts:
             - name: docker-data
               mountPath: /var/lib/docker
+            - name: squid-ca
+              mountPath: /squid-ca
+              readOnly: true
           resources:
             requests:
               cpu: 200m
@@ -129,3 +171,9 @@ spec:
           emptyDir: {}
         - name: docker-data
           emptyDir: {}
+        # haku-squid CA trust bundle, written into this namespace by the
+        # trust-manager Bundle (agents/haku-squid/trust-bundle.yaml). Mounted into
+        # both the runner and dind so intercepted external TLS validates.
+        - name: squid-ca
+          configMap:
+            name: haku-squid-ca-cert
