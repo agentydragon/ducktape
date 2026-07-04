@@ -10,6 +10,7 @@
 // where several widgets mount at once and each want the tree.
 
 import { type FrontMatter, parseFrontmatter } from "./frontmatter.ts";
+import { trackGit } from "./git_progress.ts";
 import type { RepoBlob, RepoTree } from "./types.ts";
 
 const blobCache = new Map<string, string>();
@@ -32,24 +33,29 @@ export function resetRepoCache(): void {
 export function repoTree(): Promise<RepoTree> {
   if (treeInFlight && Date.now() - treeAt < TREE_TTL_MS) return treeInFlight;
   treeAt = Date.now();
-  treeInFlight = (async () => {
+  // A tree read is one git object; the shared in-flight promise means concurrent callers
+  // ride one fetch, so it registers with the tracker exactly once.
+  treeInFlight = trackGit(1, async () => {
     const res = await fetch("/api/repo/tree");
     if (!res.ok) {
       invalidateTree(); // don't cache a failure
       throw new Error(`repo tree: ${res.status}`);
     }
     return (await res.json()) as RepoTree;
-  })();
+  });
   return treeInFlight;
 }
 
 // Blobs by sha, in input order. Content-addressed → cached permanently; only uncached shas are fetched.
 export async function repoBlobs(shas: string[]): Promise<RepoBlob[]> {
   const missing = shas.filter((s) => !blobCache.has(s));
+  // Only a real fetch registers with the tracker — a fully-cached read (missing empty) does no I/O.
   if (missing.length > 0) {
-    const res = await fetch(`/api/repo/blobs?shas=${missing.join(",")}`);
-    if (!res.ok) throw new Error(`repo blobs: ${res.status}`);
-    for (const b of (await res.json()) as RepoBlob[]) blobCache.set(b.sha, b.content);
+    await trackGit(missing.length, async () => {
+      const res = await fetch(`/api/repo/blobs?shas=${missing.join(",")}`);
+      if (!res.ok) throw new Error(`repo blobs: ${res.status}`);
+      for (const b of (await res.json()) as RepoBlob[]) blobCache.set(b.sha, b.content);
+    });
   }
   return shas.map((sha) => ({ sha, content: blobCache.get(sha) ?? "" }));
 }

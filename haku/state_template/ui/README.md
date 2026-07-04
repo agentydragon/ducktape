@@ -33,6 +33,12 @@ npm run build   # → dist/  (the Dockerfile copies this into the backend's stat
 npm run dev     # local dev server; proxies /api to a backend on :8080
 ```
 
+Repo reads all funnel through the two git primitives in `src/repo.ts` (recursive tree, bulk
+blobs). Both register with a central tracker (`src/git_progress.ts`), and `src/git_progress_bar.tsx`
+renders one app-wide top progress bar mirroring git's object-transfer count (`done/total`) whenever
+any read — from any surface — is in flight; per-view "Loading…" text stays as each surface's
+first-paint skeleton.
+
 Because this UI runs **inside** the console's sandboxed iframe (no `allow-popups`),
 it cannot open links itself. All outbound navigation (`<handoff>` deep-links, item source)
 goes through the console's **`openLink` postMessage bridge**: `src/bridge.ts` posts

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { notifyRouteChanged } from "./bridge.ts";
 import { fetchMeta } from "./client.ts";
 import { NoteToHaku } from "./feedback_button.tsx";
+import { GitProgressBar } from "./git_progress_bar.tsx";
 import { GardenPage } from "./garden.tsx";
 import { ImprovementBoard } from "./improvement_board.tsx";
 import { InboxView } from "./inbox.tsx";
@@ -61,6 +62,9 @@ export default function App() {
 
   return (
     <Container size={760} px="md" pb="xl">
+      {/* App-wide git transfer indicator: fixed to the viewport top, shows whenever any repo
+          tree/blob read is in flight (any surface), idle otherwise. */}
+      <GitProgressBar />
       {/* The header (logo + Note/Launch) and the tab strip stay pinned as content scrolls
             (operator: keep the top menu fixed). Sticky within the scrolling iframe body; a solid
             body background + subtle shadow so content scrolls under it and it reads as a bar. */}
