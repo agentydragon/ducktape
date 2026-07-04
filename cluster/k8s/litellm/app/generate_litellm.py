@@ -91,6 +91,15 @@ ANTHROPIC_MODELS: list[str] = ["claude-sonnet-5", "claude-haiku-4-5"]
 GROQ_CHAT_MODELS: list[str] = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
 GROQ_WHISPER_MODELS: list[str] = ["whisper-large-v3", "whisper-large-v3-turbo"]
 
+# TODO(gemini-litellm): wire Gemini in once the key is recovered. The only copy is
+# cluster/k8s/agents/openclaw/gateway-secrets/gemini-api-key.sops.yaml (encrypted to
+# admin+cluster-secrets), and openclaw was never deployed — no openclaw-gateway namespace
+# and no live in-cluster secret to read (verified: 0 gemini/AIza hits across 521 secrets).
+# Recover the plaintext (decrypt with the admin age key, or re-issue a key), then add a
+# litellm-level sops Secret litellm-gemini-key + GEMINI_API_KEY env in deployment.yaml +
+# GEMINI_MODELS here (e.g. gemini-2.5-pro, gemini-2.5-flash) and regenerate proxy-config.yaml.
+# Same pattern as Groq above; see memory reference_litellm_provider_keys.
+
 
 def _anthropic_entries() -> Iterator[dict]:
     for model in ANTHROPIC_MODELS:
