@@ -15,6 +15,11 @@ spec:
   timeout: 10m
   path: ./cluster/k8s/litellm/keys-tf
   prune: true
+  # Decrypt litellm-zai-clients-sops-age-key.sops.yaml (the narrow SOPS_AGE_KEY for
+  # the tf-runner) so sops_external in tf/gitops/litellm-keys can read the virtual-key
+  # SSOT. Added when that SOPS file arrived — previously this dir held only plain YAML.
+  decryption:
+    provider: sops
   sourceRef:
     kind: GitRepository
     name: flux-system
