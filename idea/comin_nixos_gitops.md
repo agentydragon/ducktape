@@ -10,7 +10,7 @@ with no CI step and no manual `nixos-rebuild`.
 ## Why
 
 This is the mature, purpose-built answer to the property we kept hitting while
-designing the codex pod (<../cluster/docs/plans/codex_pod_nix_csi.md>): "change
+designing the codex pod (<../cluster/docs/plans/codex_pod.md>): "change
 the Nix definition, push, the running thing reconciles itself." At the
 k8s-pod + nix-csi layer that needs custom glue (there's no off-the-shelf
 Flux-image-automation analog for Nix store paths). At the **NixOS-system** layer,
@@ -82,5 +82,5 @@ away. Worth doing on the VM regardless of what happens with the pod.
 - Repo: <https://github.com/nlewo/comin> (`readme.md`, `docs/` — howtos,
   advanced-config, authentication, generated-module-options, design).
 - Matrix room: `#nixos-comin:matrix.org`.
-- Related: <../cluster/docs/plans/codex_pod_nix_csi.md> (the pod arc that
+- Related: <../cluster/docs/plans/codex_pod.md> (the pod arc that
   surfaced this).
