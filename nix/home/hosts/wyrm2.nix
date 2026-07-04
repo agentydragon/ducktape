@@ -33,6 +33,10 @@
       sopsFile = ../../../secrets/home/wyrm2/openai.yaml;
       key = "openai_api_key";
     };
+    GROQ_API_KEY = {
+      sopsFile = ../../../secrets/home/wyrm2/groq.yaml;
+      key = "groq_api_key";
+    };
   };
 
   # Place decrypted z.ai API key where aiquota reads it.

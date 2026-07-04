@@ -86,12 +86,33 @@ _CHATGPT_MODELS: list[str] = ["gpt-5.4", "gpt-5.5", "gpt-5.3-codex-spark"]
 ANTHROPIC_MODELS: list[str] = ["claude-sonnet-5", "claude-haiku-4-5"]
 
 
+# Groq (fast open-model inference: Llama chat + Whisper ASR). Key from the
+# GROQ_API_KEY env var (litellm-groq-key secret). Free tier.
+GROQ_CHAT_MODELS: list[str] = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+GROQ_WHISPER_MODELS: list[str] = ["whisper-large-v3", "whisper-large-v3-turbo"]
+
+
 def _anthropic_entries() -> Iterator[dict]:
     for model in ANTHROPIC_MODELS:
         yield {
             "model_name": model,
             "litellm_params": {"model": f"anthropic/{model}", "api_key": "os.environ/ANTHROPIC_API_KEY"},
             "model_info": {"mode": "chat", "supports_function_calling": True},
+        }
+
+
+def _groq_entries() -> Iterator[dict]:
+    for model in GROQ_CHAT_MODELS:
+        yield {
+            "model_name": model,
+            "litellm_params": {"model": f"groq/{model}", "api_key": "os.environ/GROQ_API_KEY"},
+            "model_info": {"mode": "chat", "supports_function_calling": True},
+        }
+    for model in GROQ_WHISPER_MODELS:
+        yield {
+            "model_name": model,
+            "litellm_params": {"model": f"groq/{model}", "api_key": "os.environ/GROQ_API_KEY"},
+            "model_info": {"mode": "audio_transcription"},
         }
 
 
@@ -149,6 +170,7 @@ def generate() -> str:
     model_list.extend(_zai_anthropic_entries())
     model_list.extend(_chatgpt_entries())
     model_list.extend(_anthropic_entries())
+    model_list.extend(_groq_entries())
 
     # Master key and Langfuse credentials are injected as env vars in the
     # Deployment; not repeated here.

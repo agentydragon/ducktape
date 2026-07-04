@@ -55,6 +55,13 @@ in
     sandbox.filesystem.allowWrite = lib.mkAfter [ bazeliskCache ];
   };
 
+  ducktape.sopsEnv = {
+    GROQ_API_KEY = {
+      sopsFile = ../../../secrets/home/rugged/groq.yaml;
+      key = "groq_api_key";
+    };
+  };
+
   # SSH keys for wyrm and vps, decrypted from SOPS binary at activation time.
   sops.secrets =
     builtins.listToAttrs (

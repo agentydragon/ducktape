@@ -126,6 +126,12 @@ spec:
                 secretKeyRef:
                   name: litellm-anthropic-key
                   key: api-key
+            # Groq key for the groq upstream models (Llama chat + Whisper ASR).
+            - name: GROQ_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-groq-key
+                  key: GROQ_API_KEY
             - name: LANGFUSE_OTEL_HOST
               value: "http://langfuse-web.langfuse.svc.cluster.local:3000"
             - name: LANGFUSE_PUBLIC_KEY
