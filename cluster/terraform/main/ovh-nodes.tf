@@ -323,7 +323,7 @@ locals {
         # extraArgs (see `kimsufi_cloud_provider_external_enabled_nodes` below); the
         # CCM transformation matches on `region=hil` set here.
         # `storage.allegedly.works/tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
-        # (cluster/k8s/local-path-provisioner); see cluster/docs/ovh_storage_tiering.md.
+        # (cluster/k8s/local-path-provisioner); see cluster/docs/plans/ovh_storage_tiering.md.
         nodeLabels = {
           "topology.kubernetes.io/region" = "hil"
           "topology.kubernetes.io/zone"   = v.zone
@@ -351,7 +351,7 @@ locals {
         }
         # Topology labels set explicitly — no CCM for OVH bare metal.
         # `storage.allegedly.works/tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
-        # (cluster/k8s/local-path-provisioner); see cluster/docs/ovh_storage_tiering.md.
+        # (cluster/k8s/local-path-provisioner); see cluster/docs/plans/ovh_storage_tiering.md.
         nodeLabels = {
           "topology.kubernetes.io/region" = "hil"
           "topology.kubernetes.io/zone"   = v.zone
@@ -478,7 +478,7 @@ locals {
         # extraArgs (see `kimsufi_cloud_provider_external_enabled_nodes` below); the
         # CCM transformation matches on `region=hil` set here.
         # `storage.allegedly.works/tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
-        # (cluster/k8s/local-path-provisioner); see cluster/docs/ovh_storage_tiering.md.
+        # (cluster/k8s/local-path-provisioner); see cluster/docs/plans/ovh_storage_tiering.md.
         nodeLabels = {
           "topology.kubernetes.io/region" = "hil"
           "topology.kubernetes.io/zone"   = v.zone
