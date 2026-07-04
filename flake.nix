@@ -539,10 +539,10 @@
           };
         };
 
-        # agent-box - headless CLI-only KubeVirt VM hosting agent users. The
-        # codex user runs OpenAI Codex under a dedicated, scoped identity
-        # (agent-box-codex-user). See plans/agent-box.md.
-        # TODO: add `claude` and `z-claude` agent users on this host.
+        # agent-box - headless CLI-only KubeVirt VM hosting agent users, each under
+        # its own scoped identity. `codex` runs OpenAI Codex; `zai` runs Claude Code
+        # routed to z.ai's GLM via the cluster LiteLLM proxy. See
+        # cluster/k8s/agent-box/README.md.
         agent-box = mkNixos {
           hostname = "agent-box";
           username = "codex";
@@ -550,8 +550,20 @@
           inlineHomeManager = {
             enableGui = false;
             isK8sWorker = false;
-            module = ./nix/home/hosts/agent-box.nix;
+            module = ./nix/home/hosts/agent-box/codex.nix;
           };
+          # zai is a second agent user. codex is the primary inline-HM user above
+          # (and also enables home-manager's extraSpecialArgs/sharedModules); zai is
+          # wired as an extra home-manager user here so mkNixos stays
+          # single-user-generic. The matching NixOS user is created by the host
+          # config's agentUsers list (nix/nixos/hosts/agent-box/default.nix).
+          extraModules = [
+            {
+              home-manager.users.zai = {
+                imports = [ ./nix/home/hosts/agent-box/zai.nix ];
+              };
+            }
+          ];
         };
 
         # Gecko - headless CLI-only KubeVirt VM for Claude Code / Codex

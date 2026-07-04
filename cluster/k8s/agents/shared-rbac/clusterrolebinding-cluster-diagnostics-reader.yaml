@@ -24,3 +24,7 @@ subjects:
   - kind: Group
     name: oidc-ksbx-groups:agent-box-codex
     apiGroup: rbac.authorization.k8s.io
+  # agent-box zai VM (Claude Code via LiteLLM/z.ai): same secret-free diagnostics.
+  - kind: Group
+    name: oidc-ksbx-groups:agent-box-zai
+    apiGroup: rbac.authorization.k8s.io

@@ -53,6 +53,20 @@ rotations:
     credentials_dir: /var/run/secrets/authentik/agent-box-codex
     sops_file: secrets/agent-box-codex-k8s-jwt.yaml
     token_field: jwt
+  - name: agent-box-zai
+    # Source JWT for the self-hosted zai (Claude Code via LiteLLM/z.ai) user on the
+    # agent-box VM. Issued by the shared kubectl-sandbox-client-credentials provider
+    # using the agent-box-zai Authentik service account, whose machine-principal
+    # mapping emits only the agent-box-zai k8s group.
+    provider_slug: kubectl-sandbox-client-credentials
+    scopes: openid profile email groups
+    credential_mode: user_password
+    expected_group: agent-box-zai
+    expected_audiences:
+      - kubectl-sandbox-client-credentials
+    credentials_dir: /var/run/secrets/authentik/agent-box-zai
+    sops_file: secrets/agent-box-zai-k8s-jwt.yaml
+    token_field: jwt
   - name: haku-grocy
     # Source JWT for haku's read-only access to the grocy-sf MCP. Issued by the
     # dedicated grocy-mcp-haku-sf provider (30-day validity; shares grocy-mcp-sf's

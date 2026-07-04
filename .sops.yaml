@@ -26,6 +26,9 @@ keys:
   # user's age decryption identity.
   - &agent-box-host age1gzgkw3pcyd4aan0ndqnc7g7q4rrg3ufpd7n2hepuqpjcmqjj056s4lqawx
   - &agent-box-codex-user age16madmg3yjv39dekr6dscqr2slv0haxcw7lw25v8vmly4wl95td4qwev54u
+  # zai agent user on agent-box: its id_ed25519, planted by NixOS sops-nix and doubling
+  # as its age decryption identity (mirrors agent-box-codex-user above).
+  - &agent-box-zai-user age14zkdx3rku2yp9zv8ejrlv0yd53yx7rmmtfzxmxhawvc5hp2gxf7sxnv4sv
   # CI key (GitHub Actions + BuildBuddy, narrow access to CI-only secrets)
   # Private key: k8s Secret in github-secrets-sync namespace, synced to GHA as SOPS_AGE_KEY.
   # Manual paste into BuildBuddy org secrets.
@@ -251,6 +254,7 @@ creation_rules:
           - *admin
           - *agent-box-host
           - *agent-box-codex-user
+          - *agent-box-zai-user
 
   # --- Per-host secrets (admin + host) ---
   - path_regex: secrets/hosts/wyrm2-.*\.yaml$
@@ -352,6 +356,21 @@ creation_rules:
       - age:
           - *admin
           - *agent-box-codex-user
+  # zai user identity: decrypted on the VM by NixOS sops-nix via the host key, then
+  # planted at /home/zai/.ssh/id_ed25519. admin retained for management.
+  - path_regex: ssh_keys/agent-box-zai-user\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *agent-box-host
+  # zai Forgejo bot push key: decrypted by the zai user's home-manager sops-nix.
+  - path_regex: ssh_keys/agent-box-zai-forgejo\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *agent-box-zai-user
 
   # --- Per-user home-manager secrets (admin + user SSH key) ---
   - path_regex: secrets/home/wyrm2/.*\.yaml$
@@ -527,6 +546,27 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
+  # agent-box zai K8s bearer JWT (auto-rotated by the authentik-jwt-rotation
+  # CronJob). Decrypted by the zai user's home-manager on agent-box to render
+  # ~/.kube/config; admin + user keys retained for break-glass.
+  - path_regex: secrets/agent-box-zai-k8s-jwt\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *agent-box-zai-user
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+  # agent-box zai LiteLLM master key: the value of the in-cluster litellm-master-key
+  # Secret (zai talks to LiteLLM's Anthropic /v1/messages -> z.ai rather than z.ai
+  # directly). Decryptable only by the zai user (+ admin break-glass). No
+  # auto-rotation path today; re-mirror if litellm-master-key rotates.
+  - path_regex: secrets/agent-box-zai-litellm\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *agent-box-zai-user
   # Haku read-only grocy-sf MCP bearer JWT (auto-rotated by the
   # authentik-jwt-rotation CronJob). Same readers as haku-k8s-jwt: the Haku
   # routine (haku) plus admin + user keys for break-glass.

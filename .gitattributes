@@ -70,7 +70,7 @@ haku/state_template/** filename-conventions-ignored=true
 # ./nix/nixos/hosts/${hostname}), and the host/DNS name agent-box is kebab by
 # k8s/DNS convention. Keep the related Nix + plan filenames consistent.
 nix/nixos/hosts/agent-box/** filename-conventions-ignored=true
-nix/home/hosts/agent-box.nix filename-conventions-ignored=true
+nix/home/hosts/agent-box/** filename-conventions-ignored=true
 plans/agent-box.md filename-conventions-ignored=true
 
 # Non-K8s YAML under cluster/k8s/ - rules_distroless apt manifests for CronJob

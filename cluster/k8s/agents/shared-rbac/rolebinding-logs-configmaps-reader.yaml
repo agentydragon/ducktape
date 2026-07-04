@@ -20,3 +20,6 @@ subjects:
   - kind: Group
     name: oidc-ksbx-groups:agent-box-codex
     apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: oidc-ksbx-groups:agent-box-zai
+    apiGroup: rbac.authorization.k8s.io
