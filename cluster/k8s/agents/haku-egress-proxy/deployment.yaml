@@ -1,3 +1,8 @@
+# Haku's egress proxy for haku-sandbox — currently implemented with Squid (the
+# ubuntu/squid image + squid.conf below). The k8s object names stay
+# implementation-neutral (haku-egress-proxy) so swapping the proxy doesn't
+# cascade renames; only the image, config file, and squid-internal paths are
+# Squid-named.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -9,6 +14,10 @@ metadata:
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
+  # RWO cache PVC: a RollingUpdate would try to mount it on the new pod before the
+  # old pod releases it (multi-attach deadlock). Recreate serializes the swap.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: haku-egress-proxy
@@ -17,85 +26,86 @@ spec:
       labels:
         app.kubernetes.io/name: haku-egress-proxy
     spec:
+      # OVH workers (region hil): keeps the pod near the seaweedfs-ovh (hil-ovh)
+      # volume servers so the cache is region-local. seaweedfs is not node-pinned,
+      # so the pod still reschedules freely within the region.
+      nodeSelector:
+        topology.kubernetes.io/region: hil
       initContainers:
-        - name: mitmproxy-ca-init
-          image: busybox:1.37
-          command:
-            - sh
-            - -c
+        # Build the ssl-bump signing CA, initialize the generated-leaf cert DB, and
+        # lay down the cache_dir swap structure — then hand ownership to `proxy`,
+        # the user Squid's workers run as (cache_effective_user).
+        - name: squid-init
+          # Same image as the main container so security_file_certgen + `squid -z`
+          # match the runtime Squid. Pin verified against the registry before merge
+          # (see README risk note).
+          image: ubuntu/squid:6.6-24.04_beta
+          command: [sh, -c]
+          args:
             - |
-              cat /mitmproxy-ca/tls.key /mitmproxy-ca/tls.crt > /mitmproxy-data/mitmproxy-ca.pem
-              cp /mitmproxy-ca/tls.crt /mitmproxy-data/mitmproxy-ca-cert.pem
+              set -e
+              cat /egress-proxy-ca/tls.key /egress-proxy-ca/tls.crt > /etc/squid/ssl/squid-ca.pem
+              chmod 400 /etc/squid/ssl/squid-ca.pem
+              rm -rf /var/lib/squid/ssl_db
+              /usr/lib/squid/security_file_certgen -c -s /var/lib/squid/ssl_db -M 8MB
+              squid -z -f /config/squid.conf --foreground
+              chown -R proxy:proxy /etc/squid/ssl /var/lib/squid /var/cache/squid
           volumeMounts:
-            - name: mitmproxy-ca
-              mountPath: /mitmproxy-ca
+            - name: egress-proxy-ca
+              mountPath: /egress-proxy-ca
               readOnly: true
-            - name: mitmproxy-data
-              mountPath: /mitmproxy-data
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: ssl
+              mountPath: /etc/squid/ssl
+            - name: ssl-db
+              mountPath: /var/lib/squid
+            - name: cache-data
+              mountPath: /var/cache/squid
       containers:
-        - name: mitmproxy
-          # Egress proxy — currently implemented with mitmproxy.
-          # >=12.2.3 (mitmproxy#8214): the leaf's AuthorityKeyIdentifier now
-          # copies the CA cert's SubjectKeyIdentifier instead of recomputing it
-          # as SHA-1. cert-manager mints CA SKIs per RFC 7093 (truncated
-          # SHA-256), so on <12.2.3 every intercepted leaf's AKID mismatched the
-          # CA SKI and strict clients rejected the chain ("unable to get local
-          # issuer certificate"). See
-          # cluster/docs/lessons_learned/2026_06_25_mitmproxy_ca_ski_aki_mismatch.md.
-          image: mitmproxy/mitmproxy:12.2.3
-          command:
-            - mitmweb
-            - --listen-host
-            - "0.0.0.0"
-            - --listen-port
-            - "8080"
-            - --web-host
-            - "0.0.0.0"
-            - --web-port
-            - "8081"
-            - --set
-            - confdir=/mitmproxy-data
-            # Stream (don't buffer) response bodies over 1 MB. dind pulls
-            # multi-hundred-MB image layers through here; buffering them OOM-killed
-            # the container (exit 137, connection refused mid-restart → haku-ci
-            # builds failed). We gate at the CONNECT/host level (the allowlist), not
-            # blob content, so streaming loses no enforcement.
-            - --set
-            - stream_large_bodies=1m
-            # Passthrough (raw TCP, no TLS interception) for Anthropic's control
-            # plane. The haku-worker drives Managed Agents sessions over a
-            # long-lived HTTP/2 stream to api.anthropic.com; mitmproxy's
-            # interception buffers/breaks that stream, so the worker claims work
-            # but tool results never post and sessions deadlock at "idle". This
-            # traffic carries only the scoped environment key and needs no
-            # inspection. Egress still flows through the proxy (the CCNP
-            # chokepoint is unchanged); only TLS interception is skipped here.
-            # TODO(haku): tighten later — this passes ALL of api.anthropic.com
-            #   through untouched. Revisit whether only the session stream needs
-            #   passthrough (and whether to inspect the rest).
-            - --ignore-hosts
-            - api\.anthropic\.com
+        - name: squid
+          image: ubuntu/squid:6.6-24.04_beta
+          command: [squid]
+          args:
+            - -N
+            - -f
+            - /config/squid.conf
           ports:
+            # 8080 is the contract the Kyverno inject-haku-egress-proxy policy sets
+            # HTTPS_PROXY/HTTP_PROXY to; keep it in sync with the Service, the
+            # NetworkPolicy ingress, and the force-egress CCNP.
             - name: proxy
               containerPort: 8080
-            - name: web
-              containerPort: 8081
           volumeMounts:
-            - name: mitmproxy-data
-              mountPath: /mitmproxy-data
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: ssl
+              mountPath: /etc/squid/ssl
+              readOnly: true
+            - name: ssl-db
+              mountPath: /var/lib/squid
+            - name: cache-data
+              mountPath: /var/cache/squid
           resources:
             requests:
-              cpu: 50m
+              cpu: 100m
               memory: 256Mi
             limits:
-              cpu: 500m
-              # Headroom over the 512Mi that OOM-killed under haku-ci build traffic;
-              # with stream_large_bodies the working set stays bounded, this is slack
-              # for concurrent connections + the dynamic cert cache.
+              cpu: "1"
               memory: 1Gi
       volumes:
-        - name: mitmproxy-ca
+        - name: egress-proxy-ca
           secret:
             secretName: haku-egress-proxy-ca
-        - name: mitmproxy-data
+        - name: config
+          configMap:
+            name: haku-egress-proxy-config
+        - name: ssl
           emptyDir: {}
+        - name: ssl-db
+          emptyDir: {}
+        - name: cache-data
+          persistentVolumeClaim:
+            claimName: haku-egress-proxy-cache
