@@ -4,6 +4,15 @@ metadata:
   name: haku-cloud-agent
   namespace: flux-system
 spec:
+  # SUSPENDED 2026-07-04: the operator deleted the cloud managed-agent objects
+  # (agent/env/vault/deployment) directly at Anthropic. The claude-managed-agents
+  # provider's Read doesn't detect the 404s, so tofu-controller would keep reporting
+  # "no changes" against a phantom state (and the haku-cloud-agent-ids Secret still
+  # points at the deleted vault). Pause reconciliation until we decide to recreate the
+  # cloud agent (unsuspend) or retire it. NOTE: the self-hosted agent's shared-vault
+  # wiring (PR #2788) reads vault_id from this module's output Secret, so it can't be
+  # cut over until this is unsuspended and re-applied to a live vault.
+  suspend: true
   interval: 15m
   refreshBeforeApply: true
   path: ./tf/gitops/haku-cloud-agent
