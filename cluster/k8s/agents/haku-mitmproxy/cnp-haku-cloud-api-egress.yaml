@@ -61,6 +61,35 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
+    # Bazel-build additions: the haku-ci runner builds haku-state with Bazel and
+    # NO RBE, so its cold-fetch of the toolchain/module closure now flows through
+    # this proxy (and is cached by cache_addon.py). Bazel registry + release
+    # artifacts, GitHub source/release archives, and the Node.js toolchain.
+    # (ghcr/docker/npm/pypi are already allowed above.)
+    - toFQDNs:
+        - matchName: releases.bazel.build
+        - matchName: bcr.bazel.build
+        - matchName: github.com
+        - matchName: codeload.github.com
+        - matchName: objects.githubusercontent.com
+        - matchName: release-assets.githubusercontent.com
+        - matchName: raw.githubusercontent.com
+        - matchName: nodejs.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # haku-ci Forgejo Actions: the runner fetches `uses:` actions from
+    # data.forgejo.org (this instance's default actions URL) and pulls the
+    # act_runner + job-container images from code.forgejo.org. These were direct
+    # egress on haku-ci before it was moved behind this proxy.
+    - toFQDNs:
+        - matchName: code.forgejo.org
+        - matchName: data.forgejo.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
     # Nix binary cache + channels — so Haku runtimes that install/refresh their
     # Nix closure (e.g. the agent-haku devtools/fastmcp install) hit the public
     # cache instead of building from source. cache.nixos.org serves nars;
