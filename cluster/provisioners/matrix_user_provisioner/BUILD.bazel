@@ -10,6 +10,7 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 py_library(
     name = "provision_matrix_users",
     srcs = ["provision_matrix_users.py"],
+    deps = ["@pypi//httpx"],
 )
 
 py_test(
@@ -17,6 +18,7 @@ py_test(
     srcs = ["test_provision_matrix_users.py"],
     deps = [
         ":provision_matrix_users",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
