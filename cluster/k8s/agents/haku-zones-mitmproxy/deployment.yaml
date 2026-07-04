@@ -1,5 +1,5 @@
 # Shared egress proxy for all Haku worker zones (haku-sandbox-{zai,oai,…}).
-# Mirrors agents/haku-mitmproxy; deviation: no TLS-interception exceptions and a
+# Mirrors agents/haku-egress-proxy; deviation: no TLS-interception exceptions and a
 # much narrower FQDN allowlist (workers' LLM path is in-cluster via the
 # haku-dispatch workers-LiteLLM, never a direct provider connection).
 apiVersion: apps/v1

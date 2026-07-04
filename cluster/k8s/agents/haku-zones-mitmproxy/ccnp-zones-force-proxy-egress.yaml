@@ -1,5 +1,5 @@
 # Egress fence for ALL Haku worker-zone namespaces. Much tighter than
-# haku-sandbox's fence (deviation from agents/haku-mitmproxy): NO
+# haku-sandbox's fence (deviation from agents/haku-egress-proxy): NO
 # `toEntities: cluster` (workers get no blanket in-cluster reach) and NO
 # kube-apiserver (workers never call the k8s API; their ServiceAccount has no
 # grants anyway). Workers may reach exactly: DNS, the shared zones proxy, the

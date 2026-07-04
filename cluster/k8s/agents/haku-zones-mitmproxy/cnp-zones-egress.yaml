@@ -1,5 +1,5 @@
 # External endpoints Haku worker-zone jobs may reach through the shared proxy.
-# Deviation from agents/haku-mitmproxy: NO Google APIs (the whole point of the
+# Deviation from agents/haku-egress-proxy: NO Google APIs (the whole point of the
 # zones — see haku/plans/multi_agent.md trust model), no api.anthropic.com
 # (workers' LLM path is in-cluster via the haku-dispatch workers-LiteLLM), no
 # image registries (kubelet pulls images at the node, not through pod egress).
