@@ -1,7 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  # No SOPS Secrets here: the runner's ANTHROPIC_API_KEY reuses the shared
-  # haku-cloud-anthropic-api-key (owned by cloud-agent-tf), and the tana-ro +
-  # gmail-labeling bearers are read in-cluster from their owning namespaces.
-  - terraform.yaml

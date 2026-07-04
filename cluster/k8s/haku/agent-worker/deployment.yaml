@@ -51,13 +51,13 @@ spec:
             # login shell k8s won't set it, so pin it to haku's home.
             - name: HOME
               value: /home/haku
-            # The self-hosted environment is now provisioned by the claude-managed-agents
-            # tofu provider (../self-hosted-agent-tf). At the recreate-fresh cutover, set
-            # this to the new env_… from the haku-self-hosted-agent-ids Secret (key
-            # environment_id) and regenerate haku-environment-key in lockstep — see
-            # ../self-hosted-agent-tf/README.md.
+            # The self-hosted environment is provisioned imperatively via `ant`
+            # (haku/runtime/managed_agent/self_hosted/provision.sh), NOT Terraform — the
+            # claude-managed-agents provider has no self_hosted support. This is the live
+            # env; if it is ever recreated, update this ID and regenerate the
+            # haku-environment-key secret in lockstep.
             - name: ANTHROPIC_ENVIRONMENT_ID
-              value: env_015uqL9WAMSDytQEWWmLG9zF # current (pre-cutover) haku-selfhosted env (not secret)
+              value: env_015uqL9WAMSDytQEWWmLG9zF # live haku-selfhosted env (not secret)
             - name: ANTHROPIC_ENVIRONMENT_KEY
               valueFrom:
                 secretKeyRef:
