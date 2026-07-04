@@ -1,12 +1,12 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: haku-squid-root-ca
-  namespace: haku-squid
+  name: haku-egress-proxy-root-ca
+  namespace: haku-egress-proxy
 spec:
   isCA: true
-  commonName: haku-squid-root-ca
-  secretName: haku-squid-ca
+  commonName: haku-egress-proxy-root-ca
+  secretName: haku-egress-proxy-ca
   duration: 87600h # 10 years
   renewBefore: 8760h # 1 year
   privateKey:

@@ -106,8 +106,8 @@ resources:
   - agents/openclaw/gateway-namespace/flux-kustomization.yaml
   - agents/mitmproxy-namespace/flux-kustomization.yaml
   - agents/mitmproxy/flux-kustomization.yaml
-  - agents/haku-squid-namespace/flux-kustomization.yaml
-  - agents/haku-squid/flux-kustomization.yaml
+  - agents/haku-egress-proxy-namespace/flux-kustomization.yaml
+  - agents/haku-egress-proxy/flux-kustomization.yaml
   - agents/haku-zones-mitmproxy-namespace/flux-kustomization.yaml
   - agents/haku-zones-mitmproxy/flux-kustomization.yaml
   - agents/openclaw/gateway-secrets/flux-kustomization.yaml

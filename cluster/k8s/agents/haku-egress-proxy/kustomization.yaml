@@ -14,7 +14,7 @@ generatorOptions:
   # reloader annotation on the Deployment handles restart-on-change.
   disableNameSuffixHash: true
 configMapGenerator:
-  - name: haku-squid-config
-    namespace: haku-squid
+  - name: haku-egress-proxy-config
+    namespace: haku-egress-proxy
     files:
       - squid.conf

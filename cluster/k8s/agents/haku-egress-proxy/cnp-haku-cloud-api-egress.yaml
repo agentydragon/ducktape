@@ -1,4 +1,4 @@
-# Allow haku-squid egress to the external endpoints Haku workloads need. Squid
+# Allow haku-egress-proxy egress to the external endpoints Haku workloads need. Squid
 # goes DIRECT to origins (no upstream cache_peer). Additive with the operator's
 # default-deny NetworkPolicy.
 #
@@ -10,12 +10,12 @@
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: allow-haku-squid-egress
-  namespace: haku-squid
+  name: allow-haku-egress-proxy-egress
+  namespace: haku-egress-proxy
 spec:
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: haku-squid
+      app.kubernetes.io/name: haku-egress-proxy
   egress:
     # Cilium FQDN egress rules need the proxy pod to query CoreDNS first.
     - toEndpoints:

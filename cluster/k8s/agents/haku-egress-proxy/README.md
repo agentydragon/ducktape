@@ -1,24 +1,30 @@
-# Haku Squid Egress Fence
+# Haku Egress Proxy
 
-`haku-squid` is Haku's single egress fence — enforcement inventory #5 in
+`haku-egress-proxy` is Haku's single egress fence — enforcement inventory #5 in
 <../../../../haku/docs/security.md>. It replaces the former `haku-mitmproxy`.
+
+The k8s object names are implementation-neutral (`haku-egress-proxy`, not
+`haku-squid`) so a future proxy swap doesn't cascade renames. **It is currently
+implemented with Squid** — the `squid.conf`, the `ubuntu/squid` image, and
+squid-specific paths (`/etc/squid`, `squid-ca.pem`) are the only Squid-named
+artifacts that remain; everything else is generic.
 
 It is a Squid `ssl-bump` caching forward proxy. It does everything mitmproxy did —
 terminate + inspect client TLS, enforce a host allowlist, and splice
 `api.anthropic.com` untouched — **plus** it caches immutable public build/package
-artifacts. Both `haku-sandbox` (agent pods, via the Kyverno `inject-haku-squid`
+artifacts. Both `haku-sandbox` (agent pods, via the Kyverno `inject-haku-egress-proxy`
 policy) and `haku-ci` (the Bazelified image-build runner, hand-wired) egress
 through it, so they share one HTTP cache. There is no credential injection.
 
 ## Trust flow
 
-- cert-manager creates `Secret/haku-squid-ca` in `haku-squid`.
+- cert-manager creates `Secret/haku-egress-proxy-ca` in `haku-egress-proxy`.
 - The init container builds the ssl-bump signing CA (`squid-ca.pem` = `tls.key` +
   `tls.crt`), initializes the generated-leaf cert DB (`security_file_certgen`),
   and lays down the `cache_dir` swap structure on the PVC.
 - Reflector mirrors the Secret into `cert-manager`, trust-manager's source
   namespace in this cluster.
-- trust-manager writes `ConfigMap/haku-squid-ca-cert` into `haku-sandbox` **and**
+- trust-manager writes `ConfigMap/haku-egress-proxy-ca-cert` into `haku-sandbox` **and**
   `haku-ci`. The bundle contains public roots, the cluster internal root, and the
   Squid root.
 - Clients point their TLS trust at `/…/ca-certificates.crt`: Kyverno mounts it in
@@ -26,7 +32,7 @@ through it, so they share one HTTP cache. There is no credential injection.
   into job containers via the act_runner `container.options`.
 
 Keep haku CA rotation separate. For a planned root rollover, publish both old and
-new roots in the trust bundle, wait for clients to see it, then restart haku-squid
+new roots in the trust bundle, wait for clients to see it, then restart haku-egress-proxy
 with the new signing key.
 
 ## squid.conf design

@@ -1,7 +1,7 @@
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
 metadata:
-  name: haku-squid-ca-cert
+  name: haku-egress-proxy-ca-cert
 spec:
   sources:
     - useDefaultCAs: true
@@ -9,16 +9,16 @@ spec:
         name: cluster-root-ca-secret
         key: ca.crt
     - secret:
-        name: haku-squid-ca
+        name: haku-egress-proxy-ca
         key: tls.crt
   target:
     configMap:
       key: ca-certificates.crt
       metadata:
         annotations:
-          description: Trust bundle for haku-squid ssl-bumped sandbox + CI HTTPS traffic
+          description: Trust bundle for haku-egress-proxy ssl-bumped sandbox + CI HTTPS traffic
     # Both haku-sandbox (agent pods) and haku-ci (the Bazel image-build runner)
-    # egress through haku-squid, so both need its CA to trust the bumped TLS.
+    # egress through haku-egress-proxy, so both need its CA to trust the bumped TLS.
     namespaceSelector:
       matchExpressions:
         - key: kubernetes.io/metadata.name

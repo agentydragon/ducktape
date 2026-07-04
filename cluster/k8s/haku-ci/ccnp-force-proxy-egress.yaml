@@ -1,10 +1,10 @@
 # Force all external egress from the haku-ci runner (agent-controlled build
-# compute) through haku-squid — the same chokepoint haku-sandbox uses. Allows:
+# compute) through haku-egress-proxy — the same chokepoint haku-sandbox uses. Allows:
 # DNS, cluster-internal traffic (the in-cluster Forgejo git + OCI registry it
-# clones/pushes/long-polls), and haku-squid port 3128. Blocks all direct external
+# clones/pushes/long-polls), and haku-egress-proxy port 3128. Blocks all direct external
 # internet — the base-image registries, npm/pypi, Bazel/toolchain, and
 # Forgejo-action hosts now flow through the proxy's allowlist
-# (agents/haku-squid/cnp-haku-cloud-api-egress.yaml), which also caches them.
+# (agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml), which also caches them.
 #
 # Deviation from haku-sandbox's force-egress: no kube-apiserver rule — haku-ci runs
 # with automountServiceAccountToken:false and has no RBAC, so it never calls the
@@ -50,11 +50,11 @@ spec:
               protocol: TCP
             - port: "3000"
               protocol: TCP
-    # haku-squid — all external internet traffic must go through here.
+    # haku-egress-proxy — all external internet traffic must go through here.
     - toEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: haku-squid
-            k8s:app.kubernetes.io/name: haku-squid
+            k8s:io.kubernetes.pod.namespace: haku-egress-proxy
+            k8s:app.kubernetes.io/name: haku-egress-proxy
       toPorts:
         - ports:
             - port: "3128"

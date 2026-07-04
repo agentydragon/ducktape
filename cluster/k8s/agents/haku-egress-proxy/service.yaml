@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: haku-squid
-  namespace: haku-squid
+  name: haku-egress-proxy
+  namespace: haku-egress-proxy
 spec:
   selector:
-    app.kubernetes.io/name: haku-squid
+    app.kubernetes.io/name: haku-egress-proxy
   ports:
     - name: proxy
       port: 3128

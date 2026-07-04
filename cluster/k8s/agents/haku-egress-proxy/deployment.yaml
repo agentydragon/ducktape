@@ -1,10 +1,14 @@
+# Haku's egress proxy — currently implemented with Squid (the ubuntu/squid image
+# + squid.conf below). The k8s object names stay implementation-neutral
+# (haku-egress-proxy) so swapping the proxy doesn't cascade renames; only the
+# image, config file, and squid-internal paths are Squid-named.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: haku-squid
-  namespace: haku-squid
+  name: haku-egress-proxy
+  namespace: haku-egress-proxy
   labels:
-    app.kubernetes.io/name: haku-squid
+    app.kubernetes.io/name: haku-egress-proxy
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
@@ -15,11 +19,11 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app.kubernetes.io/name: haku-squid
+      app.kubernetes.io/name: haku-egress-proxy
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: haku-squid
+        app.kubernetes.io/name: haku-egress-proxy
     spec:
       # OVH workers (region hil): keeps the pod near the seaweedfs-ovh (hil-ovh)
       # volume servers so the cache is region-local. seaweedfs is not node-pinned,
@@ -39,15 +43,15 @@ spec:
           args:
             - |
               set -e
-              cat /squid-ca/tls.key /squid-ca/tls.crt > /etc/squid/ssl/squid-ca.pem
+              cat /egress-proxy-ca/tls.key /egress-proxy-ca/tls.crt > /etc/squid/ssl/squid-ca.pem
               chmod 400 /etc/squid/ssl/squid-ca.pem
               rm -rf /var/lib/squid/ssl_db
               /usr/lib/squid/security_file_certgen -c -s /var/lib/squid/ssl_db -M 8MB
               squid -z -f /config/squid.conf --foreground
               chown -R proxy:proxy /etc/squid/ssl /var/lib/squid /var/cache/squid
           volumeMounts:
-            - name: squid-ca
-              mountPath: /squid-ca
+            - name: egress-proxy-ca
+              mountPath: /egress-proxy-ca
               readOnly: true
             - name: config
               mountPath: /config
@@ -88,16 +92,16 @@ spec:
               cpu: "1"
               memory: 1Gi
       volumes:
-        - name: squid-ca
+        - name: egress-proxy-ca
           secret:
-            secretName: haku-squid-ca
+            secretName: haku-egress-proxy-ca
         - name: config
           configMap:
-            name: haku-squid-config
+            name: haku-egress-proxy-config
         - name: ssl
           emptyDir: {}
         - name: ssl-db
           emptyDir: {}
         - name: cache-data
           persistentVolumeClaim:
-            claimName: haku-squid-cache
+            claimName: haku-egress-proxy-cache
