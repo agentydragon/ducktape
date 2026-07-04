@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+import logging
 
 import httpx
 import pytest
@@ -68,14 +69,15 @@ def test_register_admin_computes_hmac_and_posts_registration():
     }
 
 
-def test_register_admin_skips_when_already_registered(capsys: pytest.CaptureFixture):
+def test_register_admin_skips_when_already_registered(caplog: pytest.LogCaptureFixture):
     client = _FakeClient(
         [_response(200, {"nonce": NONCE}), _response(400, {"errcode": "M_USER_IN_USE", "error": "already taken"})]
     )
 
-    register_admin(client, "shared-secret", "adminpw")  # must not raise
+    with caplog.at_level(logging.INFO):
+        register_admin(client, "shared-secret", "adminpw")  # must not raise
 
-    assert "already exists" in capsys.readouterr().out
+    assert "already exists" in caplog.text
 
 
 def test_register_admin_raises_on_unexpected_error():

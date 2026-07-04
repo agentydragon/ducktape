@@ -164,7 +164,7 @@ jobs:
           - {
               image: "//cluster/provisioners/grocy_user_perms:image",
               image_name: grocy-user-perms-provisioner,
-              test_target: "",
+              test_target: "//cluster/provisioners/grocy_user_perms/...",
             }
           - {
               image: "//cluster/provisioners/matrix_user_provisioner:image",
