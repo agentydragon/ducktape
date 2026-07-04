@@ -11,4 +11,3 @@ resources:
   - rolebinding-ollama-reader.yaml
   - rolebinding-langfuse-reader.yaml
   - rolebinding-openclaw-reader.yaml
-  - rolebinding-harbor-reader.yaml
