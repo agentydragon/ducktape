@@ -323,6 +323,7 @@ in
       bbapi
       gterm-theme
       ducktapePackages.tana-outliner
+      ducktapePackages.zai-cli
     ]
     ++ [
       eza
