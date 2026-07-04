@@ -55,6 +55,13 @@ spec:
             - "8081"
             - --set
             - confdir=/mitmproxy-data
+            # Stream (don't buffer) response bodies over 1 MB. dind pulls
+            # multi-hundred-MB image layers through here; buffering them OOM-killed
+            # the container (exit 137, connection refused mid-restart → haku-ci
+            # builds failed). We gate at the CONNECT/host level (the allowlist), not
+            # blob content, so streaming loses no enforcement.
+            - --set
+            - stream_large_bodies=1m
             # Passthrough (raw TCP, no TLS interception) for Anthropic's control
             # plane. The haku-worker drives Managed Agents sessions over a
             # long-lived HTTP/2 stream to api.anthropic.com; mitmproxy's
@@ -79,10 +86,13 @@ spec:
           resources:
             requests:
               cpu: 50m
-              memory: 128Mi
+              memory: 256Mi
             limits:
               cpu: 500m
-              memory: 512Mi
+              # Headroom over the 512Mi that OOM-killed under haku-ci build traffic;
+              # with stream_large_bodies the working set stays bounded, this is slack
+              # for concurrent connections + the dynamic cert cache.
+              memory: 1Gi
       volumes:
         - name: mitmproxy-ca
           secret:
