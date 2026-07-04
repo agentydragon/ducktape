@@ -59,11 +59,9 @@ config files at boot (the pod analog of the sops-nix templates):
   `git.allegedly.works` ssh matchBlock. No new secret.
 - **BuildBuddy** — `BUILDBUDDY_API_KEY` is set on the container from the shared
   `buildbuddy-api-key` Secret via `secretKeyRef` (`optional: true`); `bbr` reads
-  it, and `start-sshd.sh` forwards it to ssh sessions via `SetEnv`.
-  **One-time step (needs the cluster key):** add `codex-pod` to the reflector
-  `reflection-{allowed,auto}-namespaces` annotations on
-  `cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml` (via `sops`),
-  so it reflects here. Until then the env var is empty and the pod runs without it.
+  it, and `start-sshd.sh` forwards it to ssh sessions via `SetEnv`. That Secret
+  (`cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml`) is reflected
+  into `codex-pod` — no per-pod key, just the one shared key.
 
 Still to port when needed: **Attic** (`~/.config/attic/config.toml` +
 `~/.config/nix/netrc` from a minted token) — same rendering approach.

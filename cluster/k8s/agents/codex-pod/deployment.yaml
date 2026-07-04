@@ -60,9 +60,9 @@ spec:
           image: git.allegedly.works/ducktape-ci/codex-pod:devel
           command: ["/bin/bash", "/run/codex-pod-scripts/start-sshd.sh"]
           env:
-            # Shared BuildBuddy key (bbr reads BUILDBUDDY_API_KEY). Optional: the
-            # pod starts without it until codex-pod is added to the reflector
-            # annotation on shared-secrets/buildbuddy-api-key.sops.yaml.
+            # Shared BuildBuddy key (bbr reads BUILDBUDDY_API_KEY), reflected into
+            # this namespace from shared-secrets/buildbuddy-api-key. Optional so a
+            # brief pre-reflection window doesn't block pod start.
             - name: BUILDBUDDY_API_KEY
               valueFrom:
                 secretKeyRef:
