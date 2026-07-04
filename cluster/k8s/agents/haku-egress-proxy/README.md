@@ -73,25 +73,3 @@ SKI (OpenSSL's `keyid` method copies the issuer's SKI extension when present),
 NOT a recomputed SHA-1. **Verify** after first deploy: extract a bumped leaf and
 confirm its AKI equals the CA SKI, and that `curl` (via the injected trust bundle)
 validates the chain without `-k`.
-
-## TODO: sharing the cache across proxies (mind the trust boundary)
-
-As the repo grows more egress proxies — likely several, each with its **own**
-allowlist and trust tier — they will re-cache the same public toolchains/wheels/base
-images N times. A shared HTTP artifact cache would deduplicate that. **But naive
-sharing weakens the per-proxy allowlist**, so this needs care:
-
-- **Allowlist bypass on HITs**: if proxy A (allowlist `{X}`) and proxy B (allowlist
-  `{Y}`, `X ∉ Y`) share one store, a cache HIT could serve B an object from `X` that
-  B's allowlist would never let it _fetch_. The allowlist must be enforced on cache
-  **hits**, not just origin fetches — i.e. a HIT for a host outside the requesting
-  proxy's allowlist is still a `deny`.
-- **Cross-tier poisoning**: a lower-trust proxy populating a shared entry that a
-  higher-trust proxy then reads. Entries must be partitioned/authenticated by trust
-  scope, not blindly shared by URL key.
-- **Options**: a Squid `cache_peer` sibling hierarchy with each proxy keeping its own
-  `http_access allowed` in front (allowlist stays per-proxy, only the _store_ is
-  shared); or a separate shared pull-through artifact cache that each proxy is
-  explicitly allowlisted to reach (see the `TODO(pull-through-cache)` notes in
-  `cnp-haku-cloud-api-egress.yaml`). Prefer whichever keeps the allowlist the
-  authoritative gate on every request, cached or not.
