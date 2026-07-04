@@ -1,0 +1,24 @@
+# Allow haku-sandbox and haku-ci proxy clients to reach Squid (port 3128).
+# (Squid has no web UI — unlike mitmweb — so there is no Authentik ingress rule.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-proxy-client-ingress
+  namespace: haku-squid
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-squid
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: haku-sandbox
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: haku-ci
+      ports:
+        - port: 3128
+          protocol: TCP
+  policyTypes:
+    - Ingress

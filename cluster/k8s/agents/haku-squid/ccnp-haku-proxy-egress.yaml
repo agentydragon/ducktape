@@ -1,0 +1,46 @@
+# Force all external egress from the haku-sandbox namespace through the dedicated
+# haku-squid proxy. Allows: DNS, cluster-internal traffic, kube-apiserver,
+# haku-squid port 3128. Blocks: direct external internet access.
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: haku-sandbox-force-proxy-egress
+spec:
+  endpointSelector:
+    matchExpressions:
+      - key: "k8s:io.kubernetes.pod.namespace"
+        operator: In
+        values:
+          - haku-sandbox
+  egress:
+    # DNS resolution (CoreDNS in kube-system)
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # All cluster-internal traffic (pod-to-service, bypasses proxy via NO_PROXY).
+    # This is also how haku-sandbox reaches the Plaid Postgres cluster-internally.
+    - toEntities:
+        - cluster
+    # Kubernetes API server
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "6443"
+              protocol: TCP
+    # haku-squid — all external internet traffic must go through here.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-squid
+            k8s:app.kubernetes.io/name: haku-squid
+      toPorts:
+        - ports:
+            - port: "3128"
+              protocol: TCP

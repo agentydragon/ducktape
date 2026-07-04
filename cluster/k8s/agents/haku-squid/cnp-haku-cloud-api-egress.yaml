@@ -1,0 +1,126 @@
+# Allow haku-squid egress to the external endpoints Haku workloads need. Squid
+# goes DIRECT to origins (no upstream cache_peer). Additive with the operator's
+# default-deny NetworkPolicy.
+#
+# This L3/L4 FQDN allowlist must stay a superset of squid.conf's `allowed`
+# dstdomain L7 allowlist: Cilium decides whether the packet leaves the proxy pod;
+# Squid decides whether the request is served. Plaid Postgres and the in-cluster
+# Forgejo are reached cluster-internally (the `toEntities: cluster` rule), not via
+# an external hop.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-haku-squid-egress
+  namespace: haku-squid
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-squid
+  egress:
+    # Cilium FQDN egress rules need the proxy pod to query CoreDNS first.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    # Container image registries (base-image + tooling pulls). Docker Hub fronts
+    # its blob CDN on BOTH cloudflare and cloudfront (the confusable pair) — both
+    # required or blob pulls dial-timeout.
+    - toFQDNs:
+        - matchName: ghcr.io
+        - matchName: pkg-containers.githubusercontent.com
+        - matchName: registry-1.docker.io
+        - matchName: auth.docker.io
+        - matchName: index.docker.io
+        - matchName: production.cloudflare.docker.com
+        - matchName: production.cloudfront.docker.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Python / npm package registries (ad-hoc `pip install` / `npx`).
+    - toFQDNs:
+        - matchName: pypi.org
+        - matchName: files.pythonhosted.org
+        - matchName: registry.npmjs.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Nix binary cache + channels.
+    - toFQDNs:
+        - matchName: cache.nixos.org
+        - matchName: nixos.org
+        - matchName: channels.nixos.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Bazel registry + release artifacts, GitHub source/release archives, and the
+    # Node.js toolchain — the haku-ci Bazel cold-fetch closure (NO RBE), cached by
+    # Squid.
+    - toFQDNs:
+        - matchName: releases.bazel.build
+        - matchName: bcr.bazel.build
+        - matchName: github.com
+        - matchName: codeload.github.com
+        - matchName: objects.githubusercontent.com
+        - matchName: release-assets.githubusercontent.com
+        - matchName: raw.githubusercontent.com
+        - matchName: nodejs.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Forgejo Actions: `uses:` actions from data.forgejo.org, act_runner +
+    # job-container images from code.forgejo.org.
+    - toFQDNs:
+        - matchName: code.forgejo.org
+        - matchName: data.forgejo.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Google APIs (Gmail read, Calendar/Drive, Tasks) + Haku mailbox read API.
+    - toFQDNs:
+        - matchName: gmail.googleapis.com
+        - matchName: www.googleapis.com
+        - matchName: tasks.googleapis.com
+        - matchName: haku-mailbox.allegedly.works
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Managed Agents self-hosted worker long-polls Anthropic's work queue. Spliced
+    # (never bumped/cached) inside Squid, but egress still exits here.
+    - toFQDNs:
+        - matchName: api.anthropic.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Allow forwarding to any in-cluster Service. Sandbox/CI workloads keep Squid
+    # in-path even when targeting cluster endpoints; NO_PROXY in the clients still
+    # permits explicit bypass for Service FQDNs (`*.svc.cluster.local`, 10.0.0.0/8).
+    - toEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+            - port: "3000"
+              protocol: TCP
+            - port: "8000"
+              protocol: TCP
+            - port: "8080"
+              protocol: TCP
+            - port: "11434"
+              protocol: TCP

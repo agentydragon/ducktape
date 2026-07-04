@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - certificate.yaml
+  - trust-bundle.yaml
+  - deployment.yaml
+  - service.yaml
+  - networkpolicy.yaml
+  - cnp-haku-cloud-api-egress.yaml
+  - ccnp-haku-proxy-egress.yaml
+  - cache-pvc.yaml
+generatorOptions:
+  # Stable ConfigMap name so the Deployment volume can reference it directly; the
+  # reloader annotation on the Deployment handles restart-on-change.
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: haku-squid-config
+    namespace: haku-squid
+    files:
+      - squid.conf

@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haku-squid
+  namespace: haku-squid
+  labels:
+    app.kubernetes.io/name: haku-squid
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  # RWO cache PVC: a RollingUpdate would try to mount it on the new pod before the
+  # old pod releases it (multi-attach deadlock). Recreate serializes the swap.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-squid
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-squid
+    spec:
+      # OVH workers (region hil): keeps the pod near the seaweedfs-ovh (hil-ovh)
+      # volume servers so the cache is region-local. seaweedfs is not node-pinned,
+      # so the pod still reschedules freely within the region.
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      initContainers:
+        # Build the ssl-bump signing CA, initialize the generated-leaf cert DB, and
+        # lay down the cache_dir swap structure — then hand ownership to `proxy`,
+        # the user Squid's workers run as (cache_effective_user).
+        - name: squid-init
+          # Same image as the main container so security_file_certgen + `squid -z`
+          # match the runtime Squid. Pin verified against the registry before merge
+          # (see README risk note).
+          image: ubuntu/squid:6.6-24.04_beta
+          command: [sh, -c]
+          args:
+            - |
+              set -e
+              cat /squid-ca/tls.key /squid-ca/tls.crt > /etc/squid/ssl/squid-ca.pem
+              chmod 400 /etc/squid/ssl/squid-ca.pem
+              rm -rf /var/lib/squid/ssl_db
+              /usr/lib/squid/security_file_certgen -c -s /var/lib/squid/ssl_db -M 8MB
+              squid -z -f /config/squid.conf --foreground
+              chown -R proxy:proxy /etc/squid/ssl /var/lib/squid /var/cache/squid
+          volumeMounts:
+            - name: squid-ca
+              mountPath: /squid-ca
+              readOnly: true
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: ssl
+              mountPath: /etc/squid/ssl
+            - name: ssl-db
+              mountPath: /var/lib/squid
+            - name: cache-data
+              mountPath: /var/cache/squid
+      containers:
+        - name: squid
+          image: ubuntu/squid:6.6-24.04_beta
+          command: [squid]
+          args:
+            - -N
+            - -f
+            - /config/squid.conf
+          ports:
+            - name: proxy
+              containerPort: 3128
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: ssl
+              mountPath: /etc/squid/ssl
+              readOnly: true
+            - name: ssl-db
+              mountPath: /var/lib/squid
+            - name: cache-data
+              mountPath: /var/cache/squid
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      volumes:
+        - name: squid-ca
+          secret:
+            secretName: haku-squid-ca
+        - name: config
+          configMap:
+            name: haku-squid-config
+        - name: ssl
+          emptyDir: {}
+        - name: ssl-db
+          emptyDir: {}
+        - name: cache-data
+          persistentVolumeClaim:
+            claimName: haku-squid-cache
