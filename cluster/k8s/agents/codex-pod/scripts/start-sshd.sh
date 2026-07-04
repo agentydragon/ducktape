@@ -24,11 +24,13 @@ if [ ! -e /tmp/sshd/ssh_host_ed25519_key ]; then
   ssh-keygen -q -t ed25519 -N "" -f /tmp/sshd/ssh_host_ed25519_key
 fi
 
-# BUILDBUDDY_API_KEY comes from the container env (secretKeyRef). kubectl-exec
-# inherits it directly; forward it to interactive ssh sessions via SetEnv so
-# codex/bbr see it there too.
+# Agent creds come from the container env (secretKeyRef). kubectl-exec inherits
+# them directly; forward them to interactive ssh sessions via SetEnv so codex/bbr
+# see them there too.
 setenv="PATH=/bin HOME=/home/codex USER=codex"
-[ -n "${BUILDBUDDY_API_KEY:-}" ] && setenv="$setenv BUILDBUDDY_API_KEY=$BUILDBUDDY_API_KEY"
+for v in BUILDBUDDY_API_KEY FORGEJO_USERNAME FORGEJO_PASSWORD FORGEJO_URL; do
+  [ -n "${!v:-}" ] && setenv="$setenv $v=${!v}"
+done
 
 cat >/tmp/sshd/sshd_config <<SSHD
 Port 2222

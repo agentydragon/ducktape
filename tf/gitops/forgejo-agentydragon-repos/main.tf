@@ -1,10 +1,18 @@
 # Forgejo repo access for agentydragon-owned source mirrors.
 #
-# Provisions `agent-box-codex` and `agent-box-zai` service users, attaches their
-# SSH push keys (agent-box-{codex,zai}-forgejo), adopts the existing
-# `agentydragon/{ducktape,gaffer-private}` repos under Terraform, grants each
-# agent-box user write collaboration, and grants Haku read access to those same
-# source mirrors. Provider wiring mirrors tf/gitops/forgejo-claude.
+# Provisions the AI-agent service users (`agent-box-codex`, `agent-box-zai`,
+# `codex-pod`, …), attaches their SSH push keys, adopts the existing
+# `agentydragon/{ducktape,gaffer-private}` repos under Terraform, and grants Haku
+# read access. Provider wiring mirrors tf/gitops/forgejo-claude.
+#
+# CONVENTION — agents are READ-only + fork-based. No agent gets write on the
+# upstream repos, so none can advance `devel`/`main` (branch protection can't help
+# here: Forgejo has no force-push allowlist, and the GitHub→Forgejo mirror
+# force-pushes those branches, so they must stay unprotected — see the note at the
+# bottom). Instead each agent forks the repo (the fork is created by the agent on
+# first use — the provider has no fork resource) and opens PRs from its fork;
+# read access is all Forgejo needs to fork + open a cross-repo PR. Every future
+# on-box AI provider follows this pattern.
 
 data "kubernetes_secret" "forgejo_admin" {
   metadata {
@@ -80,21 +88,20 @@ import {
   id = "agentydragon/gaffer-private"
 }
 
-# --- agent-box-codex write collaboration ---
-# Write (not read) so agent-box-codex can push topic branches for PRs.
+# --- agent-box-codex read collaboration (fork model) ---
 resource "forgejo_collaborator" "agent_box_codex_ducktape" {
   repository_id = forgejo_repository.ducktape.id
   user          = forgejo_user.agent_box_codex.login
-  permission    = "write"
+  permission    = "read"
 }
 
 resource "forgejo_collaborator" "agent_box_codex_gaffer" {
   repository_id = forgejo_repository.gaffer_private.id
   user          = forgejo_user.agent_box_codex.login
-  permission    = "write"
+  permission    = "read"
 }
 
-# --- agent-box-zai service user + write collaboration ---
+# --- agent-box-zai service user + read collaboration (fork model) ---
 # Same shape as agent-box-codex above: the zai agent authenticates to Forgejo
 # over SSH (key below), so the password is never delivered anywhere.
 resource "random_password" "agent_box_zai" {
@@ -119,22 +126,20 @@ resource "forgejo_ssh_key" "agent_box_zai" {
   title = "agent-box-zai-forgejo"
 }
 
-# Write (not read) so agent-box-zai can push topic branches for PRs.
 resource "forgejo_collaborator" "agent_box_zai_ducktape" {
   repository_id = forgejo_repository.ducktape.id
   user          = forgejo_user.agent_box_zai.login
-  permission    = "write"
+  permission    = "read"
 }
 
 resource "forgejo_collaborator" "agent_box_zai_gaffer" {
   repository_id = forgejo_repository.gaffer_private.id
   user          = forgejo_user.agent_box_zai.login
-  permission    = "write"
+  permission    = "read"
 }
 
 # --- codex-pod (in-cluster Nix-image codex agent) ---
-# Same shape and privileges as agent-box-codex: a service user that pushes topic
-# branches to agentydragon/ducktape for PRs, authenticating over SSH.
+# Same shape as agent-box-codex: read-only + fork model, authenticating over SSH.
 resource "random_password" "codex_pod" {
   length  = 48
   special = false
@@ -158,11 +163,26 @@ resource "forgejo_ssh_key" "codex_pod" {
   title = "codex-pod"
 }
 
-# Write (not read) so codex-pod can push topic branches for PRs.
 resource "forgejo_collaborator" "codex_pod_ducktape" {
   repository_id = forgejo_repository.ducktape.id
   user          = forgejo_user.codex_pod.login
-  permission    = "write"
+  permission    = "read"
+}
+
+# codex-pod's Forgejo credentials, for the API operations SSH can't do (create
+# the fork, open the cross-repo PR). Delivered to the codex-pod namespace (the
+# resource retries until that namespace exists, like the claude/props secrets).
+resource "kubernetes_secret" "codex_pod_forgejo_creds" {
+  metadata {
+    name      = "codex-pod-forgejo-creds"
+    namespace = "codex-pod"
+  }
+
+  data = {
+    username = forgejo_user.codex_pod.login
+    password = random_password.codex_pod.result
+    url      = "https://git.allegedly.works"
+  }
 }
 
 # --- haku read collaboration ---
