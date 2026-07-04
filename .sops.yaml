@@ -29,6 +29,12 @@ keys:
   # zai agent user on agent-box: its id_ed25519, planted by NixOS sops-nix and doubling
   # as its age decryption identity (mirrors agent-box-codex-user above).
   - &agent-box-zai-user age14zkdx3rku2yp9zv8ejrlv0yd53yx7rmmtfzxmxhawvc5hp2gxf7sxnv4sv
+  # Dedicated, narrow age key for the litellm-zai-clients virtual-key SSOT
+  # (secrets/litellm-zai-clients-key.yaml). Its private half lives ONLY in the
+  # litellm-keys tf-runner (SOPS_AGE_KEY, via the litellm-zai-clients-sops-age-key
+  # Secret) so TF can decrypt this one file via sops_external — it is NOT the broad
+  # cluster SOPS key, so the runner can decrypt nothing else.
+  - &litellm-zai-clients age165jt8xt99jzfjk9y03tkt34hxcpx0ues3fmzdpgh9vq9gva28adqdarctz
   # CI key (GitHub Actions + BuildBuddy, narrow access to CI-only secrets)
   # Private key: k8s Secret in github-secrets-sync namespace, synced to GHA as SOPS_AGE_KEY.
   # Manual paste into BuildBuddy org secrets.
@@ -558,14 +564,21 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
-  # agent-box zai LiteLLM master key: the value of the in-cluster litellm-master-key
-  # Secret (zai talks to LiteLLM's Anthropic /v1/messages -> z.ai rather than z.ai
-  # directly). Decryptable only by the zai user (+ admin break-glass). No
-  # auto-rotation path today; re-mirror if litellm-master-key rotates.
-  - path_regex: secrets/agent-box-zai-litellm\.yaml$
+  # z.ai-scoped LiteLLM virtual key (SSOT). Value lives here in git SOPS — NOT as a
+  # cluster Secret. Read by the litellm-keys tf-runner via sops_external (using the
+  # narrow &litellm-zai-clients key) to mint litellm_key.zai_clients, and by the
+  # laptop z-claude alias + the agent-box zai user (ducktape.sopsEnv.LITELLM_ZAI_KEY).
+  # Recipients: admin + the narrow runner key + laptops + agent-box-zai (NOT the
+  # broad cluster key).
+  - path_regex: secrets/litellm-zai-clients-key\.yaml$
     key_groups:
       - age:
           - *admin
+          - *litellm-zai-clients
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
           - *agent-box-zai-user
   # Haku read-only grocy-sf MCP bearer JWT (auto-rotated by the
   # authentik-jwt-rotation CronJob). Same readers as haku-k8s-jwt: the Haku

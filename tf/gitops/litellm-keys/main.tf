@@ -14,6 +14,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.7.0"
     }
+    sops = {
+      source  = "carlpett/sops"
+      version = "~> 1.0"
+    }
   }
 }
 
@@ -208,5 +212,35 @@ resource "kubernetes_secret" "dispatcher_classifier" {
 
   data = {
     api-key = litellm_key.dispatcher_classifier.key
+  }
+}
+
+# ============================================================================
+# zai-clients — z.ai-scoped key for interactive Claude-Code-on-GLM clients
+# ============================================================================
+# A LiteLLM virtual key for the laptop `z-claude` alias (nix/home/home.nix) and the
+# agent-box `zai` user (nix/home/hosts/agent-box/zai.nix), both driving Claude Code
+# against z.ai's GLM through this proxy. Scoped to GLM models only (the raw z.ai key
+# stays cluster-side as litellm-zai-key, used upstream by the glm-*-anthropic routes).
+# No budget — interactive, user-driven use; the model scope is the guardrail.
+#
+# KEY SSOT: the value lives in a git SOPS file (secrets/litellm-zai-clients-key.yaml),
+# NOT a cluster Secret. This module reads it via sops_external, decrypting with a
+# dedicated narrow age key (litellm-zai-clients) mounted as SOPS_AGE_KEY into this
+# module's tf-runner (see the litellm-keys Terraform CR) — NOT the broad cluster SOPS
+# key, so the runner can decrypt only this one file. Laptops/agent-box read the same
+# SOPS file via ducktape.sopsEnv (LITELLM_ZAI_KEY).
+
+data "sops_external" "zai_clients_key" {
+  source     = file("${path.module}/../../../secrets/litellm-zai-clients-key.yaml")
+  input_type = "yaml"
+}
+
+resource "litellm_key" "zai_clients" {
+  key_alias = "zai-clients"
+  key       = data.sops_external.zai_clients_key.data["litellm_zai_key"]
+  models    = local.zai_lane_models
+  metadata = {
+    consumer = "laptop-z-claude, agent-box-zai"
   }
 }

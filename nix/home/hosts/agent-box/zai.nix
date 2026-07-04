@@ -1,13 +1,17 @@
 # zai agent user on agent-box: Claude Code routed to z.ai's GLM via the cluster
 # LiteLLM proxy (Anthropic /v1/messages shape, model glm-5.2-anthropic) — NOT z.ai
-# directly. So this user holds only the LiteLLM master key, never ZAI_API_KEY (which
-# stays cluster-side as the litellm-zai-key secret). See ./common.nix for the shared
-# base; this file adds Claude Code + the zai wrapper + unattended config.
+# directly. So this user holds only the z.ai-scoped LiteLLM virtual key
+# (LITELLM_ZAI_KEY), never the raw z.ai key (which stays cluster-side as the
+# litellm-zai-key secret). See ./common.nix for the shared base; this file adds
+# Claude Code + the zai wrapper + unattended config.
 {
   pkgs,
   lib,
   ...
 }:
+let
+  zClaude = import ../../claude_code/z-claude.nix { inherit pkgs; };
+in
 {
   imports = [
     (import ./common.nix {
@@ -22,12 +26,13 @@
     ../../claude_code # Claude Code CLI + skills/config
   ];
 
-  # LiteLLM master key -> LiteLLM's Anthropic /v1/messages -> z.ai GLM. The token is
-  # the in-cluster litellm-master-key value (mirrored into SOPS); z.ai's own key stays
-  # cluster-side only. Exported as an env var so the zai wrapper below can read it.
-  ducktape.sopsEnv.LITELLM_API_KEY = {
-    sopsFile = ../../../../secrets/agent-box-zai-litellm.yaml;
-    key = "litellm_api_key";
+  # z.ai-scoped LiteLLM virtual key (SSOT in secrets/litellm-zai-clients-key.yaml,
+  # shared with the laptop z-claude alias). LiteLLM's Anthropic /v1/messages routes to
+  # z.ai GLM; the raw z.ai key stays cluster-side. Exported as an env var so the
+  # z-claude wrapper below (and z-claude.nix) can read it.
+  ducktape.sopsEnv.LITELLM_ZAI_KEY = {
+    sopsFile = ../../../../secrets/litellm-zai-clients-key.yaml;
+    key = "litellm_zai_key";
   };
 
   # Isolated agent VM: run Claude Code fully unattended, mirroring codex's
@@ -40,18 +45,9 @@
   };
 
   home.packages = [
-    # zai wrapper: Claude Code against LiteLLM's Anthropic shape, model
-    # glm-5.2-anthropic. WebFetch/WebSearch disabled (GLM tool-call shape; see
-    # cluster/k8s/litellm/app/generate_litellm.py). Differs from the user-machine
-    # z-claude alias (nix/home/home.nix) only in base URL/model/token: LiteLLM +
-    # glm-5.2-anthropic + LITELLM_API_KEY instead of z.ai direct + ZAI_API_KEY.
-    (pkgs.writeShellScriptBin "zai" ''
-      exec env \
-        ANTHROPIC_BASE_URL=https://litellm.allegedly.works \
-        ANTHROPIC_AUTH_TOKEN="$LITELLM_API_KEY" \
-        ANTHROPIC_MODEL=glm-5.2-anthropic \
-        claude --disallowed-tools "WebFetch WebSearch" \
-        "$@"
-    '')
+    # z-claude: same wrapper the laptops use (nix/home/home.nix) — Claude Code on
+    # glm-5.2-anthropic via LiteLLM, reading $LITELLM_ZAI_KEY. See
+    # ../../claude_code/z-claude.nix.
+    zClaude
   ];
 }

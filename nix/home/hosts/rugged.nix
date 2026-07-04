@@ -31,13 +31,6 @@ in
     sopsFile = ../../../secrets/home/rugged/attic.yaml;
   };
 
-  ducktape.sopsEnv = {
-    ZAI_API_KEY = {
-      sopsFile = ../../../secrets/home/rugged/zai.yaml;
-      key = "zai_api_key";
-    };
-  };
-
   # Rugged-only Bazel cache sharing across local worktrees.
   # See devinfra/docs/bazel_worktree_cache_sharing.md for rationale and probes.
   #

@@ -17,6 +17,10 @@
 let
   toTOML = (pkgs.formats.toml { }).generate;
 
+  # `z-claude`: Claude Code on z.ai GLM via the cluster LiteLLM proxy, reading
+  # $LITELLM_ZAI_KEY. See ./claude_code/z-claude.nix. Shared with the agent-box zai user.
+  zClaude = import ./claude_code/z-claude.nix { inherit pkgs; };
+
   ducktapePackages = import ../packages {
     inherit lib pkgs pkgsUnstable;
     artifacts = ducktape-artifacts;
@@ -97,6 +101,12 @@ in
     HABITIFY_API_KEY = {
       sopsFile = ../../secrets/shared/habitify.yaml;
       key = "habitify_api_key";
+    };
+    # z.ai-scoped LiteLLM virtual key (SSOT in secrets/litellm-zai-clients-key.yaml)
+    # powering the `z-claude` Claude-Code-on-GLM alias below.
+    LITELLM_ZAI_KEY = {
+      sopsFile = ../../secrets/litellm-zai-clients-key.yaml;
+      key = "litellm_zai_key";
     };
   };
 
@@ -297,14 +307,7 @@ in
       sccache
       gcc
 
-      (writeShellScriptBin "z-claude" ''
-        exec env \
-          ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic \
-          ANTHROPIC_AUTH_TOKEN="$ZAI_API_KEY" \
-          ANTHROPIC_MODEL=glm-5.2 \
-          claude --disallowed-tools "WebFetch WebSearch" \
-          "$@"
-      '')
+      zClaude
 
       tanaClaude
 

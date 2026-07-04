@@ -188,17 +188,9 @@ The agent-box VM and its `codex` user are live (see
       Flip it on once `attic-jwt-rotation` has minted+committed
       `secrets/hosts/agent-box-attic.yaml` to devel (the path literal would
       otherwise fail flake eval).
-- [x] **`zai` agent user** on agent-box: live alongside `codex` with its own login
-      keys, `agent-box-zai-user` age identity, scoped secrets, and home dir. Runs
-      Claude Code routed to z.ai's GLM via the cluster LiteLLM proxy. agent-box is
-      multi-user (the `agentUsers` list in `nix/nixos/hosts/agent-box/default.nix`);
-      adding a user is one list entry + an HM module under
-      `nix/home/hosts/agent-box/` + identity material. z.ai's own "ZCode" harness is
-      an Electron desktop app (no CLI, Linux closed beta) — not headless-VM-viable —
-      so `zai` drives GLM through Claude Code + LiteLLM rather than a z.ai-native CLI.
-- [ ] **`claude` agent user** on agent-box: same pattern as zai but running Claude
-      Code against Anthropic directly (not via LiteLLM/z.ai). The multi-user
-      refactor makes this a small, self-contained addition.
+- [ ] **`claude` agent user** on agent-box: same multi-user pattern as `codex`/`zai`
+      (the `agentUsers` list + a per-user HM module under `nix/home/hosts/agent-box/`),
+      but running Claude Code against Anthropic directly (not via LiteLLM/z.ai).
 - [ ] **Auto-provision the Codex CLI auth credential** (`~/.codex/auth.json`):
       today the ChatGPT login is done manually via the device-code flow and is lost
       on every image rebuild + VM recreate. Investigate SOPS-planting it (decrypted
