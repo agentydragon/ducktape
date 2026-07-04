@@ -370,6 +370,7 @@ py_test(
         "//cluster/k8s/haku/dispatch/litellm:manifests",
         "//cluster/k8s/litellm/app:manifests",
         "//cluster/k8s/litellm/tana:manifests",
+        "//cluster/k8s/matrix/secrets:manifests",
         "//cluster/k8s/talos-cloud-controller-manager:manifests",
     ],
     deps = [
