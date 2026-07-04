@@ -94,10 +94,27 @@ this non-root image pod has not) and no boot-time render script:
 
 ## Follow-ups
 
-- **Attic** — `~/.config/attic/config.toml` + `~/.config/nix/netrc` from a minted
-  token. The static parts belong in `home.nix`; the token would come from k8s via
-  an ESO `ExternalSecret` `spec.target.template` that renders the netrc (precedent:
-  `cluster/k8s/props/app/registry-pull-secret.yaml`) — not wired yet.
+- **Verify LiteLLM on a real codex task** — the `litellm` model_provider
+  (`gpt-5.5-chatgpt`) is only smoke-tested (`reply → READY`). LiteLLM's `chatgpt/`
+  backend is streaming-only with a documented non-streaming-empty-output gotcha
+  (`cluster/k8s/litellm/app/generate_litellm.py`). Run a real coding turn (edit,
+  `apply_patch`, multi-turn, tool calls) through the pod and confirm it holds up;
+  fall back to another model if `gpt-5.5-chatgpt` misbehaves.
+- **Autonomous operation (or decide interactive-only)** — the pod is currently an
+  interactive box you `ssh`/`kubectl exec` into. The original goal was "git push to
+  `devel` → auto-migrating pod that _autonomously sends PRs_"; no trigger / schedule
+  / task-input is wired. Decide: build the autonomous loop (what kicks off a run —
+  cron? task queue? webhook?) or accept interactive-only and adjust the framing.
+- **Attic cache (auto-rotated)** — wire `cache.allegedly.works/{main,gaffer}` as
+  substituters so the pod's nix/bazel builds reuse our closures. Both caches need a
+  reader JWT (`main:r,gaffer:r`); neither is public-read. Do it _right_: extend
+  `cluster/rotators/attic_jwt_rotation` (`rotate.py` + `rotators.yaml`) to emit a
+  **k8s Secret / netrc** target (today it only writes sops-nix host files and
+  overwrites rather than merges), so the pod's reader token auto-rotates. A
+  hand-minted static token works but silently expires in ~1 year — rejected. Pod
+  side once the rotated secret exists: mount it, add the substituters +
+  `trusted-public-keys` (`main:owYQ…`, `gaffer:78zV…`, SSOT `nix/attic-pubkeys.json`)
+  - `netrc-file` to the baked `~/.config/nix/nix.conf`.
 - **Push-time reconcile** — a Forgejo `package`-webhook receiver (copy
   `cluster/k8s/haku/ui-image-webhook/receiver.yaml`) to replace the 5m
   `ImageRepository` poll.
