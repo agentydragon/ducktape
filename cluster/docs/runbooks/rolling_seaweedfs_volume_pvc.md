@@ -1,9 +1,15 @@
 # Runbook: rolling a SeaweedFS volume-server PVC
 
-This procedure is the safe way to delete and recreate the `local-path-ovh`
-PVC of one SeaweedFS volume-server pod — e.g. as part of renaming the OVH
-node it lives on, swapping in new hardware, or recovering from a corrupt
-local disk.
+This procedure is the safe way to delete and recreate the local-path PVC of
+one SeaweedFS volume-server pod — e.g. as part of renaming the OVH node it
+lives on, swapping in new hardware, or recovering from a corrupt local disk.
+
+Since the 2026-07 storage-tiering migration the volume layer runs as two
+`volumeTopology` groups, so the StatefulSet and PVC names depend on the
+node's tier: KS-5 nodes host `seaweedfs-volume-hdd-*`
+(`mount0-seaweedfs-volume-hdd-<ordinal>`, class `local-path-ovh-hdd`); KS-GAME
+nodes host `seaweedfs-volume-ssd-*` (`…-ssd-…`, class `local-path-ovh-ssd`).
+Substitute the right tier below.
 
 **Why this runbook exists**: On 2026-06-02 we did three of these PVC deletes
 back-to-back across pilots 2–4 of the OVH node rename project without
@@ -45,14 +51,15 @@ just runs to completion by removing `-n` and waiting).
 kubectl cordon <node>
 kubectl drain <node> --ignore-daemonsets --delete-emptydir-data
 
-# Identify the StatefulSet ordinal pinned to that node:
+# Identify the tier StatefulSet + ordinal pinned to that node:
 kubectl get pods -n seaweedfs -o wide | grep seaweedfs-volume
-# e.g. seaweedfs-volume-1 lives on ovh-ns103656
+# e.g. seaweedfs-volume-hdd-2 lives on ovh-ns103656 (KS-5 → hdd group)
 
-# Patch the Seaweed CR to scale only that ordinal out:
-# (depends on operator; safest: scale the volume server StatefulSet to 0
-# replicas via the Seaweed CR's volume.count or via direct kubectl scale)
-kubectl scale statefulset -n seaweedfs seaweedfs-volume --replicas=<N-1>
+# Scale that tier's StatefulSet down by one (seaweedfs-volume-hdd or
+# seaweedfs-volume-ssd). The operator reconciles replicas from the Seaweed CR's
+# volumeTopology.<tier>.replicas, so for a lasting change lower it there; a
+# direct kubectl scale is fine for a transient roll (operator will restore it).
+kubectl scale statefulset -n seaweedfs seaweedfs-volume-<tier> --replicas=<N-1>
 ```
 
 (Alternative: just delete the volume-server pod and let the SS recreate it
@@ -81,8 +88,8 @@ re-replication is exactly the failure mode we hit.
 ### 4. Delete the PVC and let it rebind on the renamed/new node
 
 ```bash
-kubectl delete pvc -n seaweedfs mount0-seaweedfs-volume-<ordinal>
-# local-path-ovh is hostname-pinned in the HelmRelease nodePathMap; if
+kubectl delete pvc -n seaweedfs mount0-seaweedfs-volume-<tier>-<ordinal>
+# local-path-ovh-<tier> is hostname-pinned in the HelmRelease nodePathMap; if
 # you're renaming the node, update nodePathMap first so the new PV lands
 # in the right hostPath after rebind.
 ```
@@ -108,13 +115,13 @@ fix should be clean within a few minutes.
 
 ## Caveat: rack labels
 
-As of 2026-06-02 all three OVH volume servers advertise the same rack id
-(`hil-ovh-h109b04`). `001` replication then falls back to "any other
-DataNode" rather than "another rack" — i.e. we have single-node tolerance,
-not rack tolerance. Until rack labels are fixed (see
-`cluster/docs/plan.md` Next Actions), treat **any concurrent loss of two
-volume-server pods or their PVCs as a data-loss event** regardless of what
-the policy nominally says.
+Each topology group's servers share one rack id: the `hdd` group's three
+KS-5 servers advertise `hil-ovh-h109b04`, the `ssd` group's two KS-GAME
+servers advertise `hil-ovh-h108b01`. `001` means "2 copies, 2 DataNodes, 1
+rack" — by design here, so it's **single-node tolerance within a tier, not
+rack tolerance**. Treat **any concurrent loss of two volume-server pods or
+their PVCs in the same tier as a data-loss event** regardless of what the
+policy nominally says.
 
 ## Quick sanity checks
 

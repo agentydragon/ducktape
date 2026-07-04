@@ -85,7 +85,8 @@ returns (not independently parked):
       is the one workload that can't roll without a brief SeaweedFS-wide blip); pin the
       tofu-controller runners (blocked on centralizing the ~22 copy-pasted
       `runnerPodTemplate`s) and the cross-repo augur ingest job; then the structural
-      etcd-on-NVMe move. Full RCA + remediation tracking:
+      etcd-on-NVMe move — Stage 2 of <plans/ovh_storage_tiering.md>, whose SeaweedFS
+      volume-tiering foundation landed 2026-07. Full RCA + remediation tracking:
       <lessons_learned/2026_06_19_etcd_hdd_io_contention.md>.
 - [ ] **haku-ci Docker Hub pull-through cache** (replace the external-CDN egress
       allows). The haku-ci runner's rootless dind pulls base images from Docker
