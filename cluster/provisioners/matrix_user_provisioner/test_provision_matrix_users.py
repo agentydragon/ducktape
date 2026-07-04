@@ -1,5 +1,6 @@
 """Tests for provision_matrix_users.py's two-phase Matrix/Synapse provisioning."""
 
+import email.message
 import hashlib
 import hmac
 import io
@@ -26,7 +27,7 @@ NONCE = "test-nonce"
 
 def _http_error(code: int, body: dict) -> urllib.error.HTTPError:
     return urllib.error.HTTPError(
-        url="url", code=code, msg="error", hdrs=None, fp=io.BytesIO(json.dumps(body).encode())
+        url="url", code=code, msg="error", hdrs=email.message.Message(), fp=io.BytesIO(json.dumps(body).encode())
     )
 
 
@@ -45,7 +46,7 @@ class _Recorder:
         self.calls: list[tuple[str, str, dict | None]] = []
 
     def record(self, req: urllib.request.Request) -> tuple[str, str, dict | None]:
-        body = json.loads(req.data) if req.data else None
+        body = json.loads(req.data) if isinstance(req.data, bytes) else None
         call = (req.get_method(), req.full_url, body)
         self.calls.append(call)
         return call

@@ -29,7 +29,8 @@ SERVER_NAME = "allegedly.works"
 
 def _get_json(url: str, headers: dict) -> dict:
     req = urllib.request.Request(url, headers=headers)
-    return json.loads(urllib.request.urlopen(req).read())
+    result: dict = json.loads(urllib.request.urlopen(req).read())
+    return result
 
 
 def _post_json(url: str, data: dict, headers: dict | None = None) -> dict:
@@ -37,14 +38,16 @@ def _post_json(url: str, data: dict, headers: dict | None = None) -> dict:
     if headers:
         hdrs.update(headers)
     req = urllib.request.Request(url, json.dumps(data).encode(), headers=hdrs)
-    return json.loads(urllib.request.urlopen(req).read())
+    result: dict = json.loads(urllib.request.urlopen(req).read())
+    return result
 
 
 def _put_json(url: str, data: dict, headers: dict) -> dict:
     hdrs = {"Content-Type": "application/json"}
     hdrs.update(headers)
     req = urllib.request.Request(url, json.dumps(data).encode(), headers=hdrs, method="PUT")
-    return json.loads(urllib.request.urlopen(req).read())
+    result: dict = json.loads(urllib.request.urlopen(req).read())
+    return result
 
 
 def register_admin(registration_secret: str, admin_password: str) -> None:
