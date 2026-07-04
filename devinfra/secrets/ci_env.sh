@@ -35,6 +35,12 @@ try_export ATTIC_TOKEN "$REPO_ROOT/secrets/ci/attic-main-writer.sops.yaml" '["at
 try_export PROPS_REGISTRY_USERNAME "$REPO_ROOT/secrets/ci/props-registry.sops.yaml" '["username"]'
 try_export PROPS_REGISTRY_PASSWORD "$REPO_ROOT/secrets/ci/props-registry.sops.yaml" '["password"]'
 
+# Forgejo images registry: CI pushes ducktape in-cluster images directly to the
+# Forgejo OCI registry (git.allegedly.works/ducktape-ci/<image>) as the
+# ducktape-ci tenant user (tf/gitops/forgejo-images).
+try_export FORGEJO_IMAGES_USERNAME "$REPO_ROOT/secrets/ci/forgejo-images-registry.sops.yaml" '["username"]'
+try_export FORGEJO_IMAGES_PASSWORD "$REPO_ROOT/secrets/ci/forgejo-images-registry.sops.yaml" '["password"]'
+
 # GitHub releases (agentydragon account, contents:write on ducktape)
 try_export GH_RELEASE_PAT "$REPO_ROOT/secrets/ci/gh-release-pat.sops.yaml" '["token"]'
 

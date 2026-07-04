@@ -196,6 +196,7 @@ resources:
   - forgejo/servicemonitor/flux-kustomization.yaml
   - forgejo/secrets/flux-kustomization.yaml
   - forgejo/props/flux-kustomization.yaml
+  - forgejo-images/flux-kustomization.yaml
   - forgejo/budget-ledger/flux-kustomization.yaml
   - forgejo/augur-evidence/flux-kustomization.yaml
   - forgejo/cpap-data/flux-kustomization.yaml

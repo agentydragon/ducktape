@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: forgejo-images-creds
+    namespace: forgejo-images
+    annotations:
+        description: Shared credential for the ducktape-ci Forgejo registry tenant. username/password read by tf/gitops/forgejo-images; .dockerconfigjson used as kubelet imagePullSecret (codex-pod) and Flux ImageRepository secretRef (flux-system) — both via reflector mirroring.
+        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: flux-system,codex-pod
+        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: flux-system,codex-pod
+type: kubernetes.io/dockerconfigjson
+stringData:
+    username: ENC[AES256_GCM,data:pMLXL7SfEtD6eY8=,iv:+uXLAJ6OMSDxlBIwkWVAT3p89WOf0q1fadh3jbcBy4g=,tag:yaHH6itqD49xfIssNXJidw==,type:str]
+    password: ENC[AES256_GCM,data:oV1rjq4rnaKTXIyLEknZ9do9GD1xKJSfxRmFBCUih1oe5mvVIyCsVjhA+SrFyQ==,iv:BjBhw11/vK2O/wnVSYaiNk8fMC24u3BYayEYMkmz9d0=,tag:29e6Q/96CJKEDFt4OBZ61g==,type:str]
+    .dockerconfigjson: ENC[AES256_GCM,data:syQQZNF3MR/xqo9V4eWCpN7ZZWK8DqJImkg88NOcVCNNAkiF4EafaZT81Boo1WemsU/Fca8lTFztJ1vAydDid/tJIkdDB17U8kKg9bolgGQRDtujvvkLbBasnerWv9zNKrP97kkiu3dWz8NZuMGkVkhHNNt6shQb5MdgaEtPkh7+e3tMJTtPfjOjcpxXyC2br8hQWc3yCV83mZ/mhAKTBlGCCaKTN7MLZtZ8tkr+3LWlwGdvzZQXwOT8rreZ7uwJKzorBePI8rxfL6Iy8uUATS17,iv:9FLHOfIGMcJCpWxeJakUp4y/aiRXImXdw09iZlLMvAE=,tag:ZQcvplYHWTTIQm0D6tfwhQ==,type:str]
+sops:
+    age:
+        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBXK1RDdGVaNXZrcjFaSXZC
+            ZEIzOTE3cjEwUURSS0c0Nm8zK0FVSFhtNUNnCldPYlJVSGhWUDI0Ti9LQ1JoazBB
+            dGRxUzZpNk84Nk10YXd2akw0bnVFMU0KLS0tIGNFVWdiWTBNSFFONmlQa0ZIbVJI
+            Rm9kVkpuYWE2NTZpMmwrYmMwc1pJd0kKEEFH0DwNU3d3nsaFZFRAVYD6McHEB2KD
+            0BlwqUbb+t00WafLKYXXUGwhqKdCaD5Q3UGgiJiyemuEFNiuqnCd0g==
+            -----END AGE ENCRYPTED FILE-----
+        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAyNGFjSTJLRnJSLzZPTkF1
+            czg1NkUzNEx4Z2FuQzN0YlhCenBUOXk1OWgwCjNLNlpJYVozSW9paDdXMm5hSFBp
+            ZDZwbU1mZUlkR0doZEtkNjlpcXpjczAKLS0tIEYweERMR0pFSWRmcGZVMnBRTjd2
+            M0dBeDVOR0ZwTzZ6N2FYamVwWmFyZDQKAcfISfmLzrGYI+xO2t6OHBKuOpqysJZT
+            2j+XKcVVZCu30bhHAJ+R651I0G1iG4trCcu01Y680iKcFrGmgsyZHA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-07-04T02:20:42Z"
+    mac: ENC[AES256_GCM,data:hnkeCMTrOFPAN+EfnDQHfs8DufnmykpXroVKfzk9HeH83nBWh7wFlPqEgG9LLXohx5l4v/UVGqEUjIILRKCH2z8/EsumLtOKnoo5CSwsl5lA1iZkvKi+LNlzKLwi1Qq6oFwe4RT2DfNvspmfRG2goAOJXCTnS0dFXjdvMvqmkV4=,iv:3pdYcuwLCFiKx0m8CfFmDo3xY4DxvTrnEjR6UzOJQzQ=,tag:9UiCtJoqDknLql2AfEMQoQ==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1
