@@ -23,8 +23,8 @@ the Forgejo CI **test gate** (see _Tests_ below).
 
 ## Frontend
 
-Standard Vite React+TS — no Mantine/Tailwind/Bazel (lean and self-contained). Plain
-CSS in `src/styles.css`.
+Standard Vite React+TS with Mantine (`@mantine/core`) — no Tailwind/Bazel (lean and
+self-contained). App-specific CSS in `src/styles.css`.
 
 ```bash
 cd frontend
