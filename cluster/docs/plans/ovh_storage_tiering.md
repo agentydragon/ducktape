@@ -467,16 +467,37 @@ Buy 1 NVMe OVH box; add as control-plane (learner → voter), then remove `10365
 HDD etcd seat) → all-NVMe 3-member quorum; bump the SeaweedFS `ssd` group to `replicas: 3`. Same
 one-member-at-a-time **G-etcd** discipline.
 
-## Forgejo git → SSD migration runbook (Stage 1)
+## Forgejo git → SSD migration runbook (Stage 1, Phase 3)
 
-`storageClassName` is immutable on a PVC, so this is a copy-cutover (same shape as the
-2026-06-28 RWO→RWX migration), not a manifest flip.
+`storageClassName` is immutable on a PVC, so this is a copy-cutover. We use **VolSync
+rsync-TLS** (the cluster's PVC-migration tool, cf. `k8s/grocy/*/app/volsync-backup.yaml`)
+with a pre-seed, and cut over **read-zero-downtime**: reads/clones stay up the whole time,
+only writes (pushes) freeze for ~1–2 min. A consistent cross-class swap needs a
+write-freeze point — an in-flight push during the cutover would split-brain the two PVCs —
+but reads never have to drop.
 
-1. Create `forgejo-git-rwx-ssd` (RWX, `storageClassName: seaweedfs-ovh-ssd`, 50Gi).
-2. Scale Forgejo to 0 (maintenance window).
-3. Copy `forgejo-git-rwx` → `forgejo-git-rwx-ssd` (helper pod mounting both, `cp -a` /
-   `rsync -a`). Verify repo counts + a `git fsck` sample.
-4. Point the chart's `persistence.claimName` at `forgejo-git-rwx-ssd`
-   (<../../k8s/forgejo/app/helmrelease.yaml>, <../../k8s/forgejo/app/git-storage-pvc.yaml>).
-5. Scale up; verify `git.allegedly.works` and a clone/push.
-6. Retain the old PVC briefly, then delete once satisfied.
+Scaffolding (committed, inert until triggered): dest PVC `forgejo-git-rwx-ssd` +
+`ReplicationDestination`/`ReplicationSource` (ships `paused`) in
+<../../k8s/forgejo/app/volsync-git-ssd-migration.yaml>. Mover UID/GID 1000 matches
+Forgejo's git user (pod `fsGroup=1000`); `copyMethod: Direct` (no SeaweedFS
+`VolumeSnapshotClass`, so the source mover bind-mounts the live git PVC over RWX).
+
+1. **Pre-seed (zero downtime):** set the ReplicationSource `paused: false` → rsyncs ~1 GiB
+   hdd→ssd while Forgejo serves. A torn pack here is corrected by the final sync. Verify the
+   git collection's volumes appear on `seaweedfs-volume-ssd-*`.
+2. **Write-freeze:** hold pushes (personal cluster — operator + any push automation pause;
+   optionally block HTTP `git-receive-pack` at the HTTPRoute). Reads/clones keep working.
+   SSH is L4 (port 2222 via CiliumEnvoyConfig) so it can't be selectively push-blocked —
+   coordinate the window instead.
+3. **Final delta sync:** bump the ReplicationSource `trigger.manual` → fast delta against
+   the now-quiescent source. Verify repo count + a `git fsck` sample on the dest.
+4. **Rolling repoint (reads stay up):** commit `persistence.claimName` → `forgejo-git-rwx-ssd`
+   in <../../k8s/forgejo/app/helmrelease.yaml>. The Deployment RollingUpdate (`maxUnavailable`
+   0 + PDB) keeps ≥1 replica serving; with writes frozen, hdd and ssd hold identical data so
+   pods swap PVCs with no split-brain. **Do NOT scale to 0** — that drops reads and needs
+   explicit go-ahead (no-Forgejo-downtime rule).
+5. **Unfreeze + verify:** allow pushes; confirm a `git.allegedly.works` clone/push, the new
+   PVC `Bound` on `seaweedfs-ovh-ssd`, and the git collection on `seaweedfs-volume-ssd-*`.
+6. **Cleanup (after a few days):** delete the old `forgejo-git-rwx` PVC + the three VolSync
+   objects. Rollback before cleanup = revert the `claimName` commit (the source PVC is
+   untouched by `Direct` reads).
