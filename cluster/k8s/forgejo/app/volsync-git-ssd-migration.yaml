@@ -61,8 +61,9 @@ metadata:
   namespace: forgejo
 spec:
   sourcePVC: forgejo-git-rwx
-  # Inert until the migration: unpause to pre-seed, bump trigger.manual to cut over.
-  paused: true
+  # Pre-seed running (Forgejo live). Cut over by bumping trigger.manual with
+  # Forgejo scaled to 0, then repoint the HelmRelease claimName.
+  paused: false
   trigger:
     manual: preseed-1
   rsyncTLS:
