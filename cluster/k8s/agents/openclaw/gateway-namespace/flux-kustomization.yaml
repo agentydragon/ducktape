@@ -4,7 +4,7 @@ metadata:
   name: openclaw-gateway-namespace
   namespace: flux-system
 spec:
-  suspend: true
+  suspend: false
   interval: 1h
   path: ./cluster/k8s/agents/openclaw/gateway-namespace
   prune: false
