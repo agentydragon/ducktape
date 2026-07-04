@@ -225,20 +225,22 @@ resource "kubernetes_secret" "dispatcher_classifier" {
 # No budget — interactive, user-driven use; the model scope is the guardrail.
 #
 # KEY SSOT: the value lives in a git SOPS file (secrets/litellm-zai-clients-key.yaml),
-# NOT a cluster Secret. This module reads it via sops_external, decrypting with a
+# NOT a cluster Secret. This module reads it via the sops_file data source
+# (source_file, NOT file() — the SSOT lives outside this module, at repo root, and
+# file() can't escape path.module; source_file is a path the provider opens only at
+# plan/apply, when the tf-runner has the repo checked out), decrypting with a
 # dedicated narrow age key (litellm-zai-clients) mounted as SOPS_AGE_KEY into this
 # module's tf-runner (see the litellm-keys Terraform CR) — NOT the broad cluster SOPS
 # key, so the runner can decrypt only this one file. Laptops/agent-box read the same
 # SOPS file via ducktape.sopsEnv (LITELLM_ZAI_KEY).
 
-data "sops_external" "zai_clients_key" {
-  source     = file("${path.module}/../../../secrets/litellm-zai-clients-key.yaml")
-  input_type = "yaml"
+data "sops_file" "zai_clients_key" {
+  source_file = "${path.module}/../../../secrets/litellm-zai-clients-key.yaml"
 }
 
 resource "litellm_key" "zai_clients" {
   key_alias = "zai-clients"
-  key       = data.sops_external.zai_clients_key.data["litellm_zai_key"]
+  key       = data.sops_file.zai_clients_key.data["litellm_zai_key"]
   models    = local.zai_lane_models
   metadata = {
     consumer = "laptop-z-claude, agent-box-zai"
