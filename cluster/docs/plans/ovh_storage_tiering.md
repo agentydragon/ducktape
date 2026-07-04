@@ -1,10 +1,11 @@
 # Plan: OVH storage tiering (HDD bulk vs SSD hot) + etcd onto NVMe
 
-**Status: active.** Stage 0 code (the `storage.allegedly.works/tier` node labels) is
-committed (#2776) but **not yet applied to the running nodes** — verified 2026-07-03,
-no OVH node carries the label yet. Nothing downstream (the media-scoped StorageClasses,
-the SeaweedFS SSD tier, the control-plane reshuffle) has been built. The steps below are
-all still to do.
+**Status: active.** Foundation is live: the `storage.allegedly.works/tier` node labels are
+applied to all five OVH nodes (KS-5 `hdd`, KS-GAME `ssd`), and the media-scoped
+StorageClasses `local-path-ovh-{hdd,ssd}` plus the `local-path-ovh`→`hdd` repin are merged
+and reconciled. Remaining, in order: **Stage 1** (SSD SeaweedFS tier + Forgejo git cutover —
+the Haku-dashboard fix, no wipes/CP changes), then **Stage 2** (mount rename + etcd onto
+NVMe, the rolling destructive part), then the optional **Stage 3**.
 
 ## Goal
 
@@ -271,13 +272,12 @@ all nodes at once. Each TF-applying step is: `tofu plan` against
 **`tofu apply -target=<addr>`** (the same `-target` mechanism `bootstrap.py` uses) → re-plan
 to confirm the residual diff is empty or only what's expected. One concern at a time.
 
-- **Stage 0 labels** are a Talos machine-config change (apply live, no reboot): the targets
-  are `talos_machine_configuration_apply.kimsufi` (the four `kimsufi_servers` nodes) and
-  `talos_machine_configuration_apply.kimsufi_cp` (`102453`) — or a single node's map key.
-  The plan diff should show **only** the `nodeLabels` addition; if it shows anything else
-  (image, disk, network), stop and investigate before applying.
-- **Stage 2** per-node ops are likewise targeted single-node applies, gated additionally by
-  the opt-in node set (rule 2) so the plan surfaces only that node — reviewed before apply.
+- **Stage 2** per-node ops are targeted single-node applies, gated additionally by the
+  opt-in node set (rule 2) so the plan surfaces only that node — reviewed before apply.
+
+The Stage-0 label apply already followed this: a targeted
+`talos_machine_configuration_apply.{kimsufi,kimsufi_cp}` plan whose diff was exactly one
+`nodeLabels` line per node (anything else — image/disk/network — is a stop-and-investigate).
 
 ### Final state (no new hardware — end of Stage 2)
 
@@ -352,35 +352,6 @@ tolerates 1 down). All 3 KS-5 then workers/bulk.
 - **G-flux** — `flux get kustomizations` / `helmreleases` all `Ready`.
 - **G-public** — Gatus green + blackbox: `git.allegedly.works`, `auth.allegedly.works`
   reachable; a test `git clone` succeeds.
-
-### Stage 0 — foundation: labels + media-scoped SCs
-
-Split into two PRs so nothing activates on merge unexpectedly:
-
-- **Labels PR (#2776, merged):** the `storage.allegedly.works/tier` labels
-  (Terraform/Talos in `ovh-nodes.tf`) + this plan. Merging changed nothing on its own —
-  the labels are inert until applied via Terraform.
-- **SC PR (not yet built):** the StorageClass manifests (`local-path-ovh-{hdd,ssd}` + the
-  `local-path-ovh` repin). Flux-reconciled, so they take effect on merge — hence they land
-  _after_ the labels are live.
-
-Apply order (declarative only; nothing moves):
-
-1. **Apply the labels first** (still pending), via the targeted plan→diff→apply discipline
-   above (the `talos_machine_configuration_apply.{kimsufi,kimsufi_cp}` targets, diff showing
-   only the `nodeLabels` addition) — **not** a blind bootstrap. Verify:
-   `kubectl get nodes -L storage.allegedly.works/tier` shows `hdd`/`ssd` on all five.
-   **Until this runs, the SC PR must not merge** — the `-hdd` repin references `tier=hdd`,
-   which no node has yet, so new `local-path-ovh` PVCs would go Pending (existing bound PVs
-   are unaffected).
-2. Merge the SC PR. `allowedTopologies` is **mutable** (only
-   provisioner/parameters/reclaimPolicy/volumeBindingMode are immutable on a StorageClass),
-   so Flux updates the `local-path-ovh` repin in place — no `kubectl delete` needed.
-   Existing bound PVCs are unaffected (the SC is only read at provision time). (Verified
-   2026-07-04: the repin reconciled in place, creationTimestamp unchanged.)
-
-**Stage 0 post-checks:** **G-flux** green and `kubectl get sc local-path-ovh{,-hdd,-ssd}`
-shows each with the expected `allowedTopologies`. No workload moved.
 
 ### Stage 1 — SSD SeaweedFS tier for Forgejo git (fixes the Haku dashboard)
 
