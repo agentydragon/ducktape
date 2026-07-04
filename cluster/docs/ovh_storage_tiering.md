@@ -100,7 +100,7 @@ one-node-at-a-time wipe** is safe and not painful.
 ### Rules
 
 1. **One node at a time — never both KS-GAME together.** Many CNPG clusters have
-   *both* instances on the two KS-GAME nodes (`forgejo-db`, `airlock-db`,
+   _both_ instances on the two KS-GAME nodes (`forgejo-db`, `airlock-db`,
    `atuin`, `langfuse`, …); wiping both at once loses them. Wipe one, wait for
    CNPG re-clone + SeaweedFS re-replication onto the survivor, then the next.
 2. **Do NOT apply via a blanket `bazel run //cluster:bootstrap`** — it hits all
@@ -114,22 +114,74 @@ one-node-at-a-time wipe** is safe and not painful.
    agent/VM sandboxes). Confirm each is disposable or move it before wiping its
    node.
 
-### Per-node procedure
+The per-node rename procedure and its health gates are folded into **Stage 2**
+of the execution plan below (it pairs with the control-plane reshuffle, which
+already drains/rebuilds each node — but the rename roll can also be run
+standalone).
 
-1. `kubectl cordon <node>` and drain the losable/single-copy pods; for CNPG,
-   `cnpg.io` will re-clone the instance elsewhere once its PVC is gone.
-2. Add `<node>` to the rename opt-in set; apply Talos config to **that node
-   only** (`talosctl -n <node> apply-config`), which wipes + recreates the data
-   disk under the new UserVolume name.
-3. Update the node's `nodePathMap` entry to the new mount in lockstep.
-4. `kubectl uncordon <node>`; verify CNPG instances rejoin healthy and SeaweedFS
-   re-replicates before moving to the next node.
+## Execution plan
 
-This pairs naturally with the Stage-2 control-plane reshuffle (those nodes are
-already being drained/rebuilt), but does not depend on it — the roll can be done
-standalone whenever.
+### Starting state (today)
 
-## Apply ordering (important — SC allowedTopologies is immutable)
+| Node           | Box     | Role                   | etcd disk          | Data disk → mount                                         | Holds                                                      |
+| -------------- | ------- | ---------------------- | ------------------ | --------------------------------------------------------- | ---------------------------------------------------------- |
+| `ovh-ns102453` | KS-5    | control-plane          | `/dev/sda` **HDD** | `/dev/sdb` → `/var/mnt/seaweedfs-data` (`seaweedfs-data`) | SeaweedFS bulk vol + local-path PVs                        |
+| `ovh-ns103656` | KS-5    | control-plane (leader) | `/dev/sda` **HDD** | `/dev/sdb` → `/var/mnt/seaweedfs-data`                    | SeaweedFS bulk vol + local-path PVs                        |
+| `ovh-ns103711` | KS-5    | control-plane          | `/dev/sda` **HDD** | `/dev/sdb` → `/var/mnt/seaweedfs-data`                    | SeaweedFS bulk vol + local-path PVs                        |
+| `ovh-ns104952` | KS-GAME | worker                 | —                  | NVMe#2 → `/var/mnt/seaweedfs-data`                        | ~15 CNPG, `seaweedfs-volume-0`, Loki/Tempo/Mimir, VMs      |
+| `ovh-ns104963` | KS-GAME | worker                 | —                  | NVMe#2 → `/var/mnt/seaweedfs-data`                        | ~15 CNPG, seaweedfs master/filer, Loki/Mimir, agent-box VM |
+
+etcd on HDD (WAL fsync p99 124–240 ms). Forgejo git on `seaweedfs-ovh`
+(FUSE → HDD volume servers). `local-path-ovh` media-blind; DBs scattered by luck.
+
+### Final state (no new hardware — end of Stage 2)
+
+| Node           | Box     | Role                     | etcd disk          | Data disk → mount                                                 | Holds                                                         |
+| -------------- | ------- | ------------------------ | ------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------- |
+| `ovh-ns104952` | KS-GAME | **control-plane**        | NVMe#1 **SSD**     | NVMe#2 → `/var/mnt/local-path-ovh-ssd` (`local-path-ovh-ssd`)     | SSD tier: SeaweedFS `ssd` vol (git), `forgejo-db`, `filer-db` |
+| `ovh-ns104963` | KS-GAME | **control-plane**        | NVMe#1 **SSD**     | NVMe#2 → `/var/mnt/local-path-ovh-ssd`                            | SSD tier (peer copy)                                          |
+| `ovh-ns102453` | KS-5    | control-plane (3rd, HDD) | `/dev/sda` **HDD** | `/dev/sdb` → `/var/mnt/local-path-ovh-hdd` (`local-path-ovh-hdd`) | HDD bulk: SeaweedFS bulk vol + cold DBs/PVs                   |
+| `ovh-ns103656` | KS-5    | **worker**               | —                  | `/dev/sdb` → `/var/mnt/local-path-ovh-hdd`                        | HDD bulk                                                      |
+| `ovh-ns103711` | KS-5    | **worker**               | —                  | `/dev/sdb` → `/var/mnt/local-path-ovh-hdd`                        | HDD bulk                                                      |
+
+etcd quorum = 2 NVMe + 1 HDD (commits gated by the two NVMe majority; the HDD
+member lags harmlessly and occasionally leads — accepted). Forgejo git on
+`seaweedfs-ovh-ssd` (NVMe volume servers). Mounts self-describing; bulk on HDD.
+
+**Stage 3 (optional, +1 NVMe OVH box):** control plane becomes 3× NVMe →
+all-NVMe etcd (leadership never on HDD) + SSD replication headroom (repl `001`
+across 3 SSD nodes tolerates 1 down without losing redundancy). All 3 KS-5 then
+workers/bulk.
+
+### Health gates (the pre/post checks each destructive step is fenced by)
+
+Define these once; every stage references them. **G-all** must be green before
+starting a stage and after each node op; the others gate specific step types.
+
+- **G-etcd** — `talosctl -n <cp>… etcd status` / `service etcd`: every member
+  `HEALTH OK`, same DB revision/raft index, no alarms (`etcd alarm list` empty),
+  no leader churn; the `ControlPlaneLeasePutLatency*` alerts not firing. Only
+  ever change **one** etcd member at a time, and only when the rest are green.
+- **G-nodes** — `kubectl get nodes`: all `Ready` except the one intentionally
+  cordoned; no unexpected `NotReady`.
+- **G-swfs** — SeaweedFS fully replicated: via a master pod,
+  `weed shell -c "volume.list"` shows **every** volume at 2 copies (repl `001`),
+  zero under-replicated/`0-copy` volumes; filer up; `weed shell -c "cluster.check"`
+  clean. Gate every volume-server wipe on this being green **before** (a source
+  copy exists elsewhere) and **after** (re-replication back to 2 completed).
+- **G-cnpg** — for each affected cluster, `kubectl cnpg status <cluster>`:
+  `Cluster in healthy state`, all instances `streaming`, replication lag ≈ 0, a
+  healthy primary. Gate every node wipe on: every CNPG cluster with an instance
+  on that node has **≥1 healthy instance on another node** (re-clone source),
+  and after: the re-cloned instance is `streaming` and caught up.
+- **G-flux** — `flux get kustomizations` / `helmreleases` all `Ready`.
+- **G-public** — Gatus green + blackbox: `git.allegedly.works`,
+  `auth.allegedly.works` reachable; a test `git clone` succeeds.
+
+### Stage 0 — foundation (this PR): `storage-tier` labels + media-scoped SCs
+
+Declarative only; nothing moves. Apply ordering (SC `allowedTopologies` is
+immutable):
 
 1. Apply the `storage-tier` node labels: `bazel run //cluster:bootstrap` (or
    `talosctl apply-config`). Verify: `kubectl get nodes -L storage-tier`.
@@ -143,62 +195,116 @@ Do steps 1 → 2 in order: if the re-pinned SC reconciles before the labels exis
 new `local-path-ovh` provisioning stalls Pending (existing bound volumes are
 fine).
 
-## Staging
+### Stage 0 post-checks
 
-**Stage 1 — SSD SeaweedFS tier for Forgejo git (fixes Haku dashboard). No
-control-plane change, no new hardware.**
+**G-flux** green (the local-path-provisioner Kustomization `Ready`) and
+`kubectl get sc local-path-ovh{,-hdd,-ssd}` shows each with the expected
+`allowedTopologies`. No workload moved — nothing to drain.
 
-- [x] `storage-tier` labels + `local-path-ovh-{hdd,ssd}` SCs (this change).
-- [ ] Add a SeaweedFS SSD volume-topology group (all-operator, single cluster —
-      the operator's `spec.volume.volumeTopology` map is present in the installed
-      v1.0.19 CRD; each group is its own StatefulSet on the shared master/filer,
-      tagged via `extraArgs`). Sketch:
+## Stage 1 — SSD SeaweedFS tier for Forgejo git (fixes the Haku dashboard)
 
-  ```yaml
-  # cluster/k8s/seaweedfs/cluster/seaweed.yaml, under spec.volume
-  # KEEP the existing flat `volume:` block unchanged (it is the untagged/default
-  # = HDD tier on KS-5; renaming it into a topology group would rename the
-  # StatefulSet and orphan the 1.8 TB of data). ADD only the ssd group:
-  volumeTopology:
-    ssd:
-      replicas: 2 # the 2 KS-GAME nodes; replication 001 = 2 copies, survives 1 node
-      storageClassName: local-path-ovh-ssd
-      requests: { storage: 250Gi, cpu: 100m, memory: 512Mi }
-      limits: { memory: 1536Mi }
-      extraArgs: ["-disk=ssd"] # operator appends this to `weed volume`; no first-class diskType field
-      priorityClassName: stateful-infra
-      metricsPort: 9328
-      nodeSelector: { storage-tier: ssd }
-      affinity:
-        nodeAffinity: # hard: never land on non-SSD
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - { key: storage-tier, operator: In, values: ["ssd"] }
-        podAntiAffinity: # one per host
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchLabels: { app.kubernetes.io/component: volume, app.kubernetes.io/name: seaweedfs }
-              topologyKey: kubernetes.io/hostname
-  ```
+No control-plane change, no new hardware — this is the change that fixes
+Forgejo/Haku.
 
-  **Verify on reconcile** that the operator _adds_ the ssd StatefulSet and does
-  not touch the existing flat volume pods (flat + topology are documented to
-  coexist, but confirm before trusting it).
+**Pre-check:** the KS-GAME NVMe (~450 GB) must have room for the `ssd` pool — it
+already holds ~15 DBs + `seaweedfs-volume-0` + VM disks. Check headroom first
+(`node_filesystem_avail_bytes{mountpoint="/var/mnt/seaweedfs-data"}`); if tight,
+shed HDD-appropriate tenants to KS-5 (evict `seaweedfs-volume-0` here and let it
+re-replicate onto a KS-5) or size the pool below 250 Gi. Confirm **G-swfs** green
+before evicting any volume server, and again after it re-replicates.
 
-- [ ] Add StorageClass `seaweedfs-ovh-ssd` (CSI driver, params `diskType: ssd`,
-      `replication: "001"`) — confirm the `diskType` param name against the
-      pinned CSI driver `v1.4.14`.
-- [ ] Migrate the Forgejo git repo onto SSD (runbook below).
+1. **Add the SeaweedFS `ssd` volume-topology group** (keep the flat `volume:`
+   block untouched). Commit → Flux reconciles. **Post-check:** the operator
+   _adds_ a new `seaweedfs-volume-ssd-*` StatefulSet on the 2 KS-GAME nodes and
+   does **not** disturb the existing flat volume pods; **G-swfs** green; the
+   master lists the new `ssd`-disk volumes. Sketch:
 
-**Stage 2 — etcd onto NVMe.** Promote the 2 KS-GAME to control-plane (2 NVMe +
-1 KS-5 HDD quorum; leadership not pinned — accept occasional HDD-leader
-latency), demote 2 KS-5 to workers, re-check Nebula lighthouse placement. Fold
-the data-disk mount rename (above) into these per-node rebuilds. Pin
-`forgejo-db` / `seaweedfs-filer-db` to `local-path-ovh-ssd`.
+```yaml
+# cluster/k8s/seaweedfs/cluster/seaweed.yaml, under spec.volume
+# KEEP the existing flat `volume:` block unchanged (it is the untagged/default
+# = HDD tier on KS-5; renaming it into a topology group would rename the
+# StatefulSet and orphan the 1.8 TB of data). ADD only the ssd group:
+volumeTopology:
+  ssd:
+    replicas: 2 # the 2 KS-GAME nodes; replication 001 = 2 copies, survives 1 node
+    storageClassName: local-path-ovh-ssd
+    requests: { storage: 250Gi, cpu: 100m, memory: 512Mi }
+    limits: { memory: 1536Mi }
+    extraArgs: ["-disk=ssd"] # operator appends this to `weed volume`; no first-class diskType field
+    priorityClassName: stateful-infra
+    metricsPort: 9328
+    nodeSelector: { storage-tier: ssd }
+    affinity:
+      nodeAffinity: # hard: never land on non-SSD
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - { key: storage-tier, operator: In, values: ["ssd"] }
+      podAntiAffinity: # one per host
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels: { app.kubernetes.io/component: volume, app.kubernetes.io/name: seaweedfs }
+            topologyKey: kubernetes.io/hostname
+```
 
-**Stage 3 — third SSD node.** All-NVMe 3-member etcd + SSD placement headroom
-(replication 001 across 3 SSD nodes tolerates 1 down without losing redundancy).
+(flat + topology are documented to coexist — confirm before trusting it.)
+
+2. **Add StorageClass `seaweedfs-ovh-ssd`** (CSI, `diskType: ssd`, `replication:
+"001"`; confirm the param name against CSI `v1.4.14`). **Post-check:** a
+   throwaway PVC on it binds on an `ssd`-tagged volume (master `volume.list`).
+3. **Migrate Forgejo git → SSD** (copy-cutover runbook below). **Post-checks:**
+   **G-public** (a `git clone`/push works), the new PVC is bound on
+   `seaweedfs-ovh-ssd`, and the Haku dashboard load is benchmarked vs. the old
+   latency.
+
+## Stage 2 — mount rename + etcd onto NVMe (rolling, node-by-node)
+
+Two rolls interleaved per node: **(E)** move the etcd quorum from
+{`102453`, `103656`, `103711`} to {`102453`, `104952`, `104963`}, and **(R)**
+wipe+rename each data disk to `local-path-ovh-{hdd,ssd}`. Rules: **one etcd
+membership change at a time** with **G-etcd** green between each; **never wipe
+both KS-GAME at once** (**G-cnpg**); the data-disk wipe (R) is independent of
+etcd (which lives on the system disk), so R and the CP-promote are separate ops.
+
+Before starting: `etcdctl move-leader` off `103656` onto `102453` (the anchor
+member that stays control-plane throughout), so no membership step ever touches
+the leader. Handle the single-copy sandbox disks (`agent-box`, `gecko`,
+`codex-nix`) first — migrate or accept-loss per the rename rules above.
+
+Per-node order — each fenced by **G-all** (all gates green) before and after:
+
+1. **`ovh-ns104952` → SSD control-plane.** Verify re-clone sources exist
+   (**G-cnpg**), cordon+drain (CNPG re-clones its instances onto survivors).
+   Wipe+rename NVMe#2 → `local-path-ovh-ssd` (R). Promote to control-plane →
+   joins etcd (learner → voter). **Post:** **G-etcd** shows 4 healthy members
+   incl. `104952`; **G-swfs**/**G-cnpg** re-replicated.
+2. **`ovh-ns103711` → worker (leave etcd).** One membership change: remove it
+   from etcd, reprovision as worker; wipe+rename `/dev/sdb` →
+   `local-path-ovh-hdd` (R). **Post:** **G-etcd** back to 3 members
+   {`102453`, `103656`, `104952`}.
+3. **`ovh-ns104963` → SSD control-plane.** As step 1 (drain, wipe+rename →
+   `local-path-ovh-ssd`, promote/join). **Post:** **G-etcd** 4 members incl.
+   `104963`.
+4. **`ovh-ns103656` → worker (leave etcd).** Membership change; wipe+rename
+   `/dev/sdb` → `local-path-ovh-hdd`. **Post:** **G-etcd** = target
+   {`102453`, `104952`, `104963`}, tolerating 1 down.
+5. **`ovh-ns102453` — data disk only.** Stays control-plane; do **not** touch its
+   etcd / `/dev/sda`. Drain its `/dev/sdb` local-path PVs, wipe+rename →
+   `local-path-ovh-hdd` (R). **Post:** **G-swfs**/**G-cnpg** green.
+6. **Pin hot DBs to SSD.** Set `forgejo-db` + `seaweedfs-filer-db`
+   `storageClass: local-path-ovh-ssd` + nodeSelector `storage-tier=ssd`; roll
+   each CNPG instance one at a time (**G-cnpg** between). Re-check Nebula
+   lighthouse placement now that `103656`/`103711` are workers.
+
+**Exit:** matches the Final-state table; watch `ControlPlaneLeasePutLatency*`
+drop as etcd fsync moves onto NVMe.
+
+## Stage 3 — third SSD node (optional, future)
+
+Buy 1 NVMe OVH box; add as control-plane (learner → voter), then remove `102453`
+from etcd → all-NVMe 3-member quorum; bump the SeaweedFS `ssd` group to
+`replicas: 3`. Gives leadership-never-on-HDD + SSD replication headroom. Same
+one-member-at-a-time **G-etcd** discipline.
 
 ## Forgejo git → SSD migration runbook (Stage 1)
 
