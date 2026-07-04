@@ -8,13 +8,6 @@ source-faithful to that evidence.
 
 ## P0: Required before OpenCode or Claude Code use
 
-- Run this as the cluster's real LiteLLM Proxy backend, not only a Python demo:
-  - switch `cluster/k8s/litellm` to the custom image
-  - add `custom_provider_map` config for provider `tana`
-  - add model entries with Claude-shaped external names, e.g.
-    `claude-3-5-sonnet-latest -> tana/claude-3-5-sonnet-latest`
-  - keep `tana.litellm_proxy.custom_handler.tana_handler` as the stable handler
-    object referenced by the proxy config
 - Add OpenAI-compatible smoke tests through LiteLLM Proxy:
   - `/v1/chat/completions`
   - streaming `/v1/chat/completions`
