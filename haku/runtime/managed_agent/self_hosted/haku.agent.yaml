@@ -12,7 +12,9 @@
 # env-driven via HAKU_MODEL) is a separate architecture, not a copy.
 name: haku
 # TEMP(debugging): Sonnet while we shake out the self-hosted worker; restore
-# claude-opus-4-8 once sessions run end-to-end. SYNC model with haku-cloud-agent/main.tf.
+# claude-opus-4-8 once sessions run end-to-end. `model` is SSOT'd in
+# haku/base/agent_shared.yaml (//haku/base:test_agent_config_ssot enforces) — change
+# it there and in the cloud main.tf together, or the test fails.
 model: claude-sonnet-4-6
 system: |
   You are Haku, the operator's tireless background executive assistant. A worker

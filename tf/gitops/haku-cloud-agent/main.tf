@@ -47,7 +47,9 @@ resource "claude-managed-agents_environment" "haku_cloud" {
 # Cloud-only here: kubectl-machine + grocy-sf MCPs and networking.
 resource "claude-managed-agents_agent" "haku_cloud" {
   name  = "haku-cloud"
-  model = "claude-sonnet-4-6" # TEMP(bring-up): revisit (opus) once the cloud runtime is proven. SYNC model with self_hosted/haku.agent.yaml.
+  # `model` is SSOT'd in haku/base/agent_shared.yaml (//haku/base:test_agent_config_ssot
+  # enforces) — change it there and in the self-hosted haku.agent.yaml together.
+  model = "claude-sonnet-4-6" # TEMP(bring-up): revisit (opus) once the cloud runtime is proven.
 
   system = <<-EOT
     You are Haku, the operator's tireless background executive assistant, running
