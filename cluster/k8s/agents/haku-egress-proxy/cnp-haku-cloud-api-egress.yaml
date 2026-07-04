@@ -29,6 +29,16 @@ spec:
             dns:
               - matchPattern: "*"
     - toFQDNs:
+        # Container image registries (base-image + tooling pulls: dind base images,
+        # ghcr tools).
+        # TODO(pull-through-cache): these OCI-registry hosts can leave this allowlist
+        #   entirely once an in-cluster pull-through mirror exists again — the mirror
+        #   fetches from origin under ITS own egress and dind points at it via
+        #   `--registry-mirror`, so the runner/proxy no longer needs Docker Hub / ghcr
+        #   here. (This re-homes the `haku-ci-pull-through-cache` TODO deleted with
+        #   haku-ci/networkpolicy.yaml; tracked in cluster/docs/plan.md. registry:2 is
+        #   single-upstream, so Docker Hub and ghcr need one proxy each — or Harbor
+        #   proxy-cache projects, once Harbor is back.)
         - matchName: ghcr.io
         - matchName: pkg-containers.githubusercontent.com
         - matchName: registry-1.docker.io
@@ -57,6 +67,11 @@ spec:
     # (e.g. `pip install fastmcp`, `npx <mcp-server>`). PyPI: `pypi.org`
     # (index/metadata) + `files.pythonhosted.org` (wheels/sdists); npm:
     # `registry.npmjs.org`.
+    # Note: unlike the OCI registries above, the egress proxy's HTTP cache (Squid,
+    # deferred proxy-config PR) speeds up REPEAT fetches of these but does NOT let them
+    # leave the allowlist — the proxy still fetches from origin. Dropping them needs a
+    # dedicated pull-through mirror with its own egress (devpi/bandersnatch for PyPI,
+    # Verdaccio for npm). Lower priority than the OCI mirror; TODO(pull-through-cache).
     - toFQDNs:
         - matchName: pypi.org
         - matchName: files.pythonhosted.org
@@ -69,6 +84,11 @@ spec:
     # Nix closure (e.g. the agent-haku devtools/fastmcp install) hit the public
     # cache instead of building from source. cache.nixos.org serves nars;
     # nixos.org redirects channel/installer fetches.
+    # TODO(pull-through-cache): cache.nixos.org can leave this allowlist once clients
+    #   use the cluster's own nix cache (cache.allegedly.works) as an upstream
+    #   substituter — that cache reaches nixos.org under its own egress. (nixos.org /
+    #   channels.nixos.org are redirect/channel fetches, not nar content, so they'd
+    #   still be needed unless the pin is fully flake-locked.)
     - toFQDNs:
         - matchName: cache.nixos.org
         - matchName: nixos.org
