@@ -18,17 +18,17 @@ design: <../../../docs/plans/codex_pod.md>.
   `127.0.0.1:2222` reachable via `kubectl exec` ProxyCommand (see the
   `codex-nix-pvc-uid-pod` spike for the ProxyCommand block).
 
-## Activation (not yet Flux-wired)
+## Bring-up
 
-This directory is **not** in `cluster/k8s/kustomization.yaml` yet — bring it up
-after the image exists:
+Flux-wired (in `cluster/k8s/kustomization.yaml`). On merge to `devel`:
 
-1. Merge to `devel` so the CI workflow builds + pushes the first image.
-2. **Make the GHCR package public** (`ghcr.io/agentydragon/codex-pod`) — cluster
-   nodes pull without credentials (see <../../../docs/container-images.md>).
-3. Add `cluster/k8s/agents/codex-pod/flux-kustomization.yaml` to the root
-   `cluster/k8s/kustomization.yaml`. Flux applies the Deployment; image
-   automation pins it to the newest `devel-*` tag.
+1. CI builds + pushes the first `ghcr.io/agentydragon/codex-pod:devel-*` image.
+2. **Make the GHCR package public** — one-time manual step; cluster nodes pull
+   without credentials (see <../../../docs/container-images.md>). Until then the
+   `ImageRepository` scan fails and the pod stays `ImagePullBackOff` on the
+   placeholder `:devel` tag.
+3. Once public, the `ImagePolicy` resolves the newest tag, the `all-images`
+   `ImageUpdateAutomation` writes it into the Deployment marker, and the pod runs.
 4. Optional: add the `codex-pod` `ImageRepository` to
    `cluster/k8s/flux-webhook/github-webhook-receiver.yaml` for push-time pickup
    instead of the 5m poll.

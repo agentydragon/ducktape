@@ -66,6 +66,7 @@ resources:
   - agents/attic-jwt-rotation/flux-kustomization.yaml
   - agents/claude-sandbox-firecracker/flux-kustomization.yaml
   - agents/claude-zai-key/flux-kustomization.yaml
+  - agents/codex-pod/flux-kustomization.yaml
   - agents/airlock/flux-kustomization.yaml
   - agents/airlock-oidc-proxy-tf/flux-kustomization.yaml
   - agents/google-workspace-mcp/flux-kustomization.yaml
