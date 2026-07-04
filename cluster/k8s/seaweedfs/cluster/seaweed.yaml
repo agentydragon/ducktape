@@ -82,71 +82,12 @@ spec:
                 app.kubernetes.io/name: seaweedfs
             topologyKey: kubernetes.io/hostname
 
-  volume:
-    # Three volume servers spread across kimsufi hosts. KS-5 nodes use
-    # /dev/sdb; KS-GAME nodes use their second NVMe. All mount the data volume
-    # at /var/mnt/seaweedfs-data via Talos UserVolumeConfig
-    # (cluster/terraform/main/ovh-nodes.tf). With replication=001 across
-    # 3 hosts, we can lose one node and still have 2 surviving copies.
-    replicas: 3
-    # The operator routes requests.storage to the PVC volumeClaimTemplate and
-    # cpu/memory to the container (filterContainerResources strips `storage`),
-    # so adding compute requests here leaves the 1800Gi PVC untouched. QoS /
-    # eviction protection as on master; volume holds the in-memory needle index
-    # so memory is sized higher (≤435Mi observed). See the lessons_learned RCA.
-    priorityClassName: stateful-infra
-    requests:
-      storage: 1800Gi # leaves headroom on the 2 TB /dev/sdb
-      cpu: 100m
-      memory: 512Mi
-    limits:
-      memory: 1536Mi
-    storageClassName: local-path-ovh
-    dataCenter: "hil"
-    rack: "hil-ovh-h109b04"
-    metricsPort: 9325
-    nodeSelector:
-      topology.kubernetes.io/zone: hil-ovh
-    # Tolerate the CP taint so one volume server can land on the kimsufi
-    # CP. Volume I/O is sequential and on a separate disk (sdb) from etcd
-    # (sda), so contention with the control plane is minimal.
-    tolerations:
-      - key: node-role.kubernetes.io/control-plane
-        operator: Exists
-        effect: NoSchedule
-    # Hard anti-affinity so each volume server sits on a different kimsufi
-    # node — that's what makes replication=001 actually no-SPOF. The
-    # StatefulSet would otherwise co-locate replicas on whichever node the
-    # scheduler picks first (verified live).
-    affinity:
-      podAntiAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                app.kubernetes.io/component: volume
-                app.kubernetes.io/name: seaweedfs
-            topologyKey: kubernetes.io/hostname
-
-  # SSD tiering — Stage 1 of cluster/docs/plans/ovh_storage_tiering.md.
-  #
-  # volumeTopology REPLACES the flat spec.volume above as the volume-server
-  # source: once this is set, the operator (verified 1.0.19) reconciles ONLY
-  # these groups and stops reconciling the flat `seaweedfs-volume` StatefulSet
-  # — it is NOT additive. Two hard constraints from the rehearsal
-  # (2026-07-04, swfs-migtest):
-  #   1. spec.volume MUST stay above (removing it nil-panics the operator, which
-  #      reads m.Spec.Volume.* for topology defaults). It is now a defaults stub;
-  #      no flat StatefulSet is created while volumeTopology is set.
-  #      CLEANUP(added 2026-07-04): drop the spec.volume stub once the operator
-  #        is upgraded to >=1.0.20 — 1.0.20 landed "nil-safe spec.volume fallback
-  #        in topology startup script" + "nil-safe BaseVolumeSpec for
-  #        topology-only deployments", removing the nil-panic. We run 1.0.19.
-  #   2. Each group requires dataCenter + rack.
-  #
-  # Migration (Phase 2, run by hand, G-swfs-gated): the pre-existing flat
-  # `seaweedfs-volume` StatefulSet keeps running (orphaned) and still holds the
-  # ~237 GiB bulk; `volume.move` relocates each volume onto the `hdd` group
-  # (2 copies throughout), then the flat StatefulSet + its PVCs are deleted.
+  # SSD tiering — cluster/docs/plans/ovh_storage_tiering.md. volumeTopology is the
+  # sole volume-server source: the operator reconciles ONLY these groups (all-or-
+  # nothing — it does NOT also honor a flat spec.volume, which we deliberately omit).
+  # Each group requires dataCenter + rack and is fully self-contained (no inheritance
+  # from a base spec.volume; topology-only deployment needs the operator's nil-safe
+  # BaseVolumeSpec fallback, added in 1.0.20 — we run 1.0.30).
   volumeTopology:
     hdd:
       # 3 servers on the KS-5 HDD nodes; destination for the migrated bulk.
