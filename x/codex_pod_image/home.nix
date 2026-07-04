@@ -25,11 +25,17 @@ in
   programs.bash = {
     enable = true;
     # Codex has no global "trust all": its directory-trust prompt is gated
-    # per-directory (exact-match `[projects."<path>"]`, no ancestor/global option),
-    # and it can't even persist a "Yes" here because config.toml is a read-only
-    # /nix/store symlink. So wrap `codex` to auto-mark the launch dir (git repo
-    # root, else cwd) trusted via `-c`, and never prompt. This is an isolated YOLO
-    # agent pod (danger-full-access, approval=never) — trusting everything is intended.
+    # per-directory (exact-match `[projects."<path>"]`, no ancestor/global option).
+    #
+    # Deviation from agent-box: agent-box runs the activation-based `programs.codex`
+    # module (../../nix/home/codex/), where `home-manager switch` merges the nix base
+    # into a WRITABLE ~/.codex/config.toml and merge.py's PRESERVE_KEYS keeps the
+    # live `projects` block — so codex persists each "Yes" and you answer once per
+    # repo. This pod bakes config.toml as a read-only /nix/store symlink (no
+    # activation, no merge), so codex can't persist a "Yes" and would re-prompt every
+    # session. Instead, wrap `codex` to auto-mark the launch dir (git repo root, else
+    # cwd) trusted via `-c` — it never prompts at all. Isolated YOLO agent pod
+    # (danger-full-access, approval=never), so trusting everything is intended.
     initExtra = ''
       codex() {
         local d
