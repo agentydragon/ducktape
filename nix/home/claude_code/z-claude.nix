@@ -4,7 +4,7 @@
 # cluster/k8s/litellm/app/generate_litellm.py). Auth token is $LITELLM_ZAI_KEY — a
 # z.ai-scoped LiteLLM virtual key whose value is SSOT in
 # secrets/litellm-zai-clients-key.yaml (provisioned by tf/gitops/litellm-keys via
-# sops_external, decryptable by this host's age key).
+# sops_file, decryptable by this host's age key).
 #
 # Shared as-is by the laptop `z-claude` alias (nix/home/home.nix) and the agent-box
 # `zai` user (nix/home/hosts/agent-box/zai.nix) — same executable name everywhere.
