@@ -17,11 +17,12 @@ from cluster.validation.k8s import parse_k8s_resources
 from cluster.validation.kustomize import KustomizeBuildResult
 
 
-def _repo(name: str) -> dict[str, Any]:
+def _repo(name: str, image: str | None = None) -> dict[str, Any]:
     return {
         "apiVersion": "image.toolkit.fluxcd.io/v1beta2",
         "kind": "ImageRepository",
         "metadata": {"name": name, "namespace": "flux-system"},
+        "spec": {"image": image or f"ghcr.io/agentydragon/{name}"},
     }
 
 
@@ -65,6 +66,17 @@ def test_repository_missing_from_webhook() -> None:
     cluster = _cluster(_repo("foo"), _policy("foo", "foo"), _receiver([]))
     errors = check_image_automation_webhook(cluster)
     assert any("foo" in e and "github-webhook-receiver" in e for e in errors)
+
+
+def test_non_ghcr_repository_exempt_from_webhook() -> None:
+    # Non-GHCR (e.g. Forgejo) images can't use the GitHub registry_package webhook,
+    # so they aren't required in the Receiver.
+    cluster = _cluster(
+        _repo("codex-pod", image="git.allegedly.works/ducktape-ci/codex-pod"),
+        _policy("codex-pod", "codex-pod"),
+        _receiver([]),
+    )
+    assert check_image_automation_webhook(cluster) == []
 
 
 def test_stale_webhook_entry() -> None:

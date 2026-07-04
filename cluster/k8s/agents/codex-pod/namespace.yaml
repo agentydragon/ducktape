@@ -6,3 +6,4 @@ metadata:
     description: "Codex agent pod running the Nix-built codex-pod image (see cluster/k8s/agents/codex-pod/README.md)."
   labels:
     app.kubernetes.io/name: codex-pod
+    goldilocks.fairwinds.com/enabled: "true"

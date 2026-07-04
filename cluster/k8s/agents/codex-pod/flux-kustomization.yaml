@@ -7,6 +7,7 @@ metadata:
     description: Codex agent pod running the Nix-built codex-pod image, auto-rolled by Flux image automation.
 spec:
   interval: 10m
+  retryInterval: 1m
   path: ./cluster/k8s/agents/codex-pod
   prune: true
   sourceRef:

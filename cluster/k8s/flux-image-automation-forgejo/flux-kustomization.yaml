@@ -14,3 +14,4 @@ spec:
     name: flux-system
   dependsOn:
     - name: forgejo-images # source credential (reflected into flux-system)
+    - name: flux-image-automation-ghcr # the all-images ImageUpdateAutomation lives there

@@ -85,8 +85,13 @@ class HelmReleaseResource(K8sResource):
         return self.spec.chart.spec.version
 
 
+class ImageRepositorySpec(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    image: str = ""
+
+
 class ImageRepositoryResource(K8sResource):
-    """Flux `ImageRepository` — only its name is needed."""
+    spec: ImageRepositorySpec = Field(default_factory=ImageRepositorySpec)
 
 
 class TerraformBackendConfig(BaseModel):
