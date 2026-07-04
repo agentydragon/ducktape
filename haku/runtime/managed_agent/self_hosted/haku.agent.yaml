@@ -10,7 +10,9 @@
 # (fails on drift) — no live codegen (the tofu-controller runner can't read repo-wide
 # files), so update this + main.tf to match the SSOT. Runtime C (haku/runtime/agent,
 # env-driven via HAKU_MODEL) is a separate architecture, not a copy.
-name: haku
+# Agent object name (matches the `haku-selfhosted` environment; sibling is `haku-cloud`).
+# The persona is still "Haku" (see `system` below); this is just the control-plane name.
+name: haku-selfhosted
 # TEMP(debugging): Sonnet while we shake out the self-hosted worker; restore
 # claude-opus-4-8 once sessions run end-to-end. `model` is SSOT'd in
 # haku/base/agent_shared.yaml (//haku/base:test_agent_config_ssot enforces) — change
