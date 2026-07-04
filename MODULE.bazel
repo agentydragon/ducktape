@@ -26,6 +26,7 @@ bazel_dep(name = "package_metadata", version = "0.0.6")  # Required by image_pin
 bazel_dep(name = "ducktape_activitywatch", version = "0.1.0")
 bazel_dep(name = "ducktape_manifold_mcp_server", version = "0.1.0")
 bazel_dep(name = "ducktape_mcporter", version = "0.1.0")
+bazel_dep(name = "ducktape_buildbuddy_cli", version = "0.1.0")
 bazel_dep(name = "ducktape_claude_web_env_environment_manager", version = "0.1.0")
 bazel_dep(name = "rules_mypy", version = "0.40.0")
 bazel_dep(name = "rules_conda", version = "0.3.2")
@@ -112,6 +113,11 @@ local_path_override(
 local_path_override(
     module_name = "ducktape_mcporter",
     path = "third_party/mcporter",
+)
+
+local_path_override(
+    module_name = "ducktape_buildbuddy_cli",
+    path = "third_party/buildbuddy_cli",
 )
 
 local_path_override(
@@ -856,7 +862,7 @@ http_archive(
 
 # ─ Go toolchain ──────────────────────────────────────────────────────────
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.download(version = "1.26.4")
+go_sdk.download(version = "1.26.4")  # buildbuddy-io/buildbuddy's go.mod requires >= 1.26.4 (see //third_party/buildbuddy_cli)
 go_sdk.nogo(nogo = "//devinfra/lint:nogo")
 
 # ─ Go dependencies ───────────────────────────────────────────────────────
@@ -875,6 +881,13 @@ go_deps.module_override(
     patches = ["//skills/reverse_engineer/examples:garble_hash_fix.patch"],
     path = "mvdan.cc/garble",
 )
+
+# bb remote --repo_url patch + devshell-build-only fixups for
+# //third_party/buildbuddy_cli:bb (single_version_override for gazelle,
+# go_deps.module_override for buildbuddy, go_deps.gazelle_override for
+# client_model -- all root-only overrides, so they can't live in the
+# submodule's own MODULE.bazel).
+include("//third_party/buildbuddy_cli_overrides:overrides.MODULE.bazel")
 
 # ─ redress + GoReSym (reverse engineering tools) ─────────────────────────────
 go_deps.module(

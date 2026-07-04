@@ -1,0 +1,10 @@
+exports_files([
+    "go.mod",
+    "go.sum",
+])
+
+alias(
+    name = "bb",
+    actual = "@com_github_buildbuddy_io_buildbuddy//cli/cmd/bb:bb-linux-amd64",
+    visibility = ["//visibility:public"],
+)

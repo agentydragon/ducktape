@@ -1,0 +1,78 @@
+diff --git a/enterprise/server/api/BUILD b/enterprise/server/api/BUILD
+index 4a90557..49225bb 100644
+--- a/enterprise/server/api/BUILD
++++ b/enterprise/server/api/BUILD
+@@ -86,7 +86,7 @@ go_test(
+         "@com_github_google_uuid//:uuid",
+         "@com_github_open_feature_go_sdk//openfeature",
+         "@com_github_open_feature_go_sdk_contrib_providers_flagd//pkg",
+-        "@com_github_prometheus_client_model//io/prometheus/client:go",
++        "@com_github_prometheus_client_model//go:go",
+         "@com_github_stretchr_testify//assert",
+         "@com_github_stretchr_testify//require",
+         "@org_golang_google_protobuf//encoding/protojson",
+diff --git a/enterprise/server/backends/prom/BUILD b/enterprise/server/backends/prom/BUILD
+index db5dc9f..d5175ee 100644
+--- a/enterprise/server/backends/prom/BUILD
++++ b/enterprise/server/backends/prom/BUILD
+@@ -19,7 +19,7 @@ go_library(
+         "@com_github_prometheus_client_golang//api",
+         "@com_github_prometheus_client_golang//api/prometheus/v1:prometheus",
+         "@com_github_prometheus_client_golang//prometheus",
+-        "@com_github_prometheus_client_model//io/prometheus/client:go",
++        "@com_github_prometheus_client_model//go:go",
+         "@com_github_prometheus_common//model",
+         "@org_golang_x_sync//errgroup",
+     ],
+diff --git a/enterprise/server/cache_proxy_registration/BUILD b/enterprise/server/cache_proxy_registration/BUILD
+index 4850d31..d21837c 100644
+--- a/enterprise/server/cache_proxy_registration/BUILD
++++ b/enterprise/server/cache_proxy_registration/BUILD
+@@ -23,7 +23,7 @@ go_library(
+         "//server/version",
+         "@com_github_google_uuid//:uuid",
+         "@com_github_prometheus_client_golang//prometheus",
+-        "@com_github_prometheus_client_model//io/prometheus/client:go",
++        "@com_github_prometheus_client_model//go:go",
+         "@org_golang_google_grpc//metadata",
+         "@org_golang_google_protobuf//types/known/timestamppb",
+     ],
+diff --git a/proto/BUILD b/proto/BUILD
+index 0daf703..f2f6eaf 100644
+--- a/proto/BUILD
++++ b/proto/BUILD
+@@ -1739,7 +1739,7 @@ go_proto_library(
+     importpath = "github.com/buildbuddy-io/buildbuddy/proto/metrics",
+     proto = ":metrics_proto",
+     deps = [
+-        "@com_github_prometheus_client_model//io/prometheus/client:go",
++        "@com_github_prometheus_client_model//go:go",
+     ],
+ )
+ 
+diff --git a/server/interfaces/BUILD b/server/interfaces/BUILD
+index f930add..0d9286a 100644
+--- a/server/interfaces/BUILD
++++ b/server/interfaces/BUILD
+@@ -53,7 +53,7 @@ go_library(
+         "@com_github_google_go_github_v59//github",
+         "@com_github_hashicorp_serf//serf",
+         "@com_github_miekg_dns//:dns",
+-        "@com_github_prometheus_client_model//io/prometheus/client:go",
++        "@com_github_prometheus_client_model//go:go",
+         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
+         "@io_gorm_gorm//:gorm",
+         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+diff --git a/server/testutil/testmetrics/BUILD b/server/testutil/testmetrics/BUILD
+index 7da7614..171f655 100644
+--- a/server/testutil/testmetrics/BUILD
++++ b/server/testutil/testmetrics/BUILD
+@@ -8,7 +8,7 @@ go_library(
+     visibility = ["//visibility:public"],
+     deps = [
+         "@com_github_prometheus_client_golang//prometheus",
+-        "@com_github_prometheus_client_model//io/prometheus/client:go",
++        "@com_github_prometheus_client_model//go:go",
+         "@com_github_stretchr_testify//assert",
+         "@com_github_stretchr_testify//require",
+     ],
