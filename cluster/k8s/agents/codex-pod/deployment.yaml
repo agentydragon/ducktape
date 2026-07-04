@@ -34,8 +34,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: codex
-          # {"$imagepolicy": "flux-system:codex-pod"}
-          image: git.allegedly.works/ducktape-ci/codex-pod:devel
+          # Flux image-automation setter: the marker MUST be a trailing comment on
+          # the image line (kyaml Setters ignores an own-line comment above it).
+          image: git.allegedly.works/ducktape-ci/codex-pod:devel # {"$imagepolicy": "flux-system:codex-pod"}
           # HOME (/home/codex) + all static config are baked into the image by
           # home-manager. The only runtime step is planting the SSH private key
           # (secret → 0600; a mount can't satisfy ssh's ownership/perms). Access
