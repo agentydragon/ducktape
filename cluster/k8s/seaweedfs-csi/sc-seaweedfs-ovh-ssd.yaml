@@ -12,6 +12,9 @@ metadata:
 provisioner: seaweedfs-csi-driver
 reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
+# SeaweedFS CSI expansion is a collection-quota bump — enable it (parity with the
+# seaweedfs-ovh class) so a growing PVC (e.g. Forgejo git) can be resized in place.
+allowVolumeExpansion: true
 parameters:
   # CSI v1.4.14 maps `diskType`→`weed mount -disk` and passes `replication`
   # through (verified against pkg/driver/mounter.go).
