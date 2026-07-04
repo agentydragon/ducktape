@@ -40,6 +40,20 @@ sops cluster/k8s/<app>/secrets/my-secret.sops.yaml
 SOPS uses `.sops.yaml` creation rules to determine which age keys encrypt the
 file based on its path. Commit and push — Flux deploys automatically.
 
+The owning flux-kustomization must declare `spec.decryption`, or Flux applies
+the `ENC[...]` ciphertext literally and silently (no error — see the failure
+mode below). Every kustomization applying a `.sops.yaml` needs:
+
+```yaml
+spec:
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+```
+
+Enforced at PR time by the `test_sops_decryption` validation check.
+
 ## Rotating Credentials
 
 1. Get new credential from external service
@@ -70,6 +84,21 @@ re-encrypt and redeploy per [Rotating the Cluster Age Key](#rotating-the-cluster
 ```bash
 kubectl get secret sops-age-cluster-secrets -n flux-system
 ```
+
+### SOPS Secret Applied as Ciphertext (Silent)
+
+**Symptom**: the consumer gets garbage bytes or auth failures (401, bogus
+credentials), but the Kustomization shows `Ready=True` with no error. The live
+Secret's data values are `ENC[AES256_GCM,…]` instead of plaintext.
+
+**Cause**: the flux-kustomization is missing `spec.decryption` (or declares
+`provider: sops` without a `secretRef`), so Flux never decrypts — it applies
+the ciphertext literally. Unlike the loud failure above, this emits no error.
+
+**Fix**: add the `decryption` block (see
+[Adding New SOPS Secrets](#adding-new-sops-secrets)). Incident history and
+detail: <lessons_learned/2026_07_04_flux_sops_ciphertext_applied_literally.md>.
+Enforced at PR time by `test_sops_decryption`.
 
 ### OpenTofu State Lost
 
