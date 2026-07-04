@@ -47,6 +47,8 @@ resources:
   - token-provisioner-image-policy.yaml
   - grocy-user-perms-provisioner-image-repository.yaml
   - grocy-user-perms-provisioner-image-policy.yaml
+  - matrix-user-provisioner-image-repository.yaml
+  - matrix-user-provisioner-image-policy.yaml
   - authentik-jwt-rotation-image-repository.yaml
   - authentik-jwt-rotation-image-policy.yaml
   - attic-jwt-rotation-image-repository.yaml

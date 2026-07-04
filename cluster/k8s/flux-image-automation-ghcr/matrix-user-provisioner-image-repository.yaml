@@ -1,0 +1,8 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: matrix-user-provisioner
+  namespace: flux-system
+spec:
+  image: ghcr.io/agentydragon/matrix-user-provisioner
+  interval: 5m

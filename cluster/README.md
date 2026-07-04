@@ -144,7 +144,7 @@ cluster/
 │   ├── <service>/          # Flat: single flux-kustomization, all manifests at root
 │   └── flux-system/        # Flux controllers (auto-generated)
 ├── rotators/               # Source for credential-rotation CronJob images (authentik/attic JWTs)
-├── provisioners/           # Source for reconciler CronJob/Job images (grocy user-perms, inventree token)
+├── provisioners/           # Source for reconciler CronJob/Job images (grocy user-perms, inventree token, matrix users)
 └── validation/             # Structural validation tests
 ```
 

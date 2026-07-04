@@ -166,6 +166,11 @@ jobs:
               image_name: grocy-user-perms-provisioner,
               test_target: "",
             }
+          - {
+              image: "//cluster/provisioners/matrix_user_provisioner:image",
+              image_name: matrix-user-provisioner,
+              test_target: "//cluster/provisioners/matrix_user_provisioner/...",
+            }
           - { image: "//devinfra/firecracker/manager:image", image_name: firecracker-manager, test_target: "" }
           - { image: "//devinfra/firecracker/vm_pod:image", image_name: fc-vm-pod, test_target: "" }
           - { image: "//inventree_utils/rai_plugin:image", image_name: inventree, test_target: "" }

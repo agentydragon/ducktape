@@ -10,7 +10,7 @@ import urllib.request
 import pytest
 import pytest_bazel
 
-from cluster.k8s.matrix.secrets.provision_matrix_users import (
+from cluster.provisioners.matrix_user_provisioner.provision_matrix_users import (
     ADMIN_USERNAME,
     BOT_DISPLAYNAME,
     BOT_USERNAME,

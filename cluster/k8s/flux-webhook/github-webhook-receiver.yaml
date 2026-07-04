@@ -123,6 +123,9 @@ spec:
       name: grocy-user-perms-provisioner
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
+      name: matrix-user-provisioner
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
       name: cpap-sync
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
