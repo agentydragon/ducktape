@@ -1,0 +1,21 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-ovh-hdd
+provisioner: cluster.local/local-path-provisioner
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+# Media-scoped OVH node-local storage: KS-5 7200rpm HDD data disks. Both keys
+# are ANDed in the same topology term — zone keeps it OVH-scoped (never a
+# non-OVH SSD node such as wyrm2), and `storage.allegedly.works/tier=hdd` is the
+# hardware-keyed node label from cluster/terraform/main/ovh-nodes.tf. Under
+# WaitForFirstConsumer a PVC binds only where an OVH hdd node is schedulable.
+# See cluster/docs/plans/ovh_storage_tiering.md.
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - hil-ovh
+      - key: storage.allegedly.works/tier
+        values:
+          - hdd

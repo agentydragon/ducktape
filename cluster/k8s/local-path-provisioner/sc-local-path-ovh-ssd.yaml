@@ -1,0 +1,21 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-ovh-ssd
+provisioner: cluster.local/local-path-provisioner
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+# Media-scoped OVH node-local storage: KS-GAME NVMe data disks. zone (OVH-only)
+# ANDed with the hardware-keyed `storage.allegedly.works/tier=ssd` node label.
+# A PVC on this class binds only where an OVH ssd node is schedulable, else it
+# stays Pending (loud) instead of silently landing on HDD. Reserved for
+# fsync/latency-critical data (Forgejo git, forgejo-db, seaweedfs-filer-db).
+# See cluster/docs/plans/ovh_storage_tiering.md.
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - hil-ovh
+      - key: storage.allegedly.works/tier
+        values:
+          - ssd

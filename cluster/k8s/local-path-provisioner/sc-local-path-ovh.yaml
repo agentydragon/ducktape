@@ -5,14 +5,20 @@ metadata:
 provisioner: cluster.local/local-path-provisioner
 reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
-# TODO(2026-05-28): Decide whether to split OVH local storage into separate
-# HDD-backed KS-5 and SSD/NVMe-backed KS-GAME storage classes. For now,
-# local-path-ovh means "OVH HIL node-local data disk" regardless of media.
-# zone (not region): keep this tied to OVH nodes even if other HIL capacity
-# appears later. The user volume at /var/mnt/seaweedfs-data is declared via
-# Talos UserVolumeConfig in cluster/terraform/main/ovh-nodes.tf.
+# DEPRECATED alias, re-pinned to the same media as local-path-ovh-hdd (KS-5
+# 7200rpm HDD). New OVH PVCs should target local-path-ovh-{hdd,ssd} explicitly;
+# this stays only for the ~40 existing bound PVCs referencing it. Adding the
+# `storage.allegedly.works/tier=hdd` key means a re-provisioned PVC can only land
+# on an OVH hdd node, not silently on a KS-GAME NVMe. `allowedTopologies` is
+# immutable, so applying this needs a one-time
+# `kubectl delete storageclass local-path-ovh` for Flux to recreate it (bound
+# PVCs survive — the SC is only read at provision time).
+# See cluster/docs/plans/ovh_storage_tiering.md.
 allowedTopologies:
   - matchLabelExpressions:
       - key: topology.kubernetes.io/zone
         values:
           - hil-ovh
+      - key: storage.allegedly.works/tier
+        values:
+          - hdd
