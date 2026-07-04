@@ -49,6 +49,9 @@ in
         fi
         command codex "$@"
       }
+
+      # A real prompt (bash falls back to `-bash-5.3$` with PS1 unset).
+      PS1='\[\e[1;36m\]codex-pod\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\]\$ '
     '';
   };
   programs.git = {

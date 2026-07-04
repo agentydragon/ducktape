@@ -57,12 +57,17 @@ let
     ];
   };
 
+  homeConfig = home-manager.lib.homeManagerConfiguration {
+    inherit pkgs;
+    modules = [ ./home.nix ];
+  };
   # home-manager's realized dotfiles tree (~/.ssh/config, ~/.bashrc, direnv, …).
-  homeFiles =
-    (home-manager.lib.homeManagerConfiguration {
-      inherit pkgs;
-      modules = [ ./home.nix ];
-    }).config.home-files;
+  homeFiles = homeConfig.config.home-files;
+  # The generated ~/.bashrc sources ~/.nix-profile/etc/profile.d/hm-session-vars.sh,
+  # which only exists after a real `home-manager switch`. This package holds that
+  # file; symlinking ~/.nix-profile at it (below) makes the source succeed instead
+  # of erroring on every login shell.
+  homeSessionVars = homeConfig.config.home.sessionVariablesPackage;
 in
 pkgs.dockerTools.buildLayeredImage {
   name = "codex-pod";
@@ -84,6 +89,10 @@ pkgs.dockerTools.buildLayeredImage {
     mkdir -p home/codex
     cp -a ${homeFiles}/. home/codex/
     chmod 700 home/codex/.ssh home/codex/.codex
+
+    # ~/.bashrc sources ~/.nix-profile/etc/profile.d/hm-session-vars.sh; point the
+    # profile at the session-vars package so that source succeeds (no activation here).
+    ln -s ${homeSessionVars} home/codex/.nix-profile
 
     # Replace the read-only /nix/store config.toml symlink with a writable real copy:
     # the `codex` shell wrapper (home.nix) appends per-directory trust tables to it so
