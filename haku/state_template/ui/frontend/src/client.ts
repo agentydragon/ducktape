@@ -1,6 +1,6 @@
 import { parse } from "yaml";
 
-import { invalidateTree, readBlobs, repoFile } from "./repo.ts";
+import { docsUnder, invalidateTree, repoFile } from "./repo.ts";
 import type { FeedbackContext, MetaResponse, RunManifest, RunsResponse } from "./types.ts";
 
 // Same-origin JSON client: the FastAPI backend serves this bundle and the API.
@@ -68,10 +68,11 @@ export async function readResponse(scope: string, field: string): Promise<string
   return typeof parsed.value === "string" ? parsed.value : null;
 }
 
-// Recent per-run propagation manifests, composed over the shared git-store reader (no bespoke
-// /api/runs): pair each `runs/<date>/<ulid>.yaml` with its sibling `.md` prose notes (README.md
-// and dangling `.md` ignored), newest-first by `started`. Missing optional fields default (mirrors
-// the backend RunManifest) so one lean manifest can't crash the table.
+// Recent per-run propagation records. Each run is one `runs/<date>/<ulid>.md`: the manifest as YAML
+// frontmatter, prose notes as the body. `docsUnder` parses both; keep the docs that carry a
+// manifest (a `run_id`) so `runs/README.md` and any dangling note drop out. Newest-first by
+// `started`; missing optional fields default (mirrors the backend RunManifest) so one lean manifest
+// can't crash the table.
 const EMPTY_RUN: Omit<RunManifest, "run_id" | "notes_md"> = {
   date: "",
   started: "",
@@ -82,23 +83,16 @@ const EMPTY_RUN: Omit<RunManifest, "run_id" | "notes_md"> = {
 };
 
 export async function fetchRuns(limit = 20): Promise<RunsResponse> {
-  const blobs = await readBlobs(
-    (e) =>
-      e.path.startsWith("runs/") &&
-      (e.path.endsWith(".yaml") || (e.path.endsWith(".md") && !e.path.endsWith("/README.md")))
-  );
-  // Pair each runs/<date>/<ulid>.yaml manifest with its sibling .md notes (by shared base path).
-  const yamls = new Map<string, string>(); // base → manifest yaml
-  const notes = new Map<string, string>(); // base → prose notes
-  for (const b of blobs) {
-    if (b.path.endsWith(".yaml")) yamls.set(b.path.slice(0, -".yaml".length), b.content);
-    else notes.set(b.path.slice(0, -".md".length), b.content);
-  }
-  const runs = [...yamls]
-    .map(([base, yamlText]): RunManifest => {
-      const m = (parse(yamlText) ?? {}) as Partial<RunManifest>;
-      return { ...EMPTY_RUN, ...m, run_id: m.run_id ?? base, notes_md: notes.get(base) ?? "" };
-    })
+  const runs = (await docsUnder("runs"))
+    .filter((d) => typeof d.data.run_id === "string")
+    .map(
+      (d): RunManifest => ({
+        ...EMPTY_RUN,
+        ...(d.data as Partial<RunManifest>),
+        run_id: d.data.run_id as string,
+        notes_md: d.body,
+      })
+    )
     .sort((a, b) => b.started.localeCompare(a.started));
   return { runs: runs.slice(0, limit) };
 }

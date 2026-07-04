@@ -1,7 +1,7 @@
 """Typed models the backend reads from haku-state and serves over JSON.
 
 Each content collection carries thin, typed frontmatter (``items/<slug>.md``,
-``memory/improvements/<id>.md``, ``runs/<date>/<ulid>.yaml``); the validate-state gate
+``memory/improvements/<id>.md``, ``runs/<date>/<ulid>.md``); the validate-state gate
 parses every file through these models so a malformed frontmatter file can't silently
 parse into a wrong shape. Typed values (enum, dates) validate strictly.
 
@@ -105,11 +105,11 @@ class ImprovementDoc(BaseModel):
     summary: str = ""  # ideas carry a one-liner; friction usually omits it
 
 
-# --- Runs surface (runs/<date>/<ulid>.{yaml,md}) -------------------------------
+# --- Runs surface (runs/<date>/<ulid>.md) --------------------------------------
 # Per-run propagation record: proves every source was processed and shows how each change
-# propagated to every surface. The .yaml is the machine-checkable spine; the sibling .md is
-# free-form reasoning (rendered as markdown). See procedures/propagation/ + the base
-# "Propagation discipline" obligation.
+# propagated to every surface. One markdown file per run — this manifest as YAML frontmatter (the
+# machine-checkable spine, validated below), prose reasoning as the body (rendered in the Runs
+# tab). See procedures/propagation/ + the base "Propagation discipline" obligation.
 
 
 class ScannedSource(BaseModel):
@@ -173,7 +173,8 @@ class RunManifest(BaseModel):
     sources: list[RunSource] = Field(default_factory=list)
     checklists: list[RunChecklist] = Field(default_factory=list)
     propagation: list[PropagationEntry] = Field(default_factory=list)
-    notes_md: str = ""  # the sibling .md (raw markdown), attached by reads.read_runs
+    # Prose notes are the markdown *body* of the run's .md, not a manifest field: the frontend
+    # reads them from the body; validate-state checks only this frontmatter.
 
 
 class RunsResponse(BaseModel):
