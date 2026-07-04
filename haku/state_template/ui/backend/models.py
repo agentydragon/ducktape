@@ -1,19 +1,16 @@
 """Typed models the backend reads from haku-state and serves over JSON.
 
-Mirrors the read-relevant subset of ``haku/base/schema/item.json`` (the write-time
-JSON Schema Haku validates against). Both the item's primary ``action`` and its
-operator ``actions[]`` are **discriminated unions on ``kind``**, so invalid field
-combinations are unrepresentable.
+Each content collection carries thin, typed frontmatter (``items/<slug>.md``,
+``memory/improvements/<id>.md``, ``runs/<date>/<ulid>.yaml``); the validate-state gate
+parses every file through these models so a malformed frontmatter file can't silently
+parse into a wrong shape. Typed values (enum, dates) validate strictly.
 
-Unknown top-level fields are ignored on parse so a newer item field doesn't break a
-not-yet-rebuilt UI; typed values (enum, dates) still validate strictly.
-
-Keep the frontend's ``types.ts`` in sync.
+Keep the frontend's ``types.ts`` in sync by hand.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
@@ -29,76 +26,32 @@ class ItemStatus(StrEnum):
     EXPIRED = "expired"
 
 
-# --- primary action (item.action, optional) -----------------------------------
+# --- Item (items/<slug>.md) ----------------------------------------------------
+# An item is typed frontmatter + a markdown body that embeds affordances (<handoff> for the
+# executor prompt, <signal-toggle> for the operator's status). Only fields with a real reader
+# survive — Inbox display/ranking/filter/timing. This model gates the FRONTMATTER; the body is
+# prose validated only structurally, like other content-directory docs. The readable filename is
+# the item's identity (no `id` field). See items/README.md.
 
 
-class Suggestion(BaseModel):
-    """FYI / 'do this yourself'; no machine payload."""
-
-    kind: Literal["suggestion"] = "suggestion"
-
-
-class PreparedPrompt(BaseModel):
-    kind: Literal["prepared_prompt"] = "prepared_prompt"
-    prompt: str = Field(description="Self-contained prompt for an executor agent session")
-
-
-PrimaryAction = Annotated[Suggestion | PreparedPrompt, Field(discriminator="kind")]
-
-
-# --- operator action buttons (item.actions[], optional) -----------------------
-
-
-class CommandAction(BaseModel):
-    """A click/un-click toggle; Haku interprets ``intent`` when the click lands."""
-
-    kind: Literal["command"] = "command"
-    id: str = Field(description="Stable id within the item (used in the click path)")
-    label: str = Field(description="Button text shown to the operator")
-    intent: str = Field(description="Self-contained instruction Haku carries out when this is clicked")
-
-
-class ClaudeHandoffAction(BaseModel):
-    """A stateless ``claude.ai/new`` deep-link rendered inline (no click state)."""
-
-    kind: Literal["claude_handoff"] = "claude_handoff"
-    id: str = Field(description="Stable id within the item (used in the click path)")
-    label: str = Field(description="Button text shown to the operator")
-    prompt: str = Field(description="The prepared prompt to hand to Claude via the deep-link")
-
-
-OperatorAction = Annotated[CommandAction | ClaudeHandoffAction, Field(discriminator="kind")]
-
-
-class Item(BaseModel):
-    """The UI's read view of a haku-state item — the fields it renders."""
-
-    id: str
+class ItemDoc(BaseModel):
     title: str
-    body: str
-    value: int
-    action: PrimaryAction | None = None
-    status: ItemStatus
-    deadline: datetime | None = None
-    actions: list[OperatorAction] = Field(default_factory=list)
+    value: int = Field(ge=0, le=100)  # Inbox ranking
+    status: ItemStatus  # Inbox filter (open shown)
+    deadline: datetime | None = None  # optional — due-soon badge/sort
+    snoozed_until: date | None = None  # optional — resurface timing
 
 
 # --- API request/response models (the JSON contract for the React SPA) ---------
 
 
-class Click(BaseModel):
-    """A currently-clicked operator action, from the clicks/ overlay."""
+class MetaResponse(BaseModel):
+    """Footer metadata: when haku-state last changed, and which image is serving. Items are read
+    from `items/*.md` through the generic proxy, not here."""
 
-    item_id: str
-    action_id: str
-
-
-class DashboardResponse(BaseModel):
-    scan_time: str = Field(description="ISO 8601 timestamp of the last haku-state commit (the last scan/update)")
+    scan_time: str = Field(description="ISO 8601 timestamp of the last haku-state scan (newest Haku commit)")
     deployed_commit: str | None = Field(default=None, description="Short SHA the running UI image was built from")
     deployed_commit_url: str | None = Field(default=None, description="Forgejo link to the deployed commit")
-    items: list[Item]
-    clicks: list[Click]
 
 
 class FeedbackRequest(BaseModel):
@@ -107,34 +60,49 @@ class FeedbackRequest(BaseModel):
         default=None,
         description="If set, the item this feedback is about (tagged in the intake note); else a global note",
     )
+    page: str | None = Field(
+        default=None, description="The UI page (URL hash, e.g. '#/runs') the operator was on when writing the note"
+    )
+    selection: str | None = Field(
+        default=None,
+        description="Any text the operator had selected on the page, for grounding (e.g. 'this looks bad')",
+    )
 
 
-# --- Improvements / friction surface (improvements.yaml) -----------------------
-# Haku's self-backlog: capability ideas + the friction it hits during runs. Read-only
-# in the UI (no operator actions) — the operator steers it via feedback / intake.
+# --- Responses surface (responses/<scope>/<field>.yaml) ------------------------
+# The generic operator-answer log: one keyed current-state file per (scope, field) slot, committed
+# per change so the git commit history IS the append-only log (plans/ui-authoring-architecture.md →
+# feedback loop). `scope` is an item id / form id / context key, `field` is the slot; the file at
+# HEAD is the current answer. The item status slot and forms compose over this. Writes stay a
+# dedicated endpoint; reads go through the generic proxy.
 
 
-class ImprovementIdea(BaseModel):
-    id: str
+class ResponseRequest(BaseModel):
+    value: str
+    note: str | None = None
+
+
+class ResponseDoc(BaseModel):
+    # scope/field are the path, not fields in the file — nothing else describes them, so no need.
+    value: str
+    note: str | None = None
+    at: str | None = None
+
+
+# --- Improvements surface (memory/improvements/<id>.md content collection) -----
+# Haku's self-backlog is a content collection: one markdown file per entry, flat
+# `kind: improvement` frontmatter + detail prose as the body, rendered live by the
+# <improvement-board/> garden widget over the tree+blobs proxy. This model is the
+# frontmatter schema the validate-state gate checks; the widget parses defensively.
+
+
+class ImprovementDoc(BaseModel):
+    kind: Literal["improvement"]
+    doc_class: Literal["idea", "friction"] = Field(alias="class")  # which board section
     title: str
-    value: Literal["high", "medium", "low"]
-    status: Literal["recommend", "idea", "parked", "blocked", "wired"]
-    summary: str
-    detail: str = ""  # markdown
-
-
-class Friction(BaseModel):
-    id: str
-    title: str
-    severity: Literal["high", "medium", "low"]
-    status: Literal["open", "workaround", "resolved", "answered"]
-    detail: str = ""  # markdown: impact + fix
-
-
-class ImprovementsBoard(BaseModel):
-    updated: str = ""
-    ideas: list[ImprovementIdea] = Field(default_factory=list)
-    friction: list[Friction] = Field(default_factory=list)
+    weight: Literal["high", "medium", "low"]  # idea → value, friction → severity
+    status: str  # idea: recommend|idea|parked|blocked|wired; friction: open|workaround|resolved|answered
+    summary: str = ""  # ideas carry a one-liner; friction usually omits it
 
 
 # --- Runs surface (runs/<date>/<ulid>.{yaml,md}) -------------------------------
@@ -148,8 +116,8 @@ class ScannedSource(BaseModel):
     """A source read this run: where its bookmark moved and how many changes it yielded."""
 
     source: str
-    # Bookmarks are opaque resume tokens and differ by source (epoch string, integer id, …),
-    # so accept either an int or a string.
+    # Bookmarks are opaque resume tokens and differ by source (an email epoch string, a REST API's
+    # int id, a millisecond timestamp), so accept either an int or a string.
     bookmark_before: int | str | None = None
     bookmark_after: int | str | None = None
     # A real count when countable (0 = scanned, nothing new); a short prose summary when a
@@ -186,7 +154,7 @@ class RunChecklist(BaseModel):
 class PropagationTarget(BaseModel):
     surface: str
     # "created" = a new entry/file was made on the surface; "n/a" = this surface never
-    # applies to this change; "no_change" = considered, didn\'t apply.
+    # applies to this change; "no_change" = considered, didn't apply.
     action: Literal["created", "updated", "no_change", "n/a"]
     note: str = ""
 
@@ -212,20 +180,28 @@ class RunsResponse(BaseModel):
     runs: list[RunManifest] = Field(default_factory=list)
 
 
-# --- Knowledge garden (arbitrary repo markdown under whitelisted dirs) ----------
-# A general primitive: browse + render any .md/.mdx Haku keeps under a small set of
-# garden dirs (memory/, procedures/, runs/). The UI renders it as MDX so notes can
-# embed the standard widgets; plain markdown is valid MDX, so most render unchanged.
+# The knowledge garden browses/reads arbitrary repo markdown through the generic content
+# proxy below (the frontend filters the tree to the curated dirs and fetches blobs) — no
+# dedicated garden model or endpoint.
+
+# --- Generic content proxy: Forgejo's two read primitives, thinly passed through ------
+# `/api/repo/tree` mirrors Forgejo's recursive git-trees API; `/api/repo/blobs` mirrors its
+# bulk blob fetch. The frontend composes (filter the tree by prefix/kind, then fetch the blobs
+# it wants), so new collections/views — and migrating existing server-side reads — need zero
+# backend shape changes. See plans/garden-gradient.md → Settled mechanism.
 
 
-class GardenEntry(BaseModel):
-    path: str  # repo-relative, e.g. "memory/situational-awareness.md"
+class RepoTreeEntry(BaseModel):
+    path: str  # repo-relative
+    type: str  # git object type, straight from Forgejo: "blob" | "tree"
+    sha: str
 
 
-class GardenIndex(BaseModel):
-    entries: list[GardenEntry] = Field(default_factory=list)
+class RepoTree(BaseModel):
+    sha: str  # the HEAD commit the tree was read at (for the client to cache/keying)
+    entries: list[RepoTreeEntry] = Field(default_factory=list)
 
 
-class GardenFile(BaseModel):
-    path: str
-    markdown: str  # raw .md/.mdx source; rendered client-side
+class RepoBlob(BaseModel):
+    sha: str
+    content: str  # UTF-8 text (haku-state is a text repo)

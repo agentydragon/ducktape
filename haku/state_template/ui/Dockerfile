@@ -50,13 +50,12 @@ FROM backend-base AS runtime
 # Surfaced in the UI footer as a Forgejo commit link. Empty in a plain local build.
 ARG GIT_SHA=""
 # Standard OCI provenance: point the image at its source repo. This is *also* the label
-# Forgejo/Gitea use to auto-link a container package to a repo — BUT this Forgejo (15) did
-# NOT auto-link from it (verified 2026-06-29: label present + repo URL exact-match, package
-# still unlinked). The repo↔package link is therefore maintained out-of-band (it's durable
-# once set; the repo-scoped `package` webhook only fires while linked — see
-# improvements.yaml:flux-image-webhook-not-firing and tf/gitops/haku-state). Keep the label
-# regardless — it's correct provenance and would auto-link on a Forgejo that honors it.
-LABEL org.opencontainers.image.source="https://git.allegedly.works/haku/haku-state" \
+# Forgejo/Gitea use to auto-link a container package to a repo. Some Forgejo versions do
+# NOT auto-link from it (label present + repo URL exact-match, package still unlinked), in
+# which case the repo<->package link must be maintained out-of-band (it's durable once set;
+# the repo-scoped `package` webhook only fires while linked). Keep the label regardless —
+# it's correct provenance and auto-links on a Forgejo that honors it. Point it at your repo.
+LABEL org.opencontainers.image.source="https://forgejo.example.com/haku/haku-state" \
       org.opencontainers.image.revision="$GIT_SHA"
 # The built SPA is served same-origin by the backend (HAKU_UI_STATIC_DIR).
 COPY --from=frontend /app/frontend/dist ./web

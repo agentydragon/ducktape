@@ -3,7 +3,7 @@ kind: Kustomization
 # Haku's GitOps workload dir. The operator-owned Flux Kustomization reconciles
 # `kustomize build` of this path from haku-state, under a constrained
 # impersonation SA (Deployments/Services/ConfigMaps/Jobs/CronJobs/PVCs in
-# haku-sandbox only; routes denied by Kyverno). Add a dir per workload here.
+# haku only; routes denied by Kyverno). Add a dir per workload here.
 resources:
   - haku-ui
   - haku-ui-image-automation

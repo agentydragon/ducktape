@@ -1,10 +1,9 @@
-"""The FastAPI surface — health, the two read endpoints, and the trace writes.
+"""The FastAPI surface — health, the read endpoints, and the trace/response writes.
 
 The Forgejo client is replaced with a fake via dependency override. The fake implements the
-**generic** Forgejo primitives the endpoints compose (commits/tree/blobs for the items-board
-read, read_yaml for improvements, create_file/delete_file for the trace writes) — so these
-tests exercise the real feature layer (reads.read_dashboard + the endpoints) over canned git
-content, without a real Forgejo.
+**generic** Forgejo primitives the endpoints compose (commits/tree/blobs for the content proxy,
+create_file/write_file/delete_file for writes) — so these tests exercise the real feature layer
+(reads.py + the endpoints) over canned git content, without a real Forgejo.
 """
 
 from __future__ import annotations
@@ -15,58 +14,38 @@ from app import _forgejo, create_app
 from config import Settings
 from fastapi.testclient import TestClient
 
-_ITEM_YAML = b'id: "01AAA"\ntitle: "t"\nbody: "b"\nvalue: 9\nstatus: open\n'
-_IMPROVEMENTS = {
-    "updated": "2026-06-29T05:30:00Z",
-    "ideas": [
-        {
-            "id": "example-idea",
-            "title": "An example capability idea",
-            "value": "high",
-            "status": "recommend",
-            "summary": "what it would unlock",
-            "detail": "**why** it matters",
-        }
-    ],
-    "friction": [
-        {
-            "id": "example-friction",
-            "title": "An example data-access gap",
-            "severity": "medium",
-            "status": "open",
-            "detail": "impact + the fix",
-        }
-    ],
-}
-
 
 class FakeForgejo:
     """Fakes the generic Forgejo content primitives; records writes."""
 
     def __init__(self) -> None:
         self.created: list[tuple[str, bytes, str]] = []
+        self.written: list[tuple[str, bytes, str]] = []
         self.deleted: list[tuple[str, str]] = []
 
     async def commits(self, limit: int = 40) -> list[dict[str, Any]]:
-        return [
-            {"sha": "HEAD", "commit": {"author": {"email": "haku@allegedly.works", "date": "2026-06-28T22:00:00Z"}}}
-        ]
+        return [{"sha": "HEAD", "commit": {"author": {"email": "haku@example.com", "date": "2026-06-28T22:00:00Z"}}}]
 
     async def tree(self, sha: str) -> list[dict[str, Any]]:
+        # The markdown collection members carry realistic hex shas (the /api/repo/blobs endpoint
+        # validates shas as hex).
         return [
-            {"type": "blob", "path": "items/01AAA.yaml", "sha": "sha-a"},
-            {"type": "blob", "path": "clicks/01AAA/done", "sha": "sha-c"},
+            {"type": "blob", "path": "memory/improvements/beta.md", "sha": "b2b2"},
+            {"type": "blob", "path": "memory/improvements/alpha.md", "sha": "a1a1"},
         ]
 
     async def blobs(self, shas: list[str]) -> list[bytes]:
-        return [_ITEM_YAML for _ in shas]
-
-    async def read_yaml(self, path: str) -> Any:
-        assert path == "improvements.yaml"
-        return _IMPROVEMENTS
+        content = {
+            "a1a1": b"---\nkind: improvement\ntitle: Alpha\n---\nalpha body\n",
+            "b2b2": b"---\nkind: improvement\ntitle: Beta\n---\nbeta body\n",
+        }
+        return [content[s] for s in shas]
 
     async def create_file(self, path: str, content: bytes, message: str) -> None:
         self.created.append((path, content, message))
+
+    async def write_file(self, path: str, content: bytes, message: str) -> None:
+        self.written.append((path, content, message))
 
     async def delete_file(self, path: str, message: str) -> None:
         self.deleted.append((path, message))
@@ -75,7 +54,7 @@ class FakeForgejo:
 def _settings(**overrides: Any) -> Settings:
     base = {
         "forgejo_api_url": "http://forgejo.test/api/v1/repos/haku/haku-state",
-        "repo_web_url": "https://git.example/haku/haku-state",
+        "repo_web_url": "https://your-forgejo.example.com/haku/haku-state",
         "git_username": "u",
         "git_password": "p",
     }
@@ -97,43 +76,20 @@ def test_healthz():
     assert r.json() == {"status": "ok"}
 
 
-def test_dashboard_returns_items_and_clicks():
+def test_meta_returns_scan_time():
     client, _ = _client()
     with client:
-        r = client.get("/api/dashboard")
-    assert r.status_code == 200
-    body = r.json()
-    assert [i["id"] for i in body["items"]] == ["01AAA"]
-    assert body["clicks"] == [{"item_id": "01AAA", "action_id": "done"}]
-    assert body["scan_time"] == "2026-06-28T22:00:00Z"
+        body = client.get("/api/meta").json()
+    assert body["scan_time"] == "2026-06-28T22:00:00Z"  # newest Haku-authored commit
     assert body["deployed_commit"] is None  # no git_sha in this Settings
 
 
-def test_dashboard_surfaces_deployed_commit_when_git_sha_set():
+def test_meta_surfaces_deployed_commit_when_git_sha_set():
     client, _ = _client(git_sha="abcdef1234567890")
     with client:
-        body = client.get("/api/dashboard").json()
+        body = client.get("/api/meta").json()
     assert body["deployed_commit"] == "abcdef1"
-    assert body["deployed_commit_url"] == "https://git.example/haku/haku-state/commit/abcdef1234567890"
-
-
-def test_improvements_returns_ideas_and_friction():
-    client, _ = _client()
-    with client:
-        body = client.get("/api/improvements").json()
-    assert body["updated"] == "2026-06-29T05:30:00Z"
-    assert [i["id"] for i in body["ideas"]] == ["example-idea"]
-    assert body["ideas"][0]["value"] == "high"
-    assert [f["id"] for f in body["friction"]] == ["example-friction"]
-
-
-def test_trace_click_set_and_clear_reach_forgejo():
-    client, fake = _client()
-    with client:
-        assert client.put("/api/trace/items/01AAA/actions/done").status_code == 200
-        assert client.delete("/api/trace/items/01AAA/actions/done").status_code == 200
-    assert [p for p, _c, _m in fake.created] == ["clicks/01AAA/done"]
-    assert [p for p, _m in fake.deleted] == ["clicks/01AAA/done"]
+    assert body["deployed_commit_url"] == "https://your-forgejo.example.com/haku/haku-state/commit/abcdef1234567890"
 
 
 def test_trace_feedback_reaches_forgejo():
@@ -144,6 +100,84 @@ def test_trace_feedback_reaches_forgejo():
     path, content, _msg = fake.created[0]
     assert path.endswith("-feedback-01AAA.md")
     assert b"hello" in content
+
+
+def test_feedback_records_page_and_selection_in_the_note():
+    client, fake = _client()
+    with client:
+        r = client.post(
+            "/api/trace/feedback",
+            json={"text": "this page looks bad", "page": "#/runs", "selection": "6 scanned · 2 skipped"},
+        )
+    assert r.status_code == 200
+    _path, content, _msg = fake.created[0]
+    body = content.decode()
+    assert "this page looks bad" in body
+    assert "Reported from page: #/runs" in body
+    # Selected text is block-quoted so Haku reads it as a quote, not as note prose.
+    assert "Selected text:\n> 6 scanned · 2 skipped" in body
+
+
+def test_feedback_omits_context_block_when_no_page_or_selection():
+    client, fake = _client()
+    with client:
+        client.post("/api/trace/feedback", json={"text": "plain note"})
+    _path, content, _msg = fake.created[0]
+    # No page/selection → no trailing context rule, just the heading + note.
+    assert "Reported from page" not in content.decode()
+    assert "---" not in content.decode()
+
+
+def test_response_set_and_clear_reach_forgejo():
+    client, fake = _client()
+    with client:
+        assert client.put("/api/responses/dentist-appt/status", json={"value": "went"}).status_code == 200
+        assert client.delete("/api/responses/dentist-appt/status").status_code == 200
+    path, content, _msg = fake.written[0]
+    assert path == "responses/dentist-appt/status.yaml"
+    assert b"went" in content
+    assert [p for p, _m in fake.deleted] == ["responses/dentist-appt/status.yaml"]
+
+
+def test_response_records_value_note_and_timestamp():
+    client, fake = _client()
+    with client:
+        client.put("/api/responses/york-tender/outcome", json={"value": "other", "note": "rescheduled to Tue"})
+    _path, content, _msg = fake.written[0]
+    body = content.decode()
+    assert "value: other" in body
+    assert "note: rescheduled to Tue" in body
+    assert "at:" in body
+
+
+def test_repo_tree_returns_head_sha_and_recursive_entries():
+    client, _ = _client()
+    with client:
+        body = client.get("/api/repo/tree").json()
+    assert body["sha"] == "HEAD"
+    by_path = {e["path"]: e for e in body["entries"]}
+    assert "memory/improvements/alpha.md" in by_path
+    assert by_path["memory/improvements/alpha.md"] == {
+        "path": "memory/improvements/alpha.md",
+        "type": "blob",
+        "sha": "a1a1",
+    }
+
+
+def test_repo_blobs_bulk_fetch_in_input_order():
+    client, _ = _client()
+    with client:
+        body = client.get("/api/repo/blobs", params={"shas": "a1a1,b2b2"}).json()
+    assert [b["sha"] for b in body] == ["a1a1", "b2b2"]
+    assert "alpha body" in body[0]["content"]
+    assert "kind: improvement" in body[1]["content"]
+
+
+def test_repo_blobs_rejects_non_hex_sha():
+    client, _ = _client()
+    with client:
+        assert client.get("/api/repo/blobs", params={"shas": "a1a1,../etc"}).status_code == 400
+        assert client.get("/api/repo/blobs", params={"shas": "nothex"}).status_code == 400
 
 
 if __name__ == "__main__":

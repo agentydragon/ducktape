@@ -24,8 +24,8 @@ move runtime instructions here, and don't put editor notes in `instructions.md`.
   fields, gotchas. **Not** what to do with it.
 
 Haku's **method is not in base.** The procedures it runs (the "passes"), the UI it serves,
-and whatever format that UI presents (the starter's "items" board + `schema/`) are seeded
-from `haku/state_template/` (`procedures/`, `ui/`, `items/` + `schema/`) and owned by Haku
+and whatever format that UI presents (the starter's "items" board) are seeded
+from `haku/state_template/` (`procedures/`, `ui/`, `items/`) and owned by Haku
 in its state. Don't add them here.
 
 **Source vs. procedure — the boundary** (the thing that kept getting muddled): a source

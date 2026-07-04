@@ -1,24 +1,36 @@
 import { SHELL_ORIGIN } from "./constants.ts";
 
-// This UI runs INSIDE the trusted console's sandboxed cross-origin iframe. The
-// iframe is sandboxed WITHOUT `allow-popups`, so it can't open links itself: bare
-// `<a target=_blank>` / `window.open` are blocked. Instead it asks the parent shell
-// to open a link by posting `{type:"openLink", url}`. The shell scheme-gates the URL
-// (https/mailto only), opens whitelisted hosts directly, confirms off-whitelist hosts,
-// and rejects everything else — then replies with `{type:"openLinkResult", ...}`.
-// Protocol owner + whitelist live in the shell (ducktape, PR-gated), never here.
+// This UI runs INSIDE the trusted console's sandboxed cross-origin iframe. The iframe
+// may only **request**; the shell (ducktape, PR-gated) decides and acts. Two requests
+// (plus the fire-and-forget `routeChanged` notify at the bottom of this file):
 //
-// DUPLICATE: the `OpenLinkResult` shape + message `type` strings below are a
-// hand-maintained copy of the AUTHORITATIVE protocol in ducktape's
-// haku/console/frontend/bridge.ts (the shell side). Keep the two in sync by hand.
-// TODO: share one protocol definition instead of duplicating it — see
-// haku/PLAN.md → _Not yet built_ (share-the-protocol). See also the demo
-// in haku/state_template/k8s/haku-ui/index.html.
+//  - `openLink`: the iframe is sandboxed WITHOUT `allow-popups`, so it can't open links
+//    itself (bare `<a target=_blank>` / `window.open` are blocked). It posts
+//    `{type:"openLink", url}`; the shell scheme-gates (https/mailto), opens whitelisted
+//    hosts directly, confirms off-whitelist, rejects the rest → `{type:"openLinkResult"}`.
+//  - `requestLaunch`: the iframe asks the shell to start a Haku run with a prompt. Firing
+//    the privileged launch capability must be a genuine operator gesture against
+//    trusted-rendered chrome, so the iframe can only *ask* — the shell shows its OWN
+//    confirm and only then fires → `{type:"launchResult"}`. The iframe can render the
+//    prompt dialog; it can never script the launch.
+//
+// DUPLICATE: the result shapes + message `type` strings below are a hand-maintained copy
+// of the AUTHORITATIVE protocol in ducktape's haku/console/frontend/bridge.ts (the shell
+// side). Keep the two in sync by hand. TODO: share one protocol definition instead of
+// duplicating it (see haku/console/plans/free_form_ui_iframe.md → Open questions).
 
 interface OpenLinkResult {
   type: "openLinkResult";
   url: string;
   opened: boolean;
+  reason?: string;
+}
+
+export interface LaunchResult {
+  type: "launchResult";
+  id: string;
+  ok: boolean;
+  sessionUrl?: string;
   reason?: string;
 }
 
@@ -34,6 +46,25 @@ export function openLink(url: string): Promise<OpenLinkResult> {
     }
     window.addEventListener("message", onMessage);
     window.parent.postMessage({ type: "openLink", url }, SHELL_ORIGIN);
+  });
+}
+
+// Ask the shell to launch a Haku run with `prompt` (may be empty). The shell shows its
+// own trusted confirm before firing; resolves with the outcome (a session link on
+// success, or `ok:false` with a reason — e.g. the operator cancelled). Correlated by a
+// per-request id so a stale reply can't resolve the wrong call.
+export function requestLaunch(prompt: string): Promise<LaunchResult> {
+  const id = crypto.randomUUID();
+  return new Promise((resolve) => {
+    function onMessage(e: MessageEvent) {
+      if (e.origin !== SHELL_ORIGIN) return; // only the shell may reply
+      const m = e.data as Partial<LaunchResult> | null;
+      if (!m || m.type !== "launchResult" || m.id !== id) return;
+      window.removeEventListener("message", onMessage);
+      resolve({ type: "launchResult", id, ok: m.ok ?? false, sessionUrl: m.sessionUrl, reason: m.reason });
+    }
+    window.addEventListener("message", onMessage);
+    window.parent.postMessage({ type: "requestLaunch", id, prompt }, SHELL_ORIGIN);
   });
 }
 

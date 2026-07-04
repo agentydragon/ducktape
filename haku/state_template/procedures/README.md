@@ -20,17 +20,24 @@ the operator's work _in advance_ and hand over a one-click, approve-to-implement
 - [`operate_ui_service.md`](operate_ui_service.md) — operate & evolve my own UI service: the
   standing health/evolution pass, driving every change to running in prod, and the bar for
   changing the surface. "Operating it is half the job."
+- [`garden.md`](garden.md) — the knowledge garden: link syntax, standard view widgets, and the
+  affordance library (`<handoff>`, `<signal-toggle>`, `<choices>`, …) you embed in item/note bodies.
 - [`worked_stories.md`](worked_stories.md) — capabilities in concert; the bar.
 - [`triage_and_delegation.md`](triage_and_delegation.md) — inbox-like triage; delegation scans.
-- [`manage_gmail_labels.md`](manage_gmail_labels.md) — your one sanctioned world-write: organize
-  Gmail with labels under `haku/` via the `gmail-labeling` MCP (base → _Hard rules_). Policy + knobs;
-  conservative until a scheme is agreed.
-- [`finance.md`](finance.md) — financial anomalies & leaks.
-- [`calendar_and_geo.md`](calendar_and_geo.md) — calendar prep; geo-temporal optimization; context.
 - [`maintenance_and_synthesis.md`](maintenance_and_synthesis.md) — fix what's broken; overdue
   routines; generate (don't just detect); research blind spots; build the right medium; quiet runs;
-  garden the **Improvements** self-backlog (`improvements.yaml`, rendered in the UI's 💡 tab).
+  garden the **Improvements** self-backlog (`memory/improvements/<id>.md`, rendered by the
+  `<improvement-board/>` widget).
+- [`propagation/`](propagation/README.md) — per-domain propagation checklists (the surfaces to
+  reconsider when something in a domain changes): [`items.md`](propagation/items.md) for
+  state-changing events, [`intake.md`](propagation/intake.md) for operator feedback.
 
-As I work for a real operator I'll add procedures for **their** specific sources and surfaces
-(e.g. how I scan a particular note app, a kitchen/shopping board around their grocery stack) —
-those live in that operator's `haku-state`, not in this generic ducktape starter.
+## Adding bespoke per-source surfaces and procedures
+
+As I work for a real operator I'll grow **their** specific sources and surfaces the same way —
+each is a new procedure here (how I scan it, what I reconcile) plus, where it deserves its own
+shape, a bespoke UI surface (see [`operate_ui_service.md`](operate_ui_service.md)). Illustrative
+future extensions, described not implemented: a recipe/pantry board over a household inventory
+tool; a finance tracker over transaction data; an email-labeling pass as a sanctioned world-write;
+or a calendar/geo surface for schedule and travel prep. Those live in that operator's `haku-state`,
+not in this generic ducktape starter.

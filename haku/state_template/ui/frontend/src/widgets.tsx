@@ -1,16 +1,16 @@
-import { Alert, Badge, Table, Text } from "@mantine/core";
+import { Alert, Anchor, Badge, Table, Text } from "@mantine/core";
 import type { ReactNode } from "react";
 
 import type { PropagationEntry, PropagationTarget } from "./types.ts";
 
 // The fixed registry of "standard widgets" that garden content (run notes, memory notes,
-// procedures) may use from MDX: <Callout>, <StatusBadge>, <PropagationMatrix data={…}/>.
-// The registry IS the trust surface — authored MDX can only reach these components, never
-// arbitrary app internals. Add a widget here to make it available everywhere the garden renders.
-// PropagationMatrix is also used directly (as TSX) by the Runs detail page, so the structured
-// run data and an MDX-embedded matrix render identically.
+// procedures) may embed with literal-attribute syntax: <Callout>, <StatusBadge>. Rendered by
+// the non-eval markdown pipeline (see mdx.tsx) — no arbitrary props/expressions, only string
+// attributes, since there's no JS evaluation to compute anything richer.
+// PropagationMatrix takes a structured `data` prop that only a real caller can supply, so it's
+// used directly as TSX (by the Runs detail page below), not embedded in authored markdown.
 
-type CalloutKind = "info" | "warning" | "success" | "danger";
+export type CalloutKind = "info" | "warning" | "success" | "danger";
 const CALLOUT_COLOR: Record<CalloutKind, string> = {
   info: "blue",
   warning: "yellow",
@@ -42,18 +42,35 @@ export function StatusBadge({ status, color = "gray" }: { status: string; color?
   );
 }
 
-// updated = it landed; no_change = considered, didn't apply; n/a = surface never applies.
+// created/updated = it landed; no_change = considered, didn't apply; n/a = never applies. Plain
+// colored text, not a badge — one dot-badge per row (often 20+ rows/run) was the "everything's a
+// chip" clutter the operator called out (2026-07-02); a color-coded word carries the same signal.
 const ACTION_COLOR: Record<PropagationTarget["action"], string> = {
   created: "teal",
   updated: "teal",
-  no_change: "gray",
-  "n/a": "gray",
+  no_change: "dimmed",
+  "n/a": "dimmed",
 };
 
+// A surface path that the garden can render — `.md`/`.mdx` (the garden browses the curated dirs
+// GARDEN_DIRS = memory/, procedures/, runs/ in garden.tsx). Non-garden surfaces (items/*.yaml,
+// kitchen/board.yaml, ui/) render as plain path text — there's no page to deep-link them into yet.
+function isGardenFile(path: string): boolean {
+  return /\.mdx?$/.test(path);
+}
+
 // Renders a run's propagation[] (or any change→surfaces list) as a matrix: one row per surface,
-// the change spanning its surfaces' rows. The richer presentation of the same data the Runs tab
-// used to show as inline badges.
-export function PropagationMatrix({ data }: { data: PropagationEntry[] }) {
+// the change spanning its surfaces' rows. `onNavigate`, when given, turns garden-eligible surface
+// paths into in-app links (the same affordance the Mdx renderer gives internal markdown links) —
+// omit it (e.g. when this widget is embedded in authored markdown, with no router in scope) to
+// fall back to plain path text.
+export function PropagationMatrix({
+  data,
+  onNavigate,
+}: {
+  data: PropagationEntry[];
+  onNavigate?: (path: string) => void;
+}) {
   if (data.length === 0) return null;
   return (
     <Table withTableBorder withColumnBorders my="sm" fz="sm" verticalSpacing="xs">
@@ -80,11 +97,21 @@ export function PropagationMatrix({ data }: { data: PropagationEntry[] }) {
                   )}
                 </Table.Td>
               )}
-              <Table.Td>{s.surface}</Table.Td>
               <Table.Td>
-                <Badge size="sm" variant="dot" color={ACTION_COLOR[s.action]}>
+                {onNavigate && isGardenFile(s.surface) ? (
+                  <Anchor size="sm" onClick={() => onNavigate(s.surface)} style={{ cursor: "pointer" }}>
+                    {s.surface}
+                  </Anchor>
+                ) : (
+                  <Text size="sm" ff="monospace">
+                    {s.surface}
+                  </Text>
+                )}
+              </Table.Td>
+              <Table.Td>
+                <Text size="sm" c={ACTION_COLOR[s.action]} fw={600}>
                   {s.action}
-                </Badge>
+                </Text>
               </Table.Td>
               <Table.Td>{s.note}</Table.Td>
             </Table.Tr>
@@ -95,5 +122,6 @@ export function PropagationMatrix({ data }: { data: PropagationEntry[] }) {
   );
 }
 
-// Passed as the `components` scope to runtime-evaluated MDX (see mdx.tsx).
-export const WIDGETS = { Callout, StatusBadge, PropagationMatrix };
+// Passed as the `components` scope to the non-eval markdown renderer (see mdx.tsx). No
+// PropagationMatrix here — see the comment above it for why.
+export const WIDGETS = { Callout, StatusBadge };

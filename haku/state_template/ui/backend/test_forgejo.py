@@ -1,8 +1,8 @@
 """The generic Forgejo content client — git primitives, no feature knowledge.
 
 Forgejo is mocked with httpx.MockTransport, so these are pure unit tests of forgejo.py:
-the batched tree/blobs reads (incl. the truncated-tree guard and the 80-SHA chunking),
-single-file read_text/read_yaml, and the idempotent create_file/delete_file writes.
+the batched tree/blobs reads (incl. the truncated-tree guard, sub-cap chunking, and by-SHA
+mapping), single-file read_text/read_yaml, and the idempotent create/write/delete_file writes.
 """
 
 from __future__ import annotations
@@ -40,8 +40,8 @@ def test_tree_raises_on_truncated():
         _call(handler, lambda f: f.tree("deadbeef"))
 
 
-def test_blobs_are_batched_at_80_shas():
-    """81 SHAs must fetch in 2 /git/blobs calls (chunk size 80), not one giant URL."""
+def test_blobs_are_batched_below_the_forgejo_cap():
+    """81 SHAs fetch in chunks of 40 — Forgejo silently caps /git/blobs at 50, so we stay under it."""
     calls: list[int] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -51,7 +51,32 @@ def test_blobs_are_batched_at_80_shas():
 
     out = _call(handler, lambda f: f.blobs([f"sha-{i}" for i in range(81)]))
     assert len(out) == 81
-    assert calls == [80, 1]
+    assert calls == [40, 40, 1]
+    assert all(chunk <= 50 for chunk in calls)
+
+
+def test_blobs_map_by_sha_not_response_order():
+    """A response that reorders the blobs must not scramble the input→content mapping."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        shas = request.url.params["shas"].split(",")
+        body = [{"sha": s, "content": base64.b64encode(f"body-{s}".encode()).decode()} for s in reversed(shas)]
+        return httpx.Response(200, json=body)
+
+    out = _call(handler, lambda f: f.blobs(["a", "b", "c"]))
+    assert out == [b"body-a", b"body-b", b"body-c"]
+
+
+def test_blobs_raise_when_server_drops_one():
+    """If the batch endpoint silently omits a requested SHA, fail loud rather than dropping it —
+    this is exactly the cap bug that hid the 51st+ item from the dashboard."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        kept = request.url.params["shas"].split(",")[:-1]  # simulate the cap dropping the last one
+        return httpx.Response(200, json=[{"sha": s, "content": base64.b64encode(s.encode()).decode()} for s in kept])
+
+    with pytest.raises(RuntimeError, match="git/blobs returned"):
+        _call(handler, lambda f: f.blobs(["a", "b", "c"]))
 
 
 def test_read_text_returns_content_or_none():
@@ -82,8 +107,35 @@ def test_create_file_tolerates_already_exists():
         # 422 = file already exists; create_file must treat it as success (no raise).
         return httpx.Response(422, json={"message": "already exists"})
 
-    _call(handler, lambda f: f.create_file("clicks/a/b", b"x", "msg"))  # must not raise
+    _call(handler, lambda f: f.create_file("responses/dentist-appt/status.yaml", b"x", "msg"))  # must not raise
     assert seen == ["POST"]
+
+
+def test_write_file_posts_when_absent_and_puts_when_present():
+    """Upsert: POST (create) when the file is missing, PUT (overwrite, with sha) when present."""
+    absent: list[str] = []
+
+    def absent_handler(request: httpx.Request) -> httpx.Response:
+        absent.append(request.method)
+        if request.method == "GET":
+            return httpx.Response(404)  # file missing → create via POST
+        return httpx.Response(200, json={})
+
+    _call(absent_handler, lambda f: f.write_file("responses/dentist-appt/status.yaml", b"x", "msg"))
+    assert absent == ["GET", "POST"]
+
+    present: list[tuple[str, Any]] = []
+
+    def present_handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, json={"sha": "old-sha"})
+        present.append((request.method, request.read()))
+        return httpx.Response(200, json={})
+
+    _call(present_handler, lambda f: f.write_file("responses/dentist-appt/status.yaml", b"x", "msg"))
+    method, raw = present[0]
+    assert method == "PUT"
+    assert b'"sha":"old-sha"' in raw.replace(b" ", b"")  # PUT carries the existing sha
 
 
 def test_delete_file_is_noop_when_missing():
@@ -93,7 +145,7 @@ def test_delete_file_is_noop_when_missing():
         seen.append(request.method)
         return httpx.Response(404)  # GET sha → not found → no DELETE issued
 
-    _call(handler, lambda f: f.delete_file("clicks/a/b", "msg"))  # must not raise
+    _call(handler, lambda f: f.delete_file("responses/dentist-appt/status.yaml", "msg"))  # must not raise
     assert seen == ["GET"]  # no DELETE attempted
 
 

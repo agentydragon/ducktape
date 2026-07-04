@@ -1,72 +1,146 @@
-import { Anchor, Badge, Card, Group, Stack, Text, Title } from "@mantine/core";
+import { Anchor, Group, Stack, Table, Text, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 
 import { fetchRuns } from "./client.ts";
 import { Mdx } from "./mdx.tsx";
-import type { RunManifest, RunSource } from "./types.ts";
+import type { RunManifest, RunSource, ScannedSource } from "./types.ts";
 import { PropagationMatrix } from "./widgets.tsx";
-
-// One badge per source: how many changes it produced, or that it was skipped (with the reason
-// on hover) — so "considered every source" is legible, and a skipped source is loud, not silent.
-function sourceBadge(s: RunSource) {
-  if ("skipped" in s) {
-    return (
-      <Badge key={s.source} color="yellow" variant="light" title={s.skipped}>
-        {s.source}: skipped
-      </Badge>
-    );
-  }
-  return (
-    // Prose changes_seen (a summary instead of a count) means something happened — teal.
-    <Badge key={s.source} color={s.changes_seen !== 0 ? "teal" : "gray"} variant="light">
-      {s.source}: {s.changes_seen}
-    </Badge>
-  );
-}
 
 function whenLabel(run: RunManifest): string {
   return run.started ? new Date(run.started).toLocaleString() : run.date;
 }
 
-// A concise, clickable row in the runs list: when, the source-coverage badges, and a one-line
-// summary (changes / surface updates / skipped sources). Click → the full per-run detail.
-function RunRow({ run, onOpen }: { run: RunManifest; onOpen: () => void }) {
-  // "created" is a surface update too (a new entry/file landed on the surface).
-  const updated = run.propagation.reduce(
+// created/updated both land content on a surface; no_change/n/a don't. This is the "did the run
+// actually move anything" count the operator scans the list for.
+function surfaceUpdateCount(run: RunManifest): number {
+  return run.propagation.reduce(
     (n, p) => n + p.surfaces.filter((s) => s.action === "updated" || s.action === "created").length,
     0
   );
-  const skipped = run.sources.filter((s) => "skipped" in s).length;
+}
+
+function scannedCount(sources: RunSource[]): number {
+  return sources.filter((s) => !("skipped" in s)).length;
+}
+
+function skippedCount(sources: RunSource[]): number {
+  return sources.filter((s) => "skipped" in s).length;
+}
+
+// A run's changes_seen is a real count when countable, else a short prose summary — render either
+// as-is (0 stays dimmed so "scanned, nothing new" reads quiet, not like a signal).
+function ChangesCell({ value }: { value: number | string }) {
+  const empty = value === 0 || value === "0";
   return (
-    <Card
-      withBorder
-      padding="sm"
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}
-      style={{ cursor: "pointer" }}
-    >
-      <Group justify="space-between" align="center" wrap="nowrap">
-        <Text fw={600}>Run · {whenLabel(run)}</Text>
-        <Text size="xs" c="dimmed">
-          {run.propagation.length} change{run.propagation.length === 1 ? "" : "s"} · {updated} surface update
-          {updated === 1 ? "" : "s"}
-          {skipped ? ` · ${skipped} skipped` : ""}
-        </Text>
-      </Group>
-      {run.sources.length > 0 && (
-        <Group gap="xs" mt="xs">
-          {run.sources.map(sourceBadge)}
-        </Group>
-      )}
-    </Card>
+    <Text size="sm" c={empty ? "dimmed" : undefined}>
+      {value}
+    </Text>
   );
 }
 
-// The full per-run detail: source coverage, the checklists walked, the change→surface propagation
-// matrix (the shared widget, so structured runs and MDX-embedded matrices render identically), and
-// the prose notes rendered as MDX (so a note can embed standard garden widgets).
+function bookmarkLabel(s: ScannedSource): string | null {
+  if (s.bookmark_before == null && s.bookmark_after == null) return null;
+  return `${s.bookmark_before ?? "—"} → ${s.bookmark_after ?? "—"}`;
+}
+
+// The runs list as a scannable table — one row per run, no per-source color wall. Numbers on the
+// right, coverage folded into one "N scanned · M skipped" cell (skipped in a subtle warning color,
+// the only color that carries signal here). The whole row opens the detail (click or Enter/Space).
+function RunsTable({ runs, onOpen }: { runs: RunManifest[]; onOpen: (runId: string) => void }) {
+  return (
+    <Table.ScrollContainer minWidth={480}>
+      <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md">
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>When</Table.Th>
+            <Table.Th>Sources</Table.Th>
+            <Table.Th ta="right">Changes</Table.Th>
+            <Table.Th ta="right">Surface updates</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {runs.map((run) => {
+            const skipped = skippedCount(run.sources);
+            return (
+              <Table.Tr
+                key={run.run_id}
+                role="button"
+                tabIndex={0}
+                onClick={() => onOpen(run.run_id)}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen(run.run_id))}
+                style={{ cursor: "pointer" }}
+              >
+                <Table.Td>{whenLabel(run)}</Table.Td>
+                <Table.Td>
+                  <Text span size="sm">
+                    {scannedCount(run.sources)} scanned
+                  </Text>
+                  {skipped > 0 && (
+                    <Text span size="sm" c="orange">
+                      {" · "}
+                      {skipped} skipped
+                    </Text>
+                  )}
+                </Table.Td>
+                <Table.Td ta="right">{run.propagation.length}</Table.Td>
+                <Table.Td ta="right">{surfaceUpdateCount(run)}</Table.Td>
+              </Table.Tr>
+            );
+          })}
+        </Table.Tbody>
+      </Table>
+    </Table.ScrollContainer>
+  );
+}
+
+// Source coverage for one run, as a table (Source · Changes · Bookmark before→after). A skipped
+// source spans the trailing columns with its reason in a subtle warning color, so a coverage gap
+// reads as one calm line, not a color wall.
+function SourceTable({ sources }: { sources: RunSource[] }) {
+  if (sources.length === 0) return null;
+  return (
+    <Table withTableBorder fz="sm" verticalSpacing="xs" horizontalSpacing="md">
+      <Table.Thead>
+        <Table.Tr>
+          <Table.Th>Source</Table.Th>
+          <Table.Th>Changes</Table.Th>
+          <Table.Th>Bookmark</Table.Th>
+        </Table.Tr>
+      </Table.Thead>
+      <Table.Tbody>
+        {sources.map((s) =>
+          "skipped" in s ? (
+            <Table.Tr key={s.source}>
+              <Table.Td>{s.source}</Table.Td>
+              <Table.Td colSpan={2}>
+                <Text size="sm" c="orange">
+                  Skipped — {s.skipped}
+                </Text>
+              </Table.Td>
+            </Table.Tr>
+          ) : (
+            <Table.Tr key={s.source}>
+              <Table.Td>{s.source}</Table.Td>
+              <Table.Td>
+                <ChangesCell value={s.changes_seen} />
+              </Table.Td>
+              <Table.Td>
+                {bookmarkLabel(s) && (
+                  <Text size="sm" c="dimmed" ff="monospace">
+                    {bookmarkLabel(s)}
+                  </Text>
+                )}
+              </Table.Td>
+            </Table.Tr>
+          )
+        )}
+      </Table.Tbody>
+    </Table>
+  );
+}
+
+// The full per-run detail: source coverage table, the checklists walked, the change→surface
+// propagation matrix (the shared widget), and the prose notes rendered as MDX.
 function RunDetail({
   run,
   onBack,
@@ -90,7 +164,12 @@ function RunDetail({
         Run · {whenLabel(run)}
       </Title>
 
-      {run.sources.length > 0 && <Group gap="xs">{run.sources.map(sourceBadge)}</Group>}
+      <Stack gap="xs">
+        <Title order={3} size="h6">
+          Sources
+        </Title>
+        <SourceTable sources={run.sources} />
+      </Stack>
 
       {run.checklists.length > 0 && (
         <Text size="sm" c="dimmed">
@@ -103,7 +182,7 @@ function RunDetail({
           <Title order={3} size="h6">
             Propagation
           </Title>
-          <PropagationMatrix data={run.propagation} />
+          <PropagationMatrix data={run.propagation} onNavigate={openInGarden} />
         </Stack>
       )}
 
@@ -114,9 +193,9 @@ function RunDetail({
   );
 }
 
-// The Runs surface: a list of runs (concise structured summary) → click into the full per-run
-// propagation detail. Proves every source was processed and shows how each change reached its
-// surfaces. Read-only; backed by runs/<date>/<ulid>.{yaml,md}.
+// The Runs surface: a scannable table of runs → click into the full per-run propagation detail.
+// Proves every source was processed and shows how each change reached its surfaces. Read-only;
+// backed by runs/<date>/<ulid>.{yaml,md}.
 export function RunsPage({ openInGarden }: { openInGarden: (path: string) => void }) {
   const [runs, setRuns] = useState<RunManifest[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -155,9 +234,7 @@ export function RunsPage({ openInGarden }: { openInGarden: (path: string) => voi
       <Text size="sm" c="dimmed">
         Each run: every source I processed, and how each change propagated to your surfaces. Click a run for detail.
       </Text>
-      {runs.map((run) => (
-        <RunRow key={run.run_id} run={run} onOpen={() => setSelected(run.run_id)} />
-      ))}
+      <RunsTable runs={runs} onOpen={setSelected} />
     </Stack>
   );
 }

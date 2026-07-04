@@ -1,9 +1,9 @@
 """Runtime settings for the Haku UI backend (env-driven, prefix ``HAKU_UI_``).
 
 Credentials come from the ``haku-state-git-write`` secret, mounted by the Deployment,
-and are used as Forgejo basic auth. The internal Forgejo URL
-(``http://forgejo-http.forgejo:3000/...``) is the cluster-internal plaintext-HTTP host
-(no TLS), reachable from haku-sandbox.
+and are used as Forgejo basic auth. The internal Forgejo URL (a cluster-internal
+plaintext-HTTP host, e.g. ``http://forgejo-http.forgejo:3000/...``,
+no TLS) is reachable from the agent's namespace.
 """
 
 from __future__ import annotations
@@ -17,10 +17,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="HAKU_UI_")
 
-    # haku-state via the cluster-internal plaintext-HTTP Forgejo API: the repo API root
-    # (…/api/v1/repos/<owner>/<repo>). Deployment-specific → REQUIRED (set in the Deployment
-    # env); not defaulted here, since a default would bake one instance's URL into the generic
-    # starter. Credentials (basic auth) come from the haku-state-git-write secret.
+    # haku-state via the cluster-internal plaintext-HTTP Forgejo API. The repo API root
+    # (…/api/v1/repos/haku/<repo>); credentials (basic auth) come from the
+    # haku-state-git-write secret. Required (no default): the Deployment must set
+    # HAKU_UI_FORGEJO_API_URL so this never silently points at the wrong instance.
     forgejo_api_url: str
     git_username: str
     git_password: SecretStr
@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # The git commit the running image was built from (baked by CI via --build-arg GIT_SHA →
     # HAKU_UI_GIT_SHA); None in local dev. Surfaced in the UI footer as a Forgejo commit link.
     git_sha: str | None = None
-    # Public (operator-facing) Forgejo repo URL, for building commit links. Deployment-specific
-    # → REQUIRED (set in the Deployment env), not defaulted: NOT the internal API URL
-    # (forgejo_api_url) — that's cluster-internal plaintext HTTP.
+    # Public (operator-facing) Forgejo repo URL, for building commit links. NOT the internal
+    # API URL (forgejo_api_url) — that's cluster-internal plaintext HTTP. Required (no default):
+    # the Deployment sets HAKU_UI_REPO_WEB_URL.
     repo_web_url: str

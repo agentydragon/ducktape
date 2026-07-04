@@ -20,7 +20,7 @@ spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       # The image lives in the in-cluster Forgejo registry; the operator provisions
-      # this pull secret separately (reflected into haku-sandbox).
+      # this pull secret separately (reflected into haku).
       imagePullSecrets:
         - name: haku-forgejo-registry-pull
       securityContext:
@@ -34,14 +34,14 @@ spec:
           # ImageUpdateAutomation which image ref to rewrite; keep it on this line.
           # The matching ImageRepository/ImagePolicy/ImageUpdateAutomation are Haku's
           # own (the sibling k8s/haku-ui-image-automation/ dir), reconciled into
-          # haku-sandbox — hence the haku-sandbox:haku-ui policy ref.
-          image: git.allegedly.works/haku/ui:main-20260629083051-85fda52 # {"$imagepolicy": "haku-sandbox:haku-ui"}
+          # haku — hence the haku:haku-ui policy ref.
+          image: forgejo.example.com/haku/ui:main-00000000000000-0000000 # {"$imagepolicy": "haku:haku-ui"}
           ports:
             - containerPort: 8080
           env:
-            # haku-state write creds (the haku-state-git-write secret, mounted into
-            # haku-sandbox by the tf/gitops/haku-state module). The backend uses these
-            # as Forgejo basic auth — no local clone.
+            # haku-state write creds (the haku-state-git-write Secret, mounted into
+            # haku by the operator). The backend uses these as Forgejo
+            # basic auth — no local clone.
             - name: HAKU_UI_GIT_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -52,21 +52,21 @@ spec:
                 secretKeyRef:
                   name: haku-state-git-write
                   key: password
-            # Internal plaintext-HTTP Forgejo API. MUST be the FULLY-QUALIFIED
-            # `.svc.cluster.local` name: the namespace injects HTTP(S)_PROXY →
-            # haku-mitmproxy with NO_PROXY=...,.svc.cluster.local,10.0.0.0/8. httpx
-            # matches NO_PROXY by hostname string (not resolved IP), so the short
-            # name `forgejo-http.forgejo` does NOT match the suffix and gets routed
-            # through mitmproxy, where it dial-times-out (ReadTimeout on every
-            # /contents call). The FQDN matches the `.svc.cluster.local` suffix and
-            # bypasses the proxy for a direct in-cluster connection. (10.0.0.0/8
-            # can't save the short name — NO_PROXY CIDRs only match IP literals.)
+            # Internal cluster-internal plaintext-HTTP Forgejo API host. If the namespace
+            # injects an HTTP(S)_PROXY egress proxy with a NO_PROXY that includes
+            # `.svc.cluster.local`, this MUST be the FULLY-QUALIFIED `.svc.cluster.local`
+            # name: httpx matches NO_PROXY by hostname string (not resolved IP), so a short
+            # name like `forgejo-http.forgejo` would NOT match the suffix
+            # and would get routed through the proxy (where it typically dial-times-out on
+            # every /contents call). The FQDN matches the `.svc.cluster.local` suffix and
+            # bypasses the proxy for a direct in-cluster connection. (A NO_PROXY CIDR like
+            # 10.0.0.0/8 can't save the short name — NO_PROXY CIDRs only match IP literals.)
             - name: HAKU_UI_FORGEJO_API_URL
               value: http://forgejo-http.forgejo.svc.cluster.local:3000/api/v1/repos/haku/haku-state
             # Public (operator-facing) repo URL for the footer's commit links. Required by the
             # backend (no code default) so this deployment's URL isn't baked into the starter.
             - name: HAKU_UI_REPO_WEB_URL
-              value: https://git.allegedly.works/haku/haku-state
+              value: https://forgejo.example.com/haku/haku-state
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

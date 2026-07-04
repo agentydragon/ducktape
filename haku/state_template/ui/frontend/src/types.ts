@@ -1,63 +1,23 @@
 // Wire contract with the backend's JSON API. Mirrors the Pydantic models in
-// ../../backend/models.py, which themselves mirror haku/base/schema/item.json.
-// Keep this in sync with models.py when the item shape changes.
+// ../../backend/models.py — keep them in sync by hand. Items are read from `items/*.md` through the
+// generic content proxy (repo.ts composes tree+blobs), not a bespoke wire type.
 
-export type PrimaryAction = { kind: "suggestion" } | { kind: "prepared_prompt"; prompt: string };
-
-export type OperatorAction =
-  | { kind: "command"; id: string; label: string; intent: string }
-  | { kind: "claude_handoff"; id: string; label: string; prompt: string };
-
-export type ItemStatus = "open" | "in_progress" | "done" | "rejected" | "snoozed" | "expired";
-
-export interface Item {
-  id: string;
-  title: string;
-  body: string;
-  value: number;
-  action: PrimaryAction | null;
-  status: ItemStatus;
-  deadline: string | null;
-  actions: OperatorAction[];
+// Context snapshotted when the operator opens a "Note to Haku" — which page they're on and any
+// text they had selected — so Haku has grounding when the note says e.g. "this page looks bad".
+export interface FeedbackContext {
+  page: string; // the URL hash, e.g. "#/runs"
+  selection: string | null; // selected text at note-open time, or null if none
 }
 
-export interface Click {
-  item_id: string;
-  action_id: string;
-}
-
-export interface DashboardResponse {
-  scan_time: string; // ISO 8601 of the last haku-state commit
+// Footer metadata (GET /api/meta): freshness + which image is serving.
+export interface MetaResponse {
+  scan_time: string; // ISO 8601 of the last Haku commit ("last scan")
   deployed_commit: string | null; // short SHA the running image was built from
   deployed_commit_url: string | null; // Forgejo link to that commit
-  items: Item[];
-  clicks: Click[];
 }
 
-// --- Improvements / friction surface (improvements.yaml) ---
-// Haku's self-backlog: capability ideas it could grow into + friction it hits during runs.
-export interface ImprovementIdea {
-  id: string;
-  title: string;
-  value: "high" | "medium" | "low";
-  status: "recommend" | "idea" | "parked" | "blocked" | "wired";
-  summary: string;
-  detail: string; // markdown
-}
-
-export interface Friction {
-  id: string;
-  title: string;
-  severity: "high" | "medium" | "low";
-  status: "open" | "workaround" | "resolved" | "answered";
-  detail: string; // markdown
-}
-
-export interface ImprovementsBoard {
-  updated: string;
-  ideas: ImprovementIdea[];
-  friction: Friction[];
-}
+// Improvements are a content collection (memory/improvements/<id>.md) rendered by the
+// <improvement-board/> widget — no wire type; the widget parses frontmatter itself.
 
 // --- Runs surface (runs/<date>/<ulid>.{yaml,md}) ---
 // Per-run propagation record: each source processed + how each change reached every surface.
@@ -110,16 +70,22 @@ export interface RunsResponse {
   runs: RunManifest[];
 }
 
-// --- Knowledge garden (arbitrary repo markdown under whitelisted dirs) ---
-export interface GardenEntry {
-  path: string; // repo-relative, e.g. "memory/situational-awareness.md"
-}
+// The knowledge garden browses/reads arbitrary repo markdown through the generic content proxy
+// below (repo.ts composes tree+blobs) — no dedicated garden wire types.
 
-export interface GardenIndex {
-  entries: GardenEntry[];
-}
-
-export interface GardenFile {
+// Generic content proxy — mirrors ui/backend/models.py (Forgejo's tree + bulk-blobs primitives).
+export interface RepoTreeEntry {
   path: string;
-  markdown: string; // raw .md/.mdx source; rendered client-side as MDX
+  type: string; // git object type: "blob" | "tree"
+  sha: string;
+}
+
+export interface RepoTree {
+  sha: string; // the HEAD commit the tree was read at
+  entries: RepoTreeEntry[];
+}
+
+export interface RepoBlob {
+  sha: string;
+  content: string;
 }

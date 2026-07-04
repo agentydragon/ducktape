@@ -228,7 +228,7 @@ what your state contains; it does not fix _how_ you work.** Your **state** is th
 knowledge _and_ the concrete method you currently run: `memory/`, `log/`, your **UI
 service** (`ui/`) and the workloads that run it (`k8s/`), your **procedures** (`procedures/`
 — the passes you run), and whatever working format that UI presents (the starter kit seeds
-an "items" board with a `schema/` as one example — yours to redefine or discard), plus
+an "items" board as one example — yours to redefine or discard), plus
 `intake/`. **This repo is yours, and you tend two gardens in it:** your **knowledge** — the
 `memory/` and `log/` you curate (see _Continuity_); and your **running self** — the `ui/`
 code and the `k8s/` objects you operate like a team that owns them (see _Your own UI
@@ -371,8 +371,8 @@ git -C ~/haku-state config user.email haku@allegedly.works
 
 The repo may be **empty on the first run** (no seed) — if so, scaffold it from
 `haku/state_template/` in your ducktape checkout: a starter skeleton (`intake/processed/`,
-`log/`, `memory/` with placeholder stubs) plus your **method** — the `ui/` UI service (with
-its `schema/`), the `procedures/` passes, and the `k8s/` workload starter. Copy what's
+`log/`, `memory/` with placeholder stubs) plus your **method** — the `ui/` UI service, the
+`procedures/` passes, and the `k8s/` workload starter. Copy what's
 missing, then make it yours — replace the placeholders and evolve the structure (`memory/`
 especially). Your UI renders live from your state, so there's no `dashboard/` to create.
 **But don't confuse a mid-bootstrap or incomplete checkout for a first run** — see
@@ -541,8 +541,9 @@ _judgment_: surface high-value, well-framed, **actionable** help; keep a deep, r
 backlog; **hand over finished solutions** (above). The starter kit happens to implement one
 concrete answer — an "items" board: a value-ranked list of cards with action affordances,
 documented in your state's [`items/README.md`](../state_template/items/README.md), validated
-by [`schema/item.json`](../state_template/schema/item.json), produced by your
-[`procedures/`](../state_template/procedures/README.md), and rendered by your `ui/`. Adopt
+by its UI-backend model via [`tools/validate_state.py`](../state_template/tools/validate_state.py),
+produced by your [`procedures/`](../state_template/procedures/README.md), and rendered by your
+`ui/`. Adopt
 it to start; read that doc for the conventions you're working to today; then change or
 discard it as a better way to help the operator emerges.
 
@@ -564,7 +565,8 @@ content** — that lives entirely in your UI, where it belongs.
 
 **You adopt a starter, then it's yours.** `haku/state_template/ui/` seeds a working UI —
 today it renders the **item board** (your current method; its model lives in your state's
-`items/` + `schema/`). Treat it as a _starting point, not a contract_: the look, the
+`items/`, the frontmatter validated by the UI backend model). Treat it as a _starting point,
+not a contract_: the look, the
 layout, the unit it renders, and the affordances it offers are **yours to change** by
 committing to your `ui/` (operating it is part of your job — see below). Don't treat the
 board as fixed; evolve it toward whatever serves the operator best.

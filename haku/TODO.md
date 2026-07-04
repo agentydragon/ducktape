@@ -122,39 +122,6 @@ has shipped on the capability tier — see the README.)
   "CPAP check", "triage open PRs"). Reuses the launch button's existing bearer + egress
   perimeter. Docs: code.claude.com/docs/en/routines.
 
-## `state_template` — resync to the affordance/responses architecture
-
-The seed under `state_template/` is a full generation behind the live haku-state UI: it
-still ships the pre-affordance stack — the `Item` action-union model + `schema/item.json`,
-the `/api/dashboard` + `/api/trace/items/<id>/actions/<aid>` (clicks) endpoints, `task.tsx`,
-a plain-CSS (no Mantine) frontend, and `widgets.tsx` with only `Callout/StatusBadge/
-PropagationMatrix`. Live haku-state has since moved to `items/<slug>.md` (thin frontmatter +
-affordance-bearing body), the `responses/<scope>/<field>` log, a generic tree+blobs content
-proxy the SPA composes over, the `<handoff>`/`<signal-toggle>`/`<launch>`/`<feedback>`/
-`<item-card>` affordance library, and a Mantine UI. A fresh bootstrap from the template
-therefore seeds the old format and would have to redo the whole migration.
-
-Mirror the generic halves (operator specifics excluded, per the sync-back convention), as its
-own PR with the template frontend actually built/tested — this is a wholesale port, not a
-seed tweak:
-
-- Backend: `models.py` → `ItemDoc` + `ResponseDoc`/`MetaResponse` (drop `Item`/`Suggestion`/
-  the `*Action` unions); `app.py` → `/api/meta` + `/api/responses/<scope>/<field>` +
-  the generic repo proxy (drop `/api/dashboard` + the clicks/garden/improvements endpoints);
-  `reads.py` → `read_scan_time`/`read_runs`; retarget `test_*.py`.
-- Frontend: port the affordance library + `item_card` + generic `repo.ts`/`docsUnder`;
-  rewrite `inbox.tsx`/`client.ts`/`types.ts`; add the Mantine deps + lockfile; delete
-  `task.tsx`/`feedback.tsx`/`widgets.tsx`.
-- Delete `state_template/schema/item.json` and its references (`README.md:44`,
-  `items/README.md:17`, `ui/frontend/src/types.ts:2`, `ui/backend/models.py:3`,
-  `haku/base/instructions.md:544`); rewrite `state_template/items/README.md` + the
-  item-touching `procedures/*` to the new format.
-- Gate: `validate_state.py` → `items/*.md → ItemDoc` dispatch; template frontend `npm run
-build` + `vitest` green in its Docker CI gate.
-
-Reference: the landed live implementation in haku-state (`ui/`, `items/README.md`,
-`tools/validate_state.py`) is the source to mirror from.
-
 ## Managed Agents runtimes — per-runtime TODOs
 
 Runtime-specific TODOs live with each runtime (the agent loop runs at Anthropic;

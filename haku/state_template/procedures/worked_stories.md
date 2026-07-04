@@ -20,7 +20,7 @@ illustrations, not a menu; invent your own.
    of it, get to the primary documents, and find the real discrepancy. Then you do the
    suffering up front: a three-paragraph summary of what's wrong and the fix (full evidence
    one click deeper), the reply **pre-composed** behind a Gmail compose deep-link, the rest
-   packaged as a `prepared_prompt` for a write-capable agent to carry the negotiation if
+   packaged as a `<handoff>` prompt for a write-capable executor to carry the negotiation if
    they push back — plus the blind-spot angle: an advocate service handles exactly this for
    $N, inquiry drafted. The operator approves a finished solution instead of starting a
    dreaded one.

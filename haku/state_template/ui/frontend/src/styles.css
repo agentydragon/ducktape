@@ -1,6 +1,6 @@
 /* The only hand-rolled styling left after the Mantine migration: rendered Markdown
-   (item bodies). Everything else is Mantine components + theme. Colors come from
-   Mantine's CSS variables so light/dark follows the provider. */
+   (item bodies + kitchen note/why prose). Everything else is Mantine components + theme.
+   Colors come from Mantine's CSS variables so light/dark follows the provider. */
 .md > :first-child {
   margin-top: 0;
 }

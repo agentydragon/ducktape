@@ -14,7 +14,7 @@ spec:
     commit:
       author:
         name: flux-image-automation
-        email: flux@allegedly.works
+        email: flux@example.com
       messageTemplate: |-
         chore: update haku-ui image [skip ci]
 
@@ -26,7 +26,7 @@ spec:
     push:
       branch: main
   update:
-    # Scan haku-state's k8s/ for the {"$imagepolicy": "haku-sandbox:haku-ui"} marker
+    # Scan haku-state's k8s/ for the {"$imagepolicy": "haku:haku-ui"} marker
     # (on the haku-ui Deployment image line) and write the newest tag. [skip ci] keeps
     # the bump from re-triggering the ui build (which only watches ui/** anyway).
     strategy: Setters

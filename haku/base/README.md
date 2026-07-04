@@ -20,7 +20,7 @@ ducktape and letting the image rebuild (Flux image automation bumps the CronJob 
   how to read it. Inputs/reference, not a checklist.
 
 Haku's **method** — the procedures (passes) it runs, the UI it serves, and whatever
-format that UI presents (the starter kit's "items" board + schema is one example) — is
+format that UI presents (the starter kit's "items" board is one example) — is
 **not here.** It is seeded from `haku/state_template/` and owned/evolved by Haku in its
 state. (The full "what lives where" is in `AGENTS.md`.)
 

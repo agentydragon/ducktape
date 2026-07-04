@@ -1,17 +1,22 @@
 import { Anchor, Group, NavLink, Stack, Text, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 
-import { fetchGarden, fetchGardenFile } from "./client.ts";
 import { Mdx } from "./mdx.tsx";
-import type { GardenEntry } from "./types.ts";
+import { repoFile, repoTree } from "./repo.ts";
+
+// Curated browse dirs for the garden index. The raw content proxy is repo-wide (haku-state is
+// single-author, no secrets); this is purely which notes show up in the browse list — curation,
+// not a security fence. (Was the backend GARDEN_DIRS; moved here when the garden read collapsed
+// onto the generic tree+blobs proxy — see plans/garden-gradient.md.)
+const GARDEN_DIRS = ["memory", "procedures", "runs"];
 
 // The top-level dir (memory/procedures/runs) a garden path lives under — used to group the list.
 function topDir(path: string): string {
   return path.split("/")[0];
 }
 
-// The rendered pane: fetch one file's markdown and render it as MDX (so embedded widgets work, and
-// internal links navigate the garden via onNavigate).
+// The rendered pane: fetch one file's markdown (via the content proxy) and render it as MDX (so
+// embedded widgets work, and internal links navigate the garden via onNavigate).
 function FileView({ path, onNavigate }: { path: string; onNavigate: (path: string) => void }) {
   const [markdown, setMarkdown] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -20,8 +25,8 @@ function FileView({ path, onNavigate }: { path: string; onNavigate: (path: strin
     let alive = true;
     setMarkdown(null);
     setError(null);
-    fetchGardenFile(path)
-      .then((f) => alive && setMarkdown(f.markdown))
+    repoFile(path)
+      .then((md) => alive && (md === null ? setError("not found") : setMarkdown(md)))
       .catch((e: unknown) => alive && setError(e instanceof Error ? e.message : String(e)));
     return () => {
       alive = false;
@@ -38,17 +43,24 @@ function FileView({ path, onNavigate }: { path: string; onNavigate: (path: strin
   return <Mdx source={markdown} basePath={path} onNavigate={onNavigate} />;
 }
 
-// The knowledge garden: browse any markdown Haku keeps under the whitelisted dirs (memory/,
+// The knowledge garden: browse any markdown Haku keeps under the curated dirs (memory/,
 // procedures/, runs/) and read it rendered (with standard widgets + working cross-links). A general
 // primitive — the same renderer backs run notes. Read-only. `path`/`onSelect` are controlled so
 // other surfaces (a run note, an item) can deep-link straight into a file.
 export function GardenPage({ path, onSelect }: { path: string | null; onSelect: (path: string | null) => void }) {
-  const [entries, setEntries] = useState<GardenEntry[] | null>(null);
+  const [paths, setPaths] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchGarden()
-      .then((g) => setEntries(g.entries))
+    repoTree()
+      .then((t) =>
+        setPaths(
+          t.entries
+            .filter((e) => e.type === "blob" && /\.mdx?$/.test(e.path) && GARDEN_DIRS.includes(topDir(e.path)))
+            .map((e) => e.path)
+            .sort()
+        )
+      )
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
 
@@ -69,11 +81,11 @@ export function GardenPage({ path, onSelect }: { path: string | null; onSelect: 
     );
 
   if (error) return <Text c="red">Failed to load garden: {error}</Text>;
-  if (!entries) return <Text c="dimmed">Loading…</Text>;
-  if (entries.length === 0) return <Text c="dimmed">The garden is empty.</Text>;
+  if (!paths) return <Text c="dimmed">Loading…</Text>;
+  if (paths.length === 0) return <Text c="dimmed">The garden is empty.</Text>;
 
-  // Group by top dir for a scannable list; within a group, the backend already sorted by path.
-  const groups = [...new Set(entries.map((e) => topDir(e.path)))];
+  // Group by top dir for a scannable list; within a group, paths are already sorted.
+  const groups = [...new Set(paths.map(topDir))];
 
   return (
     <Stack gap="lg">
@@ -85,13 +97,13 @@ export function GardenPage({ path, onSelect }: { path: string | null; onSelect: 
           <Title order={3} size="h6">
             {dir}/
           </Title>
-          {entries
-            .filter((e) => topDir(e.path) === dir)
-            .map((e) => (
+          {paths
+            .filter((p) => topDir(p) === dir)
+            .map((p) => (
               <NavLink
-                key={e.path}
-                label={e.path.slice(dir.length + 1)}
-                onClick={() => onSelect(e.path)}
+                key={p}
+                label={p.slice(dir.length + 1)}
+                onClick={() => onSelect(p)}
                 style={{ cursor: "pointer" }}
               />
             ))}

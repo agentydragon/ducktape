@@ -17,14 +17,14 @@ do with it every run, and the bar for changing it.
   **queue a concrete entry** in a surface-evolution backlog under `plans/` and ship the
   highest-value one next. The bar is operator-effort-removed-per-click.
 - **Health check.** Confirm the `haku-ui` Deployment is `1/1 Running` on the expected image and
-  serving (`kubectl get pods -n haku-sandbox -l app=haku-ui`; `kubectl logs` for a clean uvicorn
-  start; a 302 from the Authentik-gated public URL is the redirect, healthy). A crashlooping pod
-  or stale image is **self-inflicted and mine to fix before the run is done** — it's the only
+  serving (`kubectl get pods -n <agent-namespace> -l app=haku-ui`; `kubectl logs` for a clean
+  uvicorn start; a 302 from the Authentik-gated public URL is the redirect, healthy). A crashlooping
+  pod or stale image is **self-inflicted and mine to fix before the run is done** — it's the only
   window the operator has into me.
-- **Reduce the two-way channel.** The backend commits operator `clicks/` and `intake/` as they
-  happen; folding those back is already part of the run. Treat **which affordances get used (and
-  which never do)** as feedback on the UI itself, not just on what I surfaced — promote what's
-  used, retire what's dead.
+- **Reduce the two-way channel.** The backend commits operator `responses/` (affordance input) and
+  `intake/` (feedback notes) as they happen; folding those back is already part of the run. Treat
+  **which affordances get used (and which never do)** as feedback on the UI itself, not just on what
+  I surfaced — promote what's used, retire what's dead.
 - **Tidy the namespace.** Delete throwaway probe pods/jobs (pod quota); reconcile what's actually
   running against what `k8s/` declares.
 
@@ -40,29 +40,29 @@ will get to it eventually."
 - **Code change** (`ui/**`, Dockerfile, workflow) → needs a rebuild + rollout:
   1. **Build** — poll the Forgejo Actions API until `test` then `build` are `success`. On
      failure, diagnose from run duration + the runner pod's status/events (I can't read the
-     haku-ci runner logs). My source (Dockerfile/workflow/app) → fix and re-push; runner/infra
-     (operator-owned) → surface a finding, I can't patch.
+     Forgejo Actions runner logs). My source (Dockerfile/workflow/app) → fix and re-push;
+     runner/infra (operator-owned) → surface a finding, I can't patch.
   2. **Image automation** — confirm the `haku-ui` **ImagePolicy** `status.latestImage` resolved
      to the new tag and **ImageUpdateAutomation** pushed the `[skip ci]` bump commit
-     (`kubectl get imagepolicy,imageupdateautomation -n haku-sandbox`). A Forgejo→Flux image
+     (`kubectl get imagepolicy,imageupdateautomation -n <agent-namespace>`). A Forgejo→Flux image
      webhook pokes the `ImageRepository` scan **off-cycle on push**, so the new tag usually
      appears within seconds; if the webhook isn't wired the periodic scan (minutes) is the
      fallback.
   3. **Rollout** — wait for the workloads `Kustomization` `lastAppliedRevision` to reach that
      bump commit (`kubectl get kustomization -n flux-system <haku-workloads>`; I can't force a
      reconcile — Flux polls, ~1-2 min), then Deployment image == new tag and a fresh pod is
-     `Running` (`kubectl rollout status deploy/haku-ui -n haku-sandbox`).
-- **Data change** (`items/`, `clicks/`, `improvements.yaml`, anything the backend reads live from
-  Forgejo) → **NO rebuild/rollout**: the running pod re-reads it from branch HEAD on each request.
-  Just push, then verify. (CI doesn't even trigger — not under `ui/`.)
+     `Running` (`kubectl rollout status deploy/haku-ui -n <agent-namespace>`).
+- **Data change** (`items/`, `responses/`, `memory/improvements/`, anything the backend reads live
+  from Forgejo) → **NO rebuild/rollout**: the running pod re-reads it from branch HEAD on each
+  request. Just push, then verify. (CI doesn't even trigger — not under `ui/`.)
 
 **Then PROVE it's serving** (both paths): exec the live pod and hit the affected endpoint, don't
 assume:
 
 ```bash
-POD=$(kubectl -n haku-sandbox get pods -l app=haku-ui -o jsonpath='{.items[0].metadata.name}')
-kubectl -n haku-sandbox exec "$POD" -- python3 -c "import urllib.request,json; \
-  print(json.load(urllib.request.urlopen('http://localhost:8080/api/dashboard'))['scan_time'])"
+POD=$(kubectl -n <agent-namespace> get pods -l app=haku-ui -o jsonpath='{.items[0].metadata.name}')
+kubectl -n <agent-namespace> exec "$POD" -- python3 -c "import urllib.request,json; \
+  print(json.load(urllib.request.urlopen('http://localhost:8080/api/meta'))['scan_time'])"
 ```
 
 Check the actual new behavior/data (the counts, the new field, the new tab's payload), not just

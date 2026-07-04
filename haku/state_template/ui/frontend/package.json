@@ -12,11 +12,11 @@
   "dependencies": {
     "@mantine/core": "^9.4.1",
     "@mantine/hooks": "^9.4.1",
-    "@mdx-js/mdx": "^3.1.1",
     "dompurify": "^3.4.11",
     "marked": "^18.0.5",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",

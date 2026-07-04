@@ -1,27 +1,24 @@
 """FastAPI app for Haku's own UI service: JSON API + same-origin React SPA.
 
-This is **Haku-owned** starter code: it runs in ``haku-sandbox``, behind the
-operator-owned Authentik outpost, embedded in the trusted console's "Free-form UI"
-iframe. It is the **feature layer**: it knows which files in haku-state back each surface
-and how to parse them, composing the feature-agnostic ``Forgejo`` git-content client
-(``forgejo.py``) + the items-board read in ``reads.py``. Reads ``items/`` + ``improvements.yaml``;
-writes ``clicks/`` / ``intake/`` back on operator action (the conventions Haku reduces on its
-next run). No local clone.
+This is **Haku-owned** starter code: it runs in the agent's namespace, behind an
+operator-owned auth proxy, embedded in the trusted console's "Free-form UI" iframe. It
+is the **feature layer**: it knows which files in haku-state back each surface and how
+to parse them, composing the feature-agnostic ``Forgejo`` git-content client
+(``forgejo.py``) + the batched tree/blob reads in ``reads.py``. It reads the content
+collections and writes ``responses/`` / ``intake/`` back on operator action (the
+conventions Haku reduces on its next run), all through the Forgejo API — no local
+clone. Adding a surface never touches ``forgejo.py``: it reads via the generic
+``read_yaml``/``tree``/``blobs`` primitives and writes via ``create_file``/``write_file``/``delete_file``.
 
-Unlike the trusted console, there is **no capability tier** here — only the low-privilege
-trace surface (clicks + feedback into haku-state, which Haku already owns). The privileged
-launch-routine capability stays in the console.
+There is **no capability tier** here — only the low-privilege trace surface (responses +
+feedback into haku-state, which Haku already owns). Any privileged launch-routine
+capability stays in the console.
 
-This starter ships two person-agnostic surfaces: the **items board** (``/api/dashboard`` + the
-trace writes) and Haku's **Improvements** self-backlog (``/api/improvements``). Haku adds more
-endpoints here as it builds bespoke surfaces for its operator — those operator-specific
-surfaces live in that operator's haku-state, not in this generic starter. Adding one never
-touches ``forgejo.py``: it reads via the generic ``read_yaml``/``tree``/``blobs`` primitives.
-
-**Operator authentication.** The app is only reachable through the Authentik outpost, which
-injects ``X-authentik-username``. We read it to know who acted (logged on every write). The
-header is only trustworthy once an ingress NetworkPolicy restricts the app to the outpost (so
-a sibling haku-sandbox pod can't spoof it). Until then, treat it as advisory.
+**Operator authentication.** The app is only reachable through the auth proxy, which
+injects ``X-authentik-username``. We read it to know who acted (logged on every write).
+The header is only trustworthy once an ingress NetworkPolicy restricts the app to the
+proxy (so a sibling pod in the same namespace can't spoof it). Until then, treat the
+header as advisory.
 """
 
 from __future__ import annotations
@@ -29,16 +26,18 @@ from __future__ import annotations
 import contextlib
 import datetime as dt
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from typing import Annotated
 
 import uvicorn
+import yaml
 from config import Settings
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from forgejo import Forgejo
-from models import Click, DashboardResponse, FeedbackRequest, GardenFile, GardenIndex, ImprovementsBoard, RunsResponse
-from reads import GARDEN_DIRS, read_dashboard, read_garden_index, read_runs
+from models import FeedbackRequest, MetaResponse, RepoBlob, RepoTree, RepoTreeEntry, ResponseRequest, RunsResponse
+from reads import read_runs, read_scan_time
 
 logger = logging.getLogger(__name__)
 
@@ -47,25 +46,28 @@ logger = logging.getLogger(__name__)
 Operator = Annotated[str | None, Header(alias="X-authentik-username")]
 
 
+def _response_path(scope: str, field: str) -> str:
+    """The haku-state path for an operator-answer slot, validating both path segments (each a
+    lowercase-slug directory/file name)."""
+    for seg in (scope, field):
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", seg):
+            raise ValueError(f"invalid response path segment: {seg!r}")
+    return f"responses/{scope}/{field}.yaml"
+
+
+def _blob_sha(sha: str) -> str:
+    """Validate a blob sha for the bulk-fetch proxy: lowercase hex only. Guards the
+    comma-joined ``?shas=`` passed to Forgejo against injection; a bad sha is a 400, not a 500."""
+    if not re.fullmatch(r"[0-9a-f]{4,64}", sha):
+        raise HTTPException(status_code=400, detail=f"invalid blob sha: {sha!r}")
+    return sha
+
+
 def _forgejo(request: Request) -> Forgejo:
     return request.app.state.forgejo
 
 
 ForgejoDep = Annotated[Forgejo, Depends(_forgejo)]
-
-
-def _garden_path(path: str) -> str:
-    """Validate a garden file request: a ``.md``/``.mdx`` file under a whitelisted garden dir,
-    no traversal/absolute escape. The closed read surface that keeps the garden from serving
-    arbitrary repo files. Raises a 400 (not 500) on a bad path."""
-    if (
-        path.startswith("/")
-        or ".." in path.split("/")
-        or not path.startswith(tuple(f"{d}/" for d in GARDEN_DIRS))
-        or not path.endswith((".md", ".mdx"))
-    ):
-        raise HTTPException(status_code=400, detail=f"path not in the garden: {path!r}")
-    return path
 
 
 def create_app(settings: Settings) -> FastAPI:
@@ -87,7 +89,7 @@ def create_app(settings: Settings) -> FastAPI:
     @app.middleware("http")
     async def _response_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         response = await call_next(request)
-        response.headers["Content-Security-Policy"] = "frame-ancestors https://haku.allegedly.works"
+        response.headers["Content-Security-Policy"] = "frame-ancestors https://haku.example.com"
         # The SPA shell (index.html) must always revalidate: a new build references new hashed
         # asset filenames, so a stale-cached index.html keeps loading the old app (and the iframe
         # keeps showing the previous page). Hashed assets themselves stay cacheable.
@@ -99,27 +101,45 @@ def create_app(settings: Settings) -> FastAPI:
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.get("/api/dashboard")
-    async def dashboard(forgejo: ForgejoDep) -> DashboardResponse:
-        """Items (with their currently-clicked action ids), the last scan time, and the
-        commit the running image was built from (for the footer's Forgejo link)."""
-        items, clicks, scan_time = await read_dashboard(forgejo)
-        clicked = [Click(item_id=item_id, action_id=action_id) for item_id, action_id in sorted(clicks)]
+    @app.get("/api/meta")
+    async def meta(forgejo: ForgejoDep) -> MetaResponse:
+        """Footer metadata: the last-scan time + the commit the running image was built from. Items
+        are read from `items/*.md` through the generic proxy (the frontend composes them)."""
         sha = settings.git_sha
-        return DashboardResponse(
-            scan_time=scan_time,
+        return MetaResponse(
+            scan_time=await read_scan_time(forgejo),
             deployed_commit=sha[:7] if sha else None,
             deployed_commit_url=f"{settings.repo_web_url}/commit/{sha}" if sha else None,
-            items=items,
-            clicks=clicked,
         )
 
-    # --- Improvements / friction surface: Haku's read-only self-backlog ---------
-    @app.get("/api/improvements")
-    async def improvements(forgejo: ForgejoDep) -> ImprovementsBoard:
-        """Capability ideas + friction log (improvements.yaml). Read-only; empty board if absent."""
-        raw = await forgejo.read_yaml("improvements.yaml")
-        return ImprovementsBoard.model_validate(raw) if raw else ImprovementsBoard()
+    # --- Responses surface: operator-answer slot writes ---------------------------
+    # A generic keyed current-state file per (scope, field): the file at HEAD is the current answer,
+    # the git commit history is the append-only log (plans/ui-authoring-architecture.md → feedback
+    # loop). Replace-in-slot — the item status slot and forms compose over it. Reads go through the
+    # generic proxy; writes stay here.
+    @app.put("/api/responses/{scope}/{field}")
+    async def set_response(
+        scope: str, field: str, req: ResponseRequest, forgejo: ForgejoDep, operator: Operator = None
+    ) -> dict[str, str]:
+        logger.info("response %s/%s = %s by %s", scope, field, req.value, operator or "<unknown>")
+        record = {"value": req.value, "at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds")}
+        if req.note is not None:
+            record["note"] = req.note
+        content = yaml.safe_dump(record)
+        await forgejo.write_file(
+            _response_path(scope, field), content.encode(), f"ui: response {scope}/{field} = {req.value}"
+        )
+        return {"status": "ok"}
+
+    @app.delete("/api/responses/{scope}/{field}")
+    async def clear_response(scope: str, field: str, forgejo: ForgejoDep, operator: Operator = None) -> dict[str, str]:
+        logger.info("clear response %s/%s by %s", scope, field, operator or "<unknown>")
+        await forgejo.delete_file(_response_path(scope, field), f"ui: clear response {scope}/{field}")
+        return {"status": "cleared"}
+
+    # Improvements are now a content collection (memory/improvements/<id>.md), served by the
+    # generic tree+blobs proxy and rendered by the <improvement-board/> garden widget — no
+    # bespoke endpoint. See plans/garden-gradient.md → Settled mechanism.
 
     # --- Runs surface: per-run propagation record (runs/<date>/<ulid>.{yaml,md}) -
     @app.get("/api/runs")
@@ -128,41 +148,36 @@ def create_app(settings: Settings) -> FastAPI:
         how each change propagated to every surface. Read-only; empty if no runs recorded yet."""
         return RunsResponse(runs=await read_runs(forgejo))
 
-    # --- Knowledge garden: browse + render arbitrary repo markdown (whitelisted dirs) ---
-    @app.get("/api/garden")
-    async def garden(forgejo: ForgejoDep) -> GardenIndex:
-        """The garden index: every ``.md``/``.mdx`` under the whitelisted dirs, sorted by path."""
-        return GardenIndex(entries=await read_garden_index(forgejo))
+    # The knowledge garden (browse + file read) now composes over the generic content proxy
+    # below — the frontend filters the tree to the curated dirs and fetches blobs. No bespoke
+    # garden endpoint or path whitelist; the raw read is repo-wide (haku-state holds no secrets).
 
-    @app.get("/api/garden/file")
-    async def garden_file(path: str, forgejo: ForgejoDep) -> GardenFile:
-        """One garden file's raw markdown (rendered as MDX client-side). 400 off-whitelist, 404 if gone."""
-        markdown = await forgejo.read_text(_garden_path(path))
-        if markdown is None:
-            raise HTTPException(status_code=404, detail=f"not found: {path!r}")
-        return GardenFile(path=path, markdown=markdown)
+    # --- Generic read-only content proxy: Forgejo's two read primitives, thinly passed ---
+    # The frontend composes over these (filter the tree, bulk-fetch the blobs it wants), so new
+    # collections/views need zero backend code and existing server-side reads can migrate onto
+    # them. Read-only by construction (never Forgejo's write methods); the git-write cred stays
+    # server-side. See plans/garden-gradient.md → Settled mechanism.
+    @app.get("/api/repo/tree")
+    async def repo_tree(forgejo: ForgejoDep) -> RepoTree:
+        """The whole repo's recursive git tree at HEAD — mirrors Forgejo's git-trees API. No path
+        input (so no traversal surface); the frontend filters by prefix/kind. Repo-pinned, and
+        haku-state is single-author with no credentials, so the full listing is safe to expose."""
+        sha = (await forgejo.commits(1))[0]["sha"]
+        entries = [RepoTreeEntry(path=e["path"], type=e["type"], sha=e["sha"]) for e in await forgejo.tree(sha)]
+        return RepoTree(sha=sha, entries=entries)
 
-    # --- trace tier: operator-expressed intent recorded into haku-state ---------
-    # A clicked action is the file clicks/<item_id>/<action_id> (removed on un-click); feedback
-    # is an intake/ note. Haku reduces these on its next run. This layer owns the paths/messages;
-    # the Forgejo client just makes idempotent single-file commits.
+    @app.get("/api/repo/blobs")
+    async def repo_blobs(shas: str, forgejo: ForgejoDep) -> list[RepoBlob]:
+        """Bulk blob fetch by comma-separated sha — mirrors Forgejo's git/blobs (the client
+        batches internally). Each sha is validated hex; content is UTF-8 text. 400 on a bad sha."""
+        sha_list = [_blob_sha(s) for s in shas.split(",") if s]
+        contents = await forgejo.blobs(sha_list)
+        return [RepoBlob(sha=s, content=c.decode()) for s, c in zip(sha_list, contents, strict=True)]
 
-    @app.put("/api/trace/items/{item_id}/actions/{action_id}")
-    async def set_click(item_id: str, action_id: str, forgejo: ForgejoDep, operator: Operator = None) -> dict[str, str]:
-        logger.info("click %s on %s by %s", action_id, item_id, operator or "<unknown>")
-        stamp = f"clicked_at: {dt.datetime.now(dt.UTC).isoformat(timespec='seconds')}\n"
-        await forgejo.create_file(
-            f"clicks/{item_id}/{action_id}", stamp.encode(), f"ui: click {action_id} on {item_id}"
-        )
-        return {"status": "clicked"}
-
-    @app.delete("/api/trace/items/{item_id}/actions/{action_id}")
-    async def clear_click(
-        item_id: str, action_id: str, forgejo: ForgejoDep, operator: Operator = None
-    ) -> dict[str, str]:
-        logger.info("unclick %s on %s by %s", action_id, item_id, operator or "<unknown>")
-        await forgejo.delete_file(f"clicks/{item_id}/{action_id}", f"ui: unclick {action_id} on {item_id}")
-        return {"status": "cleared"}
+    # --- trace tier: operator feedback recorded into haku-state -----------------
+    # A feedback note is an intake/ file Haku reduces on its next run. (Operator status/affordance
+    # input goes through the responses/ endpoints above, not here.) This layer owns the
+    # paths/messages; the Forgejo client just makes idempotent single-file commits.
 
     @app.post("/api/trace/feedback")
     async def feedback(req: FeedbackRequest, forgejo: ForgejoDep, operator: Operator = None) -> dict[str, str]:
@@ -174,6 +189,16 @@ def create_app(settings: Settings) -> FastAPI:
         heading = f"Operator feedback on {req.item_id}" if req.item_id else "Operator feedback"
         message = f"ui: feedback on {req.item_id}" if req.item_id else "ui: feedback"
         body = f"# {heading} ({stamp})\n\n{req.text.strip()}\n"
+        # Page + selection give Haku grounding for context-free notes ("this page looks bad"),
+        # appended under a rule as clean markdown (selection block-quoted so it reads as a quote).
+        context: list[str] = []
+        if req.page:
+            context.append(f"Reported from page: {req.page}")
+        if req.selection and req.selection.strip():
+            quoted = "\n".join(f"> {line}" for line in req.selection.strip().splitlines())
+            context.append(f"Selected text:\n{quoted}")
+        if context:
+            body += "\n---\n" + "\n\n".join(context) + "\n"
         await forgejo.create_file(f"intake/{stamp}-feedback{suffix}.md", body.encode(), message)
         return {"status": "ok"}
 

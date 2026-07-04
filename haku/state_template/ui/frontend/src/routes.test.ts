@@ -53,7 +53,7 @@ describe("formatHash / round-trip", () => {
       { view: "improvements", gardenPath: null },
       { view: "runs", gardenPath: null },
       { view: "garden", gardenPath: null },
-      { view: "garden", gardenPath: "procedures/tana_runbook.md" },
+      { view: "garden", gardenPath: "procedures/garden.md" },
       { view: "garden", gardenPath: "runs/2026-07-01/note with spaces.md" },
     ];
     for (const r of routes) expect(parseHash(formatHash(r))).toEqual(r);

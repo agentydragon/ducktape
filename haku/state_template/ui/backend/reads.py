@@ -2,51 +2,32 @@
 
 This is the layer that DOES know about features (which file/dir, how to parse it). It sits
 above the feature-agnostic `Forgejo` client so that adding a surface changes only this layer
-(and the endpoint), never the git-content client. Simple single-file reads (e.g. the
-Improvements board) are just `forgejo.read_yaml(path)` inline in the endpoint; the items
-board needs the batched tree+blobs read, which lives here.
+(and the endpoint), never the git-content client. Simple single-file reads are just
+`forgejo.read_yaml(path)` inline in the endpoint; surfaces that need the batched tree+blobs read
+(e.g. the runs manifests) live here. Content collections (e.g. items, improvements) skip this
+layer entirely — the frontend composes over the generic tree+blobs proxy.
 """
 
 from __future__ import annotations
 
 import yaml
 from forgejo import Forgejo
-from models import GardenEntry, Item, RunManifest
+from models import RunManifest
 
 # Haku-the-scanner commits as this author; the "last scan" time is the newest such commit
-# (NOT the UI's click/feedback writes, NOT Flux image-automation commits).
-_HAKU_AUTHOR_EMAIL = "haku@allegedly.works"
-
-# Dirs the knowledge garden may browse/render. A closed whitelist — never the whole repo
-# (keeps clicks/, intake/, and any future secret-ish path out of the browser).
-GARDEN_DIRS = ("memory", "procedures", "runs")
+# (NOT the UI's response/feedback writes, NOT Flux image-automation commits).
+_HAKU_AUTHOR_EMAIL = "haku@example.com"
 
 
-async def read_dashboard(forgejo: Forgejo) -> tuple[list[Item], set[tuple[str, str]], str]:
-    """Items, currently-clicked ``(item_id, action_id)`` pairs, and the last-scan timestamp.
-
-    The timestamp (ISO 8601) is when haku-state last meaningfully changed — the newest
-    Haku-authored commit — surfaced to the UI as "last scan". Beyond the commits list this is
-    two reads regardless of item count: the git tree (paths + blob SHAs) and a batched blobs
-    fetch. The clicks/ overlay is derived straight off the tree paths, no extra calls.
-    """
+async def read_scan_time(forgejo: Forgejo) -> str:
+    """When haku-state last meaningfully changed (ISO 8601): the newest Haku-authored commit,
+    surfaced to the UI footer as "last scan". Items themselves are read from `items/*.md` via the
+    generic proxy — the frontend composes them; this is just the freshness stamp."""
     commits = await forgejo.commits()
-    head_sha = commits[0]["sha"]
-    scan_time = next(
+    return next(
         (c["commit"]["author"]["date"] for c in commits if c["commit"]["author"]["email"] == _HAKU_AUTHOR_EMAIL),
         commits[0]["commit"]["author"]["date"],
     )
-    tree = await forgejo.tree(head_sha)
-    item_shas = [
-        e["sha"] for e in tree if e["type"] == "blob" and e["path"].startswith("items/") and e["path"].endswith(".yaml")
-    ]
-    clicks: set[tuple[str, str]] = set()
-    for e in tree:
-        parts = e["path"].split("/")
-        if e["type"] == "blob" and parts[0] == "clicks" and len(parts) == 3:
-            clicks.add((parts[1], parts[2]))
-    items = [Item.model_validate(yaml.safe_load(raw)) for raw in await forgejo.blobs(item_shas)]
-    return items, clicks, scan_time
 
 
 async def read_runs(forgejo: Forgejo, limit: int = 20) -> list[RunManifest]:
@@ -54,7 +35,7 @@ async def read_runs(forgejo: Forgejo, limit: int = 20) -> list[RunManifest]:
     notes (the sibling ``.md``) attached, newest-first by ``started``.
 
     Two reads beyond the commits list (tree + one batched blobs fetch), regardless of run
-    count — same shape as ``read_dashboard``. A run needs a ``.yaml`` to appear; the ``.md``
+    count. A run needs a ``.yaml`` to appear; the ``.md``
     is optional (``runs/README.md`` and other dangling ``.md`` are ignored)."""
     commits = await forgejo.commits(1)
     tree = await forgejo.tree(commits[0]["sha"])
@@ -77,18 +58,3 @@ async def read_runs(forgejo: Forgejo, limit: int = 20) -> list[RunManifest]:
         runs.append(RunManifest.model_validate(manifest))
     runs.sort(key=lambda m: m.started, reverse=True)
     return runs[:limit]
-
-
-async def read_garden_index(forgejo: Forgejo) -> list[GardenEntry]:
-    """All ``.md``/``.mdx`` files under the garden dirs (`GARDEN_DIRS`), sorted by path —
-    one tree read. The file bodies are fetched lazily per-open via ``forgejo.read_text``."""
-    commits = await forgejo.commits(1)
-    tree = await forgejo.tree(commits[0]["sha"])
-    prefixes = tuple(f"{d}/" for d in GARDEN_DIRS)
-    entries = [
-        GardenEntry(path=e["path"])
-        for e in tree
-        if e["type"] == "blob" and e["path"].startswith(prefixes) and e["path"].endswith((".md", ".mdx"))
-    ]
-    entries.sort(key=lambda e: e.path)
-    return entries

@@ -1,16 +1,14 @@
-// Hash routing — the SPA's own URL is the source of truth for which surface is open.
-// Hash, not path, so the StaticFiles backend needs no catch-all and nothing depends on
-// history.pushState semantics inside the sandboxed console iframe; `location.hash`/
-// `hashchange` are the primitive, safe pair. Hand-rolled on purpose: the route space is
-// small and flat — a router dependency would be premature machinery.
+// Hash routing — the SPA's own URL is the source of truth for which surface is open
+// (plans/garden-gradient.md → "Give the gradient real URLs"). Hash, not path, so the
+// StaticFiles backend needs no catch-all and nothing depends on history.pushState
+// semantics inside the sandboxed console iframe; `location.hash`/`hashchange` are the
+// primitive, safe pair. Hand-rolled on purpose: the route space is small and flat — a
+// router dependency would be premature machinery.
 //
 // Scheme:  #/            Inbox (default; unknown routes also fall back here)
-//          #/<view>      any other top-level tab
+//          #/<view>      any other top-level tab (runs, improvements, …)
 //          #/garden      Garden index
 //          #/garden/<repo-relative-path>   a specific garden file
-//
-// When you add a surface (a new View entry in app.tsx), add it to VIEWS here — the route
-// falls back to Inbox until you do.
 
 import { useCallback, useEffect, useState } from "react";
 

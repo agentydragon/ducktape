@@ -2,11 +2,11 @@
 
 This layer knows only about **git/Forgejo content**: reading files/trees/blobs and making
 single-file commits over the Forgejo API. It deliberately knows NOTHING about haku-state's
-features (items, improvements, kitchen, …) — those file paths and their parsing live in the
+features (items, improvements, runs, …) — those file paths and their parsing live in the
 feature layer (`reads.py` + the endpoints in `app.py`), so adding a surface never touches
 this client. The cluster-internal Forgejo is plaintext HTTP, so no TLS/CA handling. Every
 write is one authenticated HTTP call (Forgejo serializes commits server-side), so there is
-no working copy, no lock, and no pull loop. Credentials are the haku-state-git-write
+no working copy, no lock, and no pull loop. Credentials are the git-write secret's
 basic-auth pair.
 """
 
@@ -18,16 +18,16 @@ from typing import Any, Self
 import httpx
 import yaml
 
-# Commits the UI makes (operator clicks/feedback) are attributed to this author so callers
-# can tell them apart from Haku's own scanner commits.
-UI_AUTHOR = {"name": "haku-ui", "email": "haku-ui@allegedly.works"}
+# Commits the UI makes (operator feedback/responses) are attributed to this author so
+# callers can tell them apart from Haku's own scanner commits.
+UI_AUTHOR = {"name": "haku-ui", "email": "haku-ui@example.com"}
 
 
 class Forgejo:
     """Async client for one repo over the Forgejo API. Generic content primitives only.
 
     ``api_url`` is the repo API root, e.g.
-    ``http://forgejo-http.forgejo:3000/api/v1/repos/<owner>/<repo>``.
+    ``http://<forgejo-service>.<forgejo-namespace>:3000/api/v1/repos/<owner>/<repo>``.
     """
 
     def __init__(self, *, api_url: str, username: str, password: str, branch: str = "main") -> None:
@@ -75,15 +75,22 @@ class Forgejo:
     async def blobs(self, shas: list[str]) -> list[bytes]:
         """Decoded contents for many blob SHAs via the batch ``git/blobs`` API, in input order.
 
-        One round trip per ~80 SHAs (keeps the URL short) instead of a per-file ``/raw`` fan-out,
-        which this Forgejo serializes (~1s/blob).
+        Batched instead of a per-file ``/raw`` fan-out, which this Forgejo serializes (~1s/blob).
+        **Forgejo silently caps ``git/blobs`` at 50 blobs per request** — extra SHAs are dropped
+        from the response, not errored (this hid the 51st+ item once the repo crossed 50 items).
+        So chunk *below* that cap and map results back **by SHA**, never by response position, so a
+        short or reordered response can neither misalign items nor silently drop one: any requested
+        SHA that doesn't come back raises instead of vanishing.
         """
-        out: list[bytes] = []
-        for i in range(0, len(shas), 80):
-            r = await self._http.get("/git/blobs", params={"shas": ",".join(shas[i : i + 80])})
+        by_sha: dict[str, bytes] = {}
+        for i in range(0, len(shas), 40):
+            chunk = shas[i : i + 40]
+            r = await self._http.get("/git/blobs", params={"shas": ",".join(chunk)})
             r.raise_for_status()
-            out.extend(base64.b64decode(b["content"]) for b in r.json())
-        return out
+            by_sha.update((b["sha"], base64.b64decode(b["content"])) for b in r.json())
+        if missing := [s for s in shas if s not in by_sha]:
+            raise RuntimeError(f"git/blobs returned {len(by_sha)}/{len(shas)}; missing {missing[:5]}")
+        return [by_sha[s] for s in shas]
 
     async def read_text(self, path: str) -> str | None:
         """A single file's text content via the contents API, or ``None`` if it doesn't exist."""
@@ -98,16 +105,28 @@ class Forgejo:
         raw = await self.read_text(path)
         return None if raw is None else yaml.safe_load(raw)
 
-    # --- generic writes (idempotent single-file commits) -------------------------
+    # --- generic writes (single-file commits) ------------------------------------
     # Forgejo makes each commit server-side; a concurrent writer just surfaces as 422
-    # (file already exists) / 404 (already gone), handled inline as a no-op so these are
-    # idempotent — no local reconcile-and-retry loop.
+    # (file already exists) / 404 (already gone), handled inline as a no-op so create/delete
+    # are idempotent — no local reconcile-and-retry loop.
 
     async def create_file(self, path: str, content: bytes, message: str) -> None:
         """Create ``path`` (idempotent: a 422 'already exists' is treated as success)."""
         r = await self._http.post(f"/contents/{path}", json=self._commit_body(message, content=content))
         if r.status_code != httpx.codes.UNPROCESSABLE_ENTITY:
             r.raise_for_status()
+
+    async def write_file(self, path: str, content: bytes, message: str) -> None:
+        """Create-or-overwrite ``path`` (upsert): POST if absent, else PUT with its current sha."""
+        existing = await self._http.get(f"/contents/{path}", params={"ref": self._branch})
+        if existing.status_code == httpx.codes.NOT_FOUND:
+            r = await self._http.post(f"/contents/{path}", json=self._commit_body(message, content=content))
+        else:
+            existing.raise_for_status()
+            r = await self._http.put(
+                f"/contents/{path}", json=self._commit_body(message, content=content, sha=existing.json()["sha"])
+            )
+        r.raise_for_status()
 
     async def delete_file(self, path: str, message: str) -> None:
         """Delete ``path`` (idempotent: a missing file is a no-op)."""
