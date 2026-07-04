@@ -1,11 +1,13 @@
 # Plan: OVH storage tiering (HDD bulk vs SSD hot) + etcd onto NVMe
 
-**Status: active.** Foundation is live: the `storage.allegedly.works/tier` node labels are
-applied to all five OVH nodes (KS-5 `hdd`, KS-GAME `ssd`), and the media-scoped
-StorageClasses `local-path-ovh-{hdd,ssd}` plus the `local-path-ovh`→`hdd` repin are merged
-and reconciled. Remaining, in order: **Stage 1** (SSD SeaweedFS tier + Forgejo git cutover —
-the Haku-dashboard fix, no wipes/CP changes), then **Stage 2** (mount rename + etcd onto
-NVMe, the rolling destructive part), then the optional **Stage 3**.
+**Status: active.** Done: the `storage.allegedly.works/tier` node labels + media-scoped
+StorageClasses (`local-path-ovh-{hdd,ssd}`, `seaweedfs-ovh-ssd`), and the SeaweedFS
+volume-layer migration to `volumeTopology` — the whole bulk is now 2-copy on the `hdd` group
+(3× KS-5), both the flat volume servers and their PVCs are retired, and the `ssd` group is up
+and empty. Remaining, in order: **Phase 2.5** (upgrade seaweedfs-operator, drop the
+`spec.volume` stub), **Phase 3** (Forgejo git → `seaweedfs-ovh-ssd`, the Haku-dashboard fix),
+then **Stage 2** (mount rename + etcd onto NVMe, the rolling destructive part), then the
+optional **Stage 3**.
 
 ## Goal
 
@@ -121,26 +123,11 @@ would still provision at whatever path that node has.
 **Guardrail:** since `-disk` tags are unverified, alert if a SeaweedFS `ssd`
 volume-server pod is not on a `tier=ssd` node.
 
-**Verified (rehearsal 2026-07-04) — `volumeTopology` is all-or-nothing, NOT additive.** The
-operator (`controller_volume.go`, confirmed in 1.0.19 _and_ master) does
-`if len(VolumeTopology) > 0 { return ...topology }` — so the moment `volumeTopology` is set,
-the flat `spec.volume` StatefulSet is **no longer reconciled** (an operator upgrade won't
-help). The SSD tier therefore can't be "added beside" the flat block; the whole volume layer
-must move to `volumeTopology` (an `hdd` group + an `ssd` group), which is a data migration —
-see the rewritten Stage 1 below. Two hard rehearsal findings drive the procedure:
-
-- **`spec.volume` must stay in the CR (on 1.0.19).** Removing it while adding `volumeTopology`
-  **panics the operator** (nil deref in `buildVolumeServerStartupScriptWithTopology`, which
-  reads `m.Spec.Volume.*` for topology defaults). Keep `spec.volume` as a defaults stub — in
-  topology mode the operator ignores it for server creation but still reads it for defaults.
-  Fixed upstream in **1.0.20** (nil-safe fallback); the stub is dropped in Phase 2.5 after the
-  operator upgrade.
-- Each topology group **requires `dataCenter` and `rack`** (CRD-required fields).
-
-The good news, also rehearsed: flipping to `volumeTopology` **leaves the existing flat
-StatefulSet running** (same UID, orphaned but serving), and **`volume.move`** relocates each
-volume copy flat→topology (copy → tail-for-in-flight → delete source) **without ever dropping
-below 2 copies**, retagging disk type in flight. Data integrity confirmed end-to-end.
+**`volumeTopology` is all-or-nothing (not additive).** Once set, the operator reconciles only
+the topology groups and stops touching the flat `spec.volume` StatefulSet. On our operator
+(1.0.19) `spec.volume` must stay in the CR as a defaults stub: removing it nil-panics
+`buildVolumeServerStartupScriptWithTopology`. Fixed upstream in **1.0.20**; the stub is dropped
+in Phase 2.5 after the operator upgrade.
 
 **Verified — no control-plane taint trap.** OVH control planes run with
 `allowSchedulingOnControlPlanes = true` (ovh-nodes.tf), and live OVH nodes carry no
@@ -369,111 +356,11 @@ tolerates 1 down). All 3 KS-5 then workers/bulk.
 
 ### Stage 1 — SSD SeaweedFS tier for Forgejo git (fixes the Haku dashboard)
 
-No control-plane change, no new hardware — but (per the rehearsal above) it is a **volume-layer
-topology migration**, not a bolt-on: the whole SeaweedFS volume layer moves from the flat
-`spec.volume` to two `volumeTopology` groups (`hdd` on KS-5, `ssd` on KS-GAME), and the
-existing ~237 GiB of bulk is `volume.move`-relocated onto the new `hdd` servers. `spec.volume`
-stays in the CR as a defaults stub (removing it panics the operator).
-
-**Phase 0 — `seaweedfs-ovh-ssd` StorageClass** (<../../k8s/seaweedfs-csi/sc-seaweedfs-ovh-ssd.yaml>):
-CSI, `parameters: {diskType: ssd, replication: "001"}` (v1.4.14 maps `diskType`→`weed mount
--disk`, passes `replication` through). Additive; nothing binds until the `ssd` servers exist
-(Phase 1), so a real post-check waits for Phase 1.
-
-**Phase 1 — add the `hdd` + `ssd` `volumeTopology` groups, keep `spec.volume`.** Commit →
-Flux. The operator brings up empty `seaweedfs-volume-{hdd,ssd}-*` StatefulSets; the flat
-`seaweedfs-volume` StatefulSet keeps running (orphaned, same UID). **Post-check:** master
-`cluster.check` lists all servers (flat + hdd + ssd), **G-swfs** green (bulk still 2-copy on
-the flat 3). Sketch (both groups need `dataCenter` + `rack`; `spec.volume` unchanged, still
-present):
-
-```yaml
-# cluster/k8s/seaweedfs/cluster/seaweed.yaml — spec.volume stays (defaults stub); ADD:
-volumeTopology:
-  hdd: # 3 replicas on KS-5; holds the migrated bulk
-    replicas: 3
-    dataCenter: hil
-    rack: hil-ovh-h109b04
-    storageClassName: local-path-ovh-hdd
-    requests: { storage: 1800Gi, cpu: 100m, memory: 512Mi }
-    limits: { memory: 1536Mi }
-    extraArgs: ["-disk=hdd"] # matches the flat servers' default ("" == hdd, verified)
-    priorityClassName: stateful-infra
-    nodeSelector: { storage.allegedly.works/tier: hdd }
-    affinity: { podAntiAffinity: <one per host, labelSelector seaweedfs/topology=hdd> }
-  ssd: # 2 replicas on KS-GAME; serves Forgejo git
-    replicas: 2
-    dataCenter: hil
-    rack: hil-ovh-h108b01 # real OVH rack of both KS-GAME nodes
-    storageClassName: local-path-ovh-ssd
-    requests: { storage: 250Gi, cpu: 100m, memory: 512Mi }
-    limits: { memory: 1536Mi }
-    minFreeSpacePercent: 10 # NVMe#2 is one shared XFS pool (ssd server + forgejo-db +
-    #   filer-db); go read-only before the disk fills so the fragile DBs keep their reserve.
-    maxVolumeCounts: 50 # overcommit slots: -max=0 gives only ~24 on 419 GB, and SeaweedFS
-    #   pre-grabs ~2–6 (mostly-empty) volumes per collection; thin volumes make this ~free.
-    extraArgs: ["-disk=ssd"]
-    priorityClassName: stateful-infra
-    metricsPort: 9328
-    nodeSelector: { storage.allegedly.works/tier: ssd }
-    affinity: { podAntiAffinity: <one per host, labelSelector seaweedfs/topology=ssd> }
-```
-
-**Phase-1 gotcha — the flat servers' anti-affinity blocks the topology pods (fix or they
-stay Pending).** The topology pods carry the same `app.kubernetes.io/component=volume` +
-`name=seaweedfs` labels as the flat servers, so the flat servers' original one-per-host
-`podAntiAffinity` (`{component: volume, name: seaweedfs}`) treats the topology pods as
-anti-affinity targets — each flat server blocks its node against topology co-location. With
-flat servers on 3 of the 5 OVH nodes, only the 2 flat-free nodes accept a topology pod; the
-other 3 stay **Pending**. Fix: narrow the flat anti-affinity to `component=volume` **AND**
-`seaweedfs/topology DoesNotExist` (keeps flat-flat separation, ignores topology). The operator
-won't apply a `spec.volume` change in topology mode (it stops reconciling the flat
-StatefulSet), so patch the **orphaned** flat StatefulSet directly — it's transient (deleted in
-Phase 2), so no committed-config change is warranted:
-
-```bash
-kubectl -n seaweedfs patch sts seaweedfs-volume --type=merge -p '{"spec":{"template":{"spec":{"affinity":{"podAntiAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":[{"labelSelector":{"matchExpressions":[{"key":"app.kubernetes.io/component","operator":"In","values":["volume"]},{"key":"app.kubernetes.io/name","operator":"In","values":["seaweedfs"]},{"key":"seaweedfs/topology","operator":"DoesNotExist"}]},"topologyKey":"kubernetes.io/hostname"}]}}}}}}'
-```
-
-The flat servers roll one-at-a-time (each sticky to its local-path node); **G-swfs** stays
-green. A topology pod left Pending during the roll can keep a stale scheduler backoff — `kubectl
--n seaweedfs delete pod <pending-topology-pod>` forces a fresh scheduling attempt once the last
-flat server has rolled. (Done 2026-07-04: all 8 servers up, G-swfs green, no data moved.)
-
-**Phase 2 — evacuate the flat servers → `hdd` group, then retire them (hands-on,
-G-swfs-gated).** Moves the ~473 GB physical (~237 GiB logical) of bulk off the 3 flat servers
-onto the 3 `hdd` servers with `volume.move` (copy → tail-for-in-flight → delete source — never
-drops below 2 copies). All from a master pod; mutating commands need the admin `lock`.
-
-**Pre:** **G-swfs** green; all 8 servers up (`cluster.check`); snapshot `volume.list`.
-
-1. **Evacuate one flat server at a time** (`volume-2`, then `-1`, then `-0`). For each volume
-   on flat server `F`, `volume.move` its copy to an `hdd` server that does **not** already hold
-   that volume, so the volume's 2 copies land on 2 different `hdd` hosts (repl 001, rack
-   `hil-ovh-h109b04`). Batch per lock session:
-
-   ```bash
-   printf 'lock\nvolume.move -source <F>:8444 -target <hdd-X>:8444 -volumeId <id>\n…\nunlock\n' \
-     | kubectl -n seaweedfs exec -i seaweedfs-master-0 -- weed shell
-   ```
-
-   After each server empties: **G-swfs** green (every volume still 2 copies, now on `hdd`
-   servers) and `volume.list` shows `F` holding 0 volumes.
-
-2. **Verify the bulk is fully on the `hdd` group.** `volume.list`: every bulk volume's 2 copies
-   on `seaweedfs-volume-hdd-*`, none on the flat servers; `volume.fix.replication` dry-run
-   empty; `cluster.check` clean.
-
-3. **Retire the flat StatefulSet** — only once step 2 is green:
-   - `kubectl -n seaweedfs delete statefulset seaweedfs-volume`
-   - Delete PVCs `mount0-seaweedfs-volume-{0,1,2}` (reclaimPolicy `Delete` frees the local-path
-     dirs). **Irreversible** — the old copies are gone; do it only after G-swfs confirms the
-     data is on the `hdd` group.
-   - `spec.volume` stays in the CR (removing it panics the operator on 1.0.19) — now a pure
-     stub that creates no servers. Dropped in Phase 2.5 after the operator upgrade.
-
-**Post:** `cluster.check` shows 5 volume servers (3 `hdd` + 2 `ssd`); **G-swfs** green; bulk on
-`hdd`, `ssd` servers empty (until Phase 3). ~hours over nebula.
+No control-plane change, no new hardware. The volume-layer migration is done: SeaweedFS runs
+two `volumeTopology` groups (`hdd` on KS-5, `ssd` on KS-GAME), the ~237 GiB of bulk is 2-copy
+on the `hdd` servers, and the flat `spec.volume` StatefulSet + PVCs are retired (`spec.volume`
+kept as a defaults stub, dropped in Phase 2.5). Remaining Stage-1 work: the operator upgrade
+(Phase 2.5) and the Forgejo git cutover (Phase 3).
 
 **Phase 2.5 — upgrade seaweedfs-operator, then drop the `spec.volume` stub.** We run 1.0.19
 (chart 0.1.22); upstream is 1.0.30 (chart 0.1.33). Two fixes land in this range that retire our
@@ -493,8 +380,7 @@ churn — the stub removal is a no-op in topology mode).
 
 **Phase 3 — migrate Forgejo git → SSD** (copy-cutover runbook below). Its `seaweedfs-ovh-ssd`
 PVC (`diskType: ssd`) places git volumes on the `ssd` group. **Post-checks:** **G-public** (a
-`git clone`/push works), the new PVC bound on `seaweedfs-ovh-ssd`, and the Haku dashboard load
-benchmarked vs. the old latency.
+`git clone`/push works) and the new PVC bound on `seaweedfs-ovh-ssd`.
 
 ### Stage 2 — mount rename + etcd onto NVMe (rolling, node-by-node)
 
@@ -577,5 +463,5 @@ one-member-at-a-time **G-etcd** discipline.
    `rsync -a`). Verify repo counts + a `git fsck` sample.
 4. Point the chart's `persistence.claimName` at `forgejo-git-rwx-ssd`
    (<../../k8s/forgejo/app/helmrelease.yaml>, <../../k8s/forgejo/app/git-storage-pvc.yaml>).
-5. Scale up; verify `git.allegedly.works` and a clone/push. Bench the Haku dashboard load.
+5. Scale up; verify `git.allegedly.works` and a clone/push.
 6. Retain the old PVC briefly, then delete once satisfied.
