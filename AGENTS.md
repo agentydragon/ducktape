@@ -74,7 +74,7 @@ Remote execution (RBE) and remote caching are the **expected defaults** — do n
 
 **If any Bazel-family command (`bazel`, `bazelisk`, `bb`, `bbr`) cannot reach BuildBuddy** (connection refused, DNS failure, cert error):
 
-1. First, retry the Bash tool call with `dangerouslyDisableSandbox: true` — the Claude Code sandbox's `--unshare-net` breaks Bazel's gRPC DNS resolution even when the host is listed in the domain allowlist (see <docs/claude_code_sandbox.md>).
+1. First, retry the Bash tool call outside the sandbox (per the [Sandbox](#sandbox) rule above) — `--unshare-net` breaks Bazel's gRPC DNS resolution even when the host is listed in the domain allowlist (see <docs/claude_code_sandbox.md>).
 2. If it still fails, **stop and report the connectivity issue to the user**. The user may need to recover the session start hook or check VPN/firewall state.
 
 Build outputs, invocation data, and `bbr` configuration layers live in

@@ -73,4 +73,4 @@ Needs verification:
 
 ## Repository
 
-- [ ] Pick a sane license schema (probably AGPL)
+- [ ] Add an AGPL-3.0 `LICENSE` file at the repo root and standardize AGPL-3.0 license headers across source files (`README.md` declares AGPL 3.0, but there is no `LICENSE` file and headers are inconsistent)

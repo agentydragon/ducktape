@@ -3,6 +3,13 @@
 Captured on 2026-05-31 before rebooting `talos-kimsufi-worker-1`
 (`147.135.39.176`, `10.42.0.14`).
 
+> **Root cause (identified 2026-06-08):** this was the first symptom capture of a
+> recurring syndrome — promtail page-cache eviction starving etcd of IO, which
+> surfaced as node-lease misses and `NotReady` flaps. Full RCA + fix in
+> <../2026-06-10-etcd-io-contention/promtail-page-cache-etcd-starvation.md>. This
+> directory remains the symptom capture; the CNPG `pg_create_restore_point()`
+> recovery recipe below is still current.
+
 ## Summary
 
 The host was still alive on the public network, but Talos and Kubernetes control

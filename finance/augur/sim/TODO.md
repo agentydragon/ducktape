@@ -302,6 +302,54 @@ view, not a real cost. The actual dense-decode wins are orthogonal to layout —
 sparse-active decoding and not storing rarely-read state as a dense per-snapshot
 grid; see <augur/debug/rollout_perf_profiling.md>.
 
+## Code review — open findings (2026-05)
+
+Carried over from the 2026-05 code review (`code_review_2026_05_26.md` /
+`code_review_2026_05_27.md`, consolidated 2026-05-27). Still matched the current
+tree at merge time.
+
+### P2
+
+- **External-series cubes use serial row loops and uneven coverage checks.**
+  `_validate_series_indexed_amounts` builds a Python dict from long Polars rows
+  and checks rollout/month cells with nested Python loops; `external_values_cube`
+  and `external_event_values_cube` fill dense arrays by iterating rows. Coverage
+  validation also differs by consumer (`SeriesIndexedAmount` is prechecked; asset
+  prices, home values, event cubes can still enter the dense plan as `NaN` /
+  default `False`). Share one coverage-checked matrix materialization path for
+  level and event series (`simulate.py`, `compiler/series.py`, `model/exogenous.py`).
+- **Product fan path splits batched simulations back into one-rollout cache
+  entries.** `_simulate_missing` simulates all missing seeds in one dense batch,
+  then stores one sliced `DenseSimulationResult` per seed; `_decoded_rollouts`
+  and `_metric_matrix` decode N times and restack. Separate distribution/fan
+  caching from selected-rollout detail caching (`product/service.py`).
+- **Direct cash mutations bypass obligation/failure semantics.** Scheduled
+  transfers, property purchases, and capital improvements debit cash directly
+  and can push it negative without the hard-demand failure path; behavior is
+  defined per phase rather than by a scenario-visible contract. Make the
+  cash-demand taxonomy explicit (`engine/phases.py`).
+- **Obligation funding recomputes each account group once per slot.**
+  `_obligation_group_funded` rebuilds the `(agent, from_slot)` group mask and
+  recomputes grouped due per slot. Precompute per-month group ids and compute
+  group due once (`engine/phases.py`).
+
+### P3
+
+- **Rollout detail still materializes selected dense results through the old
+  frame path** — already tracked as the `ProjectionRun` product cutover above.
+- **Lifecycle and obligation discriminators are still raw SoA fields.**
+  `LifecycleEventCompileOutput` reuses one `amount` field by `kind`;
+  `ObligationCompileOutput` carries `source_kind` / `source_index` with
+  kind-dependent payload. Add typed per-kind views over the dense rows
+  (`compiler/lifecycle.py`, `compiler/obligations.py`, `engine/phases.py`).
+- **Some compile-plan fields still sit outside their natural arenas.**
+  `capital_gain_agent_codes`, `tax_profile_capital_gain_index`,
+  `property_rented_fraction`, `property_building_basis`,
+  `property_owner_profile_index`, `liability_owner_profile_index` remain
+  top-level arrays on `CompiledSimulation`. Move when touching nearby compiler
+  code; likely homes `TaxCompileOutput` / `PropertyCompileOutput` /
+  `LiabilityCompileOutput` (`compiler/plan.py`).
+
 ## Future / nice-to-have
 
 - **Stochastic tenant model.** Landlord rental income today uses a
