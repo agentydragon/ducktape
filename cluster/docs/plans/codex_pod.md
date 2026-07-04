@@ -8,8 +8,8 @@ same build/publish/auto-update pipeline we already use for every other container
 
 ## Goal
 
-`git push devel` (changing `flake.nix` / the codex tool env) → CI builds a
-`nix2container` image → pushes to the registry → Flux image automation writes the
+`git push devel` (changing `flake.nix` / the codex tool env) → CI builds the
+`codex-pod` Nix image → pushes to the registry → Flux image automation writes the
 new digest to git → the codex `Deployment` rolls. Adding a tool is a one-line edit
 to a Nix `buildEnv`; no hand-rolled `/nix` seeding, no runtime `nix shell`.
 
@@ -40,59 +40,60 @@ Three stages, each an existing, boring piece of our stack:
    applies, the `Deployment` rolls. Identical to how every other image
    auto-updates here.
 
-### The environment (SSOT for the tool set)
+### The image + environment — implemented
+
+Both live in `x/codex_pod_image/default.nix` (wired into the flake as
+`.#codex-pod-image`), following the existing `x/nix_rbe_image` pattern —
+`dockerTools.buildLayeredImage` over a `buildEnv`, not nix2container (no new flake
+input needed; see the alternatives table). The tool set is one `buildEnv`; adding
+a tool is a one-line edit to `paths`:
 
 ```nix
-# codex-env.nix
-{ pkgs }:
-pkgs.buildEnv {
+codexEnv = pkgs.buildEnv {
   name = "codex-env";
-  paths = with pkgs; [
-    bash coreutils moreutils git openssh
-    direnv nix-direnv
-    ripgrep fd jq nodejs_22
-    # codex-cli: nixpkgs pkg or our own overlay derivation
+  paths = [
+    pkgsUnstable.codex # same package home-manager pins for agent-box
+    pkgs.bashInteractive pkgs.coreutils pkgs.git pkgs.openssh
+    pkgs.direnv pkgs.nix-direnv pkgs.nix
+    pkgs.ripgrep pkgs.fd pkgs.jq pkgs.nodejs_22 pkgs.kubectl pkgs.cacert
+    # …one line per tool
   ];
-}
+  pathsToLink = [ "/bin" "/share" ]; # NOT /etc — fakeRootCommands writes it
+};
 ```
 
-Adding a tool = one line here. This `buildEnv` is the only thing that defines
-what lands in the pod.
+`fakeRootCommands` plants real `/etc/{passwd,group,nsswitch.conf}` (UID 1000
+`codex` user, resolved by the OCI runtime before the `/nix` overlay) and the
+ca-cert symlink; `/bin/{bash,sh,env}` come from the env. `tag = null` →
+**content-addressed tag** (verified: `codex-pod:ddw5…`), so the tag changes iff
+`codexEnv` changes.
 
-### The image (nix2container)
+Build/verify locally:
 
-```nix
-# image.nix
-nix2container.buildImage {
-  name = "ghcr.io/agentydragon/codex-pod";
-  # tag defaults to the image output hash → changes iff the closure changes
-  config.entrypoint = [ "${pkgs.bash}/bin/bash" ];
-  copyToRoot = codexEnv; # buildEnv above, relocated to /
-  maxLayers = 100; # popularity-based layering for cache reuse
-}
+```bash
+nix build .#codex-pod-image   # → result (docker archive; codex 0.142.2 + tools)
+docker load < result
 ```
-
-`nix build .#codexImage` produces a small JSON descriptor (no tarball in the
-store); `nix run .#codexImage.copyToRegistry` streams only changed layers to the
-registry. See <../container-images.md> for our registry/tag/Flux-automation
-conventions.
 
 ### The CI job (sketch — analogous to `openclaw-image`)
 
-A dedicated workflow that runs Nix (we already run Nix in CI for the Attic push):
+A workflow that runs Nix (we already run Nix in CI for the Attic push), builds the
+archive, and pushes it with `skopeo`/`crane` (`dockerTools` emits a tarball, not a
+direct registry push):
 
 ```yaml
 # .github/workflows/codex-pod-image.yml (sketch)
 on:
   push:
     branches: [devel]
-    paths: ["cluster/k8s/agents/codex-pod/**", "flake.nix", "flake.lock"]
+    paths: ["x/codex_pod_image/**", "flake.nix", "flake.lock"]
 jobs:
   build-push:
     steps:
       - uses: actions/checkout@v4
       - # install/enable Nix
-      - run: nix run .#codexImage.copyToRegistry # → GHCR/Harbor
+      - run: nix build .#codex-pod-image
+      - run: skopeo copy docker-archive:result docker://ghcr.io/agentydragon/codex-pod:<tag>
 ```
 
 ### Flux image automation (sketch)
@@ -143,11 +144,13 @@ home-on-SeaweedFS carry over unchanged from `codex-nix-pvc-uid-pod`.
 
 ### Roll granularity
 
-nix2container output is deterministic, so an unchanged `codexEnv` yields the same
-content. To avoid rolling the pod on unrelated `devel` commits, the CI job should
-only publish a new **sortable** tag when the closure actually changed (e.g. skip
-the push if a tag for this narhash already exists), so `ImagePolicy` only sees a
-new image when the tool set really moved. Exact tag policy: settle against
+The image `tag` is the content hash, so an unchanged `codexEnv` yields the same
+tag. But Flux `ImagePolicy` needs a **sortable** tag to pick "newest", and a hash
+isn't ordered — so CI should also push a sortable tag (timestamp / build number)
+and let `ImagePolicy` select on that while the digest pins content. To avoid
+rolling on unrelated `devel` commits, guard the push: skip it when the content
+tag already exists in the registry, so a new sortable tag only appears when the
+tool set actually moved. Exact tag policy: settle against
 <../container-images.md>.
 
 ## Alternatives considered (and why not, for now)
@@ -156,6 +159,7 @@ new image when the tool set really moved. Exact tag policy: settle against
 | --- | --- |
 | **nix-csi** (Lillecarl) — CSI-mount a shared node `/nix`, realize closure in-cluster | No off-the-shelf auto-roll: the store path must reach the `Deployment` spec, needing a custom controller or local render. Also a privileged Talos DaemonSet to validate. Was only attractive under a "no CI build" constraint we've since dropped. |
 | **comin** (nlewo) — pull-based NixOS GitOps, in-place `nixos-rebuild switch` | The genuinely complete "push → self-reconciles" tool, but it drives a **NixOS machine/microVM**, not a k8s pod. Tracked separately for the `agent-box` VM in <../../../idea/comin_nixos_gitops.md>. |
+| **nix2container** (nlewo) — archive-less image build, incremental push | More efficient than `dockerTools` (no ~1.1 GB tarball in the store, skips already-pushed layers), but needs a new flake input + patched skopeo. A future optimization if push/build time bites; `dockerTools` matches `x/nix_rbe_image` today. |
 | **nix-snapshotter** (pdtpartners) — image ref *is* a nix store path, closure from a binary cache | Technically ideal (no fat layers), and Flux image automation can still watch the registry tag. Blocked by needing a **containerd snapshotter plugin on every node** — a Talos-extension/custom-image project, not a config toggle. |
 | **Nixery** (tazjin) — `nixery.dev/shell/pkg1/pkg2` as the image | Quick ergonomics, but an external/awkward-to-self-host registry and less control than building our own image. |
 | **kubenix / easykubenix / nixidy** — Nix → k8s manifests | Renderers only; don't change the build/roll story. Overkill for one Deployment. |
@@ -164,7 +168,6 @@ new image when the tool set really moved. Exact tag policy: settle against
 ## Open questions / decisions
 
 - **Registry**: GHCR (like `openclaw-image`) vs in-cluster Harbor.
-- **`codex-cli` packaging**: is it in nixpkgs, or do we need an overlay/derivation?
 - **Manifest location**: promote to `cluster/k8s/agents/codex-pod/` with a Flux
   `Kustomization` + SOPS decryption once the image builds and the pod runs.
 - **Identity**: reuse `agent-box-codex-user` or mint a `codex-pod` identity.
@@ -174,22 +177,26 @@ new image when the tool set really moved. Exact tag policy: settle against
 
 ## Phased next steps
 
-1. Land the spikes (PR #2774) — done / in review.
-2. Add `codex-env.nix` + `image.nix`; get `nix run .#codexImage.copyToRegistry`
-   working locally against the registry.
-3. Add the CI workflow (paths-filtered on the codex env + flake).
-4. Add the `Deployment` + Flux `ImageRepository`/`ImagePolicy`/
+Image + env are built (`.#codex-pod-image`, `x/codex_pod_image/`). Remaining:
+
+1. Add the CI workflow (paths-filtered on `x/codex_pod_image/**` + flake): `nix
+   build .#codex-pod-image` → `skopeo copy` to the registry, with the sortable +
+   content tag scheme above.
+2. Add the `Deployment` + Flux `ImageRepository`/`ImagePolicy`/
    `ImageUpdateAutomation` under `cluster/k8s/agents/codex-pod/`; wire the Flux
-   `Kustomization` (SOPS for the identity secret).
-5. Verify the loop end-to-end: edit `codex-env.nix` → push → new image → digest
+   `Kustomization` (SOPS for the identity secret). Port the sshd startup + SOPS
+   bootstrap identity from `codex-nix-pvc-uid-pod`.
+3. Verify the loop end-to-end: edit `codexEnv` → push → new image → digest
    committed → pod rolls with the new tool present.
-6. Decide exposure + identity, then treat as a normal service.
+4. Decide exposure + identity, then treat as a normal service.
 
 ## References
 
+- `x/codex_pod_image/default.nix` — the built image + env (`.#codex-pod-image`);
+  `x/nix_rbe_image/` is the `dockerTools.buildLayeredImage` precedent.
 - <../../k8s/agents/x/codex-nix-pvc-uid-pod/README.md> — the spike this evolves.
 - <../container-images.md> — our build/push/tag + Flux image automation conventions.
-- nix2container: <https://github.com/nlewo/nix2container>.
-- Alternatives: nix-csi <https://github.com/Lillecarl/nix-csi>, comin
-  <https://github.com/nlewo/comin> (see <../../../idea/comin_nixos_gitops.md>),
-  nix-snapshotter <https://github.com/pdtpartners/nix-snapshotter>.
+- Alternatives: nix2container <https://github.com/nlewo/nix2container>, nix-csi
+  <https://github.com/Lillecarl/nix-csi>, comin <https://github.com/nlewo/comin>
+  (see <../../../idea/comin_nixos_gitops.md>), nix-snapshotter
+  <https://github.com/pdtpartners/nix-snapshotter>.
