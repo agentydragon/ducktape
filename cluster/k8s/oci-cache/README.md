@@ -80,9 +80,11 @@ The public, authenticated endpoint and node-level pull-through are deliberately 
    routes through the mirror (see Consumers above); dropping `ghcr.io` +
    `pkg-containers.githubusercontent.com` from `cnp-haku-cloud-api-egress.yaml` needs dind
    to mirror ghcr too, which classic dockerd can't — enable Docker's containerd image
-   store + `hosts.toml`, or move to buildkit. Egress note: haku-ci's force-proxy policy
-   had to allow the **backend** port 5000 for the mirror (Cilium enforces on targetPort,
-   not the Service port).
+   store + `hosts.toml`, or move to buildkit. The mirror side already works
+   (`/v2/ghcr/... → 200`); the open work is the dind client + verifying it. Full handoff
+   notes (blockers, the exact test, why it's unfinished): <plans/tier2-ghcr-quay-mirror.md>.
+   Egress note: haku-ci's force-proxy policy had to allow the **backend** port 5000 for the
+   mirror (Cilium enforces on targetPort, not the Service port).
 
 ## Verified working (2026-07-04)
 
