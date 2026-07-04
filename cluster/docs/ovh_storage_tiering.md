@@ -56,14 +56,78 @@ stays **Pending (loud)** instead of silently landing on HDD.
 2. **Now:** the SeaweedFS SSD volume-topology group (below) also carries a hard
    `required` nodeAffinity on `storage-tier=ssd` — belt-and-suspenders so the
    pod, not just the volume, is media-locked.
-3. **Stage 2 (Talos hardening):** give the KS-GAME NVMe its own
-   `UserVolumeConfig` (e.g. `seaweedfs-ssd-data`, `diskSelector` on the NVMe
-   serial, mounted at `/var/mnt/seaweedfs-ssd-data`) and point `-ssd`'s
-   nodePathMap there. Then the SSD tier physically cannot exist on a KS-5 (the
-   mount is absent), removing trust in the human-set label.
+
+The **hard media gate is layers 1–2** (allowedTopologies + the hardware-keyed
+`storage-tier` label). The data-disk mount rename below is **naming/clarity, not
+a third enforcement layer**: local-path-provisioner's `nodePathMap` is keyed by
+node, not by StorageClass, so a mis-scheduled pod would still provision at
+whatever path that node has — it does not make the SSD tier "physically
+impossible" on a KS-5.
 
 **Guardrail:** since `-disk` tags are unverified, alert if a SeaweedFS `ssd`
 volume-server pod is not on a `storage-tier=ssd` node.
+
+## Data-disk mount rename (fixing the backwards `/var/mnt/seaweedfs-data` path)
+
+Today the OVH data disk is a Talos UserVolume named `seaweedfs-data`, and the
+**general** local-path-provisioner is nested under it at
+`/var/mnt/seaweedfs-data/local-path` — so every OVH local-path PVC (~40: CNPG
+DBs, Valkey, Loki/Mimir/Tempo, VM disks…) lives inside a mount named after one
+tenant. SeaweedFS's own volume server is itself just a `local-path` PVC
+(`/var/mnt/seaweedfs-data/local-path/pvc-<id>/`), so the disk is named after a
+tenant that is three levels down. It's a leftover from the SeaweedFS trial.
+
+**Target:** name the mount for the disk/tier, SeaweedFS is one PVC of the class:
+
+- KS-5: UserVolume `local-path-ovh-hdd` → `/var/mnt/local-path-ovh-hdd`
+- KS-GAME: UserVolume `local-path-ovh-ssd` → `/var/mnt/local-path-ovh-ssd`
+  (`diskSelector` on the NVMe serial)
+
+Each node's `nodePathMap` points at its own mount; SeaweedFS volume servers and
+everything else become plain `pvc-*` dirs under it.
+
+### Why it's a wipe, and why that's OK
+
+Renaming a Talos UserVolume repartitions (wipes) the disk. Both OVH data disks
+are **full of live local-path data** — the KS-GAME NVMe holds ~15 CNPG instances
+(incl. `forgejo-db`, `authentik-db`, `langfuse-db`), `seaweedfs-volume-0`, Loki
+backends, Tempo, Mimir compactor/store-gateway, Valkey, and a couple of VM disks.
+But nearly all of it is **replicated or rebuildable**: CNPG re-clones a wiped
+instance from its replica; SeaweedFS re-replicates (`001`); Loki/Mimir/Tempo
+local PVCs are WAL/cache backed by SeaweedFS S3; Valkey is cache. So a **rolling,
+one-node-at-a-time wipe** is safe and not painful.
+
+### Rules
+
+1. **One node at a time — never both KS-GAME together.** Many CNPG clusters have
+   *both* instances on the two KS-GAME nodes (`forgejo-db`, `airlock-db`,
+   `atuin`, `langfuse`, …); wiping both at once loses them. Wipe one, wait for
+   CNPG re-clone + SeaweedFS re-replication onto the survivor, then the next.
+2. **Do NOT apply via a blanket `bazel run //cluster:bootstrap`** — it hits all
+   OVH nodes together. Gate the rename per node with an opt-in node set (same
+   idiom as `kimsufi_eno1_peer_route_enabled_nodes` in `ovh-nodes.tf`): the
+   UserVolume is renamed only for nodes in the set, so an empty set is a no-op
+   and you roll by adding one node at a time.
+3. **Migrate or accept the single-copy disks first.** Not replicated, would be
+   lost: `agent-box/agent-box-root`, `gecko/gecko-root`,
+   `codex-nix-pod/codex-home`, `codex-nix-pod/codex-nix-store` (experimental
+   agent/VM sandboxes). Confirm each is disposable or move it before wiping its
+   node.
+
+### Per-node procedure
+
+1. `kubectl cordon <node>` and drain the losable/single-copy pods; for CNPG,
+   `cnpg.io` will re-clone the instance elsewhere once its PVC is gone.
+2. Add `<node>` to the rename opt-in set; apply Talos config to **that node
+   only** (`talosctl -n <node> apply-config`), which wipes + recreates the data
+   disk under the new UserVolume name.
+3. Update the node's `nodePathMap` entry to the new mount in lockstep.
+4. `kubectl uncordon <node>`; verify CNPG instances rejoin healthy and SeaweedFS
+   re-replicates before moving to the next node.
+
+This pairs naturally with the Stage-2 control-plane reshuffle (those nodes are
+already being drained/rebuilt), but does not depend on it — the roll can be done
+standalone whenever.
 
 ## Apply ordering (important — SC allowedTopologies is immutable)
 
@@ -130,8 +194,8 @@ control-plane change, no new hardware.**
 **Stage 2 — etcd onto NVMe.** Promote the 2 KS-GAME to control-plane (2 NVMe +
 1 KS-5 HDD quorum; leadership not pinned — accept occasional HDD-leader
 latency), demote 2 KS-5 to workers, re-check Nebula lighthouse placement. Fold
-in the Talos-layer L3 hardening above. Pin `forgejo-db` / `seaweedfs-filer-db`
-to `local-path-ovh-ssd`.
+the data-disk mount rename (above) into these per-node rebuilds. Pin
+`forgejo-db` / `seaweedfs-filer-db` to `local-path-ovh-ssd`.
 
 **Stage 3 — third SSD node.** All-NVMe 3-member etcd + SSD placement headroom
 (replication 001 across 3 SSD nodes tolerates 1 down without losing redundancy).
