@@ -39,17 +39,29 @@ class Move:
 
 
 def _kubectl(args: list[str], stdin: str | None = None, retries: int = 3) -> str:
-    """Run kubectl, retrying transient apiserver timeouts (etcd contention)."""
+    """Run kubectl with stderr merged into stdout, retrying transient apiserver
+    timeouts (etcd contention). `weed`'s glog status lines (`moved volume N`) go
+    to stderr while progress goes to stdout, so callers need the merged stream.
+    The 600s ceiling covers a full 16 GB volume.move over nebula."""
     for attempt in range(retries):
-        result = subprocess.run(
-            ["kubectl", "-n", NAMESPACE, *args], check=False, input=stdin, capture_output=True, text=True, timeout=180
-        )
+        try:
+            result = subprocess.run(
+                ["kubectl", "-n", NAMESPACE, *args],
+                check=False,
+                input=stdin,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=600,
+            )
+        except subprocess.TimeoutExpired:
+            raise SystemExit(f"kubectl {' '.join(args)} exceeded 600s; re-run to resume (idempotent)") from None
         if result.returncode == 0:
             return result.stdout
-        if "Timeout" in result.stderr and attempt < retries - 1:
+        if "Timeout" in result.stdout and attempt < retries - 1:
             time.sleep(3 * (attempt + 1))
             continue
-        raise SystemExit(f"kubectl {' '.join(args)} failed: {result.stderr.strip()}")
+        raise SystemExit(f"kubectl {' '.join(args)} failed:\n{result.stdout.strip()[-800:]}")
     raise SystemExit(f"kubectl {' '.join(args)} timed out after {retries} attempts")
 
 
@@ -142,8 +154,13 @@ def apply_move(move: Move, master: str) -> None:
         f" -target {peer_address(move.target)} -volumeId {move.volume_id}"
     )
     out = weed_shell(["lock", command, "unlock"], master)
-    if f"moved volume {move.volume_id}" not in out:
-        raise SystemExit(f"volume.move {move.volume_id} did not confirm:\n{out}")
+    if f"moved volume {move.volume_id}" in out:
+        return
+    # The exec stream can truncate while the move still completes server-side, so
+    # confirm authoritatively: the source no longer holds the volume.
+    if move.source not in volume_locations(master).get(move.volume_id, []):
+        return
+    raise SystemExit(f"volume.move {move.volume_id} did not confirm:\n{out[-800:]}")
 
 
 def under_replicated(master: str) -> int:
