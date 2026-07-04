@@ -12,17 +12,13 @@ import yaml
 
 from util.bazel.runfiles import get_required_path
 
-_SHARED = yaml.safe_load(
-    get_required_path("_main/haku/base/agent_shared.yaml").read_text()
-)
+_SHARED = yaml.safe_load(get_required_path("_main/haku/base/agent_shared.yaml").read_text())
 _SELF_HOSTED = yaml.safe_load(
-    get_required_path(
-        "_main/haku/runtime/managed_agent/self_hosted/haku.agent.yaml"
-    ).read_text()
+    get_required_path("_main/haku/runtime/managed_agent/self_hosted/haku.agent.yaml").read_text()
 )
-_CLOUD = pygohcl.loads(
-    get_required_path("_main/tf/gitops/haku-cloud-agent/main.tf").read_text()
-)["resource"]["claude-managed-agents_agent"]["haku_cloud"]
+_CLOUD = pygohcl.loads(get_required_path("_main/tf/gitops/haku-cloud-agent/main.tf").read_text())["resource"][
+    "claude-managed-agents_agent"
+]["haku_cloud"]
 
 
 def _urls(agent: dict) -> dict[str, str]:

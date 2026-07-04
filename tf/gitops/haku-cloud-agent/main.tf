@@ -46,7 +46,7 @@ resource "claude-managed-agents_environment" "haku_cloud" {
 # read repo-wide files from the runner), so update this + haku.agent.yaml to match the SSOT.
 # Cloud-only here: kubectl-machine + grocy-sf MCPs and networking.
 resource "claude-managed-agents_agent" "haku_cloud" {
-  name  = "haku-cloud"
+  name = "haku-cloud"
   # `model` is SSOT'd in haku/base/agent_shared.yaml (//haku/base:test_agent_config_ssot
   # enforces) — change it there and in the self-hosted haku.agent.yaml together.
   model = "claude-sonnet-4-6" # TEMP(bring-up): revisit (opus) once the cloud runtime is proven.
