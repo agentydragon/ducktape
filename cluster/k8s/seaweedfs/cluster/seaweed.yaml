@@ -127,6 +127,94 @@ spec:
                 app.kubernetes.io/name: seaweedfs
             topologyKey: kubernetes.io/hostname
 
+  # SSD tiering — Stage 1 of cluster/docs/plans/ovh_storage_tiering.md.
+  #
+  # volumeTopology REPLACES the flat spec.volume above as the volume-server
+  # source: once this is set, the operator (verified 1.0.19) reconciles ONLY
+  # these groups and stops reconciling the flat `seaweedfs-volume` StatefulSet
+  # — it is NOT additive. Two hard constraints from the rehearsal
+  # (2026-07-04, swfs-migtest):
+  #   1. spec.volume MUST stay above (removing it nil-panics the operator, which
+  #      reads m.Spec.Volume.* for topology defaults). It is now a defaults stub;
+  #      no flat StatefulSet is created while volumeTopology is set.
+  #   2. Each group requires dataCenter + rack.
+  #
+  # Migration (Phase 2, run by hand, G-swfs-gated): the pre-existing flat
+  # `seaweedfs-volume` StatefulSet keeps running (orphaned) and still holds the
+  # ~237 GiB bulk; `volume.move` relocates each volume onto the `hdd` group
+  # (2 copies throughout), then the flat StatefulSet + its PVCs are deleted.
+  volumeTopology:
+    hdd:
+      # 3 servers on the KS-5 HDD nodes; destination for the migrated bulk.
+      # -disk=hdd matches the flat servers' default disk type ("" == hdd,
+      # verified in seaweedfs 4.29 ToDiskType). Same rack as the flat servers
+      # so replication 001 places 2 copies across 2 KS-5 hosts.
+      replicas: 3
+      dataCenter: "hil"
+      rack: "hil-ovh-h109b04"
+      priorityClassName: stateful-infra
+      requests:
+        storage: 1800Gi
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 1536Mi
+      storageClassName: local-path-ovh-hdd
+      metricsPort: 9325
+      extraArgs: ["-disk=hdd"]
+      nodeSelector:
+        storage.allegedly.works/tier: hdd
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: seaweedfs
+                  seaweedfs/topology: hdd
+              topologyKey: kubernetes.io/hostname
+    ssd:
+      # 2 servers on the KS-GAME NVMe nodes; serves Forgejo git via the
+      # seaweedfs-ovh-ssd StorageClass (diskType=ssd -> -disk=ssd).
+      replicas: 2
+      dataCenter: "hil"
+      rack: "hil-ovh-ssd"
+      priorityClassName: stateful-infra
+      requests:
+        storage: 250Gi
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 1536Mi
+      storageClassName: local-path-ovh-ssd
+      metricsPort: 9328
+      extraArgs: ["-disk=ssd"]
+      # NVMe#2 is one shared XFS pool (this ssd server + forgejo-db + filer-db);
+      # go read-only before the disk fills so the fragile CNPG DBs keep a reserve.
+      minFreeSpacePercent: 10
+      # Overcommit the volume-slot count: -max=0 auto-derives only ~24 slots on
+      # the 419 GB NVMe and SeaweedFS pre-grabs ~2-6 (mostly-empty) volumes per
+      # collection. Thin volumes make over-committing ~free; disk-full is bounded
+      # by minFreeSpacePercent, not the slot cap.
+      maxVolumeCounts: 50
+      nodeSelector:
+        storage.allegedly.works/tier: ssd
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: seaweedfs
+                  seaweedfs/topology: ssd
+              topologyKey: kubernetes.io/hostname
+
   filer:
     # 2-replica HA. The filer is a stateless metadata gateway to the shared
     # postgres2 store (seaweedfs-filer-db), so both replicas serve identical
