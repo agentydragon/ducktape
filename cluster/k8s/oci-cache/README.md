@@ -7,27 +7,28 @@ allowlisting every registry CDN.
 
 ## Architecture
 
-| Concern            | Choice                                                                                                                                           |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Registry           | Zot (`ghcr.io/project-zot/zot-linux-amd64`, full image — needs the `sync` extension)                                                             |
-| Durable content    | SeaweedFS S3 `registry-cache` bucket (`seaweedfs/registry-cache-bucket/`) — manifests + blobs                                                    |
-| Dedupe index       | `oci-cache-valkey` `RedisReplication` (Zot `cacheDriver: redis`, `remoteCache`)                                                                  |
-| Local state        | none durable — only ephemeral upload staging on `emptyDir`, so the pod reschedules freely                                                        |
-| Placement          | unpinned (soft-prefers OVH region to sit near SeaweedFS); Valkey on `seaweedfs-ovh` (HDD, networked)                                             |
-| S3 credentials     | `s3-identity-registry-cache` Secret (seaweedfs ns), Reflector-mirrored into `oci-cache`, injected as `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` |
-| Exposure (phase 1) | ClusterIP `oci-cache.oci-cache.svc:5000` only — no public route, no auth                                                                         |
+| Concern            | Choice                                                                                                                                                                                                         |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Registry           | Zot (`ghcr.io/project-zot/zot-linux-amd64`, full image — needs the `sync` extension)                                                                                                                           |
+| Durable content    | SeaweedFS S3 `registry-cache` bucket (`seaweedfs/registry-cache-bucket/`) — manifests + blobs                                                                                                                  |
+| Dedupe index       | `oci-cache-valkey` `RedisReplication` (Zot `cacheDriver: redis`, `remoteCache`)                                                                                                                                |
+| Local state        | none durable — only ephemeral upload staging on `emptyDir`, so the pod reschedules freely                                                                                                                      |
+| Placement          | unpinned (soft-prefers OVH region to sit near SeaweedFS); Valkey on `seaweedfs-ovh` (HDD, networked)                                                                                                           |
+| S3 credentials     | `s3-identity-registry-cache` Secret (seaweedfs ns), Reflector-mirrored into `oci-cache`, injected as `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`                                                               |
+| Exposure (phase 1) | ClusterIP, plain HTTP on `oci-cache.oci-cache.svc:80` (→ container 5000) — no public route, no auth. Port 80 (not 5000) so port-restricted consumers like haku-ci can reach it without a NetworkPolicy change. |
 
-Upstreams are addressed **by path prefix** (Zot `sync` `stripPrefix`):
+Upstreams are addressed **by path prefix** (Zot `sync` `stripPrefix`); the endpoint
+is plain HTTP on port 80, so clients need an `http://` endpoint / insecure-registry config:
 
-| Upstream          | Pull as                                          |
-| ----------------- | ------------------------------------------------ |
-| `docker.io`       | `oci-cache.oci-cache.svc:5000/docker-hub/<repo>` |
-| `ghcr.io`         | `oci-cache.oci-cache.svc:5000/ghcr/<repo>`       |
-| `quay.io`         | `oci-cache.oci-cache.svc:5000/quay/<repo>`       |
-| `registry.k8s.io` | `oci-cache.oci-cache.svc:5000/k8s/<repo>`        |
-| `gcr.io`          | `oci-cache.oci-cache.svc:5000/gcr/<repo>`        |
+| Upstream          | Pull as                                     |
+| ----------------- | ------------------------------------------- |
+| `docker.io`       | `oci-cache.oci-cache.svc/docker-hub/<repo>` |
+| `ghcr.io`         | `oci-cache.oci-cache.svc/ghcr/<repo>`       |
+| `quay.io`         | `oci-cache.oci-cache.svc/quay/<repo>`       |
+| `registry.k8s.io` | `oci-cache.oci-cache.svc/k8s/<repo>`        |
+| `gcr.io`          | `oci-cache.oci-cache.svc/gcr/<repo>`        |
 
-e.g. `docker.io/library/nginx` → `oci-cache.oci-cache.svc:5000/docker-hub/library/nginx`.
+e.g. `docker.io/library/nginx` → `oci-cache.oci-cache.svc/docker-hub/library/nginx`.
 
 ## Eviction
 
@@ -64,8 +65,9 @@ The public, authenticated endpoint and node-level pull-through are deliberately 
 
 4. **Haku dind allowlist** — point Haku CI's dind `--registry-mirror` at this Service and
    drop the registry CDN FQDNs from `cluster/k8s/agents/haku-egress-proxy/`
-   (`cnp-haku-cloud-api-egress.yaml`, the `TODO(pull-through-cache)`). Needs a
-   NetworkPolicy allowing egress from the runner to `oci-cache`.
+   (`cnp-haku-cloud-api-egress.yaml`, the `TODO(pull-through-cache)`). No egress-policy
+   change needed: the Service is on port 80, which haku-ci's `toEntities: cluster` rule
+   already permits (the claude/haku sandboxes have unrestricted cluster egress).
 
 ## Verify before trusting it
 
@@ -76,5 +78,5 @@ drift), and the `sync` prefix/`stripPrefix` routing. Smoke test:
 
 ```bash
 kubectl -n oci-cache run probe --rm -it --image=curlimages/curl --restart=Never -- \
-  curl -sS http://oci-cache:5000/v2/docker-hub/library/alpine/manifests/latest -I
+  curl -sS http://oci-cache/v2/docker-hub/library/alpine/manifests/latest -I
 ```

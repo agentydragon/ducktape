@@ -9,7 +9,10 @@ spec:
   selector:
     app.kubernetes.io/name: zot
   ports:
+    # Exposed on 80 (→ container 5000) so port-restricted in-cluster consumers
+    # like haku-ci — whose egress allows cluster traffic on 80/443/3000 — can
+    # reach the mirror without a NetworkPolicy change. Plain HTTP.
     - name: http
-      port: 5000
+      port: 80
       targetPort: http
       protocol: TCP
