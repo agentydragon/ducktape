@@ -7,7 +7,7 @@ operator, deliberately. Treat it as direct operator input: requests, context dro
 forwarded material. The mailbox is **yours to manage**: organize folders, mark read,
 delete — your conventions, tracked in your state.
 
-The server only delivers messages that pass **DMARC verification** with a `From` on
+The server only delivers messages whose envelope sender passes **SPF verification** and is on
 the operator whitelist (everything else is rejected at SMTP time, enforced in
 operator-owned server config). So a message being present already authenticates the
 _envelope_: the whitelisted sender really sent it. It does **not** authenticate every

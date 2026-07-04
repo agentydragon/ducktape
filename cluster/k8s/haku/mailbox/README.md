@@ -23,8 +23,12 @@ deliberately tiny (its documented declarative-deployments workflow):
 - `app/mailbox-plan.ndjson` — everything else, as an idempotent
   `stalwart-cli apply` plan of `upsert`s: domain, the `haku` account
   (pre-created so inbound RCPT resolves before first login — required for
-  OIDC directories), the Authentik OIDC directory, the DMARC-gated
-  whitelist Sieve script wired to the SMTP DATA stage, the three listeners
+  OIDC directories), the Authentik OIDC directory, the SPF-gated
+  whitelist Sieve script wired to the SMTP DATA stage (SPF, not DMARC:
+  the DATA-stage script runs before Stalwart's DKIM/DMARC analysis),
+  a `SenderAuth` override enabling SPF/DMARC verification off port 25
+  (the built-in defaults only verify on `local_port == 25`; the listener
+  is on :2525), the three listeners
   (SMTP :2525 STARTTLS, HTTP :8080, IMAP :1143 — the latter two plaintext,
   cluster-internal only), an `MtaStageAuth` override so the
   DNAT'ed :2525 listener accepts unauthenticated MX traffic (the upstream

@@ -1,5 +1,5 @@
 # Stalwart mailserver: haku's mailbox (haku@allegedly.works), receive-only.
-# Haku is a mail *user*, never the server admin: all policy (the DMARC-gated
+# Haku is a mail *user*, never the server admin: all policy (the SPF-gated
 # sender whitelist, listeners, the OIDC directory) is the operator-owned
 # provisioning plan in this directory, applied idempotently on every pod start
 # by bootstrap-and-run.sh. Authentication is exclusively Authentik OIDC bearer

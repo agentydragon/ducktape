@@ -4,9 +4,13 @@ A Stalwart mailserver serving `allegedly.works` mail, whose single mailbox
 (`haku@allegedly.works`) belongs to Haku. Promises:
 
 - **Only verified operator mail is delivered.** At the SMTP DATA stage the
-  server rejects (550) any message that fails DMARC verification or whose
-  `From` address is not on the operator whitelist. Mail from a spoofed
-  whitelisted address fails DMARC alignment and never lands.
+  server rejects (550) any message whose envelope sender fails SPF
+  verification or is not on the operator whitelist. Mail from a spoofed
+  whitelisted address fails SPF (the spoofer's IP isn't in the sender
+  domain's SPF record) and never lands. SPF rather than DMARC: Stalwart
+  runs the DATA-stage script before its DKIM/DMARC analysis, so the DMARC
+  verdict structurally isn't available at rejection time (verified on
+  0.16.11); the MAIL-stage SPF verdict is.
 - **Policy is operator-owned.** The whitelist, listeners, directory, and
   every other server setting live in the provisioning plan in this directory
   (applied idempotently at pod start); changing any of it is a ducktape PR.
