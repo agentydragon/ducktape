@@ -3,7 +3,8 @@
 # bootstrap script for static config. Secrets are NOT here — they come from k8s
 # (BUILDBUDDY_API_KEY env, the id_ed25519 plant, ESO-templated files); so no
 # sops-nix, no systemd, non-root.
-_: {
+{ pkgs, ... }:
+{
   home.username = "codex";
   home.homeDirectory = "/home/codex";
   home.stateVersion = "25.11";
@@ -36,5 +37,30 @@ _: {
   programs.direnv = {
     enable = true;
     nix-direnv.enable = true;
+  };
+
+  # Codex runs fully unattended in this isolated agent pod — never prompt, no
+  # sandbox — mirroring agent-box's `ducktape.codex` (nix/home/hosts/agent-box/
+  # codex.nix). The upstream programs.codex module writes config.toml from a
+  # home-manager *activation* script (merge.py), but this image bakes only the
+  # static home-files and never runs activation — so we bake config.toml directly.
+  # Codex reads it from its default CODEX_HOME (~/.codex).
+  home.file.".codex/config.toml".source = (pkgs.formats.toml { }).generate "codex-config.toml" {
+    model = "gpt-5.5";
+    model_reasoning_effort = "xhigh";
+    approval_policy = "never";
+    sandbox_mode = "danger-full-access";
+    history.persistence = "save-all";
+    features = {
+      streamable_shell = true;
+      unified_exec = true;
+      apply_patch_freeform = true;
+      shell_tool = true;
+      view_image_tool = true;
+    };
+    shell_environment_policy = {
+      "inherit" = "all";
+      set.CODEX_AGENT = "1";
+    };
   };
 }

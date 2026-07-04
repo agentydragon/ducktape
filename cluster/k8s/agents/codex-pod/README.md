@@ -11,7 +11,11 @@ Registry-hosting rationale (why Forgejo over GHCR) + the general pattern:
 - **Image + env**: `x/codex_pod_image/default.nix` — a `buildEnv` tool set on
   `/bin` plus the user's static dotfiles baked from a home-manager config
   (`x/codex_pod_image/home.nix`). No runtime bootstrap script; all static config
-  is Nix-built and baked into the image.
+  is Nix-built and baked into the image — including Codex's `~/.codex/config.toml`
+  (`approval_policy = "never"`, `sandbox_mode = "danger-full-access"`, mirroring
+  agent-box's unattended `ducktape.codex`). Baked directly rather than via the
+  upstream `programs.codex` module, whose config.toml comes from a home-manager
+  _activation_ script that never runs in this activation-less image.
 - **CI**: `.github/workflows/codex-pod-image.yml` builds `.#codex-pod-image` and
   `skopeo copy`s a `devel-<ts>-<sha7>` tag to our Forgejo registry
   `git.allegedly.works/ducktape-ci/codex-pod` (as the `ducktape-ci` tenant).
@@ -22,12 +26,14 @@ Registry-hosting rationale (why Forgejo over GHCR) + the general pattern:
 - **Registry credential**: `cluster/k8s/forgejo-images/` provisions the
   `ducktape-ci` Forgejo user (Terraform) and a `forgejo-images-creds` Secret
   reflected into `flux-system` (scan) + `codex-pod` (`imagePullSecrets`).
-- **Runtime**: non-root UID 1000. `HOME=/home/codex` (the baked dotfiles) is
-  distinct from the work dir: the `codex-workspace` PVC (`seaweedfs-ovh`) mounts at
-  `/workspace` so it doesn't shadow the baked home, and holds the work tree,
-  `CODEX_HOME` (`/workspace/.codex`), and `XDG_CACHE_HOME` (`/workspace/.cache`).
-  Access is `kubectl exec` (no sshd) — the container's baked env carries into exec
-  sessions.
+- **Runtime**: non-root UID 1000. `HOME=/home/codex` (the baked dotfiles, incl.
+  the Codex config) is distinct from the work dir: the `codex-workspace` PVC
+  (`seaweedfs-ovh`) mounts at `/workspace` so it doesn't shadow the baked home, and
+  holds the work tree plus `XDG_CACHE_HOME` (`/workspace/.cache`) for build caches.
+  `CODEX_HOME` is left at its default (`~/.codex`, baked); Codex's own state
+  (history/sessions) is ephemeral there — durable state is the git work tree on the
+  PVC. Access is `kubectl exec` (no sshd) — the container's baked env carries into
+  exec sessions.
 
 ## Bring-up
 

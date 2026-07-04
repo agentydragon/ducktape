@@ -76,11 +76,13 @@ pkgs.dockerTools.buildLayeredImage {
     chmod 1777 tmp
 
     # Bake the home-manager dotfiles into /home/codex (HOME; the /workspace PVC is
-    # mounted elsewhere so it doesn't shadow these). Make ~/.ssh writable — the
-    # entrypoint plants id_ed25519 into it at runtime; home-manager leaves it 0555.
+    # mounted elsewhere so it doesn't shadow these). home-manager leaves these dirs
+    # 0555; make them writable so the entrypoint can plant id_ed25519 into ~/.ssh
+    # and Codex can write history/sessions/auth into ~/.codex (its baked config.toml
+    # stays a read-only store symlink, which Codex only reads).
     mkdir -p home/codex
     cp -a ${homeFiles}/. home/codex/
-    chmod 700 home/codex/.ssh
+    chmod 700 home/codex/.ssh home/codex/.codex
     chown -R 1000:1000 home/codex workspace
 
     cat > etc/passwd <<'PASSWD'
@@ -106,8 +108,8 @@ pkgs.dockerTools.buildLayeredImage {
       "PATH=/bin:${codexEnv}/bin"
       "HOME=/home/codex"
       "USER=codex"
-      # Persistent state on the /workspace PVC; config stays in the baked ~/.config.
-      "CODEX_HOME=/workspace/.codex"
+      # Codex reads its baked config.toml from the default CODEX_HOME (~/.codex);
+      # don't override it. Build caches persist on the /workspace PVC.
       "XDG_CACHE_HOME=/workspace/.cache"
       "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
       "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
