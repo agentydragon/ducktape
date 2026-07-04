@@ -46,7 +46,7 @@
 
 - [ ] Unify manual `tofu` runs with Bazel-managed providers. Currently manual `tofu plan/apply` resolves providers independently from the `tf.download(mirror={...})` pins in `MODULE.bazel`. Create a wrapper (script or `bazel run` target) that sets `TF_CLI_CONFIG_FILE` pointing at the Bazel-fetched filesystem mirror (`<output_base>/external/@tf_toolchains/mirror/`), so manual runs use the exact same provider versions as `bazel test`.
 - [ ] Merge `ollama-bearer-token` and `litellm-api-key` into a single TF root/CR — both are simple `random_password` + `k8s secret` patterns for the ollama stack, already in the same `ollama-secrets` kustomization. Reduces CR count and state overhead.
-- [ ] Restore proper Forgejo branch protection for `agentydragon/ducktape:devel` and `agentydragon/gaffer-private:main` once Forgejo or the `svalabs/forgejo` provider can express "protected branch, but allow `agentydragon` force-push". Current Forgejo 15.0.2 / Gitea 1.22 API only has a normal push whitelist, so protected branches still reject `git push --force`.
+- [ ] Restore proper Forgejo branch protection for `agentydragon/ducktape:devel` and `agentydragon/gaffer-private:main` once Forgejo or the `svalabs/forgejo` provider can express "protected branch, but allow `agentydragon` force-push". Forgejo 15.x / Gitea 1.22 API only has a normal push whitelist, so protected branches still reject `git push --force`.
 
 ## Renovate Coverage gaps
 
