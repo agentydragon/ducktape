@@ -135,7 +135,7 @@ cluster/
 ├── docs/                   # bootstrap, plan, troubleshooting, operations, secrets
 ├── terraform/
 │   └── main/               # Single TF root (PG backend, all resources)
-├── k8s/                    # Flux-managed manifests
+├── k8s/                    # Flux-managed manifests (config only — source lives in rotators/, provisioners/)
 │   ├── agents/             # Agent infra (openclaw, airlock, agent-rbac-base, tana-mcp, ...)
 │   ├── authentik/          # SSO (app, blueprints, db, secrets, proxy-routes, ...)
 │   ├── monitoring/         # Observability (stack, loki, alloy, tempo, ...)
@@ -143,6 +143,8 @@ cluster/
 │   ├── <service>/          # Grouped: subdirs per flux-kustomization (namespace, secrets, app, db)
 │   ├── <service>/          # Flat: single flux-kustomization, all manifests at root
 │   └── flux-system/        # Flux controllers (auto-generated)
+├── rotators/               # Source for credential-rotation CronJob images (authentik/attic JWTs)
+├── provisioners/           # Source for reconciler CronJob/Job images (grocy user-perms, inventree token)
 └── validation/             # Structural validation tests
 ```
 
