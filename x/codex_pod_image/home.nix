@@ -26,21 +26,28 @@ in
     enable = true;
     # Codex has no global "trust all": its directory-trust prompt is gated
     # per-directory (exact-match `[projects."<path>"]`, no ancestor/global option).
+    # The common dirs (~ and /workspace) are pre-trusted in the baked config.toml
+    # below; this wrapper covers everything else (e.g. cloned repos) by appending
+    # the launch dir (git repo root, else cwd) to config.toml before running codex.
     #
     # Deviation from agent-box: agent-box runs the activation-based `programs.codex`
     # module (../../nix/home/codex/), where `home-manager switch` merges the nix base
-    # into a WRITABLE ~/.codex/config.toml and merge.py's PRESERVE_KEYS keeps the
-    # live `projects` block — so codex persists each "Yes" and you answer once per
-    # repo. This pod bakes config.toml as a read-only /nix/store symlink (no
-    # activation, no merge), so codex can't persist a "Yes" and would re-prompt every
-    # session. Instead, wrap `codex` to auto-mark the launch dir (git repo root, else
-    # cwd) trusted via `-c` — it never prompts at all. Isolated YOLO agent pod
+    # into config.toml and merge.py's PRESERVE_KEYS keeps the live `projects` block —
+    # so codex persists each "Yes" and you answer once per repo. This pod has no
+    # activation; instead the baked config.toml is made writable (default.nix) and we
+    # pre-trust dirs here. `-c projects."<path>".trust_level=...` does NOT work: codex
+    # `-c` keys are naive dotted paths, so the quoted path segment is mis-parsed and
+    # never matches the resolved dir. Writing real TOML tables to the file does work
+    # (verified: it gates project-local config loading). Isolated YOLO agent pod
     # (danger-full-access, approval=never), so trusting everything is intended.
     initExtra = ''
       codex() {
-        local d
+        local cfg="$HOME/.codex/config.toml" d
         d="$(command git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PWD")"
-        command codex -c "projects.\"$d\".trust_level=\"trusted\"" "$@"
+        if [ -w "$cfg" ] && ! grep -qF "[projects.\"$d\"]" "$cfg" 2>/dev/null; then
+          printf '\n[projects."%s"]\ntrust_level = "trusted"\n' "$d" >>"$cfg"
+        fi
+        command codex "$@"
       }
     '';
   };
@@ -138,6 +145,13 @@ in
     shell_environment_policy = {
       "inherit" = "all";
       set.CODEX_AGENT = "1";
+    };
+    # Pre-trust the dirs codex is normally launched from (HOME landing dir + the
+    # /workspace work root) so its directory-trust prompt never fires there. Other
+    # dirs (cloned repos) are appended at launch by the `codex` wrapper above.
+    projects = {
+      "/home/codex".trust_level = "trusted";
+      "/workspace".trust_level = "trusted";
     };
   };
 }

@@ -80,11 +80,17 @@ pkgs.dockerTools.buildLayeredImage {
     # Bake the home-manager dotfiles into /home/codex (HOME; the /workspace PVC is
     # mounted elsewhere so it doesn't shadow these). home-manager leaves these dirs
     # 0555; make them writable so the entrypoint can plant id_ed25519 into ~/.ssh
-    # and Codex can write history/sessions/auth into ~/.codex (its baked config.toml
-    # stays a read-only store symlink, which Codex only reads).
+    # and Codex can write history/sessions/auth into ~/.codex.
     mkdir -p home/codex
     cp -a ${homeFiles}/. home/codex/
     chmod 700 home/codex/.ssh home/codex/.codex
+
+    # Replace the read-only /nix/store config.toml symlink with a writable real copy:
+    # the `codex` shell wrapper (home.nix) appends per-directory trust tables to it so
+    # codex never shows its directory-trust prompt.
+    cp --remove-destination "$(readlink -f home/codex/.codex/config.toml)" home/codex/.codex/config.toml
+    chmod 644 home/codex/.codex/config.toml
+
     chown -R 1000:1000 home/codex workspace
 
     cat > etc/passwd <<'PASSWD'
