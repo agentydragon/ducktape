@@ -209,14 +209,25 @@ SeaweedFS S3; Valkey is cache. So a **rolling, one-node-at-a-time wipe** is safe
    an empty set is a no-op; you roll by adding one node at a time. Flip that node's
    `nodePathMap` entry (surface b) in the same step, and apply the Talos side with
    `tofu apply -target=` for just that node.
-3. **Warn before wiping any single-copy disk.** These local-path PVCs are not replicated.
-   They are pre-accepted as **disposable**, but the per-node preflight (**G-losable**) must
-   **list them and halt for explicit acknowledgment**, and must **halt on any single-copy
-   disk _not_ on this list** so a newly-created one is never destroyed silently:
+3. **Warn before wiping any single-copy disk.** These local-path PVCs are not replicated, so
+   the wipe destroys them. The per-node preflight (**G-losable**) must **list every single-copy
+   PVC on the node and halt for explicit acknowledgment**, and must **halt on any single-copy
+   disk in neither list below** so a newly-created one is never destroyed silently. Two classes:
+
+   **Recreate-empty (disposable) — recreate blank, no backup:**
    - `agent-box/agent-box-root`
    - `gecko/gecko-root`
    - `codex-nix-pod/codex-home`
    - `codex-nix-pod/codex-nix-store`
+
+   **Back up → restore (kept on `local-path` by decision, not migrated to `seaweedfs-ovh`):**
+   these hold real state, so per node holding one: **down the app → back up the PVC → wipe →
+   restore into the re-provisioned PVC → verify perms/mode → restart**.
+   - `grocy-sf/grocy-config-ovh`, `grocy-vallejo/grocy-config-ovh` — grocy config/uploads;
+     existing backups available.
+   - `langfuse/data-langfuse-zookeeper-0` — langfuse ZooKeeper (ClickHouse ReplicatedMergeTree
+     metadata; **not** safe to recreate empty). Down langfuse so the ZK data dir is quiescent
+     before copying. These three currently sit on `ovh-ns103711`.
 
 ## CNPG tier migration without disruption
 
