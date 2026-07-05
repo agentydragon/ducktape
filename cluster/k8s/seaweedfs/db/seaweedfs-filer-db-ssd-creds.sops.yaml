@@ -1,0 +1,40 @@
+# App credentials for the SeaweedFS filer's connection to seaweedfs-filer-db-ssd.
+# Named -creds, NOT -app: CNPG auto-generates a bogus <cluster>-app Secret (default
+# username "app", no matching role) for this pg_basebackup cluster, so we must not
+# collide with that name. postgres-cluster-ssd.yaml enforces this password onto the
+# real owner role (seaweedfs) via spec.managed.roles; the filer authenticates with it.
+# Password copied from the old seaweedfs-filer-db-app (physically replicated), so the
+# managed.roles apply is a no-op and lets us delete the old cluster.
+apiVersion: v1
+kind: Secret
+metadata:
+    name: seaweedfs-filer-db-ssd-creds
+    namespace: seaweedfs
+type: kubernetes.io/basic-auth
+stringData:
+    username: ENC[AES256_GCM,data:phtZUnB1If5z,iv:+KjXF2wlZVJ1MVkpNCkwTg355Fwq0IJSEVRQ2bS8gOw=,tag:BRQqQSJ2XkBEUTjrdHjghQ==,type:str]
+    password: ENC[AES256_GCM,data:4OU3T3Oyo1GAa69ENoAGcOrDhnUfqOOoe4ZlD6UjZfedZRbegxFgY6AYlv+QD3hEH0kRDoX9tj33wMbKQ4RPxQ==,iv:b6a39pWR9xIc77rr8Y5FFaQmdyHoqY3662jH2PmI36A=,tag:ZFIVKvz9u30I0YGicocThA==,type:str]
+sops:
+    age:
+        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBscjhuOVlGMUhlMTNwTmp1
+            S1dzSHk1ZGRaTjFkbFYvallDUy9zU3ZudkFrCko1dy9LS3pIU2ZieGlFVk9mNk9J
+            dGo5MUx4TDdaL1lLVHdBN3J1Sm9XaTAKLS0tIElNTkF2L3cvb3FaVnhqSHJKckdx
+            Sll0NjhUTUwzWDc5ZnYyQ0dPYmNEa0kKoRfwxM7Wo+ixPJf3N792mB8hppzKgCzV
+            //xTHPIkTXFPHiIfbW/DmTAagky65qMl5L8tGFEuD0gtSCrcyZHluw==
+            -----END AGE ENCRYPTED FILE-----
+        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB4YnZaalo0NDVGcFhnYS9u
+            U0o0NlVqQXdRdVI2VDFVOGtDQ05ZNnJ0dkdZCkdUWHc3Nm8yMG5pU3Jld0ZNL0Jl
+            MUZtSHZBUFdzb3FyWUt5VVNJQy94R0UKLS0tIG5LOU1zUTc2cTQvSWp0bE5oQzd1
+            TE11Mi9naVVId0NmUFRGeXV2N28yTTgKjh/bLEw57VITRF0Knr3tBVTbDsm43bhN
+            rKgSM4NEhmrlYVI8DIfkLh4jUFSwvgDgywaEAgsbeyGR5A6gXh5eBg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-07-05T00:48:41Z"
+    mac: ENC[AES256_GCM,data:fEc3LCPOWvi7hCZ+L/tGoXu1fia31XiDF13scm9V0fzmCJDlhag+k0gexYAB6AGTo1PLAW9DufAD2vOfkh5/6BaeQkXAyIC3BhRMpRSLl3TeHqoXzQI459wgW4rhP6EhsVKhavEcZ52x+NtZYFAHYaO4pyHXeXaiAmFgkh4bLKs=,iv:8ADQLXMx4meWnT/YCK++MfD8+clt9NgovXBwHcBIMlM=,tag:hypIhORGR9k5TWs3VyW86g==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

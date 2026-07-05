@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
   - postgres-cluster.yaml
   - postgres-cluster-ssd.yaml
-  - seaweedfs-filer-db-ssd-app.sops.yaml
+  - seaweedfs-filer-db-ssd-creds.sops.yaml

@@ -59,7 +59,7 @@ spec:
         bypassrls: false
         connectionLimit: -1
         passwordSecret:
-          name: seaweedfs-filer-db-ssd-app
+          name: seaweedfs-filer-db-ssd-creds
 
   # Promoted to an independent primary at cutover (was a streaming replica of
   # seaweedfs-filer-db). bootstrap/externalClusters below are inert post-bootstrap;
