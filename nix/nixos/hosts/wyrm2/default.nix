@@ -6,6 +6,7 @@
   pkgs,
   lib,
   username,
+  inputs,
   ...
 }:
 let
@@ -152,6 +153,24 @@ in
       # start). With animations off the callback runs immediately.
       settings."org/gnome/desktop/interface".enable-animations = false;
     }
+  ];
+
+  # gamescope 3.16.17 (nixpkgs 25.11) SIGABRTs on startup when a seat input
+  # event races wlserver_init's lock — upstream ValveSoftware/gamescope#1746,
+  # fixed in 3.16.24 by PR #2023 ("Lock wlserver while initializing wayland").
+  # Pull the fixed build from unstable until 25.11 catches up. Overriding the
+  # package-set attr covers the gamescopeSession, the capSysNice wrapper, and
+  # Steam in one place. CLEANUP: drop once nixpkgs 25.11 ships gamescope ≥3.16.24.
+  nixpkgs.overlays = [
+    (_: _: {
+      inherit
+        (import inputs.nixpkgs-unstable {
+          inherit (pkgs.stdenv.hostPlatform) system;
+          config.allowUnfree = true;
+        })
+        gamescope
+        ;
+    })
   ];
 
   # Steam — games run on the RTX 5090s (direct display via seat-game, or
