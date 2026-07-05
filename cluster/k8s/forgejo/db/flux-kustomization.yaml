@@ -13,6 +13,12 @@ spec:
   path: ./cluster/k8s/forgejo/db
   prune: true
   wait: true
+  # Required to apply forgejo-db-ssd-creds.sops.yaml (Forgejo's DB app creds, which CNPG
+  # syncs onto the -ssd forgejo role); without it Flux applies the ciphertext.
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: forgejo-namespace
     - name: cnpg

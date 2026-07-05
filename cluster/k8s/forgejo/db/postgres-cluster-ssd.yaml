@@ -44,8 +44,11 @@ spec:
   monitoring:
     enablePodMonitor: true
 
+  # Promoted to an independent primary at cutover (was a streaming replica of forgejo-db).
+  # bootstrap/externalClusters below are inert post-promotion; dropped in the phase-3 cleanup
+  # along with the old cluster.
   replica:
-    enabled: true
+    enabled: false
     source: forgejo-db
 
   bootstrap:

@@ -1,0 +1,41 @@
+# App credentials for Forgejo's connection to forgejo-db-ssd (the SSD-tier DB).
+# Named -creds, NOT -app: CNPG auto-generates a bogus <cluster>-app Secret (default
+# username "app", no matching role) for this pg_basebackup clone, so we must not collide
+# with that name. postgres-cluster-ssd.yaml names "forgejo" as the app user
+# (bootstrap.initdb.owner + this Secret, added in the phase-3 cleanup), so CNPG keeps that
+# role's password in sync with this value; Forgejo authenticates with it via the chart's
+# gitea.config.database.PASSWD valuesFrom. Password copied from forgejo-db-app (physically
+# replicated), so the cutover is a host+secret swap with the password unchanged.
+apiVersion: v1
+kind: Secret
+metadata:
+    name: forgejo-db-ssd-creds
+    namespace: forgejo
+type: kubernetes.io/basic-auth
+stringData:
+    username: ENC[AES256_GCM,data:OpvxiNkNQQ==,iv:1sxrvwGpID8hYtiHcQOGWNZS3/nZNH1CNOHg3+xqBqs=,tag:FNwy9SA7RupXm16dM27b/w==,type:str]
+    password: ENC[AES256_GCM,data:S5N+rYokV7wfU15KqvbQudUk9u8uLJw02y75kUfR2wlpouykSsHdtjRctGK+PxQ6hhrml1VI0UZaxNm7a3uV+A==,iv:+4a4KDaRNJCozE948AcNWCvRV2CL27VEm/Jdxqz102M=,tag:Hc65fGi6x5urA8WjGaFjfQ==,type:str]
+sops:
+    age:
+        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB6M1JQdXV2N0dTVlkrbm5Y
+            Z2JESWVRUzZ0enpPbWJSMWJONjMyL245WWpFCmdSZ1dNSW0xM2FjQjRJaHNFYnZC
+            Z3VlTUVBSkNSRnV0MytGZjN4VStUQWcKLS0tIFFKcW0ySzdLYVd2R0FFVGxiMjAv
+            MXdIUExWcDRxMk45M1JUS2tJd1JWYm8KRKVJAmkzHMBq2vko8Z4V00BNfgD74ps/
+            1ULfInxs4ByhGTyLExZzat4maA+z7Mulz5YeyinyBwanaJwr9WbFOQ==
+            -----END AGE ENCRYPTED FILE-----
+        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB4Y0ZLWW9mbzNHZ294OElI
+            UUpXQmRKNlpWTXh2MWMxcTJPQ21nb2xLRmtJCkY4amptQ0syWkoySzNvVVd2M005
+            RGY5TjdCclduRFA0eDJLNFJoV1R3dGsKLS0tIHdjWjh1cHE1TUNtLzBRVG5jbWJp
+            SVBJSytzamR1a1VtU0llL3J4VVZ6M1kKC52elNGrd6/5TlogOf/6gedcnrmx5786
+            B94qCukK4NHJvFvfBJD1CjHsmIbMqAvqGfkLiJ+YgrsM6Vv+B9a9+w==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-07-05T02:32:09Z"
+    mac: ENC[AES256_GCM,data:jJ8PTMxahuiZzEIp5ATJgKQ1rsVXBMfeuSWmpImzrWDiT0vrPooGgydksA0GDqMvTehaim5wQP0H0NmcW+XyCrtJ2QiUOeghZ7Lz4gJdu2vGtKDJ6BQ/Jz2z/4PA9PJheQlPoF+gNBeNGwG4VAYZ6onln2bFwEra77ox0G/S65Q=,iv:XnDqjB3EernfOCaCi4jPYrZ2VXr1ykaTvb8hjy2w+74=,tag:KQX2bKWGyh90O+Y3bR14QQ==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

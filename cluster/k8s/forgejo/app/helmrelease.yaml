@@ -33,7 +33,7 @@ spec:
         namespace: forgejo
   valuesFrom:
     - kind: Secret
-      name: forgejo-db-app
+      name: forgejo-db-ssd-creds
       valuesKey: password
       # The Forgejo chart is a fork of the Gitea chart and keeps the `gitea:` values key.
       targetPath: gitea.config.database.PASSWD
@@ -160,7 +160,7 @@ spec:
 
         database:
           DB_TYPE: postgres
-          HOST: forgejo-db-rw.forgejo:5432
+          HOST: forgejo-db-ssd-rw.forgejo:5432
           NAME: forgejo
           USER: forgejo
 
