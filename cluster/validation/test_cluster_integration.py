@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+import yaml
 
 from cluster.validation.authentik_blueprints import (
     check_blueprint_completeness,
@@ -135,6 +136,17 @@ def test_sops_secrets_have_decryption_block(cluster: ParsedCluster, k8s_dir: Pat
     """Active flux kustomizations rendering a SOPS Secret must declare decryption.provider: sops."""
     errors = check_sops_decryption_blocks(cluster, k8s_dir)
     assert not errors, "\n".join(errors)
+
+
+def test_ntfy_provider_headers_parse_as_yaml_map(k8s_dir: Path) -> None:
+    """notification-controller parses Provider secret `headers` as a YAML string map."""
+    secret_path = k8s_dir / "flux-webhook" / "ntfy-webhook.sops.yaml"
+    secret = yaml.safe_load(secret_path.read_text())
+    headers = yaml.safe_load(secret["stringData"]["headers"])
+
+    assert isinstance(headers, dict)
+    assert headers
+    assert all(isinstance(key, str) and isinstance(value, str) for key, value in headers.items())
 
 
 def test_retry_policy(cluster: ParsedCluster) -> None:

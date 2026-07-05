@@ -10,13 +10,15 @@ stringData:
     address: ENC[AES256_GCM,data:szI+rMWSSfVSzW6GySklYS3P/v/zXmBbYDemG28U+bgkkyeoQ77QiJeHEhQCwg==,iv:U1YglRfcjGJMmDZpSzNGXPlAhPyCvL5I7itC3KX97S0=,tag:hcaoygzHA4gPV5SWnAaAxw==,type:str]
     # ntfy inline message templating (Template: yes makes Title/Message Go
     # templates over the Flux event JSON body) so previews show a readable
-    # title + body instead of the raw event JSON. Non-secret presentation
-    # config: left plaintext and excluded from the MAC (see .sops.yaml).
+    # title + body instead of the raw event JSON. notification-controller
+    # parses this value as a YAML map; quote Go-template values so the braces
+    # are strings, not YAML flow mappings. Non-secret presentation config:
+    # left plaintext and excluded from the MAC (see .sops.yaml).
     headers: |
-        Template: yes
-        X-Title: {{.involvedObject.kind}} {{.involvedObject.name}}
-        X-Message: {{.severity}}: {{.reason}} - {{.message}}
-        X-Tags: rotating_light
+        Template: "yes"
+        X-Title: "{{.involvedObject.kind}} {{.involvedObject.name}}"
+        X-Message: "{{.severity}}: {{.reason}} - {{.message}}"
+        X-Tags: "rotating_light"
 sops:
     age:
         - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
