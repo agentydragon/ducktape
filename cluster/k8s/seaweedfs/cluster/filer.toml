@@ -21,7 +21,10 @@ createTable = """
     PRIMARY KEY (dirhash, name)
   );
 """
-hostname = "seaweedfs-filer-db-rw.seaweedfs.svc"
+# Repointed to the SSD-tier filer DB (Case B git-latency migration, 2026-07). The
+# seaweedfs-filer-db-app Secret still holds valid creds: the -ssd role password was
+# physically replicated from the old seaweedfs-filer-db before promotion.
+hostname = "seaweedfs-filer-db-ssd-rw.seaweedfs.svc"
 port = 5432
 database = "seaweedfs"
 sslmode = "disable"

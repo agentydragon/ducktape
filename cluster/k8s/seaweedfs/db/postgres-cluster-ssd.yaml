@@ -42,8 +42,11 @@ spec:
   monitoring:
     enablePodMonitor: true
 
+  # Promoted to an independent primary at cutover (was a streaming replica of
+  # seaweedfs-filer-db). bootstrap/externalClusters below are inert post-bootstrap;
+  # kept for a minimal diff and removed in the post-cutover cleanup.
   replica:
-    enabled: true
+    enabled: false
     source: seaweedfs-filer-db
 
   bootstrap:
