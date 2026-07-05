@@ -23,7 +23,11 @@ locals {
   proxmox_gateway = "10.2.0.1"
 
   # Stable Talos endpoint used for post-bootstrap client configuration reads.
-  primary_controlplane_ip     = data.ovh_dedicated_server.kimsufi_cp["ovh-ns102453"].ip
+  # Stage 2 (OVH storage tiering): moved 102453 -> 103656, the KS-5 node that stays
+  # control-plane throughout the reshuffle, so 102453 can later be demoted to a worker
+  # without breaking this reference. The bootstrap/kubeconfig resources below
+  # ignore_changes on this so the repoint does NOT re-trigger a cluster bootstrap.
+  primary_controlplane_ip     = data.ovh_dedicated_server.kimsufi["ovh-ns103656"].ip
   kubeconfig_cluster_endpoint = "https://api.${var.cluster_domain}:6443"
 
   # Total expected node count (for health checks)
@@ -293,6 +297,14 @@ resource "talos_machine_bootstrap" "cluster" {
     talos_machine_configuration_apply.kimsufi,
     talos_machine_configuration_apply.kimsufi_cp,
   ]
+
+  # The cluster is already bootstrapped. Re-pointing primary_controlplane_ip
+  # (Stage 2 CP reshuffle) must NOT force this resource to re-run bootstrap against a
+  # new node — that would fail on an already-bootstrapped cluster. Bootstrap is a
+  # one-time event; ignore endpoint/node drift.
+  lifecycle {
+    ignore_changes = [endpoint, node]
+  }
 }
 
 # Generate kubeconfig
@@ -302,6 +314,12 @@ resource "talos_cluster_kubeconfig" "cluster" {
   node                 = local.primary_controlplane_ip
 
   depends_on = [talos_machine_bootstrap.cluster]
+
+  # As talos_machine_bootstrap: the kubeconfig is already generated; a primary-IP
+  # repoint should not churn it. Any live CP endpoint serves the same kubeconfig.
+  lifecycle {
+    ignore_changes = [endpoint, node]
+  }
 }
 
 # Generate talosconfig

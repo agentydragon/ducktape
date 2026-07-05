@@ -45,10 +45,13 @@ locals {
       storage_tier    = "hdd"
     }
     "ovh-ns104952" = {
-      service_name    = var.kimsufi_service_name_ks_game_0
-      hostname        = "ovh-ns104952"
-      nebula_ip       = "10.42.0.16"
-      role            = "worker"
+      service_name = var.kimsufi_service_name_ks_game_0
+      hostname     = "ovh-ns104952"
+      nebula_ip    = "10.42.0.16"
+      # Stage 2 (OVH storage tiering): promoted worker -> control-plane to move etcd
+      # onto NVMe. storage_tier stays "ssd" (keyed to hardware, not role).
+      role            = "controlplane"
+      apply_mode      = "staged_if_needing_reboot"
       install_disk    = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256006P450RGN"
       data_disk_match = "disk.serial == 'BTPF8304019P450RGN'"
       zone            = "hil-ovh"
