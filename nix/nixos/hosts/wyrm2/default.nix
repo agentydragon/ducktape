@@ -191,15 +191,12 @@ in
       swaylock
     ];
   };
-  # wlroots (sway) on seat-game must be restricted to the display 5090 (guest
-  # 02:00.0 = card2); otherwise it also probes the seat0-owned compute-5090 /
-  # virtio card nodes and dies on logind's TakeDevice denial (the same trap
-  # gamescope hit — but sway respects WLR_DRM_DEVICES). Global is safe: only
-  # wlroots reads these, and the seat0 GNOME desktop uses mutter.
-  environment.sessionVariables = {
-    WLR_NO_HARDWARE_CURSORS = "1";
-    WLR_DRM_DEVICES = "/dev/dri/by-path/pci-0000:02:00.0-card";
-  };
+  # NVIDIA: wlroots can't do hardware cursors on this path. GPU selection is left
+  # to the seat assignment — seat-game owns only card2 (the display 5090), so
+  # libseat hands sway the right device. (Don't set WLR_DRM_DEVICES to the
+  # by-path node: it's a colon-separated list, and the PCI address's colons make
+  # wlroots split it into garbage — "Found 0 GPUs".)
+  environment.sessionVariables.WLR_NO_HARDWARE_CURSORS = "1";
 
   # Steam — games run on the RTX 5090s (direct display via seat-game, or
   # streamed to atlas via Sunshine/Moonlight).
@@ -279,7 +276,6 @@ in
           id
           echo "seat=$XDG_SEAT vt=$XDG_VTNR session=$XDG_SESSION_ID"
           ls -l /dev/dri/by-path/
-          export WLR_DRM_DEVICES=/dev/dri/by-path/pci-0000:02:00.0-card
           export WLR_NO_HARDWARE_CURSORS=1
           exec sway -d
         ''}
