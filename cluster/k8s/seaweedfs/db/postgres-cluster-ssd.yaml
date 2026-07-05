@@ -2,9 +2,9 @@
 # completed 2026-07-05). filer-db metadata is on the critical path of every SeaweedFS/git
 # op; it was moved off the KS-5 HDD tier to the KS-GAME NVMe tier via the CNPG
 # standalone-replica pattern (skills/cnpg_region_switch): a streaming replica of the old
-# seaweedfs-filer-db was bootstrapped here, promoted, and the filer repointed onto it. The
-# source cluster has since been retired; the inert bootstrap/replica/externalClusters
-# stanzas were dropped once the promotion was durable.
+# seaweedfs-filer-db was bootstrapped here (pg_basebackup), promoted, and the filer
+# repointed onto it. The source cluster has since been retired; the inert replica /
+# externalClusters / pg_basebackup stanzas were dropped once the promotion was durable.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -34,23 +34,19 @@ spec:
   monitoring:
     enablePodMonitor: true
 
-  # The filer's owner role. This cluster was physically cloned (pg_basebackup) from
-  # seaweedfs-filer-db, whose owner role is "seaweedfs" — not CNPG's default "app" — so we
-  # enforce the role's password from a committed Secret (attributes replicated from the
-  # live role: login-only, no superuser/createdb/createrole/replication/bypassrls,
-  # unlimited connections). The filer authenticates with this same Secret. See
-  # seaweedfs-filer-db-ssd-creds.sops.yaml for why the name avoids CNPG's reserved -app.
-  managed:
-    roles:
-      - name: seaweedfs
-        ensure: present
-        login: true
-        superuser: false
-        createdb: false
-        createrole: false
-        inherit: true
-        replication: false
-        bypassrls: false
-        connectionLimit: -1
-        passwordSecret:
-          name: seaweedfs-filer-db-ssd-creds
+  # Application-user identity for CNPG's ongoing reconcile. NOT a re-initialization: CNPG
+  # runs bootstrap exactly once, at cluster creation on empty PGDATA (this cluster was
+  # actually created via pg_basebackup, see the header) — the running instances are never
+  # re-init'd by this stanza. Its sole purpose is to tell CNPG the application role is
+  # "seaweedfs" (this clone's owner) rather than CNPG's default "app": without it, the
+  # instance-manager loops forever on `role "app" does not exist` because no "app" role was
+  # cloned. CNPG keeps the seaweedfs role's password in sync with this Secret — a no-op,
+  # since the Secret holds the value physically replicated from the source. The filer
+  # authenticates with the same Secret. The -creds name deliberately avoids CNPG's reserved
+  # <cluster>-app; see seaweedfs-filer-db-ssd-creds.sops.yaml.
+  bootstrap:
+    initdb:
+      database: seaweedfs
+      owner: seaweedfs
+      secret:
+        name: seaweedfs-filer-db-ssd-creds

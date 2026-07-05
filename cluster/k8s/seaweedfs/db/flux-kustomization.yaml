@@ -14,7 +14,7 @@ spec:
   prune: true
   wait: true
   # Required to apply seaweedfs-filer-db-ssd-creds.sops.yaml (the filer DB app creds
-  # enforced onto -ssd via managed.roles); without it Flux applies the ciphertext.
+  # CNPG syncs onto the -ssd seaweedfs role); without it Flux applies the ciphertext.
   decryption:
     provider: sops
     secretRef:

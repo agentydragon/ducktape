@@ -1,10 +1,10 @@
 # App credentials for the SeaweedFS filer's connection to seaweedfs-filer-db-ssd.
 # Named -creds, NOT -app: CNPG auto-generates a bogus <cluster>-app Secret (default
-# username "app", no matching role) for this pg_basebackup cluster, so we must not
-# collide with that name. postgres-cluster-ssd.yaml enforces this password onto the
-# real owner role (seaweedfs) via spec.managed.roles; the filer authenticates with it.
-# Password copied from the old seaweedfs-filer-db-app (physically replicated), so the
-# managed.roles apply is a no-op and lets us delete the old cluster.
+# username "app", no matching role) for this pg_basebackup clone, so we must not
+# collide with that name. postgres-cluster-ssd.yaml names "seaweedfs" as the app user
+# (bootstrap.initdb.owner + this Secret), so CNPG keeps that role's password in sync
+# with this value; the filer authenticates with it. Password copied from the source
+# role (physically replicated), so the sync is a no-op.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -12,29 +12,29 @@ metadata:
     namespace: seaweedfs
 type: kubernetes.io/basic-auth
 stringData:
-    username: ENC[AES256_GCM,data:phtZUnB1If5z,iv:+KjXF2wlZVJ1MVkpNCkwTg355Fwq0IJSEVRQ2bS8gOw=,tag:BRQqQSJ2XkBEUTjrdHjghQ==,type:str]
-    password: ENC[AES256_GCM,data:4OU3T3Oyo1GAa69ENoAGcOrDhnUfqOOoe4ZlD6UjZfedZRbegxFgY6AYlv+QD3hEH0kRDoX9tj33wMbKQ4RPxQ==,iv:b6a39pWR9xIc77rr8Y5FFaQmdyHoqY3662jH2PmI36A=,tag:ZFIVKvz9u30I0YGicocThA==,type:str]
+    username: ENC[AES256_GCM,data:ISXZkYYiThDX,iv:V6TjfPmXRZZqfJ2iHs0fczMlhDqKeee2uCwDZAbZbN0=,tag:GpIIdYoACAKNr8Chvwqdng==,type:str]
+    password: ENC[AES256_GCM,data:XUxVTNtHHhPoiHjcl7LhGTyUr3MD4dznA0C6R0Kc1sAvIua3qUysT6xTujLNe/MkI4hqGlvhj3M6LVGGT1AJcA==,iv:Lc2oXzPDm9RN107Wj39MqP/xNGVW0ZSPqDF7YOKO+gM=,tag:Dqt45pzK2/60NJo02jZ4vg==,type:str]
 sops:
     age:
         - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
           enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBscjhuOVlGMUhlMTNwTmp1
-            S1dzSHk1ZGRaTjFkbFYvallDUy9zU3ZudkFrCko1dy9LS3pIU2ZieGlFVk9mNk9J
-            dGo5MUx4TDdaL1lLVHdBN3J1Sm9XaTAKLS0tIElNTkF2L3cvb3FaVnhqSHJKckdx
-            Sll0NjhUTUwzWDc5ZnYyQ0dPYmNEa0kKoRfwxM7Wo+ixPJf3N792mB8hppzKgCzV
-            //xTHPIkTXFPHiIfbW/DmTAagky65qMl5L8tGFEuD0gtSCrcyZHluw==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBuYVFmUFVsQ0N4V0VtL3dB
+            cm1RTWQyOG8wMk9rWVFwWjRXeERrUVVMeWdFClo1OFJuRERlWDFiTURuaS9sTHhF
+            NktJa1owVm1FbUxZbVJHWmZSK0cza3cKLS0tIDlmTmtNbVBIVGdBTFNoSm9DSFpD
+            d1UyajlxMVpvaFRMZDE5YUM5MzJCam8KHQk6+5ucBNGfvsOMgVd9MIfcocf/MzMC
+            /D3rWOykLCwKLXBnadaW84qRGu5vNfo/qXymrWkXppy7NI8BAkUksg==
             -----END AGE ENCRYPTED FILE-----
         - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
           enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB4YnZaalo0NDVGcFhnYS9u
-            U0o0NlVqQXdRdVI2VDFVOGtDQ05ZNnJ0dkdZCkdUWHc3Nm8yMG5pU3Jld0ZNL0Jl
-            MUZtSHZBUFdzb3FyWUt5VVNJQy94R0UKLS0tIG5LOU1zUTc2cTQvSWp0bE5oQzd1
-            TE11Mi9naVVId0NmUFRGeXV2N28yTTgKjh/bLEw57VITRF0Knr3tBVTbDsm43bhN
-            rKgSM4NEhmrlYVI8DIfkLh4jUFSwvgDgywaEAgsbeyGR5A6gXh5eBg==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBFUmxjRjhtcm1MdU55Y21M
+            T2tNcm5vRU5PV0U2amRacGxPR2JJOC9DT2hVCi9XR05XcmRISCt2d3ZsQ2lRV0Mx
+            ZmJ5TGptVGUzbzBhbFdDNlFhWExBRkkKLS0tIEJtNmM0dTJ4UnJOY21RdFpKTjdO
+            TmI4aFB5QXFrZDZXeFlUYnR4d1hWa0kK/HyAxHP+BpUi0p3KPOBNgPqjYfmvCNUh
+            y+hukMdd+A4UCn/DUkaInw8L5UOqFbERqq3m2vLr7q3bHOBeUQShRA==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2026-07-05T00:48:41Z"
-    mac: ENC[AES256_GCM,data:fEc3LCPOWvi7hCZ+L/tGoXu1fia31XiDF13scm9V0fzmCJDlhag+k0gexYAB6AGTo1PLAW9DufAD2vOfkh5/6BaeQkXAyIC3BhRMpRSLl3TeHqoXzQI459wgW4rhP6EhsVKhavEcZ52x+NtZYFAHYaO4pyHXeXaiAmFgkh4bLKs=,iv:8ADQLXMx4meWnT/YCK++MfD8+clt9NgovXBwHcBIMlM=,tag:hypIhORGR9k5TWs3VyW86g==,type:str]
+    lastmodified: "2026-07-05T01:27:22Z"
+    mac: ENC[AES256_GCM,data:SG5MGVpx0CrRB4rLEwNwHehe7HOBkwovPob/DPcYI21Lfw5ercpDgab0zMQFJq/JA2t7I7rniVFO2izR11jCVeVD1xX3gI1Of5bJ6n5NzyKGgD+KF2sxQKXv4isyT9iyIGLLhgWlfBUvgKP65s0WELTInU/28ScP/FZvJg3FrrA=,iv:68y/tHMEQ9ghfNd1pIyBoTM1TTOICWwv19rLopq4460=,tag:lyyBnfQDXyUoKtl8bwKQXA==,type:str]
     encrypted_regex: ^(data|stringData)$
     version: 3.12.1
