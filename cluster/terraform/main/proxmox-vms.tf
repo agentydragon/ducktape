@@ -50,9 +50,13 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     pcie   = true
     rombar = true
   }
+  # Display 5090 (host 03:00, IOMMU group 16): pass the WHOLE device (no function
+  # suffix) so the guest gets both the GPU (02:00.0) and its DP/HDMI audio
+  # function (02:00.1) — the monitor's audio path for the gaming seat. Applied
+  # imperatively via qm on atlas; this keeps the TF source in sync.
   hostpci {
     device = "hostpci1"
-    id     = "0000:03:00.0"
+    id     = "0000:03:00"
     pcie   = true
     rombar = true
   }
