@@ -39,9 +39,10 @@ first.
 
 - **haku-ci dind** pulls Docker Hub base images via `--registry-mirror` (see
   `cluster/k8s/haku-ci/deployment.yaml`); the Docker Hub FQDNs are consequently dropped
-  from the `haku-egress-proxy` allowlist. ghcr/quay aren't mirrored yet — classic dockerd
-  only mirrors Docker Hub; collapsing those needs containerd `hosts.toml` / buildkit
-  (Phase 2).
+  from the `haku-egress-proxy` allowlist. ghcr/quay aren't mirrored through haku-ci yet,
+  but this is intentionally downprioritized while Haku image builds move to Bazel
+  `rules_oci`: the remaining haku-ci Dockerfile path uses Docker Hub bases, which are
+  already covered.
 
 ## Eviction
 
@@ -76,15 +77,15 @@ The public, authenticated endpoint and node-level pull-through are deliberately 
    `credentialsFile` to Zot's `sync` config keyed by `registry-1.docker.io` with a Docker
    Hub username + PAT. Anonymous pull-through works without it.
 
-4. **Haku dind allowlist — ghcr/quay (Docker Hub done in Tier 1).** Docker Hub already
-   routes through the mirror (see Consumers above); dropping `ghcr.io` +
-   `pkg-containers.githubusercontent.com` from `cnp-haku-cloud-api-egress.yaml` needs dind
-   to mirror ghcr too, which classic dockerd can't — enable Docker's containerd image
-   store + `hosts.toml`, or move to buildkit. The mirror side already works
-   (`/v2/ghcr/... → 200`); the open work is the dind client + verifying it. Full handoff
-   notes (blockers, the exact test, why it's unfinished): <plans/tier2-ghcr-quay-mirror.md>.
-   Egress note: haku-ci's force-proxy policy had to allow the **backend** port 5000 for the
-   mirror (Cilium enforces on targetPort, not the Service port).
+4. **Haku dind allowlist — ghcr/quay (deferred).** Docker Hub already routes through the
+   mirror (see Consumers above). Dropping `ghcr.io` + `pkg-containers.githubusercontent.com`
+   from `cnp-haku-cloud-api-egress.yaml` would require haku-ci's dind to mirror ghcr too,
+   which classic dockerd can't — enable Docker's containerd image store + `hosts.toml`, or
+   move to buildkit. The mirror side already works (`/v2/ghcr/... → 200`), but this is not
+   worth doing unless post-`rules_oci` haku-ci still has frequent or painful ghcr/quay pulls.
+   Full deferred handoff notes: <plans/tier2-ghcr-quay-mirror.md>. Egress note: haku-ci's
+   force-proxy policy had to allow the **backend** port 5000 for the mirror (Cilium enforces
+   on targetPort, not the Service port).
 
 ## Verified working (2026-07-04)
 

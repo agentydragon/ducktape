@@ -1,12 +1,22 @@
-# Tier 2: route haku-ci dind ghcr/quay pulls through oci-cache
+# Deferred: route non-Docker-Hub pulls through oci-cache
 
-Handoff notes. **Goal:** drop `ghcr.io` + `pkg-containers.githubusercontent.com`
-from the `haku-egress-proxy` allowlist
+Handoff notes. **Status as of 2026-07-05: downprioritized.** The original goal was
+to drop `ghcr.io` + `pkg-containers.githubusercontent.com` from the
+`haku-egress-proxy` allowlist
 (`cluster/k8s/agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml`) by making
 haku-ci's dind pull ghcr (and ideally quay) through the in-cluster `oci-cache` Zot
 mirror — the same way Docker Hub already does (Tier 1).
 
-## State: mirror ready, client side blocked
+That is no longer an immediate CI priority. haku-ci's only Dockerfile-built image is
+the Haku-owned `haku-ui` starter copied into `haku-state`, and that Dockerfile uses
+Docker Hub bases (`node:*`, `python:*`), which Tier 1 already routes through
+`oci-cache`. The rest of the Haku platform images are already built outside haku-ci,
+mostly by Bazel `rules_oci` in `.github/workflows/push-images.yml`; `haku-ui` itself is
+being ported that way too. Until a post-port workload proves it still needs frequent
+direct ghcr/quay pulls from haku-ci, keep those registry hosts on the proxy allowlist and
+do not spend migration effort here.
+
+## State: mirror ready, client side not worth migrating yet
 
 **The mirror already serves ghcr/quay.** Verified 2026-07-04 from a curl pod:
 
@@ -15,9 +25,11 @@ GET http://oci-cache.oci-cache.svc/v2/ghcr/project-zot/zot-minimal-linux-amd64/m
 -> HTTP 200
 ```
 
-So `oci-cache` needs no changes for Tier 2 — the `/ghcr` and `/quay` prefixes work.
-The whole problem is the **client** (haku-ci's dind): getting it to send ghcr pulls
-to the mirror.
+So `oci-cache` needs no changes for this future work — the `/ghcr` and `/quay`
+prefixes work. The remaining problem is purely the **client**: classic Docker's pull
+path inside haku-ci does not naturally send ghcr/quay pulls to the mirror. Given the
+rules_oci port, that client migration is probably unnecessary unless future evidence
+shows haku-ci still pulls ghcr/quay often enough to matter.
 
 ## The blocker: classic dockerd only mirrors Docker Hub
 
@@ -27,7 +39,7 @@ Tier 1 works because Docker's `--registry-mirror` handles Docker Hub — but it 
 at its root (a 6th Zot sync entry, destination `/`). There is **no `--registry-mirror`
 equivalent for ghcr/quay** in classic dockerd.
 
-Getting per-registry (ghcr/quay) mirroring needs one of:
+If this ever becomes important again, per-registry (ghcr/quay) mirroring needs one of:
 
 1. **Docker's containerd image store** (`daemon.json: {"features":{"containerd-snapshotter":true}}`)
    - containerd `hosts.toml` under `/etc/containerd/certs.d/<registry>/hosts.toml`.
@@ -42,8 +54,11 @@ Getting per-registry (ghcr/quay) mirroring needs one of:
    runner migration, not a config tweak.
 3. **nerdctl + containerd** — different runtime; also a migration.
 
-## Why this wasn't finished: couldn't test the client path
+## Why this was not finished
 
+- **Lower priority after the rules_oci port.** The only haku-ci Dockerfile path left to
+  worry about uses Docker Hub bases, and Docker Hub is already mirrored. Most other Haku
+  images are Bazel `oci_image` outputs or Nix-built outside haku-ci.
 - **No access to haku-ci.** It's operator-only with **no Haku RBAC** (by design —
   see `cluster/k8s/haku-ci/README.md`), so an agent authenticating as `haku-k8s`
   cannot create/exec pods there.
@@ -54,11 +69,11 @@ Getting per-registry (ghcr/quay) mirroring needs one of:
   create the rootless TAP), so a dind can't run there to test the Docker `hosts.toml`
   behaviour.
 
-To finish, the next agent needs **a privileged-capable namespace** (relax
+To revive this, the next agent needs **a privileged-capable namespace** (relax
 haku-sandbox to `privileged`/`baseline`-warn, or use another ns), or run the test
 **in haku-ci itself** with operator/admin credentials.
 
-## The empirical test to run
+## The empirical test to run if revived
 
 Stand up a `docker:27-dind-rootless` pod (privileged) with the containerd image
 store + `hosts.toml`, and **no `HTTP_PROXY`** so the only route to ghcr is the mirror
@@ -107,8 +122,9 @@ depends on `forgejo`, which re-reconciles on every commit).
 
 ## Recommendation
 
-**Hold unless ghcr pulls are actually frequent/painful.** The reward is two stable
-GitHub hosts; the Docker path is unverifiable-and-probably-unsupported, and the
-reliable path is a buildkit migration. The Docker Hub win (rate limits + the
-CloudFlare/CloudFront CDN sprawl) is already captured by Tier 1. The mirror stands
-ready whenever the client side is solved.
+**Hold unless post-rules_oci haku-ci still has frequent/painful ghcr or quay pulls.**
+The reward is two stable GitHub hosts; the Docker path is
+unverified-and-probably-unsupported, and the reliable path is a buildkit/runner
+migration. The Docker Hub win (rate limits + the CloudFlare/CloudFront CDN sprawl) is
+already captured by Tier 1, and the current haku-ui Dockerfile only needs that. The
+mirror stands ready whenever a real client-side need reappears.
