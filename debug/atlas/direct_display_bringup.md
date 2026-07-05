@@ -372,6 +372,33 @@ Operation not permitted`. Set `programs.gamescope.enable = true; capSysNice = fa
 - Also: sway defaulted DP-4 to **4K@60** though the FV43U exposes a **4K@144** mode
   (`swaymsg -t get_outputs`) — worth pinning 144 in the sway output config.
 
+### Wind-down status (2026-07-04, end of session)
+
+**Working + verified:** sway on the display 5090 (seat-game); `/games` 500 GB SSD
+Steam library; monitor DP audio; Stellaris launches and runs under Proton.
+
+**The one thing left to verify — per-game gamescope for the lag:** the raw
+gamescope fix (`programs.gamescope.enable = true; capSysNice = false`) is
+**built and live on wyrm2** — `command -v gamescope` is the unwrapped binary, the
+`/run/wrappers/bin/gamescope` capSysNice wrapper is gone. What remains is purely
+the Steam-side step: set the launch option **in the Steam UI** (not over SSH —
+Steam Cloud reverts `localconfig.vdf` edits) to
+`gamescope -f --prefer-vk-device 10de:2b85 -- %command%`, launch fresh, and
+confirm `nvidia-smi --query-compute-apps` shows `stellaris.exe` on `02:00.0`
+(display GPU) instead of `01:00.0` (compute) — that kills the cross-GPU copy.
+Gotcha: `steam://rungameid` no-ops if the game is already running; stop it first.
+
+**Branches (all unmerged at wind-down):**
+
+- **#2891** `wyrm2-games-disk` — the `/games` SSD disk (nix + TF). Open PR.
+- **`wyrm2-sway-seat`** — stacked on #2891; carries the sway session, the audio
+  passthrough, grim, the raw-gamescope fix, and these notes. **No PR opened yet.**
+
+**Still to do (cleanup, not blocking):** strip the now-unused gamescope kiosk bits
+(`programs.steam.gamescopeSession`, the "Steam (debug)" + "Sway (debug)" sessions,
+`gdm.debug`); pin DP-4 to 4K@144 in the sway config; harden the session-teardown
+leak.
+
 ## Open questions
 
 - **Per-game lag** (root-caused, fix in progress): cross-GPU copy — see above.
