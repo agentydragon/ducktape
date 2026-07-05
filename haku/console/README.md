@@ -55,15 +55,16 @@ enables it; the response CSP adds `frame-src` for that origin and Authentik's or
 (`HAKU_CONSOLE_AUTH_ORIGIN`, default `https://auth.allegedly.works`) so the in-frame SSO
 redirect can complete.
 Containment is cross-origin isolation: the iframe can't read the console's DOM/cookies or
-act as it. The trusted **bridge** (`bridge.ts`) lets the iframe _request_ three things via
-postMessage — opening a link (`openLink`), launching a run (`requestLaunch`), and reading
-the operator's location (`requestGeolocation`, gated by a shell-owned standing consent grant
-since the iframe has no `allow="geolocation"`); the shell origin-checks, schema-validates,
-and decides/confirms before acting. It also mirrors the iframe's hash route (`routeChanged`,
-validated as a path) into the console's own URL fragment so refresh and deep links restore
-the view. A persistent ⚙ escape button opens the shell's own console panel
+act as it. The trusted **bridge** (`bridge.ts`) lets the iframe _request_ things via
+postMessage — opening a link (`openLink`), launching a run (`requestLaunch`), and reading the
+operator's location, either one-shot (`requestGeolocation`) or as a continuous stream the
+shell holds (`startGeolocationWatch`); location is gated by a shell-owned standing consent
+grant since the iframe has no `allow="geolocation"`. The shell origin-checks,
+schema-validates, and decides/confirms before acting. It also mirrors the iframe's hash route
+(`routeChanged`, validated as a path) into the console's own URL fragment so refresh and deep
+links restore the view. A persistent ⚙ escape button opens the shell's own console panel
 (`console_panel.tsx`) — trusted chrome hosting shell-owned controls like the
-location-sharing withdraw. See <docs/containment.md>.
+location-sharing stop/withdraw. See <docs/containment.md>.
 
 ## Layout
 

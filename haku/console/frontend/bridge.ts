@@ -14,13 +14,19 @@
 //    capability must be a genuine operator gesture against trusted chrome, so the iframe
 //    can only request it; the shell renders its OWN confirm (showing the prompt) and only
 //    then fires. `id` correlates the eventual `launchResult`.
-//  - `requestGeolocation`: read the operator's current position, mirroring the browser
-//    Geolocation API's `getCurrentPosition(options)`. The iframe has **no**
+//  - `requestGeolocation`: one-shot read of the operator's current position, mirroring the
+//    browser Geolocation API's `getCurrentPosition(options)`. The iframe has **no**
 //    `allow="geolocation"`, so it cannot read location itself; it asks the shell, which
 //    reads its OWN (trusted, top-level) origin's location. Gated by a shell-owned standing
 //    grant ("allow until withdrawn", geolocation_grant.ts): the first request pops a
 //    top-layer consent confirm; once granted, later requests are served until the operator
 //    withdraws. `id` correlates the eventual `geolocationResult`.
+//  - `startGeolocationWatch` / `stopGeolocationWatch`: a continuous location stream,
+//    mirroring `watchPosition`/`clearWatch`. Same grant gate; the **shell** holds the
+//    live watch (so a prompt-injected Haku can neither start one silently nor keep one the
+//    operator stopped) and streams each fix as a `geolocationResult` tagged with the same
+//    `id`. `stop` (or the operator withdrawing) ends the stream with a terminal
+//    `geolocationResult` (`ok:false`, reason `withdrawn`).
 //  - `routeChanged`: mirror the iframe's current hash route into the console's own URL
 //    fragment so refresh/deep-links restore the view. Strictly a validated path
 //    (`isRoutePath`), never a URL — the shell only ever puts it in a fragment.
@@ -28,9 +34,14 @@ export type Inbound =
   | { type: "openLink"; url: string }
   | { type: "requestLaunch"; id: string; prompt: string }
   | { type: "requestGeolocation"; id: string; options?: GeolocationOptions }
+  | { type: "startGeolocationWatch"; id: string; options?: GeolocationOptions }
+  | { type: "stopGeolocationWatch"; id: string }
   | { type: "routeChanged"; path: string };
 
-// Outbound result (shell → iframe), so Haku's UI can react to the outcome.
+// Outbound result (shell → iframe), so Haku's UI can react to the outcome. A
+// `geolocationResult` answers both a one-shot `requestGeolocation` (once) and a
+// `startGeolocationWatch` (repeatedly, same `id`, until the watch ends); the iframe
+// correlates by `id`.
 export type Outbound =
   | { type: "openLinkResult"; url: string; opened: boolean; reason?: string }
   | { type: "launchResult"; id: string; ok: boolean; sessionUrl?: string; reason?: string }
@@ -96,6 +107,12 @@ export function parseInbound(data: unknown): Inbound | null {
   }
   if (m.type === "requestGeolocation" && typeof m.id === "string") {
     return { type: "requestGeolocation", id: m.id, options: parseGeolocationOptions(m.options) };
+  }
+  if (m.type === "startGeolocationWatch" && typeof m.id === "string") {
+    return { type: "startGeolocationWatch", id: m.id, options: parseGeolocationOptions(m.options) };
+  }
+  if (m.type === "stopGeolocationWatch" && typeof m.id === "string") {
+    return { type: "stopGeolocationWatch", id: m.id };
   }
   if (m.type === "routeChanged" && typeof m.path === "string" && isRoutePath(m.path)) {
     return { type: "routeChanged", path: m.path };

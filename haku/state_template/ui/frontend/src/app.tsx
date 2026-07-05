@@ -2,7 +2,6 @@ import { Box, Container, Group, Tabs, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 
 import { notifyRouteChanged } from "./bridge.ts";
-import { captureLocation } from "./capture_location.ts";
 import { fetchMeta } from "./client.ts";
 import { NoteToHaku } from "./feedback_button.tsx";
 import { errText } from "./errors.ts";
@@ -16,6 +15,7 @@ import { type Doc, docsUnder } from "./repo.ts";
 import { formatHash, useHashRoute } from "./routes.ts";
 import type { View } from "./routes.ts";
 import { RunsPage } from "./runs.tsx";
+import { startLocationTracking } from "./track_location.ts";
 import type { MetaResponse } from "./types.ts";
 
 const log = logger("app");
@@ -37,12 +37,11 @@ export default function App() {
   function openInGarden(path: string) {
     navigate({ view: "garden", gardenPath: path });
   }
-  // Ask for the operator's location on load and record it to the backend (haku-state). The
-  // shell's standing consent grant means this prompts only the first time, then stays silent
-  // until withdrawn; captureLocation logs and swallows its own failures (best-effort).
-  useEffect(() => {
-    void captureLocation();
-  }, []);
+  // Continuously track the operator's location and record each fix to the backend. The shell
+  // holds the live watch under its standing consent grant (prompts only the first time, then
+  // streams until the operator stops it from the console panel); startLocationTracking logs
+  // and swallows its own failures (best-effort). Stop the watch when the app unmounts.
+  useEffect(() => startLocationTracking(), []);
 
   // Ticks the live deadline countdowns; 30s is fine at minute granularity.
   const [now, setNow] = useState(() => Date.now());

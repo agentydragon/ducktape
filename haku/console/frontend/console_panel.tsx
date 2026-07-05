@@ -11,15 +11,17 @@ import { Badge, Button, Drawer, Group, Stack, Text } from "@mantine/core";
 export interface ConsolePanelProps {
   opened: boolean;
   onClose: () => void;
-  // Standing location-sharing grant (geolocation_grant.ts) + its withdraw action.
+  // Standing location-sharing grant (geolocation_grant.ts), whether a live watch is currently
+  // streaming, and the withdraw action (revokes the grant AND stops any live watch).
   geoGranted: boolean;
+  tracking: boolean;
   onWithdrawGeolocation: () => void;
 }
 
 // zIndex maxed so the Drawer sits above the full-page iframe; the escape button is one below.
 export const PANEL_Z = 2147483647;
 
-export function ConsolePanel({ opened, onClose, geoGranted, onWithdrawGeolocation }: ConsolePanelProps) {
+export function ConsolePanel({ opened, onClose, geoGranted, tracking, onWithdrawGeolocation }: ConsolePanelProps) {
   return (
     <Drawer opened={opened} onClose={onClose} position="right" size="sm" title="Console" zIndex={PANEL_Z}>
       <Stack gap="lg">
@@ -29,11 +31,17 @@ export function ConsolePanel({ opened, onClose, geoGranted, onWithdrawGeolocatio
           </Text>
           {geoGranted ? (
             <Group justify="space-between">
-              <Badge color="blue" variant="light" leftSection="📍">
-                Allowed
-              </Badge>
+              {tracking ? (
+                <Badge color="teal" variant="filled" leftSection="📍">
+                  Tracking — live
+                </Badge>
+              ) : (
+                <Badge color="blue" variant="light" leftSection="📍">
+                  Allowed — idle
+                </Badge>
+              )}
               <Button size="xs" variant="light" color="red" onClick={onWithdrawGeolocation}>
-                Withdraw
+                {tracking ? "Stop & withdraw" : "Withdraw"}
               </Button>
             </Group>
           ) : (
