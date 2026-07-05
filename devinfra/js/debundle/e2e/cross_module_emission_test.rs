@@ -644,7 +644,7 @@ fn fail_fast_dry_run_stops_before_later_duplicate_claim_diagnostics() {
     for required in [
         "diagnostics/ambiguous",
         "export `AmbiguousHelper`",
-        "target_binding `repeatedHelper`",
+        "source_matches[].bindings[`repeatedHelper`]",
         "valid global selector assignment",
     ] {
         assert!(
