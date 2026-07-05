@@ -6,7 +6,7 @@
 #
 # Postgres credentials are NOT here — they're injected as env vars
 # WEED_POSTGRES2_USERNAME / WEED_POSTGRES2_PASSWORD in the Seaweed CR
-# (sourced from CNPG's auto-generated seaweedfs-filer-db-app Secret).
+# (sourced from the committed seaweedfs-filer-db-ssd-creds Secret).
 # viper's `WEED_` env prefix with dot→underscore replacement
 # (seaweedfs/weed/util/config.go) maps env vars onto these TOML keys.
 
@@ -21,9 +21,8 @@ createTable = """
     PRIMARY KEY (dirhash, name)
   );
 """
-# Repointed to the SSD-tier filer DB (Case B git-latency migration, 2026-07). The
-# seaweedfs-filer-db-app Secret still holds valid creds: the -ssd role password was
-# physically replicated from the old seaweedfs-filer-db before promotion.
+# SSD-tier filer DB (Case B git-latency migration, 2026-07): the metadata backend was
+# moved off the KS-5 HDD tier onto the KS-GAME NVMe tier.
 hostname = "seaweedfs-filer-db-ssd-rw.seaweedfs.svc"
 port = 5432
 database = "seaweedfs"

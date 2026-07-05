@@ -9,11 +9,15 @@ and the `spec.volume` stub dropped; and **Forgejo git cut over to `seaweedfs-ovh
 <../lessons_learned/2026_07_04_seaweedfs_stale_mount_cache_after_evacuation.md>,
 <../runbooks/seaweedfs_pvc_storageclass_migration.md>.
 
+Also done (2026-07-05, ahead of Stage 2): **`seaweedfs-filer-db` migrated to `local-path-ovh-ssd`**
+via the CNPG clone-and-cutover (`seaweedfs-filer-db-ssd`) — the remaining git-latency win, since
+the filer metadata DB is on the critical path of every SeaweedFS op. Source cluster retired.
+
 **Remaining:** **Stage 2** (mount rename + etcd onto NVMe — the rolling destructive part:
-Talos CP reshuffle + the CNPG Case B moves `forgejo-db`/`filer-db` → SSD, which fully unlocks
-git latency since the filer metadata DB is still on HDD), then the optional **Stage 3**.
-Plus a one-off Phase-3 cleanup: delete the old `forgejo-git-rwx` PVC + the three VolSync
-objects once satisfied (rollback until then = revert the `claimName` commit).
+Talos CP reshuffle; the only Case B DB left is the optional `forgejo-db` move), then the
+optional **Stage 3**. Plus one-off cleanups: delete the old `forgejo-git-rwx` PVC + the three
+VolSync objects once satisfied (rollback until then = revert the `claimName` commit); and
+reclaim the retired `seaweedfs-filer-db` HDD PVCs.
 
 ## Goal
 
@@ -73,12 +77,9 @@ deliberately:
 - **Forgejo git** — the SeaweedFS `ssd` volume group + the `forgejo-git` RWX PVC. This is
   the change that fixes the Haku dashboard. Definite.
 - **`forgejo-db`** — likely (small; keeps hot Forgejo metadata next to its git).
-- **`seaweedfs-filer-db`** — yes. It is the `postgres2` metadata backend on the critical
-  path of _every_ SeaweedFS CSI/S3 op, including the Forgejo git POSIX mount the SSD tier
-  exists to accelerate: git is metadata-heavy, so leaving this DB on HDD would leave git's
-  small-op latency HDD-bound even with git blobs on SSD volume servers. Tiny (~2 GiB), a
-  2-instance CNPG pair (one per KS-GAME node), on the data NVMe (separate from etcd on
-  NVMe#1) — no downside. Speeds all SeaweedFS consumers, not just git.
+- **`seaweedfs-filer-db`** — **done** (2026-07-05, `seaweedfs-filer-db-ssd`). It is the
+  `postgres2` metadata backend on the critical path of _every_ SeaweedFS CSI/S3 op, so moving
+  it off HDD was the last git small-op latency win after git blobs went to SSD.
 
 **HDD tier (default — includes "most of the tiny Postgreses"):** all other CNPG DBs
 (`authentik`, `langfuse`, `atuin`, `airlock`, `litellm`, `props`, `paperless`, `plaid`,
@@ -417,13 +418,12 @@ Per-node order — each fenced by **G-all** + **G-losable** before and after:
 5. **`ovh-ns103656` — data disk only.** Stays control-plane (anchor); do **not** touch its
    etcd / `/dev/sda`. Drain its `/dev/sdb` local-path PVs, wipe+rename → `local-path-ovh-hdd`
    (R). **Post:** **G-swfs**/**G-cnpg** green.
-6. **Move the SSD-tier DBs (Case B).** Migrate `forgejo-db` and `seaweedfs-filer-db` to
-   `local-path-ovh-ssd` via the `cnpg_region_switch` clone-and-cutover (new cluster → stream
-   → promote → repoint app → delete old), one at a time (**G-cnpg** between); repoint Forgejo
-   and the filer respectively. Verify the `filer-db` clone before deleting the source (SSOT,
-   no external backup). Leave every other DB on HDD. Re-check Nebula lighthouse placement now
-   that `102453`/`103711` are workers (lighthouse role is per-node, not tied to k8s
-   control-plane role).
+6. **Move the last SSD-tier DB (Case B).** `seaweedfs-filer-db` is already done (see status
+   header). Optionally migrate `forgejo-db` to `local-path-ovh-ssd` via the
+   `cnpg_region_switch` clone-and-cutover (new cluster → stream → promote → repoint app →
+   delete old); repoint Forgejo. Leave every other DB on HDD. Re-check Nebula lighthouse
+   placement now that `102453`/`103711` are workers (lighthouse role is per-node, not tied to
+   k8s control-plane role).
 
 **Exit:** matches the Final-state table; watch `ControlPlaneLeasePutLatency*` drop as etcd
 fsync moves onto NVMe.

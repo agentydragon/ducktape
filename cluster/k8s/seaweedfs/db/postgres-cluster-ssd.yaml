@@ -1,25 +1,17 @@
-# SSD migration target for the SeaweedFS filer metadata DB (OVH storage tiering,
-# CNPG Case B — see cluster/docs/plans/ovh_storage_tiering.md). filer-db metadata
-# is on the critical path of every SeaweedFS/git op but currently lives on HDD
-# (KS-5 nodes); moving it to the KS-GAME NVMe tier is the remaining git-latency win
-# after Phase 3 put git blobs on SSD. This is independent of the Stage 2 etcd/CP
-# reshuffle — local-path-ovh-ssd + the KS-GAME NVMe already work today.
-#
-# Migration via the CNPG standalone-replica pattern (skills/cnpg_region_switch):
-#   1. (this manifest) bootstrap seaweedfs-filer-db-ssd as a streaming replica of
-#      seaweedfs-filer-db on local-path-ovh-ssd — NON-disruptive, source untouched.
-#   2. verify lag ~0, promote (spec.replica.enabled: false),
-#   3. repoint the filer's postgres2 host + app-secret to -ssd (brief filer
-#      reconnect — coordinated, filer-db is the metadata SSOT with no PITR backup),
-#   4. delete the old seaweedfs-filer-db.
-# imageName pinned to match the source exactly (physical replication requirement).
+# SeaweedFS filer metadata DB, SSD tier (OVH storage tiering, CNPG Case B — migration
+# completed 2026-07-05). filer-db metadata is on the critical path of every SeaweedFS/git
+# op; it was moved off the KS-5 HDD tier to the KS-GAME NVMe tier via the CNPG
+# standalone-replica pattern (skills/cnpg_region_switch): a streaming replica of the old
+# seaweedfs-filer-db was bootstrapped here, promoted, and the filer repointed onto it. The
+# source cluster has since been retired; the inert bootstrap/replica/externalClusters
+# stanzas were dropped once the promotion was durable.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
   name: seaweedfs-filer-db-ssd
   namespace: seaweedfs
   annotations:
-    description: Streaming replica of seaweedfs-filer-db on the SSD tier, to be promoted (Case B git-latency migration)
+    description: SeaweedFS filer metadata DB on the SSD tier (physically cloned from the retired seaweedfs-filer-db, Case B git-latency migration)
 spec:
   instances: 2
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
@@ -42,10 +34,12 @@ spec:
   monitoring:
     enablePodMonitor: true
 
-  # CNPG doesn't auto-generate an -app Secret for pg_basebackup clusters, so enforce
-  # the seaweedfs role's password from a committed Secret (attributes replicated from
-  # the live role: login-only, no superuser/createdb/createrole/replication/bypassrls,
-  # unlimited connections). The filer authenticates with this same Secret.
+  # The filer's owner role. This cluster was physically cloned (pg_basebackup) from
+  # seaweedfs-filer-db, whose owner role is "seaweedfs" — not CNPG's default "app" — so we
+  # enforce the role's password from a committed Secret (attributes replicated from the
+  # live role: login-only, no superuser/createdb/createrole/replication/bypassrls,
+  # unlimited connections). The filer authenticates with this same Secret. See
+  # seaweedfs-filer-db-ssd-creds.sops.yaml for why the name avoids CNPG's reserved -app.
   managed:
     roles:
       - name: seaweedfs
@@ -60,30 +54,3 @@ spec:
         connectionLimit: -1
         passwordSecret:
           name: seaweedfs-filer-db-ssd-creds
-
-  # Promoted to an independent primary at cutover (was a streaming replica of
-  # seaweedfs-filer-db). bootstrap/externalClusters below are inert post-bootstrap;
-  # kept for a minimal diff and removed in the post-cutover cleanup.
-  replica:
-    enabled: false
-    source: seaweedfs-filer-db
-
-  bootstrap:
-    pg_basebackup:
-      source: seaweedfs-filer-db
-
-  externalClusters:
-    - name: seaweedfs-filer-db
-      connectionParameters:
-        host: seaweedfs-filer-db-rw.seaweedfs.svc.cluster.local
-        user: streaming_replica
-        dbname: postgres
-      sslKey:
-        name: seaweedfs-filer-db-replication
-        key: tls.key
-      sslCert:
-        name: seaweedfs-filer-db-replication
-        key: tls.crt
-      sslRootCert:
-        name: seaweedfs-filer-db-ca
-        key: ca.crt

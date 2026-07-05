@@ -178,7 +178,7 @@ spec:
 
   filer:
     # 2-replica HA. The filer is a stateless metadata gateway to the shared
-    # postgres2 store (seaweedfs-filer-db), so both replicas serve identical
+    # postgres2 store (seaweedfs-filer-db-ssd), so both replicas serve identical
     # data and concurrent writes are handled by enableUpsert. HA lets the filer
     # roll / drain without a SeaweedFS-wide metadata stall, and (with the
     # affinity below) keeps it off the control-plane HDD nodes.
@@ -195,8 +195,9 @@ spec:
     # Postgres credentials override filer.toml [postgres2] keys via viper's
     # env-var binding (WEED_<key>, dot→underscore). seaweedfs-filer-db-ssd-creds is a
     # committed Secret (../db/seaweedfs-filer-db-ssd-creds.sops.yaml) enforced onto the
-    # -ssd seaweedfs role via managed.roles — the -ssd cluster is pg_basebackup'd so
-    # CNPG generates no -app Secret of its own.
+    # -ssd seaweedfs role via managed.roles. The -creds suffix is deliberate: CNPG
+    # auto-generates a bogus <cluster>-app Secret (default user "app") for this
+    # pg_basebackup cluster, so the committed one must not collide with that name.
     env:
       # Soft heap ceiling ~90% of the memory limit below; see the sizing note
       # at requests/limits. Go's GC (GOGC=100) otherwise ignores the cgroup
