@@ -4,7 +4,7 @@ metadata:
   name: wayback-archive-db
   namespace: wayback-cache
 spec:
-  instances: 1
+  instances: 2
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
 
   # CNPG 1.27+ kills isolated primaries by default (liveness probe).
@@ -14,9 +14,14 @@ spec:
       isolationCheck:
         enabled: false
 
+  # OVH-HA profile (cnpg_conventions R2): two instances on separate OVH kimsufi nodes.
+  # Scaled 1 → 2 ahead of the Stage 2 CP reshuffle so it has a re-clone source and rides
+  # Case A eviction instead of being destroyed with its node
+  # (cluster/docs/plans/ovh_storage_tiering.md).
   affinity:
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
+    topologyKey: kubernetes.io/hostname
 
   storage:
     storageClass: local-path-ovh
