@@ -7,9 +7,11 @@ metadata:
     description: >-
       Shared dedupe/metadata cache for the Zot OCI pull-through cache. Zot's
       cacheDriver points here (remoteCache); the durable content lives in S3, so
-      this holds only the regenerable dedupe index — safe to lose (Zot rebuilds
-      from the bucket). On seaweedfs-ovh (networked, not node-pinned) so it
-      reschedules freely.
+      this holds only rebuildable metadata/dedupe state. Losing it is acceptable
+      but may cause brief cache misses or require a Zot restart/Valkey flush for
+      stale metadb entries. On seaweedfs-ovh until the local-path migration in
+      https://github.com/agentydragon/ducktape/issues/2918; hard-pinned to
+      hil-ovh nodes because only those nodes run the SeaweedFS CSI driver.
 spec:
   clusterSize: 2
   kubernetesConfig:
@@ -34,21 +36,20 @@ spec:
             storage: 2Gi
   affinity:
     nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values: ["hil-ovh"]
       # Soft off control-plane nodes (their etcd is on a rotational HDD;
-      # co-located I/O starves etcd fsync — 2026-06-28 outage), and soft-prefer
-      # the OVH region to sit near the SeaweedFS backend. Not hard-pinned.
+      # co-located I/O starves etcd fsync — 2026-06-28 outage).
       preferredDuringSchedulingIgnoredDuringExecution:
         - weight: 100
           preference:
             matchExpressions:
               - key: node-role.kubernetes.io/control-plane
                 operator: DoesNotExist
-        - weight: 50
-          preference:
-            matchExpressions:
-              - key: topology.kubernetes.io/region
-                operator: In
-                values: ["hil"]
     podAntiAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
         - labelSelector:
