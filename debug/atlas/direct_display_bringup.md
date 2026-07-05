@@ -200,22 +200,93 @@ root-caused problems, in order:
 - [ ] Decide on greeter animations-off dconf (was added mid-debug; the
       original eternal-freeze-at-transition was never re-tested with
       animations on — possibly unnecessary now, possibly load-bearing)
-- [x] Flicker/corruption/wrong-colors: **NVIDIA direct scan-out was the
-      culprit** — `gamescopectl composite_force 1` fixed all three live;
-      `--force-composition` now pinned in session args. (Gamescope-internal
-      screenshots were always clean → artifacts were downstream of
-      composition.) HDR: intentionally not pursued (user preference).
-- [ ] **Lag remains** (UI sluggish even composited): try CAP_SYS_NICE for
-      gamescope (`programs.gamescope.capSysNice` — known-fiddly nixpkgs
-      option, may break Vulkan device visibility; test carefully). Other
-      suspects: steamwebhelper at 4K, missing realtime for the compositor.
-      Note `gamescopectl` reported ValidRefreshRates: 60 — 4K60 link.
+- [ ] ~~Flicker/corruption/wrong-colors: NVIDIA direct scan-out; fixed by
+      `composite_force 1`.~~ **CORRECTION (2026-07-04): this was never actually
+      verified fixed.** `--force-composition` is pinned in the args but the
+      corruption persists. Re-triaged live (see 2026-07-04 section): it is the
+      Steam Big Picture **button-hint bar only** — a Steam-side bug (#11843),
+      NOT scanout/composition. `composite_force 1`, `drm_debug_disable_explicit_sync 1`,
+      and `wayland_use_modifiers 0` all had zero effect. HDR: not pursued.
+- [x] ~~Lag remains (UI sluggish even composited).~~ **Root-caused 2026-07-04:**
+      it was not gamescope lag — Steam ran its web helper with `--disable-gpu`
+      (Valve NVIDIA default-off bug #13151), so the Big Picture CEF UI
+      rasterized on CPU (~5 FPS at 4K). Fixed by enabling `GPUAccelWebViewsV3`
+      (see 2026-07-04 section). `capSysNice` is on and applies (nice -20) but
+      was not the fix. `ValidRefreshRates: 60` is a real 4K60 link limit but
+      unrelated to the choppiness.
 - [ ] Sunshine now logs "Couldn't open DRM FD for CUDA device" for card2
       (seat-game owns it) — harmless, captures virtio; silence eventually
 - [ ] Commit everything; update gpu-strategy.md status
 
+## 2026-07-04: gamescope crash fix + Steam UI perf + corruption triage
+
+Picked the seat back up after it had been unused for a day; login froze on the
+greeter after password. Findings, in order:
+
+1. **gamescope 3.16.17 SIGABRT on every launch** (looked like a greeter freeze —
+   GDM waits ~60s for the dead session then bounces to the greeter). Assertion
+   `wlserver_is_lock_held()` in `wlserver_mousemotion` — a seat input event
+   racing `wlserver_init()` before the lock is held (upstream #1746). Fixed in
+   gamescope **3.16.24** by PR #2023. nixpkgs 25.11 is pinned at 3.16.17, so
+   pulled 3.16.24 from the `nixpkgs-unstable` input via an overlay in
+   `nix/nixos/hosts/wyrm2/default.nix` (**PR #2879**). Assertion gone; the
+   greeter animation-stall fix (`enable-animations=false`) was fine all along.
+
+2. **wyrm2 couldn't build from devel at all** — unrelated latent breakage:
+   `secrets/home/wyrm2/zai.yaml` was dropped by #2792 (moving to a LiteLLM
+   virtual key) and never re-committed, while `nix/home/hosts/wyrm2.nix` still
+   references it. Restored the original ciphertext from `5d3ebfef0^` (recipients
+   identical, no re-key) (**PR #2882**).
+
+3. **Session-teardown leak → re-login collisions.** A prior seat-game login
+   left the whole Steam + gamescope process tree alive (session stuck
+   `closing`), pinning `/run/user/1001/gamescope-0.lock` and `/tmp/.X11-unix/X0`.
+   The next login spawns a _second_ gamescope that can't take `gamescope-0`/`X0`
+   (falls back to `gamescope-1`/`:1`), its Steam child exits (single-instance per
+   home), "Primary child shut down" → SIGSEGV → bounced to greeter. Manual
+   recovery: `loginctl terminate-session <n>` + `pkill -9 gamescope/steam` +
+   `rm gamescope-0.lock /tmp/.X11-unix/X0` + restart `display-manager`. **Not yet
+   hardened** — every logout leaks and breaks the next login until reaped.
+
+4. **Big Picture UI ~5 FPS scroll = Steam web helper on CPU.** Steam launched
+   `steamwebhelper --disable-gpu` (confirmed in `webhelper_gpu.txt`:
+   `Disabling GPU acceleration: Disabled/CommandLine`), so the CEF Big Picture UI
+   rasterized on the CPU — brutal at 4K. Cause: Valve defaults "GPU accelerated
+   rendering in web views" OFF on NVIDIA+Wayland (driver-detection bug #13151).
+   Fix: set registry key **`GPUAccelWebViewsV3=1`** in `~/.steam/registry.vdf`
+   (found by `strings` on `steamui.so`; lives in `HKCU/Software/Valve/Steam`).
+   Result: UI "much much smoother". Baked into nix as a best-effort
+   home-manager activation re-assert (`home.activation.steamGpuWebViews`) —
+   Steam owns the file but preserves the key once set.
+
+5. **Garbled/corrupted blocks — Steam bug, not gamescope.** Confined to the Big
+   Picture **button-hint footer bar**; never in the GDM greeter (mutter, same
+   5090); present under both software and GPU CEF. Unaffected by
+   `composite_force 1`, `drm_debug_disable_explicit_sync 1`, `wayland_use_modifiers 0`.
+   → Steam-side rendering bug on NVIDIA/Wayland (#11843). Cosmetic, out of our
+   control (gamescope/nix); a Steam Beta build may fix it. **This corrects the
+   earlier claim that `composite_force` fixed on-screen corruption — it did not.**
+
+6. **Stellaris (native Linux build) crashes at launch:**
+   `mkdir: error while loading shared libraries: libselinux.so.1: cannot open
+shared object file` — the `libselinux` in `programs.steam.extraPackages`
+   doesn't reach the launcher inside the Steam Linux Runtime sandbox. Per the
+   config's own note: **force Proton** on it (Properties → Compatibility).
+
+### Live gamescope tuning (gamescopectl)
+
+`gamescopectl` is set-only (bare invocation prints display info; reading a convar
+back returns nothing). Useful convars probed live: `composite_force`,
+`drm_debug_disable_explicit_sync`, `wayland_use_modifiers`/`vr_use_modifiers`,
+`adaptive_sync`, `drm_single_plane_optimizations`. None fixed the button-bar
+corruption (see #5). Session env to reach it:
+`XDG_RUNTIME_DIR=/run/user/1001 WAYLAND_DISPLAY=gamescope-0 gamescopectl <convar> <val>`.
+
 ## Open questions
 
+- **Harden the session-teardown leak** (item 3) so re-logins stop colliding:
+  logind `KillUserProcesses` scoped to the seat-game session, or a session-exit
+  hook that reaps gamescope/Steam. Currently manual.
 - Is the spare USB A→B cable actually good? (First-port "cable is bad"
   errors vs. port flakiness — untested since the mux never engaged.)
 - Does the FV43U KVM binding survive monitor power cycles?

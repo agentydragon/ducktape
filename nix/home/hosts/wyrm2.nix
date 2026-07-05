@@ -53,6 +53,36 @@
     '';
   };
 
+  # Steam defaults "GPU accelerated rendering in web views" OFF on NVIDIA +
+  # Wayland (Valve driver-detection bug, ValveSoftware/steam-for-linux#13151).
+  # That forces the Big Picture web UI (CEF) to rasterize on the CPU — ~5 FPS
+  # scrolling at 4K on the gaming seat (debug/atlas/direct_display_bringup.md).
+  # Enabling it (registry key GPUAccelWebViewsV3=1) renders on the 5090.
+  #
+  # Steam owns registry.vdf and rewrites it on exit but preserves keys once set,
+  # so a best-effort re-assert on activation suffices. We only touch an existing
+  # file (Steam creates it on first run) and only insert when the key is absent,
+  # anchored on the gamescope refresh-rate key that Steam writes once the
+  # gamescope session has run here. Caveat: enabling GPU web views on NVIDIA can
+  # corrupt some Big Picture panels (#11843) — a separate Steam-side cosmetic bug.
+  home.activation.steamGpuWebViews = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    reg="$HOME/.steam/registry.vdf"
+    if [ -f "$reg" ] && ! grep -q GPUAccelWebViewsV3 "$reg"; then
+      if ${pkgs.gawk}/bin/awk '
+        { print }
+        !ins && /"GamescopeEnableAppTargetRefreshRate2"/ {
+          match($0, /^\t*/)
+          printf "%s\"GPUAccelWebViewsV3\"\t\t\"1\"\n", substr($0, 1, RLENGTH)
+          ins = 1
+        }
+      ' "$reg" > "$reg.hm-tmp"; then
+        mv "$reg.hm-tmp" "$reg"
+      else
+        rm -f "$reg.hm-tmp"
+      fi
+    fi
+  '';
+
   home.packages = [
     # TODO: Add syncthing tray (syncthing-gtk not in nixpkgs).
     # Options: gnomeExtensions.syncthing-indicator, gnomeExtensions.syncthing-toggle, qsyncthingtray
