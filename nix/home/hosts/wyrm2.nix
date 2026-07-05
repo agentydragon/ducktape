@@ -82,7 +82,62 @@
       modifier = "Mod4";
       terminal = "foot";
       menu = "wofi --show drun";
+      # Replace the built-in swaybar with waybar (below): it carries the volume
+      # applet and a larger font for the 4K panel.
+      bars = [ ];
+      startup = [ { command = "waybar"; } ];
+      keybindings = lib.mkOptionDefault {
+        "XF86AudioRaiseVolume" = "exec wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+";
+        "XF86AudioLowerVolume" = "exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-";
+        "XF86AudioMute" = "exec wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle";
+      };
     };
+  };
+
+  # Terminal font, ~40% over foot's 8pt default, for the 4K gaming-seat panel.
+  programs.foot = {
+    enable = true;
+    settings.main.font = "monospace:size=11";
+  };
+
+  # Bottom bar for the sway seat: workspaces + clock + a clickable/scrollable
+  # volume applet (scroll to adjust, click opens pavucontrol) + tray. Larger
+  # font to match the 4K panel. Plain-text labels (no nerd-font glyphs) so it
+  # renders without an icon-font dependency.
+  programs.waybar = {
+    enable = true;
+    settings.mainBar = {
+      layer = "top";
+      position = "bottom";
+      height = 30;
+      modules-left = [
+        "sway/workspaces"
+        "sway/mode"
+      ];
+      modules-center = [ "clock" ];
+      modules-right = [
+        "pulseaudio"
+        "tray"
+      ];
+      pulseaudio = {
+        format = "Vol {volume}%";
+        format-muted = "Vol muted";
+        scroll-step = 5;
+        on-click = "pavucontrol";
+      };
+      clock.format = "{:%a %d %b  %H:%M}";
+      tray.spacing = 8;
+    };
+    style = ''
+      * {
+        font-family: monospace;
+        font-size: 15px;
+      }
+      #pulseaudio,
+      #clock {
+        padding: 0 10px;
+      }
+    '';
   };
 
   home.packages = [
@@ -93,6 +148,7 @@
     pkgs.inkscape
     pkgs.kicad
     pkgs.openscad
+    pkgs.pavucontrol # GUI mixer opened by the waybar volume applet
     pkgs.psmisc
     # TODO: Add a GUI system monitor with graphs (psensor not in nixpkgs;
     # candidates: gnomeExtensions.vitals, gnomeExtensions.astra-monitor)
