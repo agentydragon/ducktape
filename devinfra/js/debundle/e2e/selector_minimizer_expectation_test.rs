@@ -157,8 +157,8 @@ fn source_match_binding_names(value: &serde_yaml::Value) -> BTreeSet<String> {
         .filter_map(|binding| match binding {
             serde_yaml::Value::String(local) => Some(local.to_string()),
             serde_yaml::Value::Mapping(mapping) => mapping
-                .get(&serde_yaml::Value::String("name".to_string()))
-                .or_else(|| mapping.get(&serde_yaml::Value::String("local".to_string())))
+                .get(serde_yaml::Value::String("name".to_string()))
+                .or_else(|| mapping.get(serde_yaml::Value::String("local".to_string())))
                 .and_then(serde_yaml::Value::as_str)
                 .map(str::to_string),
             _ => None,

@@ -253,11 +253,10 @@ fn is_trivial_binding_patch(member: &Member) -> bool {
         return false;
     };
     let binding_name = &binding.name;
-    let name_is_noop = member
+    member
         .name
         .as_ref()
-        .is_none_or(|export_name| export_name == binding_name);
-    name_is_noop
+        .is_none_or(|export_name| export_name == binding_name)
 }
 
 fn vendor_map(

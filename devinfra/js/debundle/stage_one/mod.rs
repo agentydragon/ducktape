@@ -122,6 +122,7 @@ where
 /// resolution uses that same structural layer before semantic member
 /// annotations can be projected to concrete bindings; this entry point lets
 /// materialization keep one source-text walk and one final owner graph.
+#[allow(clippy::too_many_arguments)]
 pub fn compute_chunk_analysis_from_structural<F>(
     chunk_id: &str,
     module: &Module,
