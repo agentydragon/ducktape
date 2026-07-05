@@ -148,8 +148,7 @@ def create_app(settings: Settings) -> FastAPI:
     @app.post("/api/location")
     async def record_location(req: LocationRequest, operator: Operator = None) -> dict[str, str]:
         logger.info(
-            "location update received by %s [TODO: not persisted — awaiting time-series store]",
-            operator or "<unknown>",
+            "location update received by %s [TODO: not persisted — awaiting time-series store]", operator or "<unknown>"
         )
         return {"status": "ok"}
 
