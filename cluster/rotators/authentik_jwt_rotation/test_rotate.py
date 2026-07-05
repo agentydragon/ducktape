@@ -8,11 +8,13 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
+from cluster.rotators.authentik_jwt_rotation import rotate
 from cluster.rotators.authentik_jwt_rotation.rotate import (
     Config,
     K8sSecretOutput,
     Rotation,
     build_secret_manifest,
+    encrypt_sops_file,
     jwt_payload,
     mint_jwt,
     remaining_hours,
@@ -186,6 +188,19 @@ def test_build_secret_manifest_carries_token_exp_under_configured_keys():
     manifest = build_secret_manifest(out, token="the-jwt", exp_epoch=1750000000)
     assert manifest["stringData"] == {"jwt": "the-jwt", "token-exp": "1750000000"}
     assert list(manifest["metadata"]["annotations"]) == ["description"]
+
+
+def test_encrypt_sops_file_uses_prettier_compatible_yaml_indent(monkeypatch, tmp_path: Path):
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append((list(args), kwargs))
+
+    monkeypatch.setattr(rotate.subprocess, "run", fake_run)
+    path = tmp_path / "secret.yaml"
+    encrypt_sops_file(path)
+
+    assert calls == [(["sops", "encrypt", "--indent", "2", "--in-place", str(path)], {"check": True})]
 
 
 def test_rotation_expected_issuer_derived_from_slug():

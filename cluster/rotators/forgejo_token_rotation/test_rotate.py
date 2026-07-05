@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest_bazel
 
+from cluster.rotators.forgejo_token_rotation import rotate
 from cluster.rotators.forgejo_token_rotation.rotate import (
     FULL_ACCOUNT_SCOPES,
     ForgejoCredentials,
@@ -10,6 +11,7 @@ from cluster.rotators.forgejo_token_rotation.rotate import (
     Rotation,
     TeaSecretOutput,
     build_secret_manifest,
+    encrypt_sops_file,
     mint_token,
     should_rotate,
     tea_config_yaml,
@@ -157,6 +159,19 @@ def test_secret_manifest_carries_config_and_raw_token():
     assert manifest["stringData"]["token"] == "token-value"
     assert manifest["stringData"]["username"] == "haku"
     assert "config.yml" in manifest["stringData"]
+
+
+def test_encrypt_sops_file_uses_prettier_compatible_yaml_indent(monkeypatch, tmp_path: Path):
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append((list(args), kwargs))
+
+    monkeypatch.setattr(rotate.subprocess, "run", fake_run)
+    path = tmp_path / "secret.yaml"
+    encrypt_sops_file(path)
+
+    assert calls == [(["sops", "encrypt", "--indent", "2", "--in-place", str(path)], {"check": True})]
 
 
 def test_mint_token_omits_repositories_for_full_account_access():

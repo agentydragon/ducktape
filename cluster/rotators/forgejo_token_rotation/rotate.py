@@ -256,6 +256,10 @@ def tea_config_yaml(rotation: Rotation, creds: ForgejoCredentials, token: str) -
     )
 
 
+def encrypt_sops_file(path: Path) -> None:
+    subprocess.run(["sops", "encrypt", "--indent", "2", "--in-place", str(path)], check=True)
+
+
 def write_raw_token_sops_file(
     rotation: Rotation, creds: ForgejoCredentials, token_data: dict[str, Any], now: datetime | None = None
 ) -> None:
@@ -275,7 +279,7 @@ def write_raw_token_sops_file(
     }
     rotation.sops_file.parent.mkdir(parents=True, exist_ok=True)
     rotation.sops_file.write_text(yaml.safe_dump(stamps, sort_keys=False, width=2**31))
-    subprocess.run(["sops", "encrypt", "--in-place", str(rotation.sops_file)], check=True)
+    encrypt_sops_file(rotation.sops_file)
 
 
 def build_secret_manifest(
@@ -311,7 +315,7 @@ def write_tea_secret(rotation: Rotation, creds: ForgejoCredentials, token_data: 
             build_secret_manifest(rotation.tea_secret, rotation, creds, token_data), sort_keys=False, width=2**31
         )
     )
-    subprocess.run(["sops", "encrypt", "--in-place", str(rotation.tea_secret.path)], check=True)
+    encrypt_sops_file(rotation.tea_secret.path)
 
 
 def rotate_one(client: httpx.Client, rotation: Rotation) -> RotatedToken | None:

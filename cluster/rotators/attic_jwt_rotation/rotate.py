@@ -142,6 +142,10 @@ def mint_attic_token(token: Token, config: Config) -> str:
     return jwt
 
 
+def encrypt_sops_file(path: Path) -> None:
+    subprocess.run(["sops", "encrypt", "--indent", "2", "--in-place", str(path)], check=True)
+
+
 def rotate_one(token: Token, config: Config) -> bool:
     """Mint + write a fresh JWT for one token. Returns True if it wrote."""
     remaining = remaining_hours(token.sops_file)
@@ -162,7 +166,7 @@ def rotate_one(token: Token, config: Config) -> bool:
     stamps = {"expires_unencrypted": expires_iso, config.token_field: jwt}
     token.sops_file.parent.mkdir(parents=True, exist_ok=True)
     token.sops_file.write_text(yaml.safe_dump(stamps, sort_keys=False, width=2**31))
-    subprocess.run(["sops", "encrypt", "--in-place", str(token.sops_file)], check=True)
+    encrypt_sops_file(token.sops_file)
     logger.info("%s: wrote token expiring %s", token.name, expires_iso)
     return True
 

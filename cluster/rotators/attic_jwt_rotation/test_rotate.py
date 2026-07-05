@@ -152,7 +152,7 @@ def test_rotate_one_mints_and_writes_when_absent(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(rotate.subprocess, "run", fake)
     assert rotate_one(token, Config(tokens=[])) is True
     assert any("atticadm" in c for c in fake.calls)
-    assert fake.calls[-1][0] == "sops"  # encrypt --in-place runs last
+    assert fake.calls[-1] == ["sops", "encrypt", "--indent", "2", "--in-place", str(sops_file)]
     written = yaml.safe_load(sops_file.read_text())
     assert written["attic_token"] == jwt
     assert "expires_unencrypted" in written
