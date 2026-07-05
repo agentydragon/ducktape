@@ -189,6 +189,8 @@ in
       wl-clipboard
       swayidle
       swaylock
+      grim # screenshots (wlroots)
+      slurp # region select for grim
     ];
   };
   # NVIDIA: wlroots can't do hardware cursors on this path. GPU selection is left
