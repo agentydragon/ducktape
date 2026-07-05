@@ -9,9 +9,8 @@ metadata:
       cacheDriver points here (remoteCache); the durable content lives in S3, so
       this holds only rebuildable metadata/dedupe state. Losing it is acceptable
       but may cause brief cache misses or require a Zot restart/Valkey flush for
-      stale metadb entries. On seaweedfs-ovh until the local-path migration in
-      https://github.com/agentydragon/ducktape/issues/2918; hard-pinned to
-      hil-ovh nodes because only those nodes run the SeaweedFS CSI driver.
+      stale metadb entries. Uses OVH HDD node-local storage so the operator can
+      rebuild a fresh Valkey replica without depending on the SeaweedFS CSI path.
 spec:
   clusterSize: 2
   kubernetesConfig:
@@ -30,7 +29,7 @@ spec:
     volumeClaimTemplate:
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: seaweedfs-ovh
+        storageClassName: local-path-ovh-hdd
         resources:
           requests:
             storage: 2Gi
