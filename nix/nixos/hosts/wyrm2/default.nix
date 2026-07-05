@@ -6,7 +6,6 @@
   pkgs,
   lib,
   username,
-  inputs,
   ...
 }:
 let
@@ -152,33 +151,15 @@ in
     }
   ];
 
-  # gamescope 3.16.17 (nixpkgs 25.11) SIGABRTs on startup when a seat input
-  # event races wlserver_init's lock — upstream ValveSoftware/gamescope#1746,
-  # fixed in 3.16.24 by PR #2023 ("Lock wlserver while initializing wayland").
-  # Pull the fixed build from unstable until 25.11 catches up. Overriding the
-  # package-set attr covers the gamescopeSession, the capSysNice wrapper, and
-  # Steam in one place. CLEANUP: drop once nixpkgs 25.11 ships gamescope ≥3.16.24.
-  nixpkgs.overlays = [
-    (_: _: {
-      inherit
-        (import inputs.nixpkgs-unstable {
-          inherit (pkgs.stdenv.hostPlatform) system;
-          config.allowUnfree = true;
-        })
-        gamescope
-        ;
-    })
-  ];
-
   # Sway session for the game seat (seat-game, on the display 5090). A real WM to
   # game + debug from, run as agentydragon — non-GNOME, so it doesn't clash with
   # the seat0 SPICE GNOME session on the shared user bus (GNOME's fixed D-Bus
   # names are the reason a second GNOME can't run for one user; sway has none).
-  # Games get direct scan-out via per-title gamescope (Steam launch option
-  # `gamescope -f -- %command%`), not a gamescope kiosk session.
+  # Games run directly in this session (the display GPU is also the render GPU —
+  # see the programs.steam note below); no gamescope.
   # NVIDIA: --unsupported-gpu is mandatory; hardware cursors off (wlroots can't
-  # do them on this NVIDIA path). On seat-game logind hands sway only the 5090,
-  # so no manual WLR_DRM_DEVICES pinning is needed (unlike gamescope).
+  # do them on this NVIDIA path). On seat-game logind hands sway only the display
+  # 5090, so no manual WLR_DRM_DEVICES pinning is needed.
   programs.sway = {
     enable = true;
     wrapperFeatures.gtk = true;
@@ -194,7 +175,7 @@ in
     ];
   };
   # NVIDIA: wlroots can't do hardware cursors on this path. GPU selection is left
-  # to the seat assignment — seat-game owns only card2 (the display 5090), so
+  # to the seat assignment — seat-game owns only the display 5090 (01:00.0), so
   # libseat hands sway the right device. (Don't set WLR_DRM_DEVICES to the
   # by-path node: it's a colon-separated list, and the PCI address's colons make
   # wlroots split it into garbage — "Found 0 GPUs".)
@@ -202,76 +183,19 @@ in
 
   # Steam — games run on the RTX 5090s (direct display via seat-game, or
   # streamed to atlas via Sunshine/Moonlight).
+  # Games run directly in the sway session on seat-game (the display GPU is
+  # 01:00.0 = the same GPU DXVK renders on, so no gamescope GPU-pinning is
+  # needed — see debug/atlas/direct_display_bringup.md). No gamescope kiosk
+  # session: on this 2-identical-5090 box gamescope can't disambiguate the
+  # GPUs and its greeter session crashed opening the wrong (seat0-owned) card.
   programs.steam.enable = true;
-  # "Steam (gamescope)" session in the greeter — the intended session for
-  # seat-game: gamescope owns the display 5090's KMS directly (no desktop
-  # compositor between game and monitor).
-  programs.steam.gamescopeSession = {
-    enable = true;
-    # Device-selection quirk exploitation (gamescope 3.16.17,
-    # src/rendervulkan.cpp): gamescope picks the FIRST Vulkan device unless
-    # --prefer-vk-device matches, in which case the LAST matching device
-    # wins. Both 5090s match 10de:2b85, Vulkan enumerates in PCI order
-    # (01:00.0 compute, 02:00.0 display) → this selects 02:00.0, the
-    # display GPU, whose primary DRM node gamescope then opens for KMS
-    # (it derives the node from the Vulkan device; WLR_DRM_DEVICES is
-    # ignored). Without this it opens the seat0-owned compute card and
-    # dies on logind's TakeDevice denial.
-    args = [
-      "--prefer-vk-device"
-      "10de:2b85"
-      # NVIDIA direct scan-out produced flicker, corruption, and wrong
-      # colors (verified live 2026-07-03: `gamescopectl composite_force 1`
-      # fixed all three; gamescope-internal screenshots were always clean).
-      "--force-composition"
-    ];
-  };
-  # Expose a RAW gamescope in PATH for per-game use. On this 2-identical-5090 VM
-  # the game (DXVK) renders on the compute 5090 while the monitor is on the other
-  # 5090, so every frame is copied cross-PCIe → ~15 FPS. gamescope pins render +
-  # display to one GPU: Steam launch option
-  # `gamescope -f --prefer-vk-device 10de:2b85 -- %command%` (the device pin is
-  # mandatory or gamescope grabs the virtio GPU and dies).
-  # capSysNice is OFF on purpose: its setcap wrapper can't gain CAP_SYS_NICE in
-  # Steam's no_new_privs game-launch sandbox — gamescope dies with "failed to
-  # inherit capabilities". The unwrapped binary just runs (no realtime priority,
-  # which that sandbox denies anyway).
-  programs.gamescope = {
-    enable = true;
-    capSysNice = false;
-  };
   # Attempt at the native Steam Linux Runtime `libselinux.so.1` failure (Stellaris
   # dies: "mkdir: libselinux.so.1: cannot open shared object file"). Adds it to
   # the Steam FHS env. Only helps if the failing binary runs in the outer FHS,
   # not deep inside the pressure-vessel container — if a game still fails in the
   # SLR sandbox, force Proton on it instead.
   programs.steam.extraPackages = [ pkgs.libselinux ];
-  # Debug variant: same payload but with stdout/stderr + xtrace captured to
-  # /tmp/steam-session.log — the stock session dies silently under GDM
-  # (~60s, zero journal output). Remove once the session works.
   services.displayManager.sessionPackages = [
-    (
-      (pkgs.writeTextDir "share/wayland-sessions/steam-debug.desktop" ''
-        [Desktop Entry]
-        Name=Steam (debug)
-        Comment=steam-gamescope with logging to /tmp/steam-session.log
-        Exec=${pkgs.writeShellScript "steam-gamescope-debug" ''
-          exec > /tmp/steam-session.log 2>&1
-          set -x
-          date
-          id
-          # Restrict wlroots/gamescope DRM discovery to the display 5090:
-          # gamescope naively opens the first card node (card0 = the compute
-          # GPU, owned by seat0) and dies when logind refuses it.
-          export WLR_DRM_DEVICES=/dev/dri/by-path/pci-0000:01:00.0-card
-          exec steam-gamescope
-        ''}
-        Type=Application
-      '').overrideAttrs
-      (_: {
-        passthru.providedSessions = [ "steam-debug" ];
-      })
-    )
     # Debug variant of sway: logs sway -d output to /tmp/sway-session.log, since
     # a failed session Exec dies silently under GDM (~60s, zero journal output).
     # Remove once sway on the seat is confirmed working.
