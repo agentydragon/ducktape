@@ -33,6 +33,8 @@ mock_modules:
   - community.general.zfs
   - community.general.dconf
   - community.general.ufw
+  - community.general.flatpak
+  - community.general.flatpak_remote
   - community.docker.docker_container
   - community.docker.docker_compose_v2
   - ansible.posix.mount
