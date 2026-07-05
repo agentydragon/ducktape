@@ -3,9 +3,10 @@
 **Status: active — Stage 2 is the remaining work.** The tiering foundation is already in
 place: media-scoped StorageClasses (`local-path-ovh-{hdd,ssd}`, keyed to a
 `storage.allegedly.works/tier` node label), the SeaweedFS volume layer on `volumeTopology`
-(`hdd` 3× KS-5, `ssd` 2× KS-GAME; operator 1.0.30), and both **Forgejo git** and the
-**`seaweedfs-filer-db` metadata DB** cut over to the SSD tier. What's left is the one
-destructive piece the rest was sequenced around: moving **etcd onto NVMe** via a rolling
+(`hdd` 3× KS-5, `ssd` 2× KS-GAME; operator 1.0.30), **Forgejo git** on SSD, and both
+SSD-destined DBs — **`seaweedfs-filer-db`** and **`forgejo-db`** (all Case B moves) — cut
+over to the SSD tier. What's left is the one destructive piece the rest was sequenced
+around: moving **etcd onto NVMe** via a rolling
 Talos control-plane reshuffle, and renaming the OVH data-disk mounts off the legacy
 `/var/mnt/seaweedfs-data` path. Then an optional **Stage 3** (3rd NVMe box).
 
@@ -76,10 +77,8 @@ deliberately:
 - **etcd** — the whole reason for the control-plane reshuffle. It is **not a PVC**, so no
   StorageClass can place it: "etcd on SSD" means keeping the control plane on the KS-GAME
   NVMe boxes (Stage 2). This is a hard requirement.
-- **Forgejo git** (SeaweedFS `ssd` volume group + `forgejo-git` RWX PVC) and
-  **`seaweedfs-filer-db`** — already on SSD.
-- **`forgejo-db`** — optional, still pending (small; keeps hot Forgejo metadata next to its
-  git).
+- **Forgejo git** (SeaweedFS `ssd` volume group + `forgejo-git` RWX PVC), **`seaweedfs-filer-db`**,
+  and **`forgejo-db`** — all already on SSD (Case B complete).
 
 **HDD tier (default — includes "most of the tiny Postgreses"):** all other CNPG DBs
 (`authentik`, `langfuse`, `atuin`, `airlock`, `litellm`, `props`, `paperless`, `plaid`,
@@ -210,9 +209,11 @@ SeaweedFS S3; Valkey is cache. So a **rolling, one-node-at-a-time wipe** is safe
 existing PVCs, and the proven path (the repo's `cnpg_region_switch` skill / RUNBOOK) is a
 **clone-and-cutover**, not an in-place edit. So the two cases are handled very differently.
 
-**Verified inventory (2026-07-03):** all OVH CNPG clusters are on `local-path-ovh`. Instance
-counts: mostly 2-instance, `study-casino-db` × 3, `wayback-archive-db` × **1**. Four clusters
-have _both_ instances on the two KS-GAME nodes (`airlock`, `atuin`, `forgejo`, `langfuse`).
+**Verified inventory (2026-07-03):** all HDD-destined OVH CNPG clusters are on
+`local-path-ovh` (the two SSD-migrated DBs, `seaweedfs-filer-db-ssd` and `forgejo-db-ssd`, are
+on `local-path-ovh-ssd` and stay put). Instance counts: mostly 2-instance, `study-casino-db` ×
+3, `wayback-archive-db` × **1**. Three HDD-destined clusters have _both_ instances on the two
+KS-GAME nodes (`airlock`, `atuin`, `langfuse`) — these ride Case A eviction during Stage 2.
 
 ### Case A — HDD-destined (nearly all): no class change, ride node-eviction
 
@@ -222,18 +223,18 @@ when those nodes drain in Stage 2: CNPG deletes the unschedulable PVC + pod and 
 the surviving instance via `pg_basebackup`, and the re-pinned SC's `tier=hdd`
 `allowedTopologies` **forces** the new PVC onto a KS-5 node. Gate: **G-cnpg** before (≥1
 healthy instance elsewhere as the re-clone source) and after (re-cloned instance `streaming`,
-caught up). Strictly one KS-GAME node at a time — the four both-on-KS-GAME clusters pass
+caught up). Strictly one KS-GAME node at a time — the three both-on-KS-GAME clusters pass
 through a single-healthy-instance window, so never drain the second KS-GAME node until the
 first's re-clone is streaming.
 
-### Case B — SSD-destined (`forgejo-db` only, remaining): clone-and-cutover
+### Case B — SSD-destined (`seaweedfs-filer-db`, `forgejo-db`): clone-and-cutover — done
 
-A real class change (`local-path-ovh` → `local-path-ovh-ssd`), so use the
-**`cnpg_region_switch`** procedure: stand up a new Cluster on `local-path-ovh-ssd` as a
-streaming replica (`bootstrap.pg_basebackup` + `replica.enabled`), confirm lag ≈ 0, promote
-(`replica.enabled: false`), **repoint the app** (Forgejo's DB host → the new cluster's `-rw`
-service), then delete the old cluster. `seaweedfs-filer-db` already went through this path;
-`forgejo-db` is optional and the only Case B left.
+Both SSD-destined DBs are migrated (a real class change `local-path-ovh` →
+`local-path-ovh-ssd`, done via the **`cnpg_region_switch`** clone-and-cutover: streaming
+replica → promote → repoint app → delete source → declare app user via `initdb.owner`). They
+now sit on `local-path-ovh-ssd`, so the Stage 2 drains leave them in place rather than
+relocating them. No Case B work remains; the procedure lives in the runbook if another DB
+ever needs it.
 
 ### Pre-execution prep
 
@@ -379,10 +380,10 @@ Per-node order — each fenced by **G-all** + **G-losable** before and after:
 5. **`ovh-ns103656` — data disk only.** Stays control-plane (anchor); do **not** touch its etcd
    / `/dev/sda`. Drain its `/dev/sdb` local-path PVs, wipe+rename → `local-path-ovh-hdd` (R).
    **Post:** **G-swfs**/**G-cnpg** green.
-6. **(Optional) migrate `forgejo-db` to SSD (Case B).** Clone-and-cutover via
-   `cnpg_region_switch` (new cluster → stream → promote → repoint Forgejo → delete old). Leave
-   every other DB on HDD. Re-check Nebula lighthouse placement now that `102453`/`103711` are
-   workers (lighthouse role is per-node, not tied to k8s control-plane role).
+6. **Finalize.** All SSD-destined DBs are already on `local-path-ovh-ssd` (Case B done), so no
+   DB moves are needed here — every other DB stays on HDD. Re-check Nebula lighthouse placement
+   now that `102453`/`103711` are workers (lighthouse role is per-node, not tied to k8s
+   control-plane role).
 
 **Exit:** matches the Final-state table; watch `ControlPlaneLeasePutLatency*` drop as etcd
 fsync moves onto NVMe.
