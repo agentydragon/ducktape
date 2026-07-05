@@ -71,6 +71,20 @@
     fi
   '';
 
+  # Sway config for the game seat (seat-game / 5090). The wrapped sway (with
+  # --unsupported-gpu for NVIDIA) and its greeter session come from the NixOS
+  # programs.sway module; package = null means "config only, reuse that sway".
+  # foot/wofi are installed system-wide via programs.sway.extraPackages.
+  wayland.windowManager.sway = {
+    enable = true;
+    package = null;
+    config = {
+      modifier = "Mod4";
+      terminal = "foot";
+      menu = "wofi --show drun";
+    };
+  };
+
   home.packages = [
     # TODO: Add syncthing tray (syncthing-gtk not in nixpkgs).
     # Options: gnomeExtensions.syncthing-indicator, gnomeExtensions.syncthing-toggle, qsyncthingtray

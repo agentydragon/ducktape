@@ -170,6 +170,29 @@ in
     })
   ];
 
+  # Sway session for the game seat (seat-game, on the display 5090). A real WM to
+  # game + debug from, run as agentydragon — non-GNOME, so it doesn't clash with
+  # the seat0 SPICE GNOME session on the shared user bus (GNOME's fixed D-Bus
+  # names are the reason a second GNOME can't run for one user; sway has none).
+  # Games get direct scan-out via per-title gamescope (Steam launch option
+  # `gamescope -f -- %command%`), not a gamescope kiosk session.
+  # NVIDIA: --unsupported-gpu is mandatory; hardware cursors off (wlroots can't
+  # do them on this NVIDIA path). On seat-game logind hands sway only the 5090,
+  # so no manual WLR_DRM_DEVICES pinning is needed (unlike gamescope).
+  programs.sway = {
+    enable = true;
+    wrapperFeatures.gtk = true;
+    extraOptions = [ "--unsupported-gpu" ];
+    extraPackages = with pkgs; [
+      foot
+      wofi
+      wl-clipboard
+      swayidle
+      swaylock
+    ];
+  };
+  environment.sessionVariables.WLR_NO_HARDWARE_CURSORS = "1";
+
   # Steam — games run on the RTX 5090s (direct display via seat-game, or
   # streamed to atlas via Sunshine/Moonlight).
   programs.steam.enable = true;
