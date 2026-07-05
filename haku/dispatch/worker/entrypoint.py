@@ -2,7 +2,7 @@
 
 Runs inside the zone perimeter with exactly the credentials mounted into the
 Job (per-job LiteLLM key, result token) — stdlib-only so the image needs no
-Python packages. Contract (haku/plans/multi_agent.md → job lifecycle): run the
+Python packages. Contract (haku/dispatch/README.md → worker image): run the
 harness headless on the prompt in an empty /workspace (if the job needs a
 repo, the prompt tells the agent to git clone it), then AFTER the agent
 process exits POST /output/result.md plus exit status to the dispatcher with

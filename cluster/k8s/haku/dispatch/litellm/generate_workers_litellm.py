@@ -25,10 +25,10 @@ _HEADER = """\
 # — do not edit by hand.
 #
 # Workers-LiteLLM proxy config (second-layer LiteLLM for Haku worker zones —
-# haku/plans/multi_agent.md → key containment). Chains to the main LiteLLM via
+# cluster/k8s/haku/dispatch/README.md). Chains to the main LiteLLM via
 # the litellm_proxy/ provider; the upstream credential per model group is that
 # zone's static key (mounted only into this deployment). Workers authenticate
-# with validator-minted per-job virtual keys whose model allowlist enforces
+# with dispatcher-minted per-job virtual keys whose model allowlist enforces
 # their zone.
 #
 # oai zone models (*-chatgpt) are added when haku-sandbox-oai lands

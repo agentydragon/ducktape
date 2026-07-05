@@ -1,4 +1,4 @@
-"""API models for the dispatcher (haku/plans/multi_agent.md → job lifecycle)."""
+"""API models for the dispatcher (haku/dispatch/README.md)."""
 
 from datetime import datetime
 from enum import StrEnum

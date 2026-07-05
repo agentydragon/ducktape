@@ -1,4 +1,4 @@
-# The dispatcher (haku/dispatch/, haku/plans/multi_agent.md → components):
+# The dispatcher (haku/dispatch/README.md):
 # classifier-gated POST /jobs stamping worker Jobs into zone namespaces, worker
 # result turn-in, kill switch. All credentials via secretKeyRef — pod specs are
 # Haku-visible through cluster-diagnostics-reader.

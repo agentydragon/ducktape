@@ -1,8 +1,8 @@
 """Dispatcher: classifier-gated dispatch of worker Jobs into zone namespaces.
 
 The one bespoke service in the multi-agent dispatch plane
-(haku/plans/multi_agent.md → new-code inventory). POST /jobs = lint + classifier
-+ per-job key mint + Job stamp; results flow back worker→validator→Postgres.
+(haku/dispatch/README.md). POST /jobs = lint + classifier
++ per-job key mint + Job stamp; results flow back worker→dispatcher→Postgres.
 
 Haku reads the jobs/results tables directly with a read-only Postgres role
 (operator, 2026-07-02 — deletes the whole GET surface here and gives Haku full

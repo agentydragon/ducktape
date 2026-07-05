@@ -47,7 +47,7 @@ spec:
             - name: MODEL
               value: ${MODEL}
             # Harness is zone-shaped: zai speaks the Anthropic wire shape via
-            # Claude Code CLI (haku/plans/multi_agent.md → worker harness).
+            # Claude Code CLI (haku/dispatch/README.md → worker image).
             - name: HARNESS
               value: claude
             - name: DISPATCHER_URL
