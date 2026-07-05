@@ -283,11 +283,74 @@ back returns nothing). Useful convars probed live: `composite_force`,
 corruption (see #5). Session env to reach it:
 `XDG_RUNTIME_DIR=/run/user/1001 WAYLAND_DISPLAY=gamescope-0 gamescopectl <convar> <val>`.
 
+## 2026-07-04 (later): pivot to a sway seat + SSD library + monitor audio
+
+Dropped the gamescope Big-Picture **kiosk** session in favor of a real WM on the
+game seat — one you can debug from and launch games from normally. Also moved the
+Steam library to SSD and got monitor audio working. **Current state: sway on the
+5090 works, Steam + Proton run, monitor speakers work; the one open item is
+per-game lag.**
+
+### Architecture change: gamescope kiosk → sway
+
+- seat-game runs a **sway** session (NixOS `programs.sway`; config via HM
+  `wayland.windowManager.sway` with `package = null`) as agentydragon — non-GNOME,
+  so no D-Bus clash with the seat0 SPICE GNOME session. Games get direct scan-out
+  via **per-title gamescope** (`gamescope -f -- %command%`), not a kiosk session.
+- NVIDIA/wlroots gotchas that cost time:
+  - `--unsupported-gpu` is mandatory (sway refuses NVIDIA otherwise); set via
+    `programs.sway.extraOptions`.
+  - **Do NOT set `WLR_DRM_DEVICES` to a `/dev/dri/by-path/pci-…` node.** That env
+    is a _colon-separated list_, so the PCI address's colons split it into garbage
+    → "Found 0 GPUs, cannot create backend" → sway exits and _wedges the greeter_
+    (it grabbed DRM, died, mutter couldn't reclaim). Unneeded anyway: the seat
+    assignment already hands seat-game only card2 (the 5090).
+  - `WLR_NO_HARDWARE_CURSORS=1`.
+  - Same GDM 60 s silent-death trap as gamescope — a failed session Exec logs
+    nothing. The **"Sway (debug)"** session (logs `sway -d` to
+    `/tmp/sway-session.log`) is what cracked the WLR_DRM_DEVICES bug. Keep the
+    debug-session-with-file-logging pattern for anything GDM launches.
+- Driving the seat headlessly over SSH works well: `swaymsg -t get_tree` for
+  windows, `grim -` for screenshots (pipe to a local file and view), `swaymsg
+seat - cursor` for input. Env: `XDG_RUNTIME_DIR=/run/user/1001
+WAYLAND_DISPLAY=wayland-1 SWAYSOCK=/run/user/1001/sway-ipc.1001.<pid>.sock`.
+
+### Steam library on SSD (/games)
+
+- Library was on `/mnt/tankshare` (tank-hdd virtiofs); Proton prefix creation
+  (thousands of small files) crawled for minutes. Repurposed the decommissioned
+  Longhorn disk (vdb, local-zfs SSD) into a **500 GB `/games`** library — grew
+  100→500 GB imperatively via `qm` on atlas, reusing the `virtio1` slot so
+  `/dev/vdb` doesn't rename.
+- **Stellaris** (native Linux) dies on `libselinux.so.1` in the SLR sandbox →
+  force Proton. First Proton launch then failed with `FileNotFoundError: …/
+tracked_files` — a **half-migrated prefix** (moving the game copied `pfx/` but
+  not `version`/`tracked_files`). Fix: `rm -rf compatdata/281990` and relaunch to
+  rebuild the prefix fresh (fast on SSD).
+
+### Monitor audio (DP passthrough)
+
+- The seat had **no audio path**: only the SPICE virtual sink (routes to the SPICE
+  console, muted). The display 5090's DP audio function wasn't passed through.
+- Fix: pass the **whole** display-GPU device. Host `03:00.0` had only its GPU
+  function passed; `03:00.1` (audio, same IOMMU group 16, already `vfio-pci`) was
+  not. Changed `hostpci1` from `0000:03:00.0` → `0000:03:00` (qm on atlas + TF).
+  Guest now sees `02:00.1` → ALSA "HDA NVidia" → PipeWire sink "GB202 … (HDMI)";
+  `wpctl set-default <sink>` routes audio to the FV43U's built-in speakers.
+  **Confirmed working.**
+- Gotcha: after a _forced_ VM stop, `qm start` failed once with `/dev/vfio/14:
+Device or resource busy` (compute-GPU IOMMU group not yet released) — just retry
+  `qm start` after a few seconds.
+
 ## Open questions
 
-- **Harden the session-teardown leak** (item 3) so re-logins stop colliding:
-  logind `KillUserProcesses` scoped to the seat-game session, or a session-exit
-  hook that reaps gamescope/Steam. Currently manual.
+- **Per-game lag** (open): Stellaris under Proton is an XWayland window in sway →
+  presentation-bound (~12% GPU, laggy despite the 5090). Fix not yet applied: add
+  `gamescope -f -- %command%` to the game's Steam launch options for direct
+  scan-out + frame pacing.
+- **Harden the session-teardown leak** so re-logins stop colliding: logind
+  `KillUserProcesses` scoped to the seat-game session, or a session-exit hook that
+  reaps the compositor/Steam. Currently manual (also bit the sway seat).
 - Is the spare USB A→B cable actually good? (First-port "cable is bad"
   errors vs. port flakiness — untested since the mux never engaged.)
 - Does the FV43U KVM binding survive monitor power cycles?
