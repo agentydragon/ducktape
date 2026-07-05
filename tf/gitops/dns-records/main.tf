@@ -29,15 +29,15 @@ locals {
     "147.135.104.16", # ovh-ns104963 (formerly talos-ks-game-worker-1)
   ]
 
-  # Kubernetes API endpoints — every control-plane node, not just the ones whose
-  # Cilium gateway is healthy. The apiserver listens on the host directly so it
-  # is independent of L2-announce state: `ovh-ns103711` (`.176`) is dropped from
-  # `public_gateway_ips` above for gateway-RST reasons but still serves the API
-  # on :6443.
+  # Kubernetes API endpoints — every control-plane node. The apiserver listens on
+  # the host directly on :6443, independent of Cilium gateway/L2-announce state.
+  # Post Stage-2 etcd reshuffle (cluster/docs/plans/ovh_storage_tiering.md) the
+  # control plane is 103656 (KS-5 anchor) + the two KS-GAME NVMe nodes; 102453 and
+  # 103711 were demoted to workers and no longer serve the API.
   kube_api_ips = [
-    "147.135.37.175", # ovh-ns102453 (formerly talos-kimsufi-cp-0)
-    "147.135.39.162", # ovh-ns103656 (formerly talos-kimsufi-worker-0)
-    "147.135.39.176", # ovh-ns103711 (formerly talos-kimsufi-worker-1)
+    "147.135.39.162", # ovh-ns103656
+    "147.135.104.5",  # ovh-ns104952
+    "147.135.104.16", # ovh-ns104963
   ]
 }
 

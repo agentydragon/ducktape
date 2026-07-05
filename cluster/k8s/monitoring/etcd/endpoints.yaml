@@ -31,13 +31,13 @@ endpoints:
     nodeName: ovh-ns103656
     conditions:
       ready: true
-  - addresses: ["10.42.0.14"]
-    hostname: ovh-ns103711
-    nodeName: ovh-ns103711
+  - addresses: ["10.42.0.16"]
+    hostname: ovh-ns104952
+    nodeName: ovh-ns104952
     conditions:
       ready: true
-  - addresses: ["10.42.0.15"]
-    hostname: ovh-ns102453
-    nodeName: ovh-ns102453
+  - addresses: ["10.42.0.17"]
+    hostname: ovh-ns104963
+    nodeName: ovh-ns104963
     conditions:
       ready: true

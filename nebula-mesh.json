@@ -13,7 +13,7 @@
     "ovh-ns103711": {
       "nebula_ip": "10.42.0.14",
       "endpoint": "147.135.39.176:4242",
-      "role": "control-plane",
+      "role": "worker",
       "lighthouse": true,
       "relay": true,
       "managed_by": "tofu-ovh",
@@ -22,7 +22,7 @@
     "ovh-ns104952": {
       "nebula_ip": "10.42.0.16",
       "endpoint": "147.135.104.5:4242",
-      "role": "worker",
+      "role": "control-plane",
       "lighthouse": true,
       "relay": true,
       "managed_by": "tofu-ovh",
@@ -31,7 +31,7 @@
     "ovh-ns104963": {
       "nebula_ip": "10.42.0.17",
       "endpoint": "147.135.104.16:4242",
-      "role": "worker",
+      "role": "control-plane",
       "lighthouse": true,
       "relay": true,
       "managed_by": "tofu-ovh",
@@ -40,7 +40,7 @@
     "ovh-ns102453": {
       "nebula_ip": "10.42.0.15",
       "endpoint": "147.135.37.175:4242",
-      "role": "control-plane",
+      "role": "worker",
       "lighthouse": true,
       "relay": true,
       "managed_by": "tofu-ovh",
