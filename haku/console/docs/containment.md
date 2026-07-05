@@ -89,6 +89,16 @@ Security rests on two things instead:
 Fullscreen is withheld from the iframe (no `allow="fullscreen"`) so it can't spoof browser
 chrome.
 
+**The console panel (⚙ escape button).** A persistent shell-owned control, fixed above the
+full-page frame, opens the console panel (`console_panel.tsx`) — trusted chrome the frame
+can't render into, holding shell-owned status and controls (today: the location-sharing
+grant + withdraw; future shell config/views slot in here). It is **not** a consent surface:
+it only reveals state and _reduces_ privilege, so — unlike `ConfirmDialog` — it needn't be a
+top-layer `<dialog>`. The one authority moment (granting a capability) always stays in the
+top-layer confirm. Consistent with invariant #4: a persistent panel is not a trust
+indicator, and a spoofed decoy of it is inert (the real grant lives in shell `localStorage`,
+and the browser's own site-settings revoke is the tamper-proof backstop).
+
 ## The bridge protocol (postMessage)
 
 Display data and operator intent go straight to Haku's backend (it holds the `haku-state`
@@ -103,6 +113,35 @@ tracked cleanup in `haku/PLAN.md` → _Not yet built_).
 haku-ui renders its own launch dialog and posts `{type: "requestLaunch", id, prompt}`; the
 shell pops its top-layer confirm showing the prompt **verbatim**, and only then fires with
 the server-side bearer (see <../README.md> → _The capability tier_).
+
+### `requestGeolocation` — read the operator's location (standing grant)
+
+haku-ui posts `{type: "requestGeolocation", id, options?}` (the `options` bag mirrors the
+browser Geolocation API's `getCurrentPosition`); the shell replies
+`{type: "geolocationResult", id, ok, position?, code?, reason?}` with a plain, cloneable
+`position` (flattened `GeolocationCoordinates` + `timestamp`) or a browser-shaped error
+(`code` follows `GeolocationPositionError`: 1 `PERMISSION_DENIED`, 2 `POSITION_UNAVAILABLE`,
+3 `TIMEOUT`). Why it must route through the shell, and how consent works:
+
+- **The frame cannot read location itself.** The iframe has **no `allow="geolocation"`**,
+  and the shell serves `Permissions-Policy: geolocation=(self)` — geolocation is delegated
+  to nothing. Only the trusted top-level origin can read it, so the iframe must ask.
+- **A shell-owned standing grant is the gate** (`geolocation_grant.ts`, persisted in the
+  shell origin's `localStorage` — cross-origin isolated, so the frame can't read or forge
+  it). The **first** request with no grant pops the top-layer consent confirm ("Allow Haku
+  to read your location?"); approving records the grant, so subsequent requests are served
+  **without** re-confirming — "allow until withdrawn". The shell reads location _only_ while
+  the grant is set.
+- **Two independent gates.** The shell grant is the app-level gate; the browser's own
+  geolocation permission (its native prompt on first read, its site-settings revoke) is the
+  platform-level gate. Both must be "on" to read; withdrawing either stops reads.
+- **Withdrawal** is a shell control in the console panel (the ⚙ escape button, below).
+  Declining the confirm, or withdrawing, yields `code: 1` (`PERMISSION_DENIED`) so the frame
+  treats it exactly like a native denial.
+- **Residual:** once granted, location is a datum the assumed-adversarial frame now holds
+  (one it couldn't derive before) and can exfiltrate only via the already-accepted browser
+  channels (whitelisted `openLink`, WebRTC). Bounded by the operator's explicit grant and
+  the one-click withdraw; see `../../docs/security.md` → _Browser-side exfiltration_.
 
 ### `openLink` — send the operator to a URL
 

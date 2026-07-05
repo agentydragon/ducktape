@@ -45,10 +45,25 @@ js_library(
 )
 
 js_library(
+    name = "geolocation_grant",
+    srcs = ["geolocation_grant.ts"],
+)
+
+js_library(
     name = "confirm_dialog",
     srcs = ["confirm_dialog.tsx"],
     deps = [
+        ":bridge",
         ":theme",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "console_panel",
+    srcs = ["console_panel.tsx"],
+    deps = [
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
     ],
@@ -61,6 +76,8 @@ js_library(
         ":bridge",
         ":client",
         ":confirm_dialog",
+        ":console_panel",
+        ":geolocation_grant",
         ":toast",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -99,6 +116,7 @@ filegroup(
         "app.tsx",
         "client.ts",
         "confirm_dialog.tsx",
+        "console_panel.tsx",
         "haku_ui_embed.tsx",
         "index.html",
         "main.tsx",

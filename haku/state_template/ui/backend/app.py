@@ -36,7 +36,7 @@ from config import Settings
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from forgejo import Forgejo
-from models import FeedbackRequest, MetaResponse, RepoBlob, RepoTree, RepoTreeEntry, ResponseRequest
+from models import FeedbackRequest, LocationRequest, MetaResponse, RepoBlob, RepoTree, RepoTreeEntry, ResponseRequest
 from reads import read_scan_time
 
 logger = logging.getLogger(__name__)
@@ -136,6 +136,25 @@ def create_app(settings: Settings) -> FastAPI:
         logger.info("clear response %s/%s by %s", scope, field, operator or "<unknown>")
         await forgejo.delete_file(_response_path(scope, field), f"ui: clear response {scope}/{field}")
         return {"status": "cleared"}
+
+    # --- Location: the operator's last known position (persistence = TODO) ---------
+    # The UI captures the operator's location on load (consent mediated by the trusted console's
+    # geolocation bridge) and POSTs it here. It deliberately does NOT go into git: location fixes
+    # are dense, frequently-updated time-series data that would bloat haku-state's history. The
+    # intended home is a time-series store in Haku's own namespace (haku-sandbox), which isn't
+    # stood up yet — so for now this validates + logs the fix but does not persist it.
+    # TODO(haku): stand up a time-series store in haku-sandbox and write fixes to it here. Haku
+    # owns that namespace, so it wires this itself; until then the endpoint is receive-and-drop.
+    @app.post("/api/location")
+    async def record_location(req: LocationRequest, operator: Operator = None) -> dict[str, str]:
+        logger.info(
+            "location %.5f,%.5f (±%.0fm) by %s [TODO: not persisted — awaiting time-series store]",
+            req.latitude,
+            req.longitude,
+            req.accuracy,
+            operator or "<unknown>",
+        )
+        return {"status": "ok"}
 
     # Improvements are now a content collection (memory/improvements/<id>.md), served by the
     # generic tree+blobs proxy and rendered by the <improvement-board/> garden widget — no

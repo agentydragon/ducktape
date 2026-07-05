@@ -32,6 +32,10 @@ APP_SHELL_CACHE_CONTROL = "no-cache, max-age=0, must-revalidate"
 IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
 NO_STORE_CACHE_CONTROL = "no-store"
 REFERRER_POLICY = "no-referrer"
+# The shell (top-level) may read geolocation for the `requestGeolocation` bridge action;
+# `(self)` scopes it to the shell origin so it is NEVER delegated to the framed haku-ui
+# origin — the frame stays unable to read location on its own (docs/containment.md).
+PERMISSIONS_POLICY = "geolocation=(self)"
 
 
 def _cache_control_for_path(path: str) -> str:
@@ -59,6 +63,7 @@ def create_app(settings: Settings) -> FastAPI:
         response.headers["Content-Security-Policy"] = csp
         response.headers["Cache-Control"] = _cache_control_for_path(request.url.path)
         response.headers["Referrer-Policy"] = REFERRER_POLICY
+        response.headers["Permissions-Policy"] = PERMISSIONS_POLICY
         return response
 
     # CSRF for the capability tier: a header-located double-submit token (the SPA

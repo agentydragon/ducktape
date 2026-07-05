@@ -2,6 +2,7 @@ import { Box, Container, Group, Tabs, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 
 import { notifyRouteChanged } from "./bridge.ts";
+import { captureLocation } from "./capture_location.ts";
 import { fetchMeta } from "./client.ts";
 import { NoteToHaku } from "./feedback_button.tsx";
 import { errText } from "./errors.ts";
@@ -36,6 +37,13 @@ export default function App() {
   function openInGarden(path: string) {
     navigate({ view: "garden", gardenPath: path });
   }
+  // Ask for the operator's location on load and record it to the backend (haku-state). The
+  // shell's standing consent grant means this prompts only the first time, then stays silent
+  // until withdrawn; captureLocation logs and swallows its own failures (best-effort).
+  useEffect(() => {
+    void captureLocation();
+  }, []);
+
   // Ticks the live deadline countdowns; 30s is fine at minute granularity.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

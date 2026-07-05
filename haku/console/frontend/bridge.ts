@@ -14,18 +14,52 @@
 //    capability must be a genuine operator gesture against trusted chrome, so the iframe
 //    can only request it; the shell renders its OWN confirm (showing the prompt) and only
 //    then fires. `id` correlates the eventual `launchResult`.
+//  - `requestGeolocation`: read the operator's current position, mirroring the browser
+//    Geolocation API's `getCurrentPosition(options)`. The iframe has **no**
+//    `allow="geolocation"`, so it cannot read location itself; it asks the shell, which
+//    reads its OWN (trusted, top-level) origin's location. Gated by a shell-owned standing
+//    grant ("allow until withdrawn", geolocation_grant.ts): the first request pops a
+//    top-layer consent confirm; once granted, later requests are served until the operator
+//    withdraws. `id` correlates the eventual `geolocationResult`.
 //  - `routeChanged`: mirror the iframe's current hash route into the console's own URL
 //    fragment so refresh/deep-links restore the view. Strictly a validated path
 //    (`isRoutePath`), never a URL — the shell only ever puts it in a fragment.
 export type Inbound =
   | { type: "openLink"; url: string }
   | { type: "requestLaunch"; id: string; prompt: string }
+  | { type: "requestGeolocation"; id: string; options?: GeolocationOptions }
   | { type: "routeChanged"; path: string };
 
 // Outbound result (shell → iframe), so Haku's UI can react to the outcome.
 export type Outbound =
   | { type: "openLinkResult"; url: string; opened: boolean; reason?: string }
-  | { type: "launchResult"; id: string; ok: boolean; sessionUrl?: string; reason?: string };
+  | { type: "launchResult"; id: string; ok: boolean; sessionUrl?: string; reason?: string }
+  | { type: "geolocationResult"; id: string; ok: boolean; position?: GeoPosition; code?: number; reason?: string };
+
+// Mirror of the browser Geolocation API's `PositionOptions` (getCurrentPosition's option
+// bag). Named explicitly, not aliased to the DOM type, so the wire contract is
+// self-describing and the haku-state duplicate can match it field-for-field.
+export interface GeolocationOptions {
+  enableHighAccuracy?: boolean;
+  timeout?: number;
+  maximumAge?: number;
+}
+
+// A plain, structured-cloneable copy of the browser's `GeolocationPosition` /
+// `GeolocationCoordinates`: the live DOM objects aren't reliably cloneable across
+// postMessage, so the shell flattens them before replying. Fields mirror the spec —
+// `altitude`/`altitudeAccuracy`/`heading`/`speed` are `null` when the device can't
+// supply them.
+export interface GeoPosition {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  altitude: number | null;
+  altitudeAccuracy: number | null;
+  heading: number | null;
+  speed: number | null;
+  timestamp: number;
+}
 
 // A mirrored route is strictly a PATH, never a URL: leading `/` (but not a
 // protocol-relative `//`, so the value stays inert even if a future caller drops it into
@@ -39,6 +73,19 @@ export function isRoutePath(path: string): boolean {
   return path.length <= ROUTE_PATH_MAX_LENGTH && !path.startsWith("//") && ROUTE_PATH_RE.test(path);
 }
 
+// Pick only the recognized option fields with their correct types, dropping anything
+// unknown or mistyped — the browser's getCurrentPosition is itself lenient about its
+// option bag, and we never want a malformed `options` to reject the whole request.
+export function parseGeolocationOptions(raw: unknown): GeolocationOptions | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const o = raw as Record<string, unknown>;
+  const opts: GeolocationOptions = {};
+  if (typeof o.enableHighAccuracy === "boolean") opts.enableHighAccuracy = o.enableHighAccuracy;
+  if (typeof o.timeout === "number") opts.timeout = o.timeout;
+  if (typeof o.maximumAge === "number") opts.maximumAge = o.maximumAge;
+  return opts;
+}
+
 // Narrow an untrusted postMessage payload to a known message, or null.
 export function parseInbound(data: unknown): Inbound | null {
   if (!data || typeof data !== "object") return null;
@@ -46,6 +93,9 @@ export function parseInbound(data: unknown): Inbound | null {
   if (m.type === "openLink" && typeof m.url === "string") return { type: "openLink", url: m.url };
   if (m.type === "requestLaunch" && typeof m.id === "string" && typeof m.prompt === "string") {
     return { type: "requestLaunch", id: m.id, prompt: m.prompt };
+  }
+  if (m.type === "requestGeolocation" && typeof m.id === "string") {
+    return { type: "requestGeolocation", id: m.id, options: parseGeolocationOptions(m.options) };
   }
   if (m.type === "routeChanged" && typeof m.path === "string" && isRoutePath(m.path)) {
     return { type: "routeChanged", path: m.path };

@@ -151,6 +151,32 @@ def test_response_records_value_note_and_timestamp():
     assert "at:" in body
 
 
+def test_location_accepts_a_valid_fix_without_persisting_to_git():
+    # Persistence is a TODO (a time-series store, not git) — the endpoint validates + logs the
+    # fix but must NOT commit anything, so haku-state's history stays free of dense location data.
+    client, fake = _client()
+    with client:
+        r = client.post(
+            "/api/location",
+            json={"latitude": 37.7749, "longitude": -122.4194, "accuracy": 12.5, "timestamp": 1_700_000_000_000},
+        )
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
+    # Nothing written to git (persistence is a TODO — a time-series store, not git).
+    assert fake.written == []
+    assert fake.created == []
+
+
+def test_location_rejects_out_of_range_coordinates():
+    client, _ = _client()
+    with client:
+        r = client.post(
+            "/api/location",
+            json={"latitude": 137.0, "longitude": -122.4194, "accuracy": 12.5, "timestamp": 1_700_000_000_000},
+        )
+    assert r.status_code == 422  # latitude outside [-90, 90]
+
+
 def test_repo_tree_returns_head_sha_and_recursive_entries():
     client, _ = _client()
     with client:

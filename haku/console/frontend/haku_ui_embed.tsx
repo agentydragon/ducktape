@@ -1,19 +1,29 @@
-import { Anchor } from "@mantine/core";
+import { ActionIcon, Anchor, Indicator } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 
-import { isRoutePath, type Outbound, parseInbound, vetOpenLink } from "./bridge.ts";
+import {
+  type GeolocationOptions,
+  type GeoPosition,
+  isRoutePath,
+  type Outbound,
+  parseInbound,
+  vetOpenLink,
+} from "./bridge.ts";
 import { launchRoutine } from "./client.ts";
 import { ConfirmDialog, type Escalation } from "./confirm_dialog.tsx";
+import { ConsolePanel, PANEL_Z } from "./console_panel.tsx";
+import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant.ts";
 import { toastError, toastSuccess } from "./toast.ts";
 
 // Haku's own UI service — a separate, Authentik-gated origin running in haku-sandbox —
 // embedded as a sandboxed cross-origin iframe (the whole console is now this frame). The
 // console never renders Haku's UI itself; it only frames this origin (the backend CSP
-// frame-src permits the embed) and runs the trusted **bridge**: the iframe may `openLink`
-// or `requestLaunch` via postMessage, but only the shell decides and acts (origin-checked
-// + schema-validated). `allow-same-origin`/`allow-forms` are needed for the framed app's
-// own Authentik auth; **no `allow-popups`** (only the shell opens links) and **no
-// `allow="fullscreen"`**. See docs/containment.md.
+// frame-src permits the embed) and runs the trusted **bridge**: the iframe may `openLink`,
+// `requestLaunch`, or `requestGeolocation` via postMessage, but only the shell decides and
+// acts (origin-checked + schema-validated). `allow-same-origin`/`allow-forms` are needed
+// for the framed app's own Authentik auth; **no `allow-popups`** (only the shell opens
+// links), **no `allow="fullscreen"`**, and **no `allow="geolocation"`** (only the shell
+// reads location, per its own consent grant). See docs/containment.md.
 
 // `noopener`/`noreferrer` force window.open() to return null even when the tab
 // opened, so open a same-origin blank tab first. The handle is the only reliable
@@ -28,6 +38,45 @@ export function openExternal(url: string): boolean {
 }
 
 const POPUP_HINT = "Allow pop-ups for this site so the console can open links.";
+
+// GeolocationPositionError.code for "no geolocation API" — matches the browser's own
+// error taxonomy (1 PERMISSION_DENIED, 2 POSITION_UNAVAILABLE, 3 TIMEOUT) so the iframe
+// can treat every failure uniformly, whatever its source.
+const GEO_PERMISSION_DENIED = 1;
+
+export type GeoResult = { ok: true; position: GeoPosition } | { ok: false; code: number; message: string };
+
+// Read the SHELL origin's geolocation into a plain, postMessage-cloneable object (or a
+// browser-shaped error). Only the trusted top-level origin can read it — the iframe has no
+// `allow="geolocation"` — and only after the operator approved on trusted chrome; the
+// browser may still surface its own native permission prompt on first use. Never throws:
+// resolves to a discriminated result so the caller reports it over the bridge either way.
+export function getGeolocation(options?: GeolocationOptions): Promise<GeoResult> {
+  return new Promise((resolve) => {
+    if (!("geolocation" in navigator)) {
+      resolve({ ok: false, code: GEO_PERMISSION_DENIED, message: "Geolocation is unavailable in this browser." });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      ({ coords, timestamp }) =>
+        resolve({
+          ok: true,
+          position: {
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            accuracy: coords.accuracy,
+            altitude: coords.altitude,
+            altitudeAccuracy: coords.altitudeAccuracy,
+            heading: coords.heading,
+            speed: coords.speed,
+            timestamp,
+          },
+        }),
+      (err) => resolve({ ok: false, code: err.code, message: err.message }),
+      options
+    );
+  });
+}
 
 // Restore the route the console URL carries into the frame on first mount. The console
 // hash is treated strictly as a validated path, never a URL: the src is always `uiUrl`
@@ -62,6 +111,28 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
     reply({ type: "openLinkResult", url, opened });
   }
 
+  // Read the shell origin's location and report it (or a browser-shaped error) over the
+  // bridge. Called on the granted fast-path AND after the operator approves the confirm.
+  function geolocateAndReply(id: string, options?: GeolocationOptions) {
+    void getGeolocation(options).then((r) =>
+      reply(
+        r.ok
+          ? { type: "geolocationResult", id, ok: true, position: r.position }
+          : { type: "geolocationResult", id, ok: false, code: r.code, reason: r.message }
+      )
+    );
+  }
+
+  // Standing consent to share location, mirrored for the console panel (below). The message
+  // handler reads the authoritative flag from storage (hasGeolocationGrant) directly, so it
+  // never goes stale in the effect closure; this mirror only drives rendering.
+  const [geoGranted, setGeoGranted] = useState(() => hasGeolocationGrant());
+  const [panelOpen, setPanelOpen] = useState(false);
+  function withdrawGeolocation() {
+    setGeolocationGrant(false);
+    setGeoGranted(false);
+  }
+
   useEffect(() => {
     function onMessage(e: MessageEvent) {
       if (e.origin !== origin) return; // only Haku's UI origin may talk to the shell
@@ -75,6 +146,14 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
           return;
         }
         setPending({ kind: "launch", id: msg.id, prompt: msg.prompt });
+        return;
+      }
+      if (msg.type === "requestGeolocation") {
+        // The iframe can only ask; the shell owns the standing grant. With consent already
+        // given ("allow until withdrawn"), serve directly; otherwise pop the top-layer
+        // consent confirm, which — once approved — records the grant so later reads skip it.
+        if (hasGeolocationGrant()) geolocateAndReply(msg.id, msg.options);
+        else setPending({ kind: "geolocation", id: msg.id, options: msg.options });
         return;
       }
       if (msg.type === "routeChanged") {
@@ -109,6 +188,14 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
       openAndReply(action.url);
       return;
     }
+    if (action.kind === "geolocation") {
+      // Consent given on trusted chrome — record the standing grant so subsequent requests
+      // are served without re-confirming, until the operator withdraws (the console panel below).
+      setGeolocationGrant(true);
+      setGeoGranted(true);
+      geolocateAndReply(action.id, action.options);
+      return;
+    }
     void launchRoutine(action.prompt || undefined)
       .then((result) => {
         toastSuccess(
@@ -131,6 +218,10 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
     if (!action) return;
     if (action.kind === "openLink") {
       reply({ type: "openLinkResult", url: action.url, opened: false, reason: "cancelled" });
+    } else if (action.kind === "geolocation") {
+      // Declined on trusted chrome → mirror a browser PERMISSION_DENIED so the iframe treats
+      // it exactly like a native geolocation denial. No grant is recorded.
+      reply({ type: "geolocationResult", id: action.id, ok: false, code: GEO_PERMISSION_DENIED, reason: "declined" });
     } else {
       reply({ type: "launchResult", id: action.id, ok: false, reason: "cancelled" });
     }
@@ -144,6 +235,27 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
         title="Haku UI"
         sandbox="allow-scripts allow-same-origin allow-forms"
         style={{ display: "block", width: "100vw", height: "100vh", border: 0 }}
+      />
+      {/* Persistent escape hatch into the shell's own controls (config, grants, views),
+          rendered by the SHELL above the full-page iframe. The dot marks an active standing
+          grant (location sharing) so the operator has at-a-glance awareness even before
+          opening the panel. It only ever opens trusted shell chrome / *reduces* privilege,
+          so — unlike the consent moment — it needn't be a top-layer surface; the browser's
+          own site-settings revoke is the tamper-proof backstop (docs/containment.md). */}
+      <Indicator
+        color="blue"
+        disabled={!geoGranted}
+        style={{ position: "fixed", top: 8, right: 8, zIndex: PANEL_Z - 1 }}
+      >
+        <ActionIcon variant="default" size="lg" aria-label="Open console controls" onClick={() => setPanelOpen(true)}>
+          ⚙
+        </ActionIcon>
+      </Indicator>
+      <ConsolePanel
+        opened={panelOpen}
+        onClose={() => setPanelOpen(false)}
+        geoGranted={geoGranted}
+        onWithdrawGeolocation={withdrawGeolocation}
       />
       <ConfirmDialog action={pending} onApprove={onApprove} onCancel={onCancel} />
     </>

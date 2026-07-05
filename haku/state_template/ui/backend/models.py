@@ -69,6 +69,21 @@ class FeedbackRequest(BaseModel):
     )
 
 
+# --- Location (POST /api/location body) ----------------------------------------
+# The operator's position, captured by the UI on load (with consent, mediated by the trusted
+# console — see the frontend bridge) and POSTed for Haku to use for location-aware reasoning.
+# The wire contract; where the backend persists it is a TODO (a time-series store in Haku's
+# namespace, not git — see app.py). Fields mirror the browser GeolocationCoordinates the UI
+# collects.
+
+
+class LocationRequest(BaseModel):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    accuracy: float = Field(ge=0, description="Radius of 68% confidence, in meters (GeolocationCoordinates.accuracy)")
+    timestamp: int = Field(description="When the browser fixed the position (epoch milliseconds, Position.timestamp)")
+
+
 # --- Responses surface (responses/<scope>/<field>.yaml) ------------------------
 # The generic operator-answer log: one keyed current-state file per (scope, field) slot, committed
 # per change so the git commit history IS the append-only log (plans/ui-authoring-architecture.md →

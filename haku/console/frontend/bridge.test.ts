@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseInbound, vetOpenLink } from "./bridge.ts";
+import { parseGeolocationOptions, parseInbound, vetOpenLink } from "./bridge.ts";
 
 describe("parseInbound", () => {
   it("accepts a well-formed openLink", () => {
@@ -41,6 +41,32 @@ describe("parseInbound", () => {
     expect(parseInbound({ type: "routeChanged", path: `/${"a".repeat(600)}` })).toBeNull(); // over the length cap
   });
 
+  it("accepts requestGeolocation, sanitizing its optional options bag", () => {
+    expect(parseInbound({ type: "requestGeolocation", id: "g1" })).toEqual({
+      type: "requestGeolocation",
+      id: "g1",
+      options: undefined,
+    });
+    expect(
+      parseInbound({ type: "requestGeolocation", id: "g1", options: { enableHighAccuracy: true, timeout: 5000 } })
+    ).toEqual({
+      type: "requestGeolocation",
+      id: "g1",
+      options: { enableHighAccuracy: true, timeout: 5000 },
+    });
+    // a mistyped option field is dropped, not fatal (mirrors the lenient browser API)
+    expect(parseInbound({ type: "requestGeolocation", id: "g1", options: { timeout: "soon" } })).toEqual({
+      type: "requestGeolocation",
+      id: "g1",
+      options: {},
+    });
+  });
+
+  it("rejects requestGeolocation without a string id", () => {
+    expect(parseInbound({ type: "requestGeolocation" })).toBeNull();
+    expect(parseInbound({ type: "requestGeolocation", id: 7 })).toBeNull();
+  });
+
   it("rejects malformed / unknown payloads", () => {
     expect(parseInbound(null)).toBeNull();
     expect(parseInbound("nope")).toBeNull();
@@ -50,6 +76,23 @@ describe("parseInbound", () => {
     expect(parseInbound({ type: "requestLaunch", prompt: "x" })).toBeNull(); // missing id
     expect(parseInbound({ type: "requestLaunch", id: 1, prompt: "x" })).toBeNull(); // wrong id type
     expect(parseInbound({ type: "evalThis", code: "x" })).toBeNull(); // unknown verb
+  });
+});
+
+describe("parseGeolocationOptions", () => {
+  it("keeps only recognized, correctly-typed fields", () => {
+    expect(parseGeolocationOptions({ enableHighAccuracy: true, timeout: 5000, maximumAge: 0 })).toEqual({
+      enableHighAccuracy: true,
+      timeout: 5000,
+      maximumAge: 0,
+    });
+    expect(parseGeolocationOptions({ timeout: "soon", maximumAge: 1000, junk: "x" })).toEqual({ maximumAge: 1000 });
+  });
+
+  it("returns undefined for a missing or non-object bag", () => {
+    expect(parseGeolocationOptions(undefined)).toBeUndefined();
+    expect(parseGeolocationOptions(null)).toBeUndefined();
+    expect(parseGeolocationOptions("nope")).toBeUndefined();
   });
 });
 

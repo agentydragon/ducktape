@@ -2,6 +2,7 @@ import { Button, Group, Stack, Text } from "@mantine/core";
 import type { PointerEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 
+import type { GeolocationOptions } from "./bridge.ts";
 import { ACTION_COLOR } from "./theme.ts";
 
 // The escalation the shell is asking the operator to approve — the **actual action** the
@@ -9,7 +10,10 @@ import { ACTION_COLOR } from "./theme.ts";
 // renders its own confirm copy (no flag+optional soup). The trusted-rendered text for each
 // privileged action lives here, in one place, since this dialog is the only trustworthy
 // surface at the moment of approval.
-export type Escalation = { kind: "openLink"; url: string } | { kind: "launch"; id: string; prompt: string };
+export type Escalation =
+  | { kind: "openLink"; url: string }
+  | { kind: "launch"; id: string; prompt: string }
+  | { kind: "geolocation"; id: string; options?: GeolocationOptions };
 
 interface Rendered {
   title: string;
@@ -29,6 +33,12 @@ function render(action: Escalation): Rendered {
         body: "This starts a new Claude Code web session running Haku now.",
         preview: action.prompt ? { text: action.prompt, mono: false } : undefined,
         approveLabel: "Launch",
+      };
+    case "geolocation":
+      return {
+        title: "Allow Haku to read your location?",
+        body: "Haku's UI is asking for your device location. Allowing lets it read your location whenever it asks — until you withdraw from the console panel (the ⚙ button, top-right). Your browser may prompt too. Haku is assumed adversarial; only allow when you trust why it's asked.",
+        approveLabel: "Allow",
       };
   }
 }

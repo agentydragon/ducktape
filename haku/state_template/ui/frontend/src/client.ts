@@ -1,5 +1,6 @@
 import { parse } from "yaml";
 
+import type { GeoPosition } from "./bridge.ts";
 import { docsUnder, invalidateTree, repoFile } from "./repo.ts";
 import type { FeedbackContext, MetaResponse, RunManifest, RunsResponse } from "./types.ts";
 
@@ -37,6 +38,24 @@ export async function sendFeedback(text: string, itemId?: string, context?: Feed
   });
   if (!res.ok) throw new Error(await detail(res, "Failed to send feedback"));
   invalidateTree();
+}
+
+// Send the operator's current position (captured with consent via the console's geolocation
+// bridge) to the backend for Haku to use. Where the backend persists it is a TODO — a
+// time-series store, not git (see the backend's /api/location) — so this doesn't touch the
+// repo tree.
+export async function recordLocation(position: GeoPosition): Promise<void> {
+  const res = await fetch("/api/location", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      latitude: position.latitude,
+      longitude: position.longitude,
+      accuracy: position.accuracy,
+      timestamp: position.timestamp,
+    }),
+  });
+  if (!res.ok) throw new Error(await detail(res, "Failed to record location"));
 }
 
 // Responses log (plans/ui-authoring-architecture → feedback loop): a keyed current-state file per
