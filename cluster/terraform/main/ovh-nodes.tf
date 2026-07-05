@@ -304,6 +304,16 @@ locals {
     if v.role == "controlplane"
   }
 
+  # Data-disk mount rename (OVH storage tiering — cluster/docs/plans/ovh_storage_tiering.md).
+  # Renaming a UserVolume repartitions/WIPES the disk, so roll it one node at a time: add a node
+  # here (empty set = no-op; every node keeps the legacy `seaweedfs-data` name) AND flip that
+  # node's nodePathMap entry in cluster/k8s/local-path-provisioner/helmrelease.yaml in the SAME
+  # commit, then `tofu apply -target=` for just that node under the plan's health gates
+  # (G-all + G-losable) — never a blanket bootstrap. A renamed node gets a tier-named UserVolume
+  # `local-path-ovh-${storage_tier}` mounted at `/var/mnt/local-path-ovh-${tier}`; its
+  # nodePathMap path becomes `/var/mnt/local-path-ovh-${tier}/local-path`. First node: 103711.
+  data_disk_mount_renamed_nodes = toset([])
+
   # Per-node user-volume patches. KS-5 nodes expose /dev/sdb; KS-GAME nodes
   # expose a second NVMe. Both are mounted at the same path so local-path-ovh
   # can use OVH-local capacity uniformly.
@@ -313,7 +323,7 @@ locals {
       yamlencode({
         apiVersion = "v1alpha1"
         kind       = "UserVolumeConfig"
-        name       = "seaweedfs-data"
+        name       = contains(local.data_disk_mount_renamed_nodes, k) ? "local-path-ovh-${v.storage_tier}" : "seaweedfs-data"
         volumeType = "disk"
         provisioning = {
           diskSelector = {
