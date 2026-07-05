@@ -43,17 +43,24 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     floating  = 0 # Disable balloon (VFIO incompatible)
   }
 
-  # GPU passthrough
+  # GPU passthrough. hostpci0 → guest 01:00.0 (first PCI), hostpci1 → guest
+  # 02:00.0. The DISPLAY GPU must be guest 01:00.0 because DXVK renders on the
+  # first-PCI device and the two 5090s are identical (no per-app selector) — so
+  # the monitor's card has to be hostpci0 to avoid a cross-PCIe copy per frame.
+  # See debug/atlas/direct_display_bringup.md.
+  #
+  # Display 5090 (host 01:00, IOMMU group 14; DP cable to the FV43U): pass the
+  # WHOLE device (no function suffix) so the guest gets both the GPU (01:00.0)
+  # and its DP/HDMI audio function (01:00.1) — the monitor's audio path for the
+  # gaming seat. Applied imperatively via qm on atlas; this keeps TF in sync.
   hostpci {
     device = "hostpci0"
-    id     = "0000:01:00.0"
+    id     = "0000:01:00"
     pcie   = true
     rombar = true
   }
-  # Display 5090 (host 03:00, IOMMU group 16): pass the WHOLE device (no function
-  # suffix) so the guest gets both the GPU (02:00.0) and its DP/HDMI audio
-  # function (02:00.1) — the monitor's audio path for the gaming seat. Applied
-  # imperatively via qm on atlas; this keeps the TF source in sync.
+  # Compute 5090 (host 03:00): headless, no monitor. Whole device passed (its
+  # audio function 02:00.1 rides along harmlessly).
   hostpci {
     device = "hostpci1"
     id     = "0000:03:00"
