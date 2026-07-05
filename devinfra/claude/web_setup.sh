@@ -3,10 +3,12 @@
 #
 # Installs:
 #   1. Nix (Determinate Systems installer, designed for non-interactive/CI use)
-#   2. devtools — Rust claude-hook, statusline, bbapi, gh, skills; from flake via attic binary cache
-#   3. git remote + bbr config for BuildBuddy remote execution
-#   4. skills — symlinked per-skill into ~/.claude/skills/ (preserves Anthropic defaults)
-#   5. user-level ~/.bazelrc with a shared local --disk_cache (web sessions only)
+#   2. Attic substituter config (nix.custom.conf + netrc) for cache.allegedly.works;
+#      the reader JWT is upserted into the netrc by web_env.sh at hook-daemon startup
+#   3. devtools — Rust claude-hook, statusline, bbapi, gh, skills; from flake via attic binary cache
+#   4. git remote + bbr config for BuildBuddy remote execution
+#   5. skills — symlinked per-skill into ~/.claude/skills/ (preserves Anthropic defaults)
+#   6. user-level ~/.bazelrc with a shared local --disk_cache (web sessions only)
 #
 # Also reclaims ~90% of the root ext4's nobody-reserved blocks up front (the
 # container ships with ~84% reserved; we run as root, so it's pure overhead).
@@ -183,6 +185,51 @@ log "--- nix show-config ---"
 nix show-config 2>/dev/null | grep -E "max-jobs|sandbox|build-users" || true
 log "---"
 
+# --- Attic binary cache substituter (cache.allegedly.works) ---
+# Point Nix at the private Attic cache so devtools/agent-haku closures
+# substitute instead of building from source. Not just a speedup: GitHub-release
+# fixed-output fetches inside those closures (e.g. bazel-diff's deploy jar) 403
+# through the session proxy, so in-session rebuilds can be impossible without
+# the cache. Auth: web_env.sh upserts the per-principal reader JWT
+# (auto-rotated in-cluster by attic-jwt-rotation) into the netrc at hook-daemon
+# startup — which is AFTER this script on a fresh rootfs, so the first install
+# may still run anonymous (401 → Nix disables the substituter with a warning
+# and builds from source, same as before this block existed). Every later boot
+# — and any in-session `nix build` once the daemon is up, since Nix re-reads
+# the netrc per download — substitutes with auth. `fallback = true` also
+# covers dangling narinfos from interrupted CI pushes. No attic CLI involved:
+# sessions only pull, and netrc + substituter settings need no tooling this
+# early in init.
+#
+# Determinate layout gotcha: /etc/nix/nix.conf is managed ("will be replaced")
+# and sets `netrc-file = /nix/var/determinate/netrc` AFTER its
+# `!include nix.custom.conf` line — later assignment wins, so a custom
+# netrc-file would be overridden. We therefore write the token into
+# Determinate's own netrc path, and the netrc-file line below is redundant
+# today but takes over if the managed conf ever drops theirs.
+configure_attic_substituter() {
+  mkdir -p /nix/var/determinate
+  [ -f /nix/var/determinate/netrc ] || (umask 077 && : >/nix/var/determinate/netrc)
+  if grep -q 'cache\.allegedly\.works' /etc/nix/nix.custom.conf 2>/dev/null; then
+    log "Attic substituter already configured in /etc/nix/nix.custom.conf."
+    return 0
+  fi
+  # Trusted pubkeys SSOT: nix/attic-pubkeys.json — parsed without jq, which is
+  # not guaranteed to exist before devtools are installed.
+  local pubkeys
+  pubkeys=$(grep -o '"[^"]*"' "${FLAKE#path:}/nix/attic-pubkeys.json" | tr -d '"' | paste -sd' ' -)
+  cat >>/etc/nix/nix.custom.conf <<EOF
+
+# Attic substituter (added by web_setup.sh; reader JWT lands in the netrc via web_env.sh)
+netrc-file = /nix/var/determinate/netrc
+extra-substituters = https://cache.allegedly.works/main
+extra-trusted-public-keys = ${pubkeys}
+fallback = true
+EOF
+  log "Attic substituter configured (nix.custom.conf + netrc; token pending web_env.sh)."
+}
+configure_attic_substituter
+
 log "Installing web session tools..."
 log "  FLAKE=${FLAKE}"
 log "  pwd=$(pwd)"
@@ -205,21 +252,6 @@ ls -la
 # first so `install` re-evaluates `.#devtools` against the current flake.
 #
 # See <devinfra/claude/docs/web-setup-debug.md> ("Pin drift on persistent rootfs").
-# TODO: `attic login` against cache.allegedly.works/{main,gaffer} before this
-# install so devtools (and any gaffer-built closures pulled transitively) hit
-# the private cache instead of building from source. The reader JWT is in
-# secrets/claude-web-attic.yaml, auto-rotated by the in-cluster
-# attic-jwt-rotation CronJob; web_env.sh decrypts SOPS files at hook-daemon
-# startup but isn't running yet at this point in init_script. Sketch:
-#   if [ -f /tmp/_secret_attic_token ]; then
-#     attic login allegedly https://cache.allegedly.works \
-#       "$(cat /tmp/_secret_attic_token)"
-#   fi
-# Plumbing needed: have web_env.sh write the decrypted token to a known
-# path (mode 0600, owned by user) before init_script runs, OR fold the
-# sops decrypt into web_setup.sh directly using SOPS_AGE_KEY. Today the
-# install path falls back to building from source if main isn't reachable
-# anonymously — slow but works.
 log "Install mode: $MODE"
 if [ "$MODE" = "home-manager" ]; then
   # Home Manager installs the same devtools (homeConfigurations.claude-web reuses

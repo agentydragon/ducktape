@@ -86,6 +86,7 @@ for output in \
   .#packages.x86_64-linux.bbr \
   .#packages.x86_64-linux.bbapi \
   .#packages.x86_64-linux.devtools \
+  .#packages.x86_64-linux.agent-haku \
   .#devShells.x86_64-linux.default; do
   nix build --impure \
     "$output" \

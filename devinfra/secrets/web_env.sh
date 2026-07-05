@@ -7,6 +7,8 @@
 #   claude-web-k8s-jwt.yaml:          admin, all user keys, claude-web
 #   alloy-otlp-bearer-token.yaml:     admin, all user keys, claude-web
 #   public-s3/claude-reader-credentials.sops.yaml: admin, cluster-secrets, claude-web
+#   claude-web-attic.yaml:            admin, claude-web
+#   haku-attic.yaml:                  admin, haku, all user keys
 #
 # Consumed by:
 #   - web_setup.sh: eval'd to populate shell env, then written to
@@ -14,8 +16,9 @@
 #   - hook daemon startup_env_script: eval'd into daemon os.environ,
 #     vars flow into the session env file for hook subprocesses
 #
-# Side effects: none beyond printing export lines. Kubeconfig is written by
-# the SessionStart handler.
+# Side effects: upserts the Attic reader token into /nix/var/determinate/netrc
+# (see the attic block below); otherwise only prints export lines. Kubeconfig
+# is written by the SessionStart handler.
 
 # shellcheck source=_common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
@@ -48,6 +51,45 @@ try_export AWS_SECRET_ACCESS_KEY "$_s3_reader" '["stringData"]["claudeReaderSecr
 export AWS_ENDPOINT_URL="https://s3.allegedly.works"
 export AWS_DEFAULT_REGION="us-east-1"
 unset _s3_reader
+
+# Attic reader JWT → Nix netrc (a file write, not an env export: Nix reads
+# substitution auth from netrc-file — /etc/nix/nix.conf points it at
+# Determinate's /nix/var/determinate/netrc — not from the session env).
+# web_setup.sh adds cache.allegedly.works/main as an extra substituter; Nix
+# re-reads the netrc per download, so upserting the token here at daemon
+# startup enables authenticated substitution for the current session and for
+# the next boot's tool install. Tokens are per-principal, auto-rotated by the
+# attic-jwt-rotation CronJob: claude-web sessions can decrypt
+# claude-web-attic.yaml, Haku homes haku-attic.yaml — try both, first that
+# decrypts wins (each principal's key opens exactly one, so per-file failures
+# are expected and only the aggregate miss warns).
+_attic_token=""
+for _attic_file in "$REPO_ROOT/secrets/claude-web-attic.yaml" "$REPO_ROOT/secrets/haku-attic.yaml"; do
+  [ -f "$_attic_file" ] || continue
+  if _attic_token=$(sops -d --extract '["attic_token"]' "$_attic_file" 2>/dev/null) && [ -n "$_attic_token" ]; then
+    break
+  fi
+  _attic_token=""
+done
+_netrc="/nix/var/determinate/netrc"
+if [ -z "$_attic_token" ]; then
+  echo "WARNING: secrets: attic: no reader token decryptable (tried claude-web-attic.yaml, haku-attic.yaml) — cache.allegedly.works substitution stays anonymous (401 → source builds)" >&2
+elif mkdir -p "${_netrc%/*}" 2>/dev/null && _netrc_tmp=$(mktemp "${_netrc}.XXXXXX" 2>/dev/null); then
+  {
+    grep -v '^machine cache\.allegedly\.works ' "$_netrc" 2>/dev/null || true
+    printf 'machine cache.allegedly.works password %s\n' "$_attic_token"
+  } >"$_netrc_tmp"
+  if chmod 600 "$_netrc_tmp" && mv "$_netrc_tmp" "$_netrc"; then
+    echo "secrets: attic: OK — reader token in ${_netrc} (cache.allegedly.works substitution)" >&2
+  else
+    rm -f "$_netrc_tmp"
+    echo "WARNING: secrets: attic: failed to move token into ${_netrc} — substitution stays anonymous" >&2
+  fi
+  unset _netrc_tmp
+else
+  echo "WARNING: secrets: attic: cannot write ${_netrc} — cache.allegedly.works substitution stays anonymous" >&2
+fi
+unset _attic_token _attic_file _netrc
 
 # Restore the caller's shell options (do not leak our `set -euo pipefail`; see _common.sh).
 _secrets_restore_shell_opts

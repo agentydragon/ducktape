@@ -669,6 +669,18 @@ creation_rules:
       - age:
           - *admin
           - *claude-web
+  # Haku home Attic reader token (auto-rotated by the attic-jwt-rotation
+  # CronJob). Decrypted by the Haku routine (web_env.sh writes it into the Nix
+  # netrc); admin + user keys for break-glass.
+  - path_regex: secrets/haku-attic\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *haku
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
   # Alloy OTLP bearer JWT (auto-rotated by the authentik-jwt-rotation CronJob)
   - path_regex: secrets/alloy-otlp-bearer-token\.yaml$
     key_groups:

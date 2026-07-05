@@ -177,9 +177,18 @@ bash ducktape/devinfra/claude/web_setup.sh
 This runs <web_setup.sh> which installs:
 
 1. Nix + devtools (`claude-hook` Rust binary, Python statusline, `bbapi`, `gh`, `sops`, skills)
-2. `github-no-proxy` git remote + `buildbuddy.remote-bazel-remote-name` for bbr
-3. Skills symlinked into `~/.claude/skills/` (preserves Anthropic defaults)
-4. A user-level `~/.bazelrc` with a shared local `--disk_cache` (50 GiB GC cap) at
+2. Attic substituter config: `extra-substituters = https://cache.allegedly.works/main`
+   (+ trusted pubkeys from <../../nix/attic-pubkeys.json> and `fallback = true`) in
+   `/etc/nix/nix.custom.conf`, so tool closures substitute from the private cache
+   instead of building from source — required in-session, where GitHub-release
+   fixed-output fetches (e.g. bazel-diff's deploy jar) 403 through the proxy. The
+   per-principal reader JWT (rotated by `cluster/k8s/agents/attic-jwt-rotation/`) is
+   upserted into `/nix/var/determinate/netrc` by `web_env.sh` at hook-daemon startup,
+   so a fresh rootfs's first install runs anonymous (falls back to source) and every
+   later `nix` invocation substitutes with auth.
+3. `github-no-proxy` git remote + `buildbuddy.remote-bazel-remote-name` for bbr
+4. Skills symlinked into `~/.claude/skills/` (preserves Anthropic defaults)
+5. A user-level `~/.bazelrc` with a shared local `--disk_cache` (50 GiB GC cap) at
    `~/.cache/bazel/disk`, so all Bazel server instances and worktrees in the container
    reuse locally-executed action results across the persistent rootfs. Web sessions
    only — CLI machines configure their own (<../docs/bazel_worktree_cache_sharing.md>).

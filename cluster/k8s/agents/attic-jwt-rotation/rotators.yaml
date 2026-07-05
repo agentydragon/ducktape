@@ -39,6 +39,11 @@ tokens:
     sub: claude-web
     validity: 1 year
     pull: [main, gaffer]
+  - name: haku attic reader
+    sops_file: secrets/haku-attic.yaml
+    sub: haku
+    validity: 1 year
+    pull: [main, gaffer]
   # ducktape CI writer pulls both caches:
   #  - main:r is an extra substituter for the nix-attic-push workflow, so paths
   #    cache.nixos.org can't serve (the unfree CUDA stack: cuda-merged/ollama for
