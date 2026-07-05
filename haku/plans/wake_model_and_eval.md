@@ -74,19 +74,46 @@ as public-data-only, and the local 5090s most trusted but least capable.
 There is currently **no per-run telemetry** from Claude Code web routine runs: no
 runs-listing API (see `haku/PLAN.md`), and the Console session page is view-only.
 Langfuse only sees LiteLLM-routed traffic (dispatch workers), never subscription-auth
-runs. But **inside** the session the full transcript sits at
+runs. The full transcript sits inside each session at
 `~/.claude/projects/<slug>/<session-id>.jsonl`, including per-request token usage.
 
-Plan:
+Options researched 2026-07-05 (official docs, via research agent):
 
-- **Capture at run close-out** (extend `haku/run.md`'s manifest step + a `tools/`
-  helper in state; checkpoint during long runs): copy the transcript plus a distilled
-  metrics summary — tokens in/out/cache-read/cache-write, tool-call counts and
-  latencies, orientation-vs-work split, wall time — into a store.
-- **Store: a separate private `haku-logs` Forgejo repo**, not `haku-state`. State is a
-  curated brief, not a telemetry archive; transcripts embed raw source data (email
-  bodies read during the run) so the log store inherits the same sensitivity class
-  (operator + haku only). The run manifest in `runs/` gets a summary row + pointer.
+- **"Takeout" / after-the-fact export: not available.** No API downloads Claude Code
+  web session transcripts; the enterprise Compliance API explicitly covers claude.ai
+  chats/files/projects **only** (not Claude Code); the claude.ai "export your data"
+  flow has no documented Code-session coverage. Only the per-session web UI page
+  exists. Don't wait for this.
+- **Agent-initiated upload (the earlier draft of this plan): rejected as primary** —
+  depends on each agent cooperating per run; doesn't scale beyond Haku and silently
+  gaps when a run dies mid-way.
+- **Hook-based auto-capture (primary path).** `Stop` (every turn) and `SessionEnd`
+  hooks run in web sessions from the repo's committed hook config and receive
+  `transcript_path` — so upload is harness-level: configured once in ducktape, fires
+  for **every** session in the environment, zero agent cooperation
+  (<https://code.claude.com/docs/en/hooks-guide.md>). The natural owner is the
+  existing Rust hook daemon (`devinfra/claude/claude_hook`). Use `Stop` for
+  incremental transcript-delta sync (a container reclaimed before `SessionEnd`
+  otherwise loses the run) and `SessionEnd` for the final flush + metrics rollup.
+- **Native Claude Code OTel (secondary, for dashboards).** `CLAUDE_CODE_ENABLE_TELEMETRY=1`
+  - `OTEL_METRICS_EXPORTER`/`OTEL_LOGS_EXPORTER=otlp` export token/cost metrics and
+    structured events; content is opt-in per knob (`OTEL_LOG_USER_PROMPTS`,
+    `OTEL_LOG_TOOL_CONTENT`, up to `OTEL_LOG_RAW_API_BODIES=1` = full Messages-API
+    bodies, 60 KB-truncated per event or untruncated via `file:<dir>`)
+    (<https://code.claude.com/docs/en/agent-sdk/observability.md>). The receiving side
+    **already exists**: `alloy-otlp.allegedly.works` (Authentik bearer, auto-rotated —
+    `secrets/alloy-otlp-bearer-token.yaml`) → in-cluster Loki/Mimir/Tempo. The earlier
+    devinfra attempt only ever exported the _hook daemon's own_ spans (Python; dropped
+    in the Rust rewrite — `devinfra/claude/TODO.md`), never Claude Code's native
+    telemetry. Untested: whether the managed web harness honors these env vars from the
+    environment's startup env script (`web_env.sh` already exports the bearer) — one
+    session with `OTEL_METRICS_EXPORTER=otlp` set answers it. Note the subprocess env
+    scrub hides `OTEL_EXPORTER_OTLP_*_HEADERS` from hooks/Bash but not from the claude
+    process itself (`devinfra/claude/web_env/re/claude_code_hook_env.md`).
+- **Store** for transcripts: a separate private `haku-logs` repo or seaweedfs S3
+  bucket, not `haku-state` (state is a curated brief; transcripts embed raw source
+  data, so the store inherits the same sensitivity class). Run manifests in `runs/`
+  get a summary row + pointer.
 - **Metrics to stand up**: cost per run; **orientation share** (tokens spent before
   first new observation — the number that decides the wake-model question);
   **event→surface latency** (source-event timestamp vs item commit timestamp — git
