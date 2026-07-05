@@ -17,7 +17,10 @@ RUN npm install -g @anthropic-ai/claude-code@2.1.198 @openai/codex@0.142.5 \
 
 COPY entrypoint.py /opt/haku/entrypoint.py
 
-RUN useradd --create-home --uid 1000 worker \
+# node:*-slim already owns UID 1000 (user `node`); rename it rather than
+# useradd a second UID-1000 user (fails: "UID 1000 is not unique").
+RUN usermod --login worker --home /home/worker --move-home node \
+    && groupmod --new-name worker node \
     && mkdir -p /workspace /output \
     && chown worker:worker /workspace /output
 USER worker
