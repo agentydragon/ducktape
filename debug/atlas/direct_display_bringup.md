@@ -342,12 +342,41 @@ tracked_files` — a **half-migrated prefix** (moving the game copied `pfx/` but
 Device or resource busy` (compute-GPU IOMMU group not yet released) — just retry
   `qm start` after a few seconds.
 
+### Per-game lag = cross-GPU copy (root-caused)
+
+Stellaris felt like ~15 FPS on a 5090. Cause is **not** presentation overhead and
+**not** GPU power — it's the **two-identical-5090** topology:
+
+```text
+stellaris.exe  → GPU0 (01:00.0)  6.6 GiB   ← the COMPUTE 5090 (DXVK rendered here)
+sway/Xwayland/display → GPU1 (02:00.0)      ← the DISPLAY 5090 (monitor is on DP-4)
+```
+
+DXVK picks the first Vulkan device (GPU0, the compute card), but the monitor is
+on GPU1, so **every frame is copied GPU0→GPU1 over PCIe** — that copy is the
+bottleneck. Diagnose with `nvidia-smi --query-compute-apps=pid,process_name,gpu_bus_id,used_memory`
+(the game's `gpu_bus_id` should match the display GPU) and `nvidia-smi pmon`.
+
+Two identical GPUs give no clean per-app PCI selector (DXVK's `DXVK_FILTER_DEVICE_NAME`
+can't tell them apart; NVIDIA Vulkan has none either). The standard fix is
+**gamescope with `--prefer-vk-device`**, which pins render+display to one GPU:
+
+- Launch option: `gamescope -f --prefer-vk-device 10de:2b85 -- %command%`
+  (`--prefer-vk-device` mandatory — without it gamescope grabs the virtio GPU:
+  `radv/amdgpu: failed to initialize device` / `vdrm_device_connect failed`).
+- Needs a **raw** gamescope: the capSysNice-wrapped `/run/wrappers/bin/gamescope`
+  dies in Steam's `no_new_privs` sandbox with `failed to inherit capabilities:
+Operation not permitted`. Set `programs.gamescope.enable = true; capSysNice = false;`.
+- The option must be set in the **Steam UI** — Steam Cloud reverts `localconfig.vdf`
+  edits made over SSH.
+- Also: sway defaulted DP-4 to **4K@60** though the FV43U exposes a **4K@144** mode
+  (`swaymsg -t get_outputs`) — worth pinning 144 in the sway output config.
+
 ## Open questions
 
-- **Per-game lag** (open): Stellaris under Proton is an XWayland window in sway →
-  presentation-bound (~12% GPU, laggy despite the 5090). Fix not yet applied: add
-  `gamescope -f -- %command%` to the game's Steam launch options for direct
-  scan-out + frame pacing.
+- **Per-game lag** (root-caused, fix in progress): cross-GPU copy — see above.
+  Fix = raw gamescope (`capSysNice=false`) + `--prefer-vk-device 10de:2b85` launch
+  option to pin the game to the display GPU. Also bump DP-4 to 4K@144 in sway.
 - **Harden the session-teardown leak** so re-logins stop colliding: logind
   `KillUserProcesses` scoped to the seat-game session, or a session-exit hook that
   reaps the compositor/Steam. Currently manual (also bit the sway seat).

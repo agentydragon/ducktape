@@ -226,11 +226,20 @@ in
       "--force-composition"
     ];
   };
-  # Let gamescope renice itself for smoother frame pacing (the session UI felt
-  # laggy without it). The module installs the cap_sys_nice-wrapped gamescope at
-  # /run/wrappers/bin/gamescope; the steam-gamescope session script picks it up
-  # from PATH, and the steam module auto-adds the setuid bwrap wrapper this needs.
-  programs.gamescope.capSysNice = true;
+  # Expose a RAW gamescope in PATH for per-game use. On this 2-identical-5090 VM
+  # the game (DXVK) renders on the compute 5090 while the monitor is on the other
+  # 5090, so every frame is copied cross-PCIe → ~15 FPS. gamescope pins render +
+  # display to one GPU: Steam launch option
+  # `gamescope -f --prefer-vk-device 10de:2b85 -- %command%` (the device pin is
+  # mandatory or gamescope grabs the virtio GPU and dies).
+  # capSysNice is OFF on purpose: its setcap wrapper can't gain CAP_SYS_NICE in
+  # Steam's no_new_privs game-launch sandbox — gamescope dies with "failed to
+  # inherit capabilities". The unwrapped binary just runs (no realtime priority,
+  # which that sandbox denies anyway).
+  programs.gamescope = {
+    enable = true;
+    capSysNice = false;
+  };
   # Attempt at the native Steam Linux Runtime `libselinux.so.1` failure (Stellaris
   # dies: "mkdir: libselinux.so.1: cannot open shared object file"). Adds it to
   # the Steam FHS env. Only helps if the failing binary runs in the outer FHS,
