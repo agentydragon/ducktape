@@ -79,9 +79,14 @@ container:
     -e NODE_EXTRA_CA_CERTS=/egress-proxy-ca/ca-certificates.crt
     -v /egress-proxy-ca/ca-certificates.crt:/egress-proxy-ca/ca-certificates.crt:ro
     -v /egress-proxy-ca/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
-  # Allow the runner's own CA bind mounts above through act_runner's volume gate
-  # (a Haku-authored workflow still cannot mount arbitrary dind-host paths).
+    -e DOCKER_CONFIG=/etc/oci-auth
+    -v /etc/oci-auth/config.json:/etc/oci-auth/config.json:ro
+  # Allow the runner's own CA + oci-auth bind mounts above through act_runner's volume
+  # gate (a Haku-authored workflow still cannot mount arbitrary dind-host paths).
+  # DOCKER_CONFIG points Bazel rules_oci at the puller creds for oci-cache.allegedly.works
+  # so base-image pulls resolve through the authenticated cache, not Docker Hub.
   valid_volumes:
     - /egress-proxy-ca/ca-certificates.crt
+    - /etc/oci-auth/config.json
 cache:
   enabled: false
