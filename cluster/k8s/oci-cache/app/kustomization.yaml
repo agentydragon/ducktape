@@ -5,6 +5,8 @@ resources:
   - valkey-instance.yaml
   - deployment.yaml
   - service.yaml
+  - httproute.yaml
+  - puller-credential.sops.yaml
 configMapGenerator:
   - name: oci-cache-zot-config
     files:

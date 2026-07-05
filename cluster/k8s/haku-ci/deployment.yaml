@@ -84,9 +84,21 @@ spec:
               value: /egress-proxy-ca/ca-certificates.crt
             - name: NODE_EXTRA_CA_CERTS
               value: /egress-proxy-ca/ca-certificates.crt
+            # Bazel rules_oci reads $DOCKER_CONFIG/config.json at build time to
+            # authenticate base-image pulls. Point it at the mounted puller
+            # credential so rules_oci pulls through the authenticated oci-cache
+            # endpoint (oci-cache.allegedly.works) instead of Docker Hub direct.
+            - name: DOCKER_CONFIG
+              value: /etc/oci-auth
           volumeMounts:
             - name: config
               mountPath: /config
+              readOnly: true
+            # config.json (docker auth for oci-cache.allegedly.works) from the
+            # Reflector-mirrored puller-credential Secret; DOCKER_CONFIG above
+            # points rules_oci here.
+            - name: oci-auth
+              mountPath: /etc/oci-auth
               readOnly: true
             - name: token
               mountPath: /secrets
@@ -186,3 +198,13 @@ spec:
         - name: egress-proxy-ca
           configMap:
             name: haku-egress-proxy-ca-cert
+        # Reflector mirrors oci-cache's puller-credential Secret into this
+        # namespace (same name). Only its config.json key (a docker config with
+        # the puller auth for oci-cache.allegedly.works) is projected, at
+        # $DOCKER_CONFIG/config.json for Bazel rules_oci.
+        - name: oci-auth
+          secret:
+            secretName: puller-credential
+            items:
+              - key: config.json
+                path: config.json

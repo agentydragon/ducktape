@@ -1,0 +1,21 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: oci-cache
+  namespace: oci-cache
+  annotations:
+    description: >-
+      Authenticated public endpoint for the Zot pull-through cache. The
+      cluster-gateway already terminates TLS for *.allegedly.works, so this is
+      just a route to the oci-cache Service (:80 -> container :5000); Zot's
+      htpasswd auth (see config.json + the puller-credential Secret) gates it.
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "oci-cache.allegedly.works"
+  rules:
+    - backendRefs:
+        - name: oci-cache
+          port: 80

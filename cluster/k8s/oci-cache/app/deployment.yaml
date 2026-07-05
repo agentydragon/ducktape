@@ -69,15 +69,17 @@ spec:
             limits:
               memory: 512Mi
               cpu: "1"
+          # TCP probes, not httpGet /v2/: with htpasswd auth enabled an
+          # unauthenticated GET /v2/ returns 401, which a plain httpGet probe
+          # (no credentials to send) would score as a failure and crashloop the
+          # pod. A TCP check confirms Zot is listening without exercising auth.
           readinessProbe:
-            httpGet:
-              path: /v2/
+            tcpSocket:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
-            httpGet:
-              path: /v2/
+            tcpSocket:
               port: http
             initialDelaySeconds: 20
             periodSeconds: 20
@@ -87,9 +89,20 @@ spec:
             capabilities:
               drop: ["ALL"]
       volumes:
+        # Projected so config.json (ConfigMap) and htpasswd (puller-credential
+        # Secret) both land in /etc/zot — Zot's config references
+        # /etc/zot/htpasswd. Only the Secret's htpasswd key is projected (not its
+        # config.json client key, which is for the runner, not Zot).
         - name: config
-          configMap:
-            name: oci-cache-zot-config
+          projected:
+            sources:
+              - configMap:
+                  name: oci-cache-zot-config
+              - secret:
+                  name: puller-credential
+                  items:
+                    - key: htpasswd
+                      path: htpasswd
         - name: cache
           emptyDir:
             sizeLimit: 5Gi
