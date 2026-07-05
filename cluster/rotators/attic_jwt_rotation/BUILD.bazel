@@ -8,6 +8,7 @@ py_library(
     name = "rotate",
     srcs = ["rotate.py"],
     deps = [
+        "//devinfra:prettier_cli",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pygit2",
@@ -74,6 +75,9 @@ oci_image(
         "@trixie_attic_rotation//:flat",
         ":sops_layer",
         ":kubectl_layer",
+        "//devinfra:node_bin_layer",
+        "//devinfra:prettier_cli_layer",
+        "//devinfra:prettier_bin_layer",
         ":layers",
     ],
 )

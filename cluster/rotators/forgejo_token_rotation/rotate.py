@@ -25,6 +25,8 @@ import typer
 import yaml
 from pydantic import BaseModel, Field
 
+from devinfra.prettier_cli import prettier_format_yaml_in_place
+
 logger = logging.getLogger(__name__)
 
 FULL_ACCOUNT_SCOPES = [
@@ -280,6 +282,7 @@ def write_raw_token_sops_file(
     rotation.sops_file.parent.mkdir(parents=True, exist_ok=True)
     rotation.sops_file.write_text(yaml.safe_dump(stamps, sort_keys=False, width=2**31))
     encrypt_sops_file(rotation.sops_file)
+    prettier_format_yaml_in_place(rotation.sops_file)
 
 
 def build_secret_manifest(
@@ -316,6 +319,7 @@ def write_tea_secret(rotation: Rotation, creds: ForgejoCredentials, token_data: 
         )
     )
     encrypt_sops_file(rotation.tea_secret.path)
+    prettier_format_yaml_in_place(rotation.tea_secret.path)
 
 
 def rotate_one(client: httpx.Client, rotation: Rotation) -> RotatedToken | None:

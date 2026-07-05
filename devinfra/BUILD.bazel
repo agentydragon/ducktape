@@ -3,6 +3,7 @@
 load("@bazel_gazelle//:def.bzl", "gazelle", "gazelle_binary")
 load("@npm_ducktape//:prettier/package_json.bzl", prettier_bin = "bin")
 load("@pypi//:requirements.bzl", "all_whl_requirements")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest")
 load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
 load("//devinfra:filter_wheels.bzl", "filter_system_packages")
@@ -83,4 +84,32 @@ py_library(
     data = [":prettier_bin"],
     visibility = ["//visibility:public"],
     deps = ["//util/bazel:runfiles"],
+)
+
+py_library(
+    name = "prettier_cli",
+    srcs = ["prettier_cli.py"],
+    visibility = ["//visibility:public"],
+)
+
+pkg_tar(
+    name = "prettier_cli_layer",
+    srcs = ["//:node_modules/prettier"],
+    mode = "0755",
+    package_dir = "/usr/local/lib",
+    visibility = ["//visibility:public"],
+)
+
+pkg_tar(
+    name = "prettier_bin_layer",
+    symlinks = {"/usr/local/bin/prettier": "../lib/prettier/bin/prettier.cjs"},
+    visibility = ["//visibility:public"],
+)
+
+pkg_tar(
+    name = "node_bin_layer",
+    srcs = ["@nodejs_linux_amd64//:bin/node"],
+    mode = "0755",
+    package_dir = "/usr/local/bin",
+    visibility = ["//visibility:public"],
 )

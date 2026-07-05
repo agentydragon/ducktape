@@ -49,6 +49,57 @@ class _RecordingClient:
         return _FakeResponse({"access_token": "minted.jwt"})
 
 
+def test_rotate_one_formats_raw_sops_file_after_encrypt(monkeypatch, tmp_path: Path):
+    sops_file = tmp_path / "secrets" / "haku-k8s-jwt.yaml"
+    credentials_dir = tmp_path / "creds"
+    credentials_dir.mkdir()
+    rotation = Rotation(
+        name="haku-k8s",
+        provider_slug="kubectl-sandbox-client-credentials",
+        scopes="openid profile email groups",
+        credentials_dir=credentials_dir,
+        sops_file=sops_file,
+        token_field="jwt",
+    )
+    token = _make_jwt({"iss": rotation.expected_issuer, "exp": 1_800_000_000, "groups": []})
+    calls: list[tuple[str, object]] = []
+
+    def fake_run(args, **_kwargs):
+        calls.append(("run", list(args)))
+
+    def fake_format(path: Path) -> None:
+        calls.append(("format", path))
+
+    monkeypatch.setattr(rotate, "mint_jwt", lambda _client, _rotation: token)
+    monkeypatch.setattr(rotate.subprocess, "run", fake_run)
+    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", fake_format)
+
+    assert rotate.rotate_one(object(), rotation, Config(rotations=[])) is True
+    assert calls == [("run", ["sops", "encrypt", "--indent", "2", "--in-place", str(sops_file)]), ("format", sops_file)]
+
+
+def test_write_k8s_secret_formats_after_encrypt(monkeypatch, tmp_path: Path):
+    out = K8sSecretOutput(
+        path=tmp_path / "cluster/k8s/haku/cloud-agent-tf/haku-kube-token.sops.yaml",
+        name="haku-kube-token",
+        namespace="flux-system",
+    )
+    calls: list[tuple[str, object]] = []
+
+    def fake_run(args, **_kwargs):
+        calls.append(("run", list(args)))
+
+    def fake_format(path: Path) -> None:
+        calls.append(("format", path))
+
+    monkeypatch.setattr(rotate.subprocess, "run", fake_run)
+    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", fake_format)
+
+    rotate.write_k8s_secret(out, token="the-jwt", exp_epoch=1_800_000_000)
+
+    assert calls == [("run", ["sops", "encrypt", "--indent", "2", "--in-place", str(out.path)]), ("format", out.path)]
+
+
 def test_jwt_payload_decodes_unpadded_base64url():
     claims = {"iss": "https://auth.allegedly.works/application/o/x/", "groups": ["some-group"], "exp": 123}
     assert jwt_payload(_make_jwt(claims)) == claims

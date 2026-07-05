@@ -51,6 +51,59 @@ class _RecordingClient:
         )
 
 
+def test_write_raw_token_sops_file_formats_after_encrypt(monkeypatch, tmp_path: Path):
+    sops_file = tmp_path / "secrets" / "haku.yaml"
+    rotation = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=sops_file)
+    creds = ForgejoCredentials("haku", "secret", "http://forgejo-http.forgejo:3000", "https://git.allegedly.works")
+    calls: list[tuple[str, object]] = []
+
+    def fake_run(args, **_kwargs):
+        calls.append(("run", list(args)))
+
+    def fake_format(path: Path) -> None:
+        calls.append(("format", path))
+
+    monkeypatch.setattr(rotate.subprocess, "run", fake_run)
+    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", fake_format)
+
+    rotate.write_raw_token_sops_file(
+        rotation,
+        creds,
+        {"id": 12, "name": "forgejo-tea-haku-20260701", "sha1": "token-value", "token_last_eight": "en-value"},
+        now=datetime(2026, 7, 1, tzinfo=UTC),
+    )
+
+    assert calls == [("run", ["sops", "encrypt", "--indent", "2", "--in-place", str(sops_file)]), ("format", sops_file)]
+
+
+def test_write_tea_secret_formats_after_encrypt(monkeypatch, tmp_path: Path):
+    out = TeaSecretOutput(
+        path=tmp_path / "cluster/k8s/haku/agent-worker/haku-forgejo-tea.sops.yaml", name="tea", namespace="haku"
+    )
+    rotation = Rotation(
+        name="haku", credentials_dir=Path("/creds"), sops_file=tmp_path / "secrets/haku.yaml", tea_secret=out
+    )
+    creds = ForgejoCredentials("haku", "secret", "http://forgejo-http.forgejo:3000", "https://git.allegedly.works")
+    calls: list[tuple[str, object]] = []
+
+    def fake_run(args, **_kwargs):
+        calls.append(("run", list(args)))
+
+    def fake_format(path: Path) -> None:
+        calls.append(("format", path))
+
+    monkeypatch.setattr(rotate.subprocess, "run", fake_run)
+    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", fake_format)
+
+    rotate.write_tea_secret(
+        rotation,
+        creds,
+        {"id": 12, "name": "forgejo-tea-haku-20260701", "sha1": "token-value", "token_last_eight": "en-value"},
+    )
+
+    assert calls == [("run", ["sops", "encrypt", "--indent", "2", "--in-place", str(out.path)]), ("format", out.path)]
+
+
 def test_default_scopes_are_full_non_admin_write_set():
     r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"))
     assert r.scopes == FULL_ACCOUNT_SCOPES

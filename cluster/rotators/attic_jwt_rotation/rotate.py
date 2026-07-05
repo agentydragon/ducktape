@@ -33,6 +33,8 @@ import typer
 import yaml
 from pydantic import BaseModel, Field
 
+from devinfra.prettier_cli import prettier_format_yaml_in_place
+
 logger = logging.getLogger(__name__)
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
@@ -167,6 +169,7 @@ def rotate_one(token: Token, config: Config) -> bool:
     token.sops_file.parent.mkdir(parents=True, exist_ok=True)
     token.sops_file.write_text(yaml.safe_dump(stamps, sort_keys=False, width=2**31))
     encrypt_sops_file(token.sops_file)
+    prettier_format_yaml_in_place(token.sops_file)
     logger.info("%s: wrote token expiring %s", token.name, expires_iso)
     return True
 
