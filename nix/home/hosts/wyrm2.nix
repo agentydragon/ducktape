@@ -123,6 +123,9 @@
         format = "Vol {volume}%";
         format-muted = "Vol muted";
         scroll-step = 5;
+        # Cap scroll at 100% — HDMI sinks default to full scale and PipeWire
+        # allows >100% (10000% = deafening), so never let the applet exceed it.
+        max-volume = 100;
         on-click = "pavucontrol";
       };
       clock.format = "{:%a %d %b  %H:%M}";
