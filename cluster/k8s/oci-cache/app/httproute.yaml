@@ -6,9 +6,9 @@ metadata:
   annotations:
     description: >-
       Authenticated public endpoint for the Zot pull-through cache. The
-      cluster-gateway already terminates TLS for *.allegedly.works, so this is
-      just a route to the oci-cache Service (:80 -> container :5000); Zot's
-      htpasswd auth (see config.json + the puller-credential Secret) gates it.
+      cluster-gateway terminates TLS for *.allegedly.works; this route targets
+      the nginx sidecar on Service port 8080, which enforces the
+      puller-credential htpasswd before proxying to Zot.
 spec:
   parentRefs:
     - name: cluster-gateway
@@ -18,4 +18,4 @@ spec:
   rules:
     - backendRefs:
         - name: oci-cache
-          port: 80
+          port: 8080

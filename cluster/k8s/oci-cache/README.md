@@ -7,15 +7,16 @@ allowlisting every registry CDN.
 
 ## Architecture
 
-| Concern            | Choice                                                                                                                                                                                                                                                                                                 |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Registry           | Zot (`ghcr.io/project-zot/zot-linux-amd64`, full image — needs the `sync` extension)                                                                                                                                                                                                                   |
-| Durable content    | SeaweedFS S3 `registry-cache` bucket (`seaweedfs/registry-cache-bucket/`) — manifests + blobs                                                                                                                                                                                                          |
-| Dedupe index       | `oci-cache-valkey` `RedisReplication` (Zot `cacheDriver: redis`, `remoteCache`)                                                                                                                                                                                                                        |
-| Local state        | none durable — only ephemeral upload staging on `emptyDir`, so the pod reschedules freely                                                                                                                                                                                                              |
-| Placement          | unpinned (soft-prefers OVH region to sit near SeaweedFS); Valkey on `seaweedfs-ovh` (HDD, networked)                                                                                                                                                                                                   |
-| S3 credentials     | `s3-identity-registry-cache` Secret (seaweedfs ns), Reflector-mirrored into `oci-cache`, injected as `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`                                                                                                                                                       |
-| Exposure (phase 1) | ClusterIP, plain HTTP on `oci-cache.oci-cache.svc:80` (→ container 5000) — no public route, no auth. (Port 80 is for conventional addressing; a port-restricted egress policy must still allow the **backend** port 5000 — Cilium enforces egress on the translated targetPort, not the Service port.) |
+| Concern           | Choice                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Registry          | Zot (`ghcr.io/project-zot/zot-linux-amd64`, full image — needs the `sync` extension)                                                                                                                                                                                                                                                                                                                                        |
+| Durable content   | SeaweedFS S3 `registry-cache` bucket (`seaweedfs/registry-cache-bucket/`) — manifests + blobs                                                                                                                                                                                                                                                                                                                               |
+| Dedupe index      | `oci-cache-valkey` `RedisReplication` (Zot `cacheDriver: redis`, `remoteCache`)                                                                                                                                                                                                                                                                                                                                             |
+| Local state       | none durable — only ephemeral upload staging on `emptyDir`, so the pod reschedules freely                                                                                                                                                                                                                                                                                                                                   |
+| Placement         | unpinned (soft-prefers OVH region to sit near SeaweedFS); Valkey on `seaweedfs-ovh` (HDD, networked)                                                                                                                                                                                                                                                                                                                        |
+| S3 credentials    | `s3-identity-registry-cache` Secret (seaweedfs ns), Reflector-mirrored into `oci-cache`, injected as `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`                                                                                                                                                                                                                                                                            |
+| Internal exposure | ClusterIP, plain HTTP on `oci-cache.oci-cache.svc:80` (→ Zot container 5000), no auth. This is intentional: dockerd's Docker Hub `--registry-mirror` probe does not attach Docker-config credentials for the mirror host. (Port 80 is for conventional addressing; a port-restricted egress policy must still allow the **backend** port 5000 — Cilium enforces egress on the translated targetPort, not the Service port.) |
+| Public exposure   | `https://oci-cache.allegedly.works` routes to the nginx `public-auth-proxy` sidecar on Service port 8080. The sidecar enforces the `puller-credential` htpasswd and then proxies to the unauthenticated in-pod Zot listener.                                                                                                                                                                                                |
 
 Upstreams are addressed **by path prefix** (Zot `sync` `stripPrefix`); the endpoint
 is plain HTTP on port 80, so clients need an `http://` endpoint / insecure-registry config:
@@ -60,15 +61,15 @@ everything else ages out and `gc` reclaims its blobs from S3. Tune `pulledWithin
 SeaweedFS bucket-lifecycle rule under Zot — deleting blobs out from under the registry
 corrupts manifests.
 
-## Phase 2 (not yet wired)
+## Node-level pull-through (not yet wired)
 
-The public, authenticated endpoint and node-level pull-through are deliberately deferred
-— nothing here depends on them, and Talos machine-config changes reboot nodes.
+The public authenticated endpoint is wired, but node-level pull-through is deliberately
+deferred because Talos machine-config changes reboot nodes.
 
-1. **Authenticated public endpoint** at `oci-cache.allegedly.works`. The gateway already
-   terminates `*.allegedly.works`, so this is an `HTTPRoute` to the `oci-cache` Service
-   plus Zot htpasswd auth. Generate the credential from the devshell and add it as a SOPS
-   Secret mounted at `/etc/zot/htpasswd`, with `http.auth.htpasswd.path` in `config.json`:
+1. **Public credential rotation**. Generate the credential from the devshell and update
+   `app/puller-credential.sops.yaml`; `htpasswd` is mounted into the nginx public-auth
+   sidecar, while `config.json` is reflected into haku-ci for clients that explicitly pull
+   from `oci-cache.allegedly.works`:
 
    ```bash
    htpasswd -nbBC 10 puller "$(openssl rand -base64 30)"   # -> puller:$2y$10$...
@@ -128,3 +129,8 @@ This path was last checked with haku-state's push-triggered `validate-state` wor
 the `docker2s2` fix. A manual `workflow_dispatch` proves the job can pass, but it does not
 replace a failed push status on the commit Forgejo shows in the branch badge; use a real
 push-triggered run when clearing red default-branch CI.
+
+If the dind log says `no basic auth credentials` for
+`http://oci-cache.oci-cache.svc.cluster.local/v2/...`, Zot auth has leaked back onto the
+internal listener. Keep auth on the public nginx sidecar only; dockerd cannot authenticate
+its automatic Docker Hub registry-mirror probe against an htpasswd-protected mirror.

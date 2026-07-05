@@ -19,3 +19,10 @@ spec:
       port: 80
       targetPort: http
       protocol: TCP
+    # Authenticated public entrypoint. The HTTPRoute for
+    # oci-cache.allegedly.works targets this port; in-cluster Docker mirrors
+    # must use the unauthenticated `http` port above.
+    - name: public-auth
+      port: 8080
+      targetPort: public-auth
+      protocol: TCP

@@ -12,9 +12,9 @@ metadata:
       (/docker-hub, /ghcr, /quay, /k8s, /gcr). Durable content in the
       SeaweedFS registry-cache bucket (S3); dedupe index in the oci-cache-valkey
       RedisReplication. No PVC — the only local state is ephemeral upload
-      staging on emptyDir, so the pod reschedules freely. ClusterIP-only for
-      now; the authenticated public endpoint + Talos containerd mirrors are a
-      later phase (see README).
+      staging on emptyDir, so the pod reschedules freely. The in-cluster
+      Service is intentionally unauthenticated for Docker registry-mirror
+      compatibility; the public endpoint is authenticated by the nginx sidecar.
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
@@ -69,10 +69,8 @@ spec:
             limits:
               memory: 512Mi
               cpu: "1"
-          # TCP probes, not httpGet /v2/: with htpasswd auth enabled an
-          # unauthenticated GET /v2/ returns 401, which a plain httpGet probe
-          # (no credentials to send) would score as a failure and crashloop the
-          # pod. A TCP check confirms Zot is listening without exercising auth.
+          # TCP probe only confirms Zot is listening. Pull-through behavior is
+          # covered by the README smoke tests.
           readinessProbe:
             tcpSocket:
               port: http
@@ -85,24 +83,64 @@ spec:
             periodSeconds: 20
           securityContext:
             allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+        # Public basic-auth wrapper. Zot itself must stay unauthenticated on the
+        # in-cluster Service because dockerd's Docker Hub registry-mirror probe
+        # does not send client Docker-config credentials for the mirror host.
+        - name: public-auth-proxy
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - name: public-auth
+              containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            - name: public-auth-config
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+            - name: public-auth
+              mountPath: /etc/nginx/auth
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          readinessProbe:
+            tcpSocket:
+              port: public-auth
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: public-auth
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 101
+            capabilities:
+              drop: ["ALL"]
       volumes:
-        # Projected so config.json (ConfigMap) and htpasswd (puller-credential
-        # Secret) both land in /etc/zot — Zot's config references
-        # /etc/zot/htpasswd. Only the Secret's htpasswd key is projected (not its
-        # config.json client key, which is for the runner, not Zot).
         - name: config
-          projected:
-            sources:
-              - configMap:
-                  name: oci-cache-zot-config
-              - secret:
-                  name: puller-credential
-                  items:
-                    - key: htpasswd
-                      path: htpasswd
+          configMap:
+            name: oci-cache-zot-config
+        - name: public-auth-config
+          configMap:
+            name: oci-cache-public-auth-proxy
+        - name: public-auth
+          secret:
+            secretName: puller-credential
+            items:
+              - key: htpasswd
+                path: htpasswd
         - name: cache
           emptyDir:
             sizeLimit: 5Gi

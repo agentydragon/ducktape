@@ -11,6 +11,9 @@ configMapGenerator:
   - name: oci-cache-zot-config
     files:
       - config.json
+  - name: oci-cache-public-auth-proxy
+    files:
+      - public-auth-proxy.conf
 generatorOptions:
   # Stable name; the Deployment's reloader annotation restarts Zot on change.
   disableNameSuffixHash: true

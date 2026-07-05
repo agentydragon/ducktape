@@ -49,10 +49,11 @@ kubectl -n haku-ci exec deploy/haku-runner -c dind -- \
   docker -H tcp://127.0.0.1:2375 pull --platform=linux/amd64 catthehacker/ubuntu:act-latest
 ```
 
-If this regresses, check the job log first. The Docker Hub symptom before the 2026-07-05 fix
-was dockerd timing out against `https://registry-1.docker.io/v2/` after the mirror rejected a
-Docker schema2 child manifest; the owning fix is `oci-cache`'s Zot `http.compat:
-["docker2s2"]` setting.
+If this regresses, check the job log first. Two known failure signatures from 2026-07-05:
+`no basic auth credentials` against the `oci-cache` mirror means Zot auth is on the internal
+listener instead of only the public proxy; Docker Hub timeouts after a mirror rejection mean
+dockerd fell back to direct `https://registry-1.docker.io/v2/`. Schema2 child-manifest
+rejections are handled by `oci-cache`'s Zot `http.compat: ["docker2s2"]` setting.
 
 ## What's here
 
