@@ -3,3 +3,4 @@ kind: Kustomization
 
 resources:
   - postgres-cluster.yaml
+  - postgres-cluster-ssd.yaml

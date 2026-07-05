@@ -1,0 +1,69 @@
+# SSD-tier target for forgejo-db (OVH storage tiering, CNPG Case B — see
+# cluster/docs/plans/ovh_storage_tiering.md). forgejo-db's two instances happen to sit on
+# the KS-GAME NVMe nodes today, but only because it schedules off the HDD control planes —
+# its StorageClass is local-path-ovh (= hdd tier), so the Stage 2 CP reshuffle would relocate
+# it to a KS-5 HDD node (Case A). Pinning it to local-path-ovh-ssd locks it onto the NVMe
+# tier where hot Forgejo metadata belongs, next to the git blobs already on SSD.
+#
+# Migration via the CNPG standalone-replica pattern (skills/cnpg_region_switch):
+#   1. (this manifest) bootstrap forgejo-db-ssd as a streaming replica of forgejo-db on
+#      local-path-ovh-ssd — NON-disruptive, source untouched, Forgejo unaffected.
+#   2. verify lag ~0, promote (spec.replica.enabled: false),
+#   3. repoint Forgejo's DB host + creds to -ssd (brief coordinated cutover — needs go-ahead),
+#   4. delete the old forgejo-db, then declare the app user via initdb.owner (stops CNPG's
+#      phantom "app"-role loop for this pg_basebackup clone; see the filer-db-ssd lesson).
+# imageName pinned to match the source exactly (physical replication requirement).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: forgejo-db-ssd
+  namespace: forgejo
+  annotations:
+    description: Streaming replica of forgejo-db on the SSD tier, to be promoted (Case B git-latency migration)
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    # One instance per KS-GAME node for HA (local-path-ovh-ssd pins the tier). No
+    # off-control-plane anti-affinity: the SSD tier IS the KS-GAME boxes, which Stage 2
+    # promotes to control-plane — this DB is meant to live there.
+    topologyKey: kubernetes.io/hostname
+
+  storage:
+    storageClass: local-path-ovh-ssd
+    size: 10Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  replica:
+    enabled: true
+    source: forgejo-db
+
+  bootstrap:
+    pg_basebackup:
+      source: forgejo-db
+
+  externalClusters:
+    - name: forgejo-db
+      connectionParameters:
+        host: forgejo-db-rw.forgejo.svc.cluster.local
+        user: streaming_replica
+        dbname: postgres
+      sslKey:
+        name: forgejo-db-replication
+        key: tls.key
+      sslCert:
+        name: forgejo-db-replication
+        key: tls.crt
+      sslRootCert:
+        name: forgejo-db-ca
+        key: ca.crt
