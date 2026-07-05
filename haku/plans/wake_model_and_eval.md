@@ -105,11 +105,20 @@ Options researched 2026-07-05 (official docs, via research agent):
     `secrets/alloy-otlp-bearer-token.yaml`) → in-cluster Loki/Mimir/Tempo. The earlier
     devinfra attempt only ever exported the _hook daemon's own_ spans (Python; dropped
     in the Rust rewrite — `devinfra/claude/TODO.md`), never Claude Code's native
-    telemetry. Untested: whether the managed web harness honors these env vars from the
-    environment's startup env script (`web_env.sh` already exports the bearer) — one
-    session with `OTEL_METRICS_EXPORTER=otlp` set answers it. Note the subprocess env
-    scrub hides `OTEL_EXPORTER_OTLP_*_HEADERS` from hooks/Bash but not from the claude
-    process itself (`devinfra/claude/web_env/re/claude_code_hook_env.md`).
+    telemetry. **Verified live 2026-07-05** (read `/proc/<claude-pid>/environ` in a
+    hosted remote session, claude 2.1.42): env-var delivery splits by mechanism —
+    the web UI **"Environment Variables"** knob (`startup_context.environment_variables`)
+    **does reach the claude process** (both `DUCKTAPE_*` UI vars present in its
+    environ), while **startup-env-script (`web_env.sh`) outputs do not** (its
+    `BUILDBUDDY_API_KEY`/`AWS_*` present in Bash subprocesses only). Matches
+    <../../devinfra/claude/docs/secrets_env_flow.md>; the older "env vars don't reach
+    claude" RE finding described the script path, not the UI path. So wiring =
+    static UI vars `CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_METRICS_EXPORTER=otlp`,
+    `OTEL_LOGS_EXPORTER=otlp`, `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318` —
+    pointing at a **local forwarder in the hook daemon** that attaches the current
+    (hourly-rotated, so unusable as a static UI var) `DUCKTAPE_OTEL_BEARER_TOKEN` and
+    relays to `alloy-otlp.allegedly.works` through the egress proxy. The claude
+    process carries no proxy env, so the local hop also solves egress.
 - **Store** for transcripts: a separate private `haku-logs` repo or seaweedfs S3
   bucket, not `haku-state` (state is a curated brief; transcripts embed raw source
   data, so the store inherits the same sensitivity class). Run manifests in `runs/`
