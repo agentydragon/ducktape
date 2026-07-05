@@ -8,7 +8,12 @@
 #      ~/.netrc so git needs no inline credentials.
 #   3. Read haku-forgejo-tea from haku-sandbox and write tea's config when the
 #      token rotator has published it.
-#   4. Clone (or fast-forward) haku-state into ~/haku-state — outside the
+#   4. Read haku-mail-token and write himalaya's config with the current mail
+#      JWT embedded (the token rotates; each session materializes it fresh).
+#      The IMAP host is cluster-internal — from the web home read mail via
+#      JMAP, or relay IMAP through kubectl exec; the config is still landed
+#      here so every runtime shares one recipe.
+#   5. Clone (or fast-forward) haku-state into ~/haku-state — outside the
 #      ducktape checkout, so there's no collision. The clone runs into a temp dir
 #      and is atomically swapped into place, so ~/haku-state never exists
 #      half-populated (it's absent until the clone completes). An early echo +
@@ -36,6 +41,31 @@ if kubectl -n "$ns" get secret haku-forgejo-tea >/dev/null 2>&1; then
   chmod 600 "$HOME/.config/tea/config.yml"
 else
   echo "haku warning: haku-forgejo-tea secret is absent; tea is installed but not logged in yet"
+fi
+
+if mail_tok=$(kubectl -n "$ns" get secret haku-mail-token -o jsonpath='{.data.jwt}' 2>/dev/null | base64 -d) && [ -n "$mail_tok" ]; then
+  install -d -m700 "$HOME/.config/himalaya"
+  cat >"$HOME/.config/himalaya/config.toml" <<EOF
+[accounts.haku]
+default = true
+email = "haku@allegedly.works"
+backend.type = "imap"
+backend.host = "haku-mailbox.haku-mailbox.svc.cluster.local"
+backend.port = 1143
+backend.encryption.type = "none"
+backend.login = "haku@allegedly.works"
+backend.auth.type = "oauth2"
+backend.auth.method = "oauthbearer"
+backend.auth.pkce = false
+backend.auth.scope = "openid"
+backend.auth.client-id = "stalwart-haku"
+backend.auth.auth-url = "https://auth.allegedly.works/application/o/authorize/"
+backend.auth.token-url = "https://auth.allegedly.works/application/o/token/"
+backend.auth.access-token.raw = "$mail_tok"
+EOF
+  chmod 600 "$HOME/.config/himalaya/config.toml"
+else
+  echo "haku warning: haku-mail-token secret is absent/empty; himalaya not configured"
 fi
 
 if [ -d "$state_dir/.git" ]; then

@@ -400,7 +400,7 @@
             paths = [
               self.packages.${system}.devtools
               ducktapePkgs.fastmcp
-# nixpkgs ships himalaya WITHOUT the `oauth2` cargo feature, so any
+              # nixpkgs ships himalaya WITHOUT the `oauth2` cargo feature, so any
               # config with backend.auth.type = "oauth2" fails to parse ("missing
               # `oauth2` cargo feature") — OAUTHBEARER against haku-mailbox needs
               # the feature compiled in (verified against the live server).
