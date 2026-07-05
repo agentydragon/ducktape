@@ -1,8 +1,5 @@
 __pycache__/
 *.pyc
 .pytest_cache/
-
-# Local verification artifacts (uv venv, editable build)
-.venv/
-build/
 *.egg-info/
+.venv/

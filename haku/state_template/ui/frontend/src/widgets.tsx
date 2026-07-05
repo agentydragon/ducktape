@@ -121,7 +121,3 @@ export function PropagationMatrix({
     </Table>
   );
 }
-
-// Passed as the `components` scope to the non-eval markdown renderer (see mdx.tsx). No
-// PropagationMatrix here — see the comment above it for why.
-export const WIDGETS = { Callout, StatusBadge };

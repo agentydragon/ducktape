@@ -1,0 +1,104 @@
+module(
+    name = "haku_state",
+    version = "0.1.0",
+)
+
+# Version pins mirror the sibling ducktape repo's MODULE.bazel (Bazel 8.6.0) so
+# the two repos stay on the same rule ecosystem. haku-state deviates in one way:
+# NO BuildBuddy/RBE — everything runs with local execution + a --disk_cache
+# (see .bazelrc). No toolchains_buildbuddy, no rbe platform, no remote executor.
+
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "rules_python", version = "1.9.0")
+
+# JavaScript / TypeScript (the Vite React SPA)
+bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
+bazel_dep(name = "aspect_rules_js", version = "2.9.2")
+bazel_dep(name = "aspect_rules_ts", version = "3.8.7")
+bazel_dep(name = "rules_nodejs", version = "6.7.3")
+
+# Container images (rules_oci) + Python image layering (aspect_rules_py)
+bazel_dep(name = "aspect_rules_py", version = "1.10.0")
+bazel_dep(name = "rules_oci", version = "2.3.0")
+bazel_dep(name = "rules_pkg", version = "1.2.0")
+
+# ── Python ───────────────────────────────────────────────────────────────────
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    is_default = True,
+    python_version = "3.13",
+)
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+
+# Backend deps, locked with hashes from ui/backend/pyproject.toml (incl. the dev
+# extra, which carries pytest + pytest-bazel + ruff). Regenerate with:
+#   cd ui/backend && uv pip compile pyproject.toml --extra dev \
+#     --generate-hashes --python-version 3.13 -o requirements.txt
+pip.parse(
+    hub_name = "pypi",
+    python_version = "3.13",
+    requirements_lock = "//ui/backend:requirements.txt",
+)
+use_repo(pip, "pypi")
+
+# ── Node.js / pnpm / npm ─────────────────────────────────────────────────────
+node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
+node.toolchain(node_version = "22.20.0")  # LTS 'Jod'; ≥22.12 required by Vite 8
+
+# Pin pnpm v9 to match the lockfile format. ui/frontend/pnpm-lock.yaml is
+# lockfileVersion '9.0' (generated via `pnpm import` from package-lock.json);
+# rules_js 2.9.2 defaults to pnpm v8, which cannot read it and would trigger a
+# non-hermetic regeneration. Integrity hash from ducktape's MODULE.bazel.
+pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")
+pnpm.pnpm(
+    pnpm_version = "9.15.9",
+    pnpm_version_integrity = "sha512-aARhQYk8ZvrQHAeSMRKOmvuJ74fiaR1p5NQO7iKJiClf1GghgbrlW1hBjDolO95lpQXsfF+UA+zlzDzTfc8lMQ==",
+)
+use_repo(pnpm, "pnpm")
+
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
+npm.npm_translate_lock(
+    name = "npm",
+    # Bin entrypoints for the dev tools ui/frontend/BUILD.bazel loads via
+    # `@npm//:<pkg>/package_json.bzl`. pnpm v9 lockfiles drop per-package bin
+    # details, so rules_js can't auto-derive them — declare them explicitly (paths
+    # are each package's package.json "bin", relative to its root).
+    bins = {
+        "eslint": ["eslint=./bin/eslint.js"],
+        "typescript": [
+            "tsc=./bin/tsc",
+            "tsserver=./bin/tsserver",
+        ],
+        "vite": ["vite=./bin/vite.js"],
+        "vitest": ["vitest=./vitest.mjs"],
+    },
+    data = ["//ui/frontend:package.json"],
+    pnpm_lock = "//ui/frontend:pnpm-lock.yaml",
+    # Auto-regenerate pnpm-lock.yaml when package.json changes.
+    update_pnpm_lock = True,
+    verify_node_modules_ignored = "//:.bazelignore",
+)
+use_repo(npm, "npm")
+
+# ── Container base image ─────────────────────────────────────────────────────
+# aspect_rules_py's py_binary emits a bash venv launcher, so the base needs a
+# shell + glibc. Debian bookworm-slim (~30 MB) provides bash/glibc/libstdc++;
+# the hermetic CPython 3.13 interpreter is bundled in the py_image_layer tars.
+# Pulled from Docker Hub, whose registry + blob-redirect hosts are on the
+# haku-egress-proxy allowlist (mirror.gcr.io, the usual rate-limit dodge, is
+# NOT — Bazel's manifest fetch through the proxy timed out). Digest matches
+# ducktape's debian_slim pin (content-addressed, so registry-agnostic).
+# TODO(egress): re-point at mirror.gcr.io to dodge Docker Hub's anonymous pull
+#   limit once mirror.gcr.io + storage.googleapis.com are allowlisted for the
+#   haku egress proxy (cluster/k8s/agents/haku-egress-proxy CNPs in ducktape).
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "debian_slim",
+    digest = "sha256:f06537653ac770703bc45b4b113475bd402f451e85223f0f2837acbf89ab020a",
+    image = "index.docker.io/library/debian",
+    platforms = ["linux/amd64"],
+    tag = "bookworm-slim",
+)
+use_repo(oci, "debian_slim", "debian_slim_linux_amd64")

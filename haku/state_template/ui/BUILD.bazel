@@ -1,0 +1,76 @@
+load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+# ── Runtime container image ──────────────────────────────────────────────────
+# Replaces ui/Dockerfile's multi-stage build. Layers:
+#   - //ui/backend:backend_layers  — hermetic CPython 3.13 + site-packages + app
+#                                    (aspect_rules_py py_image_layer over :server)
+#   - :web_tar                     — the built React SPA at /app/web
+# on debian:bookworm-slim (bash for the aspect py venv launcher; glibc/libstdc++).
+# Runtime contract preserved: uvicorn on :8080, non-root uid 10001, the app reads
+# the SPA from HAKU_UI_STATIC_DIR (=/app/web); git creds + Forgejo URLs come from
+# the Deployment env (HAKU_UI_*), not the image.
+
+# Flatten the vite dist/ TreeArtifact to the docroot root (index.html at top).
+copy_to_directory(
+    name = "web_files",
+    srcs = ["//ui/frontend:dist"],
+    root_paths = ["ui/frontend/dist"],
+)
+
+pkg_tar(
+    name = "web_tar",
+    srcs = [":web_files"],
+    package_dir = "/app/web",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    # py_image_layer places the launcher at /<package>/<binary_name>.
+    entrypoint = ["/ui/backend/server"],
+    env = {
+        "HAKU_UI_STATIC_DIR": "/app/web",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    exposed_ports = ["8080/tcp"],
+    labels = {
+        # Provenance + the label Forgejo/Gitea use to auto-link a package to a repo.
+        "org.opencontainers.image.source": "https://forgejo.example.com/haku/haku-state",
+        "org.opencontainers.image.title": "haku-ui",
+    },
+    tars = [
+        "//ui/backend:backend_layers",
+        ":web_tar",
+    ],
+    user = "10001",
+    visibility = ["//visibility:public"],
+)
+
+# Local smoke: `bazel run //ui:load` then `docker run --rm -p 8080:8080 haku-ui:dev`.
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["haku-ui:dev"],
+)
+
+# Push to the Forgejo registry. The tag is supplied at push time by CI, which
+# keeps the Flux-sortable scheme:
+#   bazel run //ui:push -- --tag "main-$(date -u +%Y%m%d%H%M%S)-<sha7>"
+oci_push(
+    name = "push",
+    image = ":image",
+    repository = "forgejo.example.com/haku/ui",
+)
+
+# Assemble the image (and its digest) under `bazel test //...` without pushing.
+build_test(
+    name = "image_build_test",
+    targets = [
+        ":image",
+        ":image.digest",
+    ],
+)

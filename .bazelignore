@@ -33,6 +33,9 @@ x/k8s_old
 trilium
 
 # Nested Bazel modules - build through their module labels.
+# haku/state_template is a self-contained seed for a spawned haku-state repo
+# (its own MODULE.bazel + Bazel/pnpm build); it is not part of ducktape's build.
+haku/state_template
 third_party/activitywatch
 third_party/manifold_mcp_server
 third_party/mcporter

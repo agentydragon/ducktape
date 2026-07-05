@@ -1,0 +1,96 @@
+# Forgejo Actions workflow that tests, builds, and ships Haku's UI image via Bazel.
+#
+# Replaces the old multi-stage Dockerfile pipeline (build-ui.yaml). Bazel gates:
+#   - backend:  pytest (//ui/backend:test_*)
+#   - frontend: tsc (//ui/frontend:tsc_test), vitest (//ui/frontend:vitest_test)
+#   - the container image assembles under //ui:image (build_test in `bazel test`)
+# So `bazel test //...` + `bazel build //...` is the whole gate; on main we then
+# `bazel run //ui:push` with the same Flux-sortable tag scheme the ImagePolicy
+# filters on (main-<utc14>-<sha7>). (ruff + eslint run separately in lint.yaml.)
+#
+# Runs IN-CLUSTER on the repo-scoped Forgejo Actions runner (cluster/k8s/haku-ci),
+# NOT on ducktape's BuildBuddy — haku-state may hold private operator info, so its
+# source never leaves the cluster. haku-state uses NO RBE: Bazel runs locally on
+# the runner with an on-disk cache (--disk_cache in the runner's ~/.bazelrc).
+#
+# Data-only commits (items/, runs/, kitchen/, …) are still validated cheaply by
+# validate-state.yaml (which runs on every push); this workflow is path-filtered
+# to code/config so a data commit doesn't rebuild/redeploy the image.
+
+name: bazel-ci
+on:
+  # Manual re-run (UI / API) — handy for re-kicking after an infra fix without a
+  # no-op commit.
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "ui/**"
+      - "tools/**"
+      - "MODULE.bazel"
+      - "MODULE.bazel.lock"
+      - ".bazelrc"
+      - ".bazelversion"
+      - "**/BUILD.bazel"
+      - ".forgejo/workflows/bazel-ci.yaml"
+
+jobs:
+  bazel:
+    runs-on: haku-ci
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # bazelisk resolves the pinned Bazel (.bazelversion → 8.6.0) and bundles a JDK.
+      - name: Install bazelisk
+        run: |
+          mkdir -p "$HOME/bin"
+          curl -fsSL -o "$HOME/bin/bazel" \
+            https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-amd64
+          chmod +x "$HOME/bin/bazel"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      # Persist the on-disk Bazel cache across runs (the runner container is not
+      # guaranteed persistent). Keyed on the module + lock so a dependency bump
+      # busts it. Optional: only affects speed, not correctness.
+      - name: Cache Bazel disk cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel-disk
+          key: bazel-disk-${{ hashFiles('MODULE.bazel', 'ui/backend/requirements.txt', 'ui/frontend/pnpm-lock.yaml') }}
+          restore-keys: |
+            bazel-disk-
+
+      # Egress: the runner reaches bcr.bazel.build / GitHub / nodejs.org / npm / PyPI
+      # through haku-egress-proxy. Proxy routing + the OpenSSL CA come from the runner
+      # env (cluster/k8s/haku-ci/config.yaml). This step additionally trusts the
+      # ssl-bump CA at the Java level — Bazel's downloader runs in the server JVM,
+      # which ignores SSL_CERT_FILE and validates against a Java KeyStore — by
+      # importing the CA into the JDK truststore + writing ~/.bazelrc. See
+      # tools/ci/trust_egress_ca.sh and the egress note in .bazelrc.
+      - name: Trust egress-proxy CA (JDK truststore)
+        run: bash tools/ci/trust_egress_ca.sh
+
+      - name: Test
+        run: bazel test --config=ci //...
+
+      - name: Build (incl. the container image)
+        run: bazel build --config=ci //...
+
+      # Push only on main. crane (rules_oci's pusher) reads ~/.docker/config.json,
+      # so a plain docker login authenticates the `bazel run //ui:push`. The tag is
+      # the Flux-sortable scheme the ImagePolicy filters on (main-<utc14>-<sha7>).
+      - name: Log in to the Forgejo registry
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "${{ secrets.REGISTRY_PUSH_TOKEN }}" \
+            | docker login forgejo.example.com -u "${{ github.repository_owner }}" --password-stdin
+
+      - name: Push the image
+        if: github.ref == 'refs/heads/main'
+        run: |
+          TAG="main-$(date -u +%Y%m%d%H%M%S)-$(echo "${{ github.sha }}" | cut -c1-7)"
+          bazel run --config=ci //ui:push -- --tag "$TAG"

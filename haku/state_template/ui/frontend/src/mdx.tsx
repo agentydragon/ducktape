@@ -8,29 +8,9 @@ import { Choice, Choices, Feedback, Handoff, Launch, SignalToggle } from "./affo
 import { errText } from "./errors.ts";
 import { ItemCardById } from "./item_card.tsx";
 import { ImprovementBoard } from "./improvement_board.tsx";
+import { isExternal, resolveRepoPath } from "./mdx_links.ts";
 import { Callout, StatusBadge } from "./widgets.tsx";
 import type { CalloutKind } from "./widgets.tsx";
-
-// A link is external if it has a URL scheme (http:, mailto:, …) or is protocol-relative.
-export function isExternal(href: string): boolean {
-  return /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//");
-}
-
-// Resolve a repo-relative markdown link against the file it appears in, so notes can link each
-// other with `../runs/x.md` or `procedures/foo.md` (leading `/` = repo root). This is what makes
-// the garden an interlinked web rather than a pile of isolated files.
-export function resolveRepoPath(base: string | undefined, href: string): string {
-  const clean = href.replace(/[#?].*$/, "");
-  if (clean.startsWith("/")) return clean.replace(/^\/+/, "");
-  const baseDir = base && base.includes("/") ? base.slice(0, base.lastIndexOf("/")) : "";
-  const parts = baseDir ? baseDir.split("/") : [];
-  for (const seg of clean.split("/")) {
-    if (seg === "" || seg === ".") continue;
-    if (seg === "..") parts.pop();
-    else parts.push(seg);
-  }
-  return parts.join("/");
-}
 
 // Widget tags authored content may embed (garden.md documents the literal-attribute syntax, e.g.
 // `<statusbadge status="open" color="teal">`). HTML tag/attribute names are case-insensitive, so

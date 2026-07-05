@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 import pytest
+import pytest_bazel
 from forgejo import Forgejo
 
 _API = "http://forgejo.test/api/v1/repos/haku/haku-state"
@@ -150,4 +151,4 @@ def test_delete_file_is_noop_when_missing():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-q"])
+    pytest_bazel.main()

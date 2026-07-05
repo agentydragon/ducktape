@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest_bazel
 from app import _forgejo, create_app
 from config import Settings
 from fastapi.testclient import TestClient
@@ -181,6 +182,4 @@ def test_repo_blobs_rejects_non_hex_sha():
 
 
 if __name__ == "__main__":
-    import pytest
-
-    pytest.main([__file__, "-q"])
+    pytest_bazel.main()

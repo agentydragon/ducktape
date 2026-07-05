@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 
 import httpx
+import pytest_bazel
 from forgejo import Forgejo
 from reads import read_scan_time
 
@@ -54,6 +55,4 @@ def test_scan_time_falls_back_to_newest_commit_when_no_haku_author():
 
 
 if __name__ == "__main__":
-    import pytest
-
-    pytest.main([__file__, "-q"])
+    pytest_bazel.main()

@@ -1,12 +1,15 @@
-# Validate the state files the UI backend reads live from HEAD (items/, runs/, and any
-# surface you add) against the backend's own Pydantic models — the actual read contract.
-# The backend has no build step for data (it parses these at request time), so without
-# this gate a malformed commit only surfaces when the dashboard 500s or silently renders
-# wrong. Runs on EVERY push to main — data commits vastly outnumber ui/ commits and are
-# not covered by build-ui.yaml's path filter.
+# Validate the state files the UI backend reads live from HEAD (items/, kitchen/, runs/,
+# responses/, memory/improvements/) against the backend's own Pydantic models
+# (tools/validate_state.py) — the actual read contract. The backend has no build step for
+# data (it parses these at request time), so without this gate a malformed commit only
+# surfaces when the dashboard 500s or silently renders wrong (the `shopping_list: 0`
+# incident). Runs on EVERY push to main — data commits vastly outnumber ui/ commits and
+# aren't covered by bazel-ci.yaml (its path filter is scoped to code/config).
 #
-# Kept deliberately light: models.py imports only pydantic + stdlib, so this installs
-# just pydantic + pyyaml (~seconds), not the whole backend.
+# Runs the real Bazel target (`bazel run //tools:validate_state`) so the validator, its
+# deps, and the models.py it checks against are exactly what the rest of the build uses —
+# no separate pip install to drift. Reuses bazel-ci's runner setup (bazelisk + egress CA);
+# the shared --disk_cache keeps it fast after the first run.
 name: validate-state
 on:
   push:
@@ -21,17 +24,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # `docker build` (not `docker run -v`): the runner's docker daemon is a dind sidecar,
-      # so a -v bind mount resolves on the SIDECAR's filesystem (empty), not the job
-      # container's checkout. Building streams the repo as context — same pattern as
-      # build-ui.yaml. The RUN validation failing fails the build, which fails the job.
-      - name: Validate state files against ui/backend/models.py
+      # bazelisk resolves the pinned Bazel (.bazelversion) and bundles a JDK.
+      - name: Install bazelisk
         run: |
-          docker build -f - . <<'EOF'
-          FROM python:3.13-slim
-          RUN pip install --quiet --no-cache-dir "pydantic>=2" pyyaml
-          WORKDIR /repo
-          COPY . .
-          ENV PYTHONPATH=/repo/ui/backend
-          RUN python tools/validate_state.py
-          EOF
+          mkdir -p "$HOME/bin"
+          curl -fsSL -o "$HOME/bin/bazel" \
+            https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-amd64
+          chmod +x "$HOME/bin/bazel"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Bazel disk cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel-disk
+          key: bazel-disk-${{ hashFiles('MODULE.bazel', 'ui/backend/requirements.txt', 'ui/frontend/pnpm-lock.yaml') }}
+          restore-keys: |
+            bazel-disk-
+
+      # Trust the egress-proxy CA at the JVM level (writes ~/.bazelrc) so Bazel's
+      # downloader can fetch rules_python + pydantic through the proxy — see bazel-ci.yaml.
+      - name: Trust egress-proxy CA (JDK truststore)
+        run: bash tools/ci/trust_egress_ca.sh
+
+      - name: Validate state files
+        run: bazel run --config=ci //tools:validate_state

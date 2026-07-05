@@ -1,0 +1,92 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
+load("@npm//:defs.bzl", "npm_link_all_packages")
+
+# Bin helpers are generated under the pnpm project's importer path (ui/frontend,
+# where pnpm-lock.yaml lives), not the @npm repo root — hence @npm//ui/frontend:,
+# not @npm//: (which is correct only when the lockfile is at the repo root).
+load("@npm//ui/frontend:eslint/package_json.bzl", eslint_bin = "bin")
+load("@npm//ui/frontend:typescript/package_json.bzl", tsc_bin = "bin")
+load("@npm//ui/frontend:vite/package_json.bzl", vite_bin = "bin")
+load("@npm//ui/frontend:vitest/package_json.bzl", vitest_bin = "bin")
+
+# package.json + pnpm-lock.yaml are referenced by npm_translate_lock in MODULE.bazel.
+exports_files([
+    "package.json",
+    "pnpm-lock.yaml",
+    "tsconfig.json",
+])
+
+# Links the pnpm-resolved node_modules into this package (//ui/frontend:node_modules/<pkg>).
+npm_link_all_packages(name = "node_modules")
+
+# ── App sources ──────────────────────────────────────────────────────────────
+# One library carrying every source the build/typecheck/lint/test steps read.
+js_library(
+    name = "sources",
+    srcs = glob([
+        "src/**/*.ts",
+        "src/**/*.tsx",
+        "src/**/*.css",
+        "public/**",
+    ]) + [
+        "eslint.config.js",
+        "index.html",
+        "postcss.config.cjs",
+        "tsconfig.json",
+        "vite.config.ts",
+    ],
+    deps = [":node_modules"],
+)
+
+# ── Production bundle (vite build → dist/) ───────────────────────────────────
+# Only `vite build` here; the `tsc -b` half of the old `npm run build` is the
+# separate tsc_test gate below. dist/ is a TreeArtifact consumed by //ui:image.
+vite_bin.vite_binary(
+    name = "vite_tool",
+)
+
+js_run_binary(
+    name = "dist",
+    srcs = [":sources"],
+    args = ["build"],
+    chdir = package_name(),
+    out_dirs = ["dist"],
+    tool = ":vite_tool",
+    visibility = ["//ui:__pkg__"],
+)
+
+# ── Gates (were the Dockerfile frontend-lint / frontend-test / tsc stages) ───
+
+# tsc --noEmit: the type-correctness gate (resolves prop shapes esbuild ignores).
+tsc_bin.tsc_test(
+    name = "tsc_test",
+    args = [
+        "--noEmit",
+        "-p",
+        "tsconfig.json",
+    ],
+    chdir = package_name(),
+    data = [":sources"],
+    tags = ["lint"],
+)
+
+# eslint over the SPA (flat eslint.config.js). Runs in Bazel — not a docker step —
+# so it reuses the :node_modules rules_js already links (no separate pnpm install,
+# which the squid egress proxy couldn't serve reliably: pnpm's parallel fetch of
+# ~300 packages timed out where the Bazel/rules_js fetch of the same set does not).
+eslint_bin.eslint_test(
+    name = "eslint_test",
+    args = ["."],
+    chdir = package_name(),
+    data = [":sources"],
+    tags = ["lint"],
+)
+
+# Vitest over the SPA's logic + component tests (jsdom via per-file
+# `// @vitest-environment jsdom` directives, so no config file needed).
+vitest_bin.vitest_test(
+    name = "vitest_test",
+    args = ["run"],
+    chdir = package_name(),
+    data = [":sources"],
+)

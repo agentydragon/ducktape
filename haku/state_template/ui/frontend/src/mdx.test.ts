@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isExternal, resolveRepoPath } from "./mdx.tsx";
+import { isExternal, resolveRepoPath } from "./mdx_links.ts";
 
 // resolveRepoPath turns a markdown link (relative or repo-absolute) into a repo path, so garden
 // notes can link each other — the load-bearing bit of "keep it interlinked". Edge cases: `.`/`..`

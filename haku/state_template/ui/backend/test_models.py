@@ -8,6 +8,7 @@ Haku-authored, parsed live at read time / in CI, never build-checked).
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 from models import ImprovementDoc, ItemDoc, ItemStatus, RunManifest
 from pydantic import ValidationError
 
@@ -76,4 +77,4 @@ def test_run_manifest_rejects_bad_propagation_action():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-q"])
+    pytest_bazel.main()

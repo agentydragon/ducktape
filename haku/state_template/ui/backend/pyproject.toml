@@ -12,7 +12,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+# pytest-bazel provides the `pytest_bazel.main()` entry point every Bazel py_test
+# needs (without it Bazel runs the test file as a plain script that exits 0).
+dev = ["pytest>=8.0", "pytest-bazel>=0.1.6", "ruff>=0.14"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -21,3 +23,14 @@ build-backend = "setuptools.build_meta"
 # Flat top-level modules (not a package); the backend is run from its own directory.
 [tool.setuptools]
 py-modules = ["app", "config", "forgejo", "models", "reads"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+# E/F: pyflakes + pycodestyle (the core correctness/style floor).
+# I: import sorting. UP: pyupgrade (keep modern-Python idioms). B: bugbear (likely bugs).
+# PT: flake8-pytest-style — this is the set that catches combined `assert x and y` (PT018)
+# and over-broad `pytest.raises(Exception)` (PT011), the class of miss that motivated
+# adding this gate.
+select = ["E", "F", "I", "PT", "UP", "B"]

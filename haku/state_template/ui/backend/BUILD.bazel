@@ -1,0 +1,159 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//ui:__subpackages__"])
+
+# The pip lockfile pip.parse consumes (referenced from MODULE.bazel).
+exports_files(["requirements.txt"])
+
+# The backend is flat top-level modules (app, config, forgejo, models, reads) that
+# import each other unqualified (`from config import Settings`), so every target
+# sets imports = ["."] to put this package dir on PYTHONPATH.
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    imports = ["."],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    imports = ["."],
+    # Also visible to //tools:validate_state, which validates state files against
+    # these models (the real read contract) — outside the //ui subtree.
+    visibility = [
+        "//tools:__pkg__",
+        "//ui:__subpackages__",
+    ],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "forgejo",
+    srcs = ["forgejo.py"],
+    imports = ["."],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "reads",
+    srcs = ["reads.py"],
+    imports = ["."],
+    deps = [
+        ":forgejo",
+        ":models",
+        "@pypi//pyyaml",
+    ],
+)
+
+# The FastAPI app module. A py_library (not just folded into the binary) so the
+# test targets can `from app import create_app`.
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    imports = ["."],
+    deps = [
+        ":config",
+        ":forgejo",
+        ":models",
+        ":reads",
+        "@pypi//fastapi",
+        "@pypi//pyyaml",
+        "@pypi//uvicorn",
+    ],
+)
+
+_APP_DEPS = [
+    ":config",
+    ":forgejo",
+    ":models",
+    ":reads",
+    "@pypi//fastapi",
+    "@pypi//pyyaml",
+    "@pypi//uvicorn",
+]
+
+# Uvicorn entry point. aspect_rules_py py_binary (emits a venv launcher) so the
+# same target feeds py_image_layer for the OCI image. Run locally:
+#   bazel run //ui/backend:server
+aspect_py_binary(
+    name = "server",
+    srcs = ["app.py"],
+    imports = ["."],
+    main = "app.py",
+    visibility = ["//ui:__pkg__"],
+    deps = _APP_DEPS,
+)
+
+# Multi-layer image tars (interpreter / site-packages / app code) for //ui:image.
+py_image_layer(
+    name = "backend_layers",
+    binary = ":server",
+    visibility = ["//ui:__pkg__"],
+)
+
+# ── Tests ────────────────────────────────────────────────────────────────────
+# Every py_test entry point is pytest_bazel.main() (see each test file's __main__
+# guard). Without it Bazel would run the file as a plain script that exits 0.
+
+py_test(
+    name = "test_app",
+    srcs = ["test_app.py"],
+    imports = ["."],
+    deps = [
+        ":app",
+        ":config",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_forgejo",
+    srcs = ["test_forgejo.py"],
+    imports = ["."],
+    deps = [
+        ":forgejo",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_reads",
+    srcs = ["test_reads.py"],
+    imports = ["."],
+    deps = [
+        ":forgejo",
+        ":reads",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_models",
+    srcs = ["test_models.py"],
+    imports = ["."],
+    deps = [
+        ":models",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Backend lint (ruff check + format) runs in CI as a standalone step, not a Bazel
+# target — see .forgejo/workflows/lint.yaml. ruff is a fast self-contained binary
+# that gains nothing from Bazel's graph, and its wheel has no console_scripts entry
+# point (awkward to wrap). TODO(lint-aspect): a rules_lint aspect would be the nicer
+# in-Bazel option if we want it back under `bazel test`.
