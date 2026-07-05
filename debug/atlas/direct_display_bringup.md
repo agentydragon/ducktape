@@ -399,11 +399,55 @@ Gotcha: `steam://rungameid` no-ops if the game is already running; stop it first
 `gdm.debug`); pin DP-4 to 4K@144 in the sway config; harden the session-teardown
 leak.
 
+### 2026-07-05 — gamescope abandoned; display moved to 01:00.0 instead
+
+Tried the gamescope launch option (`gamescope -f --prefer-vk-device 10de:2b85 --
+%command%`) live — **it did not help.** Confirmed why: `--prefer-vk-device` only
+takes `vendorID:deviceID`, and the two 5090s are identical (`10de:2b85`), so it
+cannot disambiguate them — it just grabs whichever Vulkan device enumerates first
+(the compute card, `01:00.0`), leaving the cross-PCIe copy in place. gamescope
+3.16.24 has **no PCI-bus selector**, and NVIDIA's proprietary Vulkan honors no
+per-app PCI device filter (Mesa's `MESA_VK_DEVICE_SELECT` layer isn't present /
+doesn't apply to the NVIDIA ICD). So there is **no software way to pin the game to
+a specific one of two identical GPUs** on this stack.
+
+**The actual fix (simpler, no gamescope): move the monitor to the GPU the game
+already renders on.** DXVK/Vulkan always picks the first-PCI device (`01:00.0`) and
+we can't change that — so instead make `01:00.0` the _display_ GPU. Then
+render==display==`01:00.0`, zero cross-PCIe copy, no compositor tricks.
+
+Steps taken (commit on `wyrm2-sway-seat`):
+
+- **Physical:** replug the FV43U DP cable from the `02:00.0` 5090 to the `01:00.0`
+  5090 (passthrough mapping unchanged; only which card the cable is in).
+- **Config swap** in `nix/nixos/hosts/wyrm2/default.nix`: `seat-game` udev pin
+  `02:00.0`→`01:00.0`; `mutter-device-ignore` `01:00.0`→`02:00.0` (now hide the
+  headless compute card, which is `02:00.0`); the "Steam/Sway (debug)"
+  `WLR_DRM_DEVICES` node `02:00.0`→`01:00.0`.
+- **Deploy:** `nixos-rebuild boot` + reboot (udev seat TAGs persist in the db, so a
+  live `switch` won't fully re-home the seat — reboot required).
+
+Post-reboot verification (all ✅): monitor connected on `card0-DP-1` (`01:00.0`);
+`udevadm info` shows `ID_SEAT=seat-game` on `card0`/`01:00.0` and gone from
+`02:00.0`; `loginctl seat-status seat-game` masters `card0`/`01:00.0`; greeter up
+on seat-game. (Transient gotcha: right after boot, `loginctl seat-status` briefly
+showed the _old_ card2 master — re-read a few seconds later for the settled view;
+`udevadm info` is authoritative immediately.)
+
+**Still to verify:** log into sway, launch Stellaris **plain (no gamescope launch
+option — remove it)**, confirm `nvidia-smi --query-compute-apps=pid,process_name,gpu_bus_id`
+shows `stellaris.exe` on `01:00.0` = the display GPU, with 5090-class FPS.
+
+**Now-vestigial:** the raw-gamescope block + `programs.steam.gamescopeSession`
+kiosk (and its `--prefer-vk-device` comment at ~L215, now describing the old
+ordering) are dead for the lag fix — fold into the deferred gamescope cleanup.
+
 ## Open questions
 
-- **Per-game lag** (root-caused, fix in progress): cross-GPU copy — see above.
-  Fix = raw gamescope (`capSysNice=false`) + `--prefer-vk-device 10de:2b85` launch
-  option to pin the game to the display GPU. Also bump DP-4 to 4K@144 in sway.
+- **Per-game lag** (root-caused, fix deployed 2026-07-05): cross-GPU copy — solved
+  by making `01:00.0` the display GPU (cable replug + seat/mutter/WLR pin swap) so
+  render==display. gamescope is _not_ the fix (can't pin one of two identical
+  GPUs). Final in-game FPS check still pending. Also bump DP-4 to 4K@144 in sway.
 - **Harden the session-teardown leak** so re-logins stop colliding: logind
   `KillUserProcesses` scoped to the seat-game session, or a session-exit hook that
   reaps the compositor/Steam. Currently manual (also bit the sway seat).
