@@ -119,6 +119,19 @@ spec:
       storageClassName: local-path-ovh-hdd
       metricsPort: 9325
       extraArgs: ["-disk=hdd"]
+      # Go read-only before the disk fills rather than trusting the slot cap —
+      # the real safety bound once maxVolumeCounts overcommits (mirrors the ssd group).
+      minFreeSpacePercent: 10
+      # Overcommit the volume-slot count (same rationale as the ssd group). -max=0
+      # auto-derives disk_size / volumeSizeLimitMB → only 112/113 slots on the 1.8 TiB
+      # servers, which sat at 112/112 (full) while volumes were ~5% full (~0.85 GB of a
+      # 16 GB cap). Thin volumes make over-committing ~free; disk-full is bounded by
+      # minFreeSpacePercent, not the slot cap. 300 > the ~163 distinct HDD volumes, so a
+      # single survivor can hold the full 2-copy set while a peer is repartitioned during
+      # the data-disk mount rename (cluster/docs/plans/ovh_storage_tiering.md) — no
+      # forced single-copy window — and 300 > the 3.6 TB node's auto 232, so no server is
+      # capped below its previous count.
+      maxVolumeCounts: 300
       nodeSelector:
         storage.allegedly.works/tier: hdd
       tolerations:
