@@ -193,8 +193,10 @@ spec:
     # outside of YAML string escaping.
     config: ""
     # Postgres credentials override filer.toml [postgres2] keys via viper's
-    # env-var binding (WEED_<key>, dot→underscore). CNPG auto-generates the
-    # Secret seaweedfs-filer-db-app at cluster bootstrap.
+    # env-var binding (WEED_<key>, dot→underscore). seaweedfs-filer-db-ssd-app is a
+    # committed Secret (../db/seaweedfs-filer-db-ssd-app.sops.yaml) enforced onto the
+    # -ssd seaweedfs role via managed.roles — the -ssd cluster is pg_basebackup'd so
+    # CNPG generates no -app Secret of its own.
     env:
       # Soft heap ceiling ~90% of the memory limit below; see the sizing note
       # at requests/limits. Go's GC (GOGC=100) otherwise ignores the cgroup
@@ -204,12 +206,12 @@ spec:
       - name: WEED_POSTGRES2_USERNAME
         valueFrom:
           secretKeyRef:
-            name: seaweedfs-filer-db-app
+            name: seaweedfs-filer-db-ssd-app
             key: username
       - name: WEED_POSTGRES2_PASSWORD
         valueFrom:
           secretKeyRef:
-            name: seaweedfs-filer-db-app
+            name: seaweedfs-filer-db-ssd-app
             key: password
     metricsPort: 9326
     # QoS / eviction protection as on master. Now 2 replicas → a minAvailable:1

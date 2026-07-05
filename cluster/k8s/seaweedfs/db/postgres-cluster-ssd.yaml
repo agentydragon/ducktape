@@ -42,6 +42,25 @@ spec:
   monitoring:
     enablePodMonitor: true
 
+  # CNPG doesn't auto-generate an -app Secret for pg_basebackup clusters, so enforce
+  # the seaweedfs role's password from a committed Secret (attributes replicated from
+  # the live role: login-only, no superuser/createdb/createrole/replication/bypassrls,
+  # unlimited connections). The filer authenticates with this same Secret.
+  managed:
+    roles:
+      - name: seaweedfs
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        inherit: true
+        replication: false
+        bypassrls: false
+        connectionLimit: -1
+        passwordSecret:
+          name: seaweedfs-filer-db-ssd-app
+
   # Promoted to an independent primary at cutover (was a streaming replica of
   # seaweedfs-filer-db). bootstrap/externalClusters below are inert post-bootstrap;
   # kept for a minimal diff and removed in the post-cutover cleanup.

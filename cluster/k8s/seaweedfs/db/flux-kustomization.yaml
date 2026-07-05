@@ -13,6 +13,12 @@ spec:
   path: ./cluster/k8s/seaweedfs/db
   prune: true
   wait: true
+  # Required to apply seaweedfs-filer-db-ssd-app.sops.yaml (the filer DB app creds
+  # enforced onto -ssd via managed.roles); without it Flux applies the ciphertext.
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: seaweedfs-namespace
     - name: cnpg
