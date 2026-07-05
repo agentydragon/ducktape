@@ -8,10 +8,12 @@ on:
     branches: [main, devel]
     paths:
       - "ansible/**"
+      - ".ansible-lint.yaml"
       - ".github/workflows/ansible-lint.yml"
   pull_request:
     paths:
       - "ansible/**"
+      - ".ansible-lint.yaml"
       - ".github/workflows/ansible-lint.yml"
   workflow_dispatch:
 
