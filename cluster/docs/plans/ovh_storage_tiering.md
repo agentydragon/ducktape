@@ -354,8 +354,29 @@ Suggested order (least-risk first):
 **Exit:** every OVH data disk mounted at `/var/mnt/local-path-ovh-{hdd,ssd}`, `nodePathMap`
 pointing there, and the `seaweedfs-data` UserVolume name retired.
 
+### Control-plane membership checklist (any CP add/remove)
+
+Changing which nodes are control-plane is **not** just the Terraform `role` field. The Stage-2
+reshuffle flipped the TF roles but left three downstream rosters on the old CP set, which broke
+devel (`test_nebula_mesh`/`test_dns_records`) and, worse, silently mis-pointed live etcd metrics
+and the `api.allegedly.works` record at nodes that no longer served them. Any CP add/remove
+(Stage 3's `103656` removal + new-box addition, or a future reshuffle) must update **all** of
+these in the same change — the two validation tests enforce the last three:
+
+- `cluster/terraform/main/ovh-nodes.tf` — the node `role` field (the actual CP membership).
+- `cluster/terraform/main/infrastructure.tf` — `primary_controlplane_ip` + the
+  `talos_machine_bootstrap`/`talos_cluster_kubeconfig` `ignore_changes` guards, if the anchor
+  CP moves.
+- `nebula-mesh.json` — the per-host `role` (leave `lighthouse`/`relay`/`cert_groups` alone;
+  they're per-node, not role-tied).
+- `cluster/k8s/monitoring/etcd/endpoints.yaml` — the etcd metrics scrape EndpointSlice (must
+  list exactly the nodes running etcd, or `ControlPlaneLeasePutLatency` alerts point nowhere).
+- `tf/gitops/dns-records/main.tf` — `kube_api_ips` (the `api.allegedly.works` A records must be
+  the CPs' public IPs; a demoted node has no apiserver on `:6443`).
+
 ### Stage 3 — third SSD node (optional, future)
 
 Buy 1 NVMe OVH box; add as control-plane (learner → voter), then remove `103656` (the last HDD
 etcd seat) → all-NVMe 3-member quorum; bump the SeaweedFS `ssd` group to `replicas: 3`. Same
-one-member-at-a-time **G-etcd** discipline.
+one-member-at-a-time **G-etcd** discipline. Apply the control-plane membership checklist above
+for both the add and the removal.
