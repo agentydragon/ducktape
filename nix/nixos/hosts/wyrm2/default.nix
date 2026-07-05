@@ -263,7 +263,7 @@ in
           # Restrict wlroots/gamescope DRM discovery to the display 5090:
           # gamescope naively opens the first card node (card0 = the compute
           # GPU, owned by seat0) and dies when logind refuses it.
-          export WLR_DRM_DEVICES=/dev/dri/by-path/pci-0000:02:00.0-card
+          export WLR_DRM_DEVICES=/dev/dri/by-path/pci-0000:01:00.0-card
           exec steam-gamescope
         ''}
         Type=Application
@@ -315,24 +315,30 @@ in
   # keyboard/mouse.
   # Rules 2+3: multiseat for the direct-display gaming plan — see
   # debug/atlas/direct_display_bringup.md.
-  # - The display 5090 (guest 02:00.0 = hostpci1; DP cable to the FV43U)
+  # - The display 5090 (guest 01:00.0 = hostpci0; DP cable to the FV43U)
   #   belongs to logind seat "seat-game": GDM spawns a separate greeter
   #   there, independent of the seat0 SPICE desktop. Do NOT
   #   mutter-device-ignore this card — the seat-game greeter must use it.
-  # - The other 5090 (01:00.0, headless compute) stays on seat0 but is
+  #   Why 01:00.0 and not 02:00.0: DXVK/Vulkan renders on the first-PCI GPU
+  #   (01:00.0) by default, and the two 5090s are identical (same
+  #   vendor:device 10de:2b85) so no selector can pin the game to a specific
+  #   one. Putting the monitor on 01:00.0 makes render==display==01:00.0 →
+  #   no cross-PCIe copy per frame (that copy was the ~15 FPS lag). See
+  #   debug/atlas/direct_display_bringup.md.
+  # - The other 5090 (02:00.0, headless compute) stays on seat0 but is
   #   hidden from mutter: multi-GPU mutter with NVIDIA cards crash-looped
   #   (SIGSEGV) as primary and rendered black as copy target (2026-07-02).
   # Gotcha: udev TAGS persist in the udev db — removing/changing these
   # rules needs a VM reboot to fully take effect.
   services.udev.extraRules = ''
     KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess"
-    SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:01:00.0", TAG+="mutter-device-ignore"
+    SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:02:00.0", TAG+="mutter-device-ignore"
   '';
   # seat-game device assignments must run at priority 72 — BEFORE systemd's
   # 73-seat-late.rules finalizes seat bookkeeping (extraRules lands in
   # 99-local.rules, which is too late: libinput saw ID_SEAT there but logind
   # denied TakeDevice to the seat-game greeter). Same slot loginctl-attach
-  # uses. Devices: the display 5090 (guest 02:00.0), and the TEX Shura
+  # uses. Devices: the display 5090 (guest 01:00.0), and the TEX Shura
   # (04d9:0532), which arrives via QEMU port-path passthrough ONLY when the
   # monitor's KVM routes its hub to USB-B — in this guest it is unambiguously
   # the seat-game keyboard. See debug/atlas/direct_display_bringup.md.
@@ -341,7 +347,7 @@ in
       name = "seat-game-udev-rules";
       destination = "/lib/udev/rules.d/72-seat-game.rules";
       text = ''
-        SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:02:00.0", ENV{ID_SEAT}="seat-game"
+        SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:01:00.0", ENV{ID_SEAT}="seat-game"
         # No KERNEL=="event*" filter: logind resolves an evdev node's seat via
         # its PARENT input-class device, so inputNN needs ID_SEAT too (event-
         # only assignment = libinput claims it but logind denies TakeDevice).
