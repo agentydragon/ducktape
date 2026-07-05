@@ -79,14 +79,25 @@ container:
     -e NODE_EXTRA_CA_CERTS=/egress-proxy-ca/ca-certificates.crt
     -v /egress-proxy-ca/ca-certificates.crt:/egress-proxy-ca/ca-certificates.crt:ro
     -v /egress-proxy-ca/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
-    -e DOCKER_CONFIG=/etc/oci-auth
-    -v /etc/oci-auth/config.json:/etc/oci-auth/config.json:ro
-  # Allow the runner's own CA + oci-auth bind mounts above through act_runner's volume
-  # gate (a Haku-authored workflow still cannot mount arbitrary dind-host paths).
-  # DOCKER_CONFIG points Bazel rules_oci at the puller creds for oci-cache.allegedly.works
-  # so base-image pulls resolve through the authenticated cache, not Docker Hub.
+  # NO oci-cache credential is injected. The oci-cache Zot registry is a public
+  # pull-through cache — anonymous by design; only its *public* HTTPRoute is fronted
+  # by a basic-auth sidecar. In-cluster consumers reach Zot's internal Service
+  # (oci-cache.oci-cache.svc.cluster.local, covered by the .svc.cluster.local NO_PROXY
+  # suffix above, and by the dind --registry-mirror in deployment.yaml) with no
+  # credential — so dind base-image pulls need no DOCKER_CONFIG.
+  # COUPLING: Bazel rules_oci does NOT go through the dind mirror (it has its own
+  # puller), so haku-state's MODULE.bazel oci.pull refs must point at the internal
+  # Service (insecure/HTTP), not oci-cache.allegedly.works — otherwise, with this cred
+  # gone, an explicit public-host ref 401s. Land that MODULE.bazel switch alongside this.
+  #
+  # (Was: -e DOCKER_CONFIG=/etc/oci-auth + a read-only config.json bind mount, to hand
+  # rules_oci the public-door puller creds. That made DOCKER_CONFIG a read-only mount,
+  # which broke `docker login` in every other job — `rename … device or resource busy`.
+  # Removed 2026-07-05; see cluster/docs/harbor_pullthrough.md.)
+  #
+  # Allow the runner's own CA bind mount above through act_runner's volume gate
+  # (a Haku-authored workflow still cannot mount arbitrary dind-host paths).
   valid_volumes:
     - /egress-proxy-ca/ca-certificates.crt
-    - /etc/oci-auth/config.json
 cache:
   enabled: false

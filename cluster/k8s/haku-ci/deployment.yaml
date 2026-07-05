@@ -159,14 +159,6 @@ spec:
             - name: egress-proxy-ca
               mountPath: /egress-proxy-ca
               readOnly: true
-            # Puller docker-config (auth for oci-cache.allegedly.works) mounted on dind
-            # so config.yaml's container.options can -v it into each spawned job
-            # container — where Bazel rules_oci actually runs — mirroring the egress-CA
-            # bind. (The runner process itself never runs bazel, so a runner-container
-            # mount would not reach the build.)
-            - name: oci-auth
-              mountPath: /etc/oci-auth
-              readOnly: true
           resources:
             requests:
               cpu: 200m
@@ -194,13 +186,3 @@ spec:
         - name: egress-proxy-ca
           configMap:
             name: haku-egress-proxy-ca-cert
-        # Reflector mirrors oci-cache's puller-credential Secret into this
-        # namespace (same name). Only its config.json key (a docker config with
-        # the puller auth for oci-cache.allegedly.works) is projected, at
-        # $DOCKER_CONFIG/config.json for Bazel rules_oci.
-        - name: oci-auth
-          secret:
-            secretName: puller-credential
-            items:
-              - key: config.json
-                path: config.json
