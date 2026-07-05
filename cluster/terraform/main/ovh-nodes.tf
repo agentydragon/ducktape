@@ -312,7 +312,9 @@ locals {
   # (G-all + G-losable) — never a blanket bootstrap. A renamed node gets a tier-named UserVolume
   # `local-path-ovh-${storage_tier}` mounted at `/var/mnt/local-path-ovh-${tier}`; its
   # nodePathMap path becomes `/var/mnt/local-path-ovh-${tier}/local-path`. First node: 103711.
-  data_disk_mount_renamed_nodes = toset([])
+  data_disk_mount_renamed_nodes = toset([
+    "ovh-ns103711", # rolled 2026-07-05; /dev/sdb repartitioned seaweedfs-data -> local-path-ovh-hdd
+  ])
 
   # Per-node user-volume patches. KS-5 nodes expose /dev/sdb; KS-GAME nodes
   # expose a second NVMe. Both are mounted at the same path so local-path-ovh
