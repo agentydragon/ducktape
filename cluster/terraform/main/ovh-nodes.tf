@@ -34,10 +34,13 @@ locals {
       storage_tier = "hdd"
     }
     "ovh-ns103711" = {
-      service_name    = var.kimsufi_service_name_1
-      hostname        = "ovh-ns103711"
-      nebula_ip       = "10.42.0.14"
-      role            = "controlplane"
+      service_name = var.kimsufi_service_name_1
+      hostname     = "ovh-ns103711"
+      nebula_ip    = "10.42.0.14"
+      # Stage 2 (OVH storage tiering): demoted control-plane -> worker (etcd moves onto
+      # NVMe). Data disk (/dev/sdb, seaweedfs-data) is preserved by the config-only
+      # demotion; the mount rename to local-path-ovh-hdd is a separate partition pass.
+      role            = "worker"
       apply_mode      = "staged_if_needing_reboot"
       install_disk    = "/dev/sda"
       data_disk_match = "disk.dev_path == '/dev/sdb'"
@@ -58,14 +61,32 @@ locals {
       storage_tier    = "ssd"
     }
     "ovh-ns104963" = {
-      service_name    = var.kimsufi_service_name_ks_game_1
-      hostname        = "ovh-ns104963"
-      nebula_ip       = "10.42.0.17"
-      role            = "worker"
+      service_name = var.kimsufi_service_name_ks_game_1
+      hostname     = "ovh-ns104963"
+      nebula_ip    = "10.42.0.17"
+      # Stage 2 (OVH storage tiering): promoted worker -> control-plane (etcd onto NVMe),
+      # data-preserving. storage_tier stays "ssd".
+      role            = "controlplane"
+      apply_mode      = "staged_if_needing_reboot"
       install_disk    = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256002V450RGN"
       data_disk_match = "disk.serial == 'BTPF8256009U450RGN'"
       zone            = "hil-ovh"
       storage_tier    = "ssd"
+    }
+    "ovh-ns102453" = {
+      service_name = var.kimsufi_service_name_cp0
+      hostname     = "ovh-ns102453"
+      nebula_ip    = "10.42.0.15"
+      # Stage 2 (OVH storage tiering): demoted control-plane -> worker (etcd onto NVMe).
+      # Moved from the former kimsufi_cp_servers (bootstrap-CP) map into kimsufi_servers so
+      # the role-aware config path applies a worker machine config. This node's data disk
+      # (/dev/sdb) is the biggest KS-5 disk — it becomes the primary HDD-bulk worker.
+      role            = "worker"
+      apply_mode      = "staged_if_needing_reboot"
+      install_disk    = "/dev/sda"
+      data_disk_match = "disk.dev_path == '/dev/sdb'"
+      zone            = "hil-ovh"
+      storage_tier    = "hdd"
     }
   }
   # Filter out unpurchased servers (empty service name)
@@ -73,18 +94,11 @@ locals {
     for k, v in local.kimsufi_servers : k => v if v.service_name != ""
   }
 
-  kimsufi_cp_servers = {
-    "ovh-ns102453" = {
-      service_name    = var.kimsufi_service_name_cp0
-      hostname        = "ovh-ns102453"
-      nebula_ip       = "10.42.0.15"
-      role            = "controlplane"
-      install_disk    = "/dev/sda"
-      data_disk_match = "disk.dev_path == '/dev/sdb'"
-      zone            = "hil-ovh"
-      storage_tier    = "hdd"
-    }
-  }
+  # Stage 2: emptied — the bootstrap CP (102453) was demoted into kimsufi_servers as a
+  # worker, and primary_controlplane_ip was repointed to 103656. Kept as an empty map so
+  # the kimsufi_cp_* resource shells (which for_each over active_kimsufi_cp_servers) reduce
+  # to zero instances rather than being deleted from the config.
+  kimsufi_cp_servers = {}
   active_kimsufi_cp_servers = {
     for k, v in local.kimsufi_cp_servers : k => v if v.service_name != ""
   }

@@ -277,9 +277,13 @@ servers). Mounts self-describing; bulk on HDD.
 **system disk** (`/dev/sda`), not the big data disk, so an HDD control-plane is equivalent
 whichever KS-5 node holds it — while the largest data disk (`102453`, 3.6 TB) is left as a
 **worker** so it can attract the most local-path/bulk pods without control-plane resource/I-O
-contention. `103656` is chosen because it is the current etcd leader, so it doubles as the
-migration anchor (below) with no opening `move-leader` needed. This means the TF
-primary/bootstrap control-plane must move `102453` → `103656`: `primary_controlplane_ip` and
+contention. `103656` is chosen as the anchor (the KS-5 node that stays control-plane through
+the whole reshuffle and holds the final HDD etcd seat). **Note (verified 2026-07-05): the
+current etcd leader is `102453`, NOT `103656`** — so an **opening `talosctl etcd move-leader`
+(`102453` → `103656`) IS required** before the reshuffle (an earlier draft wrongly said none
+was needed). `102453` is slated for demotion, and no membership step may touch the leader, so
+leadership must move onto the anchor first. This also means the TF primary/bootstrap
+control-plane must move `102453` → `103656`: `primary_controlplane_ip` and
 the `talos_machine_bootstrap`/kubeconfig endpoints (`infrastructure.tf`) point at `102453`
 today, and `102453` sits in its own `kimsufi_cp_servers` map — reassign both to `103656` and
 demote `102453` into the worker set. (Bootstrap already ran; guard the endpoint change so it
@@ -338,10 +342,11 @@ data disk to `local-path-ovh-{hdd,ssd}`. Rules: **one etcd membership change at 
 wipe (R) is independent of etcd (which lives on the install disk).
 
 Anchor = `103656` (the KS-5 node that stays control-plane throughout and holds the final HDD
-etcd seat). It is the current leader, so no opening `move-leader` is needed — just confirm
-leadership is on `103656` and keep it there; no membership step ever touches the leader. Do the
-TF primary/bootstrap reassignment (`102453` → `103656`, see Final state) before promoting any
-KS-GAME node.
+etcd seat). The current leader is `102453` (verified 2026-07-05), so the reshuffle **opens with
+`talosctl etcd move-leader <102453-member-id> --to <103656>`** to put leadership on the anchor;
+confirm leadership is on `103656` and keep it there, since no membership step may touch the
+leader. Then do the TF primary/bootstrap reassignment (`102453` → `103656`, see Final state)
+before promoting any KS-GAME node.
 
 **G-losable** (before wiping each node `N`): list the local-path volumes pinned to `N` and
 confirm the only non-replicated ones are the pre-accepted disposable disks (rename rule 3):
@@ -365,6 +370,11 @@ re-pinned `local-path-ovh` (`tier=hdd`) `allowedTopologies` lands it on a KS-5 n
 
 Per-node order — each fenced by **G-all** + **G-losable** before and after:
 
+0. **Opening moves (non-destructive).** `talosctl etcd move-leader 102453 → 103656` so the
+   anchor holds leadership; verify G-etcd leader = `103656`. Then apply the TF
+   primary/bootstrap reassignment (`primary_controlplane_ip → 103656` + the
+   `talos_machine_bootstrap`/`talos_cluster_kubeconfig` `ignore_changes` guards) — its plan
+   must show `talos_machine_bootstrap` unchanged.
 1. **`ovh-ns104952` → SSD control-plane.** Verify re-clone sources (**G-cnpg**), cordon+drain.
    Wipe+rename NVMe#2 → `local-path-ovh-ssd` (R). Promote to control-plane → joins etcd
    (learner → voter). **Post:** **G-etcd** shows 4 healthy members incl. `104952`;
