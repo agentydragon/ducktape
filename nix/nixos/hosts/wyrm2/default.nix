@@ -47,9 +47,6 @@ in
       "topology.kubernetes.io/region" = "proxmox";
       "topology.kubernetes.io/zone" = "atlas";
       "csi.proxmox.sinextra.dev/max-volume-attachments" = "29";
-      # TODO(2026-06-09): remove — Longhorn decommissioned (see the Longhorn disk TODO in
-      # cluster/terraform/main/proxmox-vms.tf).
-      "node.longhorn.io/create-default-disk" = "true";
     };
     # nodeTaints = [ "node-role.kubernetes.io/roaming=true:NoSchedule" ];
   };
@@ -314,10 +311,11 @@ in
     autoFormat = true;
     autoResize = true;
   };
-  # TODO(2026-06-09): remove this mount — Longhorn decommissioned; /dev/vdb (the 100GB
-  # Longhorn disk in cluster/terraform/main/proxmox-vms.tf) is unused. Drop together with
-  # that disk and the node.longhorn.io label above.
-  fileSystems."/var/mnt/longhorn" = {
+  # /dev/vdb (virtio1): 500GB SSD (local-zfs) — Steam library for the gaming seat.
+  # Repurposed from the decommissioned Longhorn disk. Games + Proton prefixes must be
+  # on SSD: the small-file prefix I/O crawls on the tank-hdd virtiofs share
+  # (/mnt/tankshare). See debug/atlas/direct_display_bringup.md.
+  fileSystems."/games" = {
     device = "/dev/vdb";
     fsType = "ext4";
     autoFormat = true;
@@ -425,6 +423,9 @@ in
     "d /home/agentydragon/.cache/bazel/_bazel_agentydragon/cache 0755 agentydragon users -"
     "d /home/agentydragon/.cache/bazel/_bazel_agentydragon/cache/repos 0755 agentydragon users -"
     "d /tmp 1777 root root -"
+    # Steam library mount (/dev/vdb) must be user-writable; the fresh ext4 root
+    # is created root:root, so chown it after the mount lands.
+    "d /games 0755 agentydragon users -"
   ];
 
   # virtiofs shared from Proxmox host (atlas)

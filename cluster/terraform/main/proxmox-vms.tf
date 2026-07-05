@@ -148,19 +148,20 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     size         = 500
     file_format  = "raw"
   } # local-path provisioner (/var/local-path-provisioner)
-  # TODO(2026-06-09): remove this disk — Longhorn was decommissioned and its k8s wiring
-  # deleted, so /dev/vdb is unused. Removing it DESTROYS the disk on `tofu apply`, so do
-  # it when wyrm2 is back online. Drop together with the `/var/mnt/longhorn` mount +
-  # `node.longhorn.io/create-default-disk` label in nix/nixos/hosts/wyrm2/default.nix and
-  # `openiscsi` in nix/nixos/modules/k8s-worker.nix.
+  # Repurposed from the decommissioned Longhorn disk (was 100GB, /var/mnt/longhorn).
+  # NOTE: the actual grow was applied imperatively via `qm` on atlas (see
+  # debug/atlas/direct_display_bringup.md); this keeps the TF source in sync.
+  # backup/replicate off — games are re-downloadable, not worth snapshotting.
   disk {
     datastore_id = var.storage
     interface    = "virtio1"
     iothread     = true
     discard      = "on"
-    size         = 100
+    size         = 500
+    backup       = false
+    replicate    = false
     file_format  = "raw"
-  } # Longhorn (/var/mnt/longhorn) — redundant, see TODO above
+  } # Steam library (/games) — SSD, gaming seat
   disk {
     datastore_id = var.storage
     interface    = "virtio2"
