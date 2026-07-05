@@ -255,9 +255,10 @@ greeter after password. Findings, in order:
    rendering in web views" OFF on NVIDIA+Wayland (driver-detection bug #13151).
    Fix: set registry key **`GPUAccelWebViewsV3=1`** in `~/.steam/registry.vdf`
    (found by `strings` on `steamui.so`; lives in `HKCU/Software/Valve/Steam`).
-   Result: UI "much much smoother". Baked into nix as a best-effort
-   home-manager activation re-assert (`home.activation.steamGpuWebViews`) —
-   Steam owns the file but preserves the key once set.
+   Result: UI "much much smoother". The setting is the in-Steam toggle
+   (Settings → Interface); a home-manager activation
+   (`home.activation.steamGpuWebViews`) only **warns** when it is not enabled —
+   it deliberately does not edit `registry.vdf`, which Steam owns and rewrites.
 
 5. **Garbled/corrupted blocks — Steam bug, not gamescope.** Confined to the Big
    Picture **button-hint footer bar**; never in the GDM greeter (mutter, same
