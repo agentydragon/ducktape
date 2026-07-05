@@ -1,22 +1,24 @@
 # Git repositories volume for Forgejo, ReadWriteMany so the two forgejo replicas
 # (helmrelease.yaml: replicaCount 2) can mount it concurrently. Provisioned here
 # rather than by the chart because the chart's default claim (gitea-shared-storage)
-# is RWO and accessModes are immutable — going HA required a fresh RWX claim, with
-# the existing git data copied over during the 2026-06-28 migration cutover.
+# is RWO and accessModes are immutable — going HA required a fresh RWX claim.
 #
-# SeaweedFS RWX multi-mount and the cross-node git filesystem semantics it depends
-# on (immediate write visibility, atomic exclusive-create for *.lock, atomic
-# rename) were verified on this cluster before the cutover.
+# On the SeaweedFS SSD tier (seaweedfs-ovh-ssd, KS-GAME NVMe) since the 2026-07
+# git-latency migration; the repos were copied here from the original HDD RWX claim
+# (forgejo-git-rwx on seaweedfs-ovh) via a one-time VolSync rsync-TLS cutover, now
+# retired. SeaweedFS RWX multi-mount and the cross-node git filesystem semantics it
+# depends on (immediate write visibility, atomic exclusive-create for *.lock, atomic
+# rename) were verified on this cluster before the HA cutover.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: forgejo-git-rwx
+  name: forgejo-git-rwx-ssd
   namespace: forgejo
   annotations:
-    description: Forgejo git repos on SeaweedFS, RWX for 2-replica HA (replaces RWO gitea-shared-storage)
+    description: Forgejo git repos on the SeaweedFS SSD tier, RWX for 2-replica HA
 spec:
   accessModes: ["ReadWriteMany"]
-  storageClassName: seaweedfs-ovh
+  storageClassName: seaweedfs-ovh-ssd
   resources:
     requests:
       storage: 50Gi
