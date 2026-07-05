@@ -191,7 +191,15 @@ in
       swaylock
     ];
   };
-  environment.sessionVariables.WLR_NO_HARDWARE_CURSORS = "1";
+  # wlroots (sway) on seat-game must be restricted to the display 5090 (guest
+  # 02:00.0 = card2); otherwise it also probes the seat0-owned compute-5090 /
+  # virtio card nodes and dies on logind's TakeDevice denial (the same trap
+  # gamescope hit — but sway respects WLR_DRM_DEVICES). Global is safe: only
+  # wlroots reads these, and the seat0 GNOME desktop uses mutter.
+  environment.sessionVariables = {
+    WLR_NO_HARDWARE_CURSORS = "1";
+    WLR_DRM_DEVICES = "/dev/dri/by-path/pci-0000:02:00.0-card";
+  };
 
   # Steam — games run on the RTX 5090s (direct display via seat-game, or
   # streamed to atlas via Sunshine/Moonlight).
@@ -254,6 +262,31 @@ in
       '').overrideAttrs
       (_: {
         passthru.providedSessions = [ "steam-debug" ];
+      })
+    )
+    # Debug variant of sway: logs sway -d output to /tmp/sway-session.log, since
+    # a failed session Exec dies silently under GDM (~60s, zero journal output).
+    # Remove once sway on the seat is confirmed working.
+    (
+      (pkgs.writeTextDir "share/wayland-sessions/sway-debug.desktop" ''
+        [Desktop Entry]
+        Name=Sway (debug)
+        Comment=sway -d with logging to /tmp/sway-session.log
+        Exec=${pkgs.writeShellScript "sway-debug" ''
+          exec > /tmp/sway-session.log 2>&1
+          set -x
+          date
+          id
+          echo "seat=$XDG_SEAT vt=$XDG_VTNR session=$XDG_SESSION_ID"
+          ls -l /dev/dri/by-path/
+          export WLR_DRM_DEVICES=/dev/dri/by-path/pci-0000:02:00.0-card
+          export WLR_NO_HARDWARE_CURSORS=1
+          exec sway -d
+        ''}
+        Type=Application
+      '').overrideAttrs
+      (_: {
+        passthru.providedSessions = [ "sway-debug" ];
       })
     )
   ];
