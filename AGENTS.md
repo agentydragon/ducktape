@@ -99,9 +99,11 @@ Forgejo tokens and credentials consumed by `haku-ci` or Haku pods must be produc
 the in-cluster GitOps Terraform controller, not minted, copied, or synchronized
 manually. Change the Terraform/GitOps wiring under <tf/gitops/haku-state> and the Flux
 wrapper under <cluster/k8s/forgejo/haku-state> so reconcile creates and repairs the
-Kubernetes Secrets and Forgejo Actions secrets. Manual `curl`, `tea`, or `kubectl`
-edits are only incident diagnostics; follow them with a PR that makes the controller own
-the state.
+Kubernetes Secrets and Forgejo Actions secrets. If live token state is stale, fix that
+Terraform/controller wiring and reconcile it; do not repair drift by updating live
+Forgejo repo Actions secrets or Kubernetes Secrets directly. Manual `curl`, `tea`, or
+`kubectl` edits are only incident diagnostics; follow them with a PR that makes the
+controller own the state.
 
 ## Flux Kustomization Wiring
 
