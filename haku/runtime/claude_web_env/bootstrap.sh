@@ -43,6 +43,12 @@ else
   echo "haku warning: haku-forgejo-tea secret is absent; tea is installed but not logged in yet"
 fi
 
+# Canonical himalaya config recipe (haku/base/sources/mailbox.md points here).
+# Verified against the live server (himalaya 1.1.0 + oauth2 feature): `pkce` and
+# `scope` are required by the config schema; auth-url/token-url are schema-
+# required but never contacted; the token is embedded as a `raw` secret because
+# the `cmd` secret form fails ("cannot get secret from command: empty output"
+# in the refresh branch) — hence re-materializing per session as the JWT rotates.
 if mail_tok=$(kubectl -n "$ns" get secret haku-mail-token -o jsonpath='{.data.jwt}' 2>/dev/null | base64 -d) && [ -n "$mail_tok" ]; then
   install -d -m700 "$HOME/.config/himalaya"
   cat >"$HOME/.config/himalaya/config.toml" <<EOF

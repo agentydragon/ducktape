@@ -17,46 +17,18 @@ like any other untrusted source material.
 ## Reading it (himalaya)
 
 `himalaya` is in your devtools closure (the flake builds it with the non-default
-`oauth2` cargo feature — stock nixpkgs lacks it and fails config parse with
-"missing `oauth2` cargo feature"). It speaks IMAP to the mailserver's
-**cluster-internal** listener (`haku-mailbox.haku-mailbox.svc.cluster.local:1143`),
-authenticating with your rotating Authentik mail JWT via SASL OAUTHBEARER (minted
-for the `stalwart-haku` provider — your k8s JWT will not work here, different
-audience). From runtimes outside the cluster (e.g. the web home), that listener is
-unreachable — use the JMAP fallback below, or relay IMAP over
+`oauth2` cargo feature — stock nixpkgs lacks it and fails config parse). It speaks
+IMAP to the mailserver's **cluster-internal** listener
+(`haku-mailbox.haku-mailbox.svc.cluster.local:1143`) via SASL OAUTHBEARER with your
+rotating Authentik mail JWT. From runtimes outside the cluster (e.g. the web home)
+that listener is unreachable — use the JMAP fallback below, or relay IMAP over
 `kubectl exec -i <pod>` with a stdio↔1143 pump if you specifically need IMAP.
 
-**Generate the config per run** (the JWT rotates; embed the current token as a
-`raw` secret — the `cmd` secret form errors "cannot get secret from command:
-empty output" in himalaya 1.1.0's refresh branch; `raw` is verified working):
-
-```bash
-MAIL_TOK=$(kubectl -n haku-sandbox get secret haku-mail-token -o jsonpath='{.data.jwt}' | base64 -d)
-mkdir -p ~/.config/himalaya
-cat > ~/.config/himalaya/config.toml << CFG
-[accounts.haku]
-default = true
-email = "haku@allegedly.works"
-backend.type = "imap"
-backend.host = "haku-mailbox.haku-mailbox.svc.cluster.local"
-backend.port = 1143
-backend.encryption.type = "none"
-backend.login = "haku@allegedly.works"
-backend.auth.type = "oauth2"
-backend.auth.method = "oauthbearer"
-backend.auth.pkce = false
-backend.auth.scope = "openid"
-backend.auth.client-id = "stalwart-haku"
-backend.auth.auth-url = "https://auth.allegedly.works/application/o/authorize/"
-backend.auth.token-url = "https://auth.allegedly.works/application/o/token/"
-backend.auth.access-token.raw = "$MAIL_TOK"
-CFG
-```
-
-(`pkce` and `scope` are required by the 1.1.0 config schema; `auth-url`/`token-url`
-are schema-required but never contacted — the raw access token short-circuits the
-OAuth flow. All of this verified against the live server, IMAP greeting through
-`envelope list`.)
+**The config lands automatically at session start** —
+`haku/runtime/claude_web_env/bootstrap.sh` materializes
+`~/.config/himalaya/config.toml` from the `haku-mail-token` secret and is the
+canonical recipe (schema gotchas documented there); other runtimes replicate that
+block. If the token rotates mid-session, re-run the bootstrap.
 
 ```bash
 himalaya envelope list -o json          # newest mail, machine-readable
