@@ -138,12 +138,16 @@ spec:
       enabled: true
       replicas: 1
       resources:
+        # No CPU limit: this controller syncs an informer cache over ALL resources
+        # (--skipResourceFilters=true) + runs background scans; the object
+        # deserialization is CPU-heavy. A 100m limit throttled cache sync to ~83s,
+        # blowing the leader-election lease deadline -> crashloop. Matches the
+        # admission-controller (also uncapped CPU). Memory raised to hold the cache.
         limits:
-          cpu: 100m
-          memory: 128Mi
+          memory: 512Mi
         requests:
-          cpu: 10m
-          memory: 32Mi
+          cpu: 100m
+          memory: 256Mi
 
     # CRD installation
     crds:
