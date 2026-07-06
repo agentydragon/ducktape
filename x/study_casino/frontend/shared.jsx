@@ -54,6 +54,75 @@ export function getElapsedSec(session, now = Date.now()) {
   return Math.max(0, ms / 1000);
 }
 
+// Server returns server-shaped session fields (id, subject, seconds,
+// ended_at_ms); the JSX layer uses camelCase (endedAt). Shared by
+// use_casino.js (own sessions) and StatsView's admin cross-user picker.
+export function mapSessionRead(row) {
+  return {
+    id: row.id,
+    subject: row.subject,
+    seconds: Math.floor(row.seconds ?? 0),
+    endedAt: Math.floor(row.ended_at_ms ?? 0),
+  };
+}
+
+export function bucketBySubject(sessions) {
+  const bySubject = {};
+  SUBJECTS.forEach((s) => (bySubject[s] = 0));
+  sessions.forEach((s) => {
+    bySubject[s.subject] = (bySubject[s.subject] || 0) + s.seconds;
+  });
+  return bySubject;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const WEEK_MS = 7 * DAY_MS;
+const DAILY_BUCKET_COUNT = 30;
+const WEEKLY_BUCKET_COUNT = 12;
+
+function startOfLocalDay(ms) {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function startOfLocalWeek(ms) {
+  const d = new Date(startOfLocalDay(ms));
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // back to Monday
+  return d.getTime();
+}
+
+const BUCKET_DATE_FMT = new Intl.DateTimeFormat([], { month: "short", day: "numeric" });
+
+/** Aggregate sessions into fixed-width trailing time buckets ("day" or
+ *  "week", in the browser's local timezone) for the study-time graph. */
+export function bucketStudyTime(sessions, granularity) {
+  const daily = granularity === "day";
+  const count = daily ? DAILY_BUCKET_COUNT : WEEKLY_BUCKET_COUNT;
+  const step = daily ? DAY_MS : WEEK_MS;
+  const latestStart = daily ? startOfLocalDay(Date.now()) : startOfLocalWeek(Date.now());
+
+  const buckets = Array.from({ length: count }, (_, i) => ({
+    start: latestStart - (count - 1 - i) * step,
+    seconds: 0,
+  }));
+  const indexByStart = new Map(buckets.map((b, i) => [b.start, i]));
+
+  sessions.forEach((s) => {
+    const start = daily ? startOfLocalDay(s.endedAt) : startOfLocalWeek(s.endedAt);
+    const idx = indexByStart.get(start);
+    if (idx !== undefined) buckets[idx].seconds += s.seconds;
+  });
+
+  return buckets.map((b) => ({
+    key: b.start,
+    label: daily
+      ? BUCKET_DATE_FMT.format(b.start)
+      : `${BUCKET_DATE_FMT.format(b.start)}–${BUCKET_DATE_FMT.format(b.start + 6 * DAY_MS)}`,
+    seconds: b.seconds,
+  }));
+}
+
 export function SectionTitle({ children, small }) {
   return (
     <div
@@ -528,5 +597,146 @@ export function SessionRow({ session, isLast, offline, onEdit, onDelete }) {
         </div>
       </div>
     </div>
+  );
+}
+
+export function SubjectBreakdownBars({ sessions }) {
+  const bySubject = bucketBySubject(sessions);
+  const maxVal = Math.max(1, ...Object.values(bySubject));
+  return (
+    <div className="panel" style={{ padding: 20, marginBottom: 40 }}>
+      {SUBJECTS.map((s) => {
+        const val = bySubject[s] || 0;
+        const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
+        return (
+          <div key={s} style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+              <span style={{ color: COLORS.cream }}>{s}</span>
+              <span className="mono" style={{ color: COLORS.creamDim }}>
+                {fmtHoursMin(val)}
+              </span>
+            </div>
+            <div style={{ height: 6, background: "rgba(0,0,0,0.4)", borderRadius: 3, overflow: "hidden" }}>
+              <div
+                style={{
+                  height: "100%",
+                  width: `${pct}%`,
+                  background: val > 0 ? `linear-gradient(90deg, ${COLORS.goldDim}, ${COLORS.gold})` : "transparent",
+                  transition: "width 0.4s",
+                }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const GRAPH_GRANULARITIES = [
+  { key: "day", label: "Daily" },
+  { key: "week", label: "Weekly" },
+];
+
+export function StudyTimeGraph({ sessions }) {
+  const [granularity, setGranularity] = useState("day");
+  const [hoverKey, setHoverKey] = useState(null);
+  const buckets = bucketStudyTime(sessions, granularity);
+  const maxSeconds = Math.max(1, ...buckets.map((b) => b.seconds));
+  const hovered = buckets.find((b) => b.key === hoverKey) ?? null;
+
+  return (
+    <div className="panel" style={{ padding: 20, marginBottom: 40 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 18,
+          flexWrap: "wrap",
+          gap: 10,
+        }}
+      >
+        <div style={{ fontSize: 12, color: COLORS.creamDim }}>
+          {hovered ? (
+            <>
+              <span style={{ color: COLORS.gold }}>{hovered.label}</span>: {fmtHoursMin(hovered.seconds)}
+            </>
+          ) : (
+            `Last ${buckets.length} ${granularity === "day" ? "days" : "weeks"}`
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 4 }}>
+          {GRAPH_GRANULARITIES.map((g) => (
+            <button
+              key={g.key}
+              onClick={() => setGranularity(g.key)}
+              className="btn"
+              style={{
+                padding: "4px 14px",
+                fontSize: 11,
+                background: granularity === g.key ? COLORS.gold : "transparent",
+                color: granularity === g.key ? COLORS.feltDeep : COLORS.gold,
+              }}
+            >
+              {g.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "flex-end", gap: granularity === "day" ? 3 : 10, height: 130 }}>
+        {buckets.map((b) => {
+          const pct = b.seconds > 0 ? Math.max((b.seconds / maxSeconds) * 100, 3) : 0;
+          return (
+            <div
+              key={b.key}
+              onMouseEnter={() => setHoverKey(b.key)}
+              onMouseLeave={() => setHoverKey((k) => (k === b.key ? null : k))}
+              title={`${b.label}: ${fmtHoursMin(b.seconds)}`}
+              style={{ flex: 1, minWidth: 2, height: "100%", display: "flex", alignItems: "flex-end" }}
+            >
+              <div
+                style={{
+                  width: "100%",
+                  height: `${pct}%`,
+                  borderRadius: "2px 2px 0 0",
+                  background:
+                    b.key === hoverKey
+                      ? `linear-gradient(180deg, ${COLORS.cream}, ${COLORS.goldBright})`
+                      : b.seconds > 0
+                        ? `linear-gradient(180deg, ${COLORS.goldBright}, ${COLORS.goldDim})`
+                        : "rgba(255,255,255,0.06)",
+                  transition: "height 0.3s",
+                }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div
+        style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 10, color: COLORS.creamDim }}
+      >
+        <span>{buckets[0]?.label}</span>
+        <span>{buckets[buckets.length - 1]?.label}</span>
+      </div>
+    </div>
+  );
+}
+
+/** "By subject" totals + daily/weekly study-time graph for one session list.
+ *  Shared by StatsView's own data and its admin cross-user picker. */
+export function StudyHabitsSections({ sessions }) {
+  if (sessions.length === 0) {
+    return <div style={{ fontSize: 13, color: COLORS.creamDim, marginBottom: 40 }}>No sessions logged yet.</div>;
+  }
+  return (
+    <>
+      <SectionTitle>By Subject</SectionTitle>
+      <SubjectBreakdownBars sessions={sessions} />
+
+      <SectionTitle>Over Time</SectionTitle>
+      <StudyTimeGraph sessions={sessions} />
+    </>
   );
 }

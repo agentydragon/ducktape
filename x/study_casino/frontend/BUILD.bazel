@@ -46,6 +46,7 @@ js_library(
     srcs = ["use_casino.js"],
     deps = [
         ":node_modules/react",
+        ":shared",
         ":sync",
     ],
 )
@@ -122,6 +123,7 @@ js_library(
     deps = [
         ":node_modules/react",
         ":shared",
+        ":sync",
     ],
 )
 

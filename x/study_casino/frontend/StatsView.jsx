@@ -1,11 +1,20 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 
-import { COLORS, SUBJECTS, fmtHoursMin, SectionTitle, StatCard, AddPastSessionForm, SessionRow } from "./shared.jsx";
+import {
+  COLORS,
+  fmtHoursMin,
+  mapSessionRead,
+  SectionTitle,
+  StatCard,
+  AddPastSessionForm,
+  SessionRow,
+  StudyHabitsSections,
+} from "./shared.jsx";
+import { fetchAdminUserState } from "./sync.js";
 
 export function StatsView({
   offline,
   totalStudied,
-  bySubject,
   sessions,
   credits,
   tokens,
@@ -16,8 +25,8 @@ export function StatsView({
   addPastSession,
   editSession,
   deleteSession,
+  isAdmin,
 }) {
-  const maxVal = Math.max(1, ...Object.values(bySubject));
   const totalEarnedFromStudy = Math.floor(totalStudied / 60);
   const totalSpent = prizeLog.reduce((a, p) => a + p.cost, 0);
 
@@ -26,6 +35,36 @@ export function StatsView({
   const [importError, setImportError] = useState("");
   const [resetStage, setResetStage] = useState(0);
   const resetTimerRef = useRef(null);
+
+  const [viewingUser, setViewingUser] = useState(() =>
+    isAdmin ? (new URLSearchParams(window.location.search).get("user") ?? "") : ""
+  );
+  const [targetSessions, setTargetSessions] = useState([]);
+  const [targetError, setTargetError] = useState(null);
+  const viewingOther = isAdmin && viewingUser.trim().length > 0;
+
+  const refreshTarget = useCallback(async () => {
+    const user = viewingUser.trim();
+    if (!isAdmin || !user) {
+      setTargetSessions([]);
+      setTargetError(null);
+      return;
+    }
+    try {
+      const state = await fetchAdminUserState(user);
+      setTargetSessions(state.sessions.map(mapSessionRead));
+      setTargetError(null);
+    } catch (e) {
+      setTargetError(`Failed to load sessions for ${user}: ${e.message}`);
+      setTargetSessions([]);
+    }
+  }, [isAdmin, viewingUser]);
+
+  useEffect(() => {
+    refreshTarget();
+  }, [refreshTarget]);
+
+  const habitsSessions = viewingOther ? targetSessions : sessions;
 
   const handleImport = () => {
     try {
@@ -74,33 +113,50 @@ export function StatsView({
         <StatCard label="Tokens" value={tokens.toLocaleString()} accent />
       </div>
 
-      <SectionTitle>By Subject</SectionTitle>
-      <div className="panel" style={{ padding: 20, marginBottom: 40 }}>
-        {SUBJECTS.map((s) => {
-          const val = bySubject[s] || 0;
-          const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
-          return (
-            <div key={s} style={{ marginBottom: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
-                <span style={{ color: COLORS.cream }}>{s}</span>
-                <span className="mono" style={{ color: COLORS.creamDim }}>
-                  {fmtHoursMin(val)}
-                </span>
-              </div>
-              <div style={{ height: 6, background: "rgba(0,0,0,0.4)", borderRadius: 3, overflow: "hidden" }}>
-                <div
-                  style={{
-                    height: "100%",
-                    width: `${pct}%`,
-                    background: val > 0 ? `linear-gradient(90deg, ${COLORS.goldDim}, ${COLORS.gold})` : "transparent",
-                    transition: "width 0.4s",
-                  }}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      {isAdmin && (
+        <div
+          className="panel"
+          style={{ padding: 12, marginBottom: 18, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}
+        >
+          <span style={{ color: COLORS.creamDim, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+            Viewing habits for
+          </span>
+          <input
+            value={viewingUser}
+            onChange={(e) => setViewingUser(e.target.value)}
+            placeholder="(yourself)"
+            style={{ minWidth: 200 }}
+          />
+          <button className="btn" onClick={refreshTarget}>
+            Reload
+          </button>
+        </div>
+      )}
+
+      {viewingOther && (
+        <div style={{ fontSize: 11, color: COLORS.creamDim, marginBottom: 16 }}>
+          Showing the "By Subject" and "Over Time" graphs below for{" "}
+          <span style={{ color: COLORS.gold }}>{viewingUser.trim()}</span>. The ledger, session editor, and data
+          controls above and below still apply to your own account.
+        </div>
+      )}
+
+      {targetError && (
+        <div
+          style={{
+            background: "rgba(180,40,40,0.25)",
+            border: `1px solid ${COLORS.red}`,
+            padding: "10px 14px",
+            marginBottom: 16,
+            color: COLORS.cream,
+            fontSize: 13,
+          }}
+        >
+          {targetError}
+        </div>
+      )}
+
+      <StudyHabitsSections sessions={habitsSessions} />
 
       <SectionTitle>Add a past session</SectionTitle>
       <div style={{ fontSize: 12, color: COLORS.creamDim, marginBottom: 10 }}>

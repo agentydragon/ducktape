@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { SyncIcon } from "./SyncIcon.jsx";
 import { useCasino } from "./use_casino.js";
 import { useUrlState } from "./use_url_state.js";
-import { COLORS, SUBJECTS, fmtClock, getElapsedSec } from "./shared.jsx";
+import { COLORS, fmtClock, getElapsedSec } from "./shared.jsx";
 import { StudyView } from "./StudyView.jsx";
 import { PrizesView } from "./PrizesView.jsx";
 import { StatsView } from "./StatsView.jsx";
@@ -73,15 +73,6 @@ export default function StudyCasino() {
   }, [sessions]);
 
   const totalStudied = useMemo(() => sessions.reduce((a, s) => a + s.seconds, 0), [sessions]);
-
-  const bySubject = useMemo(() => {
-    const m = {};
-    SUBJECTS.forEach((s) => (m[s] = 0));
-    sessions.forEach((s) => {
-      m[s.subject] = (m[s.subject] || 0) + s.seconds;
-    });
-    return m;
-  }, [sessions]);
 
   return (
     <div
@@ -508,7 +499,6 @@ export default function StudyCasino() {
           <StatsView
             offline={offline}
             totalStudied={totalStudied}
-            bySubject={bySubject}
             sessions={sessions}
             credits={credits}
             tokens={tokens}
@@ -519,6 +509,7 @@ export default function StudyCasino() {
             addPastSession={addPastSession}
             editSession={editSession}
             deleteSession={deleteSession}
+            isAdmin={isAdmin}
           />
         )}
       </main>

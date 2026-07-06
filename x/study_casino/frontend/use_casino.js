@@ -15,6 +15,7 @@
 import { useEffect, useState } from "react";
 
 import { casinoSync, useCasinoState, useSyncStatus, useMe, useDeploymentInfo } from "./sync.js";
+import { mapSessionRead } from "./shared.jsx";
 
 const ACTIVE_SESSION_LS_KEY = "casino:active_session";
 
@@ -81,12 +82,7 @@ export function useCasino() {
 
   // Server returns server-shaped fields (ended_at_ms, at_ms); the JSX layer
   // uses camelCase aliases (endedAt, at) — translate at this seam.
-  const sessions = (state?.sessions ?? []).map((row) => ({
-    id: row.id,
-    subject: row.subject,
-    seconds: Math.floor(row.seconds ?? 0),
-    endedAt: Math.floor(row.ended_at_ms ?? 0),
-  }));
+  const sessions = (state?.sessions ?? []).map(mapSessionRead);
   const prizes = (state?.prizes ?? []).map((row) => ({
     id: row.id,
     name: row.name,
