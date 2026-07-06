@@ -74,6 +74,7 @@ nix/**/result
 # Project-specific
 **/.claude/settings.local.json
 **/.claude/scheduled_tasks.lock
+.coord/
 worktrees
 cluster/.git
 cluster/.claude/

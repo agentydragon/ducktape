@@ -114,6 +114,16 @@ haku-ui renders its own launch dialog and posts `{type: "requestLaunch", id, pro
 shell pops its top-layer confirm showing the prompt **verbatim**, and only then fires with
 the server-side bearer (see <../README.md> → _The capability tier_).
 
+### Tool calls — routed through haku-ui backend, approved in trusted chrome
+
+The `<tool-call>` affordance does **not** give the iframe a direct console bridge verb in v1.
+haku-ui frontend posts to its own same-origin backend, that backend reads
+`tool_requests/<id>.yaml` from haku-state and calls haku-console's
+`POST /api/approvals/tool-calls` with the configured console API token. If approval is
+required, haku-console notifies its trusted frontend (`/api/approvals/ws`, with REST catch-up from
+`/api/approvals/pending`) and renders the top-layer approval dialog itself. The iframe can request a
+tool call, but cannot approve one or forge console chrome.
+
 ### `requestGeolocation` / `startGeolocationWatch` — read the operator's location (standing grant)
 
 For a one-shot read, haku-ui posts `{type: "requestGeolocation", id, options?}` (the

@@ -51,11 +51,27 @@ py_library(
 )
 
 py_library(
+    name = "mcp_approval",
+    srcs = ["mcp_approval.py"],
+    deps = [
+        ":config",
+        ":deps",
+        "@pypi//canonicaljson",
+        "@pypi//fastapi",
+        "@pypi//fastapi_csrf_protect",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
     name = "app",
     srcs = ["app.py"],
     deps = [
         ":capabilities",
         ":config",
+        ":mcp_approval",
         ":models",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
@@ -122,6 +138,22 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//respx",
+    ],
+)
+
+py_test(
+    name = "test_mcp_approval",
+    srcs = ["test_mcp_approval.py"],
+    deps = [
+        ":app",
+        ":config",
+        ":conftest",
+        ":mcp_approval",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

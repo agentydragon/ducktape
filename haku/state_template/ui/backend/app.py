@@ -25,18 +25,32 @@ from __future__ import annotations
 
 import contextlib
 import datetime as dt
+import hashlib
 import logging
 import re
 from collections.abc import Awaitable, Callable
 from typing import Annotated
 
+import canonicaljson
+import httpx
 import uvicorn
 import yaml
 from config import Settings
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from forgejo import Forgejo
-from models import FeedbackRequest, LocationRequest, MetaResponse, RepoBlob, RepoTree, RepoTreeEntry, ResponseRequest
+from models import (
+    FeedbackRequest,
+    LocationRequest,
+    MetaResponse,
+    RepoBlob,
+    RepoTree,
+    RepoTreeEntry,
+    ResponseRequest,
+    ToolCallRecord,
+    ToolRequestCallRequest,
+    ToolRequestDoc,
+)
 from reads import read_scan_time
 
 logger = logging.getLogger(__name__)
@@ -61,6 +75,12 @@ def _blob_sha(sha: str) -> str:
     if not re.fullmatch(r"[0-9a-f]{4,64}", sha):
         raise HTTPException(status_code=400, detail=f"invalid blob sha: {sha!r}")
     return sha
+
+
+def _state_request_id(value: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", value):
+        raise HTTPException(status_code=400, detail=f"invalid tool request id: {value!r}")
+    return value
 
 
 def _forgejo(request: Request) -> Forgejo:
@@ -185,6 +205,44 @@ def create_app(settings: Settings) -> FastAPI:
         sha_list = [_blob_sha(s) for s in shas.split(",") if s]
         contents = await forgejo.blobs(sha_list)
         return [RepoBlob(sha=s, content=c.decode()) for s, c in zip(sha_list, contents, strict=True)]
+
+    # --- Operator-approved tool calls ------------------------------------------
+    # haku-state stores only the authored request. haku-console owns authorization,
+    # execution, audit, and results; this backend is a same-origin proxy for haku-ui.
+    @app.post("/api/tool-requests/{state_request_id}/call")
+    async def call_tool_request(
+        state_request_id: str, req: ToolRequestCallRequest, forgejo: ForgejoDep, operator: Operator = None
+    ) -> ToolCallRecord:
+        if settings.haku_console_api_url is None:
+            raise HTTPException(status_code=503, detail="haku-console tool-call API is not configured")
+        request_id = _state_request_id(state_request_id)
+        path = f"tool_requests/{request_id}.yaml"
+        raw = await forgejo.read_yaml(path)
+        if raw is None:
+            raise HTTPException(status_code=404, detail=f"tool request not found: {path}")
+        doc = ToolRequestDoc.model_validate(raw)
+        if doc.state_request_id != request_id:
+            raise HTTPException(status_code=400, detail="tool request file id does not match path")
+        digest = hashlib.sha256(canonicaljson.encode_canonical_json(doc.model_dump(mode="json"))).hexdigest()
+        payload = {
+            "server_id": doc.server_id,
+            "tool_name": doc.tool_name,
+            "arguments": doc.arguments,
+            "rationale": doc.rationale,
+            "request_title": doc.title,
+            "state_request_id": doc.state_request_id,
+            "client_request_id": f"haku-state:{path}@sha256:{digest}",
+            "wait_for_ms": req.wait_for_ms,
+        }
+        headers: dict[str, str] = {}
+        if settings.haku_console_api_token is not None:
+            headers["Authorization"] = f"Bearer {settings.haku_console_api_token.get_secret_value()}"
+        logger.info("tool request %s submitted to console by %s", request_id, operator or "<unknown>")
+        async with httpx.AsyncClient(base_url=settings.haku_console_api_url, timeout=65.0) as http:
+            resp = await http.post("/api/approvals/tool-calls", json=payload, headers=headers)
+        if not resp.is_success:
+            raise HTTPException(status_code=resp.status_code, detail=resp.text[:1000])
+        return ToolCallRecord.model_validate(resp.json())
 
     # --- trace tier: operator feedback recorded into haku-state -----------------
     # A feedback note is an intake/ file Haku reduces on its next run. (Operator status/affordance

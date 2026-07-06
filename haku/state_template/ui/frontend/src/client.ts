@@ -2,7 +2,7 @@ import { parse } from "yaml";
 
 import type { GeoPosition } from "./bridge.ts";
 import { docsUnder, invalidateTree, repoFile } from "./repo.ts";
-import type { FeedbackContext, MetaResponse, RunManifest, RunsResponse } from "./types.ts";
+import type { FeedbackContext, MetaResponse, RunManifest, RunsResponse, ToolCallRecord } from "./types.ts";
 
 // Same-origin JSON client: the FastAPI backend serves this bundle and the API.
 // FastAPI error responses are `{detail: string}`; surface that real reason.
@@ -56,6 +56,16 @@ export async function recordLocation(position: GeoPosition): Promise<void> {
     }),
   });
   if (!res.ok) throw new Error(await detail(res, "Failed to record location"));
+}
+
+export async function callToolRequest(stateRequestId: string, waitForMs = 10_000): Promise<ToolCallRecord> {
+  const res = await fetch(`/api/tool-requests/${encodeURIComponent(stateRequestId)}/call`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ wait_for_ms: waitForMs }),
+  });
+  if (!res.ok) throw new Error(await detail(res, "Failed to request tool call"));
+  return (await res.json()) as ToolCallRecord;
 }
 
 // Responses log (plans/ui-authoring-architecture → feedback loop): a keyed current-state file per

@@ -58,3 +58,14 @@ class Settings(BaseSettings):
     # The console never renders Haku's UI itself. See docs/containment.md.
     haku_ui_url: str
     auth_origin: str = "https://auth.allegedly.works"
+
+    # Operator-approved MCP tool-call substrate. The catalog path points at the
+    # connected MCP server registry mounted/configured into the console; each server's
+    # tool schema is reflected from the MCP server itself. The store is the
+    # single-replica durable ledger. If the store path is unset, tests/local dev use
+    # in-memory state.
+    mcp_approval_catalog_path: Path | None = None
+    mcp_approval_store_path: Path | None = None
+    # Optional bearer accepted from Haku / haku-ui backend for backend-to-backend calls.
+    # Browser/operator calls still rely on the Authentik session at the ingress.
+    mcp_approval_api_token: SecretStr | None = None

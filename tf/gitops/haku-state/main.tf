@@ -91,6 +91,28 @@ resource "kubernetes_secret" "haku_state_git_write" {
   }
 }
 
+resource "random_password" "haku_console_tool_call_api" {
+  length  = 48
+  special = false
+}
+
+# Shared submit/read token for the haku-ui backend -> haku-console tool-call API.
+# It does NOT approve calls; approval stays in trusted console chrome. Haku can see
+# this through haku-ui/Haku-owned pods, which is fine: it lets Haku request and sweep
+# console tool calls but not execute an approval-gated call by itself.
+resource "kubernetes_secret" "haku_console_tool_call_api" {
+  for_each = toset(["haku-sandbox", "haku-console"])
+
+  metadata {
+    name      = "haku-console-tool-call-api"
+    namespace = each.value
+  }
+
+  data = {
+    token = random_password.haku_console_tool_call_api.result
+  }
+}
+
 # Source credential for forgejo-token-rotation. The rotator uses Basic auth only
 # to mint full-account API tokens, then writes the distributed `tea` configs as
 # SOPS outputs in git.

@@ -3,6 +3,7 @@ import type { PointerEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import type { GeolocationOptions } from "./bridge.ts";
+import type { PendingApproval } from "./client.ts";
 import { ACTION_COLOR } from "./theme.ts";
 
 // The escalation the shell is asking the operator to approve — the **actual action** the
@@ -14,7 +15,8 @@ export type Escalation =
   | { kind: "openLink"; url: string }
   | { kind: "launch"; id: string; prompt: string }
   | { kind: "geolocation"; id: string; options?: GeolocationOptions }
-  | { kind: "geolocationWatch"; id: string; options?: GeolocationOptions };
+  | { kind: "geolocationWatch"; id: string; options?: GeolocationOptions }
+  | { kind: "toolApproval"; approval: PendingApproval };
 
 interface Rendered {
   title: string;
@@ -43,6 +45,26 @@ function render(action: Escalation): Rendered {
         title: "Allow Haku to use your location?",
         body: "Haku's UI is asking to use your device location, including tracking it continuously. Allowing lets it read your location whenever it asks — until you withdraw from the console panel (the ⚙ button, top-right). Your browser may prompt too. Haku is assumed adversarial; only allow when you trust why it's asked.",
         approveLabel: "Allow",
+      };
+    case "toolApproval":
+      return {
+        title: action.approval.title,
+        body: `Approve ${action.approval.server_title}.${action.approval.tool_name} for ${action.approval.caller_principal}?`,
+        preview: {
+          text: JSON.stringify(
+            {
+              server_id: action.approval.server_id,
+              tool_name: action.approval.tool_name,
+              rationale: action.approval.rationale,
+              arguments: action.approval.arguments,
+              tool_call_id: action.approval.tool_call_id,
+            },
+            null,
+            2
+          ),
+          mono: true,
+        },
+        approveLabel: "Run tool",
       };
   }
 }

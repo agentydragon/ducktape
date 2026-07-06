@@ -70,6 +70,31 @@ export interface RunsResponse {
   runs: RunManifest[];
 }
 
+// Operator-approved tool calls. haku-state stores the authored request under
+// tool_requests/*.yaml; haku-console owns authorization, execution, audit, and results.
+export type ToolCallStatus = "approval_required" | "running" | "ok" | "error" | "denied" | "timed_out" | "not_allowed";
+
+export interface ToolCallRecord {
+  tool_call_id: string;
+  server_id: string;
+  server_title?: string;
+  tool_name?: string;
+  caller_principal?: string;
+  status: ToolCallStatus;
+  created_at?: string;
+  updated_at?: string;
+  arguments?: Record<string, unknown>;
+  rationale?: string;
+  request_title?: string | null;
+  client_request_id?: string | null;
+  state_request_id?: string | null;
+  request_digest?: string;
+  approval_id?: string | null;
+  decision_reason?: string | null;
+  result?: Record<string, unknown> | null;
+  error?: string | null;
+}
+
 // The knowledge garden browses/reads arbitrary repo markdown through the generic content proxy
 // below (repo.ts composes tree+blobs) — no dedicated garden wire types.
 

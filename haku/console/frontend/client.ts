@@ -8,6 +8,9 @@ const api = createClient<paths>({ baseUrl: "" });
 
 export type ConfigResponse = components["schemas"]["ConfigResponse"];
 export type LaunchRoutineResult = components["schemas"]["LaunchRoutineResult"];
+export type ApprovalDecisionResponse = components["schemas"]["ApprovalDecisionResponse"];
+export type PendingApproval = components["schemas"]["PendingApproval"];
+export type ToolCallRecord = components["schemas"]["ToolCallRecord"];
 
 // FastAPI error responses are `{detail: string}`; surface that real reason rather
 // than a generic message, falling back when the body isn't shaped that way.
@@ -25,16 +28,49 @@ export async function fetchConfig(): Promise<ConfigResponse> {
   return data;
 }
 
+async function fetchCsrfToken(): Promise<string> {
+  const { data: csrf, error: csrfError } = await api.GET("/api/capabilities/csrf");
+  if (csrfError || !csrf) throw new Error(errorDetail(csrfError, "Failed to get CSRF token"));
+  return csrf.csrf_token;
+}
+
 // Capability tier. Fetch a CSRF token (which also sets the signed double-submit
 // cookie), then fire the routine echoing the token in X-CSRF-Token. The bearer
 // stays server-side; this only triggers the action and returns the new session URL.
 export async function launchRoutine(text?: string): Promise<LaunchRoutineResult> {
-  const { data: csrf, error: csrfError } = await api.GET("/api/capabilities/csrf");
-  if (csrfError || !csrf) throw new Error(errorDetail(csrfError, "Failed to get CSRF token"));
+  const csrfToken = await fetchCsrfToken();
   const { data, error } = await api.POST("/api/capabilities/launch-routine", {
-    headers: { "X-CSRF-Token": csrf.csrf_token },
+    headers: { "X-CSRF-Token": csrfToken },
     body: text ? { text } : {},
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to launch routine"));
   return data;
+}
+
+export async function fetchPendingApprovals(): Promise<PendingApproval[]> {
+  const { data, error } = await api.GET("/api/approvals/pending");
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load pending approvals"));
+  return data.approvals ?? [];
+}
+
+export async function approveToolCall(approvalId: string): Promise<ToolCallRecord> {
+  const csrfToken = await fetchCsrfToken();
+  const { data, error } = await api.POST("/api/approvals/{approval_id}/decision", {
+    params: { path: { approval_id: approvalId } },
+    headers: { "X-CSRF-Token": csrfToken },
+    body: { decision: "approve" },
+  });
+  if (error || !data) throw new Error(errorDetail(error, "Failed to approve tool call"));
+  return data.tool_call;
+}
+
+export async function denyToolCall(approvalId: string, reason?: string): Promise<ToolCallRecord> {
+  const csrfToken = await fetchCsrfToken();
+  const { data, error } = await api.POST("/api/approvals/{approval_id}/decision", {
+    params: { path: { approval_id: approvalId } },
+    headers: { "X-CSRF-Token": csrfToken },
+    body: { decision: "deny", reason: reason ?? null },
+  });
+  if (error || !data) throw new Error(errorDetail(error, "Failed to deny tool call"));
+  return data.tool_call;
 }

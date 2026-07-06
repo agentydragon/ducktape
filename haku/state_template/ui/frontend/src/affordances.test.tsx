@@ -5,9 +5,9 @@ import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from "@testi
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Choice, Choices, Feedback, Handoff, Launch, SignalToggle } from "./affordances.tsx";
+import { Choice, Choices, Feedback, Handoff, Launch, SignalToggle, ToolCall } from "./affordances.tsx";
 import { openLink, requestLaunch } from "./bridge.ts";
-import { clearResponse, readResponse, sendFeedback, setResponse } from "./client.ts";
+import { callToolRequest, clearResponse, readResponse, sendFeedback, setResponse } from "./client.ts";
 
 vi.mock("./bridge.ts", () => ({ openLink: vi.fn(), requestLaunch: vi.fn() }));
 vi.mock("./client.ts", () => ({
@@ -15,6 +15,7 @@ vi.mock("./client.ts", () => ({
   setResponse: vi.fn(),
   clearResponse: vi.fn(),
   readResponse: vi.fn().mockResolvedValue(null),
+  callToolRequest: vi.fn(),
 }));
 
 window.matchMedia ??= ((query: string) => ({
@@ -178,5 +179,39 @@ describe("Feedback", () => {
     fireEvent.click(screen.getByRole("button", { name: /Send feedback/ }));
     await waitFor(() => expect(screen.getByText("offline")).toBeTruthy());
     expect(screen.queryByText("✓ sent")).toBeNull();
+  });
+});
+
+describe("ToolCall", () => {
+  it("submits the authored state request and shows the console approval status", async () => {
+    vi.mocked(callToolRequest).mockResolvedValue({
+      tool_call_id: "tc_1",
+      server_id: "grocy-sf",
+      status: "approval_required",
+    });
+    render(<ToolCall request="2026-07-thrive-box-grocy-stock-add" label="Add to Grocy" />);
+    fireEvent.click(screen.getByRole("button", { name: "Add to Grocy" }));
+    expect(callToolRequest).toHaveBeenCalledWith("2026-07-thrive-box-grocy-stock-add");
+    expect(await screen.findByText("waiting in console")).toBeTruthy();
+  });
+
+  it("shows terminal success without offering to run the same request again", async () => {
+    vi.mocked(callToolRequest).mockResolvedValue({
+      tool_call_id: "tc_2",
+      server_id: "smoke",
+      status: "ok",
+    });
+    render(<ToolCall request="smoke" />);
+    fireEvent.click(screen.getByRole("button", { name: "Run tool" }));
+    expect(await screen.findByText("✓ ran")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Run tool" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("surfaces request failures and keeps the button retryable", async () => {
+    vi.mocked(callToolRequest).mockRejectedValue(new Error("console unavailable"));
+    render(<ToolCall request="smoke" />);
+    fireEvent.click(screen.getByRole("button", { name: "Run tool" }));
+    await waitFor(() => expect(screen.getByText("console unavailable")).toBeTruthy());
+    expect((screen.getByRole("button", { name: "Run tool" }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

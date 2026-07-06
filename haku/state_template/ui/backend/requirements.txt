@@ -15,6 +15,10 @@ anyio==4.14.1 \
     #   httpx
     #   starlette
     #   watchfiles
+canonicaljson==2.0.0 \
+    --hash=sha256:c38a315de3b5a0532f1ec1f9153cd3d716abfc565a558d00a4835428a34fca5b \
+    --hash=sha256:e2fdaef1d7fadc5d9cb59bd3d0d41b064ddda697809ac4325dced721d12f113f
+    # via haku-ui-backend (pyproject.toml)
 certifi==2026.6.17 \
     --hash=sha256:024c88eeec92ca068db80f02b8b07c9cef7b9fe261d1d535abfd5abd6f6af432 \
     --hash=sha256:2227dcbaafe0d2f59279d1762ddddc37783ed4354594f194ffc31d20f41fc3db

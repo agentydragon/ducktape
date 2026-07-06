@@ -2,10 +2,11 @@ import { Anchor, Button, Group, Stack, Text, Textarea } from "@mantine/core";
 import { Children, createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { openLink, requestLaunch, type LaunchResult } from "./bridge.ts";
-import { clearResponse, readResponse, sendFeedback, setResponse } from "./client.ts";
+import { callToolRequest, clearResponse, readResponse, sendFeedback, setResponse } from "./client.ts";
 import { notifyError } from "./errors.ts";
 import { ItemScopeContext } from "./item_scope.ts";
 import { logger } from "./log.ts";
+import type { ToolCallRecord } from "./types.ts";
 
 const log = logger("affordances");
 
@@ -85,6 +86,61 @@ export function Launch({ prompt, label = "Launch run" }: { prompt: string; label
     >
       {label} →
     </Button>
+  );
+}
+
+function toolCallMessage(record: ToolCallRecord): { color: string; text: string } {
+  if (record.status === "ok") return { color: "teal", text: "✓ ran" };
+  if (record.status === "approval_required") return { color: "dimmed", text: "waiting in console" };
+  if (record.status === "running") return { color: "dimmed", text: "running" };
+  if (record.status === "denied") return { color: "red", text: record.decision_reason ?? "denied" };
+  if (record.status === "timed_out") return { color: "red", text: "timed out" };
+  if (record.status === "not_allowed") return { color: "red", text: record.error ?? "not allowed" };
+  return { color: "red", text: record.error ?? "failed" };
+}
+
+export function ToolCall({ request, label = "Run tool" }: { request?: string; label?: string }) {
+  const [state, setState] = useState<"idle" | "pending" | ToolCallRecord>("idle");
+  const requestId = request?.trim();
+
+  if (!requestId) {
+    return (
+      <Text size="xs" c="red">
+        &lt;tool-call&gt; needs a request
+      </Text>
+    );
+  }
+
+  const record = typeof state === "object" ? state : null;
+  const message = record ? toolCallMessage(record) : null;
+  const buttonLabel =
+    record && record.status !== "ok" && record.status !== "approval_required" && record.status !== "running"
+      ? `${label} again`
+      : label;
+
+  return (
+    <Group gap="xs">
+      <Button
+        size="xs"
+        variant="default"
+        loading={state === "pending"}
+        disabled={record?.status === "ok"}
+        onClick={() => {
+          setState("pending");
+          void callToolRequest(requestId).then(setState, (e: unknown) => {
+            notifyError("Couldn't request tool call", e);
+            setState("idle");
+          });
+        }}
+      >
+        {buttonLabel}
+      </Button>
+      {message && (
+        <Text size="xs" c={message.color}>
+          {message.text}
+        </Text>
+      )}
+    </Group>
   );
 }
 

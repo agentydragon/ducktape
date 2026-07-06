@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchRuns, sendFeedback } from "./client.ts";
+import { callToolRequest, fetchRuns, sendFeedback } from "./client.ts";
 import { resetRepoCache } from "./repo.ts";
 
 // Stub /api/repo/tree + /api/repo/blobs with a given tree and sha→content map.
@@ -86,5 +86,27 @@ describe("sendFeedback", () => {
     const fetchMock = stubOk();
     await sendFeedback("note", undefined, { page: "#/inbox", selection: null });
     expect(bodyOf(fetchMock)).toEqual({ text: "note", item_id: null, page: "#/inbox" });
+  });
+});
+
+describe("callToolRequest", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("posts the state request id to the backend proxy with the approval wait window", async () => {
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ tool_call_id: "tc_1", server_id: "grocy-sf", status: "approval_required" }),
+      } as Response)
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const record = await callToolRequest("2026-07-thrive.box", 500);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/tool-requests/2026-07-thrive.box/call",
+      expect.objectContaining({ method: "POST" })
+    );
+    const init = fetchMock.mock.calls[0][1]!;
+    expect(JSON.parse(init.body as string)).toEqual({ wait_for_ms: 500 });
+    expect(record.status).toBe("approval_required");
   });
 });
