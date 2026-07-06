@@ -1,6 +1,4 @@
-# ============================================================================
 # Headlamp — OIDC login for the Kubernetes dashboard
-# ============================================================================
 
 resource "authentik_provider_oauth2" "headlamp" {
   name               = "headlamp"

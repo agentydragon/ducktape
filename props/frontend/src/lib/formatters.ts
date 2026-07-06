@@ -87,7 +87,6 @@ export function formatDigest(digest: string): string {
   return digest.length > 16 ? digest.slice(0, 16) : digest;
 }
 
-/** Truncate text with ellipsis. */
 export function truncateText(text: string, maxLength: number = 100): string {
   return text.length > maxLength ? text.slice(0, maxLength) + "..." : text;
 }

@@ -125,7 +125,6 @@ class Mount:
 
     @property
     def exception(self) -> Exception | None:
-        """Get exception if mount failed, None otherwise."""
         if isinstance(self._state_data, _MountFailed):
             return self._state_data.exception
         return None

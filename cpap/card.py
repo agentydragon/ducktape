@@ -118,8 +118,6 @@ class EZShareClient:
         # All filenames in practice are ASCII so this is safe.
         return ET.fromstring(data.replace(b'encoding="gb2312"', b""))
 
-    # === Device info ===
-
     def get_version(self) -> str:
         root = self._parse_xml(self._get_bytes("/client?command=version"))
         return root.findtext(".//version") or ""
@@ -140,8 +138,6 @@ class EZShareClient:
         return DeviceInfo(
             version=self.get_version(), mac=self.get_mac(), ssid=self.get_ssid(), maxtime=self.get_maxtime()
         )
-
-    # === Directory listing ===
 
     def listdir_url(self, url: str) -> list[FileEntry]:
         """List a directory by its GETFILELIST URL. Excludes '.' and '..' entries."""
@@ -166,8 +162,6 @@ class EZShareClient:
             else:
                 yield entry
 
-    # === File transfer ===
-
     def download(self, url: str, dest: Path) -> None:
         """Download a file to dest via a .tmp intermediate (atomic rename on completion)."""
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -189,8 +183,7 @@ class EZShareClient:
         rel = file_param.replace("\\", "/").lstrip("/")
         return output_dir / rel
 
-    # === Card config (unverified on this firmware) ===
-
+    # Card config (unverified on this firmware)
     def get_config(self) -> CardConfig:
         root = self._parse_xml(self._get_bytes("/pdclient.cgi?command=gconfig"))
         data = {child.tag: child.text or "" for child in root}

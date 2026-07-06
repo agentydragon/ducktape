@@ -1,6 +1,4 @@
-# ============================================================================
 # Forgejo — OIDC login for the git server
-# ============================================================================
 
 resource "authentik_provider_oauth2" "forgejo" {
   name               = "forgejo-oauth2"

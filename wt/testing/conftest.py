@@ -88,29 +88,6 @@ def _disable_gh_cli_token(monkeypatch):
     monkeypatch.setattr(github_client, "get_github_token", lambda *a, **kw: None)
 
 
-# =============================================================================
-# Factory Fixtures - Modern pytest pattern for test setup
-#
-# These factories replace the old pattern of many specific fixtures with
-# flexible, parameterizable factories. Use these patterns:
-#
-# OLD WAY (being phased out):
-#   def test_something(git_repo, mock_github_interface):
-#       # Uses hard-coded test repo and mock
-#
-# NEW WAY (preferred):
-#   def test_something(repo_factory, mock_factory):
-#       repo = repo_factory.create_repo(**RepoPresets.with_branches())
-#       github = mock_factory.github_client(pr_list_returns=[...])
-#
-# Benefits:
-# - Explicit test data (no hidden setup)
-# - Parameterizable (different configs per test)
-# - Less fixture coupling
-# - Easier to understand and maintain
-# =============================================================================
-
-
 @pytest.fixture
 def mock_factory():
     """Factory for creating configured mocks with standard behaviors."""

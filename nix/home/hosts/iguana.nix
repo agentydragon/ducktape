@@ -1,7 +1,5 @@
 # iguana (ThinkPad X1 Extreme) host-specific home-manager configuration
 #
-# Previously Pop!_OS (agentydragon.nix), now NixOS.
-#
 # To apply: sudo nixos-rebuild switch --flake ~/code/ducktape#iguana
 {
   config,

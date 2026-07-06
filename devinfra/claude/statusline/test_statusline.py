@@ -17,8 +17,6 @@ from devinfra.claude.statusline.statusline import _format_context, _format_quota
 _SHORT_WINDOW_SECS = 5 * 3600
 _LONG_WINDOW_SECS = 7 * 86400
 
-# === statusline_models tests ===
-
 
 FULL_INPUT_JSON = json.dumps(
     {
@@ -110,9 +108,6 @@ def test_null_context_usage():
     assert data.context_window.current_usage is None
 
 
-# === credentials tests ===
-
-
 def test_read_credentials(tmp_path: Path):
     creds = {"claudeAiOauth": {"accessToken": "test-token-123", "subscriptionType": "max"}}
     creds_file = tmp_path / ".credentials.json"
@@ -136,9 +131,6 @@ def test_read_credentials_malformed(tmp_path: Path):
 
     with patch("devinfra.claude.claude_api.credentials.CREDENTIALS_PATH", creds_file):
         assert read_credentials() is None
-
-
-# === quota formatting tests ===
 
 
 def _make_quota(
@@ -285,9 +277,6 @@ def test_format_quota_short_zero_long_full():
     assert "5h" not in result.plain
 
 
-# === context window tests ===
-
-
 def test_format_context_none():
     assert _format_context(None) is None
 
@@ -318,9 +307,6 @@ def test_format_context_colors(pct: float, expected_text: str, expected_style: s
     assert result.style == expected_style
 
 
-# === z.ai session detection tests ===
-
-
 @pytest.mark.parametrize(
     ("base_url", "expected"),
     [
@@ -332,8 +318,6 @@ def test_format_context_colors(pct: float, expected_text: str, expected_style: s
 def test_is_zai_session(base_url: str, expected: bool):
     assert _is_zai_session(base_url) is expected
 
-
-# === render snapshot tests ===
 
 # Fixed "now" for deterministic quota formatting
 _NOW = datetime(2026, 3, 22, 12, 0, 0, tzinfo=UTC)

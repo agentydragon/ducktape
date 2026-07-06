@@ -202,7 +202,6 @@ async def test_critic_dev_optimize_cannot_see_test_split_critic_runs(
         example = session.query(Example).filter_by(snapshot_slug="test-fixtures/test1").first()
         assert example, "test-split-test fixture not found"
 
-        # Create a critic run for the test specimen using fixture factory
         test_run = make_fake_critic_run(
             session=session, example=example.to_example_spec(), status=AgentRunStatus.EXITED
         )
@@ -241,7 +240,6 @@ async def test_critic_dev_optimize_can_see_train_split_critic_runs(
         example = session.query(Example).filter_by(snapshot_slug="test-fixtures/train1").first()
         assert example, "test-trivial fixture not found"
 
-        # Create a critic run for the train specimen using fixture factory
         train_run = make_fake_critic_run(
             session=session,
             example=example.to_example_spec(),
@@ -276,7 +274,6 @@ async def test_critic_dev_optimize_cannot_see_valid_split_critic_runs(
         example = session.query(Example).filter_by(snapshot_slug="test-fixtures/valid1").first()
         assert example, "test-validation fixture not found"
 
-        # Create a critic run for the valid specimen
         valid_run = make_fake_critic_run(
             session=session,
             example=example.to_example_spec(),
@@ -314,7 +311,6 @@ async def test_critic_dev_optimize_cannot_see_valid_split_llm_requests(
         example = session.query(Example).filter_by(snapshot_slug="test-fixtures/valid1").first()
         assert example, "test-validation fixture not found"
 
-        # Create a critic run for the valid specimen
         valid_run = make_fake_critic_run(
             session=session,
             example=example.to_example_spec(),
@@ -358,7 +354,6 @@ async def test_critic_dev_optimize_can_see_train_split_llm_requests(
         example = session.query(Example).filter_by(snapshot_slug="test-fixtures/train1").first()
         assert example, "test-trivial fixture not found"
 
-        # Create a critic run for the train specimen
         train_run = make_fake_critic_run(
             session=session,
             example=example.to_example_spec(),

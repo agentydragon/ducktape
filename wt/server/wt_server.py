@@ -450,7 +450,6 @@ class WtDaemon:
         self.git_watchers[worktree_info.wtid] = watcher
 
     async def start(self) -> None:
-        """Start the daemon."""
         logger.info("Starting wt daemon for %s", self.config.main_repo)
 
         # Emit initial progress handshake to ensure the client always sees at least one line
@@ -542,7 +541,6 @@ class WtDaemon:
         self._discovery_kick = asyncio.create_task(self._run_discovery_once())
 
     async def stop(self) -> None:
-        """Stop the daemon."""
         logger.info("Stopping wt daemon")
 
         self.running = False

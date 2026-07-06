@@ -1,6 +1,4 @@
-# ============================================================================
 # Matrix — OIDC login for Element Web / Synapse
-# ============================================================================
 
 resource "authentik_provider_oauth2" "matrix" {
   name               = "matrix-oauth2"

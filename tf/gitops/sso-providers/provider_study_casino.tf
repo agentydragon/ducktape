@@ -1,6 +1,4 @@
-# ============================================================================
 # Study Casino — OIDC confidential client (Authorization Code flow)
-# ============================================================================
 #
 # The casino handles its own OIDC flow (login/callback/logout endpoints),
 # so it no longer needs the Authentik embedded proxy outpost. This file owns

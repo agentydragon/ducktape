@@ -1,6 +1,4 @@
-# ============================================================================
 # Google OAuth Source — "Sign in with Google" for Authentik
-# ============================================================================
 #
 # Security model: We trust Google to authenticate users. If Google says
 # user@example.com logged in, we accept that and link to the corresponding
@@ -9,7 +7,6 @@
 # - user_matching_mode = "email_link": On first Google login, auto-link
 #   to existing authentik user with matching email. Creates the connection.
 # - No new users are created — only pre-existing users can log in via Google.
-# ============================================================================
 
 # Read client secret from K8s secret (client ID is inlined)
 data "kubernetes_secret" "google_oauth" {

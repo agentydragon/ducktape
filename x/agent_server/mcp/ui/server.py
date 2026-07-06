@@ -52,11 +52,6 @@ class UiServer(EnhancedFastMCP):
     end_turn_tool: FlatTool[Any, Any]
 
     def __init__(self, bus: ServerBus):
-        """Create a UI MCP server bound to a ServerBus.
-
-        Args:
-            bus: ServerBus for pushing UI messages and end-turn signals
-        """
         super().__init__(
             "UI Server",
             instructions=(

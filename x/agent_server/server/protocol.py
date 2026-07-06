@@ -11,10 +11,6 @@ from x.agent_server.models.policy_error import PolicyTestsSummary
 from x.agent_server.models.proposal_status import ProposalStatus
 from x.agent_server.server.bus import MimeType
 
-# --------------------------
-# Core state
-# --------------------------
-
 
 class SessionState(BaseModel):
     session_id: str
@@ -68,11 +64,6 @@ class AgentStatus(StrEnum):
     ERROR = "error"
 
 
-# --------------------------
-# Transcript items
-# --------------------------
-
-
 class FunctionCallOutput(BaseModel):
     type: Literal["function_call_output"] = "function_call_output"
     call_id: str
@@ -98,11 +89,6 @@ class UiEndTurnEvt(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-## Client -> Server message types are no longer used; REST handles mutations.
-
-# --------------------------
-# Server -> Client messages
-# --------------------------
 # NOTE: WebSocket has been replaced by MCP. These event types are used
 # for internal state management (reducer).
 

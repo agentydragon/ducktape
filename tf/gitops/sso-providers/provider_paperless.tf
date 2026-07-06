@@ -1,10 +1,8 @@
-# ============================================================================
 # Paperless-ngx — OIDC login for the document management system.
 # Single-user (agentydragon): access is gated to the admins group, and the
 # user is auto-provisioned on first login into the `paperless_users` group
 # (created by the paperless-bootstrap-group Job) for full non-admin access.
 # Not a Django superuser by design — see cluster/k8s/paperless/.
-# ============================================================================
 
 resource "authentik_provider_oauth2" "paperless" {
   name               = "paperless-oauth2"

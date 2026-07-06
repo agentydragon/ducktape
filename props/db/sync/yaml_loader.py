@@ -16,10 +16,6 @@ from props.core.ids import SnapshotSlug
 from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
 from props.core.models.types import Rationale
 
-# ---------------------------------------------------------------------------
-# Intermediate dataclasses (YAML → ORM bridge)
-# ---------------------------------------------------------------------------
-
 
 @dataclass
 class SyncTruePositive:

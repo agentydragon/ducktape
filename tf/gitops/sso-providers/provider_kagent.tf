@@ -1,6 +1,4 @@
-# ============================================================================
 # kagent — OIDC login for the kagent web UI (oauth2-proxy subchart)
-# ============================================================================
 
 resource "authentik_provider_oauth2" "kagent" {
   name               = "kagent"

@@ -1,6 +1,4 @@
-# ============================================================================
 # Grafana — OIDC login for the monitoring dashboard
-# ============================================================================
 
 resource "authentik_provider_oauth2" "grafana" {
   name               = "grafana-oauth2"

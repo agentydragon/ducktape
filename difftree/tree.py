@@ -32,7 +32,6 @@ class TreeNode:
 
     @property
     def total_changes(self) -> int:
-        """Total number of line changes (additions + deletions)."""
         return self.additions + self.deletions
 
 
@@ -44,8 +43,6 @@ def build_tree(changes: list[FileChange]) -> TreeNode:
 
     @dataclass
     class _MutableNode:
-        """Mutable builder for TreeNode."""
-
         name: str
         is_file: bool
         additions: int = 0

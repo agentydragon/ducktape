@@ -11,28 +11,14 @@ from tana.query.nodes import get_field_values, is_in_deleted_nodes
 def filter_nodes(
     store: TanaGraph, predicate: Callable[[BaseNode], bool], *, skip_trash: bool = True, skip_deleted: bool = True
 ) -> Iterator[BaseNode]:
-    """
-    Filter nodes in a TanaGraph based on a predicate function.
-
-    Args:
-        store: The graph to filter
-        predicate: Function that returns True for nodes to include
-        skip_trash: Skip nodes in trash (default True)
-        skip_deleted: Skip nodes under "Deleted Nodes" (default True)
-
-    Yields:
-        Nodes that match the predicate
-    """
+    """Filter nodes in a TanaGraph based on a predicate function."""
     for node in store.values():
-        # Skip trash nodes if requested
         if skip_trash and node.is_trash:
             continue
 
-        # Skip deleted nodes if requested
         if skip_deleted and is_in_deleted_nodes(node, store):
             continue
 
-        # Apply the predicate
         if predicate(node):
             yield node
 
@@ -40,20 +26,7 @@ def filter_nodes(
 def filter_by_tag(
     store: TanaGraph, tag_name: str, *, skip_trash: bool = True, skip_deleted: bool = True
 ) -> Iterator[BaseNode]:
-    """
-    Filter nodes by supertag.
-
-    Requires the graph to provide supertag indexes (built by TanaGraph).
-
-    Args:
-        store: The graph to filter
-        tag_name: The tag to filter by
-        skip_trash: Skip nodes in trash (default True)
-        skip_deleted: Skip nodes under "Deleted Nodes" (default True)
-
-    Yields:
-        Nodes that have the specified tag
-    """
+    """Filter nodes by supertag. Requires the graph to provide supertag indexes (built by TanaGraph)."""
 
     def has_tag(node: BaseNode) -> bool:
         return store.has_supertag(node.id, tag_name)
@@ -70,20 +43,7 @@ def filter_by_field_value(
     skip_trash: bool = True,
     skip_deleted: bool = True,
 ) -> Iterator[BaseNode]:
-    """
-    Filter nodes by field values.
-
-    Args:
-        store: The graph to filter
-        field_name: The field name to check
-        allowed_values: If provided, only include nodes with these values
-        excluded_values: If provided, exclude nodes with these values
-        skip_trash: Skip nodes in trash (default True)
-        skip_deleted: Skip nodes under "Deleted Nodes" (default True)
-
-    Yields:
-        Nodes that match the field value criteria
-    """
+    """Filter nodes by field values."""
 
     def matches_criteria(node: BaseNode) -> bool:
         values = set(get_field_values(node, field_name, store))

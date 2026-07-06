@@ -2,9 +2,7 @@
 # Talos cluster control plane currently runs on OVH Kimsufi bare metal.
 # Machine secrets generated fresh per lifecycle (prevents stale discovery from previous clusters)
 
-# ============================================================================
 # LOCALS: Shared configuration for all nodes
-# ============================================================================
 
 locals {
   # Machine secrets generated locally (fresh per lifecycle)
@@ -282,9 +280,7 @@ locals {
   }
 }
 
-# ============================================================================
 # TALOS BOOTSTRAP & KUBECONFIG
-# ============================================================================
 
 # Bootstrap etcd. This resource records the already-bootstrapped cluster; the
 # endpoint is now an OVH control plane.
@@ -329,9 +325,7 @@ data "talos_client_configuration" "cluster" {
   endpoints            = local.all_controlplane_ips
 }
 
-# ============================================================================
 # LOCAL FILES
-# ============================================================================
 
 # Write kubeconfig to file (patched with real IP for external access)
 resource "local_file" "kubeconfig" {

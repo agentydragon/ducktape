@@ -108,12 +108,10 @@ def assert_typed_items_have_one(items: Sequence[Any], matcher) -> None:
 
 
 def assert_items_count(items: Sequence[Any], n: int) -> None:
-    """Assert items has exactly n elements."""
     assert_that(items, has_length(n))
 
 
 def assert_empty(items: Sequence[Any]) -> None:
-    """Assert items is empty."""
     assert_that(items, has_length(0))
 
 

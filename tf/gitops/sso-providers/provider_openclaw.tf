@@ -1,6 +1,4 @@
-# ============================================================================
 # OpenClaw Agent — M2M auth via client_credentials grant
-# ============================================================================
 
 resource "authentik_provider_oauth2" "openclaw_agent" {
   name               = "openclaw-agent"

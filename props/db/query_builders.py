@@ -13,8 +13,6 @@ from props.db.models import TpOccurrenceCredit
 
 
 class RecallByExampleRow(BaseModel):
-    """Single row from recall-by-example query."""
-
     example: ExampleSpec
     critic_image_digest: str
     recall: float

@@ -238,11 +238,6 @@ def get_request_identity(request: Request, admin_db: AdminDb) -> RequestIdentity
 Auth = Annotated[RequestIdentity, Depends(get_request_identity)]
 
 
-# =============================================================================
-# Dependency functions for ACL enforcement
-# =============================================================================
-
-
 def require_critic_run_access(auth: Auth) -> RequestIdentity:
     """FastAPI dependency requiring critic run access. Raises HTTPException 403 if not allowed."""
     if not (is_admin_or_evaluator(auth) or is_critic_dev_agent(auth)):
@@ -264,11 +259,6 @@ def require_evaluator_or_admin_access(auth: Auth) -> None:
         return  # SSO grants admin
     if not (isinstance(auth, AuthenticatedIdentity) and isinstance(auth.role, (AdminRole, EvaluatorRole))):
         raise HTTPException(status_code=403, detail="Admin or evaluator access required")
-
-
-# =============================================================================
-# Credential passthrough for DB access
-# =============================================================================
 
 
 def get_caller_db(admin_db: AdminDb, auth: Auth) -> Iterator[Database]:

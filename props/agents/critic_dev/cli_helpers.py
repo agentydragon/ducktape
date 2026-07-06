@@ -21,8 +21,6 @@ from props.db.models import AgentRun, AgentRunStatus, GradingEdge, LLMRequest
 
 @dataclass
 class CriticRunSummary:
-    """Summary data for a critic run."""
-
     run_id: UUID
     snapshot_slug: SnapshotSlug
     image_digest: str

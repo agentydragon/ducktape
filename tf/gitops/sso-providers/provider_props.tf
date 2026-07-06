@@ -1,4 +1,3 @@
-# ============================================================================
 # Props — OIDC login for the eval dashboard (props.allegedly.works)
 #
 # The props backend is the OIDC relying party (authlib + session cookie); see
@@ -6,7 +5,6 @@
 # client_id/secret and a generated session-signing secret are written to a K8s
 # secret in the authentik namespace and reflected into the props namespace,
 # where the Deployment consumes them as PROPS_OIDC_* env vars.
-# ============================================================================
 
 resource "authentik_provider_oauth2" "props" {
   name               = "props-oauth2"

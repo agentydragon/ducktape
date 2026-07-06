@@ -145,8 +145,8 @@ bbr test //grocy_mcp:test_server
 
 ## End-to-end verification
 
-Same shape as <../authentik_mcp_poc/README.md>'s "Verification in the
-cluster" section. After Flux reconciles the per-household grocy namespace →
+Same shape as <../authentik_mcp_poc/archive/2026_05_24_historical_runbook.md>'s
+"Verification in the cluster" section. After Flux reconciles the per-household grocy namespace →
 `agent-machine-access-tf` → grocy MCP app:
 
 ```bash
@@ -163,7 +163,7 @@ claude mcp add --transport http grocy-mcp-sf https://grocy-mcp-sf.allegedly.work
 ```
 
 Failure-mode mapping is the POC's 12-component table
-(<../authentik_mcp_poc/README.md>); the only new mode is "tool returns
+(<../authentik_mcp_poc/archive/2026_05_24_historical_runbook.md>); the only new mode is "tool returns
 200 with an empty result" which usually means Grocy accepted the
 request but the authenticated user's permissions in Grocy hide
 everything.

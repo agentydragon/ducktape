@@ -1,6 +1,4 @@
-# ============================================================================
 # Harbor — OIDC login for the container registry
-# ============================================================================
 
 resource "authentik_provider_oauth2" "harbor" {
   name               = "harbor-oauth2"

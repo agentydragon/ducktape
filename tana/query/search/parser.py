@@ -29,20 +29,12 @@ def parse_search_expression(store: TanaGraph, search_node: BaseNode) -> SearchEx
     """
     Parse the search expression from a search node.
 
-    Args:
-        store: The graph containing all nodes
-        search_node: The search node to parse
-
-    Returns:
-        The parsed search expression, or None if no expression found
-
     Raises:
         SearchParseError: If the expression cannot be parsed
     """
     if search_node.props.doc_type != "search":
         raise SearchParseError(f"Node {search_node.id} is not a search node")
 
-    # Get metadata node
     if not search_node.props.meta_node_id:
         return None
 

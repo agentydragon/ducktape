@@ -125,8 +125,6 @@ class JobInfo(BaseModel):
 
 
 class JobsResponse(BaseModel):
-    """Response for jobs endpoint."""
-
     jobs: list[JobInfo]
 
 
@@ -174,8 +172,6 @@ class ReportedIssueInfo(BaseModel):
 
 
 class CriticRunSpecifics(BaseModel):
-    """Critic-specific fields."""
-
     agent_type: Literal[AgentType.CRITIC] = AgentType.CRITIC
     resolved_files: list[str] | None = Field(description="Resolved file paths for file_set examples")
     grader_runs: list[GraderRunInfo] = Field(description="Grader runs with their edges nested")
@@ -183,8 +179,6 @@ class CriticRunSpecifics(BaseModel):
 
 
 class GraderRunSpecifics(BaseModel):
-    """Grader-specific fields."""
-
     agent_type: Literal[AgentType.GRADER] = AgentType.GRADER
     grading_edges: list[GradingEdgeInfo] = Field(description="Output edges from this grader")
 
@@ -339,8 +333,6 @@ class LLMRequestInfo(BaseModel):
 
 
 class LLMRequestsResponse(BaseModel):
-    """Response for LLM requests list."""
-
     requests: list[LLMRequestInfo]
 
 

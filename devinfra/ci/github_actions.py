@@ -19,9 +19,6 @@ from util.env import get_required_env_path
 _logger = logging.getLogger(__name__)
 
 
-# === GitHub Actions Environment ===
-
-
 class CIEnvironment(BaseModel):
     """GitHub Actions CI environment variables.
 
@@ -56,9 +53,6 @@ class CIEnvironment(BaseModel):
         self.output_path.write_text("".join(f"{k}={v}\n" for k, v in formatted.items()))
         for key, value in formatted.items():
             _logger.info("%s=%s", key, value)
-
-
-# === Workflow Schema Models ===
 
 
 class Step(BaseModel):

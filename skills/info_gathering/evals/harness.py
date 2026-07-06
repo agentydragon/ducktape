@@ -25,9 +25,6 @@ from util.bazel.runfiles import get_required_path
 logger = logging.getLogger(__name__)
 
 
-# === Pydantic models ==========================================================
-
-
 class LogEntry(BaseModel):
     timestamp: datetime
     player: Literal["agent", "simulator"]
@@ -45,9 +42,6 @@ class RunSummary[ResultT: BaseModel](BaseModel):
     result: ResultT
 
 
-# === Logging/saving helpers ===================================================
-
-
 def run_output_paths(name: str, output_dir: Path) -> tuple[Path, Path]:
     """Create output_dir and return (calls_jsonl_path, summary_json_path)."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -62,8 +56,6 @@ def save_summary(*, summary: RunSummary, summary_path: Path) -> None:
     summary_path.write_text(summary.model_dump_json(indent=2))
     logger.info("Saved results to %s", summary_path.parent)
 
-
-# === CLI helpers ==============================================================
 
 DEFAULT_MODEL = "gpt-oss:20b"
 

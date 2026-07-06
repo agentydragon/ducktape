@@ -94,11 +94,6 @@ def _setup_tracing(repo: pygit2.Repository) -> None:
     trace.set_tracer_provider(provider)
 
 
-# ---------------------------------------------------------------------------
-# Stage: pre-commit
-# ---------------------------------------------------------------------------
-
-
 async def _run_pre_commit() -> int:
     repo = pygit2.Repository(".")
     _setup_tracing(repo)
@@ -134,11 +129,7 @@ async def _run_pre_commit() -> int:
     return 1 if failed else 0
 
 
-# ---------------------------------------------------------------------------
-# Stage: prepare-commit-msg — block amending already-pushed commits
-# ---------------------------------------------------------------------------
-
-
+# prepare-commit-msg stage: block amending already-pushed commits
 def _head_on_remote(repo: pygit2.Repository) -> bool:
     """True if HEAD is reachable from any remote branch (i.e., already pushed)."""
     head_oid = repo.head.target
@@ -167,10 +158,7 @@ def _run_prepare_commit_msg(argv: list[str]) -> int:
     return 0
 
 
-# ---------------------------------------------------------------------------
-# Stage: commit-msg — enforce BAZEL_TEST_INVOCATIONS= tag
-# ---------------------------------------------------------------------------
-
+# commit-msg stage: enforce BAZEL_TEST_INVOCATIONS= tag
 _TEST_TAG_ENV_VAR = "DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG"
 
 # TODO: Re-enable by default once pytest_main_check is faster.
@@ -192,11 +180,6 @@ def _run_commit_msg(argv: list[str]) -> int:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
     return 0
-
-
-# ---------------------------------------------------------------------------
-# Dispatch
-# ---------------------------------------------------------------------------
 
 
 def main_pre_commit() -> int:

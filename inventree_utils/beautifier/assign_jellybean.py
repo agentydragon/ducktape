@@ -19,7 +19,6 @@ JELLYBEAN_PARAM_NAME = "Jellybean P/N"
 
 
 def get_parts_without_parameter(api: InvenTreeAPI, template):
-    """Return parts missing the given parameter."""
     part_pks_with_param = {param.part for param in Parameter.list(api, template=template.pk)}
     return [p for p in Part.list(api) if p.pk not in part_pks_with_param]
 

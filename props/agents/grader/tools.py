@@ -149,8 +149,6 @@ class OccurrenceInfo(BaseModel):
 
 
 class IssueDetails(BaseModel):
-    """Details of a critique issue."""
-
     issue_id: str
     critique_run_id: UUID
     rationale: str
@@ -170,8 +168,6 @@ class GTDetails(BaseModel):
 
 
 class ClusterMemberInfo(BaseModel):
-    """Info about a cluster member."""
-
     critique_run_id: UUID
     critique_issue_id: str
     rationale: str
@@ -186,8 +182,6 @@ class ClusterSummary(BaseModel):
 
 
 class ClusterDetails(BaseModel):
-    """Full cluster details."""
-
     cluster_id: str
     rationale: str
     members: list[ClusterMemberInfo]

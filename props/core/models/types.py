@@ -13,20 +13,11 @@ from typing import Annotated, Any
 
 from pydantic import PlainSerializer, StringConstraints, ValidationInfo, WrapValidator
 
-# =============================================================================
-# Rationale type
-# =============================================================================
-
 Rationale = Annotated[str, StringConstraints(min_length=10, max_length=5000, strip_whitespace=True)]
 """Validated rationale text (10-5000 chars, whitespace stripped).
 
 Uses standard Pydantic constraints for proper JSON Schema export.
 """
-
-
-# =============================================================================
-# Path types
-# =============================================================================
 
 
 class FileType(StrEnum):

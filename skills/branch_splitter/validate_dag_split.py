@@ -60,7 +60,6 @@ class DagConfig(BaseModel):
 
 
 def parse_dag_config(path: Path) -> DagConfig:
-    """Parse DAG configuration from JSON file."""
     return DagConfig.model_validate_json(path.read_text())
 
 
@@ -112,7 +111,6 @@ def all_topological_sorts(dag: dict[str, list[str]]) -> Iterator[list[str]]:
 
 
 def run_git(*args: str, cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
-    """Run a git command and return the result."""
     result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
     if check and result.returncode != 0:
         raise subprocess.CalledProcessError(result.returncode, ["git", *args], result.stdout, result.stderr)
@@ -120,7 +118,6 @@ def run_git(*args: str, cwd: Path | None = None, check: bool = True) -> subproce
 
 
 def get_diff(ref1: str, ref2: str, cwd: Path | None = None) -> str:
-    """Get the diff between two refs."""
     result = run_git("diff", f"{ref1}...{ref2}", cwd=cwd)
     return result.stdout
 

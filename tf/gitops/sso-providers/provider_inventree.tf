@@ -1,6 +1,4 @@
-# ============================================================================
 # InvenTree — OIDC login for the inventory system (suspended)
-# ============================================================================
 
 resource "authentik_provider_oauth2" "inventree" {
   name               = "inventree-oauth2"

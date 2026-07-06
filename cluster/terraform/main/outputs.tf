@@ -1,6 +1,4 @@
-# ============================================================================
 # KUBECONFIG & ACCESS
-# ============================================================================
 
 output "kubeconfig" {
   description = "Generated kubeconfig for cluster access (patched with real endpoint)"
@@ -29,9 +27,7 @@ output "talos_config" {
   sensitive   = true
 }
 
-# ============================================================================
 # CLUSTER INFORMATION
-# ============================================================================
 
 output "cluster_endpoint" {
   description = "Kubernetes API cluster endpoint"
@@ -65,9 +61,7 @@ output "expected_node_count" {
   value       = local.expected_node_count
 }
 
-# ============================================================================
 # FLUX
-# ============================================================================
 
 output "flux_deployed" {
   description = "Status of Flux deployment"
@@ -86,9 +80,7 @@ output "service_endpoints" {
   }
 }
 
-# ============================================================================
 # WYRM2 (NixOS dev env)
-# ============================================================================
 
 output "wyrm2" {
   description = "Wyrm2 VM info"
@@ -124,9 +116,7 @@ output "instructions" {
   EOT
 }
 
-# ============================================================================
 # K8S WORKER JOIN CREDENTIALS (consumed by k8s-worker-proxmox / k8s-worker-libvirt)
-# ============================================================================
 
 output "k8s_ca_cert" {
   description = "Kubernetes CA certificate (PEM, base64-encoded)"

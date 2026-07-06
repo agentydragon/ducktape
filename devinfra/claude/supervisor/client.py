@@ -188,15 +188,12 @@ class SupervisorClient:
         return await _xmlrpc_call(self._url, method, params, self._timeout)
 
     async def get_state(self) -> SupervisorState:
-        """Get supervisor daemon state."""
         return SupervisorState.model_validate(await self._call("supervisor.getState"))
 
     async def get_process_info(self, name: str) -> ProcessInfo:
-        """Get info for a specific process."""
         return ProcessInfo.model_validate(await self._call("supervisor.getProcessInfo", name))
 
     async def get_all_process_info(self) -> list[ProcessInfo]:
-        """Get info for all processes."""
         all_info = cast(list[dict[str, object]], await self._call("supervisor.getAllProcessInfo"))
         return [ProcessInfo.model_validate(info) for info in all_info]
 

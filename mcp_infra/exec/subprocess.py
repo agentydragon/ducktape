@@ -66,11 +66,6 @@ async def run_proc(
             return ExecOutcome(output=output, exit=TimedOut(), duration_ms=get_duration_ms())
 
 
-# =============================================================================
-# High-level exec interface (MCP-free)
-# =============================================================================
-
-
 class DirectExecArgs(ExecArgsBase):
     """Arguments for direct command execution.
 

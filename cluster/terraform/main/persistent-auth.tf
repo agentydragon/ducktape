@@ -3,9 +3,7 @@
 # Includes: CSI tokens, Nebula PKI,
 # Nix cache signing key, Attic JWT token, SOPS age keypair.
 
-# ============================================================================
 # PROXMOX USERS, ROLES, AND TOKENS
-# ============================================================================
 
 # TODO: Consider whether terraform@pve is still needed now that root@pam!tofu exists.
 # Infrastructure and k8s-worker-proxmox could read the root token from the keyring via
@@ -97,9 +95,7 @@ resource "proxmox_virtual_environment_user_token" "persistent" {
 
   lifecycle { prevent_destroy = true }
 }
-# ============================================================================
 # NEBULA MESH PKI — CA + per-node certificates
-# ============================================================================
 
 locals {
   nebula_cert_dir = "${path.module}/nebula-certs"
@@ -184,9 +180,7 @@ data "local_sensitive_file" "nebula_node_key" {
   depends_on = [null_resource.nebula_node_cert]
 }
 
-# ============================================================================
 # SOPS AGE KEYPAIR — cluster k8s secrets
-# ============================================================================
 # Keypair stored in secrets/shared/cluster-secrets-age.yaml (SOPS-encrypted to admin +
 # user keys). Public key in .sops.yaml (&cluster-secrets anchor).
 # Tofu decrypts via sops provider and deploys the private key to flux-system.

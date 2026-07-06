@@ -4,9 +4,7 @@ locals {
   repo_root = "${path.module}/../../.."
 }
 
-# ============================================================================
 # NIXOS BOOTSTRAP IMAGE
-# ============================================================================
 
 # Bootstrap NixOS qcow2 image — minimal SSH-able image for initial VM provisioning.
 # Only rebuilt when rebuild_image=true. After boot, nixos-rebuild deploys the full config.
@@ -18,9 +16,7 @@ module "wyrm2_image" {
   build_enabled = var.rebuild_image
 }
 
-# ============================================================================
 # VM INSTANCE
-# ============================================================================
 
 resource "proxmox_virtual_environment_vm" "wyrm2" {
   name        = "wyrm2"
@@ -247,9 +243,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
   depends_on = [module.wyrm2_image]
 }
 
-# ============================================================================
 # NIXOS-REBUILD (optional — deploys full wyrm2 config from GitHub)
-# ============================================================================
 
 resource "null_resource" "wyrm2_nixos_rebuild" {
   count = var.nixos_rebuild ? 1 : 0

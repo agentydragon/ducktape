@@ -26,13 +26,6 @@ def add_resource_prefix(uri: str | AnyUrl, prefix: str) -> str:
 async def read_text(client: Client[Any], uri: AnyUrl | str) -> str:
     """Read a text resource and return its content.
 
-    Args:
-        client: FastMCP client instance
-        uri: Resource URI (AnyUrl or string)
-
-    Returns:
-        Text content of the resource
-
     Raises:
         RuntimeError: If resource doesn't contain exactly one text part
     """

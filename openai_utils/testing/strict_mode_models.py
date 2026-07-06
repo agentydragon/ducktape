@@ -9,8 +9,6 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# ========== Invalid Models (violate strict mode) ==========
-
 
 class InvalidPathModel(BaseModel):
     """Invalid: uses Path type (generates format='path', not allowed in strict mode)."""
@@ -45,9 +43,6 @@ class NestedMissingAdditionalPropertiesModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-# ========== Discriminated Union Models ==========
-
-
 class StringVariant(BaseModel):
     """String variant for discriminated unions."""
 
@@ -73,9 +68,6 @@ class DiscriminatedUnionModel(BaseModel):
 
     data: Annotated[StringVariant | IntVariant, Field(discriminator="kind")]
     model_config = ConfigDict(extra="forbid")
-
-
-# ========== Discriminated Union with Defaults on Discriminator ==========
 
 
 class HttpServerSpec(BaseModel):
@@ -105,9 +97,6 @@ class DiscriminatedUnionWithDefaults(BaseModel):
 
     server: Annotated[HttpServerSpec | InprocServerSpec, Field(discriminator="type")]
     model_config = ConfigDict(extra="forbid")
-
-
-# ========== Valid Models (strict mode compliant) ==========
 
 
 class SimpleValidModel(BaseModel):

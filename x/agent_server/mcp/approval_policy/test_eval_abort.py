@@ -8,8 +8,6 @@ from mcp_infra.prefix import MCPMountPrefix
 from x.agent_server.mcp.approval_policy.engine import POLICY_EVALUATOR_ERROR_MSG
 from x.agent_server.testing.approval_policy_testdata import fetch_policy
 
-## Removed: template-based seatbelt tests. Seatbelt now accepts only explicit policy.
-
 
 async def test_container_timeout_causes_deny_abort(
     monkeypatch: pytest.MonkeyPatch, make_policy_gateway_client, make_approval_policy_server, make_simple_mcp

@@ -72,11 +72,6 @@ def _gepa_not_implemented() -> None:
     )
 
 
-# =============================================================================
-# Event Filtering
-# =============================================================================
-
-
 def _filter_reflection_events(agent_run_id: UUID) -> list[EventType]:
     """Return empty events list (events table deprecated).
 
@@ -84,11 +79,6 @@ def _filter_reflection_events(agent_run_id: UUID) -> list[EventType]:
     captured via container logs and llm_requests table instead.
     """
     return []
-
-
-# =============================================================================
-# Data Types
-# =============================================================================
 
 
 @dataclass

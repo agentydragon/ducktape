@@ -131,7 +131,6 @@ class AgentSession:
     async def run(self, prompt: str) -> None:
         async with self._lock:
             if self._task is not None and not self._task.done():
-                # Error now returned via HTTP error response, not sent via dead send_payload
                 return
             self._task = asyncio.create_task(self._run_impl(prompt))
 
@@ -163,10 +162,8 @@ class AgentSession:
                 self._agent.process_message(OAIUserMessage.text(prompt))
                 await self._agent.run()
             except asyncio.CancelledError:
-                # Error now logged, not sent via dead send_payload
                 logger.debug("agent_run_cancelled")
             except Exception as e:
-                # Error now logged, not sent via dead send_payload
                 logger.error(f"agent_run_exception: {e}", exc_info=True)
             finally:
                 await self._manager.flush()
@@ -174,5 +171,4 @@ class AgentSession:
                     # Ensure all transcript events have been persisted
                     await self._persist_handler.drain()
         else:
-            # Error now logged, not sent via dead send_payload
             logger.error("no_agent_attached")

@@ -399,12 +399,6 @@ Terminal states determined by host scaffold from exit code:
 
 ---
 
-## CLI Features Migrated to Frontend
-
-The `props stats` CLI command and its subcommands (`critic-leaderboard`, `example`, `occurrence`) have been removed. All stats functionality is now served by the frontend dashboard via the Stats & Analysis section (overview page), Detection Stats tab (snapshot detail page), and the `/api/stats/*` endpoints.
-
----
-
 ## Future Extensions
 
 ### Critic Development Dashboard

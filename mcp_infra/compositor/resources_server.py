@@ -91,8 +91,6 @@ class ResourcesSubscribeArgs(OpenAIStrictModeBaseModel):
 
 # No compositor meta resources here; see adgn.mcp.compositor.meta_server
 
-# ---- Top-level types for resources server (was nested) --------------------
-
 
 class SubscriptionRecord(BaseModel):
     server: str
@@ -110,9 +108,6 @@ class ListSubscribeArgs(OpenAIStrictModeBaseModel):
 class ResourceCapabilityFeature(StrEnum):
     SUBSCRIBE = "subscribe"
     LIST_CHANGED = "listChanged"
-
-
-# ---- Internal typed representations for normalized/window parts -----------
 
 
 class _MimeBase(BaseModel):
@@ -157,8 +152,6 @@ class ResourceReadResult(BaseModel):
     total_parts: int = Field(description="Total number of parts reported by the origin server")
     model_config = ConfigDict(extra="forbid")
 
-
-# ---- Block-level windowing types (new implementation) --------------------
 
 BaseResourceContents = mcp_types.TextResourceContents | mcp_types.BlobResourceContents
 

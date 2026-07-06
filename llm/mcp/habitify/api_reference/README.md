@@ -81,9 +81,7 @@ API key is automatically masked in saved files, showing only first and last 4 ch
 
 ## Confirmed Working API Endpoints
 
-Based on our testing and the [official Habitify API documentation](https://docs.habitify.me/), the following endpoints work:
-
-### Core Resources
+Based on our testing and the [official Habitify API documentation](https://docs.habitify.me/):
 
 - `GET /habits` - Get list of all habits
 - `GET /habits/{id}` - Get details for a specific habit by ID
@@ -92,9 +90,7 @@ Based on our testing and the [official Habitify API documentation](https://docs.
 - `GET /journal` - Get filtered habits based on date and other parameters
 - `GET /areas` - Get all habit categories/areas
 
-### Journal Filtering Parameters
-
-The `/journal` endpoint supports multiple filtering options:
+`/journal` filtering parameters:
 
 - `target_date` - **Required**, in ISO-8601 format with timezone
 - `order_by` - Options: `priority`, `reminder_time`, `status`
@@ -102,72 +98,28 @@ The `/journal` endpoint supports multiple filtering options:
 - `time_of_day` - Filter by time (comma-separated list): `morning`, `afternoon`, `evening`, `any_time`
 - `area_id` - Filter by specific area/category ID
 
+Invalid habit IDs (`/habits/invalid-id`, `/status/invalid-id`) return **500** (not 404) with "The habit does not exist".
+
 ## Date Format Requirements
 
-According to the [official Habitify API documentation](https://docs.habitify.me/date-format), all date-dependent endpoints require a specific date format:
+Per the [official docs](https://docs.habitify.me/date-format), all date-dependent endpoints require ISO-8601 with an explicit timezone offset: `YYYY-MM-DDThh:mm:ss±hh:mm` (URL-encoded in query params). Confirmed by testing:
 
-1. **Required Format**: ISO-8601 format with timezone: `YYYY-MM-DDThh:mm:ss±hh:mm`
-2. **URL Parameters**: When used in URL parameters, the date must be URL-encoded
-3. **Example**: For date "May 21, 2023" at UTC, use `2023-05-21T00:00:00+00:00`
-
-### Our Testing Results
-
-Our testing confirms that the Habitify API strictly enforces this format requirement:
-
-- ✅ **Works**: ISO-8601 with explicit timezone (`2023-05-21T00:00:00+00:00`)
-- ❌ **Fails**: Any other format, e.g.: `2023-05-21T00:00:00Z`, `2023-05-21`, `2023-05-21T00:00:00`
-- ❌ **Fails**: Omitting the date parameter (returns 412 Precondition Failed)
-
-### Common Issues with Date Formatting
-
-1. **Required Date Parameter**: Status endpoints require a date parameter; omitting it results in 412 Precondition Failed errors.
-2. **Time Zone Requirement**: The time zone offset (`±hh:mm`) part is mandatory - even specifying UTC with `Z` won't work.
-3. **URL Encoding**: When using dates in URL parameters, make sure to URL-encode them properly.
-
-### Journal Endpoint Filtering Options
-
-The Journal endpoint (`/journal`) supports several filtering parameters:
-
-1. `target_date`: Date to filter habits for (required, must use the ISO format with timezone)
-2. `order_by`: Options include `priority`, `reminder_time`, or `status`
-3. `status`: Filter by habit status - can include multiple values as comma-separated list
-4. `area_id`: Filter by a specific area/category ID
-5. `time_of_day`: Filter by when the habit is scheduled - options include `morning`, `afternoon`, `evening`, `any_time`
-
-### Error Handling
-
-1. **Invalid Habit IDs**: Both `/habits/invalid-id` and `/status/invalid-id` endpoints return a status code 500 (not 404) with the message "The habit does not exist" when an invalid habit ID is provided.
-2. **Date Format Errors**: Using incorrect date formats results in 500 Internal Server Error responses with a message explaining the required format.
-
-### Sample Code for Correct Date Formatting
+- ✅ **Works**: `2023-05-21T00:00:00+00:00`
+- ❌ **Fails**: `2023-05-21T00:00:00Z`, `2023-05-21`, `2023-05-21T00:00:00` — the `Z` shorthand and bare-date/no-timezone forms are all rejected
+- ❌ **Fails**: omitting the date parameter (412 Precondition Failed)
 
 ```python
 import datetime
 import urllib.parse
 
-# Get a date (e.g., today)
 date = datetime.datetime.now()
-
-# Format for Habitify API (with +00:00 timezone)
 formatted_date = f"{date.strftime('%Y-%m-%d')}T00:00:00+00:00"
-
-# Use in API call (date parameter is REQUIRED)
 encoded_date = urllib.parse.quote(formatted_date)
 status_url = f"/status/{habit_id}?target_date={encoded_date}"
 ```
 
 ## Habits With and Without Values
 
-Habitify supports two types of habits:
-
-1. **Habits with Values**: These habits track a numeric value (e.g., "Drink 8 glasses of water"). When completing these habits, you should include a `value` parameter in the PUT request to `/status/{id}`.
-
-2. **Habits without Values**: These habits only track completion status (e.g., "Meditate"). For these habits, you can omit the `value` parameter in the PUT request to `/status/{id}`.
-
-The API handles both types gracefully:
-
-- When setting status for a habit with values, you can include the `value` parameter (e.g., `"value": 8.0`).
-- When setting status for a habit without values, you can omit the `value` parameter entirely.
-- You can also set a habit with values to "skipped" or "failed" without providing a value.
+Value-tracking habits (e.g. "Drink 8 glasses of water") accept an optional `value` param on `PUT /status/{id}` (e.g. `"value": 8.0`); completion-only habits (e.g. "Meditate") omit it. Either kind can be set to "skipped"/"failed" without a value.
 
 See individual reference files for detailed request and response structures.

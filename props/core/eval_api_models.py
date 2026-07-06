@@ -25,8 +25,6 @@ from props.db.models import AgentRunStatus
 
 
 class RunCriticRequest(OpenAIStrictModeBaseModel):
-    """Request to run a critic agent."""
-
     definition_id: DefinitionId = Field(description="Image ref: OCI digest (sha256:...) or tag (e.g., 'latest')")
     example: ExampleSpec = Field(description="Example to evaluate")
     timeout_seconds: int = Field(gt=0, description="Max seconds before container is killed")

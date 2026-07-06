@@ -24,7 +24,6 @@ class ServerHandle:
     _stop_fn: Any
 
     def stop(self) -> None:
-        """Stop the server."""
         self._stop_fn()
 
 

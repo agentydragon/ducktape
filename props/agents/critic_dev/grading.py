@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 
 def get_grading_status_from_db(critic_run_id: UUID, db: Database) -> GradingStatusResponse:
-    """Check grading status by querying the database directly."""
     with db.session() as session:
         pending_count = (
             session.query(func.count())

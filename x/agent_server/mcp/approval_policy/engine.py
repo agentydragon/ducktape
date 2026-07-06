@@ -54,9 +54,6 @@ def _serialize_arguments_json(arguments: dict[str, Any] | None) -> str | None:
     return pydantic_core.to_json(arguments, fallback=str).decode("utf-8")
 
 
-# ============================================================================
-# Reserved JSON-RPC Error Codes & Messages for Policy Gateway
-# ============================================================================
 # Policy gateway denials
 POLICY_DENIED_ABORT_CODE: Final[int] = -32950
 POLICY_DENIED_CONTINUE_CODE: Final[int] = -32951
@@ -74,10 +71,7 @@ POLICY_BACKEND_RESERVED_MISUSE_MSG: Final[str] = "policy_backend_reserved_misuse
 # Gateway stamping (placed on error.data to mark origin)
 POLICY_GATEWAY_STAMP_KEY: Final[str] = "adgn_policy_gateway"
 
-# ============================================================================
-# Tool and Resource Constants
-# ============================================================================
-# (No constants - use server.tool.name and server.resource.uri for SSOT)
+# (No tool/resource constants - use server.tool.name and server.resource.uri for SSOT)
 
 
 # ---- Enums for consolidated tools ----

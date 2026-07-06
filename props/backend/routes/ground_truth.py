@@ -51,8 +51,6 @@ class SnapshotSummary(BaseModel):
 
 
 class SnapshotsListResponse(BaseModel):
-    """Response for listing snapshots."""
-
     snapshots: list[SnapshotSummary]
 
 
@@ -70,8 +68,6 @@ class OccurrenceInfo(BaseModel):
 
 
 class TpInfo(BaseModel):
-    """True positive issue info."""
-
     tp_id: str
     rationale: str
     occurrences: list[OccurrenceInfo]
@@ -79,8 +75,6 @@ class TpInfo(BaseModel):
 
 
 class FpInfo(BaseModel):
-    """False positive issue info."""
-
     fp_id: str
     rationale: str
     occurrences: list[OccurrenceInfo]

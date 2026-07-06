@@ -77,59 +77,47 @@ def test_docker_exec_shell_unwrapping_snapshot(snapshot: SnapshotAssertion, call
 
     Tests the _unwrap_shell_command() logic for various shell wrappers.
     """
-    # Create _TestExecInput
     exec_input = _TestExecInput(cmd=cmd, cwd="/workspace", env=None, user=None, timeout_ms=30000)
 
-    # Create ToolCall with _TestExecInput
     call = ToolCall(
         name=build_mcp_function(ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME),
         args_json=json.dumps(exec_input.model_dump()),
         call_id=call_id_gen(),
     )
 
-    # Create BaseExecResult (successful exit)
     exec_result = BaseExecResult(exit=Exited(exit_code=0), stdout="output text\n", stderr="", duration_ms=125)
 
-    # Create ToolCallOutput with BaseExecResult
     output = ToolCallOutput(
         call_id=call.call_id, result=ToolResult(content=[], structured_content=exec_result.model_dump(), is_error=False)
     )
 
-    # Render to string
     rendered = render_handler_to_string(call, output)
 
-    # Compare against snapshot
     assert rendered == snapshot
 
 
 def test_docker_exec_with_custom_cwd_snapshot(snapshot: SnapshotAssertion, call_id_gen):
     """Snapshot test for docker exec with custom working directory display."""
-    # Create _TestExecInput with custom cwd
     exec_input = _TestExecInput(
         cmd=["bash", "-c", "pwd && ls"], cwd="/tmp/custom", env=None, user=None, timeout_ms=30000
     )
 
-    # Create ToolCall
     call = ToolCall(
         name=build_mcp_function(ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME),
         args_json=json.dumps(exec_input.model_dump()),
         call_id=call_id_gen(),
     )
 
-    # Create BaseExecResult
     exec_result = BaseExecResult(
         exit=Exited(exit_code=0), stdout="/tmp/custom\nfile1.txt\nfile2.py\n", stderr="", duration_ms=89
     )
 
-    # Create ToolCallOutput
     output = ToolCallOutput(
         call_id=call.call_id, result=ToolResult(content=[], structured_content=exec_result.model_dump(), is_error=False)
     )
 
-    # Render to string
     rendered = render_handler_to_string(call, output)
 
-    # Compare against snapshot
     assert rendered == snapshot
 
 

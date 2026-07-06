@@ -1,4 +1,3 @@
-# ============================================================================
 # Langfuse — OIDC login for the LLM observability dashboard
 # (langfuse.allegedly.works)
 #
@@ -8,7 +7,6 @@
 # reflected into the langfuse namespace, where the HelmRelease consumes them as
 # AUTH_CUSTOM_CLIENT_ID / AUTH_CUSTOM_CLIENT_SECRET. Login is gated to the
 # admins group; email/password login is disabled in the chart (SSO-only).
-# ============================================================================
 
 resource "authentik_provider_oauth2" "langfuse" {
   name               = "langfuse-oauth2"

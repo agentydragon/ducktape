@@ -123,7 +123,6 @@ def _root(
 
 
 def _create_cli_dependencies(*, verbose: bool = False):
-    """Create common CLI dependencies."""
     config = load_config()
     formatter = ViewFormatter(daemon_log_path=config.daemon_log_file)
     configure_logging(log_level=LogLevel.INFO if verbose else LogLevel.WARNING)

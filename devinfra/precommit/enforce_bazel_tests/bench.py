@@ -160,7 +160,6 @@ def main() -> int:
 
     run_index = 0
 
-    # --- Section 1: kind/tests queries (each from cold) ---
     print("=== kind/tests queries (each from cold start) ===")
     cold_kind_cases = [
         ("kind_py_test_all", 'kind("py_test", //...)'),
@@ -175,7 +174,6 @@ def main() -> int:
         _bench_query(bench_ws, name, expr, cold=True, out_dir=out_dir, profile=args.profile, run_index=run_index)
         run_index += 1
 
-    # --- Section 2: alternative strategies (each from cold) ---
     print("\n=== alternative strategies (each from cold start) ===")
     cold_alt_cases = [
         ("enumerate_all", "//..."),
@@ -187,7 +185,6 @@ def main() -> int:
         _bench_query(bench_ws, name, expr, cold=True, out_dir=out_dir, profile=args.profile, run_index=run_index)
         run_index += 1
 
-    # --- Section 3: warm-server queries ---
     print("\n=== warm-server queries (no shutdown between queries) ===")
     # Server is warm from the last query above. If all cold queries failed,
     # start a server with a trivial query first.

@@ -408,10 +408,6 @@ let
     "bzcat /var/log/*.bz2"
   ];
 
-  # ============================================================================
-  # Transformation Functions
-  # ============================================================================
-
   # Stringify structured format → simple format
   # Input: { type = "prefix"|"exact"; cmd; args = [ ... ]; }
   # Output: { type; cmd = "full command string"; }
@@ -439,10 +435,6 @@ let
     };
 in
 {
-  # ============================================================================
-  # External API
-  # ============================================================================
-
   # Multiple exports for different consumer needs:
   exports = {
     # For sudo module: detailed structured format (includes logViewingCommands)

@@ -13,9 +13,7 @@
 #   - Server purchased via OVH web UI; set the matching kimsufi_service_name var
 #   - OVH API credentials in secrets/ovh-credentials.sops.yaml
 
-# ============================================================================
 # SERVER MAP
-# ============================================================================
 
 locals {
   kimsufi_servers = {
@@ -104,9 +102,7 @@ locals {
   }
 }
 
-# ============================================================================
 # TALOS IMAGE FACTORY - Metal platform with Nebula extension
-# ============================================================================
 
 resource "talos_image_factory_schematic" "kimsufi" {
   schematic = yamlencode({
@@ -134,9 +130,7 @@ data "talos_image_factory_urls" "kimsufi" {
   architecture  = "amd64"
 }
 
-# ============================================================================
 # OVH SERVER DATA SOURCES
-# ============================================================================
 
 data "ovh_dedicated_server" "kimsufi" {
   for_each     = local.active_kimsufi_servers
@@ -159,9 +153,7 @@ locals {
   kimsufi_harddisk_boot_id = 1      # harddisk
 }
 
-# ============================================================================
 # SSH KEY — for OVH rescue mode authentication
-# ============================================================================
 
 # ED25519 keypair injected into the OVH rescue environment so remote-exec can
 # SSH in to dd the Talos image. Stored in SOPS (secrets/ovh-rescue-ssh.sops.yaml),
@@ -170,9 +162,7 @@ data "sops_file" "ovh_rescue_ssh" {
   source_file = "${path.module}/../../../secrets/ovh-rescue-ssh.sops.yaml"
 }
 
-# ============================================================================
 # OVH SERVER RESOURCES — sets rescue SSH key + EFI bootloader
-# ============================================================================
 
 resource "ovh_dedicated_server" "kimsufi" {
   for_each = local.active_kimsufi_servers
@@ -193,9 +183,7 @@ resource "ovh_dedicated_server" "kimsufi" {
   efi_bootloader_path = "\\efi\\boot\\bootx64.efi"
 }
 
-# ============================================================================
 # TALOS INSTALLATION — rescue boot, dd image, harddisk reboot
-# ============================================================================
 
 # Step 1: Set rescue boot mode.
 # ignore_changes on boot_id: after initial creation this sets boot to rescue.
@@ -281,9 +269,7 @@ resource "ovh_dedicated_server_reboot_task" "kimsufi_to_talos" {
   depends_on   = [ovh_dedicated_server_update.kimsufi_harddisk]
 }
 
-# ============================================================================
 # TALOS MACHINE CONFIGURATION
-# ============================================================================
 
 locals {
   # OVH KS-5 control planes are also storage-bearing nodes. Keep them schedulable
@@ -561,9 +547,7 @@ resource "talos_machine_configuration_apply" "kimsufi" {
   depends_on = [ovh_dedicated_server_reboot_task.kimsufi_to_talos]
 }
 
-# ============================================================================
 # KIMSUFI CONTROL PLANE — provisioning resources
-# ============================================================================
 
 resource "ovh_dedicated_server" "kimsufi_cp" {
   for_each = local.active_kimsufi_cp_servers
@@ -637,9 +621,7 @@ resource "ovh_dedicated_server_reboot_task" "kimsufi_cp_to_talos" {
   depends_on   = [ovh_dedicated_server_update.kimsufi_cp_harddisk]
 }
 
-# ============================================================================
 # KIMSUFI CONTROL PLANE — Talos machine configuration
-# ============================================================================
 
 data "talos_machine_configuration" "kimsufi_cp" {
   for_each = local.active_kimsufi_cp_servers
@@ -681,9 +663,7 @@ resource "talos_machine_configuration_apply" "kimsufi_cp" {
   depends_on = [ovh_dedicated_server_reboot_task.kimsufi_cp_to_talos]
 }
 
-# ============================================================================
 # KS-GAME GAME SHIELD — Nebula port 4242 passthrough
-# ============================================================================
 #
 # OVH KS-GAME servers run the OVH Game Shield (anti-DDoS) which by default
 # drops UDP traffic that doesn't match a known game protocol signature.

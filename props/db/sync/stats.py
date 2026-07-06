@@ -7,8 +7,6 @@ from dataclasses import dataclass
 
 @dataclass
 class SyncStats:
-    """Statistics from a sync operation."""
-
     total: int
     added: int
     updated: int
