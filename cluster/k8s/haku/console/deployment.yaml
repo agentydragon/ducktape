@@ -72,7 +72,7 @@ spec:
               value: https://haku-ui.allegedly.works
             - name: HAKU_CONSOLE_AUTH_ORIGIN
               value: https://auth.allegedly.works
-            - name: HAKU_CONSOLE_MCP_APPROVAL_DATABASE_URL
+            - name: HAKU_CONSOLE_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: haku-console-db-app
