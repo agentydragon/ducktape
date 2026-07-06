@@ -78,14 +78,26 @@ redesign.
 
 ## Secondary leg: native Claude Code OTel (metrics dashboards)
 
-Independent of transcripts: `CLAUDE_CODE_ENABLE_TELEMETRY=1` +
-`OTEL_METRICS_EXPORTER=otlp` set as **UI env vars** (verified to reach the claude
-process) pointed at `http://127.0.0.1:4318`, with a local forwarder attaching the
-hourly-rotated `DUCKTAPE_OTEL_BEARER_TOKEN` and relaying to
-`alloy-otlp.allegedly.works` (→ Mimir/Grafana). Smoke test first: UI env vars + a
-dumb localhost listener started by bootstrap; one session tells us whether the remote
-harness build emits at all. This leg is dashboards-only; the rsync path remains the
-lossless record (OTel events truncate at 60 KB).
+Independent of transcripts, dashboards-only (the rsync path remains the lossless
+record; OTel events truncate at 60 KB). Auth is solved **without a forwarder**:
+Claude Code supports `otelHeadersHelper` in settings.json — a script emitting
+headers JSON, run at startup **and every ~29 min**
+(`CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS`; HTTP protocols only) — so the
+repo-committed settings can point at a one-liner that prints the current
+`alloy-otlp` bearer (web: the bootstrap-materialized SOPS token; machines: the
+`cli_env.sh` export). Tokens live ≥24 h, refresh every 29 min → rotation covered.
+
+Recipe: UI env vars `CLAUDE_CODE_ENABLE_TELEMETRY=1`,
+`OTEL_METRICS_EXPORTER=otlp`, `OTEL_LOGS_EXPORTER=otlp`,
+`OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`,
+`OTEL_EXPORTER_OTLP_ENDPOINT=https://alloy-otlp.allegedly.works` + settings.json
+`otelHeadersHelper`. **Residual risk → smoke test:** the claude process carries no
+proxy env and Node OTLP exporters ignore `HTTPS_PROXY`, so export is a _direct_
+HTTPS connection — the managed container's network may or may not allow that even
+for allowlisted domains. One test session (with a localhost listener as
+plan B's probe) answers it; if direct egress is blocked, fall back to a localhost
+forwarder (`OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318`, bootstrap-owned
+relay attaching the bearer).
 
 ## Build order
 
