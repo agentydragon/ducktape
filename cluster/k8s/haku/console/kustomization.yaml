@@ -8,6 +8,6 @@ resources:
   - service.yaml
 
 configMapGenerator:
-  - name: haku-console-mcp-servers
+  - name: haku-console-config
     files:
-      - mcp-servers.yaml
+      - config.yaml

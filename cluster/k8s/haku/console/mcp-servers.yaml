@@ -1,6 +1,0 @@
-# Connected MCP servers haku-console may execute after trusted operator approval.
-# This file is mounted through configMapGenerator; it is not a Kubernetes manifest.
-servers:
-  - id: grocy-sf
-    server_url: https://grocy-mcp-sf.allegedly.works/mcp
-    bearer_token_secret: haku-console-grocy-sf-token
