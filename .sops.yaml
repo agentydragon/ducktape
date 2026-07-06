@@ -681,13 +681,16 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
-  # Alloy OTLP bearer JWT (auto-rotated by the authentik-jwt-rotation CronJob)
+  # Alloy OTLP bearer JWT (auto-rotated by the authentik-jwt-rotation CronJob).
+  # haku is a reader so its sessions get DUCKTAPE_OTEL_BEARER_TOKEN for the
+  # session OTLP forwarder, same as claude-web (telemetry-ingest-only credential).
   - path_regex: secrets/alloy-otlp-bearer-token\.yaml$
     key_groups:
       - age:
           - *admin
           - *claude-web
           - *codex-cloud-agent
+          - *haku
           - *wyrm2-agentydragon
           - *rugged-agentydragon
           - *atlas-agentydragon

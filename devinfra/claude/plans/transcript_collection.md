@@ -106,7 +106,10 @@ forwarder** (the exporter can't egress directly; see Facts):
   the init script only runs at container creation, so it is deliberately not used).
   Wired into the web, home-manager, and haku profiles. Token sources:
   `DUCKTAPE_OTEL_BEARER_TOKEN` env, else the mirrored `alloy-otlp-bearer` k8s Secret
-  (with retry — the kubeconfig materializes in a sibling background command).
+  (with retry — the kubeconfig materializes in a sibling background command). The
+  haku age key is a recipient of the bearer SOPS file, so both the web and haku
+  envs normally take the env path; the k8s mirror covers SOPS-outage/bootstrap
+  windows.
 - Cluster: the `authentik-jwt-rotation` job publishes the bearer as
   `flux-system/alloy-otlp-bearer` (`k8s_secret` output); a `ClusterExternalSecret`
   (<../../../cluster/k8s/agents/alloy-otlp-bearer/>) mirrors it into
