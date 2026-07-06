@@ -32,9 +32,9 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from sqlalchemy import create_engine, func, insert, select, update
 
 from haku.console.config import Settings
+from haku.console.database_migrate import run_migrations_for_connection
+from haku.console.database_schema import sqlalchemy_url, tool_call_events, tool_call_idempotency, tool_calls
 from haku.console.deps import SettingsDep
-from haku.console.mcp_approval_migrate import run_migrations_for_connection
-from haku.console.mcp_approval_schema import sqlalchemy_url, tool_call_events, tool_call_idempotency, tool_calls
 
 logger = logging.getLogger(__name__)
 

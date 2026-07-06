@@ -38,17 +38,17 @@ py_library(
 )
 
 py_library(
-    name = "mcp_approval_schema",
-    srcs = ["mcp_approval_schema.py"],
+    name = "database_schema",
+    srcs = ["database_schema.py"],
     deps = ["@pypi//sqlalchemy"],
 )
 
 py_library(
-    name = "mcp_approval_migrate",
-    srcs = ["mcp_approval_migrate.py"],
+    name = "database_migrate",
+    srcs = ["database_migrate.py"],
     data = glob(["migrations/**"]),
     deps = [
-        ":mcp_approval_schema",
+        ":database_schema",
         "@pypi//alembic",
         "@pypi//sqlalchemy",
     ],
@@ -72,9 +72,9 @@ py_library(
     srcs = ["mcp_approval.py"],
     deps = [
         ":config",
+        ":database_migrate",
+        ":database_schema",
         ":deps",
-        ":mcp_approval_migrate",
-        ":mcp_approval_schema",
         "@pypi//canonicaljson",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",

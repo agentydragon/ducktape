@@ -1,13 +1,13 @@
 """Alembic environment for haku-console's MCP approval database.
 
-Connection is injected programmatically by ``haku.console.mcp_approval_migrate``.
+Connection is injected programmatically by ``haku.console.database_migrate``.
 """
 
 from __future__ import annotations
 
 from alembic import context
 
-from haku.console.mcp_approval_schema import metadata
+from haku.console.database_schema import metadata
 
 
 def run_migrations() -> None:

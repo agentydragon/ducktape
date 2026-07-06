@@ -1,4 +1,4 @@
-"""Alembic migration runner for haku-console's MCP approval database."""
+"""Alembic migration runner for haku-console's database."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 
-from haku.console.mcp_approval_schema import metadata
+from haku.console.database_schema import metadata
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 

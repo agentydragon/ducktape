@@ -1,11 +1,17 @@
-"""SQLAlchemy schema for haku-console's operator-approved MCP call ledger."""
+"""SQLAlchemy schema for haku-console's database."""
 
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, CheckConstraint, Column, DateTime, ForeignKey, MetaData, Table, Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, MetaData, Table, Text
+from sqlalchemy.dialects.postgresql import ENUM, JSONB
 
 metadata = MetaData()
+
+TOOL_CALL_STATUS_VALUES = ("pending_approval", "running", "ok", "error", "denied")
+TOOL_CALL_EVENT_TYPE_VALUES = ("tool_call_submitted", "approval_pending", "tool_call_updated")
+
+tool_call_status_type = ENUM(*TOOL_CALL_STATUS_VALUES, name="tool_call_status", create_type=False)
+tool_call_event_type = ENUM(*TOOL_CALL_EVENT_TYPE_VALUES, name="tool_call_event_type", create_type=False)
 
 tool_calls = Table(
     "mcp_tool_calls",
@@ -15,7 +21,7 @@ tool_calls = Table(
     Column("server_title", Text, nullable=False),
     Column("tool_name", Text, nullable=False),
     Column("caller_principal", Text, nullable=False),
-    Column("status", Text, nullable=False),
+    Column("status", tool_call_status_type, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
     Column("arguments_json", JSONB, nullable=False),
@@ -28,9 +34,6 @@ tool_calls = Table(
     Column("decision_reason", Text, nullable=True),
     Column("result_json", JSONB, nullable=True),
     Column("error", Text, nullable=True),
-    CheckConstraint(
-        "status IN ('pending_approval', 'running', 'ok', 'error', 'denied')", name="mcp_tool_calls_status_check"
-    ),
 )
 
 tool_call_idempotency = Table(
@@ -45,15 +48,11 @@ tool_call_events = Table(
     "mcp_tool_call_events",
     metadata,
     Column("event_id", BigInteger, primary_key=True, autoincrement=True),
-    Column("event_type", Text, nullable=False),
+    Column("event_type", tool_call_event_type, nullable=False),
     Column("tool_call_id", Text, nullable=False),
-    Column("status", Text, nullable=False),
+    Column("status", tool_call_status_type, nullable=False),
     Column("approval_id", Text, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
-    CheckConstraint(
-        "event_type IN ('tool_call_submitted', 'approval_pending', 'tool_call_updated')",
-        name="mcp_tool_call_events_event_type_check",
-    ),
 )
 
 
