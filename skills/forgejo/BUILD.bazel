@@ -1,6 +1,35 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//skills:defs.bzl", "skill_package")
 
 skill_package(
     name = "forgejo",
-    srcs = ["SKILL.md"],
+    srcs = [
+        "SKILL.md",
+        "scripts/fetch_forgejo_logs.py",
+    ],
+)
+
+py_library(
+    name = "fetch_forgejo_logs_lib",
+    srcs = ["scripts/fetch_forgejo_logs.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//httpx"],
+)
+
+py_binary(
+    name = "fetch_forgejo_logs",
+    srcs = ["scripts/fetch_forgejo_logs.py"],
+    main = "scripts/fetch_forgejo_logs.py",
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//httpx"],
+)
+
+py_test(
+    name = "test_fetch_forgejo_logs",
+    srcs = ["test_fetch_forgejo_logs.py"],
+    deps = [
+        ":fetch_forgejo_logs_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

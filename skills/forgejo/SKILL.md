@@ -64,6 +64,24 @@ page each time, prefer page-provided attributes over hardcoded IDs, and expect t
 to need adjustment after Forgejo upgrades. REST Basic auth is enough for `/api/v1/...`, but
 not for the web log endpoints. Start a temporary web session with the same credential:
 
+Prefer the bundled helper when you need logs:
+
+```bash
+# List step indexes from the run page.
+python skills/forgejo/scripts/fetch_forgejo_logs.py \
+  --owner "$OWNER" --repo "$REPO" --run "$RUN_NUMBER" --list-steps
+
+# Fetch one expanded step's log.
+python skills/forgejo/scripts/fetch_forgejo_logs.py \
+  --owner "$OWNER" --repo "$REPO" --run "$RUN_NUMBER" --step "$STEP_INDEX"
+```
+
+The helper logs in, fetches the run page, parses the page-provided `data-*` attributes, and
+posts the UI's JSON cursor payload. Keep credentials in environment variables or temporary
+shell variables (`FORGEJO_URL`, `FORGEJO_USER`, `FORGEJO_PASSWORD`); do not print them.
+
+Manual equivalent:
+
 ```bash
 cookie=$(mktemp)
 curl -fsS -c "$cookie" "$FORGEJO_URL/user/login" -o /tmp/forgejo-login.html
