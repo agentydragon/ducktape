@@ -9,6 +9,40 @@ import pytest_bazel
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
+from haku.console.mcp_approval import McpServerEntry, ServerMetadata, ToolMetadata
+
+
+class FakeToolExecutor:
+    async def execute(self, server: McpServerEntry, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        return {"fake_mcp": True, "server": server.id, "tool": tool_name, "arguments": arguments}
+
+
+class FakeMetadataProvider:
+    async def metadata(self, server: McpServerEntry) -> ServerMetadata:
+        return ServerMetadata(
+            server_id=server.id,
+            title=server.id,
+            tools=[
+                ToolMetadata(
+                    name="stock_add",
+                    description="Fake stock add tool used by tests.",
+                    input_schema={"type": "object", "additionalProperties": True},
+                    schema_source="mcp",
+                ),
+                ToolMetadata(
+                    name="echo",
+                    description="Fake echo tool used by tests.",
+                    input_schema={"type": "object", "additionalProperties": True},
+                    schema_source="mcp",
+                ),
+            ],
+            schema_source="mcp",
+        )
+
+
+def _test_app_overrides() -> dict[str, Any]:
+    return {"tool_call_executor": FakeToolExecutor(), "tool_call_metadata_provider": FakeMetadataProvider()}
+
 
 def _catalog(tmp_path: Path) -> Path:
     path = tmp_path / "mcp_servers.yaml"
@@ -16,12 +50,10 @@ def _catalog(tmp_path: Path) -> Path:
         """
 servers:
   - id: grocy-sf
-    title: Grocy SF
-    server_url: mock://grocy-sf
-    credential: haku-console-grocy-sf-token
+    server_url: https://grocy-sf.example.test/mcp
+    bearer_token_secret: haku-console-grocy-sf-token
   - id: smoke
-    title: Smoke server
-    server_url: mock://smoke
+    server_url: https://smoke.example.test/mcp
 """,
         encoding="utf-8",
     )
@@ -36,7 +68,7 @@ def _csrf(client: TestClient) -> str:
 
 def _submit(client: TestClient, *, client_request_id: str = "req-1", amount: int = 1) -> dict[str, Any]:
     resp = client.post(
-        "/api/approvals/tool-calls",
+        "/api/tool-calls",
         json={
             "server_id": "grocy-sf",
             "tool_name": "stock_add",
@@ -52,25 +84,25 @@ def _submit(client: TestClient, *, client_request_id: str = "req-1", amount: int
 
 
 def test_reflection_lists_connected_servers_without_leaking_credentials(make_client, tmp_path: Path) -> None:
-    with make_client(mcp_approval_catalog_path=_catalog(tmp_path)) as client:
+    with make_client(mcp_approval_catalog_path=_catalog(tmp_path), **_test_app_overrides()) as client:
         resp = client.get("/api/capabilities/mcp-servers")
     assert resp.status_code == 200
     body = resp.json()
     server = body["servers"][0]
     assert server == {
         "server_id": "grocy-sf",
-        "title": "Grocy SF",
+        "title": "grocy-sf",
         "tools": [
             {
                 "name": "stock_add",
-                "description": "Mock stock add tool used by tests/local smoke checks.",
+                "description": "Fake stock add tool used by tests.",
                 "input_schema": {"type": "object", "additionalProperties": True},
                 "schema_source": "mcp",
                 "degraded_reason": None,
             },
             {
                 "name": "echo",
-                "description": "Mock echo tool used by tests/local smoke checks.",
+                "description": "Fake echo tool used by tests.",
                 "input_schema": {"type": "object", "additionalProperties": True},
                 "schema_source": "mcp",
                 "degraded_reason": None,
@@ -79,15 +111,16 @@ def test_reflection_lists_connected_servers_without_leaking_credentials(make_cli
         "schema_source": "mcp",
         "degraded_reason": None,
     }
-    assert "credential" not in str(body)
+    assert "bearer_token_secret" not in str(body)
 
 
 def test_submit_mints_tool_call_id_and_idempotent_replay(make_client, tmp_path: Path) -> None:
-    with make_client(mcp_approval_catalog_path=_catalog(tmp_path)) as client:
+    with make_client(mcp_approval_catalog_path=_catalog(tmp_path), **_test_app_overrides()) as client:
         first = _submit(client)
         replay = _submit(client)
+        by_client_id = client.get("/api/tool-calls/by-client-request/req-1").json()
         conflict = client.post(
-            "/api/approvals/tool-calls",
+            "/api/tool-calls",
             json={
                 "server_id": "grocy-sf",
                 "tool_name": "stock_add",
@@ -99,11 +132,14 @@ def test_submit_mints_tool_call_id_and_idempotent_replay(make_client, tmp_path: 
     assert first["approval_id"].startswith("ap_")
     assert first["status"] == "approval_required"
     assert replay["tool_call_id"] == first["tool_call_id"]
+    assert by_client_id["tool_call_id"] == first["tool_call_id"]
     assert conflict.status_code == 409
 
 
-def test_approval_executes_mock_tool_and_records_terminal_result(make_client, tmp_path: Path) -> None:
-    with make_client(mcp_approval_catalog_path=_catalog(tmp_path), csrf_secret=SecretStr("csrf")) as client:
+def test_approval_executes_tool_and_records_terminal_result(make_client, tmp_path: Path) -> None:
+    with make_client(
+        mcp_approval_catalog_path=_catalog(tmp_path), csrf_secret=SecretStr("csrf"), **_test_app_overrides()
+    ) as client:
         submitted = _submit(client)
         approval_id = submitted["approval_id"]
         resp = client.post(
@@ -116,13 +152,15 @@ def test_approval_executes_mock_tool_and_records_terminal_result(make_client, tm
     decided = resp.json()["tool_call"]
     assert decided["status"] == "ok"
     assert decided["approval_id"] is None
-    assert decided["result"]["mock"] is True
+    assert decided["result"]["fake_mcp"] is True
     assert decided["result"]["tool"] == "stock_add"
     assert fetched == decided
 
 
 def test_approval_denial_is_terminal_and_does_not_execute(make_client, tmp_path: Path) -> None:
-    with make_client(mcp_approval_catalog_path=_catalog(tmp_path), csrf_secret=SecretStr("csrf")) as client:
+    with make_client(
+        mcp_approval_catalog_path=_catalog(tmp_path), csrf_secret=SecretStr("csrf"), **_test_app_overrides()
+    ) as client:
         submitted = _submit(client)
         resp = client.post(
             f"/api/approvals/{submitted['approval_id']}/decision",
@@ -137,9 +175,9 @@ def test_approval_denial_is_terminal_and_does_not_execute(make_client, tmp_path:
 
 
 def test_all_v1_tool_calls_require_console_approval(make_client, tmp_path: Path) -> None:
-    with make_client(mcp_approval_catalog_path=_catalog(tmp_path)) as client:
+    with make_client(mcp_approval_catalog_path=_catalog(tmp_path), **_test_app_overrides()) as client:
         resp = client.post(
-            "/api/approvals/tool-calls",
+            "/api/tool-calls",
             json={
                 "server_id": "smoke",
                 "tool_name": "echo",
@@ -159,7 +197,7 @@ def test_all_v1_tool_calls_require_console_approval(make_client, tmp_path: Path)
 
 def test_websocket_receives_pending_approval_event(make_client, tmp_path: Path) -> None:
     with (
-        make_client(mcp_approval_catalog_path=_catalog(tmp_path)) as client,
+        make_client(mcp_approval_catalog_path=_catalog(tmp_path), **_test_app_overrides()) as client,
         client.websocket_connect("/api/approvals/ws") as ws,
     ):
         assert ws.receive_json() == {"type": "hello"}
@@ -172,15 +210,15 @@ def test_websocket_receives_pending_approval_event(make_client, tmp_path: Path) 
 
 def test_full_audit_log_listing_and_secret_redaction(make_client, tmp_path: Path) -> None:
     with make_client(
-        mcp_approval_catalog_path=_catalog(tmp_path), mcp_approval_api_token=SecretStr("tool-token")
+        mcp_approval_catalog_path=_catalog(tmp_path), agent_api_token=SecretStr("tool-token"), **_test_app_overrides()
     ) as client:
         operator_call = client.post(
-            "/api/approvals/tool-calls",
+            "/api/tool-calls",
             headers={"X-authentik-username": "operator@example.com"},
             json={"server_id": "smoke", "tool_name": "echo", "client_request_id": "operator", "arguments": {"x": 1}},
         ).json()
         haku_call = client.post(
-            "/api/approvals/tool-calls",
+            "/api/tool-calls",
             headers={"Authorization": "Bearer tool-token"},
             json={"server_id": "smoke", "tool_name": "echo", "client_request_id": "haku", "arguments": {"x": 2}},
         ).json()

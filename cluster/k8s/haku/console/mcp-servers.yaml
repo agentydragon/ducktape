@@ -2,6 +2,5 @@
 # This file is mounted through configMapGenerator; it is not a Kubernetes manifest.
 servers:
   - id: grocy-sf
-    title: Grocy SF
     server_url: https://grocy-mcp-sf.allegedly.works/mcp
-    credential: haku-console-grocy-sf-token
+    bearer_token_secret: haku-console-grocy-sf-token

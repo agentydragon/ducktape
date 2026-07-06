@@ -16,23 +16,39 @@ import type { CalloutKind } from "./widgets.tsx";
 // `<statusbadge status="open" color="teal">`). HTML tag/attribute names are case-insensitive, so
 // the DOM always hands these back lowercased regardless of how they were written. Attributes are
 // always plain strings (nothing evaluates the markdown to compute a richer value).
-interface WidgetProps {
+interface WidgetBaseProps {
   children?: ReactNode;
+  rawText?: string; // the element's plain text content — for a prompt authored *inside* the tag
+}
+
+interface DisplayWidgetProps {
   kind?: string;
   title?: string;
   status?: string;
   color?: string;
+}
+
+interface ActionWidgetProps {
   prompt?: string;
   label?: string;
   text?: string;
   item?: string;
+  request?: string;
+}
+
+interface ChoiceWidgetProps {
+  prompt?: string;
   value?: string;
   scope?: string;
   field?: string;
-  id?: string;
-  request?: string;
-  rawText?: string; // the element's plain text content — for a prompt authored *inside* the tag
+  item?: string;
 }
+
+interface EmbedWidgetProps {
+  id?: string;
+}
+
+type WidgetProps = WidgetBaseProps & DisplayWidgetProps & ActionWidgetProps & ChoiceWidgetProps & EmbedWidgetProps;
 
 const WIDGET_COMPONENTS: Record<string, (props: WidgetProps) => ReactNode> = {
   callout: (p) => (

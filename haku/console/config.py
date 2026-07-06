@@ -69,4 +69,4 @@ class Settings(BaseSettings):
     mcp_approval_store_path: Path | None = None
     # Optional bearer accepted from Haku / haku-ui backend for backend-to-backend calls.
     # Browser/operator calls still rely on the Authentik session at the ingress.
-    mcp_approval_api_token: SecretStr | None = None
+    agent_api_token: SecretStr | None = None

@@ -79,10 +79,10 @@ spec:
                 secretKeyRef:
                   name: haku-console-db-app
                   key: uri
-            - name: HAKU_CONSOLE_MCP_APPROVAL_API_TOKEN
+            - name: HAKU_CONSOLE_AGENT_API_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: haku-console-tool-call-api
+                  name: haku-console-agent-api
                   key: token
             - name: HAKU_CONSOLE_MCP_CREDENTIAL_HAKU_CONSOLE_GROCY_SF_TOKEN
               valueFrom:

@@ -119,7 +119,7 @@ the server-side bearer (see <../README.md> → _The capability tier_).
 The `<tool-call>` affordance does **not** give the iframe a direct console bridge verb in v1.
 haku-ui frontend posts to its own same-origin backend, that backend reads
 `tool_requests/<id>.yaml` from haku-state and calls haku-console's
-`POST /api/approvals/tool-calls` with the configured console API token. If approval is
+`POST /api/tool-calls` with the configured console agent API token. If approval is
 required, haku-console notifies its trusted frontend (`/api/approvals/ws`, with REST catch-up from
 `/api/approvals/pending`) and renders the top-layer approval dialog itself. The iframe can request a
 tool call, but cannot approve one or forge console chrome.

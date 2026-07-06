@@ -29,8 +29,7 @@ tool_calls = Table(
     Column("result_json", JSONB, nullable=True),
     Column("error", Text, nullable=True),
     CheckConstraint(
-        "status IN ('approval_required', 'running', 'ok', 'error', 'denied', 'timed_out', 'not_allowed')",
-        name="mcp_tool_calls_status_check",
+        "status IN ('approval_required', 'running', 'ok', 'error', 'denied')", name="mcp_tool_calls_status_check"
     ),
 )
 

@@ -22,9 +22,8 @@ Connected MCP servers are configured in ducktape as data mounted with
 ```yaml
 servers:
   - id: grocy-sf
-    title: Grocy SF
     server_url: https://grocy-mcp-sf.allegedly.works/mcp
-    credential: haku-console-grocy-sf-token
+    bearer_token_secret: haku-console-grocy-sf-token
 ```
 
 This is not an operation allowlist. haku-console reflects each server's live MCP
@@ -32,9 +31,9 @@ This is not an operation allowlist. haku-console reflects each server's live MCP
 
 Core endpoints:
 
-- `GET /api/capabilities/mcp-servers` returns connected server IDs/titles and reflected
-  tool metadata, including MCP-published input schemas when available.
-- `POST /api/approvals/tool-calls` accepts `server_id`, `tool_name`, `arguments`,
+- `GET /api/capabilities/mcp-servers` returns connected server IDs and reflected tool
+  metadata, including MCP-published input schemas when available.
+- `POST /api/tool-calls` accepts `server_id`, `tool_name`, `arguments`,
   `rationale`, optional `request_title`, optional `state_request_id`, optional
   caller-scoped `client_request_id`, and optional `wait_for_ms`.
 - `GET /api/approvals/pending`, `GET /api/approvals/events?since=...`, and
@@ -52,8 +51,7 @@ caller/client ID with the same payload returns the original record; replaying it
 different payload rejects.
 
 Result statuses are shared across haku-ui, Haku, and future console-MCP clients:
-`approval_required`, `running`, `ok`, `error`, `denied`, `timed_out`, and
-`not_allowed`.
+`approval_required`, `running`, `ok`, `error`, and `denied`.
 
 ## haku-state Contract
 
@@ -71,9 +69,6 @@ server_id: grocy-sf
 tool_name: stock_add
 title: Add arrived Thrive box items to Grocy
 rationale: The box is physically present; these entries are still in kitchen.board incoming.
-source:
-  path: kitchen/board.yaml
-  field: incoming
 arguments:
   items:
     - product_id: 123
@@ -88,8 +83,9 @@ haku-ui renders reusable affordances in authored Markdown/MDX:
 
 Click flow:
 
-1. haku-ui frontend posts the `state_request_id` to haku-ui backend.
-2. haku-ui backend reads `tool_requests/<state_request_id>.yaml`, derives
+1. haku-ui frontend reads `tool_requests/<state_request_id>.yaml` and posts that exact
+   request body to haku-ui backend.
+2. haku-ui backend derives
    `client_request_id = haku-state:tool_requests/<id>.yaml@sha256:<canonical-json>`,
    and submits to haku-console.
 3. haku-console records the pending call, emits an approval event, and returns the

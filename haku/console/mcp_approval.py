@@ -18,7 +18,7 @@ import re
 import secrets
 import tempfile
 import threading
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Literal, Protocol, cast
@@ -48,24 +48,15 @@ class ToolCallStatus(StrEnum):
     OK = "ok"
     ERROR = "error"
     DENIED = "denied"
-    TIMED_OUT = "timed_out"
-    NOT_ALLOWED = "not_allowed"
 
 
-TERMINAL_STATUSES = {
-    ToolCallStatus.OK,
-    ToolCallStatus.ERROR,
-    ToolCallStatus.DENIED,
-    ToolCallStatus.TIMED_OUT,
-    ToolCallStatus.NOT_ALLOWED,
-}
+TERMINAL_STATUSES = {ToolCallStatus.OK, ToolCallStatus.ERROR, ToolCallStatus.DENIED}
 
 
 class McpServerEntry(BaseModel):
     id: str
-    title: str
     server_url: str
-    credential: str | None = None
+    bearer_token_secret: str | None = None
 
 
 class McpServerCatalogFile(BaseModel):
@@ -326,7 +317,7 @@ class ToolCallStore:
             record = ToolCallRecord(
                 tool_call_id=f"tc_{secrets.token_hex(12)}",
                 server_id=server.id,
-                server_title=server.title,
+                server_title=server.id,
                 tool_name=req.tool_name,
                 caller_principal=caller_principal,
                 status=status,
@@ -500,7 +491,7 @@ class PostgresToolCallStore:
             record = ToolCallRecord(
                 tool_call_id=f"tc_{secrets.token_hex(12)}",
                 server_id=server.id,
-                server_title=server.title,
+                server_title=server.id,
                 tool_name=req.tool_name,
                 caller_principal=caller_principal,
                 status=ToolCallStatus.APPROVAL_REQUIRED,
@@ -552,7 +543,7 @@ class PostgresToolCallStore:
         return _record_from_row(row)
 
     def list(self, *, status: str | None = None, since: int | None = None, limit: int = 100) -> ToolCallListResponse:
-        if status not in (None, "terminal"):
+        if status is not None and status != "terminal":
             try:
                 ToolCallStatus(status)
             except ValueError as e:
@@ -766,11 +757,29 @@ class ToolCallEventHub:
 
 class McpToolExecutor:
     async def execute(self, server: McpServerEntry, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        if server.server_url.startswith("mock://"):
-            return {"mock": True, "server": server.id, "tool": tool_name, "arguments": arguments}
         async with Client(server.server_url, auth=_credential_token(server)) as client:
             result = await client.call_tool(tool_name, arguments)
         return _mcp_result_to_json(result)
+
+
+class McpMetadataProvider:
+    async def metadata(self, server: McpServerEntry) -> ServerMetadata:
+        try:
+            async with Client(server.server_url, auth=_credential_token(server)) as client:
+                tools = await client.list_tools()
+        except Exception as e:
+            return ServerMetadata(
+                server_id=server.id, title=server.id, tools=[], schema_source="unavailable", degraded_reason=str(e)
+            )
+        reflected: list[ToolMetadata] = []
+        for tool in tools:
+            schema = tool.inputSchema
+            if not isinstance(schema, dict):
+                schema = {}
+            reflected.append(
+                ToolMetadata(name=tool.name, description=tool.description, input_schema=schema, schema_source="mcp")
+            )
+        return ServerMetadata(server_id=server.id, title=server.id, tools=reflected, schema_source="mcp")
 
 
 def make_store(settings: Settings) -> ToolCallStoreProtocol:
@@ -787,6 +796,10 @@ def make_executor() -> McpToolExecutor:
     return McpToolExecutor()
 
 
+def make_metadata_provider() -> McpMetadataProvider:
+    return McpMetadataProvider()
+
+
 def _store(request: Request) -> ToolCallStoreProtocol:
     return cast(ToolCallStoreProtocol, request.app.state.tool_call_store)
 
@@ -799,9 +812,14 @@ def _executor(request: Request) -> McpToolExecutor:
     return cast(McpToolExecutor, request.app.state.tool_call_executor)
 
 
+def _metadata_provider(request: Request) -> McpMetadataProvider:
+    return cast(McpMetadataProvider, request.app.state.tool_call_metadata_provider)
+
+
 StoreDep = Annotated[ToolCallStoreProtocol, Depends(_store)]
 HubDep = Annotated[ToolCallEventHub, Depends(_hub)]
 ExecutorDep = Annotated[McpToolExecutor, Depends(_executor)]
+MetadataProviderDep = Annotated[McpMetadataProvider, Depends(_metadata_provider)]
 
 
 def _request_digest(req: SubmitToolCallRequest) -> str:
@@ -827,11 +845,11 @@ def _record_values(record: ToolCallRecord) -> dict[str, Any]:
     return ToolCallDbRow.from_record(record).model_dump(mode="python", by_alias=True)
 
 
-def _record_from_row(row: Mapping[str, Any]) -> ToolCallRecord:
+def _record_from_row(row: Any) -> ToolCallRecord:
     return ToolCallDbRow.model_validate(dict(row)).to_record()
 
 
-def _event_from_db(row: Mapping[str, Any]) -> ToolCallEvent:
+def _event_from_db(row: Any) -> ToolCallEvent:
     return ToolCallEventDbRow.model_validate(dict(row)).to_event()
 
 
@@ -848,18 +866,18 @@ def _mcp_result_to_json(result: Any) -> dict[str, Any]:
     return {"repr": repr(result)}
 
 
-def _credential_env_name(credential: str) -> str:
-    suffix = re.sub(r"[^A-Za-z0-9]+", "_", credential).strip("_").upper()
+def _credential_env_name(bearer_token_secret: str) -> str:
+    suffix = re.sub(r"[^A-Za-z0-9]+", "_", bearer_token_secret).strip("_").upper()
     return f"HAKU_CONSOLE_MCP_CREDENTIAL_{suffix}"
 
 
 def _credential_token(server: McpServerEntry) -> str | None:
-    if server.credential is None:
+    if server.bearer_token_secret is None:
         return None
-    env_name = _credential_env_name(server.credential)
+    env_name = _credential_env_name(server.bearer_token_secret)
     token = os.environ.get(env_name)
     if not token:
-        raise RuntimeError(f"missing MCP credential env var {env_name} for MCP server {server.id}")
+        raise RuntimeError(f"missing MCP bearer token env var {env_name} for MCP server {server.id}")
     return token
 
 
@@ -881,58 +899,14 @@ def _server_entry(settings: Settings, server_id: str) -> McpServerEntry:
 def _caller_principal(request: Request, settings: Settings) -> str:
     auth = request.headers.get("authorization", "")
     operator = request.headers.get("x-authentik-username")
-    expected = settings.mcp_approval_api_token.get_secret_value() if settings.mcp_approval_api_token else None
+    expected = settings.agent_api_token.get_secret_value() if settings.agent_api_token else None
     if expected and auth == f"Bearer {expected}":
-        return "haku-console-token"
+        return "haku-agent-api-token"
     if operator:
         return operator
-    if expected and request.url.path.startswith("/api/approvals/tool-calls"):
+    if expected and request.method == "POST" and request.url.path == "/api/tool-calls":
         raise HTTPException(status_code=401, detail="missing or invalid tool-call API token")
     return "operator"
-
-
-async def _server_metadata(server: McpServerEntry) -> ServerMetadata:
-    if server.server_url.startswith("mock://"):
-        return ServerMetadata(
-            server_id=server.id,
-            title=server.title,
-            tools=[
-                ToolMetadata(
-                    name="stock_add",
-                    description="Mock stock add tool used by tests/local smoke checks.",
-                    input_schema={"type": "object", "additionalProperties": True},
-                    schema_source="mcp",
-                ),
-                ToolMetadata(
-                    name="echo",
-                    description="Mock echo tool used by tests/local smoke checks.",
-                    input_schema={"type": "object", "additionalProperties": True},
-                    schema_source="mcp",
-                ),
-            ],
-            schema_source="mcp",
-        )
-    try:
-        async with Client(server.server_url, auth=_credential_token(server)) as client:
-            tools = await client.list_tools()
-    except Exception as e:
-        return ServerMetadata(
-            server_id=server.id, title=server.title, tools=[], schema_source="unavailable", degraded_reason=str(e)
-        )
-    reflected: list[ToolMetadata] = []
-    for tool in tools:
-        dumped = tool.model_dump(mode="json") if hasattr(tool, "model_dump") else {}
-        schema = dumped.get("inputSchema") or dumped.get("input_schema") or getattr(tool, "inputSchema", None) or {}
-        if not isinstance(schema, dict):
-            schema = {}
-        description = dumped.get("description") or getattr(tool, "description", None)
-        if not isinstance(description, str):
-            description = None
-        name = dumped.get("name") or getattr(tool, "name", None)
-        if not isinstance(name, str):
-            continue
-        reflected.append(ToolMetadata(name=name, description=description, input_schema=schema, schema_source="mcp"))
-    return ServerMetadata(server_id=server.id, title=server.title, tools=reflected, schema_source="mcp")
 
 
 async def _maybe_execute(
@@ -974,11 +948,13 @@ async def _wait_terminal(store: ToolCallStoreProtocol, tool_call_id: str, wait_f
 
 
 @router.get("/api/capabilities/mcp-servers")
-async def mcp_servers(settings: SettingsDep) -> ToolCapabilitiesResponse:
-    return ToolCapabilitiesResponse(servers=[await _server_metadata(server) for server in _load_servers(settings)])
+async def mcp_servers(settings: SettingsDep, metadata_provider: MetadataProviderDep) -> ToolCapabilitiesResponse:
+    return ToolCapabilitiesResponse(
+        servers=[await metadata_provider.metadata(server) for server in _load_servers(settings)]
+    )
 
 
-@router.post("/api/approvals/tool-calls")
+@router.post("/api/tool-calls")
 async def submit_tool_call(
     body: SubmitToolCallRequest,
     request: Request,
@@ -1006,11 +982,6 @@ async def submit_tool_call(
     return await _wait_terminal(store, record.tool_call_id, body.wait_for_ms)
 
 
-@router.get("/api/tool-calls/{tool_call_id}")
-async def get_tool_call(tool_call_id: str, store: StoreDep) -> ToolCallRecord:
-    return store.get(tool_call_id)
-
-
 @router.get("/api/tool-calls")
 async def list_tool_calls(
     store: StoreDep,
@@ -1026,6 +997,11 @@ async def get_tool_call_by_client_request(
     client_request_id: str, request: Request, settings: SettingsDep, store: StoreDep
 ) -> ToolCallRecord:
     return store.find_by_client_request_id(_caller_principal(request, settings), client_request_id)
+
+
+@router.get("/api/tool-calls/{tool_call_id}")
+async def get_tool_call(tool_call_id: str, store: StoreDep) -> ToolCallRecord:
+    return store.get(tool_call_id)
 
 
 @router.get("/api/approvals/pending")

@@ -20,9 +20,16 @@ def make_client() -> Callable[..., Any]:
 
     @contextmanager
     def _make(**settings_overrides: Any) -> Iterator[TestClient]:
+        tool_call_executor = settings_overrides.pop("tool_call_executor", None)
+        tool_call_metadata_provider = settings_overrides.pop("tool_call_metadata_provider", None)
         # haku_ui_url is required; default it so callers only override what they're testing.
         settings = Settings(**{"haku_ui_url": "https://haku-ui.test", **settings_overrides})
-        with TestClient(create_app(settings)) as c:
+        app = create_app(settings)
+        if tool_call_executor is not None:
+            app.state.tool_call_executor = tool_call_executor
+        if tool_call_metadata_provider is not None:
+            app.state.tool_call_metadata_provider = tool_call_metadata_provider
+        with TestClient(app) as c:
             yield c
 
     return _make

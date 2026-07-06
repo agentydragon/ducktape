@@ -134,22 +134,23 @@ set</choice>`). Records the answer as an intake note prefixed with the question,
   </signal-toggle>
   ```
 
-- `<tool-call request="<state_request_id>" label="…"></tool-call>` — asks the haku-ui backend to
-  read `tool_requests/<state_request_id>.yaml` and submit it to haku-console for operator-approved
-  execution. Use this when Haku can author a precise, schema-valid privileged call but should not
-  run it autonomously — for example, "Restart stuck rollout" once a kubectl MCP catalog entry exists,
-  or "Add arrived order items to inventory" once a Grocy MCP catalog entry exists. The request YAML
-  carries the catalog id, rationale, source grounding, and arguments; haku-console owns approval,
-  execution, audit, and results:
+- `<tool-call request="<state_request_id>" label="…"></tool-call>` — asks the haku-ui frontend to
+  read `tool_requests/<state_request_id>.yaml`, send that exact body through the haku-ui backend,
+  and submit it to haku-console for operator-approved execution. Use this when Haku can author a
+  precise, schema-valid privileged call but should not run it autonomously — for example, "Restart
+  stuck rollout" once a kubectl MCP catalog entry exists, or "Add arrived order items to inventory"
+  once a Grocy MCP catalog entry exists. The request YAML carries the catalog id, rationale, and
+  arguments; haku-console owns approval, execution, audit, and results:
 
   ```text
   <tool-call request="restart-stuck-rollout" label="Restart rollout"></tool-call>
   ```
 
-  The button is retry-safe: the backend derives a stable client request id from the request file
-  content, and haku-console dedupes that per caller. Do **not** write a `tool_results/` mirror in
-  git; Haku can query or sweep haku-console's tool-call audit log during its normal run when it
-  wants to act on completed calls.
+  The button is retry-safe: the backend derives a stable client request id from the request content,
+  and haku-console dedupes that per caller. The UI also queries that id on render, so an already-run
+  request shows its console-owned state without a `tool_results/` mirror in git. Haku can query or
+  sweep haku-console's tool-call audit log during its normal run when it wants to act on completed
+  calls.
 
 Most affordances record via feedback/intake or responses, so they're read by the next run, not a
 live schema field. If code (a sort, an automation) must compute over an answer, that fact still

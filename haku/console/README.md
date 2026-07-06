@@ -60,7 +60,7 @@ Core endpoints:
 - `GET /api/capabilities/mcp-servers` — reflect the configured connected MCP servers and each
   server's `tools/list` metadata. The console config names reachable servers; each MCP server
   remains the tool schema source.
-- `POST /api/approvals/tool-calls` — submit a call with `server_id`, `tool_name`, and exact
+- `POST /api/tool-calls` — submit a call with `server_id`, `tool_name`, and exact
   arguments. The caller may provide a scoped `client_request_id` for idempotency; the console mints
   `tool_call_id`.
 - `GET /api/approvals/pending`, `GET /api/approvals/events?since=...`, and
@@ -70,7 +70,7 @@ Core endpoints:
 - `GET /api/tool-calls` / `GET /api/tool-calls/{tool_call_id}` — audit/result reads for Haku's
   normal sweep or operator debugging.
 
-Backend callers authenticate with the shared `HAKU_CONSOLE_MCP_APPROVAL_API_TOKEN`. Browser-origin
+Backend callers authenticate with the shared `HAKU_CONSOLE_AGENT_API_TOKEN`. Browser-origin
 approvals use the operator's Authentik session plus CSRF. The approval dialog renders in trusted
 console chrome, not inside Haku's iframe.
 
@@ -122,7 +122,7 @@ Non-root, dropped caps, no service-account token. Credentials: the
 and, when MCP approval is enabled, the catalog/API-token/database settings:
 `HAKU_CONSOLE_MCP_APPROVAL_CATALOG_PATH`,
 `HAKU_CONSOLE_MCP_APPROVAL_DATABASE_URL`, and
-`HAKU_CONSOLE_MCP_APPROVAL_API_TOKEN`.
+`HAKU_CONSOLE_AGENT_API_TOKEN`.
 It no longer holds a haku-state git credential — feedback/trace writes moved into haku-ui.
 As trusted ducktape code in its own namespace it is **not** behind the `haku-egress-proxy`
 fence — it gets ordinary cluster egress (which the capability tier needs to reach the

@@ -17,7 +17,7 @@ spec:
         spec:
           # The SA token is used only to read back the published Secrets for
           # probes (published-secrets-reader Role in flux-system, get on the
-          # five rotator-published Secret names — nothing else).
+          # rotator-published Secret names — nothing else).
           serviceAccountName: authentik-jwt-rotation
           automountServiceAccountToken: true
           restartPolicy: OnFailure

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { callToolRequest, fetchRuns, sendFeedback } from "./client.ts";
+import { callToolRequest, fetchRuns, lookupToolRequestCall, sendFeedback } from "./client.ts";
 import { resetRepoCache } from "./repo.ts";
 
 // Stub /api/repo/tree + /api/repo/blobs with a given tree and sha→content map.
@@ -90,23 +90,75 @@ describe("sendFeedback", () => {
 });
 
 describe("callToolRequest", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetRepoCache();
+  });
 
-  it("posts the state request id to the backend proxy with the approval wait window", async () => {
-    const fetchMock = vi.fn((_url: string, _init?: RequestInit) =>
-      Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({ tool_call_id: "tc_1", server_id: "grocy-sf", status: "approval_required" }),
-      } as Response)
-    );
+  const requestYaml = `
+state_request_id: 2026-07-thrive.box
+server_id: grocy-sf
+tool_name: stock_add
+title: Add Thrive box to Grocy
+rationale: box present
+arguments:
+  items:
+    - product_id: 123
+      amount: 1
+`;
+
+  function stubToolRequestFetch() {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/api/repo/tree")
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              sha: "head",
+              entries: [{ path: "tool_requests/2026-07-thrive.box.yaml", type: "blob", sha: "abc123" }],
+            }),
+        } as Response);
+      if (url === "/api/repo/blobs?shas=abc123")
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([{ sha: "abc123", content: requestYaml }]),
+        } as Response);
+      if (url === "/api/tool-calls" || url === "/api/tool-calls/lookup")
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ tool_call_id: "tc_1", server_id: "grocy-sf", status: "approval_required" }),
+        } as Response);
+      throw new Error(`unexpected fetch: ${url} ${JSON.stringify(init)}`);
+    });
     vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("loads the authored request and posts its exact body to the backend proxy", async () => {
+    const fetchMock = stubToolRequestFetch();
     const record = await callToolRequest("2026-07-thrive.box", 500);
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/tool-requests/2026-07-thrive.box/call",
-      expect.objectContaining({ method: "POST" })
-    );
-    const init = fetchMock.mock.calls[0][1]!;
-    expect(JSON.parse(init.body as string)).toEqual({ wait_for_ms: 500 });
+    const toolCall = fetchMock.mock.calls.find((c) => c[0] === "/api/tool-calls");
+    expect(toolCall).toBeTruthy();
+    const init = toolCall![1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({
+      state_request_id: "2026-07-thrive.box",
+      server_id: "grocy-sf",
+      tool_name: "stock_add",
+      title: "Add Thrive box to Grocy",
+      rationale: "box present",
+      arguments: { items: [{ product_id: 123, amount: 1 }] },
+      wait_for_ms: 500,
+    });
     expect(record.status).toBe("approval_required");
+  });
+
+  it("uses the same request body for console state lookup", async () => {
+    const fetchMock = stubToolRequestFetch();
+    const record = await lookupToolRequestCall("2026-07-thrive.box");
+    const lookup = fetchMock.mock.calls.find((c) => c[0] === "/api/tool-calls/lookup");
+    expect(lookup).toBeTruthy();
+    const init = lookup![1] as RequestInit;
+    expect(JSON.parse(init.body as string).state_request_id).toBe("2026-07-thrive.box");
+    expect(record?.tool_call_id).toBe("tc_1");
   });
 });

@@ -13,9 +13,15 @@ from pydantic import SecretStr
 from sqlalchemy import create_engine, text
 from testcontainers.postgres import PostgresContainer
 
+from haku.console.mcp_approval import McpServerEntry
 from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.oci import load_oci_image
 from util.testing.postgres import force_drop_database_sync
+
+
+class FakeToolExecutor:
+    async def execute(self, server: McpServerEntry, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        return {"fake_mcp": True, "server": server.id, "tool": tool_name, "arguments": arguments}
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -60,8 +66,7 @@ def _catalog(tmp_path: Path) -> Path:
         """
 servers:
   - id: smoke
-    title: Smoke server
-    server_url: mock://smoke
+    server_url: https://smoke.example.test/mcp
 """,
         encoding="utf-8",
     )
@@ -79,9 +84,10 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(make_client, tmp_
         mcp_approval_catalog_path=_catalog(tmp_path),
         mcp_approval_database_url=SecretStr(db_url),
         csrf_secret=SecretStr("csrf"),
+        tool_call_executor=FakeToolExecutor(),
     ) as client:
         submitted = client.post(
-            "/api/approvals/tool-calls",
+            "/api/tool-calls",
             json={
                 "server_id": "smoke",
                 "tool_name": "echo",
@@ -95,7 +101,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(make_client, tmp_
             json={"decision": "approve"},
         ).json()["tool_call"]
         replay = client.post(
-            "/api/approvals/tool-calls",
+            "/api/tool-calls",
             json={
                 "server_id": "smoke",
                 "tool_name": "echo",
@@ -151,7 +157,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(make_client, tmp_
     assert row["tool_name"] == "echo"
     assert row["status"] == "ok"
     assert row["arguments_json"] == {"hello": "world"}
-    assert row["result_json"]["mock"] is True
+    assert row["result_json"]["fake_mcp"] is True
 
 
 if __name__ == "__main__":

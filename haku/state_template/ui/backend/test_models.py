@@ -87,13 +87,11 @@ def test_tool_request_doc_accepts_precise_authored_call():
             "tool_name": "stock_add",
             "title": "Add arrived Thrive box items to Grocy",
             "rationale": "The box has arrived and the products are known.",
-            "source": {"item": "items/thrive-box.md"},
             "arguments": {"items": [{"product_id": 123, "amount": 1}]},
         }
     )
     assert doc.server_id == "grocy-sf"
     assert doc.tool_name == "stock_add"
-    assert doc.source == {"item": "items/thrive-box.md"}
     assert doc.arguments["items"][0]["product_id"] == 123
 
 

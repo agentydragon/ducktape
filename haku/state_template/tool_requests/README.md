@@ -10,10 +10,10 @@ The UI renders a request with:
 <tool-call request="request-id" label="Run the action"></tool-call>
 ```
 
-That button reads `tool_requests/request-id.yaml`, sends it to the haku-ui backend, and the backend
-forwards it to haku-console. haku-console mints the canonical `tool_call_id`, dedupes retries by the
-backend-supplied `client_request_id`, asks the trusted console frontend for approval when required,
-and stores the result in its own audit log.
+That button reads `tool_requests/request-id.yaml` in the frontend, sends the exact request body to
+the haku-ui backend, and the backend forwards it to haku-console. haku-console mints the canonical
+`tool_call_id`, dedupes retries by the backend-supplied `client_request_id`, asks the trusted console
+frontend for approval when required, and stores the result in its own audit log.
 
 Schema:
 
@@ -23,8 +23,6 @@ server_id: grocy-sf
 tool_name: stock_add
 title: Human-readable approval title
 rationale: Why this call is useful right now
-source:
-  item: items/example.md
 arguments:
   example: value
 ```
@@ -36,6 +34,8 @@ Rules:
 - `server_id` names a connected MCP server from haku-console's registry.
 - `tool_name` names any tool reflected from that server's MCP `tools/list`.
 - `arguments` must match that tool's MCP input schema; do not duplicate schemas here.
-- Put grounding in `source` and `rationale`; keep raw secrets out of both.
+- Put grounding in `rationale`. Request arguments may contain secrets when the MCP operation really
+  needs them; haku-state and haku-console are private stores, and public/reflection APIs must still
+  avoid exposing configured bearer-token names or values.
 - Results stay in haku-console. Haku can query or sweep the console audit log during its run when it
   wants to act on executed calls.

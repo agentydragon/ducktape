@@ -224,10 +224,10 @@ class RepoBlob(BaseModel):
 
 
 # --- Operator-approved tool calls ---------------------------------------------
-# Haku authors exact requests in tool_requests/<state_request_id>.yaml. The UI
-# backend reads the file, forwards it to haku-console, and returns the console-owned
-# call record. There is no tool_results/ mirror in haku-state; haku-console is the
-# result/audit source of truth.
+# Haku authors exact requests in tool_requests/<state_request_id>.yaml. The frontend
+# sends the exact request body through this backend to haku-console, which returns the
+# console-owned call record. There is no tool_results/ mirror in haku-state; haku-console
+# is the result/audit source of truth.
 
 
 class ToolRequestDoc(BaseModel):
@@ -236,11 +236,10 @@ class ToolRequestDoc(BaseModel):
     tool_name: str
     title: str
     rationale: str = ""
-    source: dict[str, Any] = Field(default_factory=dict)
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
-class ToolRequestCallRequest(BaseModel):
+class ToolCallSubmitRequest(ToolRequestDoc):
     wait_for_ms: int = Field(default=0, ge=0, le=60_000)
 
 
@@ -250,8 +249,6 @@ class ToolCallStatus(StrEnum):
     OK = "ok"
     ERROR = "error"
     DENIED = "denied"
-    TIMED_OUT = "timed_out"
-    NOT_ALLOWED = "not_allowed"
 
 
 class ToolCallRecord(BaseModel):
@@ -261,8 +258,8 @@ class ToolCallRecord(BaseModel):
     tool_name: str | None = None
     caller_principal: str | None = None
     status: ToolCallStatus
-    created_at: str | None = None
-    updated_at: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
     arguments: dict[str, Any] = Field(default_factory=dict)
     rationale: str = ""
     request_title: str | None = None

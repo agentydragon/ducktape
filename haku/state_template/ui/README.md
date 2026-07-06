@@ -57,9 +57,9 @@ FastAPI, port `8080`. Endpoints:
   (`runs/<date>/<ulid>.md`, frontmatter + body parsed on the frontend), and any repo markdown at HEAD.
 - `PUT/DELETE /api/responses/{scope}/{field}` — record/clear an operator response
   (item status, form answer) as `responses/<scope>/<field>.yaml`.
-- `POST /api/tool-requests/{state_request_id}/call` — read
-  `tool_requests/<state_request_id>.yaml`, derive a stable idempotency key from its content, and
-  submit it to haku-console for approval/execution.
+- `POST /api/tool-calls` / `POST /api/tool-calls/lookup` — accept the exact tool-call request body
+  sent by the frontend, derive a stable idempotency key from it, and submit/query haku-console for
+  approval/execution state.
 - `POST /api/trace/feedback` — append an intake note (`text`, optional `item_id`).
 - `GET /healthz`.
 

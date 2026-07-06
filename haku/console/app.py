@@ -53,6 +53,7 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.tool_call_store = mcp_approval.make_store(settings)
     app.state.tool_call_event_hub = mcp_approval.make_event_hub()
     app.state.tool_call_executor = mcp_approval.make_executor()
+    app.state.tool_call_metadata_provider = mcp_approval.make_metadata_provider()
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the

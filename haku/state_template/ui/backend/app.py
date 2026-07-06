@@ -48,8 +48,7 @@ from models import (
     RepoTreeEntry,
     ResponseRequest,
     ToolCallRecord,
-    ToolRequestCallRequest,
-    ToolRequestDoc,
+    ToolCallSubmitRequest,
 )
 from reads import read_scan_time
 
@@ -206,40 +205,58 @@ def create_app(settings: Settings) -> FastAPI:
         contents = await forgejo.blobs(sha_list)
         return [RepoBlob(sha=s, content=c.decode()) for s, c in zip(sha_list, contents, strict=True)]
 
-    # --- Operator-approved tool calls ------------------------------------------
-    # haku-state stores only the authored request. haku-console owns authorization,
-    # execution, audit, and results; this backend is a same-origin proxy for haku-ui.
-    @app.post("/api/tool-requests/{state_request_id}/call")
-    async def call_tool_request(
-        state_request_id: str, req: ToolRequestCallRequest, forgejo: ForgejoDep, operator: Operator = None
-    ) -> ToolCallRecord:
-        if settings.haku_console_api_url is None:
-            raise HTTPException(status_code=503, detail="haku-console tool-call API is not configured")
-        request_id = _state_request_id(state_request_id)
-        path = f"tool_requests/{request_id}.yaml"
-        raw = await forgejo.read_yaml(path)
-        if raw is None:
-            raise HTTPException(status_code=404, detail=f"tool request not found: {path}")
-        doc = ToolRequestDoc.model_validate(raw)
-        if doc.state_request_id != request_id:
-            raise HTTPException(status_code=400, detail="tool request file id does not match path")
-        digest = hashlib.sha256(canonicaljson.encode_canonical_json(doc.model_dump(mode="json"))).hexdigest()
-        payload = {
-            "server_id": doc.server_id,
-            "tool_name": doc.tool_name,
-            "arguments": doc.arguments,
-            "rationale": doc.rationale,
-            "request_title": doc.title,
-            "state_request_id": doc.state_request_id,
-            "client_request_id": f"haku-state:{path}@sha256:{digest}",
+    def _tool_call_client_request_id(req: ToolCallSubmitRequest) -> str:
+        request_body = req.model_dump(mode="json", exclude={"wait_for_ms"})
+        digest = hashlib.sha256(canonicaljson.encode_canonical_json(request_body)).hexdigest()
+        return f"haku-state:tool-call:{req.state_request_id}@sha256:{digest}"
+
+    def _tool_call_payload(req: ToolCallSubmitRequest) -> dict[str, object]:
+        return {
+            "server_id": req.server_id,
+            "tool_name": req.tool_name,
+            "arguments": req.arguments,
+            "rationale": req.rationale,
+            "request_title": req.title,
+            "state_request_id": req.state_request_id,
+            "client_request_id": _tool_call_client_request_id(req),
             "wait_for_ms": req.wait_for_ms,
         }
+
+    def _console_headers() -> dict[str, str]:
         headers: dict[str, str] = {}
         if settings.haku_console_api_token is not None:
             headers["Authorization"] = f"Bearer {settings.haku_console_api_token.get_secret_value()}"
+        return headers
+
+    # --- Operator-approved tool calls ------------------------------------------
+    # The frontend sends the exact authored request body. haku-console owns authorization,
+    # execution, audit, and results; this backend is a same-origin proxy for haku-ui.
+    @app.post("/api/tool-calls")
+    async def call_tool(req: ToolCallSubmitRequest, operator: Operator = None) -> ToolCallRecord:
+        if settings.haku_console_api_url is None:
+            raise HTTPException(status_code=503, detail="haku-console tool-call API is not configured")
+        request_id = _state_request_id(req.state_request_id)
+        if req.state_request_id != request_id:
+            raise HTTPException(status_code=400, detail="invalid tool request id")
         logger.info("tool request %s submitted to console by %s", request_id, operator or "<unknown>")
         async with httpx.AsyncClient(base_url=settings.haku_console_api_url, timeout=65.0) as http:
-            resp = await http.post("/api/approvals/tool-calls", json=payload, headers=headers)
+            resp = await http.post("/api/tool-calls", json=_tool_call_payload(req), headers=_console_headers())
+        if not resp.is_success:
+            raise HTTPException(status_code=resp.status_code, detail=resp.text[:1000])
+        return ToolCallRecord.model_validate(resp.json())
+
+    @app.post("/api/tool-calls/lookup")
+    async def lookup_tool_call(req: ToolCallSubmitRequest) -> ToolCallRecord | None:
+        if settings.haku_console_api_url is None:
+            raise HTTPException(status_code=503, detail="haku-console tool-call API is not configured")
+        request_id = _state_request_id(req.state_request_id)
+        if req.state_request_id != request_id:
+            raise HTTPException(status_code=400, detail="invalid tool request id")
+        client_request_id = _tool_call_client_request_id(req)
+        async with httpx.AsyncClient(base_url=settings.haku_console_api_url, timeout=15.0) as http:
+            resp = await http.get(f"/api/tool-calls/by-client-request/{client_request_id}", headers=_console_headers())
+        if resp.status_code == 404:
+            return None
         if not resp.is_success:
             raise HTTPException(status_code=resp.status_code, detail=resp.text[:1000])
         return ToolCallRecord.model_validate(resp.json())
