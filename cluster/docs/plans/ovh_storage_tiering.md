@@ -1,18 +1,23 @@
 # Plan: OVH data-disk mount rename (storage tiering — Stage 2 remainder)
 
-**Status: active — the data-disk mount rename is the only remaining Stage 2 work.** The
-etcd-onto-NVMe control-plane reshuffle is **done**: the control plane is now
-`{103656, 104952, 104963}` (etcd on 2× KS-GAME NVMe + the KS-5 anchor `103656`), the leader
-sits on the anchor `103656`, and `102453`/`103711` are demoted to workers. The rest of the
-tiering foundation was already in place: media-scoped StorageClasses
-(`local-path-ovh-{hdd,ssd}`, keyed to a `storage.allegedly.works/tier` node label), the
-SeaweedFS volume layer on `volumeTopology` (`hdd` 3× KS-5, `ssd` 2× KS-GAME; operator 1.0.30),
-**Forgejo git** on SSD, and both SSD-destined DBs — **`seaweedfs-filer-db`** and **`forgejo-db`**
-— on the SSD tier.
+**Status: active — the 3 HDD nodes are renamed; the 2 SSD control-plane nodes remain.** The
+etcd-onto-NVMe control-plane reshuffle is done (control plane `{103656, 104952, 104963}`, etcd
+on 2× KS-GAME NVMe + the KS-5 anchor `103656`; `102453`/`103711` are workers), and the
+foundation is in place: media-scoped StorageClasses (`local-path-ovh-{hdd,ssd}`), the SeaweedFS
+`volumeTopology` layer (`hdd` 3× KS-5, `ssd` 2× KS-GAME; operator 1.0.30), Forgejo git + both
+SSD-destined DBs on SSD.
 
-What's left is the destructive piece the reshuffle deliberately deferred: **renaming the OVH
-data-disk mounts off the legacy `/var/mnt/seaweedfs-data` path** to tier-named mounts, via a
-rolling one-node-at-a-time disk repartition. Then an optional **Stage 3** (3rd NVMe box).
+**Done (2026-07-05): all three KS-5 HDD nodes renamed** off `/var/mnt/seaweedfs-data` →
+`/var/mnt/local-path-ovh-hdd` — `103711` and `102453` (workers) and `103656` (the CP anchor;
+etcd on `/dev/sda` untouched, no reboot). Each was: SeaweedFS volume-server evacuated → FUSE
+consumers refreshed → node cordoned+drained → `tofu apply -target` repartition → recovery (CNPG
+re-clones, disposable STS recreated, SeaweedFS server rebuilt). The per-node mechanism
+(`data_disk_mount_renamed_nodes` opt-in + `nodePathMap` flip) is built and merged.
+
+**What's left:** rename the **2 SSD control-plane nodes** (`104952`, `104963`) off
+`/var/mnt/seaweedfs-data` → `/var/mnt/local-path-ovh-ssd`. This is harder — see
+"SSD-node rename" below (only 2 SSD SeaweedFS servers at repl `001`, so no evacuation buffer;
+accepted approach is a gated single-copy window). Then an optional **Stage 3** (3rd NVMe box).
 
 Reference material from the completed foundation work:
 <../lessons_learned/2026_07_04_seaweedfs_volumetopology_and_operator.md>,
@@ -168,18 +173,16 @@ tenant, three levels down. It's a leftover from the SeaweedFS trial.
 - KS-GAME: UserVolume `local-path-ovh-ssd` → `/var/mnt/local-path-ovh-ssd`
   (`diskSelector` on the NVMe serial)
 
-### Prerequisite — the per-node rename mechanism is not coded yet
+### The per-node rename mechanism (built)
 
-The current TF gives every node the **same** UserVolume `name = "seaweedfs-data"`
-(<../../terraform/main/ovh-nodes.tf>), and the `nodePathMap`
-(<../../k8s/local-path-provisioner/helmrelease.yaml>) points **all five** OVH nodes at
-`/var/mnt/seaweedfs-data/local-path`. Before any node can be renamed, both surfaces must be made
-**per-node**:
+Two per-node surfaces, both live:
 
-1. Talos side: derive the UserVolume name from the node's `storage_tier`
-   (`local-path-ovh-${tier}`), gated by an **opt-in node set** (the `kimsufi_*_enabled_nodes`
-   idiom already in `ovh-nodes.tf`) so an empty set is a no-op and nodes flip one at a time.
-2. local-path side: change that node's `nodePathMap` entry to the new path in the same commit.
+1. Talos side: the UserVolume name is `contains(data_disk_mount_renamed_nodes, node) ?
+"local-path-ovh-${storage_tier}" : "seaweedfs-data"` (<../../terraform/main/ovh-nodes.tf>) —
+   an opt-in `toset()`; empty = no-op, add one hostname to roll that node.
+2. local-path side: that node's `nodePathMap` entry in
+   <../../k8s/local-path-provisioner/helmrelease.yaml> flipped to `/var/mnt/local-path-ovh-hdd/local-path`
+   in the **same commit**.
 
 ### Two change surfaces move together per node (gotcha)
 
@@ -324,35 +327,60 @@ HDD-destined DBs (Case A) need no pre-step — draining forces the re-clone, and
 `local-path-ovh` (`tier=hdd`) `allowedTopologies` lands it on a KS-5 node. Ensure
 `wayback-archive-db` is already 2-instance before draining its node.
 
-### Per-node roll
+### HDD nodes — done (2026-07-05)
 
-Each node's data disk is wiped+renamed to `local-path-ovh-{hdd,ssd}` (surface a) with its
-`nodePathMap` entry flipped in lockstep (surface b), fenced by **G-all** + **G-losable** before
-and after. etcd is untouched (it lives on the install disk), so there is no membership change —
-but draining a control-plane node still moves its pods, so keep G-etcd green throughout.
+All three KS-5 HDD nodes are renamed (`103711`, `102453` workers; `103656` CP anchor). Per node:
+evacuate its SeaweedFS volume server → refresh FUSE consumers → cordon+drain → `tofu apply
+-target` repartition (`auto` mode, **no reboot** — verified, and etcd on the anchor's `/dev/sda`
+was untouched) → recovery. None had backup-restore PVCs on it (the grocy/zk backups landed only
+on `103711`). Operational lessons that generalize to the SSD nodes below:
 
-Suggested order (least-risk first):
+- **`volumeServer.evacuate` aborts on the first transient gRPC error** (the lossy nebula overlay
+  — see <2026_07_05_nebula_overlay_packet_loss_investigation.md>, issue #2917). Wrap it in a
+  **retry loop** that re-runs until the server shows 0 volumes; a single blip no longer stalls it.
+- **The last volume often won't evacuate** because it ended up over-replicated (3 copies) from
+  interrupted moves — `evacuate` can't move it (all servers have it) and `fix.replication` may
+  delete the wrong copy. It's **safe to wipe anyway** (the wipe drops the redundant copy → back
+  to 2). Or force it off with `volume.delete -volumeId X -node <server>` (deletes one replica,
+  not all — but a full/`ReadOnly:true` volume may ignore it).
+- **CNPG re-clone** = `kubectl delete pvc <inst> --wait=false; kubectl delete pod <inst> --force`
+  → the operator re-clones onto the fresh disk. All instances came back 2/2 fast.
+- **Post-wipe recovery**, per node: reconcile `local-path-provisioner` (nodePathMap flip via
+  Flux) → uncordon → CNPG re-clones → delete-and-recreate the disposable STS PVCs (valkey caches,
+  `loki-write`/`mimir-ingester`/`alertmanager`, SeaweedFS volume-server PVC) → GC the Released
+  old-path PVs (strip `pvc-protection` finalizer; the local-path cleaner can't reach the wiped
+  dir). The ConfigMap is `local-path-storage/local-path-config` (not `-provisioner-config`).
 
-1. **`ovh-ns103711` (KS-5 worker, HDD).** Cleanest first node: pure worker, no etcd, HDD tier.
-   Verify re-clone sources (**G-cnpg**) + SeaweedFS 2-copy (**G-swfs**), cordon+drain,
-   wipe+rename `/dev/sdb` → `local-path-ovh-hdd`. Proves the mechanism end-to-end on the
-   lowest-stakes node.
-2. **`ovh-ns102453` (KS-5 worker, 3.6 TB HDD, most bulk).** As step 1; more to drain +
-   re-replicate, so budget time for **G-swfs** to return to 2 copies.
-3. **`ovh-ns104952` (KS-GAME control-plane, NVMe#2 → SSD).** Never together with `104963`
-   (both hold KS-GAME CNPG instances). Wipe+rename NVMe#2 → `local-path-ovh-ssd`. etcd stays on
-   NVMe#1, untouched. **Post:** **G-etcd** still 3 healthy members; **G-swfs**/**G-cnpg**
-   re-replicated.
-4. **`ovh-ns104963` (KS-GAME control-plane, NVMe#2 → SSD).** Only after step 3's re-clones are
-   `streaming`. As step 3.
-5. **`ovh-ns103656` (KS-5 control-plane anchor, HDD).** Do **not** touch its etcd / `/dev/sda`.
-   Drain its `/dev/sdb` local-path PVs, wipe+rename → `local-path-ovh-hdd`.
-6. **Finalize.** All SSD-destined DBs are already on `local-path-ovh-ssd` — every other DB stays
-   on HDD, no DB moves here. Re-check Nebula lighthouse placement now that `102453`/`103711`
-   are workers (lighthouse role is per-node, not tied to k8s control-plane role).
+### SSD-node rename (`104952`, `104963`) — remaining, harder
 
-**Exit:** every OVH data disk mounted at `/var/mnt/local-path-ovh-{hdd,ssd}`, `nodePathMap`
-pointing there, and the `seaweedfs-data` UserVolume name retired.
+The two KS-GAME NVMe nodes still mount NVMe#2 at `/var/mnt/seaweedfs-data`; target
+`/var/mnt/local-path-ovh-ssd`. Same mechanism, but **no evacuation buffer**: the SSD SeaweedFS
+tier has only **2** volume servers at repl `001`, so a volume's two copies are on those two
+servers — you can't evacuate one and stay 2-copy (no third server to hold the moved replica).
+
+**Accepted approach (decided 2026-07-05): ride a bounded single-copy window, one node at a
+time.** The user OK'd intermittent 1-copy for the SSD data.
+
+- **Back up first** (insurance for the one fatal case — the _surviving_ SSD node dying during the
+  window): snapshot the SSD SeaweedFS data (Forgejo git) to **off the SSD tier** (HDD or
+  external). Accepting 1-copy is fine; a double-failure with no backup is not.
+- **One SSD node at a time.** Wipe ssd-0 → its volumes ride **1 copy on ssd-1** → node returns →
+  `volume.fix.replication -apply` back to 2 → **verify 2-copy (G-swfs) before touching ssd-1.**
+  Never wipe the second SSD node until the first's re-replication is complete.
+- **SSD-pinned CNPG** (`forgejo-db-ssd`, `seaweedfs-filer-db-ssd`) likewise ride a
+  single-healthy-instance window — the re-clone can't land until the drained node returns (no
+  third SSD node). Same one-at-a-time gating.
+- These are **control planes**: drain is more sensitive (respect G-etcd; the data-disk repartition
+  is `/dev/sdb`-equivalent NVMe#2, no reboot, etcd on NVMe#1 untouched — as on the `103656`
+  anchor). **No Forgejo downtime without approval** — the SSD rename touches Forgejo git's hot
+  tier, so confirm before the cutover.
+- **Alternative:** do **Stage 3 first** (3rd NVMe box → bump `ssd` group to `replicas: 3`), then
+  the SSD nodes evacuate exactly like the HDD ones — zero single-copy window. Cheaper on risk,
+  costs hardware. The rename is cosmetic, so deferring is also fine.
+
+**Finalize (after SSD nodes):** re-check Nebula lighthouse placement (`102453`/`103711` are now
+workers; lighthouse role is per-node, not tied to k8s role). **Exit:** every OVH data disk at
+`/var/mnt/local-path-ovh-{hdd,ssd}`, `nodePathMap` pointing there, `seaweedfs-data` name retired.
 
 ### Control-plane membership checklist (any CP add/remove)
 
