@@ -15,6 +15,19 @@ cycle in a single combined commit. The freshness stamp is the final token's own
 `exp` claim, so a real mint happens only ~every 44 days per token while a failed
 rotation self-heals on the next hourly run.
 
+Rotations with a `probe` (requires `k8s_secret`) additionally verify on every
+hourly run that the token _published in-cluster_ actually works: the job reads
+the published Secret back via the Kubernetes API (ServiceAccount scoped by the
+`published-secrets-reader` Role in `flux-system` to exactly the rotator's own
+published Secret names) and sends its token as a Bearer to the probe URL. A
+401/403 — or a Secret missing the configured stringData key — bypasses the
+freshness gate and re-mints, which also rewrites the Secret manifest. Endpoint
+sickness (5xx, unreachable) and an unreadable Secret are logged but are not
+credential verdicts, so an outage or Flux propagation lag doesn't cause hourly
+mint churn. This catches what the stamps can't: provider-side revocation, a
+seed placeholder that was never overwritten, or a manifest written under the
+wrong key.
+
 `expected_audiences` and `expected_claims` are both asserted on every mint
 (raising, rather than silently shipping a token missing something a consumer
 needs) and both bypass the freshness gate: if the stored token's

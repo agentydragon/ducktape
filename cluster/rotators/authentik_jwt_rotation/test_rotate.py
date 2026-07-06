@@ -1,9 +1,12 @@
 import base64
 import json
 import textwrap
+import urllib.parse
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import httpx
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
@@ -12,11 +15,13 @@ from cluster.rotators.authentik_jwt_rotation import rotate
 from cluster.rotators.authentik_jwt_rotation.rotate import (
     Config,
     K8sSecretOutput,
+    Probe,
     Rotation,
     build_secret_manifest,
     encrypt_sops_file,
     jwt_payload,
     mint_jwt,
+    probe_rejects_token,
     remaining_hours,
     stamped_audiences,
     stamped_claims,
@@ -29,24 +34,20 @@ def _make_jwt(claims: dict) -> str:
     return f"header.{body}.sig"
 
 
-class _FakeResponse:
-    def __init__(self, payload: dict):
-        self._payload = payload
-
-    def raise_for_status(self) -> None:
-        pass
-
-    def json(self) -> dict:
-        return self._payload
+def _mock_client(handler: Callable[[httpx.Request], httpx.Response]) -> httpx.Client:
+    return httpx.Client(transport=httpx.MockTransport(handler))
 
 
-class _RecordingClient:
-    def __init__(self):
-        self.calls: list[tuple[str, dict]] = []
+def _status_client(status_code: int) -> httpx.Client:
+    return _mock_client(lambda _request: httpx.Response(status_code))
 
-    def post(self, url: str, **kwargs) -> _FakeResponse:
-        self.calls.append((url, kwargs))
-        return _FakeResponse({"access_token": "minted.jwt"})
+
+def _recording_client(status_code: int, seen: list[httpx.Request], json: dict | None = None) -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(status_code, json=json)
+
+    return _mock_client(handler)
 
 
 def test_rotate_one_formats_raw_sops_file_after_encrypt(monkeypatch, tmp_path: Path):
@@ -74,7 +75,7 @@ def test_rotate_one_formats_raw_sops_file_after_encrypt(monkeypatch, tmp_path: P
     monkeypatch.setattr(rotate.subprocess, "run", fake_run)
     monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", fake_format)
 
-    assert rotate.rotate_one(object(), rotation, Config(rotations=[])) is True
+    assert rotate.rotate_one(_status_client(500), rotation, Config(rotations=[])) is True
     assert calls == [("run", ["sops", "encrypt", "--indent", "2", "--in-place", str(sops_file)]), ("format", sops_file)]
 
 
@@ -322,13 +323,18 @@ def test_mint_jwt_default_mode_uses_provider_client_secret(tmp_path: Path):
         token_field="jwt",
     )
 
-    client = _RecordingClient()
+    seen: list[httpx.Request] = []
+    client = _recording_client(200, seen, json={"access_token": "minted.jwt"})
     assert mint_jwt(client, rotation) == "minted.jwt"
 
-    [(url, kwargs)] = client.calls
-    assert url == "https://auth.allegedly.works/application/o/token/"
-    assert kwargs["auth"] == ("provider-client", "provider-secret")
-    assert kwargs["data"] == {"grant_type": "client_credentials", "scope": "openid profile email groups"}
+    [request] = seen
+    assert str(request.url) == "https://auth.allegedly.works/application/o/token/"
+    basic = base64.b64encode(b"provider-client:provider-secret").decode()
+    assert request.headers["Authorization"] == f"Basic {basic}"
+    assert dict(urllib.parse.parse_qsl(request.content.decode())) == {
+        "grant_type": "client_credentials",
+        "scope": "openid profile email groups",
+    }
 
 
 def test_mint_jwt_user_password_mode_uses_form_credentials(tmp_path: Path):
@@ -347,19 +353,142 @@ def test_mint_jwt_user_password_mode_uses_form_credentials(tmp_path: Path):
         token_field="jwt",
     )
 
-    client = _RecordingClient()
+    seen: list[httpx.Request] = []
+    client = _recording_client(200, seen, json={"access_token": "minted.jwt"})
     assert mint_jwt(client, rotation) == "minted.jwt"
 
-    [(url, kwargs)] = client.calls
-    assert url == "https://auth.allegedly.works/application/o/token/"
-    assert "auth" not in kwargs
-    assert kwargs["data"] == {
+    [request] = seen
+    assert str(request.url) == "https://auth.allegedly.works/application/o/token/"
+    assert "Authorization" not in request.headers
+    assert dict(urllib.parse.parse_qsl(request.content.decode())) == {
         "grant_type": "client_credentials",
         "scope": "openid profile email groups",
         "client_id": "provider-client",
         "username": "haku-k8s",
         "password": "app-password",
     }
+
+
+def test_rotation_probe_requires_k8s_secret():
+    base = {
+        "name": "alloy-otlp",
+        "provider_slug": "alloy-otlp-client-credentials",
+        "scopes": "openid profile email",
+        "credentials_dir": "/creds",
+        "sops_file": "secrets/alloy-otlp-bearer-token.yaml",
+        "token_field": "token",
+    }
+    with pytest.raises(ValidationError, match="probe requires k8s_secret"):
+        Rotation.model_validate(base | {"probe": {"url": "https://alloy-otlp.allegedly.works/v1/metrics"}})
+    r = Rotation.model_validate(
+        base
+        | {
+            "k8s_secret": {"path": "cluster/k8s/x.sops.yaml", "name": "alloy-otlp-bearer", "namespace": "flux-system"},
+            "probe": {"url": "https://alloy-otlp.allegedly.works/v1/metrics", "method": "POST"},
+        }
+    )
+    assert r.probe is not None
+    assert r.probe.method == "POST"
+
+
+def test_probe_rejects_token_only_on_auth_statuses():
+    probe = Probe(url="https://example.test/x")
+    assert probe_rejects_token(_status_client(401), probe, "tok") is True
+    assert probe_rejects_token(_status_client(403), probe, "tok") is True
+    assert probe_rejects_token(_status_client(200), probe, "tok") is False
+    assert probe_rejects_token(_status_client(404), probe, "tok") is False
+    # Endpoint sickness is not a credential verdict — no hourly mint churn
+    # during an outage.
+    assert probe_rejects_token(_status_client(503), probe, "tok") is False
+
+    def _down(_request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("down")
+
+    assert probe_rejects_token(_mock_client(_down), probe, "tok") is False
+
+
+def test_probe_rejects_token_sends_bearer_with_configured_method():
+    seen: list[httpx.Request] = []
+    client = _recording_client(200, seen)
+    probe_rejects_token(client, Probe(url="https://example.test/v1/metrics", method="POST"), "tok")
+    [request] = seen
+    assert (request.method, str(request.url)) == ("POST", "https://example.test/v1/metrics")
+    assert request.headers["Authorization"] == "Bearer tok"
+
+
+def _probed_rotation(tmp_path: Path) -> Rotation:
+    """A rotation whose sops file is stamped fresh (2030) and that carries a probe."""
+    sops_file = tmp_path / "secrets" / "alloy-otlp-bearer-token.yaml"
+    sops_file.parent.mkdir()
+    sops_file.write_text('expires_unencrypted: "2030-01-01T00:00:00Z"\ntoken: enc\n')
+    credentials_dir = tmp_path / "creds"
+    credentials_dir.mkdir()
+    return Rotation(
+        name="alloy-otlp",
+        provider_slug="alloy-otlp-client-credentials",
+        scopes="openid profile email",
+        credentials_dir=credentials_dir,
+        sops_file=sops_file,
+        token_field="token",
+        k8s_secret=K8sSecretOutput(
+            path=tmp_path / "cluster/k8s/agents/alloy-otlp-bearer/alloy-otlp-bearer.sops.yaml",
+            name="alloy-otlp-bearer",
+            namespace="flux-system",
+            token_key="token",
+        ),
+        probe=Probe(url="https://alloy-otlp.allegedly.works/v1/metrics", method="POST"),
+    )
+
+
+def _stub_mint(monkeypatch):
+    token = _make_jwt(
+        {"iss": "https://auth.allegedly.works/application/o/alloy-otlp-client-credentials/", "exp": 1_800_000_000}
+    )
+    monkeypatch.setattr(rotate, "mint_jwt", lambda _client, _rotation: token)
+    monkeypatch.setattr(rotate.subprocess, "run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _path: None)
+
+
+def test_rotate_one_probe_rejection_forces_remint(monkeypatch, tmp_path: Path):
+    rotation = _probed_rotation(tmp_path)
+    _stub_mint(monkeypatch)
+    monkeypatch.setattr(
+        rotate, "published_secret_data", lambda _out: {"token": base64.b64encode(b"live-token").decode()}
+    )
+    seen: list[httpx.Request] = []
+    assert rotate.rotate_one(_recording_client(401, seen), rotation, Config(rotations=[])) is True
+    [request] = seen
+    assert (request.method, str(request.url)) == ("POST", "https://alloy-otlp.allegedly.works/v1/metrics")
+    assert request.headers["Authorization"] == "Bearer live-token"
+
+
+def test_rotate_one_probe_acceptance_keeps_fresh_token(monkeypatch, tmp_path: Path):
+    rotation = _probed_rotation(tmp_path)
+    monkeypatch.setattr(
+        rotate, "published_secret_data", lambda _out: {"token": base64.b64encode(b"live-token").decode()}
+    )
+    assert rotate.rotate_one(_status_client(200), rotation, Config(rotations=[])) is False
+
+
+def test_rotate_one_probe_skipped_when_secret_unreadable(monkeypatch, tmp_path: Path):
+    # None = "no verdict" (API down, Flux lag): keep the fresh token rather
+    # than mint-churning hourly while the publish pipeline is mid-flight.
+    rotation = _probed_rotation(tmp_path)
+    monkeypatch.setattr(rotate, "published_secret_data", lambda _out: None)
+    seen: list[httpx.Request] = []
+    assert rotate.rotate_one(_recording_client(200, seen), rotation, Config(rotations=[])) is False
+    assert seen == []
+
+
+def test_rotate_one_missing_token_key_forces_remint(monkeypatch, tmp_path: Path):
+    # The published Secret exists but lacks the configured stringData key —
+    # the class of bug a wrong token_key produces; re-mint rewrites the manifest.
+    rotation = _probed_rotation(tmp_path)
+    _stub_mint(monkeypatch)
+    monkeypatch.setattr(rotate, "published_secret_data", lambda _out: {"jwt": base64.b64encode(b"x").decode()})
+    seen: list[httpx.Request] = []
+    assert rotate.rotate_one(_recording_client(200, seen), rotation, Config(rotations=[])) is True
+    assert seen == []
 
 
 if __name__ == "__main__":

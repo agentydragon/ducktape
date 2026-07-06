@@ -21,6 +21,7 @@ py_test(
     srcs = ["test_rotate.py"],
     deps = [
         ":rotate",
+        "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

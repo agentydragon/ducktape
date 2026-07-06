@@ -5,7 +5,7 @@ metadata:
   namespace: agents-infra
   annotations:
     description: >-
-      Rotates every Authentik client_credentials JWT listed in rotations.yaml (the ConfigMap-mounted source of truth). Runs hourly; rotate.py reads each output's unencrypted `expires_unencrypted` field (no decryption needed) and skips entries with > rotate_below_hours remaining, so a real mint runs only ~every 44 days per token. Everything minted this cycle lands in one commit.
+      Rotates every Authentik client_credentials JWT listed in rotations.yaml (the ConfigMap-mounted source of truth). Runs hourly; rotate.py reads each output's unencrypted `expires_unencrypted` field (no decryption needed) and skips entries with > rotate_below_hours remaining, so a real mint runs only ~every 44 days per token. Entries with a `probe` also verify the published in-cluster Secret's token against its real endpoint each run and re-mint on 401/403. Everything minted this cycle lands in one commit.
 spec:
   schedule: "15 * * * *"
   successfulJobsHistoryLimit: 3
@@ -15,9 +15,11 @@ spec:
       backoffLimit: 2
       template:
         spec:
-          # No Kubernetes API access; don't mount a SA token.
-          serviceAccountName: ""
-          automountServiceAccountToken: false
+          # The SA token is used only to read back the published Secrets for
+          # probes (published-secrets-reader Role in flux-system, get on the
+          # four rotator-published Secret names — nothing else).
+          serviceAccountName: authentik-jwt-rotation
+          automountServiceAccountToken: true
           restartPolicy: OnFailure
           volumes:
             - name: rotations-config

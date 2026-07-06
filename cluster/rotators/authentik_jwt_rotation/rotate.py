@@ -19,6 +19,14 @@ One run processes every rotation listed in the YAML config. For each rotation it
      changes — e.g. an Authentik service account's email gets fixed), plus the
      token, then `sops encrypt`s in place.
 
+Rotations with a `probe` additionally verify on every run that the token
+*published in-cluster* (the `k8s_secret` output, read back via the Kubernetes
+API) is actually accepted by its real endpoint; a 401/403 bypasses the
+freshness gate exactly like an audience/claim mismatch. Stamps only prove the
+token should still be valid — the probe catches provider-side revocation and
+publish-pipeline bugs (a seed placeholder never overwritten, a manifest
+written under the wrong stringData key).
+
 Everything that actually rotated this cycle lands in a single combined commit.
 The whole run operates from the clone root so SOPS creation rules (matched on
 repo-relative paths) resolve.
@@ -31,12 +39,12 @@ import os
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 
 import httpx
 import typer
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from devinfra.prettier_cli import prettier_format_yaml_in_place
 
@@ -44,6 +52,9 @@ logger = logging.getLogger(__name__)
 
 AUTH_BASE = "https://auth.allegedly.works"
 TOKEN_URL = f"{AUTH_BASE}/application/o/token/"
+
+K8S_API = "https://kubernetes.default.svc"
+SA_DIR = Path("/var/run/secrets/kubernetes.io/serviceaccount")
 
 CredentialMode = Literal["client_secret", "user_password"]
 
@@ -64,6 +75,20 @@ class K8sSecretOutput(BaseModel):
     namespace: str
     token_key: str = Field(default="jwt", description="stringData key for the JWT")
     exp_key: str = Field(default="token-exp", description="stringData key for the JWT exp epoch (seconds)")
+
+
+class Probe(BaseModel):
+    """Live check that the *published* token still works against its real endpoint.
+
+    The job holds no age key, so the sops file cannot be read back; the probe
+    instead reads the in-cluster Secret the `k8s_secret` output feeds and sends
+    its token as a Bearer to `url`. Only an explicit 401/403 is a credential
+    verdict — anything else means the request made it past auth (or the endpoint
+    is sick, which is not the token's fault).
+    """
+
+    url: str = Field(description="Endpoint that answers 401/403 iff the bearer is bad")
+    method: Literal["GET", "POST"] = "GET"
 
 
 class Rotation(BaseModel):
@@ -107,6 +132,17 @@ class Rotation(BaseModel):
         description="When set, also write the minted token as a k8s Secret manifest (in addition "
         "to sops_file) for an in-cluster consumer to read via Flux.",
     )
+    probe: Probe | None = Field(
+        default=None,
+        description="When set (requires k8s_secret), read the published Secret back each run and "
+        "verify its token against the real endpoint; a 401/403 forces a re-mint.",
+    )
+
+    @model_validator(mode="after")
+    def _probe_requires_k8s_secret(self) -> Self:
+        if self.probe and not self.k8s_secret:
+            raise ValueError(f"{self.name}: probe requires k8s_secret (the sops file cannot be read back)")
+        return self
 
     @property
     def expected_issuer(self) -> str:
@@ -223,6 +259,67 @@ def encrypt_sops_file(path: Path) -> None:
     subprocess.run(["sops", "encrypt", "--indent", "2", "--in-place", str(path)], check=True)
 
 
+def published_secret_data(out: K8sSecretOutput) -> dict[str, str] | None:
+    """`data` of the published in-cluster Secret (base64 values), or None if unreadable.
+
+    None means "no verdict" — SA token not mounted, API unreachable, or the
+    Secret not applied yet (Flux lag after a recent mint). The caller skips the
+    probe rather than mint-churning hourly while the publish pipeline is
+    mid-flight or down; the warning in the Job log is the alarm for that case.
+    """
+    sa_token_file = SA_DIR / "token"
+    if not sa_token_file.exists():
+        logger.warning("%s/%s: no ServiceAccount token mounted; skipping probe", out.namespace, out.name)
+        return None
+    try:
+        resp = httpx.get(
+            f"{K8S_API}/api/v1/namespaces/{out.namespace}/secrets/{out.name}",
+            headers={"Authorization": f"Bearer {sa_token_file.read_text().strip()}"},
+            verify=str(SA_DIR / "ca.crt"),
+            timeout=10,
+        )
+        resp.raise_for_status()
+    except httpx.HTTPError as e:
+        logger.warning("%s/%s: cannot read published Secret (%r); skipping probe", out.namespace, out.name, e)
+        return None
+    data: dict[str, str] = resp.json().get("data") or {}
+    return data
+
+
+def probe_rejects_token(client: httpx.Client, probe: Probe, token: str) -> bool:
+    """True iff the endpoint explicitly rejects the bearer (401/403).
+
+    Endpoint sickness (5xx, network error) is not a credential verdict: return
+    False so an outage doesn't cause hourly mint churn. Any other status means
+    the request made it past auth.
+    """
+    try:
+        resp = client.request(probe.method, probe.url, headers={"Authorization": f"Bearer {token}"})
+    except httpx.HTTPError as e:
+        logger.warning("probe %s: unreachable (%r); no credential verdict", probe.url, e)
+        return False
+    if resp.status_code in (401, 403):
+        return True
+    if resp.status_code >= 500:
+        logger.warning("probe %s: HTTP %d (endpoint sick); no credential verdict", probe.url, resp.status_code)
+    return False
+
+
+def published_token_rejected(client: httpx.Client, name: str, out: K8sSecretOutput, probe: Probe) -> bool:
+    """True iff the published Secret is demonstrably broken: missing the configured
+    stringData key, or its token rejected by the probe endpoint. An unreadable
+    Secret is no verdict (False) — see published_secret_data."""
+    if (data := published_secret_data(out)) is None:
+        return False
+    if (token_b64 := data.get(out.token_key)) is None:
+        logger.info("%s: published Secret lacks stringData key %r; forcing re-mint", name, out.token_key)
+        return True
+    if probe_rejects_token(client, probe, base64.b64decode(token_b64).decode()):
+        logger.info("%s: published token rejected by %s; forcing re-mint", name, probe.url)
+        return True
+    return False
+
+
 def rotate_one(client: httpx.Client, rotation: Rotation, config: Config) -> bool:
     """Mint + write a fresh token for one rotation. Returns True if it wrote."""
     remaining = remaining_hours(rotation.sops_file)
@@ -254,6 +351,10 @@ def rotate_one(client: httpx.Client, rotation: Rotation, config: Config) -> bool
                 rotation.expected_claims,
             )
             fresh = False
+    # Stamps only prove the token *should* still be valid; the probe checks that
+    # the published artifact actually works end-to-end.
+    if fresh and rotation.probe and rotation.k8s_secret:
+        fresh = not published_token_rejected(client, rotation.name, rotation.k8s_secret, rotation.probe)
     if fresh:
         logger.info(
             "%s: %.0fh remaining > %dh threshold; skipping", rotation.name, remaining, config.rotate_below_hours

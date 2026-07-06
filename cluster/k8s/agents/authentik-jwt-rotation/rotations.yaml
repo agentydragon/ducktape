@@ -39,6 +39,10 @@ rotations:
       path: cluster/k8s/haku/cloud-agent-tf/haku-kube-token.sops.yaml
       name: haku-cloud-kube-token
       namespace: flux-system
+    # /apis needs only system:discovery (bound to system:authenticated), so any
+    # valid token gets 200 and a dead one 401.
+    probe:
+      url: https://kubeapi.allegedly.works/apis
   - name: agent-box-codex
     # Source JWT for the self-hosted Codex user on the agent-box VM. Issued by
     # the shared kubectl-sandbox-client-credentials provider using the
@@ -91,6 +95,10 @@ rotations:
       path: cluster/k8s/haku/cloud-agent-tf/haku-grocy-sf-token.sops.yaml
       name: haku-cloud-grocy-sf-token
       namespace: flux-system
+    # The MCP validates the JWT via JWKS before anything else; a bare GET on
+    # /mcp answers 401 on a bad bearer and a non-auth status once past auth.
+    probe:
+      url: https://grocy-mcp-sf.allegedly.works/mcp
   - name: haku-mail
     # JWT for haku's mailbox (Stalwart, cluster/k8s/haku/mailbox). The server's
     # OIDC directory validates tokens against the dedicated stalwart-haku
@@ -119,6 +127,11 @@ rotations:
       path: cluster/k8s/haku/mailbox/app/haku-mail-token.sops.yaml
       name: haku-mail-token
       namespace: flux-system
+    # Stalwart 401s a bad bearer and 403s a token whose email claim can't be
+    # resolved to a mailbox — both are credential verdicts worth a re-mint
+    # (the re-mint then asserts expected_claims loudly).
+    probe:
+      url: https://haku-mailbox.allegedly.works/jmap/session
   - name: alloy-otlp
     provider_slug: alloy-otlp-client-credentials
     scopes: openid profile email
@@ -138,3 +151,8 @@ rotations:
       # jsonpath (both read `token`). Without this the default (`jwt`) would
       # silently break the mirror on the first automated mint.
       token_key: token
+    # The Authentik outpost 401s a bad bearer before Alloy sees the request; an
+    # empty POST past auth gets a non-auth status from Alloy, which is fine.
+    probe:
+      url: https://alloy-otlp.allegedly.works/v1/metrics
+      method: POST
