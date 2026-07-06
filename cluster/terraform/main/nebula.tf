@@ -83,8 +83,18 @@ locals {
   nebula_common = {
     pki             = local.nebula_pki
     static_host_map = local.nebula_static_host_map
-    listen          = { host = "0.0.0.0", port = 4242 }
-    punchy          = { punch = true, respond = true }
+    # read_buffer/write_buffer raised well above the small kernel default: nebula's
+    # UDP socket overflowed under sustained pod-network throughput and dropped packets
+    # -> heavy TCP retransmits -> single-stream throughput collapse (measured: iperf3
+    # pod-to-pod 205-730 Mbps with 1.3k-8.4k retransmits; SeaweedFS single-stream
+    # volume moves ~256 Mbps). This is the primary single-stream fix. See issue #2917.
+    listen = { host = "0.0.0.0", port = 4242, read_buffer = 10485760, write_buffer = 10485760 }
+    # 2 UDP-processing routines (nebula default is 1 = single-threaded). Nodes are
+    # 4-core/8-thread (Xeon E3-1270 v6 / i7-7700K); 2 doubles packet parallelism while
+    # leaving cores for etcd/containerd/workloads. A single flow still hashes to one
+    # routine, so this mainly lifts aggregate (multi-flow) throughput.
+    routines = 2
+    punchy   = { punch = true, respond = true }
     # Raised from Nebula's default 1300. nebula1 + 60 (Nebula overhead) = 1480,
     # under the 1500 eno1 underlay; carries Cilium's VXLAN (pod 1370 + 50 = 1420).
     # Full MTU model + layering: cluster/docs/network.md.
