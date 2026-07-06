@@ -25,12 +25,6 @@ Reference material from the completed foundation work:
 <../runbooks/seaweedfs_pvc_storageclass_migration.md> (reusable PVC storage-class migration),
 <../lessons_learned/2026_06_19_etcd_hdd_io_contention.md> (the etcd motivator, now resolved).
 
-## Small independent cleanups
-
-- Delete the old `forgejo-git-rwx` PVC + the three VolSync objects (`ReplicationSource`/
-  `ReplicationDestination` + the intermediate PVC) from the git cutover, once satisfied it
-  won't be rolled back (rollback until then = revert the `claimName` commit).
-
 ## Goal
 
 Split OVH node-local storage into media-scoped StorageClasses so fsync/latency-critical data
