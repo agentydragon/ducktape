@@ -89,10 +89,11 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
-    # Bazel registry + release artifacts, GitHub source/release archives, and the
-    # Node.js toolchain — the haku-ci Bazel cold-fetch closure (NO RBE). Added ahead
-    # of the haku-ci rehoming (next PR) so the proxy allowlist is ready when the
-    # runner starts egressing through it.
+    # Bazel registry + release artifacts, GitHub source/release archives, GNU source
+    # archives (rules_oci pulls gawk for py_image_layer manifests), and the Node.js
+    # toolchain — the haku-ci Bazel cold-fetch closure (NO RBE). Added ahead of the
+    # haku-ci rehoming (next PR) so the proxy allowlist is ready when the runner
+    # starts egressing through it.
     - toFQDNs:
         - matchName: releases.bazel.build
         - matchName: bcr.bazel.build
@@ -101,6 +102,7 @@ spec:
         - matchName: objects.githubusercontent.com
         - matchName: release-assets.githubusercontent.com
         - matchName: raw.githubusercontent.com
+        - matchName: ftp.gnu.org
         - matchName: nodejs.org
       toPorts:
         - ports:
