@@ -1,0 +1,73 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: activitywatch-sync-import
+  namespace: activitywatch
+  annotations:
+    description: Imports Syncthing-received ActivityWatch aw-sync databases into the query server.
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: activitywatch-sync-import
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          nodeSelector:
+            topology.kubernetes.io/region: hil-ovh
+          initContainers:
+            - name: stage-rugged-sync-folder
+              image: busybox:1.37
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  mkdir -p /work/rugged
+                  if [ -d /sync-inbox/rugged ]; then
+                    cp -a /sync-inbox/rugged/. /work/rugged/
+                  fi
+              volumeMounts:
+                - name: sync-inbox
+                  mountPath: /sync-inbox
+                  readOnly: true
+                - name: work
+                  mountPath: /work
+          containers:
+            - name: import
+              image: ghcr.io/agentydragon/aw-server:devel-20260706074016-af5147d # {"$imagepolicy": "flux-system:activitywatch"}
+              command:
+                - /usr/local/bin/aw-sync
+                - --host
+                - activitywatch-write.activitywatch.svc.cluster.local
+                - --port
+                - "5600"
+                - --sync-dir
+                - /work/rugged
+                - sync
+                - --mode
+                - pull
+                - --start-date
+                - "2026-07-06"
+              volumeMounts:
+                - name: work
+                  mountPath: /work
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 64Mi
+                limits:
+                  cpu: 250m
+                  memory: 256Mi
+          volumes:
+            - name: sync-inbox
+              persistentVolumeClaim:
+                claimName: activitywatch-sync-inbox
+            - name: work
+              emptyDir: {}

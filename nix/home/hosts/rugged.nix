@@ -62,6 +62,13 @@ in
     };
   };
 
+  ducktape.activitywatch.sync = {
+    enable = true;
+    hostname = "rugged";
+    root = "${config.home.homeDirectory}/.activitywatch-sync";
+    startDate = "2026-07-06";
+  };
+
   # SSH keys for wyrm and vps, decrypted from SOPS binary at activation time.
   sops.secrets =
     builtins.listToAttrs (
@@ -101,11 +108,46 @@ in
         ]
     )
     // {
+      activitywatch_syncthing_cert = {
+        sopsFile = ../../../secrets/home/rugged/activitywatch-syncthing.yaml;
+        key = "cert";
+      };
+      activitywatch_syncthing_key = {
+        sopsFile = ../../../secrets/home/rugged/activitywatch-syncthing.yaml;
+        key = "key";
+      };
       zai_api_key_file = {
         sopsFile = ../../../secrets/home/rugged/zai.yaml;
         key = "zai_api_key";
       };
     };
+
+  services.syncthing = {
+    enable = true;
+    cert = config.sops.secrets.activitywatch_syncthing_cert.path;
+    key = config.sops.secrets.activitywatch_syncthing_key.path;
+    overrideDevices = true;
+    overrideFolders = true;
+    settings = {
+      devices.activitywatch-cluster = {
+        id = "3A5F6OF-KEUVJDU-SQLKJ2P-MGJLAOY-JM3T5DH-D2ZKFS2-YVWO6QY-QL6CRQW";
+        name = "activitywatch-cluster";
+      };
+      folders."${config.home.homeDirectory}/.activitywatch-sync/rugged" = {
+        id = "activitywatch-rugged";
+        label = "ActivityWatch rugged";
+        path = "${config.home.homeDirectory}/.activitywatch-sync/rugged";
+        type = "sendonly";
+        devices = [ "activitywatch-cluster" ];
+        rescanIntervalS = 60;
+        fsWatcherEnabled = true;
+      };
+      options = {
+        relaysEnabled = true;
+        urAccepted = -1;
+      };
+    };
+  };
 
   # Wire z.ai API key into aiquota via config.toml (Python CLI reads this).
   xdg.configFile."aiquota/config.toml" = {

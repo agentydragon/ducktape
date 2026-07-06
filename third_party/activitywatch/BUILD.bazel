@@ -21,17 +21,23 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 # --- OCI image ---------------------------------------------------------------
 
 pkg_files(
-    name = "aw_server_bin_files",
-    srcs = ["@aw_server_rust//:aw_server_bin"],
+    name = "activitywatch_bin_files",
+    srcs = [
+        "@aw_server_rust//:aw_server_bin",
+        "@aw_server_rust//:aw_sync_bin",
+    ],
     attributes = pkg_attributes(mode = "0755"),
     prefix = "/usr/local/bin",
-    renames = {"@aw_server_rust//:aw_server_bin": "aw-server"},
+    renames = {
+        "@aw_server_rust//:aw_server_bin": "aw-server",
+        "@aw_server_rust//:aw_sync_bin": "aw-sync",
+    },
     strip_prefix = strip_prefix.files_only(),
 )
 
 pkg_tar(
-    name = "aw_server_layer",
-    srcs = [":aw_server_bin_files"],
+    name = "activitywatch_layer",
+    srcs = [":activitywatch_bin_files"],
 )
 
 oci_image(
@@ -52,7 +58,7 @@ oci_image(
     ],
     exposed_ports = ["5600/tcp"],
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [":aw_server_layer"],
+    tars = [":activitywatch_layer"],
 )
 
 oci_load(

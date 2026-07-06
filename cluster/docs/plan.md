@@ -19,7 +19,6 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
 Independent of the Proxmox outage — these stay suspended until explicitly revived,
 and would **not** come back just because `atlas`/`wyrm2` returns.
 
-- **ActivityWatch**: `activitywatch` — parked 2026-04-06.
 - **ARC**: `arc-namespace`, `arc` — decommissioned 2026-04-11; GitHub runner
   pod/statefulset removed, resources deleted (`arc-secrets` still deployed).
 - **BuildBuddy Executor**: `buildbuddy-executor` — scaled to 0; re-enable when needed.
@@ -467,7 +466,7 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       promtail) — unsatisfying because it suppresses all readiness checking. Full
       options, analysis, and the long-term fix (auto-remove stale NotReady nodes):
       <docs/plans/offline_node_daemonset_health.md>.
-- [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `scanner`, `activitywatch`,
+- [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `scanner`,
       `proxmox-proxy`, `props`/`props-registry`)
 - [ ] OpenClaw: obfuscation detection forces approval despite `security: full`
       (upstream `0e28e50b4`, PR #24287)

@@ -104,6 +104,30 @@ rust_library(
     ],
 )
 
+# ── aw-client-rust ────────────────────────────────────────────────────────────
+
+rust_library(
+    name = "aw_client_rust",
+    srcs = glob(["aw-client-rust/src/**/*.rs"]),
+    crate_root = "aw-client-rust/src/lib.rs",
+    edition = "2021",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aw_models",
+        "@aw_server_crates//:chrono",
+        "@aw_server_crates//:dirs",
+        "@aw_server_crates//:fs4",
+        "@aw_server_crates//:gethostname",
+        "@aw_server_crates//:log",
+        "@aw_server_crates//:phf",
+        "@aw_server_crates//:reqwest",
+        "@aw_server_crates//:serde",
+        "@aw_server_crates//:serde_json",
+        "@aw_server_crates//:thiserror",
+        "@aw_server_crates//:tokio",
+    ],
+)
+
 # ── aw-server (library + binary) ──────────────────────────────────────────────
 #
 # rust-embed with the interpolate-folder-path feature reads AW_WEBUI_DIR from
@@ -141,6 +165,59 @@ rust_library(
         "@aw_server_crates//:serde_json",
         "@aw_server_crates//:toml",
         "@aw_server_crates//:uuid",
+    ],
+)
+
+# ── aw-sync ───────────────────────────────────────────────────────────────────
+
+rust_library(
+    name = "aw_sync",
+    srcs = glob(["aw-sync/src/**/*.rs"], exclude = ["aw-sync/src/main.rs"]),
+    crate_features = ["cli"],
+    crate_root = "aw-sync/src/lib.rs",
+    edition = "2021",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aw_client_rust",
+        ":aw_datastore",
+        ":aw_models",
+        ":aw_server",
+        "@aw_server_crates//:chrono",
+        "@aw_server_crates//:clap",
+        "@aw_server_crates//:ctrlc",
+        "@aw_server_crates//:dirs",
+        "@aw_server_crates//:gethostname",
+        "@aw_server_crates//:log",
+        "@aw_server_crates//:reqwest",
+        "@aw_server_crates//:serde",
+        "@aw_server_crates//:serde_json",
+        "@aw_server_crates//:toml",
+    ],
+)
+
+rust_binary(
+    name = "aw_sync_bin",
+    srcs = glob(["aw-sync/src/**/*.rs"], exclude = ["aw-sync/src/lib.rs"]),
+    crate_features = ["cli"],
+    crate_root = "aw-sync/src/main.rs",
+    edition = "2021",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aw_client_rust",
+        ":aw_datastore",
+        ":aw_models",
+        ":aw_server",
+        ":aw_sync",
+        "@aw_server_crates//:chrono",
+        "@aw_server_crates//:clap",
+        "@aw_server_crates//:ctrlc",
+        "@aw_server_crates//:dirs",
+        "@aw_server_crates//:gethostname",
+        "@aw_server_crates//:log",
+        "@aw_server_crates//:reqwest",
+        "@aw_server_crates//:serde",
+        "@aw_server_crates//:serde_json",
+        "@aw_server_crates//:toml",
     ],
 )
 

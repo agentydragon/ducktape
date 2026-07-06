@@ -10,3 +10,18 @@ spec:
   resources:
     requests:
       storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: activitywatch-sync-inbox
+  namespace: activitywatch
+  annotations:
+    description: Syncthing receive-only inbox for ActivityWatch aw-sync databases from user devices.
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: seaweedfs-ovh
+  resources:
+    requests:
+      storage: 1Gi

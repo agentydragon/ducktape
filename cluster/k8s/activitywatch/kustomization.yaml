@@ -4,14 +4,21 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - deployment.yaml
+  - syncthing-deployment.yaml
+  - sync-import-cronjob.yaml
   - pvc.yaml
   - service.yaml
   - cilium-network-policy.yaml
   - nebula-config.yaml
   - nebula-certs.sops.yaml
+  - syncthing-identity.sops.yaml
 
 configMapGenerator:
   - name: activitywatch-readonly-proxy
     namespace: activitywatch
     files:
       - default.conf=readonly-proxy.conf
+  - name: activitywatch-syncthing-scripts
+    namespace: activitywatch
+    files:
+      - syncthing-entrypoint.sh
