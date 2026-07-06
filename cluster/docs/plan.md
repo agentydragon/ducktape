@@ -37,8 +37,8 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
   `authentik-blueprint-inventree-secret` — nice-to-have, parked under capacity pressure.
 - **kagent**: `kagent-{crds,db,secrets}` — parked 2026-05-08; too fragile (sessions die on
   large MCP outputs, z.ai error 1261). Resources deleted. See <../k8s/agents/kagent/TODO.md>.
-- **Matrix**: `matrix`, `matrix-{agent-rbac,db,secrets,namespace}` — parked; Flux
-  Kustomizations are retained on disk but not applied from the root kustomization.
+- **Matrix**: `matrix`, `matrix-{agent-rbac,db,secrets,namespace}` — parked; workload
+  manifests are retained on disk, but the Flux Kustomization CRs were removed.
 - **OpenClaw**: `openclaw-{gateway,operator,sandbox}` (+ their `-namespace`/`-secrets`,
   `gateway-agent-rbac`) — experimental, parked. **Cluster objects deleted 2026-06-19**:
   the `openclaw-{operator,mitmproxy}` namespaces (operator Deployment/HelmRelease/pod) and

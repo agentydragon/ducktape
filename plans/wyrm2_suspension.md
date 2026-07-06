@@ -40,7 +40,7 @@ Machine will be physically relocated and offline for ~2 weeks.
 - [ ] **atuin** (server + CNPG `atuin-db-1`) — shell history sync
 - [x] **grocy-sf** (grocy + mcp-server) — migrated to VPS (`local-path-hetzner` PVCs, `hil` nodeSelector). Data restored from kubectl cp backups.
 - [x] **grocy-vallejo** (grocy + mcp-server) — migrated to VPS (`local-path-hetzner` PVCs, `hil` nodeSelector). Data restored from kubectl cp backups.
-- [x] **matrix** (synapse + CNPG `matrix-db-1`) — deleted Deployment, element-web, CNPG cluster, PVC, all Secrets, HTTPRoutes. Removed the Matrix Flux Kustomizations from the root kustomization while keeping their manifests on disk for possible revival.
+- [x] **matrix** (synapse + CNPG `matrix-db-1`) — deleted Deployment, element-web, CNPG cluster, PVC, all Secrets, HTTPRoutes. Removed the Matrix Flux Kustomization CRs while keeping workload manifests on disk for possible revival.
 - [ ] **harbor** (full stack: core, db, registry, redis, portal, nginx, jobservice, exporter) — container registry
 - [ ] **nix-cache** (attic + CNPG `attic-db-1`) — Nix binary cache
 
