@@ -109,6 +109,17 @@ spec:
               matchers:
                 - alertname =~ "FluxKustomizationNotReady|FluxHelmReleaseNotReady|FluxGitRepositoryNotReady|FluxMainGitRepositoryArtifactLarge|ControlPlaneSystemDiskBusy|ControlPlanePodSystemDiskWriterHigh|ControlPlaneLeasePutLatencyHigh|ControlPlaneLeasePutLatencyCritical"
               repeat_interval: 2h
+              # One alert per ntfy message. ntfy.sh caps a published message at
+              # ~4KB; the parent route's group_by ["namespace"] bundled every
+              # flux-system alert (21+ FluxKustomizationNotReady during a storm)
+              # into one notification that, expanded by the X-Template
+              # "alertmanager" renderer, exceeded the cap and was rejected with
+              # HTTP 400 code 40041 ("message or title is too large after
+              # replacing template"). Alertmanager treats 4xx as unrecoverable,
+              # so alerts were silently dropped exactly when many were firing.
+              # group_by ["..."] disables aggregation so each alert is its own
+              # small message.
+              group_by: ["..."]
         receivers:
           - name: "null"
           - name: ntfy
