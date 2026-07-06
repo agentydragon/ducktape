@@ -119,8 +119,7 @@ shared web volume is used.
 Non-root, dropped caps, no service-account token. Credentials: the
 `haku-routine-launch-token` secret (the launch capability bearer; `HAKU_CONSOLE_LAUNCH_ROUTINE__TOKEN`)
 and, when MCP approval is enabled, the config-file/API-token/database settings:
-`HAKU_CONSOLE_CONFIG_FILE`, `HAKU_CONSOLE_MCP_APPROVAL_DATABASE_URL`, and
-`HAKU_CONSOLE_AGENT_API_TOKEN`.
+`HAKU_CONSOLE_CONFIG_FILE`, `HAKU_CONSOLE_DATABASE_URL`, and `HAKU_CONSOLE_AGENT_API_TOKEN`.
 It no longer holds a haku-state git credential — feedback/trace writes moved into haku-ui.
 As trusted ducktape code in its own namespace it is **not** behind the `haku-egress-proxy`
 fence — it gets ordinary cluster egress (which the capability tier needs to reach the

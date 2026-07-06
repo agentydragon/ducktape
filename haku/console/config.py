@@ -64,10 +64,10 @@ class Settings(BaseSettings):
     # can name connected MCP servers and the env-backed credential slot each uses.
     config_file: Path | None = None
 
-    # Operator-approved MCP tool-call substrate. Each connected MCP server's tool
-    # schema is reflected from the MCP server itself. The approval ledger is
-    # Postgres-backed; when unset, approval endpoints are disabled.
-    mcp_approval_database_url: SecretStr | None = None
+    # Shared haku-console Postgres database. MCP approvals use it for the
+    # audit/result ledger; other console-owned state can move here over time.
+    # When unset, database-backed endpoints are disabled.
+    database_url: SecretStr | None = None
     # Optional bearer accepted from Haku / haku-ui backend for backend-to-backend calls.
     # Browser/operator calls still rely on the Authentik session at the ingress.
     agent_api_token: SecretStr | None = None

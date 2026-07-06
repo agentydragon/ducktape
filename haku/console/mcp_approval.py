@@ -393,8 +393,8 @@ class McpMetadataProvider:
 
 
 def make_ledger(settings: Settings) -> ToolCallLedgerProtocol | None:
-    if settings.mcp_approval_database_url is not None:
-        return PostgresToolCallLedger(settings.mcp_approval_database_url.get_secret_value())
+    if settings.database_url is not None:
+        return PostgresToolCallLedger(settings.database_url.get_secret_value())
     return None
 
 

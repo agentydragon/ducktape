@@ -86,7 +86,7 @@ def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Generator
 
 def _test_app_overrides(db_url: str) -> dict[str, Any]:
     return {
-        "mcp_approval_database_url": SecretStr(db_url),
+        "database_url": SecretStr(db_url),
         "tool_call_executor": FakeToolExecutor(),
         "tool_call_metadata_provider": FakeMetadataProvider(),
     }
