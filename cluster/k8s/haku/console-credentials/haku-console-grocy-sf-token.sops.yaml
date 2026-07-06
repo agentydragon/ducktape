@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: haku-console-grocy-sf-token
+    namespace: flux-system
+    annotations:
+        description: Seed Secret overwritten by authentik-jwt-rotation. Privileged haku-console Grocy SF MCP bearer; mirrored only into haku-console for operator-approved calls.
+type: Opaque
+stringData:
+    jwt: ENC[AES256_GCM,data:Kve07+uAPy6Vux0=,iv:fs12MaZN7zLBoVWeTPMkOFXA0dpI0/3Ydz4TWU5YznU=,tag:u6nps7R0PLF93XYFgJ6caw==,type:str]
+    token-exp: ENC[AES256_GCM,data:uQ==,iv:QjbfS4lHiWxwPya0UoQLEYg0Hj+Xu/9zD2F0uNDqZzU=,tag:G+pzT6bPzH4KXb9D0InoNg==,type:str]
+sops:
+    age:
+        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBmMEx2Y2xTazFOMVdleFFR
+            VithQThiUm9GdzNpdFpqL29vUUY1N3BPMDFJCjVBQ3ZBWlZwQjVEQS9NVkJZQ3Fo
+            NkROQzQzVUwzUWFUaVhmSm9MMk5QaXcKLS0tIGtTT3VYYVhEbkIrdXFDZWtCRGpN
+            bnR6N1orZHNUS1hFN3B6M0RGbWpwNmMKAR5yR5xYsnx5ZiIWLpxgQkH+lXIIKpby
+            trTESncNVUJJ//yRL/NBYzIxQAWMgIAM97Ck7pr/ptwJw/0UssM1ng==
+            -----END AGE ENCRYPTED FILE-----
+        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBuTGt3d0psTkJuQXRHNW9V
+            N1hCV1FQZ1ovanMrRTltV3RWSkxIZ2RTK0Y4CjRjTFd2MG5ZbGIwbFhDalNFMVRm
+            VzB6TmJTNlNjSTNDUmFjcVFZVVNaa3MKLS0tIEVMNSt5NnVJc3lJNDZFUjF1eTRT
+            NDRmc0lEdWtkQ2FsOUptR0RGajJCSEkKv+XVnEhVNoYQsLYeAewbm4DxWqv4dfDA
+            s4VGXuPV3Kcb7jBNKGduvSzWwD4mDh+rWs2EjogVpwMwd/8jXQAqrw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-07-06T09:15:32Z"
+    mac: ENC[AES256_GCM,data:rsC4WVx8HLr2KVD3JvVPFtXaflBKrdIXxoa/JnwVGZ7+N8ElafWoln68iMgAq73EsA9bhgnQVeYjt+qwJ0y3I/6v3cXtu5yPrZyL7ruODK4h89ipyFD4XIid3SN7NqFxr3x/F4efARNNKLDXIDDmIToTJOTntFXSCQ3QwlC2LZ8=,iv:XU/WkhV/tHE6cKgFtOVGYWqyiszjrFEwcBk8cBNCAtw=,tag:53kpdlOsKRRk9rzbT+9Uig==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

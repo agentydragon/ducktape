@@ -72,6 +72,8 @@ spec:
               value: https://haku-ui.allegedly.works
             - name: HAKU_CONSOLE_AUTH_ORIGIN
               value: https://auth.allegedly.works
+            - name: HAKU_CONSOLE_CONFIG_FILE
+              value: /etc/haku-console/config/config.yaml
             - name: HAKU_CONSOLE_DB_USER
               valueFrom:
                 secretKeyRef:
@@ -104,6 +106,11 @@ spec:
                 secretKeyRef:
                   name: haku-console-agent-api
                   key: token
+            - name: HAKU_CONSOLE_MCP_CREDENTIAL_HAKU_CONSOLE_GROCY_SF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-grocy-sf-token
+                  key: jwt
           resources:
             requests:
               cpu: 50m
@@ -124,6 +131,9 @@ spec:
           volumeMounts:
             - name: tmp # writable scratch (/tmp) for the app
               mountPath: /tmp
+            - name: config
+              mountPath: /etc/haku-console/config
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -173,5 +183,8 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: config
+          configMap:
+            name: haku-console-config
         - name: nginx-conf
           emptyDir: {}
