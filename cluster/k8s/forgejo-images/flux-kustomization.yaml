@@ -28,4 +28,4 @@ spec:
     - name: forgejo # Forgejo API must be up (provider target)
     - name: tofu-controller
     - name: tofu-state-db
-    - name: reflector # mirrors forgejo-images-creds to flux-system + codex-pod
+    - name: reflector # mirrors forgejo-images-creds to flux-system + image consumers

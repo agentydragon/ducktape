@@ -18,6 +18,7 @@ spec:
   # to the committed user→permission policy.
   wait: true
   dependsOn:
+    - name: forgejo-images
     - name: grocy-vallejo
   healthChecks:
     - apiVersion: batch/v1

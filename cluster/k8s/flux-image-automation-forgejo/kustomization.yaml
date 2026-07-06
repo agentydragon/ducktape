@@ -3,3 +3,5 @@ kind: Kustomization
 resources:
   - codex-pod-image-repository.yaml
   - codex-pod-image-policy.yaml
+  - grocy-user-perms-provisioner-image-repository.yaml
+  - grocy-user-perms-provisioner-image-policy.yaml

@@ -4,5 +4,7 @@ metadata:
   name: grocy-user-perms-provisioner
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/grocy-user-perms-provisioner
+  image: git.allegedly.works/ducktape-ci/grocy-user-perms-provisioner
   interval: 5m
+  secretRef:
+    name: forgejo-images-creds

@@ -7,7 +7,7 @@ spec:
   imageRepositoryRef:
     name: grocy-user-perms-provisioner
   filterTags:
-    # Tags pushed by CI: {branch}-YYYYMMDDHHMMSS-{sha7} — alphabetical order == chronological
+    # Tags pushed by CI: {branch}-YYYYMMDDHHMMSS-{sha7} - alphabetical order == chronological
     pattern: '^devel-\d{14}-[0-9a-f]{7}$'
   policy:
     alphabetical:

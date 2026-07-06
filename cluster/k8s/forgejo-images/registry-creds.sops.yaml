@@ -4,11 +4,11 @@ metadata:
     name: forgejo-images-creds
     namespace: forgejo-images
     annotations:
-        description: Shared credential for the ducktape-ci Forgejo registry tenant. username/password read by tf/gitops/forgejo-images; .dockerconfigjson used as kubelet imagePullSecret (codex-pod) and Flux ImageRepository secretRef (flux-system) — both via reflector mirroring.
+        description: Shared credential for the ducktape-ci Forgejo registry tenant. username/password read by tf/gitops/forgejo-images; .dockerconfigjson used as kubelet imagePullSecret (codex-pod, grocy user-perms) and Flux ImageRepository secretRef (flux-system) — both via reflector mirroring.
         reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: flux-system,codex-pod
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: flux-system,codex-pod,grocy-sf,grocy-vallejo
         reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: flux-system,codex-pod
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: flux-system,codex-pod,grocy-sf,grocy-vallejo
 type: kubernetes.io/dockerconfigjson
 stringData:
     username: ENC[AES256_GCM,data:pMLXL7SfEtD6eY8=,iv:+uXLAJ6OMSDxlBIwkWVAT3p89WOf0q1fadh3jbcBy4g=,tag:yaHH6itqD49xfIssNXJidw==,type:str]

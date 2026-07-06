@@ -17,6 +17,8 @@ spec:
       restartPolicy: OnFailure
       enableServiceLinks: false
       automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -30,7 +32,7 @@ spec:
       containers:
         - name: provisioner
           # Script baked in via Bazel (//cluster/provisioners/grocy_user_perms:image).
-          image: ghcr.io/agentydragon/grocy-user-perms-provisioner:devel-20260704000514-b37cedf # {"$imagepolicy": "flux-system:grocy-user-perms-provisioner"}
+          image: git.allegedly.works/ducktape-ci/grocy-user-perms-provisioner:devel-20260704000514-b37cedf # {"$imagepolicy": "flux-system:grocy-user-perms-provisioner"}
           imagePullPolicy: Always
           args:
             - --policy

@@ -57,9 +57,13 @@ provisioned in code), host it in Forgejo. Reference implementation: `codex-pod`.
    `flux-system` (Flux scan `secretRef`) and consuming namespaces (kubelet
    `imagePullSecrets`). CI reads the same creds from
    `secrets/ci/forgejo-images-registry.sops.yaml` (via `setup-ci-secrets`).
-2. **Push** — `skopeo copy … docker://git.allegedly.works/ducktape-ci/<image>:<tag>
---dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD"` (same
-   `{branch}-{timestamp}-{sha7}` tag). Direct to Forgejo — no proxy (unlike props).
+2. **Push** — for Bazel-built images in `.github/workflows/push-images.yml`, set
+   `registry: forgejo` on the matrix row; the workflow pushes
+   `git.allegedly.works/ducktape-ci/<image>:<tag>` with the same
+   `{branch}-{timestamp}-{sha7}` tag. For bespoke workflows, use
+   `skopeo copy … docker://git.allegedly.works/ducktape-ci/<image>:<tag>
+--dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD"`. Direct to
+   Forgejo — no proxy (unlike props).
 3. **Auto-roll** — add `ImageRepository` (with `secretRef: forgejo-images-creds`)
    - `ImagePolicy` under `cluster/k8s/flux-image-automation-forgejo/`, and the
      `{"$imagepolicy": "flux-system:<name>"}` marker on the image field. The

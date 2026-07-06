@@ -45,8 +45,6 @@ resources:
   - tana-litellm-proxy-image-policy.yaml
   - token-provisioner-image-repository.yaml
   - token-provisioner-image-policy.yaml
-  - grocy-user-perms-provisioner-image-repository.yaml
-  - grocy-user-perms-provisioner-image-policy.yaml
   - matrix-user-provisioner-image-repository.yaml
   - matrix-user-provisioner-image-policy.yaml
   - authentik-jwt-rotation-image-repository.yaml
