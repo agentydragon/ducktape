@@ -157,6 +157,22 @@ resource "forgejo_repository_action_secret" "registry_push" {
   repository_id = forgejo_repository.state.id
   name          = "REGISTRY_PUSH_TOKEN"
   data          = random_password.haku.result
+
+  lifecycle {
+    replace_triggered_by = [
+      random_password.haku,
+      terraform_data.registry_push_secret_refresh,
+    ]
+  }
+}
+
+# The Forgejo provider cannot read back Actions secret values, so opaque value
+# drift can look like "NoDrift" to Terraform while CI still receives stale auth.
+# This controller-owned refresh marker forces the provider to rewrite the secret
+# once now; bump the marker if the secret ever needs an explicit declarative
+# rewrite again.
+resource "terraform_data" "registry_push_secret_refresh" {
+  triggers_replace = ["2026-07-06-haku-registry-push-token-resync"]
 }
 
 # Registration token for the contained Forgejo Actions runner (cluster/k8s/haku-ci),
