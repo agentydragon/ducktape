@@ -13,6 +13,7 @@ from authlib.oauth2 import OAuth2Error
 from authlib.oauth2.rfc6749.wrappers import OAuth2Token
 from fastmcp.server.auth.auth import TokenVerifier
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
+from glide_shared.exceptions import TimeoutError as GlideTimeoutError
 from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.provider import TokenError
 from prometheus_client import REGISTRY
@@ -435,6 +436,37 @@ async def test_resilient_proxy_retries_then_succeeds(proxy: ResilientOIDCProxy) 
     token = object()
     with patch.object(
         OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=[_invalid_grant_from(_http_error(503)), token])
+    ) as upstream:
+        assert await proxy.exchange_refresh_token(AsyncMock(), AsyncMock(), []) is token
+    assert upstream.call_count == 2
+
+
+async def test_resilient_proxy_oauth_state_store_timeout_becomes_503(proxy: ResilientOIDCProxy) -> None:
+    """A Valkey/glide timeout while persisting rotated OAuth state is transient.
+
+    This is the path seen in grocy-sf logs: Authentik returned 200, then
+    fastmcp timed out writing the refreshed upstream token to Valkey. It should
+    not leak as a raw 500 to claude.ai.
+    """
+    before = _failures("storage")
+    with (
+        patch.object(
+            OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=GlideTimeoutError("timed out"))
+        ) as upstream,
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await proxy.exchange_refresh_token(AsyncMock(), AsyncMock(), [])
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.headers is not None
+    assert "Retry-After" in exc_info.value.headers
+    assert upstream.call_count == 3
+    assert _failures("storage") == before + 1
+
+
+async def test_resilient_proxy_oauth_state_store_timeout_retries_then_succeeds(proxy: ResilientOIDCProxy) -> None:
+    token = object()
+    with patch.object(
+        OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=[GlideTimeoutError("timed out"), token])
     ) as upstream:
         assert await proxy.exchange_refresh_token(AsyncMock(), AsyncMock(), []) is token
     assert upstream.call_count == 2

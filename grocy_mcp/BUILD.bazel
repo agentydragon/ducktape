@@ -167,6 +167,7 @@ py_test(
         ":server",
         "//:conftest",
         "@pypi//httpx",
+        "@pypi//prometheus_client",
         "@pypi//pytest_bazel",
     ],
 )

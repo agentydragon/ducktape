@@ -10,7 +10,8 @@ spec:
     - name: mcp-auth
       rules:
         # An OIDCProxy-fronted MCP server (oauth facades, grocy-mcp) failed to
-        # refresh a client's token against Authentik. Before the
+        # refresh a client's token against Authentik or persist refreshed OAuth
+        # state. Before the
         # ResilientOIDCProxy fix this instantly killed the claude.ai connector
         # (invalid_grant is terminal); now transient failures answer 503, but
         # each one still means claude.ai saw an error and the connector may
@@ -21,13 +22,15 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "MCP server {{ $labels.namespace }}/{{ $labels.pod }} failed an upstream token refresh (outcome: {{ $labels.outcome }})"
+            summary: "MCP server {{ $labels.namespace }}/{{ $labels.pod }} failed a token refresh (outcome: {{ $labels.outcome }})"
             description: >
-              {{ $value | printf "%.0f" }} upstream token refresh failure(s) in
+              {{ $value | printf "%.0f" }} token refresh failure(s) in
               the last hour on {{ $labels.namespace }}/{{ $labels.pod }}
               (outcome={{ $labels.outcome }}). outcome=transient means Authentik
               was unreachable/5xx (client got 503 and may recover on its own);
               outcome=oauth means Authentik genuinely rejected a grant — the
-              claude.ai connector is likely dead until manually reconnected.
-              Check Settings → Connectors in claude.ai and authentik-server
-              health.
+              claude.ai connector is likely dead until manually reconnected;
+              outcome=storage means the MCP server could not persist OAuth state
+              to its local store such as Valkey (client got 503 and may retry).
+              Check Settings → Connectors in claude.ai, authentik-server health,
+              and the MCP namespace's state-store pods.

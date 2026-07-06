@@ -18,6 +18,7 @@ exchange is load-bearing.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -28,7 +29,7 @@ import uvicorn
 from fastmcp import FastMCP
 from fastmcp.server.providers.openapi import MCPType, OpenAPIResource, OpenAPIResourceTemplate, OpenAPITool, RouteMap
 from fastmcp.utilities.openapi import HTTPRoute
-from prometheus_client import start_http_server
+from prometheus_client import Gauge, start_http_server
 from pydantic.networks import AnyUrl
 
 from grocy_mcp.batch_tools import register_batch_tools
@@ -39,6 +40,8 @@ from mcp_infra.persistence import build_client_storage
 from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
+
+_TOOLS = Gauge("grocy_mcp_tools", "Number of tools advertised by the Grocy MCP server")
 
 # All routes become tools by default; TOOL_OVERRIDES controls which are
 # enabled, disabled, or promoted to MCP resources.
@@ -129,16 +132,29 @@ def build_server(settings: ServerSettings) -> FastMCP:
     return mcp
 
 
+async def record_tool_count(mcp: FastMCP) -> int:
+    tool_count = len(await mcp.list_tools())
+    _TOOLS.set(tool_count)
+    return tool_count
+
+
 def main() -> None:
     log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(level=log_level, format="%(asctime)s %(name)s %(levelname)s %(message)s", stream=sys.stderr)
     settings = ServerSettings()
     mcp = build_server(settings)
+    tool_count = asyncio.run(record_tool_count(mcp))
     app = mcp.http_app(path="/mcp")
     # Metrics (incl. mcp_auth_upstream_refresh_failures_total) on a dedicated
     # cluster-internal port, off the public HTTPRoute.
     start_http_server(settings.metrics_port, addr=settings.host)
-    logger.info("grocy-mcp listening on %s:%d, metrics on :%d", settings.host, settings.port, settings.metrics_port)
+    logger.info(
+        "grocy-mcp listening on %s:%d, metrics on :%d, tools=%d",
+        settings.host,
+        settings.port,
+        settings.metrics_port,
+        tool_count,
+    )
     uvicorn.run(app, host=settings.host, port=settings.port, log_level="info")
 
 

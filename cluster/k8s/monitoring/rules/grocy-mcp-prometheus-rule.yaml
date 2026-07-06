@@ -1,0 +1,24 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: grocy-mcp-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: grocy-mcp
+      rules:
+        - alert: GrocyMcpNoTools
+          expr: grocy_mcp_tools{namespace=~"grocy-.+"} == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Grocy MCP {{ $labels.namespace }}/{{ $labels.pod }} is advertising zero tools"
+            description: >
+              The Grocy MCP server is reachable on its metrics port, but its
+              local FastMCP registry reports zero advertised tools. Clients can
+              authenticate successfully and still see an empty tool list. Check
+              the pod logs for OpenAPI generation, TOOL_OVERRIDES, or batch tool
+              registration failures.

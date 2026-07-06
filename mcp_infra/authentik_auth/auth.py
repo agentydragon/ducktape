@@ -38,6 +38,7 @@ from fastmcp.server.auth.auth import AuthProvider, TokenVerifier
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
+from glide_shared.exceptions import TimeoutError as GlideTimeoutError
 from key_value.aio.protocols import AsyncKeyValue
 from mcp.server.auth.provider import TokenError
 from prometheus_client import Counter
@@ -124,8 +125,8 @@ class AuthentikAuthConfig(BaseModel):
 
 UPSTREAM_REFRESH_FAILURES = Counter(
     "mcp_auth_upstream_refresh_failures_total",
-    "MCP client token refreshes that failed at the upstream Authentik token endpoint",
-    ["outcome"],  # transient (upstream unreachable/5xx) | oauth (real OAuth error response)
+    "MCP client token refreshes that failed while talking to Authentik or persisting OAuth state",
+    ["outcome"],  # transient (upstream unreachable/5xx) | oauth (real OAuth error response) | storage
 )
 
 _RETRY_AFTER_SECONDS = 60
@@ -140,6 +141,15 @@ def _transient_upstream_error(exc: BaseException | None) -> bool:
 
 def _is_transient_token_error(exc: BaseException) -> bool:
     return isinstance(exc, TokenError) and _transient_upstream_error(exc.__cause__)
+
+
+def _transient_oauth_state_storage_error(exc: BaseException) -> bool:
+    """True for local OAuth-state store failures that should be retryable."""
+    return isinstance(exc, GlideTimeoutError)
+
+
+def _transient_refresh_error(exc: BaseException) -> bool:
+    return _is_transient_token_error(exc) or _transient_oauth_state_storage_error(exc)
 
 
 def _upstream_oauth_rejection(exc: BaseException | None) -> bool:
@@ -185,7 +195,7 @@ class ResilientOIDCProxy(OIDCProxy):
     ) -> OAuthToken:
         try:
             async for attempt in AsyncRetrying(
-                retry=retry_if_exception(_is_transient_token_error),
+                retry=retry_if_exception(_transient_refresh_error),
                 stop=self.refresh_retry_stop,
                 wait=self.refresh_retry_wait,
                 before_sleep=before_sleep_log(logger, logging.WARNING),
@@ -204,6 +214,16 @@ class ResilientOIDCProxy(OIDCProxy):
                 ) from e.__cause__
             if _upstream_oauth_rejection(e.__cause__):
                 UPSTREAM_REFRESH_FAILURES.labels(outcome="oauth").inc()
+            raise
+        except Exception as e:
+            if _transient_oauth_state_storage_error(e):
+                UPSTREAM_REFRESH_FAILURES.labels(outcome="storage").inc()
+                logger.exception("OAuth state store unavailable during token refresh")
+                raise HTTPException(
+                    status_code=503,
+                    detail="OAuth state store temporarily unavailable; retry later.",
+                    headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
+                ) from e
             raise
         raise AssertionError("unreachable")  # the retry loop always returns or raises
 
