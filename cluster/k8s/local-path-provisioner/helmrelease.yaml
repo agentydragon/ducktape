@@ -49,7 +49,7 @@ spec:
       # every node that should be eligible for local-path-ovh placement.
       - node: ovh-ns103656
         paths:
-          - /var/mnt/seaweedfs-data/local-path
+          - /var/mnt/local-path-ovh-hdd/local-path
       - node: ovh-ns103711
         paths:
           - /var/mnt/local-path-ovh-hdd/local-path

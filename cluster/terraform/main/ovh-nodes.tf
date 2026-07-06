@@ -315,6 +315,7 @@ locals {
   data_disk_mount_renamed_nodes = toset([
     "ovh-ns103711", # rolled 2026-07-05; /dev/sdb repartitioned seaweedfs-data -> local-path-ovh-hdd
     "ovh-ns102453", # rolled 2026-07-05; /dev/sdb repartitioned seaweedfs-data -> local-path-ovh-hdd
+    "ovh-ns103656", # rolled 2026-07-05; /dev/sdb repartitioned seaweedfs-data -> local-path-ovh-hdd (CP anchor; etcd on /dev/sda untouched)
   ])
 
   # Per-node user-volume patches. KS-5 nodes expose /dev/sdb; KS-GAME nodes
