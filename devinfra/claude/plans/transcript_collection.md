@@ -96,17 +96,28 @@ repo-committed settings can point at a one-liner that prints the current
 `alloy-otlp` bearer (web: the bootstrap-materialized SOPS token; machines: the
 `cli_env.sh` export). Tokens live ≥24 h, refresh every 29 min → rotation covered.
 
-Recipe: UI env vars `CLAUDE_CODE_ENABLE_TELEMETRY=1`,
-`OTEL_METRICS_EXPORTER=otlp`, `OTEL_LOGS_EXPORTER=otlp`,
-`OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`,
-`OTEL_EXPORTER_OTLP_ENDPOINT=https://alloy-otlp.allegedly.works` + settings.json
-`otelHeadersHelper`. **Residual risk → smoke test:** the claude process carries no
-proxy env and Node OTLP exporters ignore `HTTPS_PROXY`, so export is a _direct_
-HTTPS connection — the managed container's network may or may not allow that even
-for allowlisted domains. One test session (with a localhost listener as
-plan B's probe) answers it; if direct egress is blocked, fall back to a localhost
-forwarder (`OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318`, bootstrap-owned
-relay attaching the bearer).
+**Verdict (probed end-to-end 2026-07-06, throwaway hosted env): the localhost
+forwarder is the design.** Findings chain: UI env vars deliver the full OTel
+config into the claude process (12 vars confirmed via `/proc`; the subprocess
+scrub hides them from Bash — check `/proc/<claude-pid>/environ`, never `env`);
+the harness pre-sets `NODE_EXTRA_CA_CERTS`/`SSL_CERT_FILE` on claude and runs its
+own tracing (`CCR_ENABLE_TRACING`, `TRACEPARENT`); the Authentik-proxied endpoint
+
+- rotated bearer work (authenticated POST → 200); **with
+  `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318` the exporter demonstrably
+  emits all three signals** (metrics ~10 s, logs ~5 s, traces — captured by an
+  in-session listener); but with the endpoint set to the public Alloy host,
+  **nothing ever arrives** — the claude process's direct HTTPS egress is silently
+  dropped by the container (its exporter can't use the egress proxy). Conclusion:
+
+* **Hosted sessions**: UI env vars point the exporter at `http://127.0.0.1:4318`;
+  a small **forwarder** (started by the bootstrap/profile background command)
+  listens there and relays to `https://alloy-otlp.allegedly.works` through the
+  container's egress proxy, attaching the current bearer. ~40 lines of stdlib
+  Python (stream body through, add `Authorization`, honor chunked/gzip).
+* **CLI / operator machines**: no forwarder — direct export with
+  `otelHeadersHelper` in settings.json (script emitting headers JSON, re-run
+  every ~29 min; HTTP protocols only) reading the `cli_env.sh` bearer.
 
 ## Build order
 
