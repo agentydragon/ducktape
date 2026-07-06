@@ -2,11 +2,13 @@
 #
 # Replaces the old multi-stage Dockerfile pipeline (build-ui.yaml). Bazel gates:
 #   - backend:  pytest (//ui/backend:test_*)
-#   - frontend: tsc (//ui/frontend:tsc_test), vitest (//ui/frontend:vitest_test)
+#   - frontend: tsc (//ui/frontend:tsc_test), eslint (//ui/frontend:eslint_test),
+#     vitest (//ui/frontend:vitest_test)
 #   - the container image assembles under //ui:image (build_test in `bazel test`)
 # So `bazel test //...` + `bazel build //...` is the whole gate; on main we then
 # `bazel run //ui:push` with the same Flux-sortable tag scheme the ImagePolicy
-# filters on (main-<utc14>-<sha7>). (ruff + eslint run separately in lint.yaml.)
+# filters on (main-<utc14>-<sha7>). (ruff is the one gate NOT in this graph — it
+# runs standalone in lint.yaml; see that file's header for why.)
 #
 # Runs IN-CLUSTER on the repo-scoped Forgejo Actions runner (cluster/k8s/haku-ci),
 # NOT on ducktape's BuildBuddy — haku-state may hold private operator info, so its

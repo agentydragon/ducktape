@@ -9,6 +9,13 @@ common --enable_bzlmod
 # not here — see tools/ci/trust_egress_ca.sh for the runner's.
 build --spawn_strategy=local
 
+# A Claude Code session's auto-generated buildbuddy.bazelrc unconditionally sets
+# `build --config=rbe`, assuming every repo it touches is ducktape (which defines a real
+# `build:rbe` pointing at BuildBuddy). Define it here as a no-op — genuinely no remote
+# executor is wired below, so this stays exactly as local as the rest of this file — purely so
+# the flag resolves instead of erroring "Config value 'rbe' is not defined" in an agent session.
+build:rbe --spawn_strategy=local
+
 # Strict action env: actions get a fixed PATH instead of inheriting the client's
 # PATH. Keeps builds reproducible across the runner and dev machines.
 build --incompatible_strict_action_env
@@ -27,6 +34,13 @@ build --@rules_python//python/config_settings:python_version=3.13
 # Quiet, non-interactive output for CI logs.
 common:ci --curses=no
 common:ci --show_progress_rate_limit=30
+
+# Claude Code sessions auto-inject `--config=ai_agent` (a per-session bazelrc the
+# claude-hook daemon generates, shared across every repo a session touches) — define it
+# here too, matching ducktape's own `ai_agent` config, so `bazel`/`bazelisk` works in this
+# repo from an agent session instead of erroring "Config value 'ai_agent' is not defined."
+common:ai_agent --curses=no
+common:ai_agent --show_progress_rate_limit=30
 common:ci --announce_rc
 # Print failing test logs inline (they're otherwise only in bazel-testlogs, which
 # CI doesn't upload) so a failure is diagnosable from the run output.
