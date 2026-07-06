@@ -34,7 +34,7 @@ Core endpoints:
 - `GET /api/capabilities/mcp-servers` returns connected server IDs and reflected tool
   metadata, including MCP-published input schemas when available.
 - `POST /api/tool-calls` accepts `server_id`, `tool_name`, `arguments`,
-  `rationale`, optional `request_title`, optional `state_request_id`, optional
+  `rationale`, optional `title`, optional `state_request_id`, optional
   caller-scoped `client_request_id`, and optional `wait_for_ms`.
 - `GET /api/approvals/pending`, `GET /api/approvals/events?since=...`, and
   `WebSocket /api/approvals/ws` provide frontend catch-up and wakeups.
@@ -45,10 +45,9 @@ Core endpoints:
   audit/result log.
 
 haku-console mints the canonical `tool_call_id`. A caller may send a scoped
-`client_request_id` only to make retries idempotent. The idempotency digest is computed
-from a canonical JSON encoding of the normalized request payload. Replaying the same
-caller/client ID with the same payload returns the original record; replaying it with a
-different payload rejects.
+`client_request_id` only to make retries idempotent. Replaying the same caller/client ID
+with the same payload returns the original record; replaying it with a different payload
+rejects.
 
 Result statuses are shared across haku-ui, Haku, and future console-MCP clients:
 `pending_approval`, `running`, `ok`, `error`, and `denied`.
@@ -86,8 +85,8 @@ Click flow:
 1. haku-ui frontend reads `tool_requests/<state_request_id>.yaml` and posts that exact
    request body to haku-ui backend.
 2. haku-ui backend derives
-   `client_request_id = haku-state:tool_requests/<id>.yaml@sha256:<canonical-json>`,
-   and submits to haku-console.
+   `client_request_id = haku-state:tool-call:<state_request_id>`, and submits to
+   haku-console.
 3. haku-console records the pending call, emits an approval event, and returns the
    console record.
 4. haku-console frontend renders the trusted approval prompt and posts approve/deny.
@@ -119,6 +118,9 @@ Click flow:
 - Terminal results are visible in haku-console without a git mirror.
 - haku-state validation rejects malformed `tool_requests/*.yaml`.
 - A later Haku pass can sweep console audit records and update real state files.
+- Future Grocy-specific improvement: investigate whether haku-console can execute Grocy
+  calls under the operator's Authentik identity instead of only the console-held service
+  token.
 
 ## Current Grocy Principal
 

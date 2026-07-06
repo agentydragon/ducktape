@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, MetaData, Table, Text
+from sqlalchemy import BigInteger, Column, DateTime, Index, MetaData, Table, Text
 from sqlalchemy.dialects.postgresql import ENUM, JSONB
 
 metadata = MetaData()
@@ -26,7 +26,7 @@ tool_calls = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False),
     Column("arguments_json", JSONB, nullable=False),
     Column("rationale", Text, nullable=False),
-    Column("request_title", Text, nullable=True),
+    Column("title", Text, nullable=True),
     Column("client_request_id", Text, nullable=True),
     Column("state_request_id", Text, nullable=True),
     Column("request_digest", Text, nullable=False),
@@ -36,12 +36,12 @@ tool_calls = Table(
     Column("error", Text, nullable=True),
 )
 
-tool_call_idempotency = Table(
-    "mcp_tool_call_idempotency",
-    metadata,
-    Column("idempotency_key", Text, primary_key=True),
-    Column("request_digest", Text, nullable=False),
-    Column("tool_call_id", Text, ForeignKey("mcp_tool_calls.tool_call_id"), nullable=False),
+Index(
+    "uq_mcp_tool_calls_caller_client_request",
+    tool_calls.c.caller_principal,
+    tool_calls.c.client_request_id,
+    unique=True,
+    postgresql_where=tool_calls.c.client_request_id.is_not(None),
 )
 
 tool_call_events = Table(

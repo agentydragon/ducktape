@@ -30,10 +30,11 @@ from fastapi_csrf_protect import CsrfProtect
 from fastmcp.client import Client
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from sqlalchemy import create_engine, func, insert, select, update
+from sqlalchemy.exc import IntegrityError
 
 from haku.console.config import Settings
 from haku.console.database_migrate import run_migrations_for_connection
-from haku.console.database_schema import sqlalchemy_url, tool_call_events, tool_call_idempotency, tool_calls
+from haku.console.database_schema import sqlalchemy_url, tool_call_events, tool_calls
 from haku.console.deps import SettingsDep
 
 logger = logging.getLogger(__name__)
@@ -88,7 +89,7 @@ class SubmitToolCallRequest(BaseModel):
     tool_name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
     rationale: str = ""
-    request_title: str | None = None
+    title: str | None = None
     client_request_id: str | None = None
     state_request_id: str | None = None
     wait_for_ms: int = Field(default=0, ge=0, le=60_000)
@@ -110,7 +111,7 @@ class ToolCallRecord(BaseModel):
     updated_at: dt.datetime
     arguments: dict[str, Any] = Field(default_factory=dict)
     rationale: str = ""
-    request_title: str | None = None
+    title: str | None = None
     client_request_id: str | None = None
     state_request_id: str | None = None
     request_digest: str
@@ -137,7 +138,7 @@ class ToolCallDbRow(BaseModel):
         serialization_alias="arguments_json",
     )
     rationale: str = ""
-    request_title: str | None = None
+    title: str | None = None
     client_request_id: str | None = None
     state_request_id: str | None = None
     request_digest: str
@@ -246,7 +247,6 @@ class ToolCallStore:
         self._path = path
         self._lock = threading.RLock()
         self._tool_calls: dict[str, ToolCallRecord] = {}
-        self._idempotency: dict[str, dict[str, str]] = {}
         self._events: list[ToolCallEvent] = []
         self._next_event_id = 1
         if path is not None:
@@ -261,7 +261,6 @@ class ToolCallStore:
             tool_call_id: ToolCallRecord.model_validate(record)
             for tool_call_id, record in raw.get("tool_calls", {}).items()
         }
-        self._idempotency = dict(raw.get("idempotency", {}))
         self._events = [ToolCallEvent.model_validate(e) for e in raw.get("events", [])]
         self._next_event_id = int(raw.get("next_event_id", len(self._events) + 1))
 
@@ -272,7 +271,6 @@ class ToolCallStore:
         payload = {
             "next_event_id": self._next_event_id,
             "tool_calls": {k: v.model_dump(mode="json") for k, v in self._tool_calls.items()},
-            "idempotency": self._idempotency,
             "events": [e.model_dump(mode="json") for e in self._events],
         }
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=self._path.parent, delete=False) as f:
@@ -301,15 +299,16 @@ class ToolCallStore:
         self, *, server: McpServerEntry, req: SubmitToolCallRequest, caller_principal: str
     ) -> tuple[ToolCallRecord, list[ToolCallEvent], bool]:
         digest = _request_digest(req)
-        idem_key = _idempotency_key(caller_principal, req.client_request_id)
         with self._lock:
-            if idem_key is not None and idem_key in self._idempotency:
-                existing = self._idempotency[idem_key]
-                if existing["digest"] != digest:
-                    raise HTTPException(
-                        status_code=409, detail="client_request_id was already used for a different tool-call payload"
-                    )
-                return self._tool_calls[existing["tool_call_id"]], [], False
+            if req.client_request_id is not None:
+                existing = self._find_by_client_request_id_unlocked(caller_principal, req.client_request_id)
+                if existing is not None:
+                    if existing.request_digest != digest:
+                        raise HTTPException(
+                            status_code=409,
+                            detail="client_request_id was already used for a different tool-call payload",
+                        )
+                    return existing, [], False
 
             now = dt.datetime.now(dt.UTC)
             status = ToolCallStatus.PENDING_APPROVAL
@@ -325,19 +324,29 @@ class ToolCallStore:
                 updated_at=now,
                 arguments=req.arguments,
                 rationale=req.rationale,
-                request_title=req.request_title,
+                title=req.title,
                 client_request_id=req.client_request_id,
                 state_request_id=req.state_request_id,
                 request_digest=digest,
                 approval_id=approval_id,
             )
             self._tool_calls[record.tool_call_id] = record
-            if idem_key is not None:
-                self._idempotency[idem_key] = {"digest": digest, "tool_call_id": record.tool_call_id}
             events = [self._append_event("tool_call_submitted", record)]
             events.append(self._append_event("approval_pending", record))
             self._save()
             return record, events, True
+
+    def _find_by_client_request_id_unlocked(
+        self, caller_principal: str, client_request_id: str
+    ) -> ToolCallRecord | None:
+        return next(
+            (
+                record
+                for record in self._tool_calls.values()
+                if record.caller_principal == caller_principal and record.client_request_id == client_request_id
+            ),
+            None,
+        )
 
     def get(self, tool_call_id: str) -> ToolCallRecord:
         with self._lock:
@@ -347,13 +356,11 @@ class ToolCallStore:
             return record
 
     def find_by_client_request_id(self, caller_principal: str, client_request_id: str) -> ToolCallRecord:
-        idem_key = _idempotency_key(caller_principal, client_request_id)
-        assert idem_key is not None
         with self._lock:
-            existing = self._idempotency.get(idem_key)
-            if existing is None:
+            record = self._find_by_client_request_id_unlocked(caller_principal, client_request_id)
+            if record is None:
                 raise HTTPException(status_code=404, detail="tool call not found")
-            return self._tool_calls[existing["tool_call_id"]]
+            return record
 
     def list(self, *, status: str | None = None, since: int | None = None, limit: int = 100) -> ToolCallListResponse:
         with self._lock:
@@ -377,7 +384,7 @@ class ToolCallStore:
                     approval_id=r.approval_id or "",
                     tool_call_id=r.tool_call_id,
                     server_id=r.server_id,
-                    title=r.request_title or f"{r.server_title}: {r.tool_name}",
+                    title=r.title or f"{r.server_title}: {r.tool_name}",
                     server_title=r.server_title,
                     tool_name=r.tool_name,
                     caller_principal=r.caller_principal,
@@ -464,28 +471,32 @@ class PostgresToolCallStore:
         self, *, server: McpServerEntry, req: SubmitToolCallRequest, caller_principal: str
     ) -> tuple[ToolCallRecord, list[ToolCallEvent], bool]:
         digest = _request_digest(req)
-        idem_key = _idempotency_key(caller_principal, req.client_request_id)
+        try:
+            return self._submit(server=server, req=req, caller_principal=caller_principal, digest=digest)
+        except IntegrityError as e:
+            if req.client_request_id is None:
+                raise
+            with self._engine.begin() as conn:
+                record = self._record_by_client_request_id(conn, caller_principal, req.client_request_id)
+            if record.request_digest != digest:
+                raise HTTPException(
+                    status_code=409, detail="client_request_id was already used for a different tool-call payload"
+                ) from e
+            return record, [], False
+
+    def _submit(
+        self, *, server: McpServerEntry, req: SubmitToolCallRequest, caller_principal: str, digest: str
+    ) -> tuple[ToolCallRecord, list[ToolCallEvent], bool]:
         with self._engine.begin() as conn:
-            if idem_key is not None:
-                conn.execute(select(func.pg_advisory_xact_lock(func.hashtext(idem_key))))
-                row = (
-                    conn.execute(
-                        select(
-                            tool_call_idempotency.c.request_digest.label("idempotency_request_digest"), *tool_calls.c
-                        )
-                        .join(tool_calls, tool_calls.c.tool_call_id == tool_call_idempotency.c.tool_call_id)
-                        .where(tool_call_idempotency.c.idempotency_key == idem_key)
-                    )
-                    .mappings()
-                    .first()
-                )
-                if row is not None:
-                    if row["idempotency_request_digest"] != digest:
+            if req.client_request_id is not None:
+                existing = self._find_by_client_request_id(conn, caller_principal, req.client_request_id)
+                if existing is not None:
+                    if existing.request_digest != digest:
                         raise HTTPException(
                             status_code=409,
                             detail="client_request_id was already used for a different tool-call payload",
                         )
-                    return _record_from_row(row), [], False
+                    return existing, [], False
 
             now = dt.datetime.now(dt.UTC)
             record = ToolCallRecord(
@@ -499,19 +510,13 @@ class PostgresToolCallStore:
                 updated_at=now,
                 arguments=req.arguments,
                 rationale=req.rationale,
-                request_title=req.request_title,
+                title=req.title,
                 client_request_id=req.client_request_id,
                 state_request_id=req.state_request_id,
                 request_digest=digest,
                 approval_id=f"ap_{secrets.token_hex(12)}",
             )
             self._upsert_record(conn, record)
-            if idem_key is not None:
-                conn.execute(
-                    insert(tool_call_idempotency).values(
-                        idempotency_key=idem_key, request_digest=digest, tool_call_id=record.tool_call_id
-                    )
-                )
             events = [
                 self._insert_event(conn, "tool_call_submitted", record),
                 self._insert_event(conn, "approval_pending", record),
@@ -526,21 +531,8 @@ class PostgresToolCallStore:
         return _record_from_row(row)
 
     def find_by_client_request_id(self, caller_principal: str, client_request_id: str) -> ToolCallRecord:
-        idem_key = _idempotency_key(caller_principal, client_request_id)
-        assert idem_key is not None
         with self._engine.begin() as conn:
-            row = (
-                conn.execute(
-                    select(tool_calls)
-                    .join(tool_call_idempotency, tool_calls.c.tool_call_id == tool_call_idempotency.c.tool_call_id)
-                    .where(tool_call_idempotency.c.idempotency_key == idem_key)
-                )
-                .mappings()
-                .first()
-            )
-        if row is None:
-            raise HTTPException(status_code=404, detail="tool call not found")
-        return _record_from_row(row)
+            return self._record_by_client_request_id(conn, caller_principal, client_request_id)
 
     def list(self, *, status: str | None = None, since: int | None = None, limit: int = 100) -> ToolCallListResponse:
         if status is not None and status != "terminal":
@@ -586,7 +578,7 @@ class PostgresToolCallStore:
                 approval_id=r.approval_id or "",
                 tool_call_id=r.tool_call_id,
                 server_id=r.server_id,
-                title=r.request_title or f"{r.server_title}: {r.tool_name}",
+                title=r.title or f"{r.server_title}: {r.tool_name}",
                 server_title=r.server_title,
                 tool_name=r.tool_name,
                 caller_principal=r.caller_principal,
@@ -720,6 +712,29 @@ class PostgresToolCallStore:
             raise HTTPException(status_code=404, detail="approval not found")
         return _record_from_row(row)
 
+    def _find_by_client_request_id(
+        self, conn: Any, caller_principal: str, client_request_id: str
+    ) -> ToolCallRecord | None:
+        row = (
+            conn.execute(
+                select(tool_calls).where(
+                    tool_calls.c.caller_principal == caller_principal,
+                    tool_calls.c.client_request_id == client_request_id,
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if row is None:
+            return None
+        return _record_from_row(row)
+
+    def _record_by_client_request_id(self, conn: Any, caller_principal: str, client_request_id: str) -> ToolCallRecord:
+        record = self._find_by_client_request_id(conn, caller_principal, client_request_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="tool call not found")
+        return record
+
     def _next_cursor(self, conn: Any) -> str:
         row = (
             conn.execute(select(func.coalesce(func.max(tool_call_events.c.event_id), 0).label("event_id")))
@@ -828,16 +843,9 @@ def _request_digest(req: SubmitToolCallRequest) -> str:
         "tool_name": req.tool_name,
         "arguments": req.arguments,
         "rationale": req.rationale,
-        "request_title": req.request_title,
+        "title": req.title,
         "state_request_id": req.state_request_id,
     }
-    return hashlib.sha256(canonicaljson.encode_canonical_json(payload)).hexdigest()
-
-
-def _idempotency_key(caller_principal: str, client_request_id: str | None) -> str | None:
-    if client_request_id is None:
-        return None
-    payload = {"caller_principal": caller_principal, "client_request_id": client_request_id}
     return hashlib.sha256(canonicaljson.encode_canonical_json(payload)).hexdigest()
 
 

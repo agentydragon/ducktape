@@ -25,13 +25,11 @@ from __future__ import annotations
 
 import contextlib
 import datetime as dt
-import hashlib
 import logging
 import re
 from collections.abc import Awaitable, Callable
 from typing import Annotated
 
-import canonicaljson
 import httpx
 import uvicorn
 import yaml
@@ -206,21 +204,10 @@ def create_app(settings: Settings) -> FastAPI:
         return [RepoBlob(sha=s, content=c.decode()) for s, c in zip(sha_list, contents, strict=True)]
 
     def _tool_call_client_request_id(req: ToolCallSubmitRequest) -> str:
-        request_body = req.model_dump(mode="json", exclude={"wait_for_ms"})
-        digest = hashlib.sha256(canonicaljson.encode_canonical_json(request_body)).hexdigest()
-        return f"haku-state:tool-call:{req.state_request_id}@sha256:{digest}"
+        return f"haku-state:tool-call:{req.state_request_id}"
 
     def _tool_call_payload(req: ToolCallSubmitRequest) -> dict[str, object]:
-        return {
-            "server_id": req.server_id,
-            "tool_name": req.tool_name,
-            "arguments": req.arguments,
-            "rationale": req.rationale,
-            "request_title": req.title,
-            "state_request_id": req.state_request_id,
-            "client_request_id": _tool_call_client_request_id(req),
-            "wait_for_ms": req.wait_for_ms,
-        }
+        return req.model_dump(mode="json", by_alias=True) | {"client_request_id": _tool_call_client_request_id(req)}
 
     def _console_headers() -> dict[str, str]:
         headers: dict[str, str] = {}

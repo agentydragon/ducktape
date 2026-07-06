@@ -3,7 +3,6 @@ name = "haku-ui-backend"
 version = "0"
 requires-python = ">=3.13"
 dependencies = [
-    "canonicaljson>=2.0",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.34",
     "httpx>=0.28",

@@ -74,7 +74,7 @@ def _submit(client: TestClient, *, client_request_id: str = "req-1", amount: int
             "tool_name": "stock_add",
             "client_request_id": client_request_id,
             "state_request_id": "2026-07-thrive-box-grocy-stock-add",
-            "request_title": "Add Thrive box items to Grocy",
+            "title": "Add Thrive box items to Grocy",
             "rationale": "box is physically present",
             "arguments": {"items": [{"product_id": 123, "amount": amount}]},
         },

@@ -46,7 +46,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("arguments_json", JSONB(), nullable=False),
         sa.Column("rationale", sa.Text(), nullable=False),
-        sa.Column("request_title", sa.Text(), nullable=True),
+        sa.Column("title", sa.Text(), nullable=True),
         sa.Column("client_request_id", sa.Text(), nullable=True),
         sa.Column("state_request_id", sa.Text(), nullable=True),
         sa.Column("request_digest", sa.Text(), nullable=False),
@@ -62,13 +62,12 @@ def upgrade() -> None:
         ["approval_id"],
         postgresql_where=sa.text("approval_id IS NOT NULL"),
     )
-
-    op.create_table(
-        "mcp_tool_call_idempotency",
-        sa.Column("idempotency_key", sa.Text(), primary_key=True),
-        sa.Column("request_digest", sa.Text(), nullable=False),
-        sa.Column("tool_call_id", sa.Text(), nullable=False),
-        sa.ForeignKeyConstraint(["tool_call_id"], ["mcp_tool_calls.tool_call_id"]),
+    op.create_index(
+        "uq_mcp_tool_calls_caller_client_request",
+        "mcp_tool_calls",
+        ["caller_principal", "client_request_id"],
+        unique=True,
+        postgresql_where=sa.text("client_request_id IS NOT NULL"),
     )
 
     op.create_table(
@@ -88,7 +87,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("idx_mcp_tool_call_events_tool_call_id_event_id", table_name="mcp_tool_call_events")
     op.drop_table("mcp_tool_call_events")
-    op.drop_table("mcp_tool_call_idempotency")
+    op.drop_index("uq_mcp_tool_calls_caller_client_request", table_name="mcp_tool_calls")
     op.drop_index("idx_mcp_tool_calls_approval_id", table_name="mcp_tool_calls")
     op.drop_index("idx_mcp_tool_calls_created_at", table_name="mcp_tool_calls")
     op.drop_table("mcp_tool_calls")

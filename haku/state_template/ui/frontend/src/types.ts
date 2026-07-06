@@ -100,7 +100,7 @@ interface ToolCallAuditFields {
 interface ToolCallRequestEcho {
   arguments?: Record<string, unknown>;
   rationale?: string;
-  request_title?: string | null;
+  title?: string | null;
   client_request_id?: string | null;
   state_request_id?: string | null;
   request_digest?: string;

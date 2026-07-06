@@ -260,9 +260,9 @@ def test_tool_request_call_submits_exact_request_to_console():
     assert body["tool_name"] == "stock_add"
     assert body["arguments"] == {"items": [{"product_id": 123, "amount": 1}]}
     assert body["rationale"] == "box present"
-    assert body["request_title"] == "Add arrived Thrive box items to Grocy"
+    assert body["title"] == "Add arrived Thrive box items to Grocy"
     assert body["state_request_id"] == "2026-07-thrive-box-grocy-stock-add"
-    assert body["client_request_id"].startswith("haku-state:tool-call:2026-07-thrive-box-grocy-stock-add@sha256:")
+    assert body["client_request_id"] == "haku-state:tool-call:2026-07-thrive-box-grocy-stock-add"
     assert body["wait_for_ms"] == 500
 
 
@@ -311,7 +311,7 @@ def test_tool_request_lookup_returns_existing_console_state():
     assert resp.status_code == 200
     assert resp.json()["tool_call_id"] == "tc_existing"
     path, headers = gets[0]
-    assert path.startswith("/api/tool-calls/by-client-request/haku-state:tool-call:req@sha256:")
+    assert path == "/api/tool-calls/by-client-request/haku-state:tool-call:req"
     assert headers["Authorization"] == "Bearer console-token"
 
 

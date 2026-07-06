@@ -262,7 +262,7 @@ class ToolCallRecord(BaseModel):
     updated_at: datetime | None = None
     arguments: dict[str, Any] = Field(default_factory=dict)
     rationale: str = ""
-    request_title: str | None = None
+    title: str | None = None
     client_request_id: str | None = None
     state_request_id: str | None = None
     request_digest: str | None = None
