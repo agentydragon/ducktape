@@ -74,8 +74,11 @@ spec:
               value: https://auth.allegedly.works
             - name: HAKU_CONSOLE_MCP_APPROVAL_CATALOG_PATH
               value: /etc/haku-console/mcp/mcp-servers.yaml
-            - name: HAKU_CONSOLE_MCP_APPROVAL_STORE_PATH
-              value: /var/lib/haku-console/mcp-approval/store.json
+            - name: HAKU_CONSOLE_MCP_APPROVAL_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-db-app
+                  key: uri
             - name: HAKU_CONSOLE_MCP_APPROVAL_API_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -109,8 +112,6 @@ spec:
             - name: mcp-servers
               mountPath: /etc/haku-console/mcp
               readOnly: true
-            - name: mcp-approval-store
-              mountPath: /var/lib/haku-console/mcp-approval
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -163,8 +164,5 @@ spec:
         - name: mcp-servers
           configMap:
             name: haku-console-mcp-servers
-        - name: mcp-approval-store
-          persistentVolumeClaim:
-            claimName: haku-console-mcp-approval-store
         - name: nginx-conf
           emptyDir: {}

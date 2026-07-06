@@ -131,10 +131,13 @@ resource "authentik_provider_proxy" "grocy_sf" {
   access_token_validity = "hours=24"
 
   # grocy_mcp_haku_sf federates here too, so haku's machine token can be exchanged
-  # for a grocy-sf proxy token (the MCP performs that jwt-bearer exchange).
+  # for a grocy-sf proxy token (the MCP performs that jwt-bearer exchange). The
+  # haku-console sibling is separate because console-approved calls intentionally
+  # carry higher Grocy privileges than Haku's autonomous read-only token.
   jwt_federation_providers = [
     authentik_provider_oauth2.grocy_mcp_sf.id,
     authentik_provider_oauth2.grocy_mcp_haku_sf.id,
+    authentik_provider_oauth2.grocy_mcp_haku_console_sf.id,
   ]
 }
 
@@ -256,6 +259,36 @@ resource "authentik_application" "grocy_mcp_haku_sf" {
   slug              = "grocy-mcp-haku-sf"
   protocol_provider = authentik_provider_oauth2.grocy_mcp_haku_sf.id
   meta_description  = "Machine client_credentials provider for haku's read-only grocy-sf MCP access"
+}
+
+# Dedicated machine client_credentials provider for haku-console's privileged
+# grocy-sf MCP token. It shares the user-facing provider's signing key, so the
+# same JWKS validates it; the MCP accepts this issuer via extra_jwt_issuers.
+resource "authentik_provider_oauth2" "grocy_mcp_haku_console_sf" {
+  name        = "grocy-mcp-haku-console-sf"
+  client_id   = "grocy-mcp-haku-console-sf"
+  client_type = "confidential"
+
+  authorization_flow = data.authentik_flow.implicit_consent.id
+  invalidation_flow  = data.authentik_flow.invalidation.id
+  signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+  issuer_mode                = "per_provider"
+  include_claims_in_id_token = true
+  access_token_validity      = "days=30"
+
+  property_mappings = [
+    data.authentik_property_mapping_provider_scope.openid.id,
+    data.authentik_property_mapping_provider_scope.email.id,
+    data.authentik_property_mapping_provider_scope.profile.id,
+  ]
+}
+
+resource "authentik_application" "grocy_mcp_haku_console_sf" {
+  name              = "Grocy MCP Haku Console (SF)"
+  slug              = "grocy-mcp-haku-console-sf"
+  protocol_provider = authentik_provider_oauth2.grocy_mcp_haku_console_sf.id
+  meta_description  = "Machine client_credentials provider for haku-console's operator-approved grocy-sf MCP access"
 }
 
 # --- Grocy Vallejo household (proxy provider + MCP OAuth2) ---
@@ -1154,6 +1187,55 @@ resource "kubernetes_secret" "haku_grocy_client_credentials" {
     client_id = authentik_provider_oauth2.grocy_mcp_haku_sf.client_id
     username  = authentik_user.haku_grocy.username
     password  = authentik_token.haku_grocy.key
+  }
+}
+
+# ============================================================================
+# haku-console-grocy — privileged identity for operator-approved grocy-sf calls
+# ============================================================================
+
+resource "authentik_user" "haku_console_grocy" {
+  username = "haku-console"
+  name     = "Haku console grocy privileged service account"
+  email    = "haku-console@allegedly.works"
+  type     = "service_account"
+  path     = "goauthentik.io/service-accounts"
+}
+
+resource "authentik_token" "haku_console_grocy" {
+  identifier   = "haku-console-grocy-client-credentials"
+  user         = authentik_user.haku_console_grocy.id
+  intent       = "app_password"
+  expiring     = false
+  retrieve_key = true
+  description  = "client_credentials app-password for haku-console's privileged grocy-sf JWT rotation"
+}
+
+resource "authentik_policy_binding" "haku_console_grocy_mcp" {
+  target = authentik_application.grocy_mcp_haku_console_sf.uuid
+  user   = authentik_user.haku_console_grocy.id
+  order  = 1
+}
+
+resource "authentik_policy_binding" "haku_console_grocy_sf_proxy" {
+  target = authentik_application.grocy_sf.uuid
+  user   = authentik_user.haku_console_grocy.id
+  order  = 1
+}
+
+resource "kubernetes_secret" "haku_console_grocy_client_credentials" {
+  metadata {
+    name      = "haku-console-grocy-client-credentials"
+    namespace = "agents-infra"
+    annotations = {
+      description = "client_id (grocy-mcp-haku-console-sf OAuth2 provider) + haku-console username/app-password, authenticating the console service account so authentik-jwt-rotation can mint its privileged grocy-sf MCP JWT"
+    }
+  }
+
+  data = {
+    client_id = authentik_provider_oauth2.grocy_mcp_haku_console_sf.client_id
+    username  = authentik_user.haku_console_grocy.username
+    password  = authentik_token.haku_console_grocy.key
   }
 }
 

@@ -38,6 +38,23 @@ py_library(
 )
 
 py_library(
+    name = "mcp_approval_schema",
+    srcs = ["mcp_approval_schema.py"],
+    deps = ["@pypi//sqlalchemy"],
+)
+
+py_library(
+    name = "mcp_approval_migrate",
+    srcs = ["mcp_approval_migrate.py"],
+    data = glob(["migrations/**"]),
+    deps = [
+        ":mcp_approval_schema",
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "capabilities",
     srcs = ["capabilities.py"],
     deps = [
@@ -56,12 +73,16 @@ py_library(
     deps = [
         ":config",
         ":deps",
+        ":mcp_approval_migrate",
+        ":mcp_approval_schema",
         "@pypi//canonicaljson",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
         "@pypi//fastmcp",
+        "@pypi//psycopg",
         "@pypi//pydantic",
         "@pypi//pyyaml",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -154,6 +175,33 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_mcp_approval_postgres",
+    size = "medium",
+    srcs = ["test_mcp_approval_postgres.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":app",
+        ":config",
+        ":conftest",
+        ":mcp_approval",
+        "//:conftest",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "//util/testing:postgres",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
     ],
 )
 

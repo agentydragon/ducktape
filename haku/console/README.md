@@ -100,7 +100,8 @@ location-sharing stop/withdraw. See <docs/containment.md>.
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `app.py`           | FastAPI `create_app`. `GET /api/config`, `GET /healthz`, CSRF config, mounts the capability router. It can serve the SPA for local/direct fallback when `HAKU_CONSOLE_STATIC_DIR` is set.                                           |
 | `capabilities.py`  | Capability-tier router (`/api/capabilities/*`): CSRF-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer and optional per-run text; `GET /csrf` issues the double-submit token. |
-| `mcp_approval.py`  | MCP approval queue router: catalog reflection, tool-call submit/list/result endpoints, trusted approval decisions, WebSocket notifications, and JSON-backed audit state.                                                            |
+| `mcp_approval.py`  | MCP approval queue router: catalog reflection, tool-call submit/list/result endpoints, trusted approval decisions, WebSocket notifications, and Postgres-backed audit state in deploy.                                              |
+| `migrations/`      | Alembic migrations for the deployed MCP approval ledger; the console applies them at app startup before serving the API.                                                                                                            |
 | `models.py`        | Pydantic `ConfigResponse` — the `/api/config` response model.                                                                                                                                                                       |
 | `config.py`        | Env settings (`HAKU_CONSOLE_*`).                                                                                                                                                                                                    |
 | `export_schema.py` | Prints the OpenAPI schema; the frontend generates its TypeScript types from it.                                                                                                                                                     |
@@ -118,9 +119,9 @@ immutable, app shell revalidated, API/health uncached). No runtime asset copy or
 shared web volume is used.
 Non-root, dropped caps, no service-account token. Credentials: the
 `haku-routine-launch-token` secret (the launch capability bearer; `HAKU_CONSOLE_LAUNCH_ROUTINE__TOKEN`)
-and, when MCP approval is enabled, the catalog/API-token/store settings:
+and, when MCP approval is enabled, the catalog/API-token/database settings:
 `HAKU_CONSOLE_MCP_APPROVAL_CATALOG_PATH`,
-`HAKU_CONSOLE_MCP_APPROVAL_STORE_PATH`, and
+`HAKU_CONSOLE_MCP_APPROVAL_DATABASE_URL`, and
 `HAKU_CONSOLE_MCP_APPROVAL_API_TOKEN`.
 It no longer holds a haku-state git credential — feedback/trace writes moved into haku-ui.
 As trusted ducktape code in its own namespace it is **not** behind the `haku-egress-proxy`

@@ -9,3 +9,6 @@ users:
   auragon: [ADMIN]
   # Explicitly empty: haku stays read-only, converged back even if elevated in the UI.
   haku: []
+  # Trusted-console identity only. Haku cannot read this token; every v1 call still
+  # requires an operator approval in haku-console before it executes.
+  haku-console: [ADMIN]

@@ -19,7 +19,8 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: haku-console-namespace # the console's own trusted namespace (not haku-sandbox)
+    - name: haku-console-db # distributed approval ledger
     - name: haku-console-credentials # mirrors connected MCP server credentials into haku-console
-    - name: haku-state # provisions haku-state-git-write into the haku-console namespace
+    - name: haku-state # provisions the shared haku-ui/backend -> haku-console API token
     - name: gateway
     - name: authentik

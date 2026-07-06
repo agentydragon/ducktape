@@ -33,6 +33,18 @@ export function openExternal(url: string): boolean {
 }
 
 const POPUP_HINT = "Allow pop-ups for this site so the console can open links.";
+const TOOL_APPROVAL_CHANNEL = "haku-console-tool-approvals";
+
+type ToolApprovalChannelMessage = { type: "toolApprovalsChanged" };
+
+function isToolApprovalChannelMessage(value: unknown): value is ToolApprovalChannelMessage {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    "type" in value &&
+    (value as { type?: unknown }).type === "toolApprovalsChanged"
+  );
+}
 
 // Restore the route the console URL carries into the frame on first mount. The console
 // hash is treated strictly as a validated path, never a URL: the src is always `uiUrl`
@@ -57,6 +69,7 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
   // reload the frame); the iframe navigates itself, the console only reflects.
   const [frameSrc] = useState(() => initialFrameSrc(uiUrl, window.location.hash));
   const origin = new URL(uiUrl).origin;
+  const toolApprovalChannelRef = useRef<BroadcastChannel | null>(null);
   const activeAction: Escalation | null =
     pending ?? (toolApprovals[0] ? { kind: "toolApproval", approval: toolApprovals[0] } : null);
 
@@ -128,7 +141,8 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
     setToolApprovals((approvals) => approvals.filter((a) => a.approval_id !== approvalId));
   }
 
-  function refreshToolApprovals() {
+  function refreshToolApprovals(notifyPeers = false) {
+    if (notifyPeers) toolApprovalChannelRef.current?.postMessage({ type: "toolApprovalsChanged" });
     void fetchPendingApprovals().then(
       (approvals) => setToolApprovals(approvals),
       (e: unknown) => toastError("Couldn't load tool approvals", e)
@@ -139,18 +153,31 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
   useEffect(() => () => void watcher.stopAll(), [watcher]);
 
   useEffect(() => {
+    if (!("BroadcastChannel" in window)) return;
+    const channel = new BroadcastChannel(TOOL_APPROVAL_CHANNEL);
+    toolApprovalChannelRef.current = channel;
+    channel.onmessage = (e: MessageEvent<unknown>) => {
+      if (isToolApprovalChannelMessage(e.data)) refreshToolApprovals();
+    };
+    return () => {
+      if (toolApprovalChannelRef.current === channel) toolApprovalChannelRef.current = null;
+      channel.close();
+    };
+  }, []);
+
+  useEffect(() => {
     let closed = false;
     let ws: WebSocket | null = null;
-    function refreshIfLive() {
-      if (!closed) refreshToolApprovals();
+    function refreshIfLive(notifyPeers = false) {
+      if (!closed) refreshToolApprovals(notifyPeers);
     }
     refreshIfLive();
     const url = new URL("/api/approvals/ws", window.location.href);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(url);
-    ws.onopen = refreshIfLive;
-    ws.onmessage = refreshIfLive;
-    ws.onclose = refreshIfLive;
+    ws.onopen = () => refreshIfLive();
+    ws.onmessage = () => refreshIfLive(true);
+    ws.onclose = () => refreshIfLive();
     return () => {
       closed = true;
       ws?.close();
@@ -238,11 +265,11 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
       void approveToolCall(approvalId)
         .then((record) => {
           toastSuccess("Tool call finished", `${record.server_title}.${record.tool_name}: ${record.status}`);
-          refreshToolApprovals();
+          refreshToolApprovals(true);
         })
         .catch((e: unknown) => {
           toastError("Tool call failed", e);
-          refreshToolApprovals();
+          refreshToolApprovals(true);
         });
       return;
     }
@@ -279,11 +306,11 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
       void denyToolCall(approvalId, "cancelled from console").then(
         () => {
           toastSuccess("Tool call denied", action.approval.title);
-          refreshToolApprovals();
+          refreshToolApprovals(true);
         },
         (e: unknown) => {
           toastError("Couldn't deny tool call", e);
-          refreshToolApprovals();
+          refreshToolApprovals(true);
         }
       );
     } else {

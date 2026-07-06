@@ -4,11 +4,10 @@ namespace: haku-console
 
 resources:
   - deployment.yaml
-  - mcp-approval-store-pvc.yaml
   - routine-launch-token.sops.yaml
   - service.yaml
 
 configMapGenerator:
   - name: haku-console-mcp-servers
     files:
-      - mcp-servers.yaml=mcp-servers.txt
+      - mcp-servers.yaml

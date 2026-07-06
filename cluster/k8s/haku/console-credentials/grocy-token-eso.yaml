@@ -1,6 +1,6 @@
-# Mirror the rotator-published grocy-sf bearer JWT into haku-console, where the
-# approval ledger can call the connected Grocy MCP server after trusted operator
-# approval. The MCP server registry names this as haku-console-grocy-sf-token.
+# Mirror the rotator-published haku-console grocy-sf bearer JWT into haku-console,
+# where the approval ledger can call the connected Grocy MCP server after trusted
+# operator approval. This is deliberately not Haku's read-only Grocy token.
 apiVersion: external-secrets.io/v1
 kind: ClusterExternalSecret
 metadata:
@@ -18,5 +18,5 @@ spec:
     data:
       - secretKey: jwt
         remoteRef:
-          key: haku-cloud-grocy-sf-token
+          key: haku-console-grocy-sf-token
           property: jwt

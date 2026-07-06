@@ -17,7 +17,7 @@ spec:
         spec:
           # The SA token is used only to read back the published Secrets for
           # probes (published-secrets-reader Role in flux-system, get on the
-          # four rotator-published Secret names — nothing else).
+          # five rotator-published Secret names — nothing else).
           serviceAccountName: authentik-jwt-rotation
           automountServiceAccountToken: true
           restartPolicy: OnFailure
@@ -43,6 +43,9 @@ spec:
             - name: haku-grocy-creds
               secret:
                 secretName: haku-grocy-client-credentials
+            - name: haku-console-grocy-creds
+              secret:
+                secretName: haku-console-grocy-client-credentials
             - name: haku-mail-creds
               secret:
                 secretName: haku-mail-client-credentials
@@ -86,6 +89,9 @@ spec:
                   readOnly: true
                 - name: haku-grocy-creds
                   mountPath: /var/run/secrets/authentik/haku-grocy
+                  readOnly: true
+                - name: haku-console-grocy-creds
+                  mountPath: /var/run/secrets/authentik/haku-console-grocy
                   readOnly: true
                 - name: haku-mail-creds
                   mountPath: /var/run/secrets/authentik/haku-mail

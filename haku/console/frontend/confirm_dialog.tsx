@@ -26,6 +26,37 @@ interface Rendered {
   approveLabel: string;
 }
 
+type ToolApprovalRenderer = (approval: PendingApproval) => Rendered;
+
+const toolApprovalRenderers: Record<string, ToolApprovalRenderer> = {};
+
+function defaultToolApprovalRenderer(approval: PendingApproval): Rendered {
+  return {
+    title: approval.title,
+    body: `Approve ${approval.server_title}.${approval.tool_name} for ${approval.caller_principal}?`,
+    preview: {
+      text: JSON.stringify(
+        {
+          server_id: approval.server_id,
+          tool_name: approval.tool_name,
+          rationale: approval.rationale,
+          arguments: approval.arguments,
+          tool_call_id: approval.tool_call_id,
+        },
+        null,
+        2
+      ),
+      mono: true,
+    },
+    approveLabel: "Run tool",
+  };
+}
+
+function renderToolApproval(approval: PendingApproval): Rendered {
+  const renderer = toolApprovalRenderers[`${approval.server_id}.${approval.tool_name}`] ?? defaultToolApprovalRenderer;
+  return renderer(approval);
+}
+
 function render(action: Escalation): Rendered {
   switch (action.kind) {
     case "openLink":
@@ -47,25 +78,7 @@ function render(action: Escalation): Rendered {
         approveLabel: "Allow",
       };
     case "toolApproval":
-      return {
-        title: action.approval.title,
-        body: `Approve ${action.approval.server_title}.${action.approval.tool_name} for ${action.approval.caller_principal}?`,
-        preview: {
-          text: JSON.stringify(
-            {
-              server_id: action.approval.server_id,
-              tool_name: action.approval.tool_name,
-              rationale: action.approval.rationale,
-              arguments: action.approval.arguments,
-              tool_call_id: action.approval.tool_call_id,
-            },
-            null,
-            2
-          ),
-          mono: true,
-        },
-        approveLabel: "Run tool",
-      };
+      return renderToolApproval(action.approval);
   }
 }
 

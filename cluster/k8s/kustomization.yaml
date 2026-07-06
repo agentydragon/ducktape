@@ -226,6 +226,7 @@ resources:
   - haku/namespace/flux-kustomization.yaml
   - haku/rbac/flux-kustomization.yaml
   - haku/console-namespace/flux-kustomization.yaml # the console's own trusted namespace
+  - haku/console/db/flux-kustomization.yaml # CNPG approval ledger for console-approved tool calls
   - haku/console-credentials/flux-kustomization.yaml
   - haku/console/flux-kustomization.yaml
   - haku/mailbox-namespace/flux-kustomization.yaml # the mailbox's own trusted namespace

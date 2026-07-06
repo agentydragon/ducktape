@@ -9,6 +9,7 @@ const api = createClient<paths>({ baseUrl: "" });
 export type ConfigResponse = components["schemas"]["ConfigResponse"];
 export type LaunchRoutineResult = components["schemas"]["LaunchRoutineResult"];
 export type ApprovalDecisionResponse = components["schemas"]["ApprovalDecisionResponse"];
+type ApprovalDecisionRequest = components["schemas"]["ApprovalDecisionRequest"];
 export type PendingApproval = components["schemas"]["PendingApproval"];
 export type ToolCallRecord = components["schemas"]["ToolCallRecord"];
 
@@ -53,24 +54,25 @@ export async function fetchPendingApprovals(): Promise<PendingApproval[]> {
   return data.approvals ?? [];
 }
 
-export async function approveToolCall(approvalId: string): Promise<ToolCallRecord> {
+async function decideToolCall(
+  approvalId: string,
+  body: ApprovalDecisionRequest,
+  fallback: string
+): Promise<ToolCallRecord> {
   const csrfToken = await fetchCsrfToken();
   const { data, error } = await api.POST("/api/approvals/{approval_id}/decision", {
     params: { path: { approval_id: approvalId } },
     headers: { "X-CSRF-Token": csrfToken },
-    body: { decision: "approve" },
+    body,
   });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to approve tool call"));
+  if (error || !data) throw new Error(errorDetail(error, fallback));
   return data.tool_call;
 }
 
+export async function approveToolCall(approvalId: string): Promise<ToolCallRecord> {
+  return decideToolCall(approvalId, { decision: "approve" }, "Failed to approve tool call");
+}
+
 export async function denyToolCall(approvalId: string, reason?: string): Promise<ToolCallRecord> {
-  const csrfToken = await fetchCsrfToken();
-  const { data, error } = await api.POST("/api/approvals/{approval_id}/decision", {
-    params: { path: { approval_id: approvalId } },
-    headers: { "X-CSRF-Token": csrfToken },
-    body: { decision: "deny", reason: reason ?? null },
-  });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to deny tool call"));
-  return data.tool_call;
+  return decideToolCall(approvalId, { decision: "deny", reason: reason ?? null }, "Failed to deny tool call");
 }

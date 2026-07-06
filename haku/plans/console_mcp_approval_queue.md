@@ -102,7 +102,7 @@ Click flow:
 ## Deployment Stages
 
 1. haku-console: server registry reflection, approval endpoints, trusted approval UI,
-   durable console ledger, API token, MCP credentials, and PVC-backed store.
+   durable Postgres console ledger, API token, and MCP credentials.
 2. haku-state-template: generic request schema, haku-ui backend proxy endpoint,
    `<tool-call>` affordance, validation, and documentation.
 3. live haku-state: same haku-ui wiring, generated frontend API types, deployment env
@@ -124,12 +124,12 @@ Click flow:
 - haku-state validation rejects malformed `tool_requests/*.yaml`.
 - A later Haku pass can sweep console audit records and update real state files.
 
-## Known Follow-Up
+## Current Grocy Principal
 
-The initial Grocy registry entry can use the existing rotated Grocy MCP token, but the
-current Grocy policy keeps the `haku` user read-only. A Thrive stock-add request still
-needs a deliberate Grocy write-capable console principal or exact permission grant before
-it can succeed.
+The Grocy SF registry entry uses a dedicated `haku-console` machine token, not Haku's
+read-only Grocy token. The matching Grocy user is policy-managed as ADMIN, and the token
+is mirrored only into the trusted `haku-console` namespace. Haku's autonomous Grocy user
+remains read-only.
 
 ## Later
 
