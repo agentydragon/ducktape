@@ -198,15 +198,15 @@ def fetch_step_logs(client: httpx.Client, forgejo_url: str, state: RunPageState,
     )
 
 
-def _step_index(step: dict[str, Any]) -> str:
+def _step_index(position: int, step: dict[str, Any]) -> str:
     for key in ("index", "number", "step"):
         if key in step:
             return str(step[key])
-    return "?"
+    return str(position)
 
 
 def _step_name(step: dict[str, Any]) -> str:
-    for key in ("name", "title", "displayName"):
+    for key in ("name", "title", "displayName", "summary"):
         if key in step:
             return str(step[key])
     return ""
@@ -220,8 +220,8 @@ def _step_status(step: dict[str, Any]) -> str:
 
 
 def _print_steps(steps: list[dict[str, Any]]) -> None:
-    for step in steps:
-        print("\t".join([_step_index(step), _step_status(step), _step_name(step)]))
+    for position, step in enumerate(steps):
+        print("\t".join([_step_index(position, step), _step_status(step), _step_name(step)]))
 
 
 def _print_logs(lines: list[LogLine], timestamps: bool) -> None:

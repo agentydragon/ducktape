@@ -42,6 +42,22 @@ def test_extract_steps_prefers_current_job_steps() -> None:
     ]
 
 
+def test_print_steps_falls_back_to_position_and_summary(capsys: pytest.CaptureFixture[str]) -> None:
+    fetch_forgejo_logs._print_steps(
+        [
+            {"duration": "4s", "status": "success", "summary": "Set up job"},
+            {"duration": "3m3s", "status": "failure", "summary": "Test"},
+            {"index": 10, "status": "failure", "summary": "Complete job"},
+        ]
+    )
+
+    assert capsys.readouterr().out.splitlines() == [
+        "0\tsuccess\tSet up job",
+        "1\tfailure\tTest",
+        "10\tfailure\tComplete job",
+    ]
+
+
 def test_parse_run_page_unescapes_initial_post_response() -> None:
     escaped = RUN_HTML.replace('"state"', "&quot;state&quot;")
 
