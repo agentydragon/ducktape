@@ -112,13 +112,16 @@ probe pending). Haku-specific remainder:
 
 ## Order of work
 
-1. **Restore sight**: the expired `google-access-token` (Gmail/Calendar/Drive blind
-   since Jul 3) and the Forgejo registry 502 blocking haku-ui rollout — measuring a
-   half-blind Haku measures nothing.
-2. **Transcript + metrics capture** (`haku-logs` repo, run-manifest hook, `tools/`
-   helper).
+1. ~~**Restore sight**~~ — DONE 2026-07-05/06: `google-access-token` re-seeded twice
+   (second outage root-caused to the frozen ESO controller after the node incident)
+   and verified rotating; Tasks + Drive Activity APIs enabled and live; registry 502
+   resolved.
+2. **Telemetry** — the OTel dashboards leg is **implemented** (session OTLP
+   forwarder, PR #2930); the lossless transcript capture (rsync → `transcript-sink`)
+   is designed and next to build. Both in
+   <../../devinfra/claude/plans/transcript_collection.md>.
 3. **1–2 weeks baseline** → orientation share, cost/run, event→surface latency.
-4. **Event→fire wiring** (mailbox fix is a prerequisite; then sensors).
+4. **Event→fire wiring** (mailbox fix landed; sensors per multi_agent.md step 6).
 5. **Data-class policy + oai zone** (multi_agent.md step 5, already planned).
 6. **Then** decide the wake-model A/B.
 7. **Local zone on the 5090s** (classifier hosting first).

@@ -180,6 +180,26 @@ These must be configured as env vars in the Claude Code web UI so they are injec
 `DUCKTAPE_CLAUDE_HOOKS_PROFILE` is needed so Claude Code injects the profile path into all hook subprocesses.
 `SOPS_AGE_KEY` is the age private key for decrypting secrets. The hook daemon receives it from the Claude process environment via `startup_env_script`.
 
+**Optional — Claude Code native telemetry** (Grafana dashboards via the session
+OTLP forwarder; see the OTEL Tracing section above and
+<plans/transcript_collection.md> for rationale and the content-detail knobs):
+
+```text
+CLAUDE_CODE_ENABLE_TELEMETRY=1
+OTEL_METRICS_EXPORTER=otlp
+OTEL_LOGS_EXPORTER=otlp
+OTEL_TRACES_EXPORTER=otlp
+CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
+```
+
+Content-inclusion knobs (`OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS`,
+`OTEL_LOG_TOOL_CONTENT`, `OTEL_LOG_RAW_API_BODIES`) are a per-environment
+sensitivity call — everything exported lands in the operator-only Loki. These
+must be **UI env vars**: only that mechanism reaches the claude process
+(startup-script exports reach Bash subprocesses only).
+
 ### 2. Setup Script
 
 ```bash

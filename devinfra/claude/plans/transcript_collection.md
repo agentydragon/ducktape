@@ -1,39 +1,44 @@
 # Claude session transcript collection
 
-Status: **plan** (2026-07-05/06, designed in the Haku architecture session). Goal:
-every Claude Code session's transcript (`~/.claude/projects/**/*.jsonl`) and derived
-metrics land in one operator-owned store **automatically** — web sessions, routines,
-and the operator's own machines — with no per-session manual step and no reliance on
-agent cooperation. Primary consumer today: Haku's run telemetry
+Status: **plan; the OTel leg is implemented** (PR #2930). Goal: every Claude Code
+session's transcript (`~/.claude/projects/**/*.jsonl`) and derived metrics land in
+one operator-owned store **automatically** — web sessions, routines, and the
+operator's own machines — with no per-session manual step and no reliance on agent
+cooperation. Primary consumer today: Haku's run telemetry
 (<../../../haku/plans/wake*model_and_eval.md> → \_Logging*); the collector itself is
 agent-agnostic.
 
-## Facts this design rests on (verified 2026-07-05)
+## Facts this design rests on (probed live 2026-07-05/06)
 
 - **No export API exists.** Claude Code web session transcripts cannot be downloaded
   after the fact: the enterprise Compliance API covers claude.ai chats/files/projects
   only, and the account data export has no documented Code-session coverage. The
   transcript exists only inside the container while it lives.
 - **Env-var delivery in hosted sessions splits by mechanism** (verified via
-  `/proc/<claude-pid>/environ` in a live remote session, claude 2.1.42): the web UI
-  "Environment Variables" knob reaches the `claude` process; `startup_env_script`
-  outputs reach Bash subprocesses only. (Relevant to the OTel leg below; matches
-  <../docs/secrets_env_flow.md>.)
-- **Repo `.claude/settings.json` applies in remote sessions — even from `--add-dir`.**
-  Verified 2026-07-06 via the claude `--debug` diagnostics log of a live remote session
-  (cwd `/home/user`, ducktape only an additional directory): `settings_load_completed:
-source_count=4, error_count=0`, and both the harness launcher-settings hook _and_
-  ducktape's `claude-hook` SessionStart hook spawned (exit 0). `SessionEnd` also
-  observed firing in the same session type. This is the same loading path
-  `otelHeadersHelper` uses. **Caveat (operator recollection, unverified): multi-repo
-  web sessions may not load repo settings** — verify before relying on settings.json
-  in multi-source environments; our target envs are single-source.
-- **Hooks in routine-fired sessions: unverified.** Haku runs 32/35 came up without
-  the hook daemon, so routine-spawned fresh sessions may differ. A diagnostic probe
-  (fresh session in the routine's environment, fired 2026-07-06 00:13Z) is pending —
-  it answers for hooks **and** `otelHeadersHelper` at once (same mechanism). **The
-  design below does not depend on the answer**; hooks are only a latency
-  optimization.
+  `/proc/<claude-pid>/environ`, claude 2.1.42): the web UI "Environment Variables"
+  knob reaches the `claude` process (12 `OTEL_*` vars confirmed); `startup_env_script`
+  outputs reach Bash subprocesses only. The subprocess scrub also hides `OTEL_*` from
+  Bash — **inspect `/proc/<claude-pid>/environ`, never `env` from a shell**, when
+  checking what claude sees.
+- **Repo `.claude/settings.json` applies in remote sessions — even from `--add-dir`**
+  (verified via the claude `--debug` diagnostics log: 4 settings sources, 0 errors;
+  both the harness launcher hook and ducktape's `claude-hook` SessionStart hook
+  spawned). `SessionEnd` also observed firing. Caveat (operator recollection,
+  unverified): multi-repo web sessions may not load repo settings — verify before
+  relying on settings.json in multi-source environments.
+- **The SessionStart → hook daemon → background-commands chain works in
+  routine-fired sessions**: run 39 (2026-07-05) was fired by the Haku routine and its
+  bootstrap — a profile background command behind that chain — ran normally. The
+  run-32/35 "no hook daemon" incidents were transient harness flakes, not a
+  systematic gap. (A follow-up self-report is queued via Haku's intake for explicit
+  confirmation; a synthetic probe session fired 2026-07-06 produced no output —
+  inconclusive, superseded by the in-run self-report.)
+- **Claude Code's native OTel exporter runs in hosted sessions, but its direct
+  egress doesn't arrive.** With the endpoint set to `127.0.0.1`, an in-session
+  listener captured all three signals (metrics ~10 s, logs ~5 s, traces); with the
+  endpoint set to the public Alloy host, nothing ever reached Alloy's receiver,
+  while the same authenticated POST from a shell (via the egress proxy) returned 200. Exact network-layer cause not pinpointed — possibly only the environment's
+  domain allowlist (untested); the localhost relay sidesteps it either way.
 - Claude Code transcripts are **append-only JSONL** during a session — rsync's
   `--append-verify` happy path.
 
@@ -67,11 +72,11 @@ slug). All intelligence is sink-side, so clients never change:
 
 **Triggers per habitat:**
 
-| Habitat                            | Trigger                                                                                                   |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Web envs (incl. routines)          | bootstrap background loop: `while :; do rsync …; sleep 120; done` — works regardless of hook availability |
-| Operator machines                  | home-manager systemd user timer (the `nix/TODO.md` OTel item's sibling)                                   |
-| Hooks (if the probe confirms them) | `Stop` → same rsync one-liner, as a low-latency extra; never load-bearing                                 |
+| Habitat                   | Trigger                                                                                      |
+| ------------------------- | -------------------------------------------------------------------------------------------- |
+| Web envs (incl. routines) | bootstrap background loop: `while :; do rsync …; sleep 120; done`                            |
+| Operator machines         | home-manager systemd user timer (the `nix/TODO.md` OTel item's sibling)                      |
+| Hooks                     | `Stop` → same rsync one-liner, as a low-latency extra on top of the loop; never load-bearing |
 
 ## Security note (accepted trade-off)
 
@@ -85,57 +90,29 @@ but receive, so exec access ≈ transcript-read access, nothing more. If tier-sp
 is ever wanted, run per-tier sink pods in separate namespaces — additive, no client
 redesign.
 
-## Secondary leg: native Claude Code OTel (metrics dashboards)
+## OTel leg (dashboards) — IMPLEMENTED (PR #2930)
 
-Independent of transcripts, dashboards-only (the rsync path remains the lossless
-record; OTel events truncate at 60 KB). Auth is solved **without a forwarder**:
-Claude Code supports `otelHeadersHelper` in settings.json — a script emitting
-headers JSON, run at startup **and every ~29 min**
-(`CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS`; HTTP protocols only) — so the
-repo-committed settings can point at a one-liner that prints the current
-`alloy-otlp` bearer (web: the bootstrap-materialized SOPS token; machines: the
-`cli_env.sh` export). Tokens live ≥24 h, refresh every 29 min → rotation covered.
+Hosted sessions export Claude Code's native telemetry through a **localhost
+forwarder** (the exporter can't egress directly; see Facts):
 
-**Verdict (probed end-to-end 2026-07-06, throwaway hosted env): the localhost
-forwarder is the design.** Findings chain: UI env vars deliver the full OTel
-config into the claude process (12 vars confirmed via `/proc`; the subprocess
-scrub hides them from Bash — check `/proc/<claude-pid>/environ`, never `env`);
-the harness pre-sets `NODE_EXTRA_CA_CERTS`/`SSL_CERT_FILE` on claude and runs its
-own tracing (`CCR_ENABLE_TRACING`, `TRACEPARENT`); the Authentik-proxied endpoint
-
-- rotated bearer work (authenticated POST → 200); **with
-  `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318` the exporter demonstrably
-  emits all three signals** (metrics ~10 s, logs ~5 s, traces — captured by an
-  in-session listener); but with the endpoint set to the public Alloy host,
-  **nothing ever arrives** — the claude process's direct HTTPS egress is silently
-  dropped by the container (its exporter can't use the egress proxy). Conclusion:
-
-* **Hosted sessions**: UI env vars point the exporter at `http://127.0.0.1:4318`;
-  a small **forwarder** (started by the bootstrap/profile background command)
-  listens there and relays to `https://alloy-otlp.allegedly.works` through the
-  container's egress proxy, attaching the current bearer. ~40 lines of stdlib
-  Python (stream body through, add `Authorization`, honor chunked/gzip).
-* **CLI / operator machines**: no forwarder — direct export with
-  `otelHeadersHelper` in settings.json (script emitting headers JSON, re-run
-  every ~29 min; HTTP protocols only) reading the `cli_env.sh` bearer.
-
-## OTel leg — BUILT (2026-07-06, this branch)
-
-- `devinfra/claude/otlp_forwarder.py` — stdlib relay, 127.0.0.1:4318 →
-  `alloy-otlp.allegedly.works` via the egress proxy; bearer re-read per request
-  from `~/.cache/ducktape/otel-bearer`; 503 until token exists, 502 on upstream
-  failure; chunked bodies handled. Functionally verified in a live web container
-  (503 → relayed upstream auth rejection → chunked OK).
-- `devinfra/claude/ensure_otel_forwarder.sh` — idempotent per-launch starter,
-  run as a profile background command (haku + web + home-manager profiles);
-  token sources: `DUCKTAPE_OTEL_BEARER_TOKEN` env, else the mirrored
-  `alloy-otlp-bearer` k8s Secret (with retry — kubeconfig materializes in a
-  sibling bg command).
-- Cluster: rotator `k8s_secret` output → `flux-system/alloy-otlp-bearer` →
-  `ClusterExternalSecret` mirror into `claude-sandbox`/`haku-sandbox`/
-  `openclaw-sandbox` (`cluster/k8s/agents/alloy-otlp-bearer/`).
-- **Operator step — paste into each environment's UI env vars** (Haku env +
-  default web env; content knobs per env sensitivity):
+- <../otlp_forwarder.py> — stdlib relay, `127.0.0.1:4318` →
+  `alloy-otlp.allegedly.works` via the egress proxy; bearer re-read per request from
+  `~/.cache/ducktape/otel-bearer` (rotation-safe); 503 until the token exists, 502 on
+  upstream failure; chunked bodies handled. Functionally verified in a live web
+  container.
+- <../ensure_otel_forwarder.sh> — idempotent starter, run as a profile background
+  command on **every claude launch** (fresh container and resume into a recycled one;
+  the init script only runs at container creation, so it is deliberately not used).
+  Wired into the web, home-manager, and haku profiles. Token sources:
+  `DUCKTAPE_OTEL_BEARER_TOKEN` env, else the mirrored `alloy-otlp-bearer` k8s Secret
+  (with retry — the kubeconfig materializes in a sibling background command).
+- Cluster: the `authentik-jwt-rotation` job publishes the bearer as
+  `flux-system/alloy-otlp-bearer` (`k8s_secret` output); a `ClusterExternalSecret`
+  (<../../../cluster/k8s/agents/alloy-otlp-bearer/>) mirrors it into
+  `claude-sandbox`, `haku-sandbox`, and `openclaw-sandbox`.
+- **Operator step — paste into each environment's UI env vars** (Haku env + default
+  web env; content knobs per env sensitivity; OTel events truncate at 60 KB, so the
+  rsync path remains the lossless record):
 
   ```text
   CLAUDE_CODE_ENABLE_TELEMETRY=1
@@ -151,6 +128,13 @@ own tracing (`CCR_ENABLE_TRACING`, `TRACEPARENT`); the Authentik-proxied endpoin
   OTEL_LOG_RAW_API_BODIES=1
   ```
 
+- CLI / operator machines need no forwarder: direct export with `otelHeadersHelper`
+  in settings.json (a script emitting headers JSON, re-run every ~29 min; HTTP
+  protocols only) reading the `cli_env.sh` bearer. Not yet wired.
+- Possible later simplification (untested): if the hosted-egress block was only the
+  environment domain allowlist, allowlisting `alloy-otlp.allegedly.works` +
+  `otelHeadersHelper` would remove the forwarder. Test before assuming.
+
 ## Remaining build order
 
 1. **Sink**: `agents-infra` Deployment + PVC + Role/RoleBindings (`haku`,
@@ -160,5 +144,4 @@ own tracing (`CCR_ENABLE_TRACING`, `TRACEPARENT`); the Authentik-proxied endpoin
 3. **Sink processor**: summary.json per session; wire Haku's run-manifest rows to it.
 4. **Grafana**: claude-code `GrafanaDashboard` CR once data flows; `web_selfcheck`
    check for the forwarder (4318 bound, token file fresh).
-5. CLI/machines OTel: `otelHeadersHelper` + direct export (no forwarder).
-6. Revisit hooks as fast-path once the routine probe verdict is in.
+5. CLI/machines OTel: `otelHeadersHelper` + direct export.
