@@ -133,3 +133,8 @@ rotations:
       path: cluster/k8s/agents/alloy-otlp-bearer/alloy-otlp-bearer.sops.yaml
       name: alloy-otlp-bearer
       namespace: flux-system
+      # The proxy-scoped bearer is not a k8s-auth JWT; keep the key aligned with
+      # the ClusterExternalSecret's remoteRef.property and the forwarder's
+      # jsonpath (both read `token`). Without this the default (`jwt`) would
+      # silently break the mirror on the first automated mint.
+      token_key: token

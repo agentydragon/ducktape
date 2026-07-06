@@ -110,7 +110,8 @@ forwarder** (the exporter can't egress directly; see Facts):
 - Cluster: the `authentik-jwt-rotation` job publishes the bearer as
   `flux-system/alloy-otlp-bearer` (`k8s_secret` output); a `ClusterExternalSecret`
   (<../../../cluster/k8s/agents/alloy-otlp-bearer/>) mirrors it into
-  `claude-sandbox`, `haku-sandbox`, and `openclaw-sandbox`.
+  `claude-sandbox` and `haku-sandbox` (openclaw-sandbox deliberately excluded —
+  nothing there runs the forwarder, and its Kustomization is suspended).
 - **Operator step — paste into each environment's UI env vars** (Haku env + default
   web env; content knobs per env sensitivity; OTel events truncate at 60 KB, so the
   rsync path remains the lossless record):
