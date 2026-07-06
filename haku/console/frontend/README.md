@@ -16,7 +16,10 @@ components + **Tailwind v4** utilities — modeled on
   while the commit-push lands; a failure surfaces inline on the `Textarea`.
 - `client.ts` — typed `openapi-fetch` client; the types come from the backend's
   OpenAPI schema (the `:schema` target runs `//haku/console:export_schema_bin`), so
-  the `Item` Pydantic models are the single source of truth for the wire contract.
+  the Pydantic models are the single source of truth for the wire contract. Includes the
+  launch-routine helper and the MCP approval queue helpers (`pending`, approve, deny).
+- `confirm_dialog.tsx` — trusted top-layer confirmations for bridge launches, geolocation
+  grants, off-whitelist opens, and MCP tool-call approvals.
 - `markdown.ts` — item `body` → sanitized HTML (`marked` + `dompurify`).
 - `styles.src.css` — `@import`s Tailwind + `@mantine/core` CSS; compiled by
   `@tailwindcss/cli` to `generated/styles.css`, then fingerprinted into

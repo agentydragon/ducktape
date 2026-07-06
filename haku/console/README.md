@@ -20,7 +20,7 @@ bearer). Haku's full security model
 
 ## The capability tier — privileged actions, operator-gated
 
-The console exposes exactly one privileged surface: the **capability tier**
+The launch-routine path remains in the **capability tier**
 (`capabilities.py`, `/api/capabilities/*`). It uses console-only secrets and acts on the
 world, so it's gated hard (see <../docs/security.md> → enforcement inventory #11):
 
@@ -45,6 +45,34 @@ UI can ask for the capability but can never script or spoof it.
 There is **no** low-privilege "trace" write tier anymore — operator feedback now writes
 straight into haku-state from haku-ui (which Haku already owns), so the console needs no
 haku-state git credential or clone at all.
+
+## MCP approval queue — authored tool calls, console-approved
+
+The console also owns the privileged MCP-tool escape hatch (`mcp_approval.py`). Haku or haku-ui can
+submit a precise tool call that Haku should not run autonomously; the console mints the canonical
+`tool_call_id`, records the audit entry, asks the trusted console frontend for approval when
+required, executes the MCP tool, and keeps the result. haku-state stores only authored requests
+(`tool_requests/*.yaml`) and UI affordances (`<tool-call request="...">`); there is no
+`tool_results/` mirror.
+
+Core endpoints:
+
+- `GET /api/capabilities/mcp-servers` — reflect the configured connected MCP servers and each
+  server's `tools/list` metadata. The console config names reachable servers; each MCP server
+  remains the tool schema source.
+- `POST /api/tool-calls` — submit a call with `server_id`, `tool_name`, and exact
+  arguments. The caller may provide a scoped `client_request_id` for idempotency; the console mints
+  `tool_call_id`.
+- `GET /api/approvals/pending`, `GET /api/approvals/events?since=...`, and
+  `WebSocket /api/approvals/ws` — frontend catch-up + notifications. REST remains the source of
+  truth; the WebSocket only wakes the shell to refresh.
+- `POST /api/tool-calls/{tool_call_id}/decision` — CSRF-gated trusted-frontend approval/denial.
+- `GET /api/tool-calls` / `GET /api/tool-calls/{tool_call_id}` — audit/result reads for Haku's
+  normal sweep or operator debugging.
+
+Backend callers authenticate with the shared `HAKU_CONSOLE_AGENT_API_TOKEN`. Browser-origin
+approvals use the operator's Authentik session plus CSRF. The approval dialog renders in trusted
+console chrome, not inside Haku's iframe.
 
 ## Free-form UI — Haku's own UI, embedded
 
@@ -72,6 +100,8 @@ location-sharing stop/withdraw. See <docs/containment.md>.
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `app.py`           | FastAPI `create_app`. `GET /api/config`, `GET /healthz`, CSRF config, mounts the capability router. It can serve the SPA for local/direct fallback when `HAKU_CONSOLE_STATIC_DIR` is set.                                           |
 | `capabilities.py`  | Capability-tier router (`/api/capabilities/*`): CSRF-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer and optional per-run text; `GET /csrf` issues the double-submit token. |
+| `mcp_approval.py`  | MCP approval queue router: catalog reflection, tool-call submit/list/result endpoints, trusted approval decisions, WebSocket notifications, and Postgres-backed audit state in deploy.                                              |
+| `migrations/`      | Alembic migrations for the deployed haku-console database; the console applies them at app startup before serving the API.                                                                                                          |
 | `models.py`        | Pydantic `ConfigResponse` — the `/api/config` response model.                                                                                                                                                                       |
 | `config.py`        | Env settings (`HAKU_CONSOLE_*`).                                                                                                                                                                                                    |
 | `export_schema.py` | Prints the OpenAPI schema; the frontend generates its TypeScript types from it.                                                                                                                                                     |
@@ -87,8 +117,12 @@ fingerprinted SPA. nginx serves `/` and `/assets/*`, proxies `/api/*` and
 `/healthz` to FastAPI on localhost, and sets cache policy by route (`/assets/*`
 immutable, app shell revalidated, API/health uncached). No runtime asset copy or
 shared web volume is used.
-Non-root, dropped caps, no service-account token. Credentials: just the
-`haku-routine-launch-token` secret (the capability tier's bearer; `HAKU_CONSOLE_LAUNCH_ROUTINE__TOKEN`).
+Non-root, dropped caps, no service-account token. Credentials: the
+`haku-routine-launch-token` secret (the launch capability bearer; `HAKU_CONSOLE_LAUNCH_ROUTINE__TOKEN`)
+and, when MCP approval is enabled, the catalog/API-token/database settings:
+`HAKU_CONSOLE_MCP_APPROVAL_CATALOG_PATH`,
+`HAKU_CONSOLE_MCP_APPROVAL_DATABASE_URL`, and
+`HAKU_CONSOLE_AGENT_API_TOKEN`.
 It no longer holds a haku-state git credential — feedback/trace writes moved into haku-ui.
 As trusted ducktape code in its own namespace it is **not** behind the `haku-egress-proxy`
 fence — it gets ordinary cluster egress (which the capability tier needs to reach the
