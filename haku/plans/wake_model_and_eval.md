@@ -77,57 +77,20 @@ Langfuse only sees LiteLLM-routed traffic (dispatch workers), never subscription
 runs. The full transcript sits inside each session at
 `~/.claude/projects/<slug>/<session-id>.jsonl`, including per-request token usage.
 
-Options researched 2026-07-05 (official docs, via research agent):
+**The collector design lives in
+<../../devinfra/claude/plans/transcript_collection.md>** (agent-agnostic: rsync
+over `kubectl exec` to a `transcript-sink` pod from every habitat, sink-side
+summaries, native-OTel dashboards leg; includes the verified research facts —
+no export API exists, UI env vars reach the claude process, hooks-in-routines
+probe pending). Haku-specific remainder:
 
-- **"Takeout" / after-the-fact export: not available.** No API downloads Claude Code
-  web session transcripts; the enterprise Compliance API explicitly covers claude.ai
-  chats/files/projects **only** (not Claude Code); the claude.ai "export your data"
-  flow has no documented Code-session coverage. Only the per-session web UI page
-  exists. Don't wait for this.
-- **Agent-initiated upload (the earlier draft of this plan): rejected as primary** —
-  depends on each agent cooperating per run; doesn't scale beyond Haku and silently
-  gaps when a run dies mid-way.
-- **Hook-based auto-capture (primary path).** `Stop` (every turn) and `SessionEnd`
-  hooks run in web sessions from the repo's committed hook config and receive
-  `transcript_path` — so upload is harness-level: configured once in ducktape, fires
-  for **every** session in the environment, zero agent cooperation
-  (<https://code.claude.com/docs/en/hooks-guide.md>). The natural owner is the
-  existing Rust hook daemon (`devinfra/claude/claude_hook`). Use `Stop` for
-  incremental transcript-delta sync (a container reclaimed before `SessionEnd`
-  otherwise loses the run) and `SessionEnd` for the final flush + metrics rollup.
-- **Native Claude Code OTel (secondary, for dashboards).** `CLAUDE_CODE_ENABLE_TELEMETRY=1`
-  - `OTEL_METRICS_EXPORTER`/`OTEL_LOGS_EXPORTER=otlp` export token/cost metrics and
-    structured events; content is opt-in per knob (`OTEL_LOG_USER_PROMPTS`,
-    `OTEL_LOG_TOOL_CONTENT`, up to `OTEL_LOG_RAW_API_BODIES=1` = full Messages-API
-    bodies, 60 KB-truncated per event or untruncated via `file:<dir>`)
-    (<https://code.claude.com/docs/en/agent-sdk/observability.md>). The receiving side
-    **already exists**: `alloy-otlp.allegedly.works` (Authentik bearer, auto-rotated —
-    `secrets/alloy-otlp-bearer-token.yaml`) → in-cluster Loki/Mimir/Tempo. The earlier
-    devinfra attempt only ever exported the _hook daemon's own_ spans (Python; dropped
-    in the Rust rewrite — `devinfra/claude/TODO.md`), never Claude Code's native
-    telemetry. **Verified live 2026-07-05** (read `/proc/<claude-pid>/environ` in a
-    hosted remote session, claude 2.1.42): env-var delivery splits by mechanism —
-    the web UI **"Environment Variables"** knob (`startup_context.environment_variables`)
-    **does reach the claude process** (both `DUCKTAPE_*` UI vars present in its
-    environ), while **startup-env-script (`web_env.sh`) outputs do not** (its
-    `BUILDBUDDY_API_KEY`/`AWS_*` present in Bash subprocesses only). Matches
-    <../../devinfra/claude/docs/secrets_env_flow.md>; the older "env vars don't reach
-    claude" RE finding described the script path, not the UI path. So wiring =
-    static UI vars `CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_METRICS_EXPORTER=otlp`,
-    `OTEL_LOGS_EXPORTER=otlp`, `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318` —
-    pointing at a **local forwarder in the hook daemon** that attaches the current
-    (hourly-rotated, so unusable as a static UI var) `DUCKTAPE_OTEL_BEARER_TOKEN` and
-    relays to `alloy-otlp.allegedly.works` through the egress proxy. The claude
-    process carries no proxy env, so the local hop also solves egress.
-- **Store** for transcripts: a separate private `haku-logs` repo or seaweedfs S3
-  bucket, not `haku-state` (state is a curated brief; transcripts embed raw source
-  data, so the store inherits the same sensitivity class). Run manifests in `runs/`
-  get a summary row + pointer.
-- **Metrics to stand up**: cost per run; **orientation share** (tokens spent before
-  first new observation — the number that decides the wake-model question);
-  **event→surface latency** (source-event timestamp vs item commit timestamp — git
-  history already holds the commit half); staleness incidents (state's
-  `memory/lessons/` already records these).
+- **Metrics Haku needs from the sink processor**: cost per run; **orientation
+  share** (tokens spent before first new observation — the number that decides the
+  wake-model question); **event→surface latency** (source-event timestamp vs item
+  commit timestamp — git history already holds the commit half); staleness
+  incidents (state's `memory/lessons/` already records these).
+- Run manifests in `runs/` get a summary row + pointer into the sink's
+  per-session `summary.json`.
 
 ## Eval
 
