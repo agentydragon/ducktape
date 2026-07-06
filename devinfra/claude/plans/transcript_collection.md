@@ -19,12 +19,21 @@ agent-agnostic.
   "Environment Variables" knob reaches the `claude` process; `startup_env_script`
   outputs reach Bash subprocesses only. (Relevant to the OTel leg below; matches
   <../docs/secrets_env_flow.md>.)
-- **Hooks in routine-fired sessions: unverified.** `Stop`/`SessionEnd` hooks receive
-  `transcript_path` and run from repo config in interactive web sessions, but Haku
-  runs 32/35 came up without the hook daemon, so routine sessions may not fire hooks
-  reliably. A diagnostic probe (fresh session in the routine's environment, fired
-  2026-07-06) is pending — **the design below does not depend on the answer**; hooks
-  are only a latency optimization.
+- **Repo `.claude/settings.json` applies in remote sessions — even from `--add-dir`.**
+  Verified 2026-07-06 via the claude `--debug` diagnostics log of a live remote session
+  (cwd `/home/user`, ducktape only an additional directory): `settings_load_completed:
+source_count=4, error_count=0`, and both the harness launcher-settings hook _and_
+  ducktape's `claude-hook` SessionStart hook spawned (exit 0). `SessionEnd` also
+  observed firing in the same session type. This is the same loading path
+  `otelHeadersHelper` uses. **Caveat (operator recollection, unverified): multi-repo
+  web sessions may not load repo settings** — verify before relying on settings.json
+  in multi-source environments; our target envs are single-source.
+- **Hooks in routine-fired sessions: unverified.** Haku runs 32/35 came up without
+  the hook daemon, so routine-spawned fresh sessions may differ. A diagnostic probe
+  (fresh session in the routine's environment, fired 2026-07-06 00:13Z) is pending —
+  it answers for hooks **and** `otelHeadersHelper` at once (same mechanism). **The
+  design below does not depend on the answer**; hooks are only a latency
+  optimization.
 - Claude Code transcripts are **append-only JSONL** during a session — rsync's
   `--append-verify` happy path.
 
