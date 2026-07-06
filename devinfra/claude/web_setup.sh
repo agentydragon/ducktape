@@ -165,7 +165,20 @@ reclaim_reserved_blocks
 #   - --init none skips systemd/launchd (not available in containers)
 # Pinned binary from GitHub releases, SHA256-verified.
 log "Installing Nix (Determinate installer)..."
-bash "${FLAKE#path:}/devinfra/install_nix_determinate.sh"
+# Idempotent: on a persistent rootfs, Nix from a prior session's install is
+# already present. The installer fetches its binary from a GitHub release, which
+# 403s in GitHub-repo-scoped sessions (see AGENTS.md "Repository Scope") — skip
+# the reinstall when a working Nix is already there instead of hard-failing.
+if [ -x /nix/var/nix/profiles/default/bin/nix ] && /nix/var/nix/profiles/default/bin/nix --version >/dev/null 2>&1; then
+  log "Nix already installed ($(/nix/var/nix/profiles/default/bin/nix --version)); skipping installer."
+else
+  bash "${FLAKE#path:}/devinfra/install_nix_determinate.sh"
+fi
+# nix-daemon.sh sources itself only once per shell (`__ETC_PROFILE_NIX_SOURCED`
+# guard). This script's shell can inherit that guard already set from the
+# harness's own shell init without ever having put Nix on PATH, which makes the
+# source below a silent no-op. Unset it first so PATH actually gets updated.
+unset __ETC_PROFILE_NIX_SOURCED
 # shellcheck disable=SC1091
 . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
 log "Nix installation complete."
