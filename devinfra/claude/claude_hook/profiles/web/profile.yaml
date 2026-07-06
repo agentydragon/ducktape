@@ -49,6 +49,13 @@ background_commands:
     command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/claude_hook/creds_banner.sh"
     timeout: 10
     after_env: true
+  # Localhost OTLP relay for Claude Code native telemetry (session env points
+  # OTEL_EXPORTER_OTLP_ENDPOINT at 127.0.0.1:4318; the claude process can't
+  # egress directly). Idempotent: no-op if a forwarder is already listening.
+  - name: otel forwarder
+    command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/ensure_otel_forwarder.sh"
+    timeout: 90
+    after_env: true
   - name: nix nixpkgs check
     command: |
       if ! command -v nix &>/dev/null; then

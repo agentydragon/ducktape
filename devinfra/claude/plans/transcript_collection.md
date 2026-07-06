@@ -119,12 +119,46 @@ own tracing (`CCR_ENABLE_TRACING`, `TRACEPARENT`); the Authentik-proxied endpoin
   `otelHeadersHelper` in settings.json (script emitting headers JSON, re-run
   every ~29 min; HTTP protocols only) reading the `cli_env.sh` bearer.
 
-## Build order
+## OTel leg — BUILT (2026-07-06, this branch)
+
+- `devinfra/claude/otlp_forwarder.py` — stdlib relay, 127.0.0.1:4318 →
+  `alloy-otlp.allegedly.works` via the egress proxy; bearer re-read per request
+  from `~/.cache/ducktape/otel-bearer`; 503 until token exists, 502 on upstream
+  failure; chunked bodies handled. Functionally verified in a live web container
+  (503 → relayed upstream auth rejection → chunked OK).
+- `devinfra/claude/ensure_otel_forwarder.sh` — idempotent per-launch starter,
+  run as a profile background command (haku + web + home-manager profiles);
+  token sources: `DUCKTAPE_OTEL_BEARER_TOKEN` env, else the mirrored
+  `alloy-otlp-bearer` k8s Secret (with retry — kubeconfig materializes in a
+  sibling bg command).
+- Cluster: rotator `k8s_secret` output → `flux-system/alloy-otlp-bearer` →
+  `ClusterExternalSecret` mirror into `claude-sandbox`/`haku-sandbox`/
+  `openclaw-sandbox` (`cluster/k8s/agents/alloy-otlp-bearer/`).
+- **Operator step — paste into each environment's UI env vars** (Haku env +
+  default web env; content knobs per env sensitivity):
+
+  ```text
+  CLAUDE_CODE_ENABLE_TELEMETRY=1
+  OTEL_METRICS_EXPORTER=otlp
+  OTEL_LOGS_EXPORTER=otlp
+  OTEL_TRACES_EXPORTER=otlp
+  CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1
+  OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+  OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
+  OTEL_LOG_USER_PROMPTS=1
+  OTEL_LOG_TOOL_DETAILS=1
+  OTEL_LOG_TOOL_CONTENT=1
+  OTEL_LOG_RAW_API_BODIES=1
+  ```
+
+## Remaining build order
 
 1. **Sink**: `agents-infra` Deployment + PVC + Role/RoleBindings (`haku`,
    sandbox-users group, operator). Manifests under `cluster/k8s/agents/transcript-sink/`.
 2. **Clients**: `kexec-rsh` + rsync loop in the web bootstrap
    (<../claude_hook/> profile or `web_setup.sh`); home-manager timer for machines.
 3. **Sink processor**: summary.json per session; wire Haku's run-manifest rows to it.
-4. **OTel smoke test**, then the local forwarder if it emits.
-5. Revisit hooks as fast-path once the routine probe verdict is in.
+4. **Grafana**: claude-code `GrafanaDashboard` CR once data flows; `web_selfcheck`
+   check for the forwarder (4318 bound, token file fresh).
+5. CLI/machines OTel: `otelHeadersHelper` + direct export (no forwarder).
+6. Revisit hooks as fast-path once the routine probe verdict is in.

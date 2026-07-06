@@ -9,6 +9,12 @@ py_library(
 )
 
 py_library(
+    name = "otlp_forwarder",
+    srcs = ["otlp_forwarder.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "errors",
     srcs = ["errors.py"],
     visibility = ["//visibility:public"],

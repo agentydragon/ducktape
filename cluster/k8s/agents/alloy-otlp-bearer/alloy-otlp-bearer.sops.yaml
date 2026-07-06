@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: alloy-otlp-bearer
+    namespace: flux-system
+    annotations:
+        description: alloy-otlp proxy-scoped Authentik JWT published by authentik-jwt-rotation (k8s_secret output; also committed to secrets/alloy-otlp-bearer-token.yaml). Mirrored into the agent sandbox namespaces by the alloy-otlp-bearer ClusterExternalSecret for the session OTLP forwarder.
+type: Opaque
+stringData:
+    token: ENC[AES256_GCM,data:Rmuj//sZIvDrGFNO+tO2N/2k7v7Nszmcb5HE/2S+m2N7lH4kSIN3Vl9arQ==,iv:GmBk4xbxYUIABqFRutS7LlWmAMyweT0TPMNE6U87hZQ=,tag:mJWPLuLs9U0XG0uHLkQ4lQ==,type:str]
+sops:
+    age:
+        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBPTURKbU5lZjcwWko0T3Iw
+            RGtJRDBmbHkzb0JmVU1jSTdONmQySjRHYVZjCkUvMHdIeDNIZ2pnUGZpZ01nekcy
+            THpzOFErK0Z2d0VTSjZLVkZPM3lmQWcKLS0tIENoUW9TcHVHS2pTb2NKWXVJeGRr
+            VnYvS0ZoS01SelhsQVRtTDF2QlhYckkKo5/H7Rlu901sNx3ovH3IilRKthToi6IX
+            5K2JNTV4a8/SWGw62CN/XG/tFLwQrO8jDumteu+u8U1vUjscpoSP1A==
+            -----END AGE ENCRYPTED FILE-----
+        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBVWmZ5UXFaWHRZenhvMS95
+            TWtaNnBka0VIeHIyY1JwQ2VwODIxaGl0WkJvCjhOR3BaTDd2TFIzakl6V1NHeEQ2
+            YThmYURaWnRXMW11dUFTSStOMU5Tb1EKLS0tIE9aYkExUlRxNGFVRy9uQnpDRXV0
+            UWFURVUyTnNNRjhBK3EyL1U1NVZteDQKjabc57lELoyreRdr7F6gXcR9Ty5QjtFg
+            SGtzkbOlaB8SxNv659gkP5BVFxfm+cLheadR+rYuiuRagrMDDN4PAQ==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-07-06T01:25:35Z"
+    mac: ENC[AES256_GCM,data:FdypjbgqVgtViGCTvprgkVh7fZGQ6GAZ0qhwcGY7hxZoHzt0BAQwLqKz4xOKL+HokwzmqLUc2Noz5H0nzfUoI2WpBGwwjUFlGZdl+qMh3CDG+hiJ0J0sBHquK+4QKopKdyvVznfCtx1tNxJpf/ldiz/+OyUZ1QGQoTy30QKL+Us=,iv:bWat7Gn9cqP58+ltmbC5jFAD/hmk24FNDPRmMfZ6yTM=,tag:hgDrSUho8/gWpIUTckT7xA==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

@@ -126,3 +126,10 @@ rotations:
     credentials_dir: /var/run/secrets/authentik/alloy-otlp
     sops_file: secrets/alloy-otlp-bearer-token.yaml
     token_field: token
+    # Also publish in-cluster; the alloy-otlp-bearer ClusterExternalSecret
+    # (cluster/k8s/agents/alloy-otlp-bearer) mirrors it into the agent sandbox
+    # namespaces for the session OTLP forwarder (devinfra/claude/otlp_forwarder.py).
+    k8s_secret:
+      path: cluster/k8s/agents/alloy-otlp-bearer/alloy-otlp-bearer.sops.yaml
+      name: alloy-otlp-bearer
+      namespace: flux-system
