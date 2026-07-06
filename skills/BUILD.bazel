@@ -29,6 +29,7 @@ pkg_zip(
         "//skills/branch_splitter:branch_splitter_files",
         "//skills/followups:followups_files",
         "//skills/forensic_surgeon:forensic_surgeon_files",
+        "//skills/forgejo:forgejo_files",
         "//skills/freecad:freecad_files",
         "//skills/google_photos_link:google_photos_link_files",
         "//skills/ground_skill:ground_skill_files",
