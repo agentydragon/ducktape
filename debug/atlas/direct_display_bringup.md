@@ -442,12 +442,49 @@ shows `stellaris.exe` on `01:00.0` = the display GPU, with 5090-class FPS.
 kiosk (and its `--prefer-vk-device` comment at ~L215, now describing the old
 ordering) are dead for the lag fix — fold into the deferred gamescope cleanup.
 
+### 2026-07-05 (later) — lag + audio confirmed, gamescope removed, UX applet, Stalker 2 freeze
+
+**Lag fix confirmed in-game.** Stellaris launched **plain** (no gamescope) is
+smooth with no artifacts on the display-on-`01:00.0` config. The GPU-role swap
+(#2903) is the fix; gamescope is gone.
+
+**Monitor DP audio working.** Passed the display card's audio function through:
+`hostpci0` = whole `0000:01:00` device (not just `.0`), so the guest gets
+`01:00.1`. PipeWire sink `alsa_output.pci-0000_01_00.1.hdmi-stereo`; the FV43U's
+ELD is valid on ALSA `card1` (`NVidia_1`) PCM `eld#0.0`. **GOTCHA: NVIDIA HDMI
+sinks default to 100.0 = 10000%** (PipeWire allows >100%) — deafening. Clamp with
+`wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.3`; the waybar applet is capped at
+`max-volume=100`.
+
+**gamescope kiosk fully removed** (#2903). The "Steam (gamescope)"/"Steam (debug)"
+greeter sessions opened the compute card (seat0-owned after the swap) → logind
+`TakeDevice` denial → gamescope `Aborted (core dumped)` → **wedged greeter**.
+Recover a wedged greeter with `systemctl restart display-manager`.
+
+**Declarative seat UX (PR #2908):** `programs.foot` font size 11; **waybar**
+replaces swaybar with a scroll/click **volume applet** (opens `pavucontrol`) +
+tray; `pavucontrol` + XF86Audio keybinds. `programs.foot`/`programs.waybar`, not
+hand-written `~/.config` files.
+
+**Stalker 2 freeze (Proton hang, not storage).** Froze mid-game: display GPU at
+**0% util** but holding 7.3 GB VRAM, `GameThread` spinning ~15% CPU, no GPU
+Xid/hang in dmesg. Threads parked in `futex_wait_multiple`/`futex_wait_queue` =
+**Wine fsync/futex deadlock** (a known Proton hang; Stalker 2 / UE5 is
+freeze-prone). NOT a storage stall — the install is on `/mnt/tankshare`
+(**virtiofs**, host-backed, responded instantly), not the `/games` SSD.
+Relocating to `/games` helps load/stream perf but won't fix a Proton deadlock; if
+freezes recur try Proton-GE or `PROTON_NO_FSYNC=1`. **Kill mechanics:** `pkill -f`
+did **not** land (matching race); direct `kill -9 <pids>` on the Proton/wine tree
+freed the VRAM (7.3 GB → 870 MiB).
+
+**Seat teardown that works:** `loginctl terminate-session <id>` on the seat-game
+user session cleanly kills sway + Steam + waybar and drops back to the greeter
+(VRAM → ~250 MiB). Note `loginctl list-sessions` columns: SEAT is **field 4**
+(field 3 is USER). The `systemd --user` manager session (no seat) lingers
+benignly.
+
 ## Open questions
 
-- **Per-game lag** (root-caused, fix deployed 2026-07-05): cross-GPU copy — solved
-  by making `01:00.0` the display GPU (cable replug + seat/mutter/WLR pin swap) so
-  render==display. gamescope is _not_ the fix (can't pin one of two identical
-  GPUs). Final in-game FPS check still pending. Also bump DP-4 to 4K@144 in sway.
 - **Harden the session-teardown leak** so re-logins stop colliding: logind
   `KillUserProcesses` scoped to the seat-game session, or a session-exit hook that
   reaps the compositor/Steam. Currently manual (also bit the sway seat).
