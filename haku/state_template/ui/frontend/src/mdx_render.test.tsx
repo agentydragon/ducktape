@@ -7,12 +7,12 @@
 // through eval: internal-link interception, widget embedding, and GFM task lists.
 
 import { MantineProvider } from "@mantine/core";
-import { cleanup, fireEvent, render as rtlRender, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { openLink } from "./bridge.ts";
-import { sendFeedback, setResponse } from "./client.ts";
+import { callToolRequest, sendFeedback, setResponse } from "./client.ts";
 import { Mdx } from "./mdx.tsx";
 
 vi.mock("./bridge.ts", () => ({ openLink: vi.fn(), requestLaunch: vi.fn(), notifyRouteChanged: vi.fn() }));
@@ -21,6 +21,12 @@ vi.mock("./client.ts", () => ({
   setResponse: vi.fn().mockResolvedValue(undefined),
   clearResponse: vi.fn().mockResolvedValue(undefined),
   readResponse: vi.fn().mockResolvedValue(null),
+  lookupToolRequestCall: vi.fn().mockResolvedValue(null),
+  callToolRequest: vi.fn().mockResolvedValue({
+    tool_call_id: "tc_1",
+    server_id: "grocy-sf",
+    status: "pending_approval",
+  }),
 }));
 
 // jsdom has no matchMedia; MantineProvider's color-scheme detection needs it.
@@ -128,6 +134,23 @@ describe("Mdx", () => {
     render(<Mdx source={source} />);
     fireEvent.click(await screen.findByRole("button", { name: "Went" }));
     expect(setResponse).toHaveBeenCalledWith("dentist-appt", "status", "went");
+  });
+
+  it("wires <tool-call> request through the sanitizer to the backend proxy", async () => {
+    render(
+      <Mdx
+        source={[
+          '<tool-call request="2026-07-thrive-box-grocy-stock-add" label="Add to Grocy">',
+          "",
+          "</tool-call>",
+        ].join("\n")}
+      />
+    );
+    const button = await screen.findByRole("button", { name: "Add to Grocy" });
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(button);
+    expect(callToolRequest).toHaveBeenCalledWith("2026-07-thrive-box-grocy-stock-add");
+    expect(await screen.findByText("waiting in console")).toBeTruthy();
   });
 
   it("reads a <handoff> prompt authored inside the tag (a fenced code block), multi-line intact", () => {

@@ -4,7 +4,7 @@ import { marked } from "marked";
 import type { ReactNode } from "react";
 import { createElement, Fragment, useMemo } from "react";
 
-import { Choice, Choices, Feedback, Handoff, Launch, SignalToggle } from "./affordances.tsx";
+import { Choice, Choices, Feedback, Handoff, Launch, SignalToggle, ToolCall } from "./affordances.tsx";
 import { errText } from "./errors.ts";
 import { ItemCardById } from "./item_card.tsx";
 import { ImprovementBoard } from "./improvement_board.tsx";
@@ -16,22 +16,39 @@ import type { CalloutKind } from "./widgets.tsx";
 // `<statusbadge status="open" color="teal">`). HTML tag/attribute names are case-insensitive, so
 // the DOM always hands these back lowercased regardless of how they were written. Attributes are
 // always plain strings (nothing evaluates the markdown to compute a richer value).
-interface WidgetProps {
+interface WidgetBaseProps {
   children?: ReactNode;
+  rawText?: string; // the element's plain text content — for a prompt authored *inside* the tag
+}
+
+interface DisplayWidgetProps {
   kind?: string;
   title?: string;
   status?: string;
   color?: string;
+}
+
+interface ActionWidgetProps {
   prompt?: string;
   label?: string;
   text?: string;
   item?: string;
+  request?: string;
+}
+
+interface ChoiceWidgetProps {
+  prompt?: string;
   value?: string;
   scope?: string;
   field?: string;
-  id?: string;
-  rawText?: string; // the element's plain text content — for a prompt authored *inside* the tag
+  item?: string;
 }
+
+interface EmbedWidgetProps {
+  id?: string;
+}
+
+type WidgetProps = WidgetBaseProps & DisplayWidgetProps & ActionWidgetProps & ChoiceWidgetProps & EmbedWidgetProps;
 
 const WIDGET_COMPONENTS: Record<string, (props: WidgetProps) => ReactNode> = {
   callout: (p) => (
@@ -51,11 +68,13 @@ const WIDGET_COMPONENTS: Record<string, (props: WidgetProps) => ReactNode> = {
   //   `<feedback text="…" label="…" item="…">`    — one-click canned feedback into the trace
   //   `<choices prompt="…" item="…"><choice value="a"/>…</choices>` — single-select outcome capture
   //   `<signal-toggle scope="…" field="…"><choice value="a"/>…</signal-toggle>` — stateful slot
+  //   `<tool-call request="…">`                    — submit tool_requests/<id>.yaml via console
   // Prompt from the `prompt` attribute (short/inline) or, if absent, the tag's own text content
   // (a fenced code block inside `<handoff>…</handoff>` — how long/multi-line prompts are authored).
   handoff: (p) => <Handoff prompt={p.prompt || (p.rawText ?? "").trim()} label={p.label} />,
   launch: (p) => <Launch prompt={p.prompt ?? ""} label={p.label} />,
   feedback: (p) => <Feedback text={p.text ?? ""} label={p.label} item={p.item} />,
+  "tool-call": (p) => <ToolCall request={p.request} label={p.label} />,
   choices: (p) => (
     <Choices prompt={p.prompt} item={p.item}>
       {p.children}
@@ -167,7 +186,7 @@ export function Mdx({
         // attributes). Every literal-attribute prop a WIDGET_COMPONENTS entry reads must be listed
         // here or it silently arrives as undefined — the widget then renders its fallback (e.g. an
         // empty handoff prompt). Keep in sync with the props the registry reads.
-        ADD_ATTR: ["kind", "status", "color", "prompt", "label", "text", "item", "field"],
+        ADD_ATTR: ["kind", "status", "color", "prompt", "label", "text", "item", "field", "request"],
       });
       const doc = new DOMParser().parseFromString(clean, "text/html");
       const tree = Array.from(doc.body.childNodes).map((n, i) => (

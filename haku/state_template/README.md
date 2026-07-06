@@ -38,6 +38,7 @@ it; if it only makes sense for this person, leave it in their `haku-state`.
 | `log/`                 | empty (`.gitkeep`)                                                                         | per-day run journal `log/YYYY-MM-DD.md`                       |
 | `intake/processed/`    | empty (`.gitkeep`)                                                                         | operator feedback lands in `intake/`; reduced → `processed/`  |
 | `responses/`           | empty (`.gitkeep`)                                                                         | operator affordance answers Haku reduces (below)              |
+| `tool_requests/`       | `README.md`                                                                                | authored requests for console-approved privileged tool calls  |
 | `runs/`                | `README.md`                                                                                | per-run propagation manifests `runs/<date>/<HHMMSSZ>.md`      |
 | `procedures/`          | the starter passes (README + topical files)                                                | Haku's playbook — read + grow (below)                         |
 | `ui/`                  | the starter multi-surface UI (React SPA + FastAPI backend + Dockerfile)                    | Haku's own UI service, CI-built (below)                       |
@@ -71,6 +72,12 @@ It is **starter source only**: the build artifact is a container image produced 
 CI**, never a committed `dist/`. Haku adopts it into `haku-state`, **watches its Forgejo CI
 builds, fixes broken builds, tends the deployment, and evolves the UI** freely. Full detail:
 [`ui/README.md`](ui/README.md).
+
+Privileged tool calls are an explicit escape hatch, not another git result log. Haku authors exact
+requests under `tool_requests/*.yaml` and embeds a `<tool-call request="...">` affordance in an
+item or garden note. The haku-ui backend forwards the request to haku-console, where approval,
+execution, audit, and results live. There is intentionally no `tool_results/` mirror; a later Haku
+run can sweep haku-console's audit log when it wants to act on completed calls.
 
 Build-via-CI flow: Haku commits `ui/` + the `.forgejo/workflows/build-ui.yaml` workflow
 → the contained, repo-scoped Forgejo runner builds + pushes

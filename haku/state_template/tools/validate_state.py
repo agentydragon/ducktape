@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 import yaml
-from models import ImprovementDoc, ItemDoc, ResponseDoc, RunManifest
+from models import ImprovementDoc, ItemDoc, ResponseDoc, RunManifest, ToolRequestDoc
 from pydantic import ValidationError
 
 REPO = Path(__file__).resolve().parent.parent
@@ -63,6 +63,7 @@ def main() -> int:
     # Whole-file YAML docs: run manifests + operator-answer slots (scope/field are the path).
     targets: list[tuple] = [(p, RunManifest) for p in sorted((REPO / "runs").glob("*/*.yaml"))]
     targets += [(p, ResponseDoc) for p in sorted((REPO / "responses").glob("*/*.yaml"))]
+    targets += [(p, ToolRequestDoc) for p in sorted((REPO / "tool_requests").glob("*.yaml"))]
 
     # Content collections (markdown + typed frontmatter), validated by their `kind`'s model.
     # Skip a collection's own README.md (prose, no frontmatter).

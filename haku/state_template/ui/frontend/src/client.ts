@@ -2,7 +2,14 @@ import { parse } from "yaml";
 
 import type { GeoPosition } from "./bridge.ts";
 import { docsUnder, invalidateTree, repoFile } from "./repo.ts";
-import type { FeedbackContext, MetaResponse, RunManifest, RunsResponse } from "./types.ts";
+import type {
+  FeedbackContext,
+  MetaResponse,
+  RunManifest,
+  RunsResponse,
+  ToolCallRecord,
+  ToolRequestDoc,
+} from "./types.ts";
 
 // Same-origin JSON client: the FastAPI backend serves this bundle and the API.
 // FastAPI error responses are `{detail: string}`; surface that real reason.
@@ -56,6 +63,42 @@ export async function recordLocation(position: GeoPosition): Promise<void> {
     }),
   });
   if (!res.ok) throw new Error(await detail(res, "Failed to record location"));
+}
+
+function toolRequestPath(stateRequestId: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(stateRequestId))
+    throw new Error(`Invalid tool request id: ${stateRequestId}`);
+  return `tool_requests/${stateRequestId}.yaml`;
+}
+
+export async function loadToolRequest(stateRequestId: string): Promise<ToolRequestDoc> {
+  const content = await repoFile(toolRequestPath(stateRequestId));
+  if (content === null) throw new Error(`Tool request not found: ${stateRequestId}`);
+  const parsed = (parse(content) ?? {}) as ToolRequestDoc;
+  if (parsed.state_request_id !== stateRequestId) throw new Error(`Tool request id mismatch: ${stateRequestId}`);
+  return parsed;
+}
+
+export async function lookupToolRequestCall(stateRequestId: string): Promise<ToolCallRecord | null> {
+  const request = await loadToolRequest(stateRequestId);
+  const res = await fetch("/api/tool-calls/lookup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await detail(res, "Failed to look up tool call"));
+  return (await res.json()) as ToolCallRecord | null;
+}
+
+export async function callToolRequest(stateRequestId: string, waitForMs = 10_000): Promise<ToolCallRecord> {
+  const request = await loadToolRequest(stateRequestId);
+  const res = await fetch("/api/tool-calls", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...request, wait_for_ms: waitForMs }),
+  });
+  if (!res.ok) throw new Error(await detail(res, "Failed to request tool call"));
+  return (await res.json()) as ToolCallRecord;
 }
 
 // Responses log (plans/ui-authoring-architecture → feedback loop): a keyed current-state file per

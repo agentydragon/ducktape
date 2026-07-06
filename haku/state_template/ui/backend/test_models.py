@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 import pytest_bazel
-from models import ImprovementDoc, ItemDoc, ItemStatus, RunManifest
+from models import ImprovementDoc, ItemDoc, ItemStatus, RunManifest, ToolRequestDoc
 from pydantic import ValidationError
 
 # --- item frontmatter (items/<slug>.md) ---------------------------------------
@@ -74,6 +74,36 @@ def test_run_manifest_rejects_bad_propagation_action():
         RunManifest.model_validate(
             {"run_id": "x", "propagation": [{"change": "c", "surfaces": [{"surface": "s", "action": "bogus"}]}]}
         )
+
+
+# --- console-approved tool requests (tool_requests/<id>.yaml) -----------------
+
+
+def test_tool_request_doc_accepts_precise_authored_call():
+    doc = ToolRequestDoc.model_validate(
+        {
+            "state_request_id": "2026-07-thrive-box-grocy-stock-add",
+            "server_id": "grocy-sf",
+            "tool_name": "stock_add",
+            "title": "Add arrived Thrive box items to Grocy",
+            "rationale": "The box has arrived and the products are known.",
+            "arguments": {"items": [{"product_id": 123, "amount": 1}]},
+        }
+    )
+    assert doc.server_id == "grocy-sf"
+    assert doc.tool_name == "stock_add"
+    assert doc.arguments["items"][0]["product_id"] == 123
+
+
+def test_tool_request_doc_requires_server_tool_title_and_state_id():
+    with pytest.raises(ValidationError):
+        ToolRequestDoc.model_validate({"server_id": "grocy", "tool_name": "stock_add", "title": "Missing id"})
+    with pytest.raises(ValidationError):
+        ToolRequestDoc.model_validate({"state_request_id": "req", "tool_name": "stock_add", "title": "Missing server"})
+    with pytest.raises(ValidationError):
+        ToolRequestDoc.model_validate({"state_request_id": "req", "server_id": "grocy", "title": "Missing tool"})
+    with pytest.raises(ValidationError):
+        ToolRequestDoc.model_validate({"state_request_id": "req", "server_id": "grocy", "tool_name": "stock_add"})
 
 
 if __name__ == "__main__":

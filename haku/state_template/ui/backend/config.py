@@ -37,3 +37,8 @@ class Settings(BaseSettings):
     # API URL (forgejo_api_url) — that's cluster-internal plaintext HTTP. Required (no default):
     # the Deployment sets HAKU_UI_REPO_WEB_URL.
     repo_web_url: str
+
+    # Optional haku-console backend URL for operator-approved tool calls. When unset,
+    # <tool-call> affordances render but the backend returns 503 on execution.
+    haku_console_api_url: str | None = None
+    haku_console_api_token: SecretStr | None = None

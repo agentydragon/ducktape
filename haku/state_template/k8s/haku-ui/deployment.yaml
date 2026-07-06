@@ -67,6 +67,15 @@ spec:
             # backend (no code default) so this deployment's URL isn't baked into the starter.
             - name: HAKU_UI_REPO_WEB_URL
               value: https://forgejo.example.com/haku/haku-state
+            # Console-approved tool calls. The backend sends authored tool_requests/*.yaml
+            # to haku-console; haku-console owns approval, execution, audit, and results.
+            - name: HAKU_UI_HAKU_CONSOLE_API_URL
+              value: http://haku-console.haku-console.svc.cluster.local:8080
+            - name: HAKU_UI_HAKU_CONSOLE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-agent-api
+                  key: token
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

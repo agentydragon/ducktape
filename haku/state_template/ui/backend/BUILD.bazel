@@ -66,6 +66,7 @@ py_library(
         ":models",
         ":reads",
         "@pypi//fastapi",
+        "@pypi//httpx",
         "@pypi//pyyaml",
         "@pypi//uvicorn",
     ],
@@ -77,6 +78,7 @@ _APP_DEPS = [
     ":models",
     ":reads",
     "@pypi//fastapi",
+    "@pypi//httpx",
     "@pypi//pyyaml",
     "@pypi//uvicorn",
 ]
