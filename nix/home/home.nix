@@ -179,7 +179,12 @@ in
       };
       core.autocrlf = false;
       color.ui = "auto";
-      push.default = "upstream";
+      # `simple` pushes only when the current branch name matches its upstream
+      # branch name, otherwise it refuses. This avoids the `upstream` footgun:
+      # `git worktree add -b foo ... origin/devel` makes `foo` track
+      # `origin/devel`, so a plain push from `foo` can update `devel` instead
+      # of creating/pushing `foo`.
+      push.default = "simple";
       log = {
         abbrevCommit = true;
         decorate = "short";
