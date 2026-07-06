@@ -1,7 +1,7 @@
 """Typed models the backend reads from haku-state and serves over JSON.
 
 Each content collection carries thin, typed frontmatter (``items/<slug>.md``,
-``memory/improvements/<id>.md``, ``runs/<date>/<ulid>.md``); the validate-state gate
+``memory/improvements/<id>.md``, ``runs/<date>/<HHMMSSZ>.md``); the validate-state gate
 parses every file through these models so a malformed frontmatter file can't silently
 parse into a wrong shape. Typed values (enum, dates) validate strictly.
 
@@ -120,7 +120,7 @@ class ImprovementDoc(BaseModel):
     summary: str = ""  # ideas carry a one-liner; friction usually omits it
 
 
-# --- Runs surface (runs/<date>/<ulid>.md) --------------------------------------
+# --- Runs surface (runs/<date>/<HHMMSSZ>.md) --------------------------------------
 # Per-run propagation record: proves every source was processed and shows how each change
 # propagated to every surface. One markdown file per run — this manifest as YAML frontmatter (the
 # machine-checkable spine, validated below), prose reasoning as the body (rendered in the Runs

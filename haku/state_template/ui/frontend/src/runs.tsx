@@ -196,8 +196,7 @@ function RunDetail({
 }
 
 // The Runs surface: a scannable table of runs → click into the full per-run propagation detail.
-// Proves every source was processed and shows how each change reached its surfaces. Read-only;
-// backed by runs/<date>/<ulid>.{yaml,md}.
+// Proves every source was processed and shows how each change reached its surfaces. Read-only.
 export function RunsPage({ openInGarden }: { openInGarden: (path: string) => void }) {
   const [runs, setRuns] = useState<RunManifest[] | null>(null);
   const [error, setError] = useState<string | null>(null);

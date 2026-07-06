@@ -156,7 +156,7 @@ def create_app(settings: Settings) -> FastAPI:
     # generic tree+blobs proxy and rendered by the <improvement-board/> garden widget — no
     # bespoke endpoint. See plans/garden-gradient.md → Settled mechanism.
 
-    # The runs surface (runs/<date>/<ulid>.md) composes over the generic tree+blobs proxy — the
+    # The runs surface (runs/<date>/<HHMMSSZ>.md) composes over the generic tree+blobs proxy — the
     # frontend reads each run's manifest frontmatter + prose body and parses them (client.ts:fetchRuns).
     # No bespoke endpoint. RunManifest/RunsResponse stay in models.py as the wire contract.
 

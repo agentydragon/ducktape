@@ -87,7 +87,7 @@ export async function readResponse(scope: string, field: string): Promise<string
   return typeof parsed.value === "string" ? parsed.value : null;
 }
 
-// Recent per-run propagation records. Each run is one `runs/<date>/<ulid>.md`: the manifest as YAML
+// Recent per-run propagation records. Each run is one `runs/<date>/<HHMMSSZ>.md`: the manifest as YAML
 // frontmatter, prose notes as the body. `docsUnder` parses both; keep the docs that carry a
 // manifest (a `run_id`) so `runs/README.md` and any dangling note drop out. Newest-first by
 // `started`; missing optional fields default (mirrors the backend RunManifest) so one lean manifest

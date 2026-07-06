@@ -38,7 +38,7 @@ it; if it only makes sense for this person, leave it in their `haku-state`.
 | `log/`                 | empty (`.gitkeep`)                                                                         | per-day run journal `log/YYYY-MM-DD.md`                       |
 | `intake/processed/`    | empty (`.gitkeep`)                                                                         | operator feedback lands in `intake/`; reduced → `processed/`  |
 | `responses/`           | empty (`.gitkeep`)                                                                         | operator affordance answers Haku reduces (below)              |
-| `runs/`                | `README.md`                                                                                | per-run propagation manifests `runs/<date>/<ulid>.md`         |
+| `runs/`                | `README.md`                                                                                | per-run propagation manifests `runs/<date>/<HHMMSSZ>.md`      |
 | `procedures/`          | the starter passes (README + topical files)                                                | Haku's playbook — read + grow (below)                         |
 | `ui/`                  | the starter multi-surface UI (React SPA + FastAPI backend + Dockerfile)                    | Haku's own UI service, CI-built (below)                       |
 | `items/`               | `README.md` (the example "items" model) + `.gitkeep`                                       | Haku writes one `<slug>.md` per item, if it keeps this format |
