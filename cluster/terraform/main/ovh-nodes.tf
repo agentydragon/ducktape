@@ -314,6 +314,7 @@ locals {
   # nodePathMap path becomes `/var/mnt/local-path-ovh-${tier}/local-path`. First node: 103711.
   data_disk_mount_renamed_nodes = toset([
     "ovh-ns103711", # rolled 2026-07-05; /dev/sdb repartitioned seaweedfs-data -> local-path-ovh-hdd
+    "ovh-ns102453", # rolled 2026-07-05; /dev/sdb repartitioned seaweedfs-data -> local-path-ovh-hdd
   ])
 
   # Per-node user-volume patches. KS-5 nodes expose /dev/sdb; KS-GAME nodes

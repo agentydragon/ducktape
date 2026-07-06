@@ -55,7 +55,7 @@ spec:
           - /var/mnt/local-path-ovh-hdd/local-path
       - node: ovh-ns102453
         paths:
-          - /var/mnt/seaweedfs-data/local-path
+          - /var/mnt/local-path-ovh-hdd/local-path
       - node: ovh-ns104952
         paths:
           - /var/mnt/seaweedfs-data/local-path
