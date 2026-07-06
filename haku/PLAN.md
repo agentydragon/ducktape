@@ -1,77 +1,58 @@
 # Haku — Personal Background Agent
 
-Named after Spirited Away's Haku: a dragon who quietly helps run the household (and
-needs his name kept in writing — hence the repo).
-
 **This doc is forward-looking.** It holds the vision and the **not-yet-built / open
-design questions** — nothing else. Implemented architecture, deployment detail, and the
-security doctrine live where the code lives; git history holds the original full design
-rationale:
+design questions** — nothing else. What Haku is and its current status: `README.md`.
+What it promises today: `SPEC.md`. Implemented architecture, deployment detail, and the
+security doctrine live where the code lives (`README.md` → _Where things live_); git
+history holds the original full design rationale. The **actionable build checklist is
+`TODO.md`.**
 
-- What Haku is, its objective, and how it reasons, plus the credential/perimeter model:
-  `haku/base/instructions.md` (+ `haku/base/sources/`). Base is **item-agnostic**; Haku's
-  current working method — its presentation format, procedures, and UI — lives in its
-  `haku-state` repo, not base (its former seed, `haku/state_template/`, was retired 2026-07-07).
-- **Threat model, enforcement inventory, and the invariants edits must preserve:**
-  <docs/security.md> — the durable doctrine's canonical home; start a security review there.
-- The live primary runtime today is the manually configured Claude Code web home:
-  `haku/runtime/claude_web_env/`, which runs `haku/run.md`. A separate, deliberately
-  distinct thing: the operator's own **second coding-delegation path** using Claude
-  Code web deep links (pre-filled prompt + repo + environment) —
-  `haku/plans/claude_code_web_deep_link_delegation.md`. Don't conflate the two; the
-  deep-link path must not reuse Haku's own web-home environment/secrets.
-- The trusted console (capability tier + iframe shell): `haku/console/README.md`;
-  containment contract: `haku/console/docs/containment.md`. Alternative runtimes
-  (Managed Agents): `haku/runtime/managed_agent/` + `haku/plans/`.
-- Cluster wiring (RBAC, egress proxy, secrets): `cluster/k8s/haku/` and
-  `cluster/k8s/agents/haku-egress-proxy/`.
-- The **actionable build checklist is `TODO.md`.**
+## Not yet built
 
-## Open directions
+- **More sources behind read-only facades.** The read-only tool-filtering boundary
+  already exists — the generic `mcp-oauth-facade` image (default-deny tool allowlist +
+  a server-held upstream credential callers never see), live as `tana-mcp-ro`
+  (`cluster/k8s/agents/tana-mcp-ro/`). An upstream MCP server with no
+  read-only-credential trick gets fronted by **another instance** of it: a Deployment +
+  a `config.yaml` allowlist + the upstream secret + a bearer-gated route — no new
+  boundary code, the generalization is mechanical. Still to wire this way: PostScanMail
+  (unopened mail), Manifold. (The Authentik OAuth facades are _auth_ only — they forward
+  the full tool set — so they don't substitute for this.) **Grocy** went a different,
+  cheaper route — no facade: its upstream enforces per-user permissions, so the read-only
+  `haku` Grocy user (empty perms → API serves reads, 403s writes) _is_ the boundary, and
+  Haku calls the grocy-sf MCP directly (`base/sources/grocy.md`). Prefer that whenever an
+  upstream has its own read-only-credential model; the facade is for the ones that don't.
+- **Console executions panel + one-in-flight guard.** Both want a routine-runs-**listing**
+  API, and **none is known to exist** for `claude_code` routines (only `/fire`), so the
+  interim "review past runs" affordance is the deep-link to the routine's `claude.ai/code`
+  page. When a listing API surfaces and the panel is built, adopt the `anthropic` Python
+  SDK (it auto-sends `anthropic-version` — the omission that 502'd the bare-`httpx`
+  fire — plus bearer auth, typed errors, retries) and migrate the launch POST onto it then.
+  (An earlier "richer declarative UI" direction — a typed widget schema rendered by the
+  trusted console — is retired: the console renders nothing by design now; free-form UI in
+  Haku's own iframe service superseded it.)
+- **Share the iframe bridge protocol** instead of hand-duplicating the message shapes
+  between `haku/console/frontend/bridge.ts` (authoritative) and Haku's UI — a tiny shared
+  package or a sync-checked artifact. (The remaining cleanup from the realized free-form
+  UI design; see `console/docs/containment.md` → _The bridge protocol_.)
+- **In-cluster runtime** (the `haku-scanner` CronJob / self-hosted Managed-Agents
+  worker) as an alternative to the web home — deferred; see `TODO.md` → _Later_ and
+  `haku/runtime/managed_agent/`. Revisit if scanner-image upkeep or the
+  client_credentials path proves painful (scheduled deployments + vaults remove exactly
+  those work items).
+- **Capability registry** (a ConfigMap mapping `service → facade URL → secret name`) —
+  a possible later formalization of today's ad-hoc `kubectl get secret` discovery; not
+  required by the current model.
 
-- **Make Haku substantially more useful.** Keep iterating the base method and the live
-  haku-state procedures/UI until Haku routinely turns sources, memory, haku-ui, free
-  tools, and approval-gated tool requests into high-value work the operator can approve
-  with little effort. Durable doctrine belongs in `haku/base/instructions.md`; concrete
-  method changes belong in the haku-state repo and the generic starter under
-  `haku-state` (its former ducktape seed, `state_template/`, is retired).
-- **More source coverage behind safe boundaries.** Add read-only facades or scoped
-  credentials for sources that are not yet wired, such as PostScanMail and Manifold. Keep
-  the durable boundary doctrine in `haku/docs/security.md` and per-source mechanics in
-  `haku/base/sources/`; this plan should only name sources that remain to be added.
-- **Console executions panel + one-in-flight guard.** Build this when there is a
-  routine-runs listing API for Claude Code routines. The panel should render active/past
-  routine state from an official listing and migrate launch calls to the `anthropic`
-  Python SDK rather than extending bespoke `httpx` code.
-- **Shared console contracts.** ducktape owns a single shared
-  Bazel module `ducktape_haku` at `haku/shared/` (consumed by haku-state via
-  `bazel_dep(name = "ducktape_haku")` + `git_override` with `strip_prefix = "haku/shared"`
-  against the Forgejo ducktape mirror). It carries two packages, one per language:
-  - **Bridge protocol** (`bridge_protocol/`, JS, `@haku/console-bridge`): the console↔iframe
-    postMessage wire types + client helpers. The console shell imports these instead of its own
-    copies; haku-ui links the same package.
-  - **Tool-call contract** (`haku/console/tool_calls.py`, Python, `haku.console.tool_calls`): the
-    audit records and MCP discovery/correlation metadata shared by the console and haku-ui. Agent
-    admission itself is MCP-only; the REST history surface is operator-only.
-- **Alternative runtimes.** Keep the self-hosted/in-cluster scanner and Managed
-  Agents worker as experiments at varying completeness. They are not the primary
-  runtime unless their docs explicitly say they have replaced the Claude Code web
-  home.
-- **Tool-call expansion and richer Haku-owned workflows.** Connect more MCP/API servers
-  and teach Haku's state/UI to use them well: prepared Tana edits, Gmail draft/send/archive
-  flows, shopping/inventory check-ins, paperwork, and operations panels. Do not let any
-  single button/widget surface become the whole product.
-- **Capability registry.** Consider a small registry for service endpoints and credential
-  sources if ad-hoc secret/config discovery starts costing Haku meaningful run time or causes
-  drift.
+## Future: letting Haku take some actions itself (permission-elevation tokens)
 
-## Future: more autonomous low-blast-radius tools
-
-Consider letting Haku take **some** low-blast-radius actions autonomously — e.g. _draft an email_
-(into Drafts, not send), _explore less-restricted websites_ for research, and similar moves —
-without giving up the transparency and containment that make Haku's bounded posture safe. Existing
-autonomous write authority belongs canonically in `haku/base/instructions.md`; the security model
-documents its enforcement and points back to that inventory. Do not duplicate the inventory here.
+Today's contract is read-only + hand-off (`SPEC.md`). A future direction
+(operator, 2026-06-26) is to let Haku take **some** actions autonomously that aren't
+allowed now — e.g. _draft an email_ (into Drafts, not send), _explore less-restricted
+websites_ for research, and similar low-blast-radius moves — without giving up the
+transparency and containment that make the read-only posture safe. (The `gmail-labeling`
+closure server was the first realized instance of the pattern: a narrow write surface
+made safe by construction — see `docs/security.md` inventory #7.)
 
 Sketch to design out later (a real mechanism-design + security effort, not built):
 
@@ -106,13 +87,61 @@ policy execute immediately, while all others become operator approval requests. 
 the same: exact call reviewed, trusted console approval, console-owned audit/result state, and
 credentials scoped or proxied rather than trusted to Haku's restraint.
 
+## Future: a conversational interface with Haku (operator, 2026-07-06)
+
+Today the only way to reach Haku mid-stream is the console's capability tier: fire the
+claude-code-web routine (optionally with per-run `text`) and get one fresh, fire-and-forget
+`run.md` pass — no back-and-forth, no memory of the exchange beyond what lands in
+`haku-state`. The operator wants something more like chatting with Haku directly, plus
+richer push notifications. **Chat is the higher-priority half of this; notifications are a
+nice-to-have.** Nothing below is designed yet — this is the shape of the ask, to work through
+in a follow-up design pass.
+
+- **A chat-like surface** — a Telegram bot and/or a web UI — where Haku reads messages and
+  replies, as an easier and richer affordance than the console's launch dialog for:
+  - **Quick dispatch**: send Haku a task in a message, superseding the console's
+    "canned per-fire instructions" TODO (`TODO.md` → _Console_) with a lower-friction
+    version of the same idea.
+  - **An ongoing, longer conversation** — not just one-shot fire-and-forget: follow-ups,
+    clarifying questions, iterating on a task, without re-stating context each time.
+  - **Multiple conversation threads**, à la ChatGPT/claude.ai — separate topics or tasks
+    kept apart rather than one running transcript.
+  - **Inline action affordances** — clickable prebaked answers/actions in Haku's messages,
+    not just prose. Conceptually the same idea as `haku-ui`'s markdown affordance widgets
+    (`<signal-toggle>`, `<handoff>`, `<launch>`, `<feedback>`) but rendered in a chat surface
+    (e.g. Telegram inline-keyboard buttons with `callback_data`, which is a different wire
+    shape than a link-based affordance).
+- **Richer mobile notifications** — push notifications (today: one-way ntfy, no replies, no
+  buttons — see _Open questions_ below) that carry action buttons, so the operator can act
+  from the lock screen instead of opening a dashboard.
+
+Open design questions to work through before building anything:
+
+- How a chat surface reconciles with Haku's run-based execution model: today each web-home
+  invocation is one bounded `run.md` pass, not a standing process. Does "ongoing
+  conversation" mean a live conversational loop (a new runtime shape), or per-message dispatch
+  against a conversation thread/log kept in `haku-state` that each run picks up and appends to
+  (closer to today's model, but not a live chat)?
+- Where conversation threads live and who owns them — `haku-state` (consistent with "state is
+  Haku's only memory") or a separate store, and how threads relate to `items/` and `runs/`.
+- How action-button clicks get enforced: a chat message and click-to-action carries the same
+  shape of risk as `requestLaunch`, but a bot API has no equivalent of "trusted-rendered
+  chrome" to confirm against — worth a hard look before wiring any button to a mutating
+  action.
+- Bot/webhook identity and perimeter: a Telegram bot needs a public inbound route and its own
+  credential, same class of new capability surface as `haku-ui`/the console — it inherits
+  Haku's security doctrine (`docs/security.md`), not a chat SDK trusting the model to behave.
+- Whether chat-dispatched one-off tasks run at Haku's own orchestrator privilege (like today's
+  launch-routine) or can ever route through the dispatch plane's worker zones
+  (`plans/multi_agent.md`).
+
 ## Open questions
 
 - **Value scoring**: single curator-owned 0–100 plus deadline is probably enough; resist
   building an expected-utility framework before the queue has real traffic.
 - **Notification thresholds**: ntfy is the channel; when to ping vs. wait for a dashboard
-  visit is a `memory/` matter, tuned via intake. Matrix is the richer later option if
-  notifications ever grow replies.
+  visit is a `memory/` matter, tuned via intake. See _Future: a conversational interface
+  with Haku_ above for the fuller chat/rich-notification direction this was gesturing at.
 - **Git as item store at scale**: a repo gives auditability, trivial backup, and
   human-editable state, but no queries or concurrent-writer safety. Fine at personal
   volumes with effectively serialized writers. If volume/concurrency ever outgrows it,

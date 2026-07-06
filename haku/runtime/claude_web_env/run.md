@@ -31,6 +31,50 @@ environment-neutral `haku/run.md`.
   `port-forward` work too — the `kubeapi-proxy` nginx forwards the WebSocket
   upgrade (`cluster/k8s/kube-api-proxy`); they were briefly broken until that was
   added. Clean up pods after (20-pod quota).
+- If none of the above holds — `kubectl`/`nix`/`bazel` missing from `PATH`, no
+  `~/.kube/config`, `~/haku-state` absent — the background command never ran at
+  all. See _If the hook daemon never ran bootstrap_ below before assuming a slow
+  clone or re-running `bootstrap.sh` bare (it needs `kubectl` on `PATH` to work).
+
+## If the hook daemon never ran bootstrap
+
+Some Claude Code web surfaces (the agent-SDK-based environment behind "Claude Code on
+the web," as distinct from the claude.ai/code webapp and its claude-hook daemon) never
+execute `profile.yaml`'s `background_commands` — so `bootstrap.sh` never runs, even
+though the profile's env exports (`DUCKTAPE_CLAUDE_HOOKS_PROFILE`, `SOPS_AGE_KEY`,
+`K8S_*`) are still set from the environment config. The tell: however long you wait, no
+`haku-state: cloning in the background` line and no `Task [bootstrap] exited` message
+ever arrives — that's a different failure mode than "still cloning" below (don't poll
+the wait-loop expecting a daemon that isn't running here).
+
+**Self-bootstrap instead of blocking on it.** `SOPS_AGE_KEY` being set is what actually
+matters — it's the decryption credential, not the Nix devshell, so you don't need
+`direnv`/`nix develop` to work to proceed. Check first whether a previous build in this
+container already left `sops`/`kubectl` built under `/nix/store` (common — they're deps
+of other Nix derivations) even though neither is symlinked onto `PATH`:
+
+```bash
+find /nix/store -maxdepth 1 -type d \( -iname '*-sops-*' -o -iname '*-kubectl-*' \)
+```
+
+If that finds them, prepend their `bin/` dirs to `PATH` and run `bootstrap.sh` the normal
+way — it does the right thing once its dependencies are reachable, so don't
+hand-reimplement its steps. **But also export the three vars `env_exports` would
+otherwise have set** — with no daemon, that half of `profile.yaml` didn't apply either,
+so `bootstrap.sh`/`kubeconfig.py` default to the **claude-code-web** identity
+(`secrets/claude-web-k8s-jwt.yaml`), not Haku's, unless told otherwise:
+
+```bash
+export PATH="$(find /nix/store -maxdepth 1 -type d \( -iname '*-sops-*' -o -iname '*-kubectl-*' \) -printf '%p/bin:')$PATH"
+export K8S_JWT_SOPS_PATH=secrets/haku-k8s-jwt.yaml K8S_USER=haku K8S_NAMESPACE=haku-sandbox
+bash "$CLAUDE_PROJECT_DIR/haku/runtime/claude_web_env/bootstrap.sh"
+```
+
+Run this way (foreground, not backgrounded), it blocks until the clone genuinely
+finishes — no race to wait out afterward, unlike the async case below. If `nix
+develop`/`direnv allow` doesn't work either and nothing's cached, the environment
+genuinely lacks the tools — surface that as a finding rather than proceeding without
+cluster access.
 
 ## Managed/task-runner sessions: no hook daemon at all
 
