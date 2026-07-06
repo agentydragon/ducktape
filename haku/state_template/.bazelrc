@@ -9,11 +9,15 @@ common --enable_bzlmod
 # not here — see tools/ci/trust_egress_ca.sh for the runner's.
 build --spawn_strategy=local
 
-# A Claude Code session's auto-generated buildbuddy.bazelrc unconditionally sets
-# `build --config=rbe`, assuming every repo it touches is ducktape (which defines a real
-# `build:rbe` pointing at BuildBuddy). Define it here as a no-op — genuinely no remote
-# executor is wired below, so this stays exactly as local as the rest of this file — purely so
-# the flag resolves instead of erroring "Config value 'rbe' is not defined" in an agent session.
+# TODO(devinfra-session-tooling): devinfra/claude/claude_hook/main.rs's session bazelrc
+#   writer unconditionally emits `build --config=rbe` (in buildbuddy.bazelrc) and
+#   `common --config=ai_agent`, assuming every repo a Claude Code session touches is
+#   ducktape. Fix that assumption there (e.g. only emit configs the target repo actually
+#   defines, or make them genuinely repo-agnostic) so non-ducktape repos like this one
+#   don't need matching no-op shims at all. Until then, define both here as no-ops —
+#   genuinely no remote executor is wired below, so this stays exactly as local as the
+#   rest of this file — purely so the flag resolves instead of erroring "Config value
+#   'rbe' is not defined" in an agent session.
 build:rbe --spawn_strategy=local
 
 # Strict action env: actions get a fixed PATH instead of inheriting the client's
@@ -35,10 +39,9 @@ build --@rules_python//python/config_settings:python_version=3.13
 common:ci --curses=no
 common:ci --show_progress_rate_limit=30
 
-# Claude Code sessions auto-inject `--config=ai_agent` (a per-session bazelrc the
-# claude-hook daemon generates, shared across every repo a session touches) — define it
-# here too, matching ducktape's own `ai_agent` config, so `bazel`/`bazelisk` works in this
-# repo from an agent session instead of erroring "Config value 'ai_agent' is not defined."
+# Same devinfra tooling gap as the `rbe` no-op above (see the TODO there) — the session
+# bazelrc unconditionally sets `common --config=ai_agent` too. Define it here to match
+# ducktape's own `ai_agent` config until the tooling stops assuming every repo is ducktape.
 common:ai_agent --curses=no
 common:ai_agent --show_progress_rate_limit=30
 common:ci --announce_rc
