@@ -264,7 +264,7 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
       removeToolApproval(toolCallId);
       void approveToolCall(toolCallId)
         .then((record) => {
-          toastSuccess("Tool call finished", `${record.server_title}.${record.tool_name}: ${record.status}`);
+          toastSuccess("Tool call finished", `${record.server_id}.${record.tool_name}: ${record.status}`);
           refreshToolApprovals(true);
         })
         .catch((e: unknown) => {

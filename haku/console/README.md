@@ -61,8 +61,7 @@ Core endpoints:
   server's `tools/list` metadata. The console config names reachable servers; each MCP server
   remains the tool schema source.
 - `POST /api/tool-calls` — submit a call with `server_id`, `tool_name`, and exact
-  arguments. The caller may provide a scoped `client_request_id` for idempotency; the console mints
-  `tool_call_id`.
+  arguments. The console mints the canonical `tool_call_id`.
 - `GET /api/approvals/pending`, `GET /api/approvals/events?since=...`, and
   `WebSocket /api/approvals/ws` — frontend catch-up + notifications. REST remains the source of
   truth; the WebSocket only wakes the shell to refresh.
@@ -100,7 +99,7 @@ location-sharing stop/withdraw. See <docs/containment.md>.
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `app.py`           | FastAPI `create_app`. `GET /api/config`, `GET /healthz`, CSRF config, mounts the capability router. It can serve the SPA for local/direct fallback when `HAKU_CONSOLE_STATIC_DIR` is set.                                           |
 | `capabilities.py`  | Capability-tier router (`/api/capabilities/*`): CSRF-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer and optional per-run text; `GET /csrf` issues the double-submit token. |
-| `mcp_approval.py`  | MCP approval queue router: catalog reflection, tool-call submit/list/result endpoints, trusted approval decisions, WebSocket notifications, and Postgres-backed audit state in deploy.                                              |
+| `mcp_approval.py`  | MCP approval queue router: MCP server reflection, tool-call submit/list/result endpoints, trusted approval decisions, WebSocket notifications, and Postgres-backed audit state in deploy.                                           |
 | `migrations/`      | Alembic migrations for the deployed haku-console database; the console applies them at app startup before serving the API.                                                                                                          |
 | `models.py`        | Pydantic `ConfigResponse` — the `/api/config` response model.                                                                                                                                                                       |
 | `config.py`        | Env settings (`HAKU_CONSOLE_*`).                                                                                                                                                                                                    |
@@ -119,9 +118,8 @@ immutable, app shell revalidated, API/health uncached). No runtime asset copy or
 shared web volume is used.
 Non-root, dropped caps, no service-account token. Credentials: the
 `haku-routine-launch-token` secret (the launch capability bearer; `HAKU_CONSOLE_LAUNCH_ROUTINE__TOKEN`)
-and, when MCP approval is enabled, the catalog/API-token/database settings:
-`HAKU_CONSOLE_MCP_APPROVAL_CATALOG_PATH`,
-`HAKU_CONSOLE_MCP_APPROVAL_DATABASE_URL`, and
+and, when MCP approval is enabled, the config-file/API-token/database settings:
+`HAKU_CONSOLE_CONFIG_FILE`, `HAKU_CONSOLE_MCP_APPROVAL_DATABASE_URL`, and
 `HAKU_CONSOLE_AGENT_API_TOKEN`.
 It no longer holds a haku-state git credential — feedback/trace writes moved into haku-ui.
 As trusted ducktape code in its own namespace it is **not** behind the `haku-egress-proxy`

@@ -75,7 +75,6 @@ py_library(
         ":database_migrate",
         ":database_schema",
         ":deps",
-        "@pypi//canonicaljson",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
         "@pypi//fastmcp",
@@ -164,24 +163,8 @@ py_test(
 
 py_test(
     name = "test_mcp_approval",
-    srcs = ["test_mcp_approval.py"],
-    deps = [
-        ":app",
-        ":config",
-        ":conftest",
-        ":mcp_approval",
-        "//:conftest",
-        "@pypi//fastapi",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_mcp_approval_postgres",
     size = "medium",
-    srcs = ["test_mcp_approval_postgres.py"],
+    srcs = ["test_mcp_approval.py"],
     data = [
         "//third_party/containers:postgres_18",
         "//third_party/containers:ryuk",

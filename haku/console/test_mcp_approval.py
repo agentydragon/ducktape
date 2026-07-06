@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
+from sqlalchemy import create_engine, text
+from testcontainers.postgres import PostgresContainer
 
 from haku.console.mcp_approval import McpServerEntry, ServerMetadata, ToolMetadata
+from third_party.containers.rlocations import POSTGRES_18, RYUK
+from util.oci import load_oci_image
+from util.testing.postgres import force_drop_database_sync
 
 
 class FakeToolExecutor:
@@ -40,20 +48,61 @@ class FakeMetadataProvider:
         )
 
 
-def _test_app_overrides() -> dict[str, Any]:
-    return {"tool_call_executor": FakeToolExecutor(), "tool_call_metadata_provider": FakeMetadataProvider()}
+@pytest.fixture(scope="session", autouse=True)
+def _preload_postgres_images() -> None:
+    load_oci_image(RYUK)
+    load_oci_image(POSTGRES_18)
 
 
-def _catalog(tmp_path: Path) -> Path:
-    path = tmp_path / "mcp_servers.yaml"
+@pytest.fixture(scope="session")
+def postgres_container() -> Generator[PostgresContainer]:
+    container = PostgresContainer(image=POSTGRES_18.tag, username="postgres", password="postgres", dbname="postgres")
+    container.start()
+    try:
+        yield container
+    finally:
+        container.stop()
+
+
+@pytest.fixture(scope="session")
+def postgres_admin_url(postgres_container: PostgresContainer) -> str:
+    host = postgres_container.get_container_host_ip()
+    port = int(postgres_container.get_exposed_port(5432))
+    return f"postgresql+psycopg://postgres:postgres@{host}:{port}/postgres"
+
+
+@pytest.fixture
+def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Generator[str]:
+    db_name = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:45].rstrip("_") or "haku_console_test"
+    admin_engine = create_engine(postgres_admin_url, isolation_level="AUTOCOMMIT")
+    with admin_engine.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+    admin_engine.dispose()
+
+    yield postgres_admin_url.rsplit("/", 1)[0] + f"/{db_name}"
+
+    force_drop_database_sync(postgres_admin_url, db_name)
+
+
+def _test_app_overrides(db_url: str) -> dict[str, Any]:
+    return {
+        "mcp_approval_database_url": SecretStr(db_url),
+        "tool_call_executor": FakeToolExecutor(),
+        "tool_call_metadata_provider": FakeMetadataProvider(),
+    }
+
+
+def _config_file(tmp_path: Path) -> Path:
+    path = tmp_path / "haku_console.yaml"
     path.write_text(
         """
-servers:
-  - id: grocy-sf
-    server_url: https://grocy-sf.example.test/mcp
-    bearer_token_secret: haku-console-grocy-sf-token
-  - id: smoke
-    server_url: https://smoke.example.test/mcp
+mcp:
+  servers:
+    - id: grocy-sf
+      server_url: https://grocy-sf.example.test/mcp
+      bearer_token_secret: haku-console-grocy-sf-token
+    - id: smoke
+      server_url: https://smoke.example.test/mcp
 """,
         encoding="utf-8",
     )
@@ -66,14 +115,12 @@ def _csrf(client: TestClient) -> str:
     return token
 
 
-def _submit(client: TestClient, *, client_request_id: str = "req-1", amount: int = 1) -> dict[str, Any]:
+def _submit(client: TestClient, *, amount: int = 1) -> dict[str, Any]:
     resp = client.post(
         "/api/tool-calls",
         json={
             "server_id": "grocy-sf",
             "tool_name": "stock_add",
-            "client_request_id": client_request_id,
-            "state_request_id": "2026-07-thrive-box-grocy-stock-add",
             "title": "Add Thrive box items to Grocy",
             "rationale": "box is physically present",
             "arguments": {"items": [{"product_id": 123, "amount": amount}]},
@@ -83,8 +130,10 @@ def _submit(client: TestClient, *, client_request_id: str = "req-1", amount: int
     return cast(dict[str, Any], resp.json())
 
 
-def test_reflection_lists_connected_servers_without_leaking_credentials(make_client, tmp_path: Path) -> None:
-    with make_client(mcp_approval_catalog_path=_catalog(tmp_path), **_test_app_overrides()) as client:
+def test_reflection_lists_connected_servers_without_leaking_credentials(
+    make_client, tmp_path: Path, db_url: str
+) -> None:
+    with make_client(config_file=_config_file(tmp_path), **_test_app_overrides(db_url)) as client:
         resp = client.get("/api/capabilities/mcp-servers")
     assert resp.status_code == 200
     body = resp.json()
@@ -114,31 +163,19 @@ def test_reflection_lists_connected_servers_without_leaking_credentials(make_cli
     assert "bearer_token_secret" not in str(body)
 
 
-def test_submit_mints_tool_call_id_and_idempotent_replay(make_client, tmp_path: Path) -> None:
-    with make_client(mcp_approval_catalog_path=_catalog(tmp_path), **_test_app_overrides()) as client:
+def test_submit_mints_tool_call_id(make_client, tmp_path: Path, db_url: str) -> None:
+    with make_client(config_file=_config_file(tmp_path), **_test_app_overrides(db_url)) as client:
         first = _submit(client)
-        replay = _submit(client)
-        by_client_id = client.get("/api/tool-calls/by-client-request/req-1").json()
-        conflict = client.post(
-            "/api/tool-calls",
-            json={
-                "server_id": "grocy-sf",
-                "tool_name": "stock_add",
-                "client_request_id": "req-1",
-                "arguments": {"items": [{"product_id": 123, "amount": 2}]},
-            },
-        )
+        second = _submit(client)
     assert first["tool_call_id"].startswith("tc_")
     assert first["status"] == "pending_approval"
     assert "approval_id" not in first
-    assert replay["tool_call_id"] == first["tool_call_id"]
-    assert by_client_id["tool_call_id"] == first["tool_call_id"]
-    assert conflict.status_code == 409
+    assert second["tool_call_id"] != first["tool_call_id"]
 
 
-def test_approval_executes_tool_and_records_terminal_result(make_client, tmp_path: Path) -> None:
+def test_approval_executes_tool_and_records_terminal_result(make_client, tmp_path: Path, db_url: str) -> None:
     with make_client(
-        mcp_approval_catalog_path=_catalog(tmp_path), csrf_secret=SecretStr("csrf"), **_test_app_overrides()
+        config_file=_config_file(tmp_path), csrf_secret=SecretStr("csrf"), **_test_app_overrides(db_url)
     ) as client:
         submitted = _submit(client)
         resp = client.post(
@@ -155,9 +192,9 @@ def test_approval_executes_tool_and_records_terminal_result(make_client, tmp_pat
     assert fetched == decided
 
 
-def test_approval_denial_is_terminal_and_does_not_execute(make_client, tmp_path: Path) -> None:
+def test_approval_denial_is_terminal_and_does_not_execute(make_client, tmp_path: Path, db_url: str) -> None:
     with make_client(
-        mcp_approval_catalog_path=_catalog(tmp_path), csrf_secret=SecretStr("csrf"), **_test_app_overrides()
+        config_file=_config_file(tmp_path), csrf_secret=SecretStr("csrf"), **_test_app_overrides(db_url)
     ) as client:
         submitted = _submit(client)
         resp = client.post(
@@ -168,21 +205,14 @@ def test_approval_denial_is_terminal_and_does_not_execute(make_client, tmp_path:
     assert resp.status_code == 200
     tool_call = resp.json()["tool_call"]
     assert tool_call["status"] == "denied"
-    assert tool_call["decision_reason"] == "not today"
     assert tool_call["result"] is None
 
 
-def test_all_v1_tool_calls_require_console_approval(make_client, tmp_path: Path) -> None:
-    with make_client(mcp_approval_catalog_path=_catalog(tmp_path), **_test_app_overrides()) as client:
+def test_all_v1_tool_calls_require_console_approval(make_client, tmp_path: Path, db_url: str) -> None:
+    with make_client(config_file=_config_file(tmp_path), **_test_app_overrides(db_url)) as client:
         resp = client.post(
             "/api/tool-calls",
-            json={
-                "server_id": "smoke",
-                "tool_name": "echo",
-                "client_request_id": "smoke",
-                "arguments": {"hello": "world"},
-                "wait_for_ms": 1000,
-            },
+            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"hello": "world"}, "wait_for_ms": 1000},
         )
         pending = client.get("/api/approvals/pending").json()
     assert resp.status_code == 200
@@ -192,32 +222,32 @@ def test_all_v1_tool_calls_require_console_approval(make_client, tmp_path: Path)
     assert pending["approvals"][0]["tool_call_id"] == body["tool_call_id"]
 
 
-def test_websocket_receives_pending_approval_event(make_client, tmp_path: Path) -> None:
+def test_websocket_receives_pending_approval_event(make_client, tmp_path: Path, db_url: str) -> None:
     with (
-        make_client(mcp_approval_catalog_path=_catalog(tmp_path), **_test_app_overrides()) as client,
+        make_client(config_file=_config_file(tmp_path), **_test_app_overrides(db_url)) as client,
         client.websocket_connect("/api/approvals/ws") as ws,
     ):
         assert ws.receive_json() == {"type": "hello"}
-        submitted = _submit(client, client_request_id="ws-req")
+        submitted = _submit(client)
         event = ws.receive_json()
     assert event["event_type"] == "tool_call_submitted"
     assert event["tool_call_id"] == submitted["tool_call_id"]
     assert event["status"] == "pending_approval"
 
 
-def test_full_audit_log_listing_and_secret_redaction(make_client, tmp_path: Path) -> None:
+def test_full_audit_log_listing_and_secret_redaction(make_client, tmp_path: Path, db_url: str) -> None:
     with make_client(
-        mcp_approval_catalog_path=_catalog(tmp_path), agent_api_token=SecretStr("tool-token"), **_test_app_overrides()
+        config_file=_config_file(tmp_path), agent_api_token=SecretStr("tool-token"), **_test_app_overrides(db_url)
     ) as client:
         operator_call = client.post(
             "/api/tool-calls",
             headers={"X-authentik-username": "operator@example.com"},
-            json={"server_id": "smoke", "tool_name": "echo", "client_request_id": "operator", "arguments": {"x": 1}},
+            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"x": 1}},
         ).json()
         haku_call = client.post(
             "/api/tool-calls",
             headers={"Authorization": "Bearer tool-token"},
-            json={"server_id": "smoke", "tool_name": "echo", "client_request_id": "haku", "arguments": {"x": 2}},
+            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"x": 2}},
         ).json()
         body = client.get("/api/tool-calls").json()
     ids = {r["tool_call_id"] for r in body["tool_calls"]}
@@ -225,6 +255,80 @@ def test_full_audit_log_listing_and_secret_redaction(make_client, tmp_path: Path
     dumped = str(body)
     assert "haku-console-grocy-sf-token" not in dumped
     assert "tool-token" not in dumped
+
+
+def test_postgres_store_runs_alembic_and_persists_typed_ledger(make_client, tmp_path: Path, db_url: str) -> None:
+    with make_client(
+        config_file=_config_file(tmp_path), csrf_secret=SecretStr("csrf"), **_test_app_overrides(db_url)
+    ) as client:
+        submitted = client.post(
+            "/api/tool-calls", json={"server_id": "smoke", "tool_name": "echo", "arguments": {"hello": "world"}}
+        ).json()
+        approved = client.post(
+            f"/api/tool-calls/{submitted['tool_call_id']}/decision",
+            headers={"X-CSRF-Token": _csrf(client)},
+            json={"decision": "approve"},
+        ).json()["tool_call"]
+
+    assert approved["status"] == "ok"
+    assert approved["result"]["arguments"] == {"hello": "world"}
+
+    engine = create_engine(db_url)
+    try:
+        with engine.connect() as conn:
+            version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+            columns = {
+                row["column_name"]
+                for row in conn.execute(
+                    text(
+                        """
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_name = 'mcp_tool_calls'
+                        """
+                    )
+                )
+                .mappings()
+                .all()
+            }
+            row = cast(
+                dict[str, Any],
+                conn.execute(
+                    text(
+                        """
+                        SELECT server_id, tool_name, status, arguments_json, result_json
+                        FROM mcp_tool_calls
+                        WHERE tool_call_id = :tool_call_id
+                        """
+                    ),
+                    {"tool_call_id": submitted["tool_call_id"]},
+                )
+                .mappings()
+                .one(),
+            )
+    finally:
+        engine.dispose()
+
+    assert version == "0001"
+    assert {
+        "tool_call_id",
+        "server_id",
+        "tool_name",
+        "caller_principal",
+        "status",
+        "created_at",
+        "updated_at",
+        "arguments_json",
+        "rationale",
+        "title",
+        "result_json",
+        "error",
+    } == columns
+    assert row["server_id"] == "smoke"
+    assert row["tool_name"] == "echo"
+    assert row["status"] == "ok"
+    assert row["arguments_json"] == {"hello": "world"}
+    assert row["result_json"]["fake_mcp"] is True
 
 
 if __name__ == "__main__":

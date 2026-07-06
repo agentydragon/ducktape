@@ -59,14 +59,15 @@ class Settings(BaseSettings):
     haku_ui_url: str
     auth_origin: str = "https://auth.allegedly.works"
 
-    # Operator-approved MCP tool-call substrate. The catalog path points at the
-    # connected MCP server registry mounted/configured into the console; each server's
-    # tool schema is reflected from the MCP server itself. Production stores the
-    # approval ledger in Postgres. If the database URL and store path are unset,
-    # tests/local dev use in-memory state; store_path is only a local fallback.
-    mcp_approval_catalog_path: Path | None = None
+    # Optional YAML file for deploy-time console configuration that does not belong
+    # in env vars. Secret values stay in env/Kubernetes Secret references; this file
+    # can name connected MCP servers and the env-backed credential slot each uses.
+    config_file: Path | None = None
+
+    # Operator-approved MCP tool-call substrate. Each connected MCP server's tool
+    # schema is reflected from the MCP server itself. The approval ledger is
+    # Postgres-backed; when unset, approval endpoints are disabled.
     mcp_approval_database_url: SecretStr | None = None
-    mcp_approval_store_path: Path | None = None
     # Optional bearer accepted from Haku / haku-ui backend for backend-to-backend calls.
     # Browser/operator calls still rely on the Authentik session at the ingress.
     agent_api_token: SecretStr | None = None

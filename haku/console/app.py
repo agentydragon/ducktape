@@ -50,7 +50,7 @@ def create_app(settings: Settings) -> FastAPI:
     app = FastAPI(title="Haku console")
     # The capability router reads settings off app.state (see haku.console.capabilities).
     app.state.settings = settings
-    app.state.tool_call_store = mcp_approval.make_store(settings)
+    app.state.tool_call_ledger = mcp_approval.make_ledger(settings)
     app.state.tool_call_event_hub = mcp_approval.make_event_hub()
     app.state.tool_call_executor = mcp_approval.make_executor()
     app.state.tool_call_metadata_provider = mcp_approval.make_metadata_provider()
