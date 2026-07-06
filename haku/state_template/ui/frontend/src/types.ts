@@ -72,7 +72,7 @@ export interface RunsResponse {
 
 // Operator-approved tool calls. haku-state stores the authored request under
 // tool_requests/*.yaml; haku-console owns authorization, execution, audit, and results.
-export type ToolCallStatus = "approval_required" | "running" | "ok" | "error" | "denied";
+export type ToolCallStatus = "pending_approval" | "running" | "ok" | "error" | "denied";
 
 export interface ToolRequestDoc {
   state_request_id: string;

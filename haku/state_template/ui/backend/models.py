@@ -244,7 +244,7 @@ class ToolCallSubmitRequest(ToolRequestDoc):
 
 
 class ToolCallStatus(StrEnum):
-    APPROVAL_REQUIRED = "approval_required"
+    PENDING_APPROVAL = "pending_approval"
     RUNNING = "running"
     OK = "ok"
     ERROR = "error"

@@ -126,7 +126,7 @@ arguments:
       if (url === "/api/tool-calls" || url === "/api/tool-calls/lookup")
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ tool_call_id: "tc_1", server_id: "grocy-sf", status: "approval_required" }),
+          json: () => Promise.resolve({ tool_call_id: "tc_1", server_id: "grocy-sf", status: "pending_approval" }),
         } as Response);
       throw new Error(`unexpected fetch: ${url} ${JSON.stringify(init)}`);
     });
@@ -149,7 +149,7 @@ arguments:
       arguments: { items: [{ product_id: 123, amount: 1 }] },
       wait_for_ms: 500,
     });
-    expect(record.status).toBe("approval_required");
+    expect(record.status).toBe("pending_approval");
   });
 
   it("uses the same request body for console state lookup", async () => {

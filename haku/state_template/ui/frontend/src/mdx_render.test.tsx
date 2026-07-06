@@ -25,7 +25,7 @@ vi.mock("./client.ts", () => ({
   callToolRequest: vi.fn().mockResolvedValue({
     tool_call_id: "tc_1",
     server_id: "grocy-sf",
-    status: "approval_required",
+    status: "pending_approval",
   }),
 }));
 

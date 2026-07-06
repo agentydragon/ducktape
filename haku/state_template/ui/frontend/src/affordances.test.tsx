@@ -196,7 +196,7 @@ describe("ToolCall", () => {
     vi.mocked(callToolRequest).mockResolvedValue({
       tool_call_id: "tc_1",
       server_id: "grocy-sf",
-      status: "approval_required",
+      status: "pending_approval",
     });
     render(<ToolCall request="2026-07-thrive-box-grocy-stock-add" label="Add to Grocy" />);
     const button = await screen.findByRole("button", { name: "Add to Grocy" });

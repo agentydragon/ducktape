@@ -245,7 +245,7 @@ def test_tool_request_call_submits_exact_request_to_console():
                     "tool_call_id": "tc_1",
                     "server_id": "grocy-sf",
                     "tool_name": "stock_add",
-                    "status": "approval_required",
+                    "status": "pending_approval",
                 },
             )
 

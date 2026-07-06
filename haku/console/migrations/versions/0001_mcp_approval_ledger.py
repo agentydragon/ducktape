@@ -40,7 +40,7 @@ def upgrade() -> None:
         sa.Column("result_json", JSONB(), nullable=True),
         sa.Column("error", sa.Text(), nullable=True),
         sa.CheckConstraint(
-            "status IN ('approval_required', 'running', 'ok', 'error', 'denied')", name="mcp_tool_calls_status_check"
+            "status IN ('pending_approval', 'running', 'ok', 'error', 'denied')", name="mcp_tool_calls_status_check"
         ),
     )
     op.create_index("idx_mcp_tool_calls_created_at", "mcp_tool_calls", ["created_at"])

@@ -43,7 +43,7 @@ Csrf = Annotated[CsrfProtect, Depends()]
 
 
 class ToolCallStatus(StrEnum):
-    APPROVAL_REQUIRED = "approval_required"
+    PENDING_APPROVAL = "pending_approval"
     RUNNING = "running"
     OK = "ok"
     ERROR = "error"
@@ -312,7 +312,7 @@ class ToolCallStore:
                 return self._tool_calls[existing["tool_call_id"]], [], False
 
             now = dt.datetime.now(dt.UTC)
-            status = ToolCallStatus.APPROVAL_REQUIRED
+            status = ToolCallStatus.PENDING_APPROVAL
             approval_id = f"ap_{secrets.token_hex(12)}"
             record = ToolCallRecord(
                 tool_call_id=f"tc_{secrets.token_hex(12)}",
@@ -386,7 +386,7 @@ class ToolCallStore:
                     created_at=r.created_at,
                 )
                 for r in self._tool_calls.values()
-                if r.status == ToolCallStatus.APPROVAL_REQUIRED and r.approval_id is not None
+                if r.status == ToolCallStatus.PENDING_APPROVAL and r.approval_id is not None
             ]
             return PendingApprovalsResponse(approvals=sorted(approvals, key=lambda a: a.created_at))
 
@@ -397,7 +397,7 @@ class ToolCallStore:
     def mark_running_by_approval(self, approval_id: str) -> tuple[ToolCallRecord, ToolCallEvent]:
         with self._lock:
             record = self._record_by_approval_id(approval_id)
-            if record.status != ToolCallStatus.APPROVAL_REQUIRED:
+            if record.status != ToolCallStatus.PENDING_APPROVAL:
                 raise HTTPException(status_code=409, detail=f"approval is not pending; status={record.status}")
             updated = record.model_copy(
                 update={"status": ToolCallStatus.RUNNING, "updated_at": dt.datetime.now(dt.UTC)}
@@ -410,7 +410,7 @@ class ToolCallStore:
     def deny_by_approval(self, approval_id: str, reason: str | None) -> tuple[ToolCallRecord, ToolCallEvent]:
         with self._lock:
             record = self._record_by_approval_id(approval_id)
-            if record.status != ToolCallStatus.APPROVAL_REQUIRED:
+            if record.status != ToolCallStatus.PENDING_APPROVAL:
                 raise HTTPException(status_code=409, detail=f"approval is not pending; status={record.status}")
             updated = record.model_copy(
                 update={
@@ -494,7 +494,7 @@ class PostgresToolCallStore:
                 server_title=server.id,
                 tool_name=req.tool_name,
                 caller_principal=caller_principal,
-                status=ToolCallStatus.APPROVAL_REQUIRED,
+                status=ToolCallStatus.PENDING_APPROVAL,
                 created_at=now,
                 updated_at=now,
                 arguments=req.arguments,
@@ -572,7 +572,7 @@ class PostgresToolCallStore:
                 conn.execute(
                     select(tool_calls)
                     .where(
-                        tool_calls.c.status == ToolCallStatus.APPROVAL_REQUIRED.value,
+                        tool_calls.c.status == ToolCallStatus.PENDING_APPROVAL.value,
                         tool_calls.c.approval_id.is_not(None),
                     )
                     .order_by(tool_calls.c.created_at)
@@ -614,7 +614,7 @@ class PostgresToolCallStore:
     def mark_running_by_approval(self, approval_id: str) -> tuple[ToolCallRecord, ToolCallEvent]:
         with self._engine.begin() as conn:
             record = self._record_by_approval_id(conn, approval_id)
-            if record.status != ToolCallStatus.APPROVAL_REQUIRED:
+            if record.status != ToolCallStatus.PENDING_APPROVAL:
                 raise HTTPException(status_code=409, detail=f"approval is not pending; status={record.status}")
             updated = record.model_copy(
                 update={"status": ToolCallStatus.RUNNING, "updated_at": dt.datetime.now(dt.UTC)}
@@ -626,7 +626,7 @@ class PostgresToolCallStore:
     def deny_by_approval(self, approval_id: str, reason: str | None) -> tuple[ToolCallRecord, ToolCallEvent]:
         with self._engine.begin() as conn:
             record = self._record_by_approval_id(conn, approval_id)
-            if record.status != ToolCallStatus.APPROVAL_REQUIRED:
+            if record.status != ToolCallStatus.PENDING_APPROVAL:
                 raise HTTPException(status_code=409, detail=f"approval is not pending; status={record.status}")
             updated = record.model_copy(
                 update={

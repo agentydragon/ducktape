@@ -51,7 +51,7 @@ caller/client ID with the same payload returns the original record; replaying it
 different payload rejects.
 
 Result statuses are shared across haku-ui, Haku, and future console-MCP clients:
-`approval_required`, `running`, `ok`, `error`, and `denied`.
+`pending_approval`, `running`, `ok`, `error`, and `denied`.
 
 ## haku-state Contract
 
@@ -112,7 +112,7 @@ Click flow:
 
 - Haku can list connected MCP servers and reflected tool schemas through haku-console.
 - haku-ui and Haku submit the same request shape.
-- Every v1 call becomes `approval_required` until the trusted console frontend approves
+- Every v1 call becomes `pending_approval` until the trusted console frontend approves
   or denies it.
 - The console frontend can recover missed approval events via REST catch-up.
 - The same `client_request_id` cannot execute a non-idempotent call twice.

@@ -98,7 +98,7 @@ export function Launch({ prompt, label = "Launch run" }: { prompt: string; label
 
 function toolCallMessage(record: ToolCallRecord): { color: string; text: string } {
   if (record.status === "ok") return { color: "teal", text: "✓ ran" };
-  if (record.status === "approval_required") return { color: "dimmed", text: "waiting in console" };
+  if (record.status === "pending_approval") return { color: "dimmed", text: "waiting in console" };
   if (record.status === "running") return { color: "dimmed", text: "running" };
   if (record.status === "denied") return { color: "red", text: record.decision_reason ?? "denied" };
   return { color: "red", text: record.error ?? "failed" };
@@ -137,7 +137,7 @@ export function ToolCall({ request, label = "Run tool" }: { request?: string; la
   const record = typeof state === "object" ? state : null;
   const message = record ? toolCallMessage(record) : null;
   const buttonLabel =
-    record && record.status !== "ok" && record.status !== "approval_required" && record.status !== "running"
+    record && record.status !== "ok" && record.status !== "pending_approval" && record.status !== "running"
       ? `${label} again`
       : label;
 

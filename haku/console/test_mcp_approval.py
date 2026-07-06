@@ -130,7 +130,7 @@ def test_submit_mints_tool_call_id_and_idempotent_replay(make_client, tmp_path: 
         )
     assert first["tool_call_id"].startswith("tc_")
     assert first["approval_id"].startswith("ap_")
-    assert first["status"] == "approval_required"
+    assert first["status"] == "pending_approval"
     assert replay["tool_call_id"] == first["tool_call_id"]
     assert by_client_id["tool_call_id"] == first["tool_call_id"]
     assert conflict.status_code == 409
@@ -189,7 +189,7 @@ def test_all_v1_tool_calls_require_console_approval(make_client, tmp_path: Path)
         pending = client.get("/api/approvals/pending").json()
     assert resp.status_code == 200
     body = resp.json()
-    assert body["status"] == "approval_required"
+    assert body["status"] == "pending_approval"
     assert body["approval_id"].startswith("ap_")
     assert body["result"] is None
     assert pending["approvals"][0]["tool_call_id"] == body["tool_call_id"]
@@ -205,7 +205,7 @@ def test_websocket_receives_pending_approval_event(make_client, tmp_path: Path) 
         event = ws.receive_json()
     assert event["event_type"] == "tool_call_submitted"
     assert event["tool_call_id"] == submitted["tool_call_id"]
-    assert event["status"] == "approval_required"
+    assert event["status"] == "pending_approval"
 
 
 def test_full_audit_log_listing_and_secret_redaction(make_client, tmp_path: Path) -> None:
