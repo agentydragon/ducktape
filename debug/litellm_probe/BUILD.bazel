@@ -12,6 +12,7 @@ py_binary(
         "//util/bazel:runfiles",
         "@pypi//httpx",
         "@pypi//jinja2",
+        "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
 )

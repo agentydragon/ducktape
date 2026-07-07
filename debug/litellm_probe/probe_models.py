@@ -6,8 +6,9 @@ import json
 import os
 import sys
 import time
+from collections import Counter
 from collections.abc import Callable
-from contextlib import suppress
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,7 @@ from typing import Any
 import httpx
 import yaml
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from pydantic import BaseModel, ConfigDict
 
 from util.bazel.runfiles import get_required_path
 
@@ -25,22 +27,56 @@ RESULTS_JSONL = "results.jsonl"
 EXPECTED_TEXT = "OK"
 EXPECTED_TOOL_NAME = "lookup_demo_fact"
 EXPECTED_TOOL_ARGS = {"topic": "litellm-probe"}
+TEXT_PROMPT = f"Reply with exactly: {EXPECTED_TEXT}"
+TOOL_PROMPT = f"Use the tool to look up the topic {EXPECTED_TOOL_ARGS['topic']}."
+TOOL_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {"topic": {"type": "string"}},
+    "required": ["topic"],
+    "additionalProperties": False,
+}
+OPENAI_CHAT_TOOL_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": EXPECTED_TOOL_NAME,
+        "description": "Look up a demo fact by topic.",
+        "parameters": TOOL_PARAMETERS,
+    },
+}
+FUNCTION_TOOL_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "name": EXPECTED_TOOL_NAME,
+    "description": "Look up a demo fact by topic.",
+    "parameters": TOOL_PARAMETERS,
+}
+ANTHROPIC_TOOL_SCHEMA: dict[str, Any] = {
+    "name": EXPECTED_TOOL_NAME,
+    "description": "Look up a demo fact by topic.",
+    "input_schema": TOOL_PARAMETERS,
+}
+OPENAI_CHAT_TOOL_CHOICE: dict[str, Any] = {"type": "function", "function": {"name": EXPECTED_TOOL_NAME}}
+FUNCTION_TOOL_CHOICE: dict[str, Any] = {"type": "function", "name": EXPECTED_TOOL_NAME}
+ANTHROPIC_TOOL_CHOICE: dict[str, Any] = {"type": "tool", "name": EXPECTED_TOOL_NAME}
 DEFAULT_BACKENDS = {"ollama"}
 DEFAULT_PARITY_MODELS = {"gemini-2.5-flash", "glm-4.5-air-anthropic"}
 TEXT_MODES = {"chat", "responses"}
-RequestBuilder = Callable[["ModelProbe", int, str], dict[str, Any]]
-Validator = Callable[[Any], str]
 
 
-@dataclass(frozen=True)
-class ModelProbe:
+class ProbeError(Exception):
+    pass
+
+
+class ModelProbe(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
     name: str
     mode: str
     backend: str
 
 
-@dataclass(frozen=True)
-class ProbeResult:
+class ProbeResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     model: ModelProbe
     shape: str
     scenario: str
@@ -49,17 +85,50 @@ class ProbeResult:
     detail: str
     request_path: Path | None
     response_path: Path | None
-    request_key: str | None = None
+    request_key: str
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    name: str
+    arguments: Any
+
+
+TextExtractor = Callable[[Any], list[str]]
+ToolCallExtractor = Callable[[Any], list[ToolCall]]
+DetailExtractor = Callable[[Any], str | None]
 
 
 @dataclass(frozen=True)
 class ProbeShape:
     name: str
     path: str
-    build_request: RequestBuilder
-    validate_text: Validator
-    validate_tool: Validator
+    input_field: str
+    token_field: str
+    extract_text: TextExtractor
+    extract_tool_calls: ToolCallExtractor
+    tool_schema: dict[str, Any] | None = None
+    tool_choice: dict[str, Any] | None = None
     stream: bool = False
+    temperature: float | None = None
+
+    def build_request(self, model: ModelProbe, max_output_tokens: int, scenario: str) -> dict[str, Any]:
+        prompt = TOOL_PROMPT if scenario == "tool" else TEXT_PROMPT
+        body: dict[str, Any] = {"model": model.name, self.token_field: max_output_tokens}
+        if self.temperature is not None:
+            body["temperature"] = self.temperature
+        if self.input_field == "messages":
+            body["messages"] = [{"role": "user", "content": prompt}]
+        else:
+            body[self.input_field] = prompt
+        if self.path == "/v1/responses":
+            body["stream"] = self.stream
+        if scenario == "tool":
+            if self.tool_schema is None or self.tool_choice is None:
+                raise ValueError(f"{self.name} does not define tool schema fields")
+            body["tools"] = [deepcopy(self.tool_schema)]
+            body["tool_choice"] = deepcopy(self.tool_choice)
+        return body
 
 
 def _parse_args() -> argparse.Namespace:
@@ -190,15 +259,30 @@ def _parse_json(response: httpx.Response) -> Any:
         return response.text
 
 
-def _detail_from_body(body: Any) -> str:
-    if isinstance(body, str):
-        return body.strip().replace("\n", " ")[:240]
+def _compact_detail(value: str) -> str:
+    return value.strip().replace("\n", " ")[:240]
+
+
+def _json_detail(value: Any) -> str:
+    return json.dumps(value, sort_keys=True)[:240]
+
+
+def _string_body_detail(body: Any) -> str | None:
+    return _compact_detail(body) if isinstance(body, str) else None
+
+
+def _error_detail(body: Any) -> str | None:
+    if not isinstance(body, dict):
+        return None
+    error = body.get("error")
+    if not isinstance(error, dict):
+        return None
+    message = error.get("message")
+    return _compact_detail(message) if isinstance(message, str) else None
+
+
+def _chat_content_detail(body: Any) -> str | None:
     if isinstance(body, dict):
-        error = body.get("error")
-        if isinstance(error, dict):
-            message = error.get("message")
-            if isinstance(message, str):
-                return message.replace("\n", " ")[:240]
         choices = body.get("choices")
         if isinstance(choices, list) and choices:
             first = choices[0]
@@ -207,14 +291,30 @@ def _detail_from_body(body: Any) -> str:
                 if isinstance(message, dict):
                     content = message.get("content")
                     if isinstance(content, str):
-                        return content.strip().replace("\n", " ")[:240]
-        output = body.get("output")
-        if output is not None:
-            return json.dumps(output)[:240]
-        content = body.get("content")
-        if content is not None:
-            return json.dumps(content)[:240]
-    return json.dumps(body, sort_keys=True)[:240]
+                        return _compact_detail(content)
+    return None
+
+
+def _json_field_detail(field: str) -> DetailExtractor:
+    def extract(body: Any) -> str | None:
+        if not isinstance(body, dict) or field not in body:
+            return None
+        return _json_detail(body[field])
+
+    return extract
+
+
+DETAIL_EXTRACTORS: tuple[DetailExtractor, ...] = (
+    _string_body_detail,
+    _error_detail,
+    _chat_content_detail,
+    _json_field_detail("output"),
+    _json_field_detail("content"),
+)
+
+
+def _detail_from_body(body: Any) -> str:
+    return next((detail for extract in DETAIL_EXTRACTORS if (detail := extract(body)) is not None), _json_detail(body))
 
 
 def _save_body(path: Path | None, body: str) -> None:
@@ -260,11 +360,9 @@ def _first_chat_message(body: Any) -> dict[str, Any]:
     return {}
 
 
-def _assert_chat_text(body: Any) -> str:
+def _chat_text(body: Any) -> list[str]:
     content = _first_chat_message(body).get("content")
-    if isinstance(content, str) and content.strip() == EXPECTED_TEXT:
-        return ""
-    raise ValueError(f"chat final text is not {EXPECTED_TEXT!r}: {_detail_from_body(body)}")
+    return [content] if isinstance(content, str) else []
 
 
 def _parse_json_object(value: Any) -> dict[str, Any] | None:
@@ -280,28 +378,28 @@ def _parse_json_object(value: Any) -> dict[str, Any] | None:
     return None
 
 
-def _assert_tool_args(value: Any, body: Any) -> None:
+def _assert_tool_args(value: Any, body: Any, shape: str) -> None:
     args = _parse_json_object(value)
     if args == EXPECTED_TOOL_ARGS:
         return
-    raise ValueError(f"tool args are not {EXPECTED_TOOL_ARGS!r}: {_detail_from_body(body)}")
+    raise ProbeError(f"{shape} tool args are not {EXPECTED_TOOL_ARGS!r}: {_detail_from_body(body)}")
 
 
-def _assert_chat_tool_call(body: Any) -> str:
+def _chat_tool_calls(body: Any) -> list[ToolCall]:
     tool_calls = _first_chat_message(body).get("tool_calls")
-    if not isinstance(tool_calls, list) or not tool_calls:
-        raise ValueError(f"no chat tool_calls in response: {_detail_from_body(body)}")
+    if not isinstance(tool_calls, list):
+        return []
+    parsed: list[ToolCall] = []
     for call in tool_calls:
         if not isinstance(call, dict):
             continue
         function = call.get("function")
         if not isinstance(function, dict):
             continue
-        if function.get("name") != EXPECTED_TOOL_NAME:
-            continue
-        _assert_tool_args(function.get("arguments"), body)
-        return ""
-    raise ValueError(f"no chat tool_call named {EXPECTED_TOOL_NAME!r}: {_detail_from_body(body)}")
+        name = function.get("name")
+        if isinstance(name, str):
+            parsed.append(ToolCall(name=name, arguments=function.get("arguments")))
+    return parsed
 
 
 def _responses_output_items(body: Any) -> list[Any]:
@@ -313,11 +411,12 @@ def _responses_output_items(body: Any) -> list[Any]:
     return []
 
 
-def _assert_responses_text(body: Any) -> str:
+def _responses_text(body: Any) -> list[str]:
+    texts: list[str] = []
     if isinstance(body, dict):
         output_text = body.get("output_text")
-        if isinstance(output_text, str) and output_text.strip() == EXPECTED_TEXT:
-            return ""
+        if isinstance(output_text, str):
+            texts.append(output_text)
     for item in _responses_output_items(body):
         if not isinstance(item, dict):
             continue
@@ -328,20 +427,20 @@ def _assert_responses_text(body: Any) -> str:
             if not isinstance(part, dict):
                 continue
             text = part.get("text")
-            if isinstance(text, str) and text.strip() == EXPECTED_TEXT:
-                return ""
-    raise ValueError(f"Responses final text is not {EXPECTED_TEXT!r}: {_detail_from_body(body)}")
+            if isinstance(text, str):
+                texts.append(text)
+    return texts
 
 
-def _assert_responses_tool_call(body: Any) -> str:
+def _responses_tool_calls(body: Any) -> list[ToolCall]:
+    calls: list[ToolCall] = []
     for item in _responses_output_items(body):
         if not isinstance(item, dict) or item.get("type") not in {"function_call", "tool_call"}:
             continue
-        if item.get("name") != EXPECTED_TOOL_NAME:
-            continue
-        _assert_tool_args(item.get("arguments"), body)
-        return ""
-    raise ValueError(f"no Responses function_call named {EXPECTED_TOOL_NAME!r}: {_detail_from_body(body)}")
+        name = item.get("name")
+        if isinstance(name, str):
+            calls.append(ToolCall(name=name, arguments=item.get("arguments")))
+    return calls
 
 
 def _responses_body_from_stream_events(events: list[Any]) -> dict[str, Any]:
@@ -397,7 +496,8 @@ def _responses_body_from_stream_events(events: list[Any]) -> dict[str, Any]:
     return body
 
 
-def _assert_anthropic_text(body: Any) -> str:
+def _anthropic_text(body: Any) -> list[str]:
+    texts: list[str] = []
     if isinstance(body, dict):
         content = body.get("content")
         if isinstance(content, list):
@@ -405,145 +505,89 @@ def _assert_anthropic_text(body: Any) -> str:
                 if not isinstance(part, dict) or part.get("type") != "text":
                     continue
                 text = part.get("text")
-                if isinstance(text, str) and text.strip() == EXPECTED_TEXT:
-                    return ""
-    raise ValueError(f"Anthropic final text is not {EXPECTED_TEXT!r}: {_detail_from_body(body)}")
+                if isinstance(text, str):
+                    texts.append(text)
+    return texts
 
 
-def _assert_anthropic_tool_call(body: Any) -> str:
+def _anthropic_tool_calls(body: Any) -> list[ToolCall]:
+    calls: list[ToolCall] = []
     if isinstance(body, dict):
         content = body.get("content")
         if isinstance(content, list):
             for part in content:
                 if not isinstance(part, dict) or part.get("type") != "tool_use":
                     continue
-                if part.get("name") == EXPECTED_TOOL_NAME:
-                    _assert_tool_args(part.get("input"), body)
-                    return ""
-    raise ValueError(f"no Anthropic tool_use named {EXPECTED_TOOL_NAME!r}: {_detail_from_body(body)}")
+                name = part.get("name")
+                if isinstance(name, str):
+                    calls.append(ToolCall(name=name, arguments=part.get("input")))
+    return calls
 
 
-def _tool_parameters() -> dict[str, Any]:
-    return {
-        "type": "object",
-        "properties": {"topic": {"type": "string"}},
-        "required": ["topic"],
-        "additionalProperties": False,
-    }
+def _assert_expected_text(shape: ProbeShape, body: Any) -> str:
+    if any(text.strip() == EXPECTED_TEXT for text in shape.extract_text(body)):
+        return ""
+    raise ProbeError(f"{shape.name} final text is not {EXPECTED_TEXT!r}: {_detail_from_body(body)}")
 
 
-def _tool_schema_openai_chat() -> dict[str, Any]:
-    return {
-        "type": "function",
-        "function": {
-            "name": EXPECTED_TOOL_NAME,
-            "description": "Look up a demo fact by topic.",
-            "parameters": _tool_parameters(),
-        },
-    }
-
-
-def _tool_schema_function() -> dict[str, Any]:
-    return {
-        "type": "function",
-        "name": EXPECTED_TOOL_NAME,
-        "description": "Look up a demo fact by topic.",
-        "parameters": _tool_parameters(),
-    }
-
-
-def _tool_schema_anthropic() -> dict[str, Any]:
-    schema = _tool_schema_function()
-    return {"name": schema["name"], "description": schema["description"], "input_schema": schema["parameters"]}
-
-
-def _chat_request_body(model: ModelProbe, max_output_tokens: int, scenario: str) -> dict[str, Any]:
-    body: dict[str, Any] = {
-        "model": model.name,
-        "messages": [{"role": "user", "content": f"Reply with exactly: {EXPECTED_TEXT}"}],
-        "temperature": 0,
-        "max_tokens": max_output_tokens,
-    }
-    if scenario == "tool":
-        body["messages"] = [
-            {"role": "user", "content": f"Use the tool to look up the topic {EXPECTED_TOOL_ARGS['topic']}."}
-        ]
-        body["tools"] = [_tool_schema_openai_chat()]
-        body["tool_choice"] = {"type": "function", "function": {"name": EXPECTED_TOOL_NAME}}
-    return body
-
-
-def _responses_request_body(
-    model: ModelProbe, max_output_tokens: int, scenario: str, *, stream: bool = False
-) -> dict[str, Any]:
-    body: dict[str, Any] = {
-        "model": model.name,
-        "input": f"Reply with exactly: {EXPECTED_TEXT}",
-        "stream": stream,
-        "max_output_tokens": max_output_tokens,
-    }
-    if scenario == "tool":
-        body["input"] = f"Use the tool to look up the topic {EXPECTED_TOOL_ARGS['topic']}."
-        body["tools"] = [_tool_schema_function()]
-        body["tool_choice"] = {"type": "function", "name": EXPECTED_TOOL_NAME}
-    return body
-
-
-def _streaming_responses_request_body(model: ModelProbe, max_output_tokens: int, scenario: str) -> dict[str, Any]:
-    return _responses_request_body(model, max_output_tokens, scenario, stream=True)
-
-
-def _anthropic_request_body(model: ModelProbe, max_output_tokens: int, scenario: str) -> dict[str, Any]:
-    body: dict[str, Any] = {
-        "model": model.name,
-        "max_tokens": max_output_tokens,
-        "temperature": 0,
-        "messages": [{"role": "user", "content": f"Reply with exactly: {EXPECTED_TEXT}"}],
-    }
-    if scenario == "tool":
-        body["messages"] = [
-            {"role": "user", "content": f"Use the tool to look up the topic {EXPECTED_TOOL_ARGS['topic']}."}
-        ]
-        body["tools"] = [_tool_schema_anthropic()]
-        body["tool_choice"] = {"type": "tool", "name": EXPECTED_TOOL_NAME}
-    return body
+def _assert_expected_tool_call(shape: ProbeShape, body: Any) -> str:
+    for call in shape.extract_tool_calls(body):
+        if call.name != EXPECTED_TOOL_NAME:
+            continue
+        _assert_tool_args(call.arguments, body, shape.name)
+        return ""
+    raise ProbeError(f"no {shape.name} tool call named {EXPECTED_TOOL_NAME!r}: {_detail_from_body(body)}")
 
 
 def _validate_for_scenario(shape: ProbeShape, scenario: str, body: Any) -> str:
     if scenario == "tool":
-        return shape.validate_tool(body)
-    return shape.validate_text(body)
+        return _assert_expected_tool_call(shape, body)
+    return _assert_expected_text(shape, body)
 
 
 SHAPE_DEFS = (
     ProbeShape(
         name="openai-chat",
         path="/v1/chat/completions",
-        build_request=_chat_request_body,
-        validate_text=_assert_chat_text,
-        validate_tool=_assert_chat_tool_call,
+        input_field="messages",
+        token_field="max_tokens",
+        extract_text=_chat_text,
+        extract_tool_calls=_chat_tool_calls,
+        tool_schema=OPENAI_CHAT_TOOL_SCHEMA,
+        tool_choice=OPENAI_CHAT_TOOL_CHOICE,
+        temperature=0,
     ),
     ProbeShape(
         name="openai-responses",
         path="/v1/responses",
-        build_request=_responses_request_body,
-        validate_text=_assert_responses_text,
-        validate_tool=_assert_responses_tool_call,
+        input_field="input",
+        token_field="max_output_tokens",
+        extract_text=_responses_text,
+        extract_tool_calls=_responses_tool_calls,
+        tool_schema=FUNCTION_TOOL_SCHEMA,
+        tool_choice=FUNCTION_TOOL_CHOICE,
     ),
     ProbeShape(
         name="openai-responses-streaming",
         path="/v1/responses",
-        build_request=_streaming_responses_request_body,
-        validate_text=_assert_responses_text,
-        validate_tool=_assert_responses_tool_call,
+        input_field="input",
+        token_field="max_output_tokens",
+        extract_text=_responses_text,
+        extract_tool_calls=_responses_tool_calls,
+        tool_schema=FUNCTION_TOOL_SCHEMA,
+        tool_choice=FUNCTION_TOOL_CHOICE,
         stream=True,
     ),
     ProbeShape(
         name="anthropic-messages",
         path="/v1/messages",
-        build_request=_anthropic_request_body,
-        validate_text=_assert_anthropic_text,
-        validate_tool=_assert_anthropic_tool_call,
+        input_field="messages",
+        token_field="max_tokens",
+        extract_text=_anthropic_text,
+        extract_tool_calls=_anthropic_tool_calls,
+        tool_schema=ANTHROPIC_TOOL_SCHEMA,
+        tool_choice=ANTHROPIC_TOOL_CHOICE,
+        temperature=0,
     ),
 )
 SHAPES = {shape.name: shape for shape in SHAPE_DEFS}
@@ -574,7 +618,7 @@ def _request_url_from_key(request_key: str) -> str | None:
 
 
 def _saved_exchange_matches_key(result: ProbeResult) -> bool:
-    if result.request_key is None or result.request_path is None or result.response_path is None:
+    if result.request_path is None or result.response_path is None:
         return False
     if not result.request_path.exists() or not result.response_path.exists():
         return False
@@ -613,8 +657,10 @@ def _post_streaming_responses(
             if line.startswith("data: "):
                 payload = line.removeprefix("data: ").strip()
                 if payload and payload != "[DONE]":
-                    with suppress(json.JSONDecodeError):
+                    try:
                         events.append(json.loads(payload))
+                    except json.JSONDecodeError as exc:
+                        raise ProbeError(f"invalid Responses stream JSON: {payload}") from exc
         _save_body(response_path, "\n".join(raw_lines))
     return _responses_body_from_stream_events(events)
 
@@ -662,7 +708,7 @@ def _probe_one(
             )
             detail = _validate_for_scenario(shape_spec, scenario, response_body)
             status = "ok"
-    except Exception as exc:
+    except (httpx.HTTPError, ProbeError) as exc:
         detail = f"{type(exc).__name__}: {exc}"
         status = "fail"
     return ProbeResult(
@@ -680,7 +726,7 @@ def _probe_one(
 
 def _print_result(result: ProbeResult, json_lines: bool) -> None:
     if json_lines:
-        print(json.dumps(_result_record(result), sort_keys=True), flush=True)
+        print(_result_record_json(result), flush=True)
         return
     print(
         "\t".join(
@@ -722,45 +768,18 @@ def _results_path(response_dir: Path) -> Path:
     return response_dir / RESULTS_JSONL
 
 
-def _result_record(result: ProbeResult) -> dict[str, Any]:
-    return {
-        "status": result.status,
-        "elapsed_seconds": round(result.elapsed_seconds, 3),
-        "model": result.model.name,
-        "mode": result.model.mode,
-        "backend": result.model.backend,
-        "shape": result.shape,
-        "scenario": result.scenario,
-        "detail": result.detail,
-        "request_path": str(result.request_path) if result.request_path is not None else None,
-        "response_path": str(result.response_path) if result.response_path is not None else None,
-        "request_key": result.request_key,
-    }
+def _result_record_json(result: ProbeResult) -> str:
+    record = result.model_dump(mode="json")
+    record["elapsed_seconds"] = round(result.elapsed_seconds, 3)
+    return json.dumps(record, sort_keys=True)
 
 
 def _append_result_record(response_dir: Path, result: ProbeResult) -> None:
     path = _results_path(response_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a") as file:
-        file.write(json.dumps(_result_record(result), sort_keys=True))
+        file.write(_result_record_json(result))
         file.write("\n")
-
-
-def _result_from_record(record: dict[str, Any]) -> ProbeResult:
-    model = ModelProbe(name=str(record["model"]), mode=str(record["mode"]), backend=str(record["backend"]))
-    request_path = record.get("request_path")
-    response_path = record.get("response_path")
-    return ProbeResult(
-        model=model,
-        shape=str(record["shape"]),
-        scenario=str(record["scenario"]),
-        status=str(record["status"]),
-        elapsed_seconds=float(record["elapsed_seconds"]),
-        detail=str(record.get("detail") or ""),
-        request_path=Path(request_path) if isinstance(request_path, str) else None,
-        response_path=Path(response_path) if isinstance(response_path, str) else None,
-        request_key=str(record["request_key"]) if isinstance(record.get("request_key"), str) else None,
-    )
 
 
 def _load_result_records(response_dir: Path) -> list[ProbeResult]:
@@ -772,11 +791,8 @@ def _load_result_records(response_dir: Path) -> list[ProbeResult]:
         if not line.strip():
             continue
         try:
-            record = json.loads(line)
-            if not isinstance(record, dict):
-                raise ValueError("record is not a JSON object")
-            results.append(_result_from_record(record))
-        except Exception as exc:
+            results.append(ProbeResult.model_validate_json(line))
+        except ValueError as exc:
             raise ValueError(f"invalid result record in {path}:{line_number}: {exc}") from exc
     return results
 
@@ -791,12 +807,8 @@ def _load_aggregate_results(response_dirs: list[Path]) -> list[ProbeResult]:
     return results
 
 
-def _legacy_result_key(result: ProbeResult) -> str:
-    return "\x1f".join([result.model.name, result.shape, result.scenario])
-
-
 def _result_key(result: ProbeResult) -> str:
-    return result.request_key or f"legacy:{_legacy_result_key(result)}"
+    return result.request_key
 
 
 def _case_key(base_url: str, model: ModelProbe, shape: str, scenario: str, max_output_tokens: int) -> str:
@@ -834,10 +846,7 @@ def _pretty_file(path: Path | None) -> str:
 
 
 def _status_counts(results: list[ProbeResult]) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for result in results:
-        counts[result.status] = counts.get(result.status, 0) + 1
-    return counts
+    return dict(Counter(result.status for result in results))
 
 
 def _write_html_report(path: Path, results: list[ProbeResult], response_dir: Path) -> None:
@@ -869,6 +878,53 @@ def _write_html_report(path: Path, results: list[ProbeResult], response_dir: Pat
         counts=json.dumps(counts, sort_keys=True), response_dir=str(response_dir), rows=rows
     )
     path.write_text(html_text)
+
+
+def _run_probe_matrix(
+    client: httpx.Client,
+    args: argparse.Namespace,
+    base_url: str,
+    headers: dict[str, str],
+    probes: list[ModelProbe],
+    shapes: list[str],
+    scenarios: list[str],
+    response_dir: Path,
+    results_by_key: dict[str, ProbeResult],
+) -> None:
+    copied_resume_keys: set[str] = set()
+    for probe in probes:
+        for shape in shapes:
+            for scenario in scenarios:
+                key = _case_key(base_url, probe, shape, scenario, args.max_output_tokens)
+                previous = results_by_key.get(key)
+                if (
+                    args.resume_dir
+                    and previous is not None
+                    and previous.status == "ok"
+                    and _saved_exchange_matches_key(previous)
+                ):
+                    if key not in copied_resume_keys:
+                        _append_result_record(response_dir, previous)
+                        copied_resume_keys.add(key)
+                    continue
+                request_path, response_path = _artifact_paths(response_dir, probe, shape, scenario)
+                result = _probe_one(
+                    client,
+                    base_url,
+                    headers,
+                    probe,
+                    shape,
+                    scenario,
+                    args.max_output_tokens,
+                    args.include_unsupported,
+                    request_path,
+                    response_path,
+                )
+                results_by_key[key] = result
+                _append_result_record(response_dir, result)
+                _print_result(result, args.json)
+                if result.status == "fail" and not args.continue_on_error:
+                    return
 
 
 def main() -> int:
@@ -908,51 +964,10 @@ def main() -> int:
         print(f"html report: {report_path}", file=sys.stderr, flush=True)
         return 1 if any(result.status == "fail" for result in results) else 0
     timeout = httpx.Timeout(args.timeout_seconds, connect=15.0)
-    stop_after_failure = False
     interrupted = False
-    copied_resume_keys: set[str] = set()
     try:
         with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-            for probe in probes:
-                for shape in shapes:
-                    for scenario in scenarios:
-                        if stop_after_failure:
-                            break
-                        key = _case_key(base_url, probe, shape, scenario, args.max_output_tokens)
-                        previous = results_by_key.get(key)
-                        if (
-                            args.resume_dir
-                            and previous is not None
-                            and previous.status == "ok"
-                            and _saved_exchange_matches_key(previous)
-                        ):
-                            if key not in copied_resume_keys:
-                                _append_result_record(response_dir, previous)
-                                copied_resume_keys.add(key)
-                            continue
-                        request_path, response_path = _artifact_paths(response_dir, probe, shape, scenario)
-                        result = _probe_one(
-                            client,
-                            base_url,
-                            headers,
-                            probe,
-                            shape,
-                            scenario,
-                            args.max_output_tokens,
-                            args.include_unsupported,
-                            request_path,
-                            response_path,
-                        )
-                        results_by_key[key] = result
-                        _append_result_record(response_dir, result)
-                        _print_result(result, args.json)
-                        if result.status == "fail" and not args.continue_on_error:
-                            stop_after_failure = True
-                            break
-                    if stop_after_failure:
-                        break
-                if stop_after_failure:
-                    break
+            _run_probe_matrix(client, args, base_url, headers, probes, shapes, scenarios, response_dir, results_by_key)
     except KeyboardInterrupt:
         interrupted = True
         print("interrupted: writing report for completed probe records", file=sys.stderr, flush=True)
