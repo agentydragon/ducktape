@@ -1,5 +1,19 @@
 # Nix Configuration TODOs
 
+## Consider wiring Codex OTEL export
+
+Codex supports native OTLP exporters via `[otel]` in `config.toml`, including
+logs, traces, metrics, static headers, and `log_user_prompt = true`. Consider
+wiring this through `nix/home/codex/default.nix` so local Codex sessions export
+to `https://alloy-otlp.allegedly.works`.
+
+Current caveat: Codex supports static OTLP headers in config, but not a dynamic
+header helper/file like Claude Code's `otelHeadersHelper`. A direct Alloy setup
+would need to inject the SOPS-rendered bearer into the activation-generated
+`config.toml`, so token rotation requires regenerating that config. Prefer a
+dynamic helper/file upstream or a local auth-injecting forwarder if that becomes
+annoying.
+
 ## Nix PATH not available in non-interactive shells (mosh issue)
 
 **Problem:** On non-NixOS systems with nix installed, mosh fails to find nix-installed `mosh-server` because:
