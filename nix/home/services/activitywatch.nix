@@ -7,7 +7,6 @@
 }:
 let
   cfg = config.ducktape.activitywatch;
-  useAwatcher = cfg.watcher == "awatcher";
   toTOML = (pkgs.formats.toml { }).generate;
   syncRoot = cfg.sync.root;
   syncthingCfg = cfg.sync.syncthing;
@@ -33,24 +32,6 @@ let
 in
 {
   options.ducktape.activitywatch = {
-    watcher = lib.mkOption {
-      type = lib.types.enum [
-        "stock"
-        "awatcher"
-      ];
-      default = "stock";
-      description = ''
-        Active-window watcher backend.
-        - `stock`: the xlib `aw-watcher-window` shipped with aw-qt. Produces no events
-          on GNOME/Wayland (Mutter does not maintain `_NET_ACTIVE_WINDOW`).
-        - `awatcher`: the standalone `awatcher` binary — GNOME Wayland via the
-          `focused-window-d-bus` extension, also wlroots/X11. Writes the same
-          `aw-watcher-window_<host>`/`aw-watcher-afk_<host>` buckets as the stock
-          watchers, so aw-sync is unaffected. On a GNOME host you must also add
-          `pkgs.gnomeExtensions.focused-window-d-bus` to `programs.gnome-shell.extensions`.
-      '';
-    };
-
     sync = {
       enable = lib.mkEnableOption "local ActivityWatch capture with aw-sync push into a Syncthing folder";
 
@@ -103,32 +84,29 @@ in
   config = lib.mkIf enableGui (
     lib.mkMerge [
       {
-        # Install ActivityWatch from nixpkgs.
+        # aw-server, aw-qt (tray), aw-sync. aw-qt only starts aw-server (below);
+        # awatcher owns window+AFK capture.
         home.packages = [ pkgs.activitywatch ];
-
-        xdg.configFile."activitywatch/aw-watcher-afk/aw-watcher-afk.toml" = lib.mkIf (!useAwatcher) {
-          source = toTOML "aw-watcher-afk.toml" {
-            # Available options: timeout (default 180), poll_time (default 5)
-            aw-watcher-afk = { };
-            # Available options: timeout (default 20), poll_time (default 1)
-            aw-watcher-afk-testing = { };
-          };
-        };
-
-        xdg.configFile."activitywatch/aw-watcher-window/aw-watcher-window.toml" = lib.mkIf (!useAwatcher) {
-          source = toTOML "aw-watcher-window.toml" {
-            # Available options: poll_time (default 1.0), exclude_title (default false),
-            # exclude_titles (default [])
-            aw-watcher-window = { };
-          };
-        };
       }
 
-      (lib.mkIf useAwatcher {
-        # Standalone watcher (GNOME Wayland via the focused-window-d-bus extension).
-        # Replaces both stock aw-watcher-window and aw-watcher-afk; writes the same
-        # bucket ids, so aw-sync and cluster ingestion are unchanged.
+      (lib.mkIf cfg.sync.enable {
+        # Window/AFK capture: awatcher (https://github.com/2e3s/awatcher) instead of
+        # the stock aw-watcher-window/afk. The stock xlib watcher can't see windows on
+        # GNOME/Wayland — Mutter doesn't maintain _NET_ACTIVE_WINDOW, and every other
+        # out-of-process path is closed there (wlr-foreign-toplevel, Shell.Eval,
+        # Introspect.GetWindows). awatcher reads focus via the focused-window-d-bus
+        # GNOME Shell extension on GNOME, wlr-foreign-toplevel on wlroots, or xlib on
+        # X11. It writes the same aw-watcher-window_<host>/aw-watcher-afk_<host>
+        # buckets the stock watchers did, so aw-sync → Syncthing → cluster ingestion
+        # is unchanged. See debug/activitywatch_window_gnome_wayland.md.
         home.packages = [ pkgs.awatcher ];
+
+        # GNOME hosts need the in-shell extension that exports focus on the session
+        # bus (awatcher polls it). Inert on wlroots/X11 hosts, where awatcher uses
+        # the native protocol. Auto-added wherever gnome-shell is enabled.
+        programs.gnome-shell.extensions = lib.optional config.programs.gnome-shell.enable {
+          package = pkgs.gnomeExtensions.focused-window-d-bus;
+        };
 
         systemd.user.services.awatcher = {
           Unit = {
@@ -149,9 +127,7 @@ in
             WantedBy = [ "graphical-session.target" ];
           };
         };
-      })
 
-      (lib.mkIf cfg.sync.enable {
         assertions = [
           {
             assertion = (syncthingCfg.certFile == null) == (syncthingCfg.keySopsFile == null);
@@ -166,17 +142,9 @@ in
           };
         };
 
+        # aw-qt starts only aw-server; awatcher owns the window+afk buckets.
         xdg.configFile."activitywatch/aw-qt/aw-qt.toml".source = toTOML "aw-qt.toml" {
-          # awatcher owns the window+afk buckets itself; only start aw-server via aw-qt.
-          aw-qt.autostart_modules =
-            if useAwatcher then
-              [ "aw-server" ]
-            else
-              [
-                "aw-server"
-                "aw-watcher-afk"
-                "aw-watcher-window"
-              ];
+          aw-qt.autostart_modules = [ "aw-server" ];
         };
 
         xdg.autostart = {
