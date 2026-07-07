@@ -78,7 +78,7 @@ def write_csv(result_dir: Path, rows: list[dict[str, Any]]) -> None:
     csv_path = result_dir / "summary.csv"
     fieldnames = sorted({key for row in rows for key in row})
     with csv_path.open("w", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        writer = csv.DictWriter(fh, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
