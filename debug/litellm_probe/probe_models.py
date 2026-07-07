@@ -807,10 +807,6 @@ def _load_aggregate_results(response_dirs: list[Path]) -> list[ProbeResult]:
     return results
 
 
-def _result_key(result: ProbeResult) -> str:
-    return result.request_key
-
-
 def _case_key(base_url: str, model: ModelProbe, shape: str, scenario: str, max_output_tokens: int) -> str:
     body = _planned_request_body(model, shape, scenario, max_output_tokens)
     return _request_key(_request_url(base_url, shape), body)
@@ -819,7 +815,7 @@ def _case_key(base_url: str, model: ModelProbe, shape: str, scenario: str, max_o
 def _merge_results(results: list[ProbeResult]) -> dict[str, ProbeResult]:
     merged: dict[str, ProbeResult] = {}
     for result in results:
-        merged[_result_key(result)] = result
+        merged[result.request_key] = result
     return merged
 
 
@@ -955,7 +951,7 @@ def main() -> int:
     prior_results = [
         result
         for result in _load_aggregate_results(args.aggregate_dir + args.resume_dir)
-        if _result_key(result) in planned_keys
+        if result.request_key in planned_keys
     ]
     results_by_key = _merge_results(prior_results)
     if args.report_only:
