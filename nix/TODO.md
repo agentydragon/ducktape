@@ -31,10 +31,6 @@ Consider whether `nix/nixos/hosts/rugged` should switch from the current single 
 
 Evaluate whether console TTY password prompts can show visual feedback (for example `*` per keystroke) on NixOS hosts. This is not a standard NixOS knob like `sudo` `pwfeedback`; TTY login goes through `agetty` into `login`/PAM, so this likely requires a downstream package override or alternate login program. Scope and risks need review before implementing.
 
-## Wire Claude Code OTEL export to cluster collector
-
-Add OTEL env vars to `nix/home/claude_code/default.nix` `settings.env` block to export traces/logs/metrics to the cluster's OTEL collector endpoint. Key vars: `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_TRACES_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OTEL_METRICS_EXPORTER`. Consider also `OTEL_LOG_TOOL_CONTENT=1` and `OTEL_LOG_TOOL_DETAILS=1` for full tool visibility. The `SRT_DEBUG=1` env var (already configured) provides sandbox-level network logging; OTEL would give structured traces for API calls, tool execution, and query latency.
-
 ## Roll out private-cache substituter + drivefs to remaining hosts
 
 drivefs and the `cache.allegedly.works/gaffer` substituter are wired on **wyrm2**

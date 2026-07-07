@@ -133,9 +133,10 @@ forwarder** (the exporter can't egress directly; see Facts):
   OTEL_LOG_RAW_API_BODIES=1
   ```
 
-- CLI / operator machines need no forwarder: direct export with `otelHeadersHelper`
-  in settings.json (a script emitting headers JSON, re-run every ~29 min; HTTP
-  protocols only) reading the `cli_env.sh` bearer. Not yet wired.
+- CLI / operator machines need no forwarder: direct export is wired in
+  <../../../nix/home/claude_code/default.nix> with `otelHeadersHelper` (a script
+  emitting headers JSON, re-run every ~29 min; HTTP protocols only) reading the
+  sops-nix materialized `secrets/alloy-otlp-bearer-token.yaml` bearer.
 - Possible later simplification (untested): if the hosted-egress block was only the
   environment domain allowlist, allowlisting `alloy-otlp.allegedly.works` +
   `otelHeadersHelper` would remove the forwarder. Test before assuming.
@@ -149,4 +150,4 @@ forwarder** (the exporter can't egress directly; see Facts):
 3. **Sink processor**: summary.json per session; wire Haku's run-manifest rows to it.
 4. **Grafana**: claude-code `GrafanaDashboard` CR once data flows; `web_selfcheck`
    check for the forwarder (4318 bound, token file fresh).
-5. CLI/machines OTel: `otelHeadersHelper` + direct export.
+5. Grafana dashboard and alerting around native Claude Code telemetry.

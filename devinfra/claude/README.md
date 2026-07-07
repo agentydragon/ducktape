@@ -152,17 +152,23 @@ rotator in <cluster/k8s/agents/authentik-jwt-rotation/>. Rotation is normally
 automatic; to force a refresh, delete `secrets/alloy-otlp-bearer-token.yaml`
 from `devel` or manually run the `authentik-jwt-rotation` CronJob.
 
-### Claude Code native telemetry (session OTLP forwarder)
+### Claude Code native telemetry
 
-Claude Code's own OTel exporter (enabled per environment via UI env vars,
-`OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318`) exports through a
-localhost relay: <otlp_forwarder.py>, started idempotently on every claude
-launch by <ensure_otel_forwarder.sh> (a profile background command in the web,
-home-manager, and haku profiles). The relay attaches the rotated bearer (from
+Claude Code's own OTel exporter is enabled system-wide for local machines by
+the Home Manager Claude Code module: <../../nix/home/claude_code/default.nix>.
+It sets `OTEL_EXPORTER_OTLP_ENDPOINT=https://alloy-otlp.allegedly.works` and an
+`otelHeadersHelper` script that reads the rotated bearer from the sops-nix
+materialized `secrets/alloy-otlp-bearer-token.yaml` token and emits headers JSON
+for Claude Code.
+
+Web/Haku sessions still use the localhost relay path
+(`OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318`): <otlp_forwarder.py>,
+started idempotently by <ensure_otel_forwarder.sh> from the web, home-manager,
+and haku profiles. The relay attaches the rotated bearer (from
 `DUCKTAPE_OTEL_BEARER_TOKEN`, else the `alloy-otlp-bearer` Secret mirrored into
 the sandbox namespaces — <cluster/k8s/agents/alloy-otlp-bearer/>) and forwards
 to `alloy-otlp.allegedly.works`. Rationale, probe evidence, and the env-var
-block to paste per environment: <plans/transcript_collection.md>.
+block to paste per hosted environment: <plans/transcript_collection.md>.
 
 ## Web Setup
 

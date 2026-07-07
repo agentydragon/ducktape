@@ -454,6 +454,26 @@ let
       ) parsedPlugins
     );
   };
+
+  claudeOtelHeadersHelper = pkgs.writeShellApplication {
+    name = "claude-otel-headers";
+    runtimeInputs = [ pkgs.jq ];
+    text = ''
+      token_file="''${CLAUDE_CODE_OTEL_BEARER_TOKEN_FILE:-${config.sops.secrets.claude_code_otel_bearer_token.path}}"
+      if [ ! -r "$token_file" ]; then
+        echo "Claude Code OTEL bearer token file is not readable: $token_file" >&2
+        exit 1
+      fi
+
+      token="$(cat "$token_file")"
+      if [ -z "$token" ]; then
+        echo "Claude Code OTEL bearer token file is empty: $token_file" >&2
+        exit 1
+      fi
+
+      jq -n --arg token "$token" '{"Authorization": ("Bearer " + $token)}'
+    '';
+  };
 in
 {
   options.programs.claude-code.extraAllowedReadDirs = lib.mkOption {
@@ -592,6 +612,23 @@ in
       # ~/.claude/debug/ session logs.
       env.SRT_DEBUG = "1";
       env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
+      # Native Claude Code telemetry direct to Grafana Alloy. The bearer is
+      # loaded by otelHeadersHelper from the sops-nix file below so the token is
+      # never embedded in settings.json.
+      env.CLAUDE_CODE_ENABLE_TELEMETRY = "1";
+      env.CLAUDE_CODE_ENHANCED_TELEMETRY_BETA = "1";
+      env.CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS = "1740000";
+      env.OTEL_TRACES_EXPORTER = "otlp";
+      env.OTEL_LOGS_EXPORTER = "otlp";
+      env.OTEL_METRICS_EXPORTER = "otlp";
+      env.OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
+      env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://alloy-otlp.allegedly.works";
+      env.OTEL_LOG_USER_PROMPTS = "1";
+      env.OTEL_LOG_TOOL_DETAILS = "1";
+      env.OTEL_LOG_TOOL_CONTENT = "1";
+      env.OTEL_LOG_RAW_API_BODIES = "1";
+      env.CLAUDE_CODE_OTEL_BEARER_TOKEN_FILE = config.sops.secrets.claude_code_otel_bearer_token.path;
+      otelHeadersHelper = "${claudeOtelHeadersHelper}/bin/claude-otel-headers";
 
       # Auto-generated from cfg.plugins
       enabledPlugins = lib.listToAttrs (
@@ -623,6 +660,11 @@ in
         additionalDirectories = baseAdditionalDirs;
       };
     };
+  };
+
+  config.sops.secrets.claude_code_otel_bearer_token = {
+    sopsFile = ../../../secrets/alloy-otlp-bearer-token.yaml;
+    key = "token";
   };
 
   # Add gmail-mcp-server to PATH for auth setup command
