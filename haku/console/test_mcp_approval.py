@@ -10,11 +10,12 @@ from typing import Any, cast
 import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
+from mcp import types as mcp_types
 from pydantic import SecretStr
 from sqlalchemy import create_engine, text
 from testcontainers.postgres import PostgresContainer
 
-from haku.console.mcp_approval import McpServerEntry, ServerMetadata, ToolMetadata
+from haku.console.mcp_approval import McpServerEntry, ServerMetadata, ToolMetadata, _mcp_result_to_json
 from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.oci import load_oci_image
 from util.testing.postgres import force_drop_database_sync
@@ -124,6 +125,7 @@ def _submit(client: TestClient, *, amount: int = 1) -> dict[str, Any]:
             "title": "Add Thrive box items to Grocy",
             "rationale": "box is physically present",
             "arguments": {"items": [{"product_id": 123, "amount": amount}]},
+            "wait_for_ms": 0,
         },
     )
     assert resp.status_code == 200, resp.text
@@ -161,6 +163,23 @@ def test_reflection_lists_connected_servers_without_leaking_credentials(
         "degraded_reason": None,
     }
     assert "bearer_token_secret" not in str(body)
+
+
+def test_mcp_result_serialization_uses_mcp_wire_shape() -> None:
+    result = mcp_types.CallToolResult(
+        content=[
+            mcp_types.TextContent(type="text", text="ok"),
+            mcp_types.ImageContent(type="image", mimeType="image/png", data="ZmFrZQ=="),
+        ],
+        structuredContent={"changed": True},
+        isError=False,
+    )
+
+    assert _mcp_result_to_json(result) == {
+        "content": [{"type": "text", "text": "ok"}, {"type": "image", "data": "ZmFrZQ==", "mimeType": "image/png"}],
+        "structuredContent": {"changed": True},
+        "isError": False,
+    }
 
 
 def test_submit_mints_tool_call_id(make_client, tmp_path: Path, db_url: str) -> None:
@@ -242,12 +261,12 @@ def test_full_audit_log_listing_and_secret_redaction(make_client, tmp_path: Path
         operator_call = client.post(
             "/api/tool-calls",
             headers={"X-authentik-username": "operator@example.com"},
-            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"x": 1}},
+            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"x": 1}, "wait_for_ms": 0},
         ).json()
         haku_call = client.post(
             "/api/tool-calls",
             headers={"Authorization": "Bearer tool-token"},
-            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"x": 2}},
+            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"x": 2}, "wait_for_ms": 0},
         ).json()
         body = client.get("/api/tool-calls").json()
     ids = {r["tool_call_id"] for r in body["tool_calls"]}
@@ -262,7 +281,8 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(make_client, tmp_
         config_file=_config_file(tmp_path), csrf_secret=SecretStr("csrf"), **_test_app_overrides(db_url)
     ) as client:
         submitted = client.post(
-            "/api/tool-calls", json={"server_id": "smoke", "tool_name": "echo", "arguments": {"hello": "world"}}
+            "/api/tool-calls",
+            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"hello": "world"}, "wait_for_ms": 0},
         ).json()
         approved = client.post(
             f"/api/tool-calls/{submitted['tool_call_id']}/decision",

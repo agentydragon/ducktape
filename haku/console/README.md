@@ -60,8 +60,8 @@ Core endpoints:
 - `GET /api/capabilities/mcp-servers` — reflect the configured connected MCP servers and each
   server's `tools/list` metadata. The console config names reachable servers; each MCP server
   remains the tool schema source.
-- `POST /api/tool-calls` — submit a call with `server_id`, `tool_name`, and exact
-  arguments. The console mints the canonical `tool_call_id`.
+- `POST /api/tool-calls` — submit a call with `server_id`, `tool_name`, exact
+  `arguments`, and explicit `wait_for_ms`. The console mints the canonical `tool_call_id`.
 - `GET /api/approvals/pending`, `GET /api/approvals/events?since=...`, and
   `WebSocket /api/approvals/ws` — frontend catch-up + notifications. REST remains the source of
   truth; the WebSocket only wakes the shell to refresh.

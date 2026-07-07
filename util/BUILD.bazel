@@ -59,6 +59,13 @@ py_library(
 )
 
 py_library(
+    name = "sqlalchemy_types",
+    srcs = ["sqlalchemy_types.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//sqlalchemy"],
+)
+
+py_library(
     name = "fmt",
     srcs = ["fmt.py"],
     visibility = ["//visibility:public"],

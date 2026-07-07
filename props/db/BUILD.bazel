@@ -69,6 +69,7 @@ py_library(
         "//props/core:ids",
         "//props/core:splits",
         "//props/core/models:examples",
+        "//util:sqlalchemy_types",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],

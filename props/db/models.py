@@ -48,6 +48,7 @@ from props.core.ids import SnapshotSlug, _SnapshotSlugBase
 from props.core.models.examples import ExampleKind
 from props.core.splits import Split
 from props.db.snapshots import LocationAnchor
+from util.sqlalchemy_types import StrEnumColumn, StringBackedStrEnumColumn
 
 # Reusable SQLAlchemy Enum type for ExampleKind
 # Use this instead of mapped_column(String) for proper Python enum conversion
@@ -224,68 +225,6 @@ class PathColumn(TypeDecorator[Path]):
         if value is None:
             return None
         return Path(value)
-
-
-class StrEnumColumn[E: StrEnum](TypeDecorator[E]):
-    """Generic SQLAlchemy column type for StrEnum types.
-
-    Uses PostgreSQL ENUM type with values derived from the Python enum.
-    Automatically handles conversion between Python enum and database string.
-
-    Usage:
-        class MyEnum(StrEnum):
-            FOO = "foo"
-            BAR = "bar"
-
-        # In type_annotation_map:
-        MyEnum: StrEnumColumn(MyEnum, name="my_enum_type")
-
-        # In model:
-        my_field: Mapped[MyEnum] = mapped_column()
-    """
-
-    impl = Enum
-    cache_ok = True
-
-    def __init__(self, enum_class: type[E], name: str):
-        self._enum_class = enum_class
-        # Derive SQL enum values from Python enum to keep them in sync
-        super().__init__(*[e.value for e in enum_class], name=name, create_constraint=True, native_enum=True)
-
-    def process_bind_param(self, value: E | str | None, dialect: Any) -> str | None:
-        if value is None:
-            return None
-        return value.value if isinstance(value, self._enum_class) else str(value)
-
-    def process_result_value(self, value: str | None, dialect: Any) -> E | None:
-        if value is None:
-            return None
-        return self._enum_class(value)
-
-
-class StringBackedStrEnumColumn[E: StrEnum](TypeDecorator[E]):
-    """String column that returns a StrEnum in Python.
-
-    Use this when the database stores a text/varchar column with a check
-    constraint rather than a PostgreSQL native enum type.
-    """
-
-    impl = String
-    cache_ok = True
-
-    def __init__(self, enum_class: type[E], length: int | None = None):
-        self._enum_class = enum_class
-        super().__init__(length=length)
-
-    def process_bind_param(self, value: E | str | None, dialect: Any) -> str | None:
-        if value is None:
-            return None
-        return value.value if isinstance(value, self._enum_class) else str(value)
-
-    def process_result_value(self, value: str | None, dialect: Any) -> E | None:
-        if value is None:
-            return None
-        return self._enum_class(value)
 
 
 class Base(DeclarativeBase):
