@@ -8,10 +8,10 @@ node-local OVH storage or SeaweedFS CSI volumes.
 
 ## Method
 
-The benchmark assets live in <sqlite_storage_bench/>. Run from the repo devshell:
+The benchmark assets live in this debug directory. Run from the repo devshell:
 
 ```bash
-cluster/docs/sqlite_storage_bench/run_bench.sh
+debug/sqlite_storage_bench/run_bench.sh
 ```
 
 The runner creates a disposable `sqlite-storage-bench` namespace, updates a
@@ -29,7 +29,7 @@ Storage classes:
 
 The workload uses Python's stdlib SQLite binding, `journal_mode=WAL`, and
 `synchronous=FULL`. It records node, mount, kernel, SQLite version, disk free
-space, rendered manifests, and raw JSONL logs.
+space, Kubernetes object snapshots, and raw JSONL logs.
 
 ## Run
 
@@ -37,11 +37,13 @@ Run ID: `20260707T002921Z`
 
 Artifacts:
 
-- Raw JSONL logs: <sqlite_storage_bench/results/20260707T002921Z/logs/>
-- Rendered manifests: <sqlite_storage_bench/results/20260707T002921Z/manifests/>
-- Captured Kubernetes objects: <sqlite_storage_bench/results/20260707T002921Z/objects/>
-- Full generated summary: <sqlite_storage_bench/results/20260707T002921Z/summary.md>
-- CSV summary: <sqlite_storage_bench/results/20260707T002921Z/summary.csv>
+- Raw JSONL logs: <results/20260707T002921Z/logs/>
+- Captured Kubernetes objects: <results/20260707T002921Z/objects/>
+- Full generated summary: <results/20260707T002921Z/summary.md>
+- CSV summary: <results/20260707T002921Z/summary.csv>
+
+Generated PVC/Job manifests are intentionally not committed; rerun
+`render_manifests.py` or `run_bench.sh` to regenerate them.
 
 All 20 runs completed: 4 StorageClasses x 5 repeats. Each run used a fresh PVC,
 and the Job/PVC were deleted before the next run.

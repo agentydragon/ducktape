@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(git rev-parse --show-toplevel)"
-BENCH_DIR="$ROOT_DIR/cluster/docs/sqlite_storage_bench"
+BENCH_DIR="$ROOT_DIR/debug/sqlite_storage_bench"
 RUN_ID="${RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 RESULT_DIR="$BENCH_DIR/results/$RUN_ID"
 NAMESPACE=sqlite-storage-bench
