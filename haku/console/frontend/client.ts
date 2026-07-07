@@ -12,6 +12,8 @@ export type ApprovalDecisionResponse = components["schemas"]["ApprovalDecisionRe
 type ApprovalDecisionRequest = components["schemas"]["ApprovalDecisionRequest"];
 export type PendingApproval = components["schemas"]["PendingApproval"];
 export type ToolCallRecord = components["schemas"]["ToolCallRecord"];
+export type McpOperatorAuthStatus = components["schemas"]["McpOperatorAuthStatus"];
+export type McpOperatorAuthStartResponse = components["schemas"]["McpOperatorAuthStartResponse"];
 
 // FastAPI error responses are `{detail: string}`; surface that real reason rather
 // than a generic message, falling back when the body isn't shaped that way.
@@ -52,6 +54,32 @@ export async function fetchPendingApprovals(): Promise<PendingApproval[]> {
   const { data, error } = await api.GET("/api/approvals/pending");
   if (error || !data) throw new Error(errorDetail(error, "Failed to load pending approvals"));
   return data.approvals ?? [];
+}
+
+export async function fetchMcpOperatorAuthStatuses(): Promise<McpOperatorAuthStatus[]> {
+  const { data, error } = await api.GET("/api/mcp/operator-auth");
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load MCP account links"));
+  return data.associations ?? [];
+}
+
+export async function startMcpOperatorAuth(serverId: string): Promise<McpOperatorAuthStartResponse> {
+  const csrfToken = await fetchCsrfToken();
+  const { data, error } = await api.POST("/api/mcp/operator-auth/{server_id}/start", {
+    params: { path: { server_id: serverId } },
+    headers: { "X-CSRF-Token": csrfToken },
+  });
+  if (error || !data) throw new Error(errorDetail(error, "Failed to start MCP account link"));
+  return data;
+}
+
+export async function disconnectMcpOperatorAuth(serverId: string): Promise<McpOperatorAuthStatus> {
+  const csrfToken = await fetchCsrfToken();
+  const { data, error } = await api.DELETE("/api/mcp/operator-auth/{server_id}", {
+    params: { path: { server_id: serverId } },
+    headers: { "X-CSRF-Token": csrfToken },
+  });
+  if (error || !data) throw new Error(errorDetail(error, "Failed to disconnect MCP account"));
+  return data;
 }
 
 async function decideToolCall(

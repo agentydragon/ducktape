@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     # The console never renders Haku's UI itself. See docs/containment.md.
     haku_ui_url: str
     auth_origin: str = "https://auth.allegedly.works"
+    # Public console origin used for OAuth redirect URIs. When unset, the MCP
+    # operator-auth API derives it from Host/X-Forwarded-* request headers.
+    public_base_url: str | None = None
 
     # Optional YAML file for deploy-time console configuration that does not belong
     # in env vars. Secret values stay in env/Kubernetes Secret references; this file

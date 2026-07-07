@@ -60,6 +60,11 @@ Core endpoints:
 - `GET /api/capabilities/mcp-servers` — reflect the configured connected MCP servers and each
   server's `tools/list` metadata. Entries are explicitly `alive` or `degraded`; the console config
   names reachable servers, and each live MCP server remains the tool schema source.
+- `GET /api/mcp/operator-auth`, `POST /api/mcp/operator-auth/{server_id}/start`,
+  `DELETE /api/mcp/operator-auth/{server_id}`, and `GET /api/mcp/operator-auth/callback` —
+  operator account association for MCP servers whose config enables `operator_oauth`. The catalog
+  stays in the console YAML/ConfigMap; Postgres stores only short-lived DCR/PKCE flow state and
+  per-operator token associations.
 - `POST /api/tool-calls` — submit a call with `server_id`, `tool_name`, exact
   `arguments`, and explicit `wait_for_ms`. The console mints the canonical `tool_call_id`.
 - `GET /api/approvals/pending`, `GET /api/approvals/events?after_event_id=...`, and
@@ -72,7 +77,11 @@ Core endpoints:
 
 Backend callers authenticate with the shared `HAKU_CONSOLE_AGENT_API_TOKEN`. Browser-origin
 approvals use the operator's Authentik session plus CSRF. The approval dialog renders in trusted
-console chrome, not inside Haku's iframe.
+console chrome, not inside Haku's iframe. If a server enables `operator_oauth`, approval execution
+uses the approving operator's linked OAuth token and refuses to move the call out of
+`pending_approval` until that association exists. Static bearer credentials can remain configured
+for reflection or fallback wiring, but they are not silently substituted for operator-approved
+execution on an `operator_oauth` server.
 
 ## Free-form UI — Haku's own UI, embedded
 
@@ -92,7 +101,8 @@ schema-validates, and decides/confirms before acting. It also mirrors the iframe
 (`routeChanged`, validated as a path) into the console's own URL fragment so refresh and deep
 links restore the view. A persistent ⚙ escape button opens the shell's own console panel
 (`console_panel.tsx`) — trusted chrome hosting shell-owned controls like the
-location-sharing stop/withdraw. See <docs/containment.md>.
+location-sharing stop/withdraw and MCP account connect/reconnect/disconnect controls. See
+<docs/containment.md>.
 
 ## Layout
 
@@ -120,7 +130,8 @@ shared web volume is used.
 Non-root, dropped caps, no service-account token. Credentials: the
 `haku-routine-launch-token` secret (the launch capability bearer; `HAKU_CONSOLE_LAUNCH_ROUTINE__TOKEN`)
 and, when MCP approval is enabled, the config-file/API-token/database settings:
-`HAKU_CONSOLE_CONFIG_FILE`, `HAKU_CONSOLE_DATABASE_URL`, and `HAKU_CONSOLE_AGENT_API_TOKEN`.
+`HAKU_CONSOLE_CONFIG_FILE`, `HAKU_CONSOLE_DATABASE_URL`, `HAKU_CONSOLE_AGENT_API_TOKEN`, and
+optionally `HAKU_CONSOLE_PUBLIC_BASE_URL` for OAuth redirect URI generation.
 It no longer holds a haku-state git credential — feedback/trace writes moved into haku-ui.
 As trusted ducktape code in its own namespace it is **not** behind the `haku-egress-proxy`
 fence — it gets ordinary cluster egress (which the capability tier needs to reach the

@@ -94,4 +94,48 @@ class McpToolCallEvent(Base):
         )
 
 
+class McpOperatorOAuthAssociation(Base):
+    __tablename__ = "mcp_operator_oauth_associations"
+    __table_args__ = (Index("idx_mcp_operator_oauth_associations_operator", "operator_principal"),)
+
+    server_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    operator_principal: Mapped[str] = mapped_column(Text, primary_key=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    client_id: Mapped[str] = mapped_column(Text, nullable=False)
+    client_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
+    client_secret_expires_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    token_endpoint_auth_method: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    resource: Mapped[str | None] = mapped_column(Text, nullable=True)
+    access_token: Mapped[str] = mapped_column(Text, nullable=False)
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_type: Mapped[str] = mapped_column(Text, nullable=False)
+    scope: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class McpOperatorOAuthFlow(Base):
+    __tablename__ = "mcp_operator_oauth_flows"
+    __table_args__ = (
+        Index("idx_mcp_operator_oauth_flows_server_operator", "server_id", "operator_principal"),
+        Index("idx_mcp_operator_oauth_flows_expires_at", "expires_at"),
+    )
+
+    state: Mapped[str] = mapped_column(Text, primary_key=True)
+    server_id: Mapped[str] = mapped_column(Text, nullable=False)
+    operator_principal: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    redirect_uri: Mapped[str] = mapped_column(Text, nullable=False)
+    code_verifier: Mapped[str] = mapped_column(Text, nullable=False)
+    client_id: Mapped[str] = mapped_column(Text, nullable=False)
+    client_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
+    client_secret_expires_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    token_endpoint_auth_method: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    resource: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scope: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 metadata = Base.metadata

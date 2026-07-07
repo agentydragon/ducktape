@@ -8,6 +8,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 import pytest_bazel
@@ -18,7 +19,9 @@ from mcp import types as mcp_types
 from pydantic import SecretStr
 from sqlalchemy import create_engine, text
 from starlette.applications import Starlette
-from starlette.routing import Mount
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Mount, Route
 from testcontainers.postgres import PostgresContainer
 
 from haku.console.mcp_approval import _mcp_result_to_json
@@ -61,6 +64,104 @@ def _remote_mcp_url(server: FastMCP) -> Generator[str]:
         thread.join(timeout=10)
         if thread.is_alive():
             raise RuntimeError("test MCP server did not stop")
+
+
+@contextmanager
+def _remote_oauth_url() -> Generator[str]:
+    port = pick_free_port()
+    base_url = f"http://127.0.0.1:{port}"
+
+    async def mcp(request: Request) -> JSONResponse:
+        return JSONResponse(
+            {"detail": "auth required"},
+            status_code=401,
+            headers={
+                "WWW-Authenticate": f'Bearer resource_metadata="{base_url}/.well-known/oauth-protected-resource/mcp"'
+            },
+        )
+
+    async def protected_resource(request: Request) -> JSONResponse:
+        return JSONResponse(
+            {
+                "resource": f"{base_url}/mcp",
+                "authorization_servers": [f"{base_url}/auth"],
+                "scopes_supported": ["openid", "profile", "offline_access"],
+            }
+        )
+
+    async def oauth_metadata(request: Request) -> JSONResponse:
+        return JSONResponse(
+            {
+                "issuer": f"{base_url}/auth",
+                "authorization_endpoint": f"{base_url}/auth/authorize",
+                "token_endpoint": f"{base_url}/auth/token",
+                "registration_endpoint": f"{base_url}/auth/register",
+                "response_types_supported": ["code"],
+                "grant_types_supported": ["authorization_code", "refresh_token"],
+                "code_challenge_methods_supported": ["S256"],
+            }
+        )
+
+    async def register(request: Request) -> JSONResponse:
+        body = await request.json()
+        return JSONResponse(
+            {
+                **body,
+                "client_id": "dynamic-client",
+                "client_secret": None,
+                "client_id_issued_at": 1,
+                "token_endpoint_auth_method": "none",
+            },
+            status_code=201,
+        )
+
+    async def token(request: Request) -> JSONResponse:
+        form = {k: v[0] for k, v in parse_qs((await request.body()).decode()).items()}
+        if form["grant_type"] == "authorization_code":
+            assert form["code"] == "operator-code"
+            assert form["client_id"] == "dynamic-client"
+            assert form["code_verifier"]
+            return JSONResponse(
+                {
+                    "access_token": "operator-access-token",
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                    "refresh_token": "operator-refresh-token",
+                    "scope": form.get("scope", "openid profile offline_access"),
+                }
+            )
+        assert form["grant_type"] == "refresh_token"
+        assert form["refresh_token"] == "operator-refresh-token"
+        return JSONResponse(
+            {
+                "access_token": "operator-refreshed-token",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "refresh_token": "operator-refresh-token",
+            }
+        )
+
+    app = Starlette(
+        routes=[
+            Route("/mcp", mcp),
+            Route("/.well-known/oauth-protected-resource/mcp", protected_resource),
+            Route("/.well-known/oauth-protected-resource", protected_resource),
+            Route("/.well-known/oauth-authorization-server/auth", oauth_metadata),
+            Route("/auth/register", register, methods=["POST"]),
+            Route("/auth/token", token, methods=["POST"]),
+        ]
+    )
+    uvicorn_server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=uvicorn_server.run, daemon=True)
+    thread.start()
+    try:
+        wait_for_port("127.0.0.1", port, timeout_secs=10)
+        yield base_url
+    finally:
+        uvicorn_server.should_exit = True
+        thread.join(timeout=10)
+        if thread.is_alive():
+            raise RuntimeError("test OAuth server did not stop")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -127,6 +228,21 @@ mcp:
     return path
 
 
+def _operator_oauth_config_file(tmp_path: Path, oauth_base_url: str) -> Path:
+    path = tmp_path / "haku_console_operator_oauth.yaml"
+    path.write_text(
+        f"""
+mcp:
+  servers:
+    - id: grocy-sf
+      server_url: {oauth_base_url}/mcp
+      operator_oauth: {{}}
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
 def _csrf(client: TestClient) -> str:
     token = client.get("/api/capabilities/csrf").json()["csrf_token"]
     assert isinstance(token, str)
@@ -147,6 +263,20 @@ def _submit(client: TestClient, *, amount: int = 1) -> dict[str, Any]:
     )
     assert resp.status_code == 200, resp.text
     return cast(dict[str, Any], resp.json())
+
+
+class RecordingExecutor:
+    def __init__(self) -> None:
+        self.auth_tokens: list[str | None] = []
+
+    async def execute(
+        self, server: Any, tool_name: str, arguments: dict[str, Any], auth_token: str | None
+    ) -> dict[str, Any]:
+        self.auth_tokens.append(auth_token)
+        return {
+            "content": [{"type": "text", "text": f"{server.id}:{tool_name}:{arguments['items'][0]['amount']}"}],
+            "isError": False,
+        }
 
 
 def test_reflection_lists_connected_servers_without_leaking_credentials(
@@ -229,6 +359,88 @@ def test_approval_executes_tool_and_records_terminal_result(
     assert decided["status"] == "ok"
     assert decided["result"]["content"][0]["text"] == "stock_add:123:1"
     assert fetched == decided
+
+
+def test_operator_oauth_association_drives_approved_tool_execution(make_client, tmp_path: Path, db_url: str) -> None:
+    executor = RecordingExecutor()
+    with (
+        _remote_oauth_url() as oauth_url,
+        make_client(
+            config_file=_operator_oauth_config_file(tmp_path, oauth_url),
+            csrf_secret=SecretStr("csrf"),
+            public_base_url="https://haku.test",
+            tool_call_executor=executor,
+            **_test_app_overrides(db_url),
+        ) as client,
+    ):
+        before = client.get("/api/mcp/operator-auth", headers={"X-authentik-username": "operator@example.com"}).json()
+        assert before["associations"] == [
+            {
+                "server_id": "grocy-sf",
+                "status": "unconnected",
+                "operator_principal": "operator@example.com",
+                "connected_at": None,
+                "token_expires_at": None,
+                "scope": None,
+            }
+        ]
+
+        started = client.post(
+            "/api/mcp/operator-auth/grocy-sf/start",
+            headers={"X-CSRF-Token": _csrf(client), "X-authentik-username": "operator@example.com"},
+        )
+        assert started.status_code == 200, started.text
+        authorization_url = started.json()["authorization_url"]
+        parsed_authorization = urlparse(authorization_url)
+        auth_query = parse_qs(parsed_authorization.query)
+        assert parsed_authorization.path == "/auth/authorize"
+        assert auth_query["client_id"] == ["dynamic-client"]
+        assert auth_query["redirect_uri"] == ["https://haku.test/api/mcp/operator-auth/callback"]
+        assert auth_query["code_challenge_method"] == ["S256"]
+
+        callback = client.get(
+            "/api/mcp/operator-auth/callback", params={"state": auth_query["state"][0], "code": "operator-code"}
+        )
+        assert callback.status_code == 200, callback.text
+        after = client.get("/api/mcp/operator-auth", headers={"X-authentik-username": "operator@example.com"}).json()
+        assert after["associations"][0]["status"] == "connected"
+        assert after["associations"][0]["connected_at"]
+
+        submitted = _submit(client)
+        approved = client.post(
+            f"/api/tool-calls/{submitted['tool_call_id']}/decision",
+            headers={"X-CSRF-Token": _csrf(client), "X-authentik-username": "operator@example.com"},
+            json={"decision": "approve"},
+        )
+
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["tool_call"]["status"] == "ok"
+    assert executor.auth_tokens == ["operator-access-token"]
+
+
+def test_operator_oauth_approval_requires_existing_association(make_client, tmp_path: Path, db_url: str) -> None:
+    executor = RecordingExecutor()
+    with (
+        _remote_oauth_url() as oauth_url,
+        make_client(
+            config_file=_operator_oauth_config_file(tmp_path, oauth_url),
+            csrf_secret=SecretStr("csrf"),
+            tool_call_executor=executor,
+            **_test_app_overrides(db_url),
+        ) as client,
+    ):
+        submitted = _submit(client)
+        resp = client.post(
+            f"/api/tool-calls/{submitted['tool_call_id']}/decision",
+            headers={"X-CSRF-Token": _csrf(client), "X-authentik-username": "operator@example.com"},
+            json={"decision": "approve"},
+        )
+        fetched = client.get(f"/api/tool-calls/{submitted['tool_call_id']}").json()
+
+    assert resp.status_code == 409
+    assert "Connect your grocy-sf MCP account" in resp.json()["detail"]
+    assert fetched["status"] == "pending_approval"
+    assert executor.auth_tokens == []
 
 
 def test_approval_denial_is_terminal_and_does_not_execute(
@@ -343,6 +555,20 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(
     try:
         with engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+            tables = {
+                row["table_name"]
+                for row in conn.execute(
+                    text(
+                        """
+                        SELECT table_name
+                        FROM information_schema.tables
+                        WHERE table_schema = 'public'
+                        """
+                    )
+                )
+                .mappings()
+                .all()
+            }
             columns = {
                 row["column_name"]
                 for row in conn.execute(
@@ -375,7 +601,8 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(
     finally:
         engine.dispose()
 
-    assert version == "0001"
+    assert version == "0002"
+    assert {"mcp_operator_oauth_associations", "mcp_operator_oauth_flows"} <= tables
     assert {
         "tool_call_id",
         "server_id",

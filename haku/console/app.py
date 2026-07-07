@@ -55,6 +55,11 @@ def create_app(settings: Settings) -> FastAPI:
         if settings.database_url is not None
         else None
     )
+    app.state.mcp_operator_oauth_store = (
+        mcp_approval.PostgresMcpOperatorOAuthStore(settings.database_url.get_secret_value())
+        if settings.database_url is not None
+        else None
+    )
     app.state.tool_call_event_hub = mcp_approval.ToolCallEventHub()
     app.state.tool_call_executor = mcp_approval.McpToolExecutor()
     app.state.tool_call_metadata_provider = mcp_approval.McpMetadataProvider()

@@ -89,6 +89,7 @@ py_library(
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
         "@pypi//fastmcp",
+        "@pypi//httpx",
         "@pypi//mcp",
         "@pypi//psycopg",
         "@pypi//pydantic",

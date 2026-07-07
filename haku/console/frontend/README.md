@@ -17,9 +17,13 @@ components + **Tailwind v4** utilities — modeled on
 - `client.ts` — typed `openapi-fetch` client; the types come from the backend's
   OpenAPI schema (the `:schema` target runs `//haku/console:export_schema_bin`), so
   the Pydantic models are the single source of truth for the wire contract. Includes the
-  launch-routine helper and the MCP approval queue helpers (`pending`, approve, deny).
+  launch-routine helper, MCP approval queue helpers (`pending`, approve, deny), and
+  MCP operator-account association helpers.
 - `confirm_dialog.tsx` — trusted top-layer confirmations for bridge launches, geolocation
   grants, off-whitelist opens, and MCP tool-call approvals.
+- `console_panel.tsx` — the single settings-button drawer for shell-owned controls. Keep
+  MCP account connect/reconnect/disconnect affordances here rather than adding more visible
+  widgets above the framed haku-ui.
 - `markdown.ts` — item `body` → sanitized HTML (`marked` + `dompurify`).
 - `styles.src.css` — `@import`s Tailwind + `@mantine/core` CSS; compiled by
   `@tailwindcss/cli` to `generated/styles.css`, then fingerprinted into

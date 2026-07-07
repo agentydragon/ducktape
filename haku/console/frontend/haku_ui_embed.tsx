@@ -2,7 +2,17 @@ import { ActionIcon, Anchor, Indicator } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 
 import { type GeolocationOptions, isRoutePath, type Outbound, parseInbound, vetOpenLink } from "./bridge.ts";
-import { approveToolCall, denyToolCall, fetchPendingApprovals, launchRoutine, type PendingApproval } from "./client.ts";
+import {
+  approveToolCall,
+  denyToolCall,
+  disconnectMcpOperatorAuth,
+  fetchMcpOperatorAuthStatuses,
+  fetchPendingApprovals,
+  launchRoutine,
+  type McpOperatorAuthStatus,
+  type PendingApproval,
+  startMcpOperatorAuth,
+} from "./client.ts";
 import { ConfirmDialog, type Escalation } from "./confirm_dialog.tsx";
 import { ConsolePanel, PANEL_Z } from "./console_panel.tsx";
 import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation.ts";
@@ -34,6 +44,7 @@ export function openExternal(url: string): boolean {
 
 const POPUP_HINT = "Allow pop-ups for this site so the console can open links.";
 const TOOL_APPROVAL_CHANNEL = "haku-console-tool-approvals";
+const MCP_AUTH_CHANNEL = "haku-console-mcp-auth";
 
 type ToolApprovalChannelMessage = { type: "toolApprovalsChanged" };
 
@@ -65,11 +76,13 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
   // to launch). One typed action, dispatched on its `kind` — see ConfirmDialog's Escalation.
   const [pending, setPending] = useState<Escalation | null>(null);
   const [toolApprovals, setToolApprovals] = useState<PendingApproval[]>([]);
+  const [mcpAuthStatuses, setMcpAuthStatuses] = useState<McpOperatorAuthStatus[]>([]);
   // Computed once: later routeChanged mirroring must not rewrite `src` (that would
   // reload the frame); the iframe navigates itself, the console only reflects.
   const [frameSrc] = useState(() => initialFrameSrc(uiUrl, window.location.hash));
   const origin = new URL(uiUrl).origin;
   const toolApprovalChannelRef = useRef<BroadcastChannel | null>(null);
+  const mcpAuthChannelRef = useRef<BroadcastChannel | null>(null);
   const activeAction: Escalation | null =
     pending ?? (toolApprovals[0] ? { kind: "toolApproval", approval: toolApprovals[0] } : null);
 
@@ -149,6 +162,36 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
     );
   }
 
+  function refreshMcpAuthStatuses(notifyPeers = false) {
+    if (notifyPeers) mcpAuthChannelRef.current?.postMessage({ type: "mcpAuthChanged" });
+    void fetchMcpOperatorAuthStatuses().then(
+      (statuses) => setMcpAuthStatuses(statuses),
+      (e: unknown) => toastError("Couldn't load MCP account links", e)
+    );
+  }
+
+  function connectMcp(serverId: string) {
+    void startMcpOperatorAuth(serverId)
+      .then((started) => {
+        if (!openExternal(started.authorization_url)) {
+          toastError("Pop-up blocked", POPUP_HINT);
+          return;
+        }
+        toastSuccess("MCP account link started", "Finish the authorization in the new tab.");
+      })
+      .catch((e: unknown) => toastError("Couldn't start MCP account link", e));
+  }
+
+  function disconnectMcp(serverId: string) {
+    void disconnectMcpOperatorAuth(serverId).then(
+      () => {
+        toastSuccess("MCP account disconnected", serverId);
+        refreshMcpAuthStatuses(true);
+      },
+      (e: unknown) => toastError("Couldn't disconnect MCP account", e)
+    );
+  }
+
   // Tear down any live browser watches if the console unmounts.
   useEffect(() => () => void watcher.stopAll(), [watcher]);
 
@@ -161,6 +204,18 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
     };
     return () => {
       if (toolApprovalChannelRef.current === channel) toolApprovalChannelRef.current = null;
+      channel.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    refreshMcpAuthStatuses();
+    if (!("BroadcastChannel" in window)) return;
+    const channel = new BroadcastChannel(MCP_AUTH_CHANNEL);
+    mcpAuthChannelRef.current = channel;
+    channel.onmessage = () => refreshMcpAuthStatuses();
+    return () => {
+      if (mcpAuthChannelRef.current === channel) mcpAuthChannelRef.current = null;
       channel.close();
     };
   }, []);
@@ -353,6 +408,10 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
         geoGranted={geoGranted}
         tracking={tracking}
         onWithdrawGeolocation={withdrawGeolocation}
+        mcpAuthStatuses={mcpAuthStatuses}
+        onConnectMcp={connectMcp}
+        onDisconnectMcp={disconnectMcp}
+        onRefreshMcp={() => refreshMcpAuthStatuses(true)}
       />
       <ConfirmDialog action={activeAction} onApprove={onApprove} onCancel={onCancel} />
     </>
