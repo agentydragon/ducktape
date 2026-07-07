@@ -12,7 +12,7 @@ let
   bazelRepoContentsCache = "${bazelOutputUserRoot}/cache/repo-contents";
   bazelDiskCache = "${bazelOutputUserRoot}/cache/disk";
   bazeliskCache = "${config.xdg.cacheHome}/bazelisk";
-  activitywatchSyncDir = "${config.ducktape.activitywatch.sync.root}/${config.ducktape.activitywatch.sync.hostname}";
+  activitywatchSyncDir = config.ducktape.activitywatch.sync.root;
 in
 {
   imports = [
@@ -130,8 +130,8 @@ in
         name = "activitywatch-cluster";
       };
       folders.${activitywatchSyncDir} = {
-        id = "activitywatch-rugged";
-        label = "ActivityWatch rugged";
+        id = "activitywatch";
+        label = "ActivityWatch";
         path = activitywatchSyncDir;
         type = "sendonly";
         devices = [ "activitywatch-cluster" ];

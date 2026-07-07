@@ -28,6 +28,16 @@ spec:
       containers:
         - name: aw-server
           image: ghcr.io/agentydragon/aw-server:devel-20260706074016-af5147d # {"$imagepolicy": "flux-system:activitywatch"}
+          command:
+            - /usr/local/bin/aw-server
+            - --host
+            - 0.0.0.0
+            - --port
+            - "5600"
+            - --dbpath
+            - /data/db.sqlite3
+            - --device-id
+            - activitywatch-cluster
           ports:
             - containerPort: 5600
               name: http

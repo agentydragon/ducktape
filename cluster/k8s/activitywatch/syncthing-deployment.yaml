@@ -56,6 +56,29 @@ spec:
             limits:
               cpu: 250m
               memory: 256Mi
+        - name: importer
+          image: ghcr.io/agentydragon/aw-server:devel-20260706074016-af5147d # {"$imagepolicy": "flux-system:activitywatch"}
+          command:
+            - /usr/local/bin/aw-sync
+            - --host
+            - activitywatch-write.activitywatch.svc.cluster.local
+            - --port
+            - "5600"
+            - --sync-dir
+            - /sync-inbox
+            - daemon
+            - --start-date
+            - "2026-07-06"
+          volumeMounts:
+            - name: sync-inbox
+              mountPath: /sync-inbox
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
       volumes:
         - name: sync-inbox
           persistentVolumeClaim:

@@ -27,10 +27,10 @@ spec:
         - ports:
             - port: "5601"
               protocol: TCP
-    # Write API for the importer CronJob only.
+    # Write API for the Syncthing/importer pod only.
     - fromEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: activitywatch-sync-import
+            app.kubernetes.io/name: activitywatch-syncthing
       toPorts:
         - ports:
             - port: "5600"
@@ -59,36 +59,6 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: activitywatch-sync-import
-  namespace: activitywatch
-spec:
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: activitywatch-sync-import
-  egress:
-    # DNS
-    - toEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: kube-system
-            k8s-app: kube-dns
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: UDP
-            - port: "53"
-              protocol: TCP
-    # aw-sync import into the write-capable ActivityWatch API.
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: activitywatch
-      toPorts:
-        - ports:
-            - port: "5600"
-              protocol: TCP
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
   name: activitywatch-syncthing
   namespace: activitywatch
 spec:
@@ -106,6 +76,14 @@ spec:
             - port: "53"
               protocol: UDP
             - port: "53"
+              protocol: TCP
+    # aw-sync importer sidecar writes pulled events into the ActivityWatch API.
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: activitywatch
+      toPorts:
+        - ports:
+            - port: "5600"
               protocol: TCP
     # Syncthing global discovery, relays, and direct sync attempts.
     - toEntities:

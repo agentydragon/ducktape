@@ -3,27 +3,25 @@
   lib,
   pkgs,
   enableGui,
-  osConfig ? null,
   ...
 }:
 let
   cfg = config.ducktape.activitywatch;
   toTOML = (pkgs.formats.toml { }).generate;
   syncRoot = cfg.sync.root;
-  hostSyncDir = "${syncRoot}/${cfg.sync.hostname}";
   startDateArgs = lib.optionalString (
     cfg.sync.startDate != null
   ) "--start-date ${lib.escapeShellArg cfg.sync.startDate}";
   syncPushScript = pkgs.writeShellScript "activitywatch-sync-push" ''
     set -eu
 
-    mkdir -p ${lib.escapeShellArg hostSyncDir}
+    mkdir -p ${lib.escapeShellArg syncRoot}
     for _ in $(${pkgs.coreutils}/bin/seq 1 30); do
       if ${pkgs.curl}/bin/curl -fsS http://127.0.0.1:${toString cfg.sync.localPort}/api/0/info >/dev/null; then
         exec ${pkgs.activitywatch}/bin/aw-sync \
           --host 127.0.0.1 \
           --port ${toString cfg.sync.localPort} \
-          --sync-dir ${lib.escapeShellArg hostSyncDir} \
+          --sync-dir ${lib.escapeShellArg syncRoot} \
           sync-advanced \
           --mode push \
           ${startDateArgs}
@@ -38,16 +36,6 @@ in
   options.ducktape.activitywatch = {
     sync = {
       enable = lib.mkEnableOption "local ActivityWatch capture with aw-sync push into a Syncthing folder";
-
-      hostname = lib.mkOption {
-        type = lib.types.str;
-        default =
-          if osConfig != null && osConfig ? networking && osConfig.networking ? hostName then
-            osConfig.networking.hostName
-          else
-            config.home.username;
-        description = "Host label used for the ActivityWatch sync directory and synced bucket provenance.";
-      };
 
       root = lib.mkOption {
         type = lib.types.str;
@@ -137,7 +125,7 @@ in
         };
 
         home.activation.activitywatchSyncDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-          mkdir -p '${hostSyncDir}'
+          mkdir -p '${syncRoot}'
         '';
 
         systemd.user.services.activitywatch-sync-push = {

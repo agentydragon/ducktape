@@ -3,7 +3,7 @@ set -eu
 
 config_dir=/var/syncthing/config
 data_dir=/var/syncthing/data
-folder_dir=/sync-inbox/rugged
+folder_dir=/sync-inbox
 rugged_device_id=PATWINW-6VZGFXN-GFP24UN-CEAF4TB-YDBFV25-WDYEFC7-672W5RB-OQGGNQT
 
 mkdir -p "$config_dir" "$data_dir" "$folder_dir"
@@ -48,11 +48,11 @@ if ! grep -qx "$rugged_device_id" /tmp/syncthing-devices; then
 fi
 
 syncthing --config "$config_dir" --data "$data_dir" cli config folders list >/tmp/syncthing-folders
-if ! grep -qx "activitywatch-rugged" /tmp/syncthing-folders; then
-  cat >/tmp/activitywatch-rugged-folder.json <<EOF
+if ! grep -qx "activitywatch" /tmp/syncthing-folders; then
+  cat >/tmp/activitywatch-folder.json <<EOF
 {
-  "id": "activitywatch-rugged",
-  "label": "ActivityWatch rugged",
+  "id": "activitywatch",
+  "label": "ActivityWatch",
   "path": "$folder_dir",
   "type": "receiveonly",
   "devices": [
@@ -65,7 +65,7 @@ if ! grep -qx "activitywatch-rugged" /tmp/syncthing-folders; then
 }
 EOF
   syncthing --config "$config_dir" --data "$data_dir" cli config folders add-json \
-    "$(cat /tmp/activitywatch-rugged-folder.json)"
+    "$(cat /tmp/activitywatch-folder.json)"
 fi
 
 wait "$pid"
