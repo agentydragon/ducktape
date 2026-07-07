@@ -72,6 +72,8 @@ spec:
               value: https://haku-ui.allegedly.works
             - name: HAKU_CONSOLE_AUTH_ORIGIN
               value: https://auth.allegedly.works
+            - name: HAKU_CONSOLE_PUBLIC_BASE_URL
+              value: https://haku.allegedly.works
             - name: HAKU_CONSOLE_CONFIG_FILE
               value: /etc/haku-console/config/config.yaml
             - name: HAKU_CONSOLE_DB_USER
