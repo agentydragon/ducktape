@@ -3,50 +3,64 @@
 from __future__ import annotations
 
 import re
+import threading
 from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 import pytest_bazel
+import uvicorn
 from fastapi.testclient import TestClient
+from fastmcp import FastMCP
 from mcp import types as mcp_types
 from pydantic import SecretStr
 from sqlalchemy import create_engine, text
+from starlette.applications import Starlette
+from starlette.routing import Mount
 from testcontainers.postgres import PostgresContainer
 
-from haku.console.mcp_approval import McpServerEntry, ServerMetadata, ToolMetadata, _mcp_result_to_json
+from haku.console.mcp_approval import _mcp_result_to_json
 from third_party.containers.rlocations import POSTGRES_18, RYUK
+from util.net import pick_free_port, wait_for_port
 from util.oci import load_oci_image
 from util.testing.postgres import force_drop_database_sync
 
 
-class FakeToolExecutor:
-    async def execute(self, server: McpServerEntry, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        return {"fake_mcp": True, "server": server.id, "tool": tool_name, "arguments": arguments}
+def _test_mcp_server() -> FastMCP:
+    server = FastMCP("haku-console-test")
+
+    @server.tool()
+    async def stock_add(items: list[dict[str, Any]]) -> str:
+        """Add stock items to the test inventory."""
+        item = items[0]
+        return f"stock_add:{item['product_id']}:{item['amount']}"
+
+    @server.tool()
+    async def echo(text: str) -> str:
+        """Echo a test string."""
+        return f"echo:{text}"
+
+    return server
 
 
-class FakeMetadataProvider:
-    async def metadata(self, server: McpServerEntry) -> ServerMetadata:
-        return ServerMetadata(
-            server_id=server.id,
-            title=server.id,
-            tools=[
-                ToolMetadata(
-                    name="stock_add",
-                    description="Fake stock add tool used by tests.",
-                    input_schema={"type": "object", "additionalProperties": True},
-                    schema_source="mcp",
-                ),
-                ToolMetadata(
-                    name="echo",
-                    description="Fake echo tool used by tests.",
-                    input_schema={"type": "object", "additionalProperties": True},
-                    schema_source="mcp",
-                ),
-            ],
-            schema_source="mcp",
-        )
+@contextmanager
+def _remote_mcp_url(server: FastMCP) -> Generator[str]:
+    port = pick_free_port()
+    mcp_app = server.http_app(path="/")
+    app = Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=mcp_app.lifespan)
+    uvicorn_server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=uvicorn_server.run, daemon=True)
+    thread.start()
+    try:
+        wait_for_port("127.0.0.1", port, timeout_secs=10)
+        yield f"http://127.0.0.1:{port}/mcp"
+    finally:
+        uvicorn_server.should_exit = True
+        thread.join(timeout=10)
+        if thread.is_alive():
+            raise RuntimeError("test MCP server did not stop")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -85,25 +99,28 @@ def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Generator
     force_drop_database_sync(postgres_admin_url, db_name)
 
 
+@pytest.fixture
+def mcp_server_url(monkeypatch: pytest.MonkeyPatch) -> Generator[str]:
+    monkeypatch.setenv("HAKU_CONSOLE_MCP_CREDENTIAL_HAKU_CONSOLE_GROCY_SF_TOKEN", "test-token")
+    with _remote_mcp_url(_test_mcp_server()) as url:
+        yield url
+
+
 def _test_app_overrides(db_url: str) -> dict[str, Any]:
-    return {
-        "database_url": SecretStr(db_url),
-        "tool_call_executor": FakeToolExecutor(),
-        "tool_call_metadata_provider": FakeMetadataProvider(),
-    }
+    return {"database_url": SecretStr(db_url)}
 
 
-def _config_file(tmp_path: Path) -> Path:
+def _config_file(tmp_path: Path, mcp_server_url: str) -> Path:
     path = tmp_path / "haku_console.yaml"
     path.write_text(
-        """
+        f"""
 mcp:
   servers:
     - id: grocy-sf
-      server_url: https://grocy-sf.example.test/mcp
+      server_url: {mcp_server_url}
       bearer_token_secret: haku-console-grocy-sf-token
     - id: smoke
-      server_url: https://smoke.example.test/mcp
+      server_url: {mcp_server_url}
 """,
         encoding="utf-8",
     )
@@ -133,36 +150,38 @@ def _submit(client: TestClient, *, amount: int = 1) -> dict[str, Any]:
 
 
 def test_reflection_lists_connected_servers_without_leaking_credentials(
-    make_client, tmp_path: Path, db_url: str
+    make_client, tmp_path: Path, db_url: str, mcp_server_url: str
 ) -> None:
-    with make_client(config_file=_config_file(tmp_path), **_test_app_overrides(db_url)) as client:
+    with make_client(config_file=_config_file(tmp_path, mcp_server_url), **_test_app_overrides(db_url)) as client:
         resp = client.get("/api/capabilities/mcp-servers")
     assert resp.status_code == 200
     body = resp.json()
     server = body["servers"][0]
-    assert server == {
-        "server_id": "grocy-sf",
-        "title": "grocy-sf",
-        "tools": [
-            {
-                "name": "stock_add",
-                "description": "Fake stock add tool used by tests.",
-                "input_schema": {"type": "object", "additionalProperties": True},
-                "schema_source": "mcp",
-                "degraded_reason": None,
-            },
-            {
-                "name": "echo",
-                "description": "Fake echo tool used by tests.",
-                "input_schema": {"type": "object", "additionalProperties": True},
-                "schema_source": "mcp",
-                "degraded_reason": None,
-            },
-        ],
-        "schema_source": "mcp",
-        "degraded_reason": None,
-    }
+    assert server["server_id"] == "grocy-sf"
+    assert server["status"] == "alive"
+    tools = {tool["name"]: tool for tool in server["tools"]}
+    assert set(tools) == {"echo", "stock_add"}
+    assert tools["stock_add"]["status"] == "alive"
+    assert tools["stock_add"]["input_schema"]["type"] == "object"
+    assert tools["echo"]["status"] == "alive"
+    assert tools["echo"]["input_schema"]["type"] == "object"
     assert "bearer_token_secret" not in str(body)
+
+
+def test_reflection_marks_unreachable_servers_degraded(
+    make_client, tmp_path: Path, db_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HAKU_CONSOLE_MCP_CREDENTIAL_HAKU_CONSOLE_GROCY_SF_TOKEN", "test-token")
+    with make_client(
+        config_file=_config_file(tmp_path, "http://127.0.0.1:1/mcp"), **_test_app_overrides(db_url)
+    ) as client:
+        resp = client.get("/api/capabilities/mcp-servers")
+    assert resp.status_code == 200
+    server = resp.json()["servers"][0]
+    assert server["server_id"] == "grocy-sf"
+    assert server["status"] == "degraded"
+    assert server["tools"] == []
+    assert server["degraded_reason"]
 
 
 def test_mcp_result_serialization_uses_mcp_wire_shape() -> None:
@@ -182,8 +201,8 @@ def test_mcp_result_serialization_uses_mcp_wire_shape() -> None:
     }
 
 
-def test_submit_mints_tool_call_id(make_client, tmp_path: Path, db_url: str) -> None:
-    with make_client(config_file=_config_file(tmp_path), **_test_app_overrides(db_url)) as client:
+def test_submit_mints_tool_call_id(make_client, tmp_path: Path, db_url: str, mcp_server_url: str) -> None:
+    with make_client(config_file=_config_file(tmp_path, mcp_server_url), **_test_app_overrides(db_url)) as client:
         first = _submit(client)
         second = _submit(client)
     assert first["tool_call_id"].startswith("tc_")
@@ -192,9 +211,11 @@ def test_submit_mints_tool_call_id(make_client, tmp_path: Path, db_url: str) -> 
     assert second["tool_call_id"] != first["tool_call_id"]
 
 
-def test_approval_executes_tool_and_records_terminal_result(make_client, tmp_path: Path, db_url: str) -> None:
+def test_approval_executes_tool_and_records_terminal_result(
+    make_client, tmp_path: Path, db_url: str, mcp_server_url: str
+) -> None:
     with make_client(
-        config_file=_config_file(tmp_path), csrf_secret=SecretStr("csrf"), **_test_app_overrides(db_url)
+        config_file=_config_file(tmp_path, mcp_server_url), csrf_secret=SecretStr("csrf"), **_test_app_overrides(db_url)
     ) as client:
         submitted = _submit(client)
         resp = client.post(
@@ -206,14 +227,15 @@ def test_approval_executes_tool_and_records_terminal_result(make_client, tmp_pat
     assert resp.status_code == 200, resp.text
     decided = resp.json()["tool_call"]
     assert decided["status"] == "ok"
-    assert decided["result"]["fake_mcp"] is True
-    assert decided["result"]["tool"] == "stock_add"
+    assert decided["result"]["content"][0]["text"] == "stock_add:123:1"
     assert fetched == decided
 
 
-def test_approval_denial_is_terminal_and_does_not_execute(make_client, tmp_path: Path, db_url: str) -> None:
+def test_approval_denial_is_terminal_and_does_not_execute(
+    make_client, tmp_path: Path, db_url: str, mcp_server_url: str
+) -> None:
     with make_client(
-        config_file=_config_file(tmp_path), csrf_secret=SecretStr("csrf"), **_test_app_overrides(db_url)
+        config_file=_config_file(tmp_path, mcp_server_url), csrf_secret=SecretStr("csrf"), **_test_app_overrides(db_url)
     ) as client:
         submitted = _submit(client)
         resp = client.post(
@@ -227,11 +249,13 @@ def test_approval_denial_is_terminal_and_does_not_execute(make_client, tmp_path:
     assert tool_call["result"] is None
 
 
-def test_all_v1_tool_calls_require_console_approval(make_client, tmp_path: Path, db_url: str) -> None:
-    with make_client(config_file=_config_file(tmp_path), **_test_app_overrides(db_url)) as client:
+def test_all_v1_tool_calls_require_console_approval(
+    make_client, tmp_path: Path, db_url: str, mcp_server_url: str
+) -> None:
+    with make_client(config_file=_config_file(tmp_path, mcp_server_url), **_test_app_overrides(db_url)) as client:
         resp = client.post(
             "/api/tool-calls",
-            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"hello": "world"}, "wait_for_ms": 1000},
+            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "world"}, "wait_for_ms": 1000},
         )
         pending = client.get("/api/approvals/pending").json()
     assert resp.status_code == 200
@@ -241,9 +265,11 @@ def test_all_v1_tool_calls_require_console_approval(make_client, tmp_path: Path,
     assert pending["approvals"][0]["tool_call_id"] == body["tool_call_id"]
 
 
-def test_websocket_receives_pending_approval_event(make_client, tmp_path: Path, db_url: str) -> None:
+def test_websocket_receives_pending_approval_event(
+    make_client, tmp_path: Path, db_url: str, mcp_server_url: str
+) -> None:
     with (
-        make_client(config_file=_config_file(tmp_path), **_test_app_overrides(db_url)) as client,
+        make_client(config_file=_config_file(tmp_path, mcp_server_url), **_test_app_overrides(db_url)) as client,
         client.websocket_connect("/api/approvals/ws") as ws,
     ):
         assert ws.receive_json() == {"type": "hello"}
@@ -254,19 +280,23 @@ def test_websocket_receives_pending_approval_event(make_client, tmp_path: Path, 
     assert event["status"] == "pending_approval"
 
 
-def test_full_audit_log_listing_and_secret_redaction(make_client, tmp_path: Path, db_url: str) -> None:
+def test_full_audit_log_listing_and_secret_redaction(
+    make_client, tmp_path: Path, db_url: str, mcp_server_url: str
+) -> None:
     with make_client(
-        config_file=_config_file(tmp_path), agent_api_token=SecretStr("tool-token"), **_test_app_overrides(db_url)
+        config_file=_config_file(tmp_path, mcp_server_url),
+        agent_api_token=SecretStr("tool-token"),
+        **_test_app_overrides(db_url),
     ) as client:
         operator_call = client.post(
             "/api/tool-calls",
             headers={"X-authentik-username": "operator@example.com"},
-            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"x": 1}, "wait_for_ms": 0},
+            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "one"}, "wait_for_ms": 0},
         ).json()
         haku_call = client.post(
             "/api/tool-calls",
             headers={"Authorization": "Bearer tool-token"},
-            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"x": 2}, "wait_for_ms": 0},
+            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "two"}, "wait_for_ms": 0},
         ).json()
         body = client.get("/api/tool-calls").json()
     ids = {r["tool_call_id"] for r in body["tool_calls"]}
@@ -276,13 +306,15 @@ def test_full_audit_log_listing_and_secret_redaction(make_client, tmp_path: Path
     assert "tool-token" not in dumped
 
 
-def test_postgres_store_runs_alembic_and_persists_typed_ledger(make_client, tmp_path: Path, db_url: str) -> None:
+def test_postgres_store_runs_alembic_and_persists_typed_ledger(
+    make_client, tmp_path: Path, db_url: str, mcp_server_url: str
+) -> None:
     with make_client(
-        config_file=_config_file(tmp_path), csrf_secret=SecretStr("csrf"), **_test_app_overrides(db_url)
+        config_file=_config_file(tmp_path, mcp_server_url), csrf_secret=SecretStr("csrf"), **_test_app_overrides(db_url)
     ) as client:
         submitted = client.post(
             "/api/tool-calls",
-            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"hello": "world"}, "wait_for_ms": 0},
+            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "world"}, "wait_for_ms": 0},
         ).json()
         approved = client.post(
             f"/api/tool-calls/{submitted['tool_call_id']}/decision",
@@ -291,7 +323,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(make_client, tmp_
         ).json()["tool_call"]
 
     assert approved["status"] == "ok"
-    assert approved["result"]["arguments"] == {"hello": "world"}
+    assert approved["result"]["content"][0]["text"] == "echo:world"
 
     engine = create_engine(db_url)
     try:
@@ -347,8 +379,8 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(make_client, tmp_
     assert row["server_id"] == "smoke"
     assert row["tool_name"] == "echo"
     assert row["status"] == "ok"
-    assert row["arguments_json"] == {"hello": "world"}
-    assert row["result_json"]["fake_mcp"] is True
+    assert row["arguments_json"] == {"text": "world"}
+    assert row["result_json"]["content"][0]["text"] == "echo:world"
 
 
 if __name__ == "__main__":

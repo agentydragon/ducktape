@@ -62,20 +62,40 @@ class ConsoleConfigFile(BaseModel):
     mcp: ConsoleMcpConfig = Field(default_factory=ConsoleMcpConfig)
 
 
-class ToolMetadata(BaseModel):
+class AliveToolMetadata(BaseModel):
+    status: Literal["alive"] = "alive"
     name: str
     description: str | None = None
     input_schema: dict[str, Any] = Field(default_factory=dict)
-    schema_source: Literal["mcp", "unavailable"] = "unavailable"
-    degraded_reason: str | None = None
 
 
-class ServerMetadata(BaseModel):
+class DegradedToolMetadata(BaseModel):
+    status: Literal["degraded"] = "degraded"
+    name: str
+    description: str | None = None
+    input_schema: dict[str, Any] = Field(default_factory=dict)
+    degraded_reason: str
+
+
+type ToolMetadata = Annotated[AliveToolMetadata | DegradedToolMetadata, Field(discriminator="status")]
+
+
+class AliveServerMetadata(BaseModel):
+    status: Literal["alive"] = "alive"
     server_id: str
     title: str
     tools: list[ToolMetadata] = Field(default_factory=list)
-    schema_source: Literal["mcp", "unavailable"] = "unavailable"
-    degraded_reason: str | None = None
+
+
+class DegradedServerMetadata(BaseModel):
+    status: Literal["degraded"] = "degraded"
+    server_id: str
+    title: str
+    tools: list[ToolMetadata] = Field(default_factory=list)
+    degraded_reason: str
+
+
+type ServerMetadata = Annotated[AliveServerMetadata | DegradedServerMetadata, Field(discriminator="status")]
 
 
 class ToolCapabilitiesResponse(BaseModel):
@@ -332,18 +352,14 @@ class McpMetadataProvider:
             async with Client(server.server_url, auth=_credential_token(server)) as client:
                 tools = await client.list_tools()
         except Exception as e:
-            return ServerMetadata(
-                server_id=server.id, title=server.id, tools=[], schema_source="unavailable", degraded_reason=str(e)
-            )
+            return DegradedServerMetadata(server_id=server.id, title=server.id, tools=[], degraded_reason=str(e))
         reflected: list[ToolMetadata] = []
         for tool in tools:
             schema = tool.inputSchema
             if not isinstance(schema, dict):
                 schema = {}
-            reflected.append(
-                ToolMetadata(name=tool.name, description=tool.description, input_schema=schema, schema_source="mcp")
-            )
-        return ServerMetadata(server_id=server.id, title=server.id, tools=reflected, schema_source="mcp")
+            reflected.append(AliveToolMetadata(name=tool.name, description=tool.description, input_schema=schema))
+        return AliveServerMetadata(server_id=server.id, title=server.id, tools=reflected)
 
 
 def make_ledger(settings: Settings) -> ToolCallLedgerProtocol | None:
