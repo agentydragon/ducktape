@@ -73,6 +73,26 @@ may return an Authentik 404. Wait for server logs to show
 that, unauthenticated `/api/0/info` should return a proxy-auth redirect to
 `/outpost.goauthentik.io/start`, not an Authentik 404.
 
+The concrete mint (identical for every agent; verified 2026-07-07 with the haku secret):
+
+```bash
+# 1. Source JWT (1h): client-credentials with the service-account user.
+curl -s "$token_url" -d grant_type=client_credentials -d client_id="$client_id" \
+  -d username="$username" -d password="$password" -d scope="$source_scopes"
+# 2. Proxy bearer (1h): jwt-bearer exchange against the proxy provider's client id.
+curl -s "$token_url" -d grant_type=client_credentials -d client_id="$proxy_client_id" \
+  -d scope="$proxy_scopes" \
+  -d client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer \
+  -d client_assertion="$source_access_token"
+# 3. Query with the proxy bearer.
+curl -s -H "Authorization: Bearer $proxy_access_token" "$activitywatch_url/api/0/buckets/"
+```
+
+Gotchas (bite every consumer): `POST /api/0/query` requires the **trailing slash**
+(`/api/0/query/`; nginx 301s otherwise and a redirected POST degrades to GET); transient
+TLS connection resets occur (~1/20 calls) — retry once; bucket `last_updated` is always
+`null` on this server — derive recency from each bucket's newest event.
+
 ## Storage Debt
 
 The Syncthing inbox is intentionally on SeaweedFS (`activitywatch-sync-inbox`,

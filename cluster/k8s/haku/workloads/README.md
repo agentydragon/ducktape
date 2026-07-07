@@ -3,7 +3,7 @@
 Operator-owned plumbing that lets Haku run **persistent workloads** in `haku-sandbox`
 via GitOps (not just ad-hoc `kubectl apply`), while keeping the perimeter operator-owned.
 Haku writes manifests under `k8s/` in its `haku-state` repo (seeded from
-`haku/state_template/k8s/`); this pipe reconciles them.
+haku-state's `k8s/`); this pipe reconciles them.
 
 | Object                         | Kind                 | Namespace      | Role                                                                         |
 | ------------------------------ | -------------------- | -------------- | ---------------------------------------------------------------------------- |

@@ -1,4 +1,0 @@
-# Root package. Exports workspace-level files that module extensions reference
-# by label (the .bazelignore feeds npm_translate_lock's verify_node_modules_ignored).
-
-exports_files([".bazelignore"])

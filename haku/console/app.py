@@ -1,6 +1,6 @@
 """FastAPI app for the Haku console JSON API.
 
-The console is the trusted outer shell: it frames Haku's own UI (``haku/state_template/ui/``)
+The console is the trusted outer shell: it frames Haku's own UI (haku-state's ``ui/``)
 full-page as a sandboxed cross-origin iframe and owns the one privileged surface — the
 **capability tier** (``haku.console.capabilities``), which uses console-only secrets and
 acts on the world (launching the routine); it is CSRF-gated and audited (see

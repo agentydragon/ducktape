@@ -64,7 +64,6 @@ website/posts/** filename-conventions-ignored=true
 
 # Starter k8s manifests Haku copies into haku-state - kebab-case is
 # conventional for k8s manifests (and matches the resource/host names).
-haku/state_template/** filename-conventions-ignored=true
 
 # agent-box NixOS host: the host dir name must match the hostname (mkNixos reads
 # ./nix/nixos/hosts/${hostname}), and the host/DNS name agent-box is kebab by

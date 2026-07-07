@@ -20,9 +20,9 @@ ducktape and letting the image rebuild (Flux image automation bumps the CronJob 
   how to read it. Inputs/reference, not a checklist.
 
 Haku's **method** — the procedures (passes) it runs, the UI it serves, and whatever
-format that UI presents (the starter kit's "items" board is one example) — is
-**not here.** It is seeded from `haku/state_template/` and owned/evolved by Haku in its
-state. (The full "what lives where" is in `AGENTS.md`.)
+format that UI presents (the current "items" board is one example) — is
+**not here.** It lives in, and only in, Haku's `haku-state` repo.
+(The full "what lives where" is in `AGENTS.md`.)
 
 The step-by-step run procedure lives in `haku/run.md` (environment-neutral;
 per-environment entrypoints like `haku/runtime/claude_web_env/run.md` just layer setup
@@ -42,7 +42,7 @@ and that perimeter is what limits it (see `haku/PLAN.md`).
 
 Haku's **state** (memory, log, its UI + procedures, intake, and whatever working format it
 presents) lives in the separate `haku-state` repo — the only thing Haku writes, cloned
-into Haku's home during a run (the web home puts it at `~/haku-state`). The repo starts
-empty; on first run Haku scaffolds it from `haku/state_template/` (placeholder stubs plus
-the `ui/`, `procedures/`, and `k8s/` starters), then owns and evolves it. Design and
-roadmap: `haku/PLAN.md`.
+into Haku's home during a run (the web home puts it at `~/haku-state`). The repo is the
+live artifact with no seed template behind it (`haku/state_template/` was retired
+2026-07-07 — haku-ui and the method live in haku-state); an empty remote is an incident
+to surface, not a first run. Design and roadmap: `haku/PLAN.md`.

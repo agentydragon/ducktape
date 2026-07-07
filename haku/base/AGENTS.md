@@ -11,8 +11,8 @@ move runtime instructions here, and don't put editor notes in `instructions.md`.
   UI/procedures/method. Durable, runtime-agnostic, **and item-agnostic** — it must read the
   same no matter what Haku's state contains. Keep it at the "what Haku is and what it must
   honor" level. **Do not** put an item schema, a board spec, statuses, action kinds, or any
-  presentation format here — those are Haku's implementation and live in its state (seeded
-  from `haku/state_template/`), not base.
+  presentation format here — those are Haku's implementation and live in its state
+  (`haku-state`), not base.
 - The **run procedure** (the imperative step-by-step a session executes) lives
   in `haku/run.md` (environment-neutral); per-environment entrypoints like
   `haku/runtime/claude_web_env/run.md` only layer setup and defer to it. Neither belongs
@@ -24,14 +24,13 @@ move runtime instructions here, and don't put editor notes in `instructions.md`.
   fields, gotchas. **Not** what to do with it.
 
 Haku's **method is not in base.** The procedures it runs (the "passes"), the UI it serves,
-and whatever format that UI presents (the starter's "items" board) are seeded
-from `haku/state_template/` (`procedures/`, `ui/`, `items/`) and owned by Haku
-in its state. Don't add them here.
+and whatever format that UI presents (the current "items" board) live in Haku's state
+(`haku-state`: `procedures/`, `ui/`, `items/`), owned by Haku. Don't add them here.
 
 **Source vs. procedure — the boundary** (the thing that kept getting muddled): a source
 file (base) is about **getting and reading** the data; a procedure (Haku's state) is about
 **acting on** what you find. If a line reads "look for X → surface it," it's a procedure,
-not a source — it belongs in `state_template/procedures/`, not `base/sources/`. Keep
+not a source — it belongs in haku-state's `procedures/`, not `base/sources/`. Keep
 `sources/*.md` free of "look for / surface a finding" process, and keep procedures free of
 channel-specific access mechanics (those belong in the source).
 
@@ -41,18 +40,13 @@ channel-specific access mechanics (those belong in the source).
   by editing here and letting the image rebuild (Flux image automation bumps the
   CronJob tag). There is no live-editing path.
 - Do **not** add seed content to Haku's state from `base/` — it's baked into the
-  image and read-only. First-run starter scaffolding lives in `haku/state_template/`
-  instead (a separate ducktape copy-source Haku reads at run time, not part of
-  `base/`); Haku copies it, so state stays Haku-authored. `base/` and state are
-  separate; the only thing Haku writes is state.
-- When syncing Haku's evolved method back into `haku/state_template/`, keep it a
-  **generic, person-agnostic starter** — carry the structural/high-level changes
-  (architecture, the surfaces every instance wants, the deploy pipeline, generic
-  procedures/schema) but **never the operator's personal specifics** (their items,
-  `memory/` content, logs, or surfaces built around one operator's accounts/life). The
-  principle and the "would it help an arbitrary new operator?" test live in
-  [`state_template/README.md`](../state_template/README.md) → _Principle: a generic
-  starter_.
+  image and read-only. `base/` and state are separate; the only thing Haku writes is
+  state. There is **no seed template**: `haku/state_template/` was retired 2026-07-07
+  (nobody was scaffolding new instances, and the template had become an unmerged fork of
+  the live `haku-state`). Method/UI changes that used to land as template edits now land
+  as **specs** — describe the contract change (an endpoint, a widget, a request schema) in
+  ducktape docs/plans and let Haku implement it in its own `ui/`/`procedures/`; don't edit
+  Haku's UI code for it in ducktape.
 - Keep `instructions.md` and `haku/run.md` in sync when you change the cycle: the
   contracts are described once in `instructions.md`; `haku/run.md` holds the **shape of
   the run** (ordering invariants + the fluid loop, not a rigid step list) and

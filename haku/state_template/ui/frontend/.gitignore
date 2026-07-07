@@ -1,5 +1,0 @@
-# Build output and deps — never committed. The build artifact is the Bazel-built
-# container image (//ui:image, pushed by ../../.forgejo/workflows/bazel-ci.yaml).
-node_modules/
-dist/
-*.tsbuildinfo

@@ -11,7 +11,7 @@ rationale:
 - What Haku is, its objective, and how it reasons, plus the credential/perimeter model:
   `haku/base/instructions.md` (+ `haku/base/sources/`). Base is **item-agnostic**; Haku's
   current working method — its presentation format, procedures, and UI — lives in its
-  `haku-state` repo (seeded from `haku/state_template/`), not base.
+  `haku-state` repo, not base (its former seed, `haku/state_template/`, was retired 2026-07-07).
 - **Threat model, enforcement inventory, and the invariants edits must preserve:**
   <docs/security.md> — the durable doctrine's canonical home; start a security review there.
 - The run procedure: `haku/run.md`; the web runtime: `haku/runtime/claude_web_env/`.
@@ -29,7 +29,7 @@ rationale:
   tools, and approval-gated tool requests into high-value work the operator can approve
   with little effort. Durable doctrine belongs in `haku/base/instructions.md`; concrete
   method changes belong in the haku-state repo and the generic starter under
-  `haku/state_template/`.
+  `haku-state` (its former ducktape seed, `state_template/`, is retired).
 - **More source coverage behind safe boundaries.** Add read-only facades or scoped
   credentials for sources that are not yet wired, such as PostScanMail and Manifold. Keep
   the durable boundary doctrine in `haku/docs/security.md` and per-source mechanics in

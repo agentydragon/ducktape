@@ -2,7 +2,7 @@
 
 The console is now just the trusted shell: it surfaces config to the SPA (launch URL +
 Haku UI URL) and brokers the capability tier. All product surfaces — items, feedback —
-live in ``haku/state_template/ui/`` (Haku's own UI), embedded via a sandboxed iframe.
+live in haku-state's ``ui/`` (Haku's own UI), embedded via a sandboxed iframe.
 """
 
 from __future__ import annotations

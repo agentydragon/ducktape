@@ -9,7 +9,7 @@
 # way; this is the in-cluster defense-in-depth the design doc + cluster TODO flagged.
 #
 # Operator-owned (Haku has no route/netpol RBAC), and it selects the `app: haku-ui`
-# label the starter Deployment uses (haku/state_template/k8s/haku-ui).
+# label Haku's Deployment uses (haku-state k8s/haku-ui).
 # Security model: haku/docs/security.md (enforcement inventory #12).
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

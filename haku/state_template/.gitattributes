@@ -1,7 +1,0 @@
-# Generated lockfiles — not hand-edited (regenerated from their source manifests:
-# requirements.txt from pyproject.toml, pnpm-lock.yaml from package.json,
-# MODULE.bazel.lock by Bazel). Mark linguist-generated so they collapse in diffs
-# and are excluded from language stats.
-ui/backend/requirements.txt linguist-generated=true
-ui/frontend/pnpm-lock.yaml linguist-generated=true
-MODULE.bazel.lock linguist-generated=true

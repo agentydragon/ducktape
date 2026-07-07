@@ -4,8 +4,8 @@ Status: open follow-ups only. Implemented behavior belongs in:
 
 - `haku/console/README.md` for the trusted console API, approval ledger, operator OAuth,
   and console UI shell.
-- `haku/state_template/tool_requests/README.md` for authored request files.
-- `haku/state_template/procedures/tool_calls.md` and `haku/state_template/procedures/garden.md`
+- haku-state's `tool_requests/README.md` for authored request files.
+- haku-state's `procedures/tool_calls.md` and `procedures/garden.md`
   for Haku's external tool-call proposal pass, direct approval RPC use, and `<tool-call>`
   affordance authoring.
 

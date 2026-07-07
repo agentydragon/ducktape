@@ -8,7 +8,7 @@ spec:
   # tf/gitops/haku-state) that hits this receiver, reconciling the haku-ui
   # ImageRepository immediately instead of waiting for its 5m poll.
   #
-  # Operator-owned (NOT in Haku's state_template): a Receiver lists resources to
+  # Operator-owned (NOT in Haku's haku-state): a Receiver lists resources to
   # force-reconcile, which the notification-controller patches cluster-wide — a
   # cross-namespace primitive we deliberately keep out of Haku's hands. The
   # ImageRepository it triggers is Haku's own (haku-sandbox), referenced cross-namespace.

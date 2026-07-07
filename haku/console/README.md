@@ -4,7 +4,7 @@ A small FastAPI service that serves the Haku console as a **React single-page ap
 over a JSON API**. It is the trusted operator interface: Authentik operator-only,
 reviewed ducktape code. It replaced the static nginx + git-sync dashboard (now retired).
 
-All product surfaces have **moved** to `haku/state_template/ui/` — Haku's own UI service
+All product surfaces have **moved** to haku-state's `ui/` — Haku's own UI service
 (`haku-ui`), which the console frames **full-page** as a sandboxed cross-origin iframe. The
 console is now just the trusted outer shell: the capability tier (launch-routine) plus the
 bridge that brokers the iframe's privileged requests. It holds no haku-state write credential.

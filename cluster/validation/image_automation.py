@@ -17,7 +17,7 @@ from __future__ import annotations
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.k8s import ImagePolicyResource, ImageRepositoryResource, ReceiverResource
 
-# ImageRepositories defined in Haku's haku-state (haku/state_template), reconciled into
+# ImageRepositories defined in Haku's haku-state repo, reconciled into
 # haku-sandbox — not under cluster/k8s, so the validator can't see them. An operator-owned
 # Receiver here may still reference one (cluster/k8s/haku/ui-image-webhook), so exempt these
 # from the "Receiver references an undefined ImageRepository" check.
