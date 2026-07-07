@@ -22,74 +22,44 @@ rationale:
   `cluster/k8s/agents/haku-egress-proxy/`.
 - The **actionable build checklist is `TODO.md`.**
 
-## Goal
+## Open directions
 
-Haku runs in the background of the operator's life with a bundle of scoped access,
-continuously looking for useful things to do across everything it can see — Gmail,
-Calendar, Drive, Tana, Plaid, the cluster, repos, and more as they're wired. Its current
-hands are: haku-ui for interaction and bespoke flows; free tools for read/research/state
-work and tightly bounded autonomous writes; and haku-console tool-call requests for
-privileged external actions that need operator approval. The current contract is not
-"read-only forever"; it is "help as much as possible without bypassing the consent
-boundary."
-
-Status: v0 is live end-to-end — the Claude Code web home runs the loop scheduled, the
-data plane (scoped k8s identity, the sandbox, read-only source mirrors, `haku-state`,
-the mailbox — `haku@allegedly.works` on a self-hosted Stalwart, delivery DMARC-gated to
-whitelisted senders in operator-owned config, read over JMAP with a dedicated Authentik
-identity; `cluster/k8s/haku/mailbox/`) is landed, and Haku owns its UI service and
-method. Current work is iterating base and Haku's method until what it surfaces is
-genuinely good, plus the items below.
-
-## Not yet built
-
-- **More sources behind read-only facades.** The read-only tool-filtering boundary
-  already exists — the generic `mcp-oauth-facade` image (default-deny tool allowlist +
-  a server-held upstream credential callers never see), live as `tana-mcp-ro`
-  (`cluster/k8s/agents/tana-mcp-ro/`). An upstream MCP server with no
-  read-only-credential trick gets fronted by **another instance** of it: a Deployment +
-  a `config.yaml` allowlist + the upstream secret + a bearer-gated route — no new
-  boundary code, the generalization is mechanical. Still to wire this way: PostScanMail
-  (unopened mail), Manifold. (The Authentik OAuth facades are _auth_ only — they forward
-  the full tool set — so they don't substitute for this.) **Grocy** went a different,
-  cheaper route — no facade: its upstream enforces per-user permissions, so the read-only
-  `haku` Grocy user (empty perms → API serves reads, 403s writes) _is_ the boundary, and
-  Haku calls the grocy-sf MCP directly (`base/sources/grocy.md`). Prefer that whenever an
-  upstream has its own read-only-credential model; the facade is for the ones that don't.
-- **Console executions panel + one-in-flight guard.** Both want a routine-runs-**listing**
-  API, and **none is known to exist** for `claude_code` routines (only `/fire`), so the
-  interim "review past runs" affordance is the deep-link to the routine's `claude.ai/code`
-  page. When a listing API surfaces and the panel is built, adopt the `anthropic` Python
-  SDK (it auto-sends `anthropic-version` — the omission that 502'd the bare-`httpx`
-  fire — plus bearer auth, typed errors, retries) and migrate the launch POST onto it then.
-  (An earlier "richer declarative UI" direction — a typed widget schema rendered by the
-  trusted console — is retired: the console renders nothing by design now; free-form UI in
-  Haku's own iframe service superseded it.)
-- **Share the iframe bridge protocol** instead of hand-duplicating the message shapes
-  between `haku/console/frontend/bridge.ts` (authoritative) and Haku's UI — a tiny shared
-  package or a sync-checked artifact. (The remaining cleanup from the realized free-form
-  UI design; see `console/docs/containment.md` → _The bridge protocol_.)
-- **In-cluster runtime** (the `haku-scanner` CronJob / self-hosted Managed-Agents
-  worker) as an alternative to the web home — deferred; see `TODO.md` → _Later_ and
-  `haku/runtime/managed_agent/`. Revisit if scanner-image upkeep or the
-  client_credentials path proves painful (scheduled deployments + vaults remove exactly
-  those work items).
-- **Tool-call expansion and richer Haku-owned workflows.** The approval substrate exists; the
-  remaining work is to connect more MCP/API servers and teach Haku's state/UI to use them well:
-  prepared Tana edits, Gmail draft/send/archive flows, shopping/inventory check-ins, paperwork, and
-  operations panels. The v0 `<tool-call>` widget is one surface, not the architecture.
-- **Capability registry** (a ConfigMap mapping `service → facade URL → secret name`) —
-  a possible later formalization of today's ad-hoc `kubectl get secret` discovery; not
-  required by the current model.
+- **Make Haku substantially more useful.** Keep iterating the base method and the live
+  haku-state procedures/UI until Haku routinely turns sources, memory, haku-ui, free
+  tools, and approval-gated tool requests into high-value work the operator can approve
+  with little effort. Durable doctrine belongs in `haku/base/instructions.md`; concrete
+  method changes belong in the haku-state repo and the generic starter under
+  `haku/state_template/`.
+- **More source coverage behind safe boundaries.** Add read-only facades or scoped
+  credentials for sources that are not yet wired, such as PostScanMail and Manifold. Keep
+  the durable boundary doctrine in `haku/docs/security.md` and per-source mechanics in
+  `haku/base/sources/`; this plan should only name sources that remain to be added.
+- **Console executions panel + one-in-flight guard.** Build this when there is a
+  routine-runs listing API for Claude Code routines. The panel should render active/past
+  routine state from an official listing and migrate launch calls to the `anthropic`
+  Python SDK rather than extending bespoke `httpx` code.
+- **Shared iframe bridge protocol.** Replace hand-duplicated message shapes between
+  `haku/console/frontend/bridge.ts` and haku-ui with a shared package or generated
+  sync-checked artifact.
+- **Alternative in-cluster runtime.** Keep the self-hosted/in-cluster scanner or Managed
+  Agents worker as an alternative to the web-home runtime. Revisit if scanner image
+  upkeep, client-credentials, or vault integration becomes materially better than that
+  path.
+- **Tool-call expansion and richer Haku-owned workflows.** Connect more MCP/API servers
+  and teach Haku's state/UI to use them well: prepared Tana edits, Gmail draft/send/archive
+  flows, shopping/inventory check-ins, paperwork, and operations panels. Do not let any
+  single button/widget surface become the whole product.
+- **Capability registry.** Consider a small registry for service endpoints and credential
+  sources if ad-hoc secret/config discovery starts costing Haku meaningful run time or causes
+  drift.
 
 ## Future: more autonomous low-blast-radius tools
 
-Haku already has a current approval-gated action path through haku-console. A separate future
-direction is to let Haku take **some** low-blast-radius actions autonomously — e.g. _draft an
-email_ (into Drafts, not send), _explore less-restricted websites_ for research, and similar moves
-— without giving up the transparency and containment that make the current posture safe. (The
-`gmail-labeling` closure server was the first realized instance of the pattern: a narrow write
-surface made safe by construction — see `docs/security.md` inventory #7.)
+Consider letting Haku take **some** low-blast-radius actions autonomously — e.g. _draft an email_
+(into Drafts, not send), _explore less-restricted websites_ for research, and similar moves —
+without giving up the transparency and containment that make Haku's bounded posture safe. Existing
+autonomous write exceptions belong in `haku/docs/security.md` and `haku/base/instructions.md`, not
+here.
 
 Sketch to design out later (a real mechanism-design + security effort, not built):
 
@@ -106,8 +76,8 @@ Sketch to design out later (a real mechanism-design + security effort, not built
   records in `tf/gitops/dns-records/`, OVH rDNS for the gateway IPs, and Gmail may
   still junk a fresh sender for a while.
 - **Transparency by construction.** Every elevated action is logged and surfaced (what
-  it did, under which grant, why), so the operator-facing surface is the accountability
-  surface — same as recommendations are today.
+  it did, under which grant, why), so the operator-facing surface is also the
+  accountability surface.
 - **Enforced by the perimeter, not by trust.** Per `docs/security.md`, an elevation
   must be enforced by what the token actually unlocks (the mechanism), never by trusting
   Haku to stay in bounds. Drafting (write to Drafts, no send) and sandboxed browsing
@@ -119,7 +89,6 @@ Sketch to design out later (a real mechanism-design + security effort, not built
 
 ## A richer haku-console airlock (later)
 
-The current HTTP tool-call API is enough for Haku and haku-ui to request approved actions. Later,
 haku-console may grow into an MCP/HTTP airlock proxy: calls that pass auto-allow policy execute
 immediately, while all others become approval requests or async haku-ui continuations. The invariant
 stays the same: exact call reviewed, trusted console approval, console-owned audit/result state,
