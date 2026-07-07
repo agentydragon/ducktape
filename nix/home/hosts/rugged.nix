@@ -62,6 +62,8 @@ in
     };
   };
 
+  ducktape.activitywatch.watcher = "awatcher";
+
   ducktape.activitywatch.sync = {
     enable = true;
     syncthing = {
@@ -144,6 +146,9 @@ in
   programs.gnome-shell.extensions = [
     { package = pkgs.gnomeExtensions.appindicator; }
     { package = ducktapePackages.aiquota; }
+    # GNOME Wayland has no out-of-process active-window API; awatcher reads focus via
+    # this in-shell extension. See debug/activitywatch_window_gnome_wayland.md.
+    { package = pkgs.gnomeExtensions.focused-window-d-bus; }
   ];
 
   # Enable GNOME fractional scaling (125/150/175%). GNOME gates these steps
