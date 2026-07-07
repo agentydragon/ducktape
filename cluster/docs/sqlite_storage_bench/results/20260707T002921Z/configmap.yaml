@@ -1,0 +1,294 @@
+apiVersion: v1
+data:
+  bench_sqlite_storage.py: |
+    #!/usr/bin/env python3
+    import json
+    import os
+    import platform
+    import random
+    import sqlite3
+    import statistics
+    import subprocess
+    import time
+    from collections.abc import Callable, Iterable
+    from pathlib import Path
+    from typing import Any
+
+
+    DATA_DIR = Path(os.environ.get("BENCH_DATA_DIR", "/data"))
+    ROWS_1M = 1_000_000
+    EVENT_ROWS = 100_000
+    GROCY_ROWS = 100_000
+
+
+    def now_ns() -> int:
+        return time.perf_counter_ns()
+
+
+    def seconds_since(start_ns: int) -> float:
+        return (now_ns() - start_ns) / 1_000_000_000
+
+
+    def timed_seconds(fn: Callable[[], Any]) -> float:
+        start = now_ns()
+        fn()
+        return seconds_since(start)
+
+
+    def percentile(values: list[float], pct: float) -> float:
+        if not values:
+            raise ValueError("cannot compute percentile of empty list")
+        ordered = sorted(values)
+        index = min(len(ordered) - 1, max(0, int((len(ordered) - 1) * pct)))
+        return ordered[index]
+
+
+    def summarize_seconds(values: list[float]) -> dict[str, float | int]:
+        return {
+            "count": len(values),
+            "p50_ms": percentile(values, 0.50) * 1000,
+            "p95_ms": percentile(values, 0.95) * 1000,
+            "max_ms": max(values) * 1000,
+            "mean_ms": statistics.fmean(values) * 1000,
+        }
+
+
+    def emit(record: dict[str, Any]) -> None:
+        print(json.dumps(record, sort_keys=True), flush=True)
+
+
+    def run_command(args: list[str]) -> str:
+        try:
+            return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT).strip()
+        except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+            return f"unavailable: {exc}"
+
+
+    def metadata() -> dict[str, Any]:
+        mount_info = ""
+        best_mountpoint = ""
+        for line in Path("/proc/self/mountinfo").read_text().splitlines():
+            fields = line.split()
+            if len(fields) > 4 and DATA_DIR.as_posix().startswith(fields[4]) and len(fields[4]) > len(best_mountpoint):
+                best_mountpoint = fields[4]
+                mount_info = line
+
+        stat = os.statvfs(DATA_DIR)
+        return {
+            "bench_id": os.environ.get("BENCH_ID"),
+            "storage_class": os.environ.get("STORAGE_CLASS"),
+            "repeat": int(os.environ.get("REPEAT_INDEX", "0")),
+            "pod_name": os.environ.get("POD_NAME"),
+            "node_name": os.environ.get("NODE_NAME"),
+            "kernel": platform.release(),
+            "python": platform.python_version(),
+            "sqlite": sqlite3.sqlite_version,
+            "mount_info": mount_info,
+            "df_bytes_available": stat.f_bavail * stat.f_frsize,
+            "df_bytes_total": stat.f_blocks * stat.f_frsize,
+        }
+
+
+    def connect(db_path: Path) -> sqlite3.Connection:
+        conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=FULL")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        return conn
+
+
+    def new_db(name: str) -> sqlite3.Connection:
+        for path in DATA_DIR.glob(f"{name}*"):
+            path.unlink()
+        return connect(DATA_DIR / f"{name}.sqlite")
+
+
+    def measure_autocommit(rows: int) -> dict[str, Any]:
+        conn = new_db(f"autocommit_{rows}")
+        conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)")
+        latencies: list[float] = []
+        for i in range(rows):
+            start = now_ns()
+            conn.execute("INSERT INTO t(payload) VALUES (?)", (f"row-{i:06d}",))
+            conn.commit()
+            latencies.append(seconds_since(start))
+        conn.close()
+        return {"name": f"autocommit_{rows}", **summarize_seconds(latencies)}
+
+
+    def event_row(i: int) -> tuple[int, int, str, str]:
+        return (
+            1_750_000_000_000 + i * 1000,
+            random.randint(1, 30_000),
+            f"bucket-{i % 32:02d}",
+            json.dumps({"app": f"app-{i % 20}", "title": f"window {i}", "url": f"https://example/{i % 1000}"}),
+        )
+
+
+    def grocy_row(i: int) -> tuple[str, str, int, str]:
+        return (
+            f"product-{i % 4000:04d}",
+            f"location-{i % 32:02d}",
+            i % 9,
+            json.dumps({"barcode": f"{i:013d}", "note": f"purchase {i}", "done": i % 2 == 0}),
+        )
+
+
+    def insert_in_batches(
+        conn: sqlite3.Connection,
+        sql: str,
+        rows: Iterable[tuple[Any, ...]],
+        batch_size: int,
+    ) -> list[float]:
+        latencies: list[float] = []
+        batch: list[tuple[Any, ...]] = []
+        for row in rows:
+            batch.append(row)
+            if len(batch) == batch_size:
+                start = now_ns()
+                with conn:
+                    conn.executemany(sql, batch)
+                latencies.append(seconds_since(start))
+                batch.clear()
+        if batch:
+            start = now_ns()
+            with conn:
+                conn.executemany(sql, batch)
+            latencies.append(seconds_since(start))
+        return latencies
+
+
+    def measure_activitywatch_batch(batch_size: int) -> dict[str, Any]:
+        conn = new_db(f"activitywatch_batch_{batch_size}")
+        conn.execute(
+            "CREATE TABLE events (id INTEGER PRIMARY KEY, timestamp_ms INTEGER NOT NULL, duration_ms INTEGER NOT NULL, bucket_id TEXT NOT NULL, payload_json TEXT NOT NULL)"
+        )
+        conn.execute("CREATE INDEX events_bucket_time ON events(bucket_id, timestamp_ms)")
+        rows = (event_row(i) for i in range(EVENT_ROWS))
+        latencies = insert_in_batches(
+            conn,
+            "INSERT INTO events(timestamp_ms, duration_ms, bucket_id, payload_json) VALUES (?, ?, ?, ?)",
+            rows,
+            batch_size,
+        )
+        conn.close()
+        elapsed = sum(latencies)
+        return {
+            "name": f"activitywatch_batch_{batch_size}",
+            "rows": EVENT_ROWS,
+            "batch_size": batch_size,
+            "inserts_per_sec": EVENT_ROWS / elapsed,
+            **summarize_seconds(latencies),
+        }
+
+
+    def measure_grocy_batch() -> dict[str, Any]:
+        conn = new_db("grocy")
+        conn.execute(
+            "CREATE TABLE stock (id INTEGER PRIMARY KEY, product TEXT NOT NULL, location TEXT NOT NULL, quantity INTEGER NOT NULL, payload_json TEXT NOT NULL)"
+        )
+        conn.execute("CREATE INDEX stock_product_location ON stock(product, location)")
+        rows = (grocy_row(i) for i in range(GROCY_ROWS))
+        latencies = insert_in_batches(
+            conn,
+            "INSERT INTO stock(product, location, quantity, payload_json) VALUES (?, ?, ?, ?)",
+            rows,
+            100,
+        )
+        query_latencies = [
+            timed_seconds(lambda p=p: conn.execute("SELECT SUM(quantity) FROM stock WHERE product = ?", (p,)).fetchone())
+            for p in (f"product-{i:04d}" for i in range(200))
+        ]
+        conn.close()
+        return {
+            "name": "grocy_batch_100",
+            "rows": GROCY_ROWS,
+            "batch_size": 100,
+            "inserts_per_sec": GROCY_ROWS / sum(latencies),
+            "write": summarize_seconds(latencies),
+            "indexed_product_query": summarize_seconds(query_latencies),
+        }
+
+
+    def populate_events_for_queries(conn: sqlite3.Connection, rows: int) -> None:
+        conn.execute(
+            "CREATE TABLE events (id INTEGER PRIMARY KEY, timestamp_ms INTEGER NOT NULL, duration_ms INTEGER NOT NULL, bucket_id TEXT NOT NULL, payload_json TEXT NOT NULL)"
+        )
+        conn.execute("CREATE INDEX events_time ON events(timestamp_ms)")
+        conn.execute("CREATE INDEX events_bucket_time ON events(bucket_id, timestamp_ms)")
+        insert_in_batches(
+            conn,
+            "INSERT INTO events(timestamp_ms, duration_ms, bucket_id, payload_json) VALUES (?, ?, ?, ?)",
+            (event_row(i) for i in range(rows)),
+            1000,
+        )
+
+
+    def measure_queries(rows: int) -> dict[str, Any]:
+        db_path = DATA_DIR / f"queries_{rows}.sqlite"
+        conn = new_db(f"queries_{rows}")
+        populate_events_for_queries(conn, rows)
+        window_rows = min(25_000, max(1000, rows // 4))
+        range_latencies = []
+        for start in range(0, max(1, min(rows - window_rows, 100_000)), max(1, window_rows // 10)):
+            end = start + window_rows
+            range_latencies.append(
+                timed_seconds(
+                    lambda start=start, end=end: conn.execute(
+                        "SELECT COUNT(*), SUM(duration_ms) FROM events WHERE timestamp_ms BETWEEN ? AND ?",
+                        (1_750_000_000_000 + start * 1000, 1_750_000_000_000 + end * 1000),
+                    ).fetchone()
+                )
+            )
+        aggregate_latencies = [
+            timed_seconds(lambda b=b: conn.execute("SELECT COUNT(*) FROM events WHERE bucket_id = ?", (b,)).fetchone())
+            for b in (f"bucket-{i:02d}" for i in range(32))
+        ]
+        conn.close()
+        reopen_latency = timed_seconds(lambda: connect(db_path).execute("SELECT COUNT(*) FROM events").fetchone())
+        return {
+            "name": f"queries_{rows}",
+            "rows": rows,
+            "time_range": summarize_seconds(range_latencies),
+            "bucket_count": summarize_seconds(aggregate_latencies),
+            "close_reopen_count_ms": reopen_latency * 1000,
+        }
+
+
+    def measure_checkpoint() -> dict[str, Any]:
+        conn = new_db("checkpoint")
+        populate_events_for_queries(conn, EVENT_ROWS)
+        checkpoint_latency = timed_seconds(lambda: conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone())
+        close_latency = timed_seconds(conn.close)
+        reopen_latency = timed_seconds(lambda: connect(DATA_DIR / "checkpoint.sqlite").execute("SELECT COUNT(*) FROM events").fetchone())
+        return {
+            "name": "wal_checkpoint_truncate",
+            "checkpoint_ms": checkpoint_latency * 1000,
+            "close_ms": close_latency * 1000,
+            "reopen_count_ms": reopen_latency * 1000,
+        }
+
+
+    def main() -> None:
+        random.seed(0)
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        emit({"record": "metadata", **metadata(), "uname": run_command(["uname", "-a"]), "df": run_command(["df", "-h", DATA_DIR.as_posix()])})
+        for rows in (1000, 10_000):
+            emit({"record": "result", "workload": measure_autocommit(rows)})
+        for batch_size in (10, 100, 1000):
+            emit({"record": "result", "workload": measure_activitywatch_batch(batch_size)})
+        emit({"record": "result", "workload": measure_grocy_batch()})
+        for rows in (10_000, 100_000, ROWS_1M):
+            emit({"record": "result", "workload": measure_queries(rows)})
+        emit({"record": "result", "workload": measure_checkpoint()})
+        emit({"record": "complete", "elapsed_s": seconds_since(START_NS)})
+
+
+    START_NS = now_ns()
+
+    if __name__ == "__main__":
+        main()
+kind: ConfigMap
+metadata:
+  name: sqlite-storage-bench-script
+  namespace: sqlite-storage-bench
