@@ -138,9 +138,11 @@ in
           };
           Service = {
             ExecStart = "${pkgs.awatcher}/bin/awatcher";
-            # aw-server is started by aw-qt (xdg.autostart) at graphical-session time;
-            # retry briefly if awatcher starts before aw-server is listening.
-            Restart = "on-failure";
+            # awatcher exits 0 (not a failure) when the focused-window-d-bus extension
+            # isn't loaded yet (e.g. shell started before the install), and may also
+            # start before aw-qt has aw-server listening. Restart=always retries until
+            # both are up; it runs indefinitely once wired.
+            Restart = "always";
             RestartSec = 5;
           };
           Install = {
