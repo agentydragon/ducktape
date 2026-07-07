@@ -109,6 +109,9 @@ py_library(
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
         "@pypi//uvicorn",
+        # uvicorn needs a WebSocket protocol impl at runtime or every /api/approvals/ws
+        # upgrade fails ("Unsupported upgrade request") — the drawer's live channel (#2977).
+        "@pypi//websockets",
     ],
 )
 
