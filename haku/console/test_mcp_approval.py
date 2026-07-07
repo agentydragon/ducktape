@@ -24,7 +24,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from testcontainers.postgres import PostgresContainer
 
-from haku.console.mcp_approval import _mcp_result_to_json
+from haku.console.mcp_approval import AliveServerMetadata, _mcp_result_to_json
 from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.net import pick_free_port, wait_for_port
 from util.oci import load_oci_image
@@ -279,6 +279,15 @@ class RecordingExecutor:
         }
 
 
+class RecordingMetadataProvider:
+    def __init__(self) -> None:
+        self.auth_tokens: list[str | None] = []
+
+    async def metadata(self, server: Any, auth_token: str | None) -> AliveServerMetadata:
+        self.auth_tokens.append(auth_token)
+        return AliveServerMetadata(server_id=server.id, title=server.id)
+
+
 def test_reflection_lists_connected_servers_without_leaking_credentials(
     make_client, tmp_path: Path, db_url: str, mcp_server_url: str
 ) -> None:
@@ -296,6 +305,39 @@ def test_reflection_lists_connected_servers_without_leaking_credentials(
     assert tools["echo"]["status"] == "alive"
     assert tools["echo"]["input_schema"]["type"] == "object"
     assert "bearer_token_secret" not in str(body)
+
+
+def test_operator_oauth_association_drives_tool_reflection(make_client, tmp_path: Path, db_url: str) -> None:
+    metadata_provider = RecordingMetadataProvider()
+    with (
+        _remote_oauth_url() as oauth_url,
+        make_client(
+            config_file=_operator_oauth_config_file(tmp_path, oauth_url),
+            csrf_secret=SecretStr("csrf"),
+            public_base_url="https://haku.test",
+            tool_call_metadata_provider=metadata_provider,
+            **_test_app_overrides(db_url),
+        ) as client,
+    ):
+        before = client.get(
+            "/api/capabilities/mcp-servers", headers={"X-authentik-username": "operator@example.com"}
+        ).json()
+        started = client.post(
+            "/api/mcp/operator-auth/grocy-sf/start",
+            headers={"X-CSRF-Token": _csrf(client), "X-authentik-username": "operator@example.com"},
+        )
+        state = parse_qs(urlparse(started.json()["authorization_url"]).query)["state"][0]
+        callback = client.get("/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"})
+        after = client.get(
+            "/api/capabilities/mcp-servers", headers={"X-authentik-username": "operator@example.com"}
+        ).json()
+
+    assert before["servers"][0]["status"] == "degraded"
+    assert "Connect your grocy-sf MCP account" in before["servers"][0]["degraded_reason"]
+    assert callback.status_code == 200, callback.text
+    assert after["servers"][0]["status"] == "alive"
+    assert metadata_provider.auth_tokens == ["operator-access-token"]
+    assert "bearer_token_secret" not in str(after)
 
 
 def test_reflection_marks_unreachable_servers_degraded(

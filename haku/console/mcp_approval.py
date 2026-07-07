@@ -532,9 +532,9 @@ class McpToolExecutor:
 
 
 class McpMetadataProvider:
-    async def metadata(self, server: McpServerEntry) -> ServerMetadata:
+    async def metadata(self, server: McpServerEntry, auth_token: str | None) -> ServerMetadata:
         try:
-            async with Client(server.server_url, auth=_credential_token(server)) as client:
+            async with Client(server.server_url, auth=auth_token) as client:
                 tools = await client.list_tools()
         except Exception as e:
             return DegradedServerMetadata(server_id=server.id, title=server.id, tools=[], degraded_reason=str(e))
@@ -571,6 +571,10 @@ def _oauth_store(request: Request) -> McpOperatorOAuthStoreProtocol:
     if store is None:
         raise HTTPException(status_code=503, detail="MCP operator OAuth database is not configured")
     return cast(McpOperatorOAuthStoreProtocol, store)
+
+
+def _maybe_oauth_store(request: Request) -> McpOperatorOAuthStoreProtocol | None:
+    return cast(McpOperatorOAuthStoreProtocol | None, request.app.state.mcp_operator_oauth_store)
 
 
 LedgerDep = Annotated[ToolCallLedgerProtocol, Depends(_ledger)]
@@ -1015,10 +1019,44 @@ async def _wait_terminal(ledger: ToolCallLedgerProtocol, tool_call_id: str, wait
         await asyncio.sleep(0.05)
 
 
+async def _metadata_for_request(
+    *, request: Request, server: McpServerEntry, metadata_provider: McpMetadataProvider
+) -> ServerMetadata:
+    if _operator_oauth_enabled(server):
+        oauth_store = _maybe_oauth_store(request)
+        operator_principal = _operator_principal(request)
+        if oauth_store is None:
+            return DegradedServerMetadata(
+                server_id=server.id,
+                title=server.id,
+                tools=[],
+                degraded_reason="MCP operator OAuth database is not configured.",
+            )
+        auth_token = await oauth_store.access_token_for(server=server, operator_principal=operator_principal)
+        if not auth_token:
+            return DegradedServerMetadata(
+                server_id=server.id,
+                title=server.id,
+                tools=[],
+                degraded_reason=f"Connect your {server.id} MCP account in the console to reflect this server's tools.",
+            )
+        return await metadata_provider.metadata(server, auth_token)
+    try:
+        auth_token = _credential_token(server)
+    except Exception as e:
+        return DegradedServerMetadata(server_id=server.id, title=server.id, tools=[], degraded_reason=str(e))
+    return await metadata_provider.metadata(server, auth_token)
+
+
 @router.get("/api/capabilities/mcp-servers")
-async def mcp_servers(settings: SettingsDep, metadata_provider: MetadataProviderDep) -> ToolCapabilitiesResponse:
+async def mcp_servers(
+    request: Request, settings: SettingsDep, metadata_provider: MetadataProviderDep
+) -> ToolCapabilitiesResponse:
     return ToolCapabilitiesResponse(
-        servers=[await metadata_provider.metadata(server) for server in _load_servers(settings)]
+        servers=[
+            await _metadata_for_request(request=request, server=server, metadata_provider=metadata_provider)
+            for server in _load_servers(settings)
+        ]
     )
 
 
