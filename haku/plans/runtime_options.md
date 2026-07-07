@@ -1,12 +1,12 @@
 # Haku runtime options: A / B / C
 
-Status: **design / exploring — the runtime is not yet chosen.** Runtime A (Claude
-Code web routine) is the current operational path for Haku, kept despite real
-drawbacks — full Anthropic lock-in and the options it forecloses (see below) — so
-Runtimes B and C stay open as evaluation candidates. This is the "which runtime"
-comparison; the detailed design of Runtime B is in [managed_agents.md](managed_agents.md)
-(+ its [artifact drafts](managed_agents_artifacts.md)). Keep this comparison live
-until a runtime is actually committed to.
+Status: **Runtime A is the primary live runtime for now.** Haku currently runs
+as manually configured Claude Code web routines. Runtime A stays primary despite
+real drawbacks — full Anthropic lock-in and the options it forecloses (see
+below). Runtimes B and C remain experiments at different levels of completeness,
+not production replacements. This is the "which runtime" comparison; the
+detailed design of Runtime B is in [managed_agents.md](managed_agents.md) (+ its
+[artifact drafts](managed_agents_artifacts.md)).
 
 ## The two layers of lock-in
 
@@ -127,12 +127,14 @@ collapse them into one.
 
 ## Recommendation
 
-- **C** if provider-agnosticism and reusing the existing LiteLLM/Langfuse is the
-  priority (it is, per the lock-in concern) — framework = **Pydantic AI**, or
-  **Dapr Agents** if crash-survivable k8s wakeups dominate.
-- **B** if you'd rather not maintain a loop and will accept Anthropic
-  model-lock + API rates in exchange for hosted infra, vaults, and the Console.
-- **A** is the zero-ops / manual stopgap (≈ today plus triggers).
+- **A** remains the live primary runtime until another runtime proves enough
+  operational value to replace it.
+- **C** is the preferred replacement direction if provider-agnosticism and
+  reusing the existing LiteLLM/Langfuse are worth the loop-maintenance cost:
+  framework = **Pydantic AI**, or **Dapr Agents** if crash-survivable k8s
+  wakeups dominate.
+- **B** remains an option if hosted loop infrastructure, vaults, and the Console
+  are worth Anthropic model-lock + API rates.
 
 Haku's `haku-state` git memory means the warm "wake session" is an
 **optimization** in every runtime — losing it just re-orients from `haku-state` —

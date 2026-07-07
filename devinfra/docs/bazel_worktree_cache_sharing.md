@@ -143,20 +143,15 @@ programs.claude-code.settings = {
 };
 ```
 
-Claude network sandboxing is not controlled by a clean "filesystem sandbox only"
-toggle. In the restored source, the Linux runtime enables `bwrap --unshare-net`
-whenever `network.allowedDomains` is present. Claude Code's adapter builds that
-domain list from explicit sandbox settings and from `WebFetch(domain:...)`
-permission rules. Our config intentionally emits those WebFetch domain rules, so
-removing network sandboxing globally would also change WebFetch permission
-behavior unless we patch Claude.
+Network-sandbox behavior and the Bazel incompatibility are owned by
+<../../docs/claude_code_sandbox.md>. This local-CLI note only records the cache
+layout and the proxy shim used when direct `bazel`/`bazelisk` runs are kept in
+the Claude CLI sandbox.
 
-Instead, Bazel can run through Claude's proxy. Claude's Linux sandbox exposes an
-HTTP CONNECT proxy via `HTTP_PROXY=http://localhost:3128` and a SOCKS proxy via
-`ALL_PROXY=socks5h://localhost:1080`. Bazel's repository downloader honors the
-normal HTTP proxy environment, but Bazel's RBE/BES gRPC channels are grpc-java
-Netty channels. They do not read `GRPC_PROXY`; grpc-java's default proxy detector
-uses Java system properties such as `https.proxyHost` and `https.proxyPort`.
+Bazel's repository downloader honors the normal HTTP proxy environment, but
+Bazel's RBE/BES gRPC channels are grpc-java Netty channels. They do not read
+`GRPC_PROXY`; grpc-java's default proxy detector uses Java system properties
+such as `https.proxyHost` and `https.proxyPort`.
 
 The Ducktape Claude hook daemon therefore makes the Bazel shim translate
 `HTTP_PROXY`/`http_proxy`/`HTTPS_PROXY`/`https_proxy` into Bazel startup args:
@@ -328,13 +323,12 @@ Claude Code local source checked:
   - `convertToSandboxRuntimeConfig` resolves `~`, absolute paths, and
     settings-file-relative paths.
 - `/home/agentydragon/code/claude-code-sourcemap/restored-src/node_modules/@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-manager.js`
-  - network restrictions are enabled whenever `network.allowedDomains` is
-    defined, and Linux/WSL write globs are stripped/filtered because bubblewrap
-    needs concrete mount paths.
+  - Linux/WSL write globs are stripped/filtered because bubblewrap needs
+    concrete mount paths.
 - `/home/agentydragon/code/claude-code-sourcemap/restored-src/node_modules/@anthropic-ai/sandbox-runtime/dist/sandbox/linux-sandbox-utils.js`
-  - Linux network sandboxing uses `bwrap --unshare-net`; when proxy sockets are
-    available, sandbox commands get `HTTP_PROXY=http://localhost:3128`,
-    `ALL_PROXY=socks5h://localhost:1080`, and `GRPC_PROXY`/`grpc_proxy`.
+  - when proxy sockets are available, sandbox commands get
+    `HTTP_PROXY=http://localhost:3128`, `ALL_PROXY=socks5h://localhost:1080`,
+    and `GRPC_PROXY`/`grpc_proxy`.
 
 OpenAI Codex source checked at
 `/home/agentydragon/code/codex`, commit

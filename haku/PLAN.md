@@ -14,7 +14,8 @@ rationale:
   `haku-state` repo, not base (its former seed, `haku/state_template/`, was retired 2026-07-07).
 - **Threat model, enforcement inventory, and the invariants edits must preserve:**
   <docs/security.md> — the durable doctrine's canonical home; start a security review there.
-- The run procedure: `haku/run.md`; the web runtime: `haku/runtime/claude_web_env/`.
+- The live primary runtime today is the manually configured Claude Code web home:
+  `haku/runtime/claude_web_env/`, which runs `haku/run.md`.
 - The trusted console (capability tier + iframe shell): `haku/console/README.md`;
   containment contract: `haku/console/docs/containment.md`. Alternative runtimes
   (Managed Agents): `haku/runtime/managed_agent/` + `haku/plans/`.
@@ -41,10 +42,10 @@ rationale:
 - **Shared iframe bridge protocol.** Replace hand-duplicated message shapes between
   `haku/console/frontend/bridge.ts` and haku-ui with a shared package or generated
   sync-checked artifact.
-- **Alternative in-cluster runtime.** Keep the self-hosted/in-cluster scanner or Managed
-  Agents worker as an alternative to the web-home runtime. Revisit if scanner image
-  upkeep, client-credentials, or vault integration becomes materially better than that
-  path.
+- **Alternative runtimes.** Keep the self-hosted/in-cluster scanner and Managed
+  Agents worker as experiments at varying completeness. They are not the primary
+  runtime unless their docs explicitly say they have replaced the Claude Code web
+  home.
 - **Tool-call expansion and richer Haku-owned workflows.** Connect more MCP/API servers
   and teach Haku's state/UI to use them well: prepared Tana edits, Gmail draft/send/archive
   flows, shopping/inventory check-ins, paperwork, and operations panels. Do not let any

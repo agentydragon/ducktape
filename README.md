@@ -43,8 +43,8 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 
 ### Python
 
-- Deps: add to `pyproject.toml`, regenerate lockfile (see below), use `@pypi//pkg` in BUILD
-- Lockfile: `requirements_bazel.txt` (never edit manually; regenerate via RBE — see below)
+- Deps: add to `pyproject.toml`, regenerate the lockfile via <devinfra/docs/lockfiles.md>, use `@pypi//pkg` in BUILD
+- Lockfile: `requirements_bazel.txt` (never edit manually)
 - Lint: ruff + mypy via Bazel aspects (default on; `--config=nolint` to skip)
 
 ### Gazelle
@@ -58,11 +58,8 @@ bb run //devinfra:gazelle -- --mode=diff  # Preview changes
 
 ### Rust
 
-```bash
-# Add to root Cargo.toml, then:
-CARGO_BAZEL_REPIN=1 bazelisk build @crates//:all  # Update Cargo.Bazel.lock
-# Use @crates//crate_name in BUILD.bazel deps
-```
+Add deps to root `Cargo.toml`, regenerate `Cargo.Bazel.lock` via
+<devinfra/docs/lockfiles.md>, then use `@crates//crate_name` in BUILD deps.
 
 ### Remote Cache + RBE
 
@@ -112,19 +109,10 @@ See `.github/workflows/`.
 ## Common Commands
 
 ```bash
-# Update Python lockfile (requires RBE — no /bin/bash on NixOS for local run)
-bbr build //:requirements --remote_download_regex='.*requirements\.out' --noremote_accept_cached
-cp bb-out/bazel-out/k8-fastbuild/bin/requirements.out requirements_bazel.txt
-# Then regenerate the gazelle manifest:
-bb run //devinfra:gazelle_python_manifest.update
-# On a host without /bin/bash (the workspace bazelrc pins --shell_executable=/bin/bash,
-# which may not exist on NixOS), the update + gazelle runs need:
-#   bb run //devinfra:gazelle_python_manifest.update \
-#     --config=nolint --norun_validations --shell_executable="$(command -v bash)"
-# (--config=nolint + --norun_validations skip the ruff lint aspect, whose sandbox lacks coreutils.)
-
 bb run //devinfra/lint:buildifier    # Format Bazel files
 ```
+
+Lockfile and generated manifest workflows: <devinfra/docs/lockfiles.md>.
 
 ## Conventions
 

@@ -1,9 +1,10 @@
 # haku/runtime/agent — Haku's Agent Framework runtime
 
-Runtime C from <../../plans/runtime_options.md>: a provider-agnostic, self-hosted agent
-loop for Haku, built on **Microsoft Agent Framework**. Separate component from
-`haku/console/` (the dashboard) — different image, dependencies, and git write
-identity.
+Runtime C from <../../plans/runtime_options.md>: an experimental
+provider-agnostic, self-hosted agent loop for Haku, built on **Microsoft Agent
+Framework**. It is not the primary live Haku runtime; today that is
+<../claude_web_env/>. Separate component from `haku/console/` (the dashboard) —
+different image, dependencies, and git write identity.
 
 - **Model** via the in-cluster **LiteLLM** proxy (OpenAI-compatible), so the provider
   (Anthropic / OpenAI / Z.AI-GLM) is a LiteLLM config knob (`HAKU_MODEL`), not code.

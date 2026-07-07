@@ -3,167 +3,47 @@
 Forward-looking gaps in the Rust debundler. Items are written to be removed
 once closed; this file is not a changelog.
 
-## Current AI-worker priority queue (2026-06-23)
+## Current AI-worker priority queue (2026-06-27)
 
-This queue captures the active debundle tooling program. Treat this file as
-the current priority source of truth; detailed design for the automation-first
-direction lives in <plans/automated_spec_workflows.md>. Other tracking files
-hold category-specific evidence:
+This file is the dispatch queue, not a design record or changelog. Detailed
+plans and evidence live here:
 
-- <CLI_DOGFOOD.md> — command UX and scripting-safety gaps found while running
-  real workflows.
-- <SELECTOR_BUGS.md> — selector matcher bugs and diagnostics gaps, with
-  generic/anonymized examples.
-- <ARCHITECTURE_BACKLOG.md> — deeper internal refactors, only urgent when they
-  block the active workflows here.
-- <perf/> — measured performance notes. Update these from actual profiles
-  before major matcher/index rewrites.
+- <plans/selector_constraint_model.md> — P0 selector solver design, gates, and
+  real-spec evidence queue.
+- <plans/automated_spec_workflows.md> — automation-first CLI/workflow design.
+- <CLI_DOGFOOD.md> — command UX and scripting-safety gaps from real workflows.
+- <SELECTOR_BUGS.md> — matcher/diagnostic bugs with anonymized examples.
+- <ARCHITECTURE_BACKLOG.md> — deeper refactors, urgent only when they block this
+  queue.
+- `perf/` — measured performance notes. Update from real profiles before major
+  matcher/index rewrites.
 
-Planning hygiene: keep active dispatch order here. `plans/` files are design
-records and scoped backlogs; when a plan's core work is complete, its remaining
-tail should be summarized here instead of leaving the plan looking like a second
-priority queue.
+Planning hygiene: keep active dispatch order here. When a plan's core work is
+complete, summarize only its remaining tail here instead of leaving the plan as
+a second priority queue.
 
-**Current focus (2026-06-27).** PRs #2439, #2443, #2446, and #2447 moved
-`source_match` onto the Ascent-backed selector path, lowered the exact
-single-statement AST subset, stopped calling `ChunkResolver` for native
-selectors, and added native class-superclass constraints. That proved the
-global-resolution direction, but profiling the production-sized path showed the
-current Ascent exact-assignment encoding is not the endpoint: it carries
-`AssignmentRow` payloads through `partial_assignment` / `stepped_assignment`
-relations and implements target injectivity as pairwise row filtering instead
-of a native global constraint. The production cutover now compiles
-`SelectorProgram + SelectorFactStore` directly into a compact
-`CompiledSelectorProblem` and emits the OR-Tools CP-SAT protobuf from that
-single representation; the old typed model/backend-copy bridge has been
-removed. The remaining P0 is to keep improving fact/allowed-tuple derivation
-and language coverage while preserving first-class `all_different`.
-Unsupported forms still fail closed instead of taking a production procedural
-fallback.
+### P0 — single constraint-program resolver cutover
 
-Dispatch work in this order:
+Detailed design and gates live in <plans/selector_constraint_model.md>. Current
+dispatch summary:
 
-1. **Compiled-problem/backend cutover (P0.0).** Keep the explicit
-   `CompiledSelectorProblem` contract: shared interned domains, narrowed
-   variable supports, allowed tuples, equality/disequality, ordering, target
-   projection, and semantic `all_different`. Target OR-Tools CP-SAT first; use
-   RustSAT + CaDiCaL/Kissat only if OR-Tools integration is too expensive. Do
-   not optimize the current `AssignmentRow` scheduler as if it were the final
-   solver.
-2. **Alpha-equivalence as query structure (P0.1).** Lower selector-local
-   identifier matching to logic variables, equality, disequality /
-   `all_different`, and scope facts. Do not clone the procedural
-   `selector_match::Bindings` matcher inside the solver; alpha-renaming should
-   fall out of the query.
-3. **Core hole predicates (P0.2).** Lower simple `ANYTHING` / `EXPR` / `STMT`
-   holes, regex string predicates, and then ordered run holes (`STMT_LIST`,
-   `OBJECT_PROPS`, `DECLARATORS`, `ARGS`, `CLASS_REST`, `CASE_REST`,
-   `ARRAY_ELEMENTS`) as native constraints. Preserve the fail-closed rule:
-   unsupported constructs report `unsupported` until their faithful encoding is
-   implemented.
-4. **Source-match surface pruning (P0.3).** Keep unused selector/tooling
-   options out of the native IR. The known unused surfaces
-   (`target_statement`, `target_statements`, authored `wildcard_string_literals`,
-   the single-choice `match-selector --identifiers` flag, and the exact-body
-   selector-codemod fallback knobs) have been removed. Remaining pruning should
-   target tooling-only conveniences, not selector semantics that Gaffer still
-   needs.
-5. **Derived relational predicates (P0.4).** Fold the remaining bridge
-   vocabulary (`cross_ref`, `reads_member`, `member_of_module`,
-   `passed_to_call`, `makes_decorate_call`, `intrinsic_alias`) into IR atoms or
-   derived predicates over owner/reference + AST facts.
+1. Lower `identifiers: alpha_all` and retained hole/predicate forms into native
+   selector constraints.
+2. Keep exact target assignment owned by `CompiledSelectorProblem` +
+   OR-Tools CP-SAT or a measured SAT fallback with semantic `all_different`.
+3. Move production materialization, `match_selector`, codemods, synthesis, and
+   repair/prove gates onto one solver-backed selector semantics path.
+4. Fold staged relational vocabulary (`cross_ref`, `reads_member`,
+   `member_of_module`, `passed_to_call`, `makes_decorate_call`,
+   `intrinsic_alias`) into IR atoms or derived predicates over owner/reference
+   plus AST facts.
+5. Keep unsupported selector forms fail-closed; do not add a permanent
+   procedural fallback.
 
-The minimizer polish tail and automation product flows remain valuable, but
-they should build on this single constraint-program resolver contract rather
-than harden today's fallback oracle or late-bridge shape.
-
-Prefer dispatching work in this order. Large downstream spec migrations should
-lean on tooling generated from this queue instead of hand-authored YAML.
 Interactive agent-facing commands should target under 10 seconds on warmed
 inputs for the largest known downstream specs. Anything over 60 seconds is a
 workflow blocker unless the command is explicitly an offline/profile mode with
 progress output and a resumable or cacheable plan.
-
-### Live plan docs (debundle planning index)
-
-One-line status for each `plans/` design doc; this is the discovery index, not a
-parallel dispatch queue.
-
-- <plans/selector_constraint_model.md> — **active (P0 global resolver).**
-  Canonical plan for the selector model, backend ownership, execution phases,
-  verification gates, and Gaffer evidence queue. #2439 closed the global-solver
-  admission path for `source_match`; #2443/#2446/#2447 moved the exact native
-  subset out of the oracle. The solver-backend pivot is now in flight: the
-  CP-SAT sidecar consumes the backend-neutral problem through generated Rust
-  proto bindings, and production materialization has an opt-in CP-SAT backend
-  switch while Ascent remains the default. Current top priority is alpha-all and
-  hole lowering into that model, plus pruning unused source-match surface before
-  carrying it forward. The landed bridge primitives (`cross_ref`,
-  `reads_member`, `member_of_module`, `passed_to_call`, `makes_decorate_call`,
-  `intrinsic_alias`) are useful fact/selector vocabulary, but are bridge
-  implementations until they fold into derived predicates. The solver-backend
-  pivot has landed far enough that production materialization now uses the
-  protobuf CP-SAT sidecar for the supported subset; the remaining priority is
-  language coverage, not another exact-assignment backend switch. See
-  <debug/2026_06_19_p4_debt_worklist.md> for real-spec evidence.
-- <plans/automated_spec_workflows.md> — **active design, downstream of P0.**
-  North-star for the inventory/plan/apply/validate CLI surface and the
-  synthesize / stabilize / version-port / new-app-bootstrap flows. Foundational
-  milestones realized by the read-off work; repair-report, version-port, and
-  bootstrap flows should consume the solver-backed validation/diagnostic
-  contract rather than cloning selector resolution logic.
-- <plans/spec_yaml_language_cleanup.md> — **landed; keep as historical design.**
-  Ducktape module YAML now uses `source_matches[]`, binding-keyed
-  `annotations`, and alpha-equivalent selectors without public `identifiers`.
-  Use the current docs, not the migration plan, for authoring guidance.
-- <plans/adopt_names_via_bijection.md> — **obsolete historical design.** Top-level
-  readable names are explicit `source_matches[].bindings[]` claims; future
-  param/local/nested-name adoption should be designed without reintroducing
-  `adopt_names`.
-- <plans/factor_vocabulary_rename.md> — **not started.** Rename "factor"
-  vocabulary to graph-theoretic names (`OwnerGraph` / `AtomicDAG` / `ModuleDAG` /
-  `ModuleAssignment`); atomic ducktape + gaffer-private cutover.
-- <x/graph_planner_factorization.md> — **active (scratch).** Graph-derived module
-  planner design space + algorithm/analysis backlog behind `debundle modules
-propose`.
-
-### P0 — single constraint-program resolver cutover
-
-Detailed design and gates live in <plans/selector_constraint_model.md>; keep
-this list as the dispatch summary, not a second plan.
-
-1. **Wire the exact-assignment backend.** The compact
-   `CompiledSelectorProblem` contract, CP-SAT sidecar, generated Rust proto
-   bindings, Rust backend adapter, and production materialization hook have
-   landed for the supported subset. The anonymized broad-vs-specific
-   injectivity fixture resolves through CP-SAT rather than `AssignmentRow`
-   enumeration. Remaining work in this slice is to run the supported subset
-   against real Gaffer evidence and use its unsupported-form failures to drive
-   native selector-language coverage.
-2. **Keep Ascent on fact/table derivation, not exact assignment.** Ascent may
-   continue deriving relation support and allowed tuples, but exact target
-   assignment must be owned by OR-Tools CP-SAT or a measured SAT fallback with
-   semantic `all_different`.
-3. **Lower alpha-equivalence declaratively.** Represent selector-local identifier
-   bindings/references as variables and constraints over facts, including
-   equality, disequality / `all_different`, and scope. This is still the path to
-   making structural selectors solver-native rather than procedurally matched.
-4. **Lower the retained hole vocabulary.** Start with simple single-node holes
-   and regex string predicates, then add ordered run-hole placement for the
-   high-volume families (`STMT_LIST`, `DECLARATORS`, `OBJECT_PROPS`). Each
-   lowering must be faithful or fail closed.
-5. **Prune unused tooling options before nativeizing them.** The current
-   Ducktape/Gaffer census no longer has public `wildcard_string_literals`,
-   `target_statement`, `target_statements`, `match-selector --identifiers`, or
-   selector-codemod exact-body fallback surfaces to carry forward. Source-aware
-   `selector-debt` debug options should be trimmed once their solver-backed
-   replacements are scoped. The retained `EXPR_*` / `STMT_*` / `STMT_LIST_*`
-   forms are readability labels and run holes, not old `STATEMENT_*`
-   compatibility spellings.
-6. **Fold bridge vocabulary into derived predicates.** Re-express the staged
-   relational selectors as solver predicates over owner/reference + AST facts.
-   Real-spec Gaffer work should supply missing predicates and diagnostics, not
-   another permanent resolver layer.
 
 ### P1 — automation product flows over the solver
 
@@ -280,11 +160,8 @@ The read-off minimizer's completed design and research notes were pruned from
 ## Code refactor / dedup opportunities (2026-06-17 survey)
 
 Production-code (non-test) dedup/cleanup options surfaced by a codebase survey.
-Calibrated by (LOC saved × safety). Done so far: the `minimize/` single-pick
-collapse (#2346), the CLI report-dispatch helper (`cli::emit_report`), the
-`PurityReason` construction centralization (`PurityReason::new` +
-`Purity::from_reason_opt_detail`), and the `vendor/mod.rs` boundary-mapping
-collect+validate single-pass merge (`collect_and_validate_boundary_mapping`).
+Calibrated by (LOC saved × safety). Closed refactors live in git history; this
+section tracks only remaining options.
 
 **Real value but needs design work / behavior-risk:**
 

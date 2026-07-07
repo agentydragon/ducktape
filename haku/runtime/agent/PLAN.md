@@ -1,12 +1,15 @@
-# haku/runtime/agent — deployment plan
+# haku/runtime/agent — experimental deployment plan
 
-Status: the **runtime is feature-complete and green** — agent (`:scan`), supervisor
-(`:serve`, warm session, `/wake`, scheduler), unit tests, Valkey durable history
-(`RedisHistoryProvider`), `SummarizationStrategy` compaction, and startup cloning of
-ducktape and haku-state (`bootstrap.py`). What remains is **deployment**: the loop/tools
-split below, the two images, and the operator-owned k8s perimeter. Some steps are blocked
-in the Claude-web sandbox (apt and Go-SDK 403) and must run on CI / a full-network
-machine.
+Status: **experimental Runtime C, not the primary live Haku runtime.** Haku
+currently runs through the manually configured Claude Code web home in
+<../claude_web_env/>. The Runtime C implementation pieces here are
+feature-complete and green — agent (`:scan`), supervisor (`:serve`, warm
+session, `/wake`, scheduler), unit tests, Valkey durable history
+(`RedisHistoryProvider`), `SummarizationStrategy` compaction, and startup
+cloning of ducktape and haku-state (`bootstrap.py`). What remains is
+**deployment**: the loop/tools split below, the two images, and the
+operator-owned k8s perimeter. Some steps are blocked in the Claude-web sandbox
+(apt and Go-SDK 403) and must run on CI / a full-network machine.
 
 ## Execution model: loop and tools containers (`pods/exec`)
 
@@ -59,7 +62,7 @@ and set `HOME=/workspace` (or `GIT_CONFIG`) on the tools container — a small
 Turnkey tools-image wiring where apt resolves — add to MODULE.bazel's `apt` extension
 (and the name to `use_repo(apt, …)`):
 
-```
+```starlark
 apt.install(
     name = "trixie_haku_agent",
     lock = "//haku/runtime/agent:trixie_haku_agent.lock.json",
