@@ -159,7 +159,8 @@ the Home Manager Claude Code module: <../../nix/home/claude_code/default.nix>.
 It sets `OTEL_EXPORTER_OTLP_ENDPOINT=https://alloy-otlp.allegedly.works` and an
 `otelHeadersHelper` script that reads the rotated bearer from the sops-nix
 materialized `secrets/alloy-otlp-bearer-token.yaml` token and emits headers JSON
-for Claude Code.
+for Claude Code. This is inherited by the NixOS inline Home Manager hosts such
+as `iguana` and `wyrm2` through <../../nix/home/home.nix>.
 
 Web/Haku sessions still use the localhost relay path
 (`OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318`): <otlp_forwarder.py>,
