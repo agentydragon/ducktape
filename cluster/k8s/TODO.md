@@ -51,6 +51,16 @@ committed. `NO_PROXY` in `inject-mitmproxy.yaml` is unchanged.
       the device, probably via Termux/OpenSSH, with explicit keys and a clear
       power/background-execution story.
 
+## ActivityWatch storage followups
+
+- [ ] Resolve the SQLite benchmark issue (#2959), then choose where the
+      ActivityWatch query server's hot SQLite DB should live. The Syncthing inbox
+      stays on `seaweedfs-ovh`, but `activitywatch-data` is still
+      `local-path-proxmox` and is therefore node-local failure debt.
+- [ ] Move the ActivityWatch query server off the Proxmox-pinned local-path PVC
+      once there is a validated storage target or an automated backup/rebuild
+      path from the Syncthing-exported source folders.
+
 ## OpenHands: self-hosted git provider
 
 OpenHands supports GitHub and GitLab natively (PAT or OAuth App). Consider pointing

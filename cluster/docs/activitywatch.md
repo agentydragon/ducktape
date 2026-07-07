@@ -28,6 +28,24 @@ NetworkPolicy, the read-only proxy, and the Nebula mesh path.
 - **Cluster Syncthing identity**: SOPS Secret
   `cluster/k8s/activitywatch/syncthing-identity.sops.yaml`.
 
+## Storage Debt
+
+The Syncthing inbox is intentionally on SeaweedFS (`activitywatch-sync-inbox`,
+`seaweedfs-ovh`). The query server is still the risky piece: ActivityWatch's durable store
+is one SQLite file on `activitywatch-data` (`local-path-proxmox`), and the server is pinned
+to Proxmox to stay near that local-path PVC.
+
+TODO:
+
+- Resolve the SQLite benchmark issue (#2959) before putting the hot query DB on SeaweedFS
+  CSI or any other replicated POSIX-ish layer.
+- Move the query server off `local-path-proxmox` once a validated storage target or backup
+  strategy exists. Until then, treat the cluster DB as node-local state that must be backed
+  up or rebuildable from synced device folders.
+- Do not add additional ActivityWatch devices in a way that makes the local-path query DB
+  the only durable copy of their data; each device should keep its own Syncthing-exported
+  source folder.
+
 ## Rugged Setup
 
 Rugged is the first synced desktop.
