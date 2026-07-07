@@ -66,6 +66,11 @@ applies.
    `snoozed_until`; `status: rejected` → `rejected` + reason; a custom field → do the
    research/follow-up). The response file **is** the current answer (its git history is the log);
    you don't delete it — you act on it and let the item's own state become the truth.
+4. **Sweep approved tool-call results.** haku-console owns approval, execution, audit, and results
+   for privileged tool requests. Read terminal records that matter to your current work, reduce
+   them into ordinary state when useful, and leave haku-console as the source of truth. A completed
+   tool call may close an item, update a note, create a follow-up, or unblock the same thread of
+   reasoning.
 
 ### The work — a continuous understand → synthesize loop
 
@@ -94,6 +99,11 @@ backlogs) you advance a little each run and pick up next time — not a one-pass
     run, the conformance sweep is mandatory over _everything_ open** — apply each noted
     change wherever it applies, not just the commit's examples. (Your UI renders live from
     your state; no page to regenerate.)
+  - When an external privileged operation would materially advance the operator's goal, choose the
+    right consent surface: direct haku-console RPC with a short wait if same-run approval would let
+    you continue, a simple `<tool-call>` affordance for one exact async action, or a bespoke haku-ui
+    flow for review/edit tables and staged partial workflows. This is part of acting, not an
+    afterthought.
 - **Decide how much to invest**: weigh each path's value against the operator's
   value-of-time and the rough cost of your effort (manual → _How you reason_, effort
   budgeting). **A quiet run is not over** — deepen unfinished source coverage, research
@@ -118,4 +128,5 @@ backlogs) you advance a little each run and pick up next time — not a one-pass
   or >~100 steps) and has committable sub-steps, commit them as you go — so a run killed
   mid-way leaves reusable progress instead of nothing.
 
-Then stop — the operator reviews what you surfaced (your UI + Forgejo) and hands off approved ones.
+Then stop — the operator reviews what you surfaced in your UI + Forgejo, approves or denies any
+haku-console tool requests, and hands off the cases that still need a separate agent or human path.

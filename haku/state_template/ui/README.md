@@ -12,14 +12,14 @@ the Forgejo CI **test gate** (see _Tests_ below).
 
 ## Pieces
 
-| Path                                  | Role                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `frontend/`                           | React + TypeScript SPA (standard Vite). Value-ranked **Up next** (top 7) + collapsible **Backlog**, collapsible item cards, `marked`+`dompurify` markdown bodies rendering inline affordance widgets (`<signal-toggle>`, `<handoff>`, `<launch>`, `<feedback>`, `<tool-call>`), per-item + global feedback.                              |
-| `backend/`                            | FastAPI app (no build step). Talks to the **Forgejo contents API** (no local clone): a generic content proxy (tree + bulk blobs) the SPA composes to read `items/*.md`, serves the SPA + a JSON API, writes operator intent (`responses/`, `intake/`) back to `haku-state`, and proxies authored `tool_requests/` calls to haku-console. |
-| `Dockerfile`                          | Multi-stage: `frontend` builds the SPA → `backend-base` installs deps → `test` runs pytest → `runtime` runs uvicorn on `:8080` as non-root with the built SPA copied in.                                                                                                                                                                 |
-| `backend/test_*.py`                   | Backend pytest suite (models parsing, the Forgejo read path, the FastAPI endpoints). Run during the CI test gate; dev-only deps via `backend/pyproject.toml`'s `[dev]` extra.                                                                                                                                                            |
-| `../.forgejo/workflows/build-ui.yaml` | Forgejo Actions workflow: **test** (gate) → **build** push `forgejo.example.com/haku/ui:main-<utc>-<sha>`. Flux image automation (not CI) then writes the tag into `../k8s/haku-ui/deployment.yaml`.                                                                                                                                     |
-| `../k8s/haku-ui/`                     | Deployment (the built image, registry-pull imagePullSecret, `haku-state-git-write` env) + Service (`80` → `8080`).                                                                                                                                                                                                                       |
+| Path                                  | Role                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `frontend/`                           | React + TypeScript SPA (standard Vite). Value-ranked **Up next** (top 7) + collapsible **Backlog**, collapsible item cards, `marked`+`dompurify` markdown bodies rendering inline affordance widgets (`<signal-toggle>`, `<handoff>`, `<launch>`, `<feedback>`, `<tool-call>`), per-item + global feedback. Future surfaces can add richer review/edit workflows over the same backend and haku-console primitives. |
+| `backend/`                            | FastAPI app (no build step). Talks to the **Forgejo contents API** (no local clone): a generic content proxy (tree + bulk blobs) the SPA composes to read `items/*.md`, serves the SPA + a JSON API, writes operator intent (`responses/`, `intake/`) back to `haku-state`, and proxies haku-ui tool-call requests to haku-console.                                                                                 |
+| `Dockerfile`                          | Multi-stage: `frontend` builds the SPA → `backend-base` installs deps → `test` runs pytest → `runtime` runs uvicorn on `:8080` as non-root with the built SPA copied in.                                                                                                                                                                                                                                            |
+| `backend/test_*.py`                   | Backend pytest suite (models parsing, the Forgejo read path, the FastAPI endpoints). Run during the CI test gate; dev-only deps via `backend/pyproject.toml`'s `[dev]` extra.                                                                                                                                                                                                                                       |
+| `../.forgejo/workflows/build-ui.yaml` | Forgejo Actions workflow: **test** (gate) → **build** push `forgejo.example.com/haku/ui:main-<utc>-<sha>`. Flux image automation (not CI) then writes the tag into `../k8s/haku-ui/deployment.yaml`.                                                                                                                                                                                                                |
+| `../k8s/haku-ui/`                     | Deployment (the built image, registry-pull imagePullSecret, `haku-state-git-write` env) + Service (`80` → `8080`).                                                                                                                                                                                                                                                                                                  |
 
 ## Frontend
 
@@ -57,8 +57,10 @@ FastAPI, port `8080`. Endpoints:
   (`runs/<date>/<HHMMSSZ>.md`, frontmatter + body parsed on the frontend), and any repo markdown at HEAD.
 - `PUT/DELETE /api/responses/{scope}/{field}` — record/clear an operator response
   (item status, form answer) as `responses/<scope>/<field>.yaml`.
-- `POST /api/tool-calls` — accept the exact tool-call request body sent by the frontend and submit
-  it to haku-console for approval/execution.
+- `POST /api/tool-calls` — accept a tool-call request body from the frontend and submit it to
+  haku-console for approval/execution. The starter uses this for authored `tool_requests/*.yaml`;
+  bespoke workflows can add higher-level endpoints that collect runtime knobs, submit calls, and
+  read console results.
 - `POST /api/trace/feedback` — append an intake note (`text`, optional `item_id`).
 - `GET /healthz`.
 
@@ -67,8 +69,8 @@ clone, no push/reconcile loop; see `backend/forgejo.py`), writing the **exact**
 conventions Haku reduces: `responses/<scope>/<field>.yaml` (the file is the current
 answer, the commit history is the append-only log) and
 `intake/<ts>-feedback[-<id>].md`. Privileged tool execution is still owned by the trusted console:
-this backend only forwards authored `tool_requests/*.yaml` to haku-console and returns the console
-call record. Tool results are not mirrored into git.
+this backend requests haku-console tool calls and returns console-owned records/results. Tool
+results are not mirrored into git.
 
 Operator auth: the app is reachable only via the Authentik outpost, which injects
 `X-authentik-username`. The backend reads it to log who acted. Trusting it for

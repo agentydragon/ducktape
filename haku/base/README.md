@@ -29,8 +29,10 @@ per-environment entrypoints like `haku/runtime/claude_web_env/run.md` just layer
 and defer to it), which reads this manual; `base/` holds the durable contracts,
 not the imperative steps.
 
-No `.mcp.json`: v0 has no MCP servers — Plaid is plain `psql` (via a
-`haku-sandbox` pod) and Gmail/Calendar are read-only REST calls.
+No `.mcp.json` permission surface: Haku's source MCPs are called explicitly over HTTP where needed
+(see `sources/`), and privileged external actions go through haku-console tool-call requests rather
+than local agent auto-allow config. Plaid is plain `psql` (via a `haku-sandbox` pod) and
+Gmail/Calendar reads are REST calls.
 
 There is **no `.claude/` permission config** (it's gitignored, and
 unnecessary): the Job runs `claude --dangerously-skip-permissions`, so Bash and

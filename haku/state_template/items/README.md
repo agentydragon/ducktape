@@ -69,13 +69,19 @@ rejection feedback over time.
 
 There is no typed action schema. The body is markdown that **embeds affordance widgets** from
 the reviewed library (full set + syntax: [`../procedures/garden.md`](../procedures/garden.md)).
-The two that carry an item:
+Use the affordance that best advances the user's goal: a handoff when another agent/human path is
+right, a console-approved tool request when a connected privileged API can do the action, or a
+custom haku-ui surface when the operator needs to review/edit a richer workflow. Common item
+affordances:
 
 - **Hand off to an executor** — `<handoff label="<short imperative>">` with the executor prompt
   **inside the tag** as a fenced code block (a multi-line prompt can't be a literal attribute;
   short ones may use `prompt="…"`). Aim high: that executor can browse, research, run tool
   chains, write code, synthesize — state the outcome and the evidence and let it work out the
   how. A **pure-FYI item** embeds no handoff — just prose.
+- **Ask for an approved tool call** — `<tool-call request="<state_request_id>" label="…">` when
+  Haku can author one exact operation under `tool_requests/`. This is for privileged external
+  effects that haku-console should gate, execute, and audit.
 - **Status control** — a `<signal-toggle field="status">` with `done`/`snoozed`/`rejected` choices
   (scope is the item's slug, injected by the card). When the operator picks one it writes
   `responses/<slug>/status` — an input event you reconcile next run (below). The status change

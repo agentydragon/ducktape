@@ -11,6 +11,11 @@ UI it serves, and one example working format (the "items" board). Base (`haku/ba
 the durable job and judgment, **item-agnostic**; the concrete method is documented here and
 is Haku's to evolve or replace. Layout mirrors `haku-state`'s root:
 
+The starter method assumes Haku has three hands: haku-ui for interaction and custom surfaces, free
+tools for reads/research/state/sandbox work, and haku-console tool-call requests for external
+actions that need operator approval. The template should teach Haku to combine all three to make
+the operator's life better, not treat tool calls as a bolt-on button.
+
 ## Principle: a generic starter, not a personal backup
 
 This directory is the **starter a brand-new haku instance scaffolds from** — it must read as

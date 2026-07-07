@@ -64,11 +64,12 @@ the `haku` Grocy user has empty permissions, so the Grocy API enforces read-only
 (200 reads / 403 writes) server-side. Haku reaches the grocy-sf MCP directly with a
 rotated JWT, mirrored into `haku-sandbox` by ESO as `haku-cloud-grocy-sf-token`.
 
-## Autonomous write capabilities (new — first writes to the world)
+## Autonomous write capabilities
 
-Haku's contract today is read-only + hand-off. These let Haku **act** within a tight,
-safe-by-construction boundary, so wiring one on is a deliberate doctrine change (Haku's
-"never acts on the world itself"), not just a config line.
+Haku's current contract has free tools plus approval-gated tool-call requests. This section is for
+new **free/autonomous** write tools: capabilities Haku may exercise without per-call operator
+approval because the server-side boundary makes them safe by construction. Wiring one on is still a
+doctrine change, not just a config line.
 
 - **Gmail labels (`haku/` namespace)** — **Built + deployed:** the `gmail-labeling` MCP
   server (sibling service, `tana-mcp-ro` shape) manages only labels whose name starts with

@@ -24,14 +24,14 @@ rationale:
 
 ## Goal
 
-Haku runs in the background of the operator's life with a bundle of (mostly read-only)
-access, continuously looking for useful things to do across everything it can see —
-Gmail, Calendar, Drive, Tana, Plaid, the cluster, repos, and more as they're wired. It
-acts autonomously where safe and read-only (scanning, cross-referencing, research,
-synthesis) and surfaces concise, value-ranked recommendations in its own UI; approving
-one means **handing it off** (e.g. a prepared prompt taken into a Claude scaffold that
-does the work under its own permissions). Haku executing things itself is a later
-direction (see _Future_), not the current contract.
+Haku runs in the background of the operator's life with a bundle of scoped access,
+continuously looking for useful things to do across everything it can see — Gmail,
+Calendar, Drive, Tana, Plaid, the cluster, repos, and more as they're wired. Its current
+hands are: haku-ui for interaction and bespoke flows; free tools for read/research/state
+work and tightly bounded autonomous writes; and haku-console tool-call requests for
+privileged external actions that need operator approval. The current contract is not
+"read-only forever"; it is "help as much as possible without bypassing the consent
+boundary."
 
 Status: v0 is live end-to-end — the Claude Code web home runs the loop scheduled, the
 data plane (scoped k8s identity, the sandbox, read-only source mirrors, `haku-state`,
@@ -74,20 +74,22 @@ genuinely good, plus the items below.
   `haku/runtime/managed_agent/`. Revisit if scanner-image upkeep or the
   client_credentials path proves painful (scheduled deployments + vaults remove exactly
   those work items).
+- **Tool-call expansion and richer Haku-owned workflows.** The approval substrate exists; the
+  remaining work is to connect more MCP/API servers and teach Haku's state/UI to use them well:
+  prepared Tana edits, Gmail draft/send/archive flows, shopping/inventory check-ins, paperwork, and
+  operations panels. The v0 `<tool-call>` widget is one surface, not the architecture.
 - **Capability registry** (a ConfigMap mapping `service → facade URL → secret name`) —
   a possible later formalization of today's ad-hoc `kubectl get secret` discovery; not
   required by the current model.
 
-## Future: letting Haku take some actions itself (permission-elevation tokens)
+## Future: more autonomous low-blast-radius tools
 
-Today Haku is strictly read-only / synthesize-and-recommend: it never acts on the
-world, it frames work for the operator to approve and hand off. A future direction
-(operator, 2026-06-26) is to let Haku take **some** actions autonomously that aren't
-allowed now — e.g. _draft an email_ (into Drafts, not send), _explore less-restricted
-websites_ for research, and similar low-blast-radius moves — without giving up the
-transparency and containment that make the read-only posture safe. (The `gmail-labeling`
-closure server was the first realized instance of the pattern: a narrow write surface
-made safe by construction — see `docs/security.md` inventory #7.)
+Haku already has a current approval-gated action path through haku-console. A separate future
+direction is to let Haku take **some** low-blast-radius actions autonomously — e.g. _draft an
+email_ (into Drafts, not send), _explore less-restricted websites_ for research, and similar moves
+— without giving up the transparency and containment that make the current posture safe. (The
+`gmail-labeling` closure server was the first realized instance of the pattern: a narrow write
+surface made safe by construction — see `docs/security.md` inventory #7.)
 
 Sketch to design out later (a real mechanism-design + security effort, not built):
 
@@ -115,14 +117,13 @@ Sketch to design out later (a real mechanism-design + security effort, not built
   token/RBAC model, how "less-restricted browsing" stays contained, and where the line
   sits between "draft for review" and "act."
 
-## A haku-owned execution tier (later maybe)
+## A richer haku-console airlock (later)
 
-Beyond drafting, a fuller execution tier — verbatim tool calls replayed with elevated
-creds on operator approval — remains a _later maybe_, not a third action kind. If built:
-item-level approval of the exact tool calls is the gate, and `airlock/` (per-call HITL)
-earns its place only if execution becomes agent-mediated (where what runs can diverge
-from what was reviewed). Its credentials get the same treatment as everything else —
-scoped or proxied, never trusted to the agent's restraint.
+The current HTTP tool-call API is enough for Haku and haku-ui to request approved actions. Later,
+haku-console may grow into an MCP/HTTP airlock proxy: calls that pass auto-allow policy execute
+immediately, while all others become approval requests or async haku-ui continuations. The invariant
+stays the same: exact call reviewed, trusted console approval, console-owned audit/result state,
+credentials scoped or proxied rather than trusted to Haku's restraint.
 
 ## Open questions
 
