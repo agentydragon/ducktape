@@ -2,10 +2,9 @@ import { Anchor } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 
 import {
+  approvalQueueItems,
   geolocationApprovalQueueId,
   makeRecentToolCall,
-  nextSelectedApprovalId,
-  sortApprovalsNewestFirst,
   toolApprovalQueueId,
   type GeolocationApproval,
   type RecentToolCall,
@@ -173,8 +172,8 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
     setDrawerOpen(true);
   }
 
-  function openApproval(id: string) {
-    setSelectedApprovalId(id);
+  function openApprovalQueueCompact() {
+    setSelectedApprovalId(null);
     setSelectedRecentToolCallId(null);
     openDrawerTab("approvals");
   }
@@ -194,7 +193,7 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
     toolApprovalsRef.current = approvals;
     setToolApprovals(approvals);
     if (newApprovals.length > 0) {
-      openApproval(toolApprovalQueueId(sortApprovalsNewestFirst(newApprovals)[0].tool_call_id));
+      openApprovalQueueCompact();
     }
   }
 
@@ -216,12 +215,11 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
   }
 
   function finishToolDecision(record: ToolCallRecord) {
-    const remaining = removeToolApproval(record.tool_call_id);
+    removeToolApproval(record.tool_call_id);
     addRecentToolCall(record);
     setDeciding(toolApprovalQueueId(record.tool_call_id), false);
-    const nextApprovalId = nextSelectedApprovalId(remaining, geolocationApprovalsRef.current, null);
-    setSelectedApprovalId(nextApprovalId);
-    setSelectedRecentToolCallId(nextApprovalId ? null : record.tool_call_id);
+    setSelectedApprovalId(null);
+    setSelectedRecentToolCallId(null);
   }
 
   function addGeolocationApproval(mode: GeolocationApproval["mode"], id: string, options?: GeolocationOptions) {
@@ -229,7 +227,7 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
     const remaining = [approval, ...geolocationApprovalsRef.current.filter((existing) => existing.id !== id)];
     geolocationApprovalsRef.current = remaining;
     setGeolocationApprovals(remaining);
-    openApproval(geolocationApprovalQueueId(id));
+    openApprovalQueueCompact();
   }
 
   function removeGeolocationApproval(id: string): GeolocationApproval[] {
@@ -240,10 +238,9 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
   }
 
   function advanceAfterGeolocation(id: string) {
-    const remaining = removeGeolocationApproval(id);
-    const nextApprovalId = nextSelectedApprovalId(toolApprovalsRef.current, remaining, null);
-    setSelectedApprovalId(nextApprovalId);
-    if (!nextApprovalId) setSelectedRecentToolCallId(null);
+    removeGeolocationApproval(id);
+    setSelectedApprovalId(null);
+    setSelectedRecentToolCallId(null);
   }
 
   function refreshToolApprovals(notifyPeers = false) {
@@ -396,7 +393,8 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
   }, [geolocationApprovals]);
 
   useEffect(() => {
-    setSelectedApprovalId((selected) => nextSelectedApprovalId(toolApprovals, geolocationApprovals, selected));
+    const activeApprovalIds = new Set(approvalQueueItems(toolApprovals, geolocationApprovals).map((item) => item.id));
+    setSelectedApprovalId((selected) => (selected && activeApprovalIds.has(selected) ? selected : null));
   }, [geolocationApprovals, toolApprovals]);
 
   useEffect(() => {
@@ -528,8 +526,6 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
         pendingCount={toolApprovals.length + geolocationApprovals.length}
         opened={drawerOpen}
         activeTab={drawerTab}
-        geoGranted={geoGranted}
-        tracking={tracking}
         onOpenTab={openDrawerTab}
       />
       <ShellDrawer

@@ -113,22 +113,24 @@
   flex-direction: column;
   gap: 0.75rem;
   pointer-events: auto;
-  border: 1px solid var(--haku-border);
-  border-radius: 8px;
-  background: var(--haku-panel-bg);
   color: var(--mantine-color-text);
-  box-shadow: 0 18px 50px var(--haku-shell-shadow);
-  padding: 0.85rem;
 }
 
 .haku-shell-header {
   flex: 0 0 auto;
 }
 
+.haku-shell-drawer-nav {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
 .haku-shell-scroll {
   min-height: 0;
   overflow: auto;
-  padding-right: 0.1rem;
+  padding: 0.1rem 0.15rem 0.75rem 0.1rem;
 }
 
 .haku-shell-card,
@@ -136,24 +138,63 @@
   border: 1px solid var(--haku-border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--haku-panel-bg) 88%, var(--haku-shell-muted-bg));
+  box-shadow: 0 10px 32px var(--haku-shell-shadow);
   padding: 0.75rem;
 }
 
 .haku-shell-subcard {
   background: var(--haku-shell-muted-bg);
+  box-shadow: none;
 }
 
 .haku-shell-approval-card {
   display: block;
   width: 100%;
   color: inherit;
+  cursor: pointer;
   text-align: left;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.haku-shell-card-click-target {
+  cursor: pointer;
+}
+
+.haku-shell-card-click-target:focus-visible {
+  outline: 2px solid var(--mantine-color-teal-5);
+  outline-offset: 2px;
 }
 
 .haku-shell-card-active,
 .haku-shell-card-selected {
   border-color: var(--mantine-color-teal-5);
-  background: var(--haku-shell-active-bg);
+  background: color-mix(in srgb, var(--haku-panel-bg) 92%, var(--haku-shell-muted-bg));
+  box-shadow:
+    0 0 0 1px var(--mantine-color-teal-5),
+    0 10px 32px var(--haku-shell-shadow);
+}
+
+.haku-shell-countdown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.45rem;
+}
+
+.haku-shell-countdown-track {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mantine-color-dimmed) 24%, transparent);
+}
+
+.haku-shell-countdown-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--mantine-color-teal-5);
+  transition: width 200ms linear;
 }
 
 .haku-shell-fields {

@@ -29,6 +29,12 @@ export interface RecentToolCall {
   hideAtMs: number;
 }
 
+export interface RecentToolCallCountdown {
+  label: string;
+  progressPercent: number;
+  remainingSeconds: number;
+}
+
 const RECENT_OK_TTL_MS = 15_000;
 const RECENT_ERROR_TTL_MS = 60_000;
 
@@ -44,10 +50,6 @@ export function toolApprovalQueueId(toolCallId: string): string {
 
 export function geolocationApprovalQueueId(id: string): string {
   return `geolocation:${id}`;
-}
-
-export function sortApprovalsNewestFirst(approvals: readonly PendingApproval[]): PendingApproval[] {
-  return [...approvals].sort((a, b) => createdAtMs(b.created_at) - createdAtMs(a.created_at));
 }
 
 export function approvalQueueItems(
@@ -72,16 +74,6 @@ export function approvalQueueItems(
       })
     ),
   ].sort((a, b) => createdAtMs(b.createdAt) - createdAtMs(a.createdAt));
-}
-
-export function nextSelectedApprovalId(
-  toolApprovals: readonly PendingApproval[],
-  geolocationApprovals: readonly GeolocationApproval[],
-  selectedId: string | null
-): string | null {
-  const items = approvalQueueItems(toolApprovals, geolocationApprovals);
-  if (selectedId && items.some((item) => item.id === selectedId)) return selectedId;
-  return items[0]?.id ?? null;
 }
 
 export function approvalDisplayFields(approval: PendingApproval | ToolCallRecord): ApprovalDisplayFields {
@@ -118,9 +110,16 @@ export function makeRecentToolCall(record: ToolCallRecord, nowMs: number): Recen
   return ttlMs === null ? null : { record, hideAtMs: nowMs + ttlMs };
 }
 
-export function formatHideCountdown(hideAtMs: number, nowMs: number): string {
-  const remainingSeconds = Math.max(0, Math.ceil((hideAtMs - nowMs) / 1000));
-  return remainingSeconds === 0 ? "hiding now" : `hiding in ${remainingSeconds}s`;
+export function recentToolCallCountdown(recent: RecentToolCall, nowMs: number): RecentToolCallCountdown {
+  const ttlMs = recentToolCallTtlMs(recent.record.status) ?? 0;
+  const remainingMs = Math.max(0, recent.hideAtMs - nowMs);
+  const remainingSeconds = Math.ceil(remainingMs / 1000);
+  const progressPercent = ttlMs === 0 ? 0 : Math.max(0, Math.min(100, (remainingMs / ttlMs) * 100));
+  return {
+    label: remainingSeconds === 0 ? "Auto-hides now" : `Auto-hides in ${remainingSeconds}s`,
+    progressPercent,
+    remainingSeconds,
+  };
 }
 
 export function terminalStatusLabel(status: ToolCallRecord["status"]): string {

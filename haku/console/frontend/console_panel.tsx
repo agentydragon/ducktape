@@ -1,13 +1,13 @@
 import { Badge, Button, Group, SegmentedControl, Stack, Text } from "@mantine/core";
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
   approvalDisplayFields,
   approvalQueueItems,
-  formatHideCountdown,
   geolocationApprovalBody,
   geolocationApprovalTitle,
+  recentToolCallCountdown,
   type GeolocationApproval,
   type RecentToolCall,
   terminalStatusLabel,
@@ -15,7 +15,7 @@ import {
 import type { McpOperatorAuthStatus, PendingApproval, ToolCallRecord } from "./client.ts";
 import { ACTION_COLOR } from "./theme.ts";
 
-export type ShellDrawerTab = "approvals" | "console";
+export type ShellDrawerTab = "approvals" | "access";
 
 export interface ShellDrawerProps {
   opened: boolean;
@@ -48,8 +48,6 @@ export interface ShellControlsProps {
   pendingCount: number;
   opened: boolean;
   activeTab: ShellDrawerTab;
-  geoGranted: boolean;
-  tracking: boolean;
   onOpenTab: (tab: ShellDrawerTab) => void;
 }
 
@@ -83,14 +81,27 @@ function statusColor(status: ToolCallRecord["status"]): string {
   return "blue";
 }
 
-export function ShellControls({
-  pendingCount,
-  opened,
-  activeTab,
-  geoGranted,
-  tracking,
-  onOpenTab,
-}: ShellControlsProps) {
+function openOnCardKeyDown(e: KeyboardEvent<HTMLElement>, onOpen: () => void) {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  e.preventDefault();
+  onOpen();
+}
+
+function RecentCountdown({ recent, nowMs }: { recent: RecentToolCall; nowMs: number }) {
+  const countdown = recentToolCallCountdown(recent, nowMs);
+  return (
+    <div className="haku-shell-countdown" aria-label={countdown.label}>
+      <Text size="xs" c="dimmed">
+        {countdown.label}
+      </Text>
+      <div className="haku-shell-countdown-track" aria-hidden="true">
+        <div className="haku-shell-countdown-fill" style={{ width: `${countdown.progressPercent}%` }} />
+      </div>
+    </div>
+  );
+}
+
+export function ShellControls({ pendingCount, opened, activeTab, onOpenTab }: ShellControlsProps) {
   return (
     <Group className="haku-shell-controls" gap="xs" style={{ zIndex: PANEL_Z - 1 }}>
       <Button
@@ -107,14 +118,6 @@ export function ShellControls({
         }
       >
         Approvals
-      </Button>
-      <Button
-        size="xs"
-        variant={opened && activeTab === "console" ? "filled" : "default"}
-        color={tracking ? "teal" : geoGranted ? "blue" : "gray"}
-        onClick={() => onOpenTab("console")}
-      >
-        Console
       </Button>
     </Group>
   );
@@ -263,25 +266,42 @@ function ToolApprovalCard({
   const fields = approvalDisplayFields(approval);
   const armed = useArmed(`card:${approval.tool_call_id}`);
   return (
-    <section className={`haku-shell-card haku-shell-approval-card ${selected ? "haku-shell-card-active" : ""}`}>
-      <Group justify="space-between" align="flex-start" gap="sm">
-        <Stack gap={2}>
-          <Text fw={600} size="sm">
-            {fields.title}
-          </Text>
-          <Text size="xs" c="dimmed">
-            {fields.serverId}.{fields.toolName}
-          </Text>
-          <Text size="xs">{fields.rationale || fields.argumentSummary}</Text>
-        </Stack>
-        <Badge color={deciding ? "blue" : "yellow"} variant="light">
-          {deciding ? "Running" : "Pending"}
-        </Badge>
-      </Group>
-      <Group justify="flex-end" gap="xs" mt="xs">
-        <Button size="compact-xs" variant="subtle" onClick={onSelect}>
-          Details
-        </Button>
+    <section
+      className={`haku-shell-card haku-shell-approval-card ${selected ? "haku-shell-card-active" : ""}`}
+      onClick={onSelect}
+    >
+      <div
+        className="haku-shell-card-click-target"
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect();
+        }}
+        onKeyDown={(e) => openOnCardKeyDown(e, onSelect)}
+      >
+        <Group justify="space-between" align="flex-start" gap="sm">
+          <Stack gap={2}>
+            <Text fw={600} size="sm">
+              {fields.title}
+            </Text>
+            <Text size="xs" c="dimmed">
+              {fields.serverId}.{fields.toolName}
+            </Text>
+            <Text size="xs">{fields.rationale || fields.argumentSummary}</Text>
+          </Stack>
+          <Badge color={deciding ? "blue" : "yellow"} variant="light">
+            {deciding ? "Running" : "Pending"}
+          </Badge>
+        </Group>
+      </div>
+      <Group
+        justify="flex-end"
+        gap="xs"
+        mt="xs"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
         <Button size="compact-xs" variant="light" color="red" disabled={deciding || !armed} onClick={onDeny}>
           Deny
         </Button>
@@ -310,25 +330,42 @@ function GeolocationApprovalCard({
 }) {
   const armed = useArmed(`geo-card:${approval.id}`);
   return (
-    <section className={`haku-shell-card haku-shell-approval-card ${selected ? "haku-shell-card-active" : ""}`}>
-      <Group justify="space-between" align="flex-start" gap="sm">
-        <Stack gap={2}>
-          <Text fw={600} size="sm">
-            {geolocationApprovalTitle(approval)}
-          </Text>
-          <Text size="xs" c="dimmed">
-            {approval.mode === "geolocationWatch" ? "Continuous location watch" : "Current location read"}
-          </Text>
-          <Text size="xs">{geolocationApprovalBody(approval)}</Text>
-        </Stack>
-        <Badge color={deciding ? "blue" : "yellow"} variant="light">
-          {deciding ? "Applying" : "Pending"}
-        </Badge>
-      </Group>
-      <Group justify="flex-end" gap="xs" mt="xs">
-        <Button size="compact-xs" variant="subtle" onClick={onSelect}>
-          Details
-        </Button>
+    <section
+      className={`haku-shell-card haku-shell-approval-card ${selected ? "haku-shell-card-active" : ""}`}
+      onClick={onSelect}
+    >
+      <div
+        className="haku-shell-card-click-target"
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect();
+        }}
+        onKeyDown={(e) => openOnCardKeyDown(e, onSelect)}
+      >
+        <Group justify="space-between" align="flex-start" gap="sm">
+          <Stack gap={2}>
+            <Text fw={600} size="sm">
+              {geolocationApprovalTitle(approval)}
+            </Text>
+            <Text size="xs" c="dimmed">
+              {approval.mode === "geolocationWatch" ? "Continuous location watch" : "Current location read"}
+            </Text>
+            <Text size="xs">{geolocationApprovalBody(approval)}</Text>
+          </Stack>
+          <Badge color={deciding ? "blue" : "yellow"} variant="light">
+            {deciding ? "Applying" : "Pending"}
+          </Badge>
+        </Group>
+      </div>
+      <Group
+        justify="flex-end"
+        gap="xs"
+        mt="xs"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
         <Button size="compact-xs" variant="light" color="red" disabled={deciding || !armed} onClick={onDeny}>
           Deny
         </Button>
@@ -355,29 +392,47 @@ function RecentToolCallCard({
 }) {
   const fields = approvalDisplayFields(recent.record);
   return (
-    <section className={`haku-shell-card haku-shell-approval-card ${selected ? "haku-shell-card-active" : ""}`}>
-      <Group justify="space-between" align="flex-start" gap="sm">
-        <Stack gap={2}>
-          <Text fw={600} size="sm">
-            {fields.title}
-          </Text>
-          <Text size="xs" c="dimmed">
-            {fields.serverId}.{fields.toolName} · {formatHideCountdown(recent.hideAtMs, nowMs)}
-          </Text>
-          {recent.record.error && (
-            <Text size="xs" c="red">
-              {recent.record.error}
+    <section
+      className={`haku-shell-card haku-shell-approval-card ${selected ? "haku-shell-card-active" : ""}`}
+      onClick={onSelect}
+    >
+      <div
+        className="haku-shell-card-click-target"
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect();
+        }}
+        onKeyDown={(e) => openOnCardKeyDown(e, onSelect)}
+      >
+        <Group justify="space-between" align="flex-start" gap="sm">
+          <Stack gap={2}>
+            <Text fw={600} size="sm">
+              {fields.title}
             </Text>
-          )}
-        </Stack>
-        <Badge color={statusColor(recent.record.status)} variant="light">
-          {terminalStatusLabel(recent.record.status)}
-        </Badge>
-      </Group>
-      <Group justify="flex-end" gap="xs" mt="xs">
-        <Button size="compact-xs" variant="subtle" onClick={onSelect}>
-          Details
-        </Button>
+            <Text size="xs" c="dimmed">
+              {fields.serverId}.{fields.toolName}
+            </Text>
+            {recent.record.error && (
+              <Text size="xs" c="red">
+                {recent.record.error}
+              </Text>
+            )}
+          </Stack>
+          <Badge color={statusColor(recent.record.status)} variant="light">
+            {terminalStatusLabel(recent.record.status)}
+          </Badge>
+        </Group>
+        <RecentCountdown recent={recent} nowMs={nowMs} />
+      </div>
+      <Group
+        justify="flex-end"
+        gap="xs"
+        mt="xs"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
         <Button size="compact-xs" variant="subtle" color="gray" onClick={onDismiss}>
           Dismiss
         </Button>
@@ -386,7 +441,8 @@ function RecentToolCallCard({
   );
 }
 
-function RecentToolCallDetail({ record }: { record: ToolCallRecord }) {
+function RecentToolCallDetail({ recent, nowMs }: { recent: RecentToolCall; nowMs: number }) {
+  const record = recent.record;
   const fields = approvalDisplayFields(record);
   return (
     <section className="haku-shell-card haku-shell-card-selected">
@@ -402,6 +458,7 @@ function RecentToolCallDetail({ record }: { record: ToolCallRecord }) {
             {terminalStatusLabel(record.status)}
           </Badge>
         </Group>
+        <RecentCountdown recent={recent} nowMs={nowMs} />
         {record.error && (
           <Text size="sm" c="red">
             {record.error}
@@ -474,6 +531,8 @@ function ApprovalsTab({
       ? recentToolCalls.find((recent) => recent.record.tool_call_id === selectedRecentToolCallId)
       : null;
   const deciding = new Set(decidingApprovalIds);
+  const hasPending = items.length > 0;
+  const hasRecent = recentToolCalls.length > 0;
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -500,24 +559,20 @@ function ApprovalsTab({
           onDeny={() => onDenyGeolocation(selectedItem.approval)}
         />
       )}
-      {selectedRecent && <RecentToolCallDetail record={selectedRecent.record} />}
-      {!selectedItem && !selectedRecent && (
+      {selectedRecent && <RecentToolCallDetail recent={selectedRecent} nowMs={nowMs} />}
+      {!selectedItem && !selectedRecent && !hasPending && !hasRecent && (
         <section className="haku-shell-card">
           <Text size="sm" c="dimmed">
-            No pending approvals.
+            No approvals pending.
           </Text>
         </section>
       )}
-      <Stack gap="xs">
-        <Text fw={600} size="sm">
-          Pending
-        </Text>
-        {items.length === 0 ? (
-          <Text size="sm" c="dimmed">
-            Nothing needs a decision.
+      {hasPending && (
+        <Stack gap="xs">
+          <Text fw={600} size="sm">
+            Pending
           </Text>
-        ) : (
-          items.map((item) =>
+          {items.map((item) =>
             item.kind === "tool" ? (
               <ToolApprovalCard
                 key={item.id}
@@ -539,10 +594,10 @@ function ApprovalsTab({
                 onDeny={() => onDenyGeolocation(item.approval)}
               />
             )
-          )
-        )}
-      </Stack>
-      {recentToolCalls.length > 0 && (
+          )}
+        </Stack>
+      )}
+      {hasRecent && (
         <Stack gap="xs">
           <Text fw={600} size="sm">
             Recent
@@ -563,7 +618,7 @@ function ApprovalsTab({
   );
 }
 
-function ConsoleTab({
+function AccessTab({
   geoGranted,
   tracking,
   onWithdrawGeolocation,
@@ -584,30 +639,21 @@ function ConsoleTab({
   return (
     <Stack gap="md">
       <section className="haku-shell-card">
-        <Group justify="space-between" align="flex-start" gap="sm">
-          <Stack gap={4}>
-            <Text fw={600} size="sm">
-              Location sharing
-            </Text>
-            <Text size="sm" c="dimmed">
-              {geoGranted
-                ? tracking
-                  ? "Haku is receiving live location updates."
-                  : "Haku may request your location without another approval until withdrawn."
-                : "Not shared. Haku will request approval when it needs your location."}
-            </Text>
-          </Stack>
-          <Badge color={tracking ? "teal" : geoGranted ? "blue" : "gray"} variant="light">
-            {tracking ? "Live" : geoGranted ? "Allowed" : "Off"}
-          </Badge>
-        </Group>
-        {geoGranted && (
-          <Group justify="flex-end" mt="sm">
-            <Button size="xs" variant="light" color="red" onClick={onWithdrawGeolocation}>
-              {tracking ? "Stop & withdraw" : "Withdraw"}
-            </Button>
+        <Group justify="space-between" align="center" gap="sm" wrap="nowrap">
+          <Text fw={600} size="sm">
+            Location sharing
+          </Text>
+          <Group gap="xs" justify="flex-end" wrap="nowrap">
+            <Badge color={tracking ? "teal" : geoGranted ? "blue" : "gray"} variant="light">
+              {tracking ? "Live" : geoGranted ? "Allowed" : "Off"}
+            </Badge>
+            {geoGranted && (
+              <Button size="compact-xs" variant="light" color="red" onClick={onWithdrawGeolocation}>
+                {tracking ? "Stop & withdraw" : "Withdraw"}
+              </Button>
+            )}
           </Group>
-        )}
+        </Group>
       </section>
       <section className="haku-shell-card">
         <Group justify="space-between" align="center">
@@ -678,35 +724,32 @@ export function ShellDrawer(props: ShellDrawerProps) {
     <div className="haku-shell-overlay" style={{ zIndex: PANEL_Z }} aria-hidden={!props.opened}>
       {props.opened && (
         <aside className="haku-shell-drawer" aria-label="Haku console controls">
-          <Group justify="space-between" align="center" className="haku-shell-header">
-            <Stack gap={1}>
+          <section className="haku-shell-card haku-shell-drawer-nav">
+            <Group justify="space-between" align="center" className="haku-shell-header">
               <Text fw={700}>Haku console</Text>
-              <Text size="xs" c="dimmed">
-                Trusted shell controls
-              </Text>
-            </Stack>
-            <Button size="compact-xs" variant="subtle" onClick={props.onClose}>
-              Close
-            </Button>
-          </Group>
-          <SegmentedControl
-            fullWidth
-            size="xs"
-            value={props.activeTab}
-            onChange={(value) => props.onOpenTab(value as ShellDrawerTab)}
-            data={[
-              {
-                value: "approvals",
-                label: `Approvals (${props.pendingApprovals.length + props.geolocationApprovals.length})`,
-              },
-              { value: "console", label: "Console" },
-            ]}
-          />
+              <Button size="compact-xs" variant="subtle" onClick={props.onClose}>
+                Close
+              </Button>
+            </Group>
+            <SegmentedControl
+              fullWidth
+              size="xs"
+              value={props.activeTab}
+              onChange={(value) => props.onOpenTab(value as ShellDrawerTab)}
+              data={[
+                {
+                  value: "approvals",
+                  label: `Approvals (${props.pendingApprovals.length + props.geolocationApprovals.length})`,
+                },
+                { value: "access", label: "Access" },
+              ]}
+            />
+          </section>
           <div className="haku-shell-scroll">
             {props.activeTab === "approvals" ? (
               <ApprovalsTab {...props} />
             ) : (
-              <ConsoleTab
+              <AccessTab
                 geoGranted={props.geoGranted}
                 tracking={props.tracking}
                 onWithdrawGeolocation={props.onWithdrawGeolocation}
