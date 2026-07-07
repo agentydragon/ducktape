@@ -156,6 +156,7 @@
     # Options: gnomeExtensions.syncthing-indicator, gnomeExtensions.syncthing-toggle, qsyncthingtray
     ducktapePackages.aiquota
     ducktapePackages.bebas-neue-font
+    ducktapePackages.claude-desktop
     pkgs.inkscape
     pkgs.kicad
     pkgs.openscad

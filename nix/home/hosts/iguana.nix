@@ -5,6 +5,7 @@
   config,
   pkgs,
   lib,
+  ducktapePackages,
   ...
 }:
 {
@@ -31,6 +32,8 @@
   programs.gnome-shell.extensions = [
     { package = pkgs.gnomeExtensions.appindicator; }
   ];
+
+  home.packages = [ ducktapePackages.claude-desktop ];
 
   home.stateVersion = "24.11";
 }

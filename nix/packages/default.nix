@@ -326,6 +326,9 @@ rec {
   # Anthropic CLI (`ant`): Claude API / Managed Agents control plane. Not in
   # nixpkgs; vendored static release binary. Used by haku/runtime/managed_agent/self_hosted.
   anthropic-cli = pkgs.callPackage ./anthropic-cli.nix { };
+  # Claude Desktop (GUI app): Anthropic's Electron desktop client, from the
+  # official apt repo .deb. Distinct from Claude Code (the CLI).
+  claude-desktop = pkgs.callPackage ./claude-desktop.nix { };
   # fastmcp's client CLI (`fastmcp call|list <url> --auth <bearer>`) exposed as a
   # standalone app for agent closures (flake.nix `.#agent-haku`). The library
   # is consumed by the `ducktape` wheel above via `python3Packages.fastmcp`; this
