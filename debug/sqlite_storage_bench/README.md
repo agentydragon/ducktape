@@ -61,6 +61,17 @@ Pod placement:
 The SeaweedFS runs mounted `/data` through `fuse.seaweedfs`; local-path runs
 mounted XFS on the node-local data disk.
 
+Interpretation caveat: this benchmark does not isolate SeaweedFS disk media from
+SeaweedFS network/topology effects. All SeaweedFS client pods landed on
+`ovh-ns103656`. That node also runs an HDD SeaweedFS volume server
+(`seaweedfs-volume-hdd-2`), while the SSD SeaweedFS volume servers run only on
+`ovh-ns104952` and `ovh-ns104963`. The `seaweedfs-ovh-ssd` class therefore
+necessarily exercised remote volume-server I/O over the same OVH inter-node path
+suspected in [#2917](https://github.com/agentydragon/ducktape/issues/2917).
+The result should be read as "SeaweedFS SSD, as currently deployed and reached
+from this client placement, is poor for SQLite", not as proof that the SSD media
+itself is slower than the HDD media.
+
 ## Results
 
 Values below aggregate the five repeat-level measurements for each class. For
@@ -127,13 +138,16 @@ predictable writes. `local-path-ovh-hdd` is acceptable for a lower-value Grocy
 instance if SSD capacity is scarce: its Grocy-shaped p95 write latency was ~25-32
 ms, but max batch latency reached ~0.7 s and throughput was ~30x lower than SSD.
 
-Avoid both `seaweedfs-ovh-ssd` and `seaweedfs-ovh` for hot SQLite DBs. They are
-acceptable only for low-write, low-risk SQLite apps where occasional multi-second
-stalls are tolerable. The replicated/RWX property is real, but it comes through a
-FUSE/network path whose SQLite-visible behavior is poor: p95 durable write
-latency was ~40-70 ms, ActivityWatch-shaped batch p95s were hundreds of ms, max
-write phases hit ~1-2 s, default SeaweedFS produced a 21 s autocommit outlier,
-and close/reopen on 1M rows took ~6-9 s.
+Avoid both `seaweedfs-ovh-ssd` and `seaweedfs-ovh` for hot SQLite DBs in the
+current topology. They are acceptable only for low-write, low-risk SQLite apps
+where occasional multi-second stalls are tolerable. The replicated/RWX property
+is real, but it comes through a FUSE/network path whose SQLite-visible behavior
+is poor: p95 durable write latency was ~40-70 ms, ActivityWatch-shaped batch
+p95s were hundreds of ms, max write phases hit ~1-2 s, default SeaweedFS
+produced a 21 s autocommit outlier, and close/reopen on 1M rows took ~6-9 s.
+Because the SSD SeaweedFS runs were remote from the client node, this benchmark
+is also evidence that the current SeaweedFS SSD placement does not overcome the
+suspected inter-node bottleneck tracked in #2917.
 
 For replicated availability, prefer an alternate architecture instead of putting
 hot SQLite directly on SeaweedFS: application-level export/sync, VolSync/restic
