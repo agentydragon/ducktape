@@ -2,8 +2,6 @@ import { Button, Group, Stack, Text } from "@mantine/core";
 import type { PointerEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 
-import type { GeolocationOptions } from "./bridge.ts";
-import type { PendingApproval } from "./client.ts";
 import { ACTION_COLOR } from "./theme.ts";
 
 // The escalation the shell is asking the operator to approve — the **actual action** the
@@ -11,12 +9,7 @@ import { ACTION_COLOR } from "./theme.ts";
 // renders its own confirm copy (no flag+optional soup). The trusted-rendered text for each
 // privileged action lives here, in one place, since this dialog is the only trustworthy
 // surface at the moment of approval.
-export type Escalation =
-  | { kind: "openLink"; url: string }
-  | { kind: "launch"; id: string; prompt: string }
-  | { kind: "geolocation"; id: string; options?: GeolocationOptions }
-  | { kind: "geolocationWatch"; id: string; options?: GeolocationOptions }
-  | { kind: "toolApproval"; approval: PendingApproval };
+export type Escalation = { kind: "openLink"; url: string } | { kind: "launch"; id: string; prompt: string };
 
 interface Rendered {
   title: string;
@@ -24,37 +17,6 @@ interface Rendered {
   // Verbatim agent-supplied text to review before approving (a URL, a launch prompt).
   preview?: { text: string; mono: boolean };
   approveLabel: string;
-}
-
-type ToolApprovalRenderer = (approval: PendingApproval) => Rendered;
-
-const toolApprovalRenderers: Record<string, ToolApprovalRenderer> = {};
-
-function defaultToolApprovalRenderer(approval: PendingApproval): Rendered {
-  return {
-    title: approval.title ?? `${approval.server_id}: ${approval.tool_name}`,
-    body: `Approve ${approval.server_id}.${approval.tool_name} for ${approval.caller_principal}?`,
-    preview: {
-      text: JSON.stringify(
-        {
-          server_id: approval.server_id,
-          tool_name: approval.tool_name,
-          rationale: approval.rationale,
-          arguments: approval.arguments,
-          tool_call_id: approval.tool_call_id,
-        },
-        null,
-        2
-      ),
-      mono: true,
-    },
-    approveLabel: "Run tool",
-  };
-}
-
-function renderToolApproval(approval: PendingApproval): Rendered {
-  const renderer = toolApprovalRenderers[`${approval.server_id}.${approval.tool_name}`] ?? defaultToolApprovalRenderer;
-  return renderer(approval);
 }
 
 function render(action: Escalation): Rendered {
@@ -68,17 +30,15 @@ function render(action: Escalation): Rendered {
         preview: action.prompt ? { text: action.prompt, mono: false } : undefined,
         approveLabel: "Launch",
       };
-    // One grant covers both a one-shot read and a continuous watch, so the copy discloses
-    // the strongest capability it unlocks — ongoing tracking.
-    case "geolocation":
-    case "geolocationWatch":
-      return {
-        title: "Allow Haku to use your location?",
-        body: "Haku's UI is asking to use your device location, including tracking it continuously. Allowing lets it read your location whenever it asks — until you withdraw from the console panel (the ⚙ button, top-right). Your browser may prompt too. Haku is assumed adversarial; only allow when you trust why it's asked.",
-        approveLabel: "Allow",
-      };
-    case "toolApproval":
-      return renderToolApproval(action.approval);
+  }
+}
+
+export function escalationIdentity(action: Escalation): string {
+  switch (action.kind) {
+    case "openLink":
+      return `openLink:${action.url}`;
+    case "launch":
+      return `launch:${action.id}`;
   }
 }
 
@@ -108,18 +68,21 @@ export function ConfirmDialog({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [armed, setArmed] = useState(false);
+  const actionIdentity = action ? escalationIdentity(action) : null;
 
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
-    if (action && !d.open) {
+    if (!actionIdentity) {
       setArmed(false);
-      d.showModal();
-      const t = setTimeout(() => setArmed(true), ARM_DELAY_MS);
-      return () => clearTimeout(t);
+      if (d.open) d.close();
+      return;
     }
-    if (!action && d.open) d.close();
-  }, [action]);
+    setArmed(false);
+    if (!d.open) d.showModal();
+    const t = setTimeout(() => setArmed(true), ARM_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [actionIdentity]);
 
   const r = action ? render(action) : null;
   return (

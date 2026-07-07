@@ -1,6 +1,15 @@
-import { ActionIcon, Anchor, Indicator } from "@mantine/core";
+import { Anchor } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 
+import {
+  geolocationApprovalQueueId,
+  makeRecentToolCall,
+  nextSelectedApprovalId,
+  sortApprovalsNewestFirst,
+  toolApprovalQueueId,
+  type GeolocationApproval,
+  type RecentToolCall,
+} from "./approval_state.ts";
 import { type GeolocationOptions, isRoutePath, type Outbound, parseInbound, vetOpenLink } from "./bridge.ts";
 import {
   approveToolCall,
@@ -11,10 +20,11 @@ import {
   launchRoutine,
   type McpOperatorAuthStatus,
   type PendingApproval,
+  type ToolCallRecord,
   startMcpOperatorAuth,
 } from "./client.ts";
 import { ConfirmDialog, type Escalation } from "./confirm_dialog.tsx";
-import { ConsolePanel, PANEL_Z } from "./console_panel.tsx";
+import { ShellControls, ShellDrawer, type ShellDrawerTab } from "./console_panel.tsx";
 import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation.ts";
 import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant.ts";
 import { toastError, toastSuccess } from "./toast.ts";
@@ -76,15 +86,24 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
   // to launch). One typed action, dispatched on its `kind` — see ConfirmDialog's Escalation.
   const [pending, setPending] = useState<Escalation | null>(null);
   const [toolApprovals, setToolApprovals] = useState<PendingApproval[]>([]);
+  const toolApprovalsRef = useRef<PendingApproval[]>([]);
+  const knownToolApprovalIdsRef = useRef<Set<string> | null>(null);
+  const [geolocationApprovals, setGeolocationApprovals] = useState<GeolocationApproval[]>([]);
+  const geolocationApprovalsRef = useRef<GeolocationApproval[]>([]);
   const [mcpAuthStatuses, setMcpAuthStatuses] = useState<McpOperatorAuthStatus[]>([]);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<ShellDrawerTab>("approvals");
+  const [selectedApprovalId, setSelectedApprovalId] = useState<string | null>(null);
+  const [selectedRecentToolCallId, setSelectedRecentToolCallId] = useState<string | null>(null);
+  const [decidingApprovalIds, setDecidingApprovalIds] = useState<string[]>([]);
+  const [recentToolCalls, setRecentToolCalls] = useState<RecentToolCall[]>([]);
   // Computed once: later routeChanged mirroring must not rewrite `src` (that would
   // reload the frame); the iframe navigates itself, the console only reflects.
   const [frameSrc] = useState(() => initialFrameSrc(uiUrl, window.location.hash));
   const origin = new URL(uiUrl).origin;
   const toolApprovalChannelRef = useRef<BroadcastChannel | null>(null);
   const mcpAuthChannelRef = useRef<BroadcastChannel | null>(null);
-  const activeAction: Escalation | null =
-    pending ?? (toolApprovals[0] ? { kind: "toolApproval", approval: toolApprovals[0] } : null);
+  const activeAction: Escalation | null = pending;
 
   function reply(msg: Outbound) {
     iframeRef.current?.contentWindow?.postMessage(msg, origin);
@@ -114,7 +133,6 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
   // closure; these mirrors only drive rendering.
   const [geoGranted, setGeoGranted] = useState(() => hasGeolocationGrant());
   const [tracking, setTracking] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(false);
 
   // The shell (never the iframe) holds every live watchPosition stream; each fix is relayed
   // to the iframe as a geolocationResult tagged with its watch id. Created once.
@@ -150,14 +168,88 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
     setGeoGranted(false);
   }
 
-  function removeToolApproval(toolCallId: string) {
-    setToolApprovals((approvals) => approvals.filter((a) => a.tool_call_id !== toolCallId));
+  function openDrawerTab(tab: ShellDrawerTab) {
+    setDrawerTab(tab);
+    setDrawerOpen(true);
+  }
+
+  function openApproval(id: string) {
+    setSelectedApprovalId(id);
+    setSelectedRecentToolCallId(null);
+    openDrawerTab("approvals");
+  }
+
+  function setDeciding(id: string, deciding: boolean) {
+    setDecidingApprovalIds((ids) =>
+      deciding ? (ids.includes(id) ? ids : [...ids, id]) : ids.filter((existing) => existing !== id)
+    );
+  }
+
+  function applyToolApprovals(approvals: PendingApproval[]) {
+    const incomingIds = new Set(approvals.map((approval) => approval.tool_call_id));
+    const previousIds = knownToolApprovalIdsRef.current;
+    const newApprovals =
+      previousIds === null ? approvals : approvals.filter((approval) => !previousIds.has(approval.tool_call_id));
+    knownToolApprovalIdsRef.current = incomingIds;
+    toolApprovalsRef.current = approvals;
+    setToolApprovals(approvals);
+    if (newApprovals.length > 0) {
+      openApproval(toolApprovalQueueId(sortApprovalsNewestFirst(newApprovals)[0].tool_call_id));
+    }
+  }
+
+  function removeToolApproval(toolCallId: string): PendingApproval[] {
+    const remaining = toolApprovalsRef.current.filter((approval) => approval.tool_call_id !== toolCallId);
+    toolApprovalsRef.current = remaining;
+    knownToolApprovalIdsRef.current = new Set(remaining.map((approval) => approval.tool_call_id));
+    setToolApprovals(remaining);
+    return remaining;
+  }
+
+  function addRecentToolCall(record: ToolCallRecord) {
+    const recent = makeRecentToolCall(record, Date.now());
+    if (!recent) return;
+    setRecentToolCalls((records) => [
+      recent,
+      ...records.filter((existing) => existing.record.tool_call_id !== record.tool_call_id),
+    ]);
+  }
+
+  function finishToolDecision(record: ToolCallRecord) {
+    const remaining = removeToolApproval(record.tool_call_id);
+    addRecentToolCall(record);
+    setDeciding(toolApprovalQueueId(record.tool_call_id), false);
+    const nextApprovalId = nextSelectedApprovalId(remaining, geolocationApprovalsRef.current, null);
+    setSelectedApprovalId(nextApprovalId);
+    setSelectedRecentToolCallId(nextApprovalId ? null : record.tool_call_id);
+  }
+
+  function addGeolocationApproval(mode: GeolocationApproval["mode"], id: string, options?: GeolocationOptions) {
+    const approval: GeolocationApproval = { id, mode, options, createdAt: new Date().toISOString() };
+    const remaining = [approval, ...geolocationApprovalsRef.current.filter((existing) => existing.id !== id)];
+    geolocationApprovalsRef.current = remaining;
+    setGeolocationApprovals(remaining);
+    openApproval(geolocationApprovalQueueId(id));
+  }
+
+  function removeGeolocationApproval(id: string): GeolocationApproval[] {
+    const remaining = geolocationApprovalsRef.current.filter((approval) => approval.id !== id);
+    geolocationApprovalsRef.current = remaining;
+    setGeolocationApprovals(remaining);
+    return remaining;
+  }
+
+  function advanceAfterGeolocation(id: string) {
+    const remaining = removeGeolocationApproval(id);
+    const nextApprovalId = nextSelectedApprovalId(toolApprovalsRef.current, remaining, null);
+    setSelectedApprovalId(nextApprovalId);
+    if (!nextApprovalId) setSelectedRecentToolCallId(null);
   }
 
   function refreshToolApprovals(notifyPeers = false) {
     if (notifyPeers) toolApprovalChannelRef.current?.postMessage({ type: "toolApprovalsChanged" });
     void fetchPendingApprovals().then(
-      (approvals) => setToolApprovals(approvals),
+      (approvals) => applyToolApprovals(approvals),
       (e: unknown) => toastError("Couldn't load tool approvals", e)
     );
   }
@@ -256,17 +348,17 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
       }
       if (msg.type === "requestGeolocation") {
         // The iframe can only ask; the shell owns the standing grant. With consent already
-        // given ("allow until withdrawn"), serve directly; otherwise pop the top-layer
-        // consent confirm, which — once approved — records the grant so later reads skip it.
+        // given ("allow until withdrawn"), serve directly; otherwise queue a trusted shell
+        // approval in the non-modal drawer so Haku's UI remains usable.
         if (hasGeolocationGrant()) geolocateAndReply(msg.id, msg.options);
-        else setPending({ kind: "geolocation", id: msg.id, options: msg.options });
+        else addGeolocationApproval("geolocation", msg.id, msg.options);
         return;
       }
       if (msg.type === "startGeolocationWatch") {
         // A continuous stream: same grant gate as a one-shot read, but the shell keeps the
         // watch (so the iframe can't start one silently or keep one the operator stopped).
         if (hasGeolocationGrant()) startWatch(msg.id, msg.options);
-        else setPending({ kind: "geolocationWatch", id: msg.id, options: msg.options });
+        else addGeolocationApproval("geolocationWatch", msg.id, msg.options);
         return;
       }
       if (msg.type === "stopGeolocationWatch") {
@@ -295,6 +387,40 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
     return () => window.removeEventListener("message", onMessage);
   }, [origin, launchAvailable]);
 
+  useEffect(() => {
+    toolApprovalsRef.current = toolApprovals;
+  }, [toolApprovals]);
+
+  useEffect(() => {
+    geolocationApprovalsRef.current = geolocationApprovals;
+  }, [geolocationApprovals]);
+
+  useEffect(() => {
+    setSelectedApprovalId((selected) => nextSelectedApprovalId(toolApprovals, geolocationApprovals, selected));
+  }, [geolocationApprovals, toolApprovals]);
+
+  useEffect(() => {
+    if (recentToolCalls.length === 0) return;
+    const nextHideAtMs = Math.min(...recentToolCalls.map((recent) => recent.hideAtMs));
+    const t = window.setTimeout(
+      () => {
+        const now = Date.now();
+        setRecentToolCalls((records) => records.filter((recent) => recent.hideAtMs > now));
+      },
+      Math.max(0, nextHideAtMs - Date.now()) + 50
+    );
+    return () => window.clearTimeout(t);
+  }, [recentToolCalls]);
+
+  useEffect(() => {
+    if (
+      selectedRecentToolCallId &&
+      !recentToolCalls.some((recent) => recent.record.tool_call_id === selectedRecentToolCallId)
+    ) {
+      setSelectedRecentToolCallId(null);
+    }
+  }, [recentToolCalls, selectedRecentToolCallId]);
+
   // The operator approved against trusted-rendered chrome — now actually perform the action
   // (open the link / fire the capability) and report the outcome back over the bridge.
   function onApprove() {
@@ -303,29 +429,6 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
     if (!action) return;
     if (action.kind === "openLink") {
       openAndReply(action.url);
-      return;
-    }
-    if (action.kind === "geolocation" || action.kind === "geolocationWatch") {
-      // Consent given on trusted chrome — record the standing grant so subsequent reads are
-      // served without re-confirming, until the operator withdraws (the console panel below).
-      setGeolocationGrant(true);
-      setGeoGranted(true);
-      if (action.kind === "geolocationWatch") startWatch(action.id, action.options);
-      else geolocateAndReply(action.id, action.options);
-      return;
-    }
-    if (action.kind === "toolApproval") {
-      const toolCallId = action.approval.tool_call_id;
-      removeToolApproval(toolCallId);
-      void approveToolCall(toolCallId)
-        .then((record) => {
-          toastSuccess("Tool call finished", `${record.server_id}.${record.tool_name}: ${record.status}`);
-          refreshToolApprovals(true);
-        })
-        .catch((e: unknown) => {
-          toastError("Tool call failed", e);
-          refreshToolApprovals(true);
-        });
       return;
     }
     void launchRoutine(action.prompt || undefined)
@@ -350,30 +453,66 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
     if (!action) return;
     if (action.kind === "openLink") {
       reply({ type: "openLinkResult", url: action.url, opened: false, reason: "cancelled" });
-    } else if (action.kind === "geolocation" || action.kind === "geolocationWatch") {
-      // Declined on trusted chrome → mirror a browser PERMISSION_DENIED so the iframe treats
-      // it exactly like a native geolocation denial (for a watch, no stream ever starts). No
-      // grant is recorded.
-      reply({ type: "geolocationResult", id: action.id, ok: false, code: GEO_PERMISSION_DENIED, reason: "declined" });
-    } else if (action.kind === "toolApproval") {
-      const toolCallId = action.approval.tool_call_id;
-      removeToolApproval(toolCallId);
-      void denyToolCall(toolCallId, "cancelled from console").then(
-        () => {
-          toastSuccess(
-            "Tool call denied",
-            action.approval.title ?? `${action.approval.server_id}: ${action.approval.tool_name}`
-          );
-          refreshToolApprovals(true);
-        },
-        (e: unknown) => {
-          toastError("Couldn't deny tool call", e);
-          refreshToolApprovals(true);
-        }
-      );
     } else {
       reply({ type: "launchResult", id: action.id, ok: false, reason: "cancelled" });
     }
+  }
+
+  function approveToolApproval(approval: PendingApproval) {
+    const approvalId = toolApprovalQueueId(approval.tool_call_id);
+    setDeciding(approvalId, true);
+    void approveToolCall(approval.tool_call_id)
+      .then((record) => {
+        finishToolDecision(record);
+        toastSuccess("Tool call finished", `${record.server_id}.${record.tool_name}: ${record.status}`);
+        refreshToolApprovals(true);
+      })
+      .catch((e: unknown) => {
+        setDeciding(approvalId, false);
+        toastError("Tool call failed", e);
+        refreshToolApprovals(true);
+      });
+  }
+
+  function denyToolApproval(approval: PendingApproval) {
+    const approvalId = toolApprovalQueueId(approval.tool_call_id);
+    setDeciding(approvalId, true);
+    void denyToolCall(approval.tool_call_id, "denied from console").then(
+      (record) => {
+        finishToolDecision(record);
+        toastSuccess("Tool call denied", approval.title ?? `${approval.server_id}: ${approval.tool_name}`);
+        refreshToolApprovals(true);
+      },
+      (e: unknown) => {
+        setDeciding(approvalId, false);
+        toastError("Couldn't deny tool call", e);
+        refreshToolApprovals(true);
+      }
+    );
+  }
+
+  function approveGeolocationApproval(approval: GeolocationApproval) {
+    const approvalId = geolocationApprovalQueueId(approval.id);
+    setDeciding(approvalId, true);
+    setGeolocationGrant(true);
+    setGeoGranted(true);
+    if (approval.mode === "geolocationWatch") startWatch(approval.id, approval.options);
+    else geolocateAndReply(approval.id, approval.options);
+    setDeciding(approvalId, false);
+    advanceAfterGeolocation(approval.id);
+  }
+
+  function denyGeolocationApproval(approval: GeolocationApproval) {
+    const approvalId = geolocationApprovalQueueId(approval.id);
+    setDeciding(approvalId, true);
+    reply({ type: "geolocationResult", id: approval.id, ok: false, code: GEO_PERMISSION_DENIED, reason: "declined" });
+    setDeciding(approvalId, false);
+    advanceAfterGeolocation(approval.id);
+  }
+
+  function dismissRecentToolCall(toolCallId: string) {
+    setRecentToolCalls((records) => records.filter((recent) => recent.record.tool_call_id !== toolCallId));
+    if (selectedRecentToolCallId === toolCallId) setSelectedRecentToolCallId(null);
   }
 
   return (
@@ -385,26 +524,40 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
         sandbox="allow-scripts allow-same-origin allow-forms"
         style={{ display: "block", width: "100vw", height: "100vh", border: 0 }}
       />
-      {/* Persistent escape hatch into the shell's own controls (config, grants, views),
-          rendered by the SHELL above the full-page iframe. The dot marks a standing location
-          grant, and pulses (green) while a live watch is streaming, so the operator has
-          at-a-glance awareness that tracking is on even before opening the panel. It only ever
-          opens trusted shell chrome / *reduces* privilege, so — unlike the consent moment — it
-          needn't be a top-layer surface; the browser's own site-settings revoke is the
-          tamper-proof backstop (docs/containment.md). */}
-      <Indicator
-        color={tracking ? "teal" : "blue"}
-        processing={tracking}
-        disabled={!geoGranted}
-        style={{ position: "fixed", top: 8, right: 8, zIndex: PANEL_Z - 1 }}
-      >
-        <ActionIcon variant="default" size="lg" aria-label="Open console controls" onClick={() => setPanelOpen(true)}>
-          ⚙
-        </ActionIcon>
-      </Indicator>
-      <ConsolePanel
-        opened={panelOpen}
-        onClose={() => setPanelOpen(false)}
+      <ShellControls
+        pendingCount={toolApprovals.length + geolocationApprovals.length}
+        opened={drawerOpen}
+        activeTab={drawerTab}
+        geoGranted={geoGranted}
+        tracking={tracking}
+        onOpenTab={openDrawerTab}
+      />
+      <ShellDrawer
+        opened={drawerOpen}
+        activeTab={drawerTab}
+        onOpenTab={openDrawerTab}
+        onClose={() => setDrawerOpen(false)}
+        pendingApprovals={toolApprovals}
+        geolocationApprovals={geolocationApprovals}
+        selectedApprovalId={selectedApprovalId}
+        selectedRecentToolCallId={selectedRecentToolCallId}
+        decidingApprovalIds={decidingApprovalIds}
+        recentToolCalls={recentToolCalls}
+        onSelectApproval={(id) => {
+          setSelectedApprovalId(id);
+          setSelectedRecentToolCallId(null);
+          openDrawerTab("approvals");
+        }}
+        onSelectRecentToolCall={(toolCallId) => {
+          setSelectedRecentToolCallId(toolCallId);
+          setSelectedApprovalId(null);
+          openDrawerTab("approvals");
+        }}
+        onApproveTool={approveToolApproval}
+        onDenyTool={denyToolApproval}
+        onApproveGeolocation={approveGeolocationApproval}
+        onDenyGeolocation={denyGeolocationApproval}
+        onDismissRecentToolCall={dismissRecentToolCall}
         geoGranted={geoGranted}
         tracking={tracking}
         onWithdrawGeolocation={withdrawGeolocation}

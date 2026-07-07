@@ -76,8 +76,9 @@ Core endpoints:
   datetime `since` filter on `updated_at`.
 
 Backend callers authenticate with the shared `HAKU_CONSOLE_AGENT_API_TOKEN`. Browser-origin
-approvals use the operator's Authentik session plus CSRF. The approval dialog renders in trusted
-console chrome, not inside Haku's iframe. If a server enables `operator_oauth`, approval execution
+approvals use the operator's Authentik session plus CSRF. The approval drawer renders in trusted
+console chrome, not inside Haku's iframe, and does not block the framed Haku UI. If a server enables
+`operator_oauth`, approval execution
 uses the approving operator's linked OAuth token and refuses to move the call out of
 `pending_approval` until that association exists. Static bearer credentials can remain configured
 for reflection or fallback wiring, but they are not silently substituted for operator-approved

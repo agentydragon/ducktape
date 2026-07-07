@@ -74,17 +74,18 @@ Haku could author hostile UI). Safety comes from the perimeter, not from trustin
 
 ## The shell as a thin trusted layer
 
-The iframe covers the page; the shell owns only the moment-of-decision confirm, the frame,
+The iframe covers the page; the shell owns only the moment-of-decision surfaces, the frame,
 the bridge, and the CSP. **A persistent "trust indicator" is not a security control**: a web
 page has no secure-attention channel, and an iframe can render a pixel-perfect decoy badge.
 Security rests on two things instead:
 
 1. **The capability gate makes a faked control inert.** A fake "Launch" button can only emit
    a bridge request, which the shell re-gates with its own CSRF + confirm + bearer.
-2. **The confirm is the only trustworthy surface, and only at the moment of approval.** It
-   renders as a **top-layer `<dialog>.showModal()` with a backdrop**: the iframe cannot draw
-   over it, read it, or intercept its clicks. Anti-clickjacking hygiene: explicit action
-   text, a deliberate click on a freshly-rendered button, no click-through.
+2. **The shell is the only trustworthy approval surface.** Immediate bridge escalations render as
+   a **top-layer `<dialog>.showModal()` with a backdrop**. Queueable approvals render in the
+   shell-owned non-modal drawer. In both cases the iframe cannot draw over the trusted controls,
+   read them, or intercept their clicks. Anti-clickjacking hygiene: explicit action text, a
+   deliberate click on a freshly-rendered button, no click-through.
 
 Fullscreen is withheld from the iframe (no `allow="fullscreen"`) so it can't spoof browser
 chrome.
@@ -121,7 +122,7 @@ haku-ui frontend posts to its own same-origin backend, that backend reads
 `tool_requests/<id>.yaml` from haku-state and calls haku-console's
 `POST /api/tool-calls` with the configured console agent API token. If approval is
 required, haku-console notifies its trusted frontend (`/api/approvals/ws`, with REST catch-up from
-`/api/approvals/pending`) and renders the top-layer approval dialog itself. The iframe can request a
+`/api/approvals/pending`) and renders the non-modal approval drawer itself. The iframe can request a
 tool call, but cannot approve one or forge console chrome.
 
 ### `requestGeolocation` / `startGeolocationWatch` — read the operator's location (standing grant)

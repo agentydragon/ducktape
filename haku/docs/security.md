@@ -75,12 +75,11 @@ live source reads). Channels out, and what fences each:
 3. The console renders **no** Haku-authored content and holds no haku-state credential; the
    litmus test for console code: _does it hold a secret, perform a privileged action, or
    define the trust boundary?_ If not, it belongs to Haku.
-4. Consent moments happen on trusted top-level/top-layer surfaces only (the capability
-   confirm, the MCP tool-call approval confirm, the `openLink` off-whitelist confirm,
-   the `requestGeolocation` grant confirm).
-   Never move a confirm into agent-embeddable chrome; a persistent "trust badge" is not a
-   control — and the console panel that withdraws a grant is not one either (it only reduces
-   privilege).
+4. Consent moments happen on trusted top-level/top-layer shell surfaces only (the capability
+   confirm, the approval drawer for MCP tool calls and geolocation grants, and the `openLink`
+   off-whitelist confirm). Never move a confirm into agent-embeddable chrome; a persistent "trust
+   badge" is not a control — and the console panel that withdraws a grant is not one either (it only
+   reduces privilege).
 5. The `openLink` host whitelist lives in the shell (ducktape), never in haku-state.
 6. **The console stays the outer window.** Do not make haku-ui top-level: exfiltration
    containment (navigation channel above) depends on the embedding. Evaluated and rejected

@@ -24,6 +24,15 @@ js_library(
 )
 
 js_library(
+    name = "approval_state",
+    srcs = ["approval_state.ts"],
+    deps = [
+        ":bridge",
+        ":client",
+    ],
+)
+
+js_library(
     name = "theme",
     srcs = ["theme.ts"],
     deps = ["//:node_modules/@mantine/core"],
@@ -70,6 +79,9 @@ js_library(
     name = "console_panel",
     srcs = ["console_panel.tsx"],
     deps = [
+        ":approval_state",
+        ":client",
+        ":theme",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
     ],
@@ -79,6 +91,7 @@ js_library(
     name = "haku_ui_embed",
     srcs = ["haku_ui_embed.tsx"],
     deps = [
+        ":approval_state",
         ":bridge",
         ":client",
         ":confirm_dialog",
@@ -121,6 +134,7 @@ filegroup(
     name = "tailwind_content_srcs",
     srcs = [
         "app.tsx",
+        "approval_state.ts",
         "client.ts",
         "confirm_dialog.tsx",
         "console_panel.tsx",
@@ -192,6 +206,7 @@ tsc_bin.tsc_test(
     ],
     chdir = package_name(),
     data = [
+        "approval_state.test.ts",
         "bridge.test.ts",
         "geolocation.test.ts",
         "haku_ui_embed.test.ts",
@@ -208,10 +223,12 @@ vitest_bin.vitest_test(
     args = ["run"],
     chdir = package_name(),
     data = [
+        "approval_state.test.ts",
         "bridge.test.ts",
         "geolocation.test.ts",
         "haku_ui_embed.test.ts",
         "vitest.config.ts",
+        ":approval_state",
         ":bridge",
         ":geolocation",
         ":haku_ui_embed",

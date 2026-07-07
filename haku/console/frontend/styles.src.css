@@ -15,6 +15,9 @@
     --haku-code-bg: #eaf6f2;
     --haku-code-fg: #202728;
     --haku-backdrop: rgb(21 74 70 / 55%);
+    --haku-shell-shadow: rgb(36 31 43 / 20%);
+    --haku-shell-muted-bg: #f4f0f7;
+    --haku-shell-active-bg: #e7f4ef;
   }
   :root[data-mantine-color-scheme="dark"] {
     --haku-page-bg: #0f1f1d;
@@ -23,6 +26,9 @@
     --haku-code-bg: #172f2b;
     --haku-code-fg: #e8f4f0;
     --haku-backdrop: rgb(0 0 0 / 68%);
+    --haku-shell-shadow: rgb(0 0 0 / 45%);
+    --haku-shell-muted-bg: #1b2f2c;
+    --haku-shell-active-bg: #203d38;
   }
   body {
     margin: 0;
@@ -83,4 +89,143 @@
   border: 1px solid var(--haku-border);
   background: var(--haku-code-bg);
   color: var(--haku-code-fg);
+}
+
+.haku-shell-controls {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+}
+
+.haku-shell-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.haku-shell-drawer {
+  width: min(32rem, calc(100vw - 0.75rem));
+  height: calc(100dvh - 1rem);
+  margin: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  pointer-events: auto;
+  border: 1px solid var(--haku-border);
+  border-radius: 8px;
+  background: var(--haku-panel-bg);
+  color: var(--mantine-color-text);
+  box-shadow: 0 18px 50px var(--haku-shell-shadow);
+  padding: 0.85rem;
+}
+
+.haku-shell-header {
+  flex: 0 0 auto;
+}
+
+.haku-shell-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 0.1rem;
+}
+
+.haku-shell-card,
+.haku-shell-subcard {
+  border: 1px solid var(--haku-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--haku-panel-bg) 88%, var(--haku-shell-muted-bg));
+  padding: 0.75rem;
+}
+
+.haku-shell-subcard {
+  background: var(--haku-shell-muted-bg);
+}
+
+.haku-shell-approval-card {
+  display: block;
+  width: 100%;
+  color: inherit;
+  text-align: left;
+}
+
+.haku-shell-card-active,
+.haku-shell-card-selected {
+  border-color: var(--mantine-color-teal-5);
+  background: var(--haku-shell-active-bg);
+}
+
+.haku-shell-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin: 0;
+}
+
+.haku-shell-field-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.65rem;
+}
+
+.haku-shell-field {
+  min-width: 0;
+}
+
+.haku-shell-field dt {
+  margin: 0 0 0.18rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--mantine-color-dimmed);
+  text-transform: uppercase;
+}
+
+.haku-shell-field dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.haku-shell-mono,
+.haku-shell-disclosure code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.82rem;
+}
+
+.haku-shell-json {
+  max-height: 14rem;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--haku-border);
+  border-radius: 6px;
+  background: var(--haku-code-bg);
+  color: var(--haku-code-fg);
+  padding: 0.55rem;
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.haku-shell-disclosure {
+  border-top: 1px solid var(--haku-border);
+  padding-top: 0.55rem;
+}
+
+.haku-shell-disclosure summary {
+  cursor: pointer;
+  color: var(--mantine-color-dimmed);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+@media (max-width: 520px) {
+  .haku-shell-drawer {
+    width: calc(100vw - 0.5rem);
+    height: calc(100dvh - 0.5rem);
+    margin: 0.25rem;
+  }
+
+  .haku-shell-field-grid {
+    grid-template-columns: 1fr;
+  }
 }

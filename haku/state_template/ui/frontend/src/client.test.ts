@@ -136,7 +136,7 @@ arguments:
 
   it("loads the authored request and posts its exact body to the backend proxy", async () => {
     const fetchMock = stubToolRequestFetch();
-    const record = await callToolRequest("2026-07-thrive.box", 500);
+    const record = await callToolRequest("2026-07-thrive.box");
     const toolCall = fetchMock.mock.calls.find((c) => c[0] === "/api/tool-calls");
     expect(toolCall).toBeTruthy();
     const init = toolCall![1] as RequestInit;
@@ -147,7 +147,7 @@ arguments:
       title: "Add Thrive box to Grocy",
       rationale: "box present",
       arguments: { items: [{ product_id: 123, amount: 1 }] },
-      wait_for_ms: 500,
+      wait_for_ms: 0,
     });
     expect(record.status).toBe("pending_approval");
   });

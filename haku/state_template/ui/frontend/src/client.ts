@@ -79,7 +79,7 @@ export async function loadToolRequest(stateRequestId: string): Promise<ToolReque
   return parsed;
 }
 
-export async function callToolRequest(stateRequestId: string, waitForMs = 10_000): Promise<ToolCallRecord> {
+export async function callToolRequest(stateRequestId: string, waitForMs = 0): Promise<ToolCallRecord> {
   const request = await loadToolRequest(stateRequestId);
   const res = await fetch("/api/tool-calls", {
     method: "POST",
