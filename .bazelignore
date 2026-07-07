@@ -23,9 +23,6 @@ cluster/.direnv
 wt/.direnv
 props/.direnv
 
-# Debug investigations - no BUILD files
-debug
-
 # Legacy k8s cluster configs - deps not in main requirements
 x/k8s_old
 

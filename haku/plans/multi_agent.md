@@ -42,8 +42,7 @@ credential lint → Anthropic classifier → per-job key mint → k8s Job in `ha
 6. **Sensors + affordances** — changedetection.io + webhook→intake; Forgejo ducktape
    mirror automation + `haku` PR rights; base doctrine amendments. Details below.
 
-Deferred: `agent-sandbox`/gVisor isolation; grocery-order bounded-write MCP; PII check
-as a required CI status on PRs.
+Deferred: grocery-order bounded-write MCP; PII check as a required CI status on PRs.
 
 New local-inference follow-up: <local_dispatch_zone.md>. It adapts the existing zone
 perimeter to Ollama-hosted models and adds an active-model scheduler so local workers do

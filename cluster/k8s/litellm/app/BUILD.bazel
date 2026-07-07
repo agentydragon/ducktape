@@ -2,6 +2,11 @@
 
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
+exports_files(
+    ["proxy-config.yaml"],
+    visibility = ["//debug/litellm_probe:__pkg__"],
+)
+
 py_library(
     name = "generate_litellm",
     srcs = ["generate_litellm.py"],
@@ -17,19 +22,6 @@ py_binary(
     name = "generate_litellm_bin",
     main_module = "cluster.k8s.litellm.app.generate_litellm",
     deps = [":generate_litellm"],
-)
-
-py_binary(
-    name = "probe_models",
-    srcs = ["probe_models.py"],
-    data = ["proxy-config.yaml"],
-    main_module = "cluster.k8s.litellm.app.probe_models",
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//httpx",
-        "@pypi//jinja2",
-        "@pypi//pyyaml",
-    ],
 )
 
 py_test(

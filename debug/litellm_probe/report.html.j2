@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>LiteLLM Probe Report</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; }
+    details { border: 1px solid #ccc; border-radius: 6px; margin: 0.75rem 0; padding: 0.75rem; }
+    details.ok { border-color: #7ab77a; }
+    details.fail { border-color: #d36b6b; }
+    details.skip { border-color: #bbb; }
+    summary { cursor: pointer; font-weight: 600; }
+    pre { background: #f6f6f6; border-radius: 4px; overflow-x: auto; padding: 0.75rem; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>LiteLLM Probe Report</h1>
+  <p><strong>Response directory:</strong> {{ response_dir }}</p>
+  <p><strong>Counts:</strong> {{ counts }}</p>
+  {% for row in rows %}
+  <details class="{{ row.status }}">
+    <summary>{{ row.title }}</summary>
+    <p><strong>Backend:</strong> {{ row.backend }} &nbsp; <strong>Mode:</strong> {{ row.mode }}</p>
+    {% if row.detail %}<p><strong>Detail:</strong> {{ row.detail }}</p>{% endif %}
+    <p><strong>Request:</strong> {{ row.request_path }}</p>
+    <pre>{{ row.request_body }}</pre>
+    <p><strong>Response:</strong> {{ row.response_path }}</p>
+    <pre>{{ row.response_body }}</pre>
+  </details>
+  {% endfor %}
+</body>
+</html>

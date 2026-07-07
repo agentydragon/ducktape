@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import time
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,12 +14,13 @@ from typing import Any
 
 import httpx
 import yaml
-from jinja2 import Environment
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from util.bazel.runfiles import get_required_path
 
 DEFAULT_BASE_URL = "https://litellm.allegedly.works"
 DEFAULT_CONFIG_RUNFILE = "ducktape/cluster/k8s/litellm/app/proxy-config.yaml"
+REPORT_TEMPLATE_RUNFILE = "ducktape/debug/litellm_probe/report.html.j2"
 RESULTS_JSONL = "results.jsonl"
 EXPECTED_TEXT = "OK"
 EXPECTED_TOOL_NAME = "lookup_demo_fact"
@@ -26,6 +28,8 @@ EXPECTED_TOOL_ARGS = {"topic": "litellm-probe"}
 DEFAULT_BACKENDS = {"ollama"}
 DEFAULT_PARITY_MODELS = {"gemini-2.5-flash", "glm-4.5-air-anthropic"}
 TEXT_MODES = {"chat", "responses"}
+RequestBuilder = Callable[["ModelProbe", int, str], dict[str, Any]]
+Validator = Callable[[Any], str]
 
 
 @dataclass(frozen=True)
@@ -46,6 +50,16 @@ class ProbeResult:
     request_path: Path | None
     response_path: Path | None
     request_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ProbeShape:
+    name: str
+    path: str
+    build_request: RequestBuilder
+    validate_text: Validator
+    validate_tool: Validator
+    stream: bool = False
 
 
 def _parse_args() -> argparse.Namespace:
@@ -75,7 +89,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--shape",
         action="append",
-        choices=["openai-chat", "openai-responses", "anthropic-messages"],
+        choices=sorted(SHAPES),
         default=None,
         help="API shape to probe. Repeatable. Defaults to all supported text shapes.",
     )
@@ -409,52 +423,43 @@ def _assert_anthropic_tool_call(body: Any) -> str:
     raise ValueError(f"no Anthropic tool_use named {EXPECTED_TOOL_NAME!r}: {_detail_from_body(body)}")
 
 
-def _tool_schema_openai() -> dict[str, Any]:
+def _tool_parameters() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {"topic": {"type": "string"}},
+        "required": ["topic"],
+        "additionalProperties": False,
+    }
+
+
+def _tool_schema_openai_chat() -> dict[str, Any]:
     return {
         "type": "function",
         "function": {
             "name": EXPECTED_TOOL_NAME,
             "description": "Look up a demo fact by topic.",
-            "parameters": {
-                "type": "object",
-                "properties": {"topic": {"type": "string"}},
-                "required": ["topic"],
-                "additionalProperties": False,
-            },
+            "parameters": _tool_parameters(),
         },
     }
 
 
-def _tool_schema_responses() -> dict[str, Any]:
+def _tool_schema_function() -> dict[str, Any]:
     return {
         "type": "function",
         "name": EXPECTED_TOOL_NAME,
         "description": "Look up a demo fact by topic.",
-        "parameters": {
-            "type": "object",
-            "properties": {"topic": {"type": "string"}},
-            "required": ["topic"],
-            "additionalProperties": False,
-        },
+        "parameters": _tool_parameters(),
     }
 
 
 def _tool_schema_anthropic() -> dict[str, Any]:
-    return {
-        "name": EXPECTED_TOOL_NAME,
-        "description": "Look up a demo fact by topic.",
-        "input_schema": {
-            "type": "object",
-            "properties": {"topic": {"type": "string"}},
-            "required": ["topic"],
-            "additionalProperties": False,
-        },
-    }
+    schema = _tool_schema_function()
+    return {"name": schema["name"], "description": schema["description"], "input_schema": schema["parameters"]}
 
 
-def _chat_request_body(model: str, max_output_tokens: int, scenario: str) -> dict[str, Any]:
+def _chat_request_body(model: ModelProbe, max_output_tokens: int, scenario: str) -> dict[str, Any]:
     body: dict[str, Any] = {
-        "model": model,
+        "model": model.name,
         "messages": [{"role": "user", "content": f"Reply with exactly: {EXPECTED_TEXT}"}],
         "temperature": 0,
         "max_tokens": max_output_tokens,
@@ -463,28 +468,34 @@ def _chat_request_body(model: str, max_output_tokens: int, scenario: str) -> dic
         body["messages"] = [
             {"role": "user", "content": f"Use the tool to look up the topic {EXPECTED_TOOL_ARGS['topic']}."}
         ]
-        body["tools"] = [_tool_schema_openai()]
+        body["tools"] = [_tool_schema_openai_chat()]
         body["tool_choice"] = {"type": "function", "function": {"name": EXPECTED_TOOL_NAME}}
     return body
 
 
-def _responses_request_body(model: str, max_output_tokens: int, scenario: str, stream: bool) -> dict[str, Any]:
+def _responses_request_body(
+    model: ModelProbe, max_output_tokens: int, scenario: str, *, stream: bool = False
+) -> dict[str, Any]:
     body: dict[str, Any] = {
-        "model": model,
+        "model": model.name,
         "input": f"Reply with exactly: {EXPECTED_TEXT}",
         "stream": stream,
         "max_output_tokens": max_output_tokens,
     }
     if scenario == "tool":
         body["input"] = f"Use the tool to look up the topic {EXPECTED_TOOL_ARGS['topic']}."
-        body["tools"] = [_tool_schema_responses()]
+        body["tools"] = [_tool_schema_function()]
         body["tool_choice"] = {"type": "function", "name": EXPECTED_TOOL_NAME}
     return body
 
 
-def _anthropic_request_body(model: str, max_output_tokens: int, scenario: str) -> dict[str, Any]:
+def _streaming_responses_request_body(model: ModelProbe, max_output_tokens: int, scenario: str) -> dict[str, Any]:
+    return _responses_request_body(model, max_output_tokens, scenario, stream=True)
+
+
+def _anthropic_request_body(model: ModelProbe, max_output_tokens: int, scenario: str) -> dict[str, Any]:
     body: dict[str, Any] = {
-        "model": model,
+        "model": model.name,
         "max_tokens": max_output_tokens,
         "temperature": 0,
         "messages": [{"role": "user", "content": f"Reply with exactly: {EXPECTED_TEXT}"}],
@@ -498,24 +509,53 @@ def _anthropic_request_body(model: str, max_output_tokens: int, scenario: str) -
     return body
 
 
+def _validate_for_scenario(shape: ProbeShape, scenario: str, body: Any) -> str:
+    if scenario == "tool":
+        return shape.validate_tool(body)
+    return shape.validate_text(body)
+
+
+SHAPE_DEFS = (
+    ProbeShape(
+        name="openai-chat",
+        path="/v1/chat/completions",
+        build_request=_chat_request_body,
+        validate_text=_assert_chat_text,
+        validate_tool=_assert_chat_tool_call,
+    ),
+    ProbeShape(
+        name="openai-responses",
+        path="/v1/responses",
+        build_request=_responses_request_body,
+        validate_text=_assert_responses_text,
+        validate_tool=_assert_responses_tool_call,
+    ),
+    ProbeShape(
+        name="openai-responses-streaming",
+        path="/v1/responses",
+        build_request=_streaming_responses_request_body,
+        validate_text=_assert_responses_text,
+        validate_tool=_assert_responses_tool_call,
+        stream=True,
+    ),
+    ProbeShape(
+        name="anthropic-messages",
+        path="/v1/messages",
+        build_request=_anthropic_request_body,
+        validate_text=_assert_anthropic_text,
+        validate_tool=_assert_anthropic_tool_call,
+    ),
+)
+SHAPES = {shape.name: shape for shape in SHAPE_DEFS}
+DEFAULT_SHAPES = tuple(SHAPES)
+
+
 def _request_url(base_url: str, shape: str) -> str:
-    if shape == "openai-chat":
-        return f"{base_url}/v1/chat/completions"
-    if shape == "openai-responses":
-        return f"{base_url}/v1/responses"
-    if shape == "anthropic-messages":
-        return f"{base_url}/v1/messages"
-    raise ValueError(f"unsupported shape: {shape}")
+    return f"{base_url}{SHAPES[shape].path}"
 
 
 def _planned_request_body(model: ModelProbe, shape: str, scenario: str, max_output_tokens: int) -> dict[str, Any]:
-    if shape == "openai-chat":
-        return _chat_request_body(model.name, max_output_tokens, scenario)
-    if shape == "openai-responses":
-        return _responses_request_body(model.name, max_output_tokens, scenario, stream=model.mode == "responses")
-    if shape == "anthropic-messages":
-        return _anthropic_request_body(model.name, max_output_tokens, scenario)
-    raise ValueError(f"unsupported shape: {shape}")
+    return SHAPES[shape].build_request(model, max_output_tokens, scenario)
 
 
 def _request_key(url: str, body: dict[str, Any]) -> str:
@@ -550,44 +590,18 @@ def _saved_exchange_matches_key(result: ProbeResult) -> bool:
     return _request_key(url, request_body) == result.request_key
 
 
-def _probe_chat(
+def _post_streaming_responses(
     client: httpx.Client,
-    base_url: str,
+    url: str,
     headers: dict[str, str],
-    model: str,
-    max_output_tokens: int,
-    scenario: str,
+    body: dict[str, Any],
     request_path: Path | None,
     response_path: Path | None,
-) -> str:
-    body = _chat_request_body(model, max_output_tokens, scenario)
-    body_json, _ = _post_json(client, f"{base_url}/v1/chat/completions", headers, body, request_path, response_path)
-    if scenario == "tool":
-        return _assert_chat_tool_call(body_json)
-    return _assert_chat_text(body_json)
-
-
-def _probe_responses(
-    client: httpx.Client,
-    base_url: str,
-    headers: dict[str, str],
-    model: str,
-    max_output_tokens: int,
-    scenario: str,
-    stream: bool,
-    request_path: Path | None,
-    response_path: Path | None,
-) -> str:
-    body = _responses_request_body(model, max_output_tokens, scenario, stream)
+) -> dict[str, Any]:
     _save_json_body(request_path, body)
-    if not stream:
-        body_json, _ = _post_json(client, f"{base_url}/v1/responses", headers, body, None, response_path)
-        if scenario == "tool":
-            return _assert_responses_tool_call(body_json)
-        return _assert_responses_text(body_json)
     raw_lines: list[str] = []
     events: list[Any] = []
-    with client.stream("POST", f"{base_url}/v1/responses", headers=headers, json=body) as response:
+    with client.stream("POST", url, headers=headers, json=body) as response:
         if response.status_code >= 400:
             response.read()
             _save_body(response_path, response.text)
@@ -602,27 +616,24 @@ def _probe_responses(
                     with suppress(json.JSONDecodeError):
                         events.append(json.loads(payload))
         _save_body(response_path, "\n".join(raw_lines))
-        body_json = _responses_body_from_stream_events(events)
-        if scenario == "tool":
-            return _assert_responses_tool_call(body_json)
-        return _assert_responses_text(body_json)
+    return _responses_body_from_stream_events(events)
 
 
-def _probe_anthropic_messages(
+def _post_shape_request(
     client: httpx.Client,
     base_url: str,
     headers: dict[str, str],
-    model: str,
-    max_output_tokens: int,
-    scenario: str,
+    model: ModelProbe,
+    shape: ProbeShape,
+    body: dict[str, Any],
     request_path: Path | None,
     response_path: Path | None,
-) -> str:
-    body = _anthropic_request_body(model, max_output_tokens, scenario)
-    body_json, _ = _post_json(client, f"{base_url}/v1/messages", headers, body, request_path, response_path)
-    if scenario == "tool":
-        return _assert_anthropic_tool_call(body_json)
-    return _assert_anthropic_text(body_json)
+) -> Any:
+    url = _request_url(base_url, shape.name)
+    if shape.stream:
+        return _post_streaming_responses(client, url, headers, body, request_path, response_path)
+    body_json, _ = _post_json(client, url, headers, body, request_path, response_path)
+    return body_json
 
 
 def _probe_one(
@@ -638,39 +649,19 @@ def _probe_one(
     response_path: Path | None,
 ) -> ProbeResult:
     started = time.monotonic()
-    request_key = _request_key(
-        _request_url(base_url, shape), _planned_request_body(model, shape, scenario, max_output_tokens)
-    )
+    shape_spec = SHAPES[shape]
+    request_body = _planned_request_body(model, shape, scenario, max_output_tokens)
+    request_key = _request_key(_request_url(base_url, shape), request_body)
     try:
         if model.mode not in TEXT_MODES:
             detail = f"unsupported non-text mode for {shape}/{scenario} probe: {model.mode}"
             status = "fail" if include_unsupported else "skip"
-        elif shape == "openai-chat":
-            detail = _probe_chat(
-                client, base_url, headers, model.name, max_output_tokens, scenario, request_path, response_path
-            )
-            status = "ok"
-        elif shape == "openai-responses":
-            detail = _probe_responses(
-                client,
-                base_url,
-                headers,
-                model.name,
-                max_output_tokens,
-                scenario,
-                stream=model.mode == "responses",
-                request_path=request_path,
-                response_path=response_path,
-            )
-            status = "ok"
-        elif shape == "anthropic-messages":
-            detail = _probe_anthropic_messages(
-                client, base_url, headers, model.name, max_output_tokens, scenario, request_path, response_path
-            )
-            status = "ok"
         else:
-            detail = f"unsupported mode for {shape}/{scenario} probe: {model.mode}"
-            status = "fail" if include_unsupported else "skip"
+            response_body = _post_shape_request(
+                client, base_url, headers, model, shape_spec, request_body, request_path, response_path
+            )
+            detail = _validate_for_scenario(shape_spec, scenario, response_body)
+            status = "ok"
     except Exception as exc:
         detail = f"{type(exc).__name__}: {exc}"
         status = "fail"
@@ -849,41 +840,6 @@ def _status_counts(results: list[ProbeResult]) -> dict[str, int]:
     return counts
 
 
-_REPORT_TEMPLATE = """<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>LiteLLM Probe Report</title>
-  <style>
-    body { font-family: system-ui, sans-serif; margin: 2rem; }
-    details { border: 1px solid #ccc; border-radius: 6px; margin: 0.75rem 0; padding: 0.75rem; }
-    details.ok { border-color: #7ab77a; }
-    details.fail { border-color: #d36b6b; }
-    details.skip { border-color: #bbb; }
-    summary { cursor: pointer; font-weight: 600; }
-    pre { background: #f6f6f6; border-radius: 4px; overflow-x: auto; padding: 0.75rem; white-space: pre-wrap; }
-  </style>
-</head>
-<body>
-  <h1>LiteLLM Probe Report</h1>
-  <p><strong>Response directory:</strong> {{ response_dir }}</p>
-  <p><strong>Counts:</strong> {{ counts }}</p>
-  {% for row in rows %}
-  <details class="{{ row.status }}">
-    <summary>{{ row.title }}</summary>
-    <p><strong>Backend:</strong> {{ row.backend }} &nbsp; <strong>Mode:</strong> {{ row.mode }}</p>
-    {% if row.detail %}<p><strong>Detail:</strong> {{ row.detail }}</p>{% endif %}
-    <p><strong>Request:</strong> {{ row.request_path }}</p>
-    <pre>{{ row.request_body }}</pre>
-    <p><strong>Response:</strong> {{ row.response_path }}</p>
-    <pre>{{ row.response_body }}</pre>
-  </details>
-  {% endfor %}
-</body>
-</html>
-"""
-
-
 def _write_html_report(path: Path, results: list[ProbeResult], response_dir: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     counts = _status_counts(results)
@@ -905,8 +861,11 @@ def _write_html_report(path: Path, results: list[ProbeResult], response_dir: Pat
                 "response_body": _pretty_file(result.response_path),
             }
         )
-    env = Environment(autoescape=True)
-    html_text = env.from_string(_REPORT_TEMPLATE).render(
+    template_path = get_required_path(REPORT_TEMPLATE_RUNFILE)
+    env = Environment(
+        loader=FileSystemLoader(template_path.parent), autoescape=select_autoescape(enabled_extensions=("html", "j2"))
+    )
+    html_text = env.get_template(template_path.name).render(
         counts=json.dumps(counts, sort_keys=True), response_dir=str(response_dir), rows=rows
     )
     path.write_text(html_text)
@@ -930,7 +889,7 @@ def main() -> int:
         probes = [probe for probe in all_probes if _default_selected_probe(probe)]
 
     headers = _headers(args)
-    shapes = args.shape or ["openai-chat", "openai-responses", "anthropic-messages"]
+    shapes = args.shape or list(DEFAULT_SHAPES)
     scenarios = args.scenario or ["text", "tool"]
     planned_keys = _planned_request_keys(base_url, probes, shapes, scenarios, args.max_output_tokens)
     response_dir = args.response_dir or _default_response_dir()

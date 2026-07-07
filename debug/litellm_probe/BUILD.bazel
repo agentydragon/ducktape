@@ -1,0 +1,17 @@
+load("//devinfra/python:defs.bzl", "py_binary")
+
+py_binary(
+    name = "probe_models",
+    srcs = ["probe_models.py"],
+    data = [
+        "report.html.j2",
+        "//cluster/k8s/litellm/app:proxy-config.yaml",
+    ],
+    main_module = "debug.litellm_probe.probe_models",
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//httpx",
+        "@pypi//jinja2",
+        "@pypi//pyyaml",
+    ],
+)
