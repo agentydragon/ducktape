@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: sqlite-storage-bench
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: sqlite-storage-bench-script
+    files:
+      - bench_sqlite_storage.py

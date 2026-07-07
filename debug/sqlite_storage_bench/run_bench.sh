@@ -20,12 +20,7 @@ mkdir -p "$RESULT_DIR/manifests" "$RESULT_DIR/logs" "$RESULT_DIR/objects"
 kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml >"$RESULT_DIR/namespace.yaml"
 kubectl apply -f "$RESULT_DIR/namespace.yaml"
 
-kubectl create configmap sqlite-storage-bench-script \
-  --namespace "$NAMESPACE" \
-  --from-file=bench_sqlite_storage.py="$BENCH_DIR/bench_sqlite_storage.py" \
-  --dry-run=client \
-  -o yaml >"$RESULT_DIR/configmap.yaml"
-kubectl apply -f "$RESULT_DIR/configmap.yaml"
+kubectl apply -k "$BENCH_DIR"
 
 kubectl get storageclass "${STORAGE_CLASSES[@]}" -o yaml >"$RESULT_DIR/storageclasses.yaml"
 kubectl get nodes -L topology.kubernetes.io/zone,storage.allegedly.works/tier,kubernetes.io/hostname -o wide >"$RESULT_DIR/nodes.txt"

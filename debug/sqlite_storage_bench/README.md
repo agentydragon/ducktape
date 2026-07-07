@@ -14,9 +14,10 @@ The benchmark assets live in this debug directory. Run from the repo devshell:
 debug/sqlite_storage_bench/run_bench.sh
 ```
 
-The runner creates a disposable `sqlite-storage-bench` namespace, updates a
-ConfigMap containing the benchmark script, then runs one Kubernetes Job at a time.
-Each run gets a fresh PVC and the Job/PVC are deleted before the next run.
+The runner creates a disposable `sqlite-storage-bench` namespace, applies the
+Kustomize `configMapGenerator` containing the benchmark script, then runs one
+Kubernetes Job at a time. Each run gets a fresh PVC and the Job/PVC are deleted
+before the next run.
 
 Storage classes:
 
@@ -42,8 +43,9 @@ Artifacts:
 - Full generated summary: <results/20260707T002921Z/summary.md>
 - CSV summary: <results/20260707T002921Z/summary.csv>
 
-Generated PVC/Job manifests are intentionally not committed; rerun
-`render_manifests.py` or `run_bench.sh` to regenerate them.
+Generated ConfigMap YAML and PVC/Job manifests are intentionally not committed;
+rerun `kubectl kustomize`, `render_manifests.py`, or `run_bench.sh` to
+regenerate them.
 
 All 20 runs completed: 4 StorageClasses x 5 repeats. Each run used a fresh PVC,
 and the Job/PVC were deleted before the next run.
