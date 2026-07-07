@@ -41,10 +41,10 @@ Artifacts:
 - Full generated summary: <results/20260707T002921Z/summary.md>
 - CSV summary: <results/20260707T002921Z/summary.csv>
 
-Generated ConfigMap YAML, namespace YAML, PVC/Job manifests, raw pod logs, and
-captured Kubernetes object snapshots are intentionally not committed; rerun
-`kubectl kustomize`, `render_manifests.py`, or `run_bench.sh` to regenerate
-them.
+Generated ConfigMap YAML, namespace YAML, PVC/Job manifests, raw pod logs,
+Kubernetes object snapshots, and cluster metadata snapshots are intentionally
+not committed; rerun `kubectl kustomize`, `render_manifests.py`, or
+`run_bench.sh` to regenerate them.
 
 All 20 runs completed: 4 StorageClasses x 5 repeats. Each run used a fresh PVC,
 and the Job/PVC were deleted before the next run.

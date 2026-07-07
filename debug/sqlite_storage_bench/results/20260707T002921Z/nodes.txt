@@ -1,8 +1,0 @@
-NAME           STATUS   ROLES           AGE   VERSION   INTERNAL-IP   EXTERNAL-IP      OS-IMAGE                 KERNEL-VERSION   CONTAINER-RUNTIME    ZONE      TIER   HOSTNAME
-ovh-ns102453   Ready    <none>          34d   v1.35.1   10.42.0.15    147.135.37.175   Talos (v1.12.3)          6.18.8-talos     containerd://2.1.6   hil-ovh   hdd    ovh-ns102453
-ovh-ns103656   Ready    control-plane   34d   v1.35.1   10.42.0.13    147.135.39.162   Talos (v1.12.3)          6.18.8-talos     containerd://2.1.6   hil-ovh   hdd    ovh-ns103656
-ovh-ns103711   Ready    <none>          34d   v1.35.1   10.42.0.14    147.135.39.176   Talos (v1.12.3)          6.18.8-talos     containerd://2.1.6   hil-ovh   hdd    ovh-ns103711
-ovh-ns104952   Ready    control-plane   34d   v1.35.1   10.42.0.16    147.135.104.5    Talos (v1.12.3)          6.18.8-talos     containerd://2.1.6   hil-ovh   ssd    ovh-ns104952
-ovh-ns104963   Ready    control-plane   34d   v1.35.1   10.42.0.17    147.135.104.16   Talos (v1.12.3)          6.18.8-talos     containerd://2.1.6   hil-ovh   ssd    ovh-ns104963
-rugged         Ready    <none>          83d   v1.34.3   10.42.0.30    <none>           NixOS 25.11 (Xantusia)   7.0.11           containerd://2.2.1                    rugged
-wyrm2          Ready    <none>          86d   v1.34.3   10.42.0.20    <none>           NixOS 25.11 (Xantusia)   6.12.93          containerd://2.2.1   atlas            wyrm2
