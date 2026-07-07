@@ -1,8 +1,11 @@
 # tool_requests/ — authored console-approved tool calls
 
 Haku writes one YAML file here when it wants the operator to run a privileged tool through
-haku-console from the UI. The file is the authored request; haku-console is the source of truth for
-authorization, execution, audit, and results. Do not mirror results back into this repo.
+haku-console from the UI. The file is the authored request for the asynchronous affordance path;
+haku-console is the source of truth for authorization, execution, audit, and results. Do not mirror
+results back into this repo.
+For the pass that decides when to create these requests, see
+[`../procedures/tool_calls.md`](../procedures/tool_calls.md).
 
 The UI renders a request with:
 
@@ -36,6 +39,6 @@ Rules:
 - `arguments` must match that tool's MCP input schema; do not duplicate schemas here.
 - Put grounding in `rationale`. Request arguments may contain secrets when the MCP operation really
   needs them; haku-state and haku-console are private stores, and public/reflection APIs must still
-  avoid exposing configured bearer-token names or values.
+  avoid exposing configured credential names or values.
 - Results stay in haku-console. Haku can query or sweep the console audit log during its run when it
   wants to act on executed calls.

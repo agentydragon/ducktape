@@ -73,11 +73,14 @@ CI**, never a committed `dist/`. Haku adopts it into `haku-state`, **watches its
 builds, fixes broken builds, tends the deployment, and evolves the UI** freely. Full detail:
 [`ui/README.md`](ui/README.md).
 
-Privileged tool calls are an explicit escape hatch, not another git result log. Haku authors exact
-requests under `tool_requests/*.yaml` and embeds a `<tool-call request="...">` affordance in an
-item or garden note. The haku-ui backend forwards the request to haku-console, where approval,
+Privileged tool calls are an explicit escape hatch, not another git result log. Haku can request
+approval-gated MCP calls directly from haku-console during a run, or author asynchronous UI
+affordances under `tool_requests/*.yaml` and embed a `<tool-call request="...">` in an item or
+garden note. The haku-ui backend forwards authored requests to haku-console, where approval,
 execution, audit, and results live. There is intentionally no `tool_results/` mirror; a later Haku
-run can sweep haku-console's audit log when it wants to act on completed calls.
+run can sweep haku-console's audit log when it wants to act on completed calls. The standing pass
+for discovering connected MCP tools and turning them into useful operator-approved actions lives in
+[`procedures/tool_calls.md`](procedures/tool_calls.md).
 
 Build-via-CI flow: Haku commits `ui/` + the `.forgejo/workflows/build-ui.yaml` workflow
 → the contained, repo-scoped Forgejo runner builds + pushes

@@ -140,7 +140,9 @@ set</choice>`). Records the answer as an intake note prefixed with the question,
   precise, schema-valid privileged call but should not run it autonomously — for example, "Restart
   stuck rollout" once a kubectl MCP catalog entry exists, or "Add arrived order items to inventory"
   once a Grocy MCP catalog entry exists. The request YAML carries the catalog id, rationale, and
-  arguments; haku-console owns approval, execution, audit, and results:
+  arguments; haku-console owns approval, execution, audit, and results. Use this for asynchronous
+  review in context; the broader proposal/direct-RPC playbook lives in
+  [`tool_calls.md`](tool_calls.md):
 
   ```text
   <tool-call request="restart-stuck-rollout" label="Restart rollout"></tool-call>

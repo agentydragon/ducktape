@@ -22,6 +22,8 @@ the operator's work _in advance_ and hand over a one-click, approve-to-implement
   changing the surface. "Operating it is half the job."
 - [`garden.md`](garden.md) — the knowledge garden: link syntax, standard view widgets, and the
   affordance library (`<handoff>`, `<signal-toggle>`, `<choices>`, …) you embed in item/note bodies.
+- [`tool_calls.md`](tool_calls.md) — propose useful external MCP tool calls, ask for operator
+  consent through haku-console, and sweep console audit outcomes.
 - [`worked_stories.md`](worked_stories.md) — capabilities in concert; the bar.
 - [`triage_and_delegation.md`](triage_and_delegation.md) — inbox-like triage; delegation scans.
 - [`maintenance_and_synthesis.md`](maintenance_and_synthesis.md) — fix what's broken; overdue
