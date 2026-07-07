@@ -28,6 +28,7 @@ in
     ../../modules/gui.nix
     ../../modules/workstation.nix
     ../../modules/bazel
+    ../../modules/claude-desktop.nix
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
     ./ipu7-camera.nix
@@ -61,6 +62,10 @@ in
 
   # IPU7 webcam (Intel Lunar Lake, OV08X40 sensor)
   ducktape.ipu7Camera.enable = true;
+
+  # Claude Desktop Cowork sandboxed-microVM feature (QEMU firmware + virtiofsd
+  # at the Debian /usr paths the app probes).
+  ducktape.cowork.enable = true;
 
   # Local LLM inference (Arc GPU + NPU)
   ducktape.localLlm.arc.enable = true;

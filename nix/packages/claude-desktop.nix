@@ -35,6 +35,12 @@ pkgs.stdenv.mkDerivation {
   # libgbm1, libsecret-1-0, libxtst6, ...). autoPatchelf patches DT_NEEDED;
   # the GL/X libs are also dlopen'd by Electron, so makeWrapper exposes them on
   # LD_LIBRARY_PATH too (see tana-outliner.nix for the same shape).
+  #
+  # libsecret is the non-obvious one: Electron's safeStorage/OSCrypt dlopens
+  # libsecret-1.so.0 (it is NOT a DT_NEEDED), so without it on LD_LIBRARY_PATH
+  # the dlopen fails and safeStorage.isEncryptionAvailable() returns false —
+  # Claude Desktop then refuses to persist sign-in with a misleading "install a
+  # system keyring" prompt even though gnome-keyring is running and unlocked.
   buildInputs = with pkgs; [
     alsa-lib
     at-spi2-atk
@@ -85,7 +91,11 @@ pkgs.stdenv.mkDerivation {
     cp -r usr/share $out/share
     cp -r usr/lib/claude-desktop $out/lib/claude-desktop
 
-    # Wrap the real binary so dlopen'd GL/X libs resolve.
+    # Wrap the real binary so dlopen'd GL/X libs — and libsecret (dlopen'd by
+    # Electron's OSCrypt for safeStorage; see buildInputs note above) — resolve.
+    # qemu_kvm goes on PATH so the "Cowork" sandboxed-microVM feature's presence
+    # check finds qemu-system-x86_64 (firmware + virtiofsd are handled at the
+    # system level by the ducktape.cowork NixOS module).
     mkdir -p $out/bin
     makeWrapper $out/lib/claude-desktop/claude-desktop $out/bin/claude-desktop \
       --prefix LD_LIBRARY_PATH : "${
@@ -94,6 +104,7 @@ pkgs.stdenv.mkDerivation {
           [
             libGL
             libdrm
+            libsecret
             libxkbcommon
             mesa
             xorg.libX11
@@ -101,7 +112,8 @@ pkgs.stdenv.mkDerivation {
             xorg.libxcb
           ]
         )
-      }"
+      }" \
+      --prefix PATH : "${lib.makeBinPath [ pkgs.qemu_kvm ]}"
 
     # Point the desktop entry's Exec lines at our wrapper. Match the three
     # `Exec=claude-desktop <arg>` lines (main + NewChat/NewCode actions) without
