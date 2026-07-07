@@ -99,25 +99,6 @@ rotations:
     # /mcp answers 401 on a bad bearer and a non-auth status once past auth.
     probe:
       url: https://grocy-mcp-sf.allegedly.works/mcp
-  - name: haku-console-grocy
-    # Privileged bearer for console-approved grocy-sf MCP calls. This is separate
-    # from haku-grocy: the `haku` Grocy user stays read-only for autonomous agent
-    # calls, while trusted console approval executes as the `haku-console` Grocy
-    # user with the policy-managed ADMIN grant.
-    provider_slug: grocy-mcp-haku-console-sf
-    scopes: openid profile email
-    credential_mode: user_password
-    expected_audiences:
-      - grocy-mcp-haku-console-sf
-    credentials_dir: /var/run/secrets/authentik/haku-console-grocy
-    sops_file: secrets/haku-console-grocy-jwt.yaml
-    token_field: jwt
-    k8s_secret:
-      path: cluster/k8s/haku/console-credentials/haku-console-grocy-sf-token.sops.yaml
-      name: haku-console-grocy-sf-token
-      namespace: flux-system
-    probe:
-      url: https://grocy-mcp-sf.allegedly.works/mcp
   - name: haku-mail
     # JWT for haku's mailbox (Stalwart, cluster/k8s/haku/mailbox). The server's
     # OIDC directory validates tokens against the dedicated stalwart-haku

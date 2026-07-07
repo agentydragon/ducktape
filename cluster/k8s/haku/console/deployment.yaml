@@ -108,13 +108,6 @@ spec:
                 secretKeyRef:
                   name: haku-console-agent-api
                   key: token
-            # Static Grocy MCP bearer for non-interactive reflection/fallback.
-            # TODO(2026-07-07): prune this if operator OAuth covers Grocy approvals.
-            - name: HAKU_CONSOLE_MCP_CREDENTIAL_HAKU_CONSOLE_GROCY_SF_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: haku-console-grocy-sf-token
-                  key: jwt
           resources:
             requests:
               cpu: 50m
