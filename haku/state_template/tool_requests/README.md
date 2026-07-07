@@ -12,8 +12,8 @@ The UI renders a request with:
 
 That button reads `tool_requests/request-id.yaml` in the frontend, sends the exact request body to
 the haku-ui backend, and the backend forwards it to haku-console. haku-console mints the canonical
-`tool_call_id`, dedupes retries by the backend-supplied `client_request_id`, asks the trusted console
-frontend for approval when required, and stores the result in its own audit log.
+`tool_call_id`, asks the trusted console frontend for approval when required, and stores the result
+in its own audit log.
 
 Schema:
 

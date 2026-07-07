@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { callToolRequest, fetchRuns, lookupToolRequestCall, sendFeedback } from "./client.ts";
+import { callToolRequest, fetchRuns, sendFeedback } from "./client.ts";
 import { resetRepoCache } from "./repo.ts";
 
 // Stub /api/repo/tree + /api/repo/blobs with a given tree and sha→content map.
@@ -123,7 +123,7 @@ arguments:
           ok: true,
           json: () => Promise.resolve([{ sha: "abc123", content: requestYaml }]),
         } as Response);
-      if (url === "/api/tool-calls" || url === "/api/tool-calls/lookup")
+      if (url === "/api/tool-calls")
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve({ tool_call_id: "tc_1", server_id: "grocy-sf", status: "pending_approval" }),
@@ -150,15 +150,5 @@ arguments:
       wait_for_ms: 500,
     });
     expect(record.status).toBe("pending_approval");
-  });
-
-  it("uses the same request body for console state lookup", async () => {
-    const fetchMock = stubToolRequestFetch();
-    const record = await lookupToolRequestCall("2026-07-thrive.box");
-    const lookup = fetchMock.mock.calls.find((c) => c[0] === "/api/tool-calls/lookup");
-    expect(lookup).toBeTruthy();
-    const init = lookup![1] as RequestInit;
-    expect(JSON.parse(init.body as string).state_request_id).toBe("2026-07-thrive.box");
-    expect(record?.tool_call_id).toBe("tc_1");
   });
 });

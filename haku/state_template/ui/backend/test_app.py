@@ -256,14 +256,14 @@ def test_tool_request_call_submits_exact_request_to_console():
     path, body, headers = calls[0]
     assert path == "/api/tool-calls"
     assert headers["Authorization"] == "Bearer console-token"
-    assert body["server_id"] == "grocy-sf"
-    assert body["tool_name"] == "stock_add"
-    assert body["arguments"] == {"items": [{"product_id": 123, "amount": 1}]}
-    assert body["rationale"] == "box present"
-    assert body["title"] == "Add arrived Thrive box items to Grocy"
-    assert body["state_request_id"] == "2026-07-thrive-box-grocy-stock-add"
-    assert body["client_request_id"] == "haku-state:tool-call:2026-07-thrive-box-grocy-stock-add"
-    assert body["wait_for_ms"] == 500
+    assert body == {
+        "server_id": "grocy-sf",
+        "tool_name": "stock_add",
+        "title": "Add arrived Thrive box items to Grocy",
+        "rationale": "box present",
+        "arguments": {"items": [{"product_id": 123, "amount": 1}]},
+        "wait_for_ms": 500,
+    }
 
 
 def test_tool_request_call_rejects_missing_console_config():
@@ -282,37 +282,6 @@ def test_tool_request_call_rejects_invalid_state_request_id():
             "/api/tool-calls", json={"state_request_id": "../bad", "server_id": "grocy", "tool_name": "x", "title": "X"}
         )
     assert resp.status_code == 400
-
-
-def test_tool_request_lookup_returns_existing_console_state():
-    client, _ = _client(haku_console_api_url="https://haku-console.test", haku_console_api_token="console-token")
-    gets: list[tuple[str, dict[str, str]]] = []
-
-    class RecordingAsyncClient:
-        def __init__(self, *, base_url: str, timeout: float) -> None:
-            assert base_url == "https://haku-console.test"
-            assert timeout == 15.0
-
-        async def __aenter__(self) -> RecordingAsyncClient:
-            return self
-
-        async def __aexit__(self, *_exc_info: object) -> None:
-            return None
-
-        async def get(self, path: str, *, headers: dict[str, str]) -> httpx.Response:
-            gets.append((path, headers))
-            return httpx.Response(200, json={"tool_call_id": "tc_existing", "server_id": "grocy-sf", "status": "ok"})
-
-    with client, patch("app.httpx.AsyncClient", RecordingAsyncClient):
-        resp = client.post(
-            "/api/tool-calls/lookup",
-            json={"state_request_id": "req", "server_id": "grocy-sf", "tool_name": "stock_add", "title": "Add stock"},
-        )
-    assert resp.status_code == 200
-    assert resp.json()["tool_call_id"] == "tc_existing"
-    path, headers = gets[0]
-    assert path == "/api/tool-calls/by-client-request/haku-state:tool-call:req"
-    assert headers["Authorization"] == "Bearer console-token"
 
 
 if __name__ == "__main__":

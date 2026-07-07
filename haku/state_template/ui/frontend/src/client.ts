@@ -79,17 +79,6 @@ export async function loadToolRequest(stateRequestId: string): Promise<ToolReque
   return parsed;
 }
 
-export async function lookupToolRequestCall(stateRequestId: string): Promise<ToolCallRecord | null> {
-  const request = await loadToolRequest(stateRequestId);
-  const res = await fetch("/api/tool-calls/lookup", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-  });
-  if (!res.ok) throw new Error(await detail(res, "Failed to look up tool call"));
-  return (await res.json()) as ToolCallRecord | null;
-}
-
 export async function callToolRequest(stateRequestId: string, waitForMs = 10_000): Promise<ToolCallRecord> {
   const request = await loadToolRequest(stateRequestId);
   const res = await fetch("/api/tool-calls", {

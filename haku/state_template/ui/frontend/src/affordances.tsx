@@ -2,14 +2,7 @@ import { Anchor, Button, Group, Stack, Text, Textarea } from "@mantine/core";
 import { Children, createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { openLink, requestLaunch, type LaunchResult } from "./bridge.ts";
-import {
-  callToolRequest,
-  clearResponse,
-  lookupToolRequestCall,
-  readResponse,
-  sendFeedback,
-  setResponse,
-} from "./client.ts";
+import { callToolRequest, clearResponse, readResponse, sendFeedback, setResponse } from "./client.ts";
 import { notifyError } from "./errors.ts";
 import { ItemScopeContext } from "./item_scope.ts";
 import { logger } from "./log.ts";
@@ -100,31 +93,13 @@ function toolCallMessage(record: ToolCallRecord): { color: string; text: string 
   if (record.status === "ok") return { color: "teal", text: "✓ ran" };
   if (record.status === "pending_approval") return { color: "dimmed", text: "waiting in console" };
   if (record.status === "running") return { color: "dimmed", text: "running" };
-  if (record.status === "denied") return { color: "red", text: record.decision_reason ?? "denied" };
+  if (record.status === "denied") return { color: "red", text: "denied" };
   return { color: "red", text: record.error ?? "failed" };
 }
 
 export function ToolCall({ request, label = "Run tool" }: { request?: string; label?: string }) {
-  const [state, setState] = useState<"idle" | "checking" | "pending" | ToolCallRecord>("idle");
+  const [state, setState] = useState<"idle" | "pending" | ToolCallRecord>("idle");
   const requestId = request?.trim();
-
-  useEffect(() => {
-    if (!requestId) return;
-    let cancelled = false;
-    setState("checking");
-    void lookupToolRequestCall(requestId).then(
-      (record) => {
-        if (!cancelled) setState(record ?? "idle");
-      },
-      (e: unknown) => {
-        log.warn("tool-call lookup failed", e);
-        if (!cancelled) setState("idle");
-      }
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [requestId]);
 
   if (!requestId) {
     return (
@@ -146,7 +121,7 @@ export function ToolCall({ request, label = "Run tool" }: { request?: string; la
       <Button
         size="xs"
         variant="default"
-        loading={state === "pending" || state === "checking"}
+        loading={state === "pending"}
         disabled={record?.status === "ok"}
         onClick={() => {
           setState("pending");

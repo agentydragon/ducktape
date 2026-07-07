@@ -86,7 +86,6 @@ export interface ToolRequestDoc {
 interface ToolCallIdentity {
   tool_call_id: string;
   server_id: string;
-  server_title?: string;
   tool_name?: string;
 }
 
@@ -101,13 +100,9 @@ interface ToolCallRequestEcho {
   arguments?: Record<string, unknown>;
   rationale?: string;
   title?: string | null;
-  client_request_id?: string | null;
-  state_request_id?: string | null;
-  request_digest?: string;
 }
 
 interface ToolCallDecisionFields {
-  decision_reason?: string | null;
   result?: Record<string, unknown> | null;
   error?: string | null;
 }

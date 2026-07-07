@@ -21,7 +21,6 @@ vi.mock("./client.ts", () => ({
   setResponse: vi.fn().mockResolvedValue(undefined),
   clearResponse: vi.fn().mockResolvedValue(undefined),
   readResponse: vi.fn().mockResolvedValue(null),
-  lookupToolRequestCall: vi.fn().mockResolvedValue(null),
   callToolRequest: vi.fn().mockResolvedValue({
     tool_call_id: "tc_1",
     server_id: "grocy-sf",

@@ -254,7 +254,6 @@ class ToolCallStatus(StrEnum):
 class ToolCallRecord(BaseModel):
     tool_call_id: str
     server_id: str
-    server_title: str | None = None
     tool_name: str | None = None
     caller_principal: str | None = None
     status: ToolCallStatus
@@ -263,9 +262,5 @@ class ToolCallRecord(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
     rationale: str = ""
     title: str | None = None
-    client_request_id: str | None = None
-    state_request_id: str | None = None
-    request_digest: str | None = None
-    decision_reason: str | None = None
     result: dict[str, Any] | None = None
     error: str | None = None

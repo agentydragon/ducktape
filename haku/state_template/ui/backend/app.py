@@ -203,11 +203,8 @@ def create_app(settings: Settings) -> FastAPI:
         contents = await forgejo.blobs(sha_list)
         return [RepoBlob(sha=s, content=c.decode()) for s, c in zip(sha_list, contents, strict=True)]
 
-    def _tool_call_client_request_id(req: ToolCallSubmitRequest) -> str:
-        return f"haku-state:tool-call:{req.state_request_id}"
-
     def _tool_call_payload(req: ToolCallSubmitRequest) -> dict[str, object]:
-        return req.model_dump(mode="json", by_alias=True) | {"client_request_id": _tool_call_client_request_id(req)}
+        return req.model_dump(mode="json", exclude={"state_request_id"})
 
     def _console_headers() -> dict[str, str]:
         headers: dict[str, str] = {}
@@ -228,22 +225,6 @@ def create_app(settings: Settings) -> FastAPI:
         logger.info("tool request %s submitted to console by %s", request_id, operator or "<unknown>")
         async with httpx.AsyncClient(base_url=settings.haku_console_api_url, timeout=65.0) as http:
             resp = await http.post("/api/tool-calls", json=_tool_call_payload(req), headers=_console_headers())
-        if not resp.is_success:
-            raise HTTPException(status_code=resp.status_code, detail=resp.text[:1000])
-        return ToolCallRecord.model_validate(resp.json())
-
-    @app.post("/api/tool-calls/lookup")
-    async def lookup_tool_call(req: ToolCallSubmitRequest) -> ToolCallRecord | None:
-        if settings.haku_console_api_url is None:
-            raise HTTPException(status_code=503, detail="haku-console tool-call API is not configured")
-        request_id = _state_request_id(req.state_request_id)
-        if req.state_request_id != request_id:
-            raise HTTPException(status_code=400, detail="invalid tool request id")
-        client_request_id = _tool_call_client_request_id(req)
-        async with httpx.AsyncClient(base_url=settings.haku_console_api_url, timeout=15.0) as http:
-            resp = await http.get(f"/api/tool-calls/by-client-request/{client_request_id}", headers=_console_headers())
-        if resp.status_code == 404:
-            return None
         if not resp.is_success:
             raise HTTPException(status_code=resp.status_code, detail=resp.text[:1000])
         return ToolCallRecord.model_validate(resp.json())

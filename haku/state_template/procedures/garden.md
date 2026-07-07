@@ -146,11 +146,8 @@ set</choice>`). Records the answer as an intake note prefixed with the question,
   <tool-call request="restart-stuck-rollout" label="Restart rollout"></tool-call>
   ```
 
-  The button is retry-safe: the backend derives a stable client request id from `state_request_id`,
-  and haku-console dedupes that per caller while rejecting a changed payload for the same id. The UI
-  also queries that id on render, so an already-run request shows its console-owned state without a
-  `tool_results/` mirror in git. Haku can query or sweep haku-console's tool-call audit log during
-  its normal run when it wants to act on completed calls.
+  Haku can query or sweep haku-console's tool-call audit log during its normal run when it wants to
+  act on completed calls.
 
 Most affordances record via feedback/intake or responses, so they're read by the next run, not a
 live schema field. If code (a sort, an automation) must compute over an answer, that fact still
