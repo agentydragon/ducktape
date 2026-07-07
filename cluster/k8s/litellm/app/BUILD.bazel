@@ -19,6 +19,19 @@ py_binary(
     deps = [":generate_litellm"],
 )
 
+py_binary(
+    name = "probe_models",
+    srcs = ["probe_models.py"],
+    data = ["proxy-config.yaml"],
+    main_module = "cluster.k8s.litellm.app.probe_models",
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//httpx",
+        "@pypi//jinja2",
+        "@pypi//pyyaml",
+    ],
+)
+
 py_test(
     name = "test_generate_litellm",
     srcs = ["test_generate_litellm.py"],
