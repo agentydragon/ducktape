@@ -25,12 +25,41 @@ spec:
         fsGroup: 1000
       nodeSelector:
         topology.kubernetes.io/region: hil-ovh
+      initContainers:
+        - name: stage-syncthing-config
+          image: busybox:1.37
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              mkdir -p /var/syncthing/config /var/syncthing/data
+              cp /identity/cert.pem /var/syncthing/config/cert.pem
+              cp /identity/key.pem /var/syncthing/config/key.pem
+              cp /syncthing-config/config.xml /var/syncthing/config/config.xml
+              chown -R 1000:1000 /var/syncthing
+              chmod 0400 /var/syncthing/config/cert.pem /var/syncthing/config/key.pem
+              chmod 0600 /var/syncthing/config/config.xml
+          volumeMounts:
+            - name: identity
+              mountPath: /identity
+              readOnly: true
+            - name: syncthing-config
+              mountPath: /syncthing-config
+              readOnly: true
+            - name: state
+              mountPath: /var/syncthing
       containers:
         - name: syncthing
           image: syncthing/syncthing:2.0.10
           command:
-            - /bin/sh
-            - /scripts/syncthing-entrypoint.sh
+            - syncthing
+            - --config
+            - /var/syncthing/config
+            - --data
+            - /var/syncthing/data
+            - serve
+            - --no-browser
+            - --no-upgrade
           ports:
             - containerPort: 22000
               name: sync-tcp
@@ -41,15 +70,6 @@ spec:
           volumeMounts:
             - name: sync-inbox
               mountPath: /sync-inbox
-            - name: identity
-              mountPath: /identity
-              readOnly: true
-            - name: scripts
-              mountPath: /scripts
-              readOnly: true
-            - name: syncthing-config
-              mountPath: /syncthing-config
-              readOnly: true
             - name: state
               mountPath: /var/syncthing
           resources:
@@ -97,9 +117,6 @@ spec:
                   items:
                     - key: key.pem
                       path: key.pem
-        - name: scripts
-          configMap:
-            name: activitywatch-syncthing-scripts
         - name: syncthing-config
           configMap:
             name: activitywatch-syncthing-config

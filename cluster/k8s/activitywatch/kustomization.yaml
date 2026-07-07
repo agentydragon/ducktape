@@ -16,10 +16,6 @@ configMapGenerator:
     namespace: activitywatch
     files:
       - default.conf=readonly-proxy.conf
-  - name: activitywatch-syncthing-scripts
-    namespace: activitywatch
-    files:
-      - syncthing-entrypoint.sh
   - name: activitywatch-syncthing-config
     namespace: activitywatch
     files:

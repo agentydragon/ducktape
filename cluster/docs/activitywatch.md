@@ -32,8 +32,9 @@ NetworkPolicy and the read-only proxy; there is no public or Nebula route.
   `cluster/k8s/activitywatch/syncthing-key.sops.yaml`. The device ID in
   `syncthing-config.xml` is derived from that public certificate and checked in CI.
 - **Cluster Syncthing config**: `cluster/k8s/activitywatch/syncthing-config.xml`
-  declares the `activitywatch` receive-only folder and paired devices. The entrypoint only
-  stages that config plus the identity files and execs Syncthing.
+  declares the `activitywatch` receive-only folder and paired devices. An initContainer
+  stages that ConfigMap plus the identity files into Syncthing's writable config dir before
+  the Syncthing container starts.
 - **No mesh sidecar**: ActivityWatch is not joined to Nebula. Devices send data through
   Syncthing, and query access should use an explicit in-cluster or authenticated route.
 
