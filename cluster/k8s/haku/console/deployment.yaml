@@ -72,6 +72,10 @@ spec:
               value: https://haku-ui.allegedly.works
             - name: HAKU_CONSOLE_AUTH_ORIGIN
               value: https://auth.allegedly.works
+            - name: HAKU_CONSOLE_PUBLIC_BASE_URL
+              value: https://haku.allegedly.works
+            - name: HAKU_CONSOLE_CONFIG_FILE
+              value: /etc/haku-console/config/config.yaml
             - name: HAKU_CONSOLE_DB_USER
               valueFrom:
                 secretKeyRef:
@@ -124,6 +128,9 @@ spec:
           volumeMounts:
             - name: tmp # writable scratch (/tmp) for the app
               mountPath: /tmp
+            - name: config
+              mountPath: /etc/haku-console/config
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -173,5 +180,8 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: config
+          configMap:
+            name: haku-console-config
         - name: nginx-conf
           emptyDir: {}

@@ -1,0 +1,7 @@
+# Non-secret haku-console config. Secret values stay in env/Kubernetes Secrets.
+mcp:
+  servers:
+    - id: grocy-sf
+      server_url: https://grocy-mcp-sf.allegedly.works/mcp
+      operator_oauth:
+        client_name: Haku Console

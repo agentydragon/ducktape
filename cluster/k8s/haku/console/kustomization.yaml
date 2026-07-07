@@ -6,3 +6,8 @@ resources:
   - deployment.yaml
   - routine-launch-token.sops.yaml
   - service.yaml
+
+configMapGenerator:
+  - name: haku-console-config
+    files:
+      - config.yaml
