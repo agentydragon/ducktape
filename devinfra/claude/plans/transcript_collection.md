@@ -116,8 +116,8 @@ forwarder** (the exporter can't egress directly; see Facts):
   `claude-sandbox` and `haku-sandbox` (openclaw-sandbox deliberately excluded —
   nothing there runs the forwarder, and its Kustomization is suspended).
 - **Operator step — paste into each environment's UI env vars** (Haku env + default
-  web env; content knobs per env sensitivity; OTel events truncate at 60 KB, so the
-  rsync path remains the lossless record):
+  web env; full logging to operator-only ingestion; OTel events truncate at 60 KB,
+  so the rsync path remains the lossless record):
 
   ```text
   CLAUDE_CODE_ENABLE_TELEMETRY=1
