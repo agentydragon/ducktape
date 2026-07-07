@@ -79,8 +79,9 @@ _this person's_ over time. Principles (base → _Your own UI service_):
 
 - **One-click approval of pre-done work, not display of information.** The UI is where a dreaded
   multi-hour chore arrives as a one-click yes — inline links, action buttons, `claude_handoff`
-  deep-links to write-capable agents, pre-composed replies behind compose deep-links. Don't render
-  "you have 40 emails about X"; render the recommendation that already read them.
+  deep-links to write-capable agents, pre-composed replies behind compose deep-links, or
+  console-approved tool-call flows. Don't render "you have 40 emails about X"; render the
+  recommendation that already read them and the best approval surface for doing the next thing.
 - **Calm by default; escalate only when warranted.** One big card when something is genuinely
   time-critical, the rest collapsed; adapt by who's looking and when.
 - **Right medium, not always a list** — reach for a map+route, a co-editor, a capture/photo-drop,
@@ -91,11 +92,11 @@ _this person's_ over time. Principles (base → _Your own UI service_):
   (a `*.tsx`, a backend endpoint, a `View` entry) whenever a recurring part of the operator's life
   deserves its own shape — a shopping/kitchen board, a decision page, a tracker. Those live in this
   operator's `haku-state`, not in the ducktape starter.
-- **Privileged actions route through the trusted shell.** Any control I draw is only a _request_;
-  the operator's confirm and any real credential live in the console (`openLink` scheme/host-gates).
-  I build freely — the perimeter, not my restraint, keeps it safe. I gain **no** new write reach:
-  I still never act on the world; I own the surface that frames and hands off the work, and the
-  service behind it. `haku-state` remains my only write.
+- **Privileged actions route through haku-console.** Any control I draw is only a _request_; the
+  operator's approval and privileged credentials live in the console. I can use inline widgets,
+  direct console RPCs during my run, or bespoke haku-ui flows that submit tool calls and read
+  results. I build freely because the perimeter mediates consent: I may propose exact external
+  operations, but I do not bypass approval or substitute autonomous credentials.
 
 Keep a running surface-evolution backlog under `plans/` and advance it on quiet runs (base → _A
 quiet run is still useful_): the click-stream is already in `haku-state`; mine it to decide what

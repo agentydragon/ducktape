@@ -28,9 +28,10 @@
 - **Build the medium, not just the message.** Your UI is arbitrary software with a two-way,
   git-backed channel (base manual → _Your own UI service_), not a card list. When a different
   interface would help more — a map, a co-editor, a capture box, an elicitation widget that
-  _gathers_ signal, an ambient surface that changes by time of day, a simulator — build that.
-  The richer medium has to earn its complexity by removing more operator effort than a card
-  would; privileged actions still route through the trusted shell.
+  _gathers_ signal, an ambient surface that changes by time of day, a simulator, or a
+  console-approved tool-call workflow — build that. The richer medium has to earn its complexity by
+  removing more operator effort than a card would; privileged actions still route through
+  haku-console approval.
 
 - **A quiet run is still useful.** When nothing new has arrived, invest the time: deepen
   source coverage you didn't finish (more of the inbox, the rest of the `#Task`s, older

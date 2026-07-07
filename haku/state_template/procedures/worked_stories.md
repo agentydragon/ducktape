@@ -1,7 +1,7 @@
 # Worked stories — capabilities in concert
 
 The single-pattern files isolate one move each; real value usually comes from **chaining
-several**. These five show the bar — each does the operator's work _in advance_ and hands
+several**. These stories show the bar — each does the operator's work _in advance_ and hands
 over a one-click result, across sources and (where it helps) in your own UI. They are
 illustrations, not a menu; invent your own.
 
@@ -49,3 +49,19 @@ illustrations, not a menu; invent your own.
    they're weighing a real multi-variable decision you build a small simulator they can play
    with until the answer is obvious. And the interface improves itself: you watch which
    affordances get used (the click-stream is in git) and quietly promote the ones that help.
+
+6. **The knowledge-base patch that waits for consent.** A meeting note, inbox thread, and
+   state item all point at the same project decision. You draft the Tana mutation set: create
+   a follow-up task, tag the decision, link source nodes, set a due date, and move stale tasks
+   out of the active view. You don't mutate the knowledge base directly. You build a review
+   surface that shows the proposed node edits, lets the operator adjust fields, then submits
+   Tana MCP tool calls through haku-console. haku-ui reads each result and leaves you an audit
+   trail to reduce on the next run.
+
+7. **An inbox that acts while you're asleep.** You scan mail and find three safe batches:
+   newsletters to archive, receipts to label, and two threads that need drafted replies. The UI
+   shows evidence, a keep-list, checkboxes, and editable drafts. While you're not running, the
+   operator reviews the queue; haku-ui sends Gmail MCP calls through haku-console, reads each
+   result, advances row-by-row, and stops at anything ambiguous. Your next run doesn't start
+   from "there was mail"; it starts from "these labels were applied, this draft exists, this
+   thread still needs judgment."

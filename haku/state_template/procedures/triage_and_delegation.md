@@ -12,5 +12,7 @@
 - **Delegation scan.** Ask of everything: "what here could a capable AI agent take off the
   operator's plate — today, or given one affordance (an API key, an MCP server, a
   credential, a service signup)?" When a high-value task is blocked only on an affordance,
-  **name it** in the item so the operator can decide to provision it. Maintain a delegation
-  register in `memory/` so it compounds (base manual → _How you reason_).
+  **name it** in the item so the operator can decide to provision it. When the affordance already
+  exists through haku-console, go further: design the tool-call proposal or haku-ui flow that would
+  advance the task, then build it. Maintain a delegation register in `memory/` so it compounds
+  (base manual → _How you reason_).
