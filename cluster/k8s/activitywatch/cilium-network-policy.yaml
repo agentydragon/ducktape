@@ -1,6 +1,6 @@
-# ActivityWatch with Nebula mesh sidecar.
+# ActivityWatch query server and Syncthing importer.
 # Ingress: kube-apiserver (health probes), sandbox namespaces (readonly proxy).
-# Egress: DNS, Nebula lighthouses/relays (UDP 4242).
+# Egress: DNS only.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -47,14 +47,6 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
-    # Nebula lighthouses/relays (UDP 4242)
-    - toEntities:
-        - world
-        - cluster
-      toPorts:
-        - ports:
-            - port: "4242"
-              protocol: UDP
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

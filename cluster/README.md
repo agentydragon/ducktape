@@ -59,19 +59,18 @@ lives in `nebula-mesh.json` at the repo root. To add or remove a node, see
 Key services (curated — this table is not the SSOT; the full set is the
 HTTPRoutes under `k8s/` and `k8s/authentik/proxy-routes/`):
 
-| Service        | URL                                | Purpose                         |
-| -------------- | ---------------------------------- | ------------------------------- |
-| Authentik      | <https://auth.allegedly.works>     | SSO provider                    |
-| Forgejo        | <https://git.allegedly.works>      | Git hosting                     |
-| Harbor         | <https://registry.allegedly.works> | Container registry              |
-| Matrix/Element | <https://chat.allegedly.works>     | Chat                            |
-| Grafana        | <https://grafana.allegedly.works>  | Monitoring                      |
-| Nix Cache      | <https://cache.allegedly.works>    | Binary cache                    |
-| Gatus          | <https://status.allegedly.works>   | Health monitoring               |
-| OpenClaw       | <https://openclaw.allegedly.works> | AI coding agent                 |
-| Ollama         | <https://ollama.allegedly.works>   | LLM inference (GPU)             |
-| Airlock        | <https://airlock.allegedly.works>  | Agent infrastructure            |
-| ActivityWatch  | `activitywatch:5600`               | Activity tracking query surface |
+| Service        | URL                                | Purpose              |
+| -------------- | ---------------------------------- | -------------------- |
+| Authentik      | <https://auth.allegedly.works>     | SSO provider         |
+| Forgejo        | <https://git.allegedly.works>      | Git hosting          |
+| Harbor         | <https://registry.allegedly.works> | Container registry   |
+| Matrix/Element | <https://chat.allegedly.works>     | Chat                 |
+| Grafana        | <https://grafana.allegedly.works>  | Monitoring           |
+| Nix Cache      | <https://cache.allegedly.works>    | Binary cache         |
+| Gatus          | <https://status.allegedly.works>   | Health monitoring    |
+| OpenClaw       | <https://openclaw.allegedly.works> | AI coding agent      |
+| Ollama         | <https://ollama.allegedly.works>   | LLM inference (GPU)  |
+| Airlock        | <https://airlock.allegedly.works>  | Agent infrastructure |
 
 Credentials: `get-passwords` (requires direnv in cluster directory).
 OpenClaw requires a one-time gateway token entry in the UI — the token is included in
@@ -126,10 +125,10 @@ secret flow, NetworkPolicy template, and blueprint tombstone rules.
 
 ## ActivityWatch
 
-Personal activity tracking at `activitywatch:5600` over Nebula mesh (no built-in auth;
-mesh membership is the trust boundary). Desktops capture locally and sync into the
-cluster query server through Syncthing + `aw-sync`. Architecture and desktop setup:
-<docs/activitywatch.md>.
+Personal activity tracking with local desktop capture, Syncthing transport, and an
+in-cluster query server. There is no public or Nebula route to ActivityWatch; query access
+is constrained by Kubernetes NetworkPolicy and the read-only proxy. Architecture and
+desktop setup: <docs/activitywatch.md>.
 
 ## Repository Structure
 

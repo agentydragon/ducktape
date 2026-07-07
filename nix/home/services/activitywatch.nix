@@ -88,26 +88,6 @@ in
             };
       }
 
-      (lib.mkIf (!cfg.sync.enable) {
-        # Server runs in the K8s cluster with a Nebula sidecar (cert name
-        # "activitywatch"). Lighthouse DNS resolves the bare name to the pod's
-        # Nebula IP.
-        xdg.configFile."activitywatch/aw-client/aw-client.toml".source = toTOML "aw-client.toml" {
-          server = {
-            hostname = "activitywatch";
-            port = "5600";
-          };
-        };
-
-        xdg.configFile."activitywatch/aw-qt/aw-qt.toml".source = toTOML "aw-qt.toml" {
-          # No local server; data goes to the cluster via Nebula mesh.
-          aw-qt.autostart_modules = [
-            "aw-watcher-afk"
-            "aw-watcher-window"
-          ];
-        };
-      })
-
       (lib.mkIf cfg.sync.enable {
         xdg.configFile."activitywatch/aw-client/aw-client.toml".source = toTOML "aw-client.toml" {
           server = {

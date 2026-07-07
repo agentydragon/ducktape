@@ -4,8 +4,8 @@ Personal activity tracking via [aw-server-rust](https://github.com/ActivityWatch
 The cluster is the query surface; individual devices keep local ActivityWatch capture and push
 `aw-sync` databases through Syncthing.
 
-No built-in ActivityWatch auth is enabled. Read/query access is still constrained by Kubernetes
-NetworkPolicy, the read-only proxy, and the Nebula mesh path.
+No built-in ActivityWatch auth is enabled. Read/query access is constrained by Kubernetes
+NetworkPolicy and the read-only proxy; there is no public or Nebula route.
 
 ## Current Design
 
@@ -30,6 +30,8 @@ NetworkPolicy, the read-only proxy, and the Nebula mesh path.
 - **Cluster Syncthing identity**: public certificate/device ID in
   `cluster/k8s/activitywatch/syncthing-identity.yaml`; private key only in
   `cluster/k8s/activitywatch/syncthing-key.sops.yaml`.
+- **No mesh sidecar**: ActivityWatch is not joined to Nebula. Devices send data through
+  Syncthing, and query access should use an explicit in-cluster or authenticated route.
 
 ## Storage Debt
 

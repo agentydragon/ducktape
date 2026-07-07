@@ -91,40 +91,6 @@ spec:
               port: 5601
             initialDelaySeconds: 2
             periodSeconds: 10
-        - name: nebula
-          image: ghcr.io/slackhq/nebula:v1.10.0
-          command: ["nebula", "-config", "/etc/nebula/config.yaml"]
-          securityContext:
-            capabilities:
-              add:
-                - NET_ADMIN
-                - NET_RAW
-          volumeMounts:
-            - name: dev-tun
-              mountPath: /dev/net/tun
-            - name: nebula-certs
-              mountPath: /etc/nebula/ca.crt
-              subPath: ca.crt
-              readOnly: true
-            - name: nebula-certs
-              mountPath: /etc/nebula/host.crt
-              subPath: host.crt
-              readOnly: true
-            - name: nebula-certs
-              mountPath: /etc/nebula/host.key
-              subPath: host.key
-              readOnly: true
-            - name: nebula-config
-              mountPath: /etc/nebula/config.yaml
-              subPath: config.yaml
-              readOnly: true
-          resources:
-            requests:
-              cpu: 10m
-              memory: 32Mi
-            limits:
-              cpu: 100m
-              memory: 128Mi
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -132,13 +98,3 @@ spec:
         - name: readonly-proxy-config
           configMap:
             name: activitywatch-readonly-proxy
-        - name: dev-tun
-          hostPath:
-            path: /dev/net/tun
-            type: CharDevice
-        - name: nebula-certs
-          secret:
-            secretName: activitywatch-nebula-certs
-        - name: nebula-config
-          configMap:
-            name: activitywatch-nebula-config
