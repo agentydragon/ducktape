@@ -305,7 +305,10 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
       removeToolApproval(toolCallId);
       void denyToolCall(toolCallId, "cancelled from console").then(
         () => {
-          toastSuccess("Tool call denied", action.approval.title);
+          toastSuccess(
+            "Tool call denied",
+            action.approval.title ?? `${action.approval.server_id}: ${action.approval.tool_name}`
+          );
           refreshToolApprovals(true);
         },
         (e: unknown) => {

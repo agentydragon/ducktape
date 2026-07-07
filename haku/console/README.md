@@ -62,12 +62,13 @@ Core endpoints:
   names reachable servers, and each live MCP server remains the tool schema source.
 - `POST /api/tool-calls` — submit a call with `server_id`, `tool_name`, exact
   `arguments`, and explicit `wait_for_ms`. The console mints the canonical `tool_call_id`.
-- `GET /api/approvals/pending`, `GET /api/approvals/events?since=...`, and
+- `GET /api/approvals/pending`, `GET /api/approvals/events?after_event_id=...`, and
   `WebSocket /api/approvals/ws` — frontend catch-up + notifications. REST remains the source of
   truth; the WebSocket only wakes the shell to refresh.
 - `POST /api/tool-calls/{tool_call_id}/decision` — CSRF-gated trusted-frontend approval/denial.
 - `GET /api/tool-calls` / `GET /api/tool-calls/{tool_call_id}` — audit/result reads for Haku's
-  normal sweep or operator debugging.
+  normal sweep or operator debugging. The list endpoint accepts repeated `status` filters and a
+  datetime `since` filter on `updated_at`.
 
 Backend callers authenticate with the shared `HAKU_CONSOLE_AGENT_API_TOKEN`. Browser-origin
 approvals use the operator's Authentik session plus CSRF. The approval dialog renders in trusted

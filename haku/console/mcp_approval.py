@@ -23,7 +23,7 @@ from fastapi_csrf_protect import CsrfProtect
 from fastmcp.client import Client
 from mcp import types as mcp_types
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from haku.console.config import Settings
@@ -105,7 +105,7 @@ class ToolCapabilitiesResponse(BaseModel):
 class PendingApproval(BaseModel):
     tool_call_id: str
     server_id: str
-    title: str
+    title: str | None = None
     tool_name: str
     caller_principal: str
     rationale: str
@@ -119,7 +119,6 @@ class PendingApprovalsResponse(BaseModel):
 
 class ToolCallListResponse(BaseModel):
     tool_calls: list[ToolCallRecord] = Field(default_factory=list)
-    next_cursor: str | None = None
 
 
 class ToolCallEventsResponse(BaseModel):
@@ -138,12 +137,10 @@ class ToolCallLedgerProtocol(Protocol):
     def get(self, tool_call_id: str) -> ToolCallRecord: ...
 
     def list(
-        self, *, status: str | None = None, since: int | None = None, limit: int = 100
+        self, *, statuses: list[ToolCallStatus] | None = None, since: dt.datetime | None = None, limit: int = 100
     ) -> ToolCallListResponse: ...
 
-    def pending_approvals(self) -> PendingApprovalsResponse: ...
-
-    def events_since(self, since: int = 0) -> ToolCallEventsResponse: ...
+    def events_after_id(self, after_event_id: int = 0) -> ToolCallEventsResponse: ...
 
     def mark_running(self, tool_call_id: str) -> tuple[ToolCallRecord, ToolCallEvent]: ...
 
@@ -194,91 +191,39 @@ class PostgresToolCallLedger:
             raise HTTPException(status_code=404, detail="tool call not found")
         return row.to_record()
 
-    def list(self, *, status: str | None = None, since: int | None = None, limit: int = 100) -> ToolCallListResponse:
-        if status is not None and status != "terminal":
-            try:
-                ToolCallStatus(status)
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=f"unknown status filter: {status}") from e
+    def list(
+        self, *, statuses: list[ToolCallStatus] | None = None, since: dt.datetime | None = None, limit: int = 100
+    ) -> ToolCallListResponse:
         with self._sessions.begin() as session:
-            last_event = (
-                select(func.max(McpToolCallEvent.event_id))
-                .where(McpToolCallEvent.tool_call_id == McpToolCall.tool_call_id)
-                .scalar_subquery()
-            )
             stmt = select(McpToolCall)
             if since is not None:
-                stmt = stmt.where(func.coalesce(last_event, 0) > since)
-            if status == "terminal":
-                stmt = stmt.where(McpToolCall.status.in_(TERMINAL_STATUSES))
-            elif status is not None:
-                stmt = stmt.where(McpToolCall.status == ToolCallStatus(status))
+                stmt = stmt.where(McpToolCall.updated_at > since)
+            if statuses:
+                stmt = stmt.where(McpToolCall.status.in_(statuses))
             rows = session.scalars(stmt.order_by(McpToolCall.created_at).limit(limit)).all()
-            next_cursor = self._next_cursor(session)
         records = [row.to_record() for row in rows]
-        return ToolCallListResponse(tool_calls=records, next_cursor=next_cursor)
+        return ToolCallListResponse(tool_calls=records)
 
-    def pending_approvals(self) -> PendingApprovalsResponse:
+    def events_after_id(self, after_event_id: int = 0) -> ToolCallEventsResponse:
         with self._sessions.begin() as session:
             rows = session.scalars(
-                select(McpToolCall)
-                .where(McpToolCall.status == ToolCallStatus.PENDING_APPROVAL)
-                .order_by(McpToolCall.created_at)
-            ).all()
-        records = [row.to_record() for row in rows]
-        approvals = [
-            PendingApproval(
-                tool_call_id=r.tool_call_id,
-                server_id=r.server_id,
-                title=r.title or f"{r.server_id}: {r.tool_name}",
-                tool_name=r.tool_name,
-                caller_principal=r.caller_principal,
-                rationale=r.rationale,
-                arguments=r.arguments,
-                created_at=r.created_at,
-            )
-            for r in records
-        ]
-        return PendingApprovalsResponse(approvals=approvals)
-
-    def events_since(self, since: int = 0) -> ToolCallEventsResponse:
-        with self._sessions.begin() as session:
-            rows = session.scalars(
-                select(McpToolCallEvent).where(McpToolCallEvent.event_id > since).order_by(McpToolCallEvent.event_id)
+                select(McpToolCallEvent)
+                .where(McpToolCallEvent.event_id > after_event_id)
+                .order_by(McpToolCallEvent.event_id)
             ).all()
         return ToolCallEventsResponse(events=[row.to_event() for row in rows])
 
     def mark_running(self, tool_call_id: str) -> tuple[ToolCallRecord, ToolCallEvent]:
-        with self._sessions.begin() as session:
-            row = self._row_by_tool_call_id(session, tool_call_id)
-            record = row.to_record()
-            if record.status != ToolCallStatus.PENDING_APPROVAL:
-                raise HTTPException(
-                    status_code=409, detail=f"tool call is not pending approval; status={record.status}"
-                )
-            row.status = ToolCallStatus.RUNNING
-            row.updated_at = dt.datetime.now(dt.UTC)
-            updated = row.to_record()
-            event = self._insert_event(session, ToolCallEventType.TOOL_CALL_UPDATED, updated)
-            return updated, event
+        return self._transition_pending_approval(tool_call_id, ToolCallStatus.RUNNING)
 
     def deny(self, tool_call_id: str, reason: str | None) -> tuple[ToolCallRecord, ToolCallEvent]:
-        with self._sessions.begin() as session:
-            row = self._row_by_tool_call_id(session, tool_call_id)
-            record = row.to_record()
-            if record.status != ToolCallStatus.PENDING_APPROVAL:
-                raise HTTPException(
-                    status_code=409, detail=f"tool call is not pending approval; status={record.status}"
-                )
-            row.status = ToolCallStatus.DENIED
-            row.updated_at = dt.datetime.now(dt.UTC)
-            updated = row.to_record()
-            event = self._insert_event(session, ToolCallEventType.TOOL_CALL_UPDATED, updated)
-            return updated, event
+        return self._transition_pending_approval(tool_call_id, ToolCallStatus.DENIED)
 
     def finish(
         self, tool_call_id: str, *, result: dict[str, Any] | None, error: str | None
     ) -> tuple[ToolCallRecord, ToolCallEvent]:
+        if (result is None) == (error is None):
+            raise ValueError("finish requires exactly one of result or error")
         with self._sessions.begin() as session:
             row = self._row_by_tool_call_id(session, tool_call_id)
             status = ToolCallStatus.OK if error is None else ToolCallStatus.ERROR
@@ -286,6 +231,22 @@ class PostgresToolCallLedger:
             row.updated_at = dt.datetime.now(dt.UTC)
             row.result_json = result
             row.error = error
+            updated = row.to_record()
+            event = self._insert_event(session, ToolCallEventType.TOOL_CALL_UPDATED, updated)
+            return updated, event
+
+    def _transition_pending_approval(
+        self, tool_call_id: str, status: ToolCallStatus
+    ) -> tuple[ToolCallRecord, ToolCallEvent]:
+        with self._sessions.begin() as session:
+            row = self._row_by_tool_call_id(session, tool_call_id)
+            record = row.to_record()
+            if record.status != ToolCallStatus.PENDING_APPROVAL:
+                raise HTTPException(
+                    status_code=409, detail=f"tool call is not pending approval; status={record.status}"
+                )
+            row.status = status
+            row.updated_at = dt.datetime.now(dt.UTC)
             updated = row.to_record()
             event = self._insert_event(session, ToolCallEventType.TOOL_CALL_UPDATED, updated)
             return updated, event
@@ -306,9 +267,6 @@ class PostgresToolCallLedger:
         if row is None:
             raise HTTPException(status_code=404, detail="tool call not found")
         return row
-
-    def _next_cursor(self, session: Session) -> str:
-        return str(session.execute(select(func.coalesce(func.max(McpToolCallEvent.event_id), 0))).scalar_one())
 
 
 class ToolCallEventHub:
@@ -360,24 +318,6 @@ class McpMetadataProvider:
                 schema = {}
             reflected.append(AliveToolMetadata(name=tool.name, description=tool.description, input_schema=schema))
         return AliveServerMetadata(server_id=server.id, title=server.id, tools=reflected)
-
-
-def make_ledger(settings: Settings) -> ToolCallLedgerProtocol | None:
-    if settings.database_url is not None:
-        return PostgresToolCallLedger(settings.database_url.get_secret_value())
-    return None
-
-
-def make_event_hub() -> ToolCallEventHub:
-    return ToolCallEventHub()
-
-
-def make_executor() -> McpToolExecutor:
-    return McpToolExecutor()
-
-
-def make_metadata_provider() -> McpMetadataProvider:
-    return McpMetadataProvider()
 
 
 def _ledger(request: Request) -> ToolCallLedgerProtocol:
@@ -442,6 +382,19 @@ def _server_entry(settings: Settings, server_id: str) -> McpServerEntry:
         if server.id == server_id:
             return server
     raise HTTPException(status_code=404, detail=f"unknown MCP server: {server_id}")
+
+
+def _pending_approval_from_record(record: ToolCallRecord) -> PendingApproval:
+    return PendingApproval(
+        tool_call_id=record.tool_call_id,
+        server_id=record.server_id,
+        title=record.title,
+        tool_name=record.tool_name,
+        caller_principal=record.caller_principal,
+        rationale=record.rationale,
+        arguments=record.arguments,
+        created_at=record.created_at,
+    )
 
 
 def _caller_principal(request: Request, settings: Settings) -> str:
@@ -531,11 +484,11 @@ async def submit_tool_call(
 @router.get("/api/tool-calls")
 async def list_tool_calls(
     ledger: LedgerDep,
-    status: str | None = None,
-    since: int | None = None,
+    status: Annotated[list[ToolCallStatus] | None, Query()] = None,
+    since: dt.datetime | None = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> ToolCallListResponse:
-    return ledger.list(status=status, since=since, limit=limit)
+    return ledger.list(statuses=status, since=since, limit=limit)
 
 
 @router.get("/api/tool-calls/{tool_call_id}")
@@ -545,12 +498,13 @@ async def get_tool_call(tool_call_id: str, ledger: LedgerDep) -> ToolCallRecord:
 
 @router.get("/api/approvals/pending")
 async def pending_approvals(ledger: LedgerDep) -> PendingApprovalsResponse:
-    return ledger.pending_approvals()
+    records = ledger.list(statuses=[ToolCallStatus.PENDING_APPROVAL]).tool_calls
+    return PendingApprovalsResponse(approvals=[_pending_approval_from_record(r) for r in records])
 
 
 @router.get("/api/approvals/events")
-async def approval_events(ledger: LedgerDep, since: int = 0) -> ToolCallEventsResponse:
-    return ledger.events_since(since)
+async def approval_events(ledger: LedgerDep, after_event_id: int = 0) -> ToolCallEventsResponse:
+    return ledger.events_after_id(after_event_id)
 
 
 @router.post("/api/tool-calls/{tool_call_id}/decision")

@@ -258,11 +258,16 @@ def test_all_v1_tool_calls_require_console_approval(
             json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "world"}, "wait_for_ms": 1000},
         )
         pending = client.get("/api/approvals/pending").json()
+        listed = client.get(
+            "/api/tool-calls", params={"status": "pending_approval", "since": "1970-01-01T00:00:00+00:00"}
+        ).json()
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "pending_approval"
     assert body["result"] is None
     assert pending["approvals"][0]["tool_call_id"] == body["tool_call_id"]
+    assert pending["approvals"][0]["title"] is None
+    assert listed["tool_calls"][0]["tool_call_id"] == body["tool_call_id"]
 
 
 def test_websocket_receives_pending_approval_event(
@@ -275,9 +280,11 @@ def test_websocket_receives_pending_approval_event(
         assert ws.receive_json() == {"type": "hello"}
         submitted = _submit(client)
         event = ws.receive_json()
+        events = client.get("/api/approvals/events", params={"after_event_id": 0}).json()
     assert event["event_type"] == "tool_call_submitted"
     assert event["tool_call_id"] == submitted["tool_call_id"]
     assert event["status"] == "pending_approval"
+    assert events["events"][0]["event_id"] == event["event_id"]
 
 
 def test_full_audit_log_listing_and_secret_redaction(
@@ -299,8 +306,15 @@ def test_full_audit_log_listing_and_secret_redaction(
             json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "two"}, "wait_for_ms": 0},
         ).json()
         body = client.get("/api/tool-calls").json()
+        pending = client.get(
+            "/api/tool-calls", params=[("status", "pending_approval"), ("since", "1970-01-01T00:00:00+00:00")]
+        ).json()
+        future = client.get("/api/tool-calls", params={"since": "2999-01-01T00:00:00+00:00"}).json()
     ids = {r["tool_call_id"] for r in body["tool_calls"]}
     assert {operator_call["tool_call_id"], haku_call["tool_call_id"]} <= ids
+    pending_ids = {r["tool_call_id"] for r in pending["tool_calls"]}
+    assert {operator_call["tool_call_id"], haku_call["tool_call_id"]} <= pending_ids
+    assert future["tool_calls"] == []
     dumped = str(body)
     assert "haku-console-grocy-sf-token" not in dumped
     assert "tool-token" not in dumped

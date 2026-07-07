@@ -32,7 +32,7 @@ const toolApprovalRenderers: Record<string, ToolApprovalRenderer> = {};
 
 function defaultToolApprovalRenderer(approval: PendingApproval): Rendered {
   return {
-    title: approval.title,
+    title: approval.title ?? `${approval.server_id}: ${approval.tool_name}`,
     body: `Approve ${approval.server_id}.${approval.tool_name} for ${approval.caller_principal}?`,
     preview: {
       text: JSON.stringify(
