@@ -5,3 +5,7 @@ mcp:
       server_url: https://grocy-mcp-sf.allegedly.works/mcp
       operator_oauth:
         client_name: Haku Console
+    - id: tana-rw
+      server_url: https://tana-mcp-facade.allegedly.works/mcp
+      operator_oauth:
+        client_name: Haku Console
