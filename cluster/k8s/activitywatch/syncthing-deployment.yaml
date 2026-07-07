@@ -33,16 +33,10 @@ spec:
             - -ec
             - |
               mkdir -p /var/syncthing/config /var/syncthing/data
-              cp /identity/cert.pem /var/syncthing/config/cert.pem
-              cp /identity/key.pem /var/syncthing/config/key.pem
               cp /syncthing-config/config.xml /var/syncthing/config/config.xml
               chown -R 1000:1000 /var/syncthing
-              chmod 0400 /var/syncthing/config/cert.pem /var/syncthing/config/key.pem
               chmod 0600 /var/syncthing/config/config.xml
           volumeMounts:
-            - name: identity
-              mountPath: /identity
-              readOnly: true
             - name: syncthing-config
               mountPath: /syncthing-config
               readOnly: true
@@ -72,6 +66,14 @@ spec:
               mountPath: /sync-inbox
             - name: state
               mountPath: /var/syncthing
+            - name: identity
+              mountPath: /var/syncthing/config/cert.pem
+              subPath: cert.pem
+              readOnly: true
+            - name: identity
+              mountPath: /var/syncthing/config/key.pem
+              subPath: key.pem
+              readOnly: true
           resources:
             requests:
               cpu: 25m
@@ -106,6 +108,7 @@ spec:
             claimName: activitywatch-sync-inbox
         - name: identity
           projected:
+            defaultMode: 0440
             sources:
               - configMap:
                   name: activitywatch-syncthing-identity
