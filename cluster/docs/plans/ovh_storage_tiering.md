@@ -18,7 +18,7 @@ Reference material:
 <../lessons_learned/2026_07_04_seaweedfs_volumetopology_and_operator.md>,
 <../lessons_learned/2026_07_04_seaweedfs_stale_mount_cache_after_evacuation.md>,
 <../lessons_learned/2026_07_05_nebula_overlay_packet_loss_investigation.md> (issue #2917 — why
-inter-node moves are slow/flaky), <../runbooks/seaweedfs_pvc_storageclass_migration.md>
+OVH inter-node moves are slow/flaky), <../runbooks/seaweedfs_pvc_storageclass_migration.md>
 (reusable PVC storage-class migration), <../../skills/cnpg_region_switch/RUNBOOK.md>.
 
 ## The 2 SSD nodes
