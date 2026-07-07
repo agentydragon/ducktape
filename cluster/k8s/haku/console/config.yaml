@@ -3,4 +3,7 @@ mcp:
   servers:
     - id: grocy-sf
       server_url: https://grocy-mcp-sf.allegedly.works/mcp
+      # Keep the static bearer path while operator-OAuth MCP execution is
+      # proving out; it remains useful for non-interactive reflection/fallback.
+      # TODO(2026-07-07): prune this if operator OAuth covers Grocy approvals.
       bearer_token_secret: haku-console-grocy-sf-token
