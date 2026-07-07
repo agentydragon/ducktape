@@ -40,6 +40,7 @@ Artifacts:
 
 - Full generated summary: <results/20260707T002921Z/summary.md>
 - CSV summary: <results/20260707T002921Z/summary.csv>
+- Follow-up latency forensics: <seaweedfs_latency_forensics.md>
 
 Generated ConfigMap YAML, namespace YAML, PVC/Job manifests, raw pod logs,
 Kubernetes object snapshots, and cluster metadata snapshots are intentionally
