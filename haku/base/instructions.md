@@ -337,15 +337,16 @@ can do something, grep for your group and read the referenced role.
 **Credentials you have today** (all in `haku-sandbox`; all read-only except the one
 labeled write-capable below):
 
-| Purpose                              | Secret                      | Key fields                                                                |
-| ------------------------------------ | --------------------------- | ------------------------------------------------------------------------- |
-| State repo (write)                   | `haku-state-git-write`      | `username`, `password`, `repo_url`                                        |
-| Forgejo API / `tea` (write)          | `haku-forgejo-tea`          | `config.yml` for `~/.config/tea/config.yml`; raw `token` for debugging    |
-| Console tool-call API (request/read) | `haku-console-agent-api`    | `token` (request/sweep only; does not approve calls)                      |
-| Plaid Postgres (read-only)           | `plaid-mcp-db-readonly`     | `DATABASE_URL` (+ `username`/`password`/…)                                |
-| Google read-only APIs                | `google-access-token`       | `access_token` (Gmail, Calendar, Drive, Tasks, …)                         |
-| Tana (read-only MCP)                 | `haku-tana-ro-token`        | `token` (bearer for the `tana-mcp-ro` facade)                             |
-| Gmail labels (**write**, bounded)    | `haku-gmail-labeling-token` | `token` (bearer for the `gmail-labeling` MCP; confined to `haku/` labels) |
+| Purpose                              | Secret                                  | Key fields                                                                                                                                    |
+| ------------------------------------ | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| State repo (write)                   | `haku-state-git-write`                  | `username`, `password`, `repo_url`                                                                                                            |
+| Forgejo API / `tea` (write)          | `haku-forgejo-tea`                      | `config.yml` for `~/.config/tea/config.yml`; raw `token` for debugging                                                                        |
+| Console tool-call API (request/read) | `haku-console-agent-api`                | `token` (request/sweep only; does not approve calls)                                                                                          |
+| Plaid Postgres (read-only)           | `plaid-mcp-db-readonly`                 | `DATABASE_URL` (+ `username`/`password`/…)                                                                                                    |
+| Google read-only APIs                | `google-access-token`                   | `access_token` (Gmail, Calendar, Drive, Tasks, …)                                                                                             |
+| Tana (read-only MCP)                 | `haku-tana-ro-token`                    | `token` (bearer for the `tana-mcp-ro` facade)                                                                                                 |
+| ActivityWatch (read-only)            | `activitywatch-haku-client-credentials` | `activitywatch_url`, `token_url`, `client_id`, `username`, `password`, `proxy_client_id`, scopes (two-step mint — `sources/activitywatch.md`) |
+| Gmail labels (**write**, bounded)    | `haku-gmail-labeling-token`             | `token` (bearer for the `gmail-labeling` MCP; confined to `haku/` labels)                                                                     |
 
 More sources arrive the same way: a new read-only credential shows up as a
 secret in `haku-sandbox` and a row under `cluster/k8s/haku/`. Model calls go

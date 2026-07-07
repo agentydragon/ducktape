@@ -35,6 +35,9 @@ grows its own techniques and records them in its state `memory/`.
 - [`grocy`](grocy.md) — the operator's household stock (expiring /
   below-minimum items, shopping suggestions); reached via the grocy-sf MCP
   (`fastmcp`), read-only because the `haku` Grocy user has empty permissions.
+- [`activitywatch`](activitywatch.md) — the operator's device activity: presence
+  (at which computer, right now), focus, and per-day time-use; read-only via an
+  Authentik two-step token mint. The prioritization signal the other sources lack.
 - [`mailbox`](mailbox.md) — **your own mailbox** (`haku@allegedly.works`, a real
   mail account you manage): mail the operator sends directly to you (requests,
   context, forwards). Delivery is DMARC-gated to whitelisted senders at the server;
