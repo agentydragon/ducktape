@@ -12,6 +12,7 @@ let
   bazelRepoContentsCache = "${bazelOutputUserRoot}/cache/repo-contents";
   bazelDiskCache = "${bazelOutputUserRoot}/cache/disk";
   bazeliskCache = "${config.xdg.cacheHome}/bazelisk";
+  activitywatchSyncDir = "${config.ducktape.activitywatch.sync.root}/${config.ducktape.activitywatch.sync.hostname}";
 in
 {
   imports = [
@@ -64,8 +65,6 @@ in
 
   ducktape.activitywatch.sync = {
     enable = true;
-    hostname = "rugged";
-    root = "${config.home.homeDirectory}/.activitywatch-sync";
     startDate = "2026-07-06";
   };
 
@@ -108,13 +107,10 @@ in
         ]
     )
     // {
-      activitywatch_syncthing_cert = {
-        sopsFile = ../../../secrets/home/rugged/activitywatch-syncthing.yaml;
-        key = "cert";
-      };
       activitywatch_syncthing_key = {
-        sopsFile = ../../../secrets/home/rugged/activitywatch-syncthing.yaml;
-        key = "key";
+        sopsFile = ../../../secrets/home/rugged/activitywatch-syncthing.sops.key;
+        format = "binary";
+        mode = "0600";
       };
       zai_api_key_file = {
         sopsFile = ../../../secrets/home/rugged/zai.yaml;
@@ -124,19 +120,19 @@ in
 
   services.syncthing = {
     enable = true;
-    cert = config.sops.secrets.activitywatch_syncthing_cert.path;
+    cert = toString ../../../secrets/home/rugged/activitywatch-syncthing.cert.pem;
     key = config.sops.secrets.activitywatch_syncthing_key.path;
     overrideDevices = true;
     overrideFolders = true;
     settings = {
       devices.activitywatch-cluster = {
-        id = "3A5F6OF-KEUVJDU-SQLKJ2P-MGJLAOY-JM3T5DH-D2ZKFS2-YVWO6QY-QL6CRQW";
+        id = "CXD63NS-6NVOEFY-AISQIJR-JOBNTDZ-3SCQPWP-K6PN3RN-KMHAIT4-RXYOBAR";
         name = "activitywatch-cluster";
       };
-      folders."${config.home.homeDirectory}/.activitywatch-sync/rugged" = {
+      folders.${activitywatchSyncDir} = {
         id = "activitywatch-rugged";
         label = "ActivityWatch rugged";
-        path = "${config.home.homeDirectory}/.activitywatch-sync/rugged";
+        path = activitywatchSyncDir;
         type = "sendonly";
         devices = [ "activitywatch-cluster" ];
         rescanIntervalS = 60;

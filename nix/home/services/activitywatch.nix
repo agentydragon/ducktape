@@ -3,6 +3,7 @@
   lib,
   pkgs,
   enableGui,
+  osConfig ? null,
   ...
 }:
 let
@@ -40,7 +41,11 @@ in
 
       hostname = lib.mkOption {
         type = lib.types.str;
-        default = config.home.username;
+        default =
+          if osConfig != null && osConfig ? networking && osConfig.networking ? hostName then
+            osConfig.networking.hostName
+          else
+            config.home.username;
         description = "Host label used for the ActivityWatch sync directory and synced bucket provenance.";
       };
 

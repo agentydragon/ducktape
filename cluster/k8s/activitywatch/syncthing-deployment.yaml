@@ -61,8 +61,20 @@ spec:
           persistentVolumeClaim:
             claimName: activitywatch-sync-inbox
         - name: identity
-          secret:
-            secretName: activitywatch-syncthing-identity
+          projected:
+            sources:
+              - configMap:
+                  name: activitywatch-syncthing-identity
+                  items:
+                    - key: cert.pem
+                      path: cert.pem
+                    - key: device_id
+                      path: device_id
+              - secret:
+                  name: activitywatch-syncthing-key
+                  items:
+                    - key: key.pem
+                      path: key.pem
         - name: scripts
           configMap:
             name: activitywatch-syncthing-scripts

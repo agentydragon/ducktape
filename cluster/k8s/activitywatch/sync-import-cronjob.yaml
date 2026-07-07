@@ -29,6 +29,9 @@ spec:
                 - /bin/sh
                 - -ec
                 - |
+                  # aw-sync creates <sync-dir>/<local-device-id>/test.db even in
+                  # pull mode. Stage the received folder first so the importer
+                  # never writes into Syncthing's receive-only SeaweedFS inbox.
                   mkdir -p /work/rugged
                   if [ -d /sync-inbox/rugged ]; then
                     cp -a /sync-inbox/rugged/. /work/rugged/

@@ -11,6 +11,13 @@ cp /identity/cert.pem "$config_dir/cert.pem"
 cp /identity/key.pem "$config_dir/key.pem"
 chmod 0400 "$config_dir/cert.pem" "$config_dir/key.pem"
 
+expected_device_id="$(cat /identity/device_id)"
+actual_device_id="$(syncthing --config "$config_dir" --data "$data_dir" device-id)"
+if [ "$actual_device_id" != "$expected_device_id" ]; then
+  echo "Syncthing identity mismatch: cert gives $actual_device_id, expected $expected_device_id" >&2
+  exit 1
+fi
+
 if [ ! -f "$config_dir/config.xml" ]; then
   syncthing --config "$config_dir" --data "$data_dir" generate --no-port-probing
 fi
@@ -33,14 +40,32 @@ if [ ! -s /tmp/syncthing-devices ]; then
 fi
 
 if ! grep -qx "$rugged_device_id" /tmp/syncthing-devices; then
-  syncthing --config "$config_dir" --data "$data_dir" cli config devices add-json \
-    "{\"deviceID\":\"$rugged_device_id\",\"name\":\"rugged\",\"addresses\":[\"dynamic\"],\"compression\":\"metadata\"}"
+  syncthing --config "$config_dir" --data "$data_dir" cli config devices add \
+    --device-id "$rugged_device_id" \
+    --name rugged \
+    --addresses dynamic \
+    --compression metadata
 fi
 
 syncthing --config "$config_dir" --data "$data_dir" cli config folders list >/tmp/syncthing-folders
 if ! grep -qx "activitywatch-rugged" /tmp/syncthing-folders; then
+  cat >/tmp/activitywatch-rugged-folder.json <<EOF
+{
+  "id": "activitywatch-rugged",
+  "label": "ActivityWatch rugged",
+  "path": "$folder_dir",
+  "type": "receiveonly",
+  "devices": [
+    {
+      "deviceID": "$rugged_device_id"
+    }
+  ],
+  "rescanIntervalS": 60,
+  "fsWatcherEnabled": true
+}
+EOF
   syncthing --config "$config_dir" --data "$data_dir" cli config folders add-json \
-    "{\"id\":\"activitywatch-rugged\",\"label\":\"ActivityWatch rugged\",\"path\":\"$folder_dir\",\"type\":\"receiveonly\",\"devices\":[{\"deviceID\":\"$rugged_device_id\"}],\"rescanIntervalS\":60,\"fsWatcherEnabled\":true}"
+    "$(cat /tmp/activitywatch-rugged-folder.json)"
 fi
 
 wait "$pid"

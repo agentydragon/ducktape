@@ -9,7 +9,7 @@ spec:
   storageClassName: local-path-proxmox
   resources:
     requests:
-      storage: 1Gi
+      storage: 10Gi
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -24,4 +24,4 @@ spec:
   storageClassName: seaweedfs-ovh
   resources:
     requests:
-      storage: 1Gi
+      storage: 10Gi

@@ -10,23 +10,27 @@ NetworkPolicy, the read-only proxy, and the Nebula mesh path.
 ## Current Design
 
 - **Query server**: `aw-server-rust` in `cluster/k8s/activitywatch`, SQLite on
-  `activitywatch-data` (`local-path-proxmox`, 1Gi).
+  `activitywatch-data` (`local-path-proxmox`, 10Gi).
 - **Read-only API**: nginx sidecar on Service `activitywatch-readonly`, allowing GET plus
   POST `/api/0/query` for sandbox consumers.
 - **Write API**: internal Service `activitywatch-write`, admitted only from the importer
   CronJob by CiliumNetworkPolicy.
 - **Sync receiver**: `activitywatch-syncthing` Deployment on OVH, receiving into
-  `activitywatch-sync-inbox` (`seaweedfs-ovh`, RWX, 1Gi).
+  `activitywatch-sync-inbox` (`seaweedfs-ovh`, RWX, 10Gi).
 - **Importer**: `activitywatch-sync-import` CronJob every 5 minutes. It stages
   `/sync-inbox/rugged` into an `emptyDir`, then runs upstream `aw-sync` from the
-  ActivityWatch image to pull events into the query server.
+  ActivityWatch image to pull events into the query server. The staging copy is
+  intentional: upstream `aw-sync` opens/creates `<sync-dir>/<local-device-id>/test.db`
+  even in pull mode, so the importer must not point it directly at Syncthing's
+  receive-only SeaweedFS inbox.
 - **Image**: `ghcr.io/agentydragon/aw-server`, built with Bazel
   (`@ducktape_activitywatch//:image`). The image includes both `aw-server` and upstream
   `aw-sync`. The pinned `aw-sync` source is patched to use reqwest's rustls backend
   instead of native-tls/OpenSSL, which avoids vendored OpenSSL build-script runfiles in
   Bazel/RBE.
-- **Cluster Syncthing identity**: SOPS Secret
-  `cluster/k8s/activitywatch/syncthing-identity.sops.yaml`.
+- **Cluster Syncthing identity**: public certificate/device ID in
+  `cluster/k8s/activitywatch/syncthing-identity.yaml`; private key only in
+  `cluster/k8s/activitywatch/syncthing-key.sops.yaml`.
 
 ## Storage Debt
 
@@ -34,6 +38,10 @@ The Syncthing inbox is intentionally on SeaweedFS (`activitywatch-sync-inbox`,
 `seaweedfs-ovh`). The query server is still the risky piece: ActivityWatch's durable store
 is one SQLite file on `activitywatch-data` (`local-path-proxmox`), and the server is pinned
 to Proxmox to stay near that local-path PVC.
+
+Both PVCs request 10Gi. That is deliberately a starting budget, not a retention policy:
+window/AFK data should usually fit for a long time at that size, but multi-device history is
+unbounded until we measure real growth on rugged and later devices.
 
 TODO:
 
@@ -59,8 +67,9 @@ Rugged is the first synced desktop.
   `aw-sync --host 127.0.0.1 --port 5600 --sync-dir ~/.activitywatch-sync/rugged sync-advanced --mode push --start-date 2026-07-06`.
 - Home Manager also enables Syncthing with a send-only folder:
   `~/.activitywatch-sync/rugged`, folder id `activitywatch-rugged`.
-- Rugged's Syncthing keypair is SOPS-managed in
-  `secrets/home/rugged/activitywatch-syncthing.yaml`.
+- Rugged's Syncthing certificate is plaintext in
+  `secrets/home/rugged/activitywatch-syncthing.cert.pem`; its private key is a raw SOPS
+  binary secret in `secrets/home/rugged/activitywatch-syncthing.sops.key`.
 
 ## Spike Results
 
@@ -83,8 +92,9 @@ The important operational result: each source device writes only its own
 
 For another desktop such as `wyrm2`:
 
-1. Generate a Syncthing cert/key pair for the device and store it under that host's
-   `secrets/home/<host>/activitywatch-syncthing.yaml`.
+1. Generate a Syncthing cert/key pair for the device. Store the public certificate as
+   `secrets/home/<host>/activitywatch-syncthing.cert.pem` and the private key as raw SOPS
+   binary at `secrets/home/<host>/activitywatch-syncthing.sops.key`.
 2. Add the device ID to `activitywatch-syncthing-entrypoint.sh`.
 3. Add a receive-only folder on the cluster, for example `activitywatch-wyrm2` at
    `/sync-inbox/wyrm2`.
