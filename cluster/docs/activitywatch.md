@@ -57,6 +57,9 @@ TODO:
 - If Syncthing's receive-only status is noisy because `aw-sync daemon` writes
   `/sync-inbox/activitywatch-cluster/test.db`, patch or wrap `aw-sync` with a pull-only
   daemon mode. Do not reintroduce per-host staging folders just to avoid that local file.
+- Revisit whether the Syncthing config initContainer can avoid copying `config.xml` once
+  we have a supported way to keep Syncthing's config file writable without staging it out
+  of the ConfigMap.
 - Move the query server off `local-path-proxmox` once a validated storage target or backup
   strategy exists. Until then, treat the cluster DB as node-local state that must be backed
   up or rebuildable from synced device folders.
