@@ -12,7 +12,6 @@ let
   bazelRepoContentsCache = "${bazelOutputUserRoot}/cache/repo-contents";
   bazelDiskCache = "${bazelOutputUserRoot}/cache/disk";
   bazeliskCache = "${config.xdg.cacheHome}/bazelisk";
-  activitywatchSyncDir = config.ducktape.activitywatch.sync.root;
 in
 {
   imports = [
@@ -65,7 +64,10 @@ in
 
   ducktape.activitywatch.sync = {
     enable = true;
-    startDate = "2026-07-06";
+    syncthing = {
+      certFile = ../../../secrets/home/rugged/activitywatch-syncthing.cert.pem;
+      keySopsFile = ../../../secrets/home/rugged/activitywatch-syncthing.sops.key;
+    };
   };
 
   # SSH keys for wyrm and vps, decrypted from SOPS binary at activation time.
@@ -107,43 +109,11 @@ in
         ]
     )
     // {
-      activitywatch_syncthing_key = {
-        sopsFile = ../../../secrets/home/rugged/activitywatch-syncthing.sops.key;
-        format = "binary";
-        mode = "0600";
-      };
       zai_api_key_file = {
         sopsFile = ../../../secrets/home/rugged/zai.yaml;
         key = "zai_api_key";
       };
     };
-
-  services.syncthing = {
-    enable = true;
-    cert = toString ../../../secrets/home/rugged/activitywatch-syncthing.cert.pem;
-    key = config.sops.secrets.activitywatch_syncthing_key.path;
-    overrideDevices = true;
-    overrideFolders = true;
-    settings = {
-      devices.activitywatch-cluster = {
-        id = "CXD63NS-6NVOEFY-AISQIJR-JOBNTDZ-3SCQPWP-K6PN3RN-KMHAIT4-RXYOBAR";
-        name = "activitywatch-cluster";
-      };
-      folders.${activitywatchSyncDir} = {
-        id = "activitywatch";
-        label = "ActivityWatch";
-        path = activitywatchSyncDir;
-        type = "sendonly";
-        devices = [ "activitywatch-cluster" ];
-        rescanIntervalS = 60;
-        fsWatcherEnabled = true;
-      };
-      options = {
-        relaysEnabled = true;
-        urAccepted = -1;
-      };
-    };
-  };
 
   # Wire z.ai API key into aiquota via config.toml (Python CLI reads this).
   xdg.configFile."aiquota/config.toml" = {

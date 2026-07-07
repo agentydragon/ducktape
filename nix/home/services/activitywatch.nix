@@ -9,9 +9,8 @@ let
   cfg = config.ducktape.activitywatch;
   toTOML = (pkgs.formats.toml { }).generate;
   syncRoot = cfg.sync.root;
-  startDateArgs = lib.optionalString (
-    cfg.sync.startDate != null
-  ) "--start-date ${lib.escapeShellArg cfg.sync.startDate}";
+  syncthingCfg = cfg.sync.syncthing;
+  syncthingConfigured = syncthingCfg.certFile != null && syncthingCfg.keySopsFile != null;
   syncPushScript = pkgs.writeShellScript "activitywatch-sync-push" ''
     set -eu
 
@@ -23,8 +22,7 @@ let
           --port ${toString cfg.sync.localPort} \
           --sync-dir ${lib.escapeShellArg syncRoot} \
           sync-advanced \
-          --mode push \
-          ${startDateArgs}
+          --mode push
       fi
       ${pkgs.coreutils}/bin/sleep 1
     done
@@ -43,13 +41,6 @@ in
         description = "Hidden root shared by aw-sync and Syncthing.";
       };
 
-      startDate = lib.mkOption {
-        type = lib.types.nullOr lib.types.str;
-        default = null;
-        example = "2026-07-06";
-        description = "Optional YYYY-MM-DD lower bound passed to aw-sync.";
-      };
-
       interval = lib.mkOption {
         type = lib.types.str;
         default = "5min";
@@ -60,6 +51,32 @@ in
         type = lib.types.port;
         default = 5600;
         description = "Local aw-server port used by watchers and aw-sync.";
+      };
+
+      syncthing = {
+        certFile = lib.mkOption {
+          type = lib.types.nullOr lib.types.path;
+          default = null;
+          description = "Public Syncthing certificate for this host's ActivityWatch device.";
+        };
+
+        keySopsFile = lib.mkOption {
+          type = lib.types.nullOr lib.types.path;
+          default = null;
+          description = "SOPS binary-encrypted Syncthing private key for this host's ActivityWatch device.";
+        };
+
+        clusterDeviceName = lib.mkOption {
+          type = lib.types.str;
+          default = "activitywatch-cluster";
+          description = "Syncthing device name for the cluster ActivityWatch receiver.";
+        };
+
+        clusterDeviceId = lib.mkOption {
+          type = lib.types.str;
+          default = "CXD63NS-6NVOEFY-AISQIJR-JOBNTDZ-3SCQPWP-K6PN3RN-KMHAIT4-RXYOBAR";
+          description = "Syncthing device ID for the cluster ActivityWatch receiver.";
+        };
       };
     };
   };
@@ -89,6 +106,13 @@ in
       }
 
       (lib.mkIf cfg.sync.enable {
+        assertions = [
+          {
+            assertion = (syncthingCfg.certFile == null) == (syncthingCfg.keySopsFile == null);
+            message = "ducktape.activitywatch.sync.syncthing.certFile and keySopsFile must be set together.";
+          }
+        ];
+
         xdg.configFile."activitywatch/aw-client/aw-client.toml".source = toTOML "aw-client.toml" {
           server = {
             hostname = "127.0.0.1";
@@ -124,6 +148,41 @@ in
             Unit = "activitywatch-sync-push.service";
           };
           Install.WantedBy = [ "timers.target" ];
+        };
+      })
+
+      (lib.mkIf (cfg.sync.enable && syncthingConfigured) {
+        sops.secrets.activitywatch_syncthing_key = {
+          sopsFile = syncthingCfg.keySopsFile;
+          format = "binary";
+          mode = "0600";
+        };
+
+        services.syncthing = {
+          enable = true;
+          cert = toString syncthingCfg.certFile;
+          key = config.sops.secrets.activitywatch_syncthing_key.path;
+          overrideDevices = true;
+          overrideFolders = true;
+          settings = {
+            devices.${syncthingCfg.clusterDeviceName} = {
+              id = syncthingCfg.clusterDeviceId;
+              name = syncthingCfg.clusterDeviceName;
+            };
+            folders.${syncRoot} = {
+              id = "activitywatch";
+              label = "ActivityWatch";
+              path = syncRoot;
+              type = "sendonly";
+              devices = [ syncthingCfg.clusterDeviceName ];
+              rescanIntervalS = 60;
+              fsWatcherEnabled = true;
+            };
+            options = {
+              relaysEnabled = true;
+              urAccepted = -1;
+            };
+          };
         };
       })
     ]

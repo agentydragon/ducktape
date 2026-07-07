@@ -379,6 +379,24 @@ creation_rules:
           - *agent-box-zai-user
 
   # --- ActivityWatch Syncthing private keys (SOPS binary, admin + owning user key) ---
+  - path_regex: secrets/home/atlas/activitywatch-syncthing\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *atlas-agentydragon
+  - path_regex: secrets/home/iguana/activitywatch-syncthing\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *iguana-agentydragon
+  - path_regex: secrets/home/wyrm2/activitywatch-syncthing\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
   - path_regex: secrets/home/rugged/activitywatch-syncthing\.sops\.key$
     store_type: binary
     key_groups:

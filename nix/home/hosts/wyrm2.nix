@@ -39,6 +39,14 @@
     };
   };
 
+  ducktape.activitywatch.sync = {
+    enable = true;
+    syncthing = {
+      certFile = ../../../secrets/home/wyrm2/activitywatch-syncthing.cert.pem;
+      keySopsFile = ../../../secrets/home/wyrm2/activitywatch-syncthing.sops.key;
+    };
+  };
+
   # Place decrypted z.ai API key where aiquota reads it.
   # The Python CLI reads ~/.config/aiquota/config.toml for the key path.
   sops.secrets.zai_api_key_file = {

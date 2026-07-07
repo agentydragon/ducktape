@@ -12,7 +12,6 @@ data:
     c3luY3RoaW5nMAUGAytlcANBANywtRZj+KvN3WNV8N78YFaCCYXrl76tyhtPqR1+
     V6nJHjfnsAbUJGwPcbAHMK/Fp8io1aIcAYOSP97n0I68XgY=
     -----END CERTIFICATE-----
-  device_id: CXD63NS-6NVOEFY-AISQIJR-JOBNTDZ-3SCQPWP-K6PN3RN-KMHAIT4-RXYOBAR
 kind: ConfigMap
 metadata:
   name: activitywatch-syncthing-identity

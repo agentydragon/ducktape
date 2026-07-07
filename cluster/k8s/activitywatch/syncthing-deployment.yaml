@@ -47,6 +47,9 @@ spec:
             - name: scripts
               mountPath: /scripts
               readOnly: true
+            - name: syncthing-config
+              mountPath: /syncthing-config
+              readOnly: true
             - name: state
               mountPath: /var/syncthing
           resources:
@@ -67,8 +70,6 @@ spec:
             - --sync-dir
             - /sync-inbox
             - daemon
-            - --start-date
-            - "2026-07-06"
           volumeMounts:
             - name: sync-inbox
               mountPath: /sync-inbox
@@ -91,8 +92,6 @@ spec:
                   items:
                     - key: cert.pem
                       path: cert.pem
-                    - key: device_id
-                      path: device_id
               - secret:
                   name: activitywatch-syncthing-key
                   items:
@@ -101,5 +100,8 @@ spec:
         - name: scripts
           configMap:
             name: activitywatch-syncthing-scripts
+        - name: syncthing-config
+          configMap:
+            name: activitywatch-syncthing-config
         - name: state
           emptyDir: {}

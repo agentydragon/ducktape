@@ -27,9 +27,13 @@ NetworkPolicy and the read-only proxy; there is no public or Nebula route.
   `aw-sync`. The pinned `aw-sync` source is patched to use reqwest's rustls backend
   instead of native-tls/OpenSSL, which avoids vendored OpenSSL build-script runfiles in
   Bazel/RBE.
-- **Cluster Syncthing identity**: public certificate/device ID in
+- **Cluster Syncthing identity**: public certificate in
   `cluster/k8s/activitywatch/syncthing-identity.yaml`; private key only in
-  `cluster/k8s/activitywatch/syncthing-key.sops.yaml`.
+  `cluster/k8s/activitywatch/syncthing-key.sops.yaml`. The device ID in
+  `syncthing-config.xml` is derived from that public certificate and checked in CI.
+- **Cluster Syncthing config**: `cluster/k8s/activitywatch/syncthing-config.xml`
+  declares the `activitywatch` receive-only folder and paired devices. The entrypoint only
+  stages that config plus the identity files and execs Syncthing.
 - **No mesh sidecar**: ActivityWatch is not joined to Nebula. Devices send data through
   Syncthing, and query access should use an explicit in-cluster or authenticated route.
 
@@ -58,9 +62,9 @@ TODO:
   the only durable copy of their data; each device should keep its own Syncthing-exported
   source folder.
 
-## Rugged Setup
+## Desktop Setup
 
-Rugged is the first synced desktop.
+Current synced desktops are `rugged`, `wyrm2`, `iguana`, and `atlas`.
 
 - Local capture is managed by the graphical ActivityWatch applet (`aw-qt`), which starts
   `aw-server`, `aw-watcher-afk`, and `aw-watcher-window`.
@@ -68,12 +72,14 @@ Rugged is the first synced desktop.
 - `nix/home/services/activitywatch.nix` configures local clients to use
   `127.0.0.1:5600` when `ducktape.activitywatch.sync.enable = true`.
 - A Home Manager timer runs every 5 minutes:
-  `aw-sync --host 127.0.0.1 --port 5600 --sync-dir ~/.activitywatch-sync sync-advanced --mode push --start-date 2026-07-06`.
+  `aw-sync --host 127.0.0.1 --port 5600 --sync-dir ~/.activitywatch-sync sync-advanced --mode push`.
 - Home Manager also enables Syncthing with a send-only folder:
   `~/.activitywatch-sync`, folder id `activitywatch`.
-- Rugged's Syncthing certificate is plaintext in
-  `secrets/home/rugged/activitywatch-syncthing.cert.pem`; its private key is a raw SOPS
-  binary secret in `secrets/home/rugged/activitywatch-syncthing.sops.key`.
+- Each desktop's Syncthing certificate is plaintext in
+  `secrets/home/<host>/activitywatch-syncthing.cert.pem`; its private key is a raw SOPS
+  binary secret in `secrets/home/<host>/activitywatch-syncthing.sops.key`.
+- `aw-sync` runs without `--start-date`, so initial rollout backfills existing local
+  ActivityWatch history instead of silently dropping pre-rollout events.
 
 ## Spike Results
 
@@ -95,16 +101,18 @@ by appending `-synced-from-<bucket-hostname>` to cluster-side bucket IDs.
 
 ## Adding More Devices
 
-For another desktop such as `wyrm2`:
+For another desktop:
 
 1. Generate a Syncthing cert/key pair for the device. Store the public certificate as
    `secrets/home/<host>/activitywatch-syncthing.cert.pem` and the private key as raw SOPS
    binary at `secrets/home/<host>/activitywatch-syncthing.sops.key`.
-2. Add the Syncthing device ID to `activitywatch-syncthing-entrypoint.sh` and include it in
-   the cluster `activitywatch` folder device list.
-3. Enable `ducktape.activitywatch.sync` in `nix/home/hosts/<host>.nix`.
-4. Add a send-only Syncthing folder on that host with id `activitywatch`, path
-   `~/.activitywatch-sync`, and device `activitywatch-cluster`.
+2. Add a SOPS binary rule for the private key in `.sops.yaml`.
+3. Enable `ducktape.activitywatch.sync` in `nix/home/hosts/<host>.nix`, setting only
+   `syncthing.certFile` and `syncthing.keySopsFile`. The shared Home Manager module owns
+   the send-only Syncthing folder and the paired cluster device.
+4. Add the cert-derived Syncthing device ID to `syncthing-config.xml`. The
+   `//cluster/validation:test_activitywatch_syncthing_config` parity test fails if the XML
+   device IDs drift from the public certificates or if a cert is missing its SOPS key.
 
 Each device contributes its own ActivityWatch device-ID subdirectory under the shared root,
 so no cluster-side per-host folder or importer sidecar is needed for normal desktops.
@@ -120,14 +128,15 @@ Last checked 2026-07-07:
 - `bazelisk build --config=rbe @ducktape_activitywatch//:image` passed; `aw-sync` and
   `aw_sync_bin` compiled and the OCI image assembled.
 - `kustomize build cluster/k8s/activitywatch` passed.
-- Syncthing 2.0.10 CLI smoke test passed for the entrypoint's `generate`, `serve`,
-  device `add`, and flat `activitywatch` receive-only folder `add-json` sequence.
-- Focused rugged Nix evals passed for `ducktape.activitywatch.sync`, the Syncthing
-  `activitywatch` send-only folder, and the paired cluster device ID.
-- The local nixpkgs `aw-sync` supports rugged's push timer command with
-  `sync-advanced --mode push --start-date ...`.
+- Syncthing 2.0.10 smoke test passed with the static ConfigMap-style
+  `syncthing-config.xml` shape: flat `activitywatch` receive-only folder, desktop peers,
+  and cluster self device.
+- Focused Nix evals passed for `ducktape.activitywatch.sync`, the Syncthing `activitywatch`
+  send-only folder, and the paired cluster device ID.
+- The local nixpkgs `aw-sync` supports the desktop push timer command with
+  `sync-advanced --mode push`.
 - The pinned `@ducktape_activitywatch` source commit supports the cluster sidecar command
-  with `daemon --start-date ...`.
+  with `daemon`.
 - Full `nix build .#nixosConfigurations.rugged.config.system.build.toplevel --no-link`
   still fails before ActivityWatch on the unrelated
   `nix/packages/gaffer.nix` `builtins.fetchClosure` blocker.
