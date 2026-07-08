@@ -120,7 +120,19 @@ jobs:
               bazel-diff generate-hashes -w "$PWD" -b bazel /tmp/bd-cache/head.json
               bazel-diff get-impacted-targets \
                 -sh /tmp/bd-cache/base.json -fh /tmp/bd-cache/head.json \
-                > /tmp/affected.txt
+                > /tmp/affected-raw.txt
+
+              # bazel-diff's impacted set includes plain source-file labels
+              # (e.g. a .py file referenced from a BUILD file but not wrapped
+              # in a rule). `bazel build`/`bazel test` treat those as a
+              # silent no-op ("is a source file, nothing will be built for
+              # it") -- harmless but noisy. Filter them out up front so the
+              # affected set passed to build/test only contains rules.
+              { printf 'set('; tr '\n' ' ' < /tmp/affected-raw.txt; \
+                printf ') except kind("source file", set('; \
+                tr '\n' ' ' < /tmp/affected-raw.txt; printf '))\n'; } \
+                > /tmp/affected-query.txt
+              bazel query --query_file=/tmp/affected-query.txt > /tmp/affected.txt
 
               N=$(wc -l < /tmp/affected.txt)
               echo "affected targets: $N"
