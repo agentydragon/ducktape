@@ -2,55 +2,33 @@
 // haku/console/tools/google.py). Falls back to the generic raw-JSON view
 // (approval_state.ts's argumentsJson) for anything that isn't shaped as expected —
 // arguments are only validated by the tool's own Pydantic model at execution time, not
-// at submission, so a pending approval's arguments could in principle be malformed.
+// at submission, so a pending approval's arguments could in principle be malformed. The
+// zod schemas below are generated from those same Pydantic models (:schema_zod), so this
+// file's shape checks can never drift from the backend's — see haku/console/tools/google.py.
 
 import { Anchor, Badge, Group, Loader, Stack, Text } from "@mantine/core";
 import { formatDuration } from "date-fns";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
+import type { z } from "zod";
 
 import {
-  fetchGmailThreadPreviews,
-  type BatchModifyGmailThreadLabelsArgs,
-  type CalendarReminder,
-  type CreateCalendarEventArgs,
-  type CreateGmailDraftArgs,
-  type EventDateTime,
-  type GmailThreadPreview,
-} from "./client.ts";
+  zBatchModifyGmailThreadLabelsArgs,
+  zCalendarReminder,
+  zCreateCalendarEventArgs,
+  zCreateGmailDraftArgs,
+  zEventDateTime,
+} from "./api/schema.zod.ts";
+import { fetchGmailThreadPreviews, type GmailThreadPreview } from "./client.ts";
 import { Field } from "./field.tsx";
 
 const GOOGLE_SERVER_ID = "google";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((v) => typeof v === "string");
-}
-
-function isEventDateTime(value: unknown): value is EventDateTime {
-  if (!isRecord(value)) return false;
-  const dateOk = value.date === undefined || value.date === null || typeof value.date === "string";
-  const dateTimeOk = value.date_time === undefined || value.date_time === null || typeof value.date_time === "string";
-  return dateOk && dateTimeOk;
-}
-
-function asCreateCalendarEventArgs(args: Record<string, unknown>): CreateCalendarEventArgs | null {
-  if (typeof args.summary !== "string" || !isEventDateTime(args.start) || !isEventDateTime(args.end)) return null;
-  return args as unknown as CreateCalendarEventArgs;
-}
-
-function asBatchModifyGmailThreadLabelsArgs(args: Record<string, unknown>): BatchModifyGmailThreadLabelsArgs | null {
-  if (!isStringArray(args.thread_ids)) return null;
-  return args as unknown as BatchModifyGmailThreadLabelsArgs;
-}
-
-function asCreateGmailDraftArgs(args: Record<string, unknown>): CreateGmailDraftArgs | null {
-  if (!isStringArray(args.to) || typeof args.subject !== "string" || typeof args.body !== "string") return null;
-  return args as unknown as CreateGmailDraftArgs;
-}
+type EventDateTime = z.infer<typeof zEventDateTime>;
+type CalendarReminder = z.infer<typeof zCalendarReminder>;
+type CreateCalendarEventArgs = z.infer<typeof zCreateCalendarEventArgs>;
+type BatchModifyGmailThreadLabelsArgs = z.infer<typeof zBatchModifyGmailThreadLabelsArgs>;
+type CreateGmailDraftArgs = z.infer<typeof zCreateGmailDraftArgs>;
 
 function formatEventDateTime(value: EventDateTime): string {
   if (value.date) return value.date;
@@ -205,16 +183,16 @@ function CreateGmailDraftPreview({ args }: { args: CreateGmailDraftArgs }) {
 export function googleToolPreview(serverId: string, toolName: string, args: Record<string, unknown>): ReactNode | null {
   if (serverId !== GOOGLE_SERVER_ID) return null;
   if (toolName === "create_calendar_event") {
-    const parsed = asCreateCalendarEventArgs(args);
-    return parsed && <CreateCalendarEventPreview args={parsed} />;
+    const parsed = zCreateCalendarEventArgs.safeParse(args);
+    return parsed.success && <CreateCalendarEventPreview args={parsed.data} />;
   }
   if (toolName === "batch_modify_gmail_thread_labels") {
-    const parsed = asBatchModifyGmailThreadLabelsArgs(args);
-    return parsed && <BatchModifyGmailThreadLabelsPreview args={parsed} />;
+    const parsed = zBatchModifyGmailThreadLabelsArgs.safeParse(args);
+    return parsed.success && <BatchModifyGmailThreadLabelsPreview args={parsed.data} />;
   }
   if (toolName === "create_gmail_draft") {
-    const parsed = asCreateGmailDraftArgs(args);
-    return parsed && <CreateGmailDraftPreview args={parsed} />;
+    const parsed = zCreateGmailDraftArgs.safeParse(args);
+    return parsed.success && <CreateGmailDraftPreview args={parsed.data} />;
   }
   return null;
 }

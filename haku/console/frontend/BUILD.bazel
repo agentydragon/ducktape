@@ -2,7 +2,7 @@ load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
 load("@npm_ducktape//:typescript/package_json.bzl", tsc_bin = "bin")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
-load("//devinfra/js:openapi.bzl", "js_openapi_schema")
+load("//devinfra/js:openapi.bzl", "js_openapi_schema", "js_openapi_zod")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 
 package(default_visibility = ["//visibility:public"])
@@ -11,6 +11,17 @@ package(default_visibility = ["//visibility:public"])
 # Pydantic models as the wire contract). Not checked in; regenerated each build.
 js_openapi_schema(
     name = "schema",
+    generator = "//haku/console:export_schema_bin",
+)
+
+# Runtime Zod validators for the same backend models, generated from the same OpenAPI
+# JSON as :schema above. Used where a widget parses tool-call arguments it doesn't fully
+# trust (google_tool_previews.tsx) — a single source of truth for both the TS type and
+# the runtime shape check, instead of a hand-written `typeof`-narrowing guard that can
+# drift from the Pydantic model.
+js_openapi_zod(
+    name = "schema_zod",
+    out = "api/schema.zod.ts",
     generator = "//haku/console:export_schema_bin",
 )
 
@@ -87,9 +98,11 @@ js_library(
     deps = [
         ":client",
         ":field",
+        ":schema_zod",
         "//:node_modules/@mantine/core",
         "//:node_modules/date-fns",
         "//:node_modules/react",
+        "//:node_modules/zod",
     ],
 )
 
@@ -100,6 +113,7 @@ js_library(
         ":field",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
+        "//:node_modules/zod",
     ],
 )
 
@@ -257,6 +271,7 @@ tsc_bin.tsc_test(
         "tsconfig.json",
         ":main_lib",
         ":schema",
+        ":schema_zod",
         "//:node_modules",
     ],
     tags = ["lint"],

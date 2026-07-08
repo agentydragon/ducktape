@@ -8,47 +8,36 @@
 
 import { Badge, Group, Stack, Text } from "@mantine/core";
 import type { ReactNode } from "react";
+import { z } from "zod";
 
 import { Field } from "./field.tsx";
 
 const KUBECTL_SERVER_ID = "kubectl-passthrough-mcp";
 
-interface ResourcesCreateOrUpdateArgs {
-  resource: string;
-}
+// kubectl-passthrough-mcp is a third-party binary (containers/kubernetes-mcp-server) —
+// there's no backend Pydantic model to generate these from (unlike google_tool_previews.tsx's
+// :schema_zod), so they're hand-authored once, here, against that tool's real input schema
+// (checked via a live `tools/list` call against the deployed server).
+const zResourcesCreateOrUpdateArgs = z.object({
+  resource: z.string(),
+});
 
-interface ResourcesDeleteArgs {
-  apiVersion: string;
-  kind: string;
-  name: string;
-  namespace?: string;
-  gracePeriodSeconds?: number;
-}
+const zResourcesDeleteArgs = z.object({
+  apiVersion: z.string(),
+  kind: z.string(),
+  name: z.string(),
+  namespace: z.string().optional(),
+  gracePeriodSeconds: z.number().optional(),
+});
 
-interface PodsDeleteArgs {
-  name: string;
-  namespace?: string;
-}
+const zPodsDeleteArgs = z.object({
+  name: z.string(),
+  namespace: z.string().optional(),
+});
 
-function asResourcesCreateOrUpdateArgs(args: Record<string, unknown>): ResourcesCreateOrUpdateArgs | null {
-  if (typeof args.resource !== "string") return null;
-  return { resource: args.resource };
-}
-
-function asResourcesDeleteArgs(args: Record<string, unknown>): ResourcesDeleteArgs | null {
-  if (typeof args.apiVersion !== "string" || typeof args.kind !== "string" || typeof args.name !== "string") {
-    return null;
-  }
-  if (args.namespace !== undefined && typeof args.namespace !== "string") return null;
-  if (args.gracePeriodSeconds !== undefined && typeof args.gracePeriodSeconds !== "number") return null;
-  return args as unknown as ResourcesDeleteArgs;
-}
-
-function asPodsDeleteArgs(args: Record<string, unknown>): PodsDeleteArgs | null {
-  if (typeof args.name !== "string") return null;
-  if (args.namespace !== undefined && typeof args.namespace !== "string") return null;
-  return args as unknown as PodsDeleteArgs;
-}
+type ResourcesCreateOrUpdateArgs = z.infer<typeof zResourcesCreateOrUpdateArgs>;
+type ResourcesDeleteArgs = z.infer<typeof zResourcesDeleteArgs>;
+type PodsDeleteArgs = z.infer<typeof zPodsDeleteArgs>;
 
 function ResourcesApplyPreview({ args }: { args: ResourcesCreateOrUpdateArgs }) {
   return (
@@ -129,16 +118,16 @@ export function kubectlToolPreview(
 ): ReactNode | null {
   if (serverId !== KUBECTL_SERVER_ID) return null;
   if (toolName === "resources_create_or_update") {
-    const parsed = asResourcesCreateOrUpdateArgs(args);
-    return parsed && <ResourcesApplyPreview args={parsed} />;
+    const parsed = zResourcesCreateOrUpdateArgs.safeParse(args);
+    return parsed.success && <ResourcesApplyPreview args={parsed.data} />;
   }
   if (toolName === "resources_delete") {
-    const parsed = asResourcesDeleteArgs(args);
-    return parsed && <ResourcesDeletePreview args={parsed} />;
+    const parsed = zResourcesDeleteArgs.safeParse(args);
+    return parsed.success && <ResourcesDeletePreview args={parsed.data} />;
   }
   if (toolName === "pods_delete") {
-    const parsed = asPodsDeleteArgs(args);
-    return parsed && <PodsDeletePreview args={parsed} />;
+    const parsed = zPodsDeleteArgs.safeParse(args);
+    return parsed.success && <PodsDeletePreview args={parsed.data} />;
   }
   return null;
 }

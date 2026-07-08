@@ -170,11 +170,12 @@ async def gmail_thread_previews(
 
 class GoogleToolArgumentExamples(BaseModel):
     """Registers the three MCP tools' argument models in the OpenAPI schema so the
-    frontend imports them as `components["schemas"][...]` (see `client.ts`,
-    `google_tool_previews.tsx`) instead of hand-declaring parallel TypeScript
-    interfaces — the same technique `GmailThreadPreview` above uses. The values are
-    placeholders: nothing reads this endpoint's response, only `export_schema.py`'s
-    static trace of it needs to exist for these types to reach `api/schema.d.ts`."""
+    frontend gets both the runtime Zod validator and the inferred TS type from
+    generated `api/schema.zod.ts` (see `google_tool_previews.tsx`) instead of hand-
+    declaring parallel TypeScript interfaces and shape checks — the same technique
+    `GmailThreadPreview` above uses. The values are placeholders: nothing reads this
+    endpoint's response, only `export_schema.py`'s static trace of it needs to exist
+    for these models to reach the schema."""
 
     create_calendar_event: CreateCalendarEventArgs
     batch_modify_gmail_thread_labels: BatchModifyGmailThreadLabelsArgs

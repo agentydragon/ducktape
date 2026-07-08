@@ -107,15 +107,12 @@ export async function denyToolCall(toolCallId: string, reason?: string): Promise
 
 export type GmailThreadPreview = components["schemas"]["GmailThreadPreview"];
 
-// Google tool argument types, reused by google_tool_previews.tsx from the same
-// generated schema `GmailThreadPreview` above draws from — see
-// `GoogleToolArgumentExamples` in haku/console/tools/google.py for why these reach
-// the OpenAPI schema even though nothing calls that endpoint for data.
-export type EventDateTime = components["schemas"]["EventDateTime"];
-export type CalendarReminder = components["schemas"]["CalendarReminder"];
-export type CreateCalendarEventArgs = components["schemas"]["CreateCalendarEventArgs"];
-export type BatchModifyGmailThreadLabelsArgs = components["schemas"]["BatchModifyGmailThreadLabelsArgs"];
-export type CreateGmailDraftArgs = components["schemas"]["CreateGmailDraftArgs"];
+// The google tool argument types (EventDateTime, CreateCalendarEventArgs, ...) aren't
+// re-exported here: google_tool_previews.tsx gets both the runtime validator and the
+// inferred TS type from :schema_zod (api/schema.zod.ts), generated from the same
+// OpenAPI schema this file's `components["schemas"]` draws from — see
+// `GoogleToolArgumentExamples` in haku/console/tools/google.py for why these models
+// reach that schema even though nothing calls that endpoint for data.
 
 // Live subject/snippet/current-labels lookup for rendering a batch_modify_gmail_thread_labels
 // approval — the tool call's own arguments only carry thread IDs. Threads the operator's
