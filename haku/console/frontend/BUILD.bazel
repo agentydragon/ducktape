@@ -94,14 +94,34 @@ js_library(
 )
 
 js_library(
+    name = "kubectl_tool_previews",
+    srcs = ["kubectl_tool_previews.tsx"],
+    deps = [
+        ":field",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "tool_previews",
+    srcs = ["tool_previews.tsx"],
+    deps = [
+        ":google_tool_previews",
+        ":kubectl_tool_previews",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
     name = "console_panel",
     srcs = ["console_panel.tsx"],
     deps = [
         ":approval_state",
         ":client",
         ":field",
-        ":google_tool_previews",
         ":theme",
+        ":tool_previews",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
     ],
@@ -162,9 +182,11 @@ filegroup(
         "google_tool_previews.tsx",
         "haku_ui_embed.tsx",
         "index.html",
+        "kubectl_tool_previews.tsx",
         "main.tsx",
         "theme.ts",
         "toast.ts",
+        "tool_previews.tsx",
     ],
 )
 

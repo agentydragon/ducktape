@@ -1,0 +1,20 @@
+# Grants agentydragon's own identity cluster-admin when authenticated through
+# kubectl-passthrough-mcp (username prefix oidc-ksbx:, distinct from Headlamp's
+# oidc: prefix — see cluster/terraform/main/infrastructure.tf's AuthenticationConfiguration).
+# Mirrors cluster/k8s/headlamp/app/clusterrolebinding.yaml's oidc-agentydragon-admin,
+# scoped to this issuer instead. Consumed by haku-console's operator_oauth flow for the
+# kubectl-passthrough-mcp MCP server entry: Haku proposes a call, agentydragon approves in
+# haku-console's trusted UI, and the call executes with agentydragon's own passthrough
+# identity — the approval click is the only gate, by design.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oidc-ksbx-agentydragon-admin
+subjects:
+  - kind: User
+    name: "oidc-ksbx:agentydragon"
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io

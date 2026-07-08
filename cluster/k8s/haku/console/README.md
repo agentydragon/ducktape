@@ -36,3 +36,23 @@ since one server consumes all of it, and carrying the read scopes too means a fu
 haku-console read feature doesn't need a second consent round-trip. Deliberately its own
 provider (not reusing `google` or `gmail_modify`) so no other consumer's token is ever
 upgraded to this scope set. See `haku/docs/security.md` for the enforcement-inventory entry.
+
+## One-time bootstrap: `kubectl-passthrough-mcp` (cluster-admin, operator-linked)
+
+The `kubectl-passthrough-mcp` MCP server entry (config.yaml — `pods_*`, `resources_*`,
+`nodes_*`, `events_list`, `configuration_view`) uses `operator_oauth`, the same
+per-operator browser-linked mechanism as `grocy-sf`/`tana-rw`: the operator connects once
+from the console's Access tab (⚙ → Access → Connect next to `kubectl-passthrough-mcp`),
+which runs Authentik's PKCE flow against `kubectl-passthrough-mcp`'s own OAuth2
+application and stores the association in the console's Postgres database — no static
+token, no secret to mount.
+
+Unlike `grocy-sf`/`tana-rw`, this server forwards the connecting operator's own token
+straight to kube-apiserver (`cluster_auth_mode = passthrough` in
+`agents/kubectl-passthrough-mcp/`) rather than acting through a scoped service credential
+of its own — the operator's real permissions apply, via the
+`oidc-ksbx-agentydragon-admin` `ClusterRoleBinding`
+(`agents/kubectl-passthrough-mcp/app/clusterrolebinding-agentydragon-admin.yaml`, cluster-admin).
+So every tool call here runs with full cluster-admin once approved; the operator-approval
+click in trusted console chrome is the only gate. See `haku/docs/security.md` for the
+enforcement-inventory entry.

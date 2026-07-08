@@ -6,3 +6,4 @@ resources:
   - deployment.yaml
   - service.yaml
   - httproute.yaml
+  - clusterrolebinding-agentydragon-admin.yaml

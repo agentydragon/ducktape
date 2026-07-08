@@ -9,6 +9,18 @@ mcp:
       server_url: https://tana-mcp-facade.allegedly.works/mcp
       operator_oauth:
         client_name: Haku Console
+    # kubectl-passthrough-mcp forwards the approving operator's own OAuth token straight
+    # to kube-apiserver (cluster_auth_mode=passthrough) — no group override, no scoped
+    # credential of its own. RBAC is agentydragon's real cluster-admin binding
+    # (oidc-ksbx-agentydragon-admin, cluster/k8s/agents/kubectl-passthrough-mcp/app/).
+    # Every kubectl-shaped tool (pods_*, resources_*, nodes_*, events_list,
+    # configuration_view — see cluster/k8s/agents/kubectl-passthrough-mcp/) runs with full
+    # cluster-admin once approved; the approval click in trusted console chrome is the
+    # only gate, by design — see haku/docs/security.md.
+    - id: kubectl-passthrough-mcp
+      server_url: https://kubectl-passthrough-mcp.allegedly.works/mcp
+      operator_oauth:
+        client_name: Haku Console
     # Implemented in-process (haku/console/tools/google.py) as a real FastMCP server
     # attached via an in-memory transport, not a remote MCP server — no server_url/
     # operator_oauth. Holds the Airlock-issued haku_console_google token

@@ -14,8 +14,8 @@ import {
 } from "./approval_state.ts";
 import type { McpOperatorAuthStatus, PendingApproval, ToolCallRecord } from "./client.ts";
 import { Field } from "./field.tsx";
-import { googleToolPreview } from "./google_tool_previews.tsx";
 import { ACTION_COLOR } from "./theme.ts";
+import { toolPreview } from "./tool_previews.tsx";
 
 export type ShellDrawerTab = "approvals" | "access";
 
@@ -138,7 +138,7 @@ function ToolArgumentsField({
   args: Record<string, unknown>;
   argumentsJson: string;
 }) {
-  const nice = googleToolPreview(serverId, toolName, args);
+  const nice = toolPreview(serverId, toolName, args);
   return <Field label="Arguments">{nice ?? <pre className="haku-shell-json">{argumentsJson}</pre>}</Field>;
 }
 
