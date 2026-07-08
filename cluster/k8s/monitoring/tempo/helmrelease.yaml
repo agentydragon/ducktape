@@ -32,6 +32,27 @@ spec:
             bucket: tempo
             insecure: true
 
+      # Metrics-generator: powers TraceQL metrics queries (rate(), count_over_time(), etc.)
+      # in Grafana's Explore Traces app. Without this, queries over "recent" (not yet
+      # flushed to object storage) data fail with:
+      #   error finding generators in Querier.queryRangeRecent: error finding generators: empty ring
+      # because there are no metrics-generator instances registered in the ring.
+      metricsGenerator:
+        enabled: true
+        remoteWriteUrl: "http://mimir-gateway.monitoring.svc.cluster.local/api/v1/push"
+        processor:
+          local_blocks: {}
+          service_graphs: {}
+          span_metrics: {}
+
+      overrides:
+        defaults:
+          metrics_generator:
+            processors:
+              - local-blocks
+              - service-graphs
+              - span-metrics
+
       extraEnvFrom:
         - secretRef:
             name: tempo-s3-credentials
