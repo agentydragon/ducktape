@@ -194,7 +194,7 @@ resource "forgejo_repository_action_secret" "registry_push" {
 # once now; bump the marker if the secret ever needs an explicit declarative
 # rewrite again.
 resource "terraform_data" "registry_push_secret_refresh" {
-  triggers_replace = ["2026-07-06-haku-registry-push-token-resync"]
+  triggers_replace = ["2026-07-08-haku-registry-push-token-resync"]
 }
 
 # Registration token for the contained Forgejo Actions runner (cluster/k8s/haku-ci),
