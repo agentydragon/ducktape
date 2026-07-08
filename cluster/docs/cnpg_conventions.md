@@ -57,23 +57,23 @@ pinned DBs or vice versa. This prevents cross-site write latency.
 
 ## Current Compliance
 
-| Cluster                | Profile        | Compliant |
-| ---------------------- | -------------- | --------- |
-| airlock-db             | OVH-HA         | Yes       |
-| authentik-db-ovh       | OVH-HA         | Yes       |
-| gatus-db               | OVH-HA         | Yes       |
-| grafana-db-ovh         | OVH-HA         | Yes       |
-| tofu-state-db-ovh      | OVH-HA         | Yes       |
-| attic-db               | OVH-HA         | Yes       |
-| seaweedfs-filer-db-ssd | OVH-HA         | Yes       |
-| atuin-db               | OVH-HA         | Yes       |
-| forgejo-db             | OVH-HA         | Yes       |
-| langfuse-db            | OVH-HA         | Yes       |
-| inventree-db           | Proxmox-single | Yes       |
-| harbor-db              | OVH single-instance (interim) | Exception* |
-| props-db               | OVH-HA         | Yes       |
-| matrix-db              | Proxmox-single | Yes       |
-| tandoor-db             | Proxmox-single | Yes       |
+| Cluster                | Profile                       | Compliant   |
+| ---------------------- | ----------------------------- | ----------- |
+| airlock-db             | OVH-HA                        | Yes         |
+| authentik-db-ovh       | OVH-HA                        | Yes         |
+| gatus-db               | OVH-HA                        | Yes         |
+| grafana-db-ovh         | OVH-HA                        | Yes         |
+| tofu-state-db-ovh      | OVH-HA                        | Yes         |
+| attic-db               | OVH-HA                        | Yes         |
+| seaweedfs-filer-db-ssd | OVH-HA                        | Yes         |
+| atuin-db               | OVH-HA                        | Yes         |
+| forgejo-db             | OVH-HA                        | Yes         |
+| langfuse-db            | OVH-HA                        | Yes         |
+| inventree-db           | Proxmox-single                | Yes         |
+| harbor-db              | OVH single-instance (interim) | Exception\* |
+| props-db               | OVH-HA                        | Yes         |
+| matrix-db              | Proxmox-single                | Yes         |
+| tandoor-db             | Proxmox-single                | Yes         |
 
 \* `harbor-db` moved off Proxmox 2026-06-03 (`region: hil` / `local-path-ovh`) so
 Harbor's DB survives Proxmox downtime, but it's still a single instance rather than

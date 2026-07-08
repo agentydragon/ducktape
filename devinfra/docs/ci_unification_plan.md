@@ -15,7 +15,7 @@ Conflict markers, YAML/TOML syntax, `terraform_fmt`, ansible playbook syntax, pr
 
 ### What moved to Bazel
 
-Python linting (ruff, mypy), JS/TS (eslint, svelte-check), Rust (clippy, rustfmt), Terraform validation (rules_tf with hermetic provider mirror), k8s structural validation (kustomize builds, Flux dependency checks, etc. as the `//cluster/validation:test_*` py_test suite). Current tool wiring: see `devinfra/docs/linting.md`.
+Python linting (ruff, mypy), JS/TS (eslint, svelte-check), Rust (clippy, rustfmt), Terraform validation (rules*tf with hermetic provider mirror), k8s structural validation (kustomize builds, Flux dependency checks, etc. as the `//cluster/validation:test*\*`py_test suite). Current tool wiring: see`devinfra/docs/linting.md`.
 
 ## External tool installation
 

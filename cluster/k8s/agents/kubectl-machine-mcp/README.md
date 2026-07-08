@@ -13,9 +13,9 @@ credentials (its ServiceAccount has no RBAC bindings).
 
 ## Layout
 
-| Path         | Role                                                                 |
-| ------------ | --------------------------------------------------------------------- |
-| `namespace/` | `kubectl-machine-mcp` Namespace (own Flux kustomization, applied first) |
+| Path         | Role                                                                              |
+| ------------ | --------------------------------------------------------------------------------- |
+| `namespace/` | `kubectl-machine-mcp` Namespace (own Flux kustomization, applied first)           |
 | `app/`       | Deployment, Service, HTTPRoute, ServiceAccount, and the public config `ConfigMap` |
 
 ## How it works

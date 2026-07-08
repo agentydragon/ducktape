@@ -4,10 +4,10 @@ Haku on Anthropic **Managed Agents**: the agent loop runs server-side at
 Anthropic; what differs is **where the sandbox (tool execution) runs**. Two
 variants, by sandbox location (Anthropic's own vocabulary):
 
-| Dir                                               | Sandbox         | Status                   |
-| ------------------------------------------------- | --------------- | ------------------------ |
-| [`self_hosted/`](self_hosted/README.md)           | your cluster    | built (Runtime B)        |
-| [`anthropic_hosted/`](anthropic_hosted/README.md) | Anthropic cloud | **PARKED** (2026-07-04)  |
+| Dir                                               | Sandbox         | Status                  |
+| ------------------------------------------------- | --------------- | ----------------------- |
+| [`self_hosted/`](self_hosted/README.md)           | your cluster    | built (Runtime B)       |
+| [`anthropic_hosted/`](anthropic_hosted/README.md) | Anthropic cloud | **PARKED** (2026-07-04) |
 
 - **`self_hosted/`** — `ant beta:worker poll` runs a worker in `haku-sandbox`;
   tools execute there, behind our RBAC + egress perimeter. Brought up 2026-06;

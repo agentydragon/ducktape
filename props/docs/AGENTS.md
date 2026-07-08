@@ -27,10 +27,10 @@ Let included docs handle their own tables.
 
 Templates use these helpers (defined in `props/agents/runtime.py`):
 
-| Pattern                                | Purpose                                                                       |
-| -------------------------------------- | ------------------------------------------------------------------------------ |
-| `${describe_relation("name")}`         | Outputs table schema from SQLAlchemy metadata                                |
-| `${include_doc("package/path")}`       | Includes another template from Python package resources                      |
+| Pattern                               | Purpose                                                                       |
+| ------------------------------------- | ----------------------------------------------------------------------------- |
+| `${describe_relation("name")}`        | Outputs table schema from SQLAlchemy metadata                                 |
+| `${include_doc("package/path")}`      | Includes another template from Python package resources                       |
 | `${source_inspection([(mod, desc)])}` | Renders a "Source Code Inspection" section listing modules the agent can read |
 
 ## Write for Agents

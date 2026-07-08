@@ -253,12 +253,12 @@ These don't conflict with Pop Shell but are worth knowing about:
 
 ## Configuration Source Files
 
-| File                                             | What it configures                                                       |
-| ------------------------------------------------ | ------------------------------------------------------------------------ |
-| `nix/home/home.nix`                              | `programs.gnome-shell.extensions` (shared), Pop Shell settings, terminal |
-| `nix/home/modules/solarized.nix`                 | Night Theme Switcher extension + dconf settings                          |
-| `nix/home/modules/gnome-shell-keybindings.nix`   | Workspace nav keybindings, clears Pop Shell workspace/monitor keys      |
-| `nix/home/modules/gnome-custom-keybindings.nix`  | Custom keybinding framework                                              |
-| `nix/home/modules/flameshot-screenshots.nix`     | Print Screen -> Flameshot                                                |
-| `nix/home/hosts/rugged.nix`, `wyrm2.nix`         | Appindicator extension (NixOS hosts)                                     |
-| Pop Shell gschema XML                            | Default keybindings for all Pop Shell actions                            |
+| File                                            | What it configures                                                       |
+| ----------------------------------------------- | ------------------------------------------------------------------------ |
+| `nix/home/home.nix`                             | `programs.gnome-shell.extensions` (shared), Pop Shell settings, terminal |
+| `nix/home/modules/solarized.nix`                | Night Theme Switcher extension + dconf settings                          |
+| `nix/home/modules/gnome-shell-keybindings.nix`  | Workspace nav keybindings, clears Pop Shell workspace/monitor keys       |
+| `nix/home/modules/gnome-custom-keybindings.nix` | Custom keybinding framework                                              |
+| `nix/home/modules/flameshot-screenshots.nix`    | Print Screen -> Flameshot                                                |
+| `nix/home/hosts/rugged.nix`, `wyrm2.nix`        | Appindicator extension (NixOS hosts)                                     |
+| Pop Shell gschema XML                           | Default keybindings for all Pop Shell actions                            |
