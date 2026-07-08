@@ -3,6 +3,12 @@
 # working tree (see sync/sync.sh for why in-place rather than git-sync); Fava reads
 # /ledger/main.beancount and auto-reloads when the file changes. Access is gated by
 # authentik (agentydragon-only) via the proxy outpost -- Fava has no native auth.
+#
+# 2 replicas + RollingUpdate: safe because /ledger is a per-pod emptyDir and
+# sync.sh only ever reads (fetch + reset --hard, never push) — each replica is an
+# independent read-only mirror with no shared state, so there's no write hazard to
+# coordinate across pods. Replicas can be briefly out of sync with each other by up
+# to SYNC_PERIOD (300s); self-heals on the next sync tick.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -11,9 +17,12 @@ metadata:
   labels:
     app.kubernetes.io/name: fava
 spec:
-  replicas: 1
+  replicas: 2
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: fava
