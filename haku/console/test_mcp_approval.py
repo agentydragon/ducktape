@@ -600,6 +600,7 @@ def test_approval_denial_is_terminal_and_does_not_execute(
     tool_call = resp.json()["tool_call"]
     assert tool_call["status"] == "denied"
     assert tool_call["result"] is None
+    assert tool_call["denial_reason"] == "not today"
 
 
 def test_all_v1_tool_calls_require_console_approval(
@@ -742,7 +743,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(
     finally:
         engine.dispose()
 
-    assert version == "0002"
+    assert version == "0003"
     assert {"mcp_operator_oauth_associations", "mcp_operator_oauth_flows"} <= tables
     assert {
         "tool_call_id",
@@ -757,6 +758,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(
         "title",
         "result_json",
         "error",
+        "denial_reason",
     } == columns
     assert row["server_id"] == "smoke"
     assert row["tool_name"] == "echo"

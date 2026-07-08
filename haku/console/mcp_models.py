@@ -50,6 +50,7 @@ class ToolCallRecord(BaseModel):
     title: str | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
+    denial_reason: str | None = None
 
 
 class ToolCallEvent(BaseModel):

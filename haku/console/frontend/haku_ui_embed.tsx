@@ -472,10 +472,10 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
       });
   }
 
-  function denyToolApproval(approval: PendingApproval) {
+  function denyToolApproval(approval: PendingApproval, reason?: string) {
     const approvalId = toolApprovalQueueId(approval.tool_call_id);
     setDeciding(approvalId, true);
-    void denyToolCall(approval.tool_call_id, "denied from console").then(
+    void denyToolCall(approval.tool_call_id, reason || "denied from console").then(
       (record) => {
         finishToolDecision(record);
         toastSuccess("Tool call denied", approval.title ?? `${approval.server_id}: ${approval.tool_name}`);

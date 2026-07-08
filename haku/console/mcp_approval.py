@@ -310,7 +310,7 @@ class PostgresToolCallLedger:
         return self._transition_pending_approval(tool_call_id, ToolCallStatus.RUNNING)
 
     def deny(self, tool_call_id: str, reason: str | None) -> tuple[ToolCallRecord, ToolCallEvent]:
-        return self._transition_pending_approval(tool_call_id, ToolCallStatus.DENIED)
+        return self._transition_pending_approval(tool_call_id, ToolCallStatus.DENIED, denial_reason=reason)
 
     def finish(
         self, tool_call_id: str, *, result: dict[str, Any] | None, error: str | None
@@ -329,7 +329,7 @@ class PostgresToolCallLedger:
             return updated, event
 
     def _transition_pending_approval(
-        self, tool_call_id: str, status: ToolCallStatus
+        self, tool_call_id: str, status: ToolCallStatus, *, denial_reason: str | None = None
     ) -> tuple[ToolCallRecord, ToolCallEvent]:
         with self._sessions.begin() as session:
             row = self._row_by_tool_call_id(session, tool_call_id)
@@ -340,6 +340,7 @@ class PostgresToolCallLedger:
                 )
             row.status = status
             row.updated_at = dt.datetime.now(dt.UTC)
+            row.denial_reason = denial_reason
             updated = row.to_record()
             event = self._insert_event(session, ToolCallEventType.TOOL_CALL_UPDATED, updated)
             return updated, event

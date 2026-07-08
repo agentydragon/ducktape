@@ -1,4 +1,4 @@
-import { Badge, Button, Group, SegmentedControl, Stack, Text } from "@mantine/core";
+import { Badge, Button, Group, SegmentedControl, Stack, Text, Textarea } from "@mantine/core";
 import type { KeyboardEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -33,7 +33,7 @@ export interface ShellDrawerProps {
   onSelectApproval: (id: string) => void;
   onSelectRecentToolCall: (toolCallId: string) => void;
   onApproveTool: (approval: PendingApproval) => void;
-  onDenyTool: (approval: PendingApproval) => void;
+  onDenyTool: (approval: PendingApproval, reason?: string) => void;
   onApproveGeolocation: (approval: GeolocationApproval) => void;
   onDenyGeolocation: (approval: GeolocationApproval) => void;
   onDismissRecentToolCall: (toolCallId: string) => void;
@@ -151,10 +151,14 @@ function ToolApprovalDetail({
   approval: PendingApproval;
   deciding: boolean;
   onApprove: () => void;
-  onDeny: () => void;
+  onDeny: (reason?: string) => void;
 }) {
   const fields = approvalDisplayFields(approval);
   const armed = useArmed(`detail:${approval.tool_call_id}`);
+  const [denyReason, setDenyReason] = useState("");
+  useEffect(() => {
+    setDenyReason("");
+  }, [approval.tool_call_id]);
   return (
     <section className="haku-shell-card haku-shell-card-selected">
       <Stack gap="sm">
@@ -195,8 +199,25 @@ function ToolApprovalDetail({
             <code>{fields.toolCallId}</code>
           </details>
         </dl>
+        <Textarea
+          size="xs"
+          label="Denial reason (optional)"
+          placeholder="Why are you denying this?"
+          autosize
+          minRows={1}
+          maxRows={4}
+          disabled={deciding}
+          value={denyReason}
+          onChange={(e) => setDenyReason(e.currentTarget.value)}
+        />
         <Group justify="space-between">
-          <Button size="sm" variant="light" color="red" disabled={deciding || !armed} onClick={onDeny}>
+          <Button
+            size="sm"
+            variant="light"
+            color="red"
+            disabled={deciding || !armed}
+            onClick={() => onDeny(denyReason.trim() || undefined)}
+          >
             Deny
           </Button>
           <Button size="sm" color={ACTION_COLOR} disabled={deciding || !armed} onClick={onApprove}>
@@ -432,6 +453,11 @@ function RecentToolCallCard({
                 {recent.record.error}
               </Text>
             )}
+            {fields.denialReason && (
+              <Text size="xs" c="dimmed">
+                Denied: {fields.denialReason}
+              </Text>
+            )}
           </Stack>
           <Badge color={statusColor(recent.record.status)} variant="light">
             {terminalStatusLabel(recent.record.status)}
@@ -486,6 +512,7 @@ function RecentToolCallDetail({ recent, nowMs }: { recent: RecentToolCall; nowMs
               {fields.toolName}
             </Field>
           </div>
+          {fields.denialReason && <Field label="Denial reason">{fields.denialReason}</Field>}
           <ToolArgumentsField
             serverId={fields.serverId}
             toolName={fields.toolName}
@@ -564,7 +591,7 @@ function ApprovalsTab({
           approval={selectedItem.approval}
           deciding={deciding.has(selectedItem.id)}
           onApprove={() => onApproveTool(selectedItem.approval)}
-          onDeny={() => onDenyTool(selectedItem.approval)}
+          onDeny={(reason) => onDenyTool(selectedItem.approval, reason)}
         />
       )}
       {selectedItem?.kind === "geolocation" && (

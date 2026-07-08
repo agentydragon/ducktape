@@ -35,6 +35,7 @@ class McpToolCall(Base):
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
     result_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    denial_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     @classmethod
     def from_record(cls, record: ToolCallRecord) -> McpToolCall:
@@ -51,6 +52,7 @@ class McpToolCall(Base):
             title=record.title,
             result_json=record.result,
             error=record.error,
+            denial_reason=record.denial_reason,
         )
 
     def to_record(self) -> ToolCallRecord:
@@ -67,6 +69,7 @@ class McpToolCall(Base):
             title=self.title,
             result=self.result_json,
             error=self.error,
+            denial_reason=self.denial_reason,
         )
 
 
