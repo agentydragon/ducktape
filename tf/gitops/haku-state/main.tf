@@ -188,13 +188,17 @@ resource "forgejo_repository_action_secret" "registry_push" {
   }
 }
 
-# The Forgejo provider cannot read back Actions secret values, so opaque value
-# drift can look like "NoDrift" to Terraform while CI still receives stale auth.
-# This controller-owned refresh marker forces the provider to rewrite the secret
-# once now; bump the marker if the secret ever needs an explicit declarative
-# rewrite again.
+# The Forgejo provider cannot read Actions-secret values back, so the secret is
+# effectively write-only: out-of-band drift (a write that silently failed, a
+# restored Forgejo DB) reads as NoDrift on every future plan while CI receives
+# stale auth (bit twice: 2026-07-06 and 2026-07-08). Since drift cannot be
+# *detected*, re-assert instead of marking: this terraform_data replaces itself
+# whenever the plan's calendar date changes, cascading via replace_triggered_by
+# into a rewrite of the secret from random_password.haku — bounding any silent
+# drift to <24h with no manual marker to remember to bump. Password rotations
+# still propagate immediately via replace_triggered_by on random_password.haku.
 resource "terraform_data" "registry_push_secret_refresh" {
-  triggers_replace = ["2026-07-08-haku-registry-push-token-resync"]
+  triggers_replace = [formatdate("YYYY-MM-DD", plantimestamp())]
 }
 
 # Registration token for the contained Forgejo Actions runner (cluster/k8s/haku-ci),
