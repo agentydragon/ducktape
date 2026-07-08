@@ -32,6 +32,47 @@ environment-neutral `haku/run.md`.
   upgrade (`cluster/k8s/kube-api-proxy`); they were briefly broken until that was
   added. Clean up pods after (20-pod quota).
 
+## Managed/task-runner sessions: no hook daemon at all
+
+The above describes the **interactive web-home** profile, where a `claude-hook` daemon runs
+`bootstrap.sh` and the rest of `profile.yaml` for you. A **managed "execute Haku run.md" task
+session** (no persistent home — the kind that runs this file as a one-shot task) is a
+different, also-supported harness: it comes up with **no daemon at all** — no
+`/tmp/claude-hd/*` socket, an empty `~/.claude/session-env/<id>/`, `$CLAUDE_ENV_FILE` unset —
+so none of `profile.yaml`'s `env_exports` or `background_commands` ever ran. Detect this before
+assuming bootstrap will complete on its own: `ps aux | grep 'claude-hook daemon'` finds nothing,
+and there's no `Task [bootstrap] exited` message to wait for.
+
+Recover manually, in order:
+
+1. **Load the Nix devshell yourself** — a managed session's `PATH` doesn't have Nix on it
+   either (`setup.sh`/`direnv` never ran). `/etc/profile.d/nix.sh` exists but isn't sourced
+   into the tool's shell, so add it to `PATH` directly and run everything else through `nix
+develop` (per the repo's `AGENTS.md` guidance for a missing devshell):
+   ```bash
+   export PATH="/nix/var/nix/profiles/default/bin:$PATH"
+   ```
+   Only `sops`/`kubectl`/`bazelisk`/etc. from `nix develop` matter for bootstrap; `tea` /
+   `himalaya` / `fastmcp` come from the separate `.#agent-haku` closure (`nix shell
+.#agent-haku`, slow — minutes — the first time), which `setup.sh` also normally installs.
+   If you skip it, `tea whoami` fails; fall back to raw REST per `haku/base/sources/` and
+   **surface the gap** as an env-breakage finding rather than silently skipping a source.
+2. **Run `bootstrap.sh` directly** — it's self-sufficient in this harness (defaults
+   `CLAUDE_PROJECT_DIR` from its own path, and `K8S_JWT_SOPS_PATH`/`K8S_USER`/`K8S_NAMESPACE`
+   to the `haku` identity, when unset):
+   ```bash
+   cd "$CLAUDE_PROJECT_DIR"  # or wherever ducktape is checked out, e.g. /home/user/ducktape
+   nix develop --command bash haku/runtime/claude_web_env/bootstrap.sh
+   ```
+   This materializes `~/.kube/config` (group `haku`, `haku-sandbox` namespace), `~/.netrc`, and
+   clones `~/haku-state` — synchronously, not backgrounded, so there's no "wait for the
+   background command" step here; proceed once it prints `haku ready: …`.
+
+This harness also comes with claude.ai-connector MCP servers wired directly (Gmail, Calendar,
+Drive, Tana, Plaid Postgres, Grocy, GitHub) — usable instead of the raw-REST/`fastmcp` recipes
+in `haku/base/sources/`, which remain the fallback. A few connectors need one-time interactive
+OAuth before they work; if one errors, don't retry it — note it and move on.
+
 ## First: wait for bootstrap to finish (avoid the false "first run")
 
 `bootstrap.sh` runs as a **background** profile command, so when your session

@@ -23,6 +23,19 @@
 #      on the 8th run).
 set -euo pipefail
 
+# Managed/task-runner sessions ("execute haku run.md" task sessions, as opposed to an
+# interactive web-home session) don't run the claude-hook daemon, so profile.yaml's
+# env_exports never apply and this script ends up invoked directly with none of its
+# expected env. Default everything it needs so it's self-sufficient in that harness;
+# a real web-home session's profile-provided values still win (haku-state items
+# haku-bootstrap-claude-project-dir-unbound-2026,
+# haku-session-start-hook-absent-managed-run-2026-07).
+: "${CLAUDE_PROJECT_DIR:=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
+: "${K8S_JWT_SOPS_PATH:=secrets/haku-k8s-jwt.yaml}"
+: "${K8S_USER:=haku}"
+: "${K8S_NAMESPACE:=haku-sandbox}"
+export CLAUDE_PROJECT_DIR K8S_JWT_SOPS_PATH K8S_USER K8S_NAMESPACE
+
 state_dir="$HOME/haku-state"
 ns=haku-sandbox
 
