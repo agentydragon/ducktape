@@ -22,9 +22,6 @@ Each follows the same pattern: a read-only credential or filter facade reachable
 from `haku-sandbox`, plus a source guide in `base/sources/` (and any reusable
 technique as a pass in haku-state's `procedures/`).
 
-- **CPAP data** — read-only access to daily summaries / AHI / compliance (see
-  `cpap/`; WebDAV + EDF). Land scoped read creds as a `haku-sandbox` secret and
-  add a `cpap` playbook (compliance dips, AHI spikes, mask-leak trends).
 - **Tana workspace** — read-only Tana access. **Built + wired:** the `tana-mcp-ro`
   facade (in `tana-mcp`) fronts the Tana MCP, exposes only read tools (default-deny
   allowlist via `MCP_FACADE_TOOLS__ALLOW`), injects the Tana PAT server-side
