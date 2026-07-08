@@ -151,7 +151,13 @@ http_archive(
     name = "aw_server_rust",
     build_file = "//:aw-server-rust.BUILD.bazel",
     patch_args = ["-p1"],
-    patches = ["//patches:aw-server-rust-rustls.patch"],
+    patches = [
+        "//patches:aw-server-rust-rustls.patch",
+        # Serve the modern aw-webui (Vite + vite-plugin-pwa) output: /assets/,
+        # /manifest.webmanifest, /registerSW.js, /sw.js. Upstream's routes only
+        # cover the webpack-era /css, /js, /static, /manifest.json layout.
+        "//patches:aw-server-rust-vite-assets-routes.patch",
+    ],
     sha256 = "7e4e0d61f3eecd272f4f7a2985f9204327e554d126d721f4db70e8e20a106474",
     strip_prefix = "aw-server-rust-" + _AW_SERVER_RUST_COMMIT,
     urls = ["https://github.com/ActivityWatch/aw-server-rust/archive/" + _AW_SERVER_RUST_COMMIT + ".tar.gz"],
