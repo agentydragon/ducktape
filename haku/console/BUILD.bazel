@@ -107,6 +107,7 @@ py_library(
         ":mcp_approval",
         ":models",
         "//haku/console/tools:google",
+        "//haku/console/tools:grocy",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
         "@pypi//fastmcp",

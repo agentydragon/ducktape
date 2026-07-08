@@ -27,7 +27,7 @@ from fastmcp import FastMCP
 from haku.console import capabilities, mcp_approval
 from haku.console.config import Settings
 from haku.console.models import ConfigResponse
-from haku.console.tools import google as google_tools
+from haku.console.tools import google as google_tools, grocy as grocy_tools
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +122,7 @@ def create_app(settings: Settings) -> FastAPI:
     app.include_router(capabilities.router)
     app.include_router(mcp_approval.router)
     app.include_router(google_tools.router)
+    app.include_router(grocy_tools.router)
 
     # Optional direct local/dev fallback. Production serves the SPA from the
     # haku-console-static nginx image and leaves static_dir unset on this process.

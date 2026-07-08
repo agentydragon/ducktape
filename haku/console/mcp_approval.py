@@ -120,36 +120,36 @@ class ConsoleConfigFile(BaseModel):
     mcp: ConsoleMcpConfig = Field(default_factory=ConsoleMcpConfig)
 
 
-class AliveToolMetadata(BaseModel):
+class ToolMetadataBase(BaseModel):
+    name: str
+    description: str | None = None
+    input_schema: dict[str, Any] = Field(default_factory=dict)
+
+
+class AliveToolMetadata(ToolMetadataBase):
     status: Literal["alive"] = "alive"
-    name: str
-    description: str | None = None
-    input_schema: dict[str, Any] = Field(default_factory=dict)
 
 
-class DegradedToolMetadata(BaseModel):
+class DegradedToolMetadata(ToolMetadataBase):
     status: Literal["degraded"] = "degraded"
-    name: str
-    description: str | None = None
-    input_schema: dict[str, Any] = Field(default_factory=dict)
     degraded_reason: str
 
 
 type ToolMetadata = Annotated[AliveToolMetadata | DegradedToolMetadata, Field(discriminator="status")]
 
 
-class AliveServerMetadata(BaseModel):
+class ServerMetadataBase(BaseModel):
+    server_id: str
+    title: str
+    tools: list[ToolMetadata] = Field(default_factory=list)
+
+
+class AliveServerMetadata(ServerMetadataBase):
     status: Literal["alive"] = "alive"
-    server_id: str
-    title: str
-    tools: list[ToolMetadata] = Field(default_factory=list)
 
 
-class DegradedServerMetadata(BaseModel):
+class DegradedServerMetadata(ServerMetadataBase):
     status: Literal["degraded"] = "degraded"
-    server_id: str
-    title: str
-    tools: list[ToolMetadata] = Field(default_factory=list)
     degraded_reason: str
 
 
@@ -1096,6 +1096,22 @@ async def _execution_auth(
     return _credential_token(server)
 
 
+async def operator_authenticated_client(
+    server_id: str, request: Request, settings: Settings, oauth_store: McpOperatorOAuthStoreProtocol
+) -> Client:
+    """Open a `fastmcp` client for `server_id`, authenticated exactly as an approved tool call
+    for that server would be (the requesting operator's own `operator_oauth` token, or the
+    server's configured bearer). The one public seam other `haku.console.tools.*` modules use
+    to reach a remote MCP server's own read tools for preview/reference-data lookups (see
+    `haku.console.tools.grocy`) — narrow and read-only by construction of what callers do with
+    the returned client; it grants no more than a real approval already would, and is not a
+    way to bypass the approval queue for mutating calls.
+    """
+    server = _server_entry(settings, server_id)
+    auth_token = await _execution_auth(server, _operator_principal(request), oauth_store)
+    return Client(_transport(server, {}), auth=auth_token)
+
+
 async def _maybe_execute(
     record: ToolCallRecord,
     server: McpServerEntry,
@@ -1235,59 +1251,6 @@ async def mcp_operator_auth_statuses(
     request: Request, settings: SettingsDep, oauth_store: OAuthStoreDep
 ) -> McpOperatorAuthStatusResponse:
     return oauth_store.list_statuses(servers=_load_servers(settings), operator_principal=_operator_principal(request))
-
-
-class GrocyReferenceItem(BaseModel):
-    id: int
-    name: str
-
-
-class GrocyReferenceResponse(BaseModel):
-    products: list[GrocyReferenceItem]
-    locations: list[GrocyReferenceItem]
-    quantity_units: list[GrocyReferenceItem]
-    product_groups: list[GrocyReferenceItem]
-
-
-_GROCY_SF_SERVER_ID = "grocy-sf"
-
-
-def _grocy_reference_items(result_data: Any) -> list[GrocyReferenceItem]:
-    """Unwrap a grocy-sf `*_list` tool's structured result into `{id, name}` rows.
-
-    FastMCP wraps a bare-list return value as `{"result": [...]}` in structured content;
-    `Client.call_tool(...).data` unwraps that automatically when it has the tool's output
-    schema, but degrade to reading `.result` directly if it doesn't for some reason,
-    rather than crashing the whole reference lookup over one server's response shape.
-    """
-    rows = result_data if isinstance(result_data, list) else result_data["result"]
-    return [GrocyReferenceItem(id=int(row["id"]), name=str(row["name"])) for row in rows]
-
-
-@router.get("/api/grocy-sf/reference")
-async def grocy_sf_reference(
-    request: Request, settings: SettingsDep, oauth_store: OAuthStoreDep
-) -> GrocyReferenceResponse:
-    """Read-only product/location/quantity-unit `{id, name}` lookups for rendering pending
-    grocy-sf tool-call previews (`stock_add` / `stock_consume` / `products_create` accept
-    either a name or a numeric ID) — deliberately narrow: calls only grocy-sf's own
-    `products_list` / `locations_list` / `quantity_units_list` read tools, never a generic
-    "call any tool" escape hatch, which would bypass the approval queue entirely. Uses the
-    requesting operator's own linked token — the same one their approvals execute with.
-    """
-    server = _server_entry(settings, _GROCY_SF_SERVER_ID)
-    auth_token = await _execution_auth(server, _operator_principal(request), oauth_store)
-    async with Client(_transport(server, {}), auth=auth_token) as client:
-        products = await client.call_tool("products_list", {})
-        locations = await client.call_tool("locations_list", {})
-        quantity_units = await client.call_tool("quantity_units_list", {})
-        product_groups = await client.call_tool("product_groups_list", {})
-    return GrocyReferenceResponse(
-        products=_grocy_reference_items(products.data),
-        locations=_grocy_reference_items(locations.data),
-        quantity_units=_grocy_reference_items(quantity_units.data),
-        product_groups=_grocy_reference_items(product_groups.data),
-    )
 
 
 @router.post("/api/mcp/operator-auth/{server_id}/start")
