@@ -4,7 +4,9 @@ import type { components, paths } from "./api/schema";
 
 // Same-origin typed client (nginx serves this bundle and proxies /api). Types are
 // generated from the backend's OpenAPI schema: //haku/console/frontend:schema.
-const api = createClient<paths>({ baseUrl: "" });
+// Exported (not module-private) so per-integration client files (google_client.ts,
+// grocy_client.ts) share this one instance instead of each creating their own.
+export const api = createClient<paths>({ baseUrl: "" });
 
 export type ConfigResponse = components["schemas"]["ConfigResponse"];
 export type LaunchRoutineResult = components["schemas"]["LaunchRoutineResult"];
@@ -16,8 +18,9 @@ export type McpOperatorAuthStatus = components["schemas"]["McpOperatorAuthStatus
 export type McpOperatorAuthStartResponse = components["schemas"]["McpOperatorAuthStartResponse"];
 
 // FastAPI error responses are `{detail: string}`; surface that real reason rather
-// than a generic message, falling back when the body isn't shaped that way.
-function errorDetail(error: unknown, fallback: string): string {
+// than a generic message, falling back when the body isn't shaped that way. Exported
+// for per-integration client files to reuse the same error-unwrapping convention.
+export function errorDetail(error: unknown, fallback: string): string {
   if (error && typeof error === "object" && "detail" in error) {
     const { detail } = error as { detail: unknown };
     if (typeof detail === "string") return detail;
@@ -103,36 +106,4 @@ export async function approveToolCall(toolCallId: string): Promise<ToolCallRecor
 
 export async function denyToolCall(toolCallId: string, reason?: string): Promise<ToolCallRecord> {
   return decideToolCall(toolCallId, { decision: "deny", reason: reason ?? null }, "Failed to deny tool call");
-}
-
-export type GmailThreadPreview = components["schemas"]["GmailThreadPreview"];
-
-// The google tool argument types (EventDateTime, CreateCalendarEventArgs, ...) aren't
-// re-exported here: google_tool_previews.tsx gets both the runtime validator and the
-// inferred TS type from :schema_zod (api/schema.zod.ts), generated from the same
-// OpenAPI schema this file's `components["schemas"]` draws from — see
-// `GoogleToolArgumentExamples` in haku/console/tools/google.py for why these models
-// reach that schema even though nothing calls that endpoint for data.
-
-// Live subject/snippet/current-labels lookup for rendering a batch_modify_gmail_thread_labels
-// approval — the tool call's own arguments only carry thread IDs. Threads the operator's
-// account can't resolve (deleted, wrong account, …) are simply absent from the map.
-export async function fetchGmailThreadPreviews(threadIds: string[]): Promise<Record<string, GmailThreadPreview>> {
-  if (threadIds.length === 0) return {};
-  const { data, error } = await api.GET("/api/google/gmail/thread-previews", {
-    params: { query: { thread_id: threadIds } },
-  });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to load Gmail thread previews"));
-  return data.threads;
-}
-
-export type GrocyReferenceResponse = components["schemas"]["GrocyReferenceResponse"];
-
-// Live product/location/quantity-unit `{id, name}` lookup for rendering pending grocy-sf
-// stock_add/stock_consume/products_create approvals — their arguments accept either a name
-// or a numeric ID, and only names render nicely on their own.
-export async function fetchGrocyReference(): Promise<GrocyReferenceResponse> {
-  const { data, error } = await api.GET("/api/grocy-sf/reference");
-  if (error || !data) throw new Error(errorDetail(error, "Failed to load grocy-sf reference data"));
-  return data;
 }

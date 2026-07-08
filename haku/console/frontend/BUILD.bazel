@@ -35,6 +35,24 @@ js_library(
 )
 
 js_library(
+    name = "google_client",
+    srcs = ["google_client.ts"],
+    deps = [
+        ":client",
+        ":schema",
+    ],
+)
+
+js_library(
+    name = "grocy_client",
+    srcs = ["grocy_client.ts"],
+    deps = [
+        ":client",
+        ":schema",
+    ],
+)
+
+js_library(
     name = "approval_state",
     srcs = ["approval_state.ts"],
     deps = [
@@ -96,8 +114,8 @@ js_library(
     name = "google_tool_previews",
     srcs = ["google_tool_previews.tsx"],
     deps = [
-        ":client",
         ":field",
+        ":google_client",
         ":schema_zod",
         "//:node_modules/@mantine/core",
         "//:node_modules/date-fns",
@@ -121,8 +139,8 @@ js_library(
     name = "grocy_tool_previews",
     srcs = ["grocy_tool_previews.tsx"],
     deps = [
-        ":client",
         ":field",
+        ":grocy_client",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//:node_modules/zod",
@@ -206,7 +224,9 @@ filegroup(
         "confirm_dialog.tsx",
         "console_panel.tsx",
         "field.tsx",
+        "google_client.ts",
         "google_tool_previews.tsx",
+        "grocy_client.ts",
         "grocy_tool_previews.tsx",
         "haku_ui_embed.tsx",
         "index.html",

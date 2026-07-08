@@ -20,7 +20,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 
-import { fetchGrocyReference, type GrocyReferenceResponse } from "./client.ts";
+import { fetchGrocyReference, type GrocyReferenceResponse } from "./grocy_client.ts";
 import { Field } from "./field.tsx";
 
 const GROCY_SERVER_ID = "grocy-sf";

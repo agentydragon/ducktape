@@ -8,9 +8,14 @@ export interface GeolocationApproval {
   createdAt: string;
 }
 
+interface ApprovalQueueItemBase {
+  id: string;
+  createdAt: string;
+}
+
 export type ApprovalQueueItem =
-  | { kind: "tool"; id: string; createdAt: string; approval: PendingApproval }
-  | { kind: "geolocation"; id: string; createdAt: string; approval: GeolocationApproval };
+  | (ApprovalQueueItemBase & { kind: "tool"; approval: PendingApproval })
+  | (ApprovalQueueItemBase & { kind: "geolocation"; approval: GeolocationApproval });
 
 export interface ApprovalDisplayFields {
   title: string;
