@@ -816,6 +816,12 @@ resource "authentik_provider_oauth2" "kubectl_passthrough_mcp" {
 
   # - Claude Code: http://localhost:<port>/callback
   # - kubernetes-mcp-server's built-in callback (browser testing): /oauth/callback
+  # - haku-console's operator_oauth flow (mcp_approval.py): /api/mcp/operator-auth/callback.
+  #   kubernetes-mcp-server has no DCR endpoint of its own (it just mirrors Authentik's
+  #   OAuth metadata, which has none either), so haku-console is configured with this
+  #   provider's static client_id instead of registering dynamically — safe to share
+  #   across callers since this is a public/PKCE client and redirect_uri is validated
+  #   per request.
   #
   # TODO: Consider adding https://claude.ai/api/mcp/auth_callback for Claude.ai
   # Custom Connectors. Intentionally omitted for now — using the passthrough
@@ -831,6 +837,10 @@ resource "authentik_provider_oauth2" "kubectl_passthrough_mcp" {
     {
       matching_mode = "strict"
       url           = "https://kubectl-passthrough-mcp.allegedly.works/oauth/callback"
+    },
+    {
+      matching_mode = "strict"
+      url           = "https://haku.allegedly.works/api/mcp/operator-auth/callback"
     },
   ]
 }

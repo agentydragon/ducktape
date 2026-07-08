@@ -21,6 +21,15 @@ mcp:
       server_url: https://kubectl-passthrough-mcp.allegedly.works/mcp
       operator_oauth:
         client_name: Haku Console
+        # Authentik has no open Dynamic Client Registration endpoint (kubernetes-mcp-server
+        # just mirrors Authentik's own OAuth metadata, which omits registration_endpoint),
+        # so DCR would 401 against the guessed {server}/register fallback. Use the
+        # pre-registered public/PKCE client_id from the kubectl_passthrough_mcp Authentik
+        # provider instead (tf/gitops/agent-machine-access/main.tf) — it already allows
+        # multiple redirect URIs (CLI localhost, kubernetes-mcp-server's own callback, and
+        # haku-console's operator-auth callback), safe to share since PKCE plus per-request
+        # redirect_uri validation secure each caller independently.
+        static_client_id: kubectl-passthrough-mcp
     # Implemented in-process (haku/console/tools/google.py) as a real FastMCP server
     # attached via an in-memory transport, not a remote MCP server — no server_url/
     # operator_oauth. Holds the Airlock-issued haku_console_google token

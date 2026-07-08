@@ -73,9 +73,15 @@ def _remote_mcp_url(server: FastMCP) -> Generator[str]:
 
 
 @contextmanager
-def _remote_oauth_url() -> Generator[str]:
+def _remote_oauth_url(*, static_client_id: str | None = None) -> Generator[str]:
+    """A fake OAuth server. With `static_client_id` set, the metadata omits
+    `registration_endpoint` and no `/auth/register` route is mounted at all — mirroring
+    Authentik (fronted by kubernetes-mcp-server), which has no DCR endpoint — so the test
+    fails loudly if the client under test attempts dynamic registration anyway.
+    """
     port = pick_free_port()
     base_url = f"http://127.0.0.1:{port}"
+    expected_client_id = static_client_id or "dynamic-client"
 
     async def mcp(request: Request) -> JSONResponse:
         return JSONResponse(
@@ -96,17 +102,17 @@ def _remote_oauth_url() -> Generator[str]:
         )
 
     async def oauth_metadata(request: Request) -> JSONResponse:
-        return JSONResponse(
-            {
-                "issuer": f"{base_url}/auth",
-                "authorization_endpoint": f"{base_url}/auth/authorize",
-                "token_endpoint": f"{base_url}/auth/token",
-                "registration_endpoint": f"{base_url}/auth/register",
-                "response_types_supported": ["code"],
-                "grant_types_supported": ["authorization_code", "refresh_token"],
-                "code_challenge_methods_supported": ["S256"],
-            }
-        )
+        metadata = {
+            "issuer": f"{base_url}/auth",
+            "authorization_endpoint": f"{base_url}/auth/authorize",
+            "token_endpoint": f"{base_url}/auth/token",
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code", "refresh_token"],
+            "code_challenge_methods_supported": ["S256"],
+        }
+        if static_client_id is None:
+            metadata["registration_endpoint"] = f"{base_url}/auth/register"
+        return JSONResponse(metadata)
 
     async def register(request: Request) -> JSONResponse:
         body = await request.json()
@@ -125,7 +131,7 @@ def _remote_oauth_url() -> Generator[str]:
         form = {k: v[0] for k, v in parse_qs((await request.body()).decode()).items()}
         if form["grant_type"] == "authorization_code":
             assert form["code"] == "operator-code"
-            assert form["client_id"] == "dynamic-client"
+            assert form["client_id"] == expected_client_id
             assert form["code_verifier"]
             return JSONResponse(
                 {
@@ -147,16 +153,16 @@ def _remote_oauth_url() -> Generator[str]:
             }
         )
 
-    app = Starlette(
-        routes=[
-            Route("/mcp", mcp),
-            Route("/.well-known/oauth-protected-resource/mcp", protected_resource),
-            Route("/.well-known/oauth-protected-resource", protected_resource),
-            Route("/.well-known/oauth-authorization-server/auth", oauth_metadata),
-            Route("/auth/register", register, methods=["POST"]),
-            Route("/auth/token", token, methods=["POST"]),
-        ]
-    )
+    routes = [
+        Route("/mcp", mcp),
+        Route("/.well-known/oauth-protected-resource/mcp", protected_resource),
+        Route("/.well-known/oauth-protected-resource", protected_resource),
+        Route("/.well-known/oauth-authorization-server/auth", oauth_metadata),
+        Route("/auth/token", token, methods=["POST"]),
+    ]
+    if static_client_id is None:
+        routes.append(Route("/auth/register", register, methods=["POST"]))
+    app = Starlette(routes=routes)
     uvicorn_server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=uvicorn_server.run, daemon=True)
     thread.start()
@@ -243,6 +249,22 @@ mcp:
     - id: grocy-sf
       server_url: {oauth_base_url}/mcp
       operator_oauth: {{}}
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _operator_oauth_static_client_config_file(tmp_path: Path, oauth_base_url: str, client_id: str) -> Path:
+    path = tmp_path / "haku_console_operator_oauth_static.yaml"
+    path.write_text(
+        f"""
+mcp:
+  servers:
+    - id: grocy-sf
+      server_url: {oauth_base_url}/mcp
+      operator_oauth:
+        static_client_id: {client_id}
 """,
         encoding="utf-8",
     )
@@ -344,6 +366,36 @@ def test_operator_oauth_association_drives_tool_reflection(make_client, tmp_path
     assert after["servers"][0]["status"] == "alive"
     assert metadata_provider.auth_tokens == ["operator-access-token"]
     assert "bearer_token_secret" not in str(after)
+
+
+def test_operator_oauth_static_client_id_skips_dynamic_registration(make_client, tmp_path: Path, db_url: str) -> None:
+    """Mirrors kubectl-passthrough-mcp: fronted by Authentik, which has no DCR endpoint —
+    dynamic registration would 401, so a configured static_client_id must skip it entirely.
+    """
+    with (
+        _remote_oauth_url(static_client_id="preregistered-client") as oauth_url,
+        make_client(
+            config_file=_operator_oauth_static_client_config_file(tmp_path, oauth_url, "preregistered-client"),
+            csrf_secret=SecretStr("csrf"),
+            public_base_url="https://haku.test",
+            **_test_app_overrides(db_url),
+        ) as client,
+    ):
+        started = client.post(
+            "/api/mcp/operator-auth/grocy-sf/start",
+            headers={"X-CSRF-Token": _csrf(client), "X-authentik-username": "operator@example.com"},
+        )
+        assert started.status_code == 200, started.text
+        auth_query = parse_qs(urlparse(started.json()["authorization_url"]).query)
+        assert auth_query["client_id"] == ["preregistered-client"]
+
+        callback = client.get(
+            "/api/mcp/operator-auth/callback", params={"state": auth_query["state"][0], "code": "operator-code"}
+        )
+        after = client.get("/api/mcp/operator-auth", headers={"X-authentik-username": "operator@example.com"}).json()
+
+    assert callback.status_code == 200, callback.text
+    assert after["associations"][0]["status"] == "connected"
 
 
 def test_reflection_marks_unreachable_servers_degraded(

@@ -91,6 +91,14 @@ class McpOperatorOAuthConfig(BaseModel):
     enabled: bool = True
     client_name: str = "Haku Console"
     scopes: list[str] | None = None
+    # For an authorization server with no open Dynamic Client Registration (RFC 7591) —
+    # e.g. Authentik, which has no /register endpoint, so the server-metadata-declared
+    # registration_endpoint is absent and DCR would otherwise 401 against a guessed
+    # {server}/register fallback. A pre-registered public/PKCE client_id shared across
+    # every OAuth caller of that authorization server, skipping registration entirely.
+    # Safe to share: PKCE plus per-request redirect_uri validation secure each caller's
+    # auth code exchange independently even though the client_id is the same for all.
+    static_client_id: str | None = None
 
 
 class McpServerEntry(BaseModel):
@@ -836,7 +844,17 @@ async def _build_operator_oauth_flow(
                 response_types=["code"],
                 scope=scope,
             )
-            client_info = await _register_oauth_client(client, server_url, oauth_metadata, client_metadata)
+            if server.operator_oauth.static_client_id:
+                client_info = OAuthClientInformationFull(
+                    client_id=server.operator_oauth.static_client_id,
+                    redirect_uris=client_metadata.redirect_uris,
+                    grant_types=client_metadata.grant_types,
+                    response_types=client_metadata.response_types,
+                    scope=client_metadata.scope,
+                    client_name=client_metadata.client_name,
+                )
+            else:
+                client_info = await _register_oauth_client(client, server_url, oauth_metadata, client_metadata)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"failed to start MCP OAuth flow for {server.id}: {e}") from e
 
