@@ -6,8 +6,13 @@
 import type { ReactNode } from "react";
 
 import { googleToolPreview } from "./google_tool_previews.tsx";
+import { grocyToolPreview } from "./grocy_tool_previews.tsx";
 import { kubectlToolPreview } from "./kubectl_tool_previews.tsx";
 
 export function toolPreview(serverId: string, toolName: string, args: Record<string, unknown>): ReactNode | null {
-  return googleToolPreview(serverId, toolName, args) ?? kubectlToolPreview(serverId, toolName, args);
+  return (
+    googleToolPreview(serverId, toolName, args) ??
+    kubectlToolPreview(serverId, toolName, args) ??
+    grocyToolPreview(serverId, toolName, args)
+  );
 }
