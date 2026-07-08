@@ -347,7 +347,14 @@ def test_reflection_lists_connected_servers_without_leaking_credentials(
     assert server["server_id"] == "grocy-sf"
     assert server["status"] == "alive"
     tools = {tool["name"]: tool for tool in server["tools"]}
-    assert set(tools) == {"echo", "stock_add"}
+    assert set(tools) == {
+        "echo",
+        "stock_add",
+        "products_list",
+        "locations_list",
+        "quantity_units_list",
+        "product_groups_list",
+    }
     assert tools["stock_add"]["status"] == "alive"
     assert tools["stock_add"]["input_schema"]["type"] == "object"
     assert tools["echo"]["status"] == "alive"
@@ -787,7 +794,14 @@ async def test_metadata_provider_reflects_in_process_server_tools() -> None:
     server = McpServerEntry(id="google")
     metadata = await metadata_provider.metadata(server, auth_token=None)
     assert isinstance(metadata, AliveServerMetadata)
-    assert {tool.name for tool in metadata.tools} == {"stock_add", "echo"}
+    assert {tool.name for tool in metadata.tools} == {
+        "stock_add",
+        "echo",
+        "products_list",
+        "locations_list",
+        "quantity_units_list",
+        "product_groups_list",
+    }
 
 
 async def test_metadata_provider_degrades_when_no_server_url_and_not_registered() -> None:
