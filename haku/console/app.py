@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
 
-from haku.console import capabilities, mcp_approval
+from haku.console import capabilities, google_tools, mcp_approval
 from haku.console.config import Settings
 from haku.console.models import ConfigResponse
 
@@ -60,9 +60,17 @@ def create_app(settings: Settings) -> FastAPI:
         if settings.database_url is not None
         else None
     )
+    app.state.google_tool_provider = (
+        google_tools.GoogleToolProvider.from_token_dir(settings.google_token_dir)
+        if settings.google_token_dir is not None
+        else None
+    )
+    native_providers = (
+        {google_tools.GOOGLE_SERVER_ID: app.state.google_tool_provider} if app.state.google_tool_provider else {}
+    )
     app.state.tool_call_event_hub = mcp_approval.ToolCallEventHub()
-    app.state.tool_call_executor = mcp_approval.McpToolExecutor()
-    app.state.tool_call_metadata_provider = mcp_approval.McpMetadataProvider()
+    app.state.tool_call_executor = mcp_approval.McpToolExecutor(native_providers)
+    app.state.tool_call_metadata_provider = mcp_approval.McpMetadataProvider(native_providers)
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
@@ -102,6 +110,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     app.include_router(capabilities.router)
     app.include_router(mcp_approval.router)
+    app.include_router(google_tools.router)
 
     # Optional direct local/dev fallback. Production serves the SPA from the
     # haku-console-static nginx image and leaves static_dir unset on this process.

@@ -99,11 +99,49 @@ py_library(
 )
 
 py_library(
+    name = "google_tools_models",
+    srcs = ["google_tools_models.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "google_gmail_tools",
+    srcs = ["google_gmail_tools.py"],
+    deps = [
+        ":google_tools_models",
+        "//gmail_api:labels",
+        "//haku/gmail_labeling:backend",
+    ],
+)
+
+py_library(
+    name = "google_calendar_tools",
+    srcs = ["google_calendar_tools.py"],
+    deps = [":google_tools_models"],
+)
+
+py_library(
+    name = "google_tools",
+    srcs = ["google_tools.py"],
+    deps = [
+        ":google_calendar_tools",
+        ":google_gmail_tools",
+        ":google_tools_models",
+        ":mcp_approval",
+        "//gmail_api:service",
+        "@pypi//fastapi",
+        "@pypi//google_api_python_client",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "app",
     srcs = ["app.py"],
     deps = [
         ":capabilities",
         ":config",
+        ":google_tools",
         ":mcp_approval",
         ":models",
         "@pypi//fastapi",
@@ -206,6 +244,51 @@ py_test(
         "@pypi//starlette",
         "@pypi//testcontainers",
         "@pypi//uvicorn",
+        # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
+        # needs the plugin importable at runtime for its entry-point autoload; Gazelle
+        # can't see that and will try to drop this dep on regen.
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_google_calendar_tools",
+    srcs = ["test_google_calendar_tools.py"],
+    deps = [
+        ":google_calendar_tools",
+        ":google_tools_models",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_google_gmail_tools",
+    srcs = ["test_google_gmail_tools.py"],
+    deps = [
+        ":google_gmail_tools",
+        ":google_tools_models",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_google_tools",
+    srcs = ["test_google_tools.py"],
+    deps = [
+        ":conftest",
+        ":google_tools",
+        ":google_tools_models",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
+        # needs the plugin importable at runtime for its entry-point autoload; Gazelle
+        # can't see that and will try to drop this dep on regen.
+        "@pypi//pytest_asyncio",
     ],
 )
 

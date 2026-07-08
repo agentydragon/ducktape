@@ -26,21 +26,32 @@ def build_gmail_service(token_file: Path) -> Any:
     return build("gmail", "v1", credentials=creds, cache_discovery=False)
 
 
-def build_gmail_service_from_token_dir(token_dir: Path) -> Any:
-    """Build a Gmail v1 service backed by an externally-rotated access token.
+def credentials_from_token_dir(token_dir: Path, scopes: Sequence[str]) -> Credentials:
+    """Google credentials backed by an externally-rotated access token.
 
     `token_dir` is a mounted secret holding an `access_token` (and `expires_at`)
     file, as written by Airlock and synced into the namespace by ESO. This
     process holds no refresh_token; google-auth's `refresh_handler` re-reads the
     directory when the access token expires, so the token Airlock rotates is
-    picked up automatically. `static_discovery=True` keeps `build()` offline.
+    picked up automatically. Generic over `scopes` and the target API — callers
+    build whichever `googleapiclient.discovery.build(...)` service(s) the token's
+    scopes cover from the one `Credentials` object.
     """
 
-    def refresh_handler(request: object, scopes: Sequence[str] | None) -> tuple[str, dt.datetime]:
+    def refresh_handler(request: object, requested_scopes: Sequence[str] | None) -> tuple[str, dt.datetime]:
         token = (token_dir / "access_token").read_text().strip()
         return token, _read_expiry(token_dir / "expires_at")
 
-    creds = Credentials(token=None, scopes=[GMAIL_MODIFY_SCOPE], refresh_handler=refresh_handler)
+    return Credentials(token=None, scopes=list(scopes), refresh_handler=refresh_handler)
+
+
+def build_gmail_service_from_token_dir(token_dir: Path) -> Any:
+    """Build a Gmail v1 service backed by an externally-rotated access token.
+
+    See `credentials_from_token_dir` for the token-directory contract.
+    `static_discovery=True` keeps `build()` offline.
+    """
+    creds = credentials_from_token_dir(token_dir, [GMAIL_MODIFY_SCOPE])
     return build("gmail", "v1", credentials=creds, cache_discovery=False, static_discovery=True)
 
 

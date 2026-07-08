@@ -23,6 +23,7 @@ def make_client() -> Callable[..., Any]:
         *,
         tool_call_executor: Any | None = None,
         tool_call_metadata_provider: Any | None = None,
+        google_tool_provider: Any | None = None,
         **settings_overrides: Any,
     ) -> Iterator[TestClient]:
         # haku_ui_url is required; default it so callers only override what they're testing.
@@ -32,6 +33,8 @@ def make_client() -> Callable[..., Any]:
             app.state.tool_call_executor = tool_call_executor
         if tool_call_metadata_provider is not None:
             app.state.tool_call_metadata_provider = tool_call_metadata_provider
+        if google_tool_provider is not None:
+            app.state.google_tool_provider = google_tool_provider
         with TestClient(app) as c:
             yield c
 

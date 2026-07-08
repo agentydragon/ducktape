@@ -13,6 +13,7 @@ import {
   terminalStatusLabel,
 } from "./approval_state.ts";
 import type { McpOperatorAuthStatus, PendingApproval, ToolCallRecord } from "./client.ts";
+import { googleToolPreview } from "./google_tool_previews.tsx";
 import { ACTION_COLOR } from "./theme.ts";
 
 export type ShellDrawerTab = "approvals" | "access";
@@ -123,13 +124,30 @@ export function ShellControls({ pendingCount, opened, activeTab, onOpenTab }: Sh
   );
 }
 
-function Field({ label, children, mono = false }: { label: string; children: ReactNode; mono?: boolean }) {
+export function Field({ label, children, mono = false }: { label: string; children: ReactNode; mono?: boolean }) {
   return (
     <div className="haku-shell-field">
       <dt>{label}</dt>
       <dd className={mono ? "haku-shell-mono" : ""}>{children}</dd>
     </div>
   );
+}
+
+/** Arguments field for a tool-call approval/result: a per-tool-type widget
+ * (google_tool_previews.tsx) when one matches, else the generic raw-JSON view. */
+function ToolArgumentsField({
+  serverId,
+  toolName,
+  args,
+  argumentsJson,
+}: {
+  serverId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  argumentsJson: string;
+}) {
+  const nice = googleToolPreview(serverId, toolName, args);
+  return <Field label="Arguments">{nice ?? <pre className="haku-shell-json">{argumentsJson}</pre>}</Field>;
 }
 
 function ToolApprovalDetail({
@@ -169,9 +187,12 @@ function ToolApprovalDetail({
             </Field>
           </div>
           <Field label="Rationale">{fields.rationale || "No rationale provided."}</Field>
-          <Field label="Arguments">
-            <pre className="haku-shell-json">{fields.argumentsJson}</pre>
-          </Field>
+          <ToolArgumentsField
+            serverId={fields.serverId}
+            toolName={fields.toolName}
+            args={approval.arguments}
+            argumentsJson={fields.argumentsJson}
+          />
           {(fields.callerPrincipal || fields.createdAt) && (
             <Field label="Requested">
               {[fields.callerPrincipal, shortDate(fields.createdAt)].filter(Boolean).join(" · ")}
@@ -473,9 +494,12 @@ function RecentToolCallDetail({ recent, nowMs }: { recent: RecentToolCall; nowMs
               {fields.toolName}
             </Field>
           </div>
-          <Field label="Arguments">
-            <pre className="haku-shell-json">{fields.argumentsJson}</pre>
-          </Field>
+          <ToolArgumentsField
+            serverId={fields.serverId}
+            toolName={fields.toolName}
+            args={record.arguments}
+            argumentsJson={fields.argumentsJson}
+          />
           {record.result && (
             <Field label="Result">
               <pre className="haku-shell-json">{JSON.stringify(record.result, null, 2)}</pre>

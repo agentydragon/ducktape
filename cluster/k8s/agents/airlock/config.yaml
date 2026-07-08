@@ -93,6 +93,34 @@ oauth:
       extra_auth_params:
         access_type: offline
         prompt: consent
+    # Separate Google grant for haku-console's native `google` MCP server
+    # (haku/console/google_tools.py): calendar event creation, batch Gmail thread
+    # label changes, Gmail draft creation — behind haku-console's operator-approval
+    # queue, never autonomous. Kept distinct from `google` (read-only, Haku's) and
+    # `gmail_modify` (gmail.modify-only, gmail-labeling's) so no other consumer's
+    # token is ever upgraded to this scope set. Its access token
+    # (console-google-access-token) is delivered ONLY to the haku-console namespace.
+    - name: console_google
+      provider_type: oauth2
+      display_name: Google (haku-console — calendar + gmail, privileged)
+      authorize_url: https://accounts.google.com/o/oauth2/v2/auth
+      token_url: https://oauth2.googleapis.com/token
+      scopes:
+        - https://www.googleapis.com/auth/calendar.events
+        - https://www.googleapis.com/auth/gmail.modify
+        - https://www.googleapis.com/auth/gmail.compose
+      # Piggyback on the `google` provider's already-registered redirect URI (same
+      # OAuth client), so this needs NO new redirect URI in the Google console. The
+      # callback resolves the provider from OAuth `state`, not this path.
+      redirect_uri: https://airlock.allegedly.works/oauth/callback/google
+      refresh_secret:
+        name: console-google-tokens
+      access_secret:
+        name: console-google-access-token
+      refresh_margin_seconds: 300
+      extra_auth_params:
+        access_type: offline
+        prompt: consent
     - name: bsc
       provider_type: oauth2
       display_name: Blue Shield of California (FHIR sandbox)

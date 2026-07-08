@@ -9,3 +9,10 @@ mcp:
       server_url: https://tana-mcp-facade.allegedly.works/mcp
       operator_oauth:
         client_name: Haku Console
+    # Implemented in-process (haku/console/google_tools.py), not a remote MCP server —
+    # no server_url/operator_oauth. Holds the Airlock-issued console_google token
+    # (calendar.events + gmail.modify + gmail.compose) mounted at
+    # HAKU_CONSOLE_GOOGLE_TOKEN_DIR. Tools: create_calendar_event,
+    # batch_modify_gmail_thread_labels, create_gmail_draft.
+    - id: google
+      native: true

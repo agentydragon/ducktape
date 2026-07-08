@@ -74,3 +74,10 @@ class Settings(BaseSettings):
     # Optional bearer accepted from Haku / haku-ui backend for backend-to-backend calls.
     # Browser/operator calls still rely on the Authentik session at the ingress.
     agent_api_token: SecretStr | None = None
+
+    # Directory holding the Airlock-managed `console_google` access token (files:
+    # access_token, expires_at), mounted from the console-google-access-token secret.
+    # Backs the native `google` MCP server (haku.console.google_tools) — calendar event
+    # creation, batch Gmail label changes, Gmail draft creation. Unset disables that
+    # server (its capability entry reports `degraded`) and the thread-preview endpoint.
+    google_token_dir: Path | None = None
