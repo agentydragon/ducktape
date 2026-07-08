@@ -16,7 +16,7 @@ import uvicorn
 from fastapi.testclient import TestClient
 from fastmcp import FastMCP
 from mcp import types as mcp_types
-from pydantic import SecretStr, ValidationError
+from pydantic import SecretStr
 from sqlalchemy import create_engine, text
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -27,7 +27,6 @@ from testcontainers.postgres import PostgresContainer
 from haku.console.mcp_approval import (
     AliveServerMetadata,
     McpMetadataProvider,
-    McpOperatorOAuthConfig,
     McpServerEntry,
     McpToolExecutor,
     _mcp_result_to_json,
@@ -673,65 +672,41 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(
     assert row["result_json"]["content"][0]["text"] == "echo:world"
 
 
-# --- Native tool provider dispatch (haku.console.google_tools's registration path) -----
-# Unit tests only: no postgres/network fixtures, exercising McpServerEntry/McpToolExecutor/
-# McpMetadataProvider directly rather than through the FastAPI app.
+# --- In-process MCP servers (haku.console.tools.google's registration path) ------------
+# Unit tests only: no postgres/network fixtures, exercising McpToolExecutor/McpMetadataProvider
+# directly (over the module-level `_test_mcp_server()` FastMCP fixture, in-memory — no HTTP)
+# rather than through the FastAPI app.
 
 
-class _FakeNativeProvider:
-    def __init__(self) -> None:
-        self.executed: list[tuple[str, dict[str, Any]]] = []
-
-    async def metadata(self) -> AliveServerMetadata:
-        return AliveServerMetadata(server_id="google", title="Google")
-
-    async def execute(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        self.executed.append((tool_name, arguments))
-        return {"ok": True}
+def test_server_entry_allows_missing_server_url() -> None:
+    McpServerEntry(id="google")  # ok: resolved via the in-process registry at runtime, not this model
 
 
-def test_native_server_entry_requires_native_xor_server_url() -> None:
-    with pytest.raises(ValidationError, match="exactly one of"):
-        McpServerEntry(id="x", native=True, server_url="https://x/mcp")
-    with pytest.raises(ValidationError, match="exactly one of"):
-        McpServerEntry(id="x")  # neither set
-    McpServerEntry(id="x", native=True)  # ok
-    McpServerEntry(id="x", server_url="https://x/mcp")  # ok
+async def test_executor_dispatches_to_registered_in_process_server() -> None:
+    executor = McpToolExecutor({"google": _test_mcp_server()})
+    server = McpServerEntry(id="google")
+    result = await executor.execute(server, "echo", {"text": "hi"}, auth_token=None)
+    assert result["content"][0]["text"] == "echo:hi"
 
 
-def test_native_server_entry_rejects_operator_oauth() -> None:
-    with pytest.raises(ValidationError, match="cannot use operator_oauth"):
-        McpServerEntry(id="x", native=True, operator_oauth=McpOperatorOAuthConfig())
-
-
-async def test_executor_dispatches_to_registered_native_provider() -> None:
-    provider = _FakeNativeProvider()
-    executor = McpToolExecutor({"google": provider})
-    server = McpServerEntry(id="google", native=True)
-    result = await executor.execute(server, "create_gmail_draft", {"to": ["a@x"]}, auth_token=None)
-    assert result == {"ok": True}
-    assert provider.executed == [("create_gmail_draft", {"to": ["a@x"]})]
-
-
-async def test_executor_raises_when_native_provider_unregistered() -> None:
+async def test_executor_raises_when_no_server_url_and_not_registered() -> None:
     executor = McpToolExecutor({})
-    server = McpServerEntry(id="google", native=True)
-    with pytest.raises(RuntimeError, match="no native tool provider registered"):
-        await executor.execute(server, "create_gmail_draft", {}, auth_token=None)
+    server = McpServerEntry(id="google")
+    with pytest.raises(RuntimeError, match="no server_url and no in-process registration"):
+        await executor.execute(server, "echo", {}, auth_token=None)
 
 
-async def test_metadata_provider_returns_native_provider_metadata() -> None:
-    provider = _FakeNativeProvider()
-    metadata_provider = McpMetadataProvider({"google": provider})
-    server = McpServerEntry(id="google", native=True)
+async def test_metadata_provider_reflects_in_process_server_tools() -> None:
+    metadata_provider = McpMetadataProvider({"google": _test_mcp_server()})
+    server = McpServerEntry(id="google")
     metadata = await metadata_provider.metadata(server, auth_token=None)
     assert isinstance(metadata, AliveServerMetadata)
-    assert metadata.server_id == "google"
+    assert {tool.name for tool in metadata.tools} == {"stock_add", "echo"}
 
 
-async def test_metadata_provider_degrades_when_native_provider_unregistered() -> None:
+async def test_metadata_provider_degrades_when_no_server_url_and_not_registered() -> None:
     metadata_provider = McpMetadataProvider({})
-    server = McpServerEntry(id="google", native=True)
+    server = McpServerEntry(id="google")
     metadata = await metadata_provider.metadata(server, auth_token=None)
     assert metadata.status == "degraded"
 

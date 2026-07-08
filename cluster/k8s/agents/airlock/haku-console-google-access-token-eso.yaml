@@ -1,13 +1,13 @@
-# console_google access token (calendar.events + gmail.modify + gmail.compose) for
-# haku-console's native `google` MCP server (haku/console/google_tools.py). Airlock
-# writes it into the `airlock` namespace; ESO mirrors it ONLY into the haku-console
-# namespace — never to a sandbox, so no agent ever holds this token directly. Haku
-# only ever reaches these tools by proposing a call through haku-console's ordinary
-# operator-approval queue.
+# haku_console_google access token (calendar.events + gmail.modify + gmail.compose +
+# the `google` read scopes) for haku-console's in-process `google` MCP server
+# (haku/console/tools/google.py). Airlock writes it into the `airlock` namespace; ESO
+# mirrors it ONLY into the haku-console namespace — never to a sandbox, so no agent
+# ever holds this token directly. Haku only ever reaches these tools by proposing a
+# call through haku-console's ordinary operator-approval queue.
 apiVersion: external-secrets.io/v1
 kind: ClusterExternalSecret
 metadata:
-  name: console-google-access-token
+  name: haku-console-google-access-token
 spec:
   namespaces:
     - haku-console
@@ -17,7 +17,7 @@ spec:
       name: kubernetes-airlock-secret-store
       kind: ClusterSecretStore
     target:
-      name: console-google-access-token
+      name: haku-console-google-access-token
     dataFrom:
       - extract:
-          key: console-google-access-token
+          key: haku-console-google-access-token

@@ -21,10 +21,12 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
+from fastmcp import FastMCP
 
-from haku.console import capabilities, google_tools, mcp_approval
+from haku.console import capabilities, mcp_approval
 from haku.console.config import Settings
 from haku.console.models import ConfigResponse
+from haku.console.tools import google as google_tools
 
 logger = logging.getLogger(__name__)
 
@@ -60,17 +62,15 @@ def create_app(settings: Settings) -> FastAPI:
         if settings.database_url is not None
         else None
     )
-    app.state.google_tool_provider = (
-        google_tools.GoogleToolProvider.from_token_dir(settings.google_token_dir)
-        if settings.google_token_dir is not None
-        else None
-    )
-    native_providers = (
-        {google_tools.GOOGLE_SERVER_ID: app.state.google_tool_provider} if app.state.google_tool_provider else {}
-    )
+    in_process_servers: dict[str, FastMCP] = {}
+    app.state.google_gmail_client = None
+    if settings.google_token_dir is not None:
+        gmail_client, calendar_client = google_tools.build_tool_clients(settings.google_token_dir)
+        app.state.google_gmail_client = gmail_client
+        in_process_servers[google_tools.GOOGLE_SERVER_ID] = google_tools.build_mcp(gmail_client, calendar_client)
     app.state.tool_call_event_hub = mcp_approval.ToolCallEventHub()
-    app.state.tool_call_executor = mcp_approval.McpToolExecutor(native_providers)
-    app.state.tool_call_metadata_provider = mcp_approval.McpMetadataProvider(native_providers)
+    app.state.tool_call_executor = mcp_approval.McpToolExecutor(in_process_servers)
+    app.state.tool_call_metadata_provider = mcp_approval.McpMetadataProvider(in_process_servers)
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the

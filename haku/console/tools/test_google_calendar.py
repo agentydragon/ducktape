@@ -6,8 +6,12 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from haku.console.google_calendar_tools import CalendarToolsClient
-from haku.console.google_tools_models import CalendarReminder, CreateCalendarEventArgs, EventDateTime
+from haku.console.tools.google_calendar import (
+    CalendarReminder,
+    CalendarToolsClient,
+    CreateCalendarEventArgs,
+    EventDateTime,
+)
 
 
 @dataclass

@@ -19,7 +19,7 @@ resources:
   - oura-access-token-eso.yaml
   - google-access-token-eso.yaml
   - gmail-modify-access-token-eso.yaml
-  - console-google-access-token-eso.yaml
+  - haku-console-google-access-token-eso.yaml
 
 configMapGenerator:
   - name: airlock-config

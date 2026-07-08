@@ -1,53 +1,26 @@
-// Per-tool-type rendering for haku-console's native `google` MCP server (see
-// haku/console/google_tools.py). Falls back to the generic raw-JSON view
+// Per-tool-type rendering for haku-console's in-process `google` MCP server (see
+// haku/console/tools/google.py). Falls back to the generic raw-JSON view
 // (approval_state.ts's argumentsJson) for anything that isn't shaped as expected —
 // arguments are only validated by the tool's own Pydantic model at execution time, not
 // at submission, so a pending approval's arguments could in principle be malformed.
 
 import { Anchor, Badge, Group, Loader, Stack, Text } from "@mantine/core";
+import { formatDuration } from "date-fns";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
-import { fetchGmailThreadPreviews, type GmailThreadPreview } from "./client.ts";
-import { Field } from "./console_panel.tsx";
+import {
+  fetchGmailThreadPreviews,
+  type BatchModifyGmailThreadLabelsArgs,
+  type CalendarReminder,
+  type CreateCalendarEventArgs,
+  type CreateGmailDraftArgs,
+  type EventDateTime,
+  type GmailThreadPreview,
+} from "./client.ts";
+import { Field } from "./field.tsx";
 
 const GOOGLE_SERVER_ID = "google";
-
-interface EventDateTime {
-  date?: string | null;
-  date_time?: string | null;
-  time_zone?: string | null;
-}
-
-interface CalendarReminder {
-  method: "popup" | "email";
-  minutes_before_start: number;
-}
-
-interface CreateCalendarEventArgs {
-  summary: string;
-  start: EventDateTime;
-  end: EventDateTime;
-  description?: string | null;
-  location?: string | null;
-  calendar_id?: string;
-  reminders?: CalendarReminder[];
-  attendees?: string[];
-}
-
-interface BatchModifyGmailThreadLabelsArgs {
-  thread_ids: string[];
-  add?: string[];
-  remove?: string[];
-}
-
-interface CreateGmailDraftArgs {
-  to: string[];
-  subject: string;
-  body: string;
-  cc?: string[];
-  thread_id?: string | null;
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -86,13 +59,16 @@ function formatEventDateTime(value: EventDateTime): string {
 }
 
 function formatReminder(reminder: CalendarReminder): string {
-  const unit =
-    reminder.minutes_before_start % 1440 === 0
-      ? `${reminder.minutes_before_start / 1440} day(s)`
-      : reminder.minutes_before_start % 60 === 0
-        ? `${reminder.minutes_before_start / 60} hour(s)`
-        : `${reminder.minutes_before_start} min`;
-  return `${reminder.method === "popup" ? "Popup" : "Email"}, ${unit} before`;
+  const totalMinutes = reminder.minutes_before_start;
+  const timing =
+    totalMinutes === 0
+      ? "at event start"
+      : `${formatDuration({
+          days: Math.floor(totalMinutes / 1440),
+          hours: Math.floor((totalMinutes % 1440) / 60),
+          minutes: totalMinutes % 60,
+        })} before`;
+  return `${reminder.method === "popup" ? "Popup" : "Email"}, ${timing}`;
 }
 
 function CreateCalendarEventPreview({ args }: { args: CreateCalendarEventArgs }) {
@@ -133,7 +109,7 @@ function GmailThreadRow({ threadId, preview }: { threadId: string; preview: Gmai
   return (
     <Stack gap={0}>
       <Anchor href={preview.gmail_url} target="_blank" rel="noreferrer" size="sm">
-        {preview.subject}
+        {preview.subject ?? "(no subject)"}
       </Anchor>
       {preview.current_label_names.length > 0 && (
         <Text size="xs" c="dimmed">

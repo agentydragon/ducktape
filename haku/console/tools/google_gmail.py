@@ -13,20 +13,71 @@ from email.mime.text import MIMEText
 from itertools import batched
 from typing import Any
 
+from pydantic import BaseModel, Field, model_validator
+
 from gmail_api.labels import GmailLabel, LabelType
-from haku.console.google_tools_models import (
-    BatchModifyGmailThreadLabelsArgs,
-    BatchModifyGmailThreadLabelsResult,
-    CreateGmailDraftArgs,
-    CreateGmailDraftResult,
-    GmailLabelRef,
-    GmailThreadPreview,
-)
 from haku.gmail_labeling.backend import GmailLabelBackend
 
 _THREAD_URL = "https://mail.google.com/mail/u/0/#all/{thread_id}"
 # Gmail's batch-request guide recommends capping requests-per-batch at 100.
 _MAX_PREVIEW_BATCH_SIZE = 100
+
+
+class GmailLabelRef(BaseModel):
+    name: str
+    id: str
+
+
+class BatchModifyGmailThreadLabelsArgs(BaseModel):
+    """Add and/or remove Gmail labels across a batch of threads in one call."""
+
+    thread_ids: list[str] = Field(min_length=1, description="Gmail thread IDs to modify in one batch.")
+    add: list[str] = Field(default_factory=list, description="Label names to add to every thread; created if new.")
+    remove: list[str] = Field(default_factory=list, description="Label names to remove from every thread; must exist.")
+
+    @model_validator(mode="after")
+    def _at_least_one_change(self) -> BatchModifyGmailThreadLabelsArgs:
+        if not self.add and not self.remove:
+            raise ValueError("must specify at least one label in add or remove")
+        if overlap := set(self.add) & set(self.remove):
+            raise ValueError(f"label(s) {sorted(overlap)} cannot be both added and removed in the same call")
+        return self
+
+
+class BatchModifyGmailThreadLabelsResult(BaseModel):
+    added: list[GmailLabelRef]
+    removed: list[GmailLabelRef]
+    thread_count: int
+
+
+class CreateGmailDraftArgs(BaseModel):
+    """Create a Gmail draft (never sent automatically — the operator sends it from Gmail)."""
+
+    to: list[str] = Field(min_length=1, description="Recipient email addresses.")
+    subject: str
+    body: str = Field(description="Plain-text message body.")
+    cc: list[str] = Field(default_factory=list)
+    thread_id: str | None = Field(default=None, description="Existing Gmail thread ID to draft a reply within.")
+
+
+class CreateGmailDraftResult(BaseModel):
+    draft_id: str
+    message_id: str
+
+
+class GmailThreadPreview(BaseModel):
+    # Gmail permits a threadless/no-Subject message; whether that renders as e.g. "(no
+    # subject)" is a display decision, so this stays the raw (possibly absent) header.
+    subject: str | None
+    snippet: str
+    current_label_names: list[str]
+    gmail_url: str = Field(description="Link to the thread in the Gmail web UI.")
+
+
+class GmailThreadPreviewsResponse(BaseModel):
+    threads: dict[str, GmailThreadPreview] = Field(
+        description="Keyed by thread_id; a requested id absent from the map was inaccessible (deleted, wrong account, …)."
+    )
 
 
 class GmailToolsClient:
@@ -97,7 +148,7 @@ def _preview_from_thread(
     headers = {h["name"]: h["value"] for h in first_message.get("payload", {}).get("headers", [])}
     label_ids = first_message.get("labelIds", [])
     return GmailThreadPreview(
-        subject=headers.get("Subject", "(no subject)"),
+        subject=headers.get("Subject"),
         snippet=first_message.get("snippet", ""),
         current_label_names=sorted(
             label_names_by_id[label_id] for label_id in label_ids if label_id in label_names_by_id

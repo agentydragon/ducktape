@@ -25,6 +25,7 @@ import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi_csrf_protect import CsrfProtect
+from fastmcp import FastMCP
 from fastmcp.client import Client
 from mcp import types as mcp_types
 from mcp.client.auth.oauth2 import PKCEParameters
@@ -49,7 +50,7 @@ from mcp.shared.auth import (
 )
 from mcp.shared.auth_utils import check_resource_allowed, resource_url_from_server_url
 from mcp.types import LATEST_PROTOCOL_VERSION
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -91,21 +92,13 @@ class McpOperatorOAuthConfig(BaseModel):
 
 class McpServerEntry(BaseModel):
     id: str
+    # None for a server reached via an in-process FastMCP instance instead of a remote
+    # URL (see McpToolExecutor/McpMetadataProvider's `in_process_servers` registry,
+    # e.g. haku.console.tools.google's `google` server) — resolved at runtime by id,
+    # not by anything in this config model.
     server_url: str | None = None
     bearer_token_secret: str | None = None
     operator_oauth: McpOperatorOAuthConfig | None = None
-    # True for a tool provider implemented in-process (e.g. google_tools.GoogleToolProvider)
-    # rather than a remote MCP server reached over `server_url` — see
-    # `McpToolExecutor`/`McpMetadataProvider`'s `native_providers` registry.
-    native: bool = False
-
-    @model_validator(mode="after")
-    def _server_url_xor_native(self) -> McpServerEntry:
-        if self.native == (self.server_url is not None):
-            raise ValueError(f"MCP server {self.id!r} must set exactly one of server_url or native=true")
-        if self.native and self.operator_oauth is not None:
-            raise ValueError(f"MCP server {self.id!r} is native and cannot use operator_oauth")
-        return self
 
 
 class ConsoleMcpConfig(BaseModel):
@@ -532,58 +525,43 @@ class ToolCallEventHub:
             self.disconnect(ws)
 
 
-class NativeToolProvider(Protocol):
-    """A tool provider implemented in-process, registered against an MCP server id whose
-    config entry sets `native: true` — e.g. `google_tools.GoogleToolProvider`. Bypasses the
-    remote `fastmcp.client.Client(server_url, ...)` round trip entirely; every other part of
-    the approval pipeline (ledger, audit, CSRF, operator decision) is unchanged."""
+# A server reached over an in-process FastMCP instance instead of a remote URL (see
+# McpServerEntry.server_url). `fastmcp.client.Client` accepts a `FastMCP` instance
+# directly and opens an in-memory `FastMCPTransport` — so both `McpToolExecutor` and
+# `McpMetadataProvider` run the exact same `Client(...)` calls either way; only this
+# lookup differs.
+InProcessServers = dict[str, FastMCP]
 
-    async def metadata(self) -> ServerMetadata: ...
 
-    async def execute(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]: ...
+def _transport(server: McpServerEntry, in_process: InProcessServers) -> FastMCP | str:
+    if in_process_server := in_process.get(server.id):
+        return in_process_server
+    if server.server_url is not None:
+        return server.server_url
+    raise RuntimeError(f"MCP server {server.id!r} has no server_url and no in-process registration")
 
 
 class McpToolExecutor:
-    def __init__(self, native_providers: dict[str, NativeToolProvider] | None = None) -> None:
-        self._native = native_providers or {}
+    def __init__(self, in_process_servers: InProcessServers | None = None) -> None:
+        self._in_process = in_process_servers or {}
 
     async def execute(
         self, server: McpServerEntry, tool_name: str, arguments: dict[str, Any], auth_token: str | None
     ) -> dict[str, Any]:
-        if server.native:
-            return await self._native_provider(server).execute(tool_name, arguments)
-        assert server.server_url is not None  # enforced by McpServerEntry's validator
-        async with Client(server.server_url, auth=auth_token) as client:
+        async with Client(_transport(server, self._in_process), auth=auth_token) as client:
             result = await client.call_tool_mcp(tool_name, arguments)
         if result.isError:
             raise RuntimeError(_mcp_error_message(result))
         return _mcp_result_to_json(result)
 
-    def _native_provider(self, server: McpServerEntry) -> NativeToolProvider:
-        provider = self._native.get(server.id)
-        if provider is None:
-            raise RuntimeError(f"no native tool provider registered for server {server.id!r}")
-        return provider
-
 
 class McpMetadataProvider:
-    def __init__(self, native_providers: dict[str, NativeToolProvider] | None = None) -> None:
-        self._native = native_providers or {}
+    def __init__(self, in_process_servers: InProcessServers | None = None) -> None:
+        self._in_process = in_process_servers or {}
 
     async def metadata(self, server: McpServerEntry, auth_token: str | None) -> ServerMetadata:
-        if server.native:
-            provider = self._native.get(server.id)
-            if provider is None:
-                return DegradedServerMetadata(
-                    server_id=server.id,
-                    title=server.id,
-                    tools=[],
-                    degraded_reason="native tool provider not configured",
-                )
-            return await provider.metadata()
-        assert server.server_url is not None  # enforced by McpServerEntry's validator
         try:
-            async with Client(server.server_url, auth=auth_token) as client:
+            async with Client(_transport(server, self._in_process), auth=auth_token) as client:
                 tools = await client.list_tools()
         except Exception as e:
             return DegradedServerMetadata(server_id=server.id, title=server.id, tools=[], degraded_reason=str(e))
@@ -768,12 +746,17 @@ async def _build_operator_oauth_flow(
     server: McpServerEntry, operator_principal: str, public_base_url: str
 ) -> _BuiltOperatorOAuthFlow:
     assert server.operator_oauth is not None
+    # operator_oauth is meaningless for an in-process server (there's no remote
+    # authorization server to run DCR/metadata discovery against), so this is always
+    # set in practice; bind it to a local for stable mypy narrowing across the awaits.
+    assert server.server_url is not None
+    server_url = server.server_url
     redirect_uri = f"{public_base_url}{MCP_OPERATOR_AUTH_CALLBACK_PATH}"
     try:
         async with httpx.AsyncClient(follow_redirects=False, timeout=10.0) as client:
-            auth_probe = await client.get(server.server_url, headers=_metadata_request_headers())
-            resource_metadata = await _discover_protected_resource(client, server.server_url, auth_probe)
-            oauth_metadata = await _discover_oauth_metadata(client, server.server_url, resource_metadata)
+            auth_probe = await client.get(server_url, headers=_metadata_request_headers())
+            resource_metadata = await _discover_protected_resource(client, server_url, auth_probe)
+            oauth_metadata = await _discover_oauth_metadata(client, server_url, resource_metadata)
             scope = (
                 " ".join(server.operator_oauth.scopes)
                 if server.operator_oauth.scopes is not None
@@ -788,7 +771,7 @@ async def _build_operator_oauth_flow(
                 response_types=["code"],
                 scope=scope,
             )
-            client_info = await _register_oauth_client(client, server.server_url, oauth_metadata, client_metadata)
+            client_info = await _register_oauth_client(client, server_url, oauth_metadata, client_metadata)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"failed to start MCP OAuth flow for {server.id}: {e}") from e
 
@@ -799,12 +782,12 @@ async def _build_operator_oauth_flow(
     if oauth_metadata and oauth_metadata.authorization_endpoint:
         auth_endpoint = str(oauth_metadata.authorization_endpoint)
     else:
-        auth_endpoint = urljoin(_authorization_base_url(server.server_url), "/authorize")
+        auth_endpoint = urljoin(_authorization_base_url(server_url), "/authorize")
     if oauth_metadata and oauth_metadata.token_endpoint:
         token_endpoint = str(oauth_metadata.token_endpoint)
     else:
-        token_endpoint = urljoin(_authorization_base_url(server.server_url), "/token")
-    resource = _resource_for_oauth(server.server_url, resource_metadata)
+        token_endpoint = urljoin(_authorization_base_url(server_url), "/token")
+    resource = _resource_for_oauth(server_url, resource_metadata)
     params = {
         "response_type": "code",
         "client_id": client_info.client_id,
@@ -1019,8 +1002,6 @@ def _public_base_url(request: Request, settings: Settings) -> str:
 async def _execution_auth(
     server: McpServerEntry, operator_principal: str, oauth_store: McpOperatorOAuthStoreProtocol
 ) -> str | None:
-    if server.native:
-        return None
     if _operator_oauth_enabled(server):
         token = await oauth_store.access_token_for(server=server, operator_principal=operator_principal)
         if not token:
@@ -1073,8 +1054,6 @@ async def _wait_terminal(ledger: ToolCallLedgerProtocol, tool_call_id: str, wait
 async def _metadata_for_request(
     *, request: Request, server: McpServerEntry, metadata_provider: McpMetadataProvider
 ) -> ServerMetadata:
-    if server.native:
-        return await metadata_provider.metadata(server, None)
     if _operator_oauth_enabled(server):
         oauth_store = _maybe_oauth_store(request)
         operator_principal = _operator_principal(request)

@@ -73,15 +73,15 @@ spec:
                 secretKeyRef:
                   name: google-client-credentials
                   key: client_secret
-            # Same Google OAuth client again, for the console_google provider
-            # (calendar.events + gmail.modify + gmail.compose) consumed by
-            # haku-console's native `google` MCP server.
-            - name: CONSOLE_GOOGLE_CLIENT_ID
+            # Same Google OAuth client again, for the haku_console_google provider
+            # (calendar.events + gmail.modify + gmail.compose + the `google` read
+            # scopes) consumed by haku-console's in-process `google` MCP server.
+            - name: HAKU_CONSOLE_GOOGLE_CLIENT_ID
               valueFrom:
                 secretKeyRef:
                   name: google-client-credentials
                   key: client_id
-            - name: CONSOLE_GOOGLE_CLIENT_SECRET
+            - name: HAKU_CONSOLE_GOOGLE_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: google-client-credentials

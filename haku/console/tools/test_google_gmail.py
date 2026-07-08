@@ -7,8 +7,12 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from haku.console.google_gmail_tools import GmailToolsClient
-from haku.console.google_tools_models import BatchModifyGmailThreadLabelsArgs, CreateGmailDraftArgs, GmailLabelRef
+from haku.console.tools.google_gmail import (
+    BatchModifyGmailThreadLabelsArgs,
+    CreateGmailDraftArgs,
+    GmailLabelRef,
+    GmailToolsClient,
+)
 
 
 @dataclass
@@ -204,6 +208,14 @@ def test_preview_threads_extracts_subject_snippet_and_labels(service: _FakeGmail
     assert preview.snippet == "hello world"
     assert preview.current_label_names == ["haku/triaged"]
     assert preview.gmail_url == "https://mail.google.com/mail/u/0/#all/t1"
+
+
+def test_preview_threads_subject_is_none_not_a_placeholder_string(service: _FakeGmailService) -> None:
+    # Whether/how a missing Subject renders (e.g. "(no subject)") is a frontend
+    # decision; the backend passes through the raw absence.
+    service.thread_responses["t1"] = {"messages": [{"snippet": "", "labelIds": [], "payload": {"headers": []}}]}
+    client = GmailToolsClient(service)
+    assert client.preview_threads(["t1"])["t1"].subject is None
 
 
 if __name__ == "__main__":

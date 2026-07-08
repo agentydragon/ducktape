@@ -1,5 +1,5 @@
 import { Badge, Button, Group, SegmentedControl, Stack, Text } from "@mantine/core";
-import type { KeyboardEvent, ReactNode } from "react";
+import type { KeyboardEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -13,6 +13,7 @@ import {
   terminalStatusLabel,
 } from "./approval_state.ts";
 import type { McpOperatorAuthStatus, PendingApproval, ToolCallRecord } from "./client.ts";
+import { Field } from "./field.tsx";
 import { googleToolPreview } from "./google_tool_previews.tsx";
 import { ACTION_COLOR } from "./theme.ts";
 
@@ -121,15 +122,6 @@ export function ShellControls({ pendingCount, opened, activeTab, onOpenTab }: Sh
         Approvals
       </Button>
     </Group>
-  );
-}
-
-export function Field({ label, children, mono = false }: { label: string; children: ReactNode; mono?: boolean }) {
-  return (
-    <div className="haku-shell-field">
-      <dt>{label}</dt>
-      <dd className={mono ? "haku-shell-mono" : ""}>{children}</dd>
-    </div>
   );
 }
 
