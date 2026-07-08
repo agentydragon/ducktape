@@ -51,6 +51,26 @@ def _test_mcp_server() -> FastMCP:
         """Echo a test string."""
         return f"echo:{text}"
 
+    @server.tool()
+    async def products_list() -> list[dict[str, Any]]:
+        """List products, mirroring grocy-sf's products_list(detail="brief")."""
+        return [{"id": 1, "name": "Milk"}]
+
+    @server.tool()
+    async def locations_list() -> list[dict[str, Any]]:
+        """List locations, mirroring grocy-sf's locations_list(detail="brief")."""
+        return [{"id": 2, "name": "Fridge"}]
+
+    @server.tool()
+    async def quantity_units_list() -> list[dict[str, Any]]:
+        """List quantity units, mirroring grocy-sf's quantity_units_list(detail="brief")."""
+        return [{"id": 3, "name": "Liter"}]
+
+    @server.tool()
+    async def product_groups_list() -> list[dict[str, Any]]:
+        """List product groups, mirroring grocy-sf's product_groups_list(detail="brief")."""
+        return [{"id": 4, "name": "Dairy"}]
+
     return server
 
 
@@ -396,6 +416,20 @@ def test_operator_oauth_static_client_id_skips_dynamic_registration(make_client,
 
     assert callback.status_code == 200, callback.text
     assert after["associations"][0]["status"] == "connected"
+
+
+def test_grocy_sf_reference_resolves_ids_to_names(
+    make_client, tmp_path: Path, db_url: str, mcp_server_url: str
+) -> None:
+    with make_client(config_file=_config_file(tmp_path, mcp_server_url), **_test_app_overrides(db_url)) as client:
+        resp = client.get("/api/grocy-sf/reference")
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {
+        "products": [{"id": 1, "name": "Milk"}],
+        "locations": [{"id": 2, "name": "Fridge"}],
+        "quantity_units": [{"id": 3, "name": "Liter"}],
+        "product_groups": [{"id": 4, "name": "Dairy"}],
+    }
 
 
 def test_reflection_marks_unreachable_servers_degraded(

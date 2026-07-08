@@ -121,6 +121,7 @@ js_library(
     name = "grocy_tool_previews",
     srcs = ["grocy_tool_previews.tsx"],
     deps = [
+        ":client",
         ":field",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
