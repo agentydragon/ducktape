@@ -135,17 +135,18 @@ class CreateError(BaseModel):
     error: str
 
 
-class GetOk(BaseModel):
-    kind: Literal["ok"] = "ok"
+class GetResultBase(BaseModel):
     entity_type: ReadableEntityType
     object_id: int
+
+
+class GetOk(GetResultBase):
+    kind: Literal["ok"] = "ok"
     data: dict[str, Any]
 
 
-class GetError(BaseModel):
+class GetError(GetResultBase):
     kind: Literal["error"] = "error"
-    entity_type: ReadableEntityType
-    object_id: int
     error: str
 
 
