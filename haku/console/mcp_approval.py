@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import datetime as dt
 import html
+import json
 import logging
 import os
 import re
@@ -21,6 +23,7 @@ from typing import Annotated, Any, Literal, Protocol, cast
 from urllib.parse import quote, urlencode, urljoin
 
 import httpx
+import psycopg
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -499,9 +502,42 @@ class PostgresMcpOperatorOAuthStore:
             return row.access_token
 
 
+def _psycopg_dsn(database_url: str) -> str:
+    # SQLAlchemy's "+psycopg" driver suffix isn't a real libpq scheme; strip it so
+    # psycopg's own AsyncConnection.connect() (used here for LISTEN/NOTIFY, outside
+    # SQLAlchemy) accepts the DSN directly.
+    return database_url.replace("postgresql+psycopg://", "postgresql://", 1)
+
+
 class ToolCallEventHub:
-    def __init__(self) -> None:
+    """WebSocket fan-out to this pod's connected clients, relayed across every
+    haku-console replica via Postgres LISTEN/NOTIFY (when a database is configured) —
+    so a client connected to one pod still gets the live nudge for an event a
+    *different* pod handled, not just events its own pod happened to process.
+    `broadcast()` always publishes (NOTIFY when DB-backed, direct local delivery
+    otherwise, e.g. in tests with no database); actual WebSocket sends happen only in
+    `_deliver_locally`, invoked either directly or from the NOTIFY listen loop — the
+    publishing pod hears its own NOTIFY back too, so there's no separate "local vs.
+    remote" delivery path to keep in sync.
+    """
+
+    _CHANNEL = "haku_console_tool_call_events"
+
+    def __init__(self, database_url: str | None = None) -> None:
         self._connections: set[WebSocket] = set()
+        self._dsn = _psycopg_dsn(database_url) if database_url else None
+        self._listen_task: asyncio.Task[None] | None = None
+
+    async def start(self) -> None:
+        if self._dsn is not None:
+            self._listen_task = asyncio.create_task(self._listen_loop())
+
+    async def aclose(self) -> None:
+        if self._listen_task is None:
+            return
+        self._listen_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await self._listen_task
 
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()
@@ -512,7 +548,17 @@ class ToolCallEventHub:
 
     async def broadcast(self, events: Iterable[ToolCallEvent]) -> None:
         payloads = [e.model_dump(mode="json") for e in events]
-        if not payloads or not self._connections:
+        if not payloads:
+            return
+        if self._dsn is None:
+            await self._deliver_locally(payloads)
+            return
+        async with await psycopg.AsyncConnection.connect(self._dsn, autocommit=True) as conn:
+            for payload in payloads:
+                await conn.execute("SELECT pg_notify(%s, %s)", (self._CHANNEL, json.dumps(payload)))
+
+    async def _deliver_locally(self, payloads: list[dict[str, Any]]) -> None:
+        if not self._connections:
             return
         dead: list[WebSocket] = []
         for ws in self._connections:
@@ -523,6 +569,25 @@ class ToolCallEventHub:
                 dead.append(ws)
         for ws in dead:
             self.disconnect(ws)
+
+    async def _listen_loop(self) -> None:
+        assert self._dsn is not None
+        while True:
+            try:
+                async with await psycopg.AsyncConnection.connect(self._dsn, autocommit=True) as conn:
+                    await conn.execute(f"LISTEN {self._CHANNEL}")
+                    async for note in conn.notifies():
+                        try:
+                            payload = json.loads(note.payload)
+                        except ValueError:
+                            logger.exception("failed to parse tool-call event notification payload")
+                            continue
+                        await self._deliver_locally([payload])
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("tool-call event listen loop failed; reconnecting")
+                await asyncio.sleep(1)
 
 
 # A server reached over an in-process FastMCP instance instead of a remote URL (see

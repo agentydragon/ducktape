@@ -23,9 +23,15 @@ metadata:
   labels:
     app.kubernetes.io/name: haku-console
 spec:
-  replicas: 1
+  replicas: 2
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    # maxUnavailable: 0 means the new pod must be Ready before an old one is torn
+    # down, so a deploy never drops to zero endpoints (unlike the single-replica
+    # Recreate strategy this replaces, which always had a brief full outage).
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: haku-console
@@ -108,6 +114,14 @@ spec:
                 secretKeyRef:
                   name: haku-console-agent-api
                   key: token
+            # CSRF double-submit signing key, shared across replicas (see
+            # csrf-secret.sops.yaml) — without it each pod would sign/validate with
+            # its own ephemeral secret and cross-pod requests would randomly 403.
+            - name: HAKU_CONSOLE_CSRF_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-csrf-secret
+                  key: secret
             # In-process `google` MCP server (calendar event creation, batch Gmail thread
             # label changes, Gmail draft creation — see haku/console/tools/google.py).
             # haku-console-google-access-token (access_token + expires_at) is written

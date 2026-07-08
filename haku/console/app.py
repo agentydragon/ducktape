@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import logging
 import secrets
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, Request, Response
@@ -49,18 +50,26 @@ def _cache_control_for_path(path: str) -> str:
 
 
 def create_app(settings: Settings) -> FastAPI:
-    app = FastAPI(title="Haku console")
+    database_url = settings.database_url.get_secret_value() if settings.database_url is not None else None
+    # Cross-replica fan-out (Postgres LISTEN/NOTIFY) when a database is configured;
+    # started/stopped by the lifespan below rather than at construction time, since
+    # starting the listen loop needs a running event loop.
+    tool_call_event_hub = mcp_approval.ToolCallEventHub(database_url)
+
+    @asynccontextmanager
+    async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+        await tool_call_event_hub.start()
+        try:
+            yield
+        finally:
+            await tool_call_event_hub.aclose()
+
+    app = FastAPI(title="Haku console", lifespan=_lifespan)
     # The capability router reads settings off app.state (see haku.console.capabilities).
     app.state.settings = settings
-    app.state.tool_call_ledger = (
-        mcp_approval.PostgresToolCallLedger(settings.database_url.get_secret_value())
-        if settings.database_url is not None
-        else None
-    )
+    app.state.tool_call_ledger = mcp_approval.PostgresToolCallLedger(database_url) if database_url is not None else None
     app.state.mcp_operator_oauth_store = (
-        mcp_approval.PostgresMcpOperatorOAuthStore(settings.database_url.get_secret_value())
-        if settings.database_url is not None
-        else None
+        mcp_approval.PostgresMcpOperatorOAuthStore(database_url) if database_url is not None else None
     )
     in_process_servers: dict[str, FastMCP] = {}
     app.state.google_gmail_client = None
@@ -68,7 +77,7 @@ def create_app(settings: Settings) -> FastAPI:
         gmail_client, calendar_client = google_tools.build_tool_clients(settings.google_token_dir)
         app.state.google_gmail_client = gmail_client
         in_process_servers[google_tools.GOOGLE_SERVER_ID] = google_tools.build_mcp(gmail_client, calendar_client)
-    app.state.tool_call_event_hub = mcp_approval.ToolCallEventHub()
+    app.state.tool_call_event_hub = tool_call_event_hub
     app.state.tool_call_executor = mcp_approval.McpToolExecutor(in_process_servers)
     app.state.tool_call_metadata_provider = mcp_approval.McpMetadataProvider(in_process_servers)
 
@@ -89,8 +98,10 @@ def create_app(settings: Settings) -> FastAPI:
 
     # CSRF for the capability tier: a header-located double-submit token (the SPA
     # echoes the token from GET /api/capabilities/csrf in X-CSRF-Token). Use the
-    # configured secret, else an ephemeral one (fine for the single-replica console
-    # — a restart just makes the SPA refetch its token).
+    # configured secret (shared across every replica — see csrf-secret.sops.yaml),
+    # else an ephemeral one; the ephemeral fallback only ever worked by accident
+    # with exactly one replica (a token from a different pod's secret would fail
+    # validation), so it's a dev/test convenience now, not a real deploy path.
     csrf_secret = settings.csrf_secret.get_secret_value() if settings.csrf_secret else secrets.token_urlsafe(32)
     CsrfProtect.load_config(lambda: [("secret_key", csrf_secret), ("token_location", "header")])
 
