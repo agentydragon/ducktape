@@ -96,7 +96,7 @@ for AI/ML workloads. Complete overkill for general k8s workers.
 
 **Rejected: EU-only.** As of May 2026, all 312 auction servers are in FSN1
 (Falkenstein), HEL1 (Helsinki), or NBG1 (Nuremberg). No HIL. Latency from US West
-to EU is ~130ms. See `idea/hetzner-auction-k8s-node.md` for full analysis.
+to EU is ~130ms. See `idea/hetzner_auction_k8s_node.md` for full analysis.
 
 ### AWS EC2 / GCP / Azure
 

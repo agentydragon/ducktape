@@ -12,8 +12,9 @@ operator activation (runbook in <README.md>):
   `cluster/k8s/haku/agent-worker/environment-key.sops.yaml` to the real value
   (placeholder today, encrypted to the cluster/Flux age key).
 - **Activate + validate**: flip `suspend: false` on the Kustomization and watch
-  the Deployment — first systemd-PID1 pod in the cluster, so confirm it boots
-  unprivileged (cgroup-v2 delegation, writable `/run`) and tune the pod
-  `securityContext` if needed.
+  the Deployment — the pod execs the worker closure directly as the non-root
+  `haku` uid with no systemd PID 1 (see <README.md> "Worker image" for why), so
+  confirm it starts cleanly under that `securityContext` (all caps dropped,
+  writable `/workspace` emptyDir via `fsGroup`) and tune it if needed.
 - **Smoke test** — `ant beta:deployments run --deployment-id depl_011DSrUoXuhoDWJoPyDuePqR`,
   watch in the Console.

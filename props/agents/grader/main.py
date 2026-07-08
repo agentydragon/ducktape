@@ -82,9 +82,8 @@ logger = logging.getLogger(__name__)
 # Reminder sent when agent outputs text instead of using tools
 TEXT_OUTPUT_REMINDER = (
     "You must use tools to grade and cluster issues. Do not output text directly. "
-    "Use list_pending to see pending edges, then insert_edges or fill_remaining to grade them. "
-    "After grading, use list_clustering_pending to see issues needing clustering, "
-    "then create_cluster or add_to_cluster. "
+    "Use get_drift to see pending work: its .grading field lists edges needing insert_edges "
+    "or fill_remaining, and its .clustering field lists issues needing create_cluster or add_to_cluster. "
     "Call sleep when all grading and clustering is complete."
 )
 

@@ -12,9 +12,9 @@ tags:
   - workstation
   - infrastructure
   - personal
-repository: https://gitlab.com/agentydragon/ducktape
-homepage: https://gitlab.com/agentydragon/ducktape
-issues: https://gitlab.com/agentydragon/ducktape/-/issues
+repository: https://github.com/agentydragon/ducktape
+homepage: https://github.com/agentydragon/ducktape
+issues: https://github.com/agentydragon/ducktape/issues
 build_ignore:
   - .ansible
 

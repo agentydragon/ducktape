@@ -1,6 +1,6 @@
 # CI Unification Plan
 
-**Status**: Phases 1-4 complete. Remaining: Phase 4 k8s validation BUILD.bazel (sh_test wrappers), Phase 5 ansible-lint in Bazel (blocked on galaxy dependency).
+**Status**: Phases 1-4 complete. Remaining: Phase 5 ansible-lint in Bazel (blocked on galaxy dependency).
 
 ## Architecture
 
@@ -15,7 +15,7 @@ Conflict markers, YAML/TOML syntax, `terraform_fmt`, ansible playbook syntax, pr
 
 ### What moved to Bazel
 
-Python linting (ruff, mypy), JS/TS (eslint, svelte-check), Rust (clippy, rustfmt), Terraform validation (rules_tf with hermetic provider mirror), k8s validation binaries (kubeconform, flux, kustomize via http_archive).
+Python linting (ruff, mypy), JS/TS (eslint, svelte-check), Rust (clippy, rustfmt), Terraform validation (rules_tf with hermetic provider mirror), k8s structural validation (kustomize builds, Flux dependency checks, etc. as the `//cluster/validation:test_*` py_test suite). Current tool wiring: see `devinfra/docs/linting.md`.
 
 ## External tool installation
 
@@ -33,11 +33,20 @@ rules_tf (v0.0.10) with provider mirror: `mirror` dict in `tf.download()` pre-fe
 
 **Adding a new terraform module**: add providers to `mirror` dict in `MODULE.bazel` (versions from `.terraform.lock.hcl`), create `BUILD.bazel` with `tf_providers_versions` + `tf_module`.
 
-## K8s validation in Bazel (Phase 4 — binaries done, BUILD.bazel remaining)
+## K8s validation (Phase 4 — done; superseded by `devinfra/docs/linting.md`)
 
-http_archive binaries added to MODULE.bazel: `@kustomize`, `@kubeconform`, `@flux`, `@gitstatusd`. Still need sh_test wrappers in `cluster/k8s/BUILD.bazel` to actually invoke them.
+`kubeconform` is not a Bazel target — it runs only as a pre-commit hook (see
+`devinfra/docs/linting.md`). Structural validation (kustomize builds, CRD
+layering, orphaned files, Flux dependencies, health checks, blueprint
+completeness) is implemented as the `//cluster/validation:test_*` py_test
+suite (e.g. `test_flux_build`, `test_cluster_integration`) — not as sh_test
+wrappers. The `kustomize`/`flux` CLIs themselves are fetched via
+`rules_multitool` (`devinfra/lockfile.json`, exposed as
+`@multitool//tools/{kustomize,flux}`) and used internally by
+`cluster/validation/kustomize.py` and `cluster/validation/flux.py`.
 
-Existing Python validation scripts (`validate-kustomizations.py`, `validate-flux-build.py`) can be wrapped as py_test.
+`devinfra/docs/linting.md` is the current source of truth for this wiring;
+this section is historical planning context only.
 
 ## Ansible-lint (Phase 5 — not started)
 
@@ -45,5 +54,5 @@ Blocked on galaxy dependency question: ansible-lint needs galaxy collections, wh
 
 ## Remaining work
 
-- [ ] Create k8s validation BUILD.bazel with sh_test wrappers for kubeconform/flux
+- [x] K8s structural validation — implemented as `//cluster/validation:test_*` py_test suite (see `devinfra/docs/linting.md`)
 - [ ] Evaluate ansible-lint in Bazel (galaxy dependency)

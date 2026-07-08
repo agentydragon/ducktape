@@ -20,19 +20,16 @@ Note: `requires_postgres` was removed — all PostgreSQL tests now use testconta
 
 ### Docker Test Infrastructure
 
-Docker test utilities are consolidated in `//test_util`:
+Docker test utilities are consolidated in `//third_party/containers`:
 
 ```python
-from test_util.docker import (
-    load_bazel_image,       # Load OCI image from Bazel oci_load target
-    debian_slim_image,       # Session fixture for debian-slim image
-)
+from third_party.containers.fixtures import debian_slim_image  # Session fixture for debian-slim image
 ```
 
 **Pattern for Docker tests:**
 
 1. Add `requires_docker = True` to the `py_test()` call in the Bazel BUILD file
-2. Use fixtures from `test_util.docker` or `mcp_infra/testing/docker_fixtures.py`
+2. Use fixtures from `third_party.containers.fixtures` or `mcp_infra/testing/docker_fixtures.py`
 
 ### Props E2E Tests (Testcontainers)
 
@@ -71,7 +68,7 @@ Current approach in `ci.yml`:
 
 **Improvements made:**
 
-- Docker tests now share utilities via `//test_util`
+- Docker tests now share utilities via `//third_party/containers`
 - Props E2E tests use testcontainers for hermetic infrastructure
 - Non-Docker tests no longer depend on Docker fixtures
 

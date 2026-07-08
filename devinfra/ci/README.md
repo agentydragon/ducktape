@@ -58,8 +58,7 @@ bazel-ci already rebuilds them from source so the gate would be redundant.
 Ship an optimized binary — opt-level=3 LLVM optimizations, debug-assertions
 off. Cuts `modules propose` wall on the tana corpus from ~5 min to ~45 s
 (7x). `-Cdebuginfo=1` (line tables only) preserves addr2line + inlined-frame
-resolution for downstream perf profiling at ~5–10% size cost. See
-<../js/debundle/perf/proposer_roadmap.md> §0.
+resolution for downstream perf profiling at ~5–10% size cost.
 
 **`aiquota` / `aiquota-extension`**
 

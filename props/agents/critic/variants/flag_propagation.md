@@ -2,6 +2,16 @@
 
 Find issues where boolean flags or control flow states are unnecessarily threaded through code, and where control flow can be simplified.
 
+## Review Scope
+
+Snapshot: ${snapshot_slug}
+% if scope_files is None:
+Review: ALL files in snapshot
+% else:
+Files to review: ${", ".join(scope_files)}
+% endif
+Location: ${workspace_dir}
+
 ## What to Flag
 
 - **Redundant flag passing**: Flags passed down call chains but only checked at the end (consider early bailout or separate code paths)

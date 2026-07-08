@@ -20,7 +20,7 @@ ${include_doc("props/agents/docs/db/grading.md.mako")}
 
 ### Grading
 
-1. **List pending** — call `list_pending` to see edges still needed
+1. **Check pending work** — call `get_drift()`; its `.grading` field lists edges still needed
 2. **Inspect** — `show_issue` to see a critique issue's rationale and locations; `show_tp`/`show_fp` for ground truth details
 3. **Match** — `insert_edges` to create edges with credit (0.0–1.0) and rationale
 4. **Fill** — `fill_remaining` to bulk-fill remaining non-matches with credit=0
@@ -28,9 +28,9 @@ ${include_doc("props/agents/docs/db/grading.md.mako")}
 
 ### Clustering Unmatched Issues
 
-After grading is complete (`list_pending` returns empty), cluster unmatched issues:
+After grading is complete (`get_drift().grading` is empty), cluster unmatched issues:
 
-1. **List unclustered** — call `list_clustering_pending` to see issues with credit=0 across all GT
+1. **Check pending work** — call `get_drift()`; its `.clustering` field lists issues with credit=0 across all GT
 2. **Inspect** — use `show_issue` to read each issue's rationale and locations; use `exec` to read code
 3. **Cluster** — group issues that describe the **same underlying problem**:
    - `create_cluster` — create a new cluster with initial members
@@ -50,11 +50,11 @@ After grading is complete (`list_pending` returns empty), cluster unmatched issu
 
 ## Grader Lifecycle
 
-1. **On start**: Call `list_pending` and grade everything, then `list_clustering_pending` and cluster
-2. **When done**: Call `sleep` — it validates both `grading_pending` and `clustering_pending` are empty, then waits for changes
-3. **On wake**: You'll receive a message describing what changed, then call `list_pending` again
+1. **On start**: Call `get_drift()` and grade everything in `.grading`, then cluster everything in `.clustering`
+2. **When done**: Call `sleep` — it validates both `.grading` and `.clustering` are empty, then waits for changes
+3. **On wake**: You'll receive a message describing what changed, then call `get_drift()` again
 
-**Note:** You may start in a partially-graded state (previous agent hit context limit). Don't assume a clean slate — always call `list_pending` to see what work remains. The `grading_edges` table and `issue_clusters` table are your checkpoints.
+**Note:** You may start in a partially-graded state (previous agent hit context limit). Don't assume a clean slate — always call `get_drift()` to see what work remains. The `grading_edges` table and `issue_clusters` table are your checkpoints.
 
 ### Wake Message Format
 
@@ -65,16 +65,16 @@ GT changes detected:
   - INSERT_reported_issues
 ```
 
-This tells you what triggered the wake. Call `list_pending` to see the actual work.
+This tells you what triggered the wake. Call `get_drift()` to see the actual work.
 
 ### Working with Multiple Critic Runs
 
 Since you grade multiple critic runs, pass the `run` parameter to tools to specify which critic run's issues you're working with.
 
 Each wake cycle:
-1. `list_pending` — see edges needing grading (grouped by run/issue)
+1. `get_drift()` — its `.grading` field lists edges needing grading (each entry identifies `critique_run_id`/`critique_issue_id`); its `.clustering` field lists issues needing clustering
 2. For each issue: inspect with `show_issue`, examine GT with `show_tp`/`show_fp`, create edges with `insert_edges`, fill remainder with `fill_remaining`
-3. When `list_pending` returns empty, call `list_clustering_pending` and cluster unmatched issues
+3. When `.grading` is empty, cluster the issues in `.clustering`
 4. When both are empty, you'll be paused until the next change
 
 ${source_inspection([

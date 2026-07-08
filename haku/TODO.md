@@ -141,8 +141,10 @@ the runtimes differ in where the sandbox runs — see
 
 - **Self-hosted worker (Runtime B)** — operator activation to go live:
   <runtime/managed_agent/self_hosted/TODO.md>.
-- **Anthropic-hosted cloud** — v0 known issues (token propagation, egress, the
-  k8s-MCP path) + the Terraform-provider evaluation:
+- **Anthropic-hosted cloud** — **PARKED (2026-07-04)**: the cloud control-plane
+  objects were deleted at Anthropic and `cluster/k8s/haku/cloud-agent-tf` is
+  suspended; see <runtime/managed_agent/anthropic_hosted/PLAN.md> for the reason
+  and the resume decision. Per-runtime TODO (mostly moot until resumed):
   <runtime/managed_agent/anthropic_hosted/TODO.md>.
 
 ## Later (post-v0)

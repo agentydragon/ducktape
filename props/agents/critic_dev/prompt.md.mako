@@ -64,7 +64,7 @@ Beat the average of baseline definitions on sum of issues found across your `all
 Your database access is scoped by Row-Level Security based on your `type_config`:
 
 - **`allowed_examples`**: You can only see data for examples listed in your config
-- **`baseline_definition_ids`**: You can read these agent definitions
+- **`baseline_image_digests`**: You can read these agent definitions
 
 **What you CAN see:**
 
@@ -84,7 +84,7 @@ Query your config to see your allowed scope:
 ```sql
 SELECT
     type_config->'allowed_examples' AS allowed_examples,
-    type_config->'baseline_definition_ids' AS baselines
+    type_config->'baseline_image_digests' AS baselines
 FROM agent_runs
 WHERE agent_run_id = current_agent_run_id();
 ```
@@ -106,7 +106,7 @@ SELECT SUM(cost_usd) AS spent FROM llm_run_costs WHERE agent_run_id = current_ag
 SELECT type_config FROM agent_runs WHERE agent_run_id = current_agent_run_id();
 ```
 
-Gives you `baseline_definition_ids` and `allowed_examples`.
+Gives you `baseline_image_digests` and `allowed_examples`.
 
 Also check for existing definitions and scores — prior runs may have already made progress:
 

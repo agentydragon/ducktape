@@ -51,7 +51,7 @@ Output JSON (stdout):
 
 Notes:
 
-- The evaluator ALWAYS runs in Docker. The image must have the `agent_server` package installed; import types from `agent_server.policies.policy_types` and naming helpers from `mcp_infra.naming`.
+- The evaluator ALWAYS runs in Docker. The image must have the `agent_server` package installed; import types from `x.agent_server.policies.policy_types` and naming helpers from `mcp_infra.naming`.
 - Your program must print exactly one JSON object to stdout and exit 0. Non‑zero exit or invalid JSON is treated as an error.
 - Do not swallow exceptions; let them surface to make failures visible and fixable.
 
@@ -59,7 +59,7 @@ Minimal example (with helpers):
 
 ```python
 import sys
-from agent_server.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
+from x.agent_server.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 from mcp_infra.naming import tool_matches
 
 req = PolicyRequest.model_validate_json(sys.stdin.read())
@@ -93,8 +93,8 @@ Notes:
 
 Reference the `agent_server` package APIs when composing policies; no container mounts are assumed. For examples, see:
 
-- `agent_server.policies.default_policy` (packaged minimal policy program)
-- `agent_server.policies.approve_all` (approve-all example)
+- `x.agent_server.policies.default_policy` (packaged minimal policy program)
+- `x.agent_server.policies.approve_all` (approve-all example)
 
 ## Best practices
 

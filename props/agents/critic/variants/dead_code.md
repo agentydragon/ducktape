@@ -2,6 +2,16 @@
 
 Find dead code: unused symbols, unreachable branches, and test-only production code.
 
+## Review Scope
+
+Snapshot: ${snapshot_slug}
+% if scope_files is None:
+Review: ALL files in snapshot
+% else:
+Files to review: ${", ".join(scope_files)}
+% endif
+Location: ${workspace_dir}
+
 ## What to Flag
 
 - **Unused symbols**: Functions, classes, methods, variables, constants not referenced from production code

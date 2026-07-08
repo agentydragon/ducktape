@@ -50,7 +50,7 @@ When provisioning a new VM or remote machine:
 3. Clone ducktape repository and checkout devel branch:
 
    ```bash
-   ssh agentydragon@NEW_MACHINE_IP 'mkdir -p ~/code && git clone git@gitlab.com:agentydragon/ducktape ~/code/ducktape && cd ~/code/ducktape && git checkout devel'
+   ssh agentydragon@NEW_MACHINE_IP 'mkdir -p ~/code && git clone git@github.com:agentydragon/ducktape ~/code/ducktape && cd ~/code/ducktape && git checkout devel'
    ```
 
 4. Run the playbook from your provisioning machine:

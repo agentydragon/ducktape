@@ -12,9 +12,9 @@ read from stdin see the request. Then it exec()s POLICY_SRC. The policy program
 is responsible for printing a single JSON line (PolicyResponse) to stdout.
 
 Notes:
-- Policy programs CAN import from agent_server package (installed in container).
-- Container image must have the agent_server package installed for both the shim
-  execution (python -m agent_server.policy_eval.shim) and for policy programs
+- Policy programs CAN import from the x.agent_server package (installed in container).
+- Container image must have the x.agent_server package installed for both the shim
+  execution (python -m x.agent_server.policy_eval.shim) and for policy programs
   to import types/utilities from x.agent_server.
 """
 

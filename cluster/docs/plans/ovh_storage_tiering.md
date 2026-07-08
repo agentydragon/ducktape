@@ -176,6 +176,7 @@ must update **all** of these in the same change — the two validation tests enf
   the nodes running etcd, or `ControlPlaneLeasePutLatency` alerts point nowhere).
 - `tf/gitops/dns-records/main.tf` — `kube_api_ips` (the `api.allegedly.works` A records must be
   the CPs' public IPs).
+- `cluster/README.md` — the "Node Types" table (human-facing CP/worker roster).
 
 ## Stage 3 — third SSD node (optional, future)
 

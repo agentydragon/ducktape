@@ -1,10 +1,15 @@
 # haku base
 
 The **base** layer of Haku, a personal background agent: its instructions and config —
-the durable **job and judgment**, independent of how Haku currently works. This directory
-is baked into the `haku-scanner` container image and is the read-only project root at run
-time — Haku never writes here. Changing Haku's behaviour means editing this directory in
-ducktape and letting the image rebuild (Flux image automation bumps the CronJob tag).
+the durable **job and judgment**, independent of how Haku currently works. Haku reads
+this directory straight from a live ducktape git checkout at run time — not baked into
+a container image — and never writes here: the Claude Code web "home" environment's
+project checkout **is** the ducktape repo
+(<../runtime/claude_web_env/README.md>), and the self-hosted worker's `entrypoint.sh`
+clones/fast-forwards ducktape into the pod's workdir on every wake
+(<../runtime/managed_agent/self_hosted/README.md>). Changing Haku's behaviour means
+editing this directory in ducktape and merging — the next session/wake picks it up
+live, with no image rebuild.
 
 - `instructions.md` — Haku's operating manual: who it is, its objective (make the
   operator's life go well), how it reasons, the perimeter/credential model, hard rules,

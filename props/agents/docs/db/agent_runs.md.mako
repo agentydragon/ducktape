@@ -24,7 +24,7 @@ SELECT type_config FROM agent_runs WHERE agent_run_id = current_agent_run_id();
 SELECT
     type_config->>'agent_type' AS agent_type,
     type_config->'allowed_examples' AS allowed_examples,
-    type_config->'baseline_definition_ids' AS baselines
+    type_config->'baseline_image_digests' AS baselines
 FROM agent_runs
 WHERE agent_run_id = current_agent_run_id();
 ```

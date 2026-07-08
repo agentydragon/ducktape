@@ -1,9 +1,12 @@
 # Managed Agents — Anthropic-hosted sandbox
 
-Status: **control plane shipped (v0).** Haku's cloud Managed Agent
-(environment + agent + vault + static_bearer credential + deployment) is now
-provisioned **declaratively via Terraform**, not the imperative `ant` scripts
-this directory used to hold. The live wiring:
+Status: **PARKED (2026-07-04).** The cloud control-plane objects
+(environment/agent/vault/static_bearer credential/deployment) were deleted at
+Anthropic by the operator, and `cluster/k8s/haku/cloud-agent-tf` is suspended
+(`suspend: true`). See <PLAN.md> for the reason and the resume decision
+(recreate via the Terraform provider vs. retire it). What follows describes the
+**v0 architecture as it was built**, before parking — historical until the plan
+is resumed:
 
 - **Terraform root:** <../../../../tf/gitops/haku-cloud-agent> — the
   `claude-managed-agents` provider, pinned + hash-locked.
@@ -19,9 +22,9 @@ this directory used to hold. The live wiring:
 > `kubectl-machine-mcp` with a `static_bearer` credential bound to the MCP URL
 > (Path A), so the token is never substituted into arbitrary egress.
 
-This doc is the **architecture + forward direction** beyond v0. The agent today
-only runs a connectivity test (lists `haku-sandbox` pods); the ephemeral-compute
-run loop below is not built yet — see <PLAN.md>.
+This doc is the **architecture + forward direction** beyond v0. Before parking,
+the agent only ran a connectivity test (lists `haku-sandbox` pods); the
+ephemeral-compute run loop below was never built — see <PLAN.md>.
 
 ## Why cloud (vs the self-hosted worker)
 

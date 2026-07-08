@@ -35,27 +35,34 @@ variable is non-empty.
 
 ## 1. Choose a slot
 
-| Scenario                  | Slot                                                     |
-| ------------------------- | -------------------------------------------------------- |
-| Existing KS-5 worker slot | `kimsufi_worker0` (`var.kimsufi_service_name`)           |
-| Existing KS-5 worker slot | `kimsufi_worker1` (`var.kimsufi_service_name_1`)         |
-| Existing KS-5 CP slot     | `kimsufi_cp0` (`var.kimsufi_service_name_cp0`)           |
-| New KS-GAME worker slot   | `ks_game_worker0` (`var.kimsufi_service_name_ks_game_0`) |
-| New KS-GAME worker slot   | `ks_game_worker1` (`var.kimsufi_service_name_ks_game_1`) |
+All five slot variables below are currently occupied by provisioned servers (there is
+no spare slot). To provision a genuinely new node, either add a new variable following
+this naming pattern, or free up one of these slots via §5 (replacing an existing slot).
 
-Slot ↔ Nebula identity is fixed in code:
+| Variable                        | Current hostname | Hardware |
+| -------------------------------- | ----------------- | -------- |
+| `kimsufi_service_name`           | `ovh-ns103656`    | KS-5     |
+| `kimsufi_service_name_1`         | `ovh-ns103711`    | KS-5     |
+| `kimsufi_service_name_cp0`       | `ovh-ns102453`    | KS-5     |
+| `kimsufi_service_name_ks_game_0` | `ovh-ns104952`    | KS-GAME  |
+| `kimsufi_service_name_ks_game_1` | `ovh-ns104963`    | KS-GAME  |
 
-| Slot              | Hostname                 | Nebula IP       | Talos role    | Install disk                     | Data disk selector               |
-| ----------------- | ------------------------ | --------------- | ------------- | -------------------------------- | -------------------------------- |
-| `kimsufi_worker0` | `talos-kimsufi-worker-0` | `10.42.0.13/16` | control plane | `/dev/sda`                       | `/dev/sdb`                       |
-| `kimsufi_worker1` | `talos-kimsufi-worker-1` | `10.42.0.14/16` | control plane | `/dev/sda`                       | `/dev/sdb`                       |
-| `kimsufi_cp0`     | `talos-kimsufi-cp-0`     | `10.42.0.15/16` | control plane | `/dev/sda`                       | `/dev/sdb`                       |
-| `ks_game_worker0` | `talos-ks-game-worker-0` | `10.42.0.16/16` | worker        | NVMe serial `BTPF8256006P450RGN` | NVMe serial `BTPF8304019P450RGN` |
-| `ks_game_worker1` | `talos-ks-game-worker-1` | `10.42.0.17/16` | worker        | NVMe serial `BTPF8256002V450RGN` | NVMe serial `BTPF8256009U450RGN` |
+Slot ↔ Nebula identity is fixed in code (`cluster/terraform/main/ovh-nodes.tf`,
+`local.kimsufi_servers`):
 
-`data_disk_match` becomes a Talos `UserVolumeConfig` disk selector mounted at
-`/var/mnt/seaweedfs-data`; `local-path-ovh` uses
-`/var/mnt/seaweedfs-data/local-path` on each listed node.
+| Variable                          | Hostname       | Nebula IP       | Talos role    | Install disk                     | Data disk selector               |
+| ---------------------------------- | -------------- | --------------- | ------------- | --------------------------------- | --------------------------------- |
+| `kimsufi_service_name`             | `ovh-ns103656` | `10.42.0.13/16` | control plane | `/dev/sda`                       | `/dev/sdb`                       |
+| `kimsufi_service_name_1`           | `ovh-ns103711` | `10.42.0.14/16` | worker        | `/dev/sda`                       | `/dev/sdb`                       |
+| `kimsufi_service_name_cp0`         | `ovh-ns102453` | `10.42.0.15/16` | worker        | `/dev/sda`                       | `/dev/sdb`                       |
+| `kimsufi_service_name_ks_game_0`   | `ovh-ns104952` | `10.42.0.16/16` | control plane | NVMe serial `BTPF8256006P450RGN` | NVMe serial `BTPF8304019P450RGN` |
+| `kimsufi_service_name_ks_game_1`   | `ovh-ns104963` | `10.42.0.17/16` | control plane | NVMe serial `BTPF8256002V450RGN` | NVMe serial `BTPF8256009U450RGN` |
+
+`data_disk_match` becomes a Talos `UserVolumeConfig` disk selector; it mounts at
+`/var/mnt/seaweedfs-data` (legacy name) or `/var/mnt/local-path-ovh-<tier>` on nodes
+that have gone through the OVH storage-tiering rename (see `ovh-nodes.tf`'s
+`data_disk_mount_renamed_nodes`) — `local-path-ovh` uses whichever path applies on
+each listed node.
 
 ## 2. Set the service name
 

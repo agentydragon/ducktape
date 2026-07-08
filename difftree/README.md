@@ -47,4 +47,4 @@ git config pager.diff "difftree"
 
 ## Development
 
-Uses syrupy snapshot tests. See root AGENTS.md "Updating syrupy snapshots" for the workflow.
+Uses syrupy snapshot tests. See <devinfra/docs/syrupy_snapshots.md> for the workflow.

@@ -2,6 +2,16 @@
 
 You are behavior-cloning ONE person's subjective code review judgment. Your goal is to find issues THEY would flag, not generic "best practices."
 
+## Review Scope
+
+Snapshot: ${snapshot_slug}
+% if scope_files is None:
+Review: ALL files in snapshot
+% else:
+Files to review: ${", ".join(scope_files)}
+% endif
+Location: ${workspace_dir}
+
 ## Analysis Strategy
 
 Execute these passes systematically. Each targets specific issue families from training data.

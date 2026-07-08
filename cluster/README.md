@@ -38,9 +38,9 @@ See <docs/bootstrap.md> for full setup.
 
 | Node                           | Type             | Region    | Availability     | Hardware            |
 | ------------------------------ | ---------------- | --------- | ---------------- | ------------------- |
-| `ovh-ns102453`                 | Talos CP         | `hil`     | Always on        | OVH Kimsufi KS-5    |
-| `ovh-ns103656`, `ovh-ns103711` | Talos CP         | `hil`     | Always on        | OVH Kimsufi KS-5    |
-| `ovh-ns104952`, `ovh-ns104963` | Talos worker     | `hil`     | Always on        | OVH KS-GAME         |
+| `ovh-ns103656`                 | Talos CP         | `hil`     | Always on        | OVH Kimsufi KS-5    |
+| `ovh-ns104952`, `ovh-ns104963` | Talos CP         | `hil`     | Always on        | OVH KS-GAME         |
+| `ovh-ns103711`, `ovh-ns102453` | Talos worker     | `hil`     | Always on        | OVH Kimsufi KS-5    |
 | `wyrm2`                        | NixOS GPU worker | `proxmox` | Always on (home) | 2x RTX 5090         |
 | `iguana`                       | NixOS laptop     | `roaming` | Often offline    | ThinkPad X1 Extreme |
 | `rugged`                       | NixOS laptop     | `roaming` | Often offline    | Dell Rugged 12      |

@@ -4,10 +4,8 @@ Status: **plan; the OTel leg is implemented** (PR #2930). Goal: every Claude Cod
 session's transcript (`~/.claude/projects/**/*.jsonl`) and derived metrics land in
 one operator-owned store **automatically** — web sessions, routines, and the
 operator's own machines — with no per-session manual step and no reliance on agent
-cooperation. Primary consumer today: Haku's run telemetry
-([wake_model_and_eval.md](../../../haku/plans/wake_model_and_eval.md) → _Logging_,
-PR #2932); the collector itself is
-agent-agnostic.
+cooperation. Primary consumer today: Haku's run telemetry (PR #2932); the collector
+itself is agent-agnostic.
 
 ## Facts this design rests on (probed live 2026-07-05/06)
 

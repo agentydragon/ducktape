@@ -8,7 +8,7 @@ Gazelle Python is **fully configured and operational**. The repository has ~95% 
 
 - `//devinfra:gazelle` target builds and runs successfully
 - `//tools:modules_map` generates wheel metadata correctly
-- `gazelle_python.yaml` manifest is populated with 500+ module mappings
+- `devinfra/gazelle_python.yaml` manifest is populated with 500+ module mappings
 - Go dependencies download without network issues
 - System packages are filtered via `devinfra/filter_wheels.bzl`
 
@@ -28,11 +28,11 @@ bazel run //devinfra:gazelle_python_manifest.update
 ## Configuration
 
 1. **Dependencies** (`MODULE.bazel`):
-   - `rules_python_gazelle_plugin` version 1.4.1
-   - `gazelle` version 0.34.0
+   - `rules_python_gazelle_plugin` version 1.9.0
+   - `gazelle` version 0.47.0
 
 2. **Configuration Files**:
-   - `gazelle_python.yaml` - generated manifest mapping imports to PyPI packages
+   - `devinfra/gazelle_python.yaml` - generated manifest mapping imports to PyPI packages
    - `devinfra/filter_wheels.bzl` - filters system packages (pygobject, dbus-python, pycairo)
    - `//devinfra:gazelle` target in `devinfra/BUILD.bazel`
 
@@ -43,98 +43,8 @@ bazel run //devinfra:gazelle_python_manifest.update
 
 ## BUILD File Conventions
 
-### Per-File Targets (Gazelle Pattern)
-
-Each `.py` file should have its own `py_library` target with:
-
-- `name` matching the file stem (e.g., `client.py` → `name = "client"`)
-- `srcs` containing only that file
-- `imports = [".."]` or appropriate path to enable package imports
-
-### No Aggregator Targets
-
-Don't bundle multiple files into a single `py_library`:
-
-```python
-# ❌ WRONG: Aggregator pattern
-py_library(
-    name = "my_package",
-    srcs = ["client.py", "server.py", "utils.py"],
-    ...
-)
-
-# ✓ CORRECT: Per-file pattern
-py_library(name = "client", srcs = ["client.py"], ...)
-py_library(name = "server", srcs = ["server.py"], ...)
-py_library(name = "utils", srcs = ["utils.py"], ...)
-```
-
-### No `__init__` Targets
-
-Don't create `py_library` targets for `__init__.py` files:
-
-- Most `__init__.py` should not exist at all (Bazel generates stubs via `imports = [".."]`)
-- If `__init__.py` exists, it usually shouldn't have its own target
-- Exception: When `__init__.py` contains actual code (not just re-exports)
-
-### Import From Definition, Not Re-exports
-
-Depend on the target where code is defined, not where it's re-exported:
-
-```python
-# ❌ WRONG: Depending on re-export
-from mypackage import MyClass  # if __init__.py re-exports from mypackage.client
-deps = ["//mypackage"]  # or "//mypackage:__init__"
-
-# ✓ CORRECT: Depend on the defining module
-from mypackage.client import MyClass
-deps = ["//mypackage:client"]
-```
-
-### BUILD Files Parallel to Sources
-
-Each directory with `.py` files should have its own `BUILD.bazel`:
-
-```
-# ❌ WRONG: Root BUILD touching subdirectory files
-pkg/BUILD.bazel:
-    srcs = ["sub/client.py", "sub/server.py"]
-
-# ✓ CORRECT: BUILD files in each directory
-pkg/BUILD.bazel        # only for files in pkg/
-pkg/sub/BUILD.bazel    # for sub/client.py, sub/server.py
-```
-
-### Minimal Visibility
-
-Omit `visibility` when the default is sufficient. Only add explicit visibility when needed:
-
-```python
-# ❌ WRONG: Unnecessary visibility
-py_library(
-    name = "internal_helper",
-    srcs = ["internal_helper.py"],
-    visibility = ["//:__subpackages__"],  # Often not needed
-)
-
-# ✓ CORRECT: Omit when default works
-py_library(
-    name = "internal_helper",
-    srcs = ["internal_helper.py"],
-)
-
-# ✓ CORRECT: Add only when actually needed
-py_library(
-    name = "public_api",
-    srcs = ["public_api.py"],
-    visibility = ["//visibility:public"],  # Intentionally public
-)
-```
-
-Default visibility is package-private. Only broaden when:
-
-- Target is used by other packages (use `//pkg:__subpackages__` or specific packages)
-- Target is a public API (use `//visibility:public`)
+See root <../README.md> (Gazelle section) and <../STYLE.md> for per-file target,
+aggregator, `__init__`, import, and visibility conventions.
 
 ## Completed Fixes
 

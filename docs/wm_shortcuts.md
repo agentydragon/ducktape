@@ -39,7 +39,7 @@ Not enabled: `gjsosk@vishram1123.com` (on-screen keyboard, installed but not in 
 
 dconf path: `/org/gnome/shell/extensions/pop-shell/`
 
-Only these keys have dconf overrides (from `nix/home/modules/gnome-workspace-shortcuts.nix` and `nix/home/home.nix`):
+Only these keys have dconf overrides (from `nix/home/modules/gnome-shell-keybindings.nix` and `nix/home/home.nix`):
 
 | Key                         | Live value | Schema default                      | Source         |
 | --------------------------- | ---------- | ----------------------------------- | -------------- |
@@ -147,7 +147,7 @@ All values from live `gsettings list-recursively`. Source is schema default unle
 
 ### Workspace Navigation
 
-Configured in `nix/home/modules/gnome-workspace-shortcuts.nix`. Workspaces are dynamic (`org.gnome.mutter dynamic-workspaces = true`), made **vertical** by V-Shell extension, and only on primary monitor (`workspaces-only-on-primary = true`).
+Configured in `nix/home/modules/gnome-shell-keybindings.nix`. Workspaces are dynamic (`org.gnome.mutter dynamic-workspaces = true`), made **vertical** by V-Shell extension, and only on primary monitor (`workspaces-only-on-primary = true`).
 
 GNOME Shell 49 checks workspace orientation at runtime (`js/ui/windowManager.js:1798-1805`): with `layout_columns === -1` (horizontal, default), only left/right bindings work; with `layout_rows === -1` (vertical, set by V-Shell), only up/down work. V-Shell must be enabled for up/down bindings to function.
 
@@ -257,7 +257,7 @@ These don't conflict with Pop Shell but are worth knowing about:
 | ------------------------------------------------ | ------------------------------------------------------------------------ |
 | `nix/home/home.nix`                              | `programs.gnome-shell.extensions` (shared), Pop Shell settings, terminal |
 | `nix/home/modules/solarized.nix`                 | Night Theme Switcher extension + dconf settings                          |
-| `nix/home/modules/gnome-workspace-shortcuts.nix` | Workspace nav keybindings, clears Pop Shell workspace/monitor keys       |
+| `nix/home/modules/gnome-shell-keybindings.nix`   | Workspace nav keybindings, clears Pop Shell workspace/monitor keys      |
 | `nix/home/modules/gnome-custom-keybindings.nix`  | Custom keybinding framework                                              |
 | `nix/home/modules/flameshot-screenshots.nix`     | Print Screen -> Flameshot                                                |
 | `nix/home/hosts/rugged.nix`, `wyrm2.nix`         | Appindicator extension (NixOS hosts)                                     |

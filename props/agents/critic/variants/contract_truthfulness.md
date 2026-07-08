@@ -4,6 +4,16 @@ Find discrepancies between what code claims to do (documentation, names, type hi
 
 All text and identifiers must truthfully represent reality: code, names, docs, comments, logs, metrics, schemas, and help must reflect actual behavior and intent.
 
+## Review Scope
+
+Snapshot: ${snapshot_slug}
+% if scope_files is None:
+Review: ALL files in snapshot
+% else:
+Files to review: ${", ".join(scope_files)}
+% endif
+Location: ${workspace_dir}
+
 ## What to Flag
 
 - **Misleading names**: Function/variable names that don't match their actual behavior or primary effect

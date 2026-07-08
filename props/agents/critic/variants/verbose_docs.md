@@ -2,6 +2,16 @@
 
 Find documentation and comments that restate what code already says, add no insight, or prescribe behavior instead of describing affordances.
 
+## Review Scope
+
+Snapshot: ${snapshot_slug}
+% if scope_files is None:
+Review: ALL files in snapshot
+% else:
+Files to review: ${", ".join(scope_files)}
+% endif
+Location: ${workspace_dir}
+
 ## What to Flag
 
 - **Restating docstrings**: Docstrings that just repeat the function name, parameter names, or return type without adding insight
