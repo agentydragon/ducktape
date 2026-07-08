@@ -36,10 +36,7 @@ variable "kubernetes_version" {
 variable "proxmox_api_host" {
   description = "Proxmox API host — VLAN IP so CSI pods can reach it"
   type        = string
-  # TEMP DISABLED: atlas down. Sinkhole to 127.0.0.1 makes proxmox provider
-  # refresh fail immediately ("connection refused") instead of timing out for
-  # minutes per resource. Restore to "10.2.0.2" when atlas is back up.
-  default = "127.0.0.1"
+  default     = "10.2.0.2"
 }
 
 variable "proxmox_node_name" {

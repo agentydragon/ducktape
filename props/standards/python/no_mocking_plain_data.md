@@ -82,7 +82,7 @@ process(payload)
 
 ## See also
 
-- [Use pytest's standard fixtures for temp dirs and monkeypatching](./pytest-standard-fixtures.md)
-- [Use yield fixtures for teardown](./pytest-yield-fixtures.md)
-- [Structured data types over untyped mappings](../structured-data-over-untyped-mappings.md)
-- [No useless tests](../no-useless-tests.md)
+- [Use pytest's standard fixtures for temp dirs and monkeypatching](./pytest_standard_fixtures.md)
+- [Use yield fixtures for teardown](./pytest_yield_fixtures.md)
+- [Structured data types over untyped mappings](../structured_data_over_untyped_mappings.md)
+- [No useless tests](../no_useless_tests.md)

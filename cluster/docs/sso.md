@@ -10,7 +10,28 @@ TF owns the client_secret lifecycle — no Vault, no ESO, no `!Env` drift.
 **Secret flow**: TF creates provider → reads `client_secret` → writes `kubernetes_secret`
 in `authentik` namespace → Reflector mirrors to consumer namespace(s).
 
-**Currently managed**: grafana, headlamp, openclaw-agent, props, langfuse.
+**Source of truth for which apps currently have SSO**: the `provider_*.tf` files
+under `tf/gitops/sso-providers/` — one file per app. Don't hand-maintain an
+enumeration here; it goes stale as apps are added/removed. `ls tf/gitops/sso-providers/`
+(or grep for `authentik_provider_oauth2`) for the current set.
+
+Every provider file follows the same shape — an `authentik_provider_oauth2` +
+`authentik_application`, sharing the same `authorization_flow`/`invalidation_flow`,
+`issuer_mode = "per_provider"`, and the same three `openid`/`email`/`profile`
+`property_mappings` — plus a `kubernetes_secret` in the `authentik` namespace with
+Reflector annotations scoping the mirror to the consuming app's namespace. What
+varies per app: the redirect URI (`allowed_redirect_uris`, strict-matched to the
+app's OIDC callback path) and the mirrored secret's key/env-var shape, since each
+app expects its own config format. Compare:
+
+- `provider_grafana.tf` — redirect `https://grafana.allegedly.works/login/generic_oauth`;
+  secret keys `GF_AUTH_GENERIC_OAUTH_CLIENT_{ID,SECRET}`.
+- `provider_headlamp.tf` — redirect `https://headlamp.allegedly.works/oidc-callback`;
+  secret keys `OIDC_CLIENT_ID`/`OIDC_CLIENT_SECRET`/`OIDC_ISSUER_URL`/`OIDC_SCOPES`.
+- `provider_props.tf` — redirect `https://props.allegedly.works/auth/callback`;
+  secret keys `client-id`/`client-secret` plus an app-specific
+  `random_password`-generated `session-secret`, and an `authentik_policy_binding`
+  gating login to `data.authentik_group.admins`.
 
 ### Blueprint-managed providers (deprecated)
 

@@ -45,6 +45,6 @@ MAX_UPLOAD = 25                     # units unclear
 - [Time and duration](time.md)
 - [URLs](urls.md)
 - [Byte sizes](bytes.md)
-- [Physical quantities](physical-quantities.md)
+- [Physical quantities](physical_quantities.md)
 - [Paths (PathLike, Python)](../python/pathlike.md)
 - [Pathlib usage (Python)](../python/pathlib.md)

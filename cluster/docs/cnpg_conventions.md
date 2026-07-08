@@ -70,10 +70,16 @@ pinned DBs or vice versa. This prevents cross-site write latency.
 | forgejo-db             | OVH-HA         | Yes       |
 | langfuse-db            | OVH-HA         | Yes       |
 | inventree-db           | Proxmox-single | Yes       |
-| harbor-db              | Proxmox-single | Yes       |
-| props-db               | Proxmox-single | Yes       |
+| harbor-db              | OVH single-instance (interim) | Exception* |
+| props-db               | OVH-HA         | Yes       |
 | matrix-db              | Proxmox-single | Yes       |
 | tandoor-db             | Proxmox-single | Yes       |
+
+\* `harbor-db` moved off Proxmox 2026-06-03 (`region: hil` / `local-path-ovh`) so
+Harbor's DB survives Proxmox downtime, but it's still a single instance rather than
+the 2-instance `zone: hil-ovh` OVH-HA shape — see the comment in
+`k8s/harbor/db/postgres-cluster.yaml`. Bumping it to a proper OVH-HA cluster (R2/R3)
+is a known, deliberately deferred follow-up, not an oversight.
 
 ## TODO
 

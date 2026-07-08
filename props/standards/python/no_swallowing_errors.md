@@ -110,4 +110,4 @@ except Exception:  # ❌ should catch FileNotFoundError if ignoring that case on
 
 ## See also
 
-- [Try/except is scoped around the operation it guards](./scoped-try-except.md)
+- [Try/except is scoped around the operation it guards](./scoped_try_except.md)

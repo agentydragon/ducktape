@@ -762,9 +762,12 @@ in `openclaw-sandbox` and `claude-sandbox`.
 
 ### CNPG Backup Strategy
 
-Single-instance Proxmox CNPG clusters (inventree, harbor, props, matrix, tandoor) rely
-on Proxmox ZFS for local reliability (checksums, snapshots). Off-site disaster recovery
-needed:
+Single-instance Proxmox CNPG clusters (inventree, matrix, tandoor) rely on Proxmox ZFS
+for local reliability (checksums, snapshots). Off-site disaster recovery needed:
+
+(`harbor-db` moved to a single OVH instance and `props-db` to a 2-instance OVH-HA
+cluster — see <cnpg_conventions.md> Compliance table — so they're no longer part of
+this Proxmox-only gap.)
 
 - [ ] Generalize the `tofu-state` pg_dump CronJob pattern to all Proxmox CNPG clusters
       (write dumps to OVH-hosted PVC or object storage)

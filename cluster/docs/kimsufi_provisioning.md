@@ -122,10 +122,11 @@ public Talos reachability between those nodes. Nebula and kubelet may look healt
 while public peer traffic still fails.
 
 ```bash
-# Direct API readiness for each Kimsufi control-plane public IP.
-kubectl --server=https://147.135.37.175:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
+# Direct API readiness for each Kimsufi control-plane public IP
+# (ovh-ns103656, ovh-ns104952, ovh-ns104963 — see nebula-mesh.json for the roster).
 kubectl --server=https://147.135.39.162:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
-kubectl --server=https://147.135.39.176:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
+kubectl --server=https://147.135.104.5:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
+kubectl --server=https://147.135.104.16:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
 
 # Cross-node Talos API/maintenance reachability from host-networked Kimsufi pods.
 # Use one Cilium pod per Kimsufi node as the source and test the other public IPs.
@@ -143,15 +144,16 @@ expiry. Two strategies:
 
 **A. Drain-then-replace** (clean K8s identity, brief disruption):
 
-1. `kubectl cordon talos-kimsufi-worker-N`
-2. `kubectl drain --ignore-daemonsets --delete-emptydir-data talos-kimsufi-worker-N`
+1. `kubectl cordon <hostname>` (e.g. `ovh-ns103711` — the Talos `HostnameConfig` sets
+   the k8s Node name to the slot's hostname, not a `talos-kimsufi-*` label)
+2. `kubectl drain --ignore-daemonsets --delete-emptydir-data <hostname>`
 3. `talosctl -n <old-ip> shutdown` (so old kubelet stops claiming the hostname)
-4. `kubectl delete node talos-kimsufi-worker-N`
+4. `kubectl delete node <hostname>`
 5. `tofu state rm` the 9 entries for that slot (`data.ovh_dedicated_server`,
    `ovh_dedicated_server`, `..._update.kimsufi_{rescue,harddisk}`,
    `..._reboot_task.kimsufi_to_{rescue,talos}`, `null_resource.install_talos_kimsufi`,
    `data.talos_machine_configuration`, `talos_machine_configuration_apply` — all
-   under `["kimsufi_workerN"]`).
+   under `["<hostname>"]`, since `local.kimsufi_servers` is keyed by hostname).
 6. Continue from §2.
 
 **B. Use the empty slot first, drain later** (additive, zero disruption):

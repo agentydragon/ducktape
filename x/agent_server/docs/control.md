@@ -8,7 +8,7 @@ A tiny FastMCP server that provides neutral loop control tools independent of an
   - Triggers a latch consumed by the loop-control handler. On the next `on_before_sample`, that handler returns `Abort()` and the turn ends. The handler also appends an end-turn marker to `UiState` so the timeline reflects the transition.
   - Keep always-allow in policy; it is the neutral, prompt-aligned way for the model to finish a turn.
 
-Server name: `loop` → tools exposed to the model as `loop_yield_turn`. See also <overview.md> and <../vision.md>.
+Server name: `loop` → tools exposed to the model as `loop_yield_turn`. See also <../vision.md>.
 
 ## Wiring
 
@@ -27,4 +27,4 @@ Server name: `loop` → tools exposed to the model as `loop_yield_turn`. See als
 
 - Deprecates `ui.end_turn` on the UI server. Keep UI’s `end_turn` only while the transition to the loop server completes; prompts and handler injections should prefer `loop.yield_turn`.
 - Pairs well with handler‑injected chat reads: the orchestrator can synthetically insert a `loop.yield_turn` after injecting chat read tool results to immediately hand control back to the model.
-- Yield semantics are owned by the loop-control handler: `yield_turn` flips the latch, the handler aborts the turn, and the orchestrator enters whatever “sleep until user” state it defines. The policy middleware does not define wake semantics; approvals do not wake. See the overview for details.
+- Yield semantics are owned by the loop-control handler: `yield_turn` flips the latch, the handler aborts the turn, and the orchestrator enters whatever “sleep until user” state it defines. The policy middleware does not define wake semantics; approvals do not wake.

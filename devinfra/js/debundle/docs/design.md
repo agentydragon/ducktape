@@ -1454,9 +1454,9 @@ the now-binding-pair-blame `render_cycle_summary` format), so the
 diagnostic points the spec author directly at "{B, readB} must
 co-locate."
 
-The synthetic minimization is in <e2e/realizability_test.rs>
+The synthetic minimization is in <../e2e/realizability_test.rs>
 (`rejects_cycle_through_lazy_back_edge`); the namespace-aggregator
-form is in <e2e/namespace_aggregator_split_tdz_test.rs>.
+form is in <../e2e/namespace_aggregator_split_tdz_test.rs>.
 
 ### Why a static gate, not a runtime check
 
@@ -2820,7 +2820,7 @@ declarator with the original kind (`const`/`let`/`var`) and any
 residual module as a (possibly single-declarator) comma-list.
 Source-order side effects across declarators are preserved by the
 ESM linker, which evaluates the destination modules in source
-order. See <e2e/comma_list_owner_split_test.rs> for the full
+order. See <../e2e/comma_list_owner_split_test.rs> for the full
 shape matrix.
 
 **Destructuring declarators are atomic.** `const { x, y } = obj`
@@ -2884,34 +2884,34 @@ YAML conventions.
 
 | Step                           | Module                        | Runs when                                                                                                                                                                                                                               |
 | ------------------------------ | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `load_transform_spec`          | <pipeline.rs>                 | Always; loads either the flat YAML spec or the tree-shaped authoring spec.                                                                                                                                                              |
-| `validate_transform_spec`      | <spec.rs>                     | Always after spec load.                                                                                                                                                                                                                 |
-| `load_js_chunks`               | <artifact.rs>                 | Always; configured by `inputs`.                                                                                                                                                                                                         |
-| `prepare_js_chunks`            | <prepare_chunks.rs>           | Always. In one parallel per-chunk pass, parses every chunk with SWC, computes shallow program facts, and canonicalizes entries.                                                                                                         |
-| `build_artifact_indexes`       | <artifact.rs>                 | Always after preparation. Builds chunk id, source path, output path, and import-reference indexes for later stages.                                                                                                                     |
-| `build_vendor_resolution_plan` | <vendor/plan.rs>              | Always after index build. Read-only: validates every `vendor` mark, resolves boundary mappings / swap targets / partial-swap symbol tables, runs the plan-time consumer gate.                                                           |
-| `materialize_logical_modules`  | <lowering/> + analysis files  | When `logical_modules`, `unassigned_mode`, or `chunk_renames` is non-empty. Computes facts, quotients the owner graph into `I ∪ S`, validates, emits.                                                                                   |
-| `apply_emission_rewrites`      | <vendor/emission.rs>          | Always. Pass-through directive rewrite (specifier canonicalization, boundary-rename mapping, partial-swap consumer surgery) over files emitted without lowering, plus the per-vendor-chunk residual composition (self-rewrite + strip). |
-| `validate_emitted_exports`     | <validate_emitted_exports.rs> | Always; duplicate-public-export tripwire over the emission set (excluded full-swap chunks are skipped).                                                                                                                                 |
-| `write_js_tree`                | <write_tree.rs>               | When `write_js_tree` output config is present; writes JS tree reports with exact `output_metrics` and directory reports when logical modules exist.                                                                                     |
-| `emit_browser_harness`         | <emit_harness.rs>             | When `emit_browser_harness` output config is present; writes browser harness reports with exact `output_metrics` and directory reports when logical modules exist.                                                                      |
+| `load_transform_spec`          | <../pipeline.rs>                 | Always; loads either the flat YAML spec or the tree-shaped authoring spec.                                                                                                                                                              |
+| `validate_transform_spec`      | <../spec.rs>                     | Always after spec load.                                                                                                                                                                                                                 |
+| `load_js_chunks`               | <../artifact.rs>                 | Always; configured by `inputs`.                                                                                                                                                                                                         |
+| `prepare_js_chunks`            | <../prepare_chunks.rs>           | Always. In one parallel per-chunk pass, parses every chunk with SWC, computes shallow program facts, and canonicalizes entries.                                                                                                         |
+| `build_artifact_indexes`       | <../artifact.rs>                 | Always after preparation. Builds chunk id, source path, output path, and import-reference indexes for later stages.                                                                                                                     |
+| `build_vendor_resolution_plan` | <../vendor/plan.rs>              | Always after index build. Read-only: validates every `vendor` mark, resolves boundary mappings / swap targets / partial-swap symbol tables, runs the plan-time consumer gate.                                                           |
+| `materialize_logical_modules`  | <../lowering/> + analysis files  | When `logical_modules`, `unassigned_mode`, or `chunk_renames` is non-empty. Computes facts, quotients the owner graph into `I ∪ S`, validates, emits.                                                                                   |
+| `apply_emission_rewrites`      | <../vendor/emission.rs>          | Always. Pass-through directive rewrite (specifier canonicalization, boundary-rename mapping, partial-swap consumer surgery) over files emitted without lowering, plus the per-vendor-chunk residual composition (self-rewrite + strip). |
+| `validate_emitted_exports`     | <../validate_emitted_exports.rs> | Always; duplicate-public-export tripwire over the emission set (excluded full-swap chunks are skipped).                                                                                                                                 |
+| `write_js_tree`                | <../write_tree.rs>               | When `write_js_tree` output config is present; writes JS tree reports with exact `output_metrics` and directory reports when logical modules exist.                                                                                     |
+| `emit_browser_harness`         | <../emit_harness.rs>             | When `emit_browser_harness` output config is present; writes browser harness reports with exact `output_metrics` and directory reports when logical modules exist.                                                                      |
 
 Within `materialize_logical_modules`, the substages are:
 
 1. **Spec parsing** → `LogicalRequest` / `ModulePlan` per chunk.
-2. **Chunk AST analysis** (<lowering/chunk_ast.rs>:
+2. **Chunk AST analysis** (<../lowering/chunk_ast.rs>:
    `analyze_chunk_ast`) → top-level declarations, declaration index,
    and runtime import facts in one top-level scan.
-3. **Statement-facts analysis** (<facts/mod.rs>:
+3. **Statement-facts analysis** (<../facts/mod.rs>:
    `analyze_chunk`) → `Vec<StatementFacts>`.
-4. **Owner graph construction** (<graph.rs>) → owner vertices plus read and
+4. **Owner graph construction** (<../graph/>) → owner vertices plus read and
    side-effect-order evidence. This is a first-class intermediate
    and report side output.
 5. **Binding assignment** → `BTreeMap<BindingName, ModuleId>` from
    the spec's explicit member list. Bindings with no spec entry
    default to `ResidualEntry`; nothing pulls implicitly. (See
    [Spec explicitness](#spec-explicitness-and-diagnostics).)
-6. **Quotient + validation** (<graph.rs>, <validation.rs>).
+6. **Quotient + validation** (<../graph/>, <../validation.rs>).
    The quotient graph
    collapses owners by destination, aggregates edge reasons, and
    validates the resulting `I ∪ S`.
@@ -3345,7 +3345,7 @@ emitted into source. Wrapping it would force `.0` everywhere a
 real-text-vs-id distinction doesn't exist. The other four are
 genuinely different things and earn a wrapper.
 
-`ModuleId` (in <ids.rs>) is a tagged
+`ModuleId` (in <../ids.rs>) is a tagged
 union over these:
 
 ```rust
@@ -3364,7 +3364,7 @@ or compatibility-only JSON fields.
 
 #### Killing the `owner_NNNNN` opaque id
 
-The `OwnerRecord.id` system in <program_analysis.rs> mints a
+The `OwnerRecord.id` system in <../program_analysis.rs> mints a
 stringified sequential index per top-level decl, exposes it in
 the chunk analysis output, and the gaffer spec references it.
 Replacing it:
@@ -3456,7 +3456,7 @@ Not yet pinned by tests (and at least some not implemented):
   if transform isn't applied, the JSX visitor needs explicit
   handling.
 
-Action: add a unit test per case to <facts/mod.rs> / <purity/mod.rs>;
+Action: add a unit test per case to <../facts/mod.rs> / <../purity/mod.rs>;
 fill the visitor's gaps. Aim for an exhaustive table.
 
 #### Side-effect classification is conservative
@@ -3613,35 +3613,35 @@ exploration before crossing the relevant phase.
 Primary:
 
 - <design.md> — this document.
-- <facts/mod.rs> — `StatementFacts` analyzer.
-- <graph.rs> — owner graph and `ModuleDepGraph` builders.
-- <validation.rs> — realizability checks.
-- <chunk_analysis.rs> — `ChunkAnalysis` (inputs + IR + input-derived caches).
-- <chunk_factorization.rs> — `ChunkFactorization` construction and linker-order reasoning.
-- <atomic_units.rs> — owner-level hard colocation units.
-- <factor_assembly.rs> — spec claims projected onto atomic units.
-- <peel/factorize.rs> — advisory factorization proposal construction
+- <../facts/mod.rs> — `StatementFacts` analyzer.
+- <../graph/> — owner graph and `ModuleDepGraph` builders.
+- <../validation.rs> — realizability checks.
+- <../chunk_analysis.rs> — `ChunkAnalysis` (inputs + IR + input-derived caches).
+- <../chunk_factorization.rs> — `ChunkFactorization` construction and linker-order reasoning.
+- <../atomic_units.rs> — owner-level hard colocation units.
+- <../factor_assembly.rs> — spec claims projected onto atomic units.
+- <../peel/factorize.rs> — advisory factorization proposal construction
   and reporting.
-- <lowering/> — main splitting transform (`mod.rs` plus per-concern
+- <../lowering/> — main splitting transform (`mod.rs` plus per-concern
   sibling files: `chunk_ast.rs`, `lower.rs`, `materialize/`,
   `plans.rs`, `naturalize.rs`, `imports_cross.rs`,
   `imports_runtime.rs`, `exports.rs`, `plan_references.rs`,
   `runtime_imports.rs`, `body_facts.rs`, `chunk_renames.rs`,
   `rewrite_runtime.rs`, `visitors.rs`, `anonymous.rs`, `util.rs`).
-- <pipeline.rs> — fixed transform composition.
-- <program_analysis.rs> — chunk metadata + side-effect
+- <../pipeline.rs> — fixed transform composition.
+- <../program_analysis.rs> — chunk metadata + side-effect
   classification (used as input to the analyzer).
 
 Secondary:
 
-- <vendor/>, <emit_harness.rs>, <write_tree.rs>,
-  <identifier_rename_queue.rs> — supporting transforms and
+- <../vendor/>, <../emit_harness.rs>, <../write_tree.rs>,
+  <../identifier_rename_queue.rs> — supporting transforms and
   side-output producers.
 
 Tracking:
 
-- <TODO.md> — open work items.
-- <AGENTS.md> — operating principles for contributors.
+- <../TODO.md> — open work items.
+- <../AGENTS.md> — operating principles for contributors.
 
 ## Conventions for updating this doc
 

@@ -1,6 +1,6 @@
 # ui chat server
 
-This document describes the chat MCP servers that handle human↔agent messaging. The legacy `ui` server (with `send_message` / `end_turn`) is being retired; forward-looking design routes all chat through the dedicated chat servers plus `loop.yield_turn` for end-of-turn signalling. See also <overview.md> and <../vision.md> for how chat fits into the broader runtime.
+This document describes the chat MCP servers that handle human↔agent messaging. The legacy `ui` server (with `send_message` / `end_turn`) is being retired; forward-looking design routes all chat through the dedicated chat servers plus `loop.yield_turn` for end-of-turn signalling. See also <../vision.md> for how chat fits into the broader runtime.
 
 ## Architecture snapshot (sidecar model)
 

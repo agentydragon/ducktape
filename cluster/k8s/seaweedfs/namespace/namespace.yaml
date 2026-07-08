@@ -6,8 +6,8 @@ metadata:
     goldilocks.fairwinds.com/enabled: "false"
   annotations:
     description: |
-      SeaweedFS trial deployment. Object store on the OVH Kimsufi workers,
-      backed by the /dev/sdb XFS partition declared via Talos UserVolumeConfig.
-      Replication strategy "001" (one copy on a different node, same rack).
-      See cluster/docs/kimsufi_provisioning.md and the trial plan at
-      ~/.claude/plans/ns103656-ip-147-135-39-us-...md
+      SeaweedFS object store on the OVH Kimsufi nodes, backed by the
+      Talos-declared UserVolumeConfig data disk on each node. Replication
+      strategy "001" (one copy on a different node, same rack).
+      See cluster/docs/kimsufi_provisioning.md and
+      cluster/docs/plans/ovh_storage_tiering.md.

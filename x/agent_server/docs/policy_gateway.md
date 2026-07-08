@@ -1,12 +1,12 @@
 # policy middleware in the compositor — implementation spec (V1 sync)
 
 All agent and container tool/resource calls go through the Compositor surface.
-This document specifies the V1 (synchronous) policy middleware implemented as pre‑dispatch filtering inside the Compositor (aggregator). The Compositor remains the aggregation layer and also becomes the authoritative ingress for model‑initiated tool calls (and, when enabled, programmatic calls from inside the container). Resource management (list/read/subscribe) is handled by a dedicated resources MCP server mounted under the Compositor; the policy middleware does not add resource semantics. See <overview.md> for runtime architecture, and <../vision.md> for the philosophy behind executable policy and graduated autonomy.
+This document specifies the V1 (synchronous) policy middleware implemented as pre‑dispatch filtering inside the Compositor (aggregator). The Compositor remains the aggregation layer and also becomes the authoritative ingress for model‑initiated tool calls (and, when enabled, programmatic calls from inside the container). Resource management (list/read/subscribe) is handled by a dedicated resources MCP server mounted under the Compositor; the policy middleware does not add resource semantics. See <../vision.md> for the philosophy behind executable policy and graduated autonomy.
 
 Scope
 
 - V1 (sync) only: in‑proc first, HTTP optional; approvals block the call at the proxy; no unified async returns
-- Chat/message delivery and notification batching are out of scope for the policy middleware; these live in Loop Control and/or UI/chat servers. See overview and ui-chat docs for future directions.
+- Chat/message delivery and notification batching are out of scope for the policy middleware; these live in Loop Control and/or UI/chat servers. See <ui_chat.md> for future directions.
 
 ---
 
@@ -112,7 +112,7 @@ Approvals UI integration (Human‑only)
 
 ## 5. Orchestration & Yield (Sync)
 
-The policy middleware does not own orchestration semantics. Turn scheduling, wake sources, and end‑turn behavior are defined by the Loop Control server and handlers. See <control.md> and <overview.md> for details. In V1, approvals resolution does not inject intermediate “pending” state into the model context.
+The policy middleware does not own orchestration semantics. Turn scheduling, wake sources, and end‑turn behavior are defined by the Loop Control server and handlers. See <control.md> for details. In V1, approvals resolution does not inject intermediate “pending” state into the model context.
 
 ---
 
@@ -131,13 +131,13 @@ HTTP (optional)
 
 ## 7. Resources Management (out of scope)
 
-Policy middleware does not implement resources semantics. See `docs/resources.md` for the dedicated Resources server design and how active subscriptions are exposed to clients.
+Policy middleware does not implement resources semantics.
 
 ---
 
 ## 8. Persistence
 
-The policy middleware does not persist chat or resource subscription state. Persisted runtime mounts live with the Compositor; resource subscriptions live with the resources server; watermarks/HWMs are maintained by the agent orchestrator/handlers if used (see the overview). The middleware may maintain only ephemeral in‑memory state for approval‑pending calls while waiting on a human decision (or back it with the same SQLite overlay if running multi‑process).
+The policy middleware does not persist chat or resource subscription state. Persisted runtime mounts live with the Compositor; resource subscriptions live with the resources server; watermarks/HWMs are maintained by the agent orchestrator/handlers if used. The middleware may maintain only ephemeral in‑memory state for approval‑pending calls while waiting on a human decision (or back it with the same SQLite overlay if running multi‑process).
 
 ---
 
@@ -220,7 +220,7 @@ Note: resource subscribe/unsubscribe error mapping belongs to the resources/comp
 3. Use the dedicated Resources server for `resources/*` operations; the Compositor mounts it.
 4. Mount Loop Control via Compositor; update prompts/instructions to use `loop_yield_turn`.
 5. Update container clients to call the Compositor loopback (host.docker.internal); do not expose upstream mounts directly.
-6. Optional: chat/inbox flows are documented in <ui_chat.md> and the overview; the policy middleware does not implement them.
+6. Optional: chat/inbox flows are documented in <ui_chat.md>; the policy middleware does not implement them.
 
 ---
 

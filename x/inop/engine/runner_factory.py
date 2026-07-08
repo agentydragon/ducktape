@@ -1,10 +1,9 @@
 """Factory for creating agent runners."""
 
-from typing import Any
-
 import aiodocker
 
 from openai_utils.model import OpenAIModelProto
+from x.inop.engine.models import ClaudeRunnerConfig, MinicodexRunnerConfig, RunnerConfig
 from x.inop.runners.base import AgentRunner
 from x.inop.runners.claude_runner import ClaudeRunner
 from x.inop.runners.openai_runner import OpenAIRunner
@@ -12,7 +11,7 @@ from x.inop.runners.openai_runner import OpenAIRunner
 
 def create_runner(
     runner_name: str,
-    runner_configs: dict[str, dict[str, Any]],
+    runner_configs: dict[str, RunnerConfig],
     openai_model: OpenAIModelProto | None = None,
     docker_client: aiodocker.Docker | None = None,
 ) -> AgentRunner:
@@ -20,11 +19,8 @@ def create_runner(
 
     Args:
         runner_name: Name of the runner (e.g., "claude", "agent")
-        runner_configs: Dictionary of runner configurations from runners.yaml
+        runner_configs: Runner configurations loaded from runners.yaml
         openai_client: (deprecated) removed; pass OpenAIModelProto via openai_model
-
-    Returns:
-        Instantiated runner
 
     Raises:
         ValueError: If runner type is unknown
@@ -33,18 +29,20 @@ def create_runner(
         raise ValueError(f"Unknown runner: {runner_name}")
 
     runner_config = runner_configs[runner_name]
-    runner_type = runner_config["type"]
-    config = runner_config.get("config", {})
 
-    # Create runner based on type
-    if runner_type == "claude_runner":
-        return ClaudeRunner(runner_id=runner_name, config=config)
-    if runner_type == "openai_runner":
-        if openai_model is None:
-            raise ValueError("OpenAIRunner requires openai_model")
-        if docker_client is None:
-            raise ValueError("OpenAIRunner requires docker_client")
-        return OpenAIRunner(
-            runner_id=runner_name, config=config, openai_model=openai_model, docker_client=docker_client
-        )
-    raise ValueError(f"Unknown runner type: {runner_type}")
+    match runner_config:
+        case ClaudeRunnerConfig():
+            return ClaudeRunner(runner_id=runner_name, config=runner_config.config.model_dump())
+        case MinicodexRunnerConfig():
+            if openai_model is None:
+                raise ValueError("OpenAIRunner requires openai_model")
+            if docker_client is None:
+                raise ValueError("OpenAIRunner requires docker_client")
+            return OpenAIRunner(
+                runner_id=runner_name,
+                config=runner_config.config.model_dump(),
+                openai_model=openai_model,
+                docker_client=docker_client,
+            )
+        case _:
+            raise TypeError(f"unsupported runner config: {type(runner_config).__name__}")

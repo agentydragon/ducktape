@@ -1,6 +1,6 @@
 # matrix mcp server
 
-This document captures Matrix‑specific behavior and how it integrates with the runtime orchestrator (handlers) and the agent loop. The policy middleware enforces approvals for tool calls but does not own chat delivery. The current UI server is a simple chat room; Matrix is one concrete way to deliver chat messages via MCP notifications. See also <overview.md> and <../vision.md>.
+This document captures Matrix‑specific behavior and how it integrates with the runtime orchestrator (handlers) and the agent loop. The policy middleware enforces approvals for tool calls but does not own chat delivery. The current UI server is a simple chat room; Matrix is one concrete way to deliver chat messages via MCP notifications. See also <../vision.md>.
 
 ## Goals
 

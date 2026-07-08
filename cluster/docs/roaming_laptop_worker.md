@@ -2,7 +2,7 @@
 
 **Status**: Implemented (2026-03). rugged (Dell Rugged 12) joined as roaming
 worker via `nix/nixos/hosts/rugged/` + `k8s-worker.nix` + `nebula.nix`.
-Nebula mesh with VPS lighthouses/relays solves the double-NAT hole-punching
+Nebula mesh with OVH lighthouses/relays solves the double-NAT hole-punching
 problem that made KubeSpan unreliable. See
 `lessons_learned/nebula_mesh_migration_tombstone.md` for the full history.
 
@@ -14,7 +14,7 @@ produce cross-node traffic.
 
 NixOS laptop joins the Talos k8s cluster as a worker without VMs:
 
-- **`nebula.nix`** — joins the Nebula mesh (UDP 4242). VPS lighthouses provide
+- **`nebula.nix`** — joins the Nebula mesh (UDP 4242). OVH lighthouses provide
   peer discovery; relay mode handles double-NAT when hole-punching fails.
 - **`k8s-worker.nix`** — containerd + kubelet, haproxy on `localhost:7445`
   load-balancing across control plane Nebula IPs, sops-nix for credentials.
@@ -31,11 +31,11 @@ Key files:
 
 | Property    | Value                                          |
 | ----------- | ---------------------------------------------- |
-| Mesh        | Nebula (UDP 4242), lighthouses on VPS          |
+| Mesh        | Nebula (UDP 4242), lighthouses on OVH          |
 | Node IP     | Nebula mesh IP (e.g., `10.42.0.30` for rugged) |
 | API server  | haproxy `localhost:7445` → CP Nebula IPs       |
 | Pod overlay | VXLAN (UDP 8472) encapsulated in Nebula        |
-| Relay       | VPS lighthouses relay when hole-punching fails |
+| Relay       | OVH lighthouses relay when hole-punching fails |
 
 ## Scheduling
 
@@ -43,7 +43,7 @@ Taint `node-role.kubernetes.io/roaming=true:NoSchedule`, labels
 `topology.kubernetes.io/region=roaming`, `node.kubernetes.io/role=roaming`.
 
 **Good fit**: BuildBuddy executors, batch ML/LLM jobs, CI runners, dev/test workloads.
-**Avoid**: StatefulSets, PVCs, ingress, anything in the VPS-only resilience invariant.
+**Avoid**: StatefulSets, PVCs, ingress, anything in the OVH-only resilience invariant.
 
 ## Intermittent Connectivity
 

@@ -79,7 +79,7 @@ Each wake cycle:
 
 ${source_inspection([
     ("props.agents.grader.main", "Entry point"),
-    ("props.agents.grader.loop", "Grading loop"),
+    ("props.agents.grader.main", "Grading loop"),
     ("props.agents.grader.tools", "Tool implementations"),
     ("props.db.models", "SQLAlchemy models"),
 ])}

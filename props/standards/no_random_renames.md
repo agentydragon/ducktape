@@ -12,7 +12,7 @@ Do not introduce aliases or new names unless they add clear value (disambiguatio
   - Allowed with rationale: name collision (`from httpx import Response as HttpxResponse`), contextual disambiguation (`from foo.api import Response as FooApiResponse`), or to avoid overshadowing a local symbol.
 - No pass‑through aliases (one‑off renames) that add no semantics:
   - Disallowed: `x2 = x; process(x2)` when `process(x)` suffices.
-  - Prefer inlining trivial values: `process(make_value())` when readability is unchanged. See also: [No one‑off vars](./no-oneoff-vars-and-trivial-wrappers.md).
+  - Prefer inlining trivial values: `process(make_value())` when readability is unchanged. See also: [No one‑off vars](./no_oneoff_vars_and_trivial_wrappers.md).
 - Consistent terminology: do not refer to the same thing by multiple different names in the same scope/module (e.g., calling a `MyServer()` instance `http_server` in one place and `processor` elsewhere) unless the roles truly differ and are documented.
 - Contextual renames must strengthen meaning and then be used consistently:
   - Good: renaming a generic value to a domain‑specific one at the point its meaning becomes clear; drop the old name and continue with the precise one.
@@ -77,4 +77,4 @@ processor = server       # ❌ misleading name; not a processor
 
 - Renames should “pay rent”: resolve a collision, remove ambiguity, or increase semantic precision. Otherwise, keep the original name.
 - When you must rename for semantics, migrate fully to the new name in that scope; do not keep both alive.
-- Cross‑refs: [No one‑off vars](./no-oneoff-vars-and-trivial-wrappers.md), [Self‑describing names](./self-describing-names.md), and [Truthfulness](./truthfulness.md).
+- Cross‑refs: [No one‑off vars](./no_oneoff_vars_and_trivial_wrappers.md), [Self‑describing names](./self_describing_names.md), and [Truthfulness](./truthfulness.md).

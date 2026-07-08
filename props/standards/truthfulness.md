@@ -85,5 +85,5 @@ text = text.rstrip()
 
 ## Cross-references
 
-- [Self‑describing names](./self-describing-names.md)
-- [No useless docs](./no-useless-docs.md)
+- [Self‑describing names](./self_describing_names.md)
+- [No useless docs](./no_useless_docs.md)

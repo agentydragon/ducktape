@@ -72,9 +72,6 @@ kubectl-sandbox JWT) are rejected. The `authentik-jwt-rotation` CronJob
 biweekly-ish, publishes it as the `haku-mail-token` Secret (flux-system),
 and the `ClusterExternalSecret` in `app/` mirrors it into `haku-sandbox`.
 
-Bootstrap note: `app/haku-mail-token.sops.yaml` is a placeholder seed until
-the tofu provider lands and the rotation CronJob first runs.
-
 ## Traffic
 
 - **Port 25**: `MX allegedly.works → mx.allegedly.works` (A records on the

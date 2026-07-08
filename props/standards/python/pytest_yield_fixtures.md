@@ -78,4 +78,4 @@ def srv(tmp_path):
 
 ## See also
 
-- [Use pytest's standard fixtures for temp dirs and monkeypatching](./pytest-standard-fixtures.md)
+- [Use pytest's standard fixtures for temp dirs and monkeypatching](./pytest_standard_fixtures.md)

@@ -24,7 +24,7 @@ Pydantic models, dataclasses + TypedDicts, TS interfaces/types, Go structs, Java
 - Serialization uses library methods (`model_dump(_json)`, `JSON.stringify(value)`, `json.Marshal`, `ObjectMapper.writeValueAsString`) — do not hand‑assemble nested maps
 - Temporary map‑like collections are acceptable for inherently map‑shaped data (e.g., HTTP headers/query params, logging contexts); document invariants and normalize to a model ASAP if they cross module boundaries
 - Prefer precise fields over opaque blobs; avoid passing through arbitrary `extra` unless explicitly modeled and justified
-- Related: keep types precise and explicit; see [type correctness and specificity](./type-correctness-and-specificity.md) and [forbid dynamic attribute access](python/forbid-dynamic-attrs.md); Python should also [target Pydantic 2](python/pydantic-2.md)
+- Related: keep types precise and explicit; see [type correctness and specificity](./type_correctness_and_specificity.md) and [forbid dynamic attribute access](python/forbid_dynamic_attrs.md); Python should also [target Pydantic 2](python/pydantic_2.md)
 
 ## Positive examples
 

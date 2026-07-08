@@ -419,10 +419,39 @@ class TaskTypesYaml(BaseModel):
     task_types: dict[str, TaskTypeYamlConfig]
 
 
-class RunnerConfig(BaseModel):
-    """Configuration for a single runner."""
+class ClaudeRunnerTypeConfig(BaseModel):
+    """`config:` block of a `claude_runner` entry in runners.yaml."""
 
-    environment: RunnerEnvironment
+    strace_enabled: bool = False
+    max_turns: int = 30
+    bash_timeout_ms: int = 120_000
+
+
+class MinicodexRunnerTypeConfig(BaseModel):
+    """`config:` block of a `minicodex_runner` entry in runners.yaml."""
+
+    model: str
+    reasoning_effort: Literal["minimal", "medium", "high"] = "medium"
+    timeout_s: int
+    truncate_bytes: int
+    max_cycles: int
+
+
+class ClaudeRunnerConfig(BaseModel):
+    """A `claude_runner` entry in runners.yaml."""
+
+    type: Literal["claude_runner"]
+    config: ClaudeRunnerTypeConfig
+
+
+class MinicodexRunnerConfig(BaseModel):
+    """A `minicodex_runner` entry in runners.yaml."""
+
+    type: Literal["minicodex_runner"]
+    config: MinicodexRunnerTypeConfig
+
+
+RunnerConfig = Annotated[ClaudeRunnerConfig | MinicodexRunnerConfig, Field(discriminator="type")]
 
 
 class RunnersYaml(BaseModel):

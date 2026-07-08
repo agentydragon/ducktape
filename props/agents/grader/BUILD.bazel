@@ -8,7 +8,7 @@ The container runs a persistent agent loop that:
 1. Fetches snapshot to /workspace
 2. Renders system prompt from template
 3. Queries LLM via proxy (OPENAI_BASE_URL)
-4. Executes grader tools (list_pending, insert_edges, etc.)
+4. Executes grader tools (get_drift, insert_edges, etc.)
 5. Sleeps on pg_notify, wakes to grade new critiques
 """
 

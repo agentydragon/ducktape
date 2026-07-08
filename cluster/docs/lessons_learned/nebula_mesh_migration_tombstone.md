@@ -17,4 +17,4 @@ Nebula PKI managed in `terraform/main/persistent-auth.tf` (CA certs) and `terraf
 **Key findings**:
 
 - `rp_filter=0` (or `2`) required — WireGuard decapsulated packets fail strict reverse path check. Same issue affects Nebula.
-- Tailscale MagicDNS silently drops SRV queries matching certain patterns. gRPC-Go's `dns:///` resolver does SRV by default; use `passthrough:///`. See `debug/kubespand-grpc-dns-magicdns.md`.
+- Tailscale MagicDNS silently drops SRV queries matching certain patterns. gRPC-Go's `dns:///` resolver does SRV by default; use `passthrough:///`.

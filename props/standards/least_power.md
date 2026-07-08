@@ -88,6 +88,6 @@ fd = os.open("out.txt", os.O_WRONLY | os.O_CREAT)  # ❌ prefer Path("out.txt").
 ## Notes
 
 - Principle of least power: pick the simplest construct that expresses intent safely; only escalate when there’s a clear, documented need.
-- Scope: this property targets patterns that increase risk (silent failures, implicit behavior, needless power) when safer alternatives exist. Pure style modernizations (e.g., using `A | B` over `Union[A, B]`) live under [Modern Python idioms](./python/modern-python-idioms.md) and are not "sus" on their own.
+- Scope: this property targets patterns that increase risk (silent failures, implicit behavior, needless power) when safer alternatives exist. Pure style modernizations (e.g., using `A | B` over `Union[A, B]`) live under [Modern Python idioms](./python/modern_python_idioms.md) and are not "sus" on their own.
 - These are heuristics; exceptions exist, but require a short inline rationale.
 - Related properties: see cross‑links above for exact rules and exceptions.
