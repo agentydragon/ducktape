@@ -113,20 +113,17 @@ def remaining_hours(sops_file: Path) -> float | None:
     return (datetime.fromisoformat(expires) - datetime.now(UTC)).total_seconds() / 3600
 
 
-def scope_stamp(caches: list[str]) -> str:
-    """Canonical plaintext form of a pull/push cache list: sorted, comma-joined."""
-    return ",".join(sorted(caches))
-
-
 def scope_drift(token: Token, stamps: dict[str, Any]) -> str | None:
     """Why the stamped scope diverges from the configured one, or None if it matches.
 
-    A stamp missing entirely (pre-scope-tracking file) counts as drift, so the first
-    run after this feature ships re-mints every token once and stamps it.
+    Stamps are YAML lists compared as sets (order-insensitive). A stamp missing or
+    malformed (pre-scope-tracking file) counts as drift, so the first run after this
+    feature ships re-mints every token once and stamps it.
     """
     for field, configured in (("pull_unencrypted", token.pull), ("push_unencrypted", token.push)):
-        if stamps.get(field) != scope_stamp(configured):
-            return f"{field}: stamped {stamps.get(field)!r} != configured {scope_stamp(configured)!r}"
+        stamped = stamps.get(field)
+        if not isinstance(stamped, list) or set(stamped) != set(configured):
+            return f"{field}: stamped {stamped!r} != configured {configured!r}"
     return None
 
 
@@ -190,11 +187,12 @@ def rotate_one(token: Token, config: Config) -> bool:
 
     # `*_unencrypted` keys match SOPS's default unencrypted_suffix, so they stay
     # plaintext after `sops encrypt --in-place` — the next run reads them back
-    # for the freshness and scope-drift checks without decryption.
+    # for the freshness and scope-drift checks without decryption. Scope lists are
+    # written sorted for stable diffs; comparison is set-wise either way.
     stamps = {
         "expires_unencrypted": expires_iso,
-        "pull_unencrypted": scope_stamp(token.pull),
-        "push_unencrypted": scope_stamp(token.push),
+        "pull_unencrypted": sorted(token.pull),
+        "push_unencrypted": sorted(token.push),
         config.token_field: jwt,
     }
     token.sops_file.parent.mkdir(parents=True, exist_ok=True)
