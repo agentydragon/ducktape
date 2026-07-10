@@ -56,6 +56,7 @@
       self,
       nixpkgs,
       nixpkgs-unstable,
+      nixpkgs-master,
       home-manager,
       nix-colors,
       nixGL,
@@ -119,11 +120,17 @@
         config.allowUnfree = true;
       };
 
+      pkgsMaster = import nixpkgs-master {
+        inherit system;
+        config.allowUnfree = true;
+      };
+
       # Shared home-manager args passed to every HM configuration.
       hmCommonArgs = {
         inherit
           nix-colors
           pkgsUnstable
+          pkgsMaster
           claude-plugins-official
           siderolabs-docs
           gafferPkgs
@@ -429,7 +436,13 @@
           # buildEnv; see cluster/k8s/agents/codex-pod/README.md.
           # Build: nix build .#codex-pod-image
           # Load:  docker load < result
-          codex-pod-image = import ./x/codex_pod_image { inherit pkgs pkgsUnstable home-manager; };
+          codex-pod-image = import ./x/codex_pod_image {
+            inherit
+              pkgs
+              pkgsMaster
+              home-manager
+              ;
+          };
           # NixOS-based RBE worker (systemd, envfs, nix-ld).
           # Build: nix build .#nix-rbe-nixos
           # Load:  docker import result/tarball/*.tar.xz nix-rbe-nixos

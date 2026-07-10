@@ -14,7 +14,7 @@
 # Load:   docker load < result
 {
   pkgs,
-  pkgsUnstable,
+  pkgsMaster,
   home-manager,
 }:
 let
@@ -23,7 +23,7 @@ let
   codexEnv = pkgs.buildEnv {
     name = "codex-env";
     paths = [
-      pkgsUnstable.codex # Codex CLI (unstable, as home-manager pins it for agent-box)
+      pkgsMaster.codex # Codex CLI (master, as home-manager pins it for agent-box)
       pkgs.bashInteractive
       pkgs.coreutils
       pkgs.moreutils

@@ -12,7 +12,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates python3 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @anthropic-ai/claude-code@2.1.198 @openai/codex@0.142.5 \
+RUN npm install -g @anthropic-ai/claude-code@2.1.198 @openai/codex@0.144.1 \
     && npm cache clean --force
 
 COPY entrypoint.py /opt/haku/entrypoint.py

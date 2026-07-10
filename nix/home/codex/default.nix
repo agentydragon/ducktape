@@ -1,7 +1,7 @@
 # Codex configuration module
 {
   pkgs,
-  pkgsUnstable,
+  pkgsMaster,
   lib,
   config,
   sharedSkillsArgs,
@@ -223,8 +223,8 @@ in
 
   config.programs.codex = {
     enable = true;
-    # Prefer the unstable codex package if available.
-    package = pkgsUnstable.codex;
+    # Codex ships frequently; use the narrow master input instead of moving whole hosts.
+    package = pkgsMaster.codex;
     # Avoid letting the upstream module overwrite ~/.codex/config.toml.
     # The activation script below handles merging our desired settings.
   };
