@@ -92,6 +92,16 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
+py_test(
+    name = "test_prettier_cli",
+    srcs = ["test_prettier_cli.py"],
+    deps = [
+        ":prettier_cli",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 pkg_tar(
     name = "prettier_cli_layer",
     srcs = ["//:node_modules/prettier"],

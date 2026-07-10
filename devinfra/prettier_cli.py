@@ -10,6 +10,7 @@ def prettier_format_yaml_in_place(path: Path) -> None:
         [
             "prettier",
             "--write",
+            "--no-config",
             "--parser",
             "yaml",
             "--print-width",
