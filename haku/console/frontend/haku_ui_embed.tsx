@@ -246,9 +246,9 @@ export function HakuUiEmbed({
     );
   }
 
-  // Live tool-call signal: initial fetch on mount plus a refetch on every WS/cross-tab
-  // event. `notifyPeers` wakes other console tabs after this one approves/denies.
-  const { notifyPeers } = useToolCallEvents(refreshToolApprovals);
+  // Live tool-call signal: initial fetch on mount plus a refetch on every server WS event
+  // (which the server also broadcasts to every other tab, so they refresh too).
+  useToolCallEvents(refreshToolApprovals);
 
   function refreshMcpAuthStatuses(notify = false) {
     if (notify) mcpAuthChannelRef.current?.postMessage({ type: "mcpAuthChanged" });
@@ -431,13 +431,11 @@ export function HakuUiEmbed({
         finishToolDecision(record);
         toastSuccess("Tool call finished", `${record.server_id}.${record.tool_name}: ${record.status}`);
         refreshToolApprovals();
-        notifyPeers();
       })
       .catch((e: unknown) => {
         setDeciding(approvalId, false);
         toastError("Tool call failed", e);
         refreshToolApprovals();
-        notifyPeers();
       });
   }
 
@@ -449,13 +447,11 @@ export function HakuUiEmbed({
         finishToolDecision(record);
         toastSuccess("Tool call denied", approval.title ?? `${approval.server_id}: ${approval.tool_name}`);
         refreshToolApprovals();
-        notifyPeers();
       },
       (e: unknown) => {
         setDeciding(approvalId, false);
         toastError("Couldn't deny tool call", e);
         refreshToolApprovals();
-        notifyPeers();
       }
     );
   }

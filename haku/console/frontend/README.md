@@ -23,9 +23,9 @@ components + **Tailwind v4** utilities — modeled on
   preview or raw JSON) and inline-SVG icons (never the `@tabler` barrel — see
   `debug/esbuild_tabler_memory.md`), used by both the drawer and the history view.
 - `tool_call_events.ts` — `useToolCallEvents(onEvent)`: the shared live signal (the
-  `/api/approvals/ws` WebSocket + a cross-tab BroadcastChannel) that refetches on every
-  submit/approve/deny/finish. Both the approval drawer and the history view use it, so the
-  full page updates live without a reload.
+  `/api/approvals/ws` WebSocket) that refetches on every submit/approve/deny/finish. The
+  server broadcasts each event to every connected tab, so both the approval drawer and the
+  history view stay live without a reload — no client-side cross-tab plumbing needed.
 - `client.ts` — typed `openapi-fetch` client; the types come from the backend's
   OpenAPI schema (the `:schema` target runs `//haku/console:export_schema_bin`), so
   the Pydantic models are the single source of truth for the wire contract. Includes the
