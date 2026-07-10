@@ -41,10 +41,11 @@ rationale:
   Python SDK rather than extending bespoke `httpx` code.
 - **Shared iframe bridge protocol — finish haku-state adoption.** The wire types + client
   helpers now live in the ducktape-owned `@haku/console-bridge` package
-  (`haku/console/bridge_protocol/`, a nested Bazel module), and the console shell imports
-  them instead of defining its own copies. Remaining: haku-ui links the same package as a
-  Bazel module (`bazel_dep` + `git_override` with `strip_prefix` against the Forgejo ducktape
-  mirror) and drops its hand-maintained `ui/frontend/src/bridge.ts` duplicate.
+  (`haku/js/bridge_protocol/`, a package in the `ducktape_haku` shared-JS Bazel module), and
+  the console shell imports them instead of defining its own copies. Remaining: haku-ui links
+  the same package as a Bazel module (`bazel_dep(name = "ducktape_haku")` + `git_override`
+  with `strip_prefix = "haku/js"` against the Forgejo ducktape mirror) and drops its
+  hand-maintained `ui/frontend/src/bridge.ts` duplicate.
 - **Alternative runtimes.** Keep the self-hosted/in-cluster scanner and Managed
   Agents worker as experiments at varying completeness. They are not the primary
   runtime unless their docs explicitly say they have replaced the Claude Code web

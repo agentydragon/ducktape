@@ -106,7 +106,7 @@ Display data and operator intent go straight to Haku's backend (it holds the `ha
 creds); the bridge carries only actions needing the trusted side. Every inbound message is
 origin-checked (`event.origin === "https://haku-ui.allegedly.works"`) and schema-validated;
 the iframe can only _request_ — the shell decides and acts. Wire shapes are defined once in
-the shared `@haku/console-bridge` package (<../bridge_protocol/protocol.ts>, owned here); the
+the shared `@haku/console-bridge` package (<../../js/bridge_protocol/protocol.ts>, owned here); the
 shell's inbound validators and the open-link whitelist stay PR-gated in <../frontend/bridge.ts>.
 Haku's UI will link the same package as a Bazel module from haku-state (migration tracked in
 `haku/PLAN.md`).

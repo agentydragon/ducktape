@@ -4,7 +4,7 @@
 // See docs/containment.md → "The bridge protocol".
 //
 // The wire shapes (Inbound/Outbound/GeolocationOptions/GeoPosition) plus the client helpers
-// live in the shared @haku/console-bridge package (haku/console/bridge_protocol) — the one
+// live in the shared @haku/console-bridge package (haku/js/bridge_protocol) — the one
 // source of truth both sides import. What stays HERE is shell-only and deliberately NOT
 // shared: the inbound validators and the open-link whitelist, PR-gated so a compromised
 // iframe can't widen them.

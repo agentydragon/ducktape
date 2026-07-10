@@ -24,7 +24,7 @@ bazel_dep(name = "rules_multirun", version = "0.13.0")  # Required by format_mul
 bazel_dep(name = "rules_multitool", version = "1.11.1")
 bazel_dep(name = "package_metadata", version = "0.0.6")  # Required by image_pins extension (oci_pull repos reference it)
 bazel_dep(name = "ducktape_activitywatch", version = "0.1.0")
-bazel_dep(name = "ducktape_haku_console_bridge", version = "0.1.0")
+bazel_dep(name = "ducktape_haku", version = "0.1.0")
 bazel_dep(name = "ducktape_manifold_mcp_server", version = "0.1.0")
 bazel_dep(name = "ducktape_mcporter", version = "0.1.0")
 bazel_dep(name = "ducktape_claude_web_env_environment_manager", version = "0.1.0")
@@ -106,8 +106,8 @@ local_path_override(
 )
 
 local_path_override(
-    module_name = "ducktape_haku_console_bridge",
-    path = "haku/console/bridge_protocol",
+    module_name = "ducktape_haku",
+    path = "haku/js",
 )
 
 local_path_override(

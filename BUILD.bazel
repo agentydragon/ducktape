@@ -36,12 +36,12 @@ load("//devinfra/python:defs.bzl", "py_library")
 npm_link_all_packages(name = "node_modules")
 
 # Link the first-party shared bridge-protocol package (@haku/console-bridge) built by the
-# ducktape_haku_console_bridge nested module. First-party npm_package links (src = …) must
-# live in the root package; the console frontend then depends on //:node_modules/@haku/console-bridge
-# the same way it depends on //:node_modules/react.
+# ducktape_haku nested module. First-party npm_package links (src = …) must live in the root
+# package; the console frontend then depends on //:node_modules/@haku/console-bridge the same
+# way it depends on //:node_modules/react.
 npm_link_package(
     name = "node_modules/@haku/console-bridge",
-    src = "@ducktape_haku_console_bridge//:pkg",
+    src = "@ducktape_haku//bridge_protocol:pkg",
 )
 
 # Export workspace files for npm_translate_lock data tracking

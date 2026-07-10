@@ -1,0 +1,4 @@
+# Root package of the ducktape_haku module — Haku's shared browser/TS libraries. The
+# libraries themselves live in subpackages (e.g. bridge_protocol/); this file just marks the
+# module root. Consumed in-repo via the root MODULE.bazel local_path_override and by
+# haku-state via git_override + strip_prefix ("haku/js").
