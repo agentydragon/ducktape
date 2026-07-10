@@ -27,6 +27,7 @@ import { ShellControls, ShellDrawer, type ShellDrawerTab } from "./console_panel
 import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation.ts";
 import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant.ts";
 import { toastError, toastSuccess } from "./toast.ts";
+import { useToolCallEvents } from "./tool_call_events.ts";
 
 // Haku's own UI service — a separate, Authentik-gated origin running in haku-sandbox —
 // embedded as a sandboxed cross-origin iframe (the whole console is now this frame). The
@@ -52,19 +53,7 @@ export function openExternal(url: string): boolean {
 }
 
 const POPUP_HINT = "Allow pop-ups for this site so the console can open links.";
-const TOOL_APPROVAL_CHANNEL = "haku-console-tool-approvals";
 const MCP_AUTH_CHANNEL = "haku-console-mcp-auth";
-
-type ToolApprovalChannelMessage = { type: "toolApprovalsChanged" };
-
-function isToolApprovalChannelMessage(value: unknown): value is ToolApprovalChannelMessage {
-  return Boolean(
-    value &&
-    typeof value === "object" &&
-    "type" in value &&
-    (value as { type?: unknown }).type === "toolApprovalsChanged"
-  );
-}
 
 // Restore the route the console URL carries into the frame on first mount. The console
 // hash is treated strictly as a validated path, never a URL: the src is always `uiUrl`
@@ -108,7 +97,6 @@ export function HakuUiEmbed({
   // reload the frame); the iframe navigates itself, the console only reflects.
   const [frameSrc] = useState(() => initialFrameSrc(uiUrl, window.location.hash));
   const origin = new URL(uiUrl).origin;
-  const toolApprovalChannelRef = useRef<BroadcastChannel | null>(null);
   const mcpAuthChannelRef = useRef<BroadcastChannel | null>(null);
   const activeAction: Escalation | null = pending;
 
@@ -251,16 +239,19 @@ export function HakuUiEmbed({
     setSelectedRecentToolCallId(null);
   }
 
-  function refreshToolApprovals(notifyPeers = false) {
-    if (notifyPeers) toolApprovalChannelRef.current?.postMessage({ type: "toolApprovalsChanged" });
+  function refreshToolApprovals() {
     void fetchPendingApprovals().then(
       (approvals) => applyToolApprovals(approvals),
       (e: unknown) => toastError("Couldn't load tool approvals", e)
     );
   }
 
-  function refreshMcpAuthStatuses(notifyPeers = false) {
-    if (notifyPeers) mcpAuthChannelRef.current?.postMessage({ type: "mcpAuthChanged" });
+  // Live tool-call signal: initial fetch on mount plus a refetch on every WS/cross-tab
+  // event. `notifyPeers` wakes other console tabs after this one approves/denies.
+  const { notifyPeers } = useToolCallEvents(refreshToolApprovals);
+
+  function refreshMcpAuthStatuses(notify = false) {
+    if (notify) mcpAuthChannelRef.current?.postMessage({ type: "mcpAuthChanged" });
     void fetchMcpOperatorAuthStatuses().then(
       (statuses) => setMcpAuthStatuses(statuses),
       (e: unknown) => toastError("Couldn't load MCP account links", e)
@@ -293,19 +284,6 @@ export function HakuUiEmbed({
   useEffect(() => () => void watcher.stopAll(), [watcher]);
 
   useEffect(() => {
-    if (!("BroadcastChannel" in window)) return;
-    const channel = new BroadcastChannel(TOOL_APPROVAL_CHANNEL);
-    toolApprovalChannelRef.current = channel;
-    channel.onmessage = (e: MessageEvent<unknown>) => {
-      if (isToolApprovalChannelMessage(e.data)) refreshToolApprovals();
-    };
-    return () => {
-      if (toolApprovalChannelRef.current === channel) toolApprovalChannelRef.current = null;
-      channel.close();
-    };
-  }, []);
-
-  useEffect(() => {
     refreshMcpAuthStatuses();
     if (!("BroadcastChannel" in window)) return;
     const channel = new BroadcastChannel(MCP_AUTH_CHANNEL);
@@ -314,25 +292,6 @@ export function HakuUiEmbed({
     return () => {
       if (mcpAuthChannelRef.current === channel) mcpAuthChannelRef.current = null;
       channel.close();
-    };
-  }, []);
-
-  useEffect(() => {
-    let closed = false;
-    let ws: WebSocket | null = null;
-    function refreshIfLive(notifyPeers = false) {
-      if (!closed) refreshToolApprovals(notifyPeers);
-    }
-    refreshIfLive();
-    const url = new URL("/api/approvals/ws", window.location.href);
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    ws = new WebSocket(url);
-    ws.onopen = () => refreshIfLive();
-    ws.onmessage = () => refreshIfLive(true);
-    ws.onclose = () => refreshIfLive();
-    return () => {
-      closed = true;
-      ws?.close();
     };
   }, []);
 
@@ -471,12 +430,14 @@ export function HakuUiEmbed({
       .then((record) => {
         finishToolDecision(record);
         toastSuccess("Tool call finished", `${record.server_id}.${record.tool_name}: ${record.status}`);
-        refreshToolApprovals(true);
+        refreshToolApprovals();
+        notifyPeers();
       })
       .catch((e: unknown) => {
         setDeciding(approvalId, false);
         toastError("Tool call failed", e);
-        refreshToolApprovals(true);
+        refreshToolApprovals();
+        notifyPeers();
       });
   }
 
@@ -487,12 +448,14 @@ export function HakuUiEmbed({
       (record) => {
         finishToolDecision(record);
         toastSuccess("Tool call denied", approval.title ?? `${approval.server_id}: ${approval.tool_name}`);
-        refreshToolApprovals(true);
+        refreshToolApprovals();
+        notifyPeers();
       },
       (e: unknown) => {
         setDeciding(approvalId, false);
         toastError("Couldn't deny tool call", e);
-        refreshToolApprovals(true);
+        refreshToolApprovals();
+        notifyPeers();
       }
     );
   }

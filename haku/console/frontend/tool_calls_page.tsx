@@ -1,11 +1,12 @@
 import { Badge, Button, Group, Loader, Stack, Text } from "@mantine/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { approvalDisplayFields, shortDate, statusColor, terminalStatusLabel } from "./approval_state.ts";
 import { fetchToolCalls, type ToolCallRecord } from "./client.ts";
 import { Field } from "./field.tsx";
 import { ArrowLeftIcon } from "./icons.tsx";
 import { ToolArgumentsField } from "./tool_arguments_field.tsx";
+import { useToolCallEvents } from "./tool_call_events.ts";
 
 // Matches the backend's `le=500` cap on GET /api/tool-calls (mcp_approval.py).
 const HISTORY_LIMIT = 500;
@@ -83,7 +84,9 @@ export function ToolCallsPage({ onBack }: { onBack: () => void }) {
     );
   }, []);
 
-  useEffect(load, [load]);
+  // Live: initial load on mount plus a refetch whenever a tool call is submitted, approved,
+  // denied, or finishes anywhere — the same WS/cross-tab signal the approval drawer uses.
+  useToolCallEvents(load);
 
   return (
     <div className="haku-history-page">

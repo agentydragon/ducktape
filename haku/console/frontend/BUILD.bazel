@@ -83,6 +83,12 @@ js_library(
 )
 
 js_library(
+    name = "tool_call_events",
+    srcs = ["tool_call_events.ts"],
+    deps = ["//:node_modules/react"],
+)
+
+js_library(
     name = "routing",
     srcs = ["routing.ts"],
     deps = ["//:node_modules/react"],
@@ -204,6 +210,7 @@ js_library(
         ":field",
         ":icons",
         ":tool_arguments_field",
+        ":tool_call_events",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
     ],
@@ -221,6 +228,7 @@ js_library(
         ":geolocation",
         ":geolocation_grant",
         ":toast",
+        ":tool_call_events",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
     ],
