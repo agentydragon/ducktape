@@ -287,15 +287,15 @@ export function grocyToolPreview(serverId: string, toolName: string, args: Recor
   if (serverId !== GROCY_SERVER_ID) return null;
   if (toolName === "stock_add") {
     const parsed = zStockAddArgs.safeParse(args);
-    return parsed.success && <StockAddPreview args={parsed.data} />;
+    return parsed.success ? <StockAddPreview args={parsed.data} /> : null;
   }
   if (toolName === "stock_consume") {
     const parsed = zStockConsumeArgs.safeParse(args);
-    return parsed.success && <StockConsumePreview args={parsed.data} />;
+    return parsed.success ? <StockConsumePreview args={parsed.data} /> : null;
   }
   if (toolName === "products_create") {
     const parsed = zProductsCreateArgs.safeParse(args);
-    return parsed.success && <ProductsCreatePreview args={parsed.data} />;
+    return parsed.success ? <ProductsCreatePreview args={parsed.data} /> : null;
   }
   return null;
 }

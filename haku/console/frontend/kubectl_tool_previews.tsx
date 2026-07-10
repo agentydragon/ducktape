@@ -119,15 +119,15 @@ export function kubectlToolPreview(
   if (serverId !== KUBECTL_SERVER_ID) return null;
   if (toolName === "resources_create_or_update") {
     const parsed = zResourcesCreateOrUpdateArgs.safeParse(args);
-    return parsed.success && <ResourcesApplyPreview args={parsed.data} />;
+    return parsed.success ? <ResourcesApplyPreview args={parsed.data} /> : null;
   }
   if (toolName === "resources_delete") {
     const parsed = zResourcesDeleteArgs.safeParse(args);
-    return parsed.success && <ResourcesDeletePreview args={parsed.data} />;
+    return parsed.success ? <ResourcesDeletePreview args={parsed.data} /> : null;
   }
   if (toolName === "pods_delete") {
     const parsed = zPodsDeleteArgs.safeParse(args);
-    return parsed.success && <PodsDeletePreview args={parsed.data} />;
+    return parsed.success ? <PodsDeletePreview args={parsed.data} /> : null;
   }
   return null;
 }

@@ -184,15 +184,15 @@ export function googleToolPreview(serverId: string, toolName: string, args: Reco
   if (serverId !== GOOGLE_SERVER_ID) return null;
   if (toolName === "create_calendar_event") {
     const parsed = zCreateCalendarEventArgs.safeParse(args);
-    return parsed.success && <CreateCalendarEventPreview args={parsed.data} />;
+    return parsed.success ? <CreateCalendarEventPreview args={parsed.data} /> : null;
   }
   if (toolName === "batch_modify_gmail_thread_labels") {
     const parsed = zBatchModifyGmailThreadLabelsArgs.safeParse(args);
-    return parsed.success && <BatchModifyGmailThreadLabelsPreview args={parsed.data} />;
+    return parsed.success ? <BatchModifyGmailThreadLabelsPreview args={parsed.data} /> : null;
   }
   if (toolName === "create_gmail_draft") {
     const parsed = zCreateGmailDraftArgs.safeParse(args);
-    return parsed.success && <CreateGmailDraftPreview args={parsed.data} />;
+    return parsed.success ? <CreateGmailDraftPreview args={parsed.data} /> : null;
   }
   return null;
 }
