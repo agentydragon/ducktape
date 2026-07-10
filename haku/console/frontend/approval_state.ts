@@ -137,6 +137,18 @@ export function terminalStatusLabel(status: ToolCallRecord["status"]): string {
   return "Pending";
 }
 
+export function statusColor(status: ToolCallRecord["status"]): string {
+  if (status === "ok") return "teal";
+  if (status === "error") return "red";
+  if (status === "denied") return "gray";
+  return "blue";
+}
+
+export function shortDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return new Date(value).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}
+
 export function geolocationApprovalTitle(approval: GeolocationApproval): string {
   return approval.mode === "geolocationWatch" ? "Allow continuous location sharing?" : "Allow location sharing?";
 }

@@ -8,12 +8,20 @@ components + **Tailwind v4** utilities — modeled on
 `finance/augur/frontend` (references root `//:node_modules/*`; no per-package
 `package.json`).
 
-- `main.tsx` (wraps the app in `MantineProvider`) → `app.tsx` (the page: tiered open
-  items + global feedback box) → `task.tsx` (one item card with its action toggles
-  and a per-item feedback box).
-- `feedback.tsx` — shared feedback form (global note + per-item, the latter tagged
-  with the item id). The Mantine `Button`'s `loading` prop shows an in-flight spinner
-  while the commit-push lands; a failure surfaces inline on the `Textarea`.
+- `main.tsx` (wraps the app in `MantineProvider`) → `app.tsx` (routes between the two
+  console views) → either `haku_ui_embed.tsx` (the full-page framed haku-ui plus shell
+  chrome: approval drawer, bridge, confirms) or `tool_calls_page.tsx` (the full-page
+  past-tool-calls history).
+- `routing.ts` — the console's tiny pathname router. Two views keyed on URL **path**
+  (`/` embed, `/tool-calls` history) so console navigation never collides with the hash,
+  which is reserved for mirroring the framed haku-ui route.
+- `console_panel.tsx` — the shell drawer (`ShellDrawer`) and its persistent toggle
+  (`ShellControls`): a hamburger icon badged with a pending-approval callout light. Hosts
+  the approval queue, the past-tool-calls link, and the Access tab (location + MCP
+  accounts).
+- `tool_arguments_field.tsx` / `icons.tsx` — shared tool-argument renderer (per-server
+  preview or raw JSON) and inline-SVG icons (never the `@tabler` barrel — see
+  `debug/esbuild_tabler_memory.md`), used by both the drawer and the history view.
 - `client.ts` — typed `openapi-fetch` client; the types come from the backend's
   OpenAPI schema (the `:schema` target runs `//haku/console:export_schema_bin`), so
   the Pydantic models are the single source of truth for the wire contract. Includes the

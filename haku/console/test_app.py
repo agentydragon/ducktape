@@ -49,5 +49,19 @@ def test_cache_policy_splits_hashed_assets_app_shell_and_api(make_client, tmp_pa
         assert c.get("/healthz").headers["cache-control"] == "no-store"
 
 
+def test_spa_route_deep_link_serves_index(make_client, tmp_path: Path) -> None:
+    # The console's own client-side routes (e.g. /tool-calls) have no file on disk; the dev
+    # fallback must serve the SPA shell for them, matching production's nginx try_files.
+    static_dir = tmp_path / "web"
+    static_dir.mkdir()
+    (static_dir / "index.html").write_text("<!doctype html><div id='root'></div>", encoding="utf-8")
+
+    with make_client(static_dir=static_dir) as c:
+        resp = c.get("/tool-calls")
+        assert resp.status_code == 200
+        assert "id='root'" in resp.text
+        assert resp.headers["cache-control"] == "no-cache, max-age=0, must-revalidate"
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -97,6 +97,51 @@
   right: 8px;
 }
 
+/* Full-page past-tool-calls history view (tool_calls_page.tsx) — its own route, so it
+   replaces the framed haku-ui rather than overlaying it. */
+.haku-history-page {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--haku-page-bg);
+  color: var(--mantine-color-text);
+}
+
+.haku-history-header {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--haku-border);
+  background: var(--haku-panel-bg);
+}
+
+.haku-history-bar,
+.haku-history-list {
+  width: 100%;
+  max-width: 56rem;
+  margin: 0 auto;
+}
+
+.haku-history-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+}
+
+.haku-history-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.haku-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
 .haku-shell-overlay {
   position: fixed;
   inset: 0;

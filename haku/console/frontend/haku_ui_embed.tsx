@@ -79,7 +79,15 @@ export function initialFrameSrc(uiUrl: string, consoleHash: string): string {
   return src.toString();
 }
 
-export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchAvailable: boolean }) {
+export function HakuUiEmbed({
+  uiUrl,
+  launchAvailable,
+  onOpenToolCalls,
+}: {
+  uiUrl: string;
+  launchAvailable: boolean;
+  onOpenToolCalls: () => void;
+}) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   // The single escalation awaiting the operator's trusted confirm (a link to open or a run
   // to launch). One typed action, dispatched on its `kind` — see ConfirmDialog's Escalation.
@@ -525,8 +533,7 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
       <ShellControls
         pendingCount={toolApprovals.length + geolocationApprovals.length}
         opened={drawerOpen}
-        activeTab={drawerTab}
-        onOpenTab={openDrawerTab}
+        onToggle={() => setDrawerOpen((open) => !open)}
       />
       <ShellDrawer
         opened={drawerOpen}
@@ -554,6 +561,7 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
         onApproveGeolocation={approveGeolocationApproval}
         onDenyGeolocation={denyGeolocationApproval}
         onDismissRecentToolCall={dismissRecentToolCall}
+        onOpenToolCalls={onOpenToolCalls}
         geoGranted={geoGranted}
         tracking={tracking}
         onWithdrawGeolocation={withdrawGeolocation}

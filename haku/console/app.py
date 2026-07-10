@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
@@ -128,6 +128,16 @@ def create_app(settings: Settings) -> FastAPI:
     # haku-console-static nginx image and leaves static_dir unset on this process.
     # Mounted last so the API routes above take precedence.
     if settings.static_dir is not None and settings.static_dir.is_dir():
+        index_file = settings.static_dir / "index.html"
+
+        # SPA client-side routes (frontend/routing.ts, e.g. /tool-calls) have no file on
+        # disk; production's nginx serves index.html for them (try_files $uri /index.html).
+        # Mirror that here — registered before the mount so it wins — so the dev fallback
+        # can deep-link a console route instead of 404ing.
+        @app.get("/tool-calls")
+        async def _spa_route() -> FileResponse:
+            return FileResponse(index_file)
+
         app.mount("/", StaticFiles(directory=settings.static_dir, html=True), name="spa")
 
     return app

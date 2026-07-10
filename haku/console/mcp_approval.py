@@ -214,7 +214,12 @@ class ToolCallLedgerProtocol(Protocol):
     def get(self, tool_call_id: str) -> ToolCallRecord: ...
 
     def list(
-        self, *, statuses: list[ToolCallStatus] | None = None, since: dt.datetime | None = None, limit: int = 100
+        self,
+        *,
+        statuses: list[ToolCallStatus] | None = None,
+        since: dt.datetime | None = None,
+        limit: int = 100,
+        newest_first: bool = False,
     ) -> ToolCallListResponse: ...
 
     def events_after_id(self, after_event_id: int = 0) -> ToolCallEventsResponse: ...
@@ -285,7 +290,12 @@ class PostgresToolCallLedger:
         return row.to_record()
 
     def list(
-        self, *, statuses: list[ToolCallStatus] | None = None, since: dt.datetime | None = None, limit: int = 100
+        self,
+        *,
+        statuses: list[ToolCallStatus] | None = None,
+        since: dt.datetime | None = None,
+        limit: int = 100,
+        newest_first: bool = False,
     ) -> ToolCallListResponse:
         with self._sessions.begin() as session:
             stmt = select(McpToolCall)
@@ -293,7 +303,11 @@ class PostgresToolCallLedger:
                 stmt = stmt.where(McpToolCall.updated_at > since)
             if statuses:
                 stmt = stmt.where(McpToolCall.status.in_(statuses))
-            rows = session.scalars(stmt.order_by(McpToolCall.created_at).limit(limit)).all()
+            # `newest_first` makes `limit` keep the most recent calls (the audit/history
+            # view wants those); the default ascending order stays the queue-friendly
+            # oldest-first for pending-approval reads.
+            order = McpToolCall.created_at.desc() if newest_first else McpToolCall.created_at
+            rows = session.scalars(stmt.order_by(order).limit(limit)).all()
         records = [row.to_record() for row in rows]
         return ToolCallListResponse(tool_calls=records)
 
@@ -1227,8 +1241,9 @@ async def list_tool_calls(
     status: Annotated[list[ToolCallStatus] | None, Query()] = None,
     since: dt.datetime | None = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    newest_first: bool = False,
 ) -> ToolCallListResponse:
-    return ledger.list(statuses=status, since=since, limit=limit)
+    return ledger.list(statuses=status, since=since, limit=limit, newest_first=newest_first)
 
 
 @router.get("/api/tool-calls/{tool_call_id}")

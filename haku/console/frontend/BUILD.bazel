@@ -83,6 +83,18 @@ js_library(
 )
 
 js_library(
+    name = "routing",
+    srcs = ["routing.ts"],
+    deps = ["//:node_modules/react"],
+)
+
+js_library(
+    name = "icons",
+    srcs = ["icons.tsx"],
+    deps = ["//:node_modules/react"],
+)
+
+js_library(
     name = "geolocation_grant",
     srcs = ["geolocation_grant.ts"],
 )
@@ -159,14 +171,39 @@ js_library(
 )
 
 js_library(
+    name = "tool_arguments_field",
+    srcs = ["tool_arguments_field.tsx"],
+    deps = [
+        ":field",
+        ":tool_previews",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
     name = "console_panel",
     srcs = ["console_panel.tsx"],
     deps = [
         ":approval_state",
         ":client",
         ":field",
+        ":icons",
         ":theme",
-        ":tool_previews",
+        ":tool_arguments_field",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "tool_calls_page",
+    srcs = ["tool_calls_page.tsx"],
+    deps = [
+        ":approval_state",
+        ":client",
+        ":field",
+        ":icons",
+        ":tool_arguments_field",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
     ],
@@ -195,6 +232,8 @@ js_library(
     deps = [
         ":client",
         ":haku_ui_embed",
+        ":routing",
+        ":tool_calls_page",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
     ],
@@ -229,11 +268,15 @@ filegroup(
         "grocy_client.ts",
         "grocy_tool_previews.tsx",
         "haku_ui_embed.tsx",
+        "icons.tsx",
         "index.html",
         "kubectl_tool_previews.tsx",
         "main.tsx",
+        "routing.ts",
         "theme.ts",
         "toast.ts",
+        "tool_arguments_field.tsx",
+        "tool_calls_page.tsx",
         "tool_previews.tsx",
     ],
 )
@@ -302,6 +345,7 @@ tsc_bin.tsc_test(
         "bridge.test.ts",
         "geolocation.test.ts",
         "haku_ui_embed.test.ts",
+        "routing.test.ts",
         "tool_previews.test.ts",
         "tsconfig.json",
         ":main_lib",
@@ -321,12 +365,14 @@ vitest_bin.vitest_test(
         "bridge.test.ts",
         "geolocation.test.ts",
         "haku_ui_embed.test.ts",
+        "routing.test.ts",
         "tool_previews.test.ts",
         "vitest.config.ts",
         ":approval_state",
         ":bridge",
         ":geolocation",
         ":haku_ui_embed",
+        ":routing",
         ":tool_previews",
         "//:node_modules",
     ],

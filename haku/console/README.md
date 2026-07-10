@@ -128,10 +128,22 @@ shell holds (`startGeolocationWatch`); location is gated by a shell-owned standi
 grant since the iframe has no `allow="geolocation"`. The shell origin-checks,
 schema-validates, and decides/confirms before acting. It also mirrors the iframe's hash route
 (`routeChanged`, validated as a path) into the console's own URL fragment so refresh and deep
-links restore the view. A persistent ⚙ escape button opens the shell's own console panel
-(`console_panel.tsx`) — trusted chrome hosting shell-owned controls like the
-location-sharing stop/withdraw and MCP account connect/reconnect/disconnect controls. See
-<docs/containment.md>.
+links restore the view. A persistent hamburger button — badged with a callout light when a
+tool call is awaiting approval — opens the shell's own console panel (`console_panel.tsx`),
+trusted chrome hosting shell-owned controls like the approval queue, the past-tool-calls
+link, the location-sharing stop/withdraw, and MCP account connect/reconnect/disconnect
+controls. See <docs/containment.md>.
+
+## Past tool calls — full-page history
+
+Beyond the drawer's ephemeral "Recent" list, the console owns a **full-page history view**
+of the whole tool-call audit ledger (`frontend/tool_calls_page.tsx`), reached from the
+console panel and living at its own route, `/tool-calls` (`frontend/routing.ts`). Because
+the console's own pages are distinguished by URL **path** — the hash stays reserved for
+mirroring the framed haku-ui route — the shell renders the history view instead of the
+iframe when the path matches. It reads `GET /api/tool-calls?newest_first=true`, so the
+newest calls survive the query's limit. Production's nginx already serves the SPA for any
+non-asset/API path; `app.py`'s dev fallback mirrors that so deep links work locally too.
 
 ## Layout
 

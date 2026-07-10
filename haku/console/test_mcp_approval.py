@@ -624,6 +624,23 @@ def test_all_v1_tool_calls_require_console_approval(
     assert listed["tool_calls"][0]["tool_call_id"] == body["tool_call_id"]
 
 
+def test_list_newest_first_keeps_the_most_recent(make_client, tmp_path: Path, db_url: str, mcp_server_url: str) -> None:
+    with make_client(config_file=_config_file(tmp_path, mcp_server_url), **_test_app_overrides(db_url)) as client:
+        first = _submit(client, amount=1)
+        second = _submit(client, amount=2)
+        third = _submit(client, amount=3)
+        newest = client.get("/api/tool-calls", params={"newest_first": "true"}).json()
+        newest_two = client.get("/api/tool-calls", params={"newest_first": "true", "limit": 2}).json()
+        oldest = client.get("/api/tool-calls").json()
+
+    ids = [first["tool_call_id"], second["tool_call_id"], third["tool_call_id"]]
+    assert [r["tool_call_id"] for r in newest["tool_calls"]] == list(reversed(ids))
+    # `limit` under newest_first keeps the most recent calls, not the oldest.
+    assert [r["tool_call_id"] for r in newest_two["tool_calls"]] == [third["tool_call_id"], second["tool_call_id"]]
+    # The default (no newest_first) stays oldest-first for the pending-approval queue.
+    assert [r["tool_call_id"] for r in oldest["tool_calls"]] == ids
+
+
 def test_websocket_receives_pending_approval_event(
     make_client, tmp_path: Path, db_url: str, mcp_server_url: str
 ) -> None:

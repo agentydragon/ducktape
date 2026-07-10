@@ -59,6 +59,16 @@ export async function fetchPendingApprovals(): Promise<PendingApproval[]> {
   return data.approvals ?? [];
 }
 
+// The full tool-call audit ledger for the history view: newest first, so `limit` keeps
+// the most recent calls when the ledger has grown past it.
+export async function fetchToolCalls(limit: number): Promise<ToolCallRecord[]> {
+  const { data, error } = await api.GET("/api/tool-calls", {
+    params: { query: { newest_first: true, limit } },
+  });
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load tool calls"));
+  return data.tool_calls ?? [];
+}
+
 export async function fetchMcpOperatorAuthStatuses(): Promise<McpOperatorAuthStatus[]> {
   const { data, error } = await api.GET("/api/mcp/operator-auth");
   if (error || !data) throw new Error(errorDetail(error, "Failed to load MCP account links"));
