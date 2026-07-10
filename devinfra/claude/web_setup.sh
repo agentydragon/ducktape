@@ -199,20 +199,27 @@ nix show-config 2>/dev/null | grep -E "max-jobs|sandbox|build-users" || true
 log "---"
 
 # --- Attic binary cache substituter (cache.allegedly.works) ---
-# Point Nix at the private Attic cache so devtools/agent-haku closures
-# substitute instead of building from source. Not just a speedup: GitHub-release
+# Point Nix at the Attic caches so devtools/agent-haku closures substitute
+# instead of building from source. Not just a speedup: GitHub-release
 # fixed-output fetches inside those closures (e.g. bazel-diff's deploy jar) 403
 # through the session proxy, so in-session rebuilds can be impossible without
-# the cache. Auth: web_env.sh upserts the per-principal reader JWT
-# (auto-rotated in-cluster by attic-jwt-rotation) into the netrc at hook-daemon
-# startup — which is AFTER this script on a fresh rootfs, so the first install
-# may still run anonymous (401 → Nix disables the substituter with a warning
-# and builds from source, same as before this block existed). Every later boot
-# — and any in-session `nix build` once the daemon is up, since Nix re-reads
-# the netrc per download — substitutes with auth. `fallback = true` also
-# covers dangling narinfos from interrupted CI pushes. No attic CLI involved:
-# sessions only pull, and netrc + substituter settings need no tooling this
-# early in init.
+# the cache. Two caches, two auth stories:
+#   - `public` is anonymous-readable (no token needed) and carries exactly the
+#     web/Haku bootstrap closures (devtools/bb/bbr/bbapi/agent-haku/devShells.
+#     default — pushed by devinfra/ci/nix_attic_build_and_push.sh), so it
+#     substitutes even on this very first install, before any session
+#     credential exists. This is what fixes the ~8min cold-start source-build
+#     that existed when `main` (private) was the only substituter — see
+#     cluster/docs/nix_cache.md "Public bootstrap cache".
+#   - `main` is private; web_env.sh upserts the per-principal reader JWT
+#     (auto-rotated in-cluster by attic-jwt-rotation) into the netrc at
+#     hook-daemon startup — which is AFTER this script on a fresh rootfs, so it
+#     stays anonymous (401 → Nix disables it with a warning) until then. Every
+#     later boot — and any in-session `nix build` once the daemon is up, since
+#     Nix re-reads the netrc per download — substitutes from it with auth.
+# `fallback = true` also covers dangling narinfos from interrupted CI pushes.
+# No attic CLI involved: sessions only pull, and netrc + substituter settings
+# need no tooling this early in init.
 #
 # Determinate layout gotcha: /etc/nix/nix.conf is managed ("will be replaced")
 # and sets `netrc-file = /nix/var/determinate/netrc` AFTER its
@@ -235,7 +242,7 @@ configure_attic_substituter() {
 
 # Attic substituter (added by web_setup.sh; reader JWT lands in the netrc via web_env.sh)
 netrc-file = /nix/var/determinate/netrc
-extra-substituters = https://cache.allegedly.works/main
+extra-substituters = https://cache.allegedly.works/public https://cache.allegedly.works/main
 extra-trusted-public-keys = ${pubkeys}
 fallback = true
 EOF

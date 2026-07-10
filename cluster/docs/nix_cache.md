@@ -9,9 +9,12 @@ metadata and a SeaweedFS S3 bucket for NAR chunk storage. Manifests in
 - **Server**: `ghcr.io/zhaofengli/attic:latest` (busybox-based Rust image)
 - **Database**: CNPG cluster `attic-db` (2 instances, OVH-HA, `local-path-ovh`)
 - **Cache storage**: SeaweedFS S3 bucket `attic` (`seaweedfs-s3.seaweedfs:8333`), replicated `001` across OVH volume servers
-- **Caches** (private, priority 41, server-generated ED25519 keypairs):
-  - `main` — ducktape CI's general-purpose cache (flake outputs)
-  - `gaffer` — gaffer-private CI's cache (drivefs and friends)
+- **Caches** (priority 41, server-generated ED25519 keypairs):
+  - `main` — private; ducktape CI's general-purpose cache (flake outputs)
+  - `gaffer` — private; gaffer-private CI's cache (drivefs and friends)
+  - `public` — anonymous-readable (`is_public: true`); carries only the Claude Code
+    web/Haku bootstrap closures (`devtools`/`bb`/`bbr`/`bbapi`/`agent-haku`/
+    `devShells.default`) — see "Public bootstrap cache" below
 - **Trusted public keys** (consumer side): single source of truth is
   `nix/attic-pubkeys.json`, consumed by both
   `nix/nixos/modules/attic-substituter.nix` and the `nix-attic-push` CI
@@ -40,23 +43,29 @@ attic's Postgres DB per cache, server-generated, never extracted.)
 ## Bootstrap
 
 The bootstrap Job in `cluster/k8s/nix-cache/bootstrap/` runs on every Flux
-reconcile of the `nix-cache-bootstrap` Kustomization. It mints a 5-minute
-admin JWT via `kubectl exec deploy/attic -- atticadm`, then for each cache
-in `bootstrap.sh`'s `$CACHES` list:
+reconcile of the `nix-cache-bootstrap` Kustomization (`job.yaml`'s
+`kustomize.toolkit.fluxcd.io/force: enabled` recreates it on every change so it
+always re-runs). It mints a 5-minute admin JWT via `kubectl exec deploy/attic
+-- atticadm`, then for each `--cache`/`--public-cache` arg
+(`cluster/rotators/attic_jwt_rotation/rotate.py`'s `bootstrap-caches`
+subcommand — the previous shell-script implementation this doc used to
+describe is gone):
 
 1. `GET /_api/v1/cache-config/<name>` — exists?
-2. If 200: log "exists", skip.
+2. If 200: log "exists", skip (existing caches are never reconfigured — flipping
+   `is_public` on one needs a direct API call, not this command).
 3. If 4xx: `POST /_api/v1/cache-config/<name>` with
-   `{"keypair":"Generate","is_public":false,"store_dir":"/nix/store","priority":41,"upstream_cache_key_names":[]}`.
+   `{"keypair":"Generate","is_public":<bool>,"store_dir":"/nix/store","priority":41,"upstream_cache_key_names":[]}`
+   — `is_public` is `true` only for `--public-cache` args (currently just `public`).
 
-Public keys aren't auto-published back to git (TODO); after a cluster wipe,
-fetch the new pubkeys via:
+Public keys aren't auto-published back to git (TODO); after a cluster wipe (or
+after adding a new cache — e.g. `public`), fetch the new pubkeys via:
 
 ```bash
 JWT=$(kubectl -n nix-cache exec deploy/attic -- \
   atticadm -f /config/server.toml make-token \
   --sub fetch-pubkey --validity '5 minutes' --pull '*')
-for cache in main gaffer; do
+for cache in main gaffer public; do
   curl -sSf -H "Authorization: Bearer $JWT" \
     "https://cache.allegedly.works/_api/v1/cache-config/$cache" \
     | jq -r '.public_key'
@@ -66,15 +75,50 @@ done
 …and paste into `nix/attic-pubkeys.json` (the single source of truth, read by
 both `nix/nixos/modules/attic-substituter.nix` and the `nix-attic-push` workflow).
 
+## Public bootstrap cache
+
+`main` and `gaffer` are both private (reader JWT required), which is fine for
+every consumer except one: a fresh Claude Code web session's **first**
+`nix profile install` runs as the environment-manager init script, before any
+session credential (not just the Attic reader JWT — nothing session-scoped)
+reaches it. Against a private-only cache that request 401s, Nix disables the
+substituter, and the session builds ~42 devtools derivations from source
+(~8 minutes) instead of substituting ~490 already-built paths (~1.4 GiB).
+Root-caused and tracked as `claude-web-cold-start-attic-cache-2026-07` in
+Haku's state.
+
+Fix: a third cache, **`public`** (`is_public: true`, anonymous reads, no JWT
+needed ever), carrying **only** the web/Haku bootstrap closures —
+`devtools`/`bb`/`bbr`/`bbapi`/`agent-haku`/`devShells.default` — pushed
+alongside the existing `main` push by
+`devinfra/ci/nix_attic_build_and_push.sh` (same content, deduped by NAR hash;
+cheap). `devinfra/claude/web_setup.sh` lists `public` before `main` in
+`extra-substituters`, so the very first install substitutes anonymously and
+every later one still gets `main`+`gaffer` once authenticated. `main`/`gaffer`
+stay exactly as private as before — `public` is a strict addition, not a
+downgrade of either.
+
+**Rollout is multi-step, not just a merge:** (1) Flux reconciles the bootstrap
+Job, creating the `public` cache; (2) fetch its pubkey (above) and commit it to
+`nix/attic-pubkeys.json` — until then, Nix would refuse anything substituted
+from `public` on signature-verification grounds even though the substituter is
+configured; (3) the ducktape CI writer JWT needs `push: [main, public]` (already
+in `rotators.yaml`), but `rotate_one` only re-mints on staleness — force an
+early rotation (e.g. touch `secrets/ci/attic-main-writer.sops.yaml`'s plaintext
+`expires_unencrypted` stamp to within `rotate_below_hours`) so the next hourly
+`attic-jwt-rotation` CronJob run actually picks up the new scope; (4) run
+`nix-attic-push.yml` (push to `devel` or `workflow_dispatch`) so CI pushes the
+bootstrap closures to `public` for the first time.
+
 ## CI Push
 
 Both ducktape and gaffer-private CI push to their respective caches. Writer
 JWTs auto-rotated by the cluster (1-year validity, mint-on-staleness):
 
-| Repo           | Workflow                               | Cache    | Reads token from                                                         |
-| -------------- | -------------------------------------- | -------- | ------------------------------------------------------------------------ |
-| ducktape       | `.github/workflows/nix-attic-push.yml` | `main`   | `secrets/ci/attic-main-writer.sops.yaml`                                 |
-| gaffer-private | `.github/workflows/nix-attic-push.yml` | `gaffer` | `secrets/ci/attic-gaffer-writer.sops.yaml` (sparse-cloned from ducktape) |
+| Repo           | Workflow                               | Cache            | Reads token from                                                         |
+| -------------- | -------------------------------------- | ---------------- | ------------------------------------------------------------------------ |
+| ducktape       | `.github/workflows/nix-attic-push.yml` | `main`, `public` | `secrets/ci/attic-main-writer.sops.yaml`                                 |
+| gaffer-private | `.github/workflows/nix-attic-push.yml` | `gaffer`         | `secrets/ci/attic-gaffer-writer.sops.yaml` (sparse-cloned from ducktape) |
 
 Both files are encrypted with the CI age key, already on both repos as
 `SOPS_AGE_KEY` (synced by `tf/gitops/github-secrets-sync/main.tf`).

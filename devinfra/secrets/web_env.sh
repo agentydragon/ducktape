@@ -55,14 +55,20 @@ unset _s3_reader
 # Attic reader JWT → Nix netrc (a file write, not an env export: Nix reads
 # substitution auth from netrc-file — /etc/nix/nix.conf points it at
 # Determinate's /nix/var/determinate/netrc — not from the session env).
-# web_setup.sh adds cache.allegedly.works/main as an extra substituter; Nix
-# re-reads the netrc per download, so upserting the token here at daemon
-# startup enables authenticated substitution for the current session and for
-# the next boot's tool install. Tokens are per-principal, auto-rotated by the
-# attic-jwt-rotation CronJob: claude-web sessions can decrypt
-# claude-web-attic.yaml, Haku homes haku-attic.yaml — try both, first that
-# decrypts wins (each principal's key opens exactly one, so per-file failures
-# are expected and only the aggregate miss warns).
+# web_setup.sh adds cache.allegedly.works/main (private) as an extra
+# substituter alongside cache.allegedly.works/public (anonymous-readable, no
+# token needed — carries the web bootstrap closures, see
+# cluster/docs/nix_cache.md "Public bootstrap cache"). Nix re-reads the netrc
+# per download, so upserting the token here at daemon startup enables
+# authenticated substitution from `main`/`gaffer` for the current session and
+# for the next boot's tool install — `public` already covers the core devtools
+# bootstrap even before this runs, so a missing token here is a lesser
+# concern than the warning below implies, not a full fallback to source.
+# Tokens are per-principal, auto-rotated by the attic-jwt-rotation CronJob:
+# claude-web sessions can decrypt claude-web-attic.yaml, Haku homes
+# haku-attic.yaml — try both, first that decrypts wins (each principal's key
+# opens exactly one, so per-file failures are expected and only the aggregate
+# miss warns).
 _attic_token=""
 for _attic_file in "$REPO_ROOT/secrets/claude-web-attic.yaml" "$REPO_ROOT/secrets/haku-attic.yaml"; do
   [ -f "$_attic_file" ] || continue
@@ -73,7 +79,7 @@ for _attic_file in "$REPO_ROOT/secrets/claude-web-attic.yaml" "$REPO_ROOT/secret
 done
 _netrc="/nix/var/determinate/netrc"
 if [ -z "$_attic_token" ]; then
-  echo "WARNING: secrets: attic: no reader token decryptable (tried claude-web-attic.yaml, haku-attic.yaml) — cache.allegedly.works substitution stays anonymous (401 → source builds)" >&2
+  echo "WARNING: secrets: attic: no reader token decryptable (tried claude-web-attic.yaml, haku-attic.yaml) — cache.allegedly.works/main+gaffer substitution stays anonymous (401s there fall back to /public or source)" >&2
 elif mkdir -p "${_netrc%/*}" 2>/dev/null && _netrc_tmp=$(mktemp "${_netrc}.XXXXXX" 2>/dev/null); then
   {
     grep -v '^machine cache\.allegedly\.works ' "$_netrc" 2>/dev/null || true

@@ -257,16 +257,18 @@ def rotate_cmd(
     commit_and_push(repo, config, rotated, token)
 
 
-# Default body matches `attic cache create <name>` with no flags
-# (cf. attic upstream client/src/command/cache.rs::create_cache):
-# keypair=Generate, is_public=false, store_dir=/nix/store, priority=41.
-_CREATE_BODY: dict[str, Any] = {
-    "keypair": "Generate",
-    "is_public": False,
-    "store_dir": "/nix/store",
-    "priority": 41,
-    "upstream_cache_key_names": [],
-}
+def _create_body(is_public: bool) -> dict[str, Any]:
+    """Body for `POST /_api/v1/cache-config/<name>` — matches `attic cache create <name>`
+    with no flags (cf. attic upstream client/src/command/cache.rs::create_cache) except
+    `is_public`, which callers set explicitly.
+    """
+    return {
+        "keypair": "Generate",
+        "is_public": is_public,
+        "store_dir": "/nix/store",
+        "priority": 41,
+        "upstream_cache_key_names": [],
+    }
 
 
 def mint_admin_jwt(namespace: str, deployment: str, server_config: str) -> str:
@@ -308,18 +310,19 @@ def mint_admin_jwt(namespace: str, deployment: str, server_config: str) -> str:
     return jwt
 
 
-def ensure_cache(client: httpx.Client, cache: str) -> str:
+def ensure_cache(client: httpx.Client, cache: str, is_public: bool = False) -> str:
     """Idempotently ensure `cache` exists on the attic server behind `client`; return its public_key.
 
     `client` must already carry the admin Bearer token and a base URL pointing
     at the attic server. Non-2xx from the initial GET is only tolerated on 404
-    (cache absent → create), everything else raises.
+    (cache absent → create), everything else raises. `is_public` only affects
+    creation — an already-existing cache's visibility is left as-is.
     """
     config_path = f"/_api/v1/cache-config/{cache}"
     response = client.get(config_path)
     if response.status_code == 404:
-        logger.info("cache %s: missing — creating", cache)
-        create = client.post(config_path, json=_CREATE_BODY)
+        logger.info("cache %s: missing — creating (is_public=%s)", cache, is_public)
+        create = client.post(config_path, json=_create_body(is_public))
         if not create.is_success:
             raise RuntimeError(f"cache {cache}: create failed (HTTP {create.status_code}): {create.text}")
         response = client.get(config_path)
@@ -332,7 +335,15 @@ def ensure_cache(client: httpx.Client, cache: str) -> str:
 
 @app.command("bootstrap-caches")
 def bootstrap_caches_cmd(
-    caches: Annotated[list[str], typer.Option("--cache", help="Cache name(s) to ensure; repeatable")],
+    caches: Annotated[
+        list[str] | None, typer.Option("--cache", help="Private cache name(s) to ensure; repeatable")
+    ] = None,
+    public_caches: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--public-cache", help="Cache name(s) to ensure with anonymous-readable is_public=true; repeatable"
+        ),
+    ] = None,
     server: Annotated[
         str, typer.Option(help="Attic server URL reachable in-cluster")
     ] = "http://attic.nix-cache.svc.cluster.local:8080",
@@ -342,18 +353,21 @@ def bootstrap_caches_cmd(
         str, typer.Option(help="Attic server config path inside the attic pod")
     ] = "/config/server.toml",
 ) -> None:
-    """Ensure each --cache exists on `server`; print its public_key on stdout.
+    """Ensure each --cache / --public-cache exists on `server`; print its public_key on stdout.
 
-    Idempotent: existing caches are left alone. Public keys are printed for
-    manual paste into nix/attic-pubkeys.json (attic's public
+    Idempotent: existing caches are left alone (including their visibility — flipping
+    is_public on an existing cache needs a direct API call, not this command). Public keys
+    are printed for manual paste into nix/attic-pubkeys.json (attic's public
     /{cache}/nix-cache-info does not include the pubkey; the authenticated
     /_api/v1/cache-config/<cache> endpoint does).
     """
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     jwt = mint_admin_jwt(attic_namespace, attic_deployment, server_config)
     with httpx.Client(base_url=server, headers={"Authorization": f"Bearer {jwt}"}, timeout=30.0) as client:
-        for cache in caches:
+        for cache in caches or []:
             ensure_cache(client, cache)
+        for cache in public_caches or []:
+            ensure_cache(client, cache, is_public=True)
 
 
 if __name__ == "__main__":

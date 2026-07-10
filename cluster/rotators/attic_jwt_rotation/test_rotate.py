@@ -358,6 +358,19 @@ def test_ensure_cache_creates_when_absent():
     }
 
 
+def test_ensure_cache_creates_public_when_requested():
+    transport = _ScriptedTransport(
+        [
+            httpx.Response(404, text="not found"),
+            httpx.Response(201, text=""),
+            httpx.Response(200, json={"public_key": "public:xyz="}),
+        ]
+    )
+    with _client(transport) as client:
+        assert ensure_cache(client, "public", is_public=True) == "public:xyz="
+    assert json.loads(transport.calls[1][2])["is_public"] is True
+
+
 def test_ensure_cache_raises_on_unexpected_error():
     transport = _ScriptedTransport([httpx.Response(500, text="boom")])
     with _client(transport) as client, pytest.raises(RuntimeError, match="HTTP 500"):

@@ -4,7 +4,7 @@ metadata:
   name: attic-bootstrap-caches
   namespace: nix-cache
   annotations:
-    description: Idempotently ensure required Attic caches (main, gaffer) exist and print their public keys.
+    description: Idempotently ensure required Attic caches (main, gaffer, public) exist and print their public keys.
     # Force Flux to recreate the Job when its hash (image or args) changes.
     # Same pattern as cluster/k8s/atuin/user-provisioner/job.yaml.
     kustomize.toolkit.fluxcd.io/force: enabled
@@ -33,6 +33,7 @@ spec:
             - "bootstrap-caches"
             - "--cache=main"
             - "--cache=gaffer"
+            - "--public-cache=public"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

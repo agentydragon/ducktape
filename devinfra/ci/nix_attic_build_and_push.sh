@@ -80,7 +80,10 @@ done
 # Agent/bootstrap outputs. Keep the individual tools here even though devtools
 # includes them: these are the bootstrap tools agent hosts need before they can
 # run BuildBuddy-backed validation, so stale package composition should not hide
-# a missing cache path.
+# a missing cache path. Also the exact set that needs to be anonymously
+# substitutable (see the `public` push below), so keep this list and that one
+# in sync.
+web_bootstrap_paths=$(mktemp)
 for output in \
   .#packages.x86_64-linux.bb \
   .#packages.x86_64-linux.bbr \
@@ -90,8 +93,17 @@ for output in \
   .#devShells.x86_64-linux.default; do
   nix build --impure \
     "$output" \
-    --no-link --print-out-paths >>"$out_paths"
+    --no-link --print-out-paths | tee -a "$out_paths" >>"$web_bootstrap_paths"
 done
 
 echo "Final sweep: pushing $(wc -l <"$out_paths") paths to Attic (most already uploaded by watch-store)..."
 xargs attic push ducktape:main <"$out_paths"
+
+# The web/Haku bootstrap closures also go to the anonymous-readable `public`
+# cache: a fresh Claude Code web session's first `nix profile install` runs
+# before any session credential exists, so it can only substitute from a cache
+# that needs no auth (see devinfra/claude/web_setup.sh, cluster/docs/nix_cache.md
+# "Public bootstrap cache"). Same content as already pushed to `main` above —
+# attic dedupes by NAR hash, so this is a cheap no-op for anything unchanged.
+echo "Pushing $(wc -l <"$web_bootstrap_paths") web-bootstrap paths to the public Attic cache..."
+xargs attic push ducktape:public <"$web_bootstrap_paths"

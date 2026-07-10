@@ -52,12 +52,17 @@ tokens:
   #    nix/packages/gaffer.nix triggers builtins.fetchClosure against
   #    cache.allegedly.works/gaffer to substitute the private drivefs/drivectl
   #    closures bundled into NixOS/home configs.
+  #  - push: public is the anonymous-readable cache for the Claude Code web/Haku
+  #    bootstrap closures (devtools/bb/bbr/bbapi/agent-haku/devShells.default) —
+  #    the very first `nix profile install` of a fresh web session runs before any
+  #    session credential exists, so it can only substitute from a cache that needs
+  #    no auth. See cluster/docs/nix_cache.md "Public bootstrap cache".
   - name: ducktape CI attic writer (main)
     sops_file: secrets/ci/attic-main-writer.sops.yaml
     sub: ducktape-ci
     validity: 1 year
     pull: [main, gaffer]
-    push: [main]
+    push: [main, public]
   - name: gaffer CI attic writer
     sops_file: secrets/ci/attic-gaffer-writer.sops.yaml
     sub: gaffer-ci
