@@ -1,0 +1,14 @@
+module(
+    name = "ducktape_haku_console_bridge",
+    version = "0.1.0",
+)
+
+# Zero-npm-dependency source-TS package (@haku/console-bridge): the console↔iframe bridge
+# protocol — shared wire types (protocol.ts) + client helpers (client.ts) — owned by the
+# ducktape shell and consumed by both sides:
+#   - in-repo, the console frontend links it via the root MODULE.bazel local_path_override;
+#   - haku-state's iframe UI links it via git_override + strip_prefix against the Forgejo
+#     ducktape mirror.
+# Only build rules are needed (js_library + npm_package copy files; nothing runs node), so
+# aspect_rules_js alone suffices — no node toolchain, no pnpm/npm lock.
+bazel_dep(name = "aspect_rules_js", version = "2.9.2")

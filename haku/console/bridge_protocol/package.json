@@ -1,0 +1,11 @@
+{
+  "name": "@haku/console-bridge",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Console↔iframe postMessage bridge protocol: shared wire types + client helpers.",
+  "license": "AGPL-3.0-only",
+  "exports": {
+    ".": "./client.ts",
+    "./protocol": "./protocol.ts"
+  }
+}

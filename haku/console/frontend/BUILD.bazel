@@ -56,8 +56,8 @@ js_library(
     name = "approval_state",
     srcs = ["approval_state.ts"],
     deps = [
-        ":bridge",
         ":client",
+        "//:node_modules/@haku/console-bridge",
     ],
 )
 
@@ -80,6 +80,7 @@ js_library(
 js_library(
     name = "bridge",
     srcs = ["bridge.ts"],
+    deps = ["//:node_modules/@haku/console-bridge"],
 )
 
 js_library(
@@ -108,7 +109,7 @@ js_library(
 js_library(
     name = "geolocation",
     srcs = ["geolocation.ts"],
-    deps = [":bridge"],
+    deps = ["//:node_modules/@haku/console-bridge"],
 )
 
 js_library(
@@ -229,6 +230,7 @@ js_library(
         ":geolocation_grant",
         ":toast",
         ":tool_call_events",
+        "//:node_modules/@haku/console-bridge",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
     ],
@@ -429,6 +431,7 @@ tsc_bin.tsc_test(
     data = [
         "approval_state.test.ts",
         "bridge.test.ts",
+        "bridge_client.test.ts",
         "geolocation.test.ts",
         "haku_ui_embed.test.ts",
         "routing.test.ts",
@@ -439,6 +442,7 @@ tsc_bin.tsc_test(
         ":schema_zod",
         ":screenshot_harness_lib",
         "//:node_modules",
+        "//:node_modules/@haku/console-bridge",
     ],
     tags = ["lint"],
 )
@@ -450,6 +454,7 @@ vitest_bin.vitest_test(
     data = [
         "approval_state.test.ts",
         "bridge.test.ts",
+        "bridge_client.test.ts",
         "geolocation.test.ts",
         "haku_ui_embed.test.ts",
         "routing.test.ts",
@@ -462,5 +467,6 @@ vitest_bin.vitest_test(
         ":routing",
         ":tool_previews",
         "//:node_modules",
+        "//:node_modules/@haku/console-bridge",
     ],
 )

@@ -21,6 +21,7 @@
 # gazelle:resolve py samplebooks_parts_data //inventree_utils:samplebooks_parts_data
 
 load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_js//npm:defs.bzl", "npm_link_package")
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 load("@image_pins//:pins.bzl", "RBE_WORKER_DIGEST", "RBE_WORKER_IMAGE")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
@@ -33,6 +34,15 @@ load("//devinfra/python:defs.bzl", "py_library")
 
 # Link workspace npm packages
 npm_link_all_packages(name = "node_modules")
+
+# Link the first-party shared bridge-protocol package (@haku/console-bridge) built by the
+# ducktape_haku_console_bridge nested module. First-party npm_package links (src = …) must
+# live in the root package; the console frontend then depends on //:node_modules/@haku/console-bridge
+# the same way it depends on //:node_modules/react.
+npm_link_package(
+    name = "node_modules/@haku/console-bridge",
+    src = "@ducktape_haku_console_bridge//:pkg",
+)
 
 # Export workspace files for npm_translate_lock data tracking
 exports_files([

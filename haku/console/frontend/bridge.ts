@@ -1,76 +1,14 @@
-// postMessage protocol between the trusted shell (this console) and Haku's
-// agent-authored UI iframe. The iframe may only **request**; the shell decides and
-// acts. Every inbound message is origin-checked and schema-validated.
+// Shell side of the console↔iframe postMessage protocol: the trusted shell (this console)
+// origin-checks and schema-validates every inbound request from Haku's agent-authored UI
+// iframe, then decides and acts. The iframe may only **request**.
 // See docs/containment.md → "The bridge protocol".
 //
-// AUTHORITATIVE COPY of the iframe protocol contract. Haku's UI (the client side)
-// keeps a hand-maintained DUPLICATE of the message shapes in `haku-state` (seeded
-// from `haku/state_template/ui/`); this file is the source of truth — keep the two in
-// sync. See haku/PLAN.md → _Not yet built_ (share-the-protocol TODO).
-
-// Inbound (iframe → shell). The iframe may only **ask**:
-//  - `openLink`: open an external link (the iframe is sandboxed without allow-popups).
-//  - `requestLaunch`: start a Haku run with `prompt`. Firing the privileged launch
-//    capability must be a genuine operator gesture against trusted chrome, so the iframe
-//    can only request it; the shell renders its OWN confirm (showing the prompt) and only
-//    then fires. `id` correlates the eventual `launchResult`.
-//  - `requestGeolocation`: one-shot read of the operator's current position, mirroring the
-//    browser Geolocation API's `getCurrentPosition(options)`. The iframe has **no**
-//    `allow="geolocation"`, so it cannot read location itself; it asks the shell, which
-//    reads its OWN (trusted, top-level) origin's location. Gated by a shell-owned standing
-//    grant ("allow until withdrawn", geolocation_grant.ts): the first request pops a
-//    top-layer consent confirm; once granted, later requests are served until the operator
-//    withdraws. `id` correlates the eventual `geolocationResult`.
-//  - `startGeolocationWatch` / `stopGeolocationWatch`: a continuous location stream,
-//    mirroring `watchPosition`/`clearWatch`. Same grant gate; the **shell** holds the
-//    live watch (so a prompt-injected Haku can neither start one silently nor keep one the
-//    operator stopped) and streams each fix as a `geolocationResult` tagged with the same
-//    `id`. `stop` (or the operator withdrawing) ends the stream with a terminal
-//    `geolocationResult` (`ok:false`, reason `withdrawn`).
-//  - `routeChanged`: mirror the iframe's current hash route into the console's own URL
-//    fragment so refresh/deep-links restore the view. Strictly a validated path
-//    (`isRoutePath`), never a URL — the shell only ever puts it in a fragment.
-export type Inbound =
-  | { type: "openLink"; url: string }
-  | { type: "requestLaunch"; id: string; prompt: string }
-  | { type: "requestGeolocation"; id: string; options?: GeolocationOptions }
-  | { type: "startGeolocationWatch"; id: string; options?: GeolocationOptions }
-  | { type: "stopGeolocationWatch"; id: string }
-  | { type: "routeChanged"; path: string };
-
-// Outbound result (shell → iframe), so Haku's UI can react to the outcome. A
-// `geolocationResult` answers both a one-shot `requestGeolocation` (once) and a
-// `startGeolocationWatch` (repeatedly, same `id`, until the watch ends); the iframe
-// correlates by `id`.
-export type Outbound =
-  | { type: "openLinkResult"; url: string; opened: boolean; reason?: string }
-  | { type: "launchResult"; id: string; ok: boolean; sessionUrl?: string; reason?: string }
-  | { type: "geolocationResult"; id: string; ok: boolean; position?: GeoPosition; code?: number; reason?: string };
-
-// Mirror of the browser Geolocation API's `PositionOptions` (getCurrentPosition's option
-// bag). Named explicitly, not aliased to the DOM type, so the wire contract is
-// self-describing and the haku-state duplicate can match it field-for-field.
-export interface GeolocationOptions {
-  enableHighAccuracy?: boolean;
-  timeout?: number;
-  maximumAge?: number;
-}
-
-// A plain, structured-cloneable copy of the browser's `GeolocationPosition` /
-// `GeolocationCoordinates`: the live DOM objects aren't reliably cloneable across
-// postMessage, so the shell flattens them before replying. Fields mirror the spec —
-// `altitude`/`altitudeAccuracy`/`heading`/`speed` are `null` when the device can't
-// supply them.
-export interface GeoPosition {
-  latitude: number;
-  longitude: number;
-  accuracy: number;
-  altitude: number | null;
-  altitudeAccuracy: number | null;
-  heading: number | null;
-  speed: number | null;
-  timestamp: number;
-}
+// The wire shapes (Inbound/Outbound/GeolocationOptions/GeoPosition) plus the client helpers
+// live in the shared @haku/console-bridge package (haku/console/bridge_protocol) — the one
+// source of truth both sides import. What stays HERE is shell-only and deliberately NOT
+// shared: the inbound validators and the open-link whitelist, PR-gated so a compromised
+// iframe can't widen them.
+import type { GeolocationOptions, Inbound } from "@haku/console-bridge/protocol";
 
 // A mirrored route is strictly a PATH, never a URL: leading `/` (but not a
 // protocol-relative `//`, so the value stays inert even if a future caller drops it into

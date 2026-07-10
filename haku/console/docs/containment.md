@@ -105,9 +105,11 @@ and the browser's own site-settings revoke is the tamper-proof backstop).
 Display data and operator intent go straight to Haku's backend (it holds the `haku-state`
 creds); the bridge carries only actions needing the trusted side. Every inbound message is
 origin-checked (`event.origin === "https://haku-ui.allegedly.works"`) and schema-validated;
-the iframe can only _request_ — the shell decides and acts. Authoritative implementation:
-<../frontend/bridge.ts> (Haku's UI keeps a hand-maintained copy; sharing the contract is a
-tracked cleanup in `haku/PLAN.md` → _Not yet built_).
+the iframe can only _request_ — the shell decides and acts. Wire shapes are defined once in
+the shared `@haku/console-bridge` package (<../bridge_protocol/protocol.ts>, owned here); the
+shell's inbound validators and the open-link whitelist stay PR-gated in <../frontend/bridge.ts>.
+Haku's UI will link the same package as a Bazel module from haku-state (migration tracked in
+`haku/PLAN.md`).
 
 ### `requestLaunch` — fire the launch-routine capability
 

@@ -1,0 +1,24 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_js//npm:defs.bzl", "npm_package")
+
+package(default_visibility = ["//visibility:public"])
+
+# The shared source: wire types + client helpers, plus the package.json that names the
+# package and maps its `exports`. Shipped as TypeScript source — both consumers bundle TS
+# (esbuild / vite) and typecheck under `moduleResolution: bundler`, so no compile step.
+js_library(
+    name = "bridge_protocol",
+    srcs = [
+        "client.ts",
+        "package.json",
+        "protocol.ts",
+    ],
+)
+
+# The linkable npm package (@haku/console-bridge). Consumers reference this target from
+# npm_link_package; the import specifier resolves to package.json's `exports`.
+npm_package(
+    name = "pkg",
+    srcs = [":bridge_protocol"],
+    package = "@haku/console-bridge",
+)

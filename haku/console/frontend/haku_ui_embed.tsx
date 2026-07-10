@@ -9,7 +9,9 @@ import {
   type GeolocationApproval,
   type RecentToolCall,
 } from "./approval_state.ts";
-import { type GeolocationOptions, isRoutePath, type Outbound, parseInbound, vetOpenLink } from "./bridge.ts";
+import { type GeolocationOptions, type Outbound } from "@haku/console-bridge/protocol";
+
+import { isRoutePath, parseInbound, vetOpenLink } from "./bridge.ts";
 import {
   approveToolCall,
   denyToolCall,

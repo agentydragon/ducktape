@@ -4,7 +4,7 @@
 // (`getGeolocation`, for `requestGeolocation`) and a live watch (`GeolocationWatcher`, for
 // `startGeolocationWatch`/`stopGeolocationWatch`). See docs/containment.md → geolocation.
 
-import type { GeolocationOptions, GeoPosition } from "./bridge.ts";
+import type { GeolocationOptions, GeoPosition } from "@haku/console-bridge/protocol";
 
 // GeolocationPositionError.code for "no geolocation API" — matches the browser's own error
 // taxonomy (1 PERMISSION_DENIED, 2 POSITION_UNAVAILABLE, 3 TIMEOUT) so the iframe can treat
