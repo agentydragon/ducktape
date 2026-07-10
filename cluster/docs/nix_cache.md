@@ -98,22 +98,23 @@ every later one still gets `main`+`gaffer` once authenticated. `main`/`gaffer`
 stay exactly as private as before — `public` is a strict addition, not a
 downgrade of either.
 
-**Rollout is multi-step, not just a merge:** (1) Flux reconciles the bootstrap
-Job, creating the `public` cache; (2) fetch its pubkey (above) and commit it to
+**Rollout after adding a cache:** (1) Flux reconciles the bootstrap Job,
+creating the cache; (2) fetch its pubkey (above — for a public cache,
+`/_api/v1/cache-config/<name>` answers anonymously) and commit it to
 `nix/attic-pubkeys.json` — until then, Nix would refuse anything substituted
-from `public` on signature-verification grounds even though the substituter is
-configured; (3) the ducktape CI writer JWT needs `push: [main, public]` (already
-in `rotators.yaml`), but `rotate_one` only re-mints on staleness — force an
-early rotation (e.g. touch `secrets/ci/attic-main-writer.sops.yaml`'s plaintext
-`expires_unencrypted` stamp to within `rotate_below_hours`) so the next hourly
-`attic-jwt-rotation` CronJob run actually picks up the new scope; (4) run
-`nix-attic-push.yml` (push to `devel` or `workflow_dispatch`) so CI pushes the
-bootstrap closures to `public` for the first time.
+from it on signature-verification grounds even though the substituter is
+configured; (3) scope changes in `rotators.yaml` (e.g. a writer JWT gaining
+`push: [main, public]`) propagate on the next hourly `attic-jwt-rotation` run
+by themselves — `rotate_one` re-mints when the stamped `pull_unencrypted` /
+`push_unencrypted` scope diverges from the configured one, not just on
+staleness; (4) run `nix-attic-push.yml` (push to `devel` or
+`workflow_dispatch`) so CI pushes the new cache's closures for the first time.
 
 ## CI Push
 
 Both ducktape and gaffer-private CI push to their respective caches. Writer
-JWTs auto-rotated by the cluster (1-year validity, mint-on-staleness):
+JWTs auto-rotated by the cluster (1-year validity; re-mint on <24h remaining
+or on pull/push scope drift vs. `rotators.yaml`):
 
 | Repo           | Workflow                               | Cache            | Reads token from                                                         |
 | -------------- | -------------------------------------- | ---------------- | ------------------------------------------------------------------------ |

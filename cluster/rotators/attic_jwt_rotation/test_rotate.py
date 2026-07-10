@@ -127,20 +127,67 @@ def test_mint_attic_token_empty_output_raises(monkeypatch):
         mint_attic_token(token, Config(tokens=[]))
 
 
-def test_rotate_one_skips_when_fresh(monkeypatch, tmp_path: Path):
+def test_rotate_one_skips_when_fresh_and_scope_matches(monkeypatch, tmp_path: Path):
     sops_file = tmp_path / "t.yaml"
     expires = datetime.now(UTC) + timedelta(hours=48)
+    sops_file.write_text(
+        textwrap.dedent(f"""\
+            expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"
+            pull_unencrypted: "gaffer,main"
+            push_unencrypted: ""
+            attic_token: old
+            """)
+    )
+    token = Token(name="x", sops_file=sops_file, sub="x", validity="1 year", pull=["main", "gaffer"], push=[])
+    fake = _FakeRun(jwt="should-not-be-used")
+    monkeypatch.setattr(rotate.subprocess, "run", fake)
+    assert rotate_one(token, Config(tokens=[])) is False
+    assert not fake.calls  # no kubectl mint, no sops
+
+
+def test_rotate_one_rotates_on_scope_drift_despite_fresh_expiry(monkeypatch, tmp_path: Path):
+    # The #3001 scenario: token valid for months, but rotators.yaml grew push=[main, public]
+    # while the stamp still says push=main — must re-mint now, not in ~a year.
+    sops_file = tmp_path / "t.yaml"
+    expires = datetime.now(UTC) + timedelta(days=300)
+    sops_file.write_text(
+        textwrap.dedent(f"""\
+            expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"
+            pull_unencrypted: "gaffer,main"
+            push_unencrypted: "main"
+            attic_token: old
+            """)
+    )
+    exp = int((datetime.now(UTC) + timedelta(days=365)).timestamp())
+    jwt = _make_jwt({"sub": "x", "exp": exp})
+    token = Token(
+        name="x", sops_file=sops_file, sub="x", validity="1 year", pull=["main", "gaffer"], push=["main", "public"]
+    )
+    fake = _FakeRun(jwt=jwt)
+    monkeypatch.setattr(rotate.subprocess, "run", fake)
+    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
+    assert rotate_one(token, Config(tokens=[])) is True
+    written = yaml.safe_load(sops_file.read_text())
+    assert written["push_unencrypted"] == "main,public"
+
+
+def test_rotate_one_rotates_when_scope_stamp_missing(monkeypatch, tmp_path: Path):
+    # Pre-scope-tracking file: fresh expiry but no pull/push stamps — one migration re-mint.
+    sops_file = tmp_path / "t.yaml"
+    expires = datetime.now(UTC) + timedelta(days=300)
     sops_file.write_text(
         textwrap.dedent(f"""\
             expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"
             attic_token: old
             """)
     )
-    token = Token(name="x", sops_file=sops_file, sub="x", validity="1 year", pull=[], push=[])
-    fake = _FakeRun(jwt="should-not-be-used")
+    exp = int((datetime.now(UTC) + timedelta(days=365)).timestamp())
+    jwt = _make_jwt({"sub": "x", "exp": exp})
+    token = Token(name="x", sops_file=sops_file, sub="x", validity="1 year", pull=["main"], push=[])
+    fake = _FakeRun(jwt=jwt)
     monkeypatch.setattr(rotate.subprocess, "run", fake)
-    assert rotate_one(token, Config(tokens=[])) is False
-    assert not fake.calls  # no kubectl mint, no sops
+    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
+    assert rotate_one(token, Config(tokens=[])) is True
 
 
 def test_rotate_one_mints_and_writes_when_absent(monkeypatch, tmp_path: Path):
@@ -159,6 +206,8 @@ def test_rotate_one_mints_and_writes_when_absent(monkeypatch, tmp_path: Path):
     written = yaml.safe_load(sops_file.read_text())
     assert written["attic_token"] == jwt
     assert "expires_unencrypted" in written
+    assert written["pull_unencrypted"] == "main"
+    assert written["push_unencrypted"] == ""
 
 
 def test_token_requires_all_fields():

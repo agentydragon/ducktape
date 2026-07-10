@@ -113,6 +113,23 @@ def remaining_hours(sops_file: Path) -> float | None:
     return (datetime.fromisoformat(expires) - datetime.now(UTC)).total_seconds() / 3600
 
 
+def scope_stamp(caches: list[str]) -> str:
+    """Canonical plaintext form of a pull/push cache list: sorted, comma-joined."""
+    return ",".join(sorted(caches))
+
+
+def scope_drift(token: Token, stamps: dict[str, Any]) -> str | None:
+    """Why the stamped scope diverges from the configured one, or None if it matches.
+
+    A stamp missing entirely (pre-scope-tracking file) counts as drift, so the first
+    run after this feature ships re-mints every token once and stamps it.
+    """
+    for field, configured in (("pull_unencrypted", token.pull), ("push_unencrypted", token.push)):
+        if stamps.get(field) != scope_stamp(configured):
+            return f"{field}: stamped {stamps.get(field)!r} != configured {scope_stamp(configured)!r}"
+    return None
+
+
 def mint_attic_token(token: Token, config: Config) -> str:
     """Mint a JWT via `kubectl exec deploy/attic -- atticadm make-token …`.
 
@@ -149,12 +166,21 @@ def encrypt_sops_file(path: Path) -> None:
 
 
 def rotate_one(token: Token, config: Config) -> bool:
-    """Mint + write a fresh JWT for one token. Returns True if it wrote."""
+    """Mint + write a fresh JWT for one token. Returns True if it wrote.
+
+    Rotates when the existing token is near expiry OR its stamped pull/push scope
+    no longer matches the configured one — so a rotators.yaml scope change
+    propagates to the actual JWT on the next run instead of waiting out the
+    remaining (possibly ~1 year) validity.
+    """
+    stamps = unencrypted_stamps(token.sops_file)
     remaining = remaining_hours(token.sops_file)
-    if remaining is not None and remaining > config.rotate_below_hours:
+    drift = scope_drift(token, stamps)
+    if remaining is not None and remaining > config.rotate_below_hours and drift is None:
         logger.info("%s: %.0fh remaining > %dh threshold; skipping", token.name, remaining, config.rotate_below_hours)
         return False
-    logger.info("%s: rotating (remaining=%s)", token.name, "none" if remaining is None else f"{remaining:.0f}h")
+    reason = drift or ("no existing token" if remaining is None else f"{remaining:.0f}h remaining")
+    logger.info("%s: rotating (%s)", token.name, reason)
 
     jwt = mint_attic_token(token, config)
     payload = jwt_payload(jwt)
@@ -164,8 +190,13 @@ def rotate_one(token: Token, config: Config) -> bool:
 
     # `*_unencrypted` keys match SOPS's default unencrypted_suffix, so they stay
     # plaintext after `sops encrypt --in-place` — the next run reads them back
-    # for the freshness check without decryption.
-    stamps = {"expires_unencrypted": expires_iso, config.token_field: jwt}
+    # for the freshness and scope-drift checks without decryption.
+    stamps = {
+        "expires_unencrypted": expires_iso,
+        "pull_unencrypted": scope_stamp(token.pull),
+        "push_unencrypted": scope_stamp(token.push),
+        config.token_field: jwt,
+    }
     token.sops_file.parent.mkdir(parents=True, exist_ok=True)
     token.sops_file.write_text(yaml.safe_dump(stamps, sort_keys=False, width=2**31))
     encrypt_sops_file(token.sops_file)
