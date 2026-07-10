@@ -275,10 +275,13 @@ function ToolApprovalCard({
   deciding: boolean;
   onSelect: () => void;
   onApprove: () => void;
-  onDeny: () => void;
+  onDeny: (reason?: string) => void;
 }) {
   const fields = approvalDisplayFields(approval);
   const armed = useArmed(`card:${approval.tool_call_id}`);
+  // An always-visible optional reason field so a single Deny click can carry a "why"
+  // straight from the card, without opening the detail view.
+  const [denyReason, setDenyReason] = useState("");
   return (
     <section
       className={`haku-shell-card haku-shell-approval-card ${selected ? "haku-shell-card-active" : ""}`}
@@ -309,20 +312,34 @@ function ToolApprovalCard({
           </Badge>
         </Group>
       </div>
-      <Group
-        justify="flex-end"
-        gap="xs"
-        mt="xs"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.stopPropagation()}
-      >
-        <Button size="compact-xs" variant="light" color="red" disabled={deciding || !armed} onClick={onDeny}>
-          Deny
-        </Button>
-        <Button size="compact-xs" color={ACTION_COLOR} disabled={deciding || !armed} onClick={onApprove}>
-          Approve
-        </Button>
-      </Group>
+      <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+        <Textarea
+          size="xs"
+          mt="xs"
+          label="Denial reason (optional)"
+          placeholder="Why are you denying this?"
+          autosize
+          minRows={1}
+          maxRows={4}
+          disabled={deciding}
+          value={denyReason}
+          onChange={(e) => setDenyReason(e.currentTarget.value)}
+        />
+        <Group justify="flex-end" gap="xs" mt="xs">
+          <Button
+            size="compact-xs"
+            variant="light"
+            color="red"
+            disabled={deciding || !armed}
+            onClick={() => onDeny(denyReason.trim() || undefined)}
+          >
+            Deny
+          </Button>
+          <Button size="compact-xs" color={ACTION_COLOR} disabled={deciding || !armed} onClick={onApprove}>
+            Approve
+          </Button>
+        </Group>
+      </div>
     </section>
   );
 }
@@ -604,7 +621,7 @@ function ApprovalsTab({
                 deciding={deciding.has(item.id)}
                 onSelect={() => onSelectApproval(item.id)}
                 onApprove={() => onApproveTool(item.approval)}
-                onDeny={() => onDenyTool(item.approval)}
+                onDeny={(reason) => onDenyTool(item.approval, reason)}
               />
             ) : (
               <GeolocationApprovalCard

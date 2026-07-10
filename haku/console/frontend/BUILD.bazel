@@ -1,4 +1,4 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
 load("@npm_ducktape//:typescript/package_json.bzl", tsc_bin = "bin")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
@@ -331,6 +331,84 @@ spa_bundle(
     deps = [":main_lib"],
 )
 
+# ── Visual screenshots ─────────────────────────────────────────────────────────
+#
+# `bbr test //haku/console/frontend:screenshots` renders each console visual surface
+# (screenshots/harness.tsx) to a PNG in the test's undeclared outputs, for eyeballing (see
+# AGENTS.md). Browser rendering runs on the RBE worker's display stack — a local Bazel
+# can't fetch repos in web sessions — so it is a js_test, not a `bb run` binary. It is a
+# generator, not a pixel-diff gate: it passes as long as every scene renders.
+
+js_library(
+    name = "screenshot_harness_lib",
+    srcs = [
+        "screenshots/harness.tsx",
+        "screenshots/mock_api.ts",
+        "screenshots/sample_data.ts",
+    ],
+    tags = ["no-lint"],
+    deps = [
+        ":approval_state",
+        ":client",
+        ":console_panel",
+        ":theme",
+        ":tool_calls_page",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+    ],
+)
+
+js_binary(
+    name = "build_screenshot_harness",
+    data = [
+        "screenshots/esbuild.config.mjs",
+        ":screenshot_harness_lib",
+        "//:node_modules",
+    ],
+    entry_point = "screenshots/esbuild.config.mjs",
+)
+
+js_run_binary(
+    name = "screenshot_harness_bundle",
+    srcs = [
+        "screenshots/esbuild.config.mjs",
+        ":screenshot_harness_lib",
+    ],
+    outs = ["screenshots/dist/harness.js"],
+    args = ["screenshots/dist"],
+    chdir = package_name(),
+    tool = ":build_screenshot_harness",
+)
+
+# Single-file target so $(rootpath) resolves to one path.
+filegroup(
+    name = "screenshot_harness_js",
+    srcs = ["screenshots/dist/harness.js"],
+)
+
+js_test(
+    name = "screenshots",
+    size = "large",
+    data = [
+        ":screenshot_harness_js",
+        ":styles_css",
+        "//util/testing/frontend_visual:puppeteer_lib",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    entry_point = "screenshots/render.mjs",
+    env = {
+        "HARNESS_JS": "$(rootpath :screenshot_harness_js)",
+        "STYLES_CSS": "$(rootpath :styles_css)",
+        "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+    },
+    no_copy_to_bin = [
+        ":screenshot_harness_js",
+        "//util/testing/frontend_visual:puppeteer_lib",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+)
+
 # Full TypeScript type-check (the correctness gate esbuild bundling skips).
 tsc_bin.tsc_test(
     name = "tsc_test",
@@ -351,6 +429,7 @@ tsc_bin.tsc_test(
         ":main_lib",
         ":schema",
         ":schema_zod",
+        ":screenshot_harness_lib",
         "//:node_modules",
     ],
     tags = ["lint"],
