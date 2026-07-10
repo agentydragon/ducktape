@@ -38,7 +38,9 @@ def credentials_from_token_dir(token_dir: Path, scopes: Sequence[str]) -> Creden
     scopes cover from the one `Credentials` object.
     """
 
-    def refresh_handler(request: object, requested_scopes: Sequence[str] | None) -> tuple[str, dt.datetime]:
+    def refresh_handler(request: object, scopes: Sequence[str] | None) -> tuple[str, dt.datetime]:
+        # google-auth's Credentials.refresh() calls this with `scopes=` as a keyword
+        # argument (see google.oauth2.credentials); the parameter name must match exactly.
         token = (token_dir / "access_token").read_text().strip()
         return token, _read_expiry(token_dir / "expires_at")
 
