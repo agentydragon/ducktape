@@ -197,13 +197,23 @@ kubectl -n flux-system delete pod -l app.kubernetes.io/name=tf-runner --field-se
 See <lessons_learned/2026_07_03_tofu_controller_runner_rpc_hang.md> (upstream fix:
 `flux-iac/tofu-controller#1838`).
 
-### Stale State Locks (historical — kubernetes backend only)
+### PG Advisory Lock Survives Runner Node Reboot
 
-All `Terraform` CRs now use the PG backend, whose session-based advisory locks
-auto-release on runner-pod death. The kubernetes-backend stale-lock failure
-mode described in <lessons_learned/2026_03_18_tofu_controller_stale_state_locks.md>
-is no longer reachable. Kept as a pointer in case we ever re-add a CR on the
-kubernetes backend.
+PG advisory locks release when the owning **database session ends**, not merely when
+Kubernetes reports the runner pod gone. A node reboot can drop the runner without sending
+FIN/RST; PostgreSQL then retains the idle session and its advisory lock until TCP
+keepalives detect the dead peer. The observed defaults waited two hours before the first
+probe. Repeated `tfstate.forceUnlock` attempts do not evict a lock still owned by another
+PostgreSQL session.
+
+Query `pg_stat_activity` plus `pg_locks` on the **current CNPG primary**, prove the client
+IP belongs to no live runner, then terminate only that orphaned backend with
+`pg_terminate_backend(pid)`. See
+<lessons_learned/2026_07_11_tofu_pg_orphaned_session_lock.md> for the state matrix and
+exact diagnosis.
+
+The separate Kubernetes-backend stale-Lease failure mode is historical because all CRs
+now use PG; see <lessons_learned/2026_03_18_tofu_controller_stale_state_locks.md>.
 
 ## Secrets & Auth Issues
 

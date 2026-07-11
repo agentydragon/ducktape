@@ -198,6 +198,30 @@ Authentik route work; these tighten them (operator-approved as follow-ups):
       principal on the repo). Mint a read-only Forgejo deploy key for `haku-state`
       and point the GitRepository's `secretRef` at it instead.
 
+- [ ] **Make tofu-controller recover runner restarts without a controller restart.**
+      On 2026-07-11, `wyrm2` rebooted while `Terraform/flux-system/haku-state` was
+      reconciling. The `haku-state-tf-runner` container restarted (exit 255), but
+      tofu-controller kept the old reconciliation in `Initializing`, pinned to
+      source revision `a980d1a7` even after `GitRepository/flux-system` advanced.
+      This left the parent Kustomization and five Terraform dependents blocked
+      until tofu-controller itself was restarted; deleting the runner and annotating
+      the CR did not recover it. Track and help land upstream PR
+      `flux-iac/tofu-controller#1838` (runner-RPC deadline plus failed-pod reaping),
+      then upgrade when a release contains it. If upstream stalls, carry the patch
+      in an operator-owned image or add a watchdog that restarts the controller when
+      initialization makes no progress past a bounded deadline. Add an automated
+      failure-injection test covering node loss/container restart during init. Full
+      RCA: `cluster/docs/lessons_learned/2026_07_03_tofu_controller_runner_rpc_hang.md`.
+
+- [ ] **Shorten tofu-state PostgreSQL dead-client detection.** A `wyrm2` reboot left an
+      idle PostgreSQL backend session holding the `sso_providers` advisory lock even
+      though its runner pod/IP was gone. PostgreSQL inherited the kernel's two-hour
+      `tcp_keepalive_time`, so this did not recover promptly and blocked the Flux chain
+      through `haku-console`. Configure shorter keepalives (and consider a bounded
+      Terraform `tfstate.lockTimeout` to reduce retry churn), then failure-test runner
+      node loss. RCA and recovery matrix:
+      `cluster/docs/lessons_learned/2026_07_11_tofu_pg_orphaned_session_lock.md`.
+
 ## agent-box follow-ups
 
 The agent-box VM and its `codex` user are live (see

@@ -1,7 +1,7 @@
 # tofu-controller Reconcile Hangs Forever When a Runner Pod Dies Mid-Init (Upstream Bug)
 
-**Date**: 2026-07-03
-**Status**: Resolved (controller restart); upstream fix filed — [flux-iac/tofu-controller#1838](https://github.com/flux-iac/tofu-controller/pull/1838) (the PR body doubles as the bug report; no separate issue)
+**Date**: 2026-07-03; recurrence confirmed 2026-07-11
+**Status**: Recurring; controller restart required each time. Upstream fix filed — [flux-iac/tofu-controller#1838](https://github.com/flux-iac/tofu-controller/pull/1838) (the PR body doubles as the bug report; no separate issue). As of 2026-07-11 the PR is open, unreviewed, and unmerged.
 **Affected version**: `ghcr.io/flux-iac/tofu-controller:v0.16.1` (defect identical through v0.16.4 and `main`)
 
 ## Summary
@@ -18,6 +18,27 @@ cluster schedules onto wyrm2 (see "Aggravating factor"), so one reboot wedged th
 Terraform fleet at once — including `agent-machine-access`, which provisions haku's
 mailbox Authentik OIDC provider (`stalwart-haku`) and the `haku-mail-client-credentials`
 secret. Presenting symptom was "haku's email automation won't reconcile."
+
+### 2026-07-11 recurrence
+
+The same failure reproduced after another `wyrm2` reboot. This time
+`Terraform/flux-system/haku-state` was applying revision `a980d1a7` when its runner died.
+The runner container exited 255 and restarted after the pod sandbox changed, but the CR
+remained `Ready=Unknown / Initializing` with `reconciliationFailures=347`. Meanwhile the
+Flux source advanced to `404c1fc`, including the follow-up HCL fix in `81a774cbb`; the
+Terraform CR never observed it.
+
+This recurrence directly tested the recovery boundary:
+
+- deleting `Pod/flux-system/haku-state-tf-runner` did not create a replacement;
+- annotating the Terraform CR with `reconcile.fluxcd.io/requestedAt` was accepted, but
+  `status.lastHandledReconcileAt` did not advance;
+- waiting three minutes for `Ready` timed out;
+- controller logs contained no new `haku-state` reconcile after the runner disappeared.
+
+That behavior rules out a stale pod or ordinary retry delay: the old `Reconcile` call was
+still occupying the key and ignoring newly queued events. Restarting the controller was
+again required to cancel the parked goroutine.
 
 ## Root Cause
 
@@ -139,7 +160,8 @@ setting up terraform → plan no changes`). Dependency cascades (`haku-state`,
 
 ## Upstream Status
 
-**Not fixed.** v0.16.1 (ours), v0.16.4, and `main` (last commit 2026-06-22) are
+**Not fixed as of 2026-07-11.** v0.16.1 (ours), v0.16.4 (the newest release), and
+`main` (head `273b7aa`, 2026-06-22) are
 byte-identical on all three defects — upgrading does not help. `backend.go:52` even carries
 a **commented-out** `// ctx30s, cancelCtx30s := context.WithTimeout(ctx, 30*time.Second)`:
 a maintainer started adding exactly the RPC deadline that would prevent this, then
@@ -194,6 +216,10 @@ Validated locally with `go build` + `go vet`; the envtest integration suite is C
 fails identically on unmodified `main` in a local sandbox, so it's a harness/env issue, not
 the change). This is a low-traffic upstream — expect review latency; track the PR before
 assuming it lands.
+
+As of 2026-07-11, GitHub reports #1838 open, mergeable but blocked, with no requested
+reviewers, reviews, or comments. No released version contains it. Do not treat a routine
+upgrade from v0.16.1 to v0.16.4 as mitigation for this incident class.
 
 ## Key Lessons
 
