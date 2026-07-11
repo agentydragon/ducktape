@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { toolPreview } from "./tool_previews.tsx";
+import { toolPreview } from "./index.tsx";
 
 describe("toolPreview", () => {
   it("renders a preview for valid grocy-sf products_create args", () => {

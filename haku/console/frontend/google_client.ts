@@ -4,7 +4,7 @@ import type { components } from "./api/schema";
 export type GmailThreadPreview = components["schemas"]["GmailThreadPreview"];
 
 // The google tool argument types (EventDateTime, CreateCalendarEventArgs, ...) aren't
-// re-exported here: google_tool_previews.tsx gets both the runtime validator and the
+// re-exported here: tool_previews/google.tsx gets both the runtime validator and the
 // inferred TS type from :schema_zod (api/schema.zod.ts), generated from the same
 // OpenAPI schema this file's `components["schemas"]` draws from — see
 // `GoogleToolArgumentExamples` in haku/console/tools/google.py for why these models

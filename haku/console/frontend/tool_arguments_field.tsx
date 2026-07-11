@@ -1,8 +1,8 @@
 import { Field } from "./field.tsx";
-import { toolPreview } from "./tool_previews.tsx";
+import { toolPreview } from "./tool_previews/index.tsx";
 
 /** Arguments field for a tool-call approval/result: a per-tool-type widget
- * (google_tool_previews.tsx, ...) when one matches, else the generic raw-JSON view.
+ * (the tool_previews/ per-server modules) when one matches, else the generic raw-JSON view.
  * Shared by the approval drawer and the past-tool-calls history view. */
 export function ToolArgumentsField({
   serverId,

@@ -1,11 +1,11 @@
 // Per-tool-type rendering for the remote `grocy-sf` MCP server (see
 // grocy_mcp/README.md and grocy_mcp/batch_tools.py). Falls back to the generic raw-JSON
-// view for anything that isn't shaped as expected — same caveat as kubectl_tool_previews.tsx:
+// view for anything that isn't shaped as expected — same caveat as kubectl.tsx:
 // arguments are only validated by the tool's own schema at execution time, not at submission.
 //
 // grocy-sf's tool surface is generated from Grocy's own OpenAPI spec plus custom batch
 // tools (grocy_mcp/batch_tools.py) — there's no backend Pydantic model haku-console owns to
-// generate Zod schemas from (unlike google_tool_previews.tsx's :schema_zod), so these are
+// generate Zod schemas from (unlike google.tsx's :schema_zod), so these are
 // hand-authored once, here, against grocy_mcp/mcp_types.py's `AddItem` / `ConsumeItem` /
 // `CreateProductItem`. Every tool call runs as the approving operator's own linked Grocy
 // account (operator_oauth) once approved.
@@ -20,8 +20,8 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 
-import { fetchGrocyReference, type GrocyReferenceResponse } from "./grocy_client.ts";
-import { Field } from "./field.tsx";
+import { fetchGrocyReference, type GrocyReferenceResponse } from "../grocy_client.ts";
+import { Field } from "../field.tsx";
 
 const GROCY_SERVER_ID = "grocy-sf";
 

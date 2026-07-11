@@ -18,9 +18,9 @@ import {
   zCreateCalendarEventArgs,
   zCreateGmailDraftArgs,
   zEventDateTime,
-} from "./api/schema.zod.ts";
-import { fetchGmailThreadPreviews, type GmailThreadPreview } from "./google_client.ts";
-import { Field } from "./field.tsx";
+} from "../api/schema.zod.ts";
+import { fetchGmailThreadPreviews, type GmailThreadPreview } from "../google_client.ts";
+import { Field } from "../field.tsx";
 
 const GOOGLE_SERVER_ID = "google";
 

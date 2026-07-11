@@ -131,7 +131,7 @@ js_library(
 
 js_library(
     name = "google_tool_previews",
-    srcs = ["google_tool_previews.tsx"],
+    srcs = ["tool_previews/google.tsx"],
     deps = [
         ":field",
         ":google_client",
@@ -145,7 +145,7 @@ js_library(
 
 js_library(
     name = "kubectl_tool_previews",
-    srcs = ["kubectl_tool_previews.tsx"],
+    srcs = ["tool_previews/kubectl.tsx"],
     deps = [
         ":field",
         "//:node_modules/@mantine/core",
@@ -156,7 +156,7 @@ js_library(
 
 js_library(
     name = "grocy_tool_previews",
-    srcs = ["grocy_tool_previews.tsx"],
+    srcs = ["tool_previews/grocy.tsx"],
     deps = [
         ":field",
         ":grocy_client",
@@ -168,7 +168,7 @@ js_library(
 
 js_library(
     name = "tool_previews",
-    srcs = ["tool_previews.tsx"],
+    srcs = ["tool_previews/index.tsx"],
     deps = [
         ":google_tool_previews",
         ":grocy_tool_previews",
@@ -276,20 +276,20 @@ filegroup(
         "console_panel.tsx",
         "field.tsx",
         "google_client.ts",
-        "google_tool_previews.tsx",
         "grocy_client.ts",
-        "grocy_tool_previews.tsx",
         "haku_ui_embed.tsx",
         "icons.tsx",
         "index.html",
-        "kubectl_tool_previews.tsx",
         "main.tsx",
         "routing.ts",
         "theme.ts",
         "toast.ts",
         "tool_arguments_field.tsx",
         "tool_calls_page.tsx",
-        "tool_previews.tsx",
+        "tool_previews/google.tsx",
+        "tool_previews/grocy.tsx",
+        "tool_previews/index.tsx",
+        "tool_previews/kubectl.tsx",
     ],
 )
 
@@ -437,7 +437,7 @@ tsc_bin.tsc_test(
         "geolocation.test.ts",
         "haku_ui_embed.test.ts",
         "routing.test.ts",
-        "tool_previews.test.ts",
+        "tool_previews/index.test.ts",
         "tsconfig.json",
         ":main_lib",
         ":schema",
@@ -460,7 +460,7 @@ vitest_bin.vitest_test(
         "geolocation.test.ts",
         "haku_ui_embed.test.ts",
         "routing.test.ts",
-        "tool_previews.test.ts",
+        "tool_previews/index.test.ts",
         "vitest.config.ts",
         ":approval_state",
         ":bridge",
