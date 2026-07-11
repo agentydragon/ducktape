@@ -11,8 +11,8 @@ import "./mock_api.ts";
 import { MantineProvider, Text } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
-import { ShellControls, ShellDrawer, type ShellDrawerProps } from "../console_panel.tsx";
-import { SettingsPage } from "../settings_page.tsx";
+import { ShellChrome, type ShellChromeProps } from "../console_panel.tsx";
+import { SettingsPanel } from "../settings_page.tsx";
 import { hakuTheme } from "../theme.ts";
 import { ToolActionLine } from "../tool_action_line.tsx";
 import { ToolArgumentsField } from "../tool_arguments_field.tsx";
@@ -67,8 +67,9 @@ function PreviewGallery() {
   );
 }
 
-const drawerProps: ShellDrawerProps = {
-  opened: true,
+const chromeProps: ShellChromeProps = {
+  approvalsOpen: true,
+  onApprovalsOpenChange: noop,
   pendingApprovals: SAMPLE_PENDING,
   geolocationApprovals: [],
   decidingApprovalIds: [],
@@ -79,43 +80,28 @@ const drawerProps: ShellDrawerProps = {
   onDenyGeolocation: noop,
   onDismissRecentToolCall: noop,
   onOpenToolCalls: noop,
-  onOpenSettings: noop,
+  liveStatus: "offline",
+  geoGranted: true,
+  tracking: true,
+  onWithdrawGeolocation: noop,
 };
 
 function sceneElement(scene: string) {
   switch (scene) {
     case "settings":
-      // SettingsPage fetches /api/mcp/operator-auth on mount; mock_api.ts serves SAMPLE_MCP.
-      return <SettingsPage onBack={noop} />;
-    case "controls":
-      // The shell chrome stack: hamburger (with a pending callout) plus the location pin
-      // with its live indicator. render.mjs clicks the pin to open its popover.
+      // The settings drawer panel (a chrome surface); fetches /api/mcp/operator-auth on mount —
+      // mock_api.ts serves SAMPLE_MCP. Boxed to a panel-ish width for the shot.
       return (
-        <ShellControls
-          pendingCount={1}
-          opened={false}
-          onToggle={noop}
-          geoGranted
-          tracking
-          onWithdrawGeolocation={noop}
-        />
+        <div style={{ maxWidth: 520, margin: 16 }}>
+          <SettingsPanel />
+        </div>
       );
-    case "drawer":
-      // Render the drawer in its real shell context so the screenshot catches collisions
-      // with the persistent menu/location toggle stack at the right edge.
-      return (
-        <>
-          <ShellControls
-            pendingCount={drawerProps.pendingApprovals.length + drawerProps.geolocationApprovals.length}
-            opened
-            onToggle={noop}
-            geoGranted
-            tracking
-            onWithdrawGeolocation={noop}
-          />
-          <ShellDrawer {...drawerProps} />
-        </>
-      );
+    case "chrome":
+      // The whole shell chrome: the toggle-button toolbar (offline warning + location pin +
+      // settings + approvals) over the panel column. Approvals starts open; render.mjs clicks
+      // the live and location buttons so several panels show stacked by Y (the point of the
+      // layout).
+      return <ShellChrome {...chromeProps} />;
     case "previews":
       return <PreviewGallery />;
     // The history page; render.mjs expands its first rows into their detailed state (opening the

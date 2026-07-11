@@ -186,7 +186,7 @@ js_library(
         ":tool_action_line",
         ":tool_arguments_field",
         ":tool_call_meta",
-        ":variant_toggle",
+        ":variant_control",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//haku/console/frontend/tool_previews:variant",
@@ -204,9 +204,10 @@ js_library(
 )
 
 js_library(
-    name = "variant_toggle",
-    srcs = ["variant_toggle.tsx"],
+    name = "variant_control",
+    srcs = ["variant_control.tsx"],
     deps = [
+        "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//haku/console/frontend/tool_previews:variant",
     ],
@@ -221,9 +222,11 @@ js_library(
         ":field",
         ":icons",
         ":pending_tool_call_actions",
+        ":settings_page",
         ":theme",
         ":tool_call_card",
-        ":variant_toggle",
+        ":tool_call_events",
+        ":variant_control",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
     ],
@@ -240,7 +243,7 @@ js_library(
         ":toast",
         ":tool_call_card",
         ":tool_call_events",
-        ":variant_toggle",
+        ":variant_control",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
     ],
@@ -252,7 +255,6 @@ js_library(
     deps = [
         ":approval_state",
         ":client",
-        ":icons",
         ":open_external",
         ":toast",
         "//:node_modules/@mantine/core",
@@ -287,7 +289,6 @@ js_library(
         ":client",
         ":haku_ui_embed",
         ":routing",
-        ":settings_page",
         ":tool_calls_page",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -336,7 +337,7 @@ filegroup(
         "tool_call_card.tsx",
         "tool_call_meta.tsx",
         "tool_calls_page.tsx",
-        "variant_toggle.tsx",
+        "variant_control.tsx",
         "//haku/console/frontend/tool_previews:tailwind_srcs",
     ],
 )

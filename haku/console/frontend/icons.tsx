@@ -5,20 +5,21 @@
 import IconArrowLeft from "@tabler/icons-react/dist/esm/icons/IconArrowLeft.mjs";
 import IconBell from "@tabler/icons-react/dist/esm/icons/IconBell.mjs";
 import IconCalendarEvent from "@tabler/icons-react/dist/esm/icons/IconCalendarEvent.mjs";
+import IconChecklist from "@tabler/icons-react/dist/esm/icons/IconChecklist.mjs";
 import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
 import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
 import IconMail from "@tabler/icons-react/dist/esm/icons/IconMail.mjs";
 import IconMapPin from "@tabler/icons-react/dist/esm/icons/IconMapPin.mjs";
-import IconMenu2 from "@tabler/icons-react/dist/esm/icons/IconMenu2.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
 import IconUsers from "@tabler/icons-react/dist/esm/icons/IconUsers.mjs";
+import IconWifiOff from "@tabler/icons-react/dist/esm/icons/IconWifiOff.mjs";
 import type { ComponentProps } from "react";
 
-type TablerIconProps = ComponentProps<typeof IconMenu2>;
+type TablerIconProps = ComponentProps<typeof IconChecklist>;
 
-/** Hamburger — the shell's console-panel toggle. */
-export function MenuIcon(props: TablerIconProps) {
-  return <IconMenu2 size={20} {...props} />;
+/** Checklist — the shell's approvals-queue toggle. */
+export function ChecklistIcon(props: TablerIconProps) {
+  return <IconChecklist size={20} {...props} />;
 }
 
 /** Clock-with-rewind — links to the past-tool-calls history view. */
@@ -64,4 +65,9 @@ export function CalendarIcon(props: TablerIconProps) {
 /** Envelope — a Gmail draft's recipients / a thread list. */
 export function MailIcon(props: TablerIconProps) {
   return <IconMail size={20} {...props} />;
+}
+
+/** Crossed-out wifi — the shell's "live updates disconnected" indicator. */
+export function WifiOffIcon(props: TablerIconProps) {
+  return <IconWifiOff size={20} {...props} />;
 }

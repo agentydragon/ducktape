@@ -94,10 +94,76 @@
   color: var(--haku-code-fg);
 }
 
-.haku-shell-controls {
+/* The shell chrome column: fixed top-right, a vertical flex stack of the toggle-button row and
+   the open panels. Panels stack by Y (never overlap by z-index); the container is
+   pointer-transparent so empty column space still clicks through to the framed haku-ui, while
+   the button row and panels catch their own clicks. */
+.haku-shell-chrome {
   position: fixed;
   top: 8px;
   right: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: calc(100vw - 16px);
+  pointer-events: none;
+}
+
+/* The toggle-button row rendered as one floating toolbar: a single rounded, shadowed bar whose
+   buttons sit flush (gap 0, square button corners inset by the bar's padding), so it reads as
+   one control cluster rather than separate buttons. `overflow: visible` so the pending-count /
+   live-location indicators aren't clipped at the bar's edge. */
+.haku-shell-toolbar {
+  flex: 0 0 auto;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--haku-border);
+  border-radius: 12px;
+  background: var(--haku-panel-bg);
+  box-shadow: 0 10px 32px var(--haku-shell-shadow);
+}
+
+.haku-shell-panels {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: min(32rem, calc(100vw - 16px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  pointer-events: auto;
+}
+
+/* The approvals panel flexes to fill the column and scrolls its own list, so the smaller side
+   panels stacked beneath it stay reachable rather than being pushed off-screen. */
+.haku-shell-approvals {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+/* Settings panel: bounded so it can't hog the column when opened alongside approvals; its own
+   list scrolls inside. */
+.haku-shell-settings {
+  flex: 0 0 auto;
+  min-height: 0;
+  max-height: 45vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Location / live-channel panels: natural height, so they sit compactly under the approvals
+   panel in the stack. */
+.haku-shell-side-panel {
+  flex: 0 0 auto;
 }
 
 /* Full-page console views on their own routes (past-tool-calls history in
@@ -152,33 +218,11 @@
   box-shadow: none;
 }
 
-.haku-shell-overlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  justify-content: flex-end;
-  pointer-events: none;
-}
-
-.haku-shell-drawer {
-  /* Leave the persistent control stack exposed at the right edge. The menu button is
-     the drawer's natural close toggle, just as the location pin remains beside its
-     popover. */
-  width: min(32rem, calc(100vw - 4.25rem));
-  height: calc(100dvh - 1rem);
-  margin: 0.5rem 3.75rem 0.5rem 0.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  pointer-events: auto;
-  color: var(--mantine-color-text);
-}
-
 .haku-shell-header {
   flex: 0 0 auto;
 }
 
-.haku-shell-drawer-nav {
+.haku-shell-panel-nav {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
@@ -186,6 +230,7 @@
 }
 
 .haku-shell-scroll {
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   padding: 0.1rem 0.15rem 0.75rem 0.1rem;
@@ -297,38 +342,14 @@
   margin-top: 0.55rem;
 }
 
-/* The card's compact/detailed toggle, styled to read as one of the card's disclosures (like the
-   Metadata/Raw arguments summaries): a rotating caret + dimmed label, left-aligned, at the bottom
-   of the card — not a button in the corner. */
-.haku-shell-expander {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  color: var(--mantine-color-dimmed);
-  font: inherit;
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
-.haku-shell-expander-caret {
-  display: inline-block;
-  font-size: 0.7em;
-  transition: transform 150ms ease;
-}
-
-.haku-shell-expander[aria-expanded="true"] .haku-shell-expander-caret {
-  transform: rotate(90deg);
-}
-
 @media (max-width: 520px) {
-  .haku-shell-drawer {
-    width: calc(100vw - 4rem);
-    height: calc(100dvh - 0.5rem);
-    margin: 0.25rem 3.5rem 0.25rem 0.25rem;
+  .haku-shell-chrome {
+    top: 4px;
+    right: 4px;
+    bottom: 4px;
+    max-width: calc(100vw - 8px);
+  }
+  .haku-shell-panels {
+    width: calc(100vw - 8px);
   }
 }

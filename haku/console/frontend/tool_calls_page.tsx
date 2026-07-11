@@ -8,7 +8,7 @@ import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
 import { toastError, toastSuccess } from "./toast.ts";
 import { ToolCallCard } from "./tool_call_card.tsx";
 import { useToolCallEvents } from "./tool_call_events.ts";
-import { useVariant } from "./variant_toggle.tsx";
+import { useVariant } from "./variant_control.tsx";
 
 // Matches the backend's `le=500` cap on GET /api/tool-calls (mcp_approval.py).
 const HISTORY_LIMIT = 500;
@@ -26,7 +26,7 @@ function ToolCallRow({
 }) {
   // Per-row verbosity: the ledger starts compact (scannable) and expands to the full record
   // on demand. The variant propagates to both the arguments field and the detail-only fields.
-  const [variant, toggleVariant] = useVariant("compact");
+  const [variant, setVariant] = useVariant("compact");
   const fields = approvalDisplayFields(record);
   const pending = record.status === "pending_approval";
   return (
@@ -34,7 +34,7 @@ function ToolCallRow({
       fields={fields}
       args={record.arguments}
       variant={variant}
-      onToggle={toggleVariant}
+      onVariantChange={setVariant}
       status={{ label: terminalStatusLabel(record.status), color: statusColor(record.status) }}
       error={record.error}
       result={record.result}

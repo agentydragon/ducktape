@@ -15,26 +15,30 @@ import { launchPuppeteerBrowser } from "../../../../util/testing/frontend_visual
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-// The console's full-page surfaces (ToolCallsPage, ShellDrawer) are position:fixed, so a
+// The console's full-page surfaces (ToolCallsPage, ShellChrome) are position:fixed, so a
 // viewport screenshot — not an #app element shot — is what captures them. Each scene is a
 // separate page load driven by window.__SCENE__ (see harness.tsx).
 const SCENES = [
-  // The history page, showing both row states in one shot: expand the first row and open its
-  // Metadata disclosure, then expand the next row (whose first "Details" button the prior expand
-  // walked us onto) so a completed call's Result field shows too, leaving the rest compact.
-  // `::-p-text` walks each subsequent "Details" as prior rows flip their label to "Compact".
+  // The history page, showing both row states in one shot: flip the first row's Brief/Full
+  // selector to Full and open its Metadata disclosure, leaving the rest Brief. Each row's
+  // selector shows both segments always, so `::-p-text(Full)` matches the first row's Full
+  // segment; the Metadata summary only exists once that row is detailed.
   {
     name: "history",
     viewport: { width: 1200, height: 1500 },
-    clicks: ["button::-p-text(Show details)", "summary::-p-text(Metadata)", "button::-p-text(Show details)"],
+    clicks: ["label::-p-text(Full)", "summary::-p-text(Metadata)"],
   },
-  { name: "drawer", viewport: { width: 1200, height: 900 } },
   { name: "settings", viewport: { width: 1200, height: 900 } },
   // Every implemented tool-call preview, compact | detailed side by side — tall, so give it room.
   { name: "previews", viewport: { width: 1100, height: 3600 } },
-  // `click` opens the location-sharing popover (its open state is internal to the control)
-  // so the screenshot captures the dropdown, not just the pin.
-  { name: "controls", viewport: { width: 520, height: 380 }, click: '[aria-label="Location sharing: live"]' },
+  // The whole shell chrome: approvals panel open by default; the clicks open the live-offline
+  // and location panels (their open state is internal to the chrome) so the shot shows all
+  // three surfaces stacked by Y under the toggle-button row.
+  {
+    name: "chrome",
+    viewport: { width: 860, height: 1040 },
+    clicks: ['[aria-label="Live updates disconnected"]', '[aria-label="Location sharing: live"]'],
+  },
 ];
 const COLOR_SCHEMES = ["light", "dark"];
 

@@ -158,14 +158,15 @@ shell holds (`startGeolocationWatch`); location is gated by a shell-owned standi
 grant since the iframe has no `allow="geolocation"`. The shell origin-checks,
 schema-validates, and decides/confirms before acting. It also mirrors the iframe's hash route
 (`routeChanged`, validated as a path) into the console's own URL fragment so refresh and deep
-links restore the view. A persistent hamburger button — badged with a callout light when a
-tool call is awaiting approval — opens the shell's own console panel (`console_panel.tsx`),
-trusted chrome hosting the approval queue plus nav links to the full-page past-tool-calls
-history and settings views. Two shell-owned controls live outside the drawer: the
-location-sharing pin sits directly under the hamburger (shown only while consent is held,
-with a live indicator when location is actively read, and a popover carrying the
-stop/withdraw kill switch), and MCP account connect/reconnect/disconnect moved to the
-full-page settings view (`/settings`) since it's rarely touched. See <docs/containment.md>.
+links restore the view. A persistent top-right floating toolbar (`console_panel.tsx`'s
+`ShellChrome`, each button `filled` while its panel is open) opens the shell's own trusted
+chrome: a checklist button — badged with a callout light when a tool call is awaiting approval —
+toggles the approval queue panel (with a link to the full-page past-tool-calls history); a gear
+toggles the Settings panel (MCP account connect/reconnect/disconnect); a location-sharing pin
+(shown only while consent is held, with a live indicator when location is actively read) toggles
+a stop/withdraw panel; and a crossed-wifi button appears when the live event socket is down.
+Opening more than one panel stacks them vertically under the toolbar rather than overlapping.
+See <docs/containment.md>.
 
 ## Past tool calls — full-page history
 

@@ -7,7 +7,7 @@ import { ToolActionLine } from "./tool_action_line.tsx";
 import { ToolArgumentsField } from "./tool_arguments_field.tsx";
 import { ToolCallMeta } from "./tool_call_meta.tsx";
 import type { PreviewVariant } from "./tool_previews/variant.tsx";
-import { VariantToggle } from "./variant_toggle.tsx";
+import { VariantControl } from "./variant_control.tsx";
 
 /** One tool call, rendered the same way everywhere it appears — the drawer's pending and recent
  * cards and the history page's rows. It owns the shared skeleton (the identity header + action
@@ -19,7 +19,7 @@ export function ToolCallCard({
   fields,
   args,
   variant,
-  onToggle,
+  onVariantChange,
   status,
   error = null,
   result,
@@ -28,7 +28,7 @@ export function ToolCallCard({
   fields: ApprovalDisplayFields;
   args: Record<string, unknown>;
   variant: PreviewVariant;
-  onToggle: () => void;
+  onVariantChange: (v: PreviewVariant) => void;
   status: { label: string; color: string };
   error?: string | null;
   result?: unknown;
@@ -66,9 +66,14 @@ export function ToolCallCard({
               </Text>
             )}
           </Stack>
-          <Badge color={status.color} variant="light" style={{ flexShrink: 0 }}>
-            {status.label}
-          </Badge>
+          {/* Badge + Brief/Full selector anchored top-right: detail expands below, so the
+              selector never moves out from under the pointer. */}
+          <Stack gap={6} align="flex-end" style={{ flexShrink: 0 }}>
+            <Badge color={status.color} variant="light">
+              {status.label}
+            </Badge>
+            <VariantControl variant={variant} onChange={onVariantChange} />
+          </Stack>
         </Group>
         <ToolArgumentsField
           serverId={fields.serverId}
@@ -95,7 +100,6 @@ export function ToolCallCard({
             />
           </>
         )}
-        <VariantToggle variant={variant} onToggle={onToggle} />
         {footer}
       </Stack>
     </section>

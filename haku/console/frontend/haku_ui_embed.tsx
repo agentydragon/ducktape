@@ -20,7 +20,7 @@ import {
   type ToolCallRecord,
 } from "./client.ts";
 import { ConfirmDialog, type Escalation } from "./confirm_dialog.tsx";
-import { ShellControls, ShellDrawer } from "./console_panel.tsx";
+import { ShellChrome } from "./console_panel.tsx";
 import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation.ts";
 import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant.ts";
 import { openExternal, POPUP_HINT } from "./open_external.ts";
@@ -55,12 +55,10 @@ export function HakuUiEmbed({
   uiUrl,
   launchAvailable,
   onOpenToolCalls,
-  onOpenSettings,
 }: {
   uiUrl: string;
   launchAvailable: boolean;
   onOpenToolCalls: () => void;
-  onOpenSettings: () => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   // The single escalation awaiting the operator's trusted confirm (a link to open or a run
@@ -71,7 +69,7 @@ export function HakuUiEmbed({
   const knownToolApprovalIdsRef = useRef<Set<string> | null>(null);
   const [geolocationApprovals, setGeolocationApprovals] = useState<GeolocationApproval[]>([]);
   const geolocationApprovalsRef = useRef<GeolocationApproval[]>([]);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [approvalsOpen, setApprovalsOpen] = useState(false);
   const [decidingApprovalIds, setDecidingApprovalIds] = useState<string[]>([]);
   const [recentToolCalls, setRecentToolCalls] = useState<RecentToolCall[]>([]);
   // Computed once: later routeChanged mirroring must not rewrite `src` (that would
@@ -144,7 +142,7 @@ export function HakuUiEmbed({
   }
 
   function openApprovalQueue() {
-    setDrawerOpen(true);
+    setApprovalsOpen(true);
   }
 
   function setDeciding(id: string, deciding: boolean) {
@@ -216,8 +214,9 @@ export function HakuUiEmbed({
   }
 
   // Live tool-call signal: initial fetch on mount plus a refetch on every server WS event
-  // (which the server also broadcasts to every other tab, so they refresh too).
-  useToolCallEvents(refreshToolApprovals);
+  // (which the server also broadcasts to every other tab, so they refresh too). Its status
+  // drives the shell's live-channel warning when the socket is down.
+  const liveStatus = useToolCallEvents(refreshToolApprovals);
 
   // Tear down any live browser watches if the console unmounts.
   useEffect(() => () => void watcher.stopAll(), [watcher]);
@@ -401,16 +400,13 @@ export function HakuUiEmbed({
         sandbox="allow-scripts allow-same-origin allow-forms"
         style={{ display: "block", width: "100vw", height: "100vh", border: 0 }}
       />
-      <ShellControls
-        pendingCount={toolApprovals.length + geolocationApprovals.length}
-        opened={drawerOpen}
-        onToggle={() => setDrawerOpen((open) => !open)}
+      <ShellChrome
+        approvalsOpen={approvalsOpen}
+        onApprovalsOpenChange={setApprovalsOpen}
+        liveStatus={liveStatus}
         geoGranted={geoGranted}
         tracking={tracking}
         onWithdrawGeolocation={withdrawGeolocation}
-      />
-      <ShellDrawer
-        opened={drawerOpen}
         pendingApprovals={toolApprovals}
         geolocationApprovals={geolocationApprovals}
         decidingApprovalIds={decidingApprovalIds}
@@ -421,7 +417,6 @@ export function HakuUiEmbed({
         onDenyGeolocation={denyGeolocationApproval}
         onDismissRecentToolCall={dismissRecentToolCall}
         onOpenToolCalls={onOpenToolCalls}
-        onOpenSettings={onOpenSettings}
       />
       <ConfirmDialog action={activeAction} onApprove={onApprove} onCancel={onCancel} />
     </>

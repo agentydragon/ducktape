@@ -1,5 +1,5 @@
-import { ActionIcon, Badge, Button, Group, Indicator, Popover, Stack, Text } from "@mantine/core";
-import { useEffect, useMemo, useState } from "react";
+import { ActionIcon, Badge, Button, Group, Indicator, Stack, Text } from "@mantine/core";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import {
   approvalDisplayFields,
@@ -15,14 +15,19 @@ import {
 } from "./approval_state.ts";
 import type { PendingApproval } from "./client.ts";
 import { Field } from "./field.tsx";
-import { HistoryIcon, MapPinIcon, MenuIcon, SettingsIcon } from "./icons.tsx";
+import { ChecklistIcon, HistoryIcon, MapPinIcon, SettingsIcon, WifiOffIcon } from "./icons.tsx";
 import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
-import { ACTION_COLOR, SUCCESS_COLOR } from "./theme.ts";
+import { SettingsPanel } from "./settings_page.tsx";
+import { SUCCESS_COLOR } from "./theme.ts";
 import { ToolCallCard } from "./tool_call_card.tsx";
-import { useVariant, VariantToggle } from "./variant_toggle.tsx";
+import type { LiveStatus } from "./tool_call_events.ts";
+import { useVariant, VariantControl } from "./variant_control.tsx";
 
-export interface ShellDrawerProps {
-  opened: boolean;
+export interface ShellChromeProps {
+  // Approvals panel open-state, parent-controlled so a newly-arrived geolocation approval can
+  // force it open.
+  approvalsOpen: boolean;
+  onApprovalsOpenChange: (open: boolean) => void;
   pendingApprovals: PendingApproval[];
   geolocationApprovals: GeolocationApproval[];
   decidingApprovalIds: readonly string[];
@@ -33,21 +38,17 @@ export interface ShellDrawerProps {
   onDenyGeolocation: (approval: GeolocationApproval) => void;
   onDismissRecentToolCall: (toolCallId: string) => void;
   onOpenToolCalls: () => void;
-  onOpenSettings: () => void;
-}
-
-export interface ShellControlsProps {
-  pendingCount: number;
-  opened: boolean;
-  onToggle: () => void;
-  // Location-sharing control (rendered only when the standing grant is held): the map-pin
-  // popover under the hamburger, with a live indicator while a watch is actively reading.
+  // Live tool-call WebSocket health: when `offline`, the chrome shows a toggle for a warning
+  // panel so a dead channel (approvals only update on reload) is visible, not silent.
+  liveStatus: LiveStatus;
+  // Location-sharing chrome (rendered only while the standing grant is held): a map-pin toggle
+  // with a live indicator while a watch is actively reading, opening a stop/withdraw panel.
   geoGranted: boolean;
   tracking: boolean;
   onWithdrawGeolocation: () => void;
 }
 
-// zIndex maxed so shell chrome sits above the full-page iframe; controls are one below.
+// zIndex maxed so the shell chrome (toolbar + panels) sits above the full-page iframe.
 export const PANEL_Z = 2147483647;
 const ARM_DELAY_MS = 400;
 
@@ -79,95 +80,58 @@ function RecentCountdown({ recent, nowMs }: { recent: RecentToolCall; nowMs: num
   );
 }
 
-// The location-sharing control: a map-pin under the hamburger, shown only while the shell
-// holds the standing grant. A pulsing teal indicator dot marks that a watch is *actively*
-// reading location right now (`tracking`); the plain pin means sharing is merely allowed.
-// Its popover carries the state and the stop/withdraw kill switch (out of the drawer, since
-// it's a rare one-tap action best reachable straight from the chrome).
-function LocationControl({ tracking, onWithdraw }: { tracking: boolean; onWithdraw: () => void }) {
-  const [opened, setOpened] = useState(false);
+// The location-sharing panel: opened from the map-pin toggle, shown only while the shell holds
+// the standing grant. Carries the current state and the stop/withdraw kill switch (a rare
+// one-tap action best reachable straight from the chrome). Rendered as a stacked panel in the
+// chrome column, not a floating popover, so it sits under its sibling panels by Y.
+function LocationPanel({ tracking, onWithdraw }: { tracking: boolean; onWithdraw: () => void }) {
   return (
-    <Popover opened={opened} onChange={setOpened} position="left" withArrow shadow="md" width={248}>
-      <Popover.Target>
-        <Indicator color="teal" size={10} offset={4} processing disabled={!tracking} withBorder>
-          <ActionIcon
-            size="lg"
-            variant="default"
-            color={ACTION_COLOR}
-            onClick={() => setOpened((o) => !o)}
-            aria-label={tracking ? "Location sharing: live" : "Location sharing: allowed"}
-          >
-            <MapPinIcon />
-          </ActionIcon>
-        </Indicator>
-      </Popover.Target>
-      <Popover.Dropdown>
-        <Stack gap="xs">
-          <Group justify="space-between" align="center" wrap="nowrap">
-            <Text fw={600} size="sm">
-              Location sharing
-            </Text>
-            <Badge color={tracking ? "teal" : "blue"} variant="light">
-              {tracking ? "Live" : "Allowed"}
-            </Badge>
-          </Group>
-          <Text size="xs" c="dimmed">
-            {tracking
-              ? "Haku's UI is reading your location right now."
-              : "Haku's UI may read your location until you withdraw consent."}
+    <section className="haku-shell-card haku-shell-side-panel" aria-label="Location sharing">
+      <Stack gap="xs">
+        <Group justify="space-between" align="center" wrap="nowrap">
+          <Text fw={600} size="sm">
+            Location sharing
           </Text>
-          <Button
-            size="compact-sm"
-            variant="light"
-            color="red"
-            fullWidth
-            onClick={() => {
-              onWithdraw();
-              setOpened(false);
-            }}
-          >
-            {tracking ? "Stop & withdraw" : "Withdraw"}
-          </Button>
-        </Stack>
-      </Popover.Dropdown>
-    </Popover>
+          <Badge color={tracking ? "teal" : "blue"} variant="light">
+            {tracking ? "Live" : "Allowed"}
+          </Badge>
+        </Group>
+        <Text size="xs" c="dimmed">
+          {tracking
+            ? "Haku's UI is reading your location right now."
+            : "Haku's UI may read your location until you withdraw consent."}
+        </Text>
+        <Button size="compact-sm" variant="light" color="red" fullWidth onClick={onWithdraw}>
+          {tracking ? "Stop & withdraw" : "Withdraw"}
+        </Button>
+      </Stack>
+    </section>
   );
 }
 
-// The persistent shell chrome over the framed haku-ui, stacked top-right: a generic panel
-// toggle (its pending-approval count surfaces as a pulsing red callout — a "something needs
-// you" light, without spelling the drawer's contents onto the button) and, when location is
-// shared, the location-sharing pin below it.
-export function ShellControls({
-  pendingCount,
-  opened,
-  onToggle,
-  geoGranted,
-  tracking,
-  onWithdrawGeolocation,
-}: ShellControlsProps) {
+// Shown from the crossed-wifi toggle when the live tool-call WebSocket is down: explains that
+// approvals may be stale until the connection recovers. Without this a broken live channel is
+// invisible — the approvals list just silently stops updating between reloads (the exact
+// failure the missing nginx WS upgrade caused). The socket auto-reconnects, so the toggle
+// clears itself once it's back.
+function LivePanel() {
   return (
-    <Stack className="haku-shell-controls" gap="xs" align="flex-end" style={{ zIndex: PANEL_Z - 1 }}>
-      <Indicator
-        color="red"
-        size={16}
-        offset={4}
-        processing
-        disabled={pendingCount === 0}
-        label={pendingCount > 0 ? pendingCount : undefined}
-      >
-        <ActionIcon
-          size="lg"
-          variant={opened ? "filled" : "default"}
-          color={ACTION_COLOR}
-          onClick={onToggle}
-          aria-label={opened ? "Close console panel" : "Open console panel"}
-        >
-          <MenuIcon />
-        </ActionIcon>
-      </Indicator>
-      {geoGranted && <LocationControl tracking={tracking} onWithdraw={onWithdrawGeolocation} />}
-    </Stack>
+    <section className="haku-shell-card haku-shell-side-panel" aria-label="Live updates offline">
+      <Stack gap="xs">
+        <Group justify="space-between" align="center" wrap="nowrap">
+          <Text fw={600} size="sm">
+            Live updates offline
+          </Text>
+          <Badge color="orange" variant="light">
+            Reconnecting
+          </Badge>
+        </Group>
+        <Text size="xs" c="dimmed">
+          The console lost its live connection, so new tool calls and approvals won't appear on their own. It keeps
+          retrying; reload the page to refresh immediately.
+        </Text>
+      </Stack>
+    </section>
   );
 }
 
@@ -187,7 +151,7 @@ function ToolApprovalCard({
   onApprove: () => void;
   onDeny: (reason?: string) => void;
 }) {
-  const [variant, toggleVariant] = useVariant("compact");
+  const [variant, setVariant] = useVariant("compact");
   const fields = approvalDisplayFields(approval);
   const armed = useArmed(`card:${approval.tool_call_id}`);
   return (
@@ -195,7 +159,7 @@ function ToolApprovalCard({
       fields={fields}
       args={approval.arguments}
       variant={variant}
-      onToggle={toggleVariant}
+      onVariantChange={setVariant}
       status={{ label: deciding ? "Running" : "Pending", color: deciding ? "blue" : "yellow" }}
       footer={<PendingToolCallActions busy={deciding} armed={armed} onApprove={onApprove} onDeny={onDeny} />}
     />
@@ -213,7 +177,7 @@ function GeolocationApprovalCard({
   onApprove: () => void;
   onDeny: () => void;
 }) {
-  const [variant, toggleVariant] = useVariant("compact");
+  const [variant, setVariant] = useVariant("compact");
   const armed = useArmed(`geo-card:${approval.id}`);
   const detailed = variant === "detailed";
   const requested = formatTimestamp(approval.createdAt);
@@ -230,9 +194,12 @@ function GeolocationApprovalCard({
             </Text>
             <Text size="xs">{geolocationApprovalBody(approval)}</Text>
           </Stack>
-          <Badge color={deciding ? "blue" : "yellow"} variant="light" style={{ flexShrink: 0 }}>
-            {deciding ? "Applying" : "Pending"}
-          </Badge>
+          <Stack gap={6} align="flex-end" style={{ flexShrink: 0 }}>
+            <Badge color={deciding ? "blue" : "yellow"} variant="light">
+              {deciding ? "Applying" : "Pending"}
+            </Badge>
+            <VariantControl variant={variant} onChange={setVariant} />
+          </Stack>
         </Group>
         {detailed && (
           <div className="haku-shell-fields">
@@ -250,7 +217,6 @@ function GeolocationApprovalCard({
             </details>
           </div>
         )}
-        <VariantToggle variant={variant} onToggle={toggleVariant} />
         <Group justify="flex-end" gap="xs">
           <Button size="compact-sm" variant="light" color="red" disabled={deciding || !armed} onClick={onDeny}>
             Deny
@@ -273,7 +239,7 @@ function RecentToolCallCard({
   nowMs: number;
   onDismiss: () => void;
 }) {
-  const [variant, toggleVariant] = useVariant("compact");
+  const [variant, setVariant] = useVariant("compact");
   const record = recent.record;
   const fields = approvalDisplayFields(record);
   return (
@@ -281,7 +247,7 @@ function RecentToolCallCard({
       fields={fields}
       args={record.arguments}
       variant={variant}
-      onToggle={toggleVariant}
+      onVariantChange={setVariant}
       status={{ label: terminalStatusLabel(record.status), color: statusColor(record.status) }}
       error={record.error}
       result={record.result}
@@ -310,7 +276,7 @@ function ApprovalsTab({
   onDenyGeolocation,
   onDismissRecentToolCall,
 }: Pick<
-  ShellDrawerProps,
+  ShellChromeProps,
   | "pendingApprovals"
   | "geolocationApprovals"
   | "decidingApprovalIds"
@@ -390,46 +356,134 @@ function ApprovalsTab({
   );
 }
 
-export function ShellDrawer(props: ShellDrawerProps) {
+// The approvals panel — the primary chrome surface. One block in the chrome column (below the
+// toolbar), it flexes to fill the column's height and scrolls its own list, so the smaller
+// settings/location/live panels can stack beneath it rather than being covered.
+function ApprovalsPanel(props: ShellChromeProps) {
   const pendingCount = props.pendingApprovals.length + props.geolocationApprovals.length;
   return (
-    <div className="haku-shell-overlay" style={{ zIndex: PANEL_Z }} aria-hidden={!props.opened}>
-      {props.opened && (
-        <aside className="haku-shell-drawer" aria-label="Haku console controls">
-          <section className="haku-shell-card haku-shell-drawer-nav">
-            <Group align="center" className="haku-shell-header">
-              <Group gap="xs" align="center">
-                <Text fw={700}>Approvals</Text>
-                <Badge color={pendingCount > 0 ? "yellow" : "gray"} variant="light">
-                  {pendingCount}
-                </Badge>
-              </Group>
-            </Group>
-            <Group grow gap="xs">
-              <Button
-                size="xs"
-                variant="light"
-                color={ACTION_COLOR}
-                leftSection={<HistoryIcon />}
-                onClick={props.onOpenToolCalls}
-              >
-                Past tool calls
-              </Button>
-              <Button
-                size="xs"
-                variant="light"
-                color={ACTION_COLOR}
-                leftSection={<SettingsIcon />}
-                onClick={props.onOpenSettings}
-              >
-                Settings
-              </Button>
-            </Group>
-          </section>
-          <div className="haku-shell-scroll">
-            <ApprovalsTab {...props} />
-          </div>
-        </aside>
+    <aside className="haku-shell-card haku-shell-approvals" aria-label="Approvals">
+      <section className="haku-shell-panel-nav">
+        <Group gap="xs" align="center" className="haku-shell-header">
+          <Text fw={700}>Approvals</Text>
+          <Badge color={pendingCount > 0 ? "yellow" : "gray"} variant="light">
+            {pendingCount}
+          </Badge>
+        </Group>
+        <Button
+          size="xs"
+          variant="light"
+          color="gray"
+          fullWidth
+          leftSection={<HistoryIcon />}
+          onClick={props.onOpenToolCalls}
+        >
+          Past tool calls
+        </Button>
+      </section>
+      <div className="haku-shell-scroll">
+        <ApprovalsTab {...props} />
+      </div>
+    </aside>
+  );
+}
+
+// One toolbar toggle: `filled` (neutral gray, unless a semantic color is given) while its panel
+// is open, `subtle` otherwise — so the row of squished buttons reads as pressed/unpressed.
+function ChromeToggle({
+  open,
+  label,
+  color = "gray",
+  onClick,
+  children,
+}: {
+  open: boolean;
+  label: string;
+  color?: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <ActionIcon
+      size="lg"
+      radius="md"
+      variant={open ? "filled" : "subtle"}
+      color={color}
+      onClick={onClick}
+      aria-label={label}
+    >
+      {children}
+    </ActionIcon>
+  );
+}
+
+// The persistent shell chrome over the framed haku-ui: a floating top-right **toolbar** of
+// toggle buttons (squished together, no gaps) over a column that stacks its open panels **by
+// Y**, never by z-index. Each button is `filled` while its panel is open; opening more than one
+// panel stacks them vertically under the toolbar — the approvals panel flexes to fill remaining
+// height and scrolls internally, the smaller settings/location/live panels take their natural
+// height beneath it — so panels share the column instead of floating over one another. Toggles
+// are neutral gray; only genuinely semantic cues keep a color (red pending count, orange
+// offline, green live-location dot).
+export function ShellChrome(props: ShellChromeProps) {
+  const { approvalsOpen, onApprovalsOpenChange, liveStatus, geoGranted, tracking, onWithdrawGeolocation } = props;
+  const [locationOpen, setLocationOpen] = useState(false);
+  const [liveOpen, setLiveOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const pendingCount = props.pendingApprovals.length + props.geolocationApprovals.length;
+  const offline = liveStatus === "offline";
+  const anyPanelOpen = approvalsOpen || settingsOpen || (geoGranted && locationOpen) || (offline && liveOpen);
+  return (
+    <div className="haku-shell-chrome" style={{ zIndex: PANEL_Z }}>
+      <Group className="haku-shell-toolbar" gap={0} wrap="nowrap">
+        {offline && (
+          <ChromeToggle
+            open={liveOpen}
+            label="Live updates disconnected"
+            color="orange"
+            onClick={() => setLiveOpen((o) => !o)}
+          >
+            <WifiOffIcon />
+          </ChromeToggle>
+        )}
+        {geoGranted && (
+          <Indicator color="green" size={10} offset={6} processing disabled={!tracking} withBorder>
+            <ChromeToggle
+              open={locationOpen}
+              label={tracking ? "Location sharing: live" : "Location sharing: allowed"}
+              onClick={() => setLocationOpen((o) => !o)}
+            >
+              <MapPinIcon />
+            </ChromeToggle>
+          </Indicator>
+        )}
+        <ChromeToggle open={settingsOpen} label="Settings" onClick={() => setSettingsOpen((o) => !o)}>
+          <SettingsIcon />
+        </ChromeToggle>
+        <Indicator
+          color="red"
+          size={16}
+          offset={6}
+          processing
+          disabled={pendingCount === 0}
+          label={pendingCount > 0 ? pendingCount : undefined}
+        >
+          <ChromeToggle
+            open={approvalsOpen}
+            label={approvalsOpen ? "Close approvals" : "Open approvals"}
+            onClick={() => onApprovalsOpenChange(!approvalsOpen)}
+          >
+            <ChecklistIcon />
+          </ChromeToggle>
+        </Indicator>
+      </Group>
+      {anyPanelOpen && (
+        <div className="haku-shell-panels">
+          {approvalsOpen && <ApprovalsPanel {...props} />}
+          {settingsOpen && <SettingsPanel />}
+          {geoGranted && locationOpen && <LocationPanel tracking={tracking} onWithdraw={onWithdrawGeolocation} />}
+          {offline && liveOpen && <LivePanel />}
+        </div>
       )}
     </div>
   );

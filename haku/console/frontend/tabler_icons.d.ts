@@ -4,7 +4,7 @@
 // INSIDE each block) so the declarations register globally. The subpath form is mandatory:
 // the `@tabler/icons-react` barrel OOMs esbuild on RBE (~8.7 GB; debug/esbuild_tabler_memory.md).
 // Add a block here for each icon imported.
-declare module "@tabler/icons-react/dist/esm/icons/IconMenu2.mjs" {
+declare module "@tabler/icons-react/dist/esm/icons/IconChecklist.mjs" {
   import type { FC, SVGProps } from "react";
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
@@ -50,6 +50,11 @@ declare module "@tabler/icons-react/dist/esm/icons/IconSettings.mjs" {
   export default Icon;
 }
 declare module "@tabler/icons-react/dist/esm/icons/IconMapPin.mjs" {
+  import type { FC, SVGProps } from "react";
+  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
+  export default Icon;
+}
+declare module "@tabler/icons-react/dist/esm/icons/IconWifiOff.mjs" {
   import type { FC, SVGProps } from "react";
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;

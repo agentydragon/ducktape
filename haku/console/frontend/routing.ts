@@ -1,32 +1,29 @@
 import { useCallback, useEffect, useState } from "react";
 
-// The console has three top-level views, distinguished by URL *path*. The path is used —
+// The console has two top-level views, distinguished by URL *path*. The path is used —
 // never the hash — because the hash is already reserved for mirroring the framed
 // haku-ui route (haku_ui_embed.tsx's routeChanged handler), so a path keeps the console's
-// own navigation from colliding with the frame's.
+// own navigation from colliding with the frame's. (Operator settings is no longer a
+// separate view — it's a chrome drawer panel; see console_panel.tsx's ShellChrome.)
 //
 //   "/"            → the full-page haku-ui embed (the trusted shell)
 //   "/tool-calls"  → the console's own full-page history of every past MCP tool call
-//   "/settings"    → operator settings (MCP account linkage)
 //
 // Production's nginx serves index.html for any non-asset/API path (`try_files $uri
 // /index.html`), and the dev fallback mirrors that (app.py), so deep-linking any path
 // loads the SPA, which then renders the matching view from the pathname.
 export const TOOL_CALLS_PATH = "/tool-calls";
-export const SETTINGS_PATH = "/settings";
 export const HOME_PATH = "/";
 
-export type ConsoleView = "embed" | "toolCalls" | "settings";
+export type ConsoleView = "embed" | "toolCalls";
 
 export function viewForPathname(pathname: string): ConsoleView {
   if (pathname === TOOL_CALLS_PATH) return "toolCalls";
-  if (pathname === SETTINGS_PATH) return "settings";
   return "embed";
 }
 
 function pathForView(view: ConsoleView): string {
   if (view === "toolCalls") return TOOL_CALLS_PATH;
-  if (view === "settings") return SETTINGS_PATH;
   return HOME_PATH;
 }
 

@@ -8,7 +8,6 @@ import {
   type McpOperatorAuthStatus,
   startMcpOperatorAuth,
 } from "./client.ts";
-import { ArrowLeftIcon } from "./icons.tsx";
 import { openExternal, POPUP_HINT } from "./open_external.ts";
 import { toastError, toastSuccess } from "./toast.ts";
 
@@ -62,9 +61,9 @@ function McpAccountCard({
   );
 }
 
-// Operator settings — the console's rarely-touched MCP account linkage, moved out of the
-// approval drawer into its own full-page route (routing.ts → "/settings").
-export function SettingsPage({ onBack }: { onBack: () => void }) {
+// Operator settings — the console's rarely-touched MCP account linkage, rendered as a stacking
+// panel in the shell chrome (toggled from the toolbar's gear), alongside the approvals panel.
+export function SettingsPanel() {
   const [statuses, setStatuses] = useState<McpOperatorAuthStatus[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -122,22 +121,15 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div className="haku-page">
-      <header className="haku-page-header">
-        <div className="haku-page-bar">
-          <Group gap="xs" wrap="nowrap" align="center">
-            <Button size="xs" variant="subtle" color="gray" leftSection={<ArrowLeftIcon />} onClick={onBack}>
-              Back
-            </Button>
-            <Text fw={700}>Settings</Text>
-          </Group>
-          <Button size="xs" variant="light" loading={loading} onClick={() => load()}>
-            Refresh
-          </Button>
-        </div>
-      </header>
-      <div className="haku-page-scroll">
-        <div className="haku-page-list">
+    <aside className="haku-shell-card haku-shell-settings" aria-label="Settings">
+      <Group justify="space-between" align="center" wrap="nowrap" className="haku-shell-header">
+        <Text fw={700}>Settings</Text>
+        <Button size="compact-xs" variant="light" color="gray" loading={loading} onClick={() => load()}>
+          Refresh
+        </Button>
+      </Group>
+      <div className="haku-shell-scroll">
+        <Stack gap="xs">
           <section className="haku-shell-card">
             <Text fw={600}>MCP accounts</Text>
             <Text size="xs" c="dimmed" mt={4}>
@@ -170,8 +162,8 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
               onDisconnect={() => disconnect(status.server_id)}
             />
           ))}
-        </div>
+        </Stack>
       </div>
-    </div>
+    </aside>
   );
 }
