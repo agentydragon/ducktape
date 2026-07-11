@@ -514,7 +514,7 @@ def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
     assert response.status_code == 200, response.text
     record = response.json()
     assert record["status"] == "ok"
-    assert record["approval_policy_id"] == "gmail.haku_labels.v1"
+    assert record["approval_policy_id"] == "gmail.read_and_haku_labels.v1"
     assert record["approved_at"] is not None
     assert record["result"]["content"][0]["text"] == "gmail:labels_list"
     assert pending["approvals"] == []

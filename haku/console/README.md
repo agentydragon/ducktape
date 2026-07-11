@@ -116,8 +116,8 @@ HTTP:
   passes straight through to Gmail — `minimal`/`metadata`/`full`, plus `raw` for messages),
   `labels_list`, `labels_get`. Writes are `drafts_create`, `threads_batch_modify`, and
   label CRUD (`labels_create`, `labels_patch`, `labels_delete`). Calls default to operator approval.
-  The reviewed `gmail.haku_labels.v1` policy auto-approves Haku-agent calls to wholesale
-  `labels_list`, `threads_batch_modify` when every added/removed name starts with `haku/`,
+  The reviewed `gmail.read_and_haku_labels.v1` decision auto-approves Haku-agent calls to every
+  read tool above, plus `threads_batch_modify` when every added/removed name starts with `haku/`,
   `labels_patch` only when both the current and new names start with `haku/` and no visibility is
   changed, and `labels_delete` only when the current label name starts with `haku/`. Patch/delete
   resolve the submitted label ID before deciding. Gmail affordances not

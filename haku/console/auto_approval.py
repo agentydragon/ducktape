@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 HAKU_AGENT_PRINCIPAL = "haku-agent-api-token"
 GMAIL_SERVER_ID = "gmail"
-GMAIL_LABEL_POLICY_ID = "gmail.haku_labels.v1"
+GMAIL_AUTO_APPROVAL_ID = "gmail.read_and_haku_labels.v1"
 
 
 async def auto_approve_tool_call(
@@ -38,7 +38,16 @@ async def auto_approve_tool_call(
     """
     if caller_principal != HAKU_AGENT_PRINCIPAL or server_id != GMAIL_SERVER_ID:
         return None
-    if tool_name not in {"labels_list", "threads_batch_modify", "labels_patch", "labels_delete"}:
+    if tool_name not in {
+        "threads_list",
+        "threads_get",
+        "messages_get",
+        "labels_list",
+        "labels_get",
+        "threads_batch_modify",
+        "labels_patch",
+        "labels_delete",
+    }:
         return None
 
     try:
@@ -62,8 +71,8 @@ async def auto_approve_tool_call(
 
     try:
         namespace = LabelNamespace(label_prefix)
-        if tool_name == "labels_list":
-            return GMAIL_LABEL_POLICY_ID
+        if tool_name in {"threads_list", "threads_get", "messages_get", "labels_list", "labels_get"}:
+            return GMAIL_AUTO_APPROVAL_ID
         if tool_name == "threads_batch_modify":
             add = arguments.get("add") or []
             remove = arguments.get("remove") or []
@@ -71,7 +80,7 @@ async def auto_approve_tool_call(
                 return None
             if set(add) & set(remove):
                 return None
-            return GMAIL_LABEL_POLICY_ID if all(namespace.allows(name) for name in [*add, *remove]) else None
+            return GMAIL_AUTO_APPROVAL_ID if all(namespace.allows(name) for name in [*add, *remove]) else None
         if gmail is None:
             raise RuntimeError("Gmail client is unavailable")
         if tool_name == "labels_patch":
@@ -83,9 +92,9 @@ async def auto_approve_tool_call(
             ):
                 return None
             current = await asyncio.to_thread(gmail.labels_get, arguments["label_id"])
-            return GMAIL_LABEL_POLICY_ID if namespace.allows(current.name) and namespace.allows(new_name) else None
+            return GMAIL_AUTO_APPROVAL_ID if namespace.allows(current.name) and namespace.allows(new_name) else None
         current = await asyncio.to_thread(gmail.labels_get, arguments["label_id"])
-        return GMAIL_LABEL_POLICY_ID if namespace.allows(current.name) else None
+        return GMAIL_AUTO_APPROVAL_ID if namespace.allows(current.name) else None
     except Exception:
         logger.exception("auto-approval evaluation failed server=%s tool=%s", server_id, tool_name)
     return None

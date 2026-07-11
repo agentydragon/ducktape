@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 
 from gmail_api.labels import GmailLabel, LabelType
-from haku.console.auto_approval import GMAIL_LABEL_POLICY_ID, auto_approve_tool_call
+from haku.console.auto_approval import GMAIL_AUTO_APPROVAL_ID, auto_approve_tool_call
 from haku.console.tools.gmail import build_mcp
 
 
@@ -23,9 +23,22 @@ async def _decision(tool_name: str, arguments: dict, *, gmail=None, caller="haku
     )
 
 
-async def test_lists_all_labels_without_namespace_filter() -> None:
-    decision = await _decision("labels_list", {})
-    assert decision == GMAIL_LABEL_POLICY_ID
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [
+        ("threads_list", {"query": "from:alice", "max_results": 50}),
+        ("threads_get", {"thread_id": "t1", "format": "full"}),
+        ("messages_get", {"message_id": "m1", "format": "raw"}),
+        ("labels_list", {}),
+        ("labels_get", {"label_id": "INBOX"}),
+    ],
+)
+async def test_all_gmail_reads_are_auto_approved(tool_name: str, arguments: dict) -> None:
+    assert await _decision(tool_name, arguments) == GMAIL_AUTO_APPROVAL_ID
+
+
+async def test_read_requires_valid_registered_tool_arguments() -> None:
+    assert await _decision("threads_list", {"query": "", "unexpected": True}) is None
 
 
 @pytest.mark.parametrize("field", ["add", "remove"])
