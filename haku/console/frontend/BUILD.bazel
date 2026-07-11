@@ -16,7 +16,7 @@ js_openapi_schema(
 
 # Runtime Zod validators for the same backend models, generated from the same OpenAPI
 # JSON as :schema above. Used where a widget parses tool-call arguments it doesn't fully
-# trust (google_tool_previews.tsx) — a single source of truth for both the TS type and
+# trust (tool_previews/google.tsx) — a single source of truth for both the TS type and
 # the runtime shape check, instead of a hand-written `typeof`-narrowing guard that can
 # drift from the Pydantic model.
 js_openapi_zod(
@@ -130,60 +130,12 @@ js_library(
 )
 
 js_library(
-    name = "google_tool_previews",
-    srcs = ["tool_previews/google.tsx"],
-    deps = [
-        ":field",
-        ":google_client",
-        ":schema_zod",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/date-fns",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-    ],
-)
-
-js_library(
-    name = "kubectl_tool_previews",
-    srcs = ["tool_previews/kubectl.tsx"],
-    deps = [
-        ":field",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-    ],
-)
-
-js_library(
-    name = "grocy_tool_previews",
-    srcs = ["tool_previews/grocy.tsx"],
-    deps = [
-        ":field",
-        ":grocy_client",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-    ],
-)
-
-js_library(
-    name = "tool_previews",
-    srcs = ["tool_previews/index.tsx"],
-    deps = [
-        ":google_tool_previews",
-        ":grocy_tool_previews",
-        ":kubectl_tool_previews",
-        "//:node_modules/react",
-    ],
-)
-
-js_library(
     name = "tool_arguments_field",
     srcs = ["tool_arguments_field.tsx"],
     deps = [
         ":field",
-        ":tool_previews",
         "//:node_modules/react",
+        "//haku/console/frontend/tool_previews",
     ],
 )
 
@@ -286,10 +238,7 @@ filegroup(
         "toast.ts",
         "tool_arguments_field.tsx",
         "tool_calls_page.tsx",
-        "tool_previews/google.tsx",
-        "tool_previews/grocy.tsx",
-        "tool_previews/index.tsx",
-        "tool_previews/kubectl.tsx",
+        "//haku/console/frontend/tool_previews:tailwind_srcs",
     ],
 )
 
@@ -437,7 +386,6 @@ tsc_bin.tsc_test(
         "geolocation.test.ts",
         "haku_ui_embed.test.ts",
         "routing.test.ts",
-        "tool_previews/index.test.ts",
         "tsconfig.json",
         ":main_lib",
         ":schema",
@@ -445,6 +393,7 @@ tsc_bin.tsc_test(
         ":screenshot_harness_lib",
         "//:node_modules",
         "//:node_modules/@haku/console-bridge",
+        "//haku/console/frontend/tool_previews:index_test",
     ],
     tags = ["lint"],
 )
@@ -460,15 +409,14 @@ vitest_bin.vitest_test(
         "geolocation.test.ts",
         "haku_ui_embed.test.ts",
         "routing.test.ts",
-        "tool_previews/index.test.ts",
         "vitest.config.ts",
         ":approval_state",
         ":bridge",
         ":geolocation",
         ":haku_ui_embed",
         ":routing",
-        ":tool_previews",
         "//:node_modules",
         "//:node_modules/@haku/console-bridge",
+        "//haku/console/frontend/tool_previews:index_test",
     ],
 )

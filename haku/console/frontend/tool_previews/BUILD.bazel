@@ -1,0 +1,69 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Per-server approval-preview widgets. Each module owns one server's widgets and returns
+# null for anything outside its serverId; `tool_previews` (index.tsx) chains them.
+
+js_library(
+    name = "google",
+    srcs = ["google.tsx"],
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/date-fns",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//haku/console/frontend:field",
+        "//haku/console/frontend:google_client",
+        "//haku/console/frontend:schema_zod",
+    ],
+)
+
+js_library(
+    name = "grocy",
+    srcs = ["grocy.tsx"],
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//haku/console/frontend:field",
+        "//haku/console/frontend:grocy_client",
+    ],
+)
+
+js_library(
+    name = "kubectl",
+    srcs = ["kubectl.tsx"],
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//haku/console/frontend:field",
+    ],
+)
+
+js_library(
+    name = "tool_previews",
+    srcs = ["index.tsx"],
+    deps = [
+        ":google",
+        ":grocy",
+        ":kubectl",
+        "//:node_modules/react",
+    ],
+)
+
+# Sources Tailwind must scan for class names; the parent's tailwind_content_srcs
+# concatenates this into the one file the stylesheet's @source lists.
+filegroup(
+    name = "tailwind_srcs",
+    srcs = glob(["*.tsx"]),
+)
+
+# The dispatcher's vitest spec; the parent's aggregate tsc_test + bridge_test consume it
+# (a js_test can't take a source file from another package directly, only via a library).
+js_library(
+    name = "index_test",
+    srcs = ["index.test.ts"],
+    deps = [":tool_previews"],
+)
