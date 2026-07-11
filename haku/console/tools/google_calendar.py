@@ -62,8 +62,12 @@ class CreateCalendarEventArgs(BaseModel):
 
 
 class CreateCalendarEventResult(BaseModel):
-    event_id: str
-    html_link: str = Field(description="Link to the event in Google Calendar.")
+    # Parsed straight from the Calendar API's Event response via `model_validate`; the wire
+    # fields are `id`/`htmlLink`. populate_by_name keeps field-name construction working too.
+    model_config = ConfigDict(populate_by_name=True)
+
+    event_id: str = Field(validation_alias="id")
+    html_link: str = Field(validation_alias="htmlLink", description="Link to the event in Google Calendar.")
 
 
 # --- Google Calendar `events.insert` request-body models (camelCase wire shape) ---
@@ -131,4 +135,4 @@ class CalendarToolsClient:
             .insert(calendarId=args.calendar_id, body=body.model_dump(by_alias=True, exclude_none=True))
             .execute()
         )
-        return CreateCalendarEventResult(event_id=created["id"], html_link=created["htmlLink"])
+        return CreateCalendarEventResult.model_validate(created)
