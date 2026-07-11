@@ -1,6 +1,7 @@
 // Screenshot harness: renders each console visual surface into #app with mocked data, one
-// scene per page load (selected by `window.__SCENE__`). Bundled to an IIFE by
-// esbuild.config.mjs and driven by render.mjs, which screenshots each scene to a PNG. A
+// scene and color scheme per page load (selected by `window.__SCENE__` and
+// `window.__COLOR_SCHEME__`). Bundled to an IIFE by esbuild.config.mjs and driven by
+// render.mjs, which screenshots each combination to a PNG. A
 // generator for eyeballing the visuals, not a pixel-diff gate — see frontend/AGENTS.md.
 //
 // `./mock_api.ts` is imported FIRST so its `fetch` stub is installed before client.ts (via
@@ -112,10 +113,11 @@ function sceneElement(scene: string) {
 }
 
 const scene = (window as unknown as { __SCENE__?: string }).__SCENE__ ?? "history";
+const colorScheme = (window as unknown as { __COLOR_SCHEME__?: "light" | "dark" }).__COLOR_SCHEME__ ?? "light";
 const container = document.getElementById("app");
 if (!container) throw new Error("missing #app");
 createRoot(container).render(
-  <MantineProvider defaultColorScheme="light" theme={hakuTheme}>
+  <MantineProvider forceColorScheme={colorScheme} theme={hakuTheme}>
     {sceneElement(scene)}
   </MantineProvider>
 );

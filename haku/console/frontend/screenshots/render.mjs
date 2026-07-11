@@ -1,6 +1,6 @@
 // Screenshot generator for the console's own visual surfaces. Inlines the compiled
 // stylesheet and the bundled harness (harness.tsx) into a headless-Chromium page, one
-// scene per load, and writes a PNG per scene. This is a generator for eyeballing the
+// scene and theme per load, and writes a PNG for every combination. This is a generator for eyeballing the
 // visuals — NOT a pixel-diff regression gate — so it never fails on "looks different"; it
 // fails only if a scene crashes or renders an empty #app (waitForSelector below throws).
 //
@@ -36,6 +36,7 @@ const SCENES = [
   // so the screenshot captures the dropdown, not just the pin.
   { name: "controls", viewport: { width: 520, height: 380 }, click: '[aria-label="Location sharing: live"]' },
 ];
+const COLOR_SCHEMES = ["light", "dark"];
 
 function outputDir() {
   if (process.env.SCREENSHOT_OUT_DIR) return resolve(process.env.SCREENSHOT_OUT_DIR);
@@ -49,7 +50,7 @@ function outputDir() {
   return resolve("screenshot-out");
 }
 
-function pageHtml(css, harnessJs, scene) {
+function pageHtml(css, harnessJs, scene, colorScheme) {
   // The <base href> gives the origin-less setContent page a URL against which the SPA's
   // relative "/api/…" requests parse (the harness stubs the actual fetch). The scene global
   // is set before the harness IIFE runs so it renders the right surface.
@@ -58,6 +59,7 @@ function pageHtml(css, harnessJs, scene) {
     "<base href='https://haku-console.test/'>",
     `<style>${css}</style></head><body><div id='app'></div>`,
     `<script>window.__SCENE__=${JSON.stringify(scene)};</script>`,
+    `<script>window.__COLOR_SCHEME__=${JSON.stringify(colorScheme)};</script>`,
     `<script>${harnessJs}</script></body></html>`,
   ].join("");
 }
@@ -92,29 +94,34 @@ const browser = await launchPuppeteerBrowser({
   ],
 });
 try {
-  for (const { name, viewport, click, clicks } of SCENES) {
-    const page = await browser.newPage();
-    await page.setViewport({ ...viewport, deviceScaleFactor: 2 });
-    await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
-    await page.setContent(pageHtml(css, harnessJs, name), { waitUntil: "load" });
-    await page.waitForSelector("#app > *", { timeout: 10_000 });
-    // Let Mantine mount and layout settle, and outlast the approval buttons' 400ms arm
-    // delay so they render enabled (animations are reduced above).
-    await new Promise((r) => setTimeout(r, 700));
-    // Some scenes need clicks to reveal state internal to a component: a popover's open state
-    // (location-sharing control) or history rows toggled into their detailed view.
-    // Each click re-renders the DOM, so re-settle before the next one.
-    for (const selector of clicks ?? (click ? [click] : [])) {
-      await page.click(selector);
-      await new Promise((r) => setTimeout(r, 300));
+  for (const colorScheme of COLOR_SCHEMES) {
+    for (const { name, viewport, click, clicks } of SCENES) {
+      const page = await browser.newPage();
+      await page.setViewport({ ...viewport, deviceScaleFactor: 2 });
+      await page.emulateMediaFeatures([
+        { name: "prefers-reduced-motion", value: "reduce" },
+        { name: "prefers-color-scheme", value: colorScheme },
+      ]);
+      await page.setContent(pageHtml(css, harnessJs, name, colorScheme), { waitUntil: "load" });
+      await page.waitForSelector("#app > *", { timeout: 10_000 });
+      // Let Mantine mount and layout settle, and outlast the approval buttons' 400ms arm
+      // delay so they render enabled (animations are reduced above).
+      await new Promise((r) => setTimeout(r, 700));
+      // Some scenes need clicks to reveal state internal to a component: a popover's open state
+      // (location-sharing control) or history rows toggled into their detailed view.
+      // Each click re-renders the DOM, so re-settle before the next one.
+      for (const selector of clicks ?? (click ? [click] : [])) {
+        await page.click(selector);
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      const dest = join(outDir, `${name}-${colorScheme}.png`);
+      const png = await page.screenshot();
+      writeFileSync(dest, png);
+      console.log(`wrote ${dest}`);
+      await page.close();
     }
-    const dest = join(outDir, `${name}.png`);
-    const png = await page.screenshot();
-    writeFileSync(dest, png);
-    console.log(`wrote ${dest}`);
-    await page.close();
   }
 } finally {
   await browser.close();
 }
-console.log(`\n${SCENES.length} screenshots in ${outDir}`);
+console.log(`\n${SCENES.length * COLOR_SCHEMES.length} screenshots in ${outDir}`);

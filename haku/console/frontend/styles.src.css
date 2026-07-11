@@ -20,15 +20,18 @@
     --haku-shell-active-bg: #e7f4ef;
   }
   :root[data-mantine-color-scheme="dark"] {
-    --haku-page-bg: #0f1f1d;
-    --haku-panel-bg: #142724;
-    --haku-border: #3b5652;
-    --haku-code-bg: #172f2b;
-    --haku-code-fg: #e8f4f0;
+    /* Follow Mantine's neutral dark surfaces, as used by the location popover. The
+       shell used to tint every page and card dark green, which made this chrome
+       feel unrelated to both that popover and Haku's lavender/cream mark. */
+    --haku-page-bg: var(--mantine-color-dark-8);
+    --haku-panel-bg: var(--mantine-color-dark-7);
+    --haku-border: var(--mantine-color-dark-4);
+    --haku-code-bg: var(--mantine-color-dark-6);
+    --haku-code-fg: var(--mantine-color-gray-1);
     --haku-backdrop: rgb(0 0 0 / 68%);
     --haku-shell-shadow: rgb(0 0 0 / 45%);
-    --haku-shell-muted-bg: #1b2f2c;
-    --haku-shell-active-bg: #203d38;
+    --haku-shell-muted-bg: var(--mantine-color-dark-6);
+    --haku-shell-active-bg: var(--mantine-color-dark-5);
   }
   body {
     margin: 0;

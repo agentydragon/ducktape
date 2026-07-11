@@ -26,8 +26,8 @@ const hakuSpirit: MantineColorsTuple = [
   "#332d42",
 ];
 
-export const ACTION_COLOR = "haku";
-export const SUCCESS_COLOR = ACTION_COLOR;
+export const ACTION_COLOR = "hakuSpirit";
+export const SUCCESS_COLOR = "haku";
 export const CAPABILITY_COLOR = "hakuSpirit";
 
 export const hakuTheme = createTheme({
