@@ -13,6 +13,7 @@ import { createRoot } from "react-dom/client";
 import { ShellControls, ShellDrawer, type ShellDrawerProps } from "../console_panel.tsx";
 import { SettingsPage } from "../settings_page.tsx";
 import { hakuTheme } from "../theme.ts";
+import { ToolActionLine } from "../tool_action_line.tsx";
 import { ToolArgumentsField } from "../tool_arguments_field.tsx";
 import { ToolCallsPage } from "../tool_calls_page.tsx";
 import { PREVIEW_SAMPLES, SAMPLE_PENDING, SAMPLE_RECENT } from "./sample_data.ts";
@@ -32,9 +33,14 @@ function PreviewGallery() {
             const argumentsJson = JSON.stringify(args, null, 2);
             return (
               <div key={`${serverId}.${toolName}`} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <Text fw={700} size="sm" ff="monospace">
-                  {serverId}.{toolName}
-                </Text>
+                <div>
+                  <Text fw={700} size="sm" ff="monospace">
+                    {serverId}.{toolName}
+                  </Text>
+                  {/* The action-description line each card renders in its header (or the raw
+                      serverId.toolName fallback for the widget-less sample). */}
+                  <ToolActionLine serverId={serverId} toolName={toolName} args={args} />
+                </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
                   {(["compact", "detailed"] as const).map((variant) => (
                     <section className="haku-shell-card" key={variant}>

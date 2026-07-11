@@ -7,7 +7,7 @@
 
 import type { ReactNode } from "react";
 
-import { renderPreview, type ToolPreview } from "./entry.tsx";
+import { describeAction, renderPreview, type ToolAction, type ToolPreview } from "./entry.tsx";
 import { GMAIL_SERVER_ID, gmailPreviews } from "./gmail.tsx";
 import { GOOGLE_CALENDAR_SERVER_ID, googleCalendarPreviews } from "./google_calendar.tsx";
 import { GROCY_SERVER_ID, grocyPreviews } from "./grocy.tsx";
@@ -31,4 +31,15 @@ export function toolPreview(
 ): ReactNode | null {
   const preview = REGISTRY[serverId]?.[toolName];
   return preview ? renderPreview(preview, args, variant) : null;
+}
+
+/** A registered tool's action description for the card's identity line, or `null` when no widget
+ * matches (the caller falls back to `serverId.toolName`). */
+export function toolActionDescription(
+  serverId: string,
+  toolName: string,
+  args: Record<string, unknown>
+): ToolAction | null {
+  const preview = REGISTRY[serverId]?.[toolName];
+  return preview ? describeAction(preview, args) : null;
 }

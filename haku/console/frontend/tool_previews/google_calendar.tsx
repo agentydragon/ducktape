@@ -209,5 +209,7 @@ function CreateCalendarEventPreview({ args, variant }: PreviewProps<CreateCalend
 
 /** Per-tool preview widgets for the `google_calendar` server. */
 export const googleCalendarPreviews = {
-  create_calendar_event: definePreview(zCreateCalendarEventArgs, CreateCalendarEventPreview),
+  create_calendar_event: definePreview(zCreateCalendarEventArgs, CreateCalendarEventPreview, () => ({
+    text: "Google Calendar: Create event",
+  })),
 } satisfies Record<string, ToolPreview>;

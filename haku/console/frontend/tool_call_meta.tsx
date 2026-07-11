@@ -6,10 +6,14 @@ import { Field } from "./field.tsx";
  * collapsed "Metadata" disclosure in the detailed drawer cards and history rows, keeping the
  * detailed body focused on the arguments/result. */
 export function ToolCallMeta({
+  serverId,
+  toolName,
   callerPrincipal,
   createdAt,
   toolCallId,
 }: {
+  serverId: string;
+  toolName: string;
   callerPrincipal: string | null;
   createdAt: string | null;
   toolCallId: string;
@@ -19,6 +23,9 @@ export function ToolCallMeta({
     <details className="haku-shell-disclosure">
       <summary>Metadata</summary>
       <div className="haku-shell-fields haku-shell-disclosure-body">
+        <Field label="Tool" mono>
+          {serverId}.{toolName}
+        </Field>
         {callerPrincipal && <Field label="Caller">{callerPrincipal}</Field>}
         {requested && (
           <Field label="Requested">

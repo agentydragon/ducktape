@@ -16,7 +16,7 @@ import { Field } from "../field.tsx";
 import { fetchGmailThreadPreviews, type GmailThreadPreview } from "../gmail_client.ts";
 import { MailIcon } from "../icons.tsx";
 import { definePreview, type ToolPreview } from "./entry.tsx";
-import { COMPACT_ITEM_LIMIT, firstLines, MoreLine, type PreviewProps } from "./variant.tsx";
+import { COMPACT_ITEM_LIMIT, firstLines, MoreLine, plural, type PreviewProps } from "./variant.tsx";
 
 export const GMAIL_SERVER_ID = "gmail";
 
@@ -168,6 +168,8 @@ function CreateGmailDraftPreview({ args, variant }: PreviewProps<CreateGmailDraf
 /** Per-tool preview widgets for the `gmail` server's write tools. Read tools have no entry —
  * their args (a query, an id, a format) are self-descriptive, so the raw-JSON fallback serves. */
 export const gmailPreviews = {
-  threads_batch_modify: definePreview(zBatchModifyGmailThreadLabelsArgs, BatchModifyGmailThreadLabelsPreview),
-  drafts_create: definePreview(zCreateGmailDraftArgs, CreateGmailDraftPreview),
+  threads_batch_modify: definePreview(zBatchModifyGmailThreadLabelsArgs, BatchModifyGmailThreadLabelsPreview, (a) => ({
+    text: `Gmail: Relabel ${plural(a.thread_ids.length, "thread")}`,
+  })),
+  drafts_create: definePreview(zCreateGmailDraftArgs, CreateGmailDraftPreview, () => ({ text: "Gmail: Draft email" })),
 } satisfies Record<string, ToolPreview>;

@@ -26,7 +26,7 @@ const SCENES = [
   {
     name: "history",
     viewport: { width: 1200, height: 1500 },
-    clicks: ["button::-p-text(Details)", "summary::-p-text(Metadata)", "button::-p-text(Details)"],
+    clicks: ["button::-p-text(Show details)", "summary::-p-text(Metadata)", "button::-p-text(Show details)"],
   },
   { name: "drawer", viewport: { width: 1200, height: 900 } },
   { name: "settings", viewport: { width: 1200, height: 900 } },

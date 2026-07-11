@@ -1,16 +1,14 @@
-import { Badge, Button, Group, Loader, Stack, Text } from "@mantine/core";
+import { Button, Group, Loader, Text } from "@mantine/core";
 import { useCallback, useState } from "react";
 
 import { approvalDisplayFields, statusColor, terminalStatusLabel } from "./approval_state.ts";
 import { approveToolCall, denyToolCall, fetchToolCalls, type ToolCallRecord } from "./client.ts";
-import { Field } from "./field.tsx";
 import { ArrowLeftIcon } from "./icons.tsx";
 import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
 import { toastError, toastSuccess } from "./toast.ts";
-import { ToolArgumentsField } from "./tool_arguments_field.tsx";
-import { ToolCallMeta } from "./tool_call_meta.tsx";
+import { ToolCallCard } from "./tool_call_card.tsx";
 import { useToolCallEvents } from "./tool_call_events.ts";
-import { useVariant, VariantToggle } from "./variant_toggle.tsx";
+import { useVariant } from "./variant_toggle.tsx";
 
 // Matches the backend's `le=500` cap on GET /api/tool-calls (mcp_approval.py).
 const HISTORY_LIMIT = 500;
@@ -31,55 +29,17 @@ function ToolCallRow({
   const [variant, toggleVariant] = useVariant("compact");
   const fields = approvalDisplayFields(record);
   const pending = record.status === "pending_approval";
-  const detailed = variant === "detailed";
   return (
-    <section className="haku-shell-card">
-      <Stack gap="sm">
-        <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
-          <Stack gap={2} style={{ minWidth: 0 }}>
-            <Text fw={700}>{fields.title}</Text>
-            <Text size="xs" c="dimmed">
-              {fields.serverId}.{fields.toolName}
-            </Text>
-          </Stack>
-          <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
-            <Badge color={statusColor(record.status)} variant="light">
-              {terminalStatusLabel(record.status)}
-            </Badge>
-            <VariantToggle variant={variant} onToggle={toggleVariant} />
-          </Group>
-        </Group>
-        {record.error && (
-          <Text size="sm" c="red">
-            {record.error}
-          </Text>
-        )}
-        <div className="haku-shell-fields">
-          {detailed && fields.rationale && <Field label="Rationale">{fields.rationale}</Field>}
-          {fields.denialReason && <Field label="Denial reason">{fields.denialReason}</Field>}
-          <ToolArgumentsField
-            serverId={fields.serverId}
-            toolName={fields.toolName}
-            args={record.arguments}
-            argumentsJson={fields.argumentsJson}
-            variant={variant}
-          />
-          {detailed && record.result && (
-            <Field label="Result">
-              <pre className="haku-shell-json">{JSON.stringify(record.result, null, 2)}</pre>
-            </Field>
-          )}
-          {detailed && (
-            <ToolCallMeta
-              callerPrincipal={fields.callerPrincipal}
-              createdAt={fields.createdAt}
-              toolCallId={fields.toolCallId}
-            />
-          )}
-        </div>
-        {pending && <PendingToolCallActions busy={deciding} onApprove={onApprove} onDeny={onDeny} />}
-      </Stack>
-    </section>
+    <ToolCallCard
+      fields={fields}
+      args={record.arguments}
+      variant={variant}
+      onToggle={toggleVariant}
+      status={{ label: terminalStatusLabel(record.status), color: statusColor(record.status) }}
+      error={record.error}
+      result={record.result}
+      footer={pending ? <PendingToolCallActions busy={deciding} onApprove={onApprove} onDeny={onDeny} /> : null}
+    />
   );
 }
 

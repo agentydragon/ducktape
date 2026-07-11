@@ -168,6 +168,32 @@ js_library(
 )
 
 js_library(
+    name = "tool_action_line",
+    srcs = ["tool_action_line.tsx"],
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//haku/console/frontend/tool_previews",
+    ],
+)
+
+js_library(
+    name = "tool_call_card",
+    srcs = ["tool_call_card.tsx"],
+    deps = [
+        ":approval_state",
+        ":field",
+        ":tool_action_line",
+        ":tool_arguments_field",
+        ":tool_call_meta",
+        ":variant_toggle",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//haku/console/frontend/tool_previews:variant",
+    ],
+)
+
+js_library(
     name = "pending_tool_call_actions",
     srcs = ["pending_tool_call_actions.tsx"],
     deps = [
@@ -181,7 +207,6 @@ js_library(
     name = "variant_toggle",
     srcs = ["variant_toggle.tsx"],
     deps = [
-        "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//haku/console/frontend/tool_previews:variant",
     ],
@@ -197,8 +222,7 @@ js_library(
         ":icons",
         ":pending_tool_call_actions",
         ":theme",
-        ":tool_arguments_field",
-        ":tool_call_meta",
+        ":tool_call_card",
         ":variant_toggle",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -211,13 +235,11 @@ js_library(
     deps = [
         ":approval_state",
         ":client",
-        ":field",
         ":icons",
         ":pending_tool_call_actions",
         ":toast",
-        ":tool_arguments_field",
+        ":tool_call_card",
         ":tool_call_events",
-        ":tool_call_meta",
         ":variant_toggle",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -309,7 +331,9 @@ filegroup(
         "settings_page.tsx",
         "theme.ts",
         "toast.ts",
+        "tool_action_line.tsx",
         "tool_arguments_field.tsx",
+        "tool_call_card.tsx",
         "tool_call_meta.tsx",
         "tool_calls_page.tsx",
         "variant_toggle.tsx",
@@ -389,6 +413,7 @@ js_library(
         ":console_panel",
         ":settings_page",
         ":theme",
+        ":tool_action_line",
         ":tool_arguments_field",
         ":tool_calls_page",
         "//:node_modules/@mantine/core",

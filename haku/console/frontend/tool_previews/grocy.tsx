@@ -21,7 +21,7 @@ import { z } from "zod";
 
 import { fetchGrocyReference, type GrocyReferenceResponse } from "../grocy_client.ts";
 import { definePreview, type ToolPreview } from "./entry.tsx";
-import { ActionBadge, COMPACT_ITEM_LIMIT, MoreLine, type PreviewProps, type PreviewVariant } from "./variant.tsx";
+import { COMPACT_ITEM_LIMIT, MoreLine, plural, type PreviewProps, type PreviewVariant } from "./variant.tsx";
 
 export const GROCY_SERVER_ID = "grocy-sf";
 
@@ -150,7 +150,6 @@ function StockAddPreview({ args, variant }: PreviewProps<StockAddArgs>) {
   const shown = variant === "compact" ? args.items.slice(0, COMPACT_ITEM_LIMIT) : args.items;
   return (
     <Stack gap="xs">
-      <ActionBadge color="green">Add stock</ActionBadge>
       <Stack gap={4}>
         {shown.map((item, i) => (
           <StockAddRow key={i} item={item} reference={reference} />
@@ -187,7 +186,6 @@ function StockConsumePreview({ args, variant }: PreviewProps<StockConsumeArgs>) 
   const shown = variant === "compact" ? args.items.slice(0, COMPACT_ITEM_LIMIT) : args.items;
   return (
     <Stack gap="xs">
-      <ActionBadge color="red">Remove stock</ActionBadge>
       <Stack gap={4}>
         {shown.map((item, i) => (
           <StockConsumeRow key={i} item={item} reference={reference} />
@@ -277,7 +275,6 @@ function ProductsCreatePreview({ args, variant }: PreviewProps<ProductsCreateArg
   const shown = variant === "compact" ? args.items.slice(0, COMPACT_ITEM_LIMIT) : args.items;
   return (
     <Stack gap="xs">
-      <ActionBadge color="blue">Create product{args.items.length > 1 ? "s" : ""}</ActionBadge>
       <Stack gap={6}>
         {shown.map((item, i) => (
           <ProductsCreateRow key={i} item={item} reference={reference} variant={variant} />
@@ -291,7 +288,13 @@ function ProductsCreatePreview({ args, variant }: PreviewProps<ProductsCreateArg
 
 /** Per-tool preview widgets for the `grocy-sf` server's stock and product-creation tools. */
 export const grocyPreviews = {
-  stock_add: definePreview(zStockAddArgs, StockAddPreview),
-  stock_consume: definePreview(zStockConsumeArgs, StockConsumePreview),
-  products_create: definePreview(zProductsCreateArgs, ProductsCreatePreview),
+  stock_add: definePreview(zStockAddArgs, StockAddPreview, (a) => ({
+    text: `Grocy: Add ${plural(a.items.length, "item")} to stock`,
+  })),
+  stock_consume: definePreview(zStockConsumeArgs, StockConsumePreview, (a) => ({
+    text: `Grocy: Remove ${plural(a.items.length, "item")} from stock`,
+  })),
+  products_create: definePreview(zProductsCreateArgs, ProductsCreatePreview, (a) => ({
+    text: `Grocy: Create ${plural(a.items.length, "product")}`,
+  })),
 } satisfies Record<string, ToolPreview>;

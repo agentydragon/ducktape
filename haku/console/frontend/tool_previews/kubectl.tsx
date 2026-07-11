@@ -10,7 +10,7 @@ import { Group, Stack, Text } from "@mantine/core";
 import { z } from "zod";
 
 import { definePreview, type ToolPreview } from "./entry.tsx";
-import { ActionBadge, clampBlock, type PreviewProps } from "./variant.tsx";
+import { clampBlock, type PreviewProps } from "./variant.tsx";
 
 export const KUBECTL_SERVER_ID = "kubectl-passthrough-mcp";
 
@@ -41,12 +41,7 @@ type PodsDeleteArgs = z.infer<typeof zPodsDeleteArgs>;
 
 function ResourcesApplyPreview({ args, variant }: PreviewProps<ResourcesCreateOrUpdateArgs>) {
   const resource = variant === "compact" ? clampBlock(args.resource, 3) : args.resource;
-  return (
-    <Stack gap="xs">
-      <ActionBadge color="blue">Apply</ActionBadge>
-      <pre className="haku-shell-json">{resource}</pre>
-    </Stack>
-  );
+  return <pre className="haku-shell-json">{resource}</pre>;
 }
 
 function DeleteTargetPreview({
@@ -62,7 +57,6 @@ function DeleteTargetPreview({
 }) {
   return (
     <Stack gap="xs">
-      <ActionBadge color="red">Delete</ActionBadge>
       <Group gap={4} className="haku-shell-mono">
         <Text span fw={600}>
           {kind}
@@ -101,7 +95,15 @@ function PodsDeletePreview({ args }: PreviewProps<PodsDeleteArgs>) {
 /** Per-tool preview widgets for the `kubectl-passthrough-mcp` server's highest-stakes tools
  * (apply and delete). */
 export const kubectlPreviews = {
-  resources_create_or_update: definePreview(zResourcesCreateOrUpdateArgs, ResourcesApplyPreview),
-  resources_delete: definePreview(zResourcesDeleteArgs, ResourcesDeletePreview),
-  pods_delete: definePreview(zPodsDeleteArgs, PodsDeletePreview),
+  resources_create_or_update: definePreview(zResourcesCreateOrUpdateArgs, ResourcesApplyPreview, () => ({
+    text: "kubectl: Apply resource",
+  })),
+  resources_delete: definePreview(zResourcesDeleteArgs, ResourcesDeletePreview, (a) => ({
+    text: `kubectl: Delete ${a.kind}`,
+    destructive: true,
+  })),
+  pods_delete: definePreview(zPodsDeleteArgs, PodsDeletePreview, () => ({
+    text: "kubectl: Delete Pod",
+    destructive: true,
+  })),
 } satisfies Record<string, ToolPreview>;

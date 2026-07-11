@@ -18,8 +18,7 @@ import { Field } from "./field.tsx";
 import { HistoryIcon, MapPinIcon, MenuIcon, SettingsIcon } from "./icons.tsx";
 import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
 import { ACTION_COLOR } from "./theme.ts";
-import { ToolArgumentsField } from "./tool_arguments_field.tsx";
-import { ToolCallMeta } from "./tool_call_meta.tsx";
+import { ToolCallCard } from "./tool_call_card.tsx";
 import { useVariant, VariantToggle } from "./variant_toggle.tsx";
 
 export interface ShellDrawerProps {
@@ -192,44 +191,15 @@ function ToolApprovalCard({
   const [variant, toggleVariant] = useVariant("compact");
   const fields = approvalDisplayFields(approval);
   const armed = useArmed(`card:${approval.tool_call_id}`);
-  const detailed = variant === "detailed";
   return (
-    <section className="haku-shell-card">
-      <Stack gap="sm">
-        <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
-          <Stack gap={2} style={{ minWidth: 0 }}>
-            <Text fw={600} size="sm">
-              {fields.title}
-            </Text>
-            <Text size="xs" c="dimmed">
-              {fields.serverId}.{fields.toolName}
-            </Text>
-            {fields.rationale && <Text size="xs">{fields.rationale}</Text>}
-          </Stack>
-          <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
-            <Badge color={deciding ? "blue" : "yellow"} variant="light">
-              {deciding ? "Running" : "Pending"}
-            </Badge>
-            <VariantToggle variant={variant} onToggle={toggleVariant} />
-          </Group>
-        </Group>
-        <ToolArgumentsField
-          serverId={fields.serverId}
-          toolName={fields.toolName}
-          args={approval.arguments}
-          argumentsJson={fields.argumentsJson}
-          variant={variant}
-        />
-        {detailed && (
-          <ToolCallMeta
-            callerPrincipal={fields.callerPrincipal}
-            createdAt={fields.createdAt}
-            toolCallId={fields.toolCallId}
-          />
-        )}
-        <PendingToolCallActions busy={deciding} armed={armed} onApprove={onApprove} onDeny={onDeny} />
-      </Stack>
-    </section>
+    <ToolCallCard
+      fields={fields}
+      args={approval.arguments}
+      variant={variant}
+      onToggle={toggleVariant}
+      status={{ label: deciding ? "Running" : "Pending", color: deciding ? "blue" : "yellow" }}
+      footer={<PendingToolCallActions busy={deciding} armed={armed} onApprove={onApprove} onDeny={onDeny} />}
+    />
   );
 }
 
@@ -261,12 +231,9 @@ function GeolocationApprovalCard({
             </Text>
             <Text size="xs">{geolocationApprovalBody(approval)}</Text>
           </Stack>
-          <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
-            <Badge color={deciding ? "blue" : "yellow"} variant="light">
-              {deciding ? "Applying" : "Pending"}
-            </Badge>
-            <VariantToggle variant={variant} onToggle={toggleVariant} />
-          </Group>
+          <Badge color={deciding ? "blue" : "yellow"} variant="light" style={{ flexShrink: 0 }}>
+            {deciding ? "Applying" : "Pending"}
+          </Badge>
         </Group>
         {detailed && (
           <div className="haku-shell-fields">
@@ -284,6 +251,7 @@ function GeolocationApprovalCard({
             </details>
           </div>
         )}
+        <VariantToggle variant={variant} onToggle={toggleVariant} />
         <Group justify="flex-end" gap="xs">
           <Button size="compact-sm" variant="light" color="red" disabled={deciding || !armed} onClick={onDeny}>
             Deny
@@ -309,67 +277,26 @@ function RecentToolCallCard({
   const [variant, toggleVariant] = useVariant("compact");
   const record = recent.record;
   const fields = approvalDisplayFields(record);
-  const detailed = variant === "detailed";
   return (
-    <section className="haku-shell-card">
-      <Stack gap="sm">
-        <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
-          <Stack gap={2} style={{ minWidth: 0 }}>
-            <Text fw={600} size="sm">
-              {fields.title}
-            </Text>
-            <Text size="xs" c="dimmed">
-              {fields.serverId}.{fields.toolName}
-            </Text>
-            {record.error && (
-              <Text size="xs" c="red">
-                {record.error}
-              </Text>
-            )}
-            {fields.denialReason && (
-              <Text size="xs" c="dimmed">
-                Denied: {fields.denialReason}
-              </Text>
-            )}
-          </Stack>
-          <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
-            <Badge color={statusColor(record.status)} variant="light">
-              {terminalStatusLabel(record.status)}
-            </Badge>
-            <VariantToggle variant={variant} onToggle={toggleVariant} />
+    <ToolCallCard
+      fields={fields}
+      args={record.arguments}
+      variant={variant}
+      onToggle={toggleVariant}
+      status={{ label: terminalStatusLabel(record.status), color: statusColor(record.status) }}
+      error={record.error}
+      result={record.result}
+      footer={
+        <>
+          <RecentCountdown recent={recent} nowMs={nowMs} />
+          <Group justify="flex-end" gap="xs">
+            <Button size="compact-xs" variant="subtle" color="gray" onClick={onDismiss}>
+              Dismiss
+            </Button>
           </Group>
-        </Group>
-        <ToolArgumentsField
-          serverId={fields.serverId}
-          toolName={fields.toolName}
-          args={record.arguments}
-          argumentsJson={fields.argumentsJson}
-          variant={variant}
-        />
-        {detailed && (
-          <>
-            {record.result && (
-              <div className="haku-shell-fields">
-                <Field label="Result">
-                  <pre className="haku-shell-json">{JSON.stringify(record.result, null, 2)}</pre>
-                </Field>
-              </div>
-            )}
-            <ToolCallMeta
-              callerPrincipal={fields.callerPrincipal}
-              createdAt={fields.createdAt}
-              toolCallId={fields.toolCallId}
-            />
-          </>
-        )}
-        <RecentCountdown recent={recent} nowMs={nowMs} />
-        <Group justify="flex-end" gap="xs">
-          <Button size="compact-xs" variant="subtle" color="gray" onClick={onDismiss}>
-            Dismiss
-          </Button>
-        </Group>
-      </Stack>
-    </section>
+        </>
+      }
+    />
   );
 }
 

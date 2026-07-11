@@ -31,11 +31,13 @@ in `screenshots/render.mjs`) whenever you add a new surface.
 ## Tool-call rendering — design requirements
 
 A tool call shows up in two places — the approval **drawer** cards (`console_panel.tsx`) and
-the **history** rows (`tool_calls_page.tsx`) — and each renders at one of two variants,
-**compact** or **detailed**, flipped per item by its `Details` toggle. The argument body is
-drawn by a per-server **preview widget** (`tool_previews/`), or the generic raw-JSON fallback
-(`tool_arguments_field.tsx`). Hold all of it to these rules so the whole surface reads as one
-thing.
+the **history** rows (`tool_calls_page.tsx`) — but both render through one shared component,
+`tool_call_card.tsx` (identity header + action line + status badge + `Details` toggle, the
+arguments body, and the detailed Result/Metadata); only the status badge and footer actions
+differ per surface. Each renders at one of two variants, **compact** or **detailed**, flipped
+per item by its toggle. The argument body is drawn by a per-server **preview widget**
+(`tool_previews/`), or the generic raw-JSON fallback (`tool_arguments_field.tsx`). Hold all of
+it to these rules so the whole surface reads as one thing.
 
 **Compact is for skimming.** A compact rendering answers "what is this, and do I need to look
 closer?" at a glance — nothing more. Show the action, its primary target(s), and just enough
@@ -65,16 +67,19 @@ with the rarely-useful parts folded away:
 
 **Consistent vocabulary.**
 
-- The **action** is a colored `Badge` — green create/add, red destructive/remove/deny,
-  blue/gray neutral.
+- The **action** is a one-line description on the card's identity line (`tool_action_line.tsx`),
+  not a badge in the body: a registered tool supplies its own via `definePreview`'s third arg
+  (`"Gmail: Draft email"`, `"Grocy: Add 5 items to stock"`; destructive ones flagged red), and a
+  tool with no widget falls back to `serverId.toolName`. The widget body must not restate it.
 - **Identity / target** is bold; secondary attributes are dimmed inline text or small outline
   badges.
 - **Icons** replace labels only where the glyph is unambiguous (🕐 time, 📍 place, 👥 people);
   otherwise a short inline label.
 - **Semantic color is not the accent** — reserve red for genuinely destructive or failed states.
 
-**Datetimes and durations** use the shared concise forms (relative when near, drop the
-redundant, full value on hover) — tracked in `frontend/TODO.md`.
+**Datetimes and durations** use the shared concise forms — `formatTimestamp` (relative when
+near, full value on hover) for a wall-clock instant, `formatEventDateTimeRange` for a calendar
+start–end — rather than each field spelling its own format.
 
 When you add or change any rendering, put it (both variants) in the `previews` gallery and check
 it against this list.

@@ -1,4 +1,3 @@
-import { Button } from "@mantine/core";
 import { useState } from "react";
 
 import type { PreviewVariant } from "./tool_previews/variant.tsx";
@@ -12,11 +11,17 @@ export function useVariant(initial: PreviewVariant): [PreviewVariant, () => void
   return [variant, () => setVariant((v) => (v === "compact" ? "detailed" : "compact"))];
 }
 
-/** Flips a view between compact and detailed; the label names the state it switches *to*. */
+/** Expands/collapses a card's detail, rendered as a caret disclosure that matches the card's
+ * other disclosures (Metadata, Raw arguments) — a rotating triangle + "Show details" / "Show
+ * less" at the bottom of the card, not a button in the corner. */
 export function VariantToggle({ variant, onToggle }: { variant: PreviewVariant; onToggle: () => void }) {
+  const detailed = variant === "detailed";
   return (
-    <Button size="compact-xs" variant="subtle" color="gray" onClick={onToggle}>
-      {variant === "compact" ? "Details" : "Compact"}
-    </Button>
+    <button type="button" className="haku-shell-expander" aria-expanded={detailed} onClick={onToggle}>
+      <span className="haku-shell-expander-caret" aria-hidden="true">
+        ▸
+      </span>
+      {detailed ? "Show less" : "Show details"}
+    </button>
   );
 }

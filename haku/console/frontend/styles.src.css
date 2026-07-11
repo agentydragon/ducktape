@@ -291,6 +291,34 @@
   margin-top: 0.55rem;
 }
 
+/* The card's compact/detailed toggle, styled to read as one of the card's disclosures (like the
+   Metadata/Raw arguments summaries): a rotating caret + dimmed label, left-aligned, at the bottom
+   of the card — not a button in the corner. */
+.haku-shell-expander {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--mantine-color-dimmed);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.haku-shell-expander-caret {
+  display: inline-block;
+  font-size: 0.7em;
+  transition: transform 150ms ease;
+}
+
+.haku-shell-expander[aria-expanded="true"] .haku-shell-expander-caret {
+  transform: rotate(90deg);
+}
+
 @media (max-width: 520px) {
   .haku-shell-drawer {
     width: calc(100vw - 0.5rem);
