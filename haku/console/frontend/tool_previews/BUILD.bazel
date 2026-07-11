@@ -2,8 +2,9 @@ load("@aspect_rules_js//js:defs.bzl", "js_library")
 
 package(default_visibility = ["//visibility:public"])
 
-# Per-server approval-preview widgets. Each module owns one server's widgets and returns
-# null for anything outside its serverId; `tool_previews` (index.tsx) chains them.
+# Per-server approval-preview widgets. Each module owns one server's widgets and exports its
+# SERVER_ID + a (toolName, args) renderer; `tool_previews` (index.tsx) dispatches to them via
+# a serverId registry.
 
 js_library(
     name = "google",
@@ -60,8 +61,28 @@ filegroup(
     srcs = glob(["*.tsx"]),
 )
 
-# The dispatcher's vitest spec; the parent's aggregate tsc_test + bridge_test consume it
-# (a js_test can't take a source file from another package directly, only via a library).
+# One vitest spec per module (each test parallels the module it tests), wrapped as its own
+# js_library so the dep graph stays per-file; the parent's aggregate tsc_test + bridge_test
+# consume them (a js_test can't take a source file from another package directly, only via a
+# library).
+js_library(
+    name = "google_test",
+    srcs = ["google.test.ts"],
+    deps = [":google"],
+)
+
+js_library(
+    name = "grocy_test",
+    srcs = ["grocy.test.ts"],
+    deps = [":grocy"],
+)
+
+js_library(
+    name = "kubectl_test",
+    srcs = ["kubectl.test.ts"],
+    deps = [":kubectl"],
+)
+
 js_library(
     name = "index_test",
     srcs = ["index.test.ts"],

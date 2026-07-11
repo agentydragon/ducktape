@@ -2,29 +2,29 @@ import { describe, expect, it } from "vitest";
 
 import { toolPreview } from "./index.tsx";
 
-describe("toolPreview", () => {
-  it("renders a preview for valid grocy-sf products_create args", () => {
-    const preview = toolPreview("grocy-sf", "products_create", {
-      items: [{ name: "Oats", stock_qu: "Gram", location: "Pantry", default_best_before_days: 270 }],
-    });
-    expect(preview).not.toBeNull();
-    expect(preview).not.toBe(false);
+// The per-server renderers are covered in each module's own *.test.ts; this covers the
+// registry dispatch itself — routing by serverId and the two null paths.
+describe("toolPreview registry", () => {
+  it("dispatches to the registered renderer for a known serverId", () => {
+    expect(
+      toolPreview("grocy-sf", "products_create", {
+        items: [{ name: "Oats", stock_qu: "Gram", location: "Pantry", default_best_before_days: 270 }],
+      })
+    ).not.toBeNull();
+    expect(
+      toolPreview("google", "create_calendar_event", {
+        summary: "Standup",
+        start: { date: "2026-09-15" },
+        end: { date: "2026-09-16" },
+      })
+    ).not.toBeNull();
   });
 
-  it("falls through to null (not false) when args don't match the tool's schema", () => {
-    // Regression: the malformed shape a Jul 8 tool_request bug actually produced —
-    // {entity_type, body} nesting instead of flat fields. `parsed.success && <X/>`
-    // used to return `false` on a schema mismatch, not `null`, so `toolPreview`'s
-    // `??` chain (and console_panel.tsx's `nice ?? <pre>...</pre>` raw-JSON
-    // fallback) never kicked in — the operator saw a blank Arguments field
-    // instead of the raw JSON.
-    const preview = toolPreview("grocy-sf", "products_create", {
-      items: [{ entity_type: "products", body: { name: "Oats", stock_qu: "Gram" } }],
-    });
-    expect(preview).toBeNull();
-  });
-
-  it("returns null for an unknown server/tool combination", () => {
+  it("returns null for an unregistered server", () => {
     expect(toolPreview("some-other-server", "some_tool", {})).toBeNull();
+  });
+
+  it("returns null when the server is registered but the tool has no widget", () => {
+    expect(toolPreview("google", "list_events", {})).toBeNull();
   });
 });

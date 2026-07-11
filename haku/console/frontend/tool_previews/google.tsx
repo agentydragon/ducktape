@@ -22,7 +22,7 @@ import {
 import { fetchGmailThreadPreviews, type GmailThreadPreview } from "../google_client.ts";
 import { Field } from "../field.tsx";
 
-const GOOGLE_SERVER_ID = "google";
+export const GOOGLE_SERVER_ID = "google";
 
 type EventDateTime = z.infer<typeof zEventDateTime>;
 type CalendarReminder = z.infer<typeof zCalendarReminder>;
@@ -180,8 +180,7 @@ function CreateGmailDraftPreview({ args }: { args: CreateGmailDraftArgs }) {
 
 /** Nice per-tool rendering for the `google` server's tools; `null` when the (server, tool,
  * arguments) triple doesn't match a known widget, so the caller falls back to raw JSON. */
-export function googleToolPreview(serverId: string, toolName: string, args: Record<string, unknown>): ReactNode | null {
-  if (serverId !== GOOGLE_SERVER_ID) return null;
+export function googleToolPreview(toolName: string, args: Record<string, unknown>): ReactNode | null {
   if (toolName === "create_calendar_event") {
     const parsed = zCreateCalendarEventArgs.safeParse(args);
     return parsed.success ? <CreateCalendarEventPreview args={parsed.data} /> : null;

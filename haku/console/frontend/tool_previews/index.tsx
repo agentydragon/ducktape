@@ -1,18 +1,23 @@
-// Central dispatcher over per-server tool-preview modules (google.tsx,
-// kubectl.tsx, ...). Each module owns one server's widgets and returns
-// null for anything outside its own serverId, so adding a server is "write a new
-// per-server file + add one line here" — this file never grows past that.
+// Registry mapping each MCP server id to its per-tool preview renderer. Each per-server
+// module (google.tsx, grocy.tsx, …) owns one server's widgets and exports its serverId plus
+// a (toolName, args) => ReactNode|null renderer; adding a server is "write a new module + one
+// registry entry here". `toolPreview` dispatches by serverId, so the file never grows a
+// hand-maintained `??` chain.
 
 import type { ReactNode } from "react";
 
-import { googleToolPreview } from "./google.tsx";
-import { grocyToolPreview } from "./grocy.tsx";
-import { kubectlToolPreview } from "./kubectl.tsx";
+import { GOOGLE_SERVER_ID, googleToolPreview } from "./google.tsx";
+import { GROCY_SERVER_ID, grocyToolPreview } from "./grocy.tsx";
+import { KUBECTL_SERVER_ID, kubectlToolPreview } from "./kubectl.tsx";
+
+type ToolPreviewRenderer = (toolName: string, args: Record<string, unknown>) => ReactNode | null;
+
+const RENDERERS: Record<string, ToolPreviewRenderer> = {
+  [GOOGLE_SERVER_ID]: googleToolPreview,
+  [GROCY_SERVER_ID]: grocyToolPreview,
+  [KUBECTL_SERVER_ID]: kubectlToolPreview,
+};
 
 export function toolPreview(serverId: string, toolName: string, args: Record<string, unknown>): ReactNode | null {
-  return (
-    googleToolPreview(serverId, toolName, args) ??
-    kubectlToolPreview(serverId, toolName, args) ??
-    grocyToolPreview(serverId, toolName, args)
-  );
+  return RENDERERS[serverId]?.(toolName, args) ?? null;
 }

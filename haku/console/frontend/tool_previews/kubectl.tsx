@@ -12,7 +12,7 @@ import { z } from "zod";
 
 import { Field } from "../field.tsx";
 
-const KUBECTL_SERVER_ID = "kubectl-passthrough-mcp";
+export const KUBECTL_SERVER_ID = "kubectl-passthrough-mcp";
 
 // kubectl-passthrough-mcp is a third-party binary (containers/kubernetes-mcp-server) —
 // there's no backend Pydantic model to generate these from (unlike google.tsx's
@@ -111,12 +111,7 @@ function PodsDeletePreview({ args }: { args: PodsDeleteArgs }) {
 
 /** Nice per-tool rendering for the `kubectl-passthrough-mcp` server's highest-stakes tools
  * (apply and delete); `null` for anything else, so the caller falls back to raw JSON. */
-export function kubectlToolPreview(
-  serverId: string,
-  toolName: string,
-  args: Record<string, unknown>
-): ReactNode | null {
-  if (serverId !== KUBECTL_SERVER_ID) return null;
+export function kubectlToolPreview(toolName: string, args: Record<string, unknown>): ReactNode | null {
   if (toolName === "resources_create_or_update") {
     const parsed = zResourcesCreateOrUpdateArgs.safeParse(args);
     return parsed.success ? <ResourcesApplyPreview args={parsed.data} /> : null;

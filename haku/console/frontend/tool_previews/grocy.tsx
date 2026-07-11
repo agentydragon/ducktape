@@ -23,7 +23,7 @@ import { z } from "zod";
 import { fetchGrocyReference, type GrocyReferenceResponse } from "../grocy_client.ts";
 import { Field } from "../field.tsx";
 
-const GROCY_SERVER_ID = "grocy-sf";
+export const GROCY_SERVER_ID = "grocy-sf";
 
 // `int | str` on the Python side (name or ID) — resolved to a name for display either way.
 const zNameOrId = z.union([z.string(), z.number()]);
@@ -283,8 +283,7 @@ function ProductsCreatePreview({ args }: { args: ProductsCreateArgs }) {
 
 /** Nice per-tool rendering for the `grocy-sf` server's stock and product-creation tools;
  * `null` for anything else, so the caller falls back to raw JSON. */
-export function grocyToolPreview(serverId: string, toolName: string, args: Record<string, unknown>): ReactNode | null {
-  if (serverId !== GROCY_SERVER_ID) return null;
+export function grocyToolPreview(toolName: string, args: Record<string, unknown>): ReactNode | null {
   if (toolName === "stock_add") {
     const parsed = zStockAddArgs.safeParse(args);
     return parsed.success ? <StockAddPreview args={parsed.data} /> : null;
