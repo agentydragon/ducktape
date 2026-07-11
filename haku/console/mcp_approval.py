@@ -66,7 +66,7 @@ from haku.console.database_schema import (
     McpToolCallEvent,
 )
 from haku.console.deps import SettingsDep
-from haku.console.mcp_models import (
+from haku.console.tool_calls import (
     ApprovalDecisionRequest,
     SubmitToolCallRequest,
     ToolCallEvent,

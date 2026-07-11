@@ -9,7 +9,7 @@ from sqlalchemy import BigInteger, DateTime, Index, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from haku.console.mcp_models import ToolCallEvent, ToolCallEventType, ToolCallRecord, ToolCallStatus
+from haku.console.tool_calls import ToolCallEvent, ToolCallEventType, ToolCallRecord, ToolCallStatus
 from util.sqlalchemy_types import StrEnumColumn
 
 

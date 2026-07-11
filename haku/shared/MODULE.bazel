@@ -1,0 +1,26 @@
+module(
+    name = "ducktape_haku",
+    version = "0.1.0",
+)
+
+# Haku's shared libraries, packaged as a standalone Bazel module so both the ducktape monorepo
+# and the separate haku-state repo consume them from one source of truth. Consumed in-repo via the
+# root MODULE.bazel local_path_override; consumed by haku-state via git_override + strip_prefix
+# ("haku/shared") against the Forgejo ducktape mirror.
+#
+# Packages:
+#   - bridge_protocol (@haku/console-bridge): the console↔iframe postMessage bridge — shared wire
+#     types (protocol.ts) + client helpers (client.ts). JS, //bridge_protocol:pkg.
+#   - haku/console (haku.console.tool_calls): the haku-console tool-call API contract — the
+#     request/response Pydantic models the console serves at /api/tool-calls and haku-ui's backend
+#     parses. Python, //haku/console:tool_calls.
+#
+# The JS side has zero npm deps: js_library + npm_package only copy files (nothing runs node), so
+# aspect_rules_js alone suffices — no node toolchain, no pnpm/npm lock. The Python side ships the
+# models with pydantic as a PROVIDED dependency (not declared here): every consumer already depends
+# on its own @pypi//pydantic, so exactly one pydantic reaches runfiles (Python's module cache loads
+# a single `pydantic`). This mirrors the JS side shipping source TS resolved against the consumer's
+# toolchain, and avoids a second pydantic copy crossing the module boundary — so rules_python is
+# needed only for the py_library rule, no pip hub / lockfile.
+bazel_dep(name = "aspect_rules_js", version = "2.9.2")
+bazel_dep(name = "rules_python", version = "1.9.0")

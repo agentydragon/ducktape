@@ -29,12 +29,6 @@ py_library(
 )
 
 py_library(
-    name = "mcp_models",
-    srcs = ["mcp_models.py"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
     name = "deps",
     srcs = ["deps.py"],
     deps = [
@@ -47,8 +41,8 @@ py_library(
     name = "database_schema",
     srcs = ["database_schema.py"],
     deps = [
-        ":mcp_models",
         "//util:sqlalchemy_types",
+        "@ducktape_haku//haku/console:tool_calls",
         "@pypi//sqlalchemy",
     ],
 )
@@ -85,7 +79,7 @@ py_library(
         ":database_migrate",
         ":database_schema",
         ":deps",
-        ":mcp_models",
+        "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
         "@pypi//fastmcp",

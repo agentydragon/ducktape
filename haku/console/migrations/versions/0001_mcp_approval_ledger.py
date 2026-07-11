@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import ENUM, JSONB
 
-from haku.console.mcp_models import ToolCallEventType, ToolCallStatus
+from haku.console.tool_calls import ToolCallEventType, ToolCallStatus
 
 revision: str = "0001"
 down_revision: str | None = None

@@ -1,4 +1,11 @@
-"""Shared models for haku-console MCP approval calls."""
+"""The haku-console tool-call API contract.
+
+The request/response models for haku-console's MCP tool-call approval endpoints
+(`/api/tool-calls`, `/api/approvals/*`). Single source of truth for both repos: haku-console
+(ducktape) serves these; haku-ui's backend (haku-state) parses them when it proxies operator
+tool calls to the console. haku-ui layers its own `state_request_id`/`ToolRequestDoc` concept on
+top of `SubmitToolCallRequest` — that stays in haku-state, since the console never sees it.
+"""
 
 from __future__ import annotations
 

@@ -107,7 +107,7 @@ local_path_override(
 
 local_path_override(
     module_name = "ducktape_haku",
-    path = "haku/js",
+    path = "haku/shared",
 )
 
 local_path_override(
