@@ -203,7 +203,7 @@ export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record
   },
   {
     serverId: "gmail",
-    toolName: "threads_batch_modify",
+    toolName: "threads_modify_labels",
     args: { thread_ids: ["t1", "t2", "t3", "t4"], add: ["Follow up"], remove: ["Inbox"] },
   },
   {

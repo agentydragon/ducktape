@@ -114,10 +114,10 @@ HTTP:
   smartness, no body decoding, no flattening: `threads_list` (paginated via
   `page_token`/`next_page_token`), `threads_get`/`messages_get` (with a `format` argument that
   passes straight through to Gmail — `minimal`/`metadata`/`full`, plus `raw` for messages),
-  `labels_list`, `labels_get`. Writes are `drafts_create`, `threads_batch_modify`, and
+  `labels_list`, `labels_get`. Writes are `drafts_create`, `threads_modify_labels`, and
   label CRUD (`labels_create`, `labels_patch`, `labels_delete`). Calls default to operator approval.
   The reviewed `gmail.read_and_haku_labels.v1` decision auto-approves Haku-agent calls to every
-  read tool above, plus `threads_batch_modify` when every added/removed name starts with `haku/`,
+  read tool above, plus `threads_modify_labels` when every added/removed name starts with `haku/`,
   `labels_patch` only when both the current and new names start with `haku/` and no visibility is
   changed, and `labels_delete` only when the current label name starts with `haku/`. Patch/delete
   resolve the submitted label ID before deciding. Gmail affordances not
@@ -139,7 +139,7 @@ token, gmail-labeling's `gmail.modify`-only token) and delivered only to this na
 One-time operator OAuth bootstrap and the scope list: `cluster/k8s/haku/console/README.md`.
 Two plain HTTP endpoints alongside the MCP tools render approvals whose tool call carries only
 opaque ids: `GET /api/gmail/thread-previews` (subject/snippet/current-labels for a pending
-`threads_batch_modify`) and `GET /api/google-calendar/calendar-summary` (a non-primary
+`threads_modify_labels`) and `GET /api/google-calendar/calendar-summary` (a non-primary
 `calendar_id` → the calendar's display name + a Google Calendar link, for a pending
 `create_calendar_event`). Both stay outside `build_mcp`'s tool surface since they're reads for
 rendering, not something Haku calls.

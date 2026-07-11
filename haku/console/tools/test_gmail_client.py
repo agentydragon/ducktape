@@ -26,10 +26,10 @@ from gmail_api.messages import (
     ThreadsListResponse,
 )
 from haku.console.tools.gmail_client import (
-    BatchModifyGmailThreadLabelsArgs,
     CreateGmailDraftArgs,
     GmailLabelRef,
     GmailToolsClient,
+    ModifyGmailThreadLabelsArgs,
     SearchThreadsArgs,
     preview_gmail_threads,
 )
@@ -314,7 +314,7 @@ def test_create_draft_reply_carries_thread_id(svc: _FakeGmailService, client: Gm
 def test_batch_modify_creates_missing_add_label_and_modifies_threads(
     svc: _FakeGmailService, client: GmailToolsClient
 ) -> None:
-    result = client.threads_batch_modify(BatchModifyGmailThreadLabelsArgs(thread_ids=["t1", "t2"], add=["urgent"]))
+    result = client.threads_modify_labels(ModifyGmailThreadLabelsArgs(thread_ids=["t1", "t2"], add=["urgent"]))
     assert result.thread_count == 2
     assert [label.name for label in result.added] == ["urgent"]
     assert any(called == "labels.create" for called, _ in svc.calls)
@@ -322,14 +322,14 @@ def test_batch_modify_creates_missing_add_label_and_modifies_threads(
 
 def test_batch_modify_reuses_existing_label(svc: _FakeGmailService, client: GmailToolsClient) -> None:
     svc.labels = [GmailLabel(id="Label_9", name="urgent", type=LabelType.USER)]
-    result = client.threads_batch_modify(BatchModifyGmailThreadLabelsArgs(thread_ids=["t1"], add=["urgent"]))
+    result = client.threads_modify_labels(ModifyGmailThreadLabelsArgs(thread_ids=["t1"], add=["urgent"]))
     assert result.added == [GmailLabelRef(name="urgent", id="Label_9")]
     assert not any(called == "labels.create" for called, _ in svc.calls)  # not re-created
 
 
 def test_batch_modify_remove_requires_existing_label(client: GmailToolsClient) -> None:
     with pytest.raises(ValueError, match="do not exist"):
-        client.threads_batch_modify(BatchModifyGmailThreadLabelsArgs(thread_ids=["t1"], remove=["ghost"]))
+        client.threads_modify_labels(ModifyGmailThreadLabelsArgs(thread_ids=["t1"], remove=["ghost"]))
 
 
 def test_preview_threads_extracts_subject_snippet_and_labels(svc: _FakeGmailService) -> None:

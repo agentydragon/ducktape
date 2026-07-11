@@ -43,13 +43,13 @@ async def test_read_requires_valid_registered_tool_arguments() -> None:
 
 @pytest.mark.parametrize("field", ["add", "remove"])
 async def test_modifies_only_namespaced_labels(field: str) -> None:
-    assert await _decision("threads_batch_modify", {"thread_ids": ["t1"], field: ["haku/triaged"]})
-    assert await _decision("threads_batch_modify", {"thread_ids": ["t1"], field: ["INBOX"]}) is None
+    assert await _decision("threads_modify_labels", {"thread_ids": ["t1"], field: ["haku/triaged"]})
+    assert await _decision("threads_modify_labels", {"thread_ids": ["t1"], field: ["INBOX"]}) is None
 
 
 async def test_modify_rejects_unknown_arguments() -> None:
     assert (
-        await _decision("threads_batch_modify", {"thread_ids": ["t1"], "add": ["haku/triaged"], "unexpected": True})
+        await _decision("threads_modify_labels", {"thread_ids": ["t1"], "add": ["haku/triaged"], "unexpected": True})
         is None
     )
 

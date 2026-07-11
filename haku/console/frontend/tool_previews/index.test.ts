@@ -8,7 +8,7 @@ describe("toolPreview registry", () => {
   it("dispatches to the registered renderer for a known serverId, in both variants", () => {
     for (const variant of ["compact", "detailed"] as const) {
       expect(
-        toolPreview("gmail", "threads_batch_modify", { thread_ids: ["t1"], add: ["urgent"], remove: [] }, variant)
+        toolPreview("gmail", "threads_modify_labels", { thread_ids: ["t1"], add: ["urgent"], remove: [] }, variant)
       ).not.toBeNull();
       expect(
         toolPreview(

@@ -36,7 +36,7 @@ class GmailLabelRef(BaseModel):
     id: str
 
 
-class BatchModifyGmailThreadLabelsArgs(BaseModel):
+class ModifyGmailThreadLabelsArgs(BaseModel):
     """Add and/or remove Gmail labels across a batch of threads in one call."""
 
     thread_ids: list[str] = Field(min_length=1, description="Gmail thread IDs to modify in one batch.")
@@ -44,7 +44,7 @@ class BatchModifyGmailThreadLabelsArgs(BaseModel):
     remove: list[str] = Field(default_factory=list, description="Label names to remove from every thread; must exist.")
 
     @model_validator(mode="after")
-    def _at_least_one_change(self) -> BatchModifyGmailThreadLabelsArgs:
+    def _at_least_one_change(self) -> ModifyGmailThreadLabelsArgs:
         if not self.add and not self.remove:
             raise ValueError("must specify at least one label in add or remove")
         if overlap := set(self.add) & set(self.remove):
@@ -52,7 +52,7 @@ class BatchModifyGmailThreadLabelsArgs(BaseModel):
         return self
 
 
-class BatchModifyGmailThreadLabelsResult(BaseModel):
+class ModifyGmailThreadLabelsResult(BaseModel):
     added: list[GmailLabelRef]
     removed: list[GmailLabelRef]
     thread_count: int
@@ -81,7 +81,7 @@ class SearchThreadsArgs(BaseModel):
 
 
 # --- approval-preview models (rendered by the console for a pending
-#     `threads_batch_modify` call, which itself only carries thread IDs) ---
+#     `threads_modify_labels` call, which itself only carries thread IDs) ---
 class GmailThreadPreview(BaseModel):
     # Gmail permits a threadless/no-Subject message; whether that renders as e.g. "(no
     # subject)" is a display decision, so this stays the raw (possibly absent) header.
@@ -134,7 +134,7 @@ class GmailToolsClient:
         )
 
     # --- writes ---
-    def threads_batch_modify(self, args: BatchModifyGmailThreadLabelsArgs) -> BatchModifyGmailThreadLabelsResult:
+    def threads_modify_labels(self, args: ModifyGmailThreadLabelsArgs) -> ModifyGmailThreadLabelsResult:
         existing = {label.name: label.id for label in self._user_labels()}
         if missing := [name for name in args.remove if name not in existing]:
             raise ValueError(f"label(s) {missing} do not exist")
@@ -144,7 +144,7 @@ class GmailToolsClient:
         self._backend.modify_threads(
             args.thread_ids, add=[label.id for label in added], remove=[label.id for label in removed]
         )
-        return BatchModifyGmailThreadLabelsResult(added=added, removed=removed, thread_count=len(args.thread_ids))
+        return ModifyGmailThreadLabelsResult(added=added, removed=removed, thread_count=len(args.thread_ids))
 
     def _get_or_create(self, name: str, existing: dict[str, str]) -> GmailLabelRef:
         if label_id := existing.get(name):
@@ -180,7 +180,7 @@ class GmailToolsClient:
 
 def preview_gmail_threads(service: Any, thread_ids: list[str]) -> dict[str, GmailThreadPreview]:
     """Subject/snippet/current-labels for a batch of threads, for rendering a pending or past
-    `threads_batch_modify` approval. Composed from lower-level Gmail reads — a batched
+    `threads_modify_labels` approval. Composed from lower-level Gmail reads — a batched
     `threads().get(format=metadata)` plus a label id→name lookup — not a tool the agent invokes,
     so it's a free function over the raw service rather than a `GmailToolsClient` method. A
     thread absent from the returned map was inaccessible (deleted, wrong account, …)."""

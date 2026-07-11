@@ -37,11 +37,11 @@ from gmail_api.messages import Draft, Message, MessageFormat, Thread, ThreadForm
 from gmail_api.service import credentials_from_token_dir
 from haku.console.tools.gmail_client import (
     GMAIL_SERVER_ID,
-    BatchModifyGmailThreadLabelsArgs,
-    BatchModifyGmailThreadLabelsResult,
     CreateGmailDraftArgs,
     GmailThreadPreviewsResponse,
     GmailToolsClient,
+    ModifyGmailThreadLabelsArgs,
+    ModifyGmailThreadLabelsResult,
     SearchThreadsArgs,
     preview_gmail_threads,
 )
@@ -120,12 +120,12 @@ def build_mcp(gmail: GmailToolsClient) -> FastMCP:
         return gmail.labels_get(label_id)
 
     @mcp.tool
-    async def threads_batch_modify(
+    async def threads_modify_labels(
         thread_ids: _ThreadIdsAnn, add: _AddLabelsAnn = None, remove: _RemoveLabelsAnn = None
-    ) -> BatchModifyGmailThreadLabelsResult:
+    ) -> ModifyGmailThreadLabelsResult:
         """Add and/or remove labels (by name; missing add-labels are created) across a batch of threads."""
-        args = BatchModifyGmailThreadLabelsArgs(thread_ids=thread_ids, add=add or [], remove=remove or [])
-        return gmail.threads_batch_modify(args)
+        args = ModifyGmailThreadLabelsArgs(thread_ids=thread_ids, add=add or [], remove=remove or [])
+        return gmail.threads_modify_labels(args)
 
     @mcp.tool
     async def drafts_create(
@@ -202,7 +202,7 @@ async def gmail_thread_previews(
     gmail: GmailClientDep, thread_id: Annotated[list[str], Query()]
 ) -> GmailThreadPreviewsResponse:
     """Live subject/snippet/current-labels lookup, for rendering a pending or past
-    `threads_batch_modify` approval — the tool call itself only carries thread IDs, so the
+    `threads_modify_labels` approval — the tool call itself only carries thread IDs, so the
     approval UI resolves display text here rather than trusting caller-supplied text it can't
     verify. A plain HTTP read, not an MCP tool — outside `build_mcp`'s surface."""
     return GmailThreadPreviewsResponse(threads=preview_gmail_threads(gmail.service, thread_id))
@@ -216,13 +216,13 @@ class GmailToolArgumentExamples(BaseModel):
     The values are placeholders: nothing reads this endpoint's response, only
     `export_schema.py`'s static trace of it needs to exist for these models to reach the schema."""
 
-    threads_batch_modify: BatchModifyGmailThreadLabelsArgs
+    threads_modify_labels: ModifyGmailThreadLabelsArgs
     drafts_create: CreateGmailDraftArgs
 
 
 @router.get("/tool-argument-schema-examples")
 async def gmail_tool_argument_schema_examples() -> GmailToolArgumentExamples:
     return GmailToolArgumentExamples(
-        threads_batch_modify=BatchModifyGmailThreadLabelsArgs(thread_ids=["example-thread-id"], add=["example"]),
+        threads_modify_labels=ModifyGmailThreadLabelsArgs(thread_ids=["example-thread-id"], add=["example"]),
         drafts_create=CreateGmailDraftArgs(to=["example@example.com"], subject="Example", body="Example"),
     )

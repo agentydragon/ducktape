@@ -11,7 +11,7 @@ import { Anchor, Badge, Group, Loader, Stack, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
 import type { z } from "zod";
 
-import { zBatchModifyGmailThreadLabelsArgs, zCreateGmailDraftArgs } from "../api/schema.zod.ts";
+import { zCreateGmailDraftArgs, zModifyGmailThreadLabelsArgs } from "../api/schema.zod.ts";
 import { Field } from "../field.tsx";
 import { fetchGmailThreadPreviews, type GmailThreadPreview } from "../gmail_client.ts";
 import { MailIcon } from "../icons.tsx";
@@ -20,7 +20,7 @@ import { COMPACT_ITEM_LIMIT, firstLines, MoreLine, plural, type PreviewProps } f
 
 export const GMAIL_SERVER_ID = "gmail";
 
-type BatchModifyGmailThreadLabelsArgs = z.infer<typeof zBatchModifyGmailThreadLabelsArgs>;
+type ModifyGmailThreadLabelsArgs = z.infer<typeof zModifyGmailThreadLabelsArgs>;
 type CreateGmailDraftArgs = z.infer<typeof zCreateGmailDraftArgs>;
 
 // A Gmail API thread id resolves directly in the web UI's `#all/` view — the same link the
@@ -63,7 +63,7 @@ function GmailThreadRow({
   );
 }
 
-function ThreadLabelChanges({ args }: { args: BatchModifyGmailThreadLabelsArgs }) {
+function ThreadLabelChanges({ args }: { args: ModifyGmailThreadLabelsArgs }) {
   // One row of pills; each pill's sign + color says which way its label goes — green `+ added`,
   // red `− removed` — so no separate "Add"/"Remove" heading is needed.
   return (
@@ -82,7 +82,7 @@ function ThreadLabelChanges({ args }: { args: BatchModifyGmailThreadLabelsArgs }
   );
 }
 
-function BatchModifyGmailThreadLabelsPreview({ args, variant }: PreviewProps<BatchModifyGmailThreadLabelsArgs>) {
+function ModifyGmailThreadLabelsPreview({ args, variant }: PreviewProps<ModifyGmailThreadLabelsArgs>) {
   const [previews, setPreviews] = useState<Record<string, GmailThreadPreview> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -168,7 +168,7 @@ function CreateGmailDraftPreview({ args, variant }: PreviewProps<CreateGmailDraf
 /** Per-tool preview widgets for the `gmail` server's write tools. Read tools have no entry —
  * their args (a query, an id, a format) are self-descriptive, so the raw-JSON fallback serves. */
 export const gmailPreviews = {
-  threads_batch_modify: definePreview(zBatchModifyGmailThreadLabelsArgs, BatchModifyGmailThreadLabelsPreview, (a) => ({
+  threads_modify_labels: definePreview(zModifyGmailThreadLabelsArgs, ModifyGmailThreadLabelsPreview, (a) => ({
     text: `Gmail: Relabel ${plural(a.thread_ids.length, "thread")}`,
   })),
   drafts_create: definePreview(zCreateGmailDraftArgs, CreateGmailDraftPreview, () => ({ text: "Gmail: Draft email" })),

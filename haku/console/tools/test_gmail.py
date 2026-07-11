@@ -13,7 +13,7 @@ from fastmcp import Client
 from gmail_api.labels import GmailLabel, LabelsListResponse, LabelType
 from gmail_api.messages import Draft, Message, MessageFormat, Thread, ThreadFormat, ThreadsListResponse
 from haku.console.tools.gmail import GMAIL_SERVER_ID, build_mcp
-from haku.console.tools.gmail_client import BatchModifyGmailThreadLabelsResult, GmailThreadPreview
+from haku.console.tools.gmail_client import GmailThreadPreview, ModifyGmailThreadLabelsResult
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ async def test_tool_surface(client):
         "messages_get",
         "labels_list",
         "labels_get",
-        "threads_batch_modify",
+        "threads_modify_labels",
         "drafts_create",
         "labels_create",
         "labels_patch",
@@ -93,19 +93,19 @@ async def test_labels_get_dispatches(gmail: Mock, client):
     gmail.labels_get.assert_called_once_with("L1")
 
 
-async def test_threads_batch_modify_dispatches(gmail: Mock, client):
-    gmail.threads_batch_modify.return_value = BatchModifyGmailThreadLabelsResult(added=[], removed=[], thread_count=1)
-    result = await client.call_tool("threads_batch_modify", {"thread_ids": ["t1"], "add": ["urgent"]})
+async def test_threads_modify_labels_dispatches(gmail: Mock, client):
+    gmail.threads_modify_labels.return_value = ModifyGmailThreadLabelsResult(added=[], removed=[], thread_count=1)
+    result = await client.call_tool("threads_modify_labels", {"thread_ids": ["t1"], "add": ["urgent"]})
     assert not result.is_error
-    (args,), _kwargs = gmail.threads_batch_modify.call_args
+    (args,), _kwargs = gmail.threads_modify_labels.call_args
     assert args.thread_ids == ["t1"]
     assert args.add == ["urgent"]
     assert args.remove == []  # omitted -> empty, not None
 
 
-async def test_threads_batch_modify_rejects_unknown_arguments(client):
+async def test_threads_modify_labels_rejects_unknown_arguments(client):
     result = await client.call_tool(
-        "threads_batch_modify", {"thread_ids": ["t1"], "add": ["haku/x"], "unexpected": True}, raise_on_error=False
+        "threads_modify_labels", {"thread_ids": ["t1"], "add": ["haku/x"], "unexpected": True}, raise_on_error=False
     )
     assert result.is_error
 

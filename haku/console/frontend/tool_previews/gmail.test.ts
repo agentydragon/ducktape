@@ -4,10 +4,10 @@ import { renderPreview } from "./entry.tsx";
 import { gmailPreviews } from "./gmail.tsx";
 
 describe("gmailPreviews", () => {
-  it("renders threads_batch_modify for valid args, in both variants", () => {
+  it("renders threads_modify_labels for valid args, in both variants", () => {
     for (const variant of ["compact", "detailed"] as const) {
       const node = renderPreview(
-        gmailPreviews.threads_batch_modify,
+        gmailPreviews.threads_modify_labels,
         { thread_ids: ["t1"], add: ["urgent"], remove: [] },
         variant
       );
@@ -27,10 +27,10 @@ describe("gmailPreviews", () => {
     }
   });
 
-  it("returns null when threads_batch_modify args are malformed", () => {
+  it("returns null when threads_modify_labels args are malformed", () => {
     // thread_ids is min_length=1; an empty list fails the schema, so renderPreview returns null
     // and the caller shows raw JSON rather than a blank Arguments field.
-    expect(renderPreview(gmailPreviews.threads_batch_modify, { thread_ids: [], add: ["x"] }, "compact")).toBeNull();
+    expect(renderPreview(gmailPreviews.threads_modify_labels, { thread_ids: [], add: ["x"] }, "compact")).toBeNull();
   });
 
   it("has no entry for read tools (self-descriptive args → raw JSON, no custom widget)", () => {

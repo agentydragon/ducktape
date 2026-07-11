@@ -43,7 +43,7 @@ async def auto_approve_tool_call(
         "messages_get",
         "labels_list",
         "labels_get",
-        "threads_batch_modify",
+        "threads_modify_labels",
         "labels_patch",
         "labels_delete",
     }:
@@ -72,7 +72,7 @@ async def auto_approve_tool_call(
         namespace = LabelNamespace(label_prefix)
         if tool_name in {"threads_list", "threads_get", "messages_get", "labels_list", "labels_get"}:
             return GMAIL_AUTO_APPROVAL_ID
-        if tool_name == "threads_batch_modify":
+        if tool_name == "threads_modify_labels":
             add = arguments.get("add") or []
             remove = arguments.get("remove") or []
             if not add and not remove:

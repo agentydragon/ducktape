@@ -41,7 +41,7 @@ mcp:
     #
     # `gmail`: reads mirror Gmail's REST API and return its resource shapes verbatim
     # (threads_list, threads_get, messages_get, labels_list, labels_get); writes are
-    # drafts_create, threads_batch_modify, and label CRUD (labels_create, labels_patch,
+    # drafts_create, threads_modify_labels, and label CRUD (labels_create, labels_patch,
     # labels_delete).
     - id: gmail
     # `google_calendar`: create_calendar_event.
