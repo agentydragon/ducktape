@@ -5,14 +5,20 @@ web environments.
 
 ## Networking
 
-Current Claude Code web containers reach the internet without any per-tool
-proxy configuration: no `HTTPS_PROXY` env vars are set, and Anthropic's TLS
-inspection CA is already in the system CA bundle
-(`/etc/ssl/certs/ca-certificates.crt`) — so curl, Bazel, pip, npm, kubectl,
-git, etc. all work out of the box. We don't try to distinguish whether that
-works via a transparent network-layer MITM proxy or direct egress; as far
-as the Rust hook daemon is concerned, outbound HTTPS to known hosts reaches
-them, end of story.
+Two egress models exist across Claude Code environments:
+
+- **Transparent MITM (classic web containers).** No `HTTPS_PROXY` is set and Anthropic's
+  TLS-inspection CA is already in the system bundle (`/etc/ssl/certs/ca-certificates.crt`),
+  so curl, Bazel, pip, npm, kubectl, git, etc. work out of the box. The hook daemon doesn't
+  distinguish network-layer MITM from direct egress; outbound HTTPS to known hosts reaches
+  them, end of story.
+- **CCR agent proxy (Claude Code Remote / remote-execution sessions).** `HTTPS_PROXY`
+  points at a local relay (`http://127.0.0.1:46587`) that re-terminates TLS with its own
+  CA; every tool must trust `/root/.ccr/ca-bundle.crt` (the standard `*_CA_*` env vars and
+  system store are pre-set). See `/root/.ccr/README.md`. **Gotcha:** the proxy's boot-time
+  JVM-truststore seed races `ca-certificates-java` and often fails, so `bb`/`bbr` can't
+  verify the proxy's TLS (`bazelisk` is fine). `web_setup.sh` self-heals this; root cause +
+  detection in <docs/ccr_bazel_truststore_race.md>.
 
 ## Specification
 

@@ -8,6 +8,21 @@ Do not bypass proxy or certificate failures with `--noverify`,
 `SSL_VERIFY=false`, or similar. The durable fix is to recover the session-start
 hook path.
 
+## `bb`/`bbr` TLS (PKIX) failures on CCR remote-execution sessions
+
+If `bb`/`bbr` fail every repository fetch with `PKIX path building failed` while
+`bazelisk` works, this is **not** a session-start-hook failure — it's the CCR agent
+proxy's boot-time Java-truststore seed losing a race with `ca-certificates-java`, so
+`/etc/bazel.bazelrc` never gets written and `bb`/`bbr` fall back to the JDK cacerts. Heal
+it (idempotent, already run by `web_setup.sh`):
+
+```bash
+bash devinfra/claude/heal_ccr_bazel_trust.sh
+```
+
+Root cause, detection, and the "same command succeeds now" proof:
+<../../docs/ccr_bazel_truststore_race.md>. Do not disable TLS verification.
+
 ## Check The Live Session
 
 Find the live Rust daemon session ID:

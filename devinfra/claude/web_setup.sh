@@ -338,6 +338,15 @@ PROJECT_DIR="${FLAKE#path:}"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/reconcile_bbr_remote.sh"
 reconcile_bbr_remote "$PROJECT_DIR"
 
+# --- Step 3b: Heal CCR's failed Java-truststore seed for Bazel (bb/bbr) ---
+# The Claude Code Remote (CCR) agent proxy's boot-time truststore seed races dpkg's
+# ca-certificates-java trigger and often loses, leaving bb/bbr unable to verify the
+# proxy's re-terminated TLS (PKIX errors on repository fetches). Idempotent and
+# non-clobbering — no-op on a healthy CCR seed or a non-CCR machine. See the script
+# header and <devinfra/claude/docs/ccr_bazel_truststore_race.md>.
+bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/heal_ccr_bazel_trust.sh" \
+  || warn "CCR bazel-trust heal failed (non-fatal)"
+
 # --- Step 4: Symlink skills into ~/.claude/skills/ ---
 # Per-skill symlinks instead of replacing the directory, so Anthropic's
 # pre-landed default skills are preserved.
