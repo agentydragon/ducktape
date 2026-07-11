@@ -92,8 +92,10 @@ async def auto_approve_tool_call(
                 return None
             current = await asyncio.to_thread(gmail.labels_get, arguments["label_id"])
             return GMAIL_AUTO_APPROVAL_ID if namespace.allows(current.name) and namespace.allows(new_name) else None
-        current = await asyncio.to_thread(gmail.labels_get, arguments["label_id"])
-        return GMAIL_AUTO_APPROVAL_ID if namespace.allows(current.name) else None
+        if tool_name == "labels_delete":
+            current = await asyncio.to_thread(gmail.labels_get, arguments["label_id"])
+            return GMAIL_AUTO_APPROVAL_ID if namespace.allows(current.name) else None
+        return None
     except Exception:
         logger.exception("auto-approval evaluation failed server=%s tool=%s", server_id, tool_name)
     return None
