@@ -514,7 +514,7 @@ def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
     assert response.status_code == 200, response.text
     record = response.json()
     assert record["status"] == "ok"
-    assert record["approval_policy_id"] == "gmail.read_and_haku_labels.v1"
+    assert record["approval_policy_id"] == "v1"
     assert record["auto_approval_evaluation"] == "approved: Gmail search/read operation"
     assert record["approved_at"] is not None
     assert record["result"]["content"][0]["text"] == "gmail:labels_list"
@@ -840,7 +840,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(
     finally:
         engine.dispose()
 
-    assert version == "0005"
+    assert version == "0004"
     assert {"mcp_operator_oauth_associations", "mcp_operator_oauth_flows"} <= tables
     assert {
         "tool_call_id",

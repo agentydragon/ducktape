@@ -15,7 +15,7 @@ from haku.gmail_labeling.namespace import LabelNamespace
 logger = logging.getLogger(__name__)
 
 HAKU_AGENT_PRINCIPAL = "haku-agent-api-token"
-GMAIL_AUTO_APPROVAL_ID = "gmail.read_and_haku_labels.v1"
+GMAIL_AUTO_APPROVAL_ID = "v1"
 
 
 async def auto_approve_tool_call(

@@ -17,9 +17,11 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.add_column("mcp_tool_calls", sa.Column("approval_policy_id", sa.Text(), nullable=True))
+    op.add_column("mcp_tool_calls", sa.Column("auto_approval_evaluation", sa.Text(), nullable=True))
     op.add_column("mcp_tool_calls", sa.Column("approved_at", sa.DateTime(timezone=True), nullable=True))
 
 
 def downgrade() -> None:
     op.drop_column("mcp_tool_calls", "approved_at")
+    op.drop_column("mcp_tool_calls", "auto_approval_evaluation")
     op.drop_column("mcp_tool_calls", "approval_policy_id")

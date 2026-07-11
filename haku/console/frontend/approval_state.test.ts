@@ -77,11 +77,11 @@ describe("approval queue state", () => {
   it("surfaces auto-approval policy provenance for terminal calls", () => {
     const fields = approvalDisplayFields(
       toolCallRecord({
-        approval_policy_id: "gmail.read_and_haku_labels.v1",
+        approval_policy_id: "v1",
         auto_approval_evaluation: "approved: Gmail search/read operation",
       })
     );
-    expect(fields.approvalPolicyId).toBe("gmail.read_and_haku_labels.v1");
+    expect(fields.approvalPolicyId).toBe("v1");
     expect(fields.autoApprovalEvaluation).toBe("approved: Gmail search/read operation");
   });
 
