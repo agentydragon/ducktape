@@ -51,6 +51,12 @@ spec:
         # Haku mailbox read API (bearer-gated, read-only; see haku/mailbox/README.md)
         # so sandbox pods can poll inbound operator mail.
         - matchName: haku-mailbox.allegedly.works
+        # Coinbase read-only source: Haku reads the operator's crypto balances
+        # (CDP Advanced Trade get_accounts) from a haku-sandbox pod — Plaid does
+        # not support Coinbase as a readable institution. Reuses the reflected
+        # read-only `coinbase-api-credentials` (cluster-sops-read) CDP key and
+        # marks ETH/BTC to USD via the public /v2/prices endpoint. Same host for both.
+        - matchName: api.coinbase.com
       toPorts:
         - ports:
             - port: "443"
