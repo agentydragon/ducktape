@@ -32,6 +32,9 @@ grows its own techniques and records them in its state `memory/`.
   intentions tracked nowhere else — a must-read source, not optional.
 - [`plaid`](plaid.md) — financial transactions (read-only SQL via
   a `haku-sandbox` pod).
+- [`coinbase`](coinbase.md) — crypto balances & trade fills (read-only CDP key
+  reflected into `haku-sandbox`; JWT/ES256 auth). Coinbase isn't a Plaid
+  institution, so this is the only read path for crypto holdings.
 - [`cpap`](cpap.md) — the operator's CPAP sleep therapy data (AHI, leak, compliance);
   a git clone of the private `cpap-data` repo using your existing Forgejo login.
 - [`grocy`](grocy.md) — the operator's household stock (expiring /

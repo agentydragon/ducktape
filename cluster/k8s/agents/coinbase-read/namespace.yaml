@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: coinbase-read
+  annotations:
+    description: >-
+      Primary home of the read-only Coinbase CDP API key
+      (coinbase-api-credentials), reflected into haku-sandbox for the Haku
+      balances source. Decoupled from any consuming service (openclaw, which
+      previously held it, is turned down) so the credential survives service
+      suspend/teardown.
