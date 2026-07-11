@@ -227,7 +227,7 @@ resource "forgejo_repository" "ducktape_mirror" {
   mirror          = true
   service         = "git"
   clone_addr      = "https://github.com/agentydragon/ducktape.git"
-  mirror_interval = "0h10m0s"
+  mirror_interval = "10m0s"  # provider normalizes to Go-duration form; "0h10m0s" causes an inconsistent-result error
 }
 
 # Read git credential for the haku-ci runner to fetch the ducktape mirror as a Bazel
