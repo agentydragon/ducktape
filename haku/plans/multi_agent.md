@@ -48,6 +48,11 @@ New local-inference follow-up: <local_dispatch_zone.md>. It adapts the existing 
 perimeter to Ollama-hosted models and adds an active-model scheduler so local workers do
 not thrash model residency by running agents across multiple models at once.
 
+New application follow-up: <kitchen_stocking_subagent.md>. Fleshes out the grocery-order
+bounded-write MCP line above into a first design pass for a kitchen/household-stocking
+subagent (operator, 2026-07-11) — a candidate first real workload for the oai or local zone,
+using the existing `grocy_mcp/eval` harness (already model-agnostic) to pick the tier.
+
 ## The oai zone (step 5)
 
 The middle trust level the two-level design lacked: OpenAI, subscription-billed, trusted
