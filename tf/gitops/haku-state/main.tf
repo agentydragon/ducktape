@@ -204,20 +204,20 @@ resource "terraform_data" "registry_push_secret_refresh" {
 
 # ── Ducktape source mirror for haku-ci's Bazel builds ────────────────────────────────
 # Haku's UI Bazel build consumes ducktape's shared @haku/console-bridge package as a bzlmod
-# `git_override` (haku-state MODULE.bazel). Rather than have haku-ci fetch the agentydragon-owned
-# mirror directly, keep the dependency haku-owned and in-cluster: a private pull-mirror in haku's
-# own namespace. It syncs from the in-cluster `agentydragon/ducktape` (itself a github→forgejo
-# mirror); haku already has read on that repo (granted in tf/gitops/forgejo-agentydragon-repos),
-# so haku's basic-auth embedded in clone_addr is sufficient — no GitHub token and no external
-# egress. `mirror`/`clone_addr` are ForceNew: changing the source recreates the repo.
+# `git_override` (haku-state MODULE.bazel). Give haku its own private mirror so haku-ci fetches a
+# haku-owned repo rather than the agentydragon-owned one. It pull-mirrors directly from the public
+# ducktape GitHub (the upstream source of truth): a public source needs no auth_token, and Forgejo
+# already has egress to github.com (the agentydragon mirror pulls from there too). Single-hop, and
+# decoupled from agentydragon's Forgejo mirror. `mirror`/`clone_addr` are ForceNew: changing the
+# source recreates the repo.
 resource "forgejo_repository" "ducktape_mirror" {
   owner           = forgejo_user.haku.login
   name            = "ducktape"
-  description     = "Haku-owned in-cluster mirror of ducktape, for haku-ci Bazel builds (git_override)."
+  description     = "Haku-owned mirror of ducktape (from public GitHub), for haku-ci Bazel builds (git_override)."
   private         = true
   mirror          = true
   service         = "git"
-  clone_addr      = "http://${forgejo_user.haku.login}:${random_password.haku.result}@forgejo-http.forgejo:3000/agentydragon/ducktape.git"
+  clone_addr      = "https://github.com/agentydragon/ducktape.git"
   mirror_interval = "0h10m0s"
 }
 
