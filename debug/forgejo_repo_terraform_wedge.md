@@ -78,3 +78,26 @@ create/record window being non-atomic for migrate-backed repos.
 "haku/ducktape" }` with a CLEANUP tombstone. Merge → apply reconciles the orphan into state →
 the 5 dependent Kustomizations unfreeze → haku-console rolls to current. Remove the import
 block after Ready.
+
+## Provider bug catalogue (svalabs/forgejo, hit 2026-07-11)
+
+Two distinct bugs in `svalabs/forgejo` surfaced provisioning one mirror repo:
+
+1. **Synchronous migrate + no rollback → orphan on timeout** (the wedge above). `Create` runs
+   `MigrateRepo`, which blocks until the GitHub clone finishes (measured: 3.5 s for a KB repo,
+   77.8 s for a hundreds-of-MB repo). If a path timeout fires before it returns, the client
+   errors while Forgejo keeps the repo — `resp.State.Set` (line 1368) never runs, no rollback,
+   no adopt-on-conflict → permanent "already exists". Report upstream: creation of large mirror
+   repos should be async/resumable or at least idempotent on re-apply.
+
+2. **`mirror_interval` cannot be expressed** — the schema validator requires the regex
+   `^(0|[1-9][0-9]*)h[1-5]?[0-9]m[1-5]?[0-9]s$` (so `0h10m0s` validates, `10m0s` does NOT), but
+   `Apply` normalizes the stored value to Go-duration short form (`10m0s`) and Terraform core
+   then rejects the mismatch: `Provider produced inconsistent result: was "0h10m0s", now
+"10m0s"`. So **no literal survives both phases** — the only value the validator accepts is
+   exactly the one the apply-time normalizer rejects. The repo API even round-trips it as `''`.
+   Workaround (used here): omit the attribute entirely — it is `Optional + Computed`, so the
+   config stops fighting the normalizer and the interval floats to the server value. Cost: the
+   desired 10-min cadence can't be declared in TF; set it out-of-band in Forgejo if the default
+   is too slow for haku-ci freshness. Report upstream: validator and apply-normalizer must agree
+   on one canonical form.
