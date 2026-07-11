@@ -14,6 +14,7 @@ import type { z } from "zod";
 import { zBatchModifyGmailThreadLabelsArgs, zCreateGmailDraftArgs } from "../api/schema.zod.ts";
 import { Field } from "../field.tsx";
 import { fetchGmailThreadPreviews, type GmailThreadPreview } from "../gmail_client.ts";
+import { MailIcon } from "../icons.tsx";
 import { definePreview, type ToolPreview } from "./entry.tsx";
 import { COMPACT_ITEM_LIMIT, firstLines, MoreLine, type PreviewProps } from "./variant.tsx";
 
@@ -21,6 +22,12 @@ export const GMAIL_SERVER_ID = "gmail";
 
 type BatchModifyGmailThreadLabelsArgs = z.infer<typeof zBatchModifyGmailThreadLabelsArgs>;
 type CreateGmailDraftArgs = z.infer<typeof zCreateGmailDraftArgs>;
+
+// A Gmail API thread id resolves directly in the web UI's `#all/` view — the same link the
+// backend builds for thread previews (haku/console/tools/gmail.py `_THREAD_URL`).
+function gmailThreadUrl(threadId: string): string {
+  return `https://mail.google.com/mail/u/0/#all/${threadId}`;
+}
 
 function GmailThreadRow({
   threadId,
@@ -39,45 +46,39 @@ function GmailThreadRow({
     );
   }
   return (
-    <Stack gap={0}>
+    <Stack gap={2}>
       <Anchor href={preview.gmail_url} target="_blank" rel="noreferrer" size="sm">
         {preview.subject ?? "(no subject)"}
       </Anchor>
       {showLabels && preview.current_label_names.length > 0 && (
-        <Text size="xs" c="dimmed">
-          Current labels: {preview.current_label_names.join(", ")}
-        </Text>
+        <Group gap={4}>
+          {preview.current_label_names.map((name) => (
+            <Badge key={name} variant="outline" color="gray" size="sm">
+              {name}
+            </Badge>
+          ))}
+        </Group>
       )}
     </Stack>
   );
 }
 
 function ThreadLabelChanges({ args }: { args: BatchModifyGmailThreadLabelsArgs }) {
+  // One row of pills; each pill's sign + color says which way its label goes — green `+ added`,
+  // red `− removed` — so no separate "Add"/"Remove" heading is needed.
   return (
-    <>
-      {(args.add?.length ?? 0) > 0 && (
-        <Field label="Add labels">
-          <Group gap={4}>
-            {args.add?.map((name) => (
-              <Badge key={name} variant="light" color="teal">
-                {name}
-              </Badge>
-            ))}
-          </Group>
-        </Field>
-      )}
-      {(args.remove?.length ?? 0) > 0 && (
-        <Field label="Remove labels">
-          <Group gap={4}>
-            {args.remove?.map((name) => (
-              <Badge key={name} variant="light" color="red">
-                {name}
-              </Badge>
-            ))}
-          </Group>
-        </Field>
-      )}
-    </>
+    <Group gap={6} align="center">
+      {args.add?.map((name) => (
+        <Badge key={`+${name}`} variant="light" color="teal">
+          + {name}
+        </Badge>
+      ))}
+      {args.remove?.map((name) => (
+        <Badge key={`-${name}`} variant="light" color="red">
+          − {name}
+        </Badge>
+      ))}
+    </Group>
   );
 }
 
@@ -86,7 +87,7 @@ function BatchModifyGmailThreadLabelsPreview({ args, variant }: PreviewProps<Bat
   const [error, setError] = useState<string | null>(null);
 
   // Both variants fetch the thread subjects (and labels) — they're the important human-
-  // readable bit; compact just shows fewer rows and drops the current-label sublines.
+  // readable bit; compact just shows fewer rows and drops the current-label pills.
   useEffect(() => {
     let alive = true;
     setPreviews(null);
@@ -111,22 +112,22 @@ function BatchModifyGmailThreadLabelsPreview({ args, variant }: PreviewProps<Bat
   return (
     <Stack gap="xs">
       <ThreadLabelChanges args={args} />
-      <Field label={`Threads (${args.thread_ids.length})`}>
-        {error ? (
-          <Text size="sm" c="red">
-            {error}
-          </Text>
-        ) : previews === null ? (
-          <Loader size="xs" />
-        ) : (
-          <Stack gap="xs">
+      {error ? (
+        <Text size="sm" c="red">
+          {error}
+        </Text>
+      ) : previews === null ? (
+        <Loader size="xs" />
+      ) : (
+        <Field icon={<MailIcon size={15} />} label={`${args.thread_ids.length} threads`}>
+          <Stack gap={4}>
             {shownIds.map((threadId) => (
               <GmailThreadRow key={threadId} threadId={threadId} preview={previews[threadId]} showLabels={!compact} />
             ))}
             <MoreLine count={args.thread_ids.length - shownIds.length} />
           </Stack>
-        )}
-      </Field>
+        </Field>
+      )}
     </Stack>
   );
 }
@@ -142,18 +143,24 @@ function CompactBody({ body }: { body: string }) {
 }
 
 function CreateGmailDraftPreview({ args, variant }: PreviewProps<CreateGmailDraftArgs>) {
-  // Common trunk: To → Subject → Body; compact clamps the body and drops Cc/thread, detailed
-  // shows the full body plus them.
+  // Subject leads as the draft's title; recipients ride one mail-icon line (cc folded in when
+  // detailed); the body follows unlabelled — clamped compact, full detailed. A reply draft
+  // links to the thread it lands in (useful in both variants) rather than printing the raw
+  // thread id, which is noise — the link's href carries the id for anyone who needs it.
   const detailed = variant === "detailed";
   return (
-    <Stack gap="xs">
-      <Field label="To">{args.to.join(", ")}</Field>
-      {detailed && args.cc && args.cc.length > 0 && <Field label="Cc">{args.cc.join(", ")}</Field>}
-      <Field label="Subject">{args.subject}</Field>
-      <Field label="Body">
-        {detailed ? <pre className="haku-shell-json">{args.body}</pre> : <CompactBody body={args.body} />}
+    <Stack gap={6}>
+      <Text fw={600}>{args.subject}</Text>
+      <Field icon={<MailIcon size={15} />} label="Recipients">
+        {args.to.join(", ")}
+        {detailed && args.cc && args.cc.length > 0 && <Text span c="dimmed">{` · cc ${args.cc.join(", ")}`}</Text>}
       </Field>
-      {detailed && args.thread_id && <Field label="Replying within thread">{args.thread_id}</Field>}
+      {detailed ? <pre className="haku-shell-json">{args.body}</pre> : <CompactBody body={args.body} />}
+      {args.thread_id && (
+        <Anchor href={gmailThreadUrl(args.thread_id)} target="_blank" rel="noreferrer" size="xs">
+          Reply in thread ↗
+        </Anchor>
+      )}
     </Stack>
   );
 }

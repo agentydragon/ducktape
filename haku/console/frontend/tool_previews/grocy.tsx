@@ -20,9 +20,8 @@ import { useEffect, useState } from "react";
 import { z } from "zod";
 
 import { fetchGrocyReference, type GrocyReferenceResponse } from "../grocy_client.ts";
-import { Field } from "../field.tsx";
 import { definePreview, type ToolPreview } from "./entry.tsx";
-import { COMPACT_ITEM_LIMIT, MoreLine, type PreviewProps, type PreviewVariant } from "./variant.tsx";
+import { ActionBadge, COMPACT_ITEM_LIMIT, MoreLine, type PreviewProps, type PreviewVariant } from "./variant.tsx";
 
 export const GROCY_SERVER_ID = "grocy-sf";
 
@@ -151,11 +150,7 @@ function StockAddPreview({ args, variant }: PreviewProps<StockAddArgs>) {
   const shown = variant === "compact" ? args.items.slice(0, COMPACT_ITEM_LIMIT) : args.items;
   return (
     <Stack gap="xs">
-      <Field label="Action">
-        <Badge color="green" variant="light">
-          Add stock
-        </Badge>
-      </Field>
+      <ActionBadge color="green">Add stock</ActionBadge>
       <Stack gap={4}>
         {shown.map((item, i) => (
           <StockAddRow key={i} item={item} reference={reference} />
@@ -192,11 +187,7 @@ function StockConsumePreview({ args, variant }: PreviewProps<StockConsumeArgs>) 
   const shown = variant === "compact" ? args.items.slice(0, COMPACT_ITEM_LIMIT) : args.items;
   return (
     <Stack gap="xs">
-      <Field label="Action">
-        <Badge color="red" variant="light">
-          Remove stock
-        </Badge>
-      </Field>
+      <ActionBadge color="red">Remove stock</ActionBadge>
       <Stack gap={4}>
         {shown.map((item, i) => (
           <StockConsumeRow key={i} item={item} reference={reference} />
@@ -286,11 +277,7 @@ function ProductsCreatePreview({ args, variant }: PreviewProps<ProductsCreateArg
   const shown = variant === "compact" ? args.items.slice(0, COMPACT_ITEM_LIMIT) : args.items;
   return (
     <Stack gap="xs">
-      <Field label="Action">
-        <Badge color="blue" variant="light">
-          Create product{args.items.length > 1 ? "s" : ""}
-        </Badge>
-      </Field>
+      <ActionBadge color="blue">Create product{args.items.length > 1 ? "s" : ""}</ActionBadge>
       <Stack gap={6}>
         {shown.map((item, i) => (
           <ProductsCreateRow key={i} item={item} reference={reference} variant={variant} />

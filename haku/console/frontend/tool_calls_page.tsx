@@ -1,59 +1,19 @@
-import { Badge, Button, Group, Loader, Stack, Text, Textarea } from "@mantine/core";
+import { Badge, Button, Group, Loader, Stack, Text } from "@mantine/core";
 import { useCallback, useState } from "react";
 
-import { approvalDisplayFields, shortDate, statusColor, terminalStatusLabel } from "./approval_state.ts";
+import { approvalDisplayFields, statusColor, terminalStatusLabel } from "./approval_state.ts";
 import { approveToolCall, denyToolCall, fetchToolCalls, type ToolCallRecord } from "./client.ts";
 import { Field } from "./field.tsx";
 import { ArrowLeftIcon } from "./icons.tsx";
-import { ACTION_COLOR } from "./theme.ts";
+import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
 import { toastError, toastSuccess } from "./toast.ts";
 import { ToolArgumentsField } from "./tool_arguments_field.tsx";
+import { ToolCallMeta } from "./tool_call_meta.tsx";
 import { useToolCallEvents } from "./tool_call_events.ts";
 import { useVariant, VariantToggle } from "./variant_toggle.tsx";
 
 // Matches the backend's `le=500` cap on GET /api/tool-calls (mcp_approval.py).
 const HISTORY_LIMIT = 500;
-
-function PendingActions({
-  deciding,
-  onApprove,
-  onDeny,
-}: {
-  deciding: boolean;
-  onApprove: () => void;
-  onDeny: (reason?: string) => void;
-}) {
-  const [denyReason, setDenyReason] = useState("");
-  return (
-    <div>
-      <Textarea
-        size="xs"
-        label="Denial reason (optional)"
-        placeholder="Why are you denying this?"
-        autosize
-        minRows={1}
-        maxRows={4}
-        disabled={deciding}
-        value={denyReason}
-        onChange={(e) => setDenyReason(e.currentTarget.value)}
-      />
-      <Group justify="flex-end" gap="xs" mt="xs">
-        <Button
-          size="compact-sm"
-          variant="light"
-          color="red"
-          loading={deciding}
-          onClick={() => onDeny(denyReason.trim() || undefined)}
-        >
-          Deny
-        </Button>
-        <Button size="compact-sm" color={ACTION_COLOR} loading={deciding} onClick={onApprove}>
-          Approve
-        </Button>
-      </Group>
-    </div>
-  );
-}
 
 function ToolCallRow({
   record,
@@ -94,16 +54,8 @@ function ToolCallRow({
             {record.error}
           </Text>
         )}
-        <dl className="haku-shell-fields">
-          {detailed && (
-            <>
-              <div className="haku-shell-field-grid">
-                <Field label="Caller">{fields.callerPrincipal ?? "—"}</Field>
-                <Field label="Requested">{shortDate(fields.createdAt) ?? "—"}</Field>
-              </div>
-              {fields.rationale && <Field label="Rationale">{fields.rationale}</Field>}
-            </>
-          )}
+        <div className="haku-shell-fields">
+          {detailed && fields.rationale && <Field label="Rationale">{fields.rationale}</Field>}
           {fields.denialReason && <Field label="Denial reason">{fields.denialReason}</Field>}
           <ToolArgumentsField
             serverId={fields.serverId}
@@ -113,19 +65,19 @@ function ToolCallRow({
             variant={variant}
           />
           {detailed && record.result && (
-            <details className="haku-shell-disclosure">
-              <summary>Result</summary>
+            <Field label="Result">
               <pre className="haku-shell-json">{JSON.stringify(record.result, null, 2)}</pre>
-            </details>
+            </Field>
           )}
           {detailed && (
-            <details className="haku-shell-disclosure">
-              <summary>Tool call id</summary>
-              <code>{fields.toolCallId}</code>
-            </details>
+            <ToolCallMeta
+              callerPrincipal={fields.callerPrincipal}
+              createdAt={fields.createdAt}
+              toolCallId={fields.toolCallId}
+            />
           )}
-        </dl>
-        {pending && <PendingActions deciding={deciding} onApprove={onApprove} onDeny={onDeny} />}
+        </div>
+        {pending && <PendingToolCallActions busy={deciding} onApprove={onApprove} onDeny={onDeny} />}
       </Stack>
     </section>
   );

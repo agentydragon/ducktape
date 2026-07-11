@@ -1,13 +1,13 @@
-import { ActionIcon, Badge, Button, Group, Indicator, Popover, Stack, Text, Textarea } from "@mantine/core";
+import { ActionIcon, Badge, Button, Group, Indicator, Popover, Stack, Text } from "@mantine/core";
 import { useEffect, useMemo, useState } from "react";
 
 import {
   approvalDisplayFields,
   approvalQueueItems,
+  formatTimestamp,
   geolocationApprovalBody,
   geolocationApprovalTitle,
   recentToolCallCountdown,
-  shortDate,
   statusColor,
   type GeolocationApproval,
   type RecentToolCall,
@@ -16,8 +16,10 @@ import {
 import type { PendingApproval } from "./client.ts";
 import { Field } from "./field.tsx";
 import { HistoryIcon, MapPinIcon, MenuIcon, SettingsIcon } from "./icons.tsx";
+import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
 import { ACTION_COLOR } from "./theme.ts";
 import { ToolArgumentsField } from "./tool_arguments_field.tsx";
+import { ToolCallMeta } from "./tool_call_meta.tsx";
 import { useVariant, VariantToggle } from "./variant_toggle.tsx";
 
 export interface ShellDrawerProps {
@@ -190,7 +192,6 @@ function ToolApprovalCard({
   const [variant, toggleVariant] = useVariant("compact");
   const fields = approvalDisplayFields(approval);
   const armed = useArmed(`card:${approval.tool_call_id}`);
-  const [denyReason, setDenyReason] = useState("");
   const detailed = variant === "detailed";
   return (
     <section className="haku-shell-card">
@@ -220,45 +221,13 @@ function ToolApprovalCard({
           variant={variant}
         />
         {detailed && (
-          <dl className="haku-shell-fields">
-            {(fields.callerPrincipal || fields.createdAt) && (
-              <Field label="Requested">
-                {[fields.callerPrincipal, shortDate(fields.createdAt)].filter(Boolean).join(" · ")}
-              </Field>
-            )}
-            <details className="haku-shell-disclosure">
-              <summary>Tool call id</summary>
-              <code>{fields.toolCallId}</code>
-            </details>
-          </dl>
-        )}
-        <div>
-          <Textarea
-            size="xs"
-            label="Denial reason (optional)"
-            placeholder="Why are you denying this?"
-            autosize
-            minRows={1}
-            maxRows={4}
-            disabled={deciding}
-            value={denyReason}
-            onChange={(e) => setDenyReason(e.currentTarget.value)}
+          <ToolCallMeta
+            callerPrincipal={fields.callerPrincipal}
+            createdAt={fields.createdAt}
+            toolCallId={fields.toolCallId}
           />
-          <Group justify="flex-end" gap="xs" mt="xs">
-            <Button
-              size="compact-xs"
-              variant="light"
-              color="red"
-              disabled={deciding || !armed}
-              onClick={() => onDeny(denyReason.trim() || undefined)}
-            >
-              Deny
-            </Button>
-            <Button size="compact-xs" color={ACTION_COLOR} disabled={deciding || !armed} onClick={onApprove}>
-              Approve
-            </Button>
-          </Group>
-        </div>
+        )}
+        <PendingToolCallActions busy={deciding} armed={armed} onApprove={onApprove} onDeny={onDeny} />
       </Stack>
     </section>
   );
@@ -278,6 +247,7 @@ function GeolocationApprovalCard({
   const [variant, toggleVariant] = useVariant("compact");
   const armed = useArmed(`geo-card:${approval.id}`);
   const detailed = variant === "detailed";
+  const requested = formatTimestamp(approval.createdAt);
   return (
     <section className="haku-shell-card">
       <Stack gap="sm">
@@ -299,8 +269,10 @@ function GeolocationApprovalCard({
           </Group>
         </Group>
         {detailed && (
-          <dl className="haku-shell-fields">
-            <Field label="Requested">{shortDate(approval.createdAt)}</Field>
+          <div className="haku-shell-fields">
+            <Field label="Requested">
+              <span title={requested.title}>{requested.text}</span>
+            </Field>
             {approval.options && (
               <Field label="Options">
                 <pre className="haku-shell-json">{JSON.stringify(approval.options, null, 2)}</pre>
@@ -310,13 +282,13 @@ function GeolocationApprovalCard({
               <summary>Bridge request id</summary>
               <code>{approval.id}</code>
             </details>
-          </dl>
+          </div>
         )}
         <Group justify="flex-end" gap="xs">
-          <Button size="compact-xs" variant="light" color="red" disabled={deciding || !armed} onClick={onDeny}>
+          <Button size="compact-sm" variant="light" color="red" disabled={deciding || !armed} onClick={onDeny}>
             Deny
           </Button>
-          <Button size="compact-xs" color={ACTION_COLOR} disabled={deciding || !armed} onClick={onApprove}>
+          <Button size="compact-sm" color={ACTION_COLOR} disabled={deciding || !armed} onClick={onApprove}>
             Approve
           </Button>
         </Group>
@@ -375,17 +347,20 @@ function RecentToolCallCard({
           variant={variant}
         />
         {detailed && (
-          <dl className="haku-shell-fields">
+          <>
             {record.result && (
-              <Field label="Result">
-                <pre className="haku-shell-json">{JSON.stringify(record.result, null, 2)}</pre>
-              </Field>
+              <div className="haku-shell-fields">
+                <Field label="Result">
+                  <pre className="haku-shell-json">{JSON.stringify(record.result, null, 2)}</pre>
+                </Field>
+              </div>
             )}
-            <details className="haku-shell-disclosure">
-              <summary>Tool call id</summary>
-              <code>{fields.toolCallId}</code>
-            </details>
-          </dl>
+            <ToolCallMeta
+              callerPrincipal={fields.callerPrincipal}
+              createdAt={fields.createdAt}
+              toolCallId={fields.toolCallId}
+            />
+          </>
         )}
         <RecentCountdown recent={recent} nowMs={nowMs} />
         <Group justify="flex-end" gap="xs">

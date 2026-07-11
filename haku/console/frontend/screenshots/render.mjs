@@ -19,7 +19,15 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // viewport screenshot — not an #app element shot — is what captures them. Each scene is a
 // separate page load driven by window.__SCENE__ (see harness.tsx).
 const SCENES = [
-  { name: "history", viewport: { width: 1200, height: 1500 } },
+  // The history page, showing both row states in one shot: expand the first row and open its
+  // Metadata disclosure, then expand the next row (whose first "Details" button the prior expand
+  // walked us onto) so a completed call's Result field shows too, leaving the rest compact.
+  // `::-p-text` walks each subsequent "Details" as prior rows flip their label to "Compact".
+  {
+    name: "history",
+    viewport: { width: 1200, height: 1500 },
+    clicks: ["button::-p-text(Details)", "summary::-p-text(Metadata)", "button::-p-text(Details)"],
+  },
   { name: "drawer", viewport: { width: 1200, height: 900 } },
   { name: "settings", viewport: { width: 1200, height: 900 } },
   // Every implemented tool-call preview, compact | detailed side by side — tall, so give it room.
@@ -84,7 +92,7 @@ const browser = await launchPuppeteerBrowser({
   ],
 });
 try {
-  for (const { name, viewport, click } of SCENES) {
+  for (const { name, viewport, click, clicks } of SCENES) {
     const page = await browser.newPage();
     await page.setViewport({ ...viewport, deviceScaleFactor: 2 });
     await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
@@ -93,10 +101,11 @@ try {
     // Let Mantine mount and layout settle, and outlast the approval buttons' 400ms arm
     // delay so they render enabled (animations are reduced above).
     await new Promise((r) => setTimeout(r, 700));
-    // Some scenes need a click to reveal a popover whose open state is internal to the
-    // component (e.g. the location-sharing control); do it, then let the dropdown settle.
-    if (click) {
-      await page.click(click);
+    // Some scenes need clicks to reveal state internal to a component: a popover's open state
+    // (location-sharing control) or history rows toggled into their detailed view.
+    // Each click re-renders the DOM, so re-settle before the next one.
+    for (const selector of clicks ?? (click ? [click] : [])) {
+      await page.click(selector);
       await new Promise((r) => setTimeout(r, 300));
     }
     const dest = join(outDir, `${name}.png`);

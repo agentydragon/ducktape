@@ -6,12 +6,11 @@
 // identity (cluster_auth_mode=passthrough) once approved, so rendering the exact target
 // unambiguously matters more than for narrower-scoped tools.
 
-import { Badge, Group, Stack, Text } from "@mantine/core";
+import { Group, Stack, Text } from "@mantine/core";
 import { z } from "zod";
 
-import { Field } from "../field.tsx";
 import { definePreview, type ToolPreview } from "./entry.tsx";
-import { clampBlock, type PreviewProps } from "./variant.tsx";
+import { ActionBadge, clampBlock, type PreviewProps } from "./variant.tsx";
 
 export const KUBECTL_SERVER_ID = "kubectl-passthrough-mcp";
 
@@ -44,14 +43,8 @@ function ResourcesApplyPreview({ args, variant }: PreviewProps<ResourcesCreateOr
   const resource = variant === "compact" ? clampBlock(args.resource, 3) : args.resource;
   return (
     <Stack gap="xs">
-      <Field label="Action">
-        <Badge color="blue" variant="light">
-          Apply
-        </Badge>
-      </Field>
-      <Field label="Resource">
-        <pre className="haku-shell-json">{resource}</pre>
-      </Field>
+      <ActionBadge color="blue">Apply</ActionBadge>
+      <pre className="haku-shell-json">{resource}</pre>
     </Stack>
   );
 }
@@ -69,24 +62,18 @@ function DeleteTargetPreview({
 }) {
   return (
     <Stack gap="xs">
-      <Field label="Action">
-        <Badge color="red" variant="filled">
-          Delete
-        </Badge>
-      </Field>
-      <Field label="Target" mono>
-        <Group gap={4}>
-          <Text span fw={600}>
-            {kind}
+      <ActionBadge color="red">Delete</ActionBadge>
+      <Group gap={4} className="haku-shell-mono">
+        <Text span fw={600}>
+          {kind}
+        </Text>
+        <Text span>{name}</Text>
+        {namespace && (
+          <Text span c="dimmed">
+            in {namespace}
           </Text>
-          <Text span>{name}</Text>
-          {namespace && (
-            <Text span c="dimmed">
-              in {namespace}
-            </Text>
-          )}
-        </Group>
-      </Field>
+        )}
+      </Group>
       {gracePeriodSeconds === 0 && (
         <Text size="sm" c="red">
           Immediate deletion (grace period 0) — no termination grace.

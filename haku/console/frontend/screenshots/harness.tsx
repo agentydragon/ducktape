@@ -98,6 +98,8 @@ function sceneElement(scene: string) {
       return <ShellDrawer {...drawerProps} />;
     case "previews":
       return <PreviewGallery />;
+    // The history page; render.mjs expands its first rows into their detailed state (opening the
+    // Metadata disclosure) with a click sequence, so one shot shows both compact and detailed rows.
     default:
       return <ToolCallsPage onBack={noop} />;
   }

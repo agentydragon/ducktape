@@ -141,6 +141,33 @@ export function shortDate(value: string | null | undefined): string | null {
   return new Date(value).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
 
+const _ABS_DATETIME = new Intl.DateTimeFormat([], { dateStyle: "medium", timeStyle: "short" });
+const _TIME = new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit" });
+const _MONTH_DAY = new Intl.DateTimeFormat([], { month: "short", day: "numeric" });
+const _MONTH_DAY_YEAR = new Intl.DateTimeFormat([], { month: "short", day: "numeric", year: "numeric" });
+
+const _MINUTE = 60_000;
+const _HOUR = 60 * _MINUTE;
+const _DAY = 24 * _HOUR;
+
+/** A timestamp in a concise, human-readable form (relative when near — "2h ago", "in 30 min",
+ * "yesterday 2:32 PM" — a short date otherwise) with the full locale date+time as `title` for
+ * the element's tooltip. Shared by every card's Requested/Metadata field so they read one way. */
+export function formatTimestamp(value: string, nowMs: number = Date.now()): { text: string; title: string } {
+  const d = new Date(value);
+  const title = _ABS_DATETIME.format(d);
+  const diffMs = d.getTime() - nowMs; // >0 future, <0 past
+  const absMs = Math.abs(diffMs);
+  const ago = (near: string): string => (diffMs < 0 ? `${near} ago` : `in ${near}`);
+  if (absMs < _MINUTE) return { text: "just now", title };
+  if (absMs < _HOUR) return { text: ago(`${Math.round(absMs / _MINUTE)} min`), title };
+  if (absMs < _DAY) return { text: ago(`${Math.round(absMs / _HOUR)}h`), title };
+  if (absMs < 2 * _DAY) return { text: `${diffMs < 0 ? "yesterday" : "tomorrow"} ${_TIME.format(d)}`, title };
+  if (absMs < 7 * _DAY) return { text: ago(`${Math.round(absMs / _DAY)} days`), title };
+  const sameYear = d.getFullYear() === new Date(nowMs).getFullYear();
+  return { text: (sameYear ? _MONTH_DAY : _MONTH_DAY_YEAR).format(d), title };
+}
+
 export function geolocationApprovalTitle(approval: GeolocationApproval): string {
   return approval.mode === "geolocationWatch" ? "Allow continuous location sharing?" : "Allow location sharing?";
 }

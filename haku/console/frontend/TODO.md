@@ -1,8 +1,13 @@
 # haku/console/frontend TODO
 
-- Render datetimes and durations more concisely yet human-readably across the previews.
-  Today it's scattered: `shortDate` (approval_state.ts) dumps a full locale date+time, and
-  `formatEventDateTime` (tool_previews/google_calendar.tsx) formats all-day dates but still
-  echoes the raw ISO string for timed events. Want relative/short forms ("in 2h",
-  "tomorrow 9am", "Jul 12") with the absolute value on hover, shared by every widget and
-  both preview variants, rather than each field spelling its own format.
+- Unify the action/identity header across registered and unregistered tools. A widget's
+  `ActionBadge` (e.g. grocy's "Remove stock") largely restates the `serverId.toolName` the card
+  header already shows. Want one treatment: a registered tool draws its own custom identity
+  header; an unregistered one renders `serverId.toolName` in the _same_ styling — so the header
+  reads consistently either way instead of the widget duplicating the tool name.
+
+- Let the pending tool-call note (`pending_tool_call_actions.tsx`) ride an **approve**, not just
+  a deny — a general operator remark, not only a denial reason. The agent can already read
+  decision notes back from the tool-call result DB, so this is mostly: persist a reason on the
+  approve path of the decision endpoint (`mcp_approval.py`) and give the field a neutral
+  placeholder when it applies to both outcomes.

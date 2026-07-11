@@ -6,11 +6,11 @@ import { clampBlock, type PreviewVariant } from "./tool_previews/variant.tsx";
 // widget); the detailed view shows it in full.
 const COMPACT_JSON_LINES = 6;
 
-/** Arguments field for a tool-call approval/result: a per-tool-type widget (the tool_previews/
- * per-server modules) when one matches, else the generic raw-JSON view. `variant` picks the
- * compact form (a scannable summary for drawer cards) or the detailed form (the expanded view,
- * which also offers the raw JSON behind a disclosure even when a custom widget rendered it).
- * Shared by the approval drawer and the past-tool-calls history view. */
+/** The arguments of a tool call: a per-tool-type widget (the tool_previews/ per-server modules)
+ * when one matches — rendered directly, since it's self-describing — else the generic raw-JSON
+ * view, which keeps an "Arguments" label so it isn't mistaken for a result. `variant` picks the
+ * compact (skim) or detailed form; detailed always offers the raw JSON behind a disclosure even
+ * when a widget rendered. Shared by the approval drawer and the past-tool-calls history view. */
 export function ToolArgumentsField({
   serverId,
   toolName,
@@ -25,21 +25,24 @@ export function ToolArgumentsField({
   variant: PreviewVariant;
 }) {
   const nice = toolPreview(serverId, toolName, args, variant);
-  return (
-    <Field label="Arguments">
-      {nice ?? (
+  if (!nice) {
+    return (
+      <Field label="Arguments">
         <pre className="haku-shell-json">
           {variant === "compact" ? clampBlock(argumentsJson, COMPACT_JSON_LINES) : argumentsJson}
         </pre>
-      )}
-      {/* When a custom widget rendered, the detailed view still offers the raw JSON behind a
-          disclosure; the raw-JSON fallback above already is the JSON, so it needs none. */}
-      {nice && variant === "detailed" && (
+      </Field>
+    );
+  }
+  return (
+    <>
+      {nice}
+      {variant === "detailed" && (
         <details className="haku-shell-disclosure">
           <summary>Raw arguments</summary>
           <pre className="haku-shell-json">{argumentsJson}</pre>
         </details>
       )}
-    </Field>
+    </>
   );
 }

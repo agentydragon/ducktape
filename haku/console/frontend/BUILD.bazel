@@ -158,6 +158,26 @@ js_library(
 )
 
 js_library(
+    name = "tool_call_meta",
+    srcs = ["tool_call_meta.tsx"],
+    deps = [
+        ":approval_state",
+        ":field",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "pending_tool_call_actions",
+    srcs = ["pending_tool_call_actions.tsx"],
+    deps = [
+        ":theme",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
     name = "variant_toggle",
     srcs = ["variant_toggle.tsx"],
     deps = [
@@ -175,8 +195,10 @@ js_library(
         ":client",
         ":field",
         ":icons",
+        ":pending_tool_call_actions",
         ":theme",
         ":tool_arguments_field",
+        ":tool_call_meta",
         ":variant_toggle",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -191,10 +213,11 @@ js_library(
         ":client",
         ":field",
         ":icons",
-        ":theme",
+        ":pending_tool_call_actions",
         ":toast",
         ":tool_arguments_field",
         ":tool_call_events",
+        ":tool_call_meta",
         ":variant_toggle",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -281,11 +304,13 @@ filegroup(
         "index.html",
         "main.tsx",
         "open_external.ts",
+        "pending_tool_call_actions.tsx",
         "routing.ts",
         "settings_page.tsx",
         "theme.ts",
         "toast.ts",
         "tool_arguments_field.tsx",
+        "tool_call_meta.tsx",
         "tool_calls_page.tsx",
         "variant_toggle.tsx",
         "//haku/console/frontend/tool_previews:tailwind_srcs",

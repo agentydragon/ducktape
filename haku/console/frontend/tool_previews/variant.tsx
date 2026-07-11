@@ -4,7 +4,8 @@
 // first few lines. A **detailed** preview is the full form shown in the expanded detail
 // view. Leaf module (no widget deps) so index.tsx and every widget can import the type
 // without a cycle.
-import { Text } from "@mantine/core";
+import { Badge, Text } from "@mantine/core";
+import type { ReactNode } from "react";
 
 export type PreviewVariant = "compact" | "detailed";
 
@@ -15,6 +16,17 @@ export type PreviewProps<Args> = { args: Args; variant: PreviewVariant };
 // In compact previews, list-shaped arguments show only the first few items; the rest
 // collapse to a single "… +N more" line so a card stays scannable.
 export const COMPACT_ITEM_LIMIT = 3;
+
+/** The action a widget performs, as one colored badge — the house form for every preview's
+ * verb (green create/add, red destructive/remove, blue/gray neutral). No label above it: the
+ * badge *is* the label. */
+export function ActionBadge({ color, children }: { color: string; children: ReactNode }) {
+  return (
+    <Badge color={color} variant="light">
+      {children}
+    </Badge>
+  );
+}
 
 /** A dimmed "… +N more" line for the items a compact preview elided; renders nothing at 0. */
 export function MoreLine({ count }: { count: number }) {

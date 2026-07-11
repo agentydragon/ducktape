@@ -41,6 +41,7 @@ js_library(
         "//:node_modules/zod",
         "//haku/console/frontend:field",
         "//haku/console/frontend:gmail_client",
+        "//haku/console/frontend:icons",
         "//haku/console/frontend:schema_zod",
     ],
 )
@@ -52,11 +53,11 @@ js_library(
         ":entry",
         ":variant",
         "//:node_modules/@mantine/core",
-        "//:node_modules/date-fns",
         "//:node_modules/react",
         "//:node_modules/zod",
         "//haku/console/frontend:calendar_client",
         "//haku/console/frontend:field",
+        "//haku/console/frontend:icons",
         "//haku/console/frontend:schema_zod",
     ],
 )
@@ -70,7 +71,6 @@ js_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//:node_modules/zod",
-        "//haku/console/frontend:field",
         "//haku/console/frontend:grocy_client",
     ],
 )
@@ -84,7 +84,6 @@ js_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//:node_modules/zod",
-        "//haku/console/frontend:field",
     ],
 )
 
