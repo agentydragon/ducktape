@@ -40,7 +40,7 @@ export function PendingToolCallActions({
         style={{ flex: 1 }}
       />
       <Button
-        size="compact-sm"
+        size="xs"
         variant="light"
         color="red"
         loading={busy}
@@ -49,7 +49,7 @@ export function PendingToolCallActions({
       >
         Deny
       </Button>
-      <Button size="compact-sm" color={SUCCESS_COLOR} loading={busy} disabled={disabled} onClick={onApprove}>
+      <Button size="xs" color={SUCCESS_COLOR} loading={busy} disabled={disabled} onClick={onApprove}>
         Approve
       </Button>
     </Group>
