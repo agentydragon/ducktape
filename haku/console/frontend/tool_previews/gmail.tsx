@@ -15,7 +15,7 @@ import { zBatchModifyGmailThreadLabelsArgs, zCreateGmailDraftArgs } from "../api
 import { Field } from "../field.tsx";
 import { fetchGmailThreadPreviews, type GmailThreadPreview } from "../gmail_client.ts";
 import { definePreview, type ToolPreview } from "./entry.tsx";
-import { COMPACT_ITEM_LIMIT, firstLines, MoreLine, type PreviewVariant } from "./variant.tsx";
+import { COMPACT_ITEM_LIMIT, firstLines, MoreLine, type PreviewProps } from "./variant.tsx";
 
 export const GMAIL_SERVER_ID = "gmail";
 
@@ -81,13 +81,7 @@ function ThreadLabelChanges({ args }: { args: BatchModifyGmailThreadLabelsArgs }
   );
 }
 
-function BatchModifyGmailThreadLabelsPreview({
-  args,
-  variant,
-}: {
-  args: BatchModifyGmailThreadLabelsArgs;
-  variant: PreviewVariant;
-}) {
+function BatchModifyGmailThreadLabelsPreview({ args, variant }: PreviewProps<BatchModifyGmailThreadLabelsArgs>) {
   const [previews, setPreviews] = useState<Record<string, GmailThreadPreview> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -147,7 +141,7 @@ function CompactBody({ body }: { body: string }) {
   );
 }
 
-function CreateGmailDraftPreview({ args, variant }: { args: CreateGmailDraftArgs; variant: PreviewVariant }) {
+function CreateGmailDraftPreview({ args, variant }: PreviewProps<CreateGmailDraftArgs>) {
   // Common trunk: To → Subject → Body; compact clamps the body and drops Cc/thread, detailed
   // shows the full body plus them.
   const detailed = variant === "detailed";
@@ -167,10 +161,6 @@ function CreateGmailDraftPreview({ args, variant }: { args: CreateGmailDraftArgs
 /** Per-tool preview widgets for the `gmail` server's write tools. Read tools have no entry —
  * their args (a query, an id, a format) are self-descriptive, so the raw-JSON fallback serves. */
 export const gmailPreviews = {
-  threads_batch_modify: definePreview(zBatchModifyGmailThreadLabelsArgs, (args, variant) => (
-    <BatchModifyGmailThreadLabelsPreview args={args} variant={variant} />
-  )),
-  drafts_create: definePreview(zCreateGmailDraftArgs, (args, variant) => (
-    <CreateGmailDraftPreview args={args} variant={variant} />
-  )),
+  threads_batch_modify: definePreview(zBatchModifyGmailThreadLabelsArgs, BatchModifyGmailThreadLabelsPreview),
+  drafts_create: definePreview(zCreateGmailDraftArgs, CreateGmailDraftPreview),
 } satisfies Record<string, ToolPreview>;

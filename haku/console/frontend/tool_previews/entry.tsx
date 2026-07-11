@@ -5,7 +5,7 @@
 import type { ReactNode } from "react";
 import type { z } from "zod";
 
-import type { PreviewVariant } from "./variant.tsx";
+import type { PreviewProps, PreviewVariant } from "./variant.tsx";
 
 export type ToolPreview = {
   schema: z.ZodTypeAny;
@@ -15,12 +15,15 @@ export type ToolPreview = {
   render: (args: never, variant: PreviewVariant) => ReactNode;
 };
 
-/** Bind a tool's argument schema to a renderer of that schema's inferred type. The generic
- * checks `render`'s argument against `schema` at each call site. */
+/** Bind a tool's argument schema to the widget that renders it. `Widget` takes the schema's
+ * inferred `args` (checked against `schema` here at the call site) plus the `variant`;
+ * `renderPreview` supplies both. Pass the component directly — this builds the `<Widget/>`
+ * element (a real child component, so the widget's own hooks work). */
 export function definePreview<S extends z.ZodTypeAny>(
   schema: S,
-  render: (args: z.infer<S>, variant: PreviewVariant) => ReactNode
+  Widget: (props: PreviewProps<z.infer<S>>) => ReactNode
 ): ToolPreview {
+  const render = (args: z.infer<S>, variant: PreviewVariant): ReactNode => <Widget args={args} variant={variant} />;
   return { schema, render: render as ToolPreview["render"] };
 }
 

@@ -8,6 +8,10 @@ import { Text } from "@mantine/core";
 
 export type PreviewVariant = "compact" | "detailed";
 
+// The props every top-level preview widget takes: the tool's parsed arguments plus the variant
+// to render. Shared so widgets (and `definePreview`) don't re-spell `{ args; variant }`.
+export type PreviewProps<Args> = { args: Args; variant: PreviewVariant };
+
 // In compact previews, list-shaped arguments show only the first few items; the rest
 // collapse to a single "… +N more" line so a card stays scannable.
 export const COMPACT_ITEM_LIMIT = 3;

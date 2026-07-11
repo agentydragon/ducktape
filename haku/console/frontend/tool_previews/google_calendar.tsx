@@ -13,7 +13,7 @@ import { zCalendarReminder, zCreateCalendarEventArgs, zEventDateTime } from "../
 import { fetchCalendarSummary, type CalendarSummary } from "../calendar_client.ts";
 import { Field } from "../field.tsx";
 import { definePreview, type ToolPreview } from "./entry.tsx";
-import type { PreviewVariant } from "./variant.tsx";
+import type { PreviewProps } from "./variant.tsx";
 
 export const GOOGLE_CALENDAR_SERVER_ID = "google_calendar";
 
@@ -78,7 +78,7 @@ function CalendarField({ calendarId }: { calendarId: string }) {
   );
 }
 
-function CreateCalendarEventPreview({ args, variant }: { args: CreateCalendarEventArgs; variant: PreviewVariant }) {
+function CreateCalendarEventPreview({ args, variant }: PreviewProps<CreateCalendarEventArgs>) {
   // Common trunk: the wrapper + event summary; compact stops at the start time, detailed
   // expands the full when/where/who.
   return (
@@ -115,7 +115,5 @@ function CreateCalendarEventPreview({ args, variant }: { args: CreateCalendarEve
 
 /** Per-tool preview widgets for the `google_calendar` server. */
 export const googleCalendarPreviews = {
-  create_calendar_event: definePreview(zCreateCalendarEventArgs, (args, variant) => (
-    <CreateCalendarEventPreview args={args} variant={variant} />
-  )),
+  create_calendar_event: definePreview(zCreateCalendarEventArgs, CreateCalendarEventPreview),
 } satisfies Record<string, ToolPreview>;

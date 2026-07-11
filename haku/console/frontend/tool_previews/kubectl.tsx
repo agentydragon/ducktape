@@ -11,7 +11,7 @@ import { z } from "zod";
 
 import { Field } from "../field.tsx";
 import { definePreview, type ToolPreview } from "./entry.tsx";
-import { clampBlock, type PreviewVariant } from "./variant.tsx";
+import { clampBlock, type PreviewProps } from "./variant.tsx";
 
 export const KUBECTL_SERVER_ID = "kubectl-passthrough-mcp";
 
@@ -40,7 +40,7 @@ type ResourcesCreateOrUpdateArgs = z.infer<typeof zResourcesCreateOrUpdateArgs>;
 type ResourcesDeleteArgs = z.infer<typeof zResourcesDeleteArgs>;
 type PodsDeleteArgs = z.infer<typeof zPodsDeleteArgs>;
 
-function ResourcesApplyPreview({ args, variant }: { args: ResourcesCreateOrUpdateArgs; variant: PreviewVariant }) {
+function ResourcesApplyPreview({ args, variant }: PreviewProps<ResourcesCreateOrUpdateArgs>) {
   const resource = variant === "compact" ? clampBlock(args.resource, 3) : args.resource;
   return (
     <Stack gap="xs">
@@ -96,7 +96,7 @@ function DeleteTargetPreview({
   );
 }
 
-function ResourcesDeletePreview({ args }: { args: ResourcesDeleteArgs }) {
+function ResourcesDeletePreview({ args }: PreviewProps<ResourcesDeleteArgs>) {
   return (
     <DeleteTargetPreview
       kind={args.kind}
@@ -107,16 +107,14 @@ function ResourcesDeletePreview({ args }: { args: ResourcesDeleteArgs }) {
   );
 }
 
-function PodsDeletePreview({ args }: { args: PodsDeleteArgs }) {
+function PodsDeletePreview({ args }: PreviewProps<PodsDeleteArgs>) {
   return <DeleteTargetPreview kind="Pod" name={args.name} namespace={args.namespace} gracePeriodSeconds={undefined} />;
 }
 
 /** Per-tool preview widgets for the `kubectl-passthrough-mcp` server's highest-stakes tools
  * (apply and delete). */
 export const kubectlPreviews = {
-  resources_create_or_update: definePreview(zResourcesCreateOrUpdateArgs, (args, variant) => (
-    <ResourcesApplyPreview args={args} variant={variant} />
-  )),
-  resources_delete: definePreview(zResourcesDeleteArgs, (args) => <ResourcesDeletePreview args={args} />),
-  pods_delete: definePreview(zPodsDeleteArgs, (args) => <PodsDeletePreview args={args} />),
+  resources_create_or_update: definePreview(zResourcesCreateOrUpdateArgs, ResourcesApplyPreview),
+  resources_delete: definePreview(zResourcesDeleteArgs, ResourcesDeletePreview),
+  pods_delete: definePreview(zPodsDeleteArgs, PodsDeletePreview),
 } satisfies Record<string, ToolPreview>;

@@ -22,7 +22,7 @@ import { z } from "zod";
 import { fetchGrocyReference, type GrocyReferenceResponse } from "../grocy_client.ts";
 import { Field } from "../field.tsx";
 import { definePreview, type ToolPreview } from "./entry.tsx";
-import { COMPACT_ITEM_LIMIT, MoreLine, type PreviewVariant } from "./variant.tsx";
+import { COMPACT_ITEM_LIMIT, MoreLine, type PreviewProps, type PreviewVariant } from "./variant.tsx";
 
 export const GROCY_SERVER_ID = "grocy-sf";
 
@@ -146,7 +146,7 @@ function StockAddRow({ item, reference }: { item: AddItem; reference: GrocyRefer
   );
 }
 
-function StockAddPreview({ args, variant }: { args: StockAddArgs; variant: PreviewVariant }) {
+function StockAddPreview({ args, variant }: PreviewProps<StockAddArgs>) {
   const { reference, error } = useGrocyReference();
   const shown = variant === "compact" ? args.items.slice(0, COMPACT_ITEM_LIMIT) : args.items;
   return (
@@ -187,7 +187,7 @@ function StockConsumeRow({ item, reference }: { item: ConsumeItem; reference: Gr
   );
 }
 
-function StockConsumePreview({ args, variant }: { args: StockConsumeArgs; variant: PreviewVariant }) {
+function StockConsumePreview({ args, variant }: PreviewProps<StockConsumeArgs>) {
   const { reference, error } = useGrocyReference();
   const shown = variant === "compact" ? args.items.slice(0, COMPACT_ITEM_LIMIT) : args.items;
   return (
@@ -281,7 +281,7 @@ function ProductsCreateRow({
   );
 }
 
-function ProductsCreatePreview({ args, variant }: { args: ProductsCreateArgs; variant: PreviewVariant }) {
+function ProductsCreatePreview({ args, variant }: PreviewProps<ProductsCreateArgs>) {
   const { reference, error } = useGrocyReference();
   const shown = variant === "compact" ? args.items.slice(0, COMPACT_ITEM_LIMIT) : args.items;
   return (
@@ -304,11 +304,7 @@ function ProductsCreatePreview({ args, variant }: { args: ProductsCreateArgs; va
 
 /** Per-tool preview widgets for the `grocy-sf` server's stock and product-creation tools. */
 export const grocyPreviews = {
-  stock_add: definePreview(zStockAddArgs, (args, variant) => <StockAddPreview args={args} variant={variant} />),
-  stock_consume: definePreview(zStockConsumeArgs, (args, variant) => (
-    <StockConsumePreview args={args} variant={variant} />
-  )),
-  products_create: definePreview(zProductsCreateArgs, (args, variant) => (
-    <ProductsCreatePreview args={args} variant={variant} />
-  )),
+  stock_add: definePreview(zStockAddArgs, StockAddPreview),
+  stock_consume: definePreview(zStockConsumeArgs, StockConsumePreview),
+  products_create: definePreview(zProductsCreateArgs, ProductsCreatePreview),
 } satisfies Record<string, ToolPreview>;
