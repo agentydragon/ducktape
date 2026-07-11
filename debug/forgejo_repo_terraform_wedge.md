@@ -25,15 +25,25 @@ that was `haku-console`, `haku-workloads`, `haku-agent-worker`, `forgejo-token-r
    hits "already exists". Fixed durably by a **permanent `import` block** — this is why
    `tf/gitops/forgejo-agentydragon-repos/main.tf` pairs `forgejo_repository.ducktape` /
    `.gaffer_private` each with an `import {}`. Idempotent; correct.
-2. **Non-atomic create (the mirror case, new)** — `ducktape_mirror` has `mirror = true`, so the
-   svalabs provider's Create calls Forgejo's **repo-migrate** endpoint: it creates the repo row
-   AND kicks off a full clone of ducktape from GitHub. The repo exists in Forgejo the instant
-   migrate is accepted, but the provider's Create only returns (and TF only writes state) once
-   its call completes. If that window is interrupted — controller apply-timeout, runner pod
-   restart, or the provider erroring on the slow mirror sync — the repo is orphaned: exists in
-   Forgejo, absent from the pg state backend. Next apply: "already exists". A permanent import
-   block can NOT pre-guard this (import of a not-yet-created repo errors), so today's fix is a
-   one-shot import + CLEANUP tombstone (commit be3ca248).
+2. **Non-atomic create (the mirror case, new).** What is **proven** (2026-07-11): the repo was
+   created in Forgejo at 02:44:00 and fully cloned (515 MB, 30 branches, mirror synced 07:52),
+   yet it is absent from the pg state backend — the live plan shows `1 to add`, so TF tries to
+   create it and Forgejo answers "already exists". So: created in Forgejo, never recorded in
+   state. The exact create-time failure is **not in retained controller logs** (rotated), so
+   the record-failure mechanism is a **hypothesis, not confirmed**: the svalabs provider's
+   Create for `mirror = true` calls Forgejo's migrate endpoint (repo row created immediately),
+   then Reads computed fields (`default_branch`, `size`, … all "known after apply"); if that
+   Read raced the in-progress clone and errored on a not-yet-populated field, Create returns an
+   error → TF doesn't persist the resource → orphan. Alternative (not distinguishable from
+   surviving evidence): a controller apply-timeout / runner interruption between the migrate
+   call and state write. To confirm next time: capture the runner logs at first-create, or
+   repro against a scratch mirror repo. A permanent import block can NOT pre-guard this (import
+   of a not-yet-created repo errors), so today's fix is a one-shot import + CLEANUP tombstone
+   (be3ca248).
+
+   Environmental aggravator seen the same night: a sibling module (`forgejo-props`) failed Init
+   with `could not connect to registry.opentofu.org … Client.Timeout` — the controller has
+   flaky egress to the provider registry, which makes mid-operation interruptions more likely.
 
 State backend is `pg` (`tofu-state-db`), so this is not a lost-state-file problem — it's the
 create/record window being non-atomic for migrate-backed repos.
