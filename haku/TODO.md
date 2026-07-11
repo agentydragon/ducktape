@@ -132,6 +132,17 @@ has shipped on the capability tier — see the README.)
   `text`; consider adding quick buttons for common instructions (e.g. "scan Gmail now",
   "CPAP check", "triage open PRs"). Reuses the launch button's existing bearer + egress
   perimeter. Docs: code.claude.com/docs/en/routines.
+- **Fold launch-routine into the MCP tool-call mechanism.** The launch-routine capability
+  (`capabilities.py`, its own CSRF-gated bespoke tier) reinvents what the MCP approval queue
+  already provides: an operator-gated, audited, exact-arguments call that acts on the world.
+  Consider retiring the separate capability tier and exposing routine-launching as an
+  **in-process MCP server** — a "claude-code-web routine launcher", built like
+  `haku.console.tools.google` — whose one `launch_routine` tool flows through the same
+  submit → approve → execute → audit pipeline as every other tool call (the launch bearer stays
+  console-side, unread by Haku, exactly as today). That collapses two consent/audit surfaces into
+  one and gives each launch a ledger entry + result for free. Preserve the property that firing is
+  a genuine operator gesture against trusted chrome (today the shell renders its own confirm) when
+  it becomes an approval-queue item; pairs naturally with the routine-runs listing panel above.
 
 ## Managed Agents runtimes — per-runtime TODOs
 

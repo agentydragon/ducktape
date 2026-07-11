@@ -24,7 +24,7 @@ from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
 from fastmcp import FastMCP
 
-from haku.console import capabilities, mcp_approval
+from haku.console import capabilities, mcp_approval, mcp_operator_oauth
 from haku.console.config import Settings
 from haku.console.models import ConfigResponse
 from haku.console.tools import gmail as gmail_tools, google_calendar as google_calendar_tools, grocy as grocy_tools
@@ -69,7 +69,7 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.settings = settings
     app.state.tool_call_ledger = mcp_approval.PostgresToolCallLedger(database_url) if database_url is not None else None
     app.state.mcp_operator_oauth_store = (
-        mcp_approval.PostgresMcpOperatorOAuthStore(database_url) if database_url is not None else None
+        mcp_operator_oauth.PostgresMcpOperatorOAuthStore(database_url) if database_url is not None else None
     )
     # Two in-process MCP servers (gmail, google_calendar) built from the one mounted
     # haku_console_google token; each client is also exposed on app.state for its
@@ -130,6 +130,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     app.include_router(capabilities.router)
     app.include_router(mcp_approval.router)
+    app.include_router(mcp_operator_oauth.router)
     app.include_router(gmail_tools.router)
     app.include_router(google_calendar_tools.router)
     app.include_router(grocy_tools.router)

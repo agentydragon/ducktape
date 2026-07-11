@@ -14,7 +14,9 @@ export type ApprovalDecisionResponse = components["schemas"]["ApprovalDecisionRe
 type ApprovalDecisionRequest = components["schemas"]["ApprovalDecisionRequest"];
 export type PendingApproval = components["schemas"]["PendingApproval"];
 export type ToolCallRecord = components["schemas"]["ToolCallRecord"];
-export type McpOperatorAuthStatus = components["schemas"]["McpOperatorAuthStatus"];
+export type McpOperatorAuthStatus =
+  | components["schemas"]["McpOperatorAuthConnected"]
+  | components["schemas"]["McpOperatorAuthUnconnected"];
 export type McpOperatorAuthStartResponse = components["schemas"]["McpOperatorAuthStartResponse"];
 
 // FastAPI error responses are `{detail: string}`; surface that real reason rather

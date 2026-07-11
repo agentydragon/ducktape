@@ -26,7 +26,7 @@ function McpAccountCard({
   onDisconnect: () => void;
 }) {
   const connected = status.status === "connected";
-  const until = shortDate(status.token_expires_at);
+  const until = status.status === "connected" ? shortDate(status.token_expires_at) : null;
   return (
     <section className="haku-shell-card">
       <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">

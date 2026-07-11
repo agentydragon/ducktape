@@ -29,6 +29,18 @@ py_library(
 )
 
 py_library(
+    name = "mcp_config",
+    srcs = ["mcp_config.py"],
+    deps = [
+        ":config",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
     name = "deps",
     srcs = ["deps.py"],
     deps = [
@@ -72,6 +84,25 @@ py_library(
 )
 
 py_library(
+    name = "mcp_operator_oauth",
+    srcs = ["mcp_operator_oauth.py"],
+    data = ["mcp_operator_auth_callback.html"],
+    deps = [
+        ":config",
+        ":database_migrate",
+        ":database_schema",
+        ":deps",
+        ":mcp_config",
+        "@pypi//fastapi",
+        "@pypi//fastapi_csrf_protect",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "mcp_approval",
     srcs = ["mcp_approval.py"],
     deps = [
@@ -79,15 +110,15 @@ py_library(
         ":database_migrate",
         ":database_schema",
         ":deps",
+        ":mcp_config",
+        ":mcp_operator_oauth",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
         "@pypi//fastmcp",
-        "@pypi//httpx",
         "@pypi//mcp",
         "@pypi//psycopg",
         "@pypi//pydantic",
-        "@pypi//pyyaml",
         "@pypi//sqlalchemy",
     ],
 )
@@ -99,6 +130,7 @@ py_library(
         ":capabilities",
         ":config",
         ":mcp_approval",
+        ":mcp_operator_oauth",
         ":models",
         "//haku/console/tools:gmail",
         "//haku/console/tools:google_calendar",
@@ -189,6 +221,7 @@ py_test(
         ":config",
         ":conftest",
         ":mcp_approval",
+        ":mcp_config",
         "//:conftest",
         "//third_party/containers:rlocations",
         "//util:net",

@@ -62,9 +62,10 @@ Core endpoints:
   names reachable servers, and each live MCP server remains the tool schema source.
 - `GET /api/mcp/operator-auth`, `POST /api/mcp/operator-auth/{server_id}/start`,
   `DELETE /api/mcp/operator-auth/{server_id}`, and `GET /api/mcp/operator-auth/callback` —
-  operator account association for MCP servers whose config enables `operator_oauth`. The catalog
-  stays in the console YAML/ConfigMap; Postgres stores only short-lived DCR/PKCE flow state and
-  per-operator token associations.
+  operator account association for MCP servers whose config enables `operator_oauth` (this flow
+  lives in `mcp_operator_oauth.py`, not the approval router). The catalog stays in the console
+  YAML/ConfigMap; Postgres stores only short-lived DCR/PKCE flow state and per-operator token
+  associations.
 - `POST /api/tool-calls` — submit a call with `server_id`, `tool_name`, exact
   `arguments`, and explicit `wait_for_ms`. The console mints the canonical `tool_call_id`.
 - `GET /api/approvals/pending`, `GET /api/approvals/events?after_event_id=...`, and
@@ -165,16 +166,18 @@ non-asset/API path; `app.py`'s dev fallback mirrors that so deep links work loca
 
 ## Layout
 
-| Path               | Role                                                                                                                                                                                                                                |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `app.py`           | FastAPI `create_app`. `GET /api/config`, `GET /healthz`, CSRF config, mounts the capability router. It can serve the SPA for local/direct fallback when `HAKU_CONSOLE_STATIC_DIR` is set.                                           |
-| `capabilities.py`  | Capability-tier router (`/api/capabilities/*`): CSRF-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer and optional per-run text; `GET /csrf` issues the double-submit token. |
-| `mcp_approval.py`  | MCP approval queue router: MCP server reflection, tool-call submit/list/result endpoints, trusted approval decisions, WebSocket notifications, and Postgres-backed audit state in deploy.                                           |
-| `migrations/`      | Alembic migrations for the deployed haku-console database; the console applies them at app startup before serving the API.                                                                                                          |
-| `models.py`        | Pydantic `ConfigResponse` — the `/api/config` response model.                                                                                                                                                                       |
-| `config.py`        | Env settings (`HAKU_CONSOLE_*`).                                                                                                                                                                                                    |
-| `export_schema.py` | Prints the OpenAPI schema; the frontend generates its TypeScript types from it.                                                                                                                                                     |
-| `frontend/`        | React SPA (esbuild bundle) — see `frontend/README.md`.                                                                                                                                                                              |
+| Path                    | Role                                                                                                                                                                                                                                |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app.py`                | FastAPI `create_app`. `GET /api/config`, `GET /healthz`, CSRF config, mounts the capability router. It can serve the SPA for local/direct fallback when `HAKU_CONSOLE_STATIC_DIR` is set.                                           |
+| `capabilities.py`       | Capability-tier router (`/api/capabilities/*`): CSRF-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer and optional per-run text; `GET /csrf` issues the double-submit token. |
+| `mcp_approval.py`       | MCP approval queue router: MCP server reflection, tool-call submit/list/result endpoints, trusted approval decisions, WebSocket notifications, and Postgres-backed audit state in deploy.                                           |
+| `mcp_config.py`         | The connected-MCP-server catalog (deploy-time YAML model) plus how to reach each entry: in-process/remote transport and static bearer credential. Shared by `mcp_approval` and `mcp_operator_oauth`.                                |
+| `mcp_operator_oauth.py` | Operator OAuth account linkage for servers that execute as the operator's own account: the DCR/PKCE flow, Postgres token storage/refresh, and the `/api/mcp/operator-auth/*` connect/disconnect/callback endpoints.                 |
+| `migrations/`           | Alembic migrations for the deployed haku-console database; the console applies them at app startup before serving the API.                                                                                                          |
+| `models.py`             | Pydantic `ConfigResponse` — the `/api/config` response model.                                                                                                                                                                       |
+| `config.py`             | Env settings (`HAKU_CONSOLE_*`).                                                                                                                                                                                                    |
+| `export_schema.py`      | Prints the OpenAPI schema; the frontend generates its TypeScript types from it.                                                                                                                                                     |
+| `frontend/`             | React SPA (esbuild bundle) — see `frontend/README.md`.                                                                                                                                                                              |
 
 ## Perimeter / deploy
 

@@ -24,13 +24,8 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from testcontainers.postgres import PostgresContainer
 
-from haku.console.mcp_approval import (
-    AliveServerMetadata,
-    McpMetadataProvider,
-    McpServerEntry,
-    McpToolExecutor,
-    _mcp_result_to_json,
-)
+from haku.console.mcp_approval import AliveServerMetadata, McpMetadataProvider, McpToolExecutor, _mcp_result_to_json
+from haku.console.mcp_config import McpServerEntry
 from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.net import pick_free_port, wait_for_port
 from util.oci import load_oci_image
@@ -516,14 +511,7 @@ def test_operator_oauth_association_drives_approved_tool_execution(make_client, 
     ):
         before = client.get("/api/mcp/operator-auth", headers={"X-authentik-username": "operator@example.com"}).json()
         assert before["associations"] == [
-            {
-                "server_id": "grocy-sf",
-                "status": "unconnected",
-                "operator_principal": "operator@example.com",
-                "connected_at": None,
-                "token_expires_at": None,
-                "scope": None,
-            }
+            {"server_id": "grocy-sf", "status": "unconnected", "operator_principal": "operator@example.com"}
         ]
 
         started = client.post(

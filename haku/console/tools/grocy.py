@@ -22,7 +22,8 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from haku.console.deps import SettingsDep
-from haku.console.mcp_approval import OAuthStoreDep, operator_authenticated_client
+from haku.console.mcp_approval import operator_authenticated_client
+from haku.console.mcp_operator_oauth import OAuthStoreDep
 
 GROCY_SF_SERVER_ID = "grocy-sf"
 
