@@ -39,10 +39,16 @@ that was `haku-console`, `haku-workloads`, `haku-agent-worker`, `forgejo-token-r
    Proven for this incident: repo created 02:44:00, fully cloned by 07:52 (515 MB, 30
    branches); state lacks it (live plan = `1 to add`). The exact 02:44 error text rotated out
    of logs, but the only code path that fits is a MigrateRepo failure — and the fitting cause
-   for _this_ repo is a **client-side timeout on the synchronous migrate call**: the Forgejo
-   SDK holds the HTTP request open until the (large) GitHub clone finishes, blows its timeout,
-   returns an error — i.e. the operator's original "because it was still cloning" instinct,
-   via the migrate _call_ timing out rather than a post-create read. Aggravator seen the same
+   for _this_ repo is a **timeout on the synchronous migrate call**, which is now **empirically
+   proven** (2026-07-11, live migrate probes against this Forgejo): the migrate API blocks
+   until the clone completes, duration scaling by repo size — octocat/Hello-World (~KB) in
+   **3.5 s**, hashicorp/terraform (hundreds of MB) in **77.8 s**, both returning `empty: false`
+   (fully cloned within the call). A 515 MB repo blocks longer; 77 s already brushes common
+   60 s proxy/ingress defaults, so the likely tripped timeout is the gateway response timeout
+   (or the runner context), not necessarily the SDK. If any such timeout is below the clone
+   duration, the client errors while Forgejo finishes — the operator's "because it was still
+   cloning." Not yet pinned: which specific timeout fired at 02:44 (needs the rotated logs or a
+   size-matched repro). Aggravator seen the same
    night: sibling module `forgejo-props` failed Init with `could not connect to
 registry.opentofu.org … Client.Timeout`, so the controller had flaky egress then. A
    permanent import block can't pre-guard a to-be-created repo, so today's fix is a one-shot
