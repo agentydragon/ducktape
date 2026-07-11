@@ -57,10 +57,10 @@ locals {
     for m in ["glm-4.5", "glm-4.5-air", "glm-4.6", "glm-4.7", "glm-5", "glm-5-turbo", "glm-5.1", "glm-5.2"] :
     "${m}-anthropic"
   ]
-  # Only the three models the Codex/ChatGPT-account backend actually serves
+  # Only the models the Codex/ChatGPT-account backend actually serves
   # (see _CHATGPT_MODELS in generate_litellm.py).
   oai_lane_models = [
-    for m in ["gpt-5.4", "gpt-5.5", "gpt-5.3-codex-spark"] :
+    for m in ["gpt-5.4", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.3-codex-spark"] :
     "${m}-chatgpt"
   ]
   # Real Anthropic models (ANTHROPIC_MODELS in generate_litellm.py) — the

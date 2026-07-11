@@ -59,7 +59,7 @@ async def test_unknown_zone_rejected(client, haku_headers):
 
 
 async def test_model_outside_zone_allowlist_rejected(client, haku_headers):
-    response = await client.post("/jobs", json=_REQUEST | {"model": "gpt-5.5-chatgpt"}, headers=haku_headers)
+    response = await client.post("/jobs", json=_REQUEST | {"model": "gpt-5.6-sol-chatgpt"}, headers=haku_headers)
     assert response.status_code == 422
 
 

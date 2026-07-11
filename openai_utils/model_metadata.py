@@ -1,14 +1,15 @@
 """Unified OpenAI model metadata: pricing, context limits, and capabilities.
 
 Data provenance:
-  - Pricing: https://openai.com/api/pricing/ (accessed 2025-11-24)
+  - GPT-5.6 pricing and limits: https://developers.openai.com/api/docs/models/ (accessed 2026-07-11)
+  - Other pricing: https://openai.com/api/pricing/ (accessed 2025-11-24)
   - Context limits: Web search 2025-11-30
     - GPT-5: https://allthings.how/gpt-5-context-window-limits-and-usage-in-chatgpt-and-api/
     - General: https://www.scriptbyai.com/token-limit-openai-chatgpt/
     - Community reports: https://community.openai.com/t/huge-gpt-5-documentation-gap-flaw-causing-bugs-input-tokens-exceed-the-configured-limit-of-272-000-tokens/1344734
   - Note: OpenAI API /v1/models endpoint does NOT expose context_window or max_output fields
 
-Last updated: 2025-12-08
+Last updated: 2026-07-10
 """
 
 from __future__ import annotations

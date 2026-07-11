@@ -24,9 +24,9 @@ let
   # profiles live in localModelSettings (opt-in via ducktape.codex.localModels);
   # the writable-roots sandbox block is appended only under workspace-write.
   baseSettings = {
-    model = "gpt-5.5";
-    model_reasoning_effort = "xhigh";
-    plan_mode_reasoning_effort = "xhigh";
+    model = "gpt-5.6-sol";
+    model_reasoning_effort = "medium";
+    plan_mode_reasoning_effort = "medium";
 
     features = {
       streamable_shell = true;

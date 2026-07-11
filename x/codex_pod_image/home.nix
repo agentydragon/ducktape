@@ -131,7 +131,7 @@ in
     # LiteLLM virtual key (LITELLM_API_KEY, from the reflected litellm-key-codex-pod
     # secret; see deployment.yaml + tf/gitops/litellm-keys). wire_api=responses:
     # LiteLLM serves these models over the Responses API (streaming-only).
-    model = "gpt-5.5-chatgpt";
+    model = "gpt-5.6-sol-chatgpt";
     model_provider = "litellm";
     model_providers.litellm = {
       name = "Cluster LiteLLM";
