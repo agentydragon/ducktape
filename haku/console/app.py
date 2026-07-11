@@ -96,7 +96,7 @@ def create_app(settings: Settings) -> FastAPI:
     # `launch_routine` config/secret; independent of the Google grant above.
     if settings.launch_routine is not None:
         in_process_servers[routine_tools.HAKU_ROUTINE_SERVER_ID] = routine_tools.build_mcp(
-            routine_tools.build_routine_launcher(settings.launch_routine)
+            routine_tools.RoutineLauncher(settings.launch_routine)
         )
     app.state.tool_call_event_hub = tool_call_event_hub
     app.state.tool_call_executor = mcp_approval.McpToolExecutor(in_process_servers)

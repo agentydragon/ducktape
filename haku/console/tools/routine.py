@@ -89,7 +89,3 @@ def build_mcp(launcher: RoutineLauncher) -> FastMCP:
         return await launcher.launch(text)
 
     return mcp
-
-
-def build_routine_launcher(config: LaunchRoutineConfig) -> RoutineLauncher:
-    return RoutineLauncher(config)
