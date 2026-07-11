@@ -7,6 +7,11 @@
 # `claude` agent account. A Kubernetes Secret in the `haku-sandbox` namespace
 # carries the git credentials, consumed by in-cluster scan runs. Mirrors
 # tf/gitops/augur-evidence. The repo starts empty (auto_init only) — no seed.
+#
+# It also owns a haku-owned in-cluster mirror `haku/ducktape` (a Forgejo pull-mirror)
+# so haku-ci's Bazel build can fetch ducktape source as a bzlmod git_override without
+# depending on the agentydragon-owned mirror — see the `ducktape_mirror` resource below.
+# Both live here because they only need haku's account (already provisioned here).
 
 data "kubernetes_secret" "forgejo_admin" {
   metadata {
@@ -195,6 +200,50 @@ resource "forgejo_repository_action_secret" "registry_push" {
 # rewrite again.
 resource "terraform_data" "registry_push_secret_refresh" {
   triggers_replace = ["2026-07-06-haku-registry-push-token-resync"]
+}
+
+# ── Ducktape source mirror for haku-ci's Bazel builds ────────────────────────────────
+# Haku's UI Bazel build consumes ducktape's shared @haku/console-bridge package as a bzlmod
+# `git_override` (haku-state MODULE.bazel). Rather than have haku-ci fetch the agentydragon-owned
+# mirror directly, keep the dependency haku-owned and in-cluster: a private pull-mirror in haku's
+# own namespace. It syncs from the in-cluster `agentydragon/ducktape` (itself a github→forgejo
+# mirror); haku already has read on that repo (granted in tf/gitops/forgejo-agentydragon-repos),
+# so haku's basic-auth embedded in clone_addr is sufficient — no GitHub token and no external
+# egress. `mirror`/`clone_addr` are ForceNew: changing the source recreates the repo.
+resource "forgejo_repository" "ducktape_mirror" {
+  owner           = forgejo_user.haku.login
+  name            = "ducktape"
+  description     = "Haku-owned in-cluster mirror of ducktape, for haku-ci Bazel builds (git_override)."
+  private         = true
+  mirror          = true
+  service         = "git"
+  clone_addr      = "http://${forgejo_user.haku.login}:${random_password.haku.result}@forgejo-http.forgejo:3000/agentydragon/ducktape.git"
+  mirror_interval = "0h10m0s"
+}
+
+# Read git credential for the haku-ci runner to fetch the ducktape mirror as a Bazel
+# git_override. Delivered as an Actions secret the bazel-ci workflow reads
+# (`${{ secrets.DUCKTAPE_MIRROR_READ_TOKEN }}`) and writes into git's credential store before the
+# bazel gate. It is haku's own credential (haku owns the mirror) — same rationale and read-back
+# caveat as REGISTRY_PUSH_TOKEN above, kept as a distinct secret so git-clone auth stays decoupled
+# from the registry push token.
+resource "forgejo_repository_action_secret" "ducktape_mirror_read" {
+  repository_id = forgejo_repository.state.id
+  name          = "DUCKTAPE_MIRROR_READ_TOKEN"
+  data          = random_password.haku.result
+
+  lifecycle {
+    replace_triggered_by = [
+      random_password.haku,
+      terraform_data.ducktape_mirror_secret_refresh,
+    ]
+  }
+}
+
+# Same read-back caveat as registry_push_secret_refresh: force one declarative rewrite so the
+# opaque Actions-secret value can't silently drift. Bump the marker to force a re-push later.
+resource "terraform_data" "ducktape_mirror_secret_refresh" {
+  triggers_replace = ["2026-07-11-haku-ducktape-mirror-token-init"]
 }
 
 # Registration token for the contained Forgejo Actions runner (cluster/k8s/haku-ci),
