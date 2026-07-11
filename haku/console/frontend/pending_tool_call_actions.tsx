@@ -1,7 +1,7 @@
 import { Button, Group, Textarea } from "@mantine/core";
 import { useState } from "react";
 
-import { ACTION_COLOR } from "./theme.ts";
+import { SUCCESS_COLOR } from "./theme.ts";
 
 // The approve/deny control for a pending tool call, shared by the drawer approval card and the
 // history row so both spell it one way. The optional free-text reason sits to the LEFT of the
@@ -49,7 +49,7 @@ export function PendingToolCallActions({
       >
         Deny
       </Button>
-      <Button size="compact-sm" color={ACTION_COLOR} loading={busy} disabled={disabled} onClick={onApprove}>
+      <Button size="compact-sm" color={SUCCESS_COLOR} loading={busy} disabled={disabled} onClick={onApprove}>
         Approve
       </Button>
     </Group>

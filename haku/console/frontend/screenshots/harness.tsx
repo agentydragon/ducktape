@@ -69,7 +69,6 @@ function PreviewGallery() {
 
 const drawerProps: ShellDrawerProps = {
   opened: true,
-  onClose: noop,
   pendingApprovals: SAMPLE_PENDING,
   geolocationApprovals: [],
   decidingApprovalIds: [],
@@ -102,7 +101,21 @@ function sceneElement(scene: string) {
         />
       );
     case "drawer":
-      return <ShellDrawer {...drawerProps} />;
+      // Render the drawer in its real shell context so the screenshot catches collisions
+      // with the persistent menu/location toggle stack at the right edge.
+      return (
+        <>
+          <ShellControls
+            pendingCount={drawerProps.pendingApprovals.length + drawerProps.geolocationApprovals.length}
+            opened
+            onToggle={noop}
+            geoGranted
+            tracking
+            onWithdrawGeolocation={noop}
+          />
+          <ShellDrawer {...drawerProps} />
+        </>
+      );
     case "previews":
       return <PreviewGallery />;
     // The history page; render.mjs expands its first rows into their detailed state (opening the

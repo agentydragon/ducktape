@@ -411,7 +411,6 @@ export function HakuUiEmbed({
       />
       <ShellDrawer
         opened={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
         pendingApprovals={toolApprovals}
         geolocationApprovals={geolocationApprovals}
         decidingApprovalIds={decidingApprovalIds}

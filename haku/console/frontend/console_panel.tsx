@@ -17,13 +17,12 @@ import type { PendingApproval } from "./client.ts";
 import { Field } from "./field.tsx";
 import { HistoryIcon, MapPinIcon, MenuIcon, SettingsIcon } from "./icons.tsx";
 import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
-import { ACTION_COLOR } from "./theme.ts";
+import { ACTION_COLOR, SUCCESS_COLOR } from "./theme.ts";
 import { ToolCallCard } from "./tool_call_card.tsx";
 import { useVariant, VariantToggle } from "./variant_toggle.tsx";
 
 export interface ShellDrawerProps {
   opened: boolean;
-  onClose: () => void;
   pendingApprovals: PendingApproval[];
   geolocationApprovals: GeolocationApproval[];
   decidingApprovalIds: readonly string[];
@@ -256,7 +255,7 @@ function GeolocationApprovalCard({
           <Button size="compact-sm" variant="light" color="red" disabled={deciding || !armed} onClick={onDeny}>
             Deny
           </Button>
-          <Button size="compact-sm" color={ACTION_COLOR} disabled={deciding || !armed} onClick={onApprove}>
+          <Button size="compact-sm" color={SUCCESS_COLOR} disabled={deciding || !armed} onClick={onApprove}>
             Approve
           </Button>
         </Group>
@@ -398,16 +397,13 @@ export function ShellDrawer(props: ShellDrawerProps) {
       {props.opened && (
         <aside className="haku-shell-drawer" aria-label="Haku console controls">
           <section className="haku-shell-card haku-shell-drawer-nav">
-            <Group justify="space-between" align="center" className="haku-shell-header">
+            <Group align="center" className="haku-shell-header">
               <Group gap="xs" align="center">
                 <Text fw={700}>Approvals</Text>
                 <Badge color={pendingCount > 0 ? "yellow" : "gray"} variant="light">
                   {pendingCount}
                 </Badge>
               </Group>
-              <Button size="compact-xs" variant="subtle" onClick={props.onClose}>
-                Close
-              </Button>
             </Group>
             <Group grow gap="xs">
               <Button
