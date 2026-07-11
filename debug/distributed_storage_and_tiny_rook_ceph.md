@@ -14,7 +14,7 @@ The trial deliberately leaves production Forgejo and all existing disks untouche
 ```text
 3 OVH HDD nodes
   -> one preallocated 50 GiB file per node
-  -> privileged DaemonSet attaches each file as /dev/rook-ceph-trial-osd
+  -> privileged DaemonSet reserves /dev/loop3 for each file
   -> Rook v1.19.6 / Ceph v20.2.2, one OSD per host
   -> CephFS size=3, min_size=2, kernel CSI client, pod networking
   -> isolated two-replica Forgejo on a 10 GiB RWX PVC
@@ -24,6 +24,12 @@ The OSDs are loop-backed because the HDDs are already formatted XFS and hold
 SeaweedFS/local-path data. Rook explicitly enables loop devices for this test. This
 layout is useful for comparing filesystem paths but is not a production Ceph disk
 design.
+
+The CephCluster selects `/dev/loop3` directly. Rook canonicalizes block-device
+symlinks during inventory, so selecting the friendlier
+`/dev/rook-ceph-trial-osd` symlink causes the available loop device to be
+rejected as not matching the requested device list. The DaemonSet still creates
+that symlink for readiness checks and operator diagnostics.
 
 Manifests live under <../cluster/k8s/rook-ceph-trial/>. The deployment has no RGW,
 RBD pool, public route, DNS record, OAuth integration, or production data.

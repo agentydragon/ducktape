@@ -87,17 +87,17 @@ spec:
     nodes:
       - name: ovh-ns102453
         devices:
-          - name: /dev/rook-ceph-trial-osd
+          - name: /dev/loop3
             config:
               deviceClass: hdd
       - name: ovh-ns103656
         devices:
-          - name: /dev/rook-ceph-trial-osd
+          - name: /dev/loop3
             config:
               deviceClass: hdd
       - name: ovh-ns103711
         devices:
-          - name: /dev/rook-ceph-trial-osd
+          - name: /dev/loop3
             config:
               deviceClass: hdd
   healthCheck:
