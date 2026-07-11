@@ -4,7 +4,9 @@
 // stable local name + a consistent glyph size; callers can still override via props.
 import IconArrowLeft from "@tabler/icons-react/dist/esm/icons/IconArrowLeft.mjs";
 import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
+import IconMapPin from "@tabler/icons-react/dist/esm/icons/IconMapPin.mjs";
 import IconMenu2 from "@tabler/icons-react/dist/esm/icons/IconMenu2.mjs";
+import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
 import type { ComponentProps } from "react";
 
 type TablerIconProps = ComponentProps<typeof IconMenu2>;
@@ -19,7 +21,17 @@ export function HistoryIcon(props: TablerIconProps) {
   return <IconHistory size={20} {...props} />;
 }
 
-/** Left arrow — the history view's back-to-embed control. */
+/** Left arrow — the full-page views' back-to-embed control. */
 export function ArrowLeftIcon(props: TablerIconProps) {
   return <IconArrowLeft size={20} {...props} />;
+}
+
+/** Gear — links to the settings view. */
+export function SettingsIcon(props: TablerIconProps) {
+  return <IconSettings size={20} {...props} />;
+}
+
+/** Map pin — the shell's location-sharing control. */
+export function MapPinIcon(props: TablerIconProps) {
+  return <IconMapPin size={20} {...props} />;
 }

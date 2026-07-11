@@ -166,9 +166,9 @@ export function ToolCallsPage({ onBack }: { onBack: () => void }) {
   );
 
   return (
-    <div className="haku-history-page">
-      <header className="haku-history-header">
-        <div className="haku-history-bar">
+    <div className="haku-page">
+      <header className="haku-page-header">
+        <div className="haku-page-bar">
           <Group gap="xs" wrap="nowrap" align="center">
             <Button size="xs" variant="subtle" color="gray" leftSection={<ArrowLeftIcon />} onClick={onBack}>
               Back
@@ -185,8 +185,8 @@ export function ToolCallsPage({ onBack }: { onBack: () => void }) {
           </Button>
         </div>
       </header>
-      <div className="haku-history-scroll">
-        <div className="haku-history-list">
+      <div className="haku-page-scroll">
+        <div className="haku-page-list">
           {error && (
             <Text c="red" size="sm">
               Failed to load tool calls: {error}

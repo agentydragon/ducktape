@@ -130,9 +130,12 @@ schema-validates, and decides/confirms before acting. It also mirrors the iframe
 (`routeChanged`, validated as a path) into the console's own URL fragment so refresh and deep
 links restore the view. A persistent hamburger button — badged with a callout light when a
 tool call is awaiting approval — opens the shell's own console panel (`console_panel.tsx`),
-trusted chrome hosting shell-owned controls like the approval queue, the past-tool-calls
-link, the location-sharing stop/withdraw, and MCP account connect/reconnect/disconnect
-controls. See <docs/containment.md>.
+trusted chrome hosting the approval queue plus nav links to the full-page past-tool-calls
+history and settings views. Two shell-owned controls live outside the drawer: the
+location-sharing pin sits directly under the hamburger (shown only while consent is held,
+with a live indicator when location is actively read, and a popover carrying the
+stop/withdraw kill switch), and MCP account connect/reconnect/disconnect moved to the
+full-page settings view (`/settings`) since it's rarely touched. See <docs/containment.md>.
 
 ## Past tool calls — full-page history
 

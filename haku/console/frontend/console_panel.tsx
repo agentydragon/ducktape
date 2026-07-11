@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Button, Group, Indicator, SegmentedControl, Stack, Text, Textarea } from "@mantine/core";
+import { ActionIcon, Badge, Button, Group, Indicator, Popover, Stack, Text, Textarea } from "@mantine/core";
 import type { KeyboardEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -14,18 +14,14 @@ import {
   type RecentToolCall,
   terminalStatusLabel,
 } from "./approval_state.ts";
-import type { McpOperatorAuthStatus, PendingApproval } from "./client.ts";
+import type { PendingApproval } from "./client.ts";
 import { Field } from "./field.tsx";
-import { HistoryIcon, MenuIcon } from "./icons.tsx";
+import { HistoryIcon, MapPinIcon, MenuIcon, SettingsIcon } from "./icons.tsx";
 import { ACTION_COLOR } from "./theme.ts";
 import { ToolArgumentsField } from "./tool_arguments_field.tsx";
 
-export type ShellDrawerTab = "approvals" | "access";
-
 export interface ShellDrawerProps {
   opened: boolean;
-  activeTab: ShellDrawerTab;
-  onOpenTab: (tab: ShellDrawerTab) => void;
   onClose: () => void;
   pendingApprovals: PendingApproval[];
   geolocationApprovals: GeolocationApproval[];
@@ -41,19 +37,18 @@ export interface ShellDrawerProps {
   onDenyGeolocation: (approval: GeolocationApproval) => void;
   onDismissRecentToolCall: (toolCallId: string) => void;
   onOpenToolCalls: () => void;
-  geoGranted: boolean;
-  tracking: boolean;
-  onWithdrawGeolocation: () => void;
-  mcpAuthStatuses: McpOperatorAuthStatus[];
-  onConnectMcp: (serverId: string) => void;
-  onDisconnectMcp: (serverId: string) => void;
-  onRefreshMcp: () => void;
+  onOpenSettings: () => void;
 }
 
 export interface ShellControlsProps {
   pendingCount: number;
   opened: boolean;
   onToggle: () => void;
+  // Location-sharing control (rendered only when the standing grant is held): the map-pin
+  // popover under the hamburger, with a live indicator while a watch is actively reading.
+  geoGranted: boolean;
+  tracking: boolean;
+  onWithdrawGeolocation: () => void;
 }
 
 // zIndex maxed so shell chrome sits above the full-page iframe; controls are one below.
@@ -94,12 +89,75 @@ function RecentCountdown({ recent, nowMs }: { recent: RecentToolCall; nowMs: num
   );
 }
 
-// The one persistent piece of shell chrome over the framed haku-ui: a generic panel
-// toggle. The count of pending approvals surfaces as a pulsing red callout on the icon —
-// a "something needs you" light — without spelling the drawer's contents onto the button.
-export function ShellControls({ pendingCount, opened, onToggle }: ShellControlsProps) {
+// The location-sharing control: a map-pin under the hamburger, shown only while the shell
+// holds the standing grant. A pulsing teal indicator dot marks that a watch is *actively*
+// reading location right now (`tracking`); the plain pin means sharing is merely allowed.
+// Its popover carries the state and the stop/withdraw kill switch (out of the drawer, since
+// it's a rare one-tap action best reachable straight from the chrome).
+function LocationControl({ tracking, onWithdraw }: { tracking: boolean; onWithdraw: () => void }) {
+  const [opened, setOpened] = useState(false);
   return (
-    <Group className="haku-shell-controls" gap="xs" style={{ zIndex: PANEL_Z - 1 }}>
+    <Popover opened={opened} onChange={setOpened} position="left" withArrow shadow="md" width={248}>
+      <Popover.Target>
+        <Indicator color="teal" size={10} offset={4} processing disabled={!tracking} withBorder>
+          <ActionIcon
+            size="lg"
+            variant="default"
+            color={ACTION_COLOR}
+            onClick={() => setOpened((o) => !o)}
+            aria-label={tracking ? "Location sharing: live" : "Location sharing: allowed"}
+          >
+            <MapPinIcon />
+          </ActionIcon>
+        </Indicator>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <Stack gap="xs">
+          <Group justify="space-between" align="center" wrap="nowrap">
+            <Text fw={600} size="sm">
+              Location sharing
+            </Text>
+            <Badge color={tracking ? "teal" : "blue"} variant="light">
+              {tracking ? "Live" : "Allowed"}
+            </Badge>
+          </Group>
+          <Text size="xs" c="dimmed">
+            {tracking
+              ? "Haku's UI is reading your location right now."
+              : "Haku's UI may read your location until you withdraw consent."}
+          </Text>
+          <Button
+            size="compact-sm"
+            variant="light"
+            color="red"
+            fullWidth
+            onClick={() => {
+              onWithdraw();
+              setOpened(false);
+            }}
+          >
+            {tracking ? "Stop & withdraw" : "Withdraw"}
+          </Button>
+        </Stack>
+      </Popover.Dropdown>
+    </Popover>
+  );
+}
+
+// The persistent shell chrome over the framed haku-ui, stacked top-right: a generic panel
+// toggle (its pending-approval count surfaces as a pulsing red callout — a "something needs
+// you" light, without spelling the drawer's contents onto the button) and, when location is
+// shared, the location-sharing pin below it.
+export function ShellControls({
+  pendingCount,
+  opened,
+  onToggle,
+  geoGranted,
+  tracking,
+  onWithdrawGeolocation,
+}: ShellControlsProps) {
+  return (
+    <Stack className="haku-shell-controls" gap="xs" align="flex-end" style={{ zIndex: PANEL_Z - 1 }}>
       <Indicator
         color="red"
         size={16}
@@ -118,7 +176,8 @@ export function ShellControls({ pendingCount, opened, onToggle }: ShellControlsP
           <MenuIcon />
         </ActionIcon>
       </Indicator>
-    </Group>
+      {geoGranted && <LocationControl tracking={tracking} onWithdraw={onWithdrawGeolocation} />}
+    </Stack>
   );
 }
 
@@ -662,157 +721,47 @@ function ApprovalsTab({
   );
 }
 
-function AccessTab({
-  geoGranted,
-  tracking,
-  onWithdrawGeolocation,
-  mcpAuthStatuses,
-  onConnectMcp,
-  onDisconnectMcp,
-  onRefreshMcp,
-}: Pick<
-  ShellDrawerProps,
-  | "geoGranted"
-  | "tracking"
-  | "onWithdrawGeolocation"
-  | "mcpAuthStatuses"
-  | "onConnectMcp"
-  | "onDisconnectMcp"
-  | "onRefreshMcp"
->) {
-  return (
-    <Stack gap="md">
-      <section className="haku-shell-card">
-        <Group justify="space-between" align="center" gap="sm" wrap="nowrap">
-          <Text fw={600} size="sm">
-            Location sharing
-          </Text>
-          <Group gap="xs" justify="flex-end" wrap="nowrap">
-            <Badge color={tracking ? "teal" : geoGranted ? "blue" : "gray"} variant="light">
-              {tracking ? "Live" : geoGranted ? "Allowed" : "Off"}
-            </Badge>
-            {geoGranted && (
-              <Button size="compact-xs" variant="light" color="red" onClick={onWithdrawGeolocation}>
-                {tracking ? "Stop & withdraw" : "Withdraw"}
-              </Button>
-            )}
-          </Group>
-        </Group>
-      </section>
-      <section className="haku-shell-card">
-        <Group justify="space-between" align="center">
-          <Text fw={600} size="sm">
-            MCP accounts
-          </Text>
-          <Button size="compact-xs" variant="subtle" onClick={onRefreshMcp}>
-            Refresh
-          </Button>
-        </Group>
-        <Stack gap="sm" mt="sm">
-          {mcpAuthStatuses.length === 0 ? (
-            <Text size="sm" c="dimmed">
-              No operator-linked MCP servers are configured.
-            </Text>
-          ) : (
-            mcpAuthStatuses.map((status) => (
-              <div key={status.server_id} className="haku-shell-subcard">
-                <Group justify="space-between" align="flex-start" gap="xs">
-                  <Stack gap={2}>
-                    <Text size="sm" fw={500}>
-                      {status.server_id}
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      {status.status === "connected"
-                        ? `Linked for ${status.operator_principal}${
-                            shortDate(status.token_expires_at) ? ` until ${shortDate(status.token_expires_at)}` : ""
-                          }`
-                        : `Not linked for ${status.operator_principal}`}
-                    </Text>
-                  </Stack>
-                  <Badge color={status.status === "connected" ? "teal" : "gray"} variant="light">
-                    {status.status === "connected" ? "Connected" : "Unconnected"}
-                  </Badge>
-                </Group>
-                <Group justify="flex-end" gap="xs" mt="xs">
-                  {status.status === "connected" ? (
-                    <>
-                      <Button size="compact-xs" variant="light" onClick={() => onConnectMcp(status.server_id)}>
-                        Reconnect
-                      </Button>
-                      <Button
-                        size="compact-xs"
-                        variant="subtle"
-                        color="red"
-                        onClick={() => onDisconnectMcp(status.server_id)}
-                      >
-                        Disconnect
-                      </Button>
-                    </>
-                  ) : (
-                    <Button size="compact-xs" variant="light" onClick={() => onConnectMcp(status.server_id)}>
-                      Connect
-                    </Button>
-                  )}
-                </Group>
-              </div>
-            ))
-          )}
-        </Stack>
-      </section>
-    </Stack>
-  );
-}
-
 export function ShellDrawer(props: ShellDrawerProps) {
+  const pendingCount = props.pendingApprovals.length + props.geolocationApprovals.length;
   return (
     <div className="haku-shell-overlay" style={{ zIndex: PANEL_Z }} aria-hidden={!props.opened}>
       {props.opened && (
         <aside className="haku-shell-drawer" aria-label="Haku console controls">
           <section className="haku-shell-card haku-shell-drawer-nav">
             <Group justify="space-between" align="center" className="haku-shell-header">
-              <Text fw={700}>Haku console</Text>
+              <Group gap="xs" align="center">
+                <Text fw={700}>Approvals</Text>
+                <Badge color={pendingCount > 0 ? "yellow" : "gray"} variant="light">
+                  {pendingCount}
+                </Badge>
+              </Group>
               <Button size="compact-xs" variant="subtle" onClick={props.onClose}>
                 Close
               </Button>
             </Group>
-            <SegmentedControl
-              fullWidth
-              size="xs"
-              value={props.activeTab}
-              onChange={(value) => props.onOpenTab(value as ShellDrawerTab)}
-              data={[
-                {
-                  value: "approvals",
-                  label: `Approvals (${props.pendingApprovals.length + props.geolocationApprovals.length})`,
-                },
-                { value: "access", label: "Access" },
-              ]}
-            />
-            <Button
-              size="xs"
-              variant="light"
-              color={ACTION_COLOR}
-              fullWidth
-              leftSection={<HistoryIcon />}
-              onClick={props.onOpenToolCalls}
-            >
-              Past tool calls
-            </Button>
+            <Group grow gap="xs">
+              <Button
+                size="xs"
+                variant="light"
+                color={ACTION_COLOR}
+                leftSection={<HistoryIcon />}
+                onClick={props.onOpenToolCalls}
+              >
+                Past tool calls
+              </Button>
+              <Button
+                size="xs"
+                variant="light"
+                color={ACTION_COLOR}
+                leftSection={<SettingsIcon />}
+                onClick={props.onOpenSettings}
+              >
+                Settings
+              </Button>
+            </Group>
           </section>
           <div className="haku-shell-scroll">
-            {props.activeTab === "approvals" ? (
-              <ApprovalsTab {...props} />
-            ) : (
-              <AccessTab
-                geoGranted={props.geoGranted}
-                tracking={props.tracking}
-                onWithdrawGeolocation={props.onWithdrawGeolocation}
-                mcpAuthStatuses={props.mcpAuthStatuses}
-                onConnectMcp={props.onConnectMcp}
-                onDisconnectMcp={props.onDisconnectMcp}
-                onRefreshMcp={props.onRefreshMcp}
-              />
-            )}
+            <ApprovalsTab {...props} />
           </div>
         </aside>
       )}

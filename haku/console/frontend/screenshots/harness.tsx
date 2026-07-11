@@ -10,49 +10,54 @@ import "./mock_api.ts";
 import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
-import { ShellDrawer, type ShellDrawerProps, type ShellDrawerTab } from "../console_panel.tsx";
+import { ShellControls, ShellDrawer, type ShellDrawerProps } from "../console_panel.tsx";
+import { SettingsPage } from "../settings_page.tsx";
 import { hakuTheme } from "../theme.ts";
 import { ToolCallsPage } from "../tool_calls_page.tsx";
-import { SAMPLE_MCP, SAMPLE_PENDING, SAMPLE_RECENT } from "./sample_data.ts";
+import { SAMPLE_PENDING, SAMPLE_RECENT } from "./sample_data.ts";
 
 const noop = () => {};
 
-function drawerProps(activeTab: ShellDrawerTab): ShellDrawerProps {
-  return {
-    opened: true,
-    activeTab,
-    onOpenTab: noop,
-    onClose: noop,
-    pendingApprovals: SAMPLE_PENDING,
-    geolocationApprovals: [],
-    selectedApprovalId: null,
-    selectedRecentToolCallId: null,
-    decidingApprovalIds: [],
-    recentToolCalls: SAMPLE_RECENT,
-    onSelectApproval: noop,
-    onSelectRecentToolCall: noop,
-    onApproveTool: noop,
-    onDenyTool: noop,
-    onApproveGeolocation: noop,
-    onDenyGeolocation: noop,
-    onDismissRecentToolCall: noop,
-    onOpenToolCalls: noop,
-    geoGranted: true,
-    tracking: false,
-    onWithdrawGeolocation: noop,
-    mcpAuthStatuses: SAMPLE_MCP,
-    onConnectMcp: noop,
-    onDisconnectMcp: noop,
-    onRefreshMcp: noop,
-  };
-}
+const drawerProps: ShellDrawerProps = {
+  opened: true,
+  onClose: noop,
+  pendingApprovals: SAMPLE_PENDING,
+  geolocationApprovals: [],
+  selectedApprovalId: null,
+  selectedRecentToolCallId: null,
+  decidingApprovalIds: [],
+  recentToolCalls: SAMPLE_RECENT,
+  onSelectApproval: noop,
+  onSelectRecentToolCall: noop,
+  onApproveTool: noop,
+  onDenyTool: noop,
+  onApproveGeolocation: noop,
+  onDenyGeolocation: noop,
+  onDismissRecentToolCall: noop,
+  onOpenToolCalls: noop,
+  onOpenSettings: noop,
+};
 
 function sceneElement(scene: string) {
   switch (scene) {
-    case "drawer-access":
-      return <ShellDrawer {...drawerProps("access")} />;
+    case "settings":
+      // SettingsPage fetches /api/mcp/operator-auth on mount; mock_api.ts serves SAMPLE_MCP.
+      return <SettingsPage onBack={noop} />;
+    case "controls":
+      // The shell chrome stack: hamburger (with a pending callout) plus the location pin
+      // with its live indicator. render.mjs clicks the pin to open its popover.
+      return (
+        <ShellControls
+          pendingCount={1}
+          opened={false}
+          onToggle={noop}
+          geoGranted
+          tracking
+          onWithdrawGeolocation={noop}
+        />
+      );
     case "drawer":
-      return <ShellDrawer {...drawerProps("approvals")} />;
+      return <ShellDrawer {...drawerProps} />;
     default:
       return <ToolCallsPage onBack={noop} />;
   }

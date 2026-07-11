@@ -90,6 +90,11 @@ js_library(
 )
 
 js_library(
+    name = "open_external",
+    srcs = ["open_external.ts"],
+)
+
+js_library(
     name = "routing",
     srcs = ["routing.ts"],
     deps = ["//:node_modules/react"],
@@ -175,6 +180,20 @@ js_library(
 )
 
 js_library(
+    name = "settings_page",
+    srcs = ["settings_page.tsx"],
+    deps = [
+        ":approval_state",
+        ":client",
+        ":icons",
+        ":open_external",
+        ":toast",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
     name = "haku_ui_embed",
     srcs = ["haku_ui_embed.tsx"],
     deps = [
@@ -185,6 +204,7 @@ js_library(
         ":console_panel",
         ":geolocation",
         ":geolocation_grant",
+        ":open_external",
         ":toast",
         ":tool_call_events",
         "//:node_modules/@haku/console-bridge",
@@ -200,6 +220,7 @@ js_library(
         ":client",
         ":haku_ui_embed",
         ":routing",
+        ":settings_page",
         ":tool_calls_page",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -236,7 +257,9 @@ filegroup(
         "icons.tsx",
         "index.html",
         "main.tsx",
+        "open_external.ts",
         "routing.ts",
+        "settings_page.tsx",
         "theme.ts",
         "toast.ts",
         "tool_arguments_field.tsx",
@@ -315,6 +338,7 @@ js_library(
         ":approval_state",
         ":client",
         ":console_panel",
+        ":settings_page",
         ":theme",
         ":tool_calls_page",
         "//:node_modules/@mantine/core",
@@ -388,6 +412,7 @@ tsc_bin.tsc_test(
         "bridge_client.test.ts",
         "geolocation.test.ts",
         "haku_ui_embed.test.ts",
+        "open_external.test.ts",
         "routing.test.ts",
         # Ambient types for the @tabler/icons-react per-icon subpath imports (icons.tsx).
         "tabler_icons.d.ts",
@@ -413,12 +438,14 @@ vitest_bin.vitest_test(
         "bridge_client.test.ts",
         "geolocation.test.ts",
         "haku_ui_embed.test.ts",
+        "open_external.test.ts",
         "routing.test.ts",
         "vitest.config.ts",
         ":approval_state",
         ":bridge",
         ":geolocation",
         ":haku_ui_embed",
+        ":open_external",
         ":routing",
         "//:node_modules",
         "//:node_modules/@haku/console-bridge",

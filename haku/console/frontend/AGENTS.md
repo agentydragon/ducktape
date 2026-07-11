@@ -12,8 +12,8 @@ bbr test //haku/console/frontend:screenshots
 ```
 
 It renders each surface (`screenshots/harness.tsx`) to a PNG (one per scene: `history`,
-`drawer`, `drawer-access`) in the test's **undeclared outputs**. Browser rendering runs on
-the RBE worker, so this is a `bbr` test, not a local `bb run`. Fetch the PNGs with the
+`drawer`, `settings`, `controls`) in the test's **undeclared outputs**. Browser rendering
+runs on the RBE worker, so this is a `bbr` test, not a local `bb run`. Fetch the PNGs with the
 `buildbuddy_api` skill (download the target's undeclared test outputs), then open every one
 and actually check it looks good — spacing, alignment, contrast, truncation, that nothing
 overflows or collides, and that both content and chrome read clearly — not merely that it

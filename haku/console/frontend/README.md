@@ -8,17 +8,24 @@ components + **Tailwind v4** utilities — modeled on
 `finance/augur/frontend` (references root `//:node_modules/*`; no per-package
 `package.json`).
 
-- `main.tsx` (wraps the app in `MantineProvider`) → `app.tsx` (routes between the two
-  console views) → either `haku_ui_embed.tsx` (the full-page framed haku-ui plus shell
-  chrome: approval drawer, bridge, confirms) or `tool_calls_page.tsx` (the full-page
-  past-tool-calls history).
-- `routing.ts` — the console's tiny pathname router. Two views keyed on URL **path**
-  (`/` embed, `/tool-calls` history) so console navigation never collides with the hash,
-  which is reserved for mirroring the framed haku-ui route.
+- `main.tsx` (wraps the app in `MantineProvider`) → `app.tsx` (routes between the console
+  views) → `haku_ui_embed.tsx` (the full-page framed haku-ui plus shell chrome: approval
+  drawer, bridge, confirms), `tool_calls_page.tsx` (the full-page past-tool-calls history),
+  or `settings_page.tsx` (the full-page operator settings — MCP account linkage).
+- `routing.ts` — the console's tiny pathname router. Three views keyed on URL **path**
+  (`/` embed, `/tool-calls` history, `/settings` settings) so console navigation never
+  collides with the hash, which is reserved for mirroring the framed haku-ui route.
 - `console_panel.tsx` — the shell drawer (`ShellDrawer`) and its persistent toggle
-  (`ShellControls`): a hamburger icon badged with a pending-approval callout light. Hosts
-  the approval queue, the past-tool-calls link, and the Access tab (location + MCP
-  accounts).
+  (`ShellControls`): a hamburger icon badged with a pending-approval callout light, with a
+  location-sharing pin below it (shown only while the standing grant is held; a live
+  indicator dot marks an active read, and its popover carries the stop/withdraw kill
+  switch). The drawer hosts the approval queue plus nav links to the past-tool-calls and
+  settings pages.
+- `settings_page.tsx` — the full-page operator settings view (`/settings`): MCP operator
+  account connect/reconnect/disconnect, moved out of the drawer since it's rarely touched.
+- `open_external.ts` — `openExternal(url)`: opens a link in a new tab with the opener
+  severed, shared by the embed shell (the `openLink` bridge action) and the settings page
+  (the MCP OAuth popup).
 - `tool_arguments_field.tsx` / `icons.tsx` — shared tool-argument renderer (per-server
   preview or raw JSON) and inline-SVG icons (never the `@tabler` barrel — see
   `debug/esbuild_tabler_memory.md`), used by both the drawer and the history view.

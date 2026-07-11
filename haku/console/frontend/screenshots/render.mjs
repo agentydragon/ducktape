@@ -21,7 +21,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SCENES = [
   { name: "history", viewport: { width: 1200, height: 1500 } },
   { name: "drawer", viewport: { width: 1200, height: 900 } },
-  { name: "drawer-access", viewport: { width: 1200, height: 900 } },
+  { name: "settings", viewport: { width: 1200, height: 900 } },
+  // `click` opens the location-sharing popover (its open state is internal to the control)
+  // so the screenshot captures the dropdown, not just the pin.
+  { name: "controls", viewport: { width: 520, height: 380 }, click: '[aria-label="Location sharing: live"]' },
 ];
 
 function outputDir() {
@@ -79,7 +82,7 @@ const browser = await launchPuppeteerBrowser({
   ],
 });
 try {
-  for (const { name, viewport } of SCENES) {
+  for (const { name, viewport, click } of SCENES) {
     const page = await browser.newPage();
     await page.setViewport({ ...viewport, deviceScaleFactor: 2 });
     await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
@@ -88,6 +91,12 @@ try {
     // Let Mantine mount and layout settle, and outlast the approval buttons' 400ms arm
     // delay so they render enabled (animations are reduced above).
     await new Promise((r) => setTimeout(r, 700));
+    // Some scenes need a click to reveal a popover whose open state is internal to the
+    // component (e.g. the location-sharing control); do it, then let the dropdown settle.
+    if (click) {
+      await page.click(click);
+      await new Promise((r) => setTimeout(r, 300));
+    }
     const dest = join(outDir, `${name}.png`);
     const png = await page.screenshot();
     writeFileSync(dest, png);

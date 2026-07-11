@@ -15,19 +15,16 @@ import { isRoutePath, parseInbound, vetOpenLink } from "./bridge.ts";
 import {
   approveToolCall,
   denyToolCall,
-  disconnectMcpOperatorAuth,
-  fetchMcpOperatorAuthStatuses,
   fetchPendingApprovals,
   launchRoutine,
-  type McpOperatorAuthStatus,
   type PendingApproval,
   type ToolCallRecord,
-  startMcpOperatorAuth,
 } from "./client.ts";
 import { ConfirmDialog, type Escalation } from "./confirm_dialog.tsx";
-import { ShellControls, ShellDrawer, type ShellDrawerTab } from "./console_panel.tsx";
+import { ShellControls, ShellDrawer } from "./console_panel.tsx";
 import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation.ts";
 import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant.ts";
+import { openExternal, POPUP_HINT } from "./open_external.ts";
 import { toastError, toastSuccess } from "./toast.ts";
 import { useToolCallEvents } from "./tool_call_events.ts";
 
@@ -41,21 +38,6 @@ import { useToolCallEvents } from "./tool_call_events.ts";
 // Authentik auth; **no `allow-popups`** (only the shell opens links), **no
 // `allow="fullscreen"`**, and **no `allow="geolocation"`** (only the shell reads location,
 // per its own consent grant; it holds every location watch). See docs/containment.md.
-
-// `noopener`/`noreferrer` force window.open() to return null even when the tab
-// opened, so open a same-origin blank tab first. The handle is the only reliable
-// popup-block signal; once it exists, sever opener before navigating it.
-export function openExternal(url: string): boolean {
-  const parsed = new URL(url);
-  const opened = window.open(parsed.protocol === "mailto:" ? url : "about:blank", "_blank");
-  if (!opened) return false;
-  opened.opener = null;
-  if (parsed.protocol !== "mailto:") opened.location.replace(url);
-  return true;
-}
-
-const POPUP_HINT = "Allow pop-ups for this site so the console can open links.";
-const MCP_AUTH_CHANNEL = "haku-console-mcp-auth";
 
 // Restore the route the console URL carries into the frame on first mount. The console
 // hash is treated strictly as a validated path, never a URL: the src is always `uiUrl`
@@ -74,10 +56,12 @@ export function HakuUiEmbed({
   uiUrl,
   launchAvailable,
   onOpenToolCalls,
+  onOpenSettings,
 }: {
   uiUrl: string;
   launchAvailable: boolean;
   onOpenToolCalls: () => void;
+  onOpenSettings: () => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   // The single escalation awaiting the operator's trusted confirm (a link to open or a run
@@ -88,9 +72,7 @@ export function HakuUiEmbed({
   const knownToolApprovalIdsRef = useRef<Set<string> | null>(null);
   const [geolocationApprovals, setGeolocationApprovals] = useState<GeolocationApproval[]>([]);
   const geolocationApprovalsRef = useRef<GeolocationApproval[]>([]);
-  const [mcpAuthStatuses, setMcpAuthStatuses] = useState<McpOperatorAuthStatus[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerTab, setDrawerTab] = useState<ShellDrawerTab>("approvals");
   const [selectedApprovalId, setSelectedApprovalId] = useState<string | null>(null);
   const [selectedRecentToolCallId, setSelectedRecentToolCallId] = useState<string | null>(null);
   const [decidingApprovalIds, setDecidingApprovalIds] = useState<string[]>([]);
@@ -99,7 +81,6 @@ export function HakuUiEmbed({
   // reload the frame); the iframe navigates itself, the console only reflects.
   const [frameSrc] = useState(() => initialFrameSrc(uiUrl, window.location.hash));
   const origin = new URL(uiUrl).origin;
-  const mcpAuthChannelRef = useRef<BroadcastChannel | null>(null);
   const activeAction: Escalation | null = pending;
 
   function reply(msg: Outbound) {
@@ -165,15 +146,10 @@ export function HakuUiEmbed({
     setGeoGranted(false);
   }
 
-  function openDrawerTab(tab: ShellDrawerTab) {
-    setDrawerTab(tab);
-    setDrawerOpen(true);
-  }
-
   function openApprovalQueueCompact() {
     setSelectedApprovalId(null);
     setSelectedRecentToolCallId(null);
-    openDrawerTab("approvals");
+    setDrawerOpen(true);
   }
 
   function setDeciding(id: string, deciding: boolean) {
@@ -252,50 +228,8 @@ export function HakuUiEmbed({
   // (which the server also broadcasts to every other tab, so they refresh too).
   useToolCallEvents(refreshToolApprovals);
 
-  function refreshMcpAuthStatuses(notify = false) {
-    if (notify) mcpAuthChannelRef.current?.postMessage({ type: "mcpAuthChanged" });
-    void fetchMcpOperatorAuthStatuses().then(
-      (statuses) => setMcpAuthStatuses(statuses),
-      (e: unknown) => toastError("Couldn't load MCP account links", e)
-    );
-  }
-
-  function connectMcp(serverId: string) {
-    void startMcpOperatorAuth(serverId)
-      .then((started) => {
-        if (!openExternal(started.authorization_url)) {
-          toastError("Pop-up blocked", POPUP_HINT);
-          return;
-        }
-        toastSuccess("MCP account link started", "Finish the authorization in the new tab.");
-      })
-      .catch((e: unknown) => toastError("Couldn't start MCP account link", e));
-  }
-
-  function disconnectMcp(serverId: string) {
-    void disconnectMcpOperatorAuth(serverId).then(
-      () => {
-        toastSuccess("MCP account disconnected", serverId);
-        refreshMcpAuthStatuses(true);
-      },
-      (e: unknown) => toastError("Couldn't disconnect MCP account", e)
-    );
-  }
-
   // Tear down any live browser watches if the console unmounts.
   useEffect(() => () => void watcher.stopAll(), [watcher]);
-
-  useEffect(() => {
-    refreshMcpAuthStatuses();
-    if (!("BroadcastChannel" in window)) return;
-    const channel = new BroadcastChannel(MCP_AUTH_CHANNEL);
-    mcpAuthChannelRef.current = channel;
-    channel.onmessage = () => refreshMcpAuthStatuses();
-    return () => {
-      if (mcpAuthChannelRef.current === channel) mcpAuthChannelRef.current = null;
-      channel.close();
-    };
-  }, []);
 
   useEffect(() => {
     function onMessage(e: MessageEvent) {
@@ -495,11 +429,12 @@ export function HakuUiEmbed({
         pendingCount={toolApprovals.length + geolocationApprovals.length}
         opened={drawerOpen}
         onToggle={() => setDrawerOpen((open) => !open)}
+        geoGranted={geoGranted}
+        tracking={tracking}
+        onWithdrawGeolocation={withdrawGeolocation}
       />
       <ShellDrawer
         opened={drawerOpen}
-        activeTab={drawerTab}
-        onOpenTab={openDrawerTab}
         onClose={() => setDrawerOpen(false)}
         pendingApprovals={toolApprovals}
         geolocationApprovals={geolocationApprovals}
@@ -510,12 +445,12 @@ export function HakuUiEmbed({
         onSelectApproval={(id) => {
           setSelectedApprovalId(id);
           setSelectedRecentToolCallId(null);
-          openDrawerTab("approvals");
+          setDrawerOpen(true);
         }}
         onSelectRecentToolCall={(toolCallId) => {
           setSelectedRecentToolCallId(toolCallId);
           setSelectedApprovalId(null);
-          openDrawerTab("approvals");
+          setDrawerOpen(true);
         }}
         onApproveTool={approveToolApproval}
         onDenyTool={denyToolApproval}
@@ -523,13 +458,7 @@ export function HakuUiEmbed({
         onDenyGeolocation={denyGeolocationApproval}
         onDismissRecentToolCall={dismissRecentToolCall}
         onOpenToolCalls={onOpenToolCalls}
-        geoGranted={geoGranted}
-        tracking={tracking}
-        onWithdrawGeolocation={withdrawGeolocation}
-        mcpAuthStatuses={mcpAuthStatuses}
-        onConnectMcp={connectMcp}
-        onDisconnectMcp={disconnectMcp}
-        onRefreshMcp={() => refreshMcpAuthStatuses(true)}
+        onOpenSettings={onOpenSettings}
       />
       <ConfirmDialog action={activeAction} onApprove={onApprove} onCancel={onCancel} />
     </>

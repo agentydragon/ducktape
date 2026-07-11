@@ -19,3 +19,13 @@ declare module "@tabler/icons-react/dist/esm/icons/IconArrowLeft.mjs" {
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
+declare module "@tabler/icons-react/dist/esm/icons/IconSettings.mjs" {
+  import type { FC, SVGProps } from "react";
+  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
+  export default Icon;
+}
+declare module "@tabler/icons-react/dist/esm/icons/IconMapPin.mjs" {
+  import type { FC, SVGProps } from "react";
+  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
+  export default Icon;
+}
