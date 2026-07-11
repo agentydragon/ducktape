@@ -1,7 +1,7 @@
 # Recurring wedge: provisioning a new forgejo_repository freezes the Terraform module
 
 Seen twice (2026-07-11 haku/ducktape mirror; earlier agentydragon repos). Pinpoint + durable-fix
-menu. Companion to the infra it destabilizes (haku-console + siblings gate on this module).
+menu. Fix (one-shot import) + this note: **PR #3028**. Companion to the infra it destabilizes (haku-console + siblings gate on this module).
 
 ## Symptom
 
