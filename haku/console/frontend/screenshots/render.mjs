@@ -20,13 +20,13 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // separate page load driven by window.__SCENE__ (see harness.tsx).
 const SCENES = [
   // The history page, showing both row states in one shot: flip the first row's Brief/Full
-  // selector to Full and open its Metadata disclosure, leaving the rest Brief. Each row's
-  // selector shows both segments always, so `::-p-text(Full)` matches the first row's Full
-  // segment; the Metadata summary only exists once that row is detailed.
+  // selector to Full (its segments are icons, so match the "Full" icon by aria-label) and open
+  // its Metadata disclosure, leaving the rest Brief. `[aria-label="Full"]` matches the first
+  // row's Full segment; the Metadata summary only exists once that row is detailed.
   {
     name: "history",
     viewport: { width: 1200, height: 1500 },
-    clicks: ["label::-p-text(Full)", "summary::-p-text(Metadata)"],
+    clicks: ['[aria-label="Full"]', "summary::-p-text(Metadata)"],
   },
   { name: "settings", viewport: { width: 1200, height: 900 } },
   // Every implemented tool-call preview, compact | detailed side by side — tall, so give it room.

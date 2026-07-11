@@ -8,6 +8,8 @@ import IconCalendarEvent from "@tabler/icons-react/dist/esm/icons/IconCalendarEv
 import IconChecklist from "@tabler/icons-react/dist/esm/icons/IconChecklist.mjs";
 import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
 import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
+import IconList from "@tabler/icons-react/dist/esm/icons/IconList.mjs";
+import IconListDetails from "@tabler/icons-react/dist/esm/icons/IconListDetails.mjs";
 import IconMail from "@tabler/icons-react/dist/esm/icons/IconMail.mjs";
 import IconMapPin from "@tabler/icons-react/dist/esm/icons/IconMapPin.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
@@ -70,4 +72,14 @@ export function MailIcon(props: TablerIconProps) {
 /** Crossed-out wifi — the shell's "live updates disconnected" indicator. */
 export function WifiOffIcon(props: TablerIconProps) {
   return <IconWifiOff size={20} {...props} />;
+}
+
+/** Plain list — the "Brief" (compact) side of a card's detail toggle. */
+export function ListIcon(props: TablerIconProps) {
+  return <IconList size={20} {...props} />;
+}
+
+/** List with detail lines — the "Full" (detailed) side of a card's detail toggle. */
+export function ListDetailsIcon(props: TablerIconProps) {
+  return <IconListDetails size={20} {...props} />;
 }

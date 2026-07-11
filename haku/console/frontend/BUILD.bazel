@@ -151,8 +151,19 @@ js_library(
     srcs = ["tool_arguments_field.tsx"],
     deps = [
         ":field",
+        ":json_preview",
         "//:node_modules/react",
         "//haku/console/frontend/tool_previews",
+        "//haku/console/frontend/tool_previews:variant",
+    ],
+)
+
+js_library(
+    name = "json_preview",
+    srcs = ["json_preview.tsx"],
+    deps = [
+        "//:node_modules/highlight.js",
+        "//:node_modules/react",
         "//haku/console/frontend/tool_previews:variant",
     ],
 )
@@ -207,6 +218,7 @@ js_library(
     name = "variant_control",
     srcs = ["variant_control.tsx"],
     deps = [
+        ":icons",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//haku/console/frontend/tool_previews:variant",

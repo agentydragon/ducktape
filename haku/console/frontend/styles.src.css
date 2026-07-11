@@ -15,6 +15,11 @@
     /* Neutral gray code surface (matches the neutral dark-mode code bg below), not a tint. */
     --haku-code-bg: var(--mantine-color-gray-1);
     --haku-code-fg: var(--mantine-color-gray-9);
+    /* JSON syntax-highlight hues — muted so a code block reads as structured data, not a rainbow. */
+    --haku-json-key: #1971c2;
+    --haku-json-string: #2f9e44;
+    --haku-json-number: #e8590c;
+    --haku-json-literal: #9c36b5;
     --haku-backdrop: rgb(21 74 70 / 55%);
     --haku-shell-shadow: rgb(36 31 43 / 20%);
     --haku-shell-muted-bg: #f4f0f7;
@@ -33,6 +38,11 @@
     --haku-shell-shadow: rgb(0 0 0 / 45%);
     --haku-shell-muted-bg: var(--mantine-color-dark-6);
     --haku-shell-active-bg: var(--mantine-color-dark-5);
+    /* Lighter JSON hues for the dark code surface. */
+    --haku-json-key: #74c0fc;
+    --haku-json-string: #8ce99a;
+    --haku-json-number: #ffc078;
+    --haku-json-literal: #eebefa;
   }
   body {
     margin: 0;
@@ -324,6 +334,21 @@
   font-size: 0.82rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* highlight.js json tokens over the neutral code surface (see --haku-json-* vars). Punctuation
+   and braces carry no token class, so they inherit --haku-code-fg. */
+.haku-shell-json .hljs-attr {
+  color: var(--haku-json-key);
+}
+.haku-shell-json .hljs-string {
+  color: var(--haku-json-string);
+}
+.haku-shell-json .hljs-number {
+  color: var(--haku-json-number);
+}
+.haku-shell-json .hljs-literal {
+  color: var(--haku-json-literal);
 }
 
 .haku-shell-disclosure {

@@ -66,14 +66,14 @@ export function ToolCallCard({
               </Text>
             )}
           </Stack>
-          {/* Badge + Brief/Full selector anchored top-right: detail expands below, so the
-              selector never moves out from under the pointer. */}
-          <Stack gap={6} align="flex-end" style={{ flexShrink: 0 }}>
+          {/* Status badge left of the Brief/Full selector, anchored top-right: detail expands
+              below, so the selector never moves out from under the pointer. */}
+          <Group gap="xs" align="center" wrap="nowrap" style={{ flexShrink: 0 }}>
             <Badge color={status.color} variant="light">
               {status.label}
             </Badge>
             <VariantControl variant={variant} onChange={onVariantChange} />
-          </Stack>
+          </Group>
         </Group>
         <ToolArgumentsField
           serverId={fields.serverId}

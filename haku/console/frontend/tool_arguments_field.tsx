@@ -1,16 +1,14 @@
 import { Field } from "./field.tsx";
+import { JsonPreview } from "./json_preview.tsx";
 import { toolPreview } from "./tool_previews/index.tsx";
-import { clampBlock, type PreviewVariant } from "./tool_previews/variant.tsx";
-
-// A compact raw-JSON fallback shows only the first few lines (for a tool with no custom
-// widget); the detailed view shows it in full.
-const COMPACT_JSON_LINES = 6;
+import type { PreviewVariant } from "./tool_previews/variant.tsx";
 
 /** The arguments of a tool call: a per-tool-type widget (the tool_previews/ per-server modules)
- * when one matches — rendered directly, since it's self-describing — else the generic raw-JSON
- * view, which keeps an "Arguments" label so it isn't mistaken for a result. `variant` picks the
- * compact (skim) or detailed form; detailed always offers the raw JSON behind a disclosure even
- * when a widget rendered. Shared by the approval drawer and the past-tool-calls history view. */
+ * when one matches — rendered directly, since it's self-describing — else the generic
+ * syntax-highlighted JSON view (compact-printed + truncated in brief mode, full in detailed),
+ * which keeps an "Arguments" label so it isn't mistaken for a result. `variant` picks the compact
+ * (skim) or detailed form; detailed always offers the exact raw JSON behind a disclosure even when
+ * a widget rendered. Shared by the approval drawer and the past-tool-calls history view. */
 export function ToolArgumentsField({
   serverId,
   toolName,
@@ -28,9 +26,7 @@ export function ToolArgumentsField({
   if (!nice) {
     return (
       <Field label="Arguments">
-        <pre className="haku-shell-json">
-          {variant === "compact" ? clampBlock(argumentsJson, COMPACT_JSON_LINES) : argumentsJson}
-        </pre>
+        <JsonPreview value={args} variant={variant} />
       </Field>
     );
   }
@@ -40,6 +36,8 @@ export function ToolArgumentsField({
       {variant === "detailed" && (
         <details className="haku-shell-disclosure">
           <summary>Raw arguments</summary>
+          {/* The disclosure stays byte-exact (JSON.stringify), so reflow/truncation never costs
+              the real, copyable payload. */}
           <pre className="haku-shell-json">{argumentsJson}</pre>
         </details>
       )}

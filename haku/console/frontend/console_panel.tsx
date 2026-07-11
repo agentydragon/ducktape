@@ -194,12 +194,12 @@ function GeolocationApprovalCard({
             </Text>
             <Text size="xs">{geolocationApprovalBody(approval)}</Text>
           </Stack>
-          <Stack gap={6} align="flex-end" style={{ flexShrink: 0 }}>
+          <Group gap="xs" align="center" wrap="nowrap" style={{ flexShrink: 0 }}>
             <Badge color={deciding ? "blue" : "yellow"} variant="light">
               {deciding ? "Applying" : "Pending"}
             </Badge>
             <VariantControl variant={variant} onChange={setVariant} />
-          </Stack>
+          </Group>
         </Group>
         {detailed && (
           <div className="haku-shell-fields">
