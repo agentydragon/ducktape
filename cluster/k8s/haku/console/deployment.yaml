@@ -122,8 +122,9 @@ spec:
                 secretKeyRef:
                   name: haku-console-csrf-secret
                   key: secret
-            # In-process `google` MCP server (calendar event creation, batch Gmail thread
-            # label changes, Gmail draft creation — see haku/console/tools/google.py).
+            # Two in-process MCP servers built from this one token: `gmail` (Gmail reads
+            # mirroring the REST API, draft creation, thread-label changes, label CRUD — see
+            # haku/console/tools/gmail.py) and `google_calendar` (event creation — google_calendar.py).
             # haku-console-google-access-token (access_token + expires_at) is written
             # by Airlock's haku_console_google provider into the airlock namespace and
             # mirrored here by ESO; re-read via google-auth's refresh_handler, no
@@ -211,9 +212,9 @@ spec:
         - name: haku-console-google-token
           # optional: true so a missing token (before the one-time operator OAuth
           # consent below) never blocks the whole console pod from starting — only
-          # the in-process `google` MCP server degrades (google_token_dir empty ->
-          # its FastMCP instance never registered -> that capability entry reports
-          # `degraded`, everything else in the console is unaffected).
+          # the in-process `gmail` + `google_calendar` MCP servers degrade
+          # (google_token_dir empty -> their FastMCP instances never registered ->
+          # those capability entries report `degraded`, everything else unaffected).
           secret:
             secretName: haku-console-google-access-token
             optional: true

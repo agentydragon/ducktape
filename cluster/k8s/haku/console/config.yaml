@@ -30,10 +30,17 @@ mcp:
         # haku-console's operator-auth callback), safe to share since PKCE plus per-request
         # redirect_uri validation secure each caller independently.
         static_client_id: kubectl-passthrough-mcp
-    # Implemented in-process (haku/console/tools/google.py) as a real FastMCP server
-    # attached via an in-memory transport, not a remote MCP server — no server_url/
-    # operator_oauth. Holds the Airlock-issued haku_console_google token
-    # (calendar.events + gmail.modify + gmail.compose + google's read scopes) mounted
-    # at HAKU_CONSOLE_GOOGLE_TOKEN_DIR. Tools: create_calendar_event,
-    # batch_modify_gmail_thread_labels, create_gmail_draft.
-    - id: google
+    # Two in-process FastMCP servers (haku/console/tools/gmail.py + google_calendar.py) attached via
+    # an in-memory transport, not remote MCP servers — no server_url/operator_oauth. Both
+    # are built from the one Airlock-issued haku_console_google token (calendar.events +
+    # gmail.modify + gmail.compose + google's read scopes) mounted at
+    # HAKU_CONSOLE_GOOGLE_TOKEN_DIR. Every call is approval-gated; gmail.modify already
+    # covers the Gmail reads, so no extra scope is needed.
+    #
+    # `gmail`: reads mirror Gmail's REST API and return its resource shapes verbatim
+    # (threads_list, threads_get, messages_get, labels_list, labels_get); writes are
+    # drafts_create, threads_batch_modify, and label CRUD (labels_create, labels_patch,
+    # labels_delete).
+    - id: gmail
+    # `google_calendar`: create_calendar_event.
+    - id: google_calendar

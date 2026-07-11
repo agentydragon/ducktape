@@ -8,16 +8,11 @@ describe("toolPreview registry", () => {
   it("dispatches to the registered renderer for a known serverId, in both variants", () => {
     for (const variant of ["compact", "detailed"] as const) {
       expect(
-        toolPreview(
-          "grocy-sf",
-          "products_create",
-          { items: [{ name: "Oats", stock_qu: "Gram", location: "Pantry", default_best_before_days: 270 }] },
-          variant
-        )
+        toolPreview("gmail", "threads_batch_modify", { thread_ids: ["t1"], add: ["urgent"], remove: [] }, variant)
       ).not.toBeNull();
       expect(
         toolPreview(
-          "google",
+          "google_calendar",
           "create_calendar_event",
           { summary: "Standup", start: { date: "2026-09-15" }, end: { date: "2026-09-16" } },
           variant
@@ -31,6 +26,6 @@ describe("toolPreview registry", () => {
   });
 
   it("returns null when the server is registered but the tool has no widget", () => {
-    expect(toolPreview("google", "list_events", {}, "detailed")).toBeNull();
+    expect(toolPreview("gmail", "threads_list", { query: "from:a" }, "detailed")).toBeNull();
   });
 });

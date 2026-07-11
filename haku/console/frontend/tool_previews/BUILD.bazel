@@ -3,8 +3,8 @@ load("@aspect_rules_js//js:defs.bzl", "js_library")
 package(default_visibility = ["//visibility:public"])
 
 # Per-server approval-preview widgets. Each module owns one server's widgets and exports its
-# SERVER_ID + a (toolName, args) renderer; `tool_previews` (index.tsx) dispatches to them via
-# a serverId registry.
+# SERVER_ID + a (toolName, args, variant) renderer; `tool_previews` (index.tsx) dispatches to
+# them via a serverId registry.
 
 # Compact/detailed rendering shared by every widget (the PreviewVariant type + helpers).
 # Leaf: no widget deps, so index.tsx and each widget import it without a cycle.
@@ -18,8 +18,22 @@ js_library(
 )
 
 js_library(
-    name = "google",
-    srcs = ["google.tsx"],
+    name = "gmail",
+    srcs = ["gmail.tsx"],
+    deps = [
+        ":variant",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//haku/console/frontend:field",
+        "//haku/console/frontend:gmail_client",
+        "//haku/console/frontend:schema_zod",
+    ],
+)
+
+js_library(
+    name = "google_calendar",
+    srcs = ["google_calendar.tsx"],
     deps = [
         ":variant",
         "//:node_modules/@mantine/core",
@@ -27,7 +41,6 @@ js_library(
         "//:node_modules/react",
         "//:node_modules/zod",
         "//haku/console/frontend:field",
-        "//haku/console/frontend:google_client",
         "//haku/console/frontend:schema_zod",
     ],
 )
@@ -61,7 +74,8 @@ js_library(
     name = "tool_previews",
     srcs = ["index.tsx"],
     deps = [
-        ":google",
+        ":gmail",
+        ":google_calendar",
         ":grocy",
         ":kubectl",
         ":variant",
@@ -81,9 +95,15 @@ filegroup(
 # consume them (a js_test can't take a source file from another package directly, only via a
 # library).
 js_library(
-    name = "google_test",
-    srcs = ["google.test.ts"],
-    deps = [":google"],
+    name = "gmail_test",
+    srcs = ["gmail.test.ts"],
+    deps = [":gmail"],
+)
+
+js_library(
+    name = "google_calendar_test",
+    srcs = ["google_calendar.test.ts"],
+    deps = [":google_calendar"],
 )
 
 js_library(

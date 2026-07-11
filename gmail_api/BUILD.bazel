@@ -8,6 +8,13 @@ py_library(
 )
 
 py_library(
+    name = "messages",
+    srcs = ["messages.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "service",
     srcs = ["service.py"],
     visibility = ["//:__subpackages__"],

@@ -1,9 +1,12 @@
-"""Gmail operations behind haku-console's Google tool provider.
+"""Gmail operations behind haku-console's `gmail` MCP server.
 
-Unlike `haku.gmail_labeling` (autonomous, closed over a label-name namespace by
-construction), these tools have **no server-side namespace restriction** — the safety
-gate is the human operator approving each call in haku-console, not a structural
-invariant here. See `haku/docs/security.md` for the enforcement-inventory entry.
+The read tools mirror Gmail's REST API: `labels_list`/`labels_get`/`threads_list`/
+`threads_get`/`messages_get` return Gmail's own resource shapes (`gmail_api.messages`,
+`gmail_api.labels`) **verbatim** — no content-type prioritization, no body decoding, no
+field flattening. `format` passes straight through to Gmail. The write tools (draft
+creation, thread-label changes, label CRUD) act on any label/thread — unlike
+`haku.gmail_labeling` (autonomous, closed over the `haku/` prefix), the only safety gate
+here is the human operator approving each call in haku-console. See `haku/docs/security.md`.
 """
 
 from __future__ import annotations
@@ -15,14 +18,18 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
-from gmail_api.labels import GmailLabel, LabelType
+from gmail_api.labels import CreateLabelRequest, GmailLabel, LabelsListResponse, LabelType, PatchLabelRequest
+from gmail_api.messages import Draft, Message, MessageFormat, Thread, ThreadFormat, ThreadsListResponse
 from haku.gmail_labeling.backend import GmailLabelBackend
 
 _THREAD_URL = "https://mail.google.com/mail/u/0/#all/{thread_id}"
-# Gmail's batch-request guide recommends capping requests-per-batch at 100.
+# Gmail's batch-request guide recommends capping requests-per-batch at 100; used to fold
+# the approval-preview `threads.get` metadata lookups into as few HTTP requests as possible.
 _MAX_PREVIEW_BATCH_SIZE = 100
 
 
+# --- write-tool models (this surface takes label *names* for convenience and creates
+#     missing ones, unlike the read surface which mirrors Gmail's id-based resources) ---
 class GmailLabelRef(BaseModel):
     name: str
     id: str
@@ -60,11 +67,20 @@ class CreateGmailDraftArgs(BaseModel):
     thread_id: str | None = Field(default=None, description="Existing Gmail thread ID to draft a reply within.")
 
 
-class CreateGmailDraftResult(BaseModel):
-    draft_id: str
-    message_id: str
+# --- read-tool input ---
+class SearchThreadsArgs(BaseModel):
+    query: str = Field(
+        description="Gmail search query, same syntax as the Gmail search box "
+        "(e.g. 'from:alice after:2026/01/01 is:unread')."
+    )
+    max_results: int = Field(default=25, ge=1, le=500, description="Maximum threads per page.")
+    page_token: str | None = Field(
+        default=None, description="`next_page_token` from a previous response; omit for the first page."
+    )
 
 
+# --- approval-preview models (rendered by the console for a pending
+#     `threads_batch_modify` call, which itself only carries thread IDs) ---
 class GmailThreadPreview(BaseModel):
     # Gmail permits a threadless/no-Subject message; whether that renders as e.g. "(no
     # subject)" is a display decision, so this stays the raw (possibly absent) header.
@@ -81,9 +97,10 @@ class GmailThreadPreviewsResponse(BaseModel):
 
 
 class GmailToolsClient:
-    """The `google` server's Gmail tool operations (batch label modify + draft creation) over
-    a raw Gmail service. Thread previews are a rendering-support read, not a tool op — see the
-    module-level `preview_gmail_threads`, composed from the same lower-level service."""
+    """The `gmail` server's Gmail tool operations — reads mirroring the REST API plus
+    draft/label writes — over a raw Gmail service. Thread previews are a rendering-support
+    read, not a tool op, so they live in the module-level `preview_gmail_threads`, composed
+    from the same lower-level service."""
 
     def __init__(self, service: Any) -> None:
         self.service = service
@@ -92,7 +109,31 @@ class GmailToolsClient:
     def _user_labels(self) -> list[GmailLabel]:
         return [label for label in self._backend.list_labels() if label.type == LabelType.USER]
 
-    def batch_modify_thread_labels(self, args: BatchModifyGmailThreadLabelsArgs) -> BatchModifyGmailThreadLabelsResult:
+    # --- reads: return Gmail's own resource shapes verbatim ---
+    def labels_list(self) -> LabelsListResponse:
+        return LabelsListResponse.model_validate(self.service.users().labels().list(userId="me").execute())
+
+    def labels_get(self, label_id: str) -> GmailLabel:
+        return GmailLabel.model_validate(self.service.users().labels().get(userId="me", id=label_id).execute())
+
+    def threads_list(self, args: SearchThreadsArgs) -> ThreadsListResponse:
+        params: dict[str, Any] = {"userId": "me", "q": args.query, "maxResults": args.max_results}
+        if args.page_token is not None:
+            params["pageToken"] = args.page_token
+        return ThreadsListResponse.model_validate(self.service.users().threads().list(**params).execute())
+
+    def threads_get(self, thread_id: str, thread_format: ThreadFormat) -> Thread:
+        return Thread.model_validate(
+            self.service.users().threads().get(userId="me", id=thread_id, format=thread_format.value).execute()
+        )
+
+    def messages_get(self, message_id: str, message_format: MessageFormat) -> Message:
+        return Message.model_validate(
+            self.service.users().messages().get(userId="me", id=message_id, format=message_format.value).execute()
+        )
+
+    # --- writes ---
+    def threads_batch_modify(self, args: BatchModifyGmailThreadLabelsArgs) -> BatchModifyGmailThreadLabelsResult:
         existing = {label.name: label.id for label in self._user_labels()}
         if missing := [name for name in args.remove if name not in existing]:
             raise ValueError(f"label(s) {missing} do not exist")
@@ -110,7 +151,7 @@ class GmailToolsClient:
         created = self._backend.create_label(name)
         return GmailLabelRef(name=created.name, id=created.id)
 
-    def create_draft(self, args: CreateGmailDraftArgs) -> CreateGmailDraftResult:
+    def drafts_create(self, args: CreateGmailDraftArgs) -> Draft:
         message = MIMEText(args.body)
         message["To"] = ", ".join(args.to)
         message["Subject"] = args.subject
@@ -120,16 +161,28 @@ class GmailToolsClient:
         body: dict[str, Any] = {"message": {"raw": raw}}
         if args.thread_id:
             body["message"]["threadId"] = args.thread_id
-        draft = self.service.users().drafts().create(userId="me", body=body).execute()
-        return CreateGmailDraftResult(draft_id=draft["id"], message_id=draft["message"]["id"])
+        return Draft.model_validate(self.service.users().drafts().create(userId="me", body=body).execute())
+
+    def labels_create(self, request: CreateLabelRequest) -> GmailLabel:
+        body = request.model_dump(by_alias=True, exclude_none=True)
+        return GmailLabel.model_validate(self.service.users().labels().create(userId="me", body=body).execute())
+
+    def labels_patch(self, label_id: str, request: PatchLabelRequest) -> GmailLabel:
+        body = request.model_dump(by_alias=True, exclude_none=True)
+        return GmailLabel.model_validate(
+            self.service.users().labels().patch(userId="me", id=label_id, body=body).execute()
+        )
+
+    def labels_delete(self, label_id: str) -> None:
+        self.service.users().labels().delete(userId="me", id=label_id).execute()
 
 
 def preview_gmail_threads(service: Any, thread_ids: list[str]) -> dict[str, GmailThreadPreview]:
     """Subject/snippet/current-labels for a batch of threads, for rendering a pending or past
-    `batch_modify_gmail_thread_labels` approval. Composed from lower-level Gmail reads — a
-    batched `threads().get(format=metadata)` plus a label id→name lookup — not a tool the agent
-    invokes, so it's a free function over the raw service rather than a `GmailToolsClient` method.
-    A thread absent from the returned map was inaccessible (deleted, wrong account, …)."""
+    `threads_batch_modify` approval. Composed from lower-level Gmail reads — a batched
+    `threads().get(format=metadata)` plus a label id→name lookup — not a tool the agent invokes,
+    so it's a free function over the raw service rather than a `GmailToolsClient` method. A
+    thread absent from the returned map was inaccessible (deleted, wrong account, …)."""
     id_by_name = {label.id: label.name for label in GmailLabelBackend(service).list_labels()}
     previews: dict[str, GmailThreadPreview] = {}
 

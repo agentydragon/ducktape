@@ -77,8 +77,9 @@ class Settings(BaseSettings):
 
     # Directory holding the Airlock-managed `haku_console_google` access token (files:
     # access_token, expires_at), mounted from the haku-console-google-access-token
-    # secret. Backs the in-process `google` MCP server (haku.console.tools.google) —
-    # calendar event creation, batch Gmail label changes, Gmail draft creation. Unset
-    # disables that server (its capability entry reports `degraded`) and the
-    # thread-preview endpoint.
+    # secret. Backs the two in-process MCP servers built from this one grant: `gmail`
+    # (haku.console.tools.gmail — search/read threads+messages+labels, draft creation,
+    # thread-label changes, label CRUD) and `google_calendar` (haku.console.tools.google_calendar —
+    # calendar event creation). Unset disables both servers (their capability entries
+    # report `degraded`) and the Gmail thread-preview endpoint.
     google_token_dir: Path | None = None

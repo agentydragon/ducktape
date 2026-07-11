@@ -4,7 +4,7 @@ import type { components, paths } from "./api/schema";
 
 // Same-origin typed client (nginx serves this bundle and proxies /api). Types are
 // generated from the backend's OpenAPI schema: //haku/console/frontend:schema.
-// Exported (not module-private) so per-integration client files (google_client.ts,
+// Exported (not module-private) so per-integration client files (gmail_client.ts,
 // grocy_client.ts) share this one instance instead of each creating their own.
 export const api = createClient<paths>({ baseUrl: "" });
 

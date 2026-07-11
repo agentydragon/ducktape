@@ -1,6 +1,6 @@
 // Per-tool-type rendering for the remote `kubectl-passthrough-mcp` MCP server (see
 // cluster/k8s/agents/kubectl-passthrough-mcp/). Falls back to the generic raw-JSON view
-// for anything that isn't shaped as expected — same caveat as google.tsx:
+// for anything that isn't shaped as expected — same caveat as gmail.tsx:
 // arguments are only validated by the tool's own schema at execution time, not at
 // submission. Every tool here runs with the approving operator's own cluster-admin
 // identity (cluster_auth_mode=passthrough) once approved, so rendering the exact target
@@ -16,7 +16,7 @@ import { clampBlock, type PreviewVariant } from "./variant.tsx";
 export const KUBECTL_SERVER_ID = "kubectl-passthrough-mcp";
 
 // kubectl-passthrough-mcp is a third-party binary (containers/kubernetes-mcp-server) —
-// there's no backend Pydantic model to generate these from (unlike google.tsx's
+// there's no backend Pydantic model to generate these from (unlike gmail.tsx's
 // :schema_zod), so they're hand-authored once, here, against that tool's real input schema
 // (checked via a live `tools/list` call against the deployed server).
 const zResourcesCreateOrUpdateArgs = z.object({

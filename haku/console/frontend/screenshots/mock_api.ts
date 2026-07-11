@@ -26,7 +26,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
   if (url.includes("/api/grocy-sf/reference"))
     return jsonResponse({ products: [], quantity_units: [], locations: [], product_groups: [] });
   // The Gmail thread-labels widget looks up subjects/labels for its thread ids.
-  if (url.includes("/api/google/gmail/thread-previews")) return jsonResponse({ threads: SAMPLE_GMAIL_THREADS });
+  if (url.includes("/api/gmail/thread-previews")) return jsonResponse({ threads: SAMPLE_GMAIL_THREADS });
   if (url.includes("/api/tool-calls")) return jsonResponse({ tool_calls: SAMPLE_TOOL_CALLS });
   if (realFetch) return realFetch(input, init);
   return jsonResponse({});

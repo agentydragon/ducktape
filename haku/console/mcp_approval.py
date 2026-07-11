@@ -105,7 +105,7 @@ class McpServerEntry(BaseModel):
     id: str
     # None for a server reached via an in-process FastMCP instance instead of a remote
     # URL (see McpToolExecutor/McpMetadataProvider's `in_process_servers` registry,
-    # e.g. haku.console.tools.google's `google` server) — resolved at runtime by id,
+    # e.g. haku.console.tools.gmail's `gmail` server) — resolved at runtime by id,
     # not by anything in this config model.
     server_url: str | None = None
     bearer_token_secret: str | None = None

@@ -93,9 +93,10 @@ oauth:
       extra_auth_params:
         access_type: offline
         prompt: consent
-    # Separate Google grant for haku-console's in-process `google` MCP server
-    # (haku/console/tools/google.py): calendar event creation, batch Gmail thread
-    # label changes, Gmail draft creation — behind haku-console's operator-approval
+    # Separate Google grant for haku-console's in-process `gmail` + `google_calendar` MCP
+    # servers (haku/console/tools/gmail.py, google_calendar.py): calendar event creation,
+    # Gmail reads, thread label changes, draft creation, label CRUD — behind haku-console's
+    # operator-approval
     # queue, never autonomous. Kept distinct from `google` (read-only, Haku's) and
     # `gmail_modify` (gmail.modify-only, gmail-labeling's) so no other consumer's
     # token is ever upgraded to this scope set. Its access token

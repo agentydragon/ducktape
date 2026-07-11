@@ -3,14 +3,15 @@
 Manifests for `haku/console/` (see that directory's README for the app itself). Deploy
 notes here cover only what's specific to running it in-cluster.
 
-## One-time bootstrap: the in-process `google` MCP server
+## One-time bootstrap: the in-process `gmail` + `google_calendar` MCP servers
 
-The console's in-process `google` MCP server (`haku/console/tools/google.py` — calendar
-event creation, batch Gmail thread label changes, Gmail draft creation, all behind the ordinary
-operator-approval queue) needs a one-time browser consent for its `haku_console_google`
-Airlock provider before it's functional. The console pod itself starts fine either way (the
-token volume is `optional: true`); until consent happens, that one MCP server's tools error
-on invocation instead of running.
+The console's two in-process MCP servers — `gmail` (`haku/console/tools/gmail.py` — Gmail
+reads mirroring the REST API, draft creation, thread-label changes, label CRUD) and
+`google_calendar` (`haku/console/tools/google_calendar.py` — calendar event creation), both behind the
+ordinary operator-approval queue — are both built from the single `haku_console_google` Airlock
+token and need a one-time browser consent for its provider before they're functional. The
+console pod itself starts fine either way (the token volume is `optional: true`); until consent
+happens, those servers' tools error on invocation instead of running.
 
 0. No Google console change needed: `haku_console_google` reuses the `google` provider's
    already-registered redirect URI (`…/oauth/callback/google`) on the same OAuth client —
@@ -32,10 +33,11 @@ Scopes: `calendar.events`, `gmail.modify`, `gmail.compose`, plus every read-only
 `google` provider carries (`gmail.readonly`, `drive.readonly`, `drive.activity.readonly`,
 `calendar.readonly`, `tasks.readonly`, `contacts.readonly`, `documents.readonly`,
 `spreadsheets.readonly`, `presentations.readonly`, `youtube.readonly`) — kept in one grant
-since one server consumes all of it, and carrying the read scopes too means a future
-haku-console read feature doesn't need a second consent round-trip. Deliberately its own
-provider (not reusing `google` or `gmail_modify`) so no other consumer's token is ever
-upgraded to this scope set. See `haku/docs/security.md` for the enforcement-inventory entry.
+since the console's `gmail` and `google_calendar` servers both consume it, and carrying the
+read scopes means a future haku-console read feature outside Gmail (Drive/Docs/…) needs no
+second consent round-trip. Deliberately its own provider (not reusing `google` or
+`gmail_modify`) so no other consumer's token is ever upgraded to this scope set. See
+`haku/docs/security.md` for the enforcement-inventory entry.
 
 ## One-time bootstrap: `kubectl-passthrough-mcp` (cluster-admin, operator-linked)
 

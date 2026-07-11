@@ -4,7 +4,8 @@ product/location/quantity-unit/product-group IDs to names for rendering pending
 `haku/console/frontend/grocy_tool_previews.tsx`), whose arguments accept either a name
 or a numeric ID.
 
-Unlike `google.py`, `grocy-sf` is a remote MCP server, not an in-process one — there is
+Unlike `gmail.py` / `google_calendar.py`, `grocy-sf` is a remote MCP server, not an
+in-process one — there is
 no FastMCP instance to build here, only this narrow read-only router. It reaches the
 server via `mcp_approval.operator_authenticated_client`, the one public seam that module
 exposes for this: authenticated exactly as an approved tool call for that server would be

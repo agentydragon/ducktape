@@ -3,28 +3,44 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//haku/console:__subpackages__"])
 
 py_library(
-    name = "google_calendar",
-    srcs = ["google_calendar.py"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
-    name = "google_gmail",
-    srcs = ["google_gmail.py"],
+    name = "gmail_client",
+    srcs = ["gmail_client.py"],
     deps = [
         "//gmail_api:labels",
+        "//gmail_api:messages",
         "//haku/gmail_labeling:backend",
         "@pypi//pydantic",
     ],
 )
 
 py_library(
-    name = "google",
-    srcs = ["google.py"],
+    name = "google_calendar_client",
+    srcs = ["google_calendar_client.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "gmail",
+    srcs = ["gmail.py"],
     visibility = ["//haku/console:__subpackages__"],
     deps = [
-        ":google_calendar",
-        ":google_gmail",
+        ":gmail_client",
+        "//gmail_api:labels",
+        "//gmail_api:messages",
+        "//gmail_api:service",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//google_api_python_client",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "google_calendar",
+    srcs = ["google_calendar.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        ":google_calendar_client",
         "//gmail_api:service",
         "@pypi//fastapi",
         "@pypi//fastmcp",
@@ -46,41 +62,61 @@ py_library(
 )
 
 py_test(
+    name = "test_gmail",
+    srcs = ["test_gmail.py"],
+    deps = [
+        ":gmail",
+        ":gmail_client",
+        "//:conftest",
+        "//gmail_api:labels",
+        "//gmail_api:messages",
+        "//haku/console:conftest",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
+        # needs the plugin importable at runtime for its entry-point autoload; Gazelle
+        # can't see that and will try to drop this dep on regen.
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_gmail_client",
+    srcs = ["test_gmail_client.py"],
+    deps = [
+        ":gmail_client",
+        "//:conftest",
+        "//gmail_api:labels",
+        "//gmail_api:messages",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_google_calendar",
     srcs = ["test_google_calendar.py"],
     deps = [
         ":google_calendar",
+        ":google_calendar_client",
         "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_google_gmail",
-    srcs = ["test_google_gmail.py"],
-    deps = [
-        ":google_gmail",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_google",
-    srcs = ["test_google.py"],
-    deps = [
-        ":google",
-        ":google_calendar",
-        ":google_gmail",
-        "//:conftest",
-        "//haku/console:conftest",
         "@pypi//fastmcp",
         "@pypi//pytest_bazel",
         # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
         # needs the plugin importable at runtime for its entry-point autoload; Gazelle
         # can't see that and will try to drop this dep on regen.
         "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_google_calendar_client",
+    srcs = ["test_google_calendar_client.py"],
+    deps = [
+        ":google_calendar_client",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

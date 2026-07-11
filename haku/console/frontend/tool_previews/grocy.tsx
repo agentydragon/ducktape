@@ -5,7 +5,7 @@
 //
 // grocy-sf's tool surface is generated from Grocy's own OpenAPI spec plus custom batch
 // tools (grocy_mcp/batch_tools.py) — there's no backend Pydantic model haku-console owns to
-// generate Zod schemas from (unlike google.tsx's :schema_zod), so these are
+// generate Zod schemas from (unlike gmail.tsx's :schema_zod), so these are
 // hand-authored once, here, against grocy_mcp/mcp_types.py's `AddItem` / `ConsumeItem` /
 // `CreateProductItem`. Every tool call runs as the approving operator's own linked Grocy
 // account (operator_oauth) once approved.

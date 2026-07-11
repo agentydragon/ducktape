@@ -784,7 +784,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(
     assert row["result_json"]["content"][0]["text"] == "echo:world"
 
 
-# --- In-process MCP servers (haku.console.tools.google's registration path) ------------
+# --- In-process MCP servers (McpToolExecutor/McpMetadataProvider in-process registration) ---
 # Unit tests only: no postgres/network fixtures, exercising McpToolExecutor/McpMetadataProvider
 # directly (over the module-level `_test_mcp_server()` FastMCP fixture, in-memory — no HTTP)
 # rather than through the FastAPI app.

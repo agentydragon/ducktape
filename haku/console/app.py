@@ -27,7 +27,7 @@ from fastmcp import FastMCP
 from haku.console import capabilities, mcp_approval
 from haku.console.config import Settings
 from haku.console.models import ConfigResponse
-from haku.console.tools import google as google_tools, grocy as grocy_tools
+from haku.console.tools import gmail as gmail_tools, google_calendar as google_calendar_tools, grocy as grocy_tools
 
 logger = logging.getLogger(__name__)
 
@@ -71,12 +71,19 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.mcp_operator_oauth_store = (
         mcp_approval.PostgresMcpOperatorOAuthStore(database_url) if database_url is not None else None
     )
+    # Two in-process MCP servers (gmail, google_calendar) built from the one mounted
+    # haku_console_google token; the gmail client is also exposed on app.state for the
+    # thread-previews approval-render endpoint.
     in_process_servers: dict[str, FastMCP] = {}
-    app.state.google_gmail_client = None
+    app.state.gmail_client = None
     if settings.google_token_dir is not None:
-        gmail_client, calendar_client = google_tools.build_tool_clients(settings.google_token_dir)
-        app.state.google_gmail_client = gmail_client
-        in_process_servers[google_tools.GOOGLE_SERVER_ID] = google_tools.build_mcp(gmail_client, calendar_client)
+        gmail_client = gmail_tools.build_gmail_client(settings.google_token_dir)
+        calendar_client = google_calendar_tools.build_calendar_client(settings.google_token_dir)
+        app.state.gmail_client = gmail_client
+        in_process_servers[gmail_tools.GMAIL_SERVER_ID] = gmail_tools.build_mcp(gmail_client)
+        in_process_servers[google_calendar_tools.GOOGLE_CALENDAR_SERVER_ID] = google_calendar_tools.build_mcp(
+            calendar_client
+        )
     app.state.tool_call_event_hub = tool_call_event_hub
     app.state.tool_call_executor = mcp_approval.McpToolExecutor(in_process_servers)
     app.state.tool_call_metadata_provider = mcp_approval.McpMetadataProvider(in_process_servers)
@@ -121,7 +128,8 @@ def create_app(settings: Settings) -> FastAPI:
 
     app.include_router(capabilities.router)
     app.include_router(mcp_approval.router)
-    app.include_router(google_tools.router)
+    app.include_router(gmail_tools.router)
+    app.include_router(google_calendar_tools.router)
     app.include_router(grocy_tools.router)
 
     # Optional direct local/dev fallback. Production serves the SPA from the

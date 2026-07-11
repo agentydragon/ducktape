@@ -35,7 +35,7 @@ export const SAMPLE_TOOL_CALLS: ToolCallRecord[] = [
   toolCall({ tool_call_id: "tc_1", title: "Add Thrive box items to Grocy", status: "ok" }),
   toolCall({
     tool_call_id: "tc_2",
-    server_id: "google",
+    server_id: "google_calendar",
     tool_name: "create_calendar_event",
     title: "Create calendar event: Dentist",
     status: "error",
@@ -180,7 +180,7 @@ export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record
     },
   },
   {
-    serverId: "google",
+    serverId: "google_calendar",
     toolName: "create_calendar_event",
     args: {
       summary: "Dentist appointment",
@@ -193,13 +193,13 @@ export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record
     },
   },
   {
-    serverId: "google",
-    toolName: "batch_modify_gmail_thread_labels",
+    serverId: "gmail",
+    toolName: "threads_batch_modify",
     args: { thread_ids: ["t1", "t2", "t3", "t4"], add: ["Follow up"], remove: ["Inbox"] },
   },
   {
-    serverId: "google",
-    toolName: "create_gmail_draft",
+    serverId: "gmail",
+    toolName: "drafts_create",
     args: {
       to: ["ops@allegedly.works"],
       cc: ["rai@allegedly.works"],

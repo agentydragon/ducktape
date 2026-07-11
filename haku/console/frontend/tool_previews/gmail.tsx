@@ -1,89 +1,26 @@
-// Per-tool-type rendering for haku-console's in-process `google` MCP server (see
-// haku/console/tools/google.py). Falls back to the generic raw-JSON view
-// (approval_state.ts's argumentsJson) for anything that isn't shaped as expected —
-// arguments are only validated by the tool's own Pydantic model at execution time, not
-// at submission, so a pending approval's arguments could in principle be malformed. The
-// zod schemas below are generated from those same Pydantic models (:schema_zod), so this
-// file's shape checks can never drift from the backend's — see haku/console/tools/google.py.
+// Per-tool-type rendering for haku-console's in-process `gmail` MCP server's write tools
+// (see haku/console/tools/gmail.py). Falls back to the generic raw-JSON view
+// (approval_state.ts's argumentsJson) for anything that isn't shaped as expected — arguments
+// are only validated by the tool's own Pydantic model at execution time, not at submission,
+// so a pending approval's arguments could in principle be malformed. The read tools have no
+// widget here (their args — a query, an id, a format — are self-descriptive). The zod schemas
+// below are generated from the write tools' Pydantic argument models (:schema_zod), so this
+// file's shape checks can never drift from the backend's — see haku/console/tools/gmail.py.
 
 import { Anchor, Badge, Group, Loader, Stack, Text } from "@mantine/core";
-import { formatDuration } from "date-fns";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import type { z } from "zod";
 
-import {
-  zBatchModifyGmailThreadLabelsArgs,
-  zCalendarReminder,
-  zCreateCalendarEventArgs,
-  zCreateGmailDraftArgs,
-  zEventDateTime,
-} from "../api/schema.zod.ts";
-import { fetchGmailThreadPreviews, type GmailThreadPreview } from "../google_client.ts";
+import { zBatchModifyGmailThreadLabelsArgs, zCreateGmailDraftArgs } from "../api/schema.zod.ts";
 import { Field } from "../field.tsx";
+import { fetchGmailThreadPreviews, type GmailThreadPreview } from "../gmail_client.ts";
 import { COMPACT_ITEM_LIMIT, firstLines, MoreLine, type PreviewVariant } from "./variant.tsx";
 
-export const GOOGLE_SERVER_ID = "google";
+export const GMAIL_SERVER_ID = "gmail";
 
-type EventDateTime = z.infer<typeof zEventDateTime>;
-type CalendarReminder = z.infer<typeof zCalendarReminder>;
-type CreateCalendarEventArgs = z.infer<typeof zCreateCalendarEventArgs>;
 type BatchModifyGmailThreadLabelsArgs = z.infer<typeof zBatchModifyGmailThreadLabelsArgs>;
 type CreateGmailDraftArgs = z.infer<typeof zCreateGmailDraftArgs>;
-
-function formatEventDateTime(value: EventDateTime): string {
-  if (value.date) return value.date;
-  if (value.date_time) return value.time_zone ? `${value.date_time} (${value.time_zone})` : value.date_time;
-  return "(unset)";
-}
-
-function formatReminder(reminder: CalendarReminder): string {
-  const totalMinutes = reminder.minutes_before_start;
-  const timing =
-    totalMinutes === 0
-      ? "at event start"
-      : `${formatDuration({
-          days: Math.floor(totalMinutes / 1440),
-          hours: Math.floor((totalMinutes % 1440) / 60),
-          minutes: totalMinutes % 60,
-        })} before`;
-  return `${reminder.method === "popup" ? "Popup" : "Email"}, ${timing}`;
-}
-
-function CreateCalendarEventPreview({ args, variant }: { args: CreateCalendarEventArgs; variant: PreviewVariant }) {
-  // Common trunk: the wrapper + event summary; compact stops at the start time, detailed
-  // expands the full when/where/who.
-  return (
-    <Stack gap="xs">
-      <Field label="Event">{args.summary}</Field>
-      {variant === "compact" ? (
-        <Field label="When">{formatEventDateTime(args.start)}</Field>
-      ) : (
-        <>
-          <div className="haku-shell-field-grid">
-            <Field label="Start">{formatEventDateTime(args.start)}</Field>
-            <Field label="End">{formatEventDateTime(args.end)}</Field>
-          </div>
-          {args.location && <Field label="Location">{args.location}</Field>}
-          {args.description && <Field label="Description">{args.description}</Field>}
-          {args.calendar_id && args.calendar_id !== "primary" && <Field label="Calendar">{args.calendar_id}</Field>}
-          {args.reminders && args.reminders.length > 0 && (
-            <Field label="Reminders">
-              <Stack gap={2}>
-                {args.reminders.map((reminder, i) => (
-                  <Text size="sm" key={i}>
-                    {formatReminder(reminder)}
-                  </Text>
-                ))}
-              </Stack>
-            </Field>
-          )}
-          {args.attendees && args.attendees.length > 0 && <Field label="Attendees">{args.attendees.join(", ")}</Field>}
-        </>
-      )}
-    </Stack>
-  );
-}
 
 function GmailThreadRow({
   threadId,
@@ -227,22 +164,19 @@ function CreateGmailDraftPreview({ args, variant }: { args: CreateGmailDraftArgs
   );
 }
 
-/** Nice per-tool rendering for the `google` server's tools; `null` when the (server, tool,
- * arguments) triple doesn't match a known widget, so the caller falls back to raw JSON. */
-export function googleToolPreview(
+/** Nice per-tool rendering for the `gmail` server's write tools; `null` when the (tool,
+ * arguments) pair doesn't match a known widget, so the caller falls back to raw JSON (as the
+ * read tools, whose args are self-descriptive, always do). */
+export function gmailToolPreview(
   toolName: string,
   args: Record<string, unknown>,
   variant: PreviewVariant
 ): ReactNode | null {
-  if (toolName === "create_calendar_event") {
-    const parsed = zCreateCalendarEventArgs.safeParse(args);
-    return parsed.success ? <CreateCalendarEventPreview args={parsed.data} variant={variant} /> : null;
-  }
-  if (toolName === "batch_modify_gmail_thread_labels") {
+  if (toolName === "threads_batch_modify") {
     const parsed = zBatchModifyGmailThreadLabelsArgs.safeParse(args);
     return parsed.success ? <BatchModifyGmailThreadLabelsPreview args={parsed.data} variant={variant} /> : null;
   }
-  if (toolName === "create_gmail_draft") {
+  if (toolName === "drafts_create") {
     const parsed = zCreateGmailDraftArgs.safeParse(args);
     return parsed.success ? <CreateGmailDraftPreview args={parsed.data} variant={variant} /> : null;
   }
