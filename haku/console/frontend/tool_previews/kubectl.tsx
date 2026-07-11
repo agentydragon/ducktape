@@ -7,10 +7,10 @@
 // unambiguously matters more than for narrower-scoped tools.
 
 import { Badge, Group, Stack, Text } from "@mantine/core";
-import type { ReactNode } from "react";
 import { z } from "zod";
 
 import { Field } from "../field.tsx";
+import { definePreview, type ToolPreview } from "./entry.tsx";
 import { clampBlock, type PreviewVariant } from "./variant.tsx";
 
 export const KUBECTL_SERVER_ID = "kubectl-passthrough-mcp";
@@ -111,24 +111,12 @@ function PodsDeletePreview({ args }: { args: PodsDeleteArgs }) {
   return <DeleteTargetPreview kind="Pod" name={args.name} namespace={args.namespace} gracePeriodSeconds={undefined} />;
 }
 
-/** Nice per-tool rendering for the `kubectl-passthrough-mcp` server's highest-stakes tools
- * (apply and delete); `null` for anything else, so the caller falls back to raw JSON. */
-export function kubectlToolPreview(
-  toolName: string,
-  args: Record<string, unknown>,
-  variant: PreviewVariant
-): ReactNode | null {
-  if (toolName === "resources_create_or_update") {
-    const parsed = zResourcesCreateOrUpdateArgs.safeParse(args);
-    return parsed.success ? <ResourcesApplyPreview args={parsed.data} variant={variant} /> : null;
-  }
-  if (toolName === "resources_delete") {
-    const parsed = zResourcesDeleteArgs.safeParse(args);
-    return parsed.success ? <ResourcesDeletePreview args={parsed.data} /> : null;
-  }
-  if (toolName === "pods_delete") {
-    const parsed = zPodsDeleteArgs.safeParse(args);
-    return parsed.success ? <PodsDeletePreview args={parsed.data} /> : null;
-  }
-  return null;
-}
+/** Per-tool preview widgets for the `kubectl-passthrough-mcp` server's highest-stakes tools
+ * (apply and delete). */
+export const kubectlPreviews = {
+  resources_create_or_update: definePreview(zResourcesCreateOrUpdateArgs, (args, variant) => (
+    <ResourcesApplyPreview args={args} variant={variant} />
+  )),
+  resources_delete: definePreview(zResourcesDeleteArgs, (args) => <ResourcesDeletePreview args={args} />),
+  pods_delete: definePreview(zPodsDeleteArgs, (args) => <PodsDeletePreview args={args} />),
+} satisfies Record<string, ToolPreview>;

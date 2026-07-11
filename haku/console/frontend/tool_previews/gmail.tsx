@@ -8,13 +8,13 @@
 // file's shape checks can never drift from the backend's — see haku/console/tools/gmail.py.
 
 import { Anchor, Badge, Group, Loader, Stack, Text } from "@mantine/core";
-import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import type { z } from "zod";
 
 import { zBatchModifyGmailThreadLabelsArgs, zCreateGmailDraftArgs } from "../api/schema.zod.ts";
 import { Field } from "../field.tsx";
 import { fetchGmailThreadPreviews, type GmailThreadPreview } from "../gmail_client.ts";
+import { definePreview, type ToolPreview } from "./entry.tsx";
 import { COMPACT_ITEM_LIMIT, firstLines, MoreLine, type PreviewVariant } from "./variant.tsx";
 
 export const GMAIL_SERVER_ID = "gmail";
@@ -164,21 +164,13 @@ function CreateGmailDraftPreview({ args, variant }: { args: CreateGmailDraftArgs
   );
 }
 
-/** Nice per-tool rendering for the `gmail` server's write tools; `null` when the (tool,
- * arguments) pair doesn't match a known widget, so the caller falls back to raw JSON (as the
- * read tools, whose args are self-descriptive, always do). */
-export function gmailToolPreview(
-  toolName: string,
-  args: Record<string, unknown>,
-  variant: PreviewVariant
-): ReactNode | null {
-  if (toolName === "threads_batch_modify") {
-    const parsed = zBatchModifyGmailThreadLabelsArgs.safeParse(args);
-    return parsed.success ? <BatchModifyGmailThreadLabelsPreview args={parsed.data} variant={variant} /> : null;
-  }
-  if (toolName === "drafts_create") {
-    const parsed = zCreateGmailDraftArgs.safeParse(args);
-    return parsed.success ? <CreateGmailDraftPreview args={parsed.data} variant={variant} /> : null;
-  }
-  return null;
-}
+/** Per-tool preview widgets for the `gmail` server's write tools. Read tools have no entry —
+ * their args (a query, an id, a format) are self-descriptive, so the raw-JSON fallback serves. */
+export const gmailPreviews = {
+  threads_batch_modify: definePreview(zBatchModifyGmailThreadLabelsArgs, (args, variant) => (
+    <BatchModifyGmailThreadLabelsPreview args={args} variant={variant} />
+  )),
+  drafts_create: definePreview(zCreateGmailDraftArgs, (args, variant) => (
+    <CreateGmailDraftPreview args={args} variant={variant} />
+  )),
+} satisfies Record<string, ToolPreview>;

@@ -11,9 +11,9 @@ Registered as MCP server id `google_calendar` in `cluster/k8s/haku/console/confi
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastmcp import FastMCP
 from googleapiclient.discovery import build
 from pydantic import BaseModel, Field
@@ -21,10 +21,12 @@ from pydantic import BaseModel, Field
 from gmail_api.service import credentials_from_token_dir
 from haku.console.tools.google_calendar_client import (
     CalendarReminder,
+    CalendarSummary,
     CalendarToolsClient,
     CreateCalendarEventArgs,
     CreateCalendarEventResult,
     EventDateTime,
+    resolve_calendar_summary,
 )
 
 GOOGLE_CALENDAR_SERVER_ID = "google_calendar"
@@ -89,7 +91,24 @@ def build_calendar_client(token_dir: Path) -> CalendarToolsClient:
     return CalendarToolsClient(service)
 
 
+def _calendar_client(request: Request) -> CalendarToolsClient:
+    client = request.app.state.calendar_client
+    if client is None:
+        raise HTTPException(status_code=503, detail="Calendar tools are not configured (google_token_dir unset)")
+    return cast(CalendarToolsClient, client)
+
+
+CalendarClientDep = Annotated[CalendarToolsClient, Depends(_calendar_client)]
+
 router = APIRouter(prefix="/api/google-calendar", tags=["google_calendar"])
+
+
+@router.get("/calendar-summary")
+async def calendar_summary(calendar: CalendarClientDep, calendar_id: Annotated[str, Query()]) -> CalendarSummary:
+    """Live display-name + Google Calendar link for a calendar id, for rendering a pending
+    `create_calendar_event` approval — the tool call only carries the id, so the approval UI
+    resolves the human-readable name here. A plain HTTP read, not an MCP tool."""
+    return resolve_calendar_summary(calendar.service, calendar_id)
 
 
 class CalendarToolArgumentExamples(BaseModel):

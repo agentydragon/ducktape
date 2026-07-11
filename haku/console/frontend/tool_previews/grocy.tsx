@@ -16,12 +16,12 @@
 // via GET /api/grocy-sf/reference and every row resolves through it.
 
 import { Badge, Group, Stack, Text } from "@mantine/core";
-import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 
 import { fetchGrocyReference, type GrocyReferenceResponse } from "../grocy_client.ts";
 import { Field } from "../field.tsx";
+import { definePreview, type ToolPreview } from "./entry.tsx";
 import { COMPACT_ITEM_LIMIT, MoreLine, type PreviewVariant } from "./variant.tsx";
 
 export const GROCY_SERVER_ID = "grocy-sf";
@@ -302,24 +302,13 @@ function ProductsCreatePreview({ args, variant }: { args: ProductsCreateArgs; va
   );
 }
 
-/** Nice per-tool rendering for the `grocy-sf` server's stock and product-creation tools;
- * `null` for anything else, so the caller falls back to raw JSON. */
-export function grocyToolPreview(
-  toolName: string,
-  args: Record<string, unknown>,
-  variant: PreviewVariant
-): ReactNode | null {
-  if (toolName === "stock_add") {
-    const parsed = zStockAddArgs.safeParse(args);
-    return parsed.success ? <StockAddPreview args={parsed.data} variant={variant} /> : null;
-  }
-  if (toolName === "stock_consume") {
-    const parsed = zStockConsumeArgs.safeParse(args);
-    return parsed.success ? <StockConsumePreview args={parsed.data} variant={variant} /> : null;
-  }
-  if (toolName === "products_create") {
-    const parsed = zProductsCreateArgs.safeParse(args);
-    return parsed.success ? <ProductsCreatePreview args={parsed.data} variant={variant} /> : null;
-  }
-  return null;
-}
+/** Per-tool preview widgets for the `grocy-sf` server's stock and product-creation tools. */
+export const grocyPreviews = {
+  stock_add: definePreview(zStockAddArgs, (args, variant) => <StockAddPreview args={args} variant={variant} />),
+  stock_consume: definePreview(zStockConsumeArgs, (args, variant) => (
+    <StockConsumePreview args={args} variant={variant} />
+  )),
+  products_create: definePreview(zProductsCreateArgs, (args, variant) => (
+    <ProductsCreatePreview args={args} variant={variant} />
+  )),
+} satisfies Record<string, ToolPreview>;

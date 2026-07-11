@@ -35,6 +35,15 @@ js_library(
 )
 
 js_library(
+    name = "calendar_client",
+    srcs = ["calendar_client.ts"],
+    deps = [
+        ":client",
+        ":schema",
+    ],
+)
+
+js_library(
     name = "gmail_client",
     srcs = ["gmail_client.ts"],
     deps = [
@@ -260,6 +269,7 @@ filegroup(
     srcs = [
         "app.tsx",
         "approval_state.ts",
+        "calendar_client.ts",
         "client.ts",
         "confirm_dialog.tsx",
         "console_panel.tsx",

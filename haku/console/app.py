@@ -72,14 +72,16 @@ def create_app(settings: Settings) -> FastAPI:
         mcp_approval.PostgresMcpOperatorOAuthStore(database_url) if database_url is not None else None
     )
     # Two in-process MCP servers (gmail, google_calendar) built from the one mounted
-    # haku_console_google token; the gmail client is also exposed on app.state for the
-    # thread-previews approval-render endpoint.
+    # haku_console_google token; each client is also exposed on app.state for its
+    # approval-render read endpoint (gmail thread previews, calendar-name resolution).
     in_process_servers: dict[str, FastMCP] = {}
     app.state.gmail_client = None
+    app.state.calendar_client = None
     if settings.google_token_dir is not None:
         gmail_client = gmail_tools.build_gmail_client(settings.google_token_dir)
         calendar_client = google_calendar_tools.build_calendar_client(settings.google_token_dir)
         app.state.gmail_client = gmail_client
+        app.state.calendar_client = calendar_client
         in_process_servers[gmail_tools.GMAIL_SERVER_ID] = gmail_tools.build_mcp(gmail_client)
         in_process_servers[google_calendar_tools.GOOGLE_CALENDAR_SERVER_ID] = google_calendar_tools.build_mcp(
             calendar_client

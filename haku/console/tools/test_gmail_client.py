@@ -167,6 +167,18 @@ class _FakeGmailService:
         return _FakeBatch(callback)
 
 
+@pytest.fixture
+def svc() -> _FakeGmailService:
+    # Empty by default; each test populates the fields its call reads. GmailToolsClient reads the
+    # service lazily (at call time), so a test configures `svc` after the `client` fixture built it.
+    return _FakeGmailService()
+
+
+@pytest.fixture
+def client(svc: _FakeGmailService) -> GmailToolsClient:
+    return GmailToolsClient(svc)
+
+
 def _call(svc: _FakeGmailService, name: str) -> dict[str, Any]:
     matches = [params for called, params in svc.calls if called == name]
     assert len(matches) == 1, f"expected exactly one {name} call, got {matches}"
@@ -177,62 +189,56 @@ def _draft(draft_id: str, message_id: str) -> Draft:
     return Draft(id=draft_id, message=Message(id=message_id, thread_id="t1"))
 
 
-def test_list_labels_returns_real_label_models() -> None:
-    svc = _FakeGmailService(
-        labels=[
-            GmailLabel(id="Label_1", name="haku/triaged", type=LabelType.USER),
-            GmailLabel(id="INBOX", name="INBOX", type=LabelType.SYSTEM),
-        ]
-    )
-    result = GmailToolsClient(svc).labels_list()
+def test_list_labels_returns_real_label_models(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    svc.labels = [
+        GmailLabel(id="Label_1", name="haku/triaged", type=LabelType.USER),
+        GmailLabel(id="INBOX", name="INBOX", type=LabelType.SYSTEM),
+    ]
+    result = client.labels_list()
     by_name = {label.name: label for label in result.labels}
     assert by_name["haku/triaged"].id == "Label_1"
     assert by_name["INBOX"].type == LabelType.SYSTEM
 
 
-def test_get_label_parses_counts() -> None:
-    svc = _FakeGmailService(
-        label_responses={
-            "Label_1": _dump(GmailLabel(id="Label_1", name="haku/x", type=LabelType.USER, threads_total=3))
-        }
+def test_get_label_parses_counts(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    svc.label_responses["Label_1"] = _dump(
+        GmailLabel(id="Label_1", name="haku/x", type=LabelType.USER, threads_total=3)
     )
-    label = GmailToolsClient(svc).labels_get("Label_1")
+    label = client.labels_get("Label_1")
     assert label.name == "haku/x"
     assert label.threads_total == 3
     assert _call(svc, "labels.get") == {"id": "Label_1"}
 
 
-def test_search_threads_passes_page_token_and_returns_pagination() -> None:
-    svc = _FakeGmailService(
-        threads_list_response=_dump(
-            ThreadsListResponse(
-                threads=[Thread(id="t1", snippet="hi")], next_page_token="NEXT", result_size_estimate=42
-            )
-        )
+def test_search_threads_passes_page_token_and_returns_pagination(
+    svc: _FakeGmailService, client: GmailToolsClient
+) -> None:
+    svc.threads_list_response = _dump(
+        ThreadsListResponse(threads=[Thread(id="t1", snippet="hi")], next_page_token="NEXT", result_size_estimate=42)
     )
-    result = GmailToolsClient(svc).threads_list(SearchThreadsArgs(query="is:unread", max_results=10, page_token="PREV"))
+    result = client.threads_list(SearchThreadsArgs(query="is:unread", max_results=10, page_token="PREV"))
     assert [thread.id for thread in result.threads] == ["t1"]
     assert result.next_page_token == "NEXT"
     assert result.result_size_estimate == 42
     assert _call(svc, "threads.list") == {"q": "is:unread", "maxResults": 10, "pageToken": "PREV"}
 
 
-def test_search_threads_omits_page_token_on_first_page() -> None:
-    svc = _FakeGmailService(threads_list_response=_dump(ThreadsListResponse()))
-    GmailToolsClient(svc).threads_list(SearchThreadsArgs(query="x"))
+def test_search_threads_omits_page_token_on_first_page(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    svc.threads_list_response = _dump(ThreadsListResponse())
+    client.threads_list(SearchThreadsArgs(query="x"))
     assert "pageToken" not in _call(svc, "threads.list")
 
 
-def test_get_thread_passes_format_and_parses_messages() -> None:
+def test_get_thread_passes_format_and_parses_messages(svc: _FakeGmailService, client: GmailToolsClient) -> None:
     thread = Thread(id="t1", snippet="hello", messages=[Message(id="m1", thread_id="t1", label_ids=["INBOX"])])
-    svc = _FakeGmailService(thread_responses={"t1": _dump(thread)})
-    result = GmailToolsClient(svc).threads_get("t1", ThreadFormat.METADATA)
+    svc.thread_responses["t1"] = _dump(thread)
+    result = client.threads_get("t1", ThreadFormat.METADATA)
     assert result.messages is not None
     assert [message.id for message in result.messages] == ["m1"]
     assert _call(svc, "threads.get") == {"id": "t1", "format": "metadata"}
 
 
-def test_get_message_full_returns_payload_verbatim() -> None:
+def test_get_message_full_returns_payload_verbatim(svc: _FakeGmailService, client: GmailToolsClient) -> None:
     message = Message(
         id="m1",
         thread_id="t1",
@@ -244,8 +250,8 @@ def test_get_message_full_returns_payload_verbatim() -> None:
             parts=[MessagePart(mime_type="text/plain", body=MessagePartBody(size=5, data="aGVsbG8="))],
         ),
     )
-    svc = _FakeGmailService(message_responses={"m1": _dump(message)})
-    result = GmailToolsClient(svc).messages_get("m1", MessageFormat.FULL)
+    svc.message_responses["m1"] = _dump(message)
+    result = client.messages_get("m1", MessageFormat.FULL)
     assert result.label_ids == ["INBOX", "Label_1"]
     # Body data is returned exactly as Gmail gives it (base64url), never decoded.
     assert result.payload is not None
@@ -256,16 +262,15 @@ def test_get_message_full_returns_payload_verbatim() -> None:
     assert _call(svc, "messages.get") == {"id": "m1", "format": "full"}
 
 
-def test_get_message_raw_passes_raw_format() -> None:
-    svc = _FakeGmailService(message_responses={"m1": _dump(Message(id="m1", raw="UkFXLUJZVEVT"))})
-    result = GmailToolsClient(svc).messages_get("m1", MessageFormat.RAW)
+def test_get_message_raw_passes_raw_format(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    svc.message_responses["m1"] = _dump(Message(id="m1", raw="UkFXLUJZVEVT"))
+    result = client.messages_get("m1", MessageFormat.RAW)
     assert result.raw == "UkFXLUJZVEVT"
     assert _call(svc, "messages.get") == {"id": "m1", "format": "raw"}
 
 
-def test_create_label_sends_body_and_parses() -> None:
-    svc = _FakeGmailService()
-    label = GmailToolsClient(svc).labels_create(CreateLabelRequest(name="receipts/amazon"))
+def test_create_label_sends_body_and_parses(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    label = client.labels_create(CreateLabelRequest(name="receipts/amazon"))
     assert label.name == "receipts/amazon"
     assert label.id == "Label_1"
     body = _call(svc, "labels.create")
@@ -273,22 +278,20 @@ def test_create_label_sends_body_and_parses() -> None:
     assert body["labelListVisibility"] == "labelShow"  # camelCase alias, default visibility
 
 
-def test_patch_label_sends_only_set_fields() -> None:
-    svc = _FakeGmailService()
-    GmailToolsClient(svc).labels_patch("Label_1", PatchLabelRequest(name="renamed"))
+def test_patch_label_sends_only_set_fields(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    client.labels_patch("Label_1", PatchLabelRequest(name="renamed"))
     params = _call(svc, "labels.patch")
     assert params == {"id": "Label_1", "name": "renamed"}  # unset visibilities omitted (exclude_none)
 
 
-def test_delete_label_calls_delete() -> None:
-    svc = _FakeGmailService()
-    GmailToolsClient(svc).labels_delete("Label_9")
+def test_delete_label_calls_delete(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    client.labels_delete("Label_9")
     assert _call(svc, "labels.delete") == {"id": "Label_9"}
 
 
-def test_create_draft_encodes_mime_and_returns_draft_resource() -> None:
-    svc = _FakeGmailService(draft_response=_dump(_draft("d1", "m1")))
-    result = GmailToolsClient(svc).drafts_create(
+def test_create_draft_encodes_mime_and_returns_draft_resource(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    svc.draft_response = _dump(_draft("d1", "m1"))
+    result = client.drafts_create(
         CreateGmailDraftArgs(to=["a@example.com"], cc=["b@example.com"], subject="Hi", body="Hello there")
     )
     assert result.id == "d1"
@@ -302,43 +305,35 @@ def test_create_draft_encodes_mime_and_returns_draft_resource() -> None:
     assert "Hello there" in decoded
 
 
-def test_create_draft_reply_carries_thread_id() -> None:
-    svc = _FakeGmailService(draft_response=_dump(_draft("d1", "m1")))
-    GmailToolsClient(svc).drafts_create(
-        CreateGmailDraftArgs(to=["a@example.com"], subject="Re", body="ok", thread_id="t1")
-    )
+def test_create_draft_reply_carries_thread_id(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    svc.draft_response = _dump(_draft("d1", "m1"))
+    client.drafts_create(CreateGmailDraftArgs(to=["a@example.com"], subject="Re", body="ok", thread_id="t1"))
     assert _call(svc, "drafts.create")["message"]["threadId"] == "t1"
 
 
-def test_batch_modify_creates_missing_add_label_and_modifies_threads() -> None:
-    svc = _FakeGmailService()
-    result = GmailToolsClient(svc).threads_batch_modify(
-        BatchModifyGmailThreadLabelsArgs(thread_ids=["t1", "t2"], add=["urgent"])
-    )
+def test_batch_modify_creates_missing_add_label_and_modifies_threads(
+    svc: _FakeGmailService, client: GmailToolsClient
+) -> None:
+    result = client.threads_batch_modify(BatchModifyGmailThreadLabelsArgs(thread_ids=["t1", "t2"], add=["urgent"]))
     assert result.thread_count == 2
     assert [label.name for label in result.added] == ["urgent"]
     assert any(called == "labels.create" for called, _ in svc.calls)
 
 
-def test_batch_modify_reuses_existing_label() -> None:
-    svc = _FakeGmailService(labels=[GmailLabel(id="Label_9", name="urgent", type=LabelType.USER)])
-    result = GmailToolsClient(svc).threads_batch_modify(
-        BatchModifyGmailThreadLabelsArgs(thread_ids=["t1"], add=["urgent"])
-    )
+def test_batch_modify_reuses_existing_label(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    svc.labels = [GmailLabel(id="Label_9", name="urgent", type=LabelType.USER)]
+    result = client.threads_batch_modify(BatchModifyGmailThreadLabelsArgs(thread_ids=["t1"], add=["urgent"]))
     assert result.added == [GmailLabelRef(name="urgent", id="Label_9")]
     assert not any(called == "labels.create" for called, _ in svc.calls)  # not re-created
 
 
-def test_batch_modify_remove_requires_existing_label() -> None:
-    svc = _FakeGmailService()
+def test_batch_modify_remove_requires_existing_label(client: GmailToolsClient) -> None:
     with pytest.raises(ValueError, match="do not exist"):
-        GmailToolsClient(svc).threads_batch_modify(
-            BatchModifyGmailThreadLabelsArgs(thread_ids=["t1"], remove=["ghost"])
-        )
+        client.threads_batch_modify(BatchModifyGmailThreadLabelsArgs(thread_ids=["t1"], remove=["ghost"]))
 
 
-def test_preview_threads_extracts_subject_snippet_and_labels() -> None:
-    svc = _FakeGmailService(labels=[GmailLabel(id="Label_1", name="haku/triaged", type=LabelType.USER)])
+def test_preview_threads_extracts_subject_snippet_and_labels(svc: _FakeGmailService) -> None:
+    svc.labels = [GmailLabel(id="Label_1", name="haku/triaged", type=LabelType.USER)]
     svc.thread_responses["t1"] = _dump(
         Thread(
             id="t1",

@@ -24,6 +24,7 @@ def make_client() -> Callable[..., Any]:
         tool_call_executor: Any | None = None,
         tool_call_metadata_provider: Any | None = None,
         gmail_client: Any | None = None,
+        calendar_client: Any | None = None,
         **settings_overrides: Any,
     ) -> Iterator[TestClient]:
         # haku_ui_url is required; default it so callers only override what they're testing.
@@ -35,6 +36,8 @@ def make_client() -> Callable[..., Any]:
             app.state.tool_call_metadata_provider = tool_call_metadata_provider
         if gmail_client is not None:
             app.state.gmail_client = gmail_client
+        if calendar_client is not None:
+            app.state.calendar_client = calendar_client
         with TestClient(app) as c:
             yield c
 

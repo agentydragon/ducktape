@@ -101,6 +101,7 @@ py_test(
         ":google_calendar",
         ":google_calendar_client",
         "//:conftest",
+        "//haku/console:conftest",
         "@pypi//fastmcp",
         "@pypi//pytest_bazel",
         # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)

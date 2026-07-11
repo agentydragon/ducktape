@@ -111,7 +111,8 @@ HTTP:
   the later auto-approve policy — e.g. label calls scoped to `haku/`). Gmail affordances not
   yet exposed (send, trash/delete, message-level modify, drafts list/send, attachments,
   history, settings/filters) are tracked in `haku/console/TODO.md`.
-- **`google_calendar`** (`haku.console.tools.google_calendar`): `create_calendar_event`.
+- **`google_calendar`** (`haku.console.tools.google_calendar`): `create_calendar_event`, plus a
+  `GET /api/google-calendar/calendar-summary` rendering read (below).
 
 Both servers are built from **one** Airlock-issued `haku_console_google` token
 (`calendar.events` + `gmail.modify` + `gmail.compose`, plus the `google` provider's read-only
@@ -119,10 +120,12 @@ scopes), mounted from `haku-console-google-access-token` (`HAKU_CONSOLE_GOOGLE_T
 kept separate from every other Google-scoped credential in the cluster (Haku's read-only
 token, gmail-labeling's `gmail.modify`-only token) and delivered only to this namespace.
 One-time operator OAuth bootstrap and the scope list: `cluster/k8s/haku/console/README.md`.
-The one plain HTTP endpoint alongside the MCP tools, `GET /api/gmail/thread-previews`
-(subject/snippet/current-labels lookup the approval UI uses to render a pending
-`threads_batch_modify` call — the tool call itself only carries thread IDs), stays
-outside `build_mcp`'s tool surface since it's a read for rendering, not something Haku calls.
+Two plain HTTP endpoints alongside the MCP tools render approvals whose tool call carries only
+opaque ids: `GET /api/gmail/thread-previews` (subject/snippet/current-labels for a pending
+`threads_batch_modify`) and `GET /api/google-calendar/calendar-summary` (a non-primary
+`calendar_id` → the calendar's display name + a Google Calendar link, for a pending
+`create_calendar_event`). Both stay outside `build_mcp`'s tool surface since they're reads for
+rendering, not something Haku calls.
 
 ## Free-form UI — Haku's own UI, embedded
 

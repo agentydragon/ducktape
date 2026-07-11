@@ -3,8 +3,8 @@ load("@aspect_rules_js//js:defs.bzl", "js_library")
 package(default_visibility = ["//visibility:public"])
 
 # Per-server approval-preview widgets. Each module owns one server's widgets and exports its
-# SERVER_ID + a (toolName, args, variant) renderer; `tool_previews` (index.tsx) dispatches to
-# them via a serverId registry.
+# SERVER_ID + a { toolName -> {schema, render} } map; `tool_previews` (index.tsx) dispatches to
+# them via a serverId registry, safeParsing once and handing each widget already-typed data.
 
 # Compact/detailed rendering shared by every widget (the PreviewVariant type + helpers).
 # Leaf: no widget deps, so index.tsx and each widget import it without a cycle.
@@ -17,10 +17,24 @@ js_library(
     ],
 )
 
+# A registry entry (the tool's zod schema + a renderer over its parsed value) plus the
+# definePreview/renderPreview helpers. Leaf like :variant, so index.tsx and every widget import
+# it without a cycle.
+js_library(
+    name = "entry",
+    srcs = ["entry.tsx"],
+    deps = [
+        ":variant",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
 js_library(
     name = "gmail",
     srcs = ["gmail.tsx"],
     deps = [
+        ":entry",
         ":variant",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -35,11 +49,13 @@ js_library(
     name = "google_calendar",
     srcs = ["google_calendar.tsx"],
     deps = [
+        ":entry",
         ":variant",
         "//:node_modules/@mantine/core",
         "//:node_modules/date-fns",
         "//:node_modules/react",
         "//:node_modules/zod",
+        "//haku/console/frontend:calendar_client",
         "//haku/console/frontend:field",
         "//haku/console/frontend:schema_zod",
     ],
@@ -49,6 +65,7 @@ js_library(
     name = "grocy",
     srcs = ["grocy.tsx"],
     deps = [
+        ":entry",
         ":variant",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -62,6 +79,7 @@ js_library(
     name = "kubectl",
     srcs = ["kubectl.tsx"],
     deps = [
+        ":entry",
         ":variant",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -74,6 +92,7 @@ js_library(
     name = "tool_previews",
     srcs = ["index.tsx"],
     deps = [
+        ":entry",
         ":gmail",
         ":google_calendar",
         ":grocy",
@@ -97,25 +116,37 @@ filegroup(
 js_library(
     name = "gmail_test",
     srcs = ["gmail.test.ts"],
-    deps = [":gmail"],
+    deps = [
+        ":entry",
+        ":gmail",
+    ],
 )
 
 js_library(
     name = "google_calendar_test",
     srcs = ["google_calendar.test.ts"],
-    deps = [":google_calendar"],
+    deps = [
+        ":entry",
+        ":google_calendar",
+    ],
 )
 
 js_library(
     name = "grocy_test",
     srcs = ["grocy.test.ts"],
-    deps = [":grocy"],
+    deps = [
+        ":entry",
+        ":grocy",
+    ],
 )
 
 js_library(
     name = "kubectl_test",
     srcs = ["kubectl.test.ts"],
-    deps = [":kubectl"],
+    deps = [
+        ":entry",
+        ":kubectl",
+    ],
 )
 
 js_library(

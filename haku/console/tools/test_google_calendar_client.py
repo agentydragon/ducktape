@@ -1,5 +1,7 @@
-"""Tests for CalendarToolsClient over a fake googleapiclient-shaped Calendar service."""
+"""Tests for CalendarToolsClient and resolve_calendar_summary over a fake googleapiclient-shaped
+Calendar service."""
 
+import base64
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -11,6 +13,7 @@ from haku.console.tools.google_calendar_client import (
     CalendarToolsClient,
     CreateCalendarEventArgs,
     EventDateTime,
+    resolve_calendar_summary,
 )
 
 
@@ -32,11 +35,23 @@ class _FakeExecutable:
 
 
 @dataclass
+class _FakeCalendarList:
+    entries: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    def get(self, *, calendarId):  # noqa: N803 -- mirrors Calendar API's kwarg casing
+        return _FakeExecutable(self.entries[calendarId])
+
+
+@dataclass
 class _FakeCalendarService:
     events_: _FakeEvents = field(default_factory=_FakeEvents)
+    calendar_list_: _FakeCalendarList = field(default_factory=_FakeCalendarList)
 
     def events(self) -> _FakeEvents:
         return self.events_
+
+    def calendarList(self) -> _FakeCalendarList:  # noqa: N802 -- mirrors Calendar API's camelCase
+        return self.calendar_list_
 
 
 @pytest.fixture
@@ -94,6 +109,23 @@ def test_event_date_time_requires_exactly_one_of_date_or_date_time() -> None:
         EventDateTime()
     with pytest.raises(ValueError, match="exactly one of"):
         EventDateTime(date="2026-09-15", date_time="2026-09-15T09:00:00-07:00", time_zone="UTC")
+
+
+def test_resolve_calendar_summary_prefers_override_and_links_by_cid(service: _FakeCalendarService) -> None:
+    service.calendar_list_.entries["team@group.calendar.google.com"] = {
+        "summary": "Team",
+        "summaryOverride": "Team (SF)",  # the operator's own rename wins over the calendar's own name
+    }
+    result = resolve_calendar_summary(service, "team@group.calendar.google.com")
+    assert result.calendar_id == "team@group.calendar.google.com"
+    assert result.summary == "Team (SF)"
+    cid = base64.b64encode(b"team@group.calendar.google.com").decode().rstrip("=")
+    assert result.html_link == f"https://calendar.google.com/calendar/u/0/r?cid={cid}"
+
+
+def test_resolve_calendar_summary_uses_summary_without_override(service: _FakeCalendarService) -> None:
+    service.calendar_list_.entries["c1"] = {"summary": "Holidays"}
+    assert resolve_calendar_summary(service, "c1").summary == "Holidays"
 
 
 if __name__ == "__main__":

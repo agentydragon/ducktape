@@ -1,30 +1,30 @@
 import { describe, expect, it } from "vitest";
 
-import { grocyToolPreview } from "./grocy.tsx";
+import { renderPreview } from "./entry.tsx";
+import { grocyPreviews } from "./grocy.tsx";
 
-describe("grocyToolPreview", () => {
+describe("grocyPreviews", () => {
   it("renders products_create for valid args, in both variants", () => {
     for (const variant of ["compact", "detailed"] as const) {
-      const preview = grocyToolPreview(
-        "products_create",
+      const node = renderPreview(
+        grocyPreviews.products_create,
         { items: [{ name: "Oats", stock_qu: "Gram", location: "Pantry", default_best_before_days: 270 }] },
         variant
       );
-      expect(preview).not.toBeNull();
-      expect(preview).not.toBe(false);
+      expect(node).not.toBeNull();
     }
   });
 
-  it("falls through to null (not false) when args don't match the tool's schema", () => {
+  it("returns null (not false) when args don't match the tool's schema", () => {
     // Regression: the malformed shape a Jul 8 tool_request bug actually produced —
     // {entity_type, body} nesting instead of flat fields. `parsed.success && <X/>` used to
     // return `false` on a schema mismatch, not `null`, so the caller's `?? <pre>` raw-JSON
     // fallback never kicked in — the operator saw a blank Arguments field instead of the JSON.
-    const preview = grocyToolPreview(
-      "products_create",
+    const node = renderPreview(
+      grocyPreviews.products_create,
       { items: [{ entity_type: "products", body: { name: "Oats", stock_qu: "Gram" } }] },
       "detailed"
     );
-    expect(preview).toBeNull();
+    expect(node).toBeNull();
   });
 });

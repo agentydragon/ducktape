@@ -4,13 +4,15 @@
 // schema below is generated from `create_calendar_event`'s Pydantic argument model
 // (:schema_zod), so this file's shape checks can never drift from the backend's.
 
-import { Stack, Text } from "@mantine/core";
+import { Anchor, Loader, Stack, Text } from "@mantine/core";
 import { format, formatDuration, intervalToDuration, parseISO } from "date-fns";
-import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
 import type { z } from "zod";
 
 import { zCalendarReminder, zCreateCalendarEventArgs, zEventDateTime } from "../api/schema.zod.ts";
+import { fetchCalendarSummary, type CalendarSummary } from "../calendar_client.ts";
 import { Field } from "../field.tsx";
+import { definePreview, type ToolPreview } from "./entry.tsx";
 import type { PreviewVariant } from "./variant.tsx";
 
 export const GOOGLE_CALENDAR_SERVER_ID = "google_calendar";
@@ -37,6 +39,45 @@ function formatReminder(reminder: CalendarReminder): string {
   return `${reminder.method === "popup" ? "Popup" : "Email"}, ${timing}`;
 }
 
+// A non-primary calendar's id is opaque; resolve its display name (linked into Google Calendar)
+// via the console read endpoint. On failure the raw id still renders — the operator sees the
+// target either way. Only shown for non-primary calendars (see the caller).
+function CalendarField({ calendarId }: { calendarId: string }) {
+  const [summary, setSummary] = useState<CalendarSummary | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setSummary(null);
+    setFailed(false);
+    fetchCalendarSummary(calendarId)
+      .then((result) => {
+        if (alive) setSummary(result);
+      })
+      .catch(() => {
+        if (alive) setFailed(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [calendarId]);
+
+  return (
+    <Field label="Calendar">
+      {summary ? (
+        <Anchor href={summary.html_link} target="_blank" rel="noreferrer">
+          {summary.summary}
+        </Anchor>
+      ) : failed ? (
+        // Name lookup failed (e.g. deleted calendar, wrong account) — fall back to the raw id.
+        <Text span>{calendarId}</Text>
+      ) : (
+        <Loader size="xs" />
+      )}
+    </Field>
+  );
+}
+
 function CreateCalendarEventPreview({ args, variant }: { args: CreateCalendarEventArgs; variant: PreviewVariant }) {
   // Common trunk: the wrapper + event summary; compact stops at the start time, detailed
   // expands the full when/where/who.
@@ -53,7 +94,7 @@ function CreateCalendarEventPreview({ args, variant }: { args: CreateCalendarEve
           </div>
           {args.location && <Field label="Location">{args.location}</Field>}
           {args.description && <Field label="Description">{args.description}</Field>}
-          {args.calendar_id && args.calendar_id !== "primary" && <Field label="Calendar">{args.calendar_id}</Field>}
+          {args.calendar_id && args.calendar_id !== "primary" && <CalendarField calendarId={args.calendar_id} />}
           {args.reminders && args.reminders.length > 0 && (
             <Field label="Reminders">
               <Stack gap={2}>
@@ -72,16 +113,9 @@ function CreateCalendarEventPreview({ args, variant }: { args: CreateCalendarEve
   );
 }
 
-/** Nice rendering for the `google_calendar` server's `create_calendar_event`; `null` when the
- * (server, tool, arguments) triple doesn't match, so the caller falls back to raw JSON. */
-export function googleCalendarToolPreview(
-  toolName: string,
-  args: Record<string, unknown>,
-  variant: PreviewVariant
-): ReactNode | null {
-  if (toolName === "create_calendar_event") {
-    const parsed = zCreateCalendarEventArgs.safeParse(args);
-    return parsed.success ? <CreateCalendarEventPreview args={parsed.data} variant={variant} /> : null;
-  }
-  return null;
-}
+/** Per-tool preview widgets for the `google_calendar` server. */
+export const googleCalendarPreviews = {
+  create_calendar_event: definePreview(zCreateCalendarEventArgs, (args, variant) => (
+    <CreateCalendarEventPreview args={args} variant={variant} />
+  )),
+} satisfies Record<string, ToolPreview>;

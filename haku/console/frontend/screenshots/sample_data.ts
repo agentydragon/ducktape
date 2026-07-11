@@ -134,6 +134,14 @@ export const SAMPLE_GMAIL_THREADS = {
   },
 };
 
+// The calendar-name lookup the create-event widget fetches for a non-primary calendar_id;
+// served by mock_api so the detailed preview renders the name (linked) instead of the raw id.
+export const SAMPLE_CALENDAR_SUMMARY = {
+  calendar_id: "family@group.calendar.google.com",
+  summary: "Family",
+  html_link: "https://calendar.google.com/calendar/u/0/r?cid=ZmFtaWx5QGdyb3VwLmNhbGVuZGFyLmdvb2dsZS5jb20",
+};
+
 // Every implemented tool-call preview, for the `previews` gallery scene (harness.tsx renders
 // each in both compact and detailed). Real server ids + tool names so the registry dispatches
 // to each widget; the final entry has no widget, exercising the raw-JSON fallback.
@@ -188,6 +196,7 @@ export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record
       end: { date_time: "2026-07-12T10:00:00", time_zone: "America/Los_Angeles" },
       location: "123 Market St, San Francisco",
       description: "Routine cleaning and checkup.",
+      calendar_id: "family@group.calendar.google.com",
       reminders: [{ method: "popup", minutes_before_start: 30 }],
       attendees: ["dentist@example.com"],
     },
