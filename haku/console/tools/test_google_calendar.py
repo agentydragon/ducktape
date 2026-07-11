@@ -39,9 +39,19 @@ class _FakeCalendarService:
         return self.events_
 
 
-def test_create_event_timed_with_reminders_and_attendees() -> None:
-    service = _FakeCalendarService()
-    client = CalendarToolsClient(service)
+@pytest.fixture
+def service() -> _FakeCalendarService:
+    return _FakeCalendarService()
+
+
+@pytest.fixture
+def client(service: _FakeCalendarService) -> CalendarToolsClient:
+    return CalendarToolsClient(service)
+
+
+def test_create_event_timed_with_reminders_and_attendees(
+    service: _FakeCalendarService, client: CalendarToolsClient
+) -> None:
     args = CreateCalendarEventArgs(
         summary="Pay CA estimated tax",
         start=EventDateTime(date_time="2026-09-15T09:00:00-07:00", time_zone="America/Los_Angeles"),
@@ -65,9 +75,9 @@ def test_create_event_timed_with_reminders_and_attendees() -> None:
     assert body["attendees"] == [{"email": "michael@example.com"}]
 
 
-def test_create_event_all_day_omits_reminders_when_unset() -> None:
-    service = _FakeCalendarService()
-    client = CalendarToolsClient(service)
+def test_create_event_all_day_omits_reminders_when_unset(
+    service: _FakeCalendarService, client: CalendarToolsClient
+) -> None:
     args = CreateCalendarEventArgs(
         summary="Federal estimated tax due",
         start=EventDateTime(date="2026-09-15"),
