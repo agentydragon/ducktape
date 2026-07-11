@@ -1,18 +1,72 @@
-import { Badge, Button, Group, Loader, Stack, Text } from "@mantine/core";
+import { Badge, Button, Group, Loader, Stack, Text, Textarea } from "@mantine/core";
 import { useCallback, useState } from "react";
 
 import { approvalDisplayFields, shortDate, statusColor, terminalStatusLabel } from "./approval_state.ts";
-import { fetchToolCalls, type ToolCallRecord } from "./client.ts";
+import { approveToolCall, denyToolCall, fetchToolCalls, type ToolCallRecord } from "./client.ts";
 import { Field } from "./field.tsx";
 import { ArrowLeftIcon } from "./icons.tsx";
+import { ACTION_COLOR } from "./theme.ts";
+import { toastError, toastSuccess } from "./toast.ts";
 import { ToolArgumentsField } from "./tool_arguments_field.tsx";
 import { useToolCallEvents } from "./tool_call_events.ts";
 
 // Matches the backend's `le=500` cap on GET /api/tool-calls (mcp_approval.py).
 const HISTORY_LIMIT = 500;
 
-function ToolCallRow({ record }: { record: ToolCallRecord }) {
+function PendingActions({
+  deciding,
+  onApprove,
+  onDeny,
+}: {
+  deciding: boolean;
+  onApprove: () => void;
+  onDeny: (reason?: string) => void;
+}) {
+  const [denyReason, setDenyReason] = useState("");
+  return (
+    <div>
+      <Textarea
+        size="xs"
+        label="Denial reason (optional)"
+        placeholder="Why are you denying this?"
+        autosize
+        minRows={1}
+        maxRows={4}
+        disabled={deciding}
+        value={denyReason}
+        onChange={(e) => setDenyReason(e.currentTarget.value)}
+      />
+      <Group justify="flex-end" gap="xs" mt="xs">
+        <Button
+          size="compact-sm"
+          variant="light"
+          color="red"
+          loading={deciding}
+          onClick={() => onDeny(denyReason.trim() || undefined)}
+        >
+          Deny
+        </Button>
+        <Button size="compact-sm" color={ACTION_COLOR} loading={deciding} onClick={onApprove}>
+          Approve
+        </Button>
+      </Group>
+    </div>
+  );
+}
+
+function ToolCallRow({
+  record,
+  deciding,
+  onApprove,
+  onDeny,
+}: {
+  record: ToolCallRecord;
+  deciding: boolean;
+  onApprove: () => void;
+  onDeny: (reason?: string) => void;
+}) {
   const fields = approvalDisplayFields(record);
+  const pending = record.status === "pending_approval";
   return (
     <section className="haku-shell-card">
       <Stack gap="sm">
@@ -56,6 +110,7 @@ function ToolCallRow({ record }: { record: ToolCallRecord }) {
             <code>{fields.toolCallId}</code>
           </details>
         </dl>
+        {pending && <PendingActions deciding={deciding} onApprove={onApprove} onDeny={onDeny} />}
       </Stack>
     </section>
   );
@@ -64,10 +119,13 @@ function ToolCallRow({ record }: { record: ToolCallRecord }) {
 // The console's own full-page view of the whole tool-call audit ledger — a bigger,
 // persistent counterpart to the shell drawer's ephemeral "Recent" list. Its own route
 // (routing.ts → "/tool-calls"), so the framed haku-ui is unmounted while it's open.
+// A pending call that streams in (via the live WS signal) can be approved/denied here too,
+// through the same CSRF-gated endpoints the drawer uses, without going back to the shell.
 export function ToolCallsPage({ onBack }: { onBack: () => void }) {
   const [records, setRecords] = useState<ToolCallRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [decidingId, setDecidingId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -85,8 +143,27 @@ export function ToolCallsPage({ onBack }: { onBack: () => void }) {
   }, []);
 
   // Live: initial load on mount plus a refetch whenever a tool call is submitted, approved,
-  // denied, or finishes anywhere — the same WS/cross-tab signal the approval drawer uses.
+  // denied, or finishes anywhere — the same WS signal the approval drawer uses.
   useToolCallEvents(load);
+
+  const decide = useCallback(
+    (id: string, run: () => Promise<ToolCallRecord>, okTitle: string) => {
+      setDecidingId(id);
+      run().then(
+        (record) => {
+          toastSuccess(okTitle, `${record.server_id}.${record.tool_name}: ${record.status}`);
+          setDecidingId(null);
+          load();
+        },
+        (e: unknown) => {
+          toastError("Tool call decision failed", e);
+          setDecidingId(null);
+          load();
+        }
+      );
+    },
+    [load]
+  );
 
   return (
     <div className="haku-history-page">
@@ -128,7 +205,17 @@ export function ToolCallsPage({ onBack }: { onBack: () => void }) {
             </section>
           )}
           {records?.map((record) => (
-            <ToolCallRow key={record.tool_call_id} record={record} />
+            <ToolCallRow
+              key={record.tool_call_id}
+              record={record}
+              deciding={decidingId === record.tool_call_id}
+              onApprove={() =>
+                decide(record.tool_call_id, () => approveToolCall(record.tool_call_id), "Tool call approved")
+              }
+              onDeny={(reason) =>
+                decide(record.tool_call_id, () => denyToolCall(record.tool_call_id, reason), "Tool call denied")
+              }
+            />
           ))}
           {records && records.length === HISTORY_LIMIT && (
             <Text size="xs" c="dimmed" ta="center">

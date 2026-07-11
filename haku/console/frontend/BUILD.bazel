@@ -209,6 +209,8 @@ js_library(
         ":client",
         ":field",
         ":icons",
+        ":theme",
+        ":toast",
         ":tool_arguments_field",
         ":tool_call_events",
         "//:node_modules/@mantine/core",

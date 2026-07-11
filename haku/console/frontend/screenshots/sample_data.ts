@@ -22,6 +22,16 @@ function toolCall(overrides: Partial<ToolCallRecord> & Pick<ToolCallRecord, "too
 }
 
 export const SAMPLE_TOOL_CALLS: ToolCallRecord[] = [
+  toolCall({
+    tool_call_id: "tc_0",
+    server_id: "grocy-sf",
+    tool_name: "shopping_list_items_remove",
+    title: "Remove bought items from the weekly list",
+    status: "pending_approval",
+    rationale: "These are already in stock after the Thrive delivery, so drop them from the list.",
+    result: null,
+    arguments: { ids: [3, 7, 12] },
+  }),
   toolCall({ tool_call_id: "tc_1", title: "Add Thrive box items to Grocy", status: "ok" }),
   toolCall({
     tool_call_id: "tc_2",

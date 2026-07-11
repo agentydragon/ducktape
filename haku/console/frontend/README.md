@@ -33,10 +33,6 @@ components + **Tailwind v4** utilities — modeled on
   MCP operator-account association helpers.
 - `confirm_dialog.tsx` — trusted top-layer confirmations for bridge launches, geolocation
   grants, off-whitelist opens, and MCP tool-call approvals.
-- `console_panel.tsx` — the single settings-button drawer for shell-owned controls. Keep
-  MCP account connect/reconnect/disconnect affordances here rather than adding more visible
-  widgets above the framed haku-ui.
-- `markdown.ts` — item `body` → sanitized HTML (`marked` + `dompurify`).
 - `styles.src.css` — `@import`s Tailwind + `@mantine/core` CSS; compiled by
   `@tailwindcss/cli` to `generated/styles.css`, then fingerprinted into
   `dist/assets/styles-<hash>.css`. Deviation from a plain Tailwind setup: the `@source`

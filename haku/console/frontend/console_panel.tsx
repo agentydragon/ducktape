@@ -312,34 +312,38 @@ function ToolApprovalCard({
           </Badge>
         </Group>
       </div>
-      <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-        <Textarea
-          size="xs"
-          mt="xs"
-          label="Denial reason (optional)"
-          placeholder="Why are you denying this?"
-          autosize
-          minRows={1}
-          maxRows={4}
-          disabled={deciding}
-          value={denyReason}
-          onChange={(e) => setDenyReason(e.currentTarget.value)}
-        />
-        <Group justify="flex-end" gap="xs" mt="xs">
-          <Button
-            size="compact-xs"
-            variant="light"
-            color="red"
-            disabled={deciding || !armed}
-            onClick={() => onDeny(denyReason.trim() || undefined)}
-          >
-            Deny
-          </Button>
-          <Button size="compact-xs" color={ACTION_COLOR} disabled={deciding || !armed} onClick={onApprove}>
-            Approve
-          </Button>
-        </Group>
-      </div>
+      {/* When selected, the detail panel above carries the reason field + actions, so the
+          list card collapses to a highlighted summary — no duplicate reason input. */}
+      {!selected && (
+        <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          <Textarea
+            size="xs"
+            mt="xs"
+            label="Denial reason (optional)"
+            placeholder="Why are you denying this?"
+            autosize
+            minRows={1}
+            maxRows={4}
+            disabled={deciding}
+            value={denyReason}
+            onChange={(e) => setDenyReason(e.currentTarget.value)}
+          />
+          <Group justify="flex-end" gap="xs" mt="xs">
+            <Button
+              size="compact-xs"
+              variant="light"
+              color="red"
+              disabled={deciding || !armed}
+              onClick={() => onDeny(denyReason.trim() || undefined)}
+            >
+              Deny
+            </Button>
+            <Button size="compact-xs" color={ACTION_COLOR} disabled={deciding || !armed} onClick={onApprove}>
+              Approve
+            </Button>
+          </Group>
+        </div>
+      )}
     </section>
   );
 }
