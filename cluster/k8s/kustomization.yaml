@@ -403,6 +403,7 @@ resources:
   - rook-ceph-trial/cluster/flux-kustomization.yaml
   - rook-ceph-trial/filesystem/flux-kustomization.yaml
   - rook-ceph-trial/forgejo-bench/flux-kustomization.yaml
+  - rook-ceph-trial/forgejo-app/flux-kustomization.yaml
   - rook-ceph-trial/benchmarks/flux-kustomization.yaml
 
   # --- seaweedfs (trial) ---
