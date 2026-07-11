@@ -30,12 +30,23 @@ header sent: Authorization: Bearer <jwt>
 omitting `nonce`, or putting the query string in `uri`) returns `401 Unauthorized`
 on every call. JWT signing needs a crypto env (`cryptography` + `pyjwt`), so run it
 from a `haku-sandbox` pod (like the Plaid `psql` pod) or a `uv run --script`
-one-liner — not a bare `curl`. Endpoints (all on `api.coinbase.com`):
+one-liner — not a bare `curl`. Easiest is `coinbase-advanced-py`'s
+`RESTClient(api_key, api_secret).get(<path>, params=…)`, which mints the JWT for you.
+Endpoints (all on `api.coinbase.com`):
 
-- `GET /api/v3/brokerage/accounts` — balances, one entry per currency (`available_balance.value`).
+- **`GET /v2/accounts` — balances; use this one.** One entry per **wallet**
+  (`balance.amount` + `currency` + `name`), **including staked assets** — a separate
+  `Staked ETH`-style wallet shows here. Paginate with `?limit=100`.
 - `GET /api/v3/brokerage/orders/historical/fills` — trade-execution history.
 - `GET /api/v3/brokerage/key_permissions` — cheap sanity check; returns `can_view=true, can_trade=false, can_transfer=false` (the key is read-only).
 - `GET /v2/prices/<from>-<to>/spot` — **public, no auth** — spot price for USD marking.
+
+**Sharp edge — for balances use `/v2/accounts`, NOT `/api/v3/brokerage/accounts`.** The v3
+brokerage endpoint (`get_accounts`) returns only *tradeable* balances and **silently omits
+staked assets** — staked ETH sits in a separate `Staked ETH` wallet that v3 never returns, so a
+v3-only read can undercount the account by a wide margin (caught against the operator's app,
+Jul 11). `/v2/accounts` lists every wallet, staked included. Keep v3 only for `fills` and
+`key_permissions`.
 
 Gotcha: there is **no** generic transactions list endpoint — top-level
 `/api/v3/brokerage/transactions` → `401` and per-account
