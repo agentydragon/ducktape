@@ -139,6 +139,25 @@ just today's synthetic starting states.
   artifact to what this subagent's recipe-planning output should look like — a reasonable
   seed for what "reasonably cookable" means operationally, if this gets built.
 
+## Observability: needs the still-unbuilt Langfuse wiring, not just LiteLLM key metadata
+
+Operator's instinct (2026-07-11) is correct: today's "existing litellm level markings" —
+`litellm_key` Terraform resources with a `key_alias`/`metadata` map
+(`tf/gitops/litellm-keys/main.tf`) — are key-level attribution (which lane/consumer a key
+belongs to), not per-call traces. Actual prompt/completion/tool-call traces need Langfuse, and
+the workers-LiteLLM the zai/oai zones route through doesn't have it wired yet — this is a
+pre-existing gap, not new: see `multi_agent.md`'s "Langfuse `haku-workers` project + viewer
+key" bullet (now fleshed out with what's concretely missing). This subagent shouldn't design
+its own tracing story — it's a consumer of that same fix, and probably the forcing function
+that finally gets it built, given it's a real recurring workload worth actually watching.
+
+The one kitchen-specific input to that decision: whether it gets a dedicated **"Haku kitchen"**
+Langfuse project (operator's suggestion) rather than sharing one flat `haku-workers` project
+with every other zone workload. A dedicated project makes sense once there's more than one
+real subagent — cleaner filtering, per-domain budget/cost visibility — but is one more thing to
+provision (Langfuse has no Terraform provider today; see `multi_agent.md`). Worth deciding
+alongside whatever workload becomes the second one, not in isolation for this one.
+
 ## Relationship to haku-state
 
 The canonical home for the shopping list itself is Grocy (operator's call, 2026-07-11) —
