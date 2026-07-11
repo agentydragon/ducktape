@@ -210,6 +210,15 @@ resource "terraform_data" "registry_push_secret_refresh" {
 # already has egress to github.com (the agentydragon mirror pulls from there too). Single-hop, and
 # decoupled from agentydragon's Forgejo mirror. `mirror`/`clone_addr` are ForceNew: changing the
 # source recreates the repo.
+# CLEANUP(added 2026-07-11): one-shot import — the 02:44Z apply created haku/ducktape but
+# crashed before recording state, wedging every later apply on "already exists" (and, via the
+# Terraform health check, freezing the haku-state Kustomization + its 5 dependents). Remove
+# this block once Terraform/flux-system/haku-state reports Ready with the mirror in state.
+import {
+  to = forgejo_repository.ducktape_mirror
+  id = "haku/ducktape"
+}
+
 resource "forgejo_repository" "ducktape_mirror" {
   owner           = forgejo_user.haku.login
   name            = "ducktape"
