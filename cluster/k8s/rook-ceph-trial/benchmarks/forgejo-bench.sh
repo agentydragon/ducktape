@@ -2,7 +2,7 @@
 set -eu
 
 auth="$(printf '%s:%s' "$FORGEJO_USERNAME" "$FORGEJO_PASSWORD" | base64 | tr -d '\n')"
-repo="ceph-storage-bench"
+repo="storage-bench-${TARGET_NAME}-$(date +%s)-$$"
 api="$FORGEJO_URL/api/v1"
 work=/tmp/forgejo-storage-bench
 
@@ -54,13 +54,13 @@ request "$api/repos/$FORGEJO_USERNAME/$repo/contents/seed.txt" >/dev/null
 
 i=1
 while [ "$i" -le 20 ]; do
-  timed_request version GET "$api/version"
+  timed_request version "$api/version"
   i=$((i + 1))
 done
 
 i=1
 while [ "$i" -le 20 ]; do
-  timed_request contents_read GET "$api/repos/$FORGEJO_USERNAME/$repo/contents/seed.txt"
+  timed_request contents_read "$api/repos/$FORGEJO_USERNAME/$repo/contents/seed.txt"
   i=$((i + 1))
 done
 
