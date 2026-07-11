@@ -118,7 +118,7 @@ spec:
     persistence:
       enabled: true
       create: false
-      claimName: forgejo-ceph-bench-git-rwx
+      claimName: forgejo-ceph-bench-git-rwx-ssd
       accessModes: [ReadWriteMany]
     postgresql:
       enabled: false

@@ -13,6 +13,18 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  name: storage-bench-cephfs-ssd
+  namespace: forgejo-ceph-bench
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: rook-cephfs-trial-ssd
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
   name: storage-bench-seaweedfs
   namespace: forgejo-ceph-bench
 spec:

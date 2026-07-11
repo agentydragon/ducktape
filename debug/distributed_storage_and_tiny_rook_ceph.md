@@ -1,6 +1,6 @@
 # Distributed storage and a tiny Rook/Ceph trial
 
-**Status:** implementation prepared 2026-07-11; measurements pending.
+**Status:** HDD arm measured 2026-07-11; SSD control arm in progress.
 
 This is the implementation companion to <forgejo_git_write_latency.md>. The existing
 SeaweedFS Forgejo attribution bench found 31x slower tiny commits and 254x slower local
@@ -56,7 +56,60 @@ End-to-end test, per Forgejo instance:
 
 ## Results
 
-Pending live reconciliation and benchmark execution.
+Raw CSVs are in <results/rook_ceph_forgejo_2026_07_11/>. The first run compared
+three-copy CephFS on the HDD nodes with two-copy SeaweedFS on the SSD nodes, so it is
+an architecture-plus-media comparison rather than a media-controlled result. Each
+number below is the median wall time in seconds. Lower is better.
+
+### Direct filesystem path: Ceph HDD versus SeaweedFS SSD
+
+| Operation                 | SeaweedFS SSD | CephFS HDD | CephFS relative result |
+| ------------------------- | ------------: | ---------: | ---------------------: |
+| 200 x 4 KiB `fsync` files |          4.38 |      21.37 |           4.88x slower |
+| 50 tiny Git commits       |         26.57 |      21.47 |           1.24x faster |
+| local Git clone           |          5.65 |       1.11 |           5.09x faster |
+
+CephFS removed most of the clone penalty and modestly improved commit batches, but
+three-way replicated BlueStore on loop-backed HDD files was much worse for a stream
+of individually durable tiny files. That is a real result for this trial topology,
+not a general claim that CephFS has slower fsync than SeaweedFS on production media.
+
+### Two-replica Forgejo path: Ceph HDD versus SeaweedFS SSD
+
+| Operation          | SeaweedFS SSD Forgejo | CephFS HDD Forgejo | CephFS relative result |
+| ------------------ | --------------------: | -----------------: | ---------------------: |
+| version request    |                 0.444 |              0.419 |           1.06x faster |
+| contents API read  |                 0.631 |              0.413 |           1.53x faster |
+| contents API write |                 3.097 |              3.160 |           1.02x slower |
+| tiny Git push      |                  1.57 |               2.00 |           1.27x slower |
+
+The application comparison says CephFS is clearly better for read-heavy repository
+access, essentially tied for contents writes, and worse for this tiny-push workload.
+The two Forgejo deployments have matching topology and versions but separate
+databases, so the direct filesystem test is the stronger storage attribution.
+
+### Operational findings
+
+- Pod networking worked for MON, OSD, MDS, and CSI traffic; host networking was not
+  required.
+- Rook canonicalizes device symlinks during inventory, so the CephCluster must select
+  the reserved `/dev/loop3` rather than `/dev/rook-ceph-trial-osd`.
+- A PVC submitted before CSI secrets and CephFS existed retained a poisoned retry;
+  recreating the empty claim after the filesystem was healthy bound immediately.
+- Hard anti-affinity on exactly two Forgejo nodes deadlocks the chart default rollout
+  strategy. `maxSurge: 0` and `maxUnavailable: 1` keeps one replica serving while the
+  other is replaced.
+- Fresh CephFS subvolume roots require an `fsGroup` for a rootless direct writer.
+- Rook performed one coordinated OSD deployment refresh near the end of the direct
+  test. All three OSDs returned `up/in`, all 80 placement groups returned
+  `active+clean`, and final health was `HEALTH_OK`. Five alternating rounds reduce the
+  effect on medians, but loop-backed OSDs remain a trial mechanism, not a production
+  recommendation.
+
+For this workload, CephFS is worth a follow-up on real raw devices (and preferably
+SSD DB/WAL) if clone/read latency is the priority. This loop-backed HDD result does
+not justify replacing SeaweedFS solely for write latency: the gains are
+operation-dependent, and tiny durable writes can be materially worse.
 
 ## Teardown contract
 

@@ -73,9 +73,6 @@ spec:
                 - key: topology.kubernetes.io/zone
                   operator: In
                   values: [hil-ovh]
-                - key: storage.allegedly.works/tier
-                  operator: In
-                  values: [hdd]
       tolerations:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
@@ -100,6 +97,16 @@ spec:
           - name: /dev/loop3
             config:
               deviceClass: hdd
+      - name: ovh-ns104952
+        devices:
+          - name: /dev/loop3
+            config:
+              deviceClass: ssd
+      - name: ovh-ns104963
+        devices:
+          - name: /dev/loop3
+            config:
+              deviceClass: ssd
   healthCheck:
     daemonHealth:
       mon:

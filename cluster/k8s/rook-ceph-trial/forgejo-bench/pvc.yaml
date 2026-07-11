@@ -9,3 +9,15 @@ spec:
   resources:
     requests:
       storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: forgejo-ceph-bench-git-rwx-ssd
+  namespace: forgejo-ceph-bench
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: rook-cephfs-trial-ssd
+  resources:
+    requests:
+      storage: 10Gi
