@@ -81,26 +81,6 @@ new **free/autonomous** write tools: capabilities Haku may exercise without per-
 approval because the server-side boundary makes them safe by construction. Wiring one on is still a
 doctrine change, not just a config line.
 
-- **Gmail labels (`haku/` namespace)** — **Built + deployed:** the `gmail-labeling` MCP
-  server (sibling service, `tana-mcp-ro` shape) manages only labels whose name starts with
-  `haku/`, enforced in-process (the closure invariant; contract in
-  `haku/gmail_labeling/SPEC.md`). It's safe by construction, so there's no Airlock gate —
-  rung 2 (filter the tool surface), not rung 3. Own namespace, bearer
-  `haku-gmail-labeling-token` reflected into `haku-sandbox`, public bearer-gated route
-  `gmail-labeling.allegedly.works`; the `gmail.modify` token is Airlock-provisioned (the
-  `gmail_modify` OAuth provider) and ESO-mirrored **only** into the `gmail-labeling`
-  namespace, never a sandbox — so Haku's own Google token stays read-only. Code:
-  `haku/gmail_labeling/`; deploy: `cluster/k8s/agents/gmail-labeling/`.
-  Remaining:
-  - **One-time OAuth consent** for `gmail.modify` at
-    `airlock.allegedly.works/oauth/authorize/gmail_modify` (operator). The pod waits on
-    its token volume until this is done.
-  - **Wire it into Haku and flip the doctrine:** add a `base/sources/gmail_labeling.md`
-    (the route URL plus the bearer from the reflected secret), register it in the live
-    runtime, and record in `base/instructions.md` and Haku's SPEC that Haku may now
-    autonomously label within `haku/`. This is Haku's **first autonomous write** — do it
-    only once the server is live and consented (otherwise Haku gets a source that 503s).
-
 ## Wiring / hardening
 
 - **Verify the JWT mint** — confirm the `authentik-jwt-rotation` CronJob produces

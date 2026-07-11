@@ -107,7 +107,6 @@ py_library(
     srcs = ["auto_approval.py"],
     deps = [
         "//haku/console/tools:gmail_client",
-        "//haku/gmail_labeling:namespace",
         "@pypi//fastmcp",
         "@pypi//jsonschema",
     ],

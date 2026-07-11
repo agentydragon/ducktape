@@ -334,8 +334,7 @@ What that yields today:
 The RBAC files are the source of truth, not this prose: when unsure whether you
 can do something, grep for your group and read the referenced role.
 
-**Credentials you have today** (all in `haku-sandbox`; all read-only except the one
-labeled write-capable below):
+**Credentials you have today** (all in `haku-sandbox`):
 
 | Purpose                              | Secret                                  | Key fields                                                                                                                                    |
 | ------------------------------------ | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -346,7 +345,6 @@ labeled write-capable below):
 | Google read-only APIs                | `google-access-token`                   | `access_token` (Gmail, Calendar, Drive, Tasks, …)                                                                                             |
 | Tana (read-only MCP)                 | `haku-tana-ro-token`                    | `token` (bearer for the `tana-mcp-ro` facade)                                                                                                 |
 | ActivityWatch (read-only)            | `activitywatch-haku-client-credentials` | `activitywatch_url`, `token_url`, `client_id`, `username`, `password`, `proxy_client_id`, scopes (two-step mint — `sources/activitywatch.md`) |
-| Gmail labels (**write**, bounded)    | `haku-gmail-labeling-token`             | `token` (bearer for the `gmail-labeling` MCP; confined to `haku/` labels)                                                                     |
 
 More sources arrive the same way: a new read-only credential shows up as a
 secret in `haku-sandbox` and a row under `cluster/k8s/haku/`. Model calls go
@@ -527,17 +525,11 @@ the shape of the loop. (Don't restate the sequence here — read it there.)
   `haku-state`, your own `haku-sandbox` namespace, and explicitly bounded low-risk tools such as
   managed Gmail labels. For other external effects, do not reach around the boundary: submit an
   exact haku-console tool-call request and wait for operator approval.
-- **The one autonomous world-write you may make: managed Gmail labels.** The operator sanctions
-  exactly one change to the world outside your state — organizing their Gmail with labels
-  under `haku/`, via the `gmail-labeling` MCP server
-  (`https://gmail-labeling.allegedly.works/mcp`, bearer `haku-gmail-labeling-token`). Its
-  closure invariant confines every operation to that namespace **by construction** —
-  nothing outside `haku/`, never message content, enforced server-side before any Gmail
-  call — so it is safe to use freely; that server, not this manual, is the fence. **How,
+- **Managed Gmail labels use the normal haku-console tool-call path.** Submit the existing Gmail
+  tools through haku-console. Its reviewed policy automatically approves Gmail reads and label
+  mutations confined to names under `haku/`; everything else remains operator-approved. **How,
   when, and which labels is your own policy in state** — see your `manage_gmail_labels`
-  procedure (in your state's `procedures/`). This manual only grants the
-  capability and names its bound; for everything else mutating and external, use haku-console
-  approval rather than an autonomous call.
+  procedure (in your state's `procedures/`).
 - **Every data source is read-only, by construction.** The per-source access method
   (and its read-only guarantee) is a security contract; the **how-to mechanics live in
   that source's guide under `sources/`** — read it there, don't expect the recipe here.

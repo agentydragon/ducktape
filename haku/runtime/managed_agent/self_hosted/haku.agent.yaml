@@ -62,15 +62,6 @@ tools:
       enabled: true
       permission_policy:
         type: always_allow
-  # gmail-labeling — write, but bounded by construction to `haku/` labels (closure
-  # invariant enforced server-side), so always_allow is safe; the server is the
-  # fence. Haku's ONE sanctioned world-write.
-  - type: mcp_toolset
-    mcp_server_name: gmail-labeling
-    default_config:
-      enabled: true
-      permission_policy:
-        type: always_allow
 mcp_servers:
   - type: url
     name: kubectl-machine
@@ -81,6 +72,3 @@ mcp_servers:
   - type: url
     name: tana-ro
     url: https://tana-mcp-ro.allegedly.works/mcp
-  - type: url
-    name: gmail-labeling
-    url: https://gmail-labeling.allegedly.works/mcp

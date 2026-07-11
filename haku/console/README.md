@@ -103,9 +103,8 @@ accepts a `FastMCP` object directly (an in-memory `FastMCPTransport`), so
 `McpToolExecutor`/`McpMetadataProvider` run the exact same `Client(...)` calls either
 way — same approval/audit/CSRF pipeline, same live `tools/list` reflection, just a
 different transport (`_transport()` in `mcp_approval.py` picks the registered in-process
-`FastMCP` for a server id, falling back to `server_url`). There are three today, built exactly
-like standalone MCP servers (`@mcp.tool`-decorated functions, mirroring
-`haku/gmail_labeling/server.py`'s style) — the only difference from a real deployment is that
+`FastMCP` for a server id, falling back to `server_url`). There are three today, built like
+standalone MCP servers from `@mcp.tool`-decorated functions. The only transport difference is that
 `create_app` hands the `FastMCP` object straight to the executor instead of serving it over
 HTTP:
 
@@ -134,8 +133,7 @@ HTTP:
 The `gmail` and `google_calendar` servers are built from **one** Airlock-issued `haku_console_google` token
 (`calendar.events` + `gmail.modify` + `gmail.compose`, plus the `google` provider's read-only
 scopes), mounted from `haku-console-google-access-token` (`HAKU_CONSOLE_GOOGLE_TOKEN_DIR`) —
-kept separate from every other Google-scoped credential in the cluster (Haku's read-only
-token, gmail-labeling's `gmail.modify`-only token) and delivered only to this namespace.
+kept separate from every other Google-scoped credential in the cluster and delivered only to this namespace.
 One-time operator OAuth bootstrap and the scope list: `cluster/k8s/haku/console/README.md`.
 Two plain HTTP endpoints alongside the MCP tools render approvals whose tool call carries only
 opaque ids: `GET /api/gmail/thread-previews` (subject/snippet/current-labels for a pending

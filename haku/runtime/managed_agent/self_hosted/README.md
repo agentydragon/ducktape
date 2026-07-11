@@ -43,7 +43,7 @@ Only the **environment / agent / deployment** are imperative. The **vault + all 
 credentials are declarative and shared**: the cloud agent module
 (`tf/gitops/haku-cloud-agent`) owns one vault used by both agents, publishing its ID
 to the `haku-cloud-agent-ids` Secret; `provision.sh` reads that ID instead of creating
-its own vault, so tana-ro/gmail-labeling/kubectl-machine/grocy-sf tokens get TF
+its own vault, so tana-ro/kubectl-machine/grocy-sf tokens get TF
 drift-detection + rotation for the self-hosted agent too. The agent's toolset is
 identical to the cloud agent's — kept in step by
 `//haku/base:test_agent_config_ssot`.
@@ -117,10 +117,9 @@ check it in a worker session with `tea whoami`.
 
 The fixed toolset is `agent_toolset_20260401` (`bash/read/write/edit/glob/grep`);
 Haku reaches Plaid (`psql`), Google (`curl`), and the cluster (`kubectl`,
-in-cluster `haku` SA) through `bash`. On top of that it has four native
+in-cluster `haku` SA) through `bash`. On top of that it has three native
 `mcp_toolset`s (Anthropic-side, shared-vault auth), identical to the cloud agent:
-`tana-ro` (read-only Tana), `gmail-labeling` (the one sanctioned world-write,
-bounded to `haku/` labels), `grocy-sf` (read-only grocy), and `kubectl-machine`
+`tana-ro` (read-only Tana), `grocy-sf` (read-only grocy), and `kubectl-machine`
 (a machine-JWT cluster path — redundant here with in-pod `kubectl`, kept for parity).
 
 ## k8s wiring

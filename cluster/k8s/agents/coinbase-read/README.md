@@ -18,7 +18,7 @@ can_transfer=false`. Auth recipe and endpoints:
 
 emberstack Reflector mirrors the Secret into `haku-sandbox` (one revocable
 read-only credential shared with the sandbox — same pattern as `plaid-mcp-db-readonly`
-and `haku-gmail-labeling-token`). Adding `augur` later is a one-line annotation
+and other reflected agent credentials). Adding `augur` later is a one-line annotation
 change. Haku reads it from a `haku-sandbox` pod; egress to `api.coinbase.com` is
 allowlisted in <../haku-egress-proxy/cnp-haku-cloud-api-egress.yaml>.
 

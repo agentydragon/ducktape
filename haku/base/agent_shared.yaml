@@ -9,7 +9,7 @@
 #
 # What stays per-surface (NOT here): `name` (haku-cloud vs haku-selfhosted), the
 # `system` bootstrap prose, the `environment` (cloud+networking vs self_hosted), and
-# how each reaches its vault. The vault + all four MCP credentials are one shared,
+# how each reaches its vault. The vault + MCP credentials are shared and
 # TF-managed vault (tf/gitops/haku-cloud-agent, published to the haku-cloud-agent-ids
 # Secret); both agents reference it. (Runtime C, haku/runtime/agent, is env-driven via
 # HAKU_MODEL — a separate architecture, not covered here.)
@@ -17,16 +17,14 @@ model: claude-sonnet-4-6
 # Every toolset -> permission policy: mcp toolsets keyed by MCP server name, the
 # fixed in-sandbox bash/read/write/edit/glob/grep toolset by its type. All
 # always_allow — the execution sandbox is the trust boundary, and each MCP is bounded
-# server-side (read-only facades, or gmail-labeling's `haku/`-prefix closure).
+# server-side by read-only facades.
 toolset_policies:
   agent_toolset_20260401: always_allow
   kubectl-machine: always_allow
   grocy-sf: always_allow
   tana-ro: always_allow
-  gmail-labeling: always_allow
 # MCP server name -> URL.
 mcp_urls:
   kubectl-machine: https://kubectl-machine-mcp.allegedly.works/mcp
   grocy-sf: https://grocy-mcp-sf.allegedly.works/mcp
   tana-ro: https://tana-mcp-ro.allegedly.works/mcp
-  gmail-labeling: https://gmail-labeling.allegedly.works/mcp

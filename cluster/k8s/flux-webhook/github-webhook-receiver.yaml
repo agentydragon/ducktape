@@ -133,6 +133,3 @@ spec:
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
       name: rtl-tcp
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: gmail-labeling

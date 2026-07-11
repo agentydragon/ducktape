@@ -159,7 +159,7 @@ delegation register as a dispatch queue, outcome/cost feedback from Langfuse).
   haku-state work (the repo is the personal-data motherlode — consider splitting `ui/`
   into its own repo before offloading frontend chores); final synthesis and
   operator-facing voice.
-- **Grocery orders** (future): the gmail-labeling closure-invariant pattern — a small
+- **Grocery orders** (future): a bounded-write pattern — a small
   reviewed MCP server holding the vendor credential server-side, exposing only bounded ops
   (`add_to_cart`, `submit_order` under a $-ceiling against a merchant allowlist). Once that
   exists, even an untrusted worker can operate it safely. Generalization: **bounded-write

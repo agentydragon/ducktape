@@ -23,7 +23,7 @@ AGENT_ID=$(ant beta:agents create --transform id -r <"$here/haku.agent.yaml")
 echo "agent: $AGENT_ID"
 
 # Shared vault: the vault + ALL MCP credentials (kubectl-machine, grocy-sf, tana-ro,
-# gmail-labeling) are TF-managed by the cloud agent module (tf/gitops/haku-cloud-agent)
+# native MCP credentials are TF-managed by the cloud agent module (tf/gitops/haku-cloud-agent)
 # and published to the haku-cloud-agent-ids Secret. Both agents reference the same
 # vault, so this agent no longer creates its own — read the shared ID. (The vault +
 # creds are the one part of the self-hosted agent that IS declarative; only the

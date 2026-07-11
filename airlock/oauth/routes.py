@@ -78,7 +78,7 @@ def create_oauth_router(
 
     # CLEANUP(added 2026-06-29): legacy per-provider callback path. The {provider_name}
     # segment is cosmetic — it only lets already-registered /oauth/callback/<name> URIs
-    # (and providers piggybacking on one, e.g. gmail_modify on google's) keep routing
+    # (and providers piggybacking on one) keep routing
     # here; the provider is resolved from `state`. Remove once oura/google/bsc are
     # migrated to the shared /oauth/callback (see config.yaml TODOs) and their old URIs
     # are deregistered from their OAuth apps.

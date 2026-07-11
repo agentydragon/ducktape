@@ -58,7 +58,7 @@ oauth:
         - https://www.googleapis.com/auth/youtube.readonly
       # TODO(shared-callback): migrate to the shared /oauth/callback — register
       # https://airlock.allegedly.works/oauth/callback on this Google OAuth client, then
-      # drop this line (gmail_modify piggybacks on this URI, so migrate them together).
+      # drop this line.
       redirect_uri: https://airlock.allegedly.works/oauth/callback/google
       refresh_secret:
         name: google-tokens
@@ -68,38 +68,11 @@ oauth:
       extra_auth_params:
         access_type: offline
         prompt: consent
-    # Separate Google grant carrying gmail.modify (write) for the gmail-labeling
-    # MCP server. Kept distinct from `google` so the read-only `google-access-token`
-    # that Haku consumes in haku-sandbox is never upgraded to write. Its access
-    # token (gmail-modify-access-token) is delivered ONLY to the gmail-labeling
-    # namespace, never to a sandbox. Reuses the same Google OAuth client
-    # (GMAIL_MODIFY_CLIENT_ID/SECRET point at google-client-credentials).
-    - name: gmail_modify
-      provider_type: oauth2
-      display_name: Gmail (modify — haku labels)
-      authorize_url: https://accounts.google.com/o/oauth2/v2/auth
-      token_url: https://oauth2.googleapis.com/token
-      scopes:
-        - https://www.googleapis.com/auth/gmail.modify
-      # Piggyback on the `google` provider's already-registered redirect URI (same OAuth
-      # client), so gmail.modify needs NO new redirect URI in the Google console. The
-      # callback resolves the provider from OAuth `state`, not this path.
-      redirect_uri: https://airlock.allegedly.works/oauth/callback/google
-      refresh_secret:
-        name: gmail-modify-tokens
-      access_secret:
-        name: gmail-modify-access-token
-      refresh_margin_seconds: 300
-      extra_auth_params:
-        access_type: offline
-        prompt: consent
     # Separate Google grant for haku-console's in-process `gmail` + `google_calendar` MCP
     # servers (haku/console/tools/gmail.py, google_calendar.py): calendar event creation,
     # Gmail reads, thread label changes, draft creation, label CRUD — behind haku-console's
-    # operator-approval
-    # queue, never autonomous. Kept distinct from `google` (read-only, Haku's) and
-    # `gmail_modify` (gmail.modify-only, gmail-labeling's) so no other consumer's
-    # token is ever upgraded to this scope set. Its access token
+    # operator-approval queue. Kept distinct from `google` (read-only, Haku's) so no
+    # other consumer's token is ever upgraded to this scope set. Its access token
     # (haku-console-google-access-token) is delivered ONLY to the haku-console
     # namespace. Carries the same read-only scopes as `google` too (not just the
     # write scopes the three tools need) so haku-console can read across the same

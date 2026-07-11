@@ -10,7 +10,6 @@ import jsonschema
 from fastmcp import FastMCP
 
 from haku.console.tools.gmail_client import GMAIL_SERVER_ID, GmailToolsClient
-from haku.gmail_labeling.namespace import LabelNamespace
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +68,12 @@ async def auto_approve_tool_call(
         return None, "error: registered Gmail tool schema is invalid"
 
     try:
-        namespace = LabelNamespace(label_prefix)
+        if not label_prefix:
+            raise ValueError("Gmail auto-approval label prefix must be non-empty")
+
+        def allows_label(name: str) -> bool:
+            return name.startswith(label_prefix)
+
         if tool_name in {"threads_list", "threads_get", "messages_get", "labels_list", "labels_get"}:
             return GMAIL_AUTO_APPROVAL_ID, "approved: Gmail search/read operation"
         if tool_name == "threads_modify_labels":
@@ -79,7 +83,7 @@ async def auto_approve_tool_call(
                 return None, "manual: no label changes requested"
             if set(add) & set(remove):
                 return None, "manual: a label cannot be both added and removed"
-            if all(namespace.allows(name) for name in [*add, *remove]):
+            if all(allows_label(name) for name in [*add, *remove]):
                 return GMAIL_AUTO_APPROVAL_ID, f"approved: all label names are under {label_prefix!r}"
             return None, f"manual: at least one label name is outside {label_prefix!r}"
         if gmail is None:
@@ -93,12 +97,12 @@ async def auto_approve_tool_call(
             ):
                 return None, "manual: label rename required without visibility changes"
             current = await asyncio.to_thread(gmail.labels_get, arguments["label_id"])
-            if namespace.allows(current.name) and namespace.allows(new_name):
+            if allows_label(current.name) and allows_label(new_name):
                 return GMAIL_AUTO_APPROVAL_ID, f"approved: current and new label names are under {label_prefix!r}"
             return None, f"manual: current or new label name is outside {label_prefix!r}"
         if tool_name == "labels_delete":
             current = await asyncio.to_thread(gmail.labels_get, arguments["label_id"])
-            if namespace.allows(current.name):
+            if allows_label(current.name):
                 return GMAIL_AUTO_APPROVAL_ID, f"approved: label name is under {label_prefix!r}"
             return None, f"manual: label name is outside {label_prefix!r}"
         return None, "manual: Gmail operation did not match an auto-approval rule"

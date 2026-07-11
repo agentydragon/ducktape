@@ -31,6 +31,3 @@ spec:
     # The agent reaches the cluster through this MCP; its first deployment run
     # needs it serving.
     - name: kubectl-machine-mcp
-    # The tofu root now hard-reads gmail-labeling/haku-gmail-labeling-token (the
-    # gmail-labeling MCP bearer); this kustomization applies it, so it reconciles first.
-    - name: gmail-labeling

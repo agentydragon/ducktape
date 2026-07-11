@@ -176,7 +176,7 @@ def test_build_authentik_auth_includes_extra_jwt_issuers() -> None:
 def test_build_authentik_auth_appends_extra_verifiers() -> None:
     """extra_verifiers ride the MultiAuth after the Authentik JWTVerifier, so a
     machine caller's StaticTokenVerifier is accepted on the same endpoint as the
-    human OAuth flow (gmail-labeling's Haku bearer + operator OAuth).
+    human OAuth flow alongside a static bearer.
     """
     discovery_response = AsyncMock()
     discovery_response.raise_for_status = lambda: discovery_response

@@ -42,8 +42,7 @@ Status: open follow-ups only. Implemented behavior belongs in:
    `cluster/k8s/haku/console/config.yaml` with `operator_oauth`. Servers behind a plain Authentik
    **proxy provider** (forward-auth) or a static bearer do not match the console's DCR client
    flow and need the facade treatment first. Candidates:
-   - **google-workspace-mcp** — Gmail (send, drafts, labels — beyond the narrow `gmail-labeling`
-     always_allow path, which stays), Google Drive (organize/save files), Google Calendar
+   - **google-workspace-mcp** — Gmail (send, drafts, labels), Google Drive (organize/save files), Google Calendar
      (add/edit events). One upstream server covers all three. Already deployed at
      `cluster/k8s/agents/google-workspace-mcp/` (`ghcr.io/taylorwilsdon/google_workspace_mcp`,
      does its own Google OAuth) and fronted today by an Authentik proxy provider

@@ -68,11 +68,6 @@ resource "claude-managed-agents_agent" "haku_cloud" {
     Use it to look things up in Tana. Write tools are not exposed; never attempt
     to edit, move, or create Tana nodes.
 
-    You may organize the operator's Gmail with labels under `haku/` via the
-    `gmail-labeling` MCP server — your ONE sanctioned write to the world. The server
-    confines every operation to that namespace (nothing outside `haku/`, never message
-    content), so use it freely within that bound; everything else in Gmail you only read.
-
     IMPORTANT (v0 bring-up): your operating manual and run procedure are not wired
     yet. Do exactly what each user message asks, then stop.
   EOT
@@ -99,16 +94,6 @@ resource "claude-managed-agents_agent" "haku_cloud" {
       type = "url"
       name = "tana-ro"
       url  = "https://tana-mcp-ro.allegedly.works/mcp"
-    },
-    # gmail-labeling: Haku's ONE sanctioned world-write. The server confines every
-    # operation to labels under `haku/` by construction (closure invariant, enforced
-    # server-side before any Gmail call) — nothing outside the prefix, never message
-    # content — so always_allow is safe; the server, not in-agent gating, is the fence.
-    # Bearer-gated by haku_gmail_labeling (below).
-    {
-      type = "url"
-      name = "gmail-labeling"
-      url  = "https://gmail-labeling.allegedly.works/mcp"
     },
   ]
 
@@ -145,16 +130,6 @@ resource "claude-managed-agents_agent" "haku_cloud" {
     {
       type            = "mcp_toolset"
       mcp_server_name = "tana-ro"
-      default_config = {
-        permission_policy = { type = "always_allow" }
-      }
-    },
-    # gmail-labeling toolset — write, but bounded by construction: the server confines
-    # every op to `haku/` labels (closure invariant), so always_allow is safe. Haku's
-    # one sanctioned world-write; the server is the fence, not in-agent gating.
-    {
-      type            = "mcp_toolset"
-      mcp_server_name = "gmail-labeling"
       default_config = {
         permission_policy = { type = "always_allow" }
       }
@@ -246,34 +221,6 @@ resource "claude-managed-agents_vault_credential" "haku_tana_ro" {
     mcp_server_url   = "https://tana-mcp-ro.allegedly.works/mcp"
     token            = data.kubernetes_secret_v1.tana_ro_token.data["token"]
     token_wo_version = parseint(substr(sha256(data.kubernetes_secret_v1.tana_ro_token.data["token"]), 0, 12), 16)
-  }
-}
-
-# The gmail-labeling MCP's static client bearer, read straight from its owning
-# namespace (gmail-labeling/haku-gmail-labeling-token, key "token") — the tf-runner
-# has cluster-wide secret read, so no reflected copy is needed. This is the same
-# Secret the server validates (STATIC_BEARER) and that reflector mirrors to
-# haku-sandbox for the Claude-web + self-hosted runtimes.
-data "kubernetes_secret_v1" "gmail_labeling_token" {
-  metadata {
-    name      = "haku-gmail-labeling-token"
-    namespace = "gmail-labeling"
-  }
-}
-
-# Write-capable but bounded: the gmail-labeling server confines every op to `haku/`
-# labels by construction. Bound to the gmail-labeling MCP URL. The token is static
-# (no exp), so token_wo_version is its content hash — a re-mint re-sends, a no-op
-# apply stays stable (as haku_tana_ro).
-resource "claude-managed-agents_vault_credential" "haku_gmail_labeling" {
-  vault_id     = claude-managed-agents_vault.haku_cloud.id
-  display_name = "haku gmail-labeling bearer (managed labels under haku/)"
-
-  auth = {
-    type             = "static_bearer"
-    mcp_server_url   = "https://gmail-labeling.allegedly.works/mcp"
-    token            = data.kubernetes_secret_v1.gmail_labeling_token.data["token"]
-    token_wo_version = parseint(substr(sha256(data.kubernetes_secret_v1.gmail_labeling_token.data["token"]), 0, 12), 16)
   }
 }
 

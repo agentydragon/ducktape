@@ -22,11 +22,10 @@ happens, those servers' tools error on invocation instead of running.
    namespace; the refresh loop keeps the access token fresh thereafter.
 2. ESO mirrors `haku-console-google-access-token` into the `haku-console` namespace within
    ~1m. No restart needed — the console re-reads the mounted token via google-auth's
-   `refresh_handler` on each rotation, same as `gmail-labeling`
-   (<../../agents/gmail-labeling/README.md>).
+   `refresh_handler` on each rotation.
 
 Provider config: `agents/airlock/config.yaml` (`haku_console_google`); the same Google
-OAuth client as `google`/`gmail_modify` is reused via
+OAuth client as `google` is reused via
 `HAKU_CONSOLE_GOOGLE_CLIENT_ID/SECRET` (`agents/airlock/deployment.yaml`).
 
 Scopes: `calendar.events`, `gmail.modify`, `gmail.compose`, plus every read-only scope the
@@ -35,8 +34,8 @@ Scopes: `calendar.events`, `gmail.modify`, `gmail.compose`, plus every read-only
 `spreadsheets.readonly`, `presentations.readonly`, `youtube.readonly`) — kept in one grant
 since the console's `gmail` and `google_calendar` servers both consume it, and carrying the
 read scopes means a future haku-console read feature outside Gmail (Drive/Docs/…) needs no
-second consent round-trip. Deliberately its own provider (not reusing `google` or
-`gmail_modify`) so no other consumer's token is ever upgraded to this scope set. See
+second consent round-trip. Deliberately its own provider (not reusing `google`) so no other
+consumer's token is ever upgraded to this scope set. See
 `haku/docs/security.md` for the enforcement-inventory entry.
 
 ## One-time bootstrap: `kubectl-passthrough-mcp` (cluster-admin, operator-linked)

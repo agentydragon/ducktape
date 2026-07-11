@@ -8,7 +8,6 @@ py_library(
     deps = [
         "//gmail_api:labels",
         "//gmail_api:messages",
-        "//haku/gmail_labeling:backend",
         "@pypi//pydantic",
     ],
 )

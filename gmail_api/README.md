@@ -1,7 +1,7 @@
 # gmail_api
 
 Shared Gmail API building blocks used across the repo's Gmail tooling
-(`gmail_archiver/`, `haku/gmail_labeling/`, `haku/console/tools/`).
+(`gmail_archiver/`, `haku/console/tools/`).
 
 - `labels.py` — Pydantic models and helpers for label resources: `GmailLabel`,
   `SystemLabel`, `resolve_label_id`, `is_system_label`, `CreateLabelRequest`,
