@@ -1,0 +1,32 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: rook-ceph-trial-benchmarks
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 60m
+  path: ./cluster/k8s/rook-ceph-trial/benchmarks
+  prune: true
+  wait: true
+  force: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: rook-ceph-trial-forgejo-bench
+    - name: forgejo
+  healthChecks:
+    - apiVersion: batch/v1
+      kind: Job
+      name: storage-bench-cephfs-vs-seaweedfs
+      namespace: forgejo-ceph-bench
+    - apiVersion: batch/v1
+      kind: Job
+      name: forgejo-ceph-end-to-end-bench
+      namespace: forgejo-ceph-bench
+    - apiVersion: batch/v1
+      kind: Job
+      name: forgejo-seaweedfs-end-to-end-bench
+      namespace: forgejo

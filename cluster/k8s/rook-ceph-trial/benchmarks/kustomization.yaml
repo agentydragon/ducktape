@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - pvcs.yaml
+  - jobs.yaml
+configMapGenerator:
+  - name: rook-ceph-trial-benchmark-scripts
+    namespace: forgejo-ceph-bench
+    files:
+      - forgejo-bench.sh
+      - storage-bench.sh
+  - name: rook-ceph-trial-production-benchmark-script
+    namespace: forgejo
+    files:
+      - forgejo-bench.sh
+generatorOptions:
+  disableNameSuffixHash: true
+  annotations:
+    description: Deterministic Forgejo and Git-shaped storage benchmark scripts

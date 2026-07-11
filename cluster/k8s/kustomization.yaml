@@ -396,6 +396,15 @@ resources:
   - study-casino/db/flux-kustomization.yaml
   - study-casino/app/flux-kustomization.yaml
 
+  # --- Rook/CephFS + isolated Forgejo benchmark (disposable trial) ---
+  - rook-ceph-trial/namespace/flux-kustomization.yaml
+  - rook-ceph-trial/loop-devices/flux-kustomization.yaml
+  - rook-ceph-trial/operator/flux-kustomization.yaml
+  - rook-ceph-trial/cluster/flux-kustomization.yaml
+  - rook-ceph-trial/filesystem/flux-kustomization.yaml
+  - rook-ceph-trial/forgejo-bench/flux-kustomization.yaml
+  - rook-ceph-trial/benchmarks/flux-kustomization.yaml
+
   # --- seaweedfs (trial) ---
   - seaweedfs/namespace/flux-kustomization.yaml
   - seaweedfs/secrets/flux-kustomization.yaml

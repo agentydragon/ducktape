@@ -1,0 +1,22 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: forgejo-ceph-bench-db
+  namespace: forgejo-ceph-bench
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+      storage.allegedly.works/tier: ssd
+    topologyKey: kubernetes.io/hostname
+  storage:
+    storageClass: local-path-ovh-ssd
+    size: 5Gi
+  monitoring:
+    enablePodMonitor: true

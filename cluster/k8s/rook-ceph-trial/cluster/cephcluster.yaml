@@ -1,0 +1,131 @@
+apiVersion: ceph.rook.io/v1
+kind: CephCluster
+metadata:
+  name: rook-ceph
+  namespace: rook-ceph
+  annotations:
+    description: Disposable three-node HDD Ceph trial using loop-backed OSDs
+spec:
+  dataDirHostPath: /var/mnt/local-path-ovh-hdd/rook-ceph-trial/rook-data
+  cephVersion:
+    image: quay.io/ceph/ceph:v20.2.2-20260616
+    allowUnsupported: false
+  mon:
+    count: 3
+    allowMultiplePerNode: false
+  mgr:
+    count: 1
+    allowMultiplePerNode: false
+    modules:
+      - name: rook
+        enabled: true
+  dashboard:
+    enabled: false
+  crashCollector:
+    disable: true
+  logCollector:
+    enabled: false
+  cleanupPolicy:
+    sanitizeDisks:
+      method: quick
+      dataSource: zero
+      iteration: 1
+    allowUninstallWithVolumes: false
+  monitoring:
+    enabled: false
+  disruptionManagement:
+    managePodBudgets: true
+    osdMaintenanceTimeout: 30
+  priorityClassNames:
+    all: system-node-critical
+    mgr: system-cluster-critical
+  resources:
+    mon:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+    mgr:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+    osd:
+      requests:
+        cpu: 250m
+        memory: 2Gi
+      limits:
+        memory: 4Gi
+    prepareosd:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 1Gi
+  placement:
+    all:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: topology.kubernetes.io/zone
+                  operator: In
+                  values: [hil-ovh]
+                - key: storage.allegedly.works/tier
+                  operator: In
+                  values: [hdd]
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+  storage:
+    useAllNodes: false
+    useAllDevices: false
+    allowDeviceClassUpdate: true
+    nodes:
+      - name: ovh-ns102453
+        devices:
+          - name: /dev/rook-ceph-trial-osd
+            config:
+              deviceClass: hdd
+      - name: ovh-ns103656
+        devices:
+          - name: /dev/rook-ceph-trial-osd
+            config:
+              deviceClass: hdd
+      - name: ovh-ns103711
+        devices:
+          - name: /dev/rook-ceph-trial-osd
+            config:
+              deviceClass: hdd
+  healthCheck:
+    daemonHealth:
+      mon:
+        interval: 45s
+        timeout: 10m
+      osd:
+        interval: 1m
+      status:
+        interval: 1m
+  cephConfig:
+    global:
+      osd_pool_default_size: "3"
+      osd_pool_default_min_size: "2"
+      mon_data_avail_warn: "10"
+      osd_memory_target: "2147483648"
+      bdev_flock_retry: "20"
+      bluefs_buffered_io: "false"
+---
+apiVersion: ceph.rook.io/v1
+kind: CephBlockPool
+metadata:
+  name: builtin-mgr
+  namespace: rook-ceph
+spec:
+  name: .mgr
+  failureDomain: host
+  replicated:
+    size: 3
+    requireSafeReplicaSize: true

@@ -1,0 +1,131 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: forgejo-ceph-bench
+  namespace: forgejo-ceph-bench
+spec:
+  type: oci
+  interval: 24h
+  url: oci://code.forgejo.org/forgejo-helm
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: forgejo-ceph-bench
+  namespace: forgejo-ceph-bench
+spec:
+  interval: 15m
+  timeout: 15m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: forgejo
+      version: "17.1.1"
+      sourceRef:
+        kind: HelmRepository
+        name: forgejo-ceph-bench
+        namespace: forgejo-ceph-bench
+  values:
+    global:
+      imageRegistry: ""
+    replicaCount: 2
+    strategy:
+      type: RollingUpdate
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: kubernetes.io/hostname
+                  operator: In
+                  values: [ovh-ns104952, ovh-ns103711]
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: forgejo
+                app.kubernetes.io/instance: forgejo-ceph-bench
+            topologyKey: kubernetes.io/hostname
+    gitea:
+      admin:
+        existingSecret: forgejo-ceph-bench-db-app
+        email: bench@invalid.example
+        passwordMode: initialOnlyNoReset
+      config:
+        APP_NAME: Forgejo CephFS benchmark
+        RUN_MODE: prod
+        server:
+          DOMAIN: forgejo-ceph-bench-http.forgejo-ceph-bench.svc.cluster.local
+          SSH_DOMAIN: forgejo-ceph-bench-ssh.forgejo-ceph-bench.svc.cluster.local
+          ROOT_URL: http://forgejo-ceph-bench-http.forgejo-ceph-bench.svc.cluster.local:3000/
+          HTTP_PORT: 3000
+          SSH_PORT: 2222
+          DISABLE_SSH: false
+          START_SSH_SERVER: true
+          LFS_START_SERVER: false
+        session:
+          PROVIDER: db
+        cache:
+          ENABLED: true
+          ADAPTER: redis
+          HOST: redis://forgejo-ceph-bench-valkey-master.forgejo-ceph-bench.svc.cluster.local:6379/0
+        queue:
+          TYPE: redis
+          CONN_STR: redis://forgejo-ceph-bench-valkey-master.forgejo-ceph-bench.svc.cluster.local:6379/0
+        actions:
+          ENABLED: false
+        metrics:
+          ENABLED: true
+          TOKEN: ""
+        security:
+          INSTALL_LOCK: true
+          SECRET_KEY: rook-ceph-forgejo-benchmark-only
+        database:
+          DB_TYPE: postgres
+          HOST: forgejo-ceph-bench-db-rw.forgejo-ceph-bench.svc.cluster.local:5432
+          NAME: app
+          USER: app
+        storage:
+          STORAGE_TYPE: local
+      additionalConfigFromEnvs:
+        - name: FORGEJO__database__PASSWD
+          valueFrom:
+            secretKeyRef:
+              name: forgejo-ceph-bench-db-app
+              key: password
+    service:
+      http:
+        type: ClusterIP
+        port: 3000
+      ssh:
+        type: ClusterIP
+        port: 2222
+    resources:
+      limits:
+        cpu: "4"
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 512Mi
+    persistence:
+      enabled: true
+      create: false
+      claimName: forgejo-ceph-bench-git-rwx
+      accessModes: [ReadWriteMany]
+    postgresql:
+      enabled: false
+    postgresql-ha:
+      enabled: false
+    redis-cluster:
+      enabled: false
+    valkey-cluster:
+      enabled: false
+    memcached:
+      enabled: false
+    serviceAccount:
+      create: true

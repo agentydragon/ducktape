@@ -1,0 +1,44 @@
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  name: forgejo-ceph-bench-valkey
+  namespace: forgejo-ceph-bench
+spec:
+  clusterSize: 2
+  kubernetesConfig:
+    image: valkey/valkey:8-alpine
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  redisConfig:
+    maxMemoryPercentOfLimit: 80
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path-ovh-ssd
+        resources:
+          requests:
+            storage: 1Gi
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values: [hil-ovh]
+              - key: storage.allegedly.works/tier
+                operator: In
+                values: [ssd]
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: forgejo-ceph-bench-valkey
+          topologyKey: kubernetes.io/hostname

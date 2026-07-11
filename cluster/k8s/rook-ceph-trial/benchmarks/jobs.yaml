@@ -1,0 +1,144 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: storage-bench-cephfs-vs-seaweedfs
+  namespace: forgejo-ceph-bench
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: storage-bench-cephfs-vs-seaweedfs
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: ovh-ns104952
+      containers:
+        - name: benchmark
+          image: code.forgejo.org/forgejo/forgejo:15.0.3-rootless
+          command: [/bin/sh, /scripts/storage-bench.sh]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+            - name: cephfs
+              mountPath: /mnt/cephfs
+            - name: seaweedfs
+              mountPath: /mnt/seaweedfs
+      volumes:
+        - name: scripts
+          configMap:
+            name: rook-ceph-trial-benchmark-scripts
+            defaultMode: 0555
+        - name: cephfs
+          persistentVolumeClaim:
+            claimName: storage-bench-cephfs
+        - name: seaweedfs
+          persistentVolumeClaim:
+            claimName: storage-bench-seaweedfs
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: forgejo-ceph-end-to-end-bench
+  namespace: forgejo-ceph-bench
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: forgejo-ceph-end-to-end-bench
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: ovh-ns104952
+      containers:
+        - name: benchmark
+          image: code.forgejo.org/forgejo/forgejo:15.0.3-rootless
+          command: [/bin/sh, /scripts/forgejo-bench.sh]
+          env:
+            - name: TARGET_NAME
+              value: cephfs
+            - name: FORGEJO_URL
+              value: http://forgejo-ceph-bench-http.forgejo-ceph-bench.svc.cluster.local:3000
+            - name: FORGEJO_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: forgejo-ceph-bench-db-app
+                  key: username
+            - name: FORGEJO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: forgejo-ceph-bench-db-app
+                  key: password
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+      volumes:
+        - name: scripts
+          configMap:
+            name: rook-ceph-trial-benchmark-scripts
+            defaultMode: 0555
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: forgejo-seaweedfs-end-to-end-bench
+  namespace: forgejo
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: forgejo-seaweedfs-end-to-end-bench
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: ovh-ns104952
+      containers:
+        - name: benchmark
+          image: code.forgejo.org/forgejo/forgejo:15.0.3-rootless
+          command: [/bin/sh, /scripts/forgejo-bench.sh]
+          env:
+            - name: TARGET_NAME
+              value: seaweedfs
+            - name: FORGEJO_URL
+              value: http://forgejo-http.forgejo.svc.cluster.local:3000
+            - name: FORGEJO_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: forgejo-admin-password
+                  key: username
+            - name: FORGEJO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: forgejo-admin-password
+                  key: password
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+      volumes:
+        - name: scripts
+          configMap:
+            name: rook-ceph-trial-production-benchmark-script
+            defaultMode: 0555
