@@ -23,6 +23,11 @@ async def _decision(tool_name: str, arguments: dict, *, gmail=None, caller="haku
     )
 
 
+async def _policy_id(tool_name: str, arguments: dict, **kwargs):
+    policy_id, _evaluation = await _decision(tool_name, arguments, **kwargs)
+    return policy_id
+
+
 @pytest.mark.parametrize(
     ("tool_name", "arguments"),
     [
@@ -34,22 +39,26 @@ async def _decision(tool_name: str, arguments: dict, *, gmail=None, caller="haku
     ],
 )
 async def test_all_gmail_reads_are_auto_approved(tool_name: str, arguments: dict) -> None:
-    assert await _decision(tool_name, arguments) == GMAIL_AUTO_APPROVAL_ID
+    policy_id, evaluation = await _decision(tool_name, arguments)
+    assert policy_id == GMAIL_AUTO_APPROVAL_ID
+    assert evaluation == "approved: Gmail search/read operation"
 
 
 async def test_read_requires_valid_registered_tool_arguments() -> None:
-    assert await _decision("threads_list", {"query": "", "unexpected": True}) is None
+    policy_id, evaluation = await _decision("threads_list", {"query": "", "unexpected": True})
+    assert policy_id is None
+    assert evaluation == "manual: arguments failed the registered Gmail tool schema"
 
 
 @pytest.mark.parametrize("field", ["add", "remove"])
 async def test_modifies_only_namespaced_labels(field: str) -> None:
-    assert await _decision("threads_modify_labels", {"thread_ids": ["t1"], field: ["haku/triaged"]})
-    assert await _decision("threads_modify_labels", {"thread_ids": ["t1"], field: ["INBOX"]}) is None
+    assert await _policy_id("threads_modify_labels", {"thread_ids": ["t1"], field: ["haku/triaged"]})
+    assert await _policy_id("threads_modify_labels", {"thread_ids": ["t1"], field: ["INBOX"]}) is None
 
 
 async def test_modify_rejects_unknown_arguments() -> None:
     assert (
-        await _decision("threads_modify_labels", {"thread_ids": ["t1"], "add": ["haku/triaged"], "unexpected": True})
+        await _policy_id("threads_modify_labels", {"thread_ids": ["t1"], "add": ["haku/triaged"], "unexpected": True})
         is None
     )
 
@@ -57,18 +66,18 @@ async def test_modify_rejects_unknown_arguments() -> None:
 async def test_patch_requires_old_and_new_names_in_namespace() -> None:
     gmail = Mock()
     gmail.labels_get.return_value = GmailLabel(id="Label_1", name="haku/old", type=LabelType.USER)
-    assert await _decision("labels_patch", {"label_id": "Label_1", "name": "haku/new"}, gmail=gmail)
-    assert await _decision("labels_patch", {"label_id": "Label_1", "name": "other"}, gmail=gmail) is None
+    assert await _policy_id("labels_patch", {"label_id": "Label_1", "name": "haku/new"}, gmail=gmail)
+    assert await _policy_id("labels_patch", {"label_id": "Label_1", "name": "other"}, gmail=gmail) is None
 
     gmail.labels_get.return_value = GmailLabel(id="Label_2", name="other", type=LabelType.USER)
-    assert await _decision("labels_patch", {"label_id": "Label_2", "name": "haku/new"}, gmail=gmail) is None
+    assert await _policy_id("labels_patch", {"label_id": "Label_2", "name": "haku/new"}, gmail=gmail) is None
 
 
 async def test_patch_visibility_change_stays_manual() -> None:
     gmail = Mock()
     gmail.labels_get.return_value = GmailLabel(id="Label_1", name="haku/x", type=LabelType.USER)
     assert (
-        await _decision("labels_patch", {"label_id": "Label_1", "label_list_visibility": "labelHide"}, gmail=gmail)
+        await _policy_id("labels_patch", {"label_id": "Label_1", "label_list_visibility": "labelHide"}, gmail=gmail)
         is None
     )
     gmail.labels_get.assert_not_called()
@@ -77,20 +86,23 @@ async def test_patch_visibility_change_stays_manual() -> None:
 async def test_delete_resolves_existing_label_name() -> None:
     gmail = Mock()
     gmail.labels_get.return_value = GmailLabel(id="Label_1", name="haku/x", type=LabelType.USER)
-    assert await _decision("labels_delete", {"label_id": "Label_1"}, gmail=gmail)
+    assert await _policy_id("labels_delete", {"label_id": "Label_1"}, gmail=gmail)
     gmail.labels_get.return_value = GmailLabel(id="INBOX", name="INBOX", type=LabelType.SYSTEM)
-    assert await _decision("labels_delete", {"label_id": "INBOX"}, gmail=gmail) is None
+    assert await _policy_id("labels_delete", {"label_id": "INBOX"}, gmail=gmail) is None
 
 
 async def test_only_haku_agent_principal_is_auto_approved() -> None:
-    assert await _decision("labels_list", {}, caller="operator") is None
+    assert await _decision("labels_list", {}, caller="operator") == (None, None)
 
 
 async def test_lookup_errors_are_logged_and_fail_closed(caplog: pytest.LogCaptureFixture) -> None:
     gmail = Mock()
     gmail.labels_get.side_effect = RuntimeError("gmail unavailable")
     with caplog.at_level("ERROR"):
-        assert await _decision("labels_delete", {"label_id": "Label_1"}, gmail=gmail) is None
+        assert await _decision("labels_delete", {"label_id": "Label_1"}, gmail=gmail) == (
+            None,
+            "error: Gmail auto-approval evaluation failed",
+        )
     assert "auto-approval evaluation failed" in caplog.text
     assert "gmail unavailable" in caplog.text
 

@@ -59,6 +59,7 @@ class ToolCallRecord(BaseModel):
     error: str | None = None
     denial_reason: str | None = None
     approval_policy_id: str | None = None
+    auto_approval_evaluation: str | None = None
     approved_at: datetime.datetime | None = None
 
 

@@ -515,6 +515,7 @@ def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
     record = response.json()
     assert record["status"] == "ok"
     assert record["approval_policy_id"] == "gmail.read_and_haku_labels.v1"
+    assert record["auto_approval_evaluation"] == "approved: Gmail search/read operation"
     assert record["approved_at"] is not None
     assert record["result"]["content"][0]["text"] == "gmail:labels_list"
     assert pending["approvals"] == []
@@ -535,6 +536,35 @@ def test_operator_gmail_labels_list_stays_pending(make_client, tmp_path: Path, d
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "pending_approval"
     assert response.json()["approval_policy_id"] is None
+    assert response.json()["auto_approval_evaluation"] is None
+
+
+def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(make_client, tmp_path: Path, db_url: str) -> None:
+    gmail = Mock()
+    with make_client(
+        config_file=_gmail_config_file(tmp_path),
+        agent_api_token=SecretStr("tool-token"),
+        gmail_client=gmail,
+        in_process_servers={"gmail": build_gmail_mcp(gmail)},
+        **_test_app_overrides(db_url),
+    ) as client:
+        response = client.post(
+            "/api/tool-calls",
+            headers={"Authorization": "Bearer tool-token"},
+            json={
+                "server_id": "gmail",
+                "tool_name": "threads_modify_labels",
+                "arguments": {"thread_ids": ["t1"], "add": ["INBOX"]},
+                "wait_for_ms": 0,
+            },
+        )
+        pending = client.get("/api/approvals/pending").json()["approvals"]
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "pending_approval"
+    assert response.json()["approval_policy_id"] is None
+    assert response.json()["auto_approval_evaluation"] == "manual: at least one label name is outside 'haku/'"
+    assert pending[0]["auto_approval_evaluation"] == response.json()["auto_approval_evaluation"]
 
 
 def test_approval_executes_tool_and_records_terminal_result(
@@ -553,6 +583,8 @@ def test_approval_executes_tool_and_records_terminal_result(
     assert resp.status_code == 200, resp.text
     decided = resp.json()["tool_call"]
     assert decided["status"] == "ok"
+    assert decided["approved_at"] is not None
+    assert decided["approval_policy_id"] is None
     assert decided["result"]["content"][0]["text"] == "stock_add:123:1"
     assert fetched == decided
 
@@ -808,7 +840,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(
     finally:
         engine.dispose()
 
-    assert version == "0004"
+    assert version == "0005"
     assert {"mcp_operator_oauth_associations", "mcp_operator_oauth_flows"} <= tables
     assert {
         "tool_call_id",
@@ -825,6 +857,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(
         "error",
         "denial_reason",
         "approval_policy_id",
+        "auto_approval_evaluation",
         "approved_at",
     } == columns
     assert row["server_id"] == "smoke"

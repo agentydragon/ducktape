@@ -60,6 +60,11 @@ export function ToolCallCard({
                 Auto-approved by {fields.approvalPolicyId}
               </Text>
             )}
+            {fields.autoApprovalEvaluation && (
+              <Text size="xs" c="dimmed">
+                Auto-approval: {fields.autoApprovalEvaluation}
+              </Text>
+            )}
           </Stack>
           <Badge color={status.color} variant="light" style={{ flexShrink: 0 }}>
             {status.label}

@@ -37,6 +37,7 @@ class McpToolCall(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     denial_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     approval_policy_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    auto_approval_evaluation: Mapped[str | None] = mapped_column(Text, nullable=True)
     approved_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     @classmethod
@@ -56,6 +57,7 @@ class McpToolCall(Base):
             error=record.error,
             denial_reason=record.denial_reason,
             approval_policy_id=record.approval_policy_id,
+            auto_approval_evaluation=record.auto_approval_evaluation,
             approved_at=record.approved_at,
         )
 
@@ -75,6 +77,7 @@ class McpToolCall(Base):
             error=self.error,
             denial_reason=self.denial_reason,
             approval_policy_id=self.approval_policy_id,
+            auto_approval_evaluation=self.auto_approval_evaluation,
             approved_at=self.approved_at,
         )
 

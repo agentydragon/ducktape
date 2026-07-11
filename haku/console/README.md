@@ -60,8 +60,8 @@ The console also owns the privileged MCP-tool escape hatch (`mcp_approval.py`). 
 submit a precise tool call; the console mints the canonical `tool_call_id`, records the audit entry,
 runs the reviewed auto-approval decision, asks the trusted console frontend for approval when it
 does not match, executes the MCP tool, and keeps the result. The decision validates arguments
-against the existing FastMCP tool's generated schema; errors are logged and fail closed to manual
-approval. haku-state stores only authored requests
+against the existing FastMCP tool's generated schema; its audit-safe evaluation string is recorded
+even when the call stays manual, while errors are logged and fail closed. haku-state stores only authored requests
 (`tool_requests/*.yaml`) and UI affordances (`<tool-call request="...">`); there is no
 `tool_results/` mirror.
 

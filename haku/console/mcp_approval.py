@@ -117,6 +117,7 @@ class PendingApproval(BaseModel):
     rationale: str
     arguments: dict[str, Any]
     created_at: datetime.datetime
+    auto_approval_evaluation: str | None = None
 
 
 class PendingApprovalsResponse(BaseModel):
@@ -151,6 +152,7 @@ class PostgresToolCallLedger:
         req: SubmitToolCallRequest,
         caller_principal: str,
         auto_approval_policy_id: str | None = None,
+        auto_approval_evaluation: str | None = None,
     ) -> tuple[ToolCallRecord, list[ToolCallEvent], bool]:
         with self._sessions.begin() as session:
             now = datetime.datetime.now(datetime.UTC)
@@ -167,6 +169,7 @@ class PostgresToolCallLedger:
                 rationale=req.rationale,
                 title=req.title,
                 approval_policy_id=auto_approval_policy_id,
+                auto_approval_evaluation=auto_approval_evaluation,
                 approved_at=now if auto_approval_policy_id is not None else None,
             )
             session.add(McpToolCall.from_record(record))
@@ -444,6 +447,7 @@ def _pending_approval_from_record(record: ToolCallRecord) -> PendingApproval:
         rationale=record.rationale,
         arguments=record.arguments,
         created_at=record.created_at,
+        auto_approval_evaluation=record.auto_approval_evaluation,
     )
 
 
@@ -582,7 +586,7 @@ async def submit_tool_call(
     server = _server_entry(settings, body.server_id)
     caller = _caller_principal(request, settings)
     in_process_servers = cast(InProcessServers, request.app.state.in_process_servers)
-    auto_approval_policy_id = await auto_approve_tool_call(
+    auto_approval_policy_id, auto_approval_evaluation = await auto_approve_tool_call(
         caller_principal=caller,
         server_id=server.id,
         tool_name=body.tool_name,
@@ -592,18 +596,23 @@ async def submit_tool_call(
         mcp=in_process_servers.get(server.id),
     )
     record, events, created = ledger.submit(
-        server=server, req=body, caller_principal=caller, auto_approval_policy_id=auto_approval_policy_id
+        server=server,
+        req=body,
+        caller_principal=caller,
+        auto_approval_policy_id=auto_approval_policy_id,
+        auto_approval_evaluation=auto_approval_evaluation,
     )
     await hub.broadcast(events)
     if created:
         logger.info(
-            "tool call %s submitted status=%s server=%s tool=%s caller=%s approval_policy=%s",
+            "tool call %s submitted status=%s server=%s tool=%s caller=%s approval_policy=%s auto_approval=%s",
             record.tool_call_id,
             record.status,
             record.server_id,
             record.tool_name,
             caller,
             record.approval_policy_id,
+            record.auto_approval_evaluation,
         )
     if record.status == ToolCallStatus.RUNNING:
         auth_token = await _execution_auth(server, caller, oauth_store)
