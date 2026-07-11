@@ -4,18 +4,19 @@ metadata:
   name: rook-ceph
   namespace: rook-ceph
   annotations:
-    description: Disposable three-node HDD Ceph trial using loop-backed OSDs
+    description: Disposable two-node SSD Ceph trial using loop-backed OSDs
 spec:
-  dataDirHostPath: /var/mnt/local-path-ovh-hdd/rook-ceph-trial/rook-data
+  dataDirHostPath: /var/mnt/seaweedfs-data/rook-ceph-trial/rook-data
   cephVersion:
     image: quay.io/ceph/ceph:v20.2.2-20260616
     allowUnsupported: false
   mon:
     count: 3
-    allowMultiplePerNode: false
+    # Trial-only: retain odd quorum with only two SSD hosts.
+    allowMultiplePerNode: true
   mgr:
     count: 1
-    allowMultiplePerNode: false
+    allowMultiplePerNode: true
     modules:
       - name: rook
         enabled: true
@@ -73,6 +74,9 @@ spec:
                 - key: topology.kubernetes.io/zone
                   operator: In
                   values: [hil-ovh]
+                - key: storage.allegedly.works/tier
+                  operator: In
+                  values: [ssd]
       tolerations:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
@@ -82,21 +86,6 @@ spec:
     useAllDevices: false
     allowDeviceClassUpdate: true
     nodes:
-      - name: ovh-ns102453
-        devices:
-          - name: /dev/loop3
-            config:
-              deviceClass: hdd
-      - name: ovh-ns103656
-        devices:
-          - name: /dev/loop3
-            config:
-              deviceClass: hdd
-      - name: ovh-ns103711
-        devices:
-          - name: /dev/loop3
-            config:
-              deviceClass: hdd
       - name: ovh-ns104952
         devices:
           - name: /dev/loop3
@@ -118,8 +107,8 @@ spec:
         interval: 1m
   cephConfig:
     global:
-      osd_pool_default_size: "3"
-      osd_pool_default_min_size: "2"
+      osd_pool_default_size: "2"
+      osd_pool_default_min_size: "1"
       mon_data_avail_warn: "10"
       osd_memory_target: "2147483648"
       bdev_flock_retry: "20"
@@ -134,5 +123,5 @@ spec:
   name: .mgr
   failureDomain: host
   replicated:
-    size: 3
-    requireSafeReplicaSize: true
+    size: 2
+    requireSafeReplicaSize: false

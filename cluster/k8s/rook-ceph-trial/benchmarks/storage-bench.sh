@@ -46,21 +46,14 @@ run_one() {
 printf 'round,target,operation,seconds\n'
 round=1
 while [ "$round" -le 5 ]; do
-  case $((round % 3)) in
+  case $((round % 2)) in
     1)
       run_one seaweedfs-ssd /mnt/seaweedfs "$round"
-      run_one cephfs-hdd /mnt/cephfs "$round"
       run_one cephfs-ssd /mnt/cephfs-ssd "$round"
-      ;;
-    2)
-      run_one cephfs-hdd /mnt/cephfs "$round"
-      run_one cephfs-ssd /mnt/cephfs-ssd "$round"
-      run_one seaweedfs-ssd /mnt/seaweedfs "$round"
       ;;
     0)
       run_one cephfs-ssd /mnt/cephfs-ssd "$round"
       run_one seaweedfs-ssd /mnt/seaweedfs "$round"
-      run_one cephfs-hdd /mnt/cephfs "$round"
       ;;
   esac
   round=$((round + 1))

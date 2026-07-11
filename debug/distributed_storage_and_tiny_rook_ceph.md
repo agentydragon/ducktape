@@ -12,18 +12,24 @@ volume-server round trips rather than the physical disk class.
 The trial deliberately leaves production Forgejo and all existing disks untouched:
 
 ```text
-3 OVH HDD nodes
+2 OVH SSD nodes
   -> one preallocated 50 GiB file per node
   -> privileged DaemonSet reserves /dev/loop3 for each file
   -> Rook v1.19.6 / Ceph v20.2.2, one OSD per host
-  -> CephFS size=3, min_size=2, kernel CSI client, pod networking
+  -> CephFS size=2, min_size=1, kernel CSI client, pod networking
   -> isolated two-replica Forgejo on a 10 GiB RWX PVC
 ```
 
-The OSDs are loop-backed because the HDDs are already formatted XFS and hold
-SeaweedFS/local-path data. Rook explicitly enables loop devices for this test. This
+The OSDs are loop-backed because the SSDs already hold SeaweedFS data. Rook explicitly
+enables loop devices for this test. This
 layout is useful for comparing filesystem paths but is not a production Ceph disk
 design.
+
+The measured HDD arm used three HDD hosts, three-copy pools, and
+`/var/mnt/local-path-ovh-hdd`. The SSD control is a fresh two-host cluster using
+two-copy pools and `/var/mnt/seaweedfs-data`. Rook exposes one `dataDirHostPath` per
+CephCluster, and Talos does not provide the HDD mount root on SSD hosts, so the two
+media arms run sequentially rather than as mixed OSD classes in one cluster.
 
 The CephCluster selects `/dev/loop3` directly. Rook canonicalizes block-device
 symlinks during inventory, so selecting the friendlier
@@ -92,6 +98,10 @@ databases, so the direct filesystem test is the stronger storage attribution.
 
 - Pod networking worked for MON, OSD, MDS, and CSI traffic; host networking was not
   required.
+- A single Rook CephCluster cannot use different `dataDirHostPath` roots per node.
+  Mixing these HDD and SSD Talos hosts made SSD prepare pods fail before device
+  discovery because `/var/mnt/local-path-ovh-hdd` is absent and cannot be created on
+  the read-only root. Separate sequential clusters avoid host-path tricks.
 - Rook canonicalizes device symlinks during inventory, so the CephCluster must select
   the reserved `/dev/loop3` rather than `/dev/rook-ceph-trial-osd`.
 - A PVC submitted before CSI secrets and CephFS existed retained a poisoned retry;

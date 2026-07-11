@@ -18,5 +18,5 @@ spec:
   healthChecks:
     - apiVersion: apps/v1
       kind: DaemonSet
-      name: rook-ceph-trial-loop-device
+      name: rook-ceph-trial-loop-device-ssd
       namespace: rook-ceph

@@ -30,8 +30,6 @@ spec:
           volumeMounts:
             - name: scripts
               mountPath: /scripts
-            - name: cephfs
-              mountPath: /mnt/cephfs
             - name: cephfs-ssd
               mountPath: /mnt/cephfs-ssd
             - name: seaweedfs
@@ -41,9 +39,6 @@ spec:
           configMap:
             name: rook-ceph-trial-benchmark-scripts
             defaultMode: 0555
-        - name: cephfs
-          persistentVolumeClaim:
-            claimName: storage-bench-cephfs
         - name: cephfs-ssd
           persistentVolumeClaim:
             claimName: storage-bench-cephfs-ssd

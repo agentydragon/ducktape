@@ -46,7 +46,7 @@ spec:
             - matchExpressions:
                 - key: kubernetes.io/hostname
                   operator: In
-                  values: [ovh-ns104952, ovh-ns103711]
+                  values: [ovh-ns104952, ovh-ns104963]
       podAntiAffinity:
         requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:

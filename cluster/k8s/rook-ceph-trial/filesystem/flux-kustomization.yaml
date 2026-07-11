@@ -18,5 +18,5 @@ spec:
   healthChecks:
     - apiVersion: ceph.rook.io/v1
       kind: CephFilesystem
-      name: trialfs
+      name: trialfs-ssd
       namespace: rook-ceph
