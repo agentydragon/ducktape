@@ -22,6 +22,7 @@ from gmail_api.labels import CreateLabelRequest, GmailLabel, LabelsListResponse,
 from gmail_api.messages import Draft, Message, MessageFormat, Thread, ThreadFormat, ThreadsListResponse
 from haku.gmail_labeling.backend import GmailLabelBackend
 
+GMAIL_SERVER_ID = "gmail"
 _THREAD_URL = "https://mail.google.com/mail/u/0/#all/{thread_id}"
 # Gmail's batch-request guide recommends capping requests-per-batch at 100; used to fold
 # the approval-preview `threads.get` metadata lookups into as few HTTP requests as possible.

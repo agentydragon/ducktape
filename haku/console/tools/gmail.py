@@ -36,6 +36,7 @@ from gmail_api.labels import (
 from gmail_api.messages import Draft, Message, MessageFormat, Thread, ThreadFormat, ThreadsListResponse
 from gmail_api.service import credentials_from_token_dir
 from haku.console.tools.gmail_client import (
+    GMAIL_SERVER_ID,
     BatchModifyGmailThreadLabelsArgs,
     BatchModifyGmailThreadLabelsResult,
     CreateGmailDraftArgs,
@@ -44,8 +45,6 @@ from haku.console.tools.gmail_client import (
     SearchThreadsArgs,
     preview_gmail_threads,
 )
-
-GMAIL_SERVER_ID = "gmail"
 
 # The write scopes the label/draft tools need. `gmail.modify` also covers every read the
 # search/get tools do, so no read-only scope is required. The mounted `haku_console_google`

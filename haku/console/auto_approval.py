@@ -9,13 +9,12 @@ from typing import Any
 import jsonschema
 from fastmcp import FastMCP
 
-from haku.console.tools.gmail_client import GmailToolsClient
+from haku.console.tools.gmail_client import GMAIL_SERVER_ID, GmailToolsClient
 from haku.gmail_labeling.namespace import LabelNamespace
 
 logger = logging.getLogger(__name__)
 
 HAKU_AGENT_PRINCIPAL = "haku-agent-api-token"
-GMAIL_SERVER_ID = "gmail"
 GMAIL_AUTO_APPROVAL_ID = "gmail.read_and_haku_labels.v1"
 
 
