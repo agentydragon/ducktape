@@ -22,6 +22,8 @@ const SCENES = [
   { name: "history", viewport: { width: 1200, height: 1500 } },
   { name: "drawer", viewport: { width: 1200, height: 900 } },
   { name: "settings", viewport: { width: 1200, height: 900 } },
+  // Every implemented tool-call preview, compact | detailed side by side — tall, so give it room.
+  { name: "previews", viewport: { width: 1100, height: 3600 } },
   // `click` opens the location-sharing popover (its open state is internal to the control)
   // so the screenshot captures the dropdown, not just the pin.
   { name: "controls", viewport: { width: 520, height: 380 }, click: '[aria-label="Location sharing: live"]' },

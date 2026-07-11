@@ -354,6 +354,7 @@ js_library(
         ":console_panel",
         ":settings_page",
         ":theme",
+        ":tool_arguments_field",
         ":tool_calls_page",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",

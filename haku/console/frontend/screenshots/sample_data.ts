@@ -108,3 +108,128 @@ export const SAMPLE_MCP: McpOperatorAuthStatus[] = [
     scope: "read write",
   },
 ];
+
+// Subject/label lookups the Gmail thread-labels widget fetches; served by mock_api so both
+// preview variants render real subjects (compact shows the first few, detailed adds labels).
+export const SAMPLE_GMAIL_THREADS = {
+  t1: {
+    subject: "Q3 planning — notes + open questions",
+    gmail_url: "https://mail.google.com/mail/u/0/#all/t1",
+    current_label_names: ["Inbox", "Work"],
+  },
+  t2: {
+    subject: "Re: dentist appointment confirmation",
+    gmail_url: "https://mail.google.com/mail/u/0/#all/t2",
+    current_label_names: ["Inbox"],
+  },
+  t3: {
+    subject: "Your Thrive Market order shipped",
+    gmail_url: "https://mail.google.com/mail/u/0/#all/t3",
+    current_label_names: ["Inbox", "Receipts"],
+  },
+  t4: {
+    subject: "This week in your neighborhood",
+    gmail_url: "https://mail.google.com/mail/u/0/#all/t4",
+    current_label_names: ["Inbox", "Newsletters"],
+  },
+};
+
+// Every implemented tool-call preview, for the `previews` gallery scene (harness.tsx renders
+// each in both compact and detailed). Real server ids + tool names so the registry dispatches
+// to each widget; the final entry has no widget, exercising the raw-JSON fallback.
+export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record<string, unknown> }[] = [
+  {
+    serverId: "grocy-sf",
+    toolName: "stock_add",
+    args: {
+      items: [
+        { product: "Rolled oats", amount: 2, qu: "pack", location: "Pantry", best_before_date: "2026-12-01" },
+        { product: "Almond butter", amount: 1, qu: "jar", location: "Pantry" },
+        { product: "Frozen berries", amount: 3, qu: "bag", location: "Freezer" },
+        { product: "Oat milk", amount: 6, qu: "carton", location: "Fridge" },
+        { product: "Dark chocolate", amount: 4, qu: "bar", location: "Pantry" },
+      ],
+    },
+  },
+  {
+    serverId: "grocy-sf",
+    toolName: "stock_consume",
+    args: {
+      items: [
+        { product: "Milk", amount: 1, qu: "carton", location: "Fridge", spoiled: true },
+        { product: "Spinach", amount: 200, qu: "gram", location: "Fridge" },
+      ],
+    },
+  },
+  {
+    serverId: "grocy-sf",
+    toolName: "products_create",
+    args: {
+      items: [
+        {
+          name: "Rolled oats",
+          stock_qu: "gram",
+          location: "Pantry",
+          default_best_before_days: 270,
+          min_stock_amount: 500,
+          product_group: "Grains",
+          description: "Organic thick-cut oats.",
+        },
+        { name: "Almond butter", stock_qu: "jar", location: "Pantry", default_best_before_days: 180 },
+      ],
+    },
+  },
+  {
+    serverId: "google",
+    toolName: "create_calendar_event",
+    args: {
+      summary: "Dentist appointment",
+      start: { date_time: "2026-07-12T09:00:00", time_zone: "America/Los_Angeles" },
+      end: { date_time: "2026-07-12T10:00:00", time_zone: "America/Los_Angeles" },
+      location: "123 Market St, San Francisco",
+      description: "Routine cleaning and checkup.",
+      reminders: [{ method: "popup", minutes_before_start: 30 }],
+      attendees: ["dentist@example.com"],
+    },
+  },
+  {
+    serverId: "google",
+    toolName: "batch_modify_gmail_thread_labels",
+    args: { thread_ids: ["t1", "t2", "t3", "t4"], add: ["Follow up"], remove: ["Inbox"] },
+  },
+  {
+    serverId: "google",
+    toolName: "create_gmail_draft",
+    args: {
+      to: ["ops@allegedly.works"],
+      cc: ["rai@allegedly.works"],
+      subject: "Re: Q3 planning",
+      body: "Hi team,\n\nThanks for the notes. A few thoughts on the roadmap:\n- Ship the console settings page\n- Then the previews gallery\n- Circle back on datetime formatting\n\nBest,\nRai",
+      thread_id: "thread-42",
+    },
+  },
+  {
+    serverId: "kubectl-passthrough-mcp",
+    toolName: "resources_create_or_update",
+    args: {
+      resource:
+        "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: worker\n  namespace: haku-sandbox\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      app: worker\n  template:\n    metadata:\n      labels:\n        app: worker\n    spec:\n      containers:\n        - name: worker\n          image: ghcr.io/agentydragon/worker:latest",
+    },
+  },
+  {
+    serverId: "kubectl-passthrough-mcp",
+    toolName: "resources_delete",
+    args: { apiVersion: "v1", kind: "Pod", name: "worker-6f9c2", namespace: "haku-sandbox", gracePeriodSeconds: 0 },
+  },
+  {
+    serverId: "kubectl-passthrough-mcp",
+    toolName: "pods_delete",
+    args: { name: "worker-6f9c2", namespace: "haku-sandbox" },
+  },
+  {
+    // No widget for this (server, tool) — the generic raw-JSON fallback (compact clamps).
+    serverId: "grocy-sf",
+    toolName: "shopping_list_items_remove",
+    args: { ids: [3, 7, 12, 15, 21, 34, 42, 55] },
+  },
+];

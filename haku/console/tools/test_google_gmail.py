@@ -1,4 +1,5 @@
-"""Tests for GmailToolsClient over a fake googleapiclient-shaped Gmail service."""
+"""Tests for GmailToolsClient and preview_gmail_threads over a fake googleapiclient-shaped
+Gmail service."""
 
 import base64
 from dataclasses import dataclass, field
@@ -12,6 +13,7 @@ from haku.console.tools.google_gmail import (
     CreateGmailDraftArgs,
     GmailLabelRef,
     GmailToolsClient,
+    preview_gmail_threads,
 )
 
 
@@ -200,8 +202,7 @@ def test_preview_threads_extracts_subject_snippet_and_labels(service: _FakeGmail
             }
         ]
     }
-    client = GmailToolsClient(service)
-    previews = client.preview_threads(["t1", "missing"])
+    previews = preview_gmail_threads(service, ["t1", "missing"])
     assert previews.keys() == {"t1"}  # "missing" has no response -> omitted
     preview = previews["t1"]
     assert preview.subject == "Test subject"
@@ -214,8 +215,7 @@ def test_preview_threads_subject_is_none_not_a_placeholder_string(service: _Fake
     # Whether/how a missing Subject renders (e.g. "(no subject)") is a frontend
     # decision; the backend passes through the raw absence.
     service.thread_responses["t1"] = {"messages": [{"snippet": "", "labelIds": [], "payload": {"headers": []}}]}
-    client = GmailToolsClient(service)
-    assert client.preview_threads(["t1"])["t1"].subject is None
+    assert preview_gmail_threads(service, ["t1"])["t1"].subject is None
 
 
 if __name__ == "__main__":

@@ -38,6 +38,7 @@ from haku.console.tools.google_gmail import (
     CreateGmailDraftResult,
     GmailThreadPreviewsResponse,
     GmailToolsClient,
+    preview_gmail_threads,
 )
 
 GOOGLE_SERVER_ID = "google"
@@ -165,7 +166,7 @@ async def gmail_thread_previews(
     `batch_modify_gmail_thread_labels` approval — the tool call itself only carries thread
     IDs, so the approval UI resolves display text here rather than trusting caller-supplied
     text it can't verify. A plain HTTP read, not an MCP tool — outside `build_mcp`'s surface."""
-    return GmailThreadPreviewsResponse(threads=gmail.preview_threads(thread_id))
+    return GmailThreadPreviewsResponse(threads=preview_gmail_threads(gmail.service, thread_id))
 
 
 class GoogleToolArgumentExamples(BaseModel):

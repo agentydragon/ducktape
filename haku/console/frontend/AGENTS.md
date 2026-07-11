@@ -12,13 +12,16 @@ bbr test //haku/console/frontend:screenshots
 ```
 
 It renders each surface (`screenshots/harness.tsx`) to a PNG (one per scene: `history`,
-`drawer`, `settings`, `controls`) in the test's **undeclared outputs**. Browser rendering
-runs on the RBE worker, so this is a `bbr` test, not a local `bb run`. Fetch the PNGs with the
-`buildbuddy_api` skill (download the target's undeclared test outputs), then open every one
-and actually check it looks good — spacing, alignment, contrast, truncation, that nothing
+`drawer`, `settings`, `previews`, `controls`) in the test's **undeclared outputs**. Browser
+rendering runs on the RBE worker, so this is a `bbr` test, not a local `bb run`. Fetch the PNGs
+with the `buildbuddy_api` skill (download the target's undeclared test outputs), then open every
+one and actually check it looks good — spacing, alignment, contrast, truncation, that nothing
 overflows or collides, and that both content and chrome read clearly — not merely that it
 rendered. The test is a generator, not a pixel-diff gate: it passes as long as every scene
 renders, so it never blocks CI on "looks different", but a blank/crashed scene fails it.
 
-Add a scene to `screenshots/harness.tsx` (and the `SCENES` list in `screenshots/render.mjs`)
-whenever you add a new surface.
+The `previews` scene is a gallery of **every implemented tool-call preview**, each rendered in
+both compact and detailed — when you add or change a per-server widget (`tool_previews/*.tsx`),
+add its (server, tool, sample args) to `PREVIEW_SAMPLES` in `screenshots/sample_data.ts` and
+re-check the gallery. Add a whole new scene to `screenshots/harness.tsx` (and the `SCENES` list
+in `screenshots/render.mjs`) whenever you add a new surface.

@@ -1,7 +1,7 @@
 """Tests for the `google` in-process MCP server (build_mcp) and the thread-previews
 router endpoint."""
 
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest_bazel
 from fastmcp import Client
@@ -88,15 +88,19 @@ def test_gmail_thread_previews_endpoint_503s_when_unconfigured(make_client) -> N
         assert resp.status_code == 503
 
 
-def test_gmail_thread_previews_endpoint_returns_preview(make_client) -> None:
-    gmail = Mock()
-    gmail.preview_threads.return_value = {
+def test_gmail_thread_previews_endpoint_composes_preview_over_the_client_service(make_client) -> None:
+    previews = {
         "t1": GmailThreadPreview(subject="Test", snippet="hi", current_label_names=["haku/x"], gmail_url="https://x/t1")
     }
-    with make_client(google_gmail_client=gmail) as client:
+    gmail = Mock()  # non-None so the endpoint doesn't 503; its .service is handed to the reader
+    with (
+        patch("haku.console.tools.google.preview_gmail_threads", return_value=previews) as preview_mock,
+        make_client(google_gmail_client=gmail) as client,
+    ):
         resp = client.get("/api/google/gmail/thread-previews", params={"thread_id": ["t1"]})
-        assert resp.status_code == 200
-        assert resp.json()["threads"]["t1"]["subject"] == "Test"
+    assert resp.status_code == 200
+    assert resp.json()["threads"]["t1"]["subject"] == "Test"
+    preview_mock.assert_called_once_with(gmail.service, ["t1"])
 
 
 if __name__ == "__main__":

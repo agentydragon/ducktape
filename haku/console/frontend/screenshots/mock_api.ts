@@ -3,7 +3,7 @@
 // module that captures `globalThis.fetch` (openapi-fetch does so when client.ts builds its
 // client) — harness.tsx imports this first. Paired with a `<base href>` in the harness page
 // (render.mjs) so the relative "/api/…" URL parses in the origin-less setContent page.
-import { SAMPLE_MCP, SAMPLE_TOOL_CALLS } from "./sample_data.ts";
+import { SAMPLE_GMAIL_THREADS, SAMPLE_MCP, SAMPLE_TOOL_CALLS } from "./sample_data.ts";
 
 function requestUrl(input: RequestInfo | URL): string {
   if (typeof input === "string") return input;
@@ -25,6 +25,8 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
   // since the sample uses string names (resolveName returns those as-is).
   if (url.includes("/api/grocy-sf/reference"))
     return jsonResponse({ products: [], quantity_units: [], locations: [], product_groups: [] });
+  // The Gmail thread-labels widget looks up subjects/labels for its thread ids.
+  if (url.includes("/api/google/gmail/thread-previews")) return jsonResponse({ threads: SAMPLE_GMAIL_THREADS });
   if (url.includes("/api/tool-calls")) return jsonResponse({ tool_calls: SAMPLE_TOOL_CALLS });
   if (realFetch) return realFetch(input, init);
   return jsonResponse({});

@@ -81,10 +81,12 @@ class GmailThreadPreviewsResponse(BaseModel):
 
 
 class GmailToolsClient:
-    """Batch label modify + draft creation + thread preview, over a raw Gmail service."""
+    """The `google` server's Gmail tool operations (batch label modify + draft creation) over
+    a raw Gmail service. Thread previews are a rendering-support read, not a tool op — see the
+    module-level `preview_gmail_threads`, composed from the same lower-level service."""
 
     def __init__(self, service: Any) -> None:
-        self._service = service
+        self.service = service
         self._backend = GmailLabelBackend(service)
 
     def _user_labels(self) -> list[GmailLabel]:
@@ -118,27 +120,32 @@ class GmailToolsClient:
         body: dict[str, Any] = {"message": {"raw": raw}}
         if args.thread_id:
             body["message"]["threadId"] = args.thread_id
-        draft = self._service.users().drafts().create(userId="me", body=body).execute()
+        draft = self.service.users().drafts().create(userId="me", body=body).execute()
         return CreateGmailDraftResult(draft_id=draft["id"], message_id=draft["message"]["id"])
 
-    def preview_threads(self, thread_ids: list[str]) -> dict[str, GmailThreadPreview]:
-        id_by_name = {label.id: label.name for label in self._backend.list_labels()}
-        previews: dict[str, GmailThreadPreview] = {}
 
-        def record(thread_id: str, response: dict[str, Any] | None, exception: Exception | None) -> None:
-            if exception is not None or response is None:
-                return
-            previews[thread_id] = _preview_from_thread(thread_id, response, id_by_name)
+def preview_gmail_threads(service: Any, thread_ids: list[str]) -> dict[str, GmailThreadPreview]:
+    """Subject/snippet/current-labels for a batch of threads, for rendering a pending or past
+    `batch_modify_gmail_thread_labels` approval. Composed from lower-level Gmail reads — a
+    batched `threads().get(format=metadata)` plus a label id→name lookup — not a tool the agent
+    invokes, so it's a free function over the raw service rather than a `GmailToolsClient` method.
+    A thread absent from the returned map was inaccessible (deleted, wrong account, …)."""
+    id_by_name = {label.id: label.name for label in GmailLabelBackend(service).list_labels()}
+    previews: dict[str, GmailThreadPreview] = {}
 
-        for chunk in batched(thread_ids, _MAX_PREVIEW_BATCH_SIZE, strict=False):
-            batch_request = self._service.new_batch_http_request(callback=record)
-            for thread_id in chunk:
-                batch_request.add(
-                    self._service.users().threads().get(userId="me", id=thread_id, format="metadata"),
-                    request_id=thread_id,
-                )
-            batch_request.execute()
-        return previews
+    def record(thread_id: str, response: dict[str, Any] | None, exception: Exception | None) -> None:
+        if exception is not None or response is None:
+            return
+        previews[thread_id] = _preview_from_thread(thread_id, response, id_by_name)
+
+    for chunk in batched(thread_ids, _MAX_PREVIEW_BATCH_SIZE, strict=False):
+        batch_request = service.new_batch_http_request(callback=record)
+        for thread_id in chunk:
+            batch_request.add(
+                service.users().threads().get(userId="me", id=thread_id, format="metadata"), request_id=thread_id
+            )
+        batch_request.execute()
+    return previews
 
 
 def _preview_from_thread(
