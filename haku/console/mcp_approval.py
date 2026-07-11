@@ -2,8 +2,9 @@
 
 This router is the privileged tool-call ledger: callers can discover connected MCP
 servers, submit exact calls against any reflected tool, and read the console-owned
-result/audit state. In v1 every execution waits for an operator decision in trusted
-console chrome. The connected-server catalog lives in `mcp_config`; operator OAuth account
+result/audit state. Calls run immediately only when a reviewed auto-approval policy
+matches; all others wait for an operator decision in trusted console chrome. The
+connected-server catalog lives in `mcp_config`; operator OAuth account
 linkage (used when a server executes as the operator's own account) lives in
 `mcp_operator_oauth`.
 """
@@ -28,6 +29,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from haku.console.auto_approval import evaluate_auto_approval
 from haku.console.config import Settings
 from haku.console.database_migrate import run_migrations_for_connection
 from haku.console.database_schema import McpToolCall, McpToolCallEvent
@@ -55,6 +57,7 @@ from haku.console.tool_calls import (
     ToolCallRecord,
     ToolCallStatus,
 )
+from haku.console.tools.gmail_client import GmailToolsClient
 
 logger = logging.getLogger(__name__)
 
@@ -142,27 +145,41 @@ class PostgresToolCallLedger:
         self._sessions = sessionmaker(self._engine, expire_on_commit=False)
 
     def submit(
-        self, *, server: McpServerEntry, req: SubmitToolCallRequest, caller_principal: str
+        self,
+        *,
+        server: McpServerEntry,
+        req: SubmitToolCallRequest,
+        caller_principal: str,
+        auto_approval_policy_id: str | None = None,
     ) -> tuple[ToolCallRecord, list[ToolCallEvent], bool]:
         with self._sessions.begin() as session:
             now = datetime.datetime.now(datetime.UTC)
+            status = ToolCallStatus.RUNNING if auto_approval_policy_id is not None else ToolCallStatus.PENDING_APPROVAL
             record = ToolCallRecord(
                 tool_call_id=f"tc_{secrets.token_hex(12)}",
                 server_id=server.id,
                 tool_name=req.tool_name,
                 caller_principal=caller_principal,
-                status=ToolCallStatus.PENDING_APPROVAL,
+                status=status,
                 created_at=now,
                 updated_at=now,
                 arguments=req.arguments,
                 rationale=req.rationale,
                 title=req.title,
+                approval_policy_id=auto_approval_policy_id,
+                approved_at=now if auto_approval_policy_id is not None else None,
             )
             session.add(McpToolCall.from_record(record))
-            events = [
-                self._insert_event(session, ToolCallEventType.TOOL_CALL_SUBMITTED, record),
-                self._insert_event(session, ToolCallEventType.APPROVAL_PENDING, record),
-            ]
+            events = [self._insert_event(session, ToolCallEventType.TOOL_CALL_SUBMITTED, record)]
+            events.append(
+                self._insert_event(
+                    session,
+                    ToolCallEventType.TOOL_CALL_UPDATED
+                    if auto_approval_policy_id is not None
+                    else ToolCallEventType.APPROVAL_PENDING,
+                    record,
+                )
+            )
             return record, events, True
 
     def get(self, tool_call_id: str) -> ToolCallRecord:
@@ -238,6 +255,8 @@ class PostgresToolCallLedger:
             row.status = status
             row.updated_at = datetime.datetime.now(datetime.UTC)
             row.denial_reason = denial_reason
+            if status == ToolCallStatus.RUNNING:
+                row.approved_at = row.updated_at
             updated = row.to_record()
             event = self._insert_event(session, ToolCallEventType.TOOL_CALL_UPDATED, updated)
             return updated, event
@@ -562,16 +581,30 @@ async def submit_tool_call(
 ) -> ToolCallRecord:
     server = _server_entry(settings, body.server_id)
     caller = _caller_principal(request, settings)
-    record, events, created = ledger.submit(server=server, req=body, caller_principal=caller)
+    auto_approval = await evaluate_auto_approval(
+        caller_principal=caller,
+        server_id=server.id,
+        tool_name=body.tool_name,
+        arguments=body.arguments,
+        label_prefix=settings.gmail_auto_approve_label_prefix,
+        gmail=cast(GmailToolsClient | None, request.app.state.gmail_client),
+    )
+    record, events, created = ledger.submit(
+        server=server,
+        req=body,
+        caller_principal=caller,
+        auto_approval_policy_id=auto_approval.policy_id if auto_approval is not None else None,
+    )
     await hub.broadcast(events)
     if created:
         logger.info(
-            "tool call %s submitted status=%s server=%s tool=%s caller=%s",
+            "tool call %s submitted status=%s server=%s tool=%s caller=%s approval_policy=%s",
             record.tool_call_id,
             record.status,
             record.server_id,
             record.tool_name,
             caller,
+            record.approval_policy_id,
         )
     if record.status == ToolCallStatus.RUNNING:
         auth_token = await _execution_auth(server, caller, oauth_store)

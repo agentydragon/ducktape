@@ -57,9 +57,10 @@ haku-state git credential or clone at all.
 ## MCP approval queue — authored tool calls, console-approved
 
 The console also owns the privileged MCP-tool escape hatch (`mcp_approval.py`). Haku or haku-ui can
-submit a precise tool call that Haku should not run autonomously; the console mints the canonical
-`tool_call_id`, records the audit entry, asks the trusted console frontend for approval when
-required, executes the MCP tool, and keeps the result. haku-state stores only authored requests
+submit a precise tool call; the console mints the canonical `tool_call_id`, records the audit entry,
+runs reviewed auto-approval policies, asks the trusted console frontend for approval when no policy
+matches, executes the MCP tool, and keeps the result. Policy errors and conflicting matches are
+logged and fail closed to manual approval. haku-state stores only authored requests
 (`tool_requests/*.yaml`) and UI affordances (`<tool-call request="...">`); there is no
 `tool_results/` mirror.
 
@@ -113,11 +114,12 @@ HTTP:
   `page_token`/`next_page_token`), `threads_get`/`messages_get` (with a `format` argument that
   passes straight through to Gmail — `minimal`/`metadata`/`full`, plus `raw` for messages),
   `labels_list`, `labels_get`. Writes are `drafts_create`, `threads_batch_modify`, and
-  label CRUD (`labels_create`, `labels_patch`, `labels_delete`). Unlike `gmail-labeling`
-  (autonomous, structurally confined to the `haku/` label prefix), every call here — reads
-  included — is approval-gated; the reads add no capability Haku's own read-only Google token
-  lacks, they just route Gmail through the audited console (and are the prime candidates for
-  the later auto-approve policy — e.g. label calls scoped to `haku/`). Gmail affordances not
+  label CRUD (`labels_create`, `labels_patch`, `labels_delete`). Calls default to operator approval.
+  The reviewed `gmail.haku_labels.v1` policy auto-approves Haku-agent calls to wholesale
+  `labels_list`, `threads_batch_modify` when every added/removed name starts with `haku/`,
+  `labels_patch` only when both the current and new names start with `haku/` and no visibility is
+  changed, and `labels_delete` only when the current label name starts with `haku/`. Patch/delete
+  resolve the submitted label ID before deciding. Gmail affordances not
   yet exposed (send, trash/delete, message-level modify, drafts list/send, attachments,
   history, settings/filters) are tracked in `haku/console/TODO.md`.
 - **`google_calendar`** (`haku.console.tools.google_calendar`): `create_calendar_event`, plus a

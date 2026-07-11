@@ -55,6 +55,11 @@ export function ToolCallCard({
                 Denied: {fields.denialReason}
               </Text>
             )}
+            {fields.approvalPolicyId && (
+              <Text size="xs" c="dimmed">
+                Auto-approved by {fields.approvalPolicyId}
+              </Text>
+            )}
           </Stack>
           <Badge color={status.color} variant="light" style={{ flexShrink: 0 }}>
             {status.label}

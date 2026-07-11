@@ -103,6 +103,13 @@ async def test_threads_batch_modify_dispatches(gmail: Mock, client):
     assert args.remove == []  # omitted -> empty, not None
 
 
+async def test_threads_batch_modify_rejects_unknown_arguments(client):
+    result = await client.call_tool(
+        "threads_batch_modify", {"thread_ids": ["t1"], "add": ["haku/x"], "unexpected": True}, raise_on_error=False
+    )
+    assert result.is_error
+
+
 async def test_drafts_create_returns_draft_resource(gmail: Mock, client):
     gmail.drafts_create.return_value = Draft(id="d1", message=Message(id="m1"))
     result = await client.call_tool("drafts_create", {"to": ["a@example.com"], "subject": "S", "body": "B"})

@@ -83,3 +83,6 @@ class Settings(BaseSettings):
     # calendar event creation). Unset disables both servers (their capability entries
     # report `degraded`) and the Gmail thread-preview endpoint.
     google_token_dir: Path | None = None
+    # Namespace whose Gmail label mutations Haku may auto-approve. labels_list is
+    # wholesale because Haku already has standing Gmail read authority.
+    gmail_auto_approve_label_prefix: str = "haku/"

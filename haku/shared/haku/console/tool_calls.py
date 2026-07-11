@@ -58,6 +58,8 @@ class ToolCallRecord(BaseModel):
     result: dict[str, Any] | None = None
     error: str | None = None
     denial_reason: str | None = None
+    approval_policy_id: str | None = None
+    approved_at: datetime.datetime | None = None
 
 
 class ToolCallEvent(BaseModel):

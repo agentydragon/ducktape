@@ -28,6 +28,7 @@ export interface ApprovalDisplayFields {
   callerPrincipal: string | null;
   createdAt: string | null;
   denialReason: string | null;
+  approvalPolicyId: string | null;
 }
 
 export interface RecentToolCall {
@@ -95,6 +96,7 @@ export function approvalDisplayFields(approval: PendingApproval | ToolCallRecord
     callerPrincipal: approval.caller_principal ?? null,
     createdAt: approval.created_at ?? null,
     denialReason: "denial_reason" in approval ? (approval.denial_reason ?? null) : null,
+    approvalPolicyId: "approval_policy_id" in approval ? (approval.approval_policy_id ?? null) : null,
   };
 }
 

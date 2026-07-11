@@ -8,6 +8,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
+from unittest.mock import Mock
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -270,6 +271,12 @@ mcp:
     return path
 
 
+def _gmail_config_file(tmp_path: Path) -> Path:
+    path = tmp_path / "haku_console_gmail.yaml"
+    path.write_text("mcp:\n  servers:\n    - id: gmail\n", encoding="utf-8")
+    return path
+
+
 def _operator_oauth_static_client_config_file(tmp_path: Path, oauth_base_url: str, client_id: str) -> Path:
     path = tmp_path / "haku_console_operator_oauth_static.yaml"
     path.write_text(
@@ -329,6 +336,13 @@ class RecordingMetadataProvider:
     async def metadata(self, server: Any, auth_token: str | None) -> AliveServerMetadata:
         self.auth_tokens.append(auth_token)
         return AliveServerMetadata(server_id=server.id, title=server.id)
+
+
+class EchoingExecutor:
+    async def execute(
+        self, server: Any, tool_name: str, arguments: dict[str, Any], auth_token: str | None
+    ) -> dict[str, Any]:
+        return {"content": [{"type": "text", "text": f"{server.id}:{tool_name}"}], "isError": False}
 
 
 def test_reflection_lists_connected_servers_without_leaking_credentials(
@@ -475,6 +489,50 @@ def test_submit_mints_tool_call_id(make_client, tmp_path: Path, db_url: str, mcp
     assert first["status"] == "pending_approval"
     assert "approval_id" not in first
     assert second["tool_call_id"] != first["tool_call_id"]
+
+
+def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
+    make_client, tmp_path: Path, db_url: str
+) -> None:
+    gmail = Mock()
+    with make_client(
+        config_file=_gmail_config_file(tmp_path),
+        agent_api_token=SecretStr("tool-token"),
+        gmail_client=gmail,
+        tool_call_executor=EchoingExecutor(),
+        **_test_app_overrides(db_url),
+    ) as client:
+        response = client.post(
+            "/api/tool-calls",
+            headers={"Authorization": "Bearer tool-token"},
+            json={"server_id": "gmail", "tool_name": "labels_list", "arguments": {}, "wait_for_ms": 0},
+        )
+        pending = client.get("/api/approvals/pending").json()
+
+    assert response.status_code == 200, response.text
+    record = response.json()
+    assert record["status"] == "ok"
+    assert record["approval_policy_id"] == "gmail.haku_labels.v1"
+    assert record["approved_at"] is not None
+    assert record["result"]["content"][0]["text"] == "gmail:labels_list"
+    assert pending["approvals"] == []
+
+
+def test_operator_gmail_labels_list_stays_pending(make_client, tmp_path: Path, db_url: str) -> None:
+    with make_client(
+        config_file=_gmail_config_file(tmp_path),
+        gmail_client=Mock(),
+        tool_call_executor=EchoingExecutor(),
+        **_test_app_overrides(db_url),
+    ) as client:
+        response = client.post(
+            "/api/tool-calls",
+            json={"server_id": "gmail", "tool_name": "labels_list", "arguments": {}, "wait_for_ms": 0},
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "pending_approval"
+    assert response.json()["approval_policy_id"] is None
 
 
 def test_approval_executes_tool_and_records_terminal_result(
@@ -748,7 +806,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(
     finally:
         engine.dispose()
 
-    assert version == "0003"
+    assert version == "0004"
     assert {"mcp_operator_oauth_associations", "mcp_operator_oauth_flows"} <= tables
     assert {
         "tool_call_id",
@@ -764,6 +822,8 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(
         "result_json",
         "error",
         "denial_reason",
+        "approval_policy_id",
+        "approved_at",
     } == columns
     assert row["server_id"] == "smoke"
     assert row["tool_name"] == "echo"

@@ -74,6 +74,11 @@ describe("approval queue state", () => {
     expect(fields.toolCallId).toBe("tc_1");
   });
 
+  it("surfaces auto-approval policy provenance for terminal calls", () => {
+    const fields = approvalDisplayFields(toolCallRecord({ approval_policy_id: "gmail.haku_labels.v1" }));
+    expect(fields.approvalPolicyId).toBe("gmail.haku_labels.v1");
+  });
+
   it("keeps terminal results only as short-lived recent feedback", () => {
     const recent = makeRecentToolCall(toolCallRecord(), 1_000);
 

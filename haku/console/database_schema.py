@@ -36,6 +36,8 @@ class McpToolCall(Base):
     result_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     denial_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approval_policy_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approved_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     @classmethod
     def from_record(cls, record: ToolCallRecord) -> McpToolCall:
@@ -53,6 +55,8 @@ class McpToolCall(Base):
             result_json=record.result,
             error=record.error,
             denial_reason=record.denial_reason,
+            approval_policy_id=record.approval_policy_id,
+            approved_at=record.approved_at,
         )
 
     def to_record(self) -> ToolCallRecord:
@@ -70,6 +74,8 @@ class McpToolCall(Base):
             result=self.result_json,
             error=self.error,
             denial_reason=self.denial_reason,
+            approval_policy_id=self.approval_policy_id,
+            approved_at=self.approved_at,
         )
 
 

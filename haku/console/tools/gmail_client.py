@@ -5,8 +5,8 @@ The read tools mirror Gmail's REST API: `labels_list`/`labels_get`/`threads_list
 `gmail_api.labels`) **verbatim** — no content-type prioritization, no body decoding, no
 field flattening. `format` passes straight through to Gmail. The write tools (draft
 creation, thread-label changes, label CRUD) act on any label/thread — unlike
-`haku.gmail_labeling` (autonomous, closed over the `haku/` prefix), the only safety gate
-here is the human operator approving each call in haku-console. See `haku/docs/security.md`.
+`haku.gmail_labeling` (autonomous, closed over the `haku/` prefix), this surface is
+mediated by haku-console's manual-or-policy approval pipeline. See `haku/docs/security.md`.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from email.mime.text import MIMEText
 from itertools import batched
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from gmail_api.labels import CreateLabelRequest, GmailLabel, LabelsListResponse, LabelType, PatchLabelRequest
 from gmail_api.messages import Draft, Message, MessageFormat, Thread, ThreadFormat, ThreadsListResponse
@@ -37,6 +37,8 @@ class GmailLabelRef(BaseModel):
 
 class BatchModifyGmailThreadLabelsArgs(BaseModel):
     """Add and/or remove Gmail labels across a batch of threads in one call."""
+
+    model_config = ConfigDict(extra="forbid")
 
     thread_ids: list[str] = Field(min_length=1, description="Gmail thread IDs to modify in one batch.")
     add: list[str] = Field(default_factory=list, description="Label names to add to every thread; created if new.")

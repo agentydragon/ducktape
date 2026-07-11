@@ -2,9 +2,8 @@
 
 Gmail read + write tools behind haku-console's operator-approval queue. The reads mirror
 Gmail's REST API (they return `gmail_api` resource models verbatim); the writes create
-drafts, change thread labels, and manage labels. Every call — reads included — is gated by
-the ordinary approval queue; there is no autonomous path (unlike `haku.gmail_labeling`,
-which is autonomous but structurally confined to the `haku/` label prefix).
+drafts, change thread labels, and manage labels. Every call travels through the console's
+approval and audit pipeline; reviewed policy may auto-approve existing label tools.
 
 Built as a real `FastMCP` server and attached to `McpToolExecutor`/`McpMetadataProvider`
 as an **in-process** transport (`fastmcp.client.Client` accepts a `FastMCP` instance
@@ -75,8 +74,8 @@ def build_mcp(gmail: GmailToolsClient) -> FastMCP:
         name=GMAIL_SERVER_ID,
         instructions="Privileged Gmail tools. Reads (search/get threads, messages, labels) mirror Gmail's REST "
         "API and return its resource shapes verbatim; writes create drafts, change thread labels, and manage "
-        "labels. Every call — reads included — is gated by haku-console's operator-approval queue; there is no "
-        "autonomous path to any of these.",
+        "labels. Calls go through haku-console's approval and audit pipeline; reviewed policy may auto-approve "
+        "standing label-read authority and mutations confined to haku/.",
     )
 
     @mcp.tool
