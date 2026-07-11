@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
-# The Google Calendar REST API speaks camelCase; request-body models below carry `to_camel`
-# aliases so `model_dump(by_alias=True, exclude_none=True)` yields the wire shape directly,
-# instead of hand-assembling dicts.
-_CAMEL = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+class ReminderMethod(StrEnum):
+    POPUP = "popup"
+    EMAIL = "email"
 
 
 class EventDateTime(BaseModel):
@@ -36,7 +37,7 @@ class EventDateTime(BaseModel):
 
 
 class CalendarReminder(BaseModel):
-    method: Literal["popup", "email"] = "popup"
+    method: ReminderMethod = ReminderMethod.POPUP
     minutes_before_start: int = Field(
         ge=0, le=40320, description="Minutes before the event start; Google's max is 4 weeks."
     )
@@ -67,7 +68,7 @@ class CreateCalendarEventResult(BaseModel):
 
 # --- Google Calendar `events.insert` request-body models (camelCase wire shape) ---
 class _EventDateTime(BaseModel):
-    model_config = _CAMEL
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     date: str | None = None
     date_time: str | None = None
@@ -79,12 +80,12 @@ class _EventDateTime(BaseModel):
 
 
 class _ReminderOverride(BaseModel):
-    method: str
+    method: ReminderMethod
     minutes: int
 
 
 class _Reminders(BaseModel):
-    model_config = _CAMEL
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     use_default: bool
     overrides: list[_ReminderOverride]
@@ -95,7 +96,7 @@ class _Attendee(BaseModel):
 
 
 class _EventInsert(BaseModel):
-    model_config = _CAMEL
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     summary: str
     start: _EventDateTime
