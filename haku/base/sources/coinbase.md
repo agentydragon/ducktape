@@ -42,7 +42,7 @@ Endpoints (all on `api.coinbase.com`):
 - `GET /v2/prices/<from>-<to>/spot` — **public, no auth** — spot price for USD marking.
 
 **Sharp edge — for balances use `/v2/accounts`, NOT `/api/v3/brokerage/accounts`.** The v3
-brokerage endpoint (`get_accounts`) returns only *tradeable* balances and **silently omits
+brokerage endpoint (`get_accounts`) returns only _tradeable_ balances and **silently omits
 staked assets** — staked ETH sits in a separate `Staked ETH` wallet that v3 never returns, so a
 v3-only read can undercount the account by a wide margin (caught against the operator's app,
 Jul 11). `/v2/accounts` lists every wallet, staked included. Keep v3 only for `fills` and
