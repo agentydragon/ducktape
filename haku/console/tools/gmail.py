@@ -72,9 +72,10 @@ _RemoveLabelsAnn = Annotated[
 def build_mcp(gmail: GmailToolsClient) -> FastMCP:
     mcp: FastMCP = FastMCP(
         name=GMAIL_SERVER_ID,
+        strict_input_validation=True,
         instructions="Privileged Gmail tools. Reads (search/get threads, messages, labels) mirror Gmail's REST "
         "API and return its resource shapes verbatim; writes create drafts, change thread labels, and manage "
-        "labels. Calls go through haku-console's approval and audit pipeline; reviewed policy may auto-approve "
+        "labels. Calls go through haku-console's approval and audit pipeline; its reviewed decision may auto-approve "
         "standing label-read authority and mutations confined to haku/.",
     )
 

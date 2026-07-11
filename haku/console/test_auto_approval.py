@@ -1,4 +1,4 @@
-"""Unit tests for reviewed haku-console auto-approval policies."""
+"""Unit tests for haku-console's reviewed auto-approval decision."""
 
 from unittest.mock import Mock
 
@@ -6,24 +6,26 @@ import pytest
 import pytest_bazel
 
 from gmail_api.labels import GmailLabel, LabelType
-from haku.console.auto_approval import GMAIL_LABEL_POLICY_ID, evaluate_auto_approval
+from haku.console.auto_approval import GMAIL_LABEL_POLICY_ID, auto_approve_tool_call
+from haku.console.tools.gmail import build_mcp
 
 
 async def _decision(tool_name: str, arguments: dict, *, gmail=None, caller="haku-agent-api-token"):
-    return await evaluate_auto_approval(
+    gmail = gmail or Mock()
+    return await auto_approve_tool_call(
         caller_principal=caller,
         server_id="gmail",
         tool_name=tool_name,
         arguments=arguments,
         label_prefix="haku/",
         gmail=gmail,
+        mcp=build_mcp(gmail),
     )
 
 
 async def test_lists_all_labels_without_namespace_filter() -> None:
     decision = await _decision("labels_list", {})
-    assert decision is not None
-    assert decision.policy_id == GMAIL_LABEL_POLICY_ID
+    assert decision == GMAIL_LABEL_POLICY_ID
 
 
 @pytest.mark.parametrize("field", ["add", "remove"])
@@ -76,7 +78,7 @@ async def test_lookup_errors_are_logged_and_fail_closed(caplog: pytest.LogCaptur
     gmail.labels_get.side_effect = RuntimeError("gmail unavailable")
     with caplog.at_level("ERROR"):
         assert await _decision("labels_delete", {"label_id": "Label_1"}, gmail=gmail) is None
-    assert "auto-approval policy evaluation failed" in caplog.text
+    assert "auto-approval evaluation failed" in caplog.text
     assert "gmail unavailable" in caplog.text
 
 

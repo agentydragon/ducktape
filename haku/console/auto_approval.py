@@ -1,16 +1,15 @@
-"""Reviewed, fail-closed auto-approval policies for haku-console MCP calls."""
+"""The reviewed, fail-closed auto-approval decision for haku-console MCP calls."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+import jsonschema
+from fastmcp import FastMCP
 
-from gmail_api.labels import LabelListVisibility, MessageListVisibility
-from haku.console.tools.gmail_client import BatchModifyGmailThreadLabelsArgs, GmailToolsClient
+from haku.console.tools.gmail_client import GmailToolsClient
 from haku.gmail_labeling.namespace import LabelNamespace
 
 logger = logging.getLogger(__name__)
@@ -20,95 +19,7 @@ GMAIL_SERVER_ID = "gmail"
 GMAIL_LABEL_POLICY_ID = "gmail.haku_labels.v1"
 
 
-@dataclass(frozen=True)
-class AutoApproval:
-    policy_id: str
-
-
-@dataclass(frozen=True)
-class ToolCallPolicyInput:
-    caller_principal: str
-    server_id: str
-    tool_name: str
-    arguments: dict[str, Any]
-
-
-@dataclass(frozen=True)
-class AutoApprovalContext:
-    gmail: GmailToolsClient | None
-    gmail_label_prefix: str
-
-
-class AutoApprovalPolicy(Protocol):
-    async def evaluate(self, call: ToolCallPolicyInput, context: AutoApprovalContext) -> AutoApproval | None: ...
-
-
-class _PatchLabelArgs(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    label_id: str
-    name: str | None = None
-    label_list_visibility: LabelListVisibility | None = None
-    message_list_visibility: MessageListVisibility | None = None
-
-
-class _DeleteLabelArgs(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    label_id: str
-
-
-class GmailLabelAutoApprovalPolicy:
-    """Standing Gmail read authority plus `haku/`-bounded label mutations."""
-
-    async def evaluate(self, call: ToolCallPolicyInput, context: AutoApprovalContext) -> AutoApproval | None:
-        if call.caller_principal != HAKU_AGENT_PRINCIPAL or call.server_id != GMAIL_SERVER_ID:
-            return None
-        if call.tool_name not in {"labels_list", "threads_batch_modify", "labels_patch", "labels_delete"}:
-            return None
-
-        namespace = LabelNamespace(context.gmail_label_prefix)
-        try:
-            if call.tool_name == "labels_list":
-                return AutoApproval(GMAIL_LABEL_POLICY_ID) if not call.arguments else None
-            if call.tool_name == "threads_batch_modify":
-                parsed = BatchModifyGmailThreadLabelsArgs.model_validate(call.arguments)
-                return (
-                    AutoApproval(GMAIL_LABEL_POLICY_ID)
-                    if all(namespace.allows(name) for name in parsed.add + parsed.remove)
-                    else None
-                )
-            if call.tool_name == "labels_patch":
-                parsed_patch = _PatchLabelArgs.model_validate(call.arguments)
-                gmail = context.gmail
-                if (
-                    gmail is None
-                    or parsed_patch.name is None
-                    or parsed_patch.label_list_visibility is not None
-                    or parsed_patch.message_list_visibility is not None
-                ):
-                    return None
-                current = await asyncio.to_thread(gmail.labels_get, parsed_patch.label_id)
-                return (
-                    AutoApproval(GMAIL_LABEL_POLICY_ID)
-                    if namespace.allows(current.name) and namespace.allows(parsed_patch.name)
-                    else None
-                )
-            parsed_delete = _DeleteLabelArgs.model_validate(call.arguments)
-            gmail = context.gmail
-            if gmail is None:
-                return None
-            current = await asyncio.to_thread(gmail.labels_get, parsed_delete.label_id)
-            return AutoApproval(GMAIL_LABEL_POLICY_ID) if namespace.allows(current.name) else None
-        except ValidationError as exc:
-            logger.warning("auto-approval policy rejected malformed Gmail call tool=%s: %s", call.tool_name, exc)
-            return None
-
-
-_POLICIES: tuple[AutoApprovalPolicy, ...] = (GmailLabelAutoApprovalPolicy(),)
-
-
-async def evaluate_auto_approval(
+async def auto_approve_tool_call(
     *,
     caller_principal: str,
     server_id: str,
@@ -116,31 +27,65 @@ async def evaluate_auto_approval(
     arguments: dict[str, Any],
     label_prefix: str,
     gmail: GmailToolsClient | None,
-) -> AutoApproval | None:
-    """Run all reviewed policies; errors and conflicting matches fail closed."""
-    call = ToolCallPolicyInput(
-        caller_principal=caller_principal, server_id=server_id, tool_name=tool_name, arguments=arguments
-    )
-    context = AutoApprovalContext(gmail=gmail, gmail_label_prefix=label_prefix)
-    matches: list[AutoApproval] = []
-    for policy in _POLICIES:
-        try:
-            if match := await policy.evaluate(call, context):
-                matches.append(match)
-        except Exception:
-            logger.exception(
-                "auto-approval policy evaluation failed policy=%s server=%s tool=%s",
-                type(policy).__name__,
-                server_id,
-                tool_name,
-            )
-            return None
-    if len(matches) > 1:
-        logger.error(
-            "conflicting auto-approval policies matched server=%s tool=%s policies=%s",
-            server_id,
-            tool_name,
-            [match.policy_id for match in matches],
-        )
+    mcp: FastMCP | None,
+) -> str | None:
+    """Return the approving policy ID, or ``None`` for ordinary manual approval.
+
+    The existing FastMCP tool is the input-contract source of truth. Its published
+    schema is synthesized from the callable signature and validated here before the
+    Gmail-specific semantic boundary is evaluated. Any schema, lookup, or policy
+    error is logged and fails closed.
+    """
+    if caller_principal != HAKU_AGENT_PRINCIPAL or server_id != GMAIL_SERVER_ID:
         return None
-    return matches[0] if matches else None
+    if tool_name not in {"labels_list", "threads_batch_modify", "labels_patch", "labels_delete"}:
+        return None
+
+    try:
+        if mcp is None:
+            raise RuntimeError("in-process Gmail MCP server is unavailable")
+        tool = await mcp.get_tool(tool_name)
+        if tool is None:
+            raise RuntimeError(f"Gmail MCP tool {tool_name!r} is unavailable")
+    except Exception:
+        logger.exception("auto-approval tool lookup failed server=%s tool=%s", server_id, tool_name)
+        return None
+
+    try:
+        jsonschema.validate(instance=arguments, schema=tool.to_mcp_tool().inputSchema)
+    except jsonschema.ValidationError as exc:
+        logger.warning("auto-approval rejected invalid MCP arguments server=%s tool=%s: %s", server_id, tool_name, exc)
+        return None
+    except jsonschema.SchemaError:
+        logger.exception("auto-approval tool schema is invalid server=%s tool=%s", server_id, tool_name)
+        return None
+
+    try:
+        namespace = LabelNamespace(label_prefix)
+        if tool_name == "labels_list":
+            return GMAIL_LABEL_POLICY_ID
+        if tool_name == "threads_batch_modify":
+            add = arguments.get("add") or []
+            remove = arguments.get("remove") or []
+            if not add and not remove:
+                return None
+            if set(add) & set(remove):
+                return None
+            return GMAIL_LABEL_POLICY_ID if all(namespace.allows(name) for name in [*add, *remove]) else None
+        if gmail is None:
+            raise RuntimeError("Gmail client is unavailable")
+        if tool_name == "labels_patch":
+            new_name = arguments.get("name")
+            if (
+                new_name is None
+                or arguments.get("label_list_visibility") is not None
+                or arguments.get("message_list_visibility") is not None
+            ):
+                return None
+            current = await asyncio.to_thread(gmail.labels_get, arguments["label_id"])
+            return GMAIL_LABEL_POLICY_ID if namespace.allows(current.name) and namespace.allows(new_name) else None
+        current = await asyncio.to_thread(gmail.labels_get, arguments["label_id"])
+        return GMAIL_LABEL_POLICY_ID if namespace.allows(current.name) else None
+    except Exception:
+        logger.exception("auto-approval evaluation failed server=%s tool=%s", server_id, tool_name)
+    return None

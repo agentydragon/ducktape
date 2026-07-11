@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from haku.console.auto_approval import evaluate_auto_approval
+from haku.console.auto_approval import auto_approve_tool_call
 from haku.console.config import Settings
 from haku.console.database_migrate import run_migrations_for_connection
 from haku.console.database_schema import McpToolCall, McpToolCallEvent
@@ -581,19 +581,18 @@ async def submit_tool_call(
 ) -> ToolCallRecord:
     server = _server_entry(settings, body.server_id)
     caller = _caller_principal(request, settings)
-    auto_approval = await evaluate_auto_approval(
+    in_process_servers = cast(InProcessServers, request.app.state.in_process_servers)
+    auto_approval_policy_id = await auto_approve_tool_call(
         caller_principal=caller,
         server_id=server.id,
         tool_name=body.tool_name,
         arguments=body.arguments,
         label_prefix=settings.gmail_auto_approve_label_prefix,
         gmail=cast(GmailToolsClient | None, request.app.state.gmail_client),
+        mcp=in_process_servers.get(server.id),
     )
     record, events, created = ledger.submit(
-        server=server,
-        req=body,
-        caller_principal=caller,
-        auto_approval_policy_id=auto_approval.policy_id if auto_approval is not None else None,
+        server=server, req=body, caller_principal=caller, auto_approval_policy_id=auto_approval_policy_id
     )
     await hub.broadcast(events)
     if created:

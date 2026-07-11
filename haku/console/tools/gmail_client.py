@@ -16,7 +16,7 @@ from email.mime.text import MIMEText
 from itertools import batched
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from gmail_api.labels import CreateLabelRequest, GmailLabel, LabelsListResponse, LabelType, PatchLabelRequest
 from gmail_api.messages import Draft, Message, MessageFormat, Thread, ThreadFormat, ThreadsListResponse
@@ -37,8 +37,6 @@ class GmailLabelRef(BaseModel):
 
 class BatchModifyGmailThreadLabelsArgs(BaseModel):
     """Add and/or remove Gmail labels across a batch of threads in one call."""
-
-    model_config = ConfigDict(extra="forbid")
 
     thread_ids: list[str] = Field(min_length=1, description="Gmail thread IDs to modify in one batch.")
     add: list[str] = Field(default_factory=list, description="Label names to add to every thread; created if new.")

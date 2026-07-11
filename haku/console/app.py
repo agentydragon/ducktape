@@ -99,6 +99,7 @@ def create_app(settings: Settings) -> FastAPI:
             routine_tools.RoutineLauncher(settings.launch_routine)
         )
     app.state.tool_call_event_hub = tool_call_event_hub
+    app.state.in_process_servers = in_process_servers
     app.state.tool_call_executor = mcp_approval.McpToolExecutor(in_process_servers)
     app.state.tool_call_metadata_provider = mcp_approval.McpMetadataProvider(in_process_servers)
 

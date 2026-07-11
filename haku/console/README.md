@@ -58,9 +58,10 @@ haku-state git credential or clone at all.
 
 The console also owns the privileged MCP-tool escape hatch (`mcp_approval.py`). Haku or haku-ui can
 submit a precise tool call; the console mints the canonical `tool_call_id`, records the audit entry,
-runs reviewed auto-approval policies, asks the trusted console frontend for approval when no policy
-matches, executes the MCP tool, and keeps the result. Policy errors and conflicting matches are
-logged and fail closed to manual approval. haku-state stores only authored requests
+runs the reviewed auto-approval decision, asks the trusted console frontend for approval when it
+does not match, executes the MCP tool, and keeps the result. The decision validates arguments
+against the existing FastMCP tool's generated schema; errors are logged and fail closed to manual
+approval. haku-state stores only authored requests
 (`tool_requests/*.yaml`) and UI affordances (`<tool-call request="...">`); there is no
 `tool_results/` mirror.
 

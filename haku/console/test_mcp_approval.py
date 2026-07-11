@@ -27,6 +27,7 @@ from testcontainers.postgres import PostgresContainer
 
 from haku.console.mcp_approval import AliveServerMetadata, McpMetadataProvider, McpToolExecutor, _mcp_result_to_json
 from haku.console.mcp_config import McpServerEntry
+from haku.console.tools.gmail import build_mcp as build_gmail_mcp
 from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.net import pick_free_port, wait_for_port
 from util.oci import load_oci_image
@@ -499,6 +500,7 @@ def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
         config_file=_gmail_config_file(tmp_path),
         agent_api_token=SecretStr("tool-token"),
         gmail_client=gmail,
+        in_process_servers={"gmail": build_gmail_mcp(gmail)},
         tool_call_executor=EchoingExecutor(),
         **_test_app_overrides(db_url),
     ) as client:
