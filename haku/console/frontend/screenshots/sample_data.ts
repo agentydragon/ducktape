@@ -218,6 +218,11 @@ export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record
     },
   },
   {
+    serverId: "haku_routine",
+    toolName: "launch_routine",
+    args: { text: "Scan Gmail for anything needing a reply, draft responses, and flag time-sensitive items." },
+  },
+  {
     serverId: "kubectl-passthrough-mcp",
     toolName: "resources_create_or_update",
     args: {

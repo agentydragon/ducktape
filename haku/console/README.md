@@ -42,6 +42,14 @@ agent-authored iframe can only _request_ a launch (`requestLaunch` over the brid
 shell renders its own confirm (showing the prompt verbatim) and only then fires. So agent
 UI can ask for the capability but can never script or spoof it.
 
+**Migration (in progress):** launch is moving off this bespoke tier onto the standard MCP
+approval queue — the `haku_routine` in-process MCP server's `launch_routine` tool (below)
+fires the same routine, gated by the ordinary approval drawer instead of a separate confirm.
+This capability path stays only until haku-ui submits `launch_routine` through its backend and
+the `requestLaunch` bridge verb is dropped, at which point `capabilities.py` retires entirely
+(the shared `GET /api/capabilities/csrf` endpoint moves; it's used by the approval + operator-auth
+flows too).
+
 There is **no** low-privilege "trace" write tier anymore — operator feedback now writes
 straight into haku-state from haku-ui (which Haku already owns), so the console needs no
 haku-state git credential or clone at all.
@@ -92,7 +100,7 @@ accepts a `FastMCP` object directly (an in-memory `FastMCPTransport`), so
 `McpToolExecutor`/`McpMetadataProvider` run the exact same `Client(...)` calls either
 way — same approval/audit/CSRF pipeline, same live `tools/list` reflection, just a
 different transport (`_transport()` in `mcp_approval.py` picks the registered in-process
-`FastMCP` for a server id, falling back to `server_url`). There are two today, built exactly
+`FastMCP` for a server id, falling back to `server_url`). There are three today, built exactly
 like standalone MCP servers (`@mcp.tool`-decorated functions, mirroring
 `haku/gmail_labeling/server.py`'s style) — the only difference from a real deployment is that
 `create_app` hands the `FastMCP` object straight to the executor instead of serving it over
@@ -113,8 +121,13 @@ HTTP:
   history, settings/filters) are tracked in `haku/console/TODO.md`.
 - **`google_calendar`** (`haku.console.tools.google_calendar`): `create_calendar_event`, plus a
   `GET /api/google-calendar/calendar-summary` rendering read (below).
+- **`haku_routine`** (`haku.console.tools.routine`): `launch_routine` fires the Haku
+  claude-code-web routine (optionally with per-run instruction `text`), so a launch is an
+  ordinary approval-gated tool call rather than a bespoke capability. It uses the
+  `haku-routine-launch-token` secret (`HAKU_CONSOLE_LAUNCH_ROUTINE__*`), not the Google grant, and
+  supersedes the launch-routine capability tier above (kept during the haku-ui transition).
 
-Both servers are built from **one** Airlock-issued `haku_console_google` token
+The `gmail` and `google_calendar` servers are built from **one** Airlock-issued `haku_console_google` token
 (`calendar.events` + `gmail.modify` + `gmail.compose`, plus the `google` provider's read-only
 scopes), mounted from `haku-console-google-access-token` (`HAKU_CONSOLE_GOOGLE_TOKEN_DIR`) —
 kept separate from every other Google-scoped credential in the cluster (Haku's read-only

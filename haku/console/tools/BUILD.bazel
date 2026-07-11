@@ -61,6 +61,18 @@ py_library(
     ],
 )
 
+py_library(
+    name = "routine",
+    srcs = ["routine.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "//haku/console:config",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
 py_test(
     name = "test_gmail",
     srcs = ["test_gmail.py"],
@@ -119,5 +131,37 @@ py_test(
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_routine",
+    srcs = ["test_routine.py"],
+    deps = [
+        ":routine",
+        "//:conftest",
+        "@pypi//fastmcp",
+        "@pypi//pytest_bazel",
+        # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
+        # needs the plugin importable at runtime for its entry-point autoload; Gazelle
+        # can't see that and will try to drop this dep on regen.
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_routine_client",
+    srcs = ["test_routine_client.py"],
+    deps = [
+        ":routine",
+        "//:conftest",
+        "//haku/console:config",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
+        # Not statically imported -- pytest-asyncio auto mode (the async fire tests). See above.
+        "@pypi//pytest_asyncio",
     ],
 )

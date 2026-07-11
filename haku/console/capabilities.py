@@ -1,32 +1,31 @@
 """Capability tier: high-privilege actions the console performs that Haku cannot.
 
-This is the console's one privileged surface: these endpoints use console-only
-secrets and act on the world, so they are **CSRF-gated**, **audited** to this
-trusted namespace's logs (which Haku has no RBAC to read), and the capability set
-is a small, **PR-gated** allowlist. Today the one capability is `launch-routine`:
-firing the Haku "claude-code-web routine" via its public Anthropic fire URL with
-the bearer from the `haku-routine-launch-token` secret. The bearer never leaves
-this process. See `haku/docs/security.md` → enforcement inventory #11.
+This is the console's one privileged non-MCP surface: **CSRF-gated**, **audited** to this
+trusted namespace's logs (which Haku has no RBAC to read), and a small **PR-gated** allowlist.
+Today the one capability is `launch-routine`: firing the Haku "claude-code-web routine" with
+the bearer from the `haku-routine-launch-token` secret. The fire itself lives in
+`haku.console.tools.routine.RoutineLauncher` (shared with the `haku_routine` in-process MCP
+server); the bearer never leaves this process. See `haku/docs/security.md` → enforcement #11.
+
+CLEANUP(added 2026-07-11): Retire this whole launch-routine capability path (the endpoint +
+`LaunchRoutineRequest` + the `requestLaunch` bridge verb + the shell launch confirm) once
+haku-ui submits `launch_routine` through its backend to the standard approval queue (the
+`haku_routine` MCP server, `tools/routine.py`) and the `requestLaunch` verb is dropped. The
+`GET /api/capabilities/csrf` endpoint stays regardless — it is shared with the MCP approval
+and operator-auth flows.
 """
 
 from __future__ import annotations
 
-import logging
 from typing import Annotated
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi_csrf_protect import CsrfProtect
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from haku.console.config import LaunchRoutineConfig
 from haku.console.deps import SettingsDep
-
-logger = logging.getLogger(__name__)
-
-# Required on every Anthropic API request; without it the fire endpoint 400s
-# ("anthropic-version: header is required").
-ANTHROPIC_VERSION = "2023-06-01"
+from haku.console.tools.routine import LaunchRoutineResult, RoutineLauncher
 
 Csrf = Annotated[CsrfProtect, Depends()]
 
@@ -37,30 +36,10 @@ class CsrfTokenResponse(BaseModel):
     csrf_token: str
 
 
-class LaunchRoutineResult(BaseModel):
-    session_url: str = Field(description="claude.ai/code URL of the launched Haku session")
-
-
 class LaunchRoutineRequest(BaseModel):
     text: str | None = Field(
         default=None, description="Optional per-fire routine text; omitted or blank uses the routine's saved default"
     )
-
-    @field_validator("text")
-    @classmethod
-    def blank_text_is_absent(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        stripped = value.strip()
-        return stripped or None
-
-
-def _upstream_detail(resp: httpx.Response) -> str:
-    """Best-effort human-readable reason from an upstream error response."""
-    try:
-        return str(resp.json()["error"]["message"])
-    except (ValueError, KeyError, TypeError):
-        return resp.text[:300]
 
 
 def _launch_config(settings: SettingsDep) -> LaunchRoutineConfig:
@@ -69,10 +48,10 @@ def _launch_config(settings: SettingsDep) -> LaunchRoutineConfig:
     return settings.launch_routine
 
 
-# The SPA fetches a CSRF token here (and gets the signed double-submit cookie), then
-# echoes the token in the X-CSRF-Token header on capability POSTs. Gating the
-# privileged tier this way stops a cross-site request from riding the operator's
-# Authentik session cookie to fire a capability.
+# The SPA fetches a CSRF token here (and gets the signed double-submit cookie), then echoes the
+# token in the X-CSRF-Token header on the launch POST and on MCP approval/operator-auth calls.
+# Gating those privileged mutations this way stops a cross-site request from riding the
+# operator's Authentik session cookie.
 @router.get("/csrf")
 async def csrf_token(response: Response, csrf_protect: Csrf) -> CsrfTokenResponse:
     # Set the signed cookie on the injected Response (which FastAPI returns) so the
@@ -89,23 +68,13 @@ async def launch_routine(
     config: Annotated[LaunchRoutineConfig, Depends(_launch_config)],
     body: LaunchRoutineRequest | None = None,
 ) -> LaunchRoutineResult:
-    """Fire the Haku claude-code-web routine. CSRF-gated; the bearer stays server-side."""
+    """Fire the Haku claude-code-web routine. CSRF-gated; the bearer stays server-side.
+
+    Superseded by the `haku_routine` MCP tool `launch_routine` (approval-queue gated); kept
+    while haku-ui still fires via the `requestLaunch` bridge verb (see the module tombstone)."""
     await csrf_protect.validate_csrf(request)
-    payload = {"text": body.text} if body and body.text is not None else {}
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(
-            config.fire_url,
-            headers={
-                "Authorization": f"Bearer {config.token.get_secret_value()}",
-                "anthropic-version": ANTHROPIC_VERSION,
-            },
-            json=payload,
-        )
-    # Audit to stdout in the haku-console namespace (Haku can't read these logs).
-    logger.info("capability launch-routine fired: upstream status %s", resp.status_code)
-    if not resp.is_success:
-        # Surface the upstream reason so the frontend can show it, not a bare 502.
-        raise HTTPException(
-            status_code=502, detail=f"routine fire failed ({resp.status_code}): {_upstream_detail(resp)}"
-        )
-    return LaunchRoutineResult(session_url=resp.json()["claude_code_session_url"])
+    try:
+        return await RoutineLauncher(config).launch(body.text if body else None)
+    except RuntimeError as exc:
+        # RoutineLauncher raises on a non-2xx upstream; surface the reason, not a bare 502.
+        raise HTTPException(status_code=502, detail=str(exc)) from exc

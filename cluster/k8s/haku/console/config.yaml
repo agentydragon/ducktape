@@ -30,12 +30,13 @@ mcp:
         # haku-console's operator-auth callback), safe to share since PKCE plus per-request
         # redirect_uri validation secure each caller independently.
         static_client_id: kubectl-passthrough-mcp
-    # Two in-process FastMCP servers (haku/console/tools/gmail.py + google_calendar.py) attached via
-    # an in-memory transport, not remote MCP servers — no server_url/operator_oauth. Both
-    # are built from the one Airlock-issued haku_console_google token (calendar.events +
-    # gmail.modify + gmail.compose + google's read scopes) mounted at
-    # HAKU_CONSOLE_GOOGLE_TOKEN_DIR. Every call is approval-gated; gmail.modify already
-    # covers the Gmail reads, so no extra scope is needed.
+    # In-process FastMCP servers (haku/console/tools/*.py) attached via an in-memory transport,
+    # not remote MCP servers — no server_url/operator_oauth. Every call is approval-gated.
+    #
+    # `gmail` + `google_calendar` are built from the one Airlock-issued haku_console_google token
+    # (calendar.events + gmail.modify + gmail.compose + google's read scopes) mounted at
+    # HAKU_CONSOLE_GOOGLE_TOKEN_DIR; gmail.modify already covers the Gmail reads, so no extra
+    # scope is needed.
     #
     # `gmail`: reads mirror Gmail's REST API and return its resource shapes verbatim
     # (threads_list, threads_get, messages_get, labels_list, labels_get); writes are
@@ -44,3 +45,7 @@ mcp:
     - id: gmail
     # `google_calendar`: create_calendar_event.
     - id: google_calendar
+    # `haku_routine` (haku/console/tools/routine.py): launch_routine fires the Haku claude-code-web
+    # routine via the haku-routine-launch-token secret (HAKU_CONSOLE_LAUNCH_ROUTINE__*), not the
+    # Google grant. Superseding the bespoke launch-routine capability tier.
+    - id: haku_routine

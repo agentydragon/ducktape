@@ -27,7 +27,12 @@ from fastmcp import FastMCP
 from haku.console import capabilities, mcp_approval
 from haku.console.config import Settings
 from haku.console.models import ConfigResponse
-from haku.console.tools import gmail as gmail_tools, google_calendar as google_calendar_tools, grocy as grocy_tools
+from haku.console.tools import (
+    gmail as gmail_tools,
+    google_calendar as google_calendar_tools,
+    grocy as grocy_tools,
+    routine as routine_tools,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +90,13 @@ def create_app(settings: Settings) -> FastAPI:
         in_process_servers[gmail_tools.GMAIL_SERVER_ID] = gmail_tools.build_mcp(gmail_client)
         in_process_servers[google_calendar_tools.GOOGLE_CALENDAR_SERVER_ID] = google_calendar_tools.build_mcp(
             calendar_client
+        )
+    # `haku_routine` fires the Haku claude-code-web routine as an approval-gated MCP tool (the
+    # standard queue), superseding the bespoke launch-routine capability tier. Same
+    # `launch_routine` config/secret; independent of the Google grant above.
+    if settings.launch_routine is not None:
+        in_process_servers[routine_tools.HAKU_ROUTINE_SERVER_ID] = routine_tools.build_mcp(
+            routine_tools.build_routine_launcher(settings.launch_routine)
         )
     app.state.tool_call_event_hub = tool_call_event_hub
     app.state.tool_call_executor = mcp_approval.McpToolExecutor(in_process_servers)

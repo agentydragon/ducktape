@@ -120,6 +120,19 @@ The console design + action model live in `console/README.md`; the free-form-UI
 contract in `console/docs/containment.md`. (The launch-routine button itself
 has shipped on the capability tier — see the README.)
 
+- **Finish moving launch off the capability tier onto MCP approvals.** The `haku_routine`
+  in-process MCP server (`console/tools/routine.py`, tool `launch_routine`) now fires the
+  routine through the standard approval queue; the bespoke `capabilities.py` launch path and
+  the `requestLaunch` bridge verb are kept only for the transition. Remaining:
+  1. **haku-state:** migrate haku-ui to submit a `launch_routine` tool call through its backend
+     (the path it already uses for other tool calls) instead of posting `requestLaunch` over the
+     bridge; drop its `requestLaunch` usage + its own launch dialog (the approval drawer renders
+     the prompt now).
+  2. **ducktape:** once haku-ui is migrated, delete the launch-routine capability endpoint +
+     `LaunchRoutineRequest`, the `requestLaunch`/`launchResult` bridge protocol verbs
+     (`haku/shared/bridge_protocol/`), and the shell's launch `ConfirmDialog` branch; relocate the
+     shared `GET /api/capabilities/csrf` endpoint (used by the approval + operator-auth flows) so
+     `capabilities.py` can be removed.
 - **Recent routine executions + one-in-flight guard.** A read-only panel listing recent
   runs of the claude-code-web routine (status, start time, link), and a guard that blocks
   a second launch while one is in flight so a stray click can't fan out sessions. Both

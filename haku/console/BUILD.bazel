@@ -64,9 +64,9 @@ py_library(
     deps = [
         ":config",
         ":deps",
+        "//haku/console/tools:routine",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
-        "@pypi//httpx",
         "@pypi//pydantic",
     ],
 )
@@ -103,6 +103,7 @@ py_library(
         "//haku/console/tools:gmail",
         "//haku/console/tools:google_calendar",
         "//haku/console/tools:grocy",
+        "//haku/console/tools:routine",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
         "@pypi//fastmcp",

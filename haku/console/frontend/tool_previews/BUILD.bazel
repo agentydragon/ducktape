@@ -76,6 +76,19 @@ js_library(
 )
 
 js_library(
+    name = "haku_routine",
+    srcs = ["haku_routine.tsx"],
+    deps = [
+        ":entry",
+        ":variant",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//haku/console/frontend:field",
+    ],
+)
+
+js_library(
     name = "kubectl",
     srcs = ["kubectl.tsx"],
     deps = [
@@ -96,6 +109,7 @@ js_library(
         ":gmail",
         ":google_calendar",
         ":grocy",
+        ":haku_routine",
         ":kubectl",
         ":variant",
         "//:node_modules/react",
@@ -137,6 +151,15 @@ js_library(
     deps = [
         ":entry",
         ":grocy",
+    ],
+)
+
+js_library(
+    name = "haku_routine_test",
+    srcs = ["haku_routine.test.ts"],
+    deps = [
+        ":entry",
+        ":haku_routine",
     ],
 )
 

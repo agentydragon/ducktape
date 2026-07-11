@@ -11,6 +11,7 @@ import { renderPreview, type ToolPreview } from "./entry.tsx";
 import { GMAIL_SERVER_ID, gmailPreviews } from "./gmail.tsx";
 import { GOOGLE_CALENDAR_SERVER_ID, googleCalendarPreviews } from "./google_calendar.tsx";
 import { GROCY_SERVER_ID, grocyPreviews } from "./grocy.tsx";
+import { HAKU_ROUTINE_SERVER_ID, hakuRoutinePreviews } from "./haku_routine.tsx";
 import { KUBECTL_SERVER_ID, kubectlPreviews } from "./kubectl.tsx";
 import type { PreviewVariant } from "./variant.tsx";
 
@@ -18,6 +19,7 @@ const REGISTRY: Record<string, Record<string, ToolPreview>> = {
   [GMAIL_SERVER_ID]: gmailPreviews,
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarPreviews,
   [GROCY_SERVER_ID]: grocyPreviews,
+  [HAKU_ROUTINE_SERVER_ID]: hakuRoutinePreviews,
   [KUBECTL_SERVER_ID]: kubectlPreviews,
 };
 
