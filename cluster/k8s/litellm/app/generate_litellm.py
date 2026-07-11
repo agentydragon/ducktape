@@ -67,7 +67,7 @@ ZAI_ANTHROPIC_MODELS: list[str] = [
 # token on demand and rewrites that file, so the mount must be read-write. `drop_params`
 # (below) strips the max_tokens/metadata fields this backend rejects.
 #
-# Only these three are served by the Codex/ChatGPT-account backend (verified live).
+# Only these models are served by the Codex/ChatGPT-account backend (verified live).
 # Others tried and rejected with "not supported when using Codex with a ChatGPT
 # account": gpt-5.4-pro, gpt-5.3-codex, gpt-5.3-instant, gpt-5.3-chat-latest.
 #
@@ -75,7 +75,14 @@ ZAI_ANTHROPIC_MODELS: list[str] = [
 # output[] and the /v1/chat/completions bridge fails with "Unknown items in responses
 # API response: []" — an unfixed LiteLLM bug (BerriAI/litellm#25429; fix PRs like #27562
 # still unmerged as of litellm 1.90.x). Callers must send stream:true to /v1/responses.
-_CHATGPT_MODELS: list[str] = ["gpt-5.4", "gpt-5.5", "gpt-5.3-codex-spark"]
+_CHATGPT_MODELS: list[str] = [
+    "gpt-5.4",
+    "gpt-5.5",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-5.3-codex-spark",
+]
 
 
 # Real Anthropic API (plain claude-* names — the "-anthropic" suffix above means

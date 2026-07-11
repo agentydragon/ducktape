@@ -36,7 +36,7 @@ spec:
         - name: codex
           # Flux image-automation setter: the marker MUST be a trailing comment on
           # the image line (kyaml Setters ignores an own-line comment above it).
-          image: git.allegedly.works/ducktape-ci/codex-pod:devel-20260705002435-b448335 # {"$imagepolicy": "flux-system:codex-pod"}
+          image: git.allegedly.works/ducktape-ci/codex-pod:devel-20260711091129-48f4104 # {"$imagepolicy": "flux-system:codex-pod"}
           # HOME (/home/codex) + all static config (incl. sshd_config +
           # authorized_keys) are baked into the image by home-manager. Runtime
           # steps: (1) plant the outbound SSH private key (secret → 0600; a mount

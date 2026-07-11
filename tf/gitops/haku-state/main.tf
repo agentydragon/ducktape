@@ -220,14 +220,13 @@ import {
 }
 
 resource "forgejo_repository" "ducktape_mirror" {
-  owner           = forgejo_user.haku.login
-  name            = "ducktape"
-  description     = "Haku-owned mirror of ducktape (from public GitHub), for haku-ci Bazel builds (git_override)."
-  private         = true
-  mirror          = true
-  service         = "git"
-  clone_addr      = "https://github.com/agentydragon/ducktape.git"
-  mirror_interval = "0h10m0s"
+  owner       = forgejo_user.haku.login
+  name        = "ducktape"
+  description = "Haku-owned mirror of ducktape (from public GitHub), for haku-ci Bazel builds (git_override)."
+  private     = true
+  mirror      = true
+  service     = "git"
+  clone_addr  = "https://github.com/agentydragon/ducktape.git"
 }
 
 # Read git credential for the haku-ci runner to fetch the ducktape mirror as a Bazel
