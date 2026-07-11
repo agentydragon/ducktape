@@ -16,7 +16,6 @@ spec:
     name: flux-system
   dependsOn:
     - name: rook-ceph-trial-forgejo-bench
-    - name: forgejo
   healthChecks:
     - apiVersion: batch/v1
       kind: Job
