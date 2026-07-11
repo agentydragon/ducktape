@@ -12,8 +12,9 @@
     --haku-page-bg: #fbfaf6;
     --haku-panel-bg: #fffdf8;
     --haku-border: #d8d0df;
-    --haku-code-bg: #eaf6f2;
-    --haku-code-fg: #202728;
+    /* Neutral gray code surface (matches the neutral dark-mode code bg below), not a tint. */
+    --haku-code-bg: var(--mantine-color-gray-1);
+    --haku-code-fg: var(--mantine-color-gray-9);
     --haku-backdrop: rgb(21 74 70 / 55%);
     --haku-shell-shadow: rgb(36 31 43 / 20%);
     --haku-shell-muted-bg: #f4f0f7;
