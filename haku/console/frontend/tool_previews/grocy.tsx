@@ -22,6 +22,7 @@ import { z } from "zod";
 
 import { fetchGrocyReference, type GrocyReferenceResponse } from "../grocy_client.ts";
 import { Field } from "../field.tsx";
+import { COMPACT_ITEM_LIMIT, MoreLine, type PreviewVariant } from "./variant.tsx";
 
 export const GROCY_SERVER_ID = "grocy-sf";
 
@@ -145,8 +146,9 @@ function StockAddRow({ item, reference }: { item: AddItem; reference: GrocyRefer
   );
 }
 
-function StockAddPreview({ args }: { args: StockAddArgs }) {
+function StockAddPreview({ args, variant }: { args: StockAddArgs; variant: PreviewVariant }) {
   const { reference, error } = useGrocyReference();
+  const shown = variant === "compact" ? args.items.slice(0, COMPACT_ITEM_LIMIT) : args.items;
   return (
     <Stack gap="xs">
       <Field label="Action">
@@ -155,9 +157,10 @@ function StockAddPreview({ args }: { args: StockAddArgs }) {
         </Badge>
       </Field>
       <Stack gap={4}>
-        {args.items.map((item, i) => (
+        {shown.map((item, i) => (
           <StockAddRow key={i} item={item} reference={reference} />
         ))}
+        <MoreLine count={args.items.length - shown.length} />
       </Stack>
       <GrocyReferenceLoadError error={error} />
     </Stack>
@@ -184,8 +187,9 @@ function StockConsumeRow({ item, reference }: { item: ConsumeItem; reference: Gr
   );
 }
 
-function StockConsumePreview({ args }: { args: StockConsumeArgs }) {
+function StockConsumePreview({ args, variant }: { args: StockConsumeArgs; variant: PreviewVariant }) {
   const { reference, error } = useGrocyReference();
+  const shown = variant === "compact" ? args.items.slice(0, COMPACT_ITEM_LIMIT) : args.items;
   return (
     <Stack gap="xs">
       <Field label="Action">
@@ -194,9 +198,10 @@ function StockConsumePreview({ args }: { args: StockConsumeArgs }) {
         </Badge>
       </Field>
       <Stack gap={4}>
-        {args.items.map((item, i) => (
+        {shown.map((item, i) => (
           <StockConsumeRow key={i} item={item} reference={reference} />
         ))}
+        <MoreLine count={args.items.length - shown.length} />
       </Stack>
       <GrocyReferenceLoadError error={error} />
     </Stack>
@@ -211,7 +216,15 @@ function formatDefaultBestBeforeDays(days: number): string {
   return `${days} day${days === 1 ? "" : "s"}`;
 }
 
-function ProductsCreateRow({ item, reference }: { item: CreateProductItem; reference: GrocyReferenceResponse | null }) {
+function ProductsCreateRow({
+  item,
+  reference,
+  variant,
+}: {
+  item: CreateProductItem;
+  reference: GrocyReferenceResponse | null;
+  variant: PreviewVariant;
+}) {
   const stockQuName = resolveName(reference?.quantity_units, item.stock_qu);
   const purchaseQuName = item.purchase_qu != null ? resolveName(reference?.quantity_units, item.purchase_qu) : null;
   const consumeQuName = item.consume_qu != null ? resolveName(reference?.quantity_units, item.consume_qu) : null;
@@ -228,42 +241,49 @@ function ProductsCreateRow({ item, reference }: { item: CreateProductItem; refer
           <Badge size="sm">{resolveName(reference?.product_groups, item.product_group)}</Badge>
         )}
       </Group>
-      <Group gap={6}>
-        <Badge size="sm" variant="outline" color="gray">
-          shelf life: {formatDefaultBestBeforeDays(item.default_best_before_days)}
-        </Badge>
-        {item.min_stock_amount != null && item.min_stock_amount !== 0 && (
-          <Badge size="sm" variant="outline" color="gray">
-            min stock: {item.min_stock_amount} {stockQuName}
-          </Badge>
-        )}
-        {purchaseQuName && purchaseQuName !== stockQuName && (
-          <Badge size="sm" variant="outline" color="gray">
-            purchased in {purchaseQuName}
-          </Badge>
-        )}
-        {consumeQuName && consumeQuName !== stockQuName && (
-          <Badge size="sm" variant="outline" color="gray">
-            consumed in {consumeQuName}
-          </Badge>
-        )}
-        {item.parent_product != null && (
-          <Badge size="sm" variant="outline" color="gray">
-            variant of {resolveName(reference?.products, item.parent_product)}
-          </Badge>
-        )}
-      </Group>
-      {item.description && (
-        <Text size="sm" c="dimmed">
-          {item.description}
-        </Text>
+      {/* Compact rows carry just the product's name + where it stocks; the secondary badge
+          row (shelf life, min stock, alternate units, parent) and description are detail-only. */}
+      {variant === "compact" ? null : (
+        <>
+          <Group gap={6}>
+            <Badge size="sm" variant="outline" color="gray">
+              shelf life: {formatDefaultBestBeforeDays(item.default_best_before_days)}
+            </Badge>
+            {item.min_stock_amount != null && item.min_stock_amount !== 0 && (
+              <Badge size="sm" variant="outline" color="gray">
+                min stock: {item.min_stock_amount} {stockQuName}
+              </Badge>
+            )}
+            {purchaseQuName && purchaseQuName !== stockQuName && (
+              <Badge size="sm" variant="outline" color="gray">
+                purchased in {purchaseQuName}
+              </Badge>
+            )}
+            {consumeQuName && consumeQuName !== stockQuName && (
+              <Badge size="sm" variant="outline" color="gray">
+                consumed in {consumeQuName}
+              </Badge>
+            )}
+            {item.parent_product != null && (
+              <Badge size="sm" variant="outline" color="gray">
+                variant of {resolveName(reference?.products, item.parent_product)}
+              </Badge>
+            )}
+          </Group>
+          {item.description && (
+            <Text size="sm" c="dimmed">
+              {item.description}
+            </Text>
+          )}
+        </>
       )}
     </Stack>
   );
 }
 
-function ProductsCreatePreview({ args }: { args: ProductsCreateArgs }) {
+function ProductsCreatePreview({ args, variant }: { args: ProductsCreateArgs; variant: PreviewVariant }) {
   const { reference, error } = useGrocyReference();
+  const shown = variant === "compact" ? args.items.slice(0, COMPACT_ITEM_LIMIT) : args.items;
   return (
     <Stack gap="xs">
       <Field label="Action">
@@ -272,9 +292,10 @@ function ProductsCreatePreview({ args }: { args: ProductsCreateArgs }) {
         </Badge>
       </Field>
       <Stack gap={6}>
-        {args.items.map((item, i) => (
-          <ProductsCreateRow key={i} item={item} reference={reference} />
+        {shown.map((item, i) => (
+          <ProductsCreateRow key={i} item={item} reference={reference} variant={variant} />
         ))}
+        <MoreLine count={args.items.length - shown.length} />
       </Stack>
       <GrocyReferenceLoadError error={error} />
     </Stack>
@@ -283,18 +304,22 @@ function ProductsCreatePreview({ args }: { args: ProductsCreateArgs }) {
 
 /** Nice per-tool rendering for the `grocy-sf` server's stock and product-creation tools;
  * `null` for anything else, so the caller falls back to raw JSON. */
-export function grocyToolPreview(toolName: string, args: Record<string, unknown>): ReactNode | null {
+export function grocyToolPreview(
+  toolName: string,
+  args: Record<string, unknown>,
+  variant: PreviewVariant
+): ReactNode | null {
   if (toolName === "stock_add") {
     const parsed = zStockAddArgs.safeParse(args);
-    return parsed.success ? <StockAddPreview args={parsed.data} /> : null;
+    return parsed.success ? <StockAddPreview args={parsed.data} variant={variant} /> : null;
   }
   if (toolName === "stock_consume") {
     const parsed = zStockConsumeArgs.safeParse(args);
-    return parsed.success ? <StockConsumePreview args={parsed.data} /> : null;
+    return parsed.success ? <StockConsumePreview args={parsed.data} variant={variant} /> : null;
   }
   if (toolName === "products_create") {
     const parsed = zProductsCreateArgs.safeParse(args);
-    return parsed.success ? <ProductsCreatePreview args={parsed.data} /> : null;
+    return parsed.success ? <ProductsCreatePreview args={parsed.data} variant={variant} /> : null;
   }
   return null;
 }

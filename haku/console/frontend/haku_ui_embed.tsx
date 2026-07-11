@@ -2,7 +2,6 @@ import { Anchor } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 
 import {
-  approvalQueueItems,
   geolocationApprovalQueueId,
   makeRecentToolCall,
   toolApprovalQueueId,
@@ -73,8 +72,6 @@ export function HakuUiEmbed({
   const [geolocationApprovals, setGeolocationApprovals] = useState<GeolocationApproval[]>([]);
   const geolocationApprovalsRef = useRef<GeolocationApproval[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [selectedApprovalId, setSelectedApprovalId] = useState<string | null>(null);
-  const [selectedRecentToolCallId, setSelectedRecentToolCallId] = useState<string | null>(null);
   const [decidingApprovalIds, setDecidingApprovalIds] = useState<string[]>([]);
   const [recentToolCalls, setRecentToolCalls] = useState<RecentToolCall[]>([]);
   // Computed once: later routeChanged mirroring must not rewrite `src` (that would
@@ -146,9 +143,7 @@ export function HakuUiEmbed({
     setGeoGranted(false);
   }
 
-  function openApprovalQueueCompact() {
-    setSelectedApprovalId(null);
-    setSelectedRecentToolCallId(null);
+  function openApprovalQueue() {
     setDrawerOpen(true);
   }
 
@@ -167,7 +162,7 @@ export function HakuUiEmbed({
     toolApprovalsRef.current = approvals;
     setToolApprovals(approvals);
     if (newApprovals.length > 0) {
-      openApprovalQueueCompact();
+      openApprovalQueue();
     }
   }
 
@@ -192,8 +187,6 @@ export function HakuUiEmbed({
     removeToolApproval(record.tool_call_id);
     addRecentToolCall(record);
     setDeciding(toolApprovalQueueId(record.tool_call_id), false);
-    setSelectedApprovalId(null);
-    setSelectedRecentToolCallId(null);
   }
 
   function addGeolocationApproval(mode: GeolocationApproval["mode"], id: string, options?: GeolocationOptions) {
@@ -201,7 +194,7 @@ export function HakuUiEmbed({
     const remaining = [approval, ...geolocationApprovalsRef.current.filter((existing) => existing.id !== id)];
     geolocationApprovalsRef.current = remaining;
     setGeolocationApprovals(remaining);
-    openApprovalQueueCompact();
+    openApprovalQueue();
   }
 
   function removeGeolocationApproval(id: string): GeolocationApproval[] {
@@ -213,8 +206,6 @@ export function HakuUiEmbed({
 
   function advanceAfterGeolocation(id: string) {
     removeGeolocationApproval(id);
-    setSelectedApprovalId(null);
-    setSelectedRecentToolCallId(null);
   }
 
   function refreshToolApprovals() {
@@ -296,11 +287,6 @@ export function HakuUiEmbed({
   }, [geolocationApprovals]);
 
   useEffect(() => {
-    const activeApprovalIds = new Set(approvalQueueItems(toolApprovals, geolocationApprovals).map((item) => item.id));
-    setSelectedApprovalId((selected) => (selected && activeApprovalIds.has(selected) ? selected : null));
-  }, [geolocationApprovals, toolApprovals]);
-
-  useEffect(() => {
     if (recentToolCalls.length === 0) return;
     const nextHideAtMs = Math.min(...recentToolCalls.map((recent) => recent.hideAtMs));
     const t = window.setTimeout(
@@ -312,15 +298,6 @@ export function HakuUiEmbed({
     );
     return () => window.clearTimeout(t);
   }, [recentToolCalls]);
-
-  useEffect(() => {
-    if (
-      selectedRecentToolCallId &&
-      !recentToolCalls.some((recent) => recent.record.tool_call_id === selectedRecentToolCallId)
-    ) {
-      setSelectedRecentToolCallId(null);
-    }
-  }, [recentToolCalls, selectedRecentToolCallId]);
 
   // The operator approved against trusted-rendered chrome — now actually perform the action
   // (open the link / fire the capability) and report the outcome back over the bridge.
@@ -413,7 +390,6 @@ export function HakuUiEmbed({
 
   function dismissRecentToolCall(toolCallId: string) {
     setRecentToolCalls((records) => records.filter((recent) => recent.record.tool_call_id !== toolCallId));
-    if (selectedRecentToolCallId === toolCallId) setSelectedRecentToolCallId(null);
   }
 
   return (
@@ -438,20 +414,8 @@ export function HakuUiEmbed({
         onClose={() => setDrawerOpen(false)}
         pendingApprovals={toolApprovals}
         geolocationApprovals={geolocationApprovals}
-        selectedApprovalId={selectedApprovalId}
-        selectedRecentToolCallId={selectedRecentToolCallId}
         decidingApprovalIds={decidingApprovalIds}
         recentToolCalls={recentToolCalls}
-        onSelectApproval={(id) => {
-          setSelectedApprovalId(id);
-          setSelectedRecentToolCallId(null);
-          setDrawerOpen(true);
-        }}
-        onSelectRecentToolCall={(toolCallId) => {
-          setSelectedRecentToolCallId(toolCallId);
-          setSelectedApprovalId(null);
-          setDrawerOpen(true);
-        }}
         onApproveTool={approveToolApproval}
         onDenyTool={denyToolApproval}
         onApproveGeolocation={approveGeolocationApproval}

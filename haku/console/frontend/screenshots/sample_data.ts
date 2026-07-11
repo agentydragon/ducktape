@@ -70,6 +70,25 @@ export const SAMPLE_PENDING: PendingApproval[] = [
     arguments: { ids: [3, 7, 12] },
     created_at: "2026-07-09T14:40:00Z",
   },
+  {
+    // A many-item grocy stock_add — exercises the compact widget's "first few + … +N more".
+    tool_call_id: "tc_p2",
+    server_id: "grocy-sf",
+    tool_name: "stock_add",
+    title: "Add Thrive box items to Grocy",
+    caller_principal: "haku-agent-api-token",
+    rationale: "Thrive box delivered; adding its items to inventory.",
+    arguments: {
+      items: [
+        { product: "Rolled oats", amount: 2, qu: "pack", location: "Pantry" },
+        { product: "Almond butter", amount: 1, qu: "jar", location: "Pantry" },
+        { product: "Frozen berries", amount: 3, qu: "bag", location: "Freezer" },
+        { product: "Oat milk", amount: 6, qu: "carton", location: "Fridge" },
+        { product: "Dark chocolate", amount: 4, qu: "bar", location: "Pantry" },
+      ],
+    },
+    created_at: "2026-07-09T14:41:00Z",
+  },
 ];
 
 export const SAMPLE_RECENT: RecentToolCall[] = [

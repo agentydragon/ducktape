@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import { z } from "zod";
 
 import { Field } from "../field.tsx";
+import { clampBlock, type PreviewVariant } from "./variant.tsx";
 
 export const KUBECTL_SERVER_ID = "kubectl-passthrough-mcp";
 
@@ -39,7 +40,8 @@ type ResourcesCreateOrUpdateArgs = z.infer<typeof zResourcesCreateOrUpdateArgs>;
 type ResourcesDeleteArgs = z.infer<typeof zResourcesDeleteArgs>;
 type PodsDeleteArgs = z.infer<typeof zPodsDeleteArgs>;
 
-function ResourcesApplyPreview({ args }: { args: ResourcesCreateOrUpdateArgs }) {
+function ResourcesApplyPreview({ args, variant }: { args: ResourcesCreateOrUpdateArgs; variant: PreviewVariant }) {
+  const resource = variant === "compact" ? clampBlock(args.resource, 3) : args.resource;
   return (
     <Stack gap="xs">
       <Field label="Action">
@@ -48,7 +50,7 @@ function ResourcesApplyPreview({ args }: { args: ResourcesCreateOrUpdateArgs }) 
         </Badge>
       </Field>
       <Field label="Resource">
-        <pre className="haku-shell-json">{args.resource}</pre>
+        <pre className="haku-shell-json">{resource}</pre>
       </Field>
     </Stack>
   );
@@ -111,10 +113,14 @@ function PodsDeletePreview({ args }: { args: PodsDeleteArgs }) {
 
 /** Nice per-tool rendering for the `kubectl-passthrough-mcp` server's highest-stakes tools
  * (apply and delete); `null` for anything else, so the caller falls back to raw JSON. */
-export function kubectlToolPreview(toolName: string, args: Record<string, unknown>): ReactNode | null {
+export function kubectlToolPreview(
+  toolName: string,
+  args: Record<string, unknown>,
+  variant: PreviewVariant
+): ReactNode | null {
   if (toolName === "resources_create_or_update") {
     const parsed = zResourcesCreateOrUpdateArgs.safeParse(args);
-    return parsed.success ? <ResourcesApplyPreview args={parsed.data} /> : null;
+    return parsed.success ? <ResourcesApplyPreview args={parsed.data} variant={variant} /> : null;
   }
   if (toolName === "resources_delete") {
     const parsed = zResourcesDeleteArgs.safeParse(args);

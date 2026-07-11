@@ -6,10 +6,22 @@ package(default_visibility = ["//visibility:public"])
 # SERVER_ID + a (toolName, args) renderer; `tool_previews` (index.tsx) dispatches to them via
 # a serverId registry.
 
+# Compact/detailed rendering shared by every widget (the PreviewVariant type + helpers).
+# Leaf: no widget deps, so index.tsx and each widget import it without a cycle.
+js_library(
+    name = "variant",
+    srcs = ["variant.tsx"],
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
 js_library(
     name = "google",
     srcs = ["google.tsx"],
     deps = [
+        ":variant",
         "//:node_modules/@mantine/core",
         "//:node_modules/date-fns",
         "//:node_modules/react",
@@ -24,6 +36,7 @@ js_library(
     name = "grocy",
     srcs = ["grocy.tsx"],
     deps = [
+        ":variant",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//:node_modules/zod",
@@ -36,6 +49,7 @@ js_library(
     name = "kubectl",
     srcs = ["kubectl.tsx"],
     deps = [
+        ":variant",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//:node_modules/zod",
@@ -50,6 +64,7 @@ js_library(
         ":google",
         ":grocy",
         ":kubectl",
+        ":variant",
         "//:node_modules/react",
     ],
 )
@@ -87,4 +102,10 @@ js_library(
     name = "index_test",
     srcs = ["index.test.ts"],
     deps = [":tool_previews"],
+)
+
+js_library(
+    name = "variant_test",
+    srcs = ["variant.test.ts"],
+    deps = [":variant"],
 )

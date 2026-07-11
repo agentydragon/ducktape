@@ -144,6 +144,17 @@ js_library(
         ":field",
         "//:node_modules/react",
         "//haku/console/frontend/tool_previews",
+        "//haku/console/frontend/tool_previews:variant",
+    ],
+)
+
+js_library(
+    name = "variant_toggle",
+    srcs = ["variant_toggle.tsx"],
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//haku/console/frontend/tool_previews:variant",
     ],
 )
 
@@ -157,6 +168,7 @@ js_library(
         ":icons",
         ":theme",
         ":tool_arguments_field",
+        ":variant_toggle",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
     ],
@@ -174,6 +186,7 @@ js_library(
         ":toast",
         ":tool_arguments_field",
         ":tool_call_events",
+        ":variant_toggle",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
     ],
@@ -264,6 +277,7 @@ filegroup(
         "toast.ts",
         "tool_arguments_field.tsx",
         "tool_calls_page.tsx",
+        "variant_toggle.tsx",
         "//haku/console/frontend/tool_previews:tailwind_srcs",
     ],
 )
@@ -427,6 +441,7 @@ tsc_bin.tsc_test(
         "//haku/console/frontend/tool_previews:grocy_test",
         "//haku/console/frontend/tool_previews:index_test",
         "//haku/console/frontend/tool_previews:kubectl_test",
+        "//haku/console/frontend/tool_previews:variant_test",
     ],
     tags = ["lint"],
 )
@@ -456,5 +471,6 @@ vitest_bin.vitest_test(
         "//haku/console/frontend/tool_previews:grocy_test",
         "//haku/console/frontend/tool_previews:index_test",
         "//haku/console/frontend/tool_previews:kubectl_test",
+        "//haku/console/frontend/tool_previews:variant_test",
     ],
 )

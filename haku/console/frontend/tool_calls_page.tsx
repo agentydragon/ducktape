@@ -9,6 +9,7 @@ import { ACTION_COLOR } from "./theme.ts";
 import { toastError, toastSuccess } from "./toast.ts";
 import { ToolArgumentsField } from "./tool_arguments_field.tsx";
 import { useToolCallEvents } from "./tool_call_events.ts";
+import { useVariant, VariantToggle } from "./variant_toggle.tsx";
 
 // Matches the backend's `le=500` cap on GET /api/tool-calls (mcp_approval.py).
 const HISTORY_LIMIT = 500;
@@ -65,8 +66,12 @@ function ToolCallRow({
   onApprove: () => void;
   onDeny: (reason?: string) => void;
 }) {
+  // Per-row verbosity: the ledger starts compact (scannable) and expands to the full record
+  // on demand. The variant propagates to both the arguments field and the detail-only fields.
+  const [variant, toggleVariant] = useVariant("compact");
   const fields = approvalDisplayFields(record);
   const pending = record.status === "pending_approval";
+  const detailed = variant === "detailed";
   return (
     <section className="haku-shell-card">
       <Stack gap="sm">
@@ -77,9 +82,12 @@ function ToolCallRow({
               {fields.serverId}.{fields.toolName}
             </Text>
           </Stack>
-          <Badge color={statusColor(record.status)} variant="light">
-            {terminalStatusLabel(record.status)}
-          </Badge>
+          <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
+            <Badge color={statusColor(record.status)} variant="light">
+              {terminalStatusLabel(record.status)}
+            </Badge>
+            <VariantToggle variant={variant} onToggle={toggleVariant} />
+          </Group>
         </Group>
         {record.error && (
           <Text size="sm" c="red">
@@ -87,28 +95,35 @@ function ToolCallRow({
           </Text>
         )}
         <dl className="haku-shell-fields">
-          <div className="haku-shell-field-grid">
-            <Field label="Caller">{fields.callerPrincipal ?? "—"}</Field>
-            <Field label="Requested">{shortDate(fields.createdAt) ?? "—"}</Field>
-          </div>
-          {fields.rationale && <Field label="Rationale">{fields.rationale}</Field>}
+          {detailed && (
+            <>
+              <div className="haku-shell-field-grid">
+                <Field label="Caller">{fields.callerPrincipal ?? "—"}</Field>
+                <Field label="Requested">{shortDate(fields.createdAt) ?? "—"}</Field>
+              </div>
+              {fields.rationale && <Field label="Rationale">{fields.rationale}</Field>}
+            </>
+          )}
           {fields.denialReason && <Field label="Denial reason">{fields.denialReason}</Field>}
           <ToolArgumentsField
             serverId={fields.serverId}
             toolName={fields.toolName}
             args={record.arguments}
             argumentsJson={fields.argumentsJson}
+            variant={variant}
           />
-          {record.result && (
+          {detailed && record.result && (
             <details className="haku-shell-disclosure">
               <summary>Result</summary>
               <pre className="haku-shell-json">{JSON.stringify(record.result, null, 2)}</pre>
             </details>
           )}
-          <details className="haku-shell-disclosure">
-            <summary>Tool call id</summary>
-            <code>{fields.toolCallId}</code>
-          </details>
+          {detailed && (
+            <details className="haku-shell-disclosure">
+              <summary>Tool call id</summary>
+              <code>{fields.toolCallId}</code>
+            </details>
+          )}
         </dl>
         {pending && <PendingActions deciding={deciding} onApprove={onApprove} onDeny={onDeny} />}
       </Stack>

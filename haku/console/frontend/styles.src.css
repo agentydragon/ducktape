@@ -185,47 +185,12 @@
   padding: 0.1rem 0.15rem 0.75rem 0.1rem;
 }
 
-.haku-shell-card,
-.haku-shell-subcard {
+.haku-shell-card {
   border: 1px solid var(--haku-border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--haku-panel-bg) 88%, var(--haku-shell-muted-bg));
   box-shadow: 0 10px 32px var(--haku-shell-shadow);
   padding: 0.75rem;
-}
-
-.haku-shell-subcard {
-  background: var(--haku-shell-muted-bg);
-  box-shadow: none;
-}
-
-.haku-shell-approval-card {
-  display: block;
-  width: 100%;
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
-  transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease;
-}
-
-.haku-shell-card-click-target {
-  cursor: pointer;
-}
-
-.haku-shell-card-click-target:focus-visible {
-  outline: 2px solid var(--mantine-color-teal-5);
-  outline-offset: 2px;
-}
-
-.haku-shell-card-active,
-.haku-shell-card-selected {
-  border-color: var(--mantine-color-teal-5);
-  background: color-mix(in srgb, var(--haku-panel-bg) 92%, var(--haku-shell-muted-bg));
-  box-shadow:
-    0 0 0 1px var(--mantine-color-teal-5),
-    0 10px 32px var(--haku-shell-shadow);
 }
 
 .haku-shell-countdown {

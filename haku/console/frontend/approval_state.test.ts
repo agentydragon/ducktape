@@ -70,7 +70,6 @@ describe("approval queue state", () => {
 
     expect(fields.serverId).toBe("grocy-sf");
     expect(fields.toolName).toBe("shopping_list_items_remove");
-    expect(fields.argumentSummary).toBe("ids");
     expect(fields.argumentsJson).toContain('"ids"');
     expect(fields.toolCallId).toBe("tc_1");
   });

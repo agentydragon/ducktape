@@ -24,7 +24,6 @@ export interface ApprovalDisplayFields {
   toolName: string;
   rationale: string;
   argumentsJson: string;
-  argumentSummary: string;
   toolCallId: string;
   callerPrincipal: string | null;
   createdAt: string | null;
@@ -92,19 +91,11 @@ export function approvalDisplayFields(approval: PendingApproval | ToolCallRecord
     toolName,
     rationale: approval.rationale ?? "",
     argumentsJson: JSON.stringify(args, null, 2) ?? "null",
-    argumentSummary: summarizeArguments(args),
     toolCallId: approval.tool_call_id,
     callerPrincipal: approval.caller_principal ?? null,
     createdAt: approval.created_at ?? null,
     denialReason: "denial_reason" in approval ? (approval.denial_reason ?? null) : null,
   };
-}
-
-export function summarizeArguments(args: Record<string, unknown>): string {
-  const keys = Object.keys(args);
-  if (keys.length === 0) return "No arguments";
-  if (keys.length <= 3) return keys.join(", ");
-  return `${keys.length} fields: ${keys.slice(0, 3).join(", ")}`;
 }
 
 export function recentToolCallTtlMs(status: ToolCallRecord["status"]): number | null {

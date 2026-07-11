@@ -21,6 +21,10 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
   const url = requestUrl(input);
   // Order matters: match the more specific /api/mcp/... path before /api/tool-calls.
   if (url.includes("/api/mcp/operator-auth")) return jsonResponse({ associations: SAMPLE_MCP });
+  // The grocy compact/detailed widget resolves id→name references; empty arrays are fine
+  // since the sample uses string names (resolveName returns those as-is).
+  if (url.includes("/api/grocy-sf/reference"))
+    return jsonResponse({ products: [], quantity_units: [], locations: [], product_groups: [] });
   if (url.includes("/api/tool-calls")) return jsonResponse({ tool_calls: SAMPLE_TOOL_CALLS });
   if (realFetch) return realFetch(input, init);
   return jsonResponse({});
