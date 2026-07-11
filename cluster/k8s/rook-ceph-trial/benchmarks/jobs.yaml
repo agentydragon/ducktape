@@ -11,6 +11,9 @@ spec:
         app.kubernetes.io/name: storage-bench-cephfs-vs-seaweedfs
     spec:
       restartPolicy: Never
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       nodeSelector:
         kubernetes.io/hostname: ovh-ns104952
       containers:
