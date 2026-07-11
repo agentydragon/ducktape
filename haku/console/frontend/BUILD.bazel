@@ -98,7 +98,10 @@ js_library(
 js_library(
     name = "icons",
     srcs = ["icons.tsx"],
-    deps = ["//:node_modules/react"],
+    deps = [
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/react",
+    ],
 )
 
 js_library(
@@ -386,6 +389,8 @@ tsc_bin.tsc_test(
         "geolocation.test.ts",
         "haku_ui_embed.test.ts",
         "routing.test.ts",
+        # Ambient types for the @tabler/icons-react per-icon subpath imports (icons.tsx).
+        "tabler_icons.d.ts",
         "tsconfig.json",
         ":main_lib",
         ":schema",

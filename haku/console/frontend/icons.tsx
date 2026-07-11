@@ -1,54 +1,25 @@
-// Inline SVG icons — deliberately NOT `@tabler/icons-react`: its barrel OOMs esbuild on
-// RBE (~8.7 GB peak) and even a per-icon subpath import needs an ambient declaration.
-// See debug/esbuild_tabler_memory.md → "Inline SVG". Each glyph strokes `currentColor`
-// so it inherits the button/text color and both color schemes.
-import type { SVGProps } from "react";
+// Tabler icons via **per-icon subpath imports** — never `import { … } from "@tabler/icons-react"`
+// (the barrel OOMs esbuild on RBE at ~8.7 GB; see debug/esbuild_tabler_memory.md). Types for the
+// `.mjs` subpaths come from the ambient declaration in `tabler_icons.d.ts`. Thin wrappers keep a
+// stable local name + a consistent glyph size; callers can still override via props.
+import IconArrowLeft from "@tabler/icons-react/dist/esm/icons/IconArrowLeft.mjs";
+import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
+import IconMenu2 from "@tabler/icons-react/dist/esm/icons/IconMenu2.mjs";
+import type { ComponentProps } from "react";
 
-function Glyph(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      {...props}
-    />
-  );
-}
+type TablerIconProps = ComponentProps<typeof IconMenu2>;
 
 /** Hamburger — the shell's console-panel toggle. */
-export function MenuIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <Glyph {...props}>
-      <line x1="4" y1="6" x2="20" y2="6" />
-      <line x1="4" y1="12" x2="20" y2="12" />
-      <line x1="4" y1="18" x2="20" y2="18" />
-    </Glyph>
-  );
+export function MenuIcon(props: TablerIconProps) {
+  return <IconMenu2 size={20} {...props} />;
 }
 
 /** Clock-with-rewind — links to the past-tool-calls history view. */
-export function HistoryIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <Glyph {...props}>
-      <path d="M3 3v5h5" />
-      <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
-      <path d="M12 7v5l3 2" />
-    </Glyph>
-  );
+export function HistoryIcon(props: TablerIconProps) {
+  return <IconHistory size={20} {...props} />;
 }
 
 /** Left arrow — the history view's back-to-embed control. */
-export function ArrowLeftIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <Glyph {...props}>
-      <line x1="19" y1="12" x2="5" y2="12" />
-      <polyline points="12 19 5 12 12 5" />
-    </Glyph>
-  );
+export function ArrowLeftIcon(props: TablerIconProps) {
+  return <IconArrowLeft size={20} {...props} />;
 }
