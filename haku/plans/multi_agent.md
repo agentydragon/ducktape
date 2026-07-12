@@ -58,6 +58,18 @@ model + prompt + reviewed capability-profile launches, integrates dispatch throu
 haku-console/MCP, and sketches Google-data, public-coding, garden, and specialist profiles
 without conflating provider trust with tool authority.
 
+Garden-maintenance follow-up (haku-state, 2026-07-12 — lives in state, not here, since it's
+Haku's own method): operator asked for a principled model of the propagation checklists as a
+graph, motivated in part by this doc's subagent-boundary question. The resulting design —
+[`plans/propagation_graph_model.md`](https://git.allegedly.works/haku/haku-state/src/branch/main/plans/propagation_graph_model.md)
+maps propagation-graph edges onto the trust tiers this doc defines (same-trust in-session
+subagent vs. zone worker, by whether the edge touches private content) and treats a
+cross-boundary edge as needing one of the two sync mechanisms already built here (tool-call
+approval, dispatch-plane result polling) — plus four concrete maintenance-subagent proposals in
+[`plans/garden_maintenance_subagents.md`](https://git.allegedly.works/haku/haku-state/src/branch/main/plans/garden_maintenance_subagents.md),
+all reasoned to be same-trust-tier (in-session, not zone-dispatchable) since they read private
+haku-state content.
+
 ## The oai zone (step 5)
 
 The middle trust level the two-level design lacked: OpenAI, subscription-billed, trusted
