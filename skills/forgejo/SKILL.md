@@ -139,6 +139,34 @@ Notes:
 - Some repos also publish fallback logs, e.g. a `ci-logs` branch or workflow artifact; check
   workflow comments before assuming web logs are the only channel.
 
+## Actions Artifacts
+
+Verified on this deployment (Forgejo 15.0.3+gitea-1.22.0, probe 2026-07-12; byte-identical
+sha256 round-trip).
+
+Upload, in workflows: `actions/upload-artifact@v4` fails with `GHESNotSupportedError` —
+the GitHub action refuses any non-github.com host. Use
+`https://code.forgejo.org/forgejo/upload-artifact@v4` (preferred, v4 semantics) or
+`actions/upload-artifact@v3`.
+
+Download: no REST endpoints (`/api/v1/.../actions/artifacts` and
+`.../actions/runs/$ID/artifacts` both 404, and Basic auth on the web routes also 404s) —
+web session only (login recipe under Logs above). Gotcha: the two web routes key on
+different run identifiers, both available from `GET
+/api/v1/repos/$OWNER/$REPO/actions/runs` (`id` = DB id, `index_in_repo` = UI/display run
+number; the tasks endpoint's `url` field also embeds the display number):
+
+```bash
+# List (display run number): -> {"artifacts":[{name,size,status}]}
+curl -fsS -b "$cookie" "$FORGEJO_URL/$OWNER/$REPO/actions/runs/$RUN_INDEX/artifacts"
+
+# Download (DB id! the display number here returns 404 "no such run").
+# The response is always a ZIP wrapping the uploaded file(s).
+curl -fsS -b "$cookie" -o artifact.zip \
+  "$FORGEJO_URL/$OWNER/$REPO/actions/runs/$RUN_DB_ID/artifacts/$ARTIFACT_NAME"
+unzip artifact.zip
+```
+
 ## Actions Secrets And Registry Auth
 
 Forgejo Actions secret metadata is deliberately opaque. `GET
