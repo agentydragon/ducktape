@@ -11,6 +11,16 @@ server-level instructions. Key conventions that currently live only in
 `stock_set` vs `stock_add`, unit handling) should be folded into the
 relevant tool descriptions themselves.
 
+## Mark wholly failed batch tool calls as MCP errors
+
+Batch tools currently catch per-item exceptions and return structured
+`{"kind": "error", ...}` values, so FastMCP treats the overall call as successful
+and does not set MCP `CallToolResult.isError`. Preserve normal successful results
+for partial failures, but when every item fails, return/raise the appropriate
+FastMCP tool error so clients receive the protocol-level error marker as well as
+an actionable error message. Cover total failure, partial failure, and single-item
+failure with tests that assert the MCP `isError` value.
+
 ## Finish the `<entity>_<verb>` rename
 
 The first pass renamed the CRUD / stock / shopping-list families. The
