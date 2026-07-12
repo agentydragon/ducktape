@@ -24,12 +24,25 @@ rest as approval-gated tools when a workflow needs them — each maps to a Gmail
   forwarding, vacation responder, send-as, delegates, language, IMAP/POP.
 - **Watch / stop** — `users.{watch,stop}` (push notifications; needs a Pub/Sub topic).
 
-## Auto-approval policy (deferred)
+## Agent-facing MCP server (`/mcp`) — deferred follow-ups
 
-Design + implement the policy that lets defined `gmail` calls skip the operator click — e.g.
-label operations scoped to the `haku/` prefix — so haku-console's approval queue can
-auto-allow the safe, structurally-bounded subset while everything else stays human-gated.
-Scope it in `mcp_approval.py` (short-circuit `submit` to `RUNNING` for allowlisted calls).
+The `/mcp` server (`mcp_server.py`) ships with a single global auto-approval policy and a
+uniform build-time tool surface. Deferred, building on a small `mcp_agents` registry table
+(`agent_id` PK, `display_name`, later `policy`):
+
+- **Consent-in-SPA agent naming** — render the OIDCProxy consent step as a styled React view
+  ("Name this agent" + Allow/Deny) instead of FastMCP's default HTML, persisting
+  `client_id -> display_name`; show the friendly name in the tool-call audit/history (join
+  `caller_principal -> mcp_agents`).
+- **Per-agent policy** — a `policy` column authored as a structured YAML/JSON object (parsed
+  into a typed Pydantic policy, same pattern as `mcp_config.py`), edited in the console UI;
+  the single global policy becomes the degenerate "same for every agent" case.
+- **Per-agent tool surface** — per-request `list_tools` keyed on `get_access_token().client_id`
+  with `tools/list_changed` on policy edits (the list-time-identity keystone; v1's uniform
+  surface avoids it).
+- **Per-tool-call deep link** — a `/tool-calls/<id>` SPA route (`routing.ts` +
+  `tool_calls_page.tsx`) that opens/highlights the specific call the promise `url` points at
+  (today the URL loads the console but not that exact call).
 
 ## Generate result validators from `tools/list` output schemas
 

@@ -15,7 +15,7 @@ import re
 import yaml
 from fastapi import HTTPException
 from fastmcp import FastMCP
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 from haku.console.config import Settings
 
@@ -49,16 +49,63 @@ class ConsoleMcpConfig(BaseModel):
     servers: list[McpServerEntry] = Field(default_factory=list)
 
 
+class StaticAgentEntry(BaseModel):
+    """A static machine agent: a fixed bearer token bound to one operator.
+
+    `agent` is the agent's stable identity — the `/mcp` static bearer's `client_id` and the audit
+    `caller_principal`. The bearer and the operator's opaque OIDC subject are named env vars, not
+    literals: the value lives in the deployment Secret, never in this YAML. The token is secret; the
+    subject is the `mcp_operator_oauth_associations` key (Authentik `sub`), fed by Terraform from the
+    Authentik user id. Each entry is one token → one operator; several agents map to several operators.
+    """
+
+    agent: str
+    token_env_var: str
+    operator_subject_env: str
+
+
+class ResolvedStaticAgent(BaseModel):
+    """A `StaticAgentEntry` with its env-referenced values read in."""
+
+    agent: str
+    token: SecretStr
+    operator_subject: str
+
+
 class ConsoleConfigFile(BaseModel):
     mcp: ConsoleMcpConfig = Field(default_factory=ConsoleMcpConfig)
+    static_agents: list[StaticAgentEntry] = Field(default_factory=list)
+
+
+def _load_config(settings: Settings) -> ConsoleConfigFile:
+    path = settings.config_file
+    if path is None or not path.exists():
+        return ConsoleConfigFile()
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return ConsoleConfigFile.model_validate(raw)
 
 
 def _load_servers(settings: Settings) -> list[McpServerEntry]:
-    path = settings.config_file
-    if path is None or not path.exists():
-        return []
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return ConsoleConfigFile.model_validate(raw).mcp.servers
+    return _load_config(settings).mcp.servers
+
+
+def resolve_static_agents(settings: Settings) -> list[ResolvedStaticAgent]:
+    """The configured static agents with their env-referenced token + operator subject read in.
+
+    Raises if a named env var is missing — a misconfigured agent fails loud at startup rather than
+    silently accepting no callers. Resolve once (create_app) and reuse; do not read per request."""
+    resolved: list[ResolvedStaticAgent] = []
+    for entry in _load_config(settings).static_agents:
+        token = os.environ.get(entry.token_env_var)
+        if not token:
+            raise RuntimeError(f"missing token env var {entry.token_env_var} for agent {entry.agent!r}")
+        subject = os.environ.get(entry.operator_subject_env)
+        if not subject:
+            raise RuntimeError(
+                f"missing operator-subject env var {entry.operator_subject_env} for agent {entry.agent!r}"
+            )
+        resolved.append(ResolvedStaticAgent(agent=entry.agent, token=SecretStr(token), operator_subject=subject))
+    return resolved
 
 
 def _server_entry(settings: Settings, server_id: str) -> McpServerEntry:

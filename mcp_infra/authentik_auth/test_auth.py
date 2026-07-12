@@ -13,6 +13,7 @@ import pytest_bazel
 from authlib.oauth2 import OAuth2Error
 from authlib.oauth2.rfc6749.wrappers import OAuth2Token
 from fastmcp.server.auth.auth import TokenVerifier
+from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from glide_shared.exceptions import TimeoutError as GlideTimeoutError
 from key_value.aio.stores.memory import MemoryStore
@@ -196,6 +197,46 @@ def test_build_authentik_auth_appends_extra_verifiers() -> None:
 
     verifiers = multi_auth_cls.call_args.kwargs["verifiers"]
     assert verifiers == [jwt_verifier_cls.return_value, sentinel]  # JWT first, extra appended
+
+
+def test_build_authentik_auth_passes_on_client_authorized() -> None:
+    """on_client_authorized is handed to the OIDCProxy so it can fire a post-exchange hook."""
+    discovery_response = AsyncMock()
+    discovery_response.raise_for_status = lambda: discovery_response
+    discovery_response.json = lambda: {"jwks_uri": "https://auth.example.com/application/o/test/jwks/"}
+
+    async def _cb(client_id: str, idp_tokens: Any) -> None: ...
+
+    with (
+        patch("mcp_infra.authentik_auth.auth.httpx.get", return_value=discovery_response),
+        patch("mcp_infra.authentik_auth.auth.ResilientOIDCProxy") as oidc_proxy_cls,
+        patch("mcp_infra.authentik_auth.auth.JWTVerifier"),
+        patch("mcp_infra.authentik_auth.auth.MultiAuth"),
+    ):
+        oidc_proxy_cls.return_value.client_registration_options = AsyncMock()
+        build_authentik_auth(_config(), on_client_authorized=_cb)
+
+    assert oidc_proxy_cls.call_args.kwargs["on_client_authorized"] is _cb
+
+
+async def test_resilient_proxy_invokes_on_client_authorized_after_exchange() -> None:
+    """exchange_authorization_code issues the token via super(), then invokes on_client_authorized
+    with the client's id and the upstream token response."""
+    proxy = ResilientOIDCProxy.__new__(ResilientOIDCProxy)
+    proxy._on_client_authorized = AsyncMock()
+    idp_tokens = {"id_token": "jwt-value", "access_token": "at"}
+    proxy._code_store = AsyncMock()
+    proxy._code_store.get = AsyncMock(return_value=SimpleNamespace(idp_tokens=idp_tokens))
+    client = SimpleNamespace(client_id="dcr-xyz")
+    auth_code = SimpleNamespace(code="the-code")
+    issued = object()
+
+    with patch.object(OAuthProxy, "exchange_authorization_code", AsyncMock(return_value=issued)) as super_exch:
+        result = await ResilientOIDCProxy.exchange_authorization_code(proxy, cast(Any, client), cast(Any, auth_code))
+
+    assert result is issued
+    super_exch.assert_awaited_once()
+    proxy._on_client_authorized.assert_awaited_once_with("dcr-xyz", idp_tokens)
 
 
 # ── AuthentikExchangeAuth tests ───────────────────────────────────────────

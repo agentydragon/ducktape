@@ -104,3 +104,26 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "asgi",
+    testonly = True,
+    srcs = ["asgi.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//starlette",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "mock_oidc",
+    testonly = True,
+    srcs = ["mock_oidc.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//cryptography",
+        "@pypi//pyjwt",
+        "@pypi//starlette",
+    ],
+)

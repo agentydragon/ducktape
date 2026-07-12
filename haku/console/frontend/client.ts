@@ -8,6 +8,20 @@ import type { components, paths } from "./api/schema";
 // grocy_client.ts) share this one instance instead of each creating their own.
 export const api = createClient<paths>({ baseUrl: "" });
 
+// App-owned operator auth: the /api/* router guards answer with 401 when there's no operator
+// session (the console replaced the Authentik forward-auth outpost with its own OIDC login). The
+// SPA itself is served publicly, so on that 401 bounce the browser to /auth/login to (re)establish
+// the session; Authentik's application access policy decides who may complete it. In the
+// operator_oidc-unset dev/test mode the guards no-op and /api never 401s, so this never fires there.
+api.use({
+  onResponse({ response }) {
+    if (response.status === 401 && typeof window !== "undefined" && !window.location.pathname.startsWith("/auth/")) {
+      window.location.assign("/auth/login");
+    }
+    return response;
+  },
+});
+
 export type ConfigResponse = components["schemas"]["ConfigResponse"];
 export type LaunchRoutineResult = components["schemas"]["LaunchRoutineResult"];
 export type ApprovalDecisionResponse = components["schemas"]["ApprovalDecisionResponse"];

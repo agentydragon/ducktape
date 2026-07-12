@@ -108,10 +108,10 @@ class McpToolCallEvent(Base):
 
 class McpOperatorOAuthAssociation(Base):
     __tablename__ = "mcp_operator_oauth_associations"
-    __table_args__ = (Index("idx_mcp_operator_oauth_associations_operator", "operator_principal"),)
+    __table_args__ = (Index("idx_mcp_operator_oauth_associations_operator", "operator_subject"),)
 
     server_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    operator_principal: Mapped[str] = mapped_column(Text, primary_key=True)
+    operator_subject: Mapped[str] = mapped_column(Text, primary_key=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     client_id: Mapped[str] = mapped_column(Text, nullable=False)
@@ -130,13 +130,13 @@ class McpOperatorOAuthAssociation(Base):
 class McpOperatorOAuthFlow(Base):
     __tablename__ = "mcp_operator_oauth_flows"
     __table_args__ = (
-        Index("idx_mcp_operator_oauth_flows_server_operator", "server_id", "operator_principal"),
+        Index("idx_mcp_operator_oauth_flows_server_operator", "server_id", "operator_subject"),
         Index("idx_mcp_operator_oauth_flows_expires_at", "expires_at"),
     )
 
     state: Mapped[str] = mapped_column(Text, primary_key=True)
     server_id: Mapped[str] = mapped_column(Text, nullable=False)
-    operator_principal: Mapped[str] = mapped_column(Text, nullable=False)
+    operator_subject: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     redirect_uri: Mapped[str] = mapped_column(Text, nullable=False)
@@ -148,6 +148,33 @@ class McpOperatorOAuthFlow(Base):
     token_endpoint: Mapped[str] = mapped_column(Text, nullable=False)
     resource: Mapped[str | None] = mapped_column(Text, nullable=True)
     scope: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class McpAgentOperator(Base):
+    """Which operator an authenticated `/mcp` OAuth agent acts as when it reaches an operator_oauth
+    server, keyed by the agent's Dynamic Client Registration client_id.
+
+    Populated at the OIDCProxy authorization-code exchange. Static machine agents are deliberately
+    *not* stored here — each binds to its `operator_subject` by explicit config (the `static_agents`
+    array). N agents → N operators; no single-operator assumption."""
+
+    __tablename__ = "mcp_agent_operator"
+
+    agent_dcr_client_id: Mapped[str] = mapped_column(
+        Text,
+        primary_key=True,
+        comment="The DCR client_id the OAuth agent presents on /mcp calls (get_access_token().client_id).",
+    )
+    operator_subject: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment=(
+            "The authorizing operator's opaque OIDC subject (Authentik sub; sub_mode=user_id -> the user id), "
+            "matching the mcp_operator_oauth_associations key so execution resolves the operator token."
+        ),
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 metadata = Base.metadata

@@ -17,6 +17,8 @@ py_library(
     name = "config",
     srcs = ["config.py"],
     deps = [
+        "//mcp_infra:persistence",
+        "//mcp_infra/authentik_auth:auth",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
     ],
@@ -106,11 +108,13 @@ py_library(
         ":database_schema",
         ":deps",
         ":mcp_config",
+        ":operator_auth",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
         "@pypi//httpx",
         "@pypi//mcp",
         "@pypi//pydantic",
+        "@pypi//pyjwt",
         "@pypi//sqlalchemy",
     ],
 )
@@ -136,6 +140,7 @@ py_library(
         ":deps",
         ":mcp_config",
         ":mcp_operator_oauth",
+        ":operator_auth",
         "//haku/console/tools:gmail_client",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
@@ -164,23 +169,99 @@ py_test(
 )
 
 py_library(
+    name = "mcp_server",
+    srcs = ["mcp_server.py"],
+    deps = [
+        ":auto_approval",
+        ":config",
+        ":mcp_approval",
+        ":mcp_config",
+        ":mcp_operator_oauth",
+        "//haku/console/tools:gmail_client",
+        "//mcp_infra/authentik_auth:auth",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "operator_auth",
+    srcs = ["operator_auth.py"],
+    deps = [
+        ":config",
+        ":mcp_config",
+        "@pypi//authlib",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_operator_auth",
+    size = "medium",
+    srcs = ["test_operator_auth.py"],
+    # Real create_app runs against a Postgres testcontainer (conftest); the OAuth login walks a served
+    # mock IdP over HTTP.
+    requires_docker = True,
+    deps = [
+        ":app",
+        ":config",
+        ":conftest",
+        "//:conftest",
+        "//util:net",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        # pytest-asyncio auto mode (root conftest) needs the plugin importable at runtime.
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_mcp_operator_oauth",
+    srcs = ["test_mcp_operator_oauth.py"],
+    deps = [
+        ":mcp_operator_oauth",
+        "@pypi//pyjwt",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "app",
     srcs = ["app.py"],
     deps = [
         ":capabilities",
         ":config",
+        ":database_migrate",
         ":in_process_servers",
         ":mcp_approval",
+        ":mcp_config",
         ":mcp_operator_oauth",
+        ":mcp_server",
         ":models",
+        ":operator_auth",
         "//haku/console/tools:gmail",
         "//haku/console/tools:google_calendar",
         "//haku/console/tools:grocy",
         "//haku/console/tools:routine",
         "//haku/console/tools:tana",
+        "//mcp_infra:persistence",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
         "@pypi//fastmcp",
+        # SessionMiddleware (starlette) signs the operator session cookie with itsdangerous.
+        "@pypi//itsdangerous",
+        "@pypi//starlette",
         "@pypi//uvicorn",
         # uvicorn needs a WebSocket protocol impl at runtime or every /api/approvals/ws
         # upgrade fails ("Unsupported upgrade request") — the drawer's live channel (#2977).
@@ -200,6 +281,8 @@ py_library(
     deps = [
         ":app",
         ":config",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -249,18 +332,35 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
     deps = [
         ":app",
         ":config",
+        ":database_migrate",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "//util/testing:postgres",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//pydantic",
         "@pypi//pytest",
+        "@pypi//pyyaml",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
+        "@pypi//types_pyyaml",
     ],
 )
 
 py_test(
     name = "test_app",
+    size = "medium",
     srcs = ["test_app.py"],
+    # The console requires Postgres; the conftest fixtures start a testcontainer (image data + Docker
+    # come via :conftest).
+    requires_docker = True,
     deps = [
         ":conftest",
         "//:conftest",
@@ -270,7 +370,9 @@ py_test(
 
 py_test(
     name = "test_capabilities",
+    size = "medium",
     srcs = ["test_capabilities.py"],
+    requires_docker = True,
     deps = [
         ":app",
         ":config",
@@ -282,6 +384,41 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//respx",
+    ],
+)
+
+py_test(
+    name = "test_mcp_server",
+    size = "medium",
+    srcs = ["test_mcp_server.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":app",
+        ":config",
+        ":conftest",
+        ":mcp_approval",
+        ":mcp_config",
+        ":mcp_operator_oauth",
+        ":mcp_server",
+        "//:conftest",
+        "//gmail_api:labels",
+        "//haku/console/tools:gmail",
+        "//util:net",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//starlette",
+        "@pypi//uvicorn",
+        # pytest-asyncio auto mode (root conftest) needs the plugin importable at runtime.
+        "@pypi//pytest_asyncio",
     ],
 )
 
@@ -316,6 +453,7 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
         "@pypi//testcontainers",

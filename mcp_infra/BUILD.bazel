@@ -5,6 +5,8 @@ py_library(
     srcs = ["persistence.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        # asyncpg backs py-key-value's PostgreSQLStore (PostgresPersistence).
+        "@pypi//asyncpg",
         "@pypi//py_key_value_aio",
         "@pypi//pydantic",
         "@pypi//valkey_glide",
@@ -38,6 +40,31 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_persistence",
+    size = "medium",
+    srcs = ["test_persistence.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":persistence",
+        # Root conftest enables pytest-asyncio auto mode (STRICT otherwise -> async tests skipped).
+        "//:conftest",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "@pypi//asyncpg",
+        "@pypi//py_key_value_aio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        # pytest-asyncio auto mode (root conftest) needs the plugin importable at runtime.
+        "@pypi//pytest_asyncio",
+        "@pypi//testcontainers",
     ],
 )
 

@@ -13,19 +13,23 @@ from __future__ import annotations
 
 import logging
 import secrets
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
+from typing import Any
 
 import uvicorn
-from fastapi import FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
+from starlette.middleware.sessions import SessionMiddleware
 
-from haku.console import capabilities, mcp_approval, mcp_operator_oauth
+from haku.console import capabilities, mcp_approval, mcp_operator_oauth, mcp_server, operator_auth
 from haku.console.config import Settings
+from haku.console.database_migrate import apply_migrations
 from haku.console.in_process_servers import InProcessServerDependencies, build_in_process_servers
+from haku.console.mcp_config import resolve_static_agents
 from haku.console.models import ConfigResponse
 from haku.console.tools import (
     gmail as gmail_tools,
@@ -34,8 +38,7 @@ from haku.console.tools import (
     routine as routine_tools,
     tana as tana_tools,
 )
-
-logger = logging.getLogger(__name__)
+from mcp_infra.persistence import build_client_storage
 
 APP_SHELL_CACHE_CONTROL = "no-cache, max-age=0, must-revalidate"
 IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
@@ -51,44 +54,34 @@ PERMISSIONS_POLICY = "geolocation=(self), display-capture=(self)"
 def _cache_control_for_path(path: str) -> str:
     if path.startswith("/assets/"):
         return IMMUTABLE_ASSET_CACHE_CONTROL
-    if path.startswith("/api/") or path == "/healthz":
+    # The app is authoritative for the cache policy of every backend surface it serves — nginx no
+    # longer sets Cache-Control on proxied responses (haku/console/default.conf.template), so these
+    # prefixes must be listed here, not there. Keep in sync with the proxied `location`s.
+    if path.startswith(("/api/", "/mcp", "/auth/", "/.well-known/")) or path == "/healthz":
         return NO_STORE_CACHE_CONTROL
     return APP_SHELL_CACHE_CONTROL
 
 
 def create_app(settings: Settings) -> FastAPI:
-    database_url = settings.database_url.get_secret_value() if settings.database_url is not None else None
-    # Cross-replica fan-out (Postgres LISTEN/NOTIFY) when a database is configured;
-    # started/stopped by the lifespan below rather than at construction time, since
-    # starting the listen loop needs a running event loop.
+    # Postgres is required: it backs the approval ledger and the operator OAuth store, both always
+    # constructed. Construction is lazy (no connect); migrations run once at startup (app.main /
+    # the test fixture), not here. Cross-replica fan-out (Postgres LISTEN/NOTIFY) is started by the
+    # lifespan below, since the listen loop needs a running event loop.
+    database_url = settings.database_url.get_secret_value()
     tool_call_event_hub = mcp_approval.ToolCallEventHub(database_url)
-
-    @asynccontextmanager
-    async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-        await tool_call_event_hub.start()
-        try:
-            yield
-        finally:
-            await tool_call_event_hub.aclose()
-
-    app = FastAPI(title="Haku console", lifespan=_lifespan)
-    # The capability router reads settings off app.state (see haku.console.capabilities).
-    app.state.settings = settings
-    app.state.tool_call_ledger = mcp_approval.PostgresToolCallLedger(database_url) if database_url is not None else None
-    app.state.mcp_operator_oauth_store = (
-        mcp_operator_oauth.PostgresMcpOperatorOAuthStore(database_url) if database_url is not None else None
-    )
-    # Resolve the collaborators for the canonical in-process MCP server catalog. The
-    # Google clients are also exposed on app.state for their approval-render reads.
-    app.state.gmail_client = None
-    app.state.calendar_client = None
+    tool_call_ledger = mcp_approval.PostgresToolCallLedger(database_url)
+    mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(database_url)
+    # The static machine agents (fixed bearer → operator subject) from the config file; resolved once
+    # here (fails loud if a named env var is missing) and reused by the middleware, the /mcp static
+    # verifier, and operator resolution.
+    static_agents = resolve_static_agents(settings)
+    # Google clients back the two in-process MCP servers (gmail, google_calendar) and their
+    # approval-render read endpoints (gmail thread previews, calendar-name resolution).
     gmail_client = None
     calendar_client = None
     if settings.google_token_dir is not None:
         gmail_client = gmail_tools.build_gmail_client(settings.google_token_dir)
         calendar_client = google_calendar_tools.build_calendar_client(settings.google_token_dir)
-        app.state.gmail_client = gmail_client
-        app.state.calendar_client = calendar_client
     # `haku_routine` fires the Haku claude-code-web routine as an approval-gated MCP tool (the
     # standard queue), superseding the bespoke launch-routine capability tier. Same
     # `launch_routine` config/secret; independent of the Google grant above.
@@ -96,10 +89,72 @@ def create_app(settings: Settings) -> FastAPI:
     in_process_servers = build_in_process_servers(
         InProcessServerDependencies(gmail=gmail_client, calendar=calendar_client, routine_launcher=routine_launcher)
     )
+    tool_call_executor = mcp_approval.McpToolExecutor(in_process_servers)
+    tool_call_metadata_provider = mcp_approval.McpMetadataProvider(in_process_servers)
+
+    # The console's own agent-facing MCP server, mounted at /mcp — the console's whole reason to run.
+    # Its tools re-expose the connected servers through the same approval ledger. Always built;
+    # `build_auth` fails loud if nothing can authenticate to it (no static agent, no OAuth).
+    console_mcp_context = mcp_server.ConsoleMcpContext(
+        settings=settings,
+        static_agents=static_agents,
+        ledger=tool_call_ledger,
+        hub=tool_call_event_hub,
+        executor=tool_call_executor,
+        oauth_store=mcp_operator_oauth_store,
+        metadata_provider=tool_call_metadata_provider,
+        in_process_servers=in_process_servers,
+        gmail_client=gmail_client,
+    )
+
+    # Record the agent→operator link when an OAuth agent (claude.ai / claude CLI) completes the
+    # OIDCProxy authorization-code exchange: its DCR client_id → the operator's opaque subject.
+    # A missing `sub` is a misconfiguration (both providers run sub_mode=user_id), so fail loud.
+    async def _link_agent_operator(client_id: str, idp_tokens: Mapping[str, Any]) -> None:
+        subject = mcp_operator_oauth.operator_subject_from_idp_tokens(idp_tokens)
+        if subject is None:
+            raise RuntimeError(f"MCP OAuth id_token for client {client_id} carried no `sub` claim")
+        mcp_operator_oauth_store.upsert_agent_operator(agent_dcr_client_id=client_id, operator_subject=subject)
+
+    # The OIDCProxy client-state store only exists when OAuth does; the static-bearer-only deploy has
+    # no dynamic client registrations to persist.
+    mcp_oauth_storage = build_client_storage(settings.mcp_oauth_persistence) if settings.mcp_oauth is not None else None
+    console_mcp = mcp_server.build_console_mcp(
+        console_mcp_context,
+        auth=mcp_server.build_auth(
+            settings, static_agents, mcp_oauth_storage, on_client_authorized=_link_agent_operator
+        ),
+    )
+    mcp_asgi = console_mcp.http_app(path="/")
+
+    @asynccontextmanager
+    async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+        await tool_call_event_hub.start()
+        try:
+            # Pre-warm the OIDCProxy client-state store so the first OAuth request isn't slowed by a
+            # cold connect (see mcp_infra/oauth_facade/server.py).
+            if mcp_oauth_storage is not None and hasattr(mcp_oauth_storage, "setup"):
+                await mcp_oauth_storage.setup()
+            # FastMCP's streamable-http session manager runs under mcp_asgi.lifespan; reflect the
+            # connected servers into the tool surface once it is up.
+            async with mcp_asgi.lifespan(app):
+                await mcp_server.register_proxy_tools(console_mcp, console_mcp_context)
+                yield
+        finally:
+            await tool_call_event_hub.aclose()
+
+    app = FastAPI(title="Haku console", lifespan=_lifespan)
+    # The capability router reads settings off app.state (see haku.console.capabilities).
+    app.state.settings = settings
+    app.state.static_agents = static_agents
+    app.state.tool_call_ledger = tool_call_ledger
+    app.state.mcp_operator_oauth_store = mcp_operator_oauth_store
+    app.state.gmail_client = gmail_client
+    app.state.calendar_client = calendar_client
     app.state.tool_call_event_hub = tool_call_event_hub
     app.state.in_process_servers = in_process_servers
-    app.state.tool_call_executor = mcp_approval.McpToolExecutor(in_process_servers)
-    app.state.tool_call_metadata_provider = mcp_approval.McpMetadataProvider(in_process_servers)
+    app.state.tool_call_executor = tool_call_executor
+    app.state.tool_call_metadata_provider = tool_call_metadata_provider
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
@@ -133,19 +188,43 @@ def create_app(settings: Settings) -> FastAPI:
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.get("/api/config")
+    # Two router-level guards enforce the /api/* auth split (both no-op unless operator_oidc is set —
+    # the dev/test mode has no in-app guard, as before). Operator-only routers require an operator
+    # session; the agent-facing tool-call router (submit + read/sweep) also accepts a static agent's
+    # bearer. A route added to a guarded router is protected by default — no path list to maintain.
+    operator_only = [Depends(operator_auth.require_operator)]
+    app.include_router(
+        mcp_approval.agent_router, dependencies=[Depends(operator_auth.require_operator_or_static_agent)]
+    )
+    app.include_router(capabilities.router, dependencies=operator_only)
+    app.include_router(mcp_approval.router, dependencies=operator_only)
+    app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
+    app.include_router(gmail_tools.router, dependencies=operator_only)
+    app.include_router(google_calendar_tools.router, dependencies=operator_only)
+    app.include_router(grocy_tools.router, dependencies=operator_only)
+    app.include_router(tana_tools.router, dependencies=operator_only)
+
+    @app.get("/api/config", dependencies=operator_only)
     async def config() -> ConfigResponse:
         """Static config for the SPA: launch-routine URL and Haku UI URL."""
         launch = settings.launch_routine
         return ConfigResponse(launch_routine_url=launch.page_url if launch else None, haku_ui_url=settings.haku_ui_url)
 
-    app.include_router(capabilities.router)
-    app.include_router(mcp_approval.router)
-    app.include_router(mcp_operator_oauth.router)
-    app.include_router(gmail_tools.router)
-    app.include_router(google_calendar_tools.router)
-    app.include_router(grocy_tools.router)
-    app.include_router(tana_tools.router)
+    # Operator browser auth (Authentik OIDC), replacing the proxy outpost. Gated on config so nothing
+    # changes when unset (the outpost still guards; tests/dev run without it). SessionMiddleware
+    # establishes request.session, which the router guards read; https_only follows the public origin.
+    if settings.operator_oidc is not None:
+        app.state.operator_oauth = operator_auth.build_oauth(settings.operator_oidc)
+        app.include_router(operator_auth.router)
+        app.add_middleware(
+            SessionMiddleware,
+            secret_key=settings.operator_oidc.session_secret.get_secret_value(),
+            https_only=(settings.public_base_url or "").startswith("https://"),
+            same_site="lax",
+        )
+
+    # Agent-facing MCP server (streamable HTTP), mounted after the API routers and before the SPA.
+    app.mount("/mcp", mcp_asgi)
 
     # Optional direct local/dev fallback. Production serves the SPA from the
     # haku-console-static nginx image and leaves static_dir unset on this process.
@@ -168,7 +247,11 @@ def create_app(settings: Settings) -> FastAPI:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    app = create_app(Settings())
+    settings = Settings()
+    # Apply DB migrations once before serving — the console owns its schema at startup, decoupled from
+    # constructing any ledger/store (advisory-locked, so concurrent replicas don't race).
+    apply_migrations(settings.database_url.get_secret_value())
+    app = create_app(settings)
     # host/port are fixed, not env-driven: under the HAKU_CONSOLE_ prefix a `port`
     # setting would read the kubelet's HAKU_CONSOLE_PORT service-link var (a URL),
     # not an int. The deployment also disables service links (enableServiceLinks: false).

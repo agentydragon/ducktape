@@ -87,7 +87,8 @@ Core endpoints:
   normal sweep or operator debugging. The list endpoint accepts repeated `status` filters and a
   datetime `since` filter on `updated_at`.
 
-Backend callers authenticate with the shared `HAKU_CONSOLE_AGENT_API_TOKEN`. Browser-origin
+Backend callers authenticate with a configured **static agent** bearer (`static_agents` in the
+config file — each an agent id bound to one operator subject, both env-referenced). Browser-origin
 approvals use the operator's Authentik session plus CSRF. The approval drawer renders in trusted
 console chrome, not inside Haku's iframe, and does not block the framed Haku UI. If a server enables
 `operator_oauth`, approval execution
@@ -95,6 +96,25 @@ uses the approving operator's linked OAuth token and refuses to move the call ou
 `pending_approval` until that association exists. Static bearer credentials can remain configured
 for reflection or fallback wiring, but they are not silently substituted for operator-approved
 execution on an `operator_oauth` server.
+
+### Agent-facing MCP server (`/mcp`)
+
+`mcp_server.py` mounts a native MCP server at `/mcp` so a connected Claude client (the claude.ai
+custom connector / the `claude` CLI) can call the connected-server tools directly — the same
+submit → auto-approve → execute → wait path as `POST /api/tool-calls` (the shared `submit_and_wait`
+helper), never a divergent one. The surface is two buckets: tools the policy **unconditionally**
+auto-approves (gmail reads, read-only grocy-sf, tana `get_or_create_calendar_node`) appear as
+transparent **pass-throughs** (original name/schema, real result); everything else appears as
+`request_<server>_<tool>` with an envelope `{input, title?, rationale, wait_for_approval_ms?}` that
+returns the real result if approved within the wait, else a **promise** (a pending `tool_call_id` +
+an operator-facing deep-link `url`) the agent resolves via the `get_tool_call` / `list_tool_calls`
+read tools. The promise-semantics preamble lives in each tool's **description** (many MCP clients,
+claude.ai included, never surface a server's `instructions`). Auth is FastMCP `MultiAuth`: an
+Authentik-backed `OIDCProxy` (DCR + PKCE for claude.ai / `claude`, DCR/token state persisted in the
+console's Postgres) composed with the configured `static_agents`' fixed bearers. The `/mcp` surface only submits/reads — there
+is no decision tool — so an OAuth caller cannot self-approve; approval stays in trusted console
+chrome. Approved calls execute against the console's own stored operator credentials, so an incoming
+token's blast radius is "call the console's submit/read tools" and nothing else.
 
 ### In-process MCP servers — no second deployment
 
@@ -203,15 +223,35 @@ Manifests live in `cluster/k8s/haku/console/` (operator-owned — the perimeter 
 Haku's to change); the `haku-console` namespace itself is `cluster/k8s/haku/console-namespace/`.
 The deployment runs two containers in one pod: the `haku-console` FastAPI API
 image and a separate `haku-console-static` nginx image that bakes in the
-fingerprinted SPA. nginx serves `/` and `/assets/*`, proxies `/api/*` and
-`/healthz` to FastAPI on localhost, and sets cache policy by route (`/assets/*`
-immutable, app shell revalidated, API/health uncached). No runtime asset copy or
-shared web volume is used.
+fingerprinted SPA. nginx serves `/` and `/assets/*`, proxies `/api/*`, `/healthz`,
+`/mcp`, `/auth/*`, and the `/.well-known/oauth-*` discovery paths to FastAPI on
+localhost, and sets cache policy by route (`/assets/*` immutable, app shell
+revalidated, API/health/mcp/auth uncached). No runtime asset copy or shared web
+volume is used.
+
+**Auth is app-owned** (the Authentik forward-auth proxy outpost that used to gate
+`haku.allegedly.works` is retired; the HTTPRoute now points straight at the console
+Service). The operator browser logs in via Authentik OIDC (`HAKU_CONSOLE_OPERATOR_OIDC__*`
+→ signed session cookie; router-level dependency guards protect `/api/*`, with the agent bearer
+scoped to the agent-facing submit/read routes only), and agents authenticate to the always-mounted
+`/mcp` via `MultiAuth` (OIDCProxy DCR + the `static_agents`' fixed bearers, `HAKU_CONSOLE_MCP_OAUTH__*`;
+the DCR/token state persists in the console's own Postgres via `HAKU_CONSOLE_MCP_OAUTH_PERSISTENCE__*`).
+The console refuses to start with no `/mcp` credential at all (no static agent and no `mcp_oauth`).
+Both OAuth2 providers and their client secrets
+(the `haku-console-oidc` Secret) are minted by `tf/gitops/agent-machine-access`; single-user
+access is Authentik's application access policy.
+
+Postgres is **required**: it backs the approval ledger and the operator OAuth token store, and the
+console applies its Alembic migrations once at startup (`app.main`, before serving) — never as a
+side effect of constructing a store.
+
 Non-root, dropped caps, no service-account token. Credentials: the
-`haku-routine-launch-token` secret (the launch capability bearer; `HAKU_CONSOLE_LAUNCH_ROUTINE__TOKEN`)
-and, when MCP approval is enabled, the config-file/API-token/database settings:
-`HAKU_CONSOLE_CONFIG_FILE`, `HAKU_CONSOLE_DATABASE_URL`, `HAKU_CONSOLE_AGENT_API_TOKEN`, and
-optionally `HAKU_CONSOLE_PUBLIC_BASE_URL` for OAuth redirect URI generation.
+`haku-routine-launch-token` secret (the launch capability bearer; `HAKU_CONSOLE_LAUNCH_ROUTINE__TOKEN`),
+the OAuth client secrets (`haku-console-oidc`), the config-file/database settings
+(`HAKU_CONSOLE_CONFIG_FILE`, `HAKU_CONSOLE_DATABASE_URL`, `HAKU_CONSOLE_PUBLIC_BASE_URL` — the OAuth
+redirect-URI origin), and each `static_agents` entry's env-referenced bearer + operator subject
+(e.g. `HAKU_CONSOLE_AGENT_HAKU_TOKEN` from `haku-console-agent-api`, `HAKU_CONSOLE_AGENT_HAKU_OPERATOR`
+from the TF-fed `haku-console-oidc` `operator_subject`).
 It no longer holds a haku-state git credential — feedback/trace writes moved into haku-ui.
 As trusted ducktape code in its own namespace it is **not** behind the `haku-egress-proxy`
 fence — it gets ordinary cluster egress (which the capability tier needs to reach the

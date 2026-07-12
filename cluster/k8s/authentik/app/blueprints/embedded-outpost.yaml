@@ -37,6 +37,7 @@ entries:
         - !Find [authentik_providers_proxy.proxyprovider, [name, adsb]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, openhands]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, fava]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, haku-dashboard]]
+        # haku-dashboard retired: haku-console owns its own OAuth now (see
+        # blueprints/haku-dashboard-sso.yaml tombstone). haku-ui is a different app; it stays.
         - !Find [authentik_providers_proxy.proxyprovider, [name, haku-ui]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, tandoor]]

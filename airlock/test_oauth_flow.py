@@ -9,28 +9,21 @@ from __future__ import annotations
 import base64
 import hashlib
 import secrets
-import time
 from pathlib import Path
 from textwrap import dedent
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
-import jwt as pyjwt
 import pytest
 import pytest_bazel
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicNumbers
 from fastmcp import FastMCP
 from fastmcp.mcp_config import RemoteMCPServer
 from fastmcp.server.auth import MultiAuth
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 from starlette.applications import Starlette
-from starlette.requests import Request
-from starlette.responses import JSONResponse, RedirectResponse
-from starlette.routing import Mount, Route
+from starlette.routing import Mount
 
 from airlock.app import create_app
 from airlock.config import Settings
@@ -38,116 +31,7 @@ from airlock.conftest import GateClient, agent_transport, serve_app
 from airlock.oauth.provider import OAuthConfig
 from mcp_infra.prefix import MCPMountPrefix
 from util.net import pick_free_port
-
-# ── Mock OIDC Server ─────────────────────────────────────────────────────────
-
-
-def _build_jwks(public_key) -> dict[str, Any]:
-    """Build a JWKS document from an RSA public key."""
-    numbers: RSAPublicNumbers = public_key.public_numbers()
-
-    def _b64url(n: int, length: int) -> str:
-        return base64.urlsafe_b64encode(n.to_bytes(length, "big")).rstrip(b"=").decode()
-
-    e_bytes = (numbers.e.bit_length() + 7) // 8
-    n_bytes = (numbers.n.bit_length() + 7) // 8
-    return {
-        "keys": [
-            {
-                "kty": "RSA",
-                "use": "sig",
-                "alg": "RS256",
-                "kid": "test-key",
-                "n": _b64url(numbers.n, n_bytes),
-                "e": _b64url(numbers.e, e_bytes),
-            }
-        ]
-    }
-
-
-def _sign_jwt(private_key, claims: dict[str, Any]) -> str:
-    """Sign a JWT with the test RSA key."""
-    return pyjwt.encode(claims, private_key, algorithm="RS256", headers={"kid": "test-key"})
-
-
-def build_mock_oidc_app(*, issuer_url: str, private_key, public_key) -> Starlette:
-    """Build a minimal OIDC provider that supports discovery, JWKS, authorize, and token."""
-    jwks = _build_jwks(public_key)
-    pending_codes: dict[str, dict[str, Any]] = {}
-
-    async def discovery(request: Request) -> JSONResponse:
-        return JSONResponse(
-            {
-                "issuer": issuer_url,
-                "authorization_endpoint": f"{issuer_url}/authorize",
-                "token_endpoint": f"{issuer_url}/token",
-                "jwks_uri": f"{issuer_url}/jwks",
-                "response_types_supported": ["code"],
-                "subject_types_supported": ["public"],
-                "id_token_signing_alg_values_supported": ["RS256"],
-                "scopes_supported": ["openid", "propose", "read", "decide"],
-                "grant_types_supported": ["authorization_code"],
-            }
-        )
-
-    async def jwks_endpoint(request: Request) -> JSONResponse:
-        return JSONResponse(jwks)
-
-    async def authorize(request: Request) -> RedirectResponse:
-        """Simulate user consent + login by immediately issuing an auth code."""
-        params = dict(request.query_params)
-        code = hashlib.sha256(f"{time.time()}".encode()).hexdigest()[:16]
-        pending_codes[code] = {
-            "redirect_uri": params.get("redirect_uri", ""),
-            "scope": params.get("scope", "openid"),
-            "code_challenge": params.get("code_challenge"),
-        }
-        redirect_uri = params["redirect_uri"]
-        state = params.get("state", "")
-        return RedirectResponse(f"{redirect_uri}?code={code}&state={state}", status_code=302)
-
-    async def token(request: Request) -> JSONResponse:
-        """Exchange auth code for tokens."""
-        body = parse_qs((await request.body()).decode())
-        code = body.get("code", [""])[0]
-        code_data = pending_codes.pop(code, None)
-        if code_data is None:
-            return JSONResponse({"error": "invalid_grant"}, status_code=400)
-
-        now = int(time.time())
-        scope = code_data.get("scope", "openid")
-        claims = {
-            "iss": issuer_url,
-            "sub": "test-user",
-            "aud": body.get("resource", [issuer_url])[0],
-            "iat": now,
-            "exp": now + 3600,
-            "scope": scope,
-        }
-        access_token = _sign_jwt(private_key, claims)
-        id_token = _sign_jwt(
-            private_key,
-            {**claims, "aud": body.get("client_id", ["test"])[0], "azp": body.get("client_id", ["test"])[0]},
-        )
-        return JSONResponse(
-            {
-                "access_token": access_token,
-                "id_token": id_token,
-                "token_type": "Bearer",
-                "expires_in": 3600,
-                "scope": scope,
-            }
-        )
-
-    return Starlette(
-        routes=[
-            Route("/.well-known/openid-configuration", discovery),
-            Route("/jwks", jwks_endpoint),
-            Route("/authorize", authorize),
-            Route("/token", token, methods=["POST"]),
-        ]
-    )
-
+from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -206,8 +90,7 @@ def _build_echo_backend() -> tuple[FastMCP, int, Starlette]:
 @pytest.fixture
 def oidc_key_pair():
     """Generate an RSA key pair for the mock OIDC server."""
-    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    return private_key, private_key.public_key()
+    return generate_rsa_keypair()
 
 
 @pytest.fixture

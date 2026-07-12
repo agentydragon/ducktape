@@ -7,7 +7,7 @@ from typing import Any
 
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 
 from haku.console.database_schema import metadata
 
@@ -27,3 +27,15 @@ def run_migrations_for_connection(conn: Any) -> None:
     cfg.attributes["connection"] = conn
     cfg.attributes["target_metadata"] = metadata
     alembic_command.upgrade(cfg, "head")
+
+
+def apply_migrations(database_url: str) -> None:
+    """Upgrade the haku-console database to head. The explicit startup step (app.main) and the tests
+    call this once against the shared database — migrations are an ownership of the process, not a
+    side effect of constructing a ledger/store."""
+    engine = create_engine(database_url)
+    try:
+        with engine.begin() as conn:
+            run_migrations_for_connection(conn)
+    finally:
+        engine.dispose()

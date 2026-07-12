@@ -160,7 +160,7 @@ export const SAMPLE_MCP: McpOperatorAuthStatus[] = [
   {
     server_id: "grocy-sf",
     status: "connected",
-    operator_principal: "agentydragon",
+    username: "agentydragon",
     connected_at: "2026-07-01T09:00:00Z",
     token_expires_at: "2026-08-01T09:00:00Z",
     scope: "read write",

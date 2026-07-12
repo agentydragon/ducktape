@@ -34,3 +34,6 @@ spec:
     - name: postscanmail-mcp-namespace
     # Same for plaid-mcp.
     - name: plaid-mcp-namespace
+    # TF writes the `haku-console-oidc` secret (MCP OIDCProxy + operator-login client
+    # credentials + session secret) into the `haku-console` namespace.
+    - name: haku-console-namespace

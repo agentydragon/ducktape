@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
 import re
-import threading
-import time
 from collections.abc import AsyncGenerator, Callable, Generator, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -13,7 +10,6 @@ from uuid import UUID, uuid4
 
 import anyio
 import pytest
-import uvicorn
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
@@ -40,6 +36,7 @@ from mcp_utils.resources import parse_tool_result_as
 from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.net import pick_free_port
 from util.oci import load_oci_image
+from util.testing.asgi import serve_app
 from util.testing.postgres import force_drop_database
 
 
@@ -69,32 +66,6 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
-
-
-@asynccontextmanager
-async def serve_app(app: Starlette, *, port: int):
-    """Start a uvicorn server in a dedicated thread; yield when ready; shut down on exit."""
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-    server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    deadline = time.monotonic() + 10.0
-    while not server.started:
-        if not thread.is_alive():
-            raise RuntimeError("uvicorn thread exited before starting")
-        if time.monotonic() > deadline:
-            server.should_exit = True
-            thread.join(timeout=3.0)
-            raise TimeoutError(f"server did not start on port {port}")
-        await asyncio.sleep(0.02)
-    try:
-        yield
-    finally:
-        server.should_exit = True
-        thread.join(timeout=5.0)
-        if thread.is_alive():
-            server.force_exit = True
-            thread.join(timeout=3.0)
 
 
 class GateClient(Client, MessageHandler):

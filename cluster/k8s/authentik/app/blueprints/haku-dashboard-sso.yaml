@@ -1,40 +1,23 @@
 version: 1
 metadata:
-  name: SSO - Haku dashboard
+  name: SSO - Haku dashboard (retired)
   labels:
-    blueprints.goauthentik.io/description: "Haku dashboard proxy provider, application, and single-user access binding"
+    blueprints.goauthentik.io/description: "Tombstone: retire the haku-dashboard forward-auth proxy provider/application. The console now owns OAuth (operator browser OIDC + /mcp MultiAuth) and is reached by a plain HTTPRoute straight to its Service."
 
+# CLEANUP(added 2026-07-12): delete this tombstone file AND its line in
+#   cluster/k8s/authentik/app/kustomization.yaml once the `haku-dashboard` proxy provider +
+#   application no longer appear in Authentik. The blueprint worker only deletes an object
+#   when it sees a `state: absent` entry, so this file must stay wired through a few reconcile
+#   cycles; the provider is also removed from blueprints/embedded-outpost.yaml in this change.
 entries:
-  - model: authentik_providers_proxy.proxyprovider
-    id: haku-dashboard-provider
-    state: present
-    identifiers:
-      name: haku-dashboard
-    attrs:
-      external_host: "https://haku.allegedly.works"
-      internal_host: "http://haku-console.haku-console.svc.cluster.local:8080"
-      mode: proxy
-      authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
-      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
-      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
-      access_token_validity: "hours=24"
-
+  # Delete the application first — that cascade-removes the single-user policy binding that
+  # targeted it — then the proxy provider it fronted.
   - model: authentik_core.application
-    id: haku-dashboard-app
-    state: present
+    state: absent
     identifiers:
       slug: haku-dashboard
-    attrs:
-      name: Haku
-      provider: !KeyOf haku-dashboard-provider
-      meta_description: "Haku's interactive value-ranked item dashboard"
-      meta_launch_url: "https://haku.allegedly.works"
-      open_in_new_tab: true
 
-  # Restrict access to the single user agentydragon (mirrors fava-sso).
-  - model: authentik_policies.policybinding
-    state: present
+  - model: authentik_providers_proxy.proxyprovider
+    state: absent
     identifiers:
-      target: !KeyOf haku-dashboard-app
-      user: !Find [authentik_core.user, [username, agentydragon]]
-      order: 0
+      name: haku-dashboard

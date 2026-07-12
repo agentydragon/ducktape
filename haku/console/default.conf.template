@@ -1,8 +1,10 @@
+# Cache policy for the static content nginx serves ITSELF (fingerprinted assets are immutable; the
+# SPA shell is always revalidated). Backend responses are NOT listed here — the FastAPI app owns
+# their Cache-Control (haku/console/app.py `_cache_control_for_path`) and the proxied locations below
+# pass it through untouched.
 map $uri $haku_cache_control {
   ~^/assets/ "public, max-age=31536000, immutable";
-  ~^/api/ "no-store";
-  /healthz "no-store";
-  default "no-cache, max-age=0, must-revalidate";
+  default    "no-cache, max-age=0, must-revalidate";
 }
 
 # WebSocket upgrade passthrough for the live tool-call event socket
@@ -23,30 +25,36 @@ server {
   root /usr/share/nginx/html/dist;
   index index.html;
 
-  proxy_hide_header Content-Security-Policy;
-  proxy_hide_header Cache-Control;
-  proxy_hide_header Referrer-Policy;
-  proxy_hide_header Permissions-Policy;
-
-  add_header Content-Security-Policy
-    "frame-src 'self' ${HAKU_CONSOLE_HAKU_UI_URL} ${HAKU_CONSOLE_AUTH_ORIGIN}; frame-ancestors 'none'"
-    always;
-  add_header Cache-Control $haku_cache_control always;
-  add_header Referrer-Policy "no-referrer" always;
-  # Shell (top-level) may read geolocation for the requestGeolocation bridge action, and
-  # capture the screen for the requestScreenshot bridge action; (self) scopes both to this
-  # origin so neither is ever delegated to the framed haku-ui origin.
-  add_header Permissions-Policy "geolocation=(self), display-capture=(self)" always;
-
   proxy_http_version 1.1;
   proxy_set_header Host $host;
   proxy_set_header X-Real-IP $remote_addr;
   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
   proxy_set_header X-Forwarded-Proto $scheme;
 
+  # Response headers are owned per-server: nginx sets CSP/Cache-Control/Referrer/Permissions ONLY on
+  # the static content it serves itself (the two static locations below). The FastAPI app sets those
+  # same headers on every response it returns (haku/console/app.py `_security_headers`), so the
+  # proxied `location`s deliberately set no response headers and let the app's pass through — no
+  # hide-and-reset, no policy written twice. (`geolocation`/`display-capture=(self)` scope the
+  # geolocation + screenshot permissions to the shell origin so neither is ever delegated to the
+  # framed haku-ui iframe — docs/containment.md.)
+
   location /assets/ {
     try_files $uri =404;
+    add_header Content-Security-Policy
+      "frame-src 'self' ${HAKU_CONSOLE_HAKU_UI_URL} ${HAKU_CONSOLE_AUTH_ORIGIN}; frame-ancestors 'none'"
+      always;
+    add_header Cache-Control $haku_cache_control always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Permissions-Policy "geolocation=(self), display-capture=(self)" always;
   }
+
+  # ── Backend surfaces proxied to the FastAPI app (127.0.0.1:8080) ──────────────────────────────
+  # These locations mirror the app's top-level backend prefixes: the app.py routers (/api, /healthz),
+  # the /mcp mount, the /auth (operator OIDC) router, and the OAuth discovery docs. INVARIANT: a new
+  # top-level backend prefix needs a matching location here, or it falls through to the SPA shell
+  # (`location /`) and returns index.html instead of reaching the app (this is what bit /mcp). They
+  # set no response headers — the app owns its own (see the note above).
 
   location /api/ {
     proxy_pass http://127.0.0.1:8080;
@@ -62,7 +70,34 @@ server {
     proxy_pass http://127.0.0.1:8080;
   }
 
+  # Agent-facing MCP server (streamable HTTP / SSE), plus the OIDCProxy OAuth routes FastMCP serves
+  # under the /mcp mount. Disable proxy buffering so the event stream flushes, and allow a long read
+  # timeout for idle streams and the OAuth dance.
+  location /mcp {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_buffering off;
+    proxy_request_buffering off;
+    proxy_read_timeout 3600s;
+  }
+
+  # Operator browser OIDC login (operator_auth router: /auth/login,/callback,/logout,/me).
+  location /auth/ {
+    proxy_pass http://127.0.0.1:8080;
+  }
+
+  # OAuth discovery documents the MCP OIDCProxy serves at the root (RFC 8414 / 9728 path-suffix
+  # forms), which claude.ai fetches before connecting to /mcp.
+  location ~ ^/\.well-known/oauth {
+    proxy_pass http://127.0.0.1:8080;
+  }
+
   location / {
     try_files $uri /index.html;
+    add_header Content-Security-Policy
+      "frame-src 'self' ${HAKU_CONSOLE_HAKU_UI_URL} ${HAKU_CONSOLE_AUTH_ORIGIN}; frame-ancestors 'none'"
+      always;
+    add_header Cache-Control $haku_cache_control always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Permissions-Policy "geolocation=(self), display-capture=(self)" always;
   }
 }

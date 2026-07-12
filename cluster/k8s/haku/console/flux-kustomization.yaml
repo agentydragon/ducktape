@@ -23,3 +23,8 @@ spec:
     - name: haku-state # provisions the shared haku-ui/backend -> haku-console API token
     - name: gateway
     - name: authentik
+    # TF mints the console's Authentik OAuth2 providers + the haku-console-oidc Secret
+    # (operator_oidc + mcp_oauth client credentials + session secret) into this namespace;
+    # the pod's build_authentik_auth does a synchronous OIDC discovery fetch at startup, so
+    # the provider must exist first.
+    - name: agent-machine-access-tf

@@ -26,6 +26,7 @@ import asyncio
 import hashlib
 import logging
 import time
+from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse, urlunparse
 
@@ -49,7 +50,7 @@ from tenacity import AsyncRetrying, before_sleep_log, retry_if_exception, stop_a
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
-    from mcp.server.auth.provider import RefreshToken
+    from mcp.server.auth.provider import AuthorizationCode, RefreshToken
     from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,11 @@ _EXPIRY_LEEWAY = 30
 # - offline_access: triggers Authentik to issue a refresh token, so claude.ai
 #   can silently renew sessions without re-authenticating.
 DEFAULT_VALID_SCOPES = ["openid", "email", "profile", "offline_access"]
+
+# Invoked after an OAuth client completes the authorization-code exchange, with the client's
+# ``client_id`` and the raw upstream token response (``id_token`` etc.). A generic post-exchange hook;
+# the caller decides what to record and owns error handling — exceptions propagate out of the exchange.
+OnClientAuthorized = Callable[[str, Mapping[str, Any]], Awaitable[None]]
 
 
 # ── Config ────────────────────────────────────────────────────────────────
@@ -190,6 +196,28 @@ class ResilientOIDCProxy(OIDCProxy):
     refresh_retry_stop = stop_after_attempt(3)
     refresh_retry_wait = wait_exponential(multiplier=0.5, max=2)
 
+    def __init__(self, *args: Any, on_client_authorized: OnClientAuthorized | None = None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._on_client_authorized = on_client_authorized
+
+    async def exchange_authorization_code(
+        self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
+    ) -> OAuthToken:
+        """Issue the FastMCP token, then invoke ``on_client_authorized`` with the client's id and the
+        raw upstream token response (read from the stored code before ``super()`` consumes it).
+
+        Exceptions from the hook (or the pre-read) propagate out of the exchange — the caller owns the
+        error policy; this proxy does not swallow them.
+        """
+        idp_tokens: Mapping[str, Any] | None = None
+        if self._on_client_authorized is not None:
+            code_model = await self._code_store.get(key=authorization_code.code)
+            idp_tokens = code_model.idp_tokens if code_model is not None else None
+        token = await super().exchange_authorization_code(client, authorization_code)
+        if self._on_client_authorized is not None and idp_tokens is not None and client.client_id:
+            await self._on_client_authorized(client.client_id, idp_tokens)
+        return token
+
     async def exchange_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: RefreshToken, scopes: list[str]
     ) -> OAuthToken:
@@ -237,6 +265,7 @@ def build_authentik_auth(
     valid_scopes: list[str] | None = None,
     client_storage: Any | None = None,
     extra_verifiers: list[TokenVerifier] | None = None,
+    on_client_authorized: OnClientAuthorized | None = None,
 ) -> AuthProvider:
     """Build OIDCProxy + JWTVerifier auth for an Authentik-backed MCP server.
 
@@ -256,6 +285,9 @@ def build_authentik_auth(
             after the Authentik JWTVerifier — e.g. a ``StaticTokenVerifier`` so a
             machine caller's fixed bearer is accepted on the same endpoint as the
             human OAuth flow. Each is tried in turn; the first to accept wins.
+        on_client_authorized: Optional hook fired after an OAuth client completes the
+            authorization-code exchange, with its ``client_id`` and the raw upstream token
+            response. Exceptions from the hook propagate out of the exchange.
     """
     issuer = config.normalized_issuer()
     config_url = f"{issuer}/.well-known/openid-configuration"
@@ -268,6 +300,7 @@ def build_authentik_auth(
         base_url=config.normalized_public_base_url(),
         require_authorization_consent=True,
         client_storage=client_storage,
+        on_client_authorized=on_client_authorized,
     )
     assert proxy.client_registration_options is not None
     proxy.client_registration_options.valid_scopes = valid_scopes or DEFAULT_VALID_SCOPES

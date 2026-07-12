@@ -33,8 +33,8 @@ function McpAccountCard({
           <Text fw={600}>{status.server_id}</Text>
           <Text size="xs" c="dimmed">
             {connected
-              ? `Linked for ${status.operator_principal}${until ? ` until ${until}` : ""}`
-              : `Not linked for ${status.operator_principal}`}
+              ? `Linked for ${status.username}${until ? ` until ${until}` : ""}`
+              : `Not linked for ${status.username}`}
           </Text>
         </Stack>
         <Badge color={connected ? "teal" : "gray"} variant="light">

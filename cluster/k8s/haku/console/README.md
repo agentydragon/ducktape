@@ -3,6 +3,33 @@
 Manifests for `haku/console/` (see that directory's README for the app itself). Deploy
 notes here cover only what's specific to running it in-cluster.
 
+## App-owned auth (the forward-auth outpost is retired)
+
+The console authenticates its own surface instead of sitting behind the shared Authentik
+proxy outpost. `httproute.yaml` points `haku.allegedly.works` straight at the console
+Service; the `haku-dashboard` proxy provider is tombstoned in
+`cluster/k8s/authentik/app/blueprints/haku-dashboard-sso.yaml` (delete the tombstone after a
+few reconcile cycles, once it's gone from Authentik) and removed from the embedded outpost.
+Two Authentik OAuth2 providers, minted by `tf/gitops/agent-machine-access` (application slugs
+`haku-console` for operator browser login and `haku-console-mcp` for the `/mcp` OIDCProxy
+upstream), write their client secrets + the operator session-signing secret into the
+`haku-console-oidc` Secret; single-user access is Authentik's application access policy.
+The OIDCProxy's dynamic-client-registration + token state (shared across the two replicas) is
+backed by the console's own Postgres (`HAKU_CONSOLE_MCP_OAUTH_PERSISTENCE__KIND=postgres`,
+py-key-value's `PostgreSQLStore` auto-creating a `mcp_oauth_kv` table) — no separate valkey, unlike
+the grocy/tana MCP facades. Deviation from those facades: the operator browser login is the console's
+own app-native OIDC (not an outpost and not a separate SPA), so a 401 from `/api/*` bounces the
+browser to `/auth/login`.
+
+**nginx ↔ app routing invariant.** The `haku-console-static` nginx sidecar serves the SPA and
+proxies the app's top-level backend prefixes (`/api`, `/healthz`, `/mcp`, `/auth`, and the
+`/.well-known/oauth-*` discovery docs) to FastAPI; everything else is the SPA catch-all. So a **new
+top-level backend prefix needs a matching `location` in `haku/console/default.conf.template`**, or
+it silently returns the SPA shell instead of reaching the app (the footgun that first bit `/mcp`).
+nginx sets response headers (CSP/Cache-Control/…) only on the static content it serves itself; the
+app owns the headers on everything proxied (`app.py` `_security_headers`), so the two no longer
+write the same policy twice.
+
 ## One-time bootstrap: the in-process `gmail` + `google_calendar` MCP servers
 
 The console's two in-process MCP servers — `gmail` (`haku/console/tools/gmail.py` — Gmail

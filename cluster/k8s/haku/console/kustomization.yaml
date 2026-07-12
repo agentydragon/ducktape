@@ -5,6 +5,7 @@ namespace: haku-console
 resources:
   - csrf-secret.sops.yaml
   - deployment.yaml
+  - httproute.yaml
   - routine-launch-token.sops.yaml
   - service.yaml
 

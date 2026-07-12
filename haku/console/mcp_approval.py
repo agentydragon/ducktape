@@ -29,14 +29,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from haku.console import operator_auth
 from haku.console.auto_approval import auto_approve_tool_call
 from haku.console.config import Settings
-from haku.console.database_migrate import run_migrations_for_connection
 from haku.console.database_schema import McpToolCall, McpToolCallEvent
 from haku.console.deps import SettingsDep
 from haku.console.mcp_config import (
     InProcessServers,
     McpServerEntry,
+    ResolvedStaticAgent,
     _credential_token,
     _load_servers,
     _operator_oauth_enabled,
@@ -46,8 +47,8 @@ from haku.console.mcp_config import (
 from haku.console.mcp_operator_oauth import (
     OAuthStoreDep,
     PostgresMcpOperatorOAuthStore,
-    _maybe_oauth_store,
-    _operator_principal,
+    _oauth_store,
+    _operator_subject,
 )
 from haku.console.tool_calls import (
     ApprovalDecisionRequest,
@@ -61,7 +62,13 @@ from haku.console.tools.gmail_client import GmailToolsClient
 
 logger = logging.getLogger(__name__)
 
+# Operator-only routes (reflection, approvals, decisions). app.py guards this router with
+# `require_operator`.
 router = APIRouter(tags=["mcp-approval"])
+# The agent-facing tool-call routes (submit + read/sweep results). app.py guards this router with
+# `require_operator_or_static_agent`, so a static agent's bearer — not just an operator session —
+# reaches them, and nothing else.
+agent_router = APIRouter(tags=["mcp-approval"])
 Csrf = Annotated[CsrfProtect, Depends()]
 
 
@@ -140,9 +147,9 @@ class PostgresToolCallLedger:
     """Postgres-backed approval ledger for the deployed console."""
 
     def __init__(self, database_url: str) -> None:
+        # Migrations are applied once at startup (haku.console.database_migrate.apply_migrations), not
+        # here — constructing a ledger neither connects nor mutates schema.
         self._engine = create_engine(database_url, pool_pre_ping=True)
-        with self._engine.begin() as conn:
-            run_migrations_for_connection(conn)
         self._sessions = sessionmaker(self._engine, expire_on_commit=False)
 
     def submit(
@@ -303,14 +310,13 @@ class ToolCallEventHub:
 
     _CHANNEL = "haku_console_tool_call_events"
 
-    def __init__(self, database_url: str | None = None) -> None:
+    def __init__(self, database_url: str) -> None:
         self._connections: set[WebSocket] = set()
-        self._dsn = _psycopg_dsn(database_url) if database_url else None
+        self._dsn = _psycopg_dsn(database_url)
         self._listen_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
-        if self._dsn is not None:
-            self._listen_task = asyncio.create_task(self._listen_loop())
+        self._listen_task = asyncio.create_task(self._listen_loop())
 
     async def aclose(self) -> None:
         if self._listen_task is None:
@@ -330,9 +336,8 @@ class ToolCallEventHub:
         payloads = [e.model_dump(mode="json") for e in events]
         if not payloads:
             return
-        if self._dsn is None:
-            await self._deliver_locally(payloads)
-            return
+        # NOTIFY reaches every replica's listen loop, including this pod's own — so local websocket
+        # delivery happens there, not here, and there is no separate local-vs-remote path.
         async with await psycopg.AsyncConnection.connect(self._dsn, autocommit=True) as conn:
             for payload in payloads:
                 await conn.execute("SELECT pg_notify(%s, %s)", (self._CHANNEL, json.dumps(payload)))
@@ -351,7 +356,6 @@ class ToolCallEventHub:
             self.disconnect(ws)
 
     async def _listen_loop(self) -> None:
-        assert self._dsn is not None
         while True:
             try:
                 async with await psycopg.AsyncConnection.connect(self._dsn, autocommit=True) as conn:
@@ -404,10 +408,11 @@ class McpMetadataProvider:
 
 
 def _ledger(request: Request) -> PostgresToolCallLedger:
-    ledger = request.app.state.tool_call_ledger
-    if ledger is None:
-        raise HTTPException(status_code=503, detail="MCP approval database is not configured")
-    return cast(PostgresToolCallLedger, ledger)
+    return cast(PostgresToolCallLedger, request.app.state.tool_call_ledger)
+
+
+def _static_agents(request: Request) -> list[ResolvedStaticAgent]:
+    return cast("list[ResolvedStaticAgent]", request.app.state.static_agents)
 
 
 def _hub(request: Request) -> ToolCallEventHub:
@@ -426,6 +431,7 @@ LedgerDep = Annotated[PostgresToolCallLedger, Depends(_ledger)]
 HubDep = Annotated[ToolCallEventHub, Depends(_hub)]
 ExecutorDep = Annotated[McpToolExecutor, Depends(_executor)]
 MetadataProviderDep = Annotated[McpMetadataProvider, Depends(_metadata_provider)]
+StaticAgentsDep = Annotated[list[ResolvedStaticAgent], Depends(_static_agents)]
 
 
 def _mcp_result_to_json(result: mcp_types.CallToolResult) -> dict[str, Any]:
@@ -451,24 +457,43 @@ def _pending_approval_from_record(record: ToolCallRecord) -> PendingApproval:
     )
 
 
-def _caller_principal(request: Request, settings: Settings) -> str:
-    auth = request.headers.get("authorization", "")
-    operator = request.headers.get("x-authentik-username")
-    expected = settings.agent_api_token.get_secret_value() if settings.agent_api_token else None
-    if expected and auth == f"Bearer {expected}":
-        return "haku-agent-api-token"
+def _caller_principal(request: Request, static_agents: StaticAgentsDep) -> str:
+    """The audit identity for an `/api/tool-calls` caller: a configured static agent (matched by its
+    bearer), else the operator session, else `operator`. A POST with a configured agent present but no
+    valid credential is a 401 rather than a silent operator fallback."""
+    agent = operator_auth.authenticated_static_agent(request, static_agents)
+    if agent is not None:
+        return agent.agent
+    operator = operator_auth.operator_username(request)
     if operator:
         return operator
-    if expected and request.method == "POST" and request.url.path == "/api/tool-calls":
+    if static_agents and request.method == "POST" and request.url.path == "/api/tool-calls":
         raise HTTPException(status_code=401, detail="missing or invalid tool-call API token")
     return "operator"
 
 
+CallerPrincipalDep = Annotated[str, Depends(_caller_principal)]
+
+
+def _agent_operator(
+    caller_principal: str, static_agents: list[ResolvedStaticAgent], oauth_store: PostgresMcpOperatorOAuthStore
+) -> str | None:
+    """The operator an auto-approved operator_oauth call runs as, resolved from the calling agent.
+
+    A configured static agent → its explicit `operator_subject` binding; any other authenticated agent
+    is an OAuth DCR client → the operator it linked at connect (`None` if unlinked, which fails closed
+    into the 409 "connect your account" path)."""
+    for agent in static_agents:
+        if agent.agent == caller_principal:
+            return agent.operator_subject
+    return oauth_store.agent_operator(agent_dcr_client_id=caller_principal)
+
+
 async def _execution_auth(
-    server: McpServerEntry, operator_principal: str, oauth_store: PostgresMcpOperatorOAuthStore
+    server: McpServerEntry, operator_subject: str, oauth_store: PostgresMcpOperatorOAuthStore
 ) -> str | None:
     if _operator_oauth_enabled(server):
-        token = await oauth_store.access_token_for(server=server, operator_principal=operator_principal)
+        token = await oauth_store.access_token_for(server=server, operator_subject=operator_subject)
         if not token:
             raise HTTPException(
                 status_code=409,
@@ -490,7 +515,10 @@ async def operator_authenticated_client(
     way to bypass the approval queue for mutating calls.
     """
     server = _server_entry(settings, server_id)
-    auth_token = await _execution_auth(server, _operator_principal(request), oauth_store)
+    # The operator subject is only consulted for operator_oauth servers; for others the credential
+    # token is used, so don't require an operator subject on the request there.
+    operator_subject = _operator_subject(request) if _operator_oauth_enabled(server) else ""
+    auth_token = await _execution_auth(server, operator_subject, oauth_store)
     return Client(_transport(server, {}), auth=auth_token)
 
 
@@ -536,16 +564,8 @@ async def _metadata_for_request(
     *, request: Request, server: McpServerEntry, metadata_provider: McpMetadataProvider
 ) -> ServerMetadata:
     if _operator_oauth_enabled(server):
-        oauth_store = _maybe_oauth_store(request)
-        operator_principal = _operator_principal(request)
-        if oauth_store is None:
-            return DegradedServerMetadata(
-                server_id=server.id,
-                title=server.id,
-                tools=[],
-                degraded_reason="MCP operator OAuth database is not configured.",
-            )
-        auth_token = await oauth_store.access_token_for(server=server, operator_principal=operator_principal)
+        oauth_store = _oauth_store(request)
+        auth_token = await oauth_store.access_token_for(server=server, operator_subject=_operator_subject(request))
         if not auth_token:
             return DegradedServerMetadata(
                 server_id=server.id,
@@ -573,32 +593,38 @@ async def mcp_servers(
     )
 
 
-@router.post("/api/tool-calls")
-async def submit_tool_call(
-    body: SubmitToolCallRequest,
-    request: Request,
-    settings: SettingsDep,
-    ledger: LedgerDep,
-    hub: HubDep,
-    executor: ExecutorDep,
-    oauth_store: OAuthStoreDep,
+async def submit_and_wait(
+    *,
+    req: SubmitToolCallRequest,
+    caller_principal: str,
+    caller_is_agent: bool,
+    static_agents: list[ResolvedStaticAgent],
+    settings: Settings,
+    ledger: PostgresToolCallLedger,
+    hub: ToolCallEventHub,
+    executor: McpToolExecutor,
+    oauth_store: PostgresMcpOperatorOAuthStore,
+    in_process_servers: InProcessServers,
+    gmail_client: GmailToolsClient | None,
 ) -> ToolCallRecord:
-    server = _server_entry(settings, body.server_id)
-    caller = _caller_principal(request, settings)
-    in_process_servers = cast(InProcessServers, request.app.state.in_process_servers)
+    """Submit a tool call, auto-approve + execute if policy allows, then wait up to
+    ``req.wait_for_ms`` for a terminal status. The single execution/approval path shared by the
+    HTTP endpoint (``POST /api/tool-calls``) and the console MCP server (``mcp_server``).
+    ``caller_is_agent`` gates the auto-approval policy (static_agents, not interactive operators)."""
+    server = _server_entry(settings, req.server_id)
     auto_approval_policy_id, auto_approval_evaluation = await auto_approve_tool_call(
-        caller_principal=caller,
+        caller_is_agent=caller_is_agent,
         server_id=server.id,
-        tool_name=body.tool_name,
-        arguments=body.arguments,
+        tool_name=req.tool_name,
+        arguments=req.arguments,
         label_prefix=settings.gmail_auto_approve_label_prefix,
-        gmail=cast(GmailToolsClient | None, request.app.state.gmail_client),
+        gmail=gmail_client,
         mcp=in_process_servers.get(server.id),
     )
     record, events, created = ledger.submit(
         server=server,
-        req=body,
-        caller_principal=caller,
+        req=req,
+        caller_principal=caller_principal,
         auto_approval_policy_id=auto_approval_policy_id,
         auto_approval_evaluation=auto_approval_evaluation,
     )
@@ -610,17 +636,51 @@ async def submit_tool_call(
             record.status,
             record.server_id,
             record.tool_name,
-            caller,
+            caller_principal,
             record.approval_policy_id,
             record.auto_approval_evaluation,
         )
     if record.status == ToolCallStatus.RUNNING:
-        auth_token = await _execution_auth(server, caller, oauth_store)
+        # An auto-approved operator_oauth call executes as an operator, not the agent (an agent has no
+        # operator token of its own): a static agent uses its configured `operator_subject`, an OAuth
+        # agent the operator it linked at connect. Everything else (in-process / static-credential
+        # servers) uses the caller's own resolved credential.
+        execution_principal = caller_principal
+        if _operator_oauth_enabled(server):
+            execution_principal = _agent_operator(caller_principal, static_agents, oauth_store) or caller_principal
+        auth_token = await _execution_auth(server, execution_principal, oauth_store)
         record = await _maybe_execute(record, server, ledger, hub, executor, auth_token)
-    return await _wait_terminal(ledger, record.tool_call_id, body.wait_for_ms)
+    return await _wait_terminal(ledger, record.tool_call_id, req.wait_for_ms)
 
 
-@router.get("/api/tool-calls")
+@agent_router.post("/api/tool-calls")
+async def submit_tool_call(
+    body: SubmitToolCallRequest,
+    request: Request,
+    settings: SettingsDep,
+    ledger: LedgerDep,
+    hub: HubDep,
+    executor: ExecutorDep,
+    oauth_store: OAuthStoreDep,
+    static_agents: StaticAgentsDep,
+    caller: CallerPrincipalDep,
+) -> ToolCallRecord:
+    return await submit_and_wait(
+        req=body,
+        caller_principal=caller,
+        caller_is_agent=any(caller == agent.agent for agent in static_agents),
+        static_agents=static_agents,
+        settings=settings,
+        ledger=ledger,
+        hub=hub,
+        executor=executor,
+        oauth_store=oauth_store,
+        in_process_servers=cast(InProcessServers, request.app.state.in_process_servers),
+        gmail_client=cast(GmailToolsClient | None, request.app.state.gmail_client),
+    )
+
+
+@agent_router.get("/api/tool-calls")
 async def list_tool_calls(
     ledger: LedgerDep,
     status: Annotated[list[ToolCallStatus] | None, Query()] = None,
@@ -631,7 +691,7 @@ async def list_tool_calls(
     return ledger.list(statuses=status, since=since, limit=limit, newest_first=newest_first)
 
 
-@router.get("/api/tool-calls/{tool_call_id}")
+@agent_router.get("/api/tool-calls/{tool_call_id}")
 async def get_tool_call(tool_call_id: str, ledger: LedgerDep) -> ToolCallRecord:
     return ledger.get(tool_call_id)
 
@@ -673,7 +733,10 @@ async def decide_approval(
         return ApprovalDecisionResponse(tool_call=record)
     pending = ledger.get(tool_call_id)
     server = _server_entry(settings, pending.server_id)
-    auth_token = await _execution_auth(server, _operator_principal(request), oauth_store)
+    # Only operator_oauth execution runs as the approving operator; other servers use their configured
+    # credential, so an operator subject isn't required to approve a call there.
+    operator_subject = _operator_subject(request) if _operator_oauth_enabled(server) else ""
+    auth_token = await _execution_auth(server, operator_subject, oauth_store)
     running, running_event = ledger.mark_running(tool_call_id)
     await hub.broadcast([running_event])
     finished = await _maybe_execute(running, server, ledger, hub, executor, auth_token)

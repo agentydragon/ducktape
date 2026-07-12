@@ -195,6 +195,7 @@ py_library(
         "//third_party/containers:rlocations",
         "//util:net",
         "//util:oci",
+        "//util/testing:asgi",
         "//util/testing:postgres",
         "@pypi//anyio",
         "@pypi//asyncpg",
@@ -206,7 +207,6 @@ py_library(
         "@pypi//sqlalchemy",
         "@pypi//starlette",
         "@pypi//testcontainers",
-        "@pypi//uvicorn",
     ],
 )
 
@@ -362,10 +362,9 @@ py_test(
         "//airlock/oauth:provider",
         "//mcp_infra:prefix",
         "//util:net",
-        "@pypi//cryptography",
+        "//util/testing:mock_oidc",
         "@pypi//fastmcp",
         "@pypi//httpx",
-        "@pypi//pyjwt",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",

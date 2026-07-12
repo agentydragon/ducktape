@@ -3,8 +3,12 @@
 # (launch-routine) and frames Haku's own UI (haku-ui) as a sandboxed cross-origin
 # iframe. It holds NO haku-state git credential (feedback/trace writes moved into
 # haku-ui). nginx serves the bundled SPA image and proxies API calls to localhost.
-# Access is gated by Authentik (agentydragon-only) via the proxy outpost — the app
-# has no native auth.
+# The app owns its auth: the operator browser logs in via Authentik OIDC
+# (operator_oidc -> signed session cookie, guarded by OperatorSessionMiddleware) and
+# agents authenticate to /mcp via MultiAuth (OIDCProxy DCR + static bearer). The
+# forward-auth proxy outpost that used to gate haku.allegedly.works is retired; the
+# HTTPRoute now points straight at this Service (single-user access is Authentik's
+# application access policy on the console's OAuth2 providers).
 #
 # Trust boundary: runs in its OWN `haku-console` namespace, NOT haku-sandbox. As
 # reviewed/released ducktape code it sits outside Haku's RBAC (Haku can't read its
@@ -22,6 +26,9 @@ metadata:
   namespace: haku-console
   labels:
     app.kubernetes.io/name: haku-console
+  annotations:
+    # Roll the pod when the TF-minted OAuth client secrets rotate (haku-console-oidc).
+    reloader.stakater.com/auto: "true"
 spec:
   replicas: 2
   strategy:
@@ -109,7 +116,10 @@ spec:
                   key: dbname
             - name: HAKU_CONSOLE_DATABASE_URL
               value: "postgresql+psycopg://$(HAKU_CONSOLE_DB_USER):$(HAKU_CONSOLE_DB_PASSWORD)@$(HAKU_CONSOLE_DB_HOST):$(HAKU_CONSOLE_DB_PORT)/$(HAKU_CONSOLE_DB_NAME)"
-            - name: HAKU_CONSOLE_AGENT_API_TOKEN
+            # Haku's own backend static agent: the `haku` entry in config.yaml's `static_agents`
+            # references these two env vars — the bearer (below) and the operator subject it acts as
+            # (further down). The agent id `haku` is the audit caller_principal and /mcp client_id.
+            - name: HAKU_CONSOLE_AGENT_HAKU_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: haku-console-agent-api
@@ -131,6 +141,72 @@ spec:
             # restart needed on rotation.
             - name: HAKU_CONSOLE_GOOGLE_TOKEN_DIR
               value: /etc/haku-console-google-token
+            # Operator-facing origin, used to build the deep-link `url` the /mcp promise +
+            # read tools return (https://haku.allegedly.works/tool-calls/<id>, Authentik-gated).
+            - name: HAKU_CONSOLE_UI_BASE_URL
+              value: https://haku.allegedly.works
+            # The operator the `haku` static agent acts as when it reaches an operator_oauth server:
+            # reflecting grocy-sf/tana-rw/kubectl schemas and executing its own auto-approved
+            # operator_oauth calls (a machine agent has no operator token of its own). The value is the
+            # operator's opaque OIDC subject (the associations key); TF injects it from the Authentik
+            # user id into haku-console-oidc, never a username.
+            - name: HAKU_CONSOLE_AGENT_HAKU_OPERATOR
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-oidc
+                  key: operator_subject
+            # Agent-facing MCP OAuth: an Authentik-backed OIDCProxy (DCR + PKCE) for claude.ai /
+            # the `claude` CLI on /mcp, composed with the static agent bearer via MultiAuth. The
+            # provider + client secret are minted by tf/gitops/agent-machine-access (application
+            # slug `haku-console-mcp`, redirect https://haku.allegedly.works/mcp/auth/callback).
+            # public_base_url is the console origin (root, not /mcp) — matching airlock; FastMCP's
+            # OIDCProxy is mount-aware for its callback.
+            - name: HAKU_CONSOLE_MCP_OAUTH__OIDC_ISSUER
+              value: https://auth.allegedly.works/application/o/haku-console-mcp/
+            - name: HAKU_CONSOLE_MCP_OAUTH__PUBLIC_BASE_URL
+              value: https://haku.allegedly.works
+            - name: HAKU_CONSOLE_MCP_OAUTH__OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-oidc
+                  key: mcp_client_id
+            - name: HAKU_CONSOLE_MCP_OAUTH__OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-oidc
+                  key: mcp_client_secret
+            # OIDCProxy dynamic-client-registration + token state, shared across the 2 replicas so
+            # a claude.ai DCR registration survives a re-schedule (the file default would strand it
+            # per-pod). Backed by the console's own Postgres (py-key-value's PostgreSQLStore
+            # auto-creates its table), so there is no separate valkey to run. The URL is the asyncpg
+            # form (plain postgresql://), NOT the SQLAlchemy postgresql+psycopg:// the ORM uses.
+            - name: HAKU_CONSOLE_MCP_OAUTH_PERSISTENCE__KIND
+              value: postgres
+            - name: HAKU_CONSOLE_MCP_OAUTH_PERSISTENCE__URL
+              value: "postgresql://$(HAKU_CONSOLE_DB_USER):$(HAKU_CONSOLE_DB_PASSWORD)@$(HAKU_CONSOLE_DB_HOST):$(HAKU_CONSOLE_DB_PORT)/$(HAKU_CONSOLE_DB_NAME)"
+            # Operator browser login (Authentik OIDC), replacing the forward-auth proxy outpost:
+            # the console authenticates the operator itself (authorization-code -> signed session
+            # cookie) and OperatorSessionMiddleware guards /api/*. Provider + secrets minted by
+            # tf/gitops/agent-machine-access (application slug `haku-console`, redirect
+            # https://haku.allegedly.works/auth/callback). Setting this activates the app's own
+            # auth — it lands together with the HTTPRoute swap that removes the outpost.
+            - name: HAKU_CONSOLE_OPERATOR_OIDC__ISSUER
+              value: https://auth.allegedly.works/application/o/haku-console/
+            - name: HAKU_CONSOLE_OPERATOR_OIDC__CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-oidc
+                  key: operator_client_id
+            - name: HAKU_CONSOLE_OPERATOR_OIDC__CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-oidc
+                  key: operator_client_secret
+            - name: HAKU_CONSOLE_OPERATOR_OIDC__SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-oidc
+                  key: operator_session_secret
           resources:
             requests:
               cpu: 50m
