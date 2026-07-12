@@ -10,6 +10,16 @@ describe("kubectlPreviews", () => {
     ).not.toBeNull();
   });
 
+  it("renders pods_log target and options", () => {
+    expect(
+      renderPreview(
+        kubectlPreviews.pods_log,
+        { name: "api-0", namespace: "prod", container: "api", previous: true, tail: 50 },
+        "detailed"
+      )
+    ).not.toBeNull();
+  });
+
   it("renders resources_create_or_update in both variants (compact clamps the manifest)", () => {
     const manifest = Array.from({ length: 20 }, (_, i) => `line-${i}: value`).join("\n");
     for (const variant of ["compact", "detailed"] as const) {

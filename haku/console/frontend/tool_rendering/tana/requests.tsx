@@ -38,12 +38,19 @@ const zMoveNodeArgs = z.object({
   referenceNodeId: z.string().optional(),
   keepSourceReference: z.boolean().default(false),
 });
+const zSetFieldOptionArgs = z.object({
+  nodeId: z.string(),
+  attributeId: z.string(),
+  optionId: z.string(),
+  mode: z.enum(["replace", "append"]).default("replace"),
+});
 
 type ImportTanaPasteArgs = z.infer<typeof zImportTanaPasteArgs>;
 type GetOrCreateCalendarNodeArgs = z.infer<typeof zGetOrCreateCalendarNodeArgs>;
 type TrashNodeArgs = z.infer<typeof zTrashNodeArgs>;
 type EditNodeArgs = z.infer<typeof zEditNodeArgs>;
 type MoveNodeArgs = z.infer<typeof zMoveNodeArgs>;
+type SetFieldOptionArgs = z.infer<typeof zSetFieldOptionArgs>;
 
 function tanaNodeUrl(nodeId: string): string {
   return `https://app.tana.inc?nodeid=${encodeURIComponent(nodeId)}`;
@@ -175,6 +182,23 @@ function MoveNodePreview({ args }: PreviewProps<MoveNodeArgs>) {
   );
 }
 
+function SetFieldOptionPreview({ args }: PreviewProps<SetFieldOptionArgs>) {
+  const previews = useTanaNodePreviews([args.nodeId, args.attributeId, args.optionId]);
+  return (
+    <Stack gap={4}>
+      <Group gap={6}>
+        <TanaNodeLink nodeId={args.nodeId} previews={previews} />
+        <Text c="dimmed">field</Text>
+        <TanaNodeLink nodeId={args.attributeId} previews={previews} />
+      </Group>
+      <Group gap={6}>
+        <Badge variant="outline">{args.mode}</Badge>
+        <TanaNodeLink nodeId={args.optionId} previews={previews} />
+      </Group>
+    </Stack>
+  );
+}
+
 export const tanaPreviews = {
   import_tana_paste: definePreview(zImportTanaPasteArgs, ImportTanaPastePreview, () => ({
     text: "Tana: Import content",
@@ -185,4 +209,7 @@ export const tanaPreviews = {
   trash_node: definePreview(zTrashNodeArgs, TrashNodePreview, () => ({ text: "Tana: Trash node", destructive: true })),
   edit_node: definePreview(zEditNodeArgs, EditNodePreview, () => ({ text: "Tana: Edit node" })),
   move_node: definePreview(zMoveNodeArgs, MoveNodePreview, () => ({ text: "Tana: Move node" })),
+  set_field_option: definePreview(zSetFieldOptionArgs, SetFieldOptionPreview, (a) => ({
+    text: `Tana: ${a.mode === "append" ? "Append" : "Set"} field option`,
+  })),
 } satisfies Record<string, ToolPreview>;

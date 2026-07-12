@@ -11,6 +11,7 @@ describe("tanaPreviews", () => {
       ["trash_node", { nodeId: "node" }],
       ["edit_node", { nodeId: "node", name: { old_string: "Old", new_string: "New" } }],
       ["move_node", { nodeId: "node", targetNodeId: "target", position: "end", keepSourceReference: false }],
+      ["set_field_option", { nodeId: "node", attributeId: "status", optionId: "done", mode: "replace" }],
     ];
     for (const [tool, args] of cases) {
       for (const variant of ["compact", "detailed"] as const) {

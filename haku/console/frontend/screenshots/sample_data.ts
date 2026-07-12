@@ -529,17 +529,15 @@ const CUSTOM_PREVIEW_SAMPLES = [
   },
 ] satisfies (RegisteredToolPreviewFixture & { title: string; result?: StoredToolResult })[];
 
-const FALLBACK_PREVIEW_SAMPLE: PreviewSample = {
-  // No widget for this (server, tool), arguments or result — the generic raw-JSON fallbacks
-  // (compact clamps the arguments; the result shows only in detailed, as a labelled field).
+const SHOPPING_REMOVE_PREVIEW_SAMPLE = {
   title: "Remove purchased shopping-list items",
   serverId: "grocy-sf",
   toolName: "shopping_list_items_remove",
-  args: { ids: [3, 7, 12, 15, 21, 34, 42, 55] },
+  args: { item_ids: [3, 7, 12, 15, 21, 34, 42, 55] },
   result: callToolResult([
     { kind: "ok", item_id: 3, product_name: "Milk", amount: 1, qu_name: "Carton" },
     { kind: "ok", item_id: 7, product_name: "Spinach", amount: 200, qu_name: "Gram" },
   ]),
-};
+} satisfies RegisteredToolPreviewFixture & { title: string; result: StoredToolResult };
 
-export const PREVIEW_SAMPLES: PreviewSample[] = [...CUSTOM_PREVIEW_SAMPLES, FALLBACK_PREVIEW_SAMPLE];
+export const PREVIEW_SAMPLES: PreviewSample[] = [...CUSTOM_PREVIEW_SAMPLES, SHOPPING_REMOVE_PREVIEW_SAMPLE];

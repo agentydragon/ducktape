@@ -8,10 +8,6 @@ import { PREVIEW_SAMPLES, SAMPLE_PENDING, SAMPLE_TOOL_CALLS, sampleRecentToolCal
 
 const CUSTOM_HISTORY_IDS = new Set(["tc_1", "tc_2", "tc_3"]);
 const CUSTOM_PENDING_IDS = new Set(["tc_p2"]);
-// Gallery entries whose *arguments* intentionally hit the raw-JSON fallback (no request widget).
-const INTENTIONAL_ARGS_FALLBACKS = new Set(["grocy-sf.shopping_list_items_remove"]);
-// The one gallery entry whose *result* intentionally hits the raw-JSON result fallback.
-const INTENTIONAL_RESULT_FALLBACK = "grocy-sf.shopping_list_items_remove";
 
 function expectCustomPreview(serverId: string, toolName: string, args: Record<string, unknown>): void {
   for (const variant of ["compact", "detailed"] as const) {
@@ -34,18 +30,13 @@ describe("screenshot tool-call fixtures", () => {
     }
   });
 
-  it("dispatches every gallery fixture except the intentional raw-JSON examples", () => {
+  it("dispatches every gallery fixture", () => {
     for (const { serverId, toolName, args } of PREVIEW_SAMPLES) {
-      const key = `${serverId}.${toolName}`;
-      if (INTENTIONAL_ARGS_FALLBACKS.has(key)) {
-        expect(toolPreview(serverId, toolName, args, "compact")).toBeNull();
-      } else {
-        expectCustomPreview(serverId, toolName, args);
-      }
+      expectCustomPreview(serverId, toolName, args);
     }
   });
 
-  it("dispatches every gallery result payload to a custom result preview, except the intentional fallback", () => {
+  it("dispatches every gallery result payload to a custom result preview", () => {
     const withResults = PREVIEW_SAMPLES.filter(({ result }) => result != null);
     // Covers every server with a result widget plus both fallback paths.
     expect(withResults.length).toBeGreaterThanOrEqual(5);
@@ -55,11 +46,7 @@ describe("screenshot tool-call fixtures", () => {
       expect(payload, key).not.toBeNull();
       for (const variant of ["compact", "detailed"] as const) {
         const node = toolResultPreview(serverId, toolName, payload, variant);
-        if (key === INTENTIONAL_RESULT_FALLBACK) {
-          expect(node, key).toBeNull();
-        } else {
-          expect(node, `${key} (${variant})`).not.toBeNull();
-        }
+        expect(node, `${key} (${variant})`).not.toBeNull();
       }
     }
   });

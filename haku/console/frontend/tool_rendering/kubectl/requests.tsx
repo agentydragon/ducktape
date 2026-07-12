@@ -33,10 +33,18 @@ const zPodsDeleteArgs = z.object({
   name: z.string(),
   namespace: z.string().optional(),
 });
+const zPodsLogArgs = z.object({
+  name: z.string(),
+  namespace: z.string().optional(),
+  container: z.string().optional(),
+  previous: z.boolean().optional(),
+  tail: z.number().int().optional(),
+});
 
 type ResourcesCreateOrUpdateArgs = z.infer<typeof zResourcesCreateOrUpdateArgs>;
 type ResourcesDeleteArgs = z.infer<typeof zResourcesDeleteArgs>;
 type PodsDeleteArgs = z.infer<typeof zPodsDeleteArgs>;
+type PodsLogArgs = z.infer<typeof zPodsLogArgs>;
 
 function ResourcesApplyPreview({ args, variant }: PreviewProps<ResourcesCreateOrUpdateArgs>) {
   const resource = variant === "compact" ? clampBlock(args.resource, 3) : args.resource;
@@ -91,6 +99,21 @@ function PodsDeletePreview({ args }: PreviewProps<PodsDeleteArgs>) {
   return <DeleteTargetPreview kind="Pod" name={args.name} namespace={args.namespace} gracePeriodSeconds={undefined} />;
 }
 
+function PodsLogPreview({ args }: PreviewProps<PodsLogArgs>) {
+  return (
+    <Stack gap={2}>
+      <Group gap={6} className="haku-shell-mono">
+        <Text fw={600}>{args.name}</Text>
+        {args.namespace && <Text c="dimmed">in {args.namespace}</Text>}
+        {args.container && <Text c="dimmed">container {args.container}</Text>}
+      </Group>
+      <Text size="sm" c="dimmed">
+        {args.previous ? "Previous container logs" : "Current logs"} · last {args.tail ?? 100} lines
+      </Text>
+    </Stack>
+  );
+}
+
 /** Per-tool preview widgets for the `kubectl-passthrough-mcp` server's highest-stakes tools
  * (apply and delete). */
 export const kubectlPreviews = {
@@ -105,4 +128,5 @@ export const kubectlPreviews = {
     text: "kubectl: Delete Pod",
     destructive: true,
   })),
+  pods_log: definePreview(zPodsLogArgs, PodsLogPreview, () => ({ text: "kubectl: View Pod logs" })),
 } satisfies Record<string, ToolPreview>;

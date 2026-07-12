@@ -85,6 +85,40 @@ describe("grocyResultPreviews", () => {
     }
   });
 
+  it("renders Grocy read and shopping-list removal results", () => {
+    const cases = [
+      [
+        grocyResultPreviews.stock_get,
+        [
+          {
+            product_name: "Oats",
+            amount: 500,
+            amount_opened: 0,
+            qu_name: "Gram",
+            location_name: "Pantry",
+            best_before_date: null,
+          },
+        ],
+      ],
+      [grocyResultPreviews.products_list, [{ id: 1, name: "Oats" }]],
+      [grocyResultPreviews.quantity_units_list, [{ id: 2, name: "Gram", name_plural: "Grams" }]],
+      [grocyResultPreviews.get_system_info, { grocy_version: "4.5.0" }],
+      [
+        grocyResultPreviews.shopping_list_get,
+        {
+          name: "Weekly",
+          description: null,
+          items: [{ item_id: 3, product_name: "Oats", amount: 2, qu_name: "Pack", note: null, done: false }],
+        },
+      ],
+      [
+        grocyResultPreviews.shopping_list_items_remove,
+        [{ kind: "ok", item_id: 3, product_name: "Oats", amount: 2, qu_name: "Pack" }],
+      ],
+    ] as const;
+    for (const [preview, result] of cases) expect(renderResultPreview(preview, result, "detailed")).not.toBeNull();
+  });
+
   it("returns null for a malformed ok row instead of rendering it as a failure", () => {
     // kind "ok" without the ok-row fields must fail the whole parse (→ raw JSON fallback),
     // not fall through to the failed-row branch and paint a success red.
