@@ -476,6 +476,7 @@ js_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//:node_modules/react-dom",
+        "//haku/console/frontend/tool_previews",
     ],
 )
 
@@ -547,6 +548,7 @@ tsc_bin.tsc_test(
         "mcp_tool_schema.test.ts",
         "open_external.test.ts",
         "routing.test.ts",
+        "screenshots/sample_data.test.ts",
         "screenshot_capture.test.ts",
         "tool_call_decision.test.ts",
         # Ambient types for the @tabler/icons-react per-icon subpath imports (icons.tsx).
@@ -586,6 +588,7 @@ vitest_bin.vitest_test(
         "routing.test.ts",
         "screenshot_capture.test.ts",
         "tool_call_decision.test.ts",
+        "screenshots/sample_data.test.ts",
         "vitest.config.ts",
         ":approval_state",
         ":bridge",
@@ -596,6 +599,7 @@ vitest_bin.vitest_test(
         ":routing",
         ":screenshot_capture",
         ":tool_call_decision",
+        ":screenshot_harness_lib",
         "//:node_modules",
         "//:node_modules/@haku/console-bridge",
         "//haku/console/frontend/tool_previews:gmail_test",

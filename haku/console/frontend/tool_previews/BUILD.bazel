@@ -128,6 +128,7 @@ js_library(
         ":tana",
         ":variant",
         "//:node_modules/react",
+        "//:node_modules/zod",
     ],
 )
 

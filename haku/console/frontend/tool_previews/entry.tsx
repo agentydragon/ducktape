@@ -12,8 +12,8 @@ import type { PreviewProps, PreviewVariant } from "./variant.tsx";
  * Delete Pod"). `destructive` colors it as a danger cue (irreversible deletes). */
 export type ToolAction = { text: string; destructive?: boolean };
 
-export type ToolPreview = {
-  schema: z.ZodTypeAny;
+export type ToolPreview<S extends z.ZodTypeAny = z.ZodTypeAny> = {
+  schema: S;
   // Stored with `never` args: the schema-specific type is checked at the `definePreview` call
   // site and erased here so a heterogeneous `Record<string, ToolPreview>` holds every tool's
   // entry. `renderPreview`/`describeAction` are the one place that feed them the parsed output.
@@ -30,7 +30,7 @@ export function definePreview<S extends z.ZodTypeAny>(
   schema: S,
   Widget: (props: PreviewProps<z.infer<S>>) => ReactNode,
   describe?: (args: z.infer<S>) => ToolAction
-): ToolPreview {
+): ToolPreview<S> {
   const render = (args: z.infer<S>, variant: PreviewVariant): ReactNode => <Widget args={args} variant={variant} />;
   return { schema, render: render as ToolPreview["render"], describe: describe as ToolPreview["describe"] };
 }

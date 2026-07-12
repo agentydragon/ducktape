@@ -28,6 +28,7 @@ from mcp_infra.authentik_auth.auth import (
     AuthentikExchangeAuth,
     ResilientOIDCProxy,
     _cache_key,
+    _upstream_access_token,
     build_authentik_auth,
 )
 
@@ -366,6 +367,35 @@ async def test_exchange_auth_works_without_store() -> None:
         assert fetch.call_count == 1
 
     await auth.aclose()
+
+
+def test_upstream_access_token_uses_originating_request_header() -> None:
+    with (
+        patch(
+            "mcp_infra.authentik_auth.auth.get_http_headers", return_value={"authorization": "Bearer operator-token"}
+        ),
+        patch(
+            "mcp_infra.authentik_auth.auth.get_access_token", return_value=SimpleNamespace(token="stale-haku-token")
+        ) as parsed_access,
+    ):
+        assert _upstream_access_token() == "operator-token"
+    parsed_access.assert_not_called()
+
+
+def test_upstream_access_token_falls_back_outside_http_request() -> None:
+    with (
+        patch("mcp_infra.authentik_auth.auth.get_http_headers", return_value={}),
+        patch("mcp_infra.authentik_auth.auth.get_access_token", return_value=SimpleNamespace(token="background-token")),
+    ):
+        assert _upstream_access_token() == "background-token"
+
+
+def test_upstream_access_token_rejects_malformed_originating_header() -> None:
+    with (
+        patch("mcp_infra.authentik_auth.auth.get_http_headers", return_value={"authorization": "Basic credentials"}),
+        pytest.raises(RuntimeError, match="malformed Authorization header"),
+    ):
+        _upstream_access_token()
 
 
 # ── ResilientOIDCProxy tests ──────────────────────────────────────────────

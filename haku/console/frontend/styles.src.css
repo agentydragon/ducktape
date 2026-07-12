@@ -256,6 +256,26 @@
   padding: 0.75rem;
 }
 
+/* The card's identity header: title + action line + rationale/error subheads. The status badge
+   and Brief/Full selector float top-right (`haku-card-head-actions`) so the text wraps under them
+   on the first line(s) and reclaims the full card width below, rather than every line being
+   narrowed to leave the badge's column empty. `flow-root` contains the float within the header. */
+.haku-card-head {
+  display: flow-root;
+}
+
+.haku-card-head-actions {
+  float: right;
+  margin-left: var(--mantine-spacing-sm);
+  margin-bottom: 0.35rem;
+}
+
+/* The tight vertical rhythm the flex Stack used to give the stacked text lines (the float is the
+   first child, so the title — the first non-float line — takes no top margin). */
+.haku-card-head > :not(.haku-card-head-actions) + :not(.haku-card-head-actions) {
+  margin-top: 2px;
+}
+
 .haku-shell-countdown {
   display: flex;
   flex-direction: column;

@@ -483,13 +483,264 @@ user session cleanly kills sway + Steam + waybar and drops back to the greeter
 (field 3 is USER). The `systemd --user` manager session (no seat) lingers
 benignly.
 
+## 2026-07-11: GDM greeter freeze + two-greeter accumulation
+
+**Symptom**: GDM seat-game greeter freezes on login; display stays frozen with each
+re-attempt; display-manager restart required to recover.
+
+**Device topology** (confirmed via udevadm, /sys/class/drm):
+
+| Device | Driver     | PCI     | Seat      | Notes                                                     |
+| ------ | ---------- | ------- | --------- | --------------------------------------------------------- |
+| card0  | nvidia     | 01:00.0 | seat-game | Display GPU; DP-1 connected                               |
+| card1  | virtio-pci | 00:01.0 | seat0     | SPICE virtual display                                     |
+| card2  | nvidia     | 02:00.0 | seat0     | Compute GPU; `mutter-device-ignore`; no connected display |
+
+(card1 lands numerically "between" the two NVIDIA cards because DRM enumeration
+follows driver-load order, not PCI address order.)
+
+**Phase 1 — original single-greeter freeze (21:29 UTC):**
+
+- Only ONE greeter was running at this point (gnome-shell started by GDM 3305 at 20:45).
+- User authenticated; GDM emitted `session-opened` at 21:29:25; no
+  `ReadyForSessionToStart` came back within 60 s → "Session was cancelled" at 21:30:26.
+- sway-session.log has **zero seat-game entries** — sway never launched. The block is
+  entirely at the GDM greeter level (gnome-shell never calling `ReadyForSessionToStart`).
+- `enable-animations=false` dconf is correctly applied (verified earlier) but apparently
+  insufficient to make gnome-shell skip the render-loop dependency for the
+  ReadyForSessionToStart callback. Frame clock stall (NVIDIA vblank not delivered?) or
+  some other render-side block is the residual unknown.
+- Sunshine (PID 233050) was later found running as `gdm-greeter-3` inside the greeter
+  session — its role in the freeze is unconfirmed (was not present during the 21:29
+  attempt per the log timeline, but appeared afterward).
+
+**Phase 2 — two-greeter accumulation (from 22:15 onward):**
+
+After the 21:30 session cancellation, GDM killed the PAM session worker (PID 97927) but
+**left gnome-shell 3455 running**. It sat in a zombie/frozen state for 45 minutes.
+
+At 22:15:36 gnome-shell 3455 finally disconnected from GDM. The seat-game display (c2)
+had two internal session objects associated with it — one for the greeter program
+(gnome-shell 3455) and one for the gdm-launch-environment wrapper (PID 3321). Both
+dying in the same event loop tick caused two independent `GdmDisplay: initiating
+display self-destruct` sequences, and `GdmLocalDisplayFactory` created a new seat-game
+display for each one:
+
+1. gnome-shell 3455 disconnects → `GdmDisplay: Greeter exited` → self-destruct #1 →
+   factory adds DISPLAY_NEW_1 (status: PREPARING)
+2. Self-destruct #1 sends SIGTERM to gdm-launch-environment worker PID 3321
+3. PID 3321 dies → `GdmLaunchEnvironment: conversation stopped` → `GdmDisplay: Greeter
+stopped` → self-destruct #2 → factory adds DISPLAY_NEW_2
+
+`GdmLocalDisplayFactory` has no dedup: it creates a new display for each "seat failed"
+signal without checking whether one is already being prepared for the same seat. Both
+new displays land on seat-game → two simultaneous greeter gnome-shell processes both
+opening card0 for KMS.
+
+```
+# loginctl during the two-greeter state
+c5 60578 gdm-greeter   seat-game 240655 greeter
+c6 60580 gdm-greeter-2 seat-game 240663 greeter
+# Both gnome-shell PIDs have card0 open with identical flags (02104002)
+```
+
+Only one can hold the DRM master token; the other can't render. The display appears
+frozen because whichever gnome-shell lost the DRM master token can't display anything.
+
+The root of the cascade is the original 21:29 freeze: gnome-shell 3455 was never killed
+after the session cancellation, so when it eventually died it triggered both cleanup paths
+simultaneously. If GDM had killed the greeter at 21:30 along with the session worker, the
+two paths would have died together under a controlled `finish display` and no new displays
+would have been created (same as how the seat0 background display was cleanly destroyed at
+20:46 without spawning a replacement).
+
+**Recovery**: `systemctl restart display-manager` (kills seat0 sway session; user
+must reconnect SPICE). Alternatively kill one duplicate first:
+`loginctl terminate-session c6` — if GDM doesn't respawn it, the remaining greeter
+is clean.
+
+### 2026-07-11 23:09 — non-destructive recovery: park the seat (WORKED)
+
+By 22:39 the two-greeter pile had self-healed to a single greeter: one gnome-shell
+exited, both self-destruct paths fired, but `create_display`'s dedup
+("Ensure we don't create the same display more than once",
+`gdm-local-display-factory.c:960` in 49.2) caught the second request and reused the
+surviving session (journal: "session c5 found, activating").
+
+To drop the remaining (frozen) greeter **without touching seat0**, we made seat-game
+non-graphical so GDM has nothing to respawn onto. Source facts (GDM 49.2 +
+systemd 258, clones in `/code/github.com/{GNOME/gdm,systemd/systemd}`):
+
+- Both greeter-restart paths (`GDM_DISPLAY_FAILED` and `GDM_DISPLAY_FINISHED` in
+  `on_display_status_changed`) go through `ensure_display_for_seat()`, which for
+  non-seat0 seats returns early when `sd_seat_can_graphical() == 0`. With
+  CanGraphical=no, respawn is impossible regardless of how the greeter dies.
+- `on_seat_properties_changed` (CanGraphical → false) and `on_seat_removed` both call
+  `delete_display()` → display store unref → `gdm_display_dispose` → SIGTERM to the
+  launch-environment process group. So flipping CanGraphical also _initiates_ a clean
+  teardown.
+- **Gotcha**: logind never clears a live Device's master flag —
+  `manager_add_device()` (`logind-core.c`): `/* we support adding master-flags, but
+not removing them */`. Removing only `TAG-="master-of-seat"` changes udev state but
+  logind keeps `CanGraphical=yes` forever. The flag only clears when the Device is
+  **freed**, which `manager_process_seat_device()` does when the device loses the
+  `seat` current-tag (sticky `TAGS=` keep the uevent routable to logind's tag-filtered
+  monitor — that's the designed purpose of sticky tags).
+
+Procedure (as root on wyrm2):
+
+```bash
+cat > /run/udev/rules.d/98-park-seat-game.rules <<'EOF'
+SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:01:00.0", TAG-="seat", TAG-="master-of-seat"
+EOF
+udevadm control --reload
+udevadm trigger --action=change --subsystem-match=drm \
+  --parent-match=/sys/devices/pci0000:00/0000:00:1c.0/0000:01:00.0
+```
+
+Result: logind freed the card0 Device, seat-game disappeared, GDM logged
+`delete_display` → SIGTERM to greeter pgroup → session worker exited status 0 →
+greeter dyn-user deallocated — and **no** "display for seat seat-game requested"
+afterward. seat0 sway session untouched; no process holds `/dev/dri/card0`.
+
+**Unpark** (spawns one fresh greeter — do this when ready to debug the freeze):
+
+```bash
+rm /run/udev/rules.d/98-park-seat-game.rules
+udevadm control --reload
+udevadm trigger --action=change --subsystem-match=drm \
+  --parent-match=/sys/devices/pci0000:00/0000:00:1c.0/0000:01:00.0
+```
+
+The rule lives in `/run`, so a reboot also unparks. `ID_SEAT` stays `seat-game`
+(from `/etc/udev/rules.d/72-seat-game.rules`), so card0 never migrates to seat0
+where sway could hotplug-grab it.
+
+**Next diagnostic steps (not yet done):**
+
+- With a clean single greeter, attach a D-Bus monitor for the `ReadyForSessionToStart`
+  signal: `dbus-monitor --system "type=method_call,interface=org.gnome.DisplayManager.Session"`.
+- Also send `kill -USR1 <gnome-shell-pid>` immediately after `session-opened` to
+  capture a JS backtrace of where gnome-shell is blocked.
+- Check if disabling Sunshine in the greeter config changes the freeze behavior.
+
+### 2026-07-11 23:24 — freeze caught live: it's the conflicting-session dialog
+
+Fresh greeter (c7, gnome-shell 486153) after unparking. Login attempt at 23:24
+(GNOME session type): auth succeeded, `session-opened` emitted 23:24:17, then no
+`GdmManager: Will start session when ready` — the known freeze, caught with
+instrumentation attached this time.
+
+Live evidence:
+
+- `eu-stack -p 486153`: main thread idle in `ppoll` inside `g_main_loop_run` —
+  **not** wedged in any NVIDIA/DRM ioctl. All threads idle.
+- In-process JS dump (`gdb -p 486153 -batch -ex 'call (void) gjs_dumpstack()'` —
+  non-fatal, unlike the SIGTRAP/SIGABRT crash dumper; note gnome-shell has **no**
+  SIGUSR1 stack handler, the earlier SIGUSR1 plan was wrong): single frame at
+  `init.js:21` (main-loop hook). JS ran to completion and is waiting for an event.
+- No JS errors in the greeter journal.
+
+Root cause (gnome-shell 49.4 `js/gdm/loginDialog.js`): `_onSessionOpened` calls
+`_findConflictingSession(sessionId)`, which scans logind for any wayland/x11
+session in state active/online **owned by the same user**. If found, it opens
+`ConflictingSessionDialog` ("user is already logged in — force stop?") and returns
+**without** calling `StartSessionWhenReady`, waiting for dialog input.
+`_CONFLICTING_SESSION_DIALOG_TIMEOUT = 60` — after 60 s the dialog closes and the
+auth prompt resets; GDM's own 60 s `session-opened` timer fires around the same
+time → "Session was cancelled".
+
+The seat0 sway/SPICE session (user agentydragon, type wayland, active since 20:46)
+has been running during **every** freeze — so every seat-game login raised this
+dialog. Whether the dialog actually painted on the FV43U is the remaining question:
+if it did not (stale login-prompt frame stays on screen), there is _also_ a
+repaint/frame-clock issue; if it did, the "freeze" was just an unanswered dialog.
+
+Consequence: to log into seat-game as the same user, either answer the dialog
+(force-stop kills the seat0 session) or log out of the seat0 sway session first —
+then no conflict exists and the login should proceed directly.
+
+### 2026-07-11 — greetd ruled out for seat-game
+
+Considered swapping seat-game's greeter to greetd (no conflict check). Rejected after
+reading greetd source (`/code/github.com/kennylevinsen/greetd`):
+
+- **Hardcoded seat**: `greetd/src/session/worker.rs:216` puts `XDG_SEAT=seat0` in the
+  PAM env for every session it starts — no config override. greetd can only ever
+  create seat0 sessions; it cannot target seat-game.
+- **VT-based**: `greetd/src/terminal/mod.rs` drives sessions via `KDGRAPHICS`/`KDTEXT`
+  ioctls on `/dev/ttyN`. seat-game has `CAN_TTY=0` (no VTs), so there is no terminal
+  for greetd to manage there.
+
+greetd is single-seat/seat0/VT-oriented. (Note: a later source review found SDDM and
+LightDM _do_ support per-logind-seat multi-seat and have no same-user veto — see
+<greeter_multiseat_research.md>. Only greetd is disqualified on the VT/seat0 axis.)
+Options that remain, to run two simultaneous same-machine graphical sessions:
+
+1. **Separate user for the gaming seat** (e.g. `games`): zero patching. GDM's multi-seat
+   greeter is _designed_ for two different users at once — no conflict dialog fires
+   because `_findConflictingSession` matches only same-user sessions. Cost: a second
+   home/config.
+2. **Patch the gnome-shell greeter**: make `_findConflictingSession`
+   (`js/gdm/loginDialog.js`) skip sessions on a different `Seat` than the greeter's.
+   Keeps same-user-both-seats. Cost: a gnome-shell rebuild (the JS lives in a gresource
+   bundle, so it's a source patch + repackage, not a drop-in file).
+3. **Greeterless autologin on seat-game**: a custom launcher (PAM + `pam_systemd` with
+   `XDG_SEAT=seat-game`) that execs sway directly, with GDM no longer managing that seat.
+   GDM has no per-seat exclude, so this means taking seat-game out of GDM's view — most
+   bespoke of the three.
+
+### 2026-07-12 — decision: swap GDM → SDDM (staged, switch pending)
+
+Chose SDDM over the alternatives. Rationale from <greeter_multiseat_research.md>: SDDM
+does per-logind-seat multi-seat, sets `XDG_SEAT` per seat, gates VT usage on seat0 (so
+the VT-less seat-game is fine), supports a Wayland greeter, and — unlike GDM — has **no
+same-user conflict check**. So the same user can hold a live session on seat0 (SPICE)
+and seat-game (physical) at once with no dialog. The seat-game session is sway (no fixed
+D-Bus names), so it never collides with the seat0 GNOME session on the shared per-user
+bus.
+
+Staged in `nix/nixos/hosts/wyrm2/default.nix`:
+
+- `services.displayManager.gdm.enable = lib.mkForce false` (gdm.enable is set in the
+  shared `gui.nix`; force-disabled here so other hosts keep GDM).
+- `services.displayManager.sddm = { enable = true; wayland.enable = true; }`.
+- Removed the GDM-greeter dconf tweaks (idle-delay=0, enable-animations=false).
+
+Validated at eval only (no switch yet): resolved `gdm.enable=false`,
+`sddm.enable=true`, `sddm.wayland.enable=true`, and the `display-manager` unit's start
+script references `sddm`. Two build hiccups were **unrelated infra**, not this change:
+`nixos-rebuild` didn't pass the `fetch-closure` experimental feature; then the root-only
+attic netrc (`/run/secrets/rendered/attic-netrc`) gave a 401 to a non-root eval. The
+real `sudo nixos-rebuild switch` runs as root and reads that netrc, so gaffer/attic
+fetch is fine there.
+
+**Switch is deferred — the user will run it.** `sudo nixos-rebuild switch --flake
+~/code/ducktape#wyrm2`. It restarts display-manager → the seat0 SPICE desktop dies and
+SDDM comes up. A failed build aborts before activation (safe); root SSH survives
+regardless. Revert = uncomment the GDM lines + rebuild.
+
+**Open risks to check after the switch:**
+
+- **SDDM Wayland greeter on the NVIDIA seat-game** — unverified. The greeter compositor
+  (`Wayland.CompositorCommand`, default weston) must acquire DRM master as a
+  `greeter`-class session on card0. If it won't come up, fall back to per-seat autologin
+  (skip the greeter and launch sway directly) or SDDM's X11 greeter.
+- **No-blank for the FV43U KVM** — the GDM `idle-delay=0` guarantee is gone. If the KVM
+  reverts to USB-C because the seat-game greeter blanks, add an equivalent no-DPMS to the
+  SDDM greeter compositor / sway `swayidle`.
+
 ## Open questions
 
+- **Did the ConflictingSessionDialog ever render on the physical display?** If not,
+  there is a separate repaint stall in the greeter (frame-clock / NVIDIA), on top of
+  the dialog logic. Distinguish by logging out of seat0 sway and retrying login —
+  a fade-then-session-start means rendering is fine.
+- **Sunshine in greeter session**: Sunshine runs as `gdm-greeter-*` user when the seat
+  is unoccupied. Investigate whether it should be suppressed during greeter mode.
 - **Harden the session-teardown leak** so re-logins stop colliding: logind
   `KillUserProcesses` scoped to the seat-game session, or a session-exit hook that
   reaps the compositor/Steam. Currently manual (also bit the sway seat).
 - Is the spare USB A→B cable actually good? (First-port "cable is bad"
   errors vs. port flakiness — untested since the mux never engaged.)
 - Does the FV43U KVM binding survive monitor power cycles?
-- Does mutter handle nvidia-primary + virtio-secondary cleanly (SPICE
-  desktop must stay usable — hard requirement)?
