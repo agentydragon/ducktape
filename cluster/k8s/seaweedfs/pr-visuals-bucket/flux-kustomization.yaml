@@ -11,10 +11,13 @@ spec:
   prune: true
   sourceRef:
     kind: GitRepository
-    name: ducktape
+    name: flux-system
   dependsOn:
     - name: seaweedfs-cluster
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: cluster-settings
+      namespace: flux-system
+  wait: true
+  healthChecks:
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: Bucket
+      name: pr-visuals
+      namespace: seaweedfs

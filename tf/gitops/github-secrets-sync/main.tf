@@ -36,11 +36,17 @@ data "kubernetes_secret" "ci_age_key" {
 resource "random_password" "pr_visuals_access_key" {
   length  = 32
   special = false
+  keepers = {
+    rotation = "2026-07-12-1"
+  }
 }
 
 resource "random_password" "pr_visuals_secret_key" {
   length  = 64
   special = false
+  keepers = {
+    rotation = "2026-07-12-1"
+  }
 }
 
 resource "kubernetes_secret" "pr_visuals_s3_credentials" {
