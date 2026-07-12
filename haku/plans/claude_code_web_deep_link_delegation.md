@@ -36,6 +36,15 @@ Example: `https://claude.ai/code?prompt=Fix%20the%20login%20bug&repositories=age
 hand in the Claude Code web UI after it loads. If a task needs a specific base branch,
 say so in the prompt text itself rather than relying on the link to pre-select it.
 
+**Pre-fill is not auto-submit.** The docs' own wording is "prefill the prompt... in the
+input box" — clicking the link lands the operator on `claude.ai/code` with the prompt
+sitting in the input box, unsent. He still reads it and presses Enter (or edits/cancels)
+before anything actually runs. This is a real, structural review step — different in
+kind from `<tool-call>`'s executed-on-approval model, where clicking through in
+haku-console is the last human touch before execution. Don't describe `<code-session>`
+as fully zero-touch the way an executed tool call is; "nothing to approve" is true only
+about the link itself, not about whether the resulting session runs unreviewed.
+
 ## Which `environment` to target
 
 The operator runs **multiple environments for different cases** and picks per task
