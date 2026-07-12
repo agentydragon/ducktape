@@ -172,7 +172,10 @@ rust_library(
 
 rust_library(
     name = "aw_sync",
-    srcs = glob(["aw-sync/src/**/*.rs"], exclude = ["aw-sync/src/main.rs"]),
+    srcs = glob(
+        ["aw-sync/src/**/*.rs"],
+        exclude = ["aw-sync/src/main.rs"],
+    ),
     crate_features = ["cli"],
     crate_root = "aw-sync/src/lib.rs",
     edition = "2021",
@@ -197,7 +200,10 @@ rust_library(
 
 rust_binary(
     name = "aw_sync_bin",
-    srcs = glob(["aw-sync/src/**/*.rs"], exclude = ["aw-sync/src/lib.rs"]),
+    srcs = glob(
+        ["aw-sync/src/**/*.rs"],
+        exclude = ["aw-sync/src/lib.rs"],
+    ),
     crate_features = ["cli"],
     crate_root = "aw-sync/src/main.rs",
     edition = "2021",
