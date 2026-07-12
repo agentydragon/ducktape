@@ -32,6 +32,7 @@ from haku.console.tools import (
     google_calendar as google_calendar_tools,
     grocy as grocy_tools,
     routine as routine_tools,
+    tana as tana_tools,
 )
 
 logger = logging.getLogger(__name__)
@@ -147,6 +148,7 @@ def create_app(settings: Settings) -> FastAPI:
     app.include_router(gmail_tools.router)
     app.include_router(google_calendar_tools.router)
     app.include_router(grocy_tools.router)
+    app.include_router(tana_tools.router)
 
     # Optional direct local/dev fallback. Production serves the SPA from the
     # haku-console-static nginx image and leaves static_dir unset on this process.

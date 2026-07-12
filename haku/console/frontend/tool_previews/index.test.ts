@@ -18,6 +18,7 @@ describe("toolPreview registry", () => {
           variant
         )
       ).not.toBeNull();
+      expect(toolPreview("tana-rw", "trash_node", { nodeId: "node" }, variant)).not.toBeNull();
     }
   });
 

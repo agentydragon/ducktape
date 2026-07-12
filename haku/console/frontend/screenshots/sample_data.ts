@@ -241,6 +241,40 @@ export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record
     args: { name: "worker-6f9c2", namespace: "haku-sandbox" },
   },
   {
+    serverId: "tana-rw",
+    toolName: "import_tana_paste",
+    args: {
+      parentNodeId: "inbox",
+      content: "- Prepare planning review\n  - Gather Q3 notes\n  - Draft agenda\n  - Confirm attendees",
+    },
+  },
+  {
+    serverId: "tana-rw",
+    toolName: "get_or_create_calendar_node",
+    args: { workspaceId: "workspace", granularity: "day", date: "2026-07-11" },
+  },
+  {
+    serverId: "tana-rw",
+    toolName: "trash_node",
+    args: { nodeId: "task" },
+  },
+  {
+    serverId: "tana-rw",
+    toolName: "edit_node",
+    args: { nodeId: "task", name: { old_string: "Quarterly", new_string: "Q3", replace_all: false } },
+  },
+  {
+    serverId: "tana-rw",
+    toolName: "move_node",
+    args: {
+      nodeId: "task",
+      targetNodeId: "project",
+      sourceParentId: "old-parent",
+      position: "end",
+      keepSourceReference: true,
+    },
+  },
+  {
     // No widget for this (server, tool) — the generic raw-JSON fallback (compact clamps).
     serverId: "grocy-sf",
     toolName: "shopping_list_items_remove",

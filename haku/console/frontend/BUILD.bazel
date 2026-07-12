@@ -62,6 +62,15 @@ js_library(
 )
 
 js_library(
+    name = "tana_client",
+    srcs = ["tana_client.ts"],
+    deps = [
+        ":client",
+        ":schema",
+    ],
+)
+
+js_library(
     name = "approval_state",
     srcs = ["approval_state.ts"],
     deps = [
@@ -342,6 +351,7 @@ filegroup(
         "pending_tool_call_actions.tsx",
         "routing.ts",
         "settings_page.tsx",
+        "tana_client.ts",
         "theme.ts",
         "toast.ts",
         "tool_action_line.tsx",
@@ -517,6 +527,7 @@ tsc_bin.tsc_test(
         "//haku/console/frontend/tool_previews:haku_routine_test",
         "//haku/console/frontend/tool_previews:index_test",
         "//haku/console/frontend/tool_previews:kubectl_test",
+        "//haku/console/frontend/tool_previews:tana_test",
         "//haku/console/frontend/tool_previews:variant_test",
     ],
     tags = ["lint"],
@@ -549,6 +560,7 @@ vitest_bin.vitest_test(
         "//haku/console/frontend/tool_previews:haku_routine_test",
         "//haku/console/frontend/tool_previews:index_test",
         "//haku/console/frontend/tool_previews:kubectl_test",
+        "//haku/console/frontend/tool_previews:tana_test",
         "//haku/console/frontend/tool_previews:variant_test",
     ],
 )

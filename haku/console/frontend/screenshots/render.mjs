@@ -30,7 +30,7 @@ const SCENES = [
   },
   { name: "settings", viewport: { width: 1200, height: 900 } },
   // Every implemented tool-call preview, compact | detailed side by side — tall, so give it room.
-  { name: "previews", viewport: { width: 1100, height: 3600 } },
+  { name: "previews", viewport: { width: 1100, height: 4800 } },
   // The whole shell chrome: approvals panel open by default; the clicks open the live-offline
   // and location panels (their open state is internal to the chrome) so the shot shows all
   // three surfaces stacked by Y under the toggle-button row.

@@ -13,6 +13,7 @@ import { GOOGLE_CALENDAR_SERVER_ID, googleCalendarPreviews } from "./google_cale
 import { GROCY_SERVER_ID, grocyPreviews } from "./grocy.tsx";
 import { HAKU_ROUTINE_SERVER_ID, hakuRoutinePreviews } from "./haku_routine.tsx";
 import { KUBECTL_SERVER_ID, kubectlPreviews } from "./kubectl.tsx";
+import { TANA_RW_SERVER_ID, tanaPreviews } from "./tana.tsx";
 import type { PreviewVariant } from "./variant.tsx";
 
 const REGISTRY: Record<string, Record<string, ToolPreview>> = {
@@ -21,6 +22,7 @@ const REGISTRY: Record<string, Record<string, ToolPreview>> = {
   [GROCY_SERVER_ID]: grocyPreviews,
   [HAKU_ROUTINE_SERVER_ID]: hakuRoutinePreviews,
   [KUBECTL_SERVER_ID]: kubectlPreviews,
+  [TANA_RW_SERVER_ID]: tanaPreviews,
 };
 
 export function toolPreview(

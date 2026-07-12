@@ -25,6 +25,15 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
   // since the sample uses string names (resolveName returns those as-is).
   if (url.includes("/api/grocy-sf/reference"))
     return jsonResponse({ products: [], quantity_units: [], locations: [], product_groups: [] });
+  if (url.includes("/api/tana-rw/node-previews"))
+    return jsonResponse({
+      nodes: [
+        { id: "inbox", name: "Inbox" },
+        { id: "task", name: "Quarterly planning" },
+        { id: "project", name: "Console project" },
+        { id: "old-parent", name: "Backlog" },
+      ],
+    });
   // The Gmail thread-labels widget looks up subjects/labels for its thread ids.
   if (url.includes("/api/gmail/thread-previews")) return jsonResponse({ threads: SAMPLE_GMAIL_THREADS });
   // The create-event widget resolves a non-primary calendar_id to its display name + link.

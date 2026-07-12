@@ -62,6 +62,19 @@ py_library(
 )
 
 py_library(
+    name = "tana",
+    srcs = ["tana.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "//haku/console:deps",
+        "//haku/console:mcp_approval",
+        "//haku/console:mcp_operator_oauth",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "routine",
     srcs = ["routine.py"],
     visibility = ["//haku/console:__subpackages__"],
@@ -90,6 +103,16 @@ py_test(
         # needs the plugin importable at runtime for its entry-point autoload; Gazelle
         # can't see that and will try to drop this dep on regen.
         "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_tana",
+    srcs = ["test_tana.py"],
+    deps = [
+        ":tana",
+        "//:conftest",
+        "@pypi//pytest_bazel",
     ],
 )
 
