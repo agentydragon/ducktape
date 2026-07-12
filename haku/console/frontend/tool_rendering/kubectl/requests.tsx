@@ -9,6 +9,7 @@
 import { Group, Stack, Text } from "@mantine/core";
 import { z } from "zod";
 
+import { Field } from "../../field.tsx";
 import { definePreview, type ToolPreview } from "../entry.tsx";
 import { clampBlock, type PreviewProps } from "../variant.tsx";
 
@@ -65,12 +66,14 @@ function DeleteTargetPreview({
   return (
     <Stack gap="xs">
       <Group gap={4} className="haku-shell-mono">
-        <Text span fw={600}>
+        <Text size="sm" span fw={600}>
           {kind}
         </Text>
-        <Text span>{name}</Text>
+        <Text size="sm" span>
+          {name}
+        </Text>
         {namespace && (
-          <Text span c="dimmed">
+          <Text size="sm" span c="dimmed">
             in {namespace}
           </Text>
         )}
@@ -101,12 +104,12 @@ function PodsDeletePreview({ args }: PreviewProps<PodsDeleteArgs>) {
 
 function PodsLogPreview({ args }: PreviewProps<PodsLogArgs>) {
   return (
-    <Stack gap={2}>
-      <Group gap={6} className="haku-shell-mono">
-        <Text fw={600}>{args.name}</Text>
-        {args.namespace && <Text c="dimmed">in {args.namespace}</Text>}
-        {args.container && <Text c="dimmed">container {args.container}</Text>}
-      </Group>
+    <Stack gap="xs">
+      <Field label="Pod" mono>
+        {args.namespace ? `${args.namespace}/` : ""}
+        {args.name}
+        {args.container ? ` · ${args.container}` : ""}
+      </Field>
       <Text size="sm" c="dimmed">
         {args.previous ? "Previous container logs" : "Current logs"} · last {args.tail ?? 100} lines
       </Text>

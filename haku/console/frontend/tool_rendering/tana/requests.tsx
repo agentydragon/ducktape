@@ -86,7 +86,7 @@ function TanaNodeLink({ nodeId, previews }: { nodeId: string; previews: Record<s
       {preview.name}
     </Anchor>
   ) : (
-    <Text span className="haku-shell-mono" c="dimmed">
+    <Text size="sm" span className="haku-shell-mono" c="dimmed">
       {nodeId}
     </Text>
   );
@@ -108,9 +108,11 @@ function ImportTanaPastePreview({ args, variant }: PreviewProps<ImportTanaPasteA
 function GetOrCreateCalendarNodePreview({ args }: PreviewProps<GetOrCreateCalendarNodeArgs>) {
   return (
     <Group gap={6}>
-      <Badge variant="outline">{args.granularity}</Badge>
-      {args.date && <Text>{args.date}</Text>}
-      <Text c="dimmed" className="haku-shell-mono">
+      <Badge size="sm" variant="outline">
+        {args.granularity}
+      </Badge>
+      {args.date && <Text size="sm">{args.date}</Text>}
+      <Text size="sm" c="dimmed" className="haku-shell-mono">
         {args.workspaceId}
       </Text>
     </Group>
@@ -129,13 +131,13 @@ function EditOperation({ label, edit }: { label: string; edit: z.infer<typeof zE
         {label}
       </Text>
       <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-        <Text span c="dimmed">
+        <Text size="sm" span c="dimmed">
           {edit.old_string || "(empty)"}
         </Text>
         {" → "}
         {edit.new_string || "(clear)"}
         {edit.replace_all && (
-          <Text span c="dimmed">
+          <Text size="sm" span c="dimmed">
             {" · all matches"}
           </Text>
         )}
@@ -165,18 +167,26 @@ function MoveNodePreview({ args }: PreviewProps<MoveNodeArgs>) {
     <Stack gap={4}>
       <Group gap={6}>
         <TanaNodeLink nodeId={args.nodeId} previews={previews} />
-        <Text c="dimmed">→</Text>
+        <Text size="sm" c="dimmed">
+          →
+        </Text>
         <TanaNodeLink nodeId={args.targetNodeId} previews={previews} />
       </Group>
       <Group gap={6}>
-        <Badge variant="outline">{args.position}</Badge>
+        <Badge size="sm" variant="outline">
+          {args.position}
+        </Badge>
         {args.referenceNodeId && <TanaNodeLink nodeId={args.referenceNodeId} previews={previews} />}
         {args.sourceParentId && (
           <Text size="sm" c="dimmed">
             from <TanaNodeLink nodeId={args.sourceParentId} previews={previews} />
           </Text>
         )}
-        {args.keepSourceReference && <Badge variant="outline">keep reference</Badge>}
+        {args.keepSourceReference && (
+          <Badge size="sm" variant="outline">
+            keep reference
+          </Badge>
+        )}
       </Group>
     </Stack>
   );
@@ -185,16 +195,21 @@ function MoveNodePreview({ args }: PreviewProps<MoveNodeArgs>) {
 function SetFieldOptionPreview({ args }: PreviewProps<SetFieldOptionArgs>) {
   const previews = useTanaNodePreviews([args.nodeId, args.attributeId, args.optionId]);
   return (
-    <Stack gap={4}>
-      <Group gap={6}>
+    <Stack gap="xs">
+      <Field label="Node">
         <TanaNodeLink nodeId={args.nodeId} previews={previews} />
-        <Text c="dimmed">field</Text>
+      </Field>
+      <Field label="Field">
         <TanaNodeLink nodeId={args.attributeId} previews={previews} />
-      </Group>
-      <Group gap={6}>
-        <Badge variant="outline">{args.mode}</Badge>
-        <TanaNodeLink nodeId={args.optionId} previews={previews} />
-      </Group>
+      </Field>
+      <Field label="Option">
+        <Group gap={6}>
+          <Badge size="sm" variant="outline">
+            {args.mode}
+          </Badge>
+          <TanaNodeLink nodeId={args.optionId} previews={previews} />
+        </Group>
+      </Field>
     </Stack>
   );
 }

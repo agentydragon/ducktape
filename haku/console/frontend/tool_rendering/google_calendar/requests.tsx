@@ -157,12 +157,14 @@ function CalendarField({ calendarId }: { calendarId: string }) {
   return (
     <Field icon={<CalendarIcon size={15} />} label="Calendar">
       {summary ? (
-        <Anchor href={summary.html_link} target="_blank" rel="noreferrer">
+        <Anchor href={summary.html_link} target="_blank" rel="noreferrer" size="sm">
           {summary.summary}
         </Anchor>
       ) : failed ? (
         // Name lookup failed (e.g. deleted calendar, wrong account) — fall back to the raw id.
-        <Text span>{calendarId}</Text>
+        <Text size="sm" span>
+          {calendarId}
+        </Text>
       ) : (
         <Loader size="xs" />
       )}
@@ -176,7 +178,9 @@ function CreateCalendarEventPreview({ args, variant }: PreviewProps<CreateCalend
   const when = formatEventDateTimeRange(args.start, args.end);
   return (
     <Stack gap={6}>
-      <Text fw={600}>{args.summary}</Text>
+      <Text size="sm" fw={600}>
+        {args.summary}
+      </Text>
       <Field icon={<ClockIcon size={15} />} label="When">
         <span title={when.title}>{when.text}</span>
       </Field>

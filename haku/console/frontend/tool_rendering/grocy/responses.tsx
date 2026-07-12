@@ -182,15 +182,15 @@ function BatchResultView<Ok extends { kind: "ok" }>({
 function StockAddResultRow({ row }: { row: StockAddOkRow }) {
   return (
     <Group gap={6}>
-      <Text span fw={600}>
+      <Text size="sm" span fw={600}>
         {row.product_name}
       </Text>
       {row.amount_delta != null && (
-        <Text span>
+        <Text size="sm" span>
           +{row.amount_delta} {row.qu_name}
         </Text>
       )}
-      <Text span c="dimmed">
+      <Text size="sm" span c="dimmed">
         {row.new_amount != null ? `→ ${row.new_amount} ${row.qu_name} in ${row.location_name}` : row.location_name}
       </Text>
       {row.best_before_date && (
@@ -221,11 +221,11 @@ function productsCreateRowName(row: ProductsCreateOkRow): string {
 function ProductsCreateResultRow({ row }: { row: ProductsCreateOkRow }) {
   return (
     <Group gap={6}>
-      <Text span fw={600}>
+      <Text size="sm" span fw={600}>
         {productsCreateRowName(row)}
       </Text>
       {row.product_name != null && row.created_object_id != null && (
-        <Text span c="dimmed">
+        <Text size="sm" span c="dimmed">
           #{row.created_object_id}
         </Text>
       )}
@@ -252,13 +252,13 @@ function shoppingItemName(row: ShoppingListItemOkRow): string {
 function ShoppingListItemsAddResultRow({ row }: { row: ShoppingListItemOkRow }) {
   return (
     <Group gap={4}>
-      <Text span fw={600}>
+      <Text size="sm" span fw={600}>
         {shoppingItemName(row)}
       </Text>
-      <Text span c="dimmed">
+      <Text size="sm" span c="dimmed">
         ×
       </Text>
-      <Text span>
+      <Text size="sm" span>
         {row.amount}
         {row.qu_name ? ` ${row.qu_name}` : ""}
       </Text>
@@ -285,13 +285,13 @@ function StockEntryEditResultRow({ row }: { row: StockEntryEditOkRow }) {
   return (
     <Stack gap={2}>
       <Group gap={6}>
-        <Text span fw={600}>
+        <Text size="sm" span fw={600}>
           {row.entry.product_name}
         </Text>
-        <Text span>
+        <Text size="sm" span>
           {row.entry.amount} {row.entry.qu_name}
         </Text>
-        <Text span c="dimmed">
+        <Text size="sm" span c="dimmed">
           in {row.entry.location_name} · entry #{row.entry.entry_id}
         </Text>
         {row.entry.open && (
@@ -333,13 +333,13 @@ function StockGetResultView({ result, variant }: ResultPreviewProps<z.infer<type
       </Text>
       {rows.map((row, i) => (
         <Group gap={6} key={i}>
-          <Text span fw={600}>
+          <Text size="sm" span fw={600}>
             {row.product_name}
           </Text>
-          <Text span>
+          <Text size="sm" span>
             {row.amount} {row.qu_name}
           </Text>
-          <Text span c="dimmed">
+          <Text size="sm" span c="dimmed">
             in {row.location_name}
           </Text>
           {row.amount_opened > 0 && (
@@ -364,7 +364,7 @@ function NamedRowsResultView({ result, variant }: ResultPreviewProps<z.infer<typ
       {rows.map((row) => (
         <Text key={row.id} size="sm">
           {row.name}{" "}
-          <Text span c="dimmed">
+          <Text size="sm" span c="dimmed">
             #{row.id}
           </Text>
         </Text>
@@ -382,15 +382,15 @@ function ShoppingListGetResultView({ result, variant }: ResultPreviewProps<z.inf
   const rows = variant === "compact" ? result.items.slice(0, COMPACT_ITEM_LIMIT) : result.items;
   return (
     <Stack gap={4}>
-      <Text fw={600}>
+      <Text size="sm" fw={600}>
         {result.name} · {result.items.length} items
       </Text>
       {rows.map((row) => (
         <Group gap={6} key={row.item_id}>
-          <Text span td={row.done ? "line-through" : undefined}>
+          <Text size="sm" span td={row.done ? "line-through" : undefined}>
             {row.product_name ?? row.note ?? "(note)"}
           </Text>
-          <Text span c="dimmed">
+          <Text size="sm" span c="dimmed">
             × {row.amount}
             {row.qu_name ? ` ${row.qu_name}` : ""} · #{row.item_id}
           </Text>
@@ -406,7 +406,7 @@ function SystemInfoResultView({ result }: ResultPreviewProps<z.infer<typeof zSys
     <Stack gap={2}>
       {Object.entries(result).map(([key, value]) => (
         <Text size="sm" key={key}>
-          <Text span c="dimmed">
+          <Text size="sm" span c="dimmed">
             {key.replaceAll("_", " ")}:{" "}
           </Text>
           {String(value)}

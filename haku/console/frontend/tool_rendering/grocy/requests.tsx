@@ -24,6 +24,7 @@ import { Badge, Group, Stack, Text } from "@mantine/core";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
 import { z } from "zod";
 
+import { Field } from "../../field.tsx";
 import { fetchGrocyReference, type GrocyReferenceResponse } from "../../grocy_client.ts";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
@@ -152,13 +153,13 @@ function GrocyItemsPreview<T>({
 function ProductAmount({ product, amount, qu }: { product: string; amount: number; qu: string }) {
   return (
     <Group gap={4}>
-      <Text span fw={600}>
+      <Text size="sm" span fw={600}>
         {product}
       </Text>
-      <Text span c="dimmed">
+      <Text size="sm" span c="dimmed">
         ×
       </Text>
-      <Text span>
+      <Text size="sm" span>
         {amount} {qu}
       </Text>
     </Group>
@@ -173,7 +174,7 @@ function StockAddRow({ item, reference }: { item: AddItem; reference: GrocyRefer
         amount={item.amount}
         qu={resolveName(reference?.quantity_units, item.qu)}
       />
-      <Text span c="dimmed">
+      <Text size="sm" span c="dimmed">
         → {resolveName(reference?.locations, item.location)}
       </Text>
       {item.best_before_date && (
@@ -204,7 +205,7 @@ function StockConsumeRow({ item, reference }: { item: ConsumeItem; reference: Gr
         amount={item.amount}
         qu={resolveName(reference?.quantity_units, item.qu)}
       />
-      <Text span c="dimmed">
+      <Text size="sm" span c="dimmed">
         from {resolveName(reference?.locations, item.location)}
       </Text>
       {item.spoiled && (
@@ -255,10 +256,10 @@ function ProductsCreateRow({
   return (
     <Stack gap={2}>
       <Group gap={6}>
-        <Text span fw={600}>
+        <Text size="sm" span fw={600}>
           {item.name}
         </Text>
-        <Text span c="dimmed">
+        <Text size="sm" span c="dimmed">
           stock in {stockQuName}, at {resolveName(reference?.locations, item.location)}
         </Text>
         {item.product_group != null && (
@@ -326,15 +327,17 @@ type FieldChange = { key: string; label: string; old: string | null; next: strin
 function ChangeLine({ change }: { change: FieldChange }) {
   return (
     <Text size="sm">
-      <Text span c="dimmed">
+      <Text size="sm" span c="dimmed">
         {change.label}:{" "}
       </Text>
       {change.old !== null && (
-        <Text span c="dimmed">
+        <Text size="sm" span c="dimmed">
           {change.old || "(empty)"} →{" "}
         </Text>
       )}
-      <Text span>{change.next}</Text>
+      <Text size="sm" span>
+        {change.next}
+      </Text>
     </Text>
   );
 }
@@ -372,7 +375,9 @@ function StockEntryEditRow({
   const shown = variant === "compact" ? changes.slice(0, 2) : changes;
   return (
     <Stack gap={2}>
-      <Text fw={600}>Stock entry #{item.entry_id}</Text>
+      <Text size="sm" fw={600}>
+        Stock entry #{item.entry_id}
+      </Text>
       {shown.map((change) => (
         <ChangeLine key={change.key} change={change} />
       ))}
@@ -397,25 +402,21 @@ function StockGetPreview({ args }: PreviewProps<StockGetArgs>) {
   const products = (args.products ?? []).map((value) => resolveName(reference?.products, value));
   const locations = (args.locations ?? []).map((value) => resolveName(reference?.locations, value));
   return (
-    <Stack gap={2}>
-      <Text>{products.length === 0 && locations.length === 0 ? "All current stock" : "Filtered current stock"}</Text>
-      {products.length > 0 && (
-        <Text size="sm" c="dimmed">
-          Products: {products.join(", ")}
-        </Text>
-      )}
-      {locations.length > 0 && (
-        <Text size="sm" c="dimmed">
-          Locations: {locations.join(", ")}
-        </Text>
-      )}
+    <Stack gap="xs">
+      {products.length === 0 && locations.length === 0 && <Text size="sm">All current stock</Text>}
+      {products.length > 0 && <Field label="Products">{products.join(", ")}</Field>}
+      {locations.length > 0 && <Field label="Locations">{locations.join(", ")}</Field>}
       <GrocyReferenceLoadError error={error} />
     </Stack>
   );
 }
 
 function DetailPreview({ detail, noun }: { detail: "brief" | "full"; noun: string }) {
-  return <Text>{detail === "full" ? `Full ${noun} records` : `${noun[0].toUpperCase()}${noun.slice(1)} names`}</Text>;
+  return (
+    <Text size="sm">
+      {detail === "full" ? `Full ${noun} records` : `${noun[0].toUpperCase()}${noun.slice(1)} names`}
+    </Text>
+  );
 }
 
 function ProductsListPreview({ args }: PreviewProps<ProductsListArgs>) {
@@ -427,11 +428,15 @@ function QuantityUnitsListPreview({ args }: PreviewProps<QuantityUnitsListArgs>)
 }
 
 function GetSystemInfoPreview(_: PreviewProps<GetSystemInfoArgs>) {
-  return <Text>Grocy server version and system details</Text>;
+  return <Text size="sm">Grocy server version and system details</Text>;
 }
 
 function ShoppingListItemsRemovePreview({ args }: PreviewProps<ShoppingListItemsRemoveArgs>) {
-  return <Text>Shopping-list item IDs: {args.item_ids.join(", ")}</Text>;
+  return (
+    <Field label="Shopping-list item IDs" mono>
+      {args.item_ids.join(", ")}
+    </Field>
+  );
 }
 
 type NameMap = { id: number; name: string }[] | undefined;
@@ -564,7 +569,9 @@ function ProductsEditRow({
   const shown = variant === "compact" ? changes.slice(0, 2) : changes;
   return (
     <Stack gap={2}>
-      <Text fw={600}>{resolveName(reference?.products, item.product)}</Text>
+      <Text size="sm" fw={600}>
+        {resolveName(reference?.products, item.product)}
+      </Text>
       <Stack gap={2}>
         {shown.map((change) => (
           <ChangeLine key={change.key} change={change} />
@@ -592,11 +599,11 @@ function ShoppingListGetPreview({ args }: PreviewProps<ShoppingListGetArgs>) {
   const { reference, error } = useGrocyReference();
   return (
     <Stack gap="xs">
-      <Text>
-        <Text span c="dimmed">
+      <Text size="sm">
+        <Text size="sm" span c="dimmed">
           List{" "}
         </Text>
-        <Text span fw={600}>
+        <Text size="sm" span fw={600}>
           {resolveName(reference?.shopping_lists, args.shopping_list)}
         </Text>
       </Text>
@@ -610,21 +617,21 @@ function ShoppingListAddRow({ item, reference }: { item: ShoppingItem; reference
     <Group gap={6}>
       {item.product != null ? (
         <Group gap={4}>
-          <Text span fw={600}>
+          <Text size="sm" span fw={600}>
             {resolveName(reference?.products, item.product)}
           </Text>
           {item.amount != null && item.amount !== 1 && (
-            <Text span c="dimmed">
+            <Text size="sm" span c="dimmed">
               × {item.amount}
             </Text>
           )}
         </Group>
       ) : (
-        <Text span fw={600}>
+        <Text size="sm" span fw={600}>
           {item.note}
         </Text>
       )}
-      <Text span c="dimmed">
+      <Text size="sm" span c="dimmed">
         → {resolveName(reference?.shopping_lists, item.shopping_list)}
       </Text>
       {item.product != null && item.note && (
@@ -665,7 +672,9 @@ function ShoppingListItemEditPreview({ args, variant }: PreviewProps<ShoppingLis
   const shown = variant === "compact" ? changes.slice(0, 2) : changes;
   return (
     <Stack gap={2}>
-      <Text fw={600}>Item #{args.item_id}</Text>
+      <Text size="sm" fw={600}>
+        Item #{args.item_id}
+      </Text>
       <Stack gap={2}>
         {shown.map((change) => (
           <ChangeLine key={change.key} change={change} />

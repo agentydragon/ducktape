@@ -72,12 +72,12 @@ function ThreadLabelChanges({ args }: { args: ModifyGmailThreadLabelsArgs }) {
   return (
     <Group gap={6} align="center">
       {args.add?.map((name) => (
-        <Badge key={`+${name}`} variant="light" color="teal">
+        <Badge size="sm" key={`+${name}`} variant="light" color="teal">
           + {name}
         </Badge>
       ))}
       {args.remove?.map((name) => (
-        <Badge key={`-${name}`} variant="light" color="red">
+        <Badge size="sm" key={`-${name}`} variant="light" color="red">
           − {name}
         </Badge>
       ))}
@@ -153,10 +153,14 @@ function CreateGmailDraftPreview({ args, variant }: PreviewProps<CreateGmailDraf
   const detailed = variant === "detailed";
   return (
     <Stack gap={6}>
-      <Text fw={600}>{args.subject}</Text>
+      <Text size="sm" fw={600}>
+        {args.subject}
+      </Text>
       <Field icon={<MailIcon size={15} />} label="Recipients">
         {args.to.join(", ")}
-        {detailed && args.cc && args.cc.length > 0 && <Text span c="dimmed">{` · cc ${args.cc.join(", ")}`}</Text>}
+        {detailed && args.cc && args.cc.length > 0 && (
+          <Text size="sm" span c="dimmed">{` · cc ${args.cc.join(", ")}`}</Text>
+        )}
       </Field>
       {detailed ? <pre className="haku-shell-json">{args.body}</pre> : <CompactBody body={args.body} />}
       {args.thread_id && (

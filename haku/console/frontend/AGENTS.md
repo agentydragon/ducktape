@@ -70,6 +70,26 @@ with the rarely-useful parts folded away:
   together).
 - One idea per line.
 
+**Use the shared visual grammar; do not invent per-tool typography.**
+
+- Tool-preview body text is Mantine `Text size="sm"`. Set it explicitly, including `span`
+  fragments, so a renderer never falls back to Mantine's larger default. A bold identity/title
+  is still `size="sm"`; hierarchy comes from `fw={600}`, not a larger font.
+- Supporting or failure text is also `size="sm"` plus `c="dimmed"` or the semantic failure
+  color. Reserve `size="xs"` for genuinely tertiary UI such as `MoreLine`, a low-priority link,
+  or card-level rationale/metadata outside the tool widget.
+- Preview badges are `size="sm"`. Use `variant="outline"` for attributes and `variant="light"`
+  for semantic state. Do not use badge size as a heading hierarchy.
+- Use the shared `Field` component for labelled values instead of hand-building `Label: value`
+  rows. Use `mono` for opaque identifiers and `icon` only when the icon is unambiguous. A call's
+  primary identity remains an unlabelled bold `Text`, per the vertical-space rule above.
+- Use `Stack gap="xs"` for separate fields/sections, numeric gaps `2` or `4` only within a
+  tightly related multi-line item, and `Group gap={6}` for inline fragments. Do not introduce
+  one-off margins or font-size CSS in a server renderer.
+- Reuse `MoreLine`, `COMPACT_ITEM_LIMIT`, `Field`, the date/time formatters, and the existing
+  batch/result helpers before adding another local equivalent. If a pattern occurs in more than
+  one server, promote it to `tool_rendering/` rather than copying it.
+
 **Consistent vocabulary.**
 
 - The **action** is a one-line description on the card's identity line (`tool_action_line.tsx`),
