@@ -1,13 +1,13 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: haku-mailbox
+  name: haku-mailbox-bootstrap
   namespace: flux-system
 spec:
   interval: 10m
   retryInterval: 1m
   timeout: 5m
-  path: ./cluster/k8s/haku/mailbox/app
+  path: ./cluster/k8s/haku/mailbox/bootstrap
   prune: true
   wait: true
   sourceRef:
@@ -19,10 +19,9 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: haku-mailbox-namespace
-    - name: haku-mailbox-bootstrap # empty datastore seeded; certificate/admin created
-    - name: gateway # HTTPRoute parent for the JMAP/management API
-    - name: external-secrets-config # ClusterSecretStore + CRDs (token mirror)
+    - name: haku-mailbox-db
+    - name: cert-manager
   postBuild:
     substituteFrom:
       - kind: ConfigMap
-        name: cert-manager-issuer-config # ${LETSENCRYPT_ISSUER}
+        name: cert-manager-issuer-config

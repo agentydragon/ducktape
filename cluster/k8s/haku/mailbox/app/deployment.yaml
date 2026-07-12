@@ -1,8 +1,8 @@
 # Stalwart mailserver: haku's mailbox (haku@allegedly.works), receive-only.
 # Haku is a mail *user*, never the server admin: all policy (the SPF-gated
 # sender whitelist, listeners, the OIDC directory) is the operator-owned
-# provisioning plan in this directory, applied idempotently on every pod start
-# by bootstrap-and-run.sh. Authentication is exclusively Authentik OIDC bearer
+# provisioning plan in ../bootstrap, applied idempotently by the separate
+# reconcile Flux layer. Authentication is exclusively Authentik OIDC bearer
 # tokens (the stalwart-haku provider); no mailbox password exists.
 apiVersion: apps/v1
 kind: Deployment
@@ -12,9 +12,8 @@ metadata:
   labels:
     app.kubernetes.io/name: haku-mailbox
   annotations:
-    # Restart on rotation of the mounted STARTTLS certificate / admin secret /
-    # DB credentials — the startup wrapper re-applies the plan (and with it the
-    # fresh certificate PEM) on every start.
+    # Restart on rotation of the mounted STARTTLS certificate and DB
+    # credentials so the normal server re-reads them.
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
@@ -48,7 +47,7 @@ spec:
           # the push-images workflow; Flux image automation tracks the tag
           # (the initial placeholder resolves after the first devel push).
           image: ghcr.io/agentydragon/stalwart:devel-20260702101457-150370a # {"$imagepolicy": "flux-system:stalwart"}
-          command: ["/bin/sh", "/etc/stalwart/bootstrap-and-run.sh"]
+          command: ["/bin/sh", "/etc/stalwart/run.sh"]
           # Surface crash output in pod status (.lastState.terminated.message):
           # pods/log in this namespace is RBAC-fenced to the operator, but pod
           # status is diagnostics-readable — without this, a bootstrap failure
@@ -66,11 +65,6 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: haku-mailbox-db-app # CNPG-generated app credentials
-                  key: password
-            - name: STALWART_ADMIN_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: haku-mailbox-admin
                   key: password
             - name: STALWART_PUBLIC_URL
               value: https://haku-mailbox.allegedly.works
@@ -90,23 +84,20 @@ spec:
             limits:
               cpu: "1"
               memory: 1Gi
-          # The recovery+apply phase runs before the normal server comes up;
-          # give startup some headroom before liveness kicks in.
+          # Loopback exec probes avoid the kubelet-to-pod-IP path that caused
+          # healthy Stalwart endpoints to reset and be SIGTERMed repeatedly.
           startupProbe:
-            httpGet:
-              path: /healthz/live
-              port: http
+            exec:
+              command: ["curl", "--fail", "--silent", "http://127.0.0.1:8080/healthz/live"]
             failureThreshold: 30
             periodSeconds: 5
           livenessProbe:
-            httpGet:
-              path: /healthz/live
-              port: http
+            exec:
+              command: ["curl", "--fail", "--silent", "http://127.0.0.1:8080/healthz/live"]
             periodSeconds: 30
           readinessProbe:
-            httpGet:
-              path: /healthz/ready
-              port: http
+            exec:
+              command: ["curl", "--fail", "--silent", "http://127.0.0.1:8080/healthz/ready"]
             periodSeconds: 10
           securityContext:
             allowPrivilegeEscalation: false
@@ -115,7 +106,7 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: haku-mailbox-config
+            name: haku-mailbox-bootstrap-config
             defaultMode: 0555
         - name: tls
           secret:

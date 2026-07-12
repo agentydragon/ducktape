@@ -1,0 +1,73 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: haku-mailbox-reconciler
+  namespace: haku-mailbox
+  annotations:
+    description: Applies the declarative Stalwart plan to the running server with a dedicated Authentik JWT.
+    # The generated ConfigMap name changes with the plan. Job pod templates
+    # are immutable, so Flux must replace the completed Job.
+    kustomize.toolkit.fluxcd.io/force: enabled
+  labels:
+    app.kubernetes.io/name: haku-mailbox-reconciler
+spec:
+  backoffLimit: 0
+  # A failed first-cluster apply (for example while the first rotated token is
+  # propagating through Git) is deleted and recreated by Flux retryInterval.
+  ttlSecondsAfterFinished: 60
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-mailbox-reconciler
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: reconcile
+          image: ghcr.io/agentydragon/stalwart:devel-20260702101457-150370a # {"$imagepolicy": "flux-system:stalwart"}
+          command: ["/bin/sh", "/etc/reconciler/reconcile.sh"]
+          env:
+          volumeMounts:
+            - name: config
+              mountPath: /etc/reconciler
+              readOnly: true
+            - name: plan
+              mountPath: /etc/stalwart-plan
+              readOnly: true
+            - name: stalwart-token
+              mountPath: /var/run/secrets/stalwart-token
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: haku-mailbox-reconciler-config
+            defaultMode: 0555
+        - name: plan
+          configMap:
+            name: haku-mailbox-bootstrap-config
+        - name: stalwart-token
+          secret:
+            secretName: stalwart-reconciler-token
+        - name: tmp
+          emptyDir: {}

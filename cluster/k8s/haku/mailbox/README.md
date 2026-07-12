@@ -6,21 +6,23 @@ Haku (`haku@allegedly.works`) over an authenticated channel — contract in
 
 ## Layout
 
-| Path     | Role                                                                                               |
-| -------- | -------------------------------------------------------------------------------------------------- |
-| `db/`    | CNPG Postgres (OVH-HA profile) — Stalwart's data/blob/search/settings store; no PVC on the app     |
-| `app/`   | Stalwart Deployment + provisioning plan + Service/HTTPRoute/Certificate/secrets                    |
-| `image/` | Bazel repack of upstream Stalwart with `stalwart-cli` layered in (`ghcr.io/agentydragon/stalwart`) |
+| Path         | Role                                                                                               |
+| ------------ | -------------------------------------------------------------------------------------------------- |
+| `db/`        | CNPG Postgres (OVH-HA profile) — Stalwart's data/blob/search/settings store                        |
+| `bootstrap/` | Certificate, recovery credential, canonical plan, and one-shot empty-database bootstrap Job        |
+| `app/`       | Normal Stalwart Deployment + Service/HTTPRoute and Haku mailbox-token publication                  |
+| `reconcile/` | Authentik machine-token mirror and steady-state plan reconciler Job                                |
+| `image/`     | Bazel repack of upstream Stalwart with `stalwart-cli` layered in (`ghcr.io/agentydragon/stalwart`) |
 
 ## Configuration model
 
 Stalwart keeps almost all settings in its database; the file surface is
 deliberately tiny (its documented declarative-deployments workflow):
 
-- `app/config.json` — the DataStore object only (Postgres via the
+- `bootstrap/config.json` — the DataStore object only (Postgres via the
   CNPG-generated `haku-mailbox-db-app` credentials; password injected as an
   env var).
-- `app/mailbox-plan.ndjson` — everything else, as an idempotent
+- `bootstrap/mailbox-plan.ndjson` — everything else, as an idempotent
   `stalwart-cli apply` plan of `upsert`s: domain, the `haku` account
   (pre-created so inbound RCPT resolves before first login — required for
   OIDC directories), the Authentik OIDC directory, the SPF-gated
@@ -42,21 +44,37 @@ deliberately tiny (its documented declarative-deployments workflow):
   (`/tls/tls.{crt,key}`), so the plan is fully static and the upsert is
   idempotent across renewals — a renewal just restarts the pod (reloader)
   and the server re-reads the PEMs.
-- `app/bootstrap-and-run.sh` — pod entrypoint: applies the plan against a
-  temporary recovery-mode instance, then execs the normal server. Every pod
-  start reconciles config; the reloader annotation makes cert-manager
-  renewals trigger exactly such a restart.
+- `bootstrap/bootstrap-job.yaml` + `bootstrap/bootstrap.sh` — one-shot empty-database
+  bootstrap. It first gives an existing production server a chance to become
+  healthy (cluster-resource recreation over a retained database needs no
+  bootstrap), then uses upstream's serialized recovery-mode + apply workflow.
+  Its stable ConfigMap name deliberately prevents ordinary plan changes from
+  rerunning recovery mode.
+- `reconcile/reconciler-job.yaml` + `reconcile/reconcile.sh` — steady-state reconciliation
+  against the running management API. Kustomize hashes the plan ConfigMap;
+  plan changes make Flux replace the completed Job. It authenticates as the
+  dedicated `stalwart-reconciler` Authentik machine principal, whose JWT is
+  minted automatically by `authentik-jwt-rotation` and mirrored only into the
+  trusted `haku-mailbox` namespace. It never starts another Stalwart server.
+- `bootstrap/run.sh` — the production pod entrypoint only strips the upstream
+  binary's unused file capability and starts normal Stalwart. It never applies
+  configuration. Runtime and reconciler ConfigMaps are separate, so changing
+  only the plan does not restart the mailserver. Certificate renewal still
+  restarts the production pod so Stalwart re-reads the mounted PEM files.
 - The pod image is the in-repo repack from `image/BUILD.bazel` — upstream
-  server + the pinned static `stalwart-cli` (upstream ships the CLI only as
-  a distroless image, unusable from the pod). Published as
+  server + the pinned static `stalwart-cli` used by the reconciler (upstream
+  ships the CLI only as a distroless image, unusable from the Job). Published as
   `ghcr.io/agentydragon/stalwart` by the push-images workflow, tag tracked
   by Flux image automation. Upgrading Stalwart = bumping the `stalwart`
   `oci.pull` (tag + digest) and, on CLI releases, the `stalwart_cli`
   `http_archive` sha in `MODULE.bazel`.
 
 **Deviation** from stock Stalwart: no setup wizard, no WebUI-managed state —
-the plan is the single source of truth. Interactive admin (rarely needed)
-goes through Stalwart recovery mode: scale the deployment to keep a pod,
+the plan is the single source of truth. The recovery admin credential is
+mounted only into the one-shot bootstrap Job, never the production container
+or steady-state reconciler.
+Interactive admin (rarely needed) goes through Stalwart recovery mode: scale
+the deployment to keep a pod,
 `kubectl -n haku-mailbox exec` is blocked for Haku but available to the
 operator, or temporarily set `STALWART_RECOVERY_MODE=1` and port-forward
 :8080 with the `haku-mailbox-admin` password.
@@ -114,12 +132,11 @@ schema drifts.
   rDNS. Tracked in `haku/PLAN.md`.
 - **Backups**: CNPG cluster; wire into the standard pg_dump/backup strategy
   if mailbox contents become worth keeping.
-- **TODO: replace the recovery-mode bootstrap dance** (`bootstrap-and-run.sh`:
-  background recovery server → retried `stalwart-cli apply` → kill → exec).
-  It is upstream's documented headless path and the ugliness is irreducible
-  today — config lives in the DB, the management API is the only config
-  surface, and an empty DB serves no API — but revisit when any of these
-  gates opens: (a) a Stalwart tofu provider covers `SieveSystemScript`,
+- **Future: replace the recovery-mode bootstrap** when a fully native IaC
+  surface exists. The one-shot Job follows upstream's documented headless
+  path because config lives in the DB, the management API is the only config
+  surface, and an empty DB serves no API. Revisit when either gate opens:
+  (a) a Stalwart tofu provider covers `SieveSystemScript`,
   `MtaStageData`, the `Authentication`/`SystemSettings` singletons, and
   `Certificate` (as of 2026-07, `flungo/stalwart` v0.1.0 covers
   accounts/domains/directories/listeners only); (b) upstream grows a

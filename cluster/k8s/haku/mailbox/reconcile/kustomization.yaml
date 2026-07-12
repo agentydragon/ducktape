@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - reconciler-job.yaml
+  - stalwart-reconciler-token.sops.yaml
+  - stalwart-reconciler-token-eso.yaml
+configMapGenerator:
+  - name: haku-mailbox-reconciler-config
+    namespace: haku-mailbox
+    options:
+      annotations:
+        kustomize.toolkit.fluxcd.io/substitute: disabled
+    files:
+      - reconcile.sh

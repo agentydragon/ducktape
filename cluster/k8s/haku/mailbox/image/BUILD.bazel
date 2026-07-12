@@ -2,8 +2,8 @@
 
 Upstream ships the CLI only as a distroless image (a bare static binary — no
 shell to copy it out of in an initContainer) and as release tarballs; the
-server image carries no CLI at all. The haku-mailbox bootstrap
-(../app/bootstrap-and-run.sh) needs both binaries in one filesystem, so this
+server image carries no CLI at all. The haku-mailbox bootstrap and reconciler
+Jobs (../app/{bootstrap,reconcile}.sh) need both binaries, so this
 repack layers the pinned static CLI onto the pinned upstream server image.
 Both pins live in MODULE.bazel (`stalwart` oci.pull, `stalwart_cli`
 http_archive) — bump them together on Stalwart upgrades.
