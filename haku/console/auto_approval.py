@@ -15,6 +15,49 @@ logger = logging.getLogger(__name__)
 
 HAKU_AGENT_PRINCIPAL = "haku-agent-api-token"
 GMAIL_AUTO_APPROVAL_ID = "v1"
+UNCONDITIONAL_AUTO_APPROVAL_ID = "unconditional_v1"
+
+# Remote (operator_oauth) server ids — must match the console config
+# (`cluster/k8s/haku/console/config.yaml`).
+GROCY_SF_SERVER_ID = "grocy-sf"
+TANA_RW_SERVER_ID = "tana-rw"
+
+# The reviewed read-only subset of grocy-sf's tools (get/list only — every create/edit/delete/add/
+# consume/set/transfer/undo/merge/clear/upload stays approval-gated).
+GROCY_READ_TOOLS = frozenset(
+    {
+        "entities_get",
+        "entities_list",
+        "file_get",
+        "get_below_minimum_stock",
+        "get_current_user",
+        "get_db_changed_time",
+        "get_expired_stock",
+        "get_expiring_stock",
+        "get_product_stock",
+        "get_system_info",
+        "list_volatile_stock",
+        "locations_list",
+        "product_groups_list",
+        "products_list",
+        "quantity_units_list",
+        "shopping_list_get",
+        "shopping_lists_list",
+        "stock_entries_list",
+        "stock_get",
+    }
+)
+# tana-rw tools auto-approved regardless of arguments. `get_or_create_calendar_node` is idempotent
+# (it just resolves/creates a date container), so it is safe to auto-allow.
+TANA_AUTO_APPROVE_TOOLS = frozenset({"get_or_create_calendar_node"})
+
+# (server_id -> tools) auto-approved for the Haku agent regardless of arguments. These are remote
+# operator_oauth servers with no in-process schema, so their arguments are validated by the upstream
+# at execution time (not here).
+UNCONDITIONAL_AUTO_APPROVE: dict[str, frozenset[str]] = {
+    GROCY_SF_SERVER_ID: GROCY_READ_TOOLS,
+    TANA_RW_SERVER_ID: TANA_AUTO_APPROVE_TOOLS,
+}
 
 
 async def auto_approve_tool_call(
@@ -29,12 +72,19 @@ async def auto_approve_tool_call(
 ) -> tuple[str | None, str | None]:
     """Return the approving policy ID and an audit-safe evaluation string.
 
-    The existing FastMCP tool is the input-contract source of truth. Its published
-    schema is synthesized from the callable signature and validated here before the
-    Gmail-specific semantic boundary is evaluated. Any schema, lookup, or policy
-    error is logged and fails closed.
+    Unconditionally allowlisted read-only/safe tools (grocy-sf reads, tana
+    `get_or_create_calendar_node`) approve regardless of arguments. Gmail calls go through the
+    existing boundary: the FastMCP tool's published schema is validated before the label-prefix
+    semantic check. Any schema, lookup, or policy error is logged and fails closed.
     """
-    if caller_principal != HAKU_AGENT_PRINCIPAL or server_id != GMAIL_SERVER_ID:
+    if caller_principal != HAKU_AGENT_PRINCIPAL:
+        return None, None
+    # Remote read-only/safe allowlist (grocy-sf reads, tana get_or_create_calendar_node): these are
+    # operator_oauth servers with no in-process schema, so the upstream validates arguments at
+    # execution time rather than here.
+    if tool_name in UNCONDITIONAL_AUTO_APPROVE.get(server_id, frozenset()):
+        return UNCONDITIONAL_AUTO_APPROVAL_ID, f"approved: {server_id}/{tool_name} is allowlisted read-only/safe"
+    if server_id != GMAIL_SERVER_ID:
         return None, None
     if tool_name not in {
         "threads_list",

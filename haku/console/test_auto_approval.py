@@ -6,7 +6,14 @@ import pytest
 import pytest_bazel
 
 from gmail_api.labels import GmailLabel, LabelType
-from haku.console.auto_approval import GMAIL_AUTO_APPROVAL_ID, auto_approve_tool_call
+from haku.console.auto_approval import (
+    GMAIL_AUTO_APPROVAL_ID,
+    GROCY_READ_TOOLS,
+    GROCY_SF_SERVER_ID,
+    TANA_RW_SERVER_ID,
+    UNCONDITIONAL_AUTO_APPROVAL_ID,
+    auto_approve_tool_call,
+)
 from haku.console.tools.gmail import build_mcp
 
 
@@ -105,6 +112,47 @@ async def test_lookup_errors_are_logged_and_fail_closed(caplog: pytest.LogCaptur
         )
     assert "auto-approval evaluation failed" in caplog.text
     assert "gmail unavailable" in caplog.text
+
+
+async def _remote_decision(server_id: str, tool_name: str, arguments: dict, *, caller: str = "haku-agent-api-token"):
+    # Remote (operator_oauth) servers have no in-process schema, so gmail/mcp are unused.
+    return await auto_approve_tool_call(
+        caller_principal=caller,
+        server_id=server_id,
+        tool_name=tool_name,
+        arguments=arguments,
+        label_prefix="haku/",
+        gmail=None,
+        mcp=None,
+    )
+
+
+@pytest.mark.parametrize("tool_name", sorted(GROCY_READ_TOOLS))
+async def test_grocy_reads_are_auto_approved(tool_name: str) -> None:
+    policy_id, evaluation = await _remote_decision(GROCY_SF_SERVER_ID, tool_name, {})
+    assert policy_id == UNCONDITIONAL_AUTO_APPROVAL_ID
+    assert evaluation is not None
+    assert "read-only/safe" in evaluation
+
+
+async def test_grocy_mutations_are_not_auto_approved() -> None:
+    # A mutating grocy tool is not in the read allowlist, so it stays manual (grocy-sf ≠ gmail path).
+    assert await _remote_decision(GROCY_SF_SERVER_ID, "stock_add", {"items": []}) == (None, None)
+
+
+async def test_tana_calendar_node_is_auto_approved() -> None:
+    policy_id, _evaluation = await _remote_decision(
+        TANA_RW_SERVER_ID, "get_or_create_calendar_node", {"date": "2026-07-12"}
+    )
+    assert policy_id == UNCONDITIONAL_AUTO_APPROVAL_ID
+
+
+async def test_tana_other_tools_are_not_auto_approved() -> None:
+    assert await _remote_decision(TANA_RW_SERVER_ID, "create_tag", {"name": "X"}) == (None, None)
+
+
+async def test_remote_allowlist_only_for_haku_agent() -> None:
+    assert await _remote_decision(GROCY_SF_SERVER_ID, "stock_get", {}, caller="operator") == (None, None)
 
 
 if __name__ == "__main__":
