@@ -188,6 +188,23 @@ export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record
     },
   },
   {
+    serverId: "grocy-sf",
+    toolName: "products_edit",
+    args: {
+      items: [
+        {
+          product: "Rolled oats",
+          location: "Pantry",
+          min_stock_amount: 500,
+          default_best_before_days: 270,
+          product_group: "Grains",
+          clear_fields: ["description"],
+        },
+        { product: "Almond butter", purchase_qu: "jar", consume_qu: "jar" },
+      ],
+    },
+  },
+  {
     serverId: "google_calendar",
     toolName: "create_calendar_event",
     args: {

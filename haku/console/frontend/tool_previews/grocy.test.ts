@@ -15,6 +15,26 @@ describe("grocyPreviews", () => {
     }
   });
 
+  it("renders products_edit for valid partial updates, in both variants", () => {
+    for (const variant of ["compact", "detailed"] as const) {
+      const node = renderPreview(
+        grocyPreviews.products_edit,
+        {
+          items: [
+            {
+              product: "Oats",
+              location: "Pantry",
+              default_best_before_days: 270,
+              clear_fields: ["description"],
+            },
+          ],
+        },
+        variant
+      );
+      expect(node).not.toBeNull();
+    }
+  });
+
   it("returns null (not false) when args don't match the tool's schema", () => {
     // Regression: the malformed shape a Jul 8 tool_request bug actually produced —
     // {entity_type, body} nesting instead of flat fields. `parsed.success && <X/>` used to

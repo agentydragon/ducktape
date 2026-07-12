@@ -61,9 +61,28 @@ const zCreateProductItem = z.object({
   description: z.string().nullish(),
 });
 
+const zEditProductField = z.enum(["description", "product_group", "parent_product", "calories"]);
+
+const zEditProductItem = z.object({
+  product: zNameOrId,
+  name: z.string().optional(),
+  stock_qu: zNameOrId.optional(),
+  location: zNameOrId.optional(),
+  purchase_qu: zNameOrId.optional(),
+  consume_qu: zNameOrId.optional(),
+  min_stock_amount: z.number().optional(),
+  default_best_before_days: z.number().int().optional(),
+  due_type: z.union([z.literal(1), z.literal(2)]).optional(),
+  parent_product: zNameOrId.optional(),
+  product_group: zNameOrId.optional(),
+  description: z.string().optional(),
+  clear_fields: z.array(zEditProductField).optional(),
+});
+
 const zStockAddArgs = z.object({ items: z.array(zAddItem) });
 const zStockConsumeArgs = z.object({ items: z.array(zConsumeItem) });
 const zProductsCreateArgs = z.object({ items: z.array(zCreateProductItem) });
+const zProductsEditArgs = z.object({ items: z.array(zEditProductItem) });
 
 type AddItem = z.infer<typeof zAddItem>;
 type ConsumeItem = z.infer<typeof zConsumeItem>;
@@ -71,6 +90,8 @@ type CreateProductItem = z.infer<typeof zCreateProductItem>;
 type StockAddArgs = z.infer<typeof zStockAddArgs>;
 type StockConsumeArgs = z.infer<typeof zStockConsumeArgs>;
 type ProductsCreateArgs = z.infer<typeof zProductsCreateArgs>;
+type EditProductItem = z.infer<typeof zEditProductItem>;
+type ProductsEditArgs = z.infer<typeof zProductsEditArgs>;
 
 // Fetched once per rendered preview; while loading (or on fetch failure) `resolveName`
 // falls back to `id=N` for numeric references — a name argument always renders as-is.
@@ -286,6 +307,85 @@ function ProductsCreatePreview({ args, variant }: PreviewProps<ProductsCreateArg
   );
 }
 
+function ProductEditChanges({
+  item,
+  reference,
+  variant,
+}: {
+  item: EditProductItem;
+  reference: GrocyReferenceResponse | null;
+  variant: PreviewVariant;
+}) {
+  const changes = [
+    item.name != null ? `name: ${item.name}` : null,
+    item.stock_qu != null ? `stock unit: ${resolveName(reference?.quantity_units, item.stock_qu)}` : null,
+    item.location != null ? `location: ${resolveName(reference?.locations, item.location)}` : null,
+    item.purchase_qu != null ? `purchase unit: ${resolveName(reference?.quantity_units, item.purchase_qu)}` : null,
+    item.consume_qu != null ? `consume unit: ${resolveName(reference?.quantity_units, item.consume_qu)}` : null,
+    item.min_stock_amount != null
+      ? `min stock: ${item.min_stock_amount} ${
+          item.stock_qu != null ? resolveName(reference?.quantity_units, item.stock_qu) : "stock units"
+        }`
+      : null,
+    item.default_best_before_days != null
+      ? `shelf life: ${formatDefaultBestBeforeDays(item.default_best_before_days)}`
+      : null,
+    item.due_type != null ? `due type: ${item.due_type === 1 ? "best before" : "due date"}` : null,
+    item.parent_product != null ? `variant of: ${resolveName(reference?.products, item.parent_product)}` : null,
+    item.product_group != null ? `group: ${resolveName(reference?.product_groups, item.product_group)}` : null,
+    item.description != null
+      ? variant === "compact"
+        ? "description updated"
+        : `description: ${item.description}`
+      : null,
+    ...(item.clear_fields ?? []).map((field) => `clear ${field.replaceAll("_", " ")}`),
+  ].filter((change): change is string => change != null);
+  const shown = variant === "compact" ? changes.slice(0, 2) : changes;
+  return (
+    <Stack gap={2}>
+      {shown.map((change) => (
+        <Text key={change} size="sm" c="dimmed">
+          {change}
+        </Text>
+      ))}
+      <MoreLine count={changes.length - shown.length} />
+    </Stack>
+  );
+}
+
+function ProductsEditRow({
+  item,
+  reference,
+  variant,
+}: {
+  item: EditProductItem;
+  reference: GrocyReferenceResponse | null;
+  variant: PreviewVariant;
+}) {
+  return (
+    <Stack gap={2}>
+      <Text fw={600}>{resolveName(reference?.products, item.product)}</Text>
+      <ProductEditChanges item={item} reference={reference} variant={variant} />
+    </Stack>
+  );
+}
+
+function ProductsEditPreview({ args, variant }: PreviewProps<ProductsEditArgs>) {
+  const { reference, error } = useGrocyReference();
+  const shown = variant === "compact" ? args.items.slice(0, COMPACT_ITEM_LIMIT) : args.items;
+  return (
+    <Stack gap="xs">
+      <Stack gap={6}>
+        {shown.map((item, i) => (
+          <ProductsEditRow key={i} item={item} reference={reference} variant={variant} />
+        ))}
+        <MoreLine count={args.items.length - shown.length} />
+      </Stack>
+      <GrocyReferenceLoadError error={error} />
+    </Stack>
+  );
+}
+
 /** Per-tool preview widgets for the `grocy-sf` server's stock and product-creation tools. */
 export const grocyPreviews = {
   stock_add: definePreview(zStockAddArgs, StockAddPreview, (a) => ({
@@ -296,5 +396,8 @@ export const grocyPreviews = {
   })),
   products_create: definePreview(zProductsCreateArgs, ProductsCreatePreview, (a) => ({
     text: `Grocy: Create ${plural(a.items.length, "product")}`,
+  })),
+  products_edit: definePreview(zProductsEditArgs, ProductsEditPreview, (a) => ({
+    text: `Grocy: Edit ${plural(a.items.length, "product")}`,
   })),
 } satisfies Record<string, ToolPreview>;
