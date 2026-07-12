@@ -482,6 +482,7 @@ js_library(
         ":approval_state",
         ":client",
         ":console_panel",
+        ":grocy_client",
         ":settings_page",
         ":theme",
         ":tool_call_card",

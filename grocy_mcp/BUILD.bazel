@@ -30,6 +30,7 @@ py_library(
     name = "grocy_types",
     srcs = ["grocy_types.py"],
     visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(

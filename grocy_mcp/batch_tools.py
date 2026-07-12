@@ -189,6 +189,19 @@ def _is_retryable_mutation(exc: BaseException) -> bool:
 # ── Tool registration ────────────────────────────────────────────────────────
 
 
+def build_batch_tools_mcp(settings: ServerSettings, *, client: httpx.AsyncClient) -> FastMCP:
+    """A bare FastMCP with only the custom batch tools — no OpenAPI-generated tools, no auth.
+
+    Registration reads only the tool signatures, so no Grocy request is made and the `client`
+    is never called. Used to reflect the batch tools' input schemas without loading the OpenAPI
+    spec or reaching Grocy — e.g. haku-console generates its tool-call preview validators from
+    this (see `haku/console/export_mcp_tool_schemas.py`).
+    """
+    mcp: FastMCP = FastMCP(name="grocy-batch-tools")
+    register_batch_tools(mcp, client, settings)
+    return mcp
+
+
 def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: ServerSettings) -> None:
     """Register custom batch tools on an existing FastMCP instance."""
     sem = asyncio.Semaphore(settings.max_concurrent_requests)

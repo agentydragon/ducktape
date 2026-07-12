@@ -35,6 +35,39 @@ describe("grocyPreviews", () => {
     }
   });
 
+  it("renders shopping_list_get in both variants", () => {
+    for (const variant of ["compact", "detailed"] as const) {
+      expect(renderPreview(grocyPreviews.shopping_list_get, { shopping_list: "Weekly" }, variant)).not.toBeNull();
+    }
+  });
+
+  it("renders shopping_list_items_add with product and note-only items, in both variants", () => {
+    for (const variant of ["compact", "detailed"] as const) {
+      const node = renderPreview(
+        grocyPreviews.shopping_list_items_add,
+        {
+          items: [
+            { shopping_list: "Weekly", product: "Oats", amount: 2 },
+            { shopping_list: "Weekly", note: "paper towels?" },
+          ],
+        },
+        variant
+      );
+      expect(node).not.toBeNull();
+    }
+  });
+
+  it("renders shopping_list_item_edit in both variants", () => {
+    for (const variant of ["compact", "detailed"] as const) {
+      const node = renderPreview(
+        grocyPreviews.shopping_list_item_edit,
+        { item_id: 42, amount: 3, done: true, clear_fields: ["note"] },
+        variant
+      );
+      expect(node).not.toBeNull();
+    }
+  });
+
   it("returns null (not false) when args don't match the tool's schema", () => {
     // Regression: the malformed shape a Jul 8 tool_request bug actually produced —
     // {entity_type, body} nesting instead of flat fields. `parsed.success && <X/>` used to

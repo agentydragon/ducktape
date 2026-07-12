@@ -8,6 +8,9 @@ MCP tool I/O types (see mcp_types.py for those).
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Annotated, Any
+
+from pydantic import BaseModel, BeforeValidator
 
 # ── Entity types exposed by the resolver ────────────────────────────────────
 
@@ -151,3 +154,47 @@ PRODUCT_WRITABLE_FIELDS: set[str] = {
     "treat_opened_as_out_of_stock",
     "no_own_stock",
 }
+
+
+# ── Product row ─────────────────────────────────────────────────────────────
+
+
+# Grocy serializes every column as a string and encodes an "unset" optional as null, "", or (for
+# foreign keys) "0". Pydantic's lax coercion turns the numeric strings back into int/float on
+# `model_validate`; these BeforeValidators fold the "unset" encodings to None before that runs.
+def _unset_to_none(value: Any) -> Any:
+    return value if value not in (None, "") else None
+
+
+def _ref_to_none(value: Any) -> Any:
+    return value if value not in (None, "", "0", 0) else None
+
+
+_OptRefId = Annotated[int | None, BeforeValidator(_ref_to_none)]
+_OptFloat = Annotated[float | None, BeforeValidator(_unset_to_none)]
+_OptStr = Annotated[str | None, BeforeValidator(_unset_to_none)]
+
+
+class ProductRow(BaseModel):
+    """A parsed Grocy product row, typed to the columns `products_edit` reads (plus id/name);
+    validating a raw Grocy product object against it drops the ~30 columns it doesn't declare.
+
+    Grocy returns every column as a string and encodes an unset optional as null, "", or (for
+    foreign keys) "0"; the field types and validators absorb both, so `model_validate` yields
+    typed values with unset optionals as None. Foreign keys stay as raw IDs — callers resolve
+    names themselves. Consumed by haku-console to render `products_edit` old→new diffs.
+    """
+
+    id: int
+    name: str
+    location_id: int
+    qu_id_stock: int
+    qu_id_purchase: int
+    qu_id_consume: int
+    min_stock_amount: float
+    default_best_before_days: int
+    due_type: int
+    parent_product_id: _OptRefId = None
+    product_group_id: _OptRefId = None
+    description: _OptStr = None
+    calories: _OptFloat = None

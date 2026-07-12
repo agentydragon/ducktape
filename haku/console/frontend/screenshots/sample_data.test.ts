@@ -8,9 +8,8 @@ import { PREVIEW_SAMPLES, SAMPLE_PENDING, SAMPLE_TOOL_CALLS, sampleRecentToolCal
 
 const CUSTOM_HISTORY_IDS = new Set(["tc_1", "tc_2", "tc_3"]);
 const CUSTOM_PENDING_IDS = new Set(["tc_p2"]);
-// Gallery entries whose *arguments* intentionally hit the raw-JSON fallback (no widget, or —
-// for shopping_list_items_add — a result-only widget).
-const INTENTIONAL_ARGS_FALLBACKS = new Set(["grocy-sf.shopping_list_items_remove", "grocy-sf.shopping_list_items_add"]);
+// Gallery entries whose *arguments* intentionally hit the raw-JSON fallback (no request widget).
+const INTENTIONAL_ARGS_FALLBACKS = new Set(["grocy-sf.shopping_list_items_remove"]);
 // The one gallery entry whose *result* intentionally hits the raw-JSON result fallback.
 const INTENTIONAL_RESULT_FALLBACK = "grocy-sf.shopping_list_items_remove";
 

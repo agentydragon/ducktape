@@ -54,9 +54,27 @@ def _test_mcp_server() -> FastMCP:
         return f"echo:{text}"
 
     @server.tool()
-    async def products_list() -> list[dict[str, Any]]:
-        """List products, mirroring grocy-sf's products_list(detail="brief")."""
-        return [{"id": 1, "name": "Milk"}]
+    async def products_list(detail: str = "brief") -> list[dict[str, Any]]:
+        """List products, mirroring grocy-sf's products_list. The reference lookup asks for
+        `detail="full"`; Grocy returns numeric columns as strings, so mirror that here."""
+        assert detail == "full", f"reference lookup should request full detail, got {detail!r}"
+        return [
+            {
+                "id": 1,
+                "name": "Milk",
+                "location_id": "2",
+                "qu_id_stock": "3",
+                "qu_id_purchase": "3",
+                "qu_id_consume": "3",
+                "min_stock_amount": "1.0",
+                "default_best_before_days": "7",
+                "due_type": "1",
+                "parent_product_id": "0",
+                "product_group_id": "4",
+                "description": "Whole milk",
+                "calories": None,
+            }
+        ]
 
     @server.tool()
     async def locations_list() -> list[dict[str, Any]]:
@@ -72,6 +90,11 @@ def _test_mcp_server() -> FastMCP:
     async def product_groups_list() -> list[dict[str, Any]]:
         """List product groups, mirroring grocy-sf's product_groups_list(detail="brief")."""
         return [{"id": 4, "name": "Dairy"}]
+
+    @server.tool()
+    async def shopping_lists_list() -> list[dict[str, Any]]:
+        """List shopping lists, mirroring grocy-sf's shopping_lists_list(detail="brief")."""
+        return [{"id": 5, "name": "Weekly"}]
 
     return server
 
@@ -405,6 +428,7 @@ def test_reflection_lists_connected_servers_without_leaking_credentials(
         "locations_list",
         "quantity_units_list",
         "product_groups_list",
+        "shopping_lists_list",
     }
     assert tools["stock_add"]["status"] == "alive"
     assert tools["stock_add"]["input_schema"]["type"] == "object"
@@ -483,10 +507,28 @@ def test_grocy_sf_reference_resolves_ids_to_names(
         resp = client.get("/api/grocy-sf/reference")
     assert resp.status_code == 200, resp.text
     assert resp.json() == {
-        "products": [{"id": 1, "name": "Milk"}],
+        "products": [
+            {
+                "id": 1,
+                "name": "Milk",
+                "location_id": 2,
+                "qu_id_stock": 3,
+                "qu_id_purchase": 3,
+                "qu_id_consume": 3,
+                "min_stock_amount": 1.0,
+                "default_best_before_days": 7,
+                "due_type": 1,
+                # "0" is Grocy's "unset FK" encoding — parsed to None, not group 0.
+                "parent_product_id": None,
+                "product_group_id": 4,
+                "description": "Whole milk",
+                "calories": None,
+            }
+        ],
         "locations": [{"id": 2, "name": "Fridge"}],
         "quantity_units": [{"id": 3, "name": "Liter"}],
         "product_groups": [{"id": 4, "name": "Dairy"}],
+        "shopping_lists": [{"id": 5, "name": "Weekly"}],
     }
 
 
@@ -981,6 +1023,7 @@ async def test_metadata_provider_reflects_in_process_server_tools() -> None:
         "locations_list",
         "quantity_units_list",
         "product_groups_list",
+        "shopping_lists_list",
     }
 
 

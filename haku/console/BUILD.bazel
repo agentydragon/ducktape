@@ -215,7 +215,10 @@ py_library(
     srcs = ["export_mcp_tool_schemas.py"],
     deps = [
         ":in_process_servers",
+        "//grocy_mcp:batch_tools",
+        "//grocy_mcp:mcp_types",
         "@pypi//fastmcp",
+        "@pypi//httpx",
     ],
 )
 

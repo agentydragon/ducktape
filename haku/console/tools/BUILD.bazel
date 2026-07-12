@@ -53,6 +53,7 @@ py_library(
     srcs = ["grocy.py"],
     visibility = ["//haku/console:__subpackages__"],
     deps = [
+        "//grocy_mcp:grocy_types",
         "//haku/console:deps",
         "//haku/console:mcp_approval",
         "//haku/console:mcp_operator_oauth",

@@ -2,6 +2,7 @@
 // (mock_api.ts). Kept separate so both share one source of truth.
 import { makeRecentToolCall, type RecentToolCall } from "../approval_state.ts";
 import type { McpOperatorAuthStatus, PendingApproval, ToolCallRecord } from "../client.ts";
+import type { GrocyReferenceResponse } from "../grocy_client.ts";
 import type { RegisteredToolPreviewFixture } from "../tool_rendering/index.tsx";
 
 const STOCK_ADD_HISTORY_FIXTURE = {
@@ -191,6 +192,64 @@ export const SAMPLE_GMAIL_THREADS = {
   },
 };
 
+// The grocy-sf reference the preview widgets resolve id→name against, and (for products)
+// read current field values from to render `products_edit` old→new diffs. Served by mock_api
+// so the products_edit / shopping-list gallery entries render resolved, with an old side.
+export const SAMPLE_GROCY_REFERENCE: GrocyReferenceResponse = {
+  products: [
+    {
+      id: 1,
+      name: "Rolled oats",
+      location_id: 10,
+      qu_id_stock: 20,
+      qu_id_purchase: 20,
+      qu_id_consume: 20,
+      min_stock_amount: 250,
+      default_best_before_days: 180,
+      due_type: 1,
+      parent_product_id: null,
+      product_group_id: 30,
+      description: "Thin rolled oats.",
+      calories: null,
+    },
+    {
+      id: 2,
+      name: "Almond butter",
+      location_id: 10,
+      qu_id_stock: 21,
+      qu_id_purchase: 22,
+      qu_id_consume: 22,
+      min_stock_amount: 0,
+      default_best_before_days: 180,
+      due_type: 1,
+      parent_product_id: null,
+      product_group_id: null,
+      description: null,
+      calories: null,
+    },
+  ],
+  locations: [
+    { id: 10, name: "Pantry" },
+    { id: 11, name: "Fridge" },
+    { id: 12, name: "Freezer" },
+  ],
+  quantity_units: [
+    { id: 20, name: "gram" },
+    { id: 21, name: "jar" },
+    { id: 22, name: "case" },
+    { id: 23, name: "carton" },
+  ],
+  product_groups: [
+    { id: 30, name: "Snacks" },
+    { id: 31, name: "Grains" },
+    { id: 32, name: "Dairy" },
+  ],
+  shopping_lists: [
+    { id: 40, name: "Weekly" },
+    { id: 41, name: "Costco run" },
+  ],
+};
+
 // The calendar-name lookup the create-event widget fetches for a non-primary calendar_id;
 // served by mock_api so the detailed preview renders the name (linked) instead of the raw id.
 export const SAMPLE_CALENDAR_SUMMARY = {
@@ -321,7 +380,7 @@ const CUSTOM_PREVIEW_SAMPLES = [
       items: [
         {
           product: "Rolled oats",
-          location: "Pantry",
+          location: "Fridge",
           min_stock_amount: 500,
           default_best_before_days: 270,
           product_group: "Grains",
@@ -330,6 +389,36 @@ const CUSTOM_PREVIEW_SAMPLES = [
         { product: "Almond butter", purchase_qu: "jar", consume_qu: "jar" },
       ],
     },
+  },
+  {
+    title: "Check the weekly shopping list",
+    serverId: "grocy-sf",
+    toolName: "shopping_list_get",
+    args: { shopping_list: "Weekly" },
+  },
+  {
+    title: "Add items to the shopping list",
+    serverId: "grocy-sf",
+    toolName: "shopping_list_items_add",
+    args: {
+      items: [
+        { shopping_list: "Weekly", product: "Rolled oats", amount: 2 },
+        { shopping_list: "Weekly", amount: 1, note: "check if we need paper towels" },
+        { shopping_list: "Costco run", product: "Almond butter", amount: 1, note: "the crunchy kind" },
+      ],
+    },
+    // One result row per input item; the note-only item has a null product/unit.
+    result: callToolResult([
+      { kind: "ok", item_id: 55, product_name: "Rolled oats", amount: 2, qu_name: "Pack" },
+      { kind: "ok", item_id: 56, product_name: null, amount: 1, qu_name: null },
+      { kind: "ok", item_id: 57, product_name: "Almond butter", amount: 1, qu_name: "Jar" },
+    ]),
+  },
+  {
+    title: "Bump a shopping-list item to family size",
+    serverId: "grocy-sf",
+    toolName: "shopping_list_item_edit",
+    args: { item_id: 42, amount: 3, note: "family size", done: true },
   },
   {
     title: "Schedule dentist appointment",
@@ -440,24 +529,6 @@ const CUSTOM_PREVIEW_SAMPLES = [
   },
 ] satisfies (RegisteredToolPreviewFixture & { title: string; result?: StoredToolResult })[];
 
-const SHOPPING_ADD_PREVIEW_SAMPLE: PreviewSample = {
-  // No *argument* widget for this tool (raw-JSON args fallback) but a registered *result*
-  // widget — exercises the fallback-args + custom-result combination.
-  title: "Add missing staples to the shopping list",
-  serverId: "grocy-sf",
-  toolName: "shopping_list_items_add",
-  args: {
-    items: [
-      { product: "Oat milk", amount: 6, qu: "carton" },
-      { product: "Rolled oats", amount: 2, qu: "pack" },
-    ],
-  },
-  result: callToolResult([
-    { kind: "ok", item_id: 55, product_name: "Oat milk", amount: 6, qu_name: "Carton" },
-    { kind: "ok", item_id: 56, product_name: "Rolled oats", amount: 2, qu_name: "Pack" },
-  ]),
-};
-
 const FALLBACK_PREVIEW_SAMPLE: PreviewSample = {
   // No widget for this (server, tool), arguments or result — the generic raw-JSON fallbacks
   // (compact clamps the arguments; the result shows only in detailed, as a labelled field).
@@ -471,8 +542,4 @@ const FALLBACK_PREVIEW_SAMPLE: PreviewSample = {
   ]),
 };
 
-export const PREVIEW_SAMPLES: PreviewSample[] = [
-  ...CUSTOM_PREVIEW_SAMPLES,
-  SHOPPING_ADD_PREVIEW_SAMPLE,
-  FALLBACK_PREVIEW_SAMPLE,
-];
+export const PREVIEW_SAMPLES: PreviewSample[] = [...CUSTOM_PREVIEW_SAMPLES, FALLBACK_PREVIEW_SAMPLE];
