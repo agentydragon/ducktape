@@ -136,25 +136,35 @@ in
   # Podman
   virtualisation.podman.enable = true;
 
-  # GNOME 49 dropped X11 sessions — Wayland is the only option.
-  # NixOS auto-disables Wayland for NVIDIA, but the display is QXL (not NVIDIA).
-  services.displayManager.gdm.wayland = true;
-  # Verbose GDM logging while debugging the seat-game session launch
-  # (sessions die without their Exec ever running). Remove when solved.
-  services.displayManager.gdm.debug = true;
-  # Greeter must never blank/DPMS-off: a dark DP output makes the FV43U's KVM
-  # auto-revert to USB-C before the seat-game keyboard can wake anything
-  # (see debug/atlas/direct_display_bringup.md).
-  programs.dconf.profiles.gdm.databases = [
-    {
-      settings."org/gnome/desktop/session".idle-delay = lib.gvariant.mkUint32 0;
-      # No greeter animations: the seat-game greeter's login fade stalls
-      # (frame clock hangs → the animation-completion callback that calls
-      # StartSession never fires → "frozen greeter" instead of session
-      # start). With animations off the callback runs immediately.
-      settings."org/gnome/desktop/interface".enable-animations = false;
-    }
-  ];
+  # Display manager: SDDM, not GDM. GDM refuses to start a second graphical
+  # session for a user already logged in elsewhere (its gnome-shell greeter's
+  # _findConflictingSession check, machine-wide, no per-seat exclude) — which
+  # blocked same-user multi-seat login on seat-game while the seat0 SPICE
+  # session was active. SDDM follows logind seats (per-seat greeter), sets
+  # XDG_SEAT per seat, and has no same-user veto. See
+  # debug/atlas/greeter_multiseat_research.md and direct_display_bringup.md.
+  #
+  # gdm.enable is set in the shared gui.nix module, so it is force-disabled
+  # here rather than removed (other hosts still use GDM).
+  services.displayManager.gdm.enable = lib.mkForce false;
+  services.displayManager.sddm = {
+    enable = true;
+    # Wayland greeter (GNOME 49 is Wayland-only; the seat0 greeter renders on
+    # QXL/virtio, not NVIDIA). SDDM runs the greeter under a Wayland compositor.
+    wayland.enable = true;
+  };
+
+  # GDM greeter dconf tweaks removed with the GDM→SDDM swap:
+  # - idle-delay=0 kept the DP output awake so the FV43U KVM would not revert to
+  #   USB-C before the seat-game keyboard could wake it. TODO: re-establish the
+  #   no-blank guarantee for the SDDM seat-game greeter (weston idle) if the KVM
+  #   reverts again — see debug/atlas/direct_display_bringup.md.
+  # - enable-animations=false was a wrong theory for the "frozen greeter": the
+  #   real cause was the conflicting-session dialog, now gone with GDM.
+  #
+  #   Old GDM-specific wiring, for reference if reverting:
+  #   services.displayManager.gdm.wayland = true;
+  #   services.displayManager.gdm.debug = true;
 
   # Sway session for the game seat (seat-game, on the display 5090). A real WM to
   # game + debug from, run as agentydragon — non-GNOME, so it doesn't clash with
