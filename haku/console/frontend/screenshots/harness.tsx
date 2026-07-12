@@ -30,6 +30,7 @@ function PreviewGallery() {
         <div
           style={{ maxWidth: 1000, margin: "0 auto", padding: 24, display: "flex", flexDirection: "column", gap: 28 }}
         >
+          <div style={{ fontSize: 18, fontWeight: 600 }}>PR visual publishing end-to-end smoke test</div>
           {PREVIEW_SAMPLES.map(({ title, serverId, toolName, args, result }, index) => {
             // A sample with a result renders as a finished OK call (so the result body shows);
             // one without stays pending, like the approval drawer's cards.
