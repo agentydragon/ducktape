@@ -343,7 +343,7 @@ The audit checked and ruled out several tempting false positives:
 3. D, E, F — consolidate OAuth protocol and token state.
 4. C and M — wake-boundary synchronization and valid history.
 5. G and H — repair security/source capability contracts.
-6. I and J — shared approval controller and correct Calendar presentation.
+6. J — correct Calendar presentation.
 7. K, L, and O — remove remaining method, routing, and fixture shadows.
 8. P through T — close the extension traps before enabling the affected features.
 
