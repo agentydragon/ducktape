@@ -43,6 +43,7 @@ async def list_entities(request: Request, auth: Auth, settings: SettingsDep) -> 
     states = await fetch_states(settings)
     is_human = auth.auth_type == "admin"
     return request.app.state.templates.TemplateResponse(
+        request,
         "ha_entities.html.j2",
         {
             "request": request,
@@ -63,6 +64,7 @@ async def entity_details(request: Request, entity_id: str, auth: Auth, settings:
     entity = next((s for s in states if s["entity_id"] == entity_id), None)
     is_human = auth.auth_type == "admin"
     return request.app.state.templates.TemplateResponse(
+        request,
         "ha_entity.html.j2",
         {
             "request": request,

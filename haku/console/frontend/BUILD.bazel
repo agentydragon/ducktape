@@ -2,7 +2,8 @@ load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary"
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
 load("@npm_ducktape//:typescript/package_json.bzl", tsc_bin = "bin")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
-load("//devinfra/js:openapi.bzl", "js_openapi_schema", "js_openapi_zod")
+load("//devinfra/js:json_schema.bzl", "js_json_schema")
+load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 
 package(default_visibility = ["//visibility:public"])
@@ -14,15 +15,23 @@ js_openapi_schema(
     generator = "//haku/console:export_schema_bin",
 )
 
-# Runtime Zod validators for the same backend models, generated from the same OpenAPI
-# JSON as :schema above. Used where a widget parses tool-call arguments it doesn't fully
-# trust (tool_previews/gmail.tsx) — a single source of truth for both the TS type and
-# the runtime shape check, instead of a hand-written `typeof`-narrowing guard that can
-# drift from the Pydantic model.
-js_openapi_zod(
-    name = "schema_zod",
-    out = "api/schema.zod.ts",
-    generator = "//haku/console:export_schema_bin",
+# The exact input schemas advertised by the in-process MCP servers. Keep both the generated
+# TypeScript declarations and their source JSON: :mcp_tool_schema turns each catalog entry into
+# a runtime Zod validator derived from FastMCP's advertised structural contract.
+js_json_schema(
+    name = "mcp_tool_arguments",
+    out = "api/mcp_tool_arguments.d.ts",
+    generator = "//haku/console:export_mcp_tool_schemas_bin",
+    schema_out = "api/mcp_tool_arguments.schema.json",
+)
+
+js_library(
+    name = "mcp_tool_schema",
+    srcs = ["mcp_tool_schema.ts"],
+    deps = [
+        ":mcp_tool_arguments",
+        "//:node_modules/zod",
+    ],
 )
 
 js_library(
@@ -521,6 +530,7 @@ tsc_bin.tsc_test(
         "bridge_client.test.ts",
         "geolocation.test.ts",
         "haku_ui_embed.test.ts",
+        "mcp_tool_schema.test.ts",
         "open_external.test.ts",
         "routing.test.ts",
         "screenshot_capture.test.ts",
@@ -528,8 +538,9 @@ tsc_bin.tsc_test(
         "tabler_icons.d.ts",
         "tsconfig.json",
         ":main_lib",
+        ":mcp_tool_arguments",
+        ":mcp_tool_schema",
         ":schema",
-        ":schema_zod",
         ":screenshot_harness_lib",
         "//:node_modules",
         "//:node_modules/@haku/console-bridge",
@@ -555,6 +566,7 @@ vitest_bin.vitest_test(
         "bridge_client.test.ts",
         "geolocation.test.ts",
         "haku_ui_embed.test.ts",
+        "mcp_tool_schema.test.ts",
         "open_external.test.ts",
         "routing.test.ts",
         "screenshot_capture.test.ts",
@@ -563,6 +575,7 @@ vitest_bin.vitest_test(
         ":bridge",
         ":geolocation",
         ":haku_ui_embed",
+        ":mcp_tool_schema",
         ":open_external",
         ":routing",
         ":screenshot_capture",

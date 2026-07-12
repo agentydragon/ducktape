@@ -59,7 +59,7 @@ dependencies = [
 
     # MCP
     "mcp[cli]>=1.13.1",
-    "fastmcp>=3.0.0,<4",
+    "fastmcp>=3.2.4,<3.3",
     "py-key-value-aio[valkey]>=0.4.4",
 
     # Docker

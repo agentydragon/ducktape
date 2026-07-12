@@ -41,6 +41,19 @@ py_library(
 )
 
 py_library(
+    name = "in_process_servers",
+    srcs = ["in_process_servers.py"],
+    deps = [
+        "//haku/console/tools:gmail",
+        "//haku/console/tools:gmail_client",
+        "//haku/console/tools:google_calendar",
+        "//haku/console/tools:google_calendar_client",
+        "//haku/console/tools:routine",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
     name = "deps",
     srcs = ["deps.py"],
     deps = [
@@ -156,6 +169,7 @@ py_library(
     deps = [
         ":capabilities",
         ":config",
+        ":in_process_servers",
         ":mcp_approval",
         ":mcp_operator_oauth",
         ":models",
@@ -194,6 +208,38 @@ py_binary(
     name = "export_schema_bin",
     main_module = "haku.console.export_schema",
     deps = [":export_schema"],
+)
+
+py_library(
+    name = "export_mcp_tool_schemas",
+    srcs = ["export_mcp_tool_schemas.py"],
+    deps = [
+        ":in_process_servers",
+        "@pypi//fastmcp",
+    ],
+)
+
+# Prints the exact tools/list input schemas for the frontend's generated MCP
+# argument validators and types.
+py_binary(
+    name = "export_mcp_tool_schemas_bin",
+    main_module = "haku.console.export_mcp_tool_schemas",
+    deps = [":export_mcp_tool_schemas"],
+)
+
+py_test(
+    name = "test_export_mcp_tool_schemas",
+    srcs = ["test_export_mcp_tool_schemas.py"],
+    deps = [
+        ":export_mcp_tool_schemas",
+        "//:conftest",
+        "@pypi//jsonschema",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//referencing",
+        # Pytest async auto mode is configured by the root conftest hooks.
+        "@pypi//pytest_asyncio",
+    ],
 )
 
 py_library(

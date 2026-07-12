@@ -15,9 +15,10 @@ import { launchPuppeteerBrowser } from "../../../../util/testing/frontend_visual
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-// The console's full-page surfaces (ToolCallsPage, ShellChrome) are position:fixed, so a
-// viewport screenshot — not an #app element shot — is what captures them. Each scene is a
-// separate page load driven by window.__SCENE__ (see harness.tsx).
+// The console's full-page application surfaces (ToolCallsPage, ShellChrome) are
+// position:fixed, so a viewport screenshot — not an #app element shot — is what captures
+// them. The preview gallery opts into a full-document shot below. Each scene is a separate
+// page load driven by window.__SCENE__ (see harness.tsx).
 const SCENES = [
   // The history page, showing both row states in one shot: flip the first row's Brief/Full
   // selector to Full (its segments are icons, so match the "Full" icon by aria-label) and open
@@ -29,9 +30,10 @@ const SCENES = [
     clicks: ['[aria-label="Full"]', "summary::-p-text(Metadata)"],
   },
   { name: "settings", viewport: { width: 1200, height: 900 } },
-  // Every implemented tool-call preview, compact | detailed side by side — tall, so give it room.
-  { name: "previews", viewport: { width: 1100, height: 4800 } },
-  // The whole shell chrome: approvals panel open by default; the clicks open the live-offline,
+  // Every implemented tool-call preview, compact | detailed side by side. Capture the full
+  // document so adding a preview cannot silently push later entries below a fixed viewport.
+  { name: "previews", viewport: { width: 1100, height: 900 }, fullPage: true },
+  // The whole shell chrome: approvals panel open by default; the clicks open the live-offline
   // location, and screenshot panels (their open state is internal to the chrome) so the shot
   // shows all four surfaces stacked by Y under the toggle-button row.
   {
@@ -103,7 +105,7 @@ const browser = await launchPuppeteerBrowser({
 });
 try {
   for (const colorScheme of COLOR_SCHEMES) {
-    for (const { name, viewport, click, clicks } of SCENES) {
+    for (const { name, viewport, click, clicks, fullPage = false } of SCENES) {
       const page = await browser.newPage();
       await page.setViewport({ ...viewport, deviceScaleFactor: 2 });
       await page.emulateMediaFeatures([
@@ -123,7 +125,7 @@ try {
         await new Promise((r) => setTimeout(r, 300));
       }
       const dest = join(outDir, `${name}-${colorScheme}.png`);
-      const png = await page.screenshot();
+      const png = await page.screenshot({ fullPage });
       writeFileSync(dest, png);
       console.log(`wrote ${dest}`);
       await page.close();

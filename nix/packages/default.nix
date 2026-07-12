@@ -7,13 +7,13 @@
 }:
 let
   # The ducktape umbrella wheel is built (on Bazel) against
-  # `fastmcp>=3.0` + `mcp==1.26.0` (see requirements_bazel.txt). nixpkgs
+  # `fastmcp>=3.2.4,<3.3` + `mcp==1.26.0` (see requirements_bazel.txt). nixpkgs
   # 25.11 ships fastmcp 2.12 + mcp 1.15, and even nixos-unstable only has
   # fastmcp 2.14. To let the MCP-using entry points (`git-commit-ai`,
   # `gmail-archiver`) import on NixOS we vendor mcp 1.26 (rebuilt against
-  # the stable python interpreter) and the three packages that fastmcp 3
-  # needs but nixpkgs doesn't carry: fastmcp itself, uncalled-for, and
-  # py-key-value-aio. Applied via a python interpreter override so the
+  # the stable python interpreter) and the four packages that fastmcp 3
+  # needs but nixpkgs doesn't carry: fastmcp itself, griffelib, uncalled-for,
+  # and py-key-value-aio. Applied via a python interpreter override so the
   # whole closure shares one consistent site-packages.
   python3 = pkgs.python3.override {
     self = python3;
@@ -37,9 +37,12 @@ let
       py-key-value-aio = pkgs.callPackage ./py-key-value-aio.nix {
         python3Packages = pyfinal;
       };
+      griffelib = pkgs.callPackage ./griffelib.nix {
+        python3Packages = pyfinal;
+      };
       fastmcp = pkgs.callPackage ./fastmcp.nix {
         python3Packages = pyfinal;
-        inherit (pyfinal) py-key-value-aio uncalled-for;
+        inherit (pyfinal) griffelib py-key-value-aio uncalled-for;
       };
     };
   };

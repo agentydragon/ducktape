@@ -22,10 +22,10 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
-from fastmcp import FastMCP
 
 from haku.console import capabilities, mcp_approval, mcp_operator_oauth
 from haku.console.config import Settings
+from haku.console.in_process_servers import InProcessServerDependencies, build_in_process_servers
 from haku.console.models import ConfigResponse
 from haku.console.tools import (
     gmail as gmail_tools,
@@ -78,28 +78,24 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.mcp_operator_oauth_store = (
         mcp_operator_oauth.PostgresMcpOperatorOAuthStore(database_url) if database_url is not None else None
     )
-    # Two in-process MCP servers (gmail, google_calendar) built from the one mounted
-    # haku_console_google token; each client is also exposed on app.state for its
-    # approval-render read endpoint (gmail thread previews, calendar-name resolution).
-    in_process_servers: dict[str, FastMCP] = {}
+    # Resolve the collaborators for the canonical in-process MCP server catalog. The
+    # Google clients are also exposed on app.state for their approval-render reads.
     app.state.gmail_client = None
     app.state.calendar_client = None
+    gmail_client = None
+    calendar_client = None
     if settings.google_token_dir is not None:
         gmail_client = gmail_tools.build_gmail_client(settings.google_token_dir)
         calendar_client = google_calendar_tools.build_calendar_client(settings.google_token_dir)
         app.state.gmail_client = gmail_client
         app.state.calendar_client = calendar_client
-        in_process_servers[gmail_tools.GMAIL_SERVER_ID] = gmail_tools.build_mcp(gmail_client)
-        in_process_servers[google_calendar_tools.GOOGLE_CALENDAR_SERVER_ID] = google_calendar_tools.build_mcp(
-            calendar_client
-        )
     # `haku_routine` fires the Haku claude-code-web routine as an approval-gated MCP tool (the
     # standard queue), superseding the bespoke launch-routine capability tier. Same
     # `launch_routine` config/secret; independent of the Google grant above.
-    if settings.launch_routine is not None:
-        in_process_servers[routine_tools.HAKU_ROUTINE_SERVER_ID] = routine_tools.build_mcp(
-            routine_tools.RoutineLauncher(settings.launch_routine)
-        )
+    routine_launcher = routine_tools.RoutineLauncher(settings.launch_routine) if settings.launch_routine else None
+    in_process_servers = build_in_process_servers(
+        InProcessServerDependencies(gmail=gmail_client, calendar=calendar_client, routine_launcher=routine_launcher)
+    )
     app.state.tool_call_event_hub = tool_call_event_hub
     app.state.in_process_servers = in_process_servers
     app.state.tool_call_executor = mcp_approval.McpToolExecutor(in_process_servers)

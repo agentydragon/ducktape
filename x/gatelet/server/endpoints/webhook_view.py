@@ -182,6 +182,7 @@ async def list_all_payloads(
 
     # Add request-specific context
     return request.app.state.templates.TemplateResponse(
+        request,
         "webhook_payloads.html.j2",
         context
         | {
@@ -212,6 +213,7 @@ async def list_integration_payloads(
 
     # Add request-specific context
     return request.app.state.templates.TemplateResponse(
+        request,
         "webhook_payloads.html.j2",
         context
         | {

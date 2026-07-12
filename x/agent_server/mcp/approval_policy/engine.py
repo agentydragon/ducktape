@@ -17,7 +17,7 @@ import pydantic_core
 from fastmcp.client import Client
 from fastmcp.server.context import ServerSession
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools import ToolResult
 from mako.template import Template
 from mcp import McpError, types as mtypes
 from mcp.types import ErrorData

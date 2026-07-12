@@ -14,10 +14,9 @@ import { clampBlock, type PreviewProps } from "./variant.tsx";
 
 export const KUBECTL_SERVER_ID = "kubectl-passthrough-mcp";
 
-// kubectl-passthrough-mcp is a third-party binary (containers/kubernetes-mcp-server) —
-// there's no backend Pydantic model to generate these from (unlike gmail.tsx's
-// :schema_zod), so they're hand-authored once, here, against that tool's real input schema
-// (checked via a live `tools/list` call against the deployed server).
+// kubectl-passthrough-mcp is a remote third-party binary
+// (containers/kubernetes-mcp-server), so its tools/list schemas are not available to the
+// build-time in-process catalog. These are hand-authored against the live advertised schema.
 const zResourcesCreateOrUpdateArgs = z.object({
   resource: z.string(),
 });

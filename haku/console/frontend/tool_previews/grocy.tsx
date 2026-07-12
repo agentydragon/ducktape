@@ -4,9 +4,9 @@
 // arguments are only validated by the tool's own schema at execution time, not at submission.
 //
 // grocy-sf's tool surface is generated from Grocy's own OpenAPI spec plus custom batch
-// tools (grocy_mcp/batch_tools.py) — there's no backend Pydantic model haku-console owns to
-// generate Zod schemas from (unlike gmail.tsx's :schema_zod), so these are
-// hand-authored once, here, against grocy_mcp/mcp_types.py's `AddItem` / `ConsumeItem` /
+// tools (grocy_mcp/batch_tools.py). Because it is a remote operator-OAuth server rather than an
+// in-process console server, its tools/list schemas are not available to the build-time catalog;
+// these are hand-authored here against grocy_mcp/mcp_types.py's `AddItem` / `ConsumeItem` /
 // `CreateProductItem`. Every tool call runs as the approving operator's own linked Grocy
 // account (operator_oauth) once approved.
 //

@@ -15,7 +15,7 @@ from typing import Any
 
 from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools import Tool, ToolResult
 from pydantic import BaseModel, Field
 
 

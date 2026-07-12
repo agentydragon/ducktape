@@ -3,22 +3,25 @@
 // (approval_state.ts's argumentsJson) for anything that isn't shaped as expected — arguments
 // are only validated by the tool's own Pydantic model at execution time, not at submission,
 // so a pending approval's arguments could in principle be malformed. The read tools have no
-// widget here (their args — a query, an id, a format — are self-descriptive). The zod schemas
-// below are generated from the write tools' Pydantic argument models (:schema_zod), so this
-// file's shape checks can never drift from the backend's — see haku/console/tools/gmail.py.
+// widget here (their args — a query, an id, a format — are self-descriptive). The Zod schemas
+// below are built from the FastMCP input schemas advertised by tools/list. Execution still owns
+// cross-field rules that JSON Schema cannot express, such as add/remove label overlap.
 
 import { Anchor, Badge, Group, Loader, Stack, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
 import type { z } from "zod";
 
-import { zCreateGmailDraftArgs, zModifyGmailThreadLabelsArgs } from "../api/schema.zod.ts";
 import { Field } from "../field.tsx";
 import { fetchGmailThreadPreviews, type GmailThreadPreview } from "../gmail_client.ts";
 import { MailIcon } from "../icons.tsx";
+import { mcpToolSchema } from "../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "./entry.tsx";
 import { COMPACT_ITEM_LIMIT, firstLines, MoreLine, plural, type PreviewProps } from "./variant.tsx";
 
 export const GMAIL_SERVER_ID = "gmail";
+
+const zModifyGmailThreadLabelsArgs = mcpToolSchema(GMAIL_SERVER_ID, "threads_modify_labels");
+const zCreateGmailDraftArgs = mcpToolSchema(GMAIL_SERVER_ID, "drafts_create");
 
 type ModifyGmailThreadLabelsArgs = z.infer<typeof zModifyGmailThreadLabelsArgs>;
 type CreateGmailDraftArgs = z.infer<typeof zCreateGmailDraftArgs>;

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import time
+from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
@@ -15,7 +16,7 @@ from fastmcp.server.auth.auth import TokenVerifier
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from glide_shared.exceptions import TimeoutError as GlideTimeoutError
 from key_value.aio.stores.memory import MemoryStore
-from mcp.server.auth.provider import TokenError
+from mcp.server.auth.provider import RefreshToken, TokenError
 from prometheus_client import REGISTRY
 from starlette.exceptions import HTTPException
 from tenacity import wait_none
@@ -369,25 +370,24 @@ async def test_exchange_auth_works_without_store() -> None:
 
 # ── ResilientOIDCProxy tests ──────────────────────────────────────────────
 #
-# These pin the load-bearing assumption that fastmcp's OAuthProxy raises its
-# blanket TokenError("invalid_grant") `from` the original httpx exception
-# (fastmcp 3.1.0 oauth_proxy/proxy.py exchange_refresh_token) — and that our
-# subclass reclassifies transient upstream failures instead of surfacing the
-# terminal invalid_grant that makes claude.ai permanently drop the connector.
+# These pin the load-bearing assumption that FastMCP's OAuthProxy raises its
+# blanket TokenError("invalid_grant") `from` the original httpx exception — and
+# that our subclass reclassifies transient upstream failures instead of surfacing
+# the terminal invalid_grant that makes claude.ai permanently drop the connector.
 
 
 @pytest.fixture
 def proxy(monkeypatch: pytest.MonkeyPatch) -> ResilientOIDCProxy:
-    # exchange_refresh_token (the code under test) only calls super() and module
-    # globals; OIDCProxy.__init__ would fetch the OIDC discovery URL over the
-    # network, so skip it. No waiting between retries in tests.
+    # OIDCProxy.__init__ fetches OIDC discovery over the network, so skip it;
+    # each test installs the minimum state needed for its branch. Do not wait
+    # between retries in tests.
     monkeypatch.setattr(ResilientOIDCProxy, "refresh_retry_wait", wait_none())
     return object.__new__(ResilientOIDCProxy)
 
 
 def _invalid_grant_from(cause: BaseException | None) -> TokenError:
-    # TokenError is a frozen dataclass — __cause__ can't be assigned directly.
-    # `raise ... from` sets it at the interpreter level, exactly like fastmcp does.
+    # Synthetic helper for focused wrapper tests. TokenError is a frozen
+    # dataclass, so `raise ... from` is needed to set its interpreter-level cause.
     try:
         raise TokenError("invalid_grant", "Upstream refresh failed: boom") from cause
     except TokenError as raised:
@@ -401,6 +401,36 @@ def _http_error(status: int) -> httpx.HTTPStatusError:
 
 def _failures(outcome: str) -> float:
     return REGISTRY.get_sample_value("mcp_auth_upstream_refresh_failures_total", {"outcome": outcome}) or 0.0
+
+
+async def test_fastmcp_upstream_refresh_preserves_transport_error_cause(proxy: ResilientOIDCProxy) -> None:
+    """Exercise FastMCP's real superclass path that our retry policy depends on."""
+    upstream_url = "https://auth.example.com/application/o/token/"
+    upstream_request = httpx.Request("POST", upstream_url)
+    upstream_failure = httpx.ConnectError("temporary DNS failure", request=upstream_request)
+    state = cast(Any, proxy)
+    state._jwt_issuer = SimpleNamespace(verify_token=Mock(return_value={"jti": "refresh-jti"}))
+    state._jti_mapping_store = AsyncMock()
+    state._jti_mapping_store.get.return_value = SimpleNamespace(upstream_token_id="upstream-token-id")
+    state._upstream_token_store = AsyncMock()
+    state._upstream_token_store.get.return_value = SimpleNamespace(refresh_token="authentik-refresh-token")
+    state._upstream_token_endpoint = upstream_url
+    state._extra_token_params = {}
+    upstream_client = AsyncMock()
+    upstream_client.refresh_token.side_effect = upstream_failure
+    refresh_token = RefreshToken(token="fastmcp-refresh", client_id="client-id", scopes=["openid"])
+
+    with (
+        patch.object(proxy, "_create_upstream_oauth_client", return_value=upstream_client),
+        pytest.raises(TokenError) as exc_info,
+    ):
+        await OIDCProxy.exchange_refresh_token(proxy, AsyncMock(), refresh_token, ["openid"])
+
+    assert exc_info.value.error == "invalid_grant"
+    assert exc_info.value.__cause__ is upstream_failure
+    upstream_client.refresh_token.assert_awaited_once_with(
+        url=upstream_url, refresh_token="authentik-refresh-token", scope="openid"
+    )
 
 
 async def test_resilient_proxy_transient_5xx_becomes_503(proxy: ResilientOIDCProxy) -> None:

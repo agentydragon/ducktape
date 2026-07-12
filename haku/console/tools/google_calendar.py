@@ -16,7 +16,7 @@ from typing import Annotated, cast
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastmcp import FastMCP
 from googleapiclient.discovery import build
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from gmail_api.service import credentials_from_token_dir
 from haku.console.tools.google_calendar_client import (
@@ -109,21 +109,3 @@ async def calendar_summary(calendar: CalendarClientDep, calendar_id: Annotated[s
     `create_calendar_event` approval — the tool call only carries the id, so the approval UI
     resolves the human-readable name here. A plain HTTP read, not an MCP tool."""
     return resolve_calendar_summary(calendar.service, calendar_id)
-
-
-class CalendarToolArgumentExamples(BaseModel):
-    """Registers `create_calendar_event`'s argument model in the OpenAPI schema so the frontend
-    gets both the runtime Zod validator and the inferred TS type from generated
-    `api/schema.zod.ts` (see `tool_previews/google_calendar.tsx`). The value is a placeholder: nothing
-    reads this endpoint's response, only `export_schema.py`'s static trace of it needs to exist."""
-
-    create_calendar_event: CreateCalendarEventArgs
-
-
-@router.get("/tool-argument-schema-examples")
-async def calendar_tool_argument_schema_examples() -> CalendarToolArgumentExamples:
-    return CalendarToolArgumentExamples(
-        create_calendar_event=CreateCalendarEventArgs(
-            summary="Example event", start=EventDateTime(date="2026-01-01"), end=EventDateTime(date="2026-01-02")
-        )
-    )

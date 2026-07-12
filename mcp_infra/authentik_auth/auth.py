@@ -167,8 +167,8 @@ def _upstream_oauth_rejection(exc: BaseException | None) -> bool:
 class ResilientOIDCProxy(OIDCProxy):
     """OIDCProxy that doesn't convert transient upstream failures into invalid_grant.
 
-    Stock fastmcp (3.1.0, oauth_proxy/proxy.py `exchange_refresh_token`) wraps the
-    upstream refresh call in a blanket `except Exception` and raises
+    FastMCP's `OAuthProxy.exchange_refresh_token` wraps the upstream refresh call
+    in a blanket `except Exception` and raises
     `TokenError("invalid_grant")`. Per RFC 6749 §5.2, invalid_grant tells the client
     its refresh token is revoked — claude.ai correctly treats it as terminal, flips
     the connector to "Reconnect", and never retries. A single Authentik restart
@@ -180,8 +180,8 @@ class ResilientOIDCProxy(OIDCProxy):
     instead of invalid_grant. Genuine upstream OAuth error responses (Authentik
     actually rejecting the grant) still surface as invalid_grant.
 
-    Detection relies on fastmcp raising its TokenError `from` the original httpx
-    exception — pinned by test_auth.py against the vendored fastmcp version.
+    Detection relies on FastMCP raising its TokenError `from` the original httpx
+    exception — pinned by test_auth.py against the locked FastMCP version.
     """
 
     # Short on purpose: retries only bridge sub-second blips; longer outages are

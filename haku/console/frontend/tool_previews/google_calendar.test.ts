@@ -20,6 +20,37 @@ describe("googleCalendarPreviews", () => {
       renderPreview(googleCalendarPreviews.create_calendar_event, { summary: "no start/end" }, "detailed")
     ).toBeNull();
   });
+
+  it("keeps the custom preview when nullable FastMCP arguments are explicitly null", () => {
+    expect(
+      renderPreview(
+        googleCalendarPreviews.create_calendar_event,
+        {
+          summary: "Standup",
+          start: { date: "2026-09-15" },
+          end: { date: "2026-09-16" },
+          reminders: null,
+          attendees: null,
+        },
+        "detailed"
+      )
+    ).not.toBeNull();
+  });
+
+  it("rejects unknown arguments instead of rendering a custom preview", () => {
+    expect(
+      renderPreview(
+        googleCalendarPreviews.create_calendar_event,
+        {
+          summary: "Standup",
+          start: { date: "2026-09-15" },
+          end: { date: "2026-09-16" },
+          unexpected: true,
+        },
+        "compact"
+      )
+    ).toBeNull();
+  });
 });
 
 describe("formatEventDateTimeRange", () => {

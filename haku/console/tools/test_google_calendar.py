@@ -34,6 +34,26 @@ async def test_create_calendar_event_dispatches_to_calendar_client():
     assert args.summary == "S"
 
 
+async def test_create_calendar_event_accepts_explicit_null_lists():
+    calendar = Mock()
+    calendar.create_event.return_value = CreateCalendarEventResult(event_id="evt1", html_link="https://x/evt1")
+    async with Client(_mcp(calendar=calendar)) as client:
+        result = await client.call_tool(
+            "create_calendar_event",
+            {
+                "summary": "S",
+                "start": {"date": "2026-09-15"},
+                "end": {"date": "2026-09-16"},
+                "reminders": None,
+                "attendees": None,
+            },
+        )
+    assert not result.is_error
+    (args,), _kwargs = calendar.create_event.call_args
+    assert args.reminders == []
+    assert args.attendees == []
+
+
 def test_calendar_summary_endpoint_503s_when_unconfigured(make_client) -> None:
     with make_client() as http_client:
         resp = http_client.get("/api/google-calendar/calendar-summary", params={"calendar_id": "c1"})

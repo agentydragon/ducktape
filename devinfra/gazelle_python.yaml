@@ -264,6 +264,7 @@ manifest:
     jinja2: jinja2
     jiter: jiter
     jmespath: jmespath
+    joserfc: joserfc
     json5: json5
     json_repair: json_repair
     jsonlines: jsonlines
@@ -659,4 +660,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 2d8cf667b8bae6987778f9fc5ad8430dff907c1920aa07f3964707762371f0f2
+integrity: 4aa8ae383650b5688945d286d785888e1c7ddcf06eb9811d3bc3ed818d5e2517

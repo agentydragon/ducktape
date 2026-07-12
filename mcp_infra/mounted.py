@@ -11,7 +11,7 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resource_utils import add_resource_prefix
 
 if TYPE_CHECKING:
-    from fastmcp.tools.tool import Tool
+    from fastmcp.tools import Tool
 
 
 @dataclass

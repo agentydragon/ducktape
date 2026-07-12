@@ -1,25 +1,27 @@
 // Per-tool-type rendering for haku-console's in-process `google_calendar` MCP server (see
 // haku/console/tools/google_calendar.py). Falls back to the generic raw-JSON view
 // (approval_state.ts's argumentsJson) for anything that isn't shaped as expected. The zod
-// schema below is generated from `create_calendar_event`'s Pydantic argument model
-// (:schema_zod), so this file's shape checks can never drift from the backend's.
+// schema below is built from the FastMCP input schema advertised by tools/list. Execution-only
+// Pydantic cross-field validators may be stricter than that structural schema.
 
 import { Anchor, Loader, Stack, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
 import type { z } from "zod";
 
-import { zCalendarReminder, zCreateCalendarEventArgs, zEventDateTime } from "../api/schema.zod.ts";
 import { fetchCalendarSummary, type CalendarSummary } from "../calendar_client.ts";
 import { Field } from "../field.tsx";
 import { BellIcon, CalendarIcon, ClockIcon, MapPinIcon, UsersIcon } from "../icons.tsx";
+import { mcpToolSchema } from "../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "./entry.tsx";
 import type { PreviewProps } from "./variant.tsx";
 
 export const GOOGLE_CALENDAR_SERVER_ID = "google_calendar";
 
-type EventDateTime = z.infer<typeof zEventDateTime>;
-type CalendarReminder = z.infer<typeof zCalendarReminder>;
+const zCreateCalendarEventArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "create_calendar_event");
+
 type CreateCalendarEventArgs = z.infer<typeof zCreateCalendarEventArgs>;
+type EventDateTime = CreateCalendarEventArgs["start"];
+type CalendarReminder = NonNullable<CreateCalendarEventArgs["reminders"]>[number];
 
 function formatEventDateTime(value: EventDateTime): string {
   if (value.date) return value.date;

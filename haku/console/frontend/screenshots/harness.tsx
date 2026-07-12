@@ -8,7 +8,7 @@
 // tool_calls_page.tsx) captures `globalThis.fetch`; the history view then renders populated.
 import "./mock_api.ts";
 
-import { MantineProvider, Text } from "@mantine/core";
+import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
 import { ShellChrome, type ShellChromeProps } from "../console_panel.tsx";
@@ -25,8 +25,8 @@ const noop = () => {};
 // side, so a glance covers the whole widget surface (see PREVIEW_SAMPLES / frontend/AGENTS.md).
 function PreviewGallery() {
   return (
-    <div className="haku-page">
-      <div className="haku-page-scroll">
+    <div className="haku-page" style={{ position: "static", minHeight: "100vh" }}>
+      <div className="haku-page-scroll" style={{ overflow: "visible" }}>
         <div
           style={{ maxWidth: 1000, margin: "0 auto", padding: 24, display: "flex", flexDirection: "column", gap: 28 }}
         >

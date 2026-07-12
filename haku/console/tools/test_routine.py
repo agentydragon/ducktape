@@ -38,5 +38,14 @@ async def test_launch_routine_defaults_text_to_none():
     launcher.launch.assert_awaited_once_with(None)
 
 
+async def test_launch_routine_accepts_explicit_null_text():
+    launcher = Mock()
+    launcher.launch = AsyncMock(return_value=LaunchRoutineResult(session_url="https://x/s"))
+    async with Client(_mcp(launcher=launcher)) as client:
+        result = await client.call_tool("launch_routine", {"text": None})
+    assert not result.is_error
+    launcher.launch.assert_awaited_once_with(None)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

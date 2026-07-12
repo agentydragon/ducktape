@@ -103,6 +103,15 @@ async def test_threads_modify_labels_dispatches(gmail: Mock, client):
     assert args.remove == []  # omitted -> empty, not None
 
 
+async def test_threads_modify_labels_accepts_explicit_null_list(gmail: Mock, client):
+    gmail.threads_modify_labels.return_value = ModifyGmailThreadLabelsResult(added=[], removed=[], thread_count=1)
+    result = await client.call_tool("threads_modify_labels", {"thread_ids": ["t1"], "add": ["urgent"], "remove": None})
+    assert not result.is_error
+    (args,), _kwargs = gmail.threads_modify_labels.call_args
+    assert args.add == ["urgent"]
+    assert args.remove == []
+
+
 async def test_threads_modify_labels_rejects_unknown_arguments(client):
     result = await client.call_tool(
         "threads_modify_labels", {"thread_ids": ["t1"], "add": ["haku/x"], "unexpected": True}, raise_on_error=False
@@ -115,6 +124,14 @@ async def test_drafts_create_returns_draft_resource(gmail: Mock, client):
     result = await client.call_tool("drafts_create", {"to": ["a@example.com"], "subject": "S", "body": "B"})
     assert not result.is_error
     assert result.data.id == "d1"
+
+
+async def test_drafts_create_accepts_explicit_null_cc(gmail: Mock, client):
+    gmail.drafts_create.return_value = Draft(id="d1", message=Message(id="m1"))
+    result = await client.call_tool("drafts_create", {"to": ["a@example.com"], "subject": "S", "body": "B", "cc": None})
+    assert not result.is_error
+    (args,), _kwargs = gmail.drafts_create.call_args
+    assert args.cc == []
 
 
 async def test_drafts_create_rejects_empty_recipients(client):

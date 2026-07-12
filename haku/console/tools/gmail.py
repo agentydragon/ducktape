@@ -23,7 +23,7 @@ from typing import Annotated, cast
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastmcp import FastMCP
 from googleapiclient.discovery import build
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from gmail_api.labels import (
     CreateLabelRequest,
@@ -206,23 +206,3 @@ async def gmail_thread_previews(
     approval UI resolves display text here rather than trusting caller-supplied text it can't
     verify. A plain HTTP read, not an MCP tool — outside `build_mcp`'s surface."""
     return GmailThreadPreviewsResponse(threads=preview_gmail_threads(gmail.service, thread_id))
-
-
-class GmailToolArgumentExamples(BaseModel):
-    """Registers the write tools' argument models in the OpenAPI schema so the frontend gets
-    both the runtime Zod validator and the inferred TS type from generated `api/schema.zod.ts`
-    (see `tool_previews/gmail.tsx`). The read tools are omitted — their arguments (a query
-    string, an id, a format enum) render fine in the approval drawer's generic argument view.
-    The values are placeholders: nothing reads this endpoint's response, only
-    `export_schema.py`'s static trace of it needs to exist for these models to reach the schema."""
-
-    threads_modify_labels: ModifyGmailThreadLabelsArgs
-    drafts_create: CreateGmailDraftArgs
-
-
-@router.get("/tool-argument-schema-examples")
-async def gmail_tool_argument_schema_examples() -> GmailToolArgumentExamples:
-    return GmailToolArgumentExamples(
-        threads_modify_labels=ModifyGmailThreadLabelsArgs(thread_ids=["example-thread-id"], add=["example"]),
-        drafts_create=CreateGmailDraftArgs(to=["example@example.com"], subject="Example", body="Example"),
-    )

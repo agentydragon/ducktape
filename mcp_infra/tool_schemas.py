@@ -12,8 +12,8 @@ from __future__ import annotations
 import inspect
 from typing import TYPE_CHECKING
 
+from fastmcp.tools import Tool
 from fastmcp.tools.function_tool import FunctionTool
-from fastmcp.tools.tool import Tool
 from pydantic import BaseModel
 
 from mcp_infra.flat_tool import FlatTool

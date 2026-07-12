@@ -69,9 +69,7 @@ py_library(
     deps = [
         "//agent_core:pydantic_utils",
         "@pypi//fastmcp",
-        "@pypi//mcp",
         "@pypi//pydantic",
-        "@pypi//pydantic_core",
     ],
 )
 

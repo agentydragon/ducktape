@@ -9,12 +9,9 @@ import inspect
 from collections.abc import Callable
 from typing import Any
 
-import pydantic_core
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_context
-from fastmcp.tools.tool import Tool, ToolResult, _convert_to_content
-from fastmcp.utilities.types import Audio, File, Image
-from mcp.types import ContentBlock
+from fastmcp.tools import Tool, ToolResult
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from agent_core.pydantic_utils import format_validation_error
@@ -61,26 +58,4 @@ class FlatTool[InputModelT: BaseModel, OutputT](Tool):
         if inspect.isawaitable(result):
             result = await result
 
-        # Convert to ToolResult (adapted from FunctionTool.run)
-        if isinstance(result, ToolResult):
-            return result
-
-        unstructured_result = _convert_to_content(result, serializer=self.serializer)
-
-        if self.output_schema is None:
-            # Handle MCP content types
-            if isinstance(result, ContentBlock | Audio | Image | File) or (
-                isinstance(result, list | tuple) and any(isinstance(item, ContentBlock) for item in result)
-            ):
-                return ToolResult(content=unstructured_result)
-            # Try dict serialization
-            try:
-                structured_content = pydantic_core.to_jsonable_python(result)
-                if isinstance(structured_content, dict):
-                    return ToolResult(content=unstructured_result, structured_content=structured_content)
-            except pydantic_core.PydanticSerializationError:
-                pass
-            return ToolResult(content=unstructured_result)
-
-        wrap_result = self.output_schema.get("x-fastmcp-wrap-result")
-        return ToolResult(content=unstructured_result, structured_content={"result": result} if wrap_result else result)
+        return self.convert_result(result)

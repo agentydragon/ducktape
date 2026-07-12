@@ -342,7 +342,7 @@ py_wheel(
         "aiodocker",
         "anyio",
         "compact-json",
-        "fastmcp>=3.0.0",
+        "fastmcp>=3.2.4,<3.3",
         "httpx",
         "jinja2",
         "mako>=1.3",

@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 from fastmcp import FastMCP
-from fastmcp.tools.tool import Tool
+from fastmcp.tools import Tool
 from pydantic import BaseModel
 
 from agent_core.testing.mcp.echo_server import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput, EchoOutput

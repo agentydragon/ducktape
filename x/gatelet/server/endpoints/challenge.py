@@ -72,6 +72,7 @@ async def start_challenge(key_id: int, request: Request, db_session: DbSession, 
     key = await _validate_key(key_id, db_session, settings)
     nonce, _, options = await _new_challenge(key, db_session, settings)
     return request.app.state.templates.TemplateResponse(
+        request,
         "challenge.html.j2",
         {
             "request": request,
@@ -90,6 +91,7 @@ async def _render_new_challenge(
 ):
     nonce, _, options = await _new_challenge(key, db_session, settings)
     return request.app.state.templates.TemplateResponse(
+        request,
         "challenge.html.j2",
         {
             "request": request,

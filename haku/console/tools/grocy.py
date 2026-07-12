@@ -46,10 +46,9 @@ def _grocy_reference_items(structured_content: dict[str, Any] | None) -> list[Gr
     """Extract `{id, name}` rows from a grocy-sf `*_list` tool's structured result.
 
     Reads `structured_content` (the raw, MCP-wire-shape result — FastMCP wraps a bare-list
-    tool return value as `{"result": [...]}`) rather than the convenience `.data` property.
-    `fastmcp==3.1.0` fails to reconstruct `.data` for loosely-typed list results (returns
-    opaque placeholder objects instead of the underlying dicts) — `structured_content` has
-    no such version-dependent reconstruction step, so it's the reliable source here.
+    tool return value as `{"result": [...]}`) rather than the convenience `.data` property,
+    keeping this adapter independent of FastMCP's reconstruction rules for loosely typed
+    list results.
     """
     assert structured_content is not None
     rows = structured_content["result"]

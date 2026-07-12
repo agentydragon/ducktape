@@ -56,6 +56,7 @@ async def login(
     await csrf_protect.validate_csrf(request)
     if not verify_password(password, settings.admin.password_hash):
         return request.app.state.templates.TemplateResponse(
+            request,
             "public.html.j2",
             {
                 "request": request,
@@ -88,6 +89,7 @@ async def admin_root(request: Request, auth: Auth, settings: SettingsDep, db_ses
     ha_states = await fetch_states(settings)
     aw_summary = await activitywatch.fetch_recent_activity(settings.activitywatch)
     return request.app.state.templates.TemplateResponse(
+        request,
         "index.html.j2",
         {
             "request": request,
@@ -106,7 +108,7 @@ async def list_keys(
     keys = (await db_session.execute(select(AuthKey).order_by(AuthKey.id))).scalars().all()
     token, signed = csrf_protect.generate_csrf_tokens()
     response = request.app.state.templates.TemplateResponse(
-        "admin_keys.html.j2", {"request": request, "keys": keys, "csrf_token": token}
+        request, "admin_keys.html.j2", {"request": request, "keys": keys, "csrf_token": token}
     )
     csrf_protect.set_csrf_cookie(signed, response)
     return response
@@ -116,7 +118,7 @@ async def list_keys(
 async def new_key_form(request: Request, admin_session: AdminSessionDep, csrf_protect: Csrf) -> HTMLResponse:
     token, signed = csrf_protect.generate_csrf_tokens()
     response = request.app.state.templates.TemplateResponse(
-        "admin_key_new.html.j2", {"request": request, "csrf_token": token}
+        request, "admin_key_new.html.j2", {"request": request, "csrf_token": token}
     )
     csrf_protect.set_csrf_cookie(signed, response)
     return response
@@ -136,7 +138,7 @@ async def create_key(
     await db_session.flush()
     token, signed = csrf_protect.generate_csrf_tokens()
     response = request.app.state.templates.TemplateResponse(
-        "admin_key_created.html.j2", {"request": request, "key": key, "csrf_token": token}
+        request, "admin_key_created.html.j2", {"request": request, "key": key, "csrf_token": token}
     )
     csrf_protect.set_csrf_cookie(signed, response)
     return response
@@ -162,6 +164,7 @@ async def list_admin_sessions(
     sessions = (await db_session.execute(select(AdminSession).order_by(AdminSession.created_at))).scalars().all()
     token, signed = csrf_protect.generate_csrf_tokens()
     response = request.app.state.templates.TemplateResponse(
+        request,
         "admin_sessions.html.j2",
         {"request": request, "sessions": sessions, "csrf_token": token, "session_type": "admin"},
     )
@@ -193,7 +196,9 @@ async def list_llm_sessions(
     sessions = (await db_session.execute(select(AuthCRSession).order_by(AuthCRSession.created_at))).scalars().all()
     token, signed = csrf_protect.generate_csrf_tokens()
     response = request.app.state.templates.TemplateResponse(
-        "admin_sessions.html.j2", {"request": request, "sessions": sessions, "csrf_token": token, "session_type": "llm"}
+        request,
+        "admin_sessions.html.j2",
+        {"request": request, "sessions": sessions, "csrf_token": token, "session_type": "llm"},
     )
     csrf_protect.set_csrf_cookie(signed, response)
     return response
@@ -228,5 +233,5 @@ async def view_logs(
     else:
         log_text = "<log file not found>"
     return request.app.state.templates.TemplateResponse(
-        "admin_logs.html.j2", {"request": request, "log_text": log_text, "lines": lines}
+        request, "admin_logs.html.j2", {"request": request, "log_text": log_text, "lines": lines}
     )

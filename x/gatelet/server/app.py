@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 async def auth_error_handler(request: Request, exc: AuthHandlerError):
     """Handle all auth errors in HTML-friendly way."""
     return request.app.state.templates.TemplateResponse(
+        request,
         "error.html.j2",
         {"request": request, "status_code": status.HTTP_401_UNAUTHORIZED, "detail": "Authentication failed"},
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -78,6 +79,7 @@ async def root(request: Request, session: str | None = Cookie(default=None), csr
 
     token, signed = csrf_protect.generate_csrf_tokens()
     response = request.app.state.templates.TemplateResponse(
+        request,
         "public.html.j2",
         {
             "request": request,

@@ -3,20 +3,21 @@
 {
   lib,
   python3Packages,
+  griffelib,
   py-key-value-aio,
   uncalled-for,
   fetchFromGitHub,
 }:
 python3Packages.buildPythonPackage rec {
   pname = "fastmcp";
-  version = "3.1.0";
+  version = "3.2.4";
   pyproject = true;
 
   src = fetchFromGitHub {
-    owner = "jlowin";
+    owner = "PrefectHQ";
     repo = "fastmcp";
     tag = "v${version}";
-    hash = "sha256-MnU69JuMlRwiUFIOaws9N7Hw6oDnrIIwCoWuHFrvbHQ=";
+    hash = "sha256-rJpxPvqAaa6/vXhG1+R9dI32cY/54e6I+F/zyBVoqBM=";
   };
 
   # `uv-dynamic-versioning` reads the version from `git describe`; the source
@@ -37,6 +38,7 @@ python3Packages.buildPythonPackage rec {
       authlib
       cyclopts
       exceptiongroup
+      griffelib
       httpx
       jsonref
       jsonschema-path
@@ -72,7 +74,7 @@ python3Packages.buildPythonPackage rec {
 
   meta = {
     description = "Fast Pythonic way to build MCP servers and clients";
-    homepage = "https://github.com/jlowin/fastmcp";
+    homepage = "https://github.com/PrefectHQ/fastmcp";
     license = lib.licenses.asl20;
   };
 }
