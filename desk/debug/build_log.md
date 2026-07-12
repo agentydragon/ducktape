@@ -580,3 +580,28 @@ Sunshine → Moonlight (on atlas) over the existing iGPU → TB4 → KVM
 display path at 4K60. No desk rewiring needed; the direct-DP /
 monitor-dual-KVM option is shelved unless >60 Hz or VRR is ever
 wanted. Plan + post-reboot checklist: `debug/atlas/gpu-strategy.md`.
+
+**Note:** The Sunshine decision was superseded the same evening — see
+the next entry.
+
+## 2026-07-02 — gaming-display cables wired; DP locked but black
+
+**Physical wiring (same evening).** Ivanky 8K DP m-m: RTX 5090
+(`02:00.0`) DP-OUT → FV43U DP 1.4 in. USB A→B: FV43U USB-B uplink →
+atlas rear USB-A. FV43U KVM Wizard bound: USB-B ↔ DP, USB-C ↔ USB-C.
+
+**Observations.** Monitor locked 4K signal on DP input but displayed
+all-black (mutter cross-GPU copy failure — virtio-primary +
+nvidia-secondary compositor path). FV43U hub did not switch to USB-B
+(gated on target input having signal). Full session log:
+`debug/atlas/direct_display_bringup.md`.
+
+## 2026-07-05 — DP cable moved to 01:00.0; gaming path confirmed
+
+**Physical change.** Replugged Ivanky 8K DP m-m from `02:00.0` 5090
+to `01:00.0` 5090 (no other cable changes). Makes render==display GPU,
+eliminating cross-PCIe frame copies.
+
+**Observations.** Sway on seat-game, per-title gamescope, DP audio
+(via `01:00.1` passthrough), and Stellaris (Proton): all confirmed
+working. See `debug/atlas/direct_display_bringup.md`.
