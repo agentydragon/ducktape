@@ -38,43 +38,44 @@ export function ToolCallCard({
   return (
     <section className="haku-shell-card">
       <Stack gap="sm">
-        <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
-          <Stack gap={2} style={{ minWidth: 0 }}>
-            <Text fw={600} size="sm">
-              {fields.title}
-            </Text>
-            <ToolActionLine serverId={fields.serverId} toolName={fields.toolName} args={args} />
-            {fields.rationale && <Text size="xs">{fields.rationale}</Text>}
-            {error && (
-              <Text size="xs" c="red">
-                {error}
-              </Text>
-            )}
-            {fields.denialReason && (
-              <Text size="xs" c="dimmed">
-                Denied: {fields.denialReason}
-              </Text>
-            )}
-            {fields.approvalPolicyId && (
-              <Text size="xs" c="dimmed">
-                Auto-approved by {fields.approvalPolicyId}
-              </Text>
-            )}
-            {fields.autoApprovalEvaluation && (
-              <Text size="xs" c="dimmed">
-                Auto-approval: {fields.autoApprovalEvaluation}
-              </Text>
-            )}
-          </Stack>
-          {/* Status badge left of the Brief/Full selector, anchored top-right: detail expands
-              below, so the selector never moves out from under the pointer. */}
-          <Group gap="xs" align="center" wrap="nowrap" style={{ flexShrink: 0 }}>
+        {/* The badge + Brief/Full selector float to the top-right so the title and subheads wrap
+            under them on the first line(s) and reclaim the full width below, instead of the whole
+            text column being narrowed for every line. Anchored top so detail expands below and the
+            selector stays put under the pointer. Block flow (not a flex Stack) so text wraps
+            around the float; `haku-card-head` supplies the tight inter-line rhythm. */}
+        <div className="haku-card-head">
+          <Group className="haku-card-head-actions" gap="xs" align="center" wrap="nowrap">
             <Badge color={status.color} variant="light">
               {status.label}
             </Badge>
             <VariantControl variant={variant} onChange={onVariantChange} />
           </Group>
-        </Group>
+          <Text fw={600} size="sm">
+            {fields.title}
+          </Text>
+          <ToolActionLine serverId={fields.serverId} toolName={fields.toolName} args={args} />
+          {fields.rationale && <Text size="xs">{fields.rationale}</Text>}
+          {error && (
+            <Text size="xs" c="red">
+              {error}
+            </Text>
+          )}
+          {fields.denialReason && (
+            <Text size="xs" c="dimmed">
+              Denied: {fields.denialReason}
+            </Text>
+          )}
+          {fields.approvalPolicyId && (
+            <Text size="xs" c="dimmed">
+              Auto-approved by {fields.approvalPolicyId}
+            </Text>
+          )}
+          {fields.autoApprovalEvaluation && (
+            <Text size="xs" c="dimmed">
+              Auto-approval: {fields.autoApprovalEvaluation}
+            </Text>
+          )}
+        </div>
         <ToolArgumentsField
           serverId={fields.serverId}
           toolName={fields.toolName}
