@@ -15,7 +15,11 @@ rationale:
 - **Threat model, enforcement inventory, and the invariants edits must preserve:**
   <docs/security.md> — the durable doctrine's canonical home; start a security review there.
 - The live primary runtime today is the manually configured Claude Code web home:
-  `haku/runtime/claude_web_env/`, which runs `haku/run.md`.
+  `haku/runtime/claude_web_env/`, which runs `haku/run.md`. A separate, deliberately
+  distinct thing: the operator's own **second coding-delegation path** using Claude
+  Code web deep links (pre-filled prompt + repo + environment) —
+  `haku/plans/claude_code_web_deep_link_delegation.md`. Don't conflate the two; the
+  deep-link path must not reuse Haku's own web-home environment/secrets.
 - The trusted console (capability tier + iframe shell): `haku/console/README.md`;
   containment contract: `haku/console/docs/containment.md`. Alternative runtimes
   (Managed Agents): `haku/runtime/managed_agent/` + `haku/plans/`.
