@@ -40,6 +40,21 @@ const STOCK_ADD_PENDING_FIXTURE = {
   },
 } satisfies RegisteredToolPreviewFixture;
 
+type StoredToolResult = NonNullable<ToolCallRecord["result"]>;
+
+// The stored wire shape of an executed call's result (mcp_approval.py's `_mcp_result_to_json`):
+// FastMCP dumps the return into a JSON text block + structuredContent, wrapping a non-dict
+// return (a list, a scalar) as `{"result": …}` with the wrap flagged in `_meta`.
+function callToolResult(value: unknown): StoredToolResult {
+  const wrap = typeof value !== "object" || value === null || Array.isArray(value);
+  return {
+    content: [{ type: "text", text: JSON.stringify(value) }],
+    isError: false,
+    structuredContent: wrap ? { result: value } : value,
+    ...(wrap ? { _meta: { fastmcp: { wrap_result: true } } } : {}),
+  };
+}
+
 function toolCall(overrides: Partial<ToolCallRecord> & Pick<ToolCallRecord, "tool_call_id">): ToolCallRecord {
   return {
     server_id: STOCK_ADD_HISTORY_FIXTURE.serverId,
@@ -51,7 +66,20 @@ function toolCall(overrides: Partial<ToolCallRecord> & Pick<ToolCallRecord, "too
     arguments: STOCK_ADD_HISTORY_FIXTURE.args,
     rationale: "Thrive box delivered; adding its items to inventory.",
     title: null,
-    result: { content: [{ type: "text", text: "stock_add:42:2" }], isError: false },
+    result: callToolResult([
+      {
+        kind: "ok",
+        product_name: "Rolled oats",
+        transaction_id: "6f0b2c9e",
+        amount_delta: 2,
+        new_amount: 5,
+        qu_name: "Pack",
+        stock_qu_name: null,
+        location_name: "Pantry",
+        entry_id: 189,
+        best_before_date: "2026-12-01",
+      },
+    ]),
     error: null,
     denial_reason: null,
     ...overrides,
@@ -176,6 +204,8 @@ type PreviewSample = {
   serverId: string;
   toolName: string;
   args: Record<string, unknown>;
+  // The stored result envelope for a finished call; absent = the call renders as pending.
+  result?: StoredToolResult;
 };
 
 // Every implemented tool-call preview, for the `previews` gallery scene (harness.tsx renders
@@ -196,6 +226,58 @@ const CUSTOM_PREVIEW_SAMPLES = [
         { product: "Dark chocolate", amount: 4, qu: "bar", location: "Pantry" },
       ],
     },
+    // One row per input item; the last one fails so the gallery shows the red failed path.
+    result: callToolResult([
+      {
+        kind: "ok",
+        product_name: "Rolled oats",
+        transaction_id: "6f0b2c9e",
+        amount_delta: 2,
+        new_amount: 5,
+        qu_name: "Pack",
+        stock_qu_name: null,
+        location_name: "Pantry",
+        entry_id: 189,
+        best_before_date: "2026-12-01",
+      },
+      {
+        kind: "ok",
+        product_name: "Almond butter",
+        transaction_id: "a13d77b0",
+        amount_delta: 1,
+        new_amount: 2,
+        qu_name: "Jar",
+        stock_qu_name: null,
+        location_name: "Pantry",
+        entry_id: 190,
+        best_before_date: "2027-01-08",
+      },
+      {
+        kind: "ok",
+        product_name: "Frozen berries",
+        transaction_id: "c58e01f4",
+        amount_delta: 3,
+        new_amount: 3,
+        qu_name: "Bag",
+        stock_qu_name: null,
+        location_name: "Freezer",
+        entry_id: 191,
+        best_before_date: "2027-07-09",
+      },
+      {
+        kind: "ok",
+        product_name: "Oat milk",
+        transaction_id: "9b24aa61",
+        amount_delta: 6,
+        new_amount: 8,
+        qu_name: "Carton",
+        stock_qu_name: null,
+        location_name: "Fridge",
+        entry_id: 192,
+        best_before_date: "2026-08-02",
+      },
+      { kind: "error", error: "No product 'Dark chocolate' found — create it with products_create first." },
+    ]),
   },
   {
     title: "Consume spoiled and used groceries",
@@ -226,6 +308,10 @@ const CUSTOM_PREVIEW_SAMPLES = [
         { name: "Almond butter", stock_qu: "jar", location: "Pantry", default_best_before_days: 180 },
       ],
     },
+    result: callToolResult([
+      { kind: "ok", created_object_id: 201 },
+      { kind: "ok", created_object_id: 202 },
+    ]),
   },
   {
     title: "Update pantry product settings",
@@ -259,6 +345,10 @@ const CUSTOM_PREVIEW_SAMPLES = [
       reminders: [{ method: "popup", minutes_before_start: 30 }],
       attendees: ["dentist@example.com"],
     },
+    result: callToolResult({
+      event_id: "0k5rq2n8vd1m3jf7",
+      html_link: "https://www.google.com/calendar/event?eid=MGs1cnEybjh2ZDFtM2pmNyBmYW1pbHlAZ3JvdXA",
+    }),
   },
   {
     title: "File planning threads for follow-up",
@@ -277,6 +367,10 @@ const CUSTOM_PREVIEW_SAMPLES = [
       body: "Hi team,\n\nThanks for the notes. A few thoughts on the roadmap:\n- Ship the console settings page\n- Then the previews gallery\n- Circle back on datetime formatting\n\nBest,\nRai",
       thread_id: "thread-42",
     },
+    result: callToolResult({
+      id: "r-2603837261749773001",
+      message: { id: "18c9f7a2b3d4e5f6", threadId: "thread-42", labelIds: ["DRAFT"] },
+    }),
   },
   {
     title: "Review inbox for replies",
@@ -344,14 +438,41 @@ const CUSTOM_PREVIEW_SAMPLES = [
       keepSourceReference: true,
     },
   },
-] satisfies (RegisteredToolPreviewFixture & { title: string })[];
+] satisfies (RegisteredToolPreviewFixture & { title: string; result?: StoredToolResult })[];
+
+const SHOPPING_ADD_PREVIEW_SAMPLE: PreviewSample = {
+  // No *argument* widget for this tool (raw-JSON args fallback) but a registered *result*
+  // widget — exercises the fallback-args + custom-result combination.
+  title: "Add missing staples to the shopping list",
+  serverId: "grocy-sf",
+  toolName: "shopping_list_items_add",
+  args: {
+    items: [
+      { product: "Oat milk", amount: 6, qu: "carton" },
+      { product: "Rolled oats", amount: 2, qu: "pack" },
+    ],
+  },
+  result: callToolResult([
+    { kind: "ok", item_id: 55, product_name: "Oat milk", amount: 6, qu_name: "Carton" },
+    { kind: "ok", item_id: 56, product_name: "Rolled oats", amount: 2, qu_name: "Pack" },
+  ]),
+};
 
 const FALLBACK_PREVIEW_SAMPLE: PreviewSample = {
-  // No widget for this (server, tool) — the generic raw-JSON fallback (compact clamps).
+  // No widget for this (server, tool), arguments or result — the generic raw-JSON fallbacks
+  // (compact clamps the arguments; the result shows only in detailed, as a labelled field).
   title: "Remove purchased shopping-list items",
   serverId: "grocy-sf",
   toolName: "shopping_list_items_remove",
   args: { ids: [3, 7, 12, 15, 21, 34, 42, 55] },
+  result: callToolResult([
+    { kind: "ok", item_id: 3, product_name: "Milk", amount: 1, qu_name: "Carton" },
+    { kind: "ok", item_id: 7, product_name: "Spinach", amount: 200, qu_name: "Gram" },
+  ]),
 };
 
-export const PREVIEW_SAMPLES: PreviewSample[] = [...CUSTOM_PREVIEW_SAMPLES, FALLBACK_PREVIEW_SAMPLE];
+export const PREVIEW_SAMPLES: PreviewSample[] = [
+  ...CUSTOM_PREVIEW_SAMPLES,
+  SHOPPING_ADD_PREVIEW_SAMPLE,
+  FALLBACK_PREVIEW_SAMPLE,
+];

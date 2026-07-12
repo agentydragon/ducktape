@@ -208,6 +208,18 @@ js_library(
 )
 
 js_library(
+    name = "tool_result_field",
+    srcs = ["tool_result_field.tsx"],
+    deps = [
+        ":field",
+        "//:node_modules/react",
+        "//haku/console/frontend/tool_previews:variant",
+        "//haku/console/frontend/tool_results",
+        "//haku/console/frontend/tool_results:entry",
+    ],
+)
+
+js_library(
     name = "tool_call_meta",
     srcs = ["tool_call_meta.tsx"],
     deps = [
@@ -232,10 +244,10 @@ js_library(
     srcs = ["tool_call_card.tsx"],
     deps = [
         ":approval_state",
-        ":field",
         ":tool_action_line",
         ":tool_arguments_field",
         ":tool_call_meta",
+        ":tool_result_field",
         ":variant_control",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -394,8 +406,10 @@ filegroup(
         "tool_call_decision.ts",
         "tool_call_meta.tsx",
         "tool_calls_page.tsx",
+        "tool_result_field.tsx",
         "variant_control.tsx",
         "//haku/console/frontend/tool_previews:tailwind_srcs",
+        "//haku/console/frontend/tool_results:tailwind_srcs",
     ],
 )
 
@@ -569,6 +583,11 @@ tsc_bin.tsc_test(
         "//haku/console/frontend/tool_previews:kubectl_test",
         "//haku/console/frontend/tool_previews:tana_test",
         "//haku/console/frontend/tool_previews:variant_test",
+        "//haku/console/frontend/tool_results:entry_test",
+        "//haku/console/frontend/tool_results:gmail_test",
+        "//haku/console/frontend/tool_results:google_calendar_test",
+        "//haku/console/frontend/tool_results:grocy_test",
+        "//haku/console/frontend/tool_results:index_test",
     ],
     tags = ["lint"],
 )
@@ -610,5 +629,10 @@ vitest_bin.vitest_test(
         "//haku/console/frontend/tool_previews:kubectl_test",
         "//haku/console/frontend/tool_previews:tana_test",
         "//haku/console/frontend/tool_previews:variant_test",
+        "//haku/console/frontend/tool_results:entry_test",
+        "//haku/console/frontend/tool_results:gmail_test",
+        "//haku/console/frontend/tool_results:google_calendar_test",
+        "//haku/console/frontend/tool_results:grocy_test",
+        "//haku/console/frontend/tool_results:index_test",
     ],
 )

@@ -35,6 +35,9 @@ components + **Tailwind v4** utilities — modeled on
 - `tool_arguments_field.tsx` / `icons.tsx` — shared tool-argument renderer (per-server
   preview or raw JSON) and inline-SVG icons (never the `@tabler` barrel — see
   `debug/esbuild_tabler_memory.md`), used by both the drawer and the history view.
+- `tool_result_field.tsx` — the result-side counterpart: a finished call's result as a
+  per-server widget (`tool_results/`, a registry mirroring `tool_previews/`) over the
+  unwrapped `CallToolResult` payload, else the raw-JSON `Result` field (detailed only).
 - `tool_call_events.ts` — `useToolCallEvents(onEvent)`: the shared live signal (the
   `/api/approvals/ws` WebSocket) that refetches on every submit/approve/deny/finish. The
   server broadcasts each event to every connected tab, so both the approval drawer and the

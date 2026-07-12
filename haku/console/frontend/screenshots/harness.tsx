@@ -30,19 +30,22 @@ function PreviewGallery() {
         <div
           style={{ maxWidth: 1000, margin: "0 auto", padding: 24, display: "flex", flexDirection: "column", gap: 28 }}
         >
-          {PREVIEW_SAMPLES.map(({ title, serverId, toolName, args }, index) => {
+          {PREVIEW_SAMPLES.map(({ title, serverId, toolName, args, result }, index) => {
+            // A sample with a result renders as a finished OK call (so the result body shows);
+            // one without stays pending, like the approval drawer's cards.
+            const finished = result != null;
             const fields = approvalDisplayFields({
               tool_call_id: `preview_${index}`,
               server_id: serverId,
               tool_name: toolName,
               caller_principal: "haku-agent-api-token",
-              status: "pending_approval",
+              status: finished ? "ok" : "pending_approval",
               created_at: "2026-07-11T12:00:00Z",
               updated_at: "2026-07-11T12:00:00Z",
               arguments: args,
               rationale: "Sample rationale for the operator.",
               title,
-              result: null,
+              result: result ?? null,
               error: null,
               denial_reason: null,
             });
@@ -56,7 +59,8 @@ function PreviewGallery() {
                       args={args}
                       variant={variant}
                       onVariantChange={noop}
-                      status={{ label: "Pending", color: "yellow" }}
+                      status={finished ? { label: "OK", color: "teal" } : { label: "Pending", color: "yellow" }}
+                      result={result}
                     />
                   ))}
                 </div>

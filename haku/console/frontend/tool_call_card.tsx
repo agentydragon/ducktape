@@ -2,19 +2,19 @@ import { Badge, Group, Stack, Text } from "@mantine/core";
 import type { ReactNode } from "react";
 
 import type { ApprovalDisplayFields } from "./approval_state.ts";
-import { Field } from "./field.tsx";
 import { ToolActionLine } from "./tool_action_line.tsx";
 import { ToolArgumentsField } from "./tool_arguments_field.tsx";
 import { ToolCallMeta } from "./tool_call_meta.tsx";
 import type { PreviewVariant } from "./tool_previews/variant.tsx";
+import { ToolResultField } from "./tool_result_field.tsx";
 import { VariantControl } from "./variant_control.tsx";
 
 /** One tool call, rendered the same way everywhere it appears — the drawer's pending and recent
  * cards and the history page's rows. It owns the shared skeleton (the identity header + action
- * line + rationale/error/denial subhead + status badge + Details toggle, the arguments body, and
- * the detailed Result/Metadata) so all of that reads one way and lives in one place. The bits
- * that genuinely differ per surface — the status badge's label/color and the footer actions
- * (approve/deny, dismiss, countdown) — come in as props. */
+ * line + rationale/error/denial subhead + status badge + Details toggle, the arguments body,
+ * the result body, and the detailed Metadata) so all of that reads one way and lives in one
+ * place. The bits that genuinely differ per surface — the status badge's label/color and the
+ * footer actions (approve/deny, dismiss, countdown) — come in as props. */
 export function ToolCallCard({
   fields,
   args,
@@ -83,23 +83,17 @@ export function ToolCallCard({
           argumentsJson={fields.argumentsJson}
           variant={variant}
         />
+        {/* Rendered for both variants; it self-gates (compact shows a result only when a
+            per-tool widget makes it self-describing). */}
+        <ToolResultField serverId={fields.serverId} toolName={fields.toolName} result={result} variant={variant} />
         {detailed && (
-          <>
-            {result != null && (
-              <div className="haku-shell-fields">
-                <Field label="Result">
-                  <pre className="haku-shell-json">{JSON.stringify(result, null, 2)}</pre>
-                </Field>
-              </div>
-            )}
-            <ToolCallMeta
-              serverId={fields.serverId}
-              toolName={fields.toolName}
-              callerPrincipal={fields.callerPrincipal}
-              createdAt={fields.createdAt}
-              toolCallId={fields.toolCallId}
-            />
-          </>
+          <ToolCallMeta
+            serverId={fields.serverId}
+            toolName={fields.toolName}
+            callerPrincipal={fields.callerPrincipal}
+            createdAt={fields.createdAt}
+            toolCallId={fields.toolCallId}
+          />
         )}
         {footer}
       </Stack>
