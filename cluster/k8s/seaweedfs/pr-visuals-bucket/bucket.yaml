@@ -1,0 +1,16 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: pr-visuals
+  namespace: seaweedfs
+spec:
+  name: pr-visuals
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  reclaimPolicy: Retain
+  access:
+    - user: pr-visuals-writer
+      actions: [Read, Write, List, Tagging]
+    - user: anonymous
+      actions: [Read]

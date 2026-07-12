@@ -33,6 +33,27 @@ data "kubernetes_secret" "ci_age_key" {
   }
 }
 
+resource "random_password" "pr_visuals_access_key" {
+  length  = 32
+  special = false
+}
+
+resource "random_password" "pr_visuals_secret_key" {
+  length  = 64
+  special = false
+}
+
+resource "kubernetes_secret" "pr_visuals_s3_credentials" {
+  metadata {
+    name      = "pr-visuals-s3-credentials"
+    namespace = "seaweedfs"
+  }
+  data = {
+    prVisualsAccessKey = random_password.pr_visuals_access_key.result
+    prVisualsSecretKey = random_password.pr_visuals_secret_key.result
+  }
+}
+
 # --- GitHub Actions Secrets ---
 
 resource "github_actions_secret" "sops_age_key" {
@@ -45,6 +66,20 @@ resource "github_actions_secret" "sops_age_key_gaffer_private" {
   repository      = "gaffer-private"
   secret_name     = "SOPS_AGE_KEY"
   plaintext_value = data.kubernetes_secret.ci_age_key.data["age-key"]
+}
+
+resource "github_actions_secret" "pr_visuals_access_key" {
+  #checkov:skip=CKV_GIT_4: Value is generated in Terraform state and sent over TLS; GitHub encrypts it at rest. This module's existing SOPS key uses the same provider path.
+  repository      = "ducktape"
+  secret_name     = "PR_VISUALS_ACCESS_KEY"
+  plaintext_value = random_password.pr_visuals_access_key.result
+}
+
+resource "github_actions_secret" "pr_visuals_secret_key" {
+  #checkov:skip=CKV_GIT_4: Value is generated in Terraform state and sent over TLS; GitHub encrypts it at rest. This module's existing SOPS key uses the same provider path.
+  repository      = "ducktape"
+  secret_name     = "PR_VISUALS_SECRET_KEY"
+  plaintext_value = random_password.pr_visuals_secret_key.result
 }
 
 # --- GitHub Actions Variables ---

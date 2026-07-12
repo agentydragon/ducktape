@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>{{ title }} · {{ commit_sha }}</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font: 15px/1.45 system-ui, sans-serif;
+        background: #f4f5f7;
+        color: #16181d;
+      }
+      body { margin: 0; }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        padding: 16px 24px;
+        background: color-mix(in srgb, Canvas 92%, transparent);
+        border-bottom: 1px solid #bbb;
+        backdrop-filter: blur(8px);
+      }
+      h1 { margin: 0 0 4px; font-size: 18px; }
+      code { overflow-wrap: anywhere; font-size: 12px; }
+      main {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr));
+        gap: 20px;
+        padding: 20px;
+      }
+      figure {
+        margin: 0;
+        padding: 12px;
+        border: 1px solid #bbb;
+        border-radius: 10px;
+        background: Canvas;
+        box-shadow: 0 2px 8px #0001;
+      }
+      img { display: block; width: 100%; height: auto; border-radius: 6px; background: white; }
+      figcaption { padding-top: 9px; font-weight: 600; text-transform: capitalize; }
+      @media (prefers-color-scheme: dark) {
+        :root { background: #17181b; color: #eee; }
+        figure, header { border-color: #444; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>{{ title }}</h1>
+      <div>{{ repository }} · <code>{{ commit_sha }}</code></div>
+    </header>
+    <main>
+      {% for screenshot in screenshots %}
+      <figure>
+        <a href="{{ screenshot.name }}">
+          <img src="{{ screenshot.name }}" alt="{{ screenshot.label }}" loading="lazy">
+        </a>
+        <figcaption>{{ screenshot.label }}</figcaption>
+      </figure>
+      {% endfor %}
+    </main>
+  </body>
+</html>

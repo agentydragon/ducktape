@@ -1,0 +1,85 @@
+name: Publish Haku PR visuals
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+
+jobs:
+  publish:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.pull_requests[0] != null
+    runs-on: ubuntu-latest
+    steps:
+      # This privileged workflow always executes the trusted default-branch implementation.
+      # PR-controlled code produced the PNGs, but never receives S3 credentials.
+      - uses: actions/checkout@v6
+        with:
+          ref: devel
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Download BuildBuddy linkage
+        uses: actions/download-artifact@v5
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+          pattern: bazel-ci-linkage-*
+          merge-multiple: true
+          path: linkage
+
+      - name: Publish Haku Console visual review
+        id: visuals
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.PR_VISUALS_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PR_VISUALS_SECRET_KEY }}
+          AWS_REGION: us-east-1
+          HEAD_SHA: ${{ github.event.workflow_run.pull_requests[0].head.sha }}
+        run: |
+          bb run //devinfra/ci:pr_visuals_bin -- \
+            --linkage-dir "$PWD/linkage" \
+            --work-dir "$RUNNER_TEMP/pr-visuals" \
+            --sha "$HEAD_SHA" \
+            --component haku-console \
+            --title "Haku Console visual review" \
+            --repository "$GITHUB_REPOSITORY" \
+            --endpoint https://s3.allegedly.works \
+            --bucket pr-visuals \
+            --manifest haku-console-visuals.json
+
+      - name: Link visual review from the pull request
+        if: steps.visuals.outputs.found == 'true'
+        uses: actions/github-script@v8
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.pull_requests[0].head.sha }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        with:
+          script: |
+            const marker = "<!-- pr-visuals -->";
+            const url = `https://s3.allegedly.works/pr-visuals/commits/${process.env.HEAD_SHA}/haku-console/index.html`;
+            const body = `${marker}\nHaku Console visual review for \`${process.env.HEAD_SHA}\`: [open screenshots](${url})`;
+            const issue_number = Number(process.env.PR_NUMBER);
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+            });
+            const existing = comments.find((comment) => comment.user?.type === "Bot" && comment.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number, body });
+            }

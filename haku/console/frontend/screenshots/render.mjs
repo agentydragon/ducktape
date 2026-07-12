@@ -134,4 +134,14 @@ try {
 } finally {
   await browser.close();
 }
+writeFileSync(
+  join(outDir, "haku-console-visuals.json"),
+  `${JSON.stringify(
+    {
+      screenshots: COLOR_SCHEMES.flatMap((colorScheme) => SCENES.map(({ name }) => `${name}-${colorScheme}.png`)),
+    },
+    null,
+    2
+  )}\n`
+);
 console.log(`\n${SCENES.length * COLOR_SCHEMES.length} screenshots in ${outDir}`);
