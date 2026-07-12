@@ -1,0 +1,2 @@
+# Local `bazel run` fallback writes PNGs here; the RBE js_test uses undeclared outputs.
+/out/

@@ -1,0 +1,67 @@
+map $uri $haku_cache_control {
+  ~^/assets/ "public, max-age=31536000, immutable";
+  ~^/api/ "no-store";
+  /healthz "no-store";
+  default "no-cache, max-age=0, must-revalidate";
+}
+
+# WebSocket upgrade passthrough for the live tool-call event socket
+# (/api/approvals/ws). `proxy_http_version 1.1` alone is not enough — nginx only
+# forwards the Upgrade/Connection handshake headers when they're set explicitly,
+# so without this the WS handshake is silently downgraded to a plain request and
+# the socket fails (the console's approval drawer then only updates on reload).
+# `close` for non-upgrade requests keeps ordinary keepalive to the FastAPI upstream.
+map $http_upgrade $connection_upgrade {
+  default upgrade;
+  ''      close;
+}
+
+server {
+  listen 8081;
+  server_name _;
+
+  root /usr/share/nginx/html/dist;
+  index index.html;
+
+  proxy_hide_header Content-Security-Policy;
+  proxy_hide_header Cache-Control;
+  proxy_hide_header Referrer-Policy;
+  proxy_hide_header Permissions-Policy;
+
+  add_header Content-Security-Policy
+    "frame-src 'self' ${HAKU_CONSOLE_HAKU_UI_URL} ${HAKU_CONSOLE_AUTH_ORIGIN}; frame-ancestors 'none'"
+    always;
+  add_header Cache-Control $haku_cache_control always;
+  add_header Referrer-Policy "no-referrer" always;
+  # Shell (top-level) may read geolocation for the requestGeolocation bridge action; (self)
+  # scopes it to this origin so it's never delegated to the framed haku-ui origin.
+  add_header Permissions-Policy "geolocation=(self)" always;
+
+  proxy_http_version 1.1;
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+
+  location /assets/ {
+    try_files $uri =404;
+  }
+
+  location /api/ {
+    proxy_pass http://127.0.0.1:8080;
+    # Carry the WebSocket handshake through to FastAPI (/api/approvals/ws).
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    # WS connections are long-lived; don't let the proxy read timeout kill an idle
+    # socket that's just waiting for the next tool-call event.
+    proxy_read_timeout 3600s;
+  }
+
+  location = /healthz {
+    proxy_pass http://127.0.0.1:8080;
+  }
+
+  location / {
+    try_files $uri /index.html;
+  }
+}

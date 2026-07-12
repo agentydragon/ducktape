@@ -1,0 +1,18 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# The haku-console tool-call API contract: the request/response models the console serves at
+# /api/tool-calls and haku-ui's backend parses. Single source of truth for both repos.
+#
+# imports=["../.."] puts the module root on the import path, so this file (at haku/console/ inside
+# the module) is importable as `haku.console.tool_calls` — the same namespace it has in the main
+# ducktape repo (namespace packages merge the two source roots; the repo builds with
+# --incompatible_default_to_explicit_init_py). Pydantic is a PROVIDED dependency — every consumer
+# already pulls its own @pypi//pydantic, so exactly one reaches runfiles; do NOT add
+# @pypi//pydantic here (see this module's MODULE.bazel).
+py_library(
+    name = "tool_calls",
+    srcs = ["tool_calls.py"],
+    imports = ["../.."],
+)

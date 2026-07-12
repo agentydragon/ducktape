@@ -1,0 +1,208 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Per-server approval-preview widgets. Each module owns one server's widgets and exports its
+# SERVER_ID + a { toolName -> {schema, render} } map; `tool_previews` (index.tsx) dispatches to
+# them via a serverId registry, safeParsing once and handing each widget already-typed data.
+
+# Compact/detailed rendering shared by every widget (the PreviewVariant type + helpers).
+# Leaf: no widget deps, so index.tsx and each widget import it without a cycle.
+js_library(
+    name = "variant",
+    srcs = ["variant.tsx"],
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+# A registry entry (the tool's zod schema + a renderer over its parsed value) plus the
+# definePreview/renderPreview helpers. Leaf like :variant, so index.tsx and every widget import
+# it without a cycle.
+js_library(
+    name = "entry",
+    srcs = ["entry.tsx"],
+    deps = [
+        ":variant",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+js_library(
+    name = "gmail",
+    srcs = ["gmail.tsx"],
+    deps = [
+        ":entry",
+        ":variant",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//haku/console/frontend:field",
+        "//haku/console/frontend:gmail_client",
+        "//haku/console/frontend:icons",
+        "//haku/console/frontend:schema_zod",
+    ],
+)
+
+js_library(
+    name = "google_calendar",
+    srcs = ["google_calendar.tsx"],
+    deps = [
+        ":entry",
+        ":variant",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//haku/console/frontend:calendar_client",
+        "//haku/console/frontend:field",
+        "//haku/console/frontend:icons",
+        "//haku/console/frontend:schema_zod",
+    ],
+)
+
+js_library(
+    name = "grocy",
+    srcs = ["grocy.tsx"],
+    deps = [
+        ":entry",
+        ":variant",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//haku/console/frontend:grocy_client",
+    ],
+)
+
+js_library(
+    name = "haku_routine",
+    srcs = ["haku_routine.tsx"],
+    deps = [
+        ":entry",
+        ":variant",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//haku/console/frontend:field",
+    ],
+)
+
+js_library(
+    name = "kubectl",
+    srcs = ["kubectl.tsx"],
+    deps = [
+        ":entry",
+        ":variant",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+js_library(
+    name = "tana",
+    srcs = ["tana.tsx"],
+    deps = [
+        ":entry",
+        ":variant",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//haku/console/frontend:field",
+        "//haku/console/frontend:tana_client",
+    ],
+)
+
+js_library(
+    name = "tool_previews",
+    srcs = ["index.tsx"],
+    deps = [
+        ":entry",
+        ":gmail",
+        ":google_calendar",
+        ":grocy",
+        ":haku_routine",
+        ":kubectl",
+        ":tana",
+        ":variant",
+        "//:node_modules/react",
+    ],
+)
+
+# Sources Tailwind must scan for class names; the parent's tailwind_content_srcs
+# concatenates this into the one file the stylesheet's @source lists.
+filegroup(
+    name = "tailwind_srcs",
+    srcs = glob(["*.tsx"]),
+)
+
+# One vitest spec per module (each test parallels the module it tests), wrapped as its own
+# js_library so the dep graph stays per-file; the parent's aggregate tsc_test + bridge_test
+# consume them (a js_test can't take a source file from another package directly, only via a
+# library).
+js_library(
+    name = "gmail_test",
+    srcs = ["gmail.test.ts"],
+    deps = [
+        ":entry",
+        ":gmail",
+    ],
+)
+
+js_library(
+    name = "google_calendar_test",
+    srcs = ["google_calendar.test.ts"],
+    deps = [
+        ":entry",
+        ":google_calendar",
+    ],
+)
+
+js_library(
+    name = "grocy_test",
+    srcs = ["grocy.test.ts"],
+    deps = [
+        ":entry",
+        ":grocy",
+    ],
+)
+
+js_library(
+    name = "haku_routine_test",
+    srcs = ["haku_routine.test.ts"],
+    deps = [
+        ":entry",
+        ":haku_routine",
+    ],
+)
+
+js_library(
+    name = "kubectl_test",
+    srcs = ["kubectl.test.ts"],
+    deps = [
+        ":entry",
+        ":kubectl",
+    ],
+)
+
+js_library(
+    name = "tana_test",
+    srcs = ["tana.test.ts"],
+    deps = [
+        ":entry",
+        ":tana",
+    ],
+)
+
+js_library(
+    name = "index_test",
+    srcs = ["index.test.ts"],
+    deps = [":tool_previews"],
+)
+
+js_library(
+    name = "variant_test",
+    srcs = ["variant.test.ts"],
+    deps = [":variant"],
+)

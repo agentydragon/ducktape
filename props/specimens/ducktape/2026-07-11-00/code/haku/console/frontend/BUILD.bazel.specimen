@@ -1,0 +1,566 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
+load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
+load("@npm_ducktape//:typescript/package_json.bzl", tsc_bin = "bin")
+load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
+load("//devinfra/js:openapi.bzl", "js_openapi_schema", "js_openapi_zod")
+load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
+
+package(default_visibility = ["//visibility:public"])
+
+# TypeScript types generated from the backend's OpenAPI schema (reuses the API
+# Pydantic models as the wire contract). Not checked in; regenerated each build.
+js_openapi_schema(
+    name = "schema",
+    generator = "//haku/console:export_schema_bin",
+)
+
+# Runtime Zod validators for the same backend models, generated from the same OpenAPI
+# JSON as :schema above. Used where a widget parses tool-call arguments it doesn't fully
+# trust (tool_previews/gmail.tsx) — a single source of truth for both the TS type and
+# the runtime shape check, instead of a hand-written `typeof`-narrowing guard that can
+# drift from the Pydantic model.
+js_openapi_zod(
+    name = "schema_zod",
+    out = "api/schema.zod.ts",
+    generator = "//haku/console:export_schema_bin",
+)
+
+js_library(
+    name = "client",
+    srcs = ["client.ts"],
+    deps = [
+        ":schema",
+        "//:node_modules/openapi-fetch",
+    ],
+)
+
+js_library(
+    name = "calendar_client",
+    srcs = ["calendar_client.ts"],
+    deps = [
+        ":client",
+        ":schema",
+    ],
+)
+
+js_library(
+    name = "gmail_client",
+    srcs = ["gmail_client.ts"],
+    deps = [
+        ":client",
+        ":schema",
+    ],
+)
+
+js_library(
+    name = "grocy_client",
+    srcs = ["grocy_client.ts"],
+    deps = [
+        ":client",
+        ":schema",
+    ],
+)
+
+js_library(
+    name = "tana_client",
+    srcs = ["tana_client.ts"],
+    deps = [
+        ":client",
+        ":schema",
+    ],
+)
+
+js_library(
+    name = "approval_state",
+    srcs = ["approval_state.ts"],
+    deps = [
+        ":client",
+        "//:node_modules/@haku/console-bridge",
+    ],
+)
+
+js_library(
+    name = "theme",
+    srcs = ["theme.ts"],
+    deps = ["//:node_modules/@mantine/core"],
+)
+
+js_library(
+    name = "toast",
+    srcs = ["toast.ts"],
+    deps = [
+        ":theme",
+        "//:node_modules/@mantine/notifications",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "bridge",
+    srcs = ["bridge.ts"],
+    deps = ["//:node_modules/@haku/console-bridge"],
+)
+
+js_library(
+    name = "tool_call_events",
+    srcs = ["tool_call_events.ts"],
+    deps = ["//:node_modules/react"],
+)
+
+js_library(
+    name = "open_external",
+    srcs = ["open_external.ts"],
+)
+
+js_library(
+    name = "routing",
+    srcs = ["routing.ts"],
+    deps = ["//:node_modules/react"],
+)
+
+js_library(
+    name = "icons",
+    srcs = ["icons.tsx"],
+    deps = [
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "geolocation_grant",
+    srcs = ["geolocation_grant.ts"],
+)
+
+js_library(
+    name = "geolocation",
+    srcs = ["geolocation.ts"],
+    deps = ["//:node_modules/@haku/console-bridge"],
+)
+
+js_library(
+    name = "confirm_dialog",
+    srcs = ["confirm_dialog.tsx"],
+    deps = [
+        ":bridge",
+        ":theme",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "field",
+    srcs = ["field.tsx"],
+    deps = ["//:node_modules/react"],
+)
+
+js_library(
+    name = "tool_arguments_field",
+    srcs = ["tool_arguments_field.tsx"],
+    deps = [
+        ":field",
+        ":json_preview",
+        "//:node_modules/react",
+        "//haku/console/frontend/tool_previews",
+        "//haku/console/frontend/tool_previews:variant",
+    ],
+)
+
+js_library(
+    name = "json_preview",
+    srcs = ["json_preview.tsx"],
+    deps = [
+        "//:node_modules/highlight.js",
+        "//:node_modules/react",
+        "//haku/console/frontend/tool_previews:variant",
+    ],
+)
+
+js_library(
+    name = "tool_call_meta",
+    srcs = ["tool_call_meta.tsx"],
+    deps = [
+        ":approval_state",
+        ":field",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "tool_action_line",
+    srcs = ["tool_action_line.tsx"],
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//haku/console/frontend/tool_previews",
+    ],
+)
+
+js_library(
+    name = "tool_call_card",
+    srcs = ["tool_call_card.tsx"],
+    deps = [
+        ":approval_state",
+        ":field",
+        ":tool_action_line",
+        ":tool_arguments_field",
+        ":tool_call_meta",
+        ":variant_control",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//haku/console/frontend/tool_previews:variant",
+    ],
+)
+
+js_library(
+    name = "pending_tool_call_actions",
+    srcs = ["pending_tool_call_actions.tsx"],
+    deps = [
+        ":theme",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "variant_control",
+    srcs = ["variant_control.tsx"],
+    deps = [
+        ":icons",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//haku/console/frontend/tool_previews:variant",
+    ],
+)
+
+js_library(
+    name = "console_panel",
+    srcs = ["console_panel.tsx"],
+    deps = [
+        ":approval_state",
+        ":client",
+        ":field",
+        ":icons",
+        ":pending_tool_call_actions",
+        ":settings_page",
+        ":theme",
+        ":tool_call_card",
+        ":tool_call_events",
+        ":variant_control",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "tool_calls_page",
+    srcs = ["tool_calls_page.tsx"],
+    deps = [
+        ":approval_state",
+        ":client",
+        ":icons",
+        ":pending_tool_call_actions",
+        ":toast",
+        ":tool_call_card",
+        ":tool_call_events",
+        ":variant_control",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "settings_page",
+    srcs = ["settings_page.tsx"],
+    deps = [
+        ":approval_state",
+        ":client",
+        ":open_external",
+        ":toast",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "haku_ui_embed",
+    srcs = ["haku_ui_embed.tsx"],
+    deps = [
+        ":approval_state",
+        ":bridge",
+        ":client",
+        ":confirm_dialog",
+        ":console_panel",
+        ":geolocation",
+        ":geolocation_grant",
+        ":open_external",
+        ":toast",
+        ":tool_call_events",
+        "//:node_modules/@haku/console-bridge",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "app",
+    srcs = ["app.tsx"],
+    deps = [
+        ":client",
+        ":haku_ui_embed",
+        ":routing",
+        ":tool_calls_page",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "main_lib",
+    srcs = ["main.tsx"],
+    deps = [
+        ":app",
+        ":theme",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@mantine/notifications",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+    ],
+)
+
+# Tailwind v4 scans the `@source`-declared file for class names; concatenate every
+# source whose utility classes the stylesheet must keep into the one file it lists.
+filegroup(
+    name = "tailwind_content_srcs",
+    srcs = [
+        "app.tsx",
+        "approval_state.ts",
+        "calendar_client.ts",
+        "client.ts",
+        "confirm_dialog.tsx",
+        "console_panel.tsx",
+        "field.tsx",
+        "gmail_client.ts",
+        "grocy_client.ts",
+        "haku_ui_embed.tsx",
+        "icons.tsx",
+        "index.html",
+        "main.tsx",
+        "open_external.ts",
+        "pending_tool_call_actions.tsx",
+        "routing.ts",
+        "settings_page.tsx",
+        "tana_client.ts",
+        "theme.ts",
+        "toast.ts",
+        "tool_action_line.tsx",
+        "tool_arguments_field.tsx",
+        "tool_call_card.tsx",
+        "tool_call_meta.tsx",
+        "tool_calls_page.tsx",
+        "variant_control.tsx",
+        "//haku/console/frontend/tool_previews:tailwind_srcs",
+    ],
+)
+
+genrule(
+    name = "tailwind_content_index",
+    srcs = [":tailwind_content_srcs"],
+    outs = ["tailwind_content.txt"],
+    cmd = "cat $(SRCS) > $@",
+)
+
+tailwindcss_bin.tailwindcss_binary(
+    name = "tailwind_cli",
+    data = [
+        "//:node_modules/@mantine/core",
+        # `@import "@mantine/notifications/styles.css"` in styles.src.css.
+        "//:node_modules/@mantine/notifications",
+        "//:node_modules/@tailwindcss/cli",
+        # `@import "tailwindcss"` in styles.src.css resolves to this package.
+        "//:node_modules/tailwindcss",
+    ],
+)
+
+js_run_binary(
+    name = "styles_css",
+    srcs = [
+        "styles.src.css",
+        ":tailwind_content_index",
+    ],
+    outs = ["generated/styles.css"],
+    args = [
+        "--input",
+        "styles.src.css",
+        "--output",
+        "generated/styles.css",
+        "--minify",
+    ],
+    chdir = package_name(),
+    tool = ":tailwind_cli",
+)
+
+# Everything the static frontend image serves as the SPA docroot.
+spa_bundle(
+    name = "bundle",
+    entry_point = "main.tsx",
+    fingerprint = True,
+    fingerprinted_assets = {
+        ":styles_css": "__STYLES_CSS__",
+        "//haku/console:logo.svg": "__LOGO_SVG__",
+    },
+    jsx = "automatic",
+    deps = [":main_lib"],
+)
+
+# ── Visual screenshots ─────────────────────────────────────────────────────────
+#
+# `bbr test //haku/console/frontend:screenshots` renders each console visual surface
+# (screenshots/harness.tsx) to a PNG in the test's undeclared outputs, for eyeballing (see
+# AGENTS.md). Browser rendering runs on the RBE worker's display stack — a local Bazel
+# can't fetch repos in web sessions — so it is a js_test, not a `bb run` binary. It is a
+# generator, not a pixel-diff gate: it passes as long as every scene renders.
+
+js_library(
+    name = "screenshot_harness_lib",
+    srcs = [
+        "screenshots/harness.tsx",
+        "screenshots/mock_api.ts",
+        "screenshots/sample_data.ts",
+    ],
+    tags = ["no-lint"],
+    deps = [
+        ":approval_state",
+        ":client",
+        ":console_panel",
+        ":settings_page",
+        ":theme",
+        ":tool_action_line",
+        ":tool_arguments_field",
+        ":tool_calls_page",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+    ],
+)
+
+js_binary(
+    name = "build_screenshot_harness",
+    data = [
+        "screenshots/esbuild.config.mjs",
+        ":screenshot_harness_lib",
+        "//:node_modules",
+    ],
+    entry_point = "screenshots/esbuild.config.mjs",
+)
+
+js_run_binary(
+    name = "screenshot_harness_bundle",
+    srcs = [
+        "screenshots/esbuild.config.mjs",
+        ":screenshot_harness_lib",
+    ],
+    outs = ["screenshots/dist/harness.js"],
+    args = ["screenshots/dist"],
+    chdir = package_name(),
+    tool = ":build_screenshot_harness",
+)
+
+# Single-file target so $(rootpath) resolves to one path.
+filegroup(
+    name = "screenshot_harness_js",
+    srcs = ["screenshots/dist/harness.js"],
+)
+
+js_test(
+    name = "screenshots",
+    size = "large",
+    data = [
+        ":screenshot_harness_js",
+        ":styles_css",
+        "//util/testing/frontend_visual:puppeteer_lib",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    entry_point = "screenshots/render.mjs",
+    env = {
+        "HARNESS_JS": "$(rootpath :screenshot_harness_js)",
+        "STYLES_CSS": "$(rootpath :styles_css)",
+        "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+    },
+    no_copy_to_bin = [
+        ":screenshot_harness_js",
+        "//util/testing/frontend_visual:puppeteer_lib",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+)
+
+# Full TypeScript type-check (the correctness gate esbuild bundling skips).
+tsc_bin.tsc_test(
+    name = "tsc_test",
+    args = [
+        "--noEmit",
+        "-p",
+        "tsconfig.json",
+    ],
+    chdir = package_name(),
+    data = [
+        "approval_state.test.ts",
+        "bridge.test.ts",
+        "bridge_client.test.ts",
+        "geolocation.test.ts",
+        "haku_ui_embed.test.ts",
+        "open_external.test.ts",
+        "routing.test.ts",
+        # Ambient types for the @tabler/icons-react per-icon subpath imports (icons.tsx).
+        "tabler_icons.d.ts",
+        "tsconfig.json",
+        ":main_lib",
+        ":schema",
+        ":schema_zod",
+        ":screenshot_harness_lib",
+        "//:node_modules",
+        "//:node_modules/@haku/console-bridge",
+        "//haku/console/frontend/tool_previews:gmail_test",
+        "//haku/console/frontend/tool_previews:google_calendar_test",
+        "//haku/console/frontend/tool_previews:grocy_test",
+        "//haku/console/frontend/tool_previews:haku_routine_test",
+        "//haku/console/frontend/tool_previews:index_test",
+        "//haku/console/frontend/tool_previews:kubectl_test",
+        "//haku/console/frontend/tool_previews:tana_test",
+        "//haku/console/frontend/tool_previews:variant_test",
+    ],
+    tags = ["lint"],
+)
+
+vitest_bin.vitest_test(
+    name = "bridge_test",
+    args = ["run"],
+    chdir = package_name(),
+    data = [
+        "approval_state.test.ts",
+        "bridge.test.ts",
+        "bridge_client.test.ts",
+        "geolocation.test.ts",
+        "haku_ui_embed.test.ts",
+        "open_external.test.ts",
+        "routing.test.ts",
+        "vitest.config.ts",
+        ":approval_state",
+        ":bridge",
+        ":geolocation",
+        ":haku_ui_embed",
+        ":open_external",
+        ":routing",
+        "//:node_modules",
+        "//:node_modules/@haku/console-bridge",
+        "//haku/console/frontend/tool_previews:gmail_test",
+        "//haku/console/frontend/tool_previews:google_calendar_test",
+        "//haku/console/frontend/tool_previews:grocy_test",
+        "//haku/console/frontend/tool_previews:haku_routine_test",
+        "//haku/console/frontend/tool_previews:index_test",
+        "//haku/console/frontend/tool_previews:kubectl_test",
+        "//haku/console/frontend/tool_previews:tana_test",
+        "//haku/console/frontend/tool_previews:variant_test",
+    ],
+)

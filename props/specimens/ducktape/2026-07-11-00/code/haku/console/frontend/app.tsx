@@ -1,0 +1,62 @@
+import { Loader, Text } from "@mantine/core";
+import { useEffect, useState } from "react";
+
+import { type ConfigResponse, fetchConfig } from "./client.ts";
+import { HakuUiEmbed } from "./haku_ui_embed.tsx";
+import { useConsoleView } from "./routing.ts";
+import { ToolCallsPage } from "./tool_calls_page.tsx";
+
+// The console is now just the trusted outer shell: a full-page frame for Haku's own UI
+// (a sandboxed cross-origin iframe) plus the bridge that brokers the iframe's privileged
+// requests (opening links, launching a run). All product chrome — title bar, the global
+// feedback button, the launch dialog — lives in haku-ui now; only the trusted confirm +
+// capability firing stay here. The one other console-owned surface is the full-page
+// past-tool-calls history at its own route (routing.ts). See README + docs/containment.md.
+export default function App() {
+  const [config, setConfig] = useState<ConfigResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { view, navigate } = useConsoleView();
+
+  useEffect(() => {
+    let alive = true;
+    fetchConfig()
+      .then((c) => {
+        if (alive) setConfig(c);
+      })
+      .catch((e: unknown) => {
+        if (alive) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // The history view is a self-contained console page that reads its own API and needs no shell
+  // config, so it renders regardless of the config load (even if it failed).
+  if (view === "toolCalls") return <ToolCallsPage onBack={() => navigate("embed")} />;
+
+  // The initial config load is the one thing rendered by the shell itself; a failure
+  // leaves nothing to frame, so it gets a persistent page-level message.
+  if (error)
+    return (
+      <Text c="red" className="mx-auto max-w-3xl p-4">
+        Failed to load: {error}
+      </Text>
+    );
+  if (!config)
+    return (
+      <div className="flex justify-center p-8">
+        <Loader />
+      </div>
+    );
+
+  // launch_routine_url is set iff the launch capability is configured (it's the routine's
+  // page URL); pass that as whether the shell can honor a requestLaunch from the iframe.
+  return (
+    <HakuUiEmbed
+      uiUrl={config.haku_ui_url}
+      launchAvailable={config.launch_routine_url != null}
+      onOpenToolCalls={() => navigate("toolCalls")}
+    />
+  );
+}

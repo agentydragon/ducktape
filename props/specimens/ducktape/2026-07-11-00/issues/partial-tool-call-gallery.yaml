@@ -1,0 +1,10 @@
+rationale: |
+  The screenshot preview gallery manually reconstructs only the action line and argument body instead of rendering the shared `ToolCallCard`. It therefore omits caller-provided titles, rationale, status and variant chrome, result/metadata sections, and other custom per-tool-call rendering behavior. This duplicates the production composition and lets the visual review fixture drift while still passing its screenshot generator. Build each compact and detailed gallery entry through the shared card using representative complete tool-call data.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      haku/console/frontend/screenshots/harness.tsx:
+        - [33, 59]
+    critic_scopes_expected_to_recall:
+      - [haku/console/frontend/screenshots/harness.tsx]

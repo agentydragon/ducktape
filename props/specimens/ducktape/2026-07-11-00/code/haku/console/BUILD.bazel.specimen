@@ -1,0 +1,365 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(
+    ["logo.svg"],
+    visibility = ["//haku/console/frontend:__pkg__"],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "mcp_config",
+    srcs = ["mcp_config.py"],
+    deps = [
+        ":config",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "deps",
+    srcs = ["deps.py"],
+    deps = [
+        ":config",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
+    name = "database_schema",
+    srcs = ["database_schema.py"],
+    deps = [
+        "//util:sqlalchemy_types",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "database_migrate",
+    srcs = ["database_migrate.py"],
+    data = glob(["migrations/**"]),
+    deps = [
+        ":database_schema",
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "capabilities",
+    srcs = ["capabilities.py"],
+    deps = [
+        ":config",
+        ":deps",
+        "//haku/console/tools:routine",
+        "@pypi//fastapi",
+        "@pypi//fastapi_csrf_protect",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "mcp_operator_oauth",
+    srcs = ["mcp_operator_oauth.py"],
+    data = ["mcp_operator_auth_callback.html"],
+    deps = [
+        ":config",
+        ":database_migrate",
+        ":database_schema",
+        ":deps",
+        ":mcp_config",
+        "@pypi//fastapi",
+        "@pypi//fastapi_csrf_protect",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "auto_approval",
+    srcs = ["auto_approval.py"],
+    deps = [
+        "//haku/console/tools:gmail_client",
+        "@pypi//fastmcp",
+        "@pypi//jsonschema",
+    ],
+)
+
+py_library(
+    name = "mcp_approval",
+    srcs = ["mcp_approval.py"],
+    deps = [
+        ":auto_approval",
+        ":config",
+        ":database_migrate",
+        ":database_schema",
+        ":deps",
+        ":mcp_config",
+        ":mcp_operator_oauth",
+        "//haku/console/tools:gmail_client",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//fastapi",
+        "@pypi//fastapi_csrf_protect",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//psycopg",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_auto_approval",
+    srcs = ["test_auto_approval.py"],
+    deps = [
+        ":auto_approval",
+        "//:conftest",
+        "//gmail_api:labels",
+        "//haku/console/tools:gmail",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        # Pytest async auto mode is configured by the root conftest hooks.
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    deps = [
+        ":capabilities",
+        ":config",
+        ":mcp_approval",
+        ":mcp_operator_oauth",
+        ":models",
+        "//haku/console/tools:gmail",
+        "//haku/console/tools:google_calendar",
+        "//haku/console/tools:grocy",
+        "//haku/console/tools:routine",
+        "//haku/console/tools:tana",
+        "@pypi//fastapi",
+        "@pypi//fastapi_csrf_protect",
+        "@pypi//fastmcp",
+        "@pypi//uvicorn",
+        # uvicorn needs a WebSocket protocol impl at runtime or every /api/approvals/ws
+        # upgrade fails ("Unsupported upgrade request") — the drawer's live channel (#2977).
+        "@pypi//websockets",
+    ],
+)
+
+py_binary(
+    name = "server",
+    main_module = "haku.console.app",
+    deps = [":app"],
+)
+
+py_library(
+    name = "export_schema",
+    srcs = ["export_schema.py"],
+    deps = [
+        ":app",
+        ":config",
+    ],
+)
+
+# Prints the OpenAPI schema; the frontend's js_openapi_schema runs it to generate types.
+py_binary(
+    name = "export_schema_bin",
+    main_module = "haku.console.export_schema",
+    deps = [":export_schema"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":app",
+        ":config",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_app",
+    srcs = ["test_app.py"],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_capabilities",
+    srcs = ["test_capabilities.py"],
+    deps = [
+        ":app",
+        ":config",
+        ":conftest",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
+    ],
+)
+
+py_test(
+    name = "test_mcp_approval",
+    size = "medium",
+    srcs = ["test_mcp_approval.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":app",
+        ":config",
+        ":conftest",
+        ":mcp_approval",
+        ":mcp_config",
+        "//:conftest",
+        "//haku/console/tools:gmail",
+        "//third_party/containers:rlocations",
+        "//util:net",
+        "//util:oci",
+        "//util/testing:postgres",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//starlette",
+        "@pypi//testcontainers",
+        "@pypi//uvicorn",
+        # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
+        # needs the plugin importable at runtime for its entry-point autoload; Gazelle
+        # can't see that and will try to drop this dep on regen.
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+# ── OCI image (the haku-console service) ──────────────────────────────────────
+# ca-certificates apt layer (@trixie_ca_certificates): the capability tier makes an
+# outbound HTTPS call to the Anthropic fire URL (api.anthropic.com), and httpx needs
+# the system trust store to verify that TLS connection — absent on a bare slim base.
+
+aspect_py_binary(
+    name = "server_bin",
+    main = "app.py",
+    deps = [":app"],
+)
+
+py_image_layer(
+    name = "server_layers",
+    binary = ":server_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+pkg_files(
+    name = "web_files",
+    srcs = ["//haku/console/frontend:bundle"],
+    # The bundle output keeps its `dist/` directory; nginx roots at this child path.
+    prefix = "/usr/share/nginx/html",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_files(
+    name = "nginx_conf_files",
+    srcs = ["default.conf.template"],
+    prefix = "/etc/nginx/templates",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "static_tar",
+    srcs = [
+        ":nginx_conf_files",
+        ":web_files",
+    ],
+)
+
+oci_image(
+    name = "server_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_bin"),
+    env = py_image_env(binary_name = "server_bin"),
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
+        "org.opencontainers.image.title": "haku-console",
+    },
+    tars = [
+        ":server_layers",
+        "@trixie_ca_certificates//:flat",
+    ],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "server_load",
+    image = ":server_image",
+    repo_tags = ["haku-console:latest"],
+)
+
+oci_image(
+    name = "static_image",
+    base = "@nginx_unprivileged_linux_amd64",
+    exposed_ports = ["8081/tcp"],
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
+        "org.opencontainers.image.title": "haku-console-static",
+    },
+    tars = [":static_tar"],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "static_load",
+    image = ":static_image",
+    repo_tags = ["haku-console-static:latest"],
+)
+
+build_test(
+    name = "static_image_build_test",
+    targets = [
+        ":static_image",
+        ":static_image.digest",
+    ],
+)

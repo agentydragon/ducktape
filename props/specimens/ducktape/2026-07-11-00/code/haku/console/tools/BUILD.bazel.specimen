@@ -1,0 +1,190 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//haku/console:__subpackages__"])
+
+py_library(
+    name = "gmail_client",
+    srcs = ["gmail_client.py"],
+    deps = [
+        "//gmail_api:labels",
+        "//gmail_api:messages",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "google_calendar_client",
+    srcs = ["google_calendar_client.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "gmail",
+    srcs = ["gmail.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        ":gmail_client",
+        "//gmail_api:labels",
+        "//gmail_api:messages",
+        "//gmail_api:service",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//google_api_python_client",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "google_calendar",
+    srcs = ["google_calendar.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        ":google_calendar_client",
+        "//gmail_api:service",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//google_api_python_client",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "grocy",
+    srcs = ["grocy.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "//haku/console:deps",
+        "//haku/console:mcp_approval",
+        "//haku/console:mcp_operator_oauth",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "tana",
+    srcs = ["tana.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "//haku/console:deps",
+        "//haku/console:mcp_approval",
+        "//haku/console:mcp_operator_oauth",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "routine",
+    srcs = ["routine.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "//haku/console:config",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_gmail",
+    srcs = ["test_gmail.py"],
+    deps = [
+        ":gmail",
+        ":gmail_client",
+        "//:conftest",
+        "//gmail_api:labels",
+        "//gmail_api:messages",
+        "//haku/console:conftest",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
+        # needs the plugin importable at runtime for its entry-point autoload; Gazelle
+        # can't see that and will try to drop this dep on regen.
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_tana",
+    srcs = ["test_tana.py"],
+    deps = [
+        ":tana",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_gmail_client",
+    srcs = ["test_gmail_client.py"],
+    deps = [
+        ":gmail_client",
+        "//:conftest",
+        "//gmail_api:labels",
+        "//gmail_api:messages",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_google_calendar",
+    srcs = ["test_google_calendar.py"],
+    deps = [
+        ":google_calendar",
+        ":google_calendar_client",
+        "//:conftest",
+        "//haku/console:conftest",
+        "@pypi//fastmcp",
+        "@pypi//pytest_bazel",
+        # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
+        # needs the plugin importable at runtime for its entry-point autoload; Gazelle
+        # can't see that and will try to drop this dep on regen.
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_google_calendar_client",
+    srcs = ["test_google_calendar_client.py"],
+    deps = [
+        ":google_calendar_client",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_routine",
+    srcs = ["test_routine.py"],
+    deps = [
+        ":routine",
+        "//:conftest",
+        "@pypi//fastmcp",
+        "@pypi//pytest_bazel",
+        # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
+        # needs the plugin importable at runtime for its entry-point autoload; Gazelle
+        # can't see that and will try to drop this dep on regen.
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_routine_client",
+    srcs = ["test_routine_client.py"],
+    deps = [
+        ":routine",
+        "//:conftest",
+        "//haku/console:config",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
+        # Not statically imported -- pytest-asyncio auto mode (the async fire tests). See above.
+        "@pypi//pytest_asyncio",
+    ],
+)

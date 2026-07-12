@@ -1,0 +1,382 @@
+@import "tailwindcss";
+@import "@mantine/core/styles.css";
+@import "@mantine/notifications/styles.css";
+
+/* Tailwind v4 scans the class names listed in this generated index (see BUILD:
+   tailwind_content_index) so utility classes used in the .tsx survive the build. */
+@source "./tailwind_content.txt";
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+    --haku-page-bg: #fbfaf6;
+    --haku-panel-bg: #fffdf8;
+    --haku-border: #d8d0df;
+    /* Neutral gray code surface (matches the neutral dark-mode code bg below), not a tint. */
+    --haku-code-bg: var(--mantine-color-gray-1);
+    --haku-code-fg: var(--mantine-color-gray-9);
+    /* JSON syntax-highlight hues — muted so a code block reads as structured data, not a rainbow. */
+    --haku-json-key: #1971c2;
+    --haku-json-string: #2f9e44;
+    --haku-json-number: #e8590c;
+    --haku-json-literal: #9c36b5;
+    --haku-backdrop: rgb(21 74 70 / 55%);
+    --haku-shell-shadow: rgb(36 31 43 / 20%);
+    --haku-shell-muted-bg: #f4f0f7;
+    --haku-shell-active-bg: #e7f4ef;
+  }
+  :root[data-mantine-color-scheme="dark"] {
+    /* Follow Mantine's neutral dark surfaces, as used by the location popover. The
+       shell used to tint every page and card dark green, which made this chrome
+       feel unrelated to both that popover and Haku's lavender/cream mark. */
+    --haku-page-bg: var(--mantine-color-dark-8);
+    --haku-panel-bg: var(--mantine-color-dark-7);
+    --haku-border: var(--mantine-color-dark-4);
+    --haku-code-bg: var(--mantine-color-dark-6);
+    --haku-code-fg: var(--mantine-color-gray-1);
+    --haku-backdrop: rgb(0 0 0 / 68%);
+    --haku-shell-shadow: rgb(0 0 0 / 45%);
+    --haku-shell-muted-bg: var(--mantine-color-dark-6);
+    --haku-shell-active-bg: var(--mantine-color-dark-5);
+    /* Lighter JSON hues for the dark code surface. */
+    --haku-json-key: #74c0fc;
+    --haku-json-string: #8ce99a;
+    --haku-json-number: #ffc078;
+    --haku-json-literal: #eebefa;
+  }
+  body {
+    margin: 0;
+    background: var(--haku-page-bg);
+    color: var(--mantine-color-text);
+  }
+}
+
+/* Rendered item markdown (marked → sanitized HTML). Tailwind's typography plugin
+   isn't vendored, so the prose elements are styled explicitly here; the container
+   carries the `md` class (the inner tags come from dangerouslySetInnerHTML, which
+   Tailwind can't scan). */
+.md {
+  overflow-wrap: break-word;
+}
+.md p {
+  margin: 0.5rem 0;
+}
+.md ul,
+.md ol {
+  margin: 0.4rem 0;
+  padding-left: 1.3rem;
+}
+.md li {
+  margin: 0.2rem 0;
+}
+.md code {
+  background: var(--haku-code-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+.md a {
+  color: var(--mantine-color-anchor);
+  overflow-wrap: anywhere;
+}
+
+.haku-confirm-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: min(32rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  margin: 0;
+  overflow: auto;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--haku-border);
+  background: var(--haku-panel-bg);
+  color: var(--mantine-color-text);
+}
+
+.haku-confirm-dialog::backdrop {
+  background: var(--haku-backdrop);
+}
+
+.haku-url-preview {
+  border: 1px solid var(--haku-border);
+  background: var(--haku-code-bg);
+  color: var(--haku-code-fg);
+}
+
+/* The shell chrome column: fixed top-right, a vertical flex stack of the toggle-button row and
+   the open panels. Panels stack by Y (never overlap by z-index); the container is
+   pointer-transparent so empty column space still clicks through to the framed haku-ui, while
+   the button row and panels catch their own clicks. */
+.haku-shell-chrome {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: calc(100vw - 16px);
+  pointer-events: none;
+}
+
+/* The toggle-button row rendered as one floating toolbar: a single rounded, shadowed bar whose
+   buttons sit flush (gap 0, square button corners inset by the bar's padding), so it reads as
+   one control cluster rather than separate buttons. `overflow: visible` so the pending-count /
+   live-location indicators aren't clipped at the bar's edge. */
+.haku-shell-toolbar {
+  flex: 0 0 auto;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--haku-border);
+  border-radius: 12px;
+  background: var(--haku-panel-bg);
+  box-shadow: 0 10px 32px var(--haku-shell-shadow);
+}
+
+.haku-shell-panels {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: min(32rem, calc(100vw - 16px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  pointer-events: auto;
+}
+
+/* The approvals panel follows its content until the column runs out of room, then shrinks and
+   scrolls its list so smaller side panels remain reachable. */
+.haku-shell-approvals {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+/* The settings panel has the same content-sized behavior: only shrink and scroll its list when
+   the available column height constrains it. */
+.haku-shell-settings {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Location / live-channel panels: natural height, so they sit compactly under the approvals
+   panel in the stack. */
+.haku-shell-side-panel {
+  flex: 0 0 auto;
+}
+
+/* Full-page console views on their own routes (past-tool-calls history in
+   tool_calls_page.tsx, operator settings in settings_page.tsx) — each replaces the framed
+   haku-ui rather than overlaying it. Shared page chrome, so both use these classes. */
+.haku-page {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--haku-page-bg);
+  color: var(--mantine-color-text);
+}
+
+.haku-page-header {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--haku-border);
+  background: var(--haku-panel-bg);
+}
+
+.haku-page-bar,
+.haku-page-list {
+  width: 100%;
+  max-width: 56rem;
+  margin: 0 auto;
+}
+
+.haku-page-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+}
+
+.haku-page-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.haku-page-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+/* Full-page cards sit on a solid page background, not floating over the iframe like the
+   drawer's — so drop the drawer's lift shadow and let the border alone delineate them. */
+.haku-page .haku-shell-card {
+  box-shadow: none;
+}
+
+.haku-shell-header {
+  flex: 0 0 auto;
+}
+
+.haku-shell-panel-nav {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.haku-shell-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.1rem 0.15rem 0.75rem 0.1rem;
+}
+
+.haku-shell-card {
+  border: 1px solid var(--haku-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--haku-panel-bg) 88%, var(--haku-shell-muted-bg));
+  box-shadow: 0 10px 32px var(--haku-shell-shadow);
+  padding: 0.75rem;
+}
+
+.haku-shell-countdown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.45rem;
+}
+
+.haku-shell-countdown-track {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mantine-color-dimmed) 24%, transparent);
+}
+
+.haku-shell-countdown-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--mantine-color-teal-5);
+  transition: width 200ms linear;
+}
+
+.haku-shell-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin: 0;
+}
+
+.haku-shell-field {
+  min-width: 0;
+}
+
+.haku-shell-field-label {
+  display: block;
+  margin: 0 0 0.18rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--mantine-color-dimmed);
+  text-transform: uppercase;
+}
+
+/* Inline (icon) form: the icon stands in for the label on the value's own line. */
+.haku-shell-field-inline {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.haku-shell-field-icon {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  margin-top: 0.1rem;
+  color: var(--mantine-color-dimmed);
+  display: inline-flex;
+}
+
+.haku-shell-field-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.haku-shell-mono,
+.haku-shell-disclosure code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.82rem;
+}
+
+.haku-shell-json {
+  max-height: 14rem;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--haku-border);
+  border-radius: 6px;
+  background: var(--haku-code-bg);
+  color: var(--haku-code-fg);
+  padding: 0.55rem;
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* highlight.js json tokens over the neutral code surface (see --haku-json-* vars). Punctuation
+   and braces carry no token class, so they inherit --haku-code-fg. */
+.haku-shell-json .hljs-attr {
+  color: var(--haku-json-key);
+}
+.haku-shell-json .hljs-string {
+  color: var(--haku-json-string);
+}
+.haku-shell-json .hljs-number {
+  color: var(--haku-json-number);
+}
+.haku-shell-json .hljs-literal {
+  color: var(--haku-json-literal);
+}
+
+.haku-shell-disclosure {
+  border-top: 1px solid var(--haku-border);
+  padding-top: 0.55rem;
+}
+
+.haku-shell-disclosure summary {
+  cursor: pointer;
+  color: var(--mantine-color-dimmed);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+/* Fields revealed under a disclosure (e.g. the Metadata block) need room below the summary. */
+.haku-shell-disclosure-body {
+  margin-top: 0.55rem;
+}
+
+@media (max-width: 520px) {
+  .haku-shell-chrome {
+    top: 4px;
+    right: 4px;
+    bottom: 4px;
+    max-width: calc(100vw - 8px);
+  }
+  .haku-shell-panels {
+    width: calc(100vw - 8px);
+  }
+}
