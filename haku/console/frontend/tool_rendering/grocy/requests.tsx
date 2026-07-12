@@ -20,7 +20,7 @@
 // the edited product up by name/ID and resolves its old foreign keys through the same maps. While
 // the reference is still loading the old side is simply omitted (only the new value shows).
 
-import { Badge, Group, Stack, Text } from "@mantine/core";
+import { Group, Stack } from "@mantine/core";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
 import { z } from "zod";
 
@@ -28,7 +28,16 @@ import { Field } from "../../field.tsx";
 import { fetchGrocyReference, type GrocyReferenceResponse } from "../../grocy_client.ts";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
-import { COMPACT_ITEM_LIMIT, MoreLine, plural, type PreviewProps, type PreviewVariant } from "../variant.tsx";
+import {
+  COMPACT_ITEM_LIMIT,
+  MoreLine,
+  plural,
+  PreviewBadge,
+  PreviewText,
+  PreviewTitle,
+  type PreviewProps,
+  type PreviewVariant,
+} from "../variant.tsx";
 
 export const GROCY_SERVER_ID = "grocy-sf";
 
@@ -112,11 +121,7 @@ function resolveProduct(products: GrocyProduct[] | undefined, value: string | nu
 
 function GrocyReferenceLoadError({ error }: { error: string | null }) {
   if (!error) return null;
-  return (
-    <Text size="sm" c="red">
-      Couldn't resolve product/location names: {error}
-    </Text>
-  );
+  return <PreviewText c="red">Couldn't resolve product/location names: {error}</PreviewText>;
 }
 
 // Shared skeleton for the item-list previews (stock add/consume, products create/edit, shopping
@@ -153,15 +158,15 @@ function GrocyItemsPreview<T>({
 function ProductAmount({ product, amount, qu }: { product: string; amount: number; qu: string }) {
   return (
     <Group gap={4}>
-      <Text size="sm" span fw={600}>
+      <PreviewText span fw={600}>
         {product}
-      </Text>
-      <Text size="sm" span c="dimmed">
+      </PreviewText>
+      <PreviewText span c="dimmed">
         ×
-      </Text>
-      <Text size="sm" span>
+      </PreviewText>
+      <PreviewText span>
         {amount} {qu}
-      </Text>
+      </PreviewText>
     </Group>
   );
 }
@@ -174,14 +179,10 @@ function StockAddRow({ item, reference }: { item: AddItem; reference: GrocyRefer
         amount={item.amount}
         qu={resolveName(reference?.quantity_units, item.qu)}
       />
-      <Text size="sm" span c="dimmed">
+      <PreviewText span c="dimmed">
         → {resolveName(reference?.locations, item.location)}
-      </Text>
-      {item.best_before_date && (
-        <Badge size="sm" variant="outline">
-          best before {item.best_before_date}
-        </Badge>
-      )}
+      </PreviewText>
+      {item.best_before_date && <PreviewBadge variant="outline">best before {item.best_before_date}</PreviewBadge>}
     </Group>
   );
 }
@@ -205,13 +206,13 @@ function StockConsumeRow({ item, reference }: { item: ConsumeItem; reference: Gr
         amount={item.amount}
         qu={resolveName(reference?.quantity_units, item.qu)}
       />
-      <Text size="sm" span c="dimmed">
+      <PreviewText span c="dimmed">
         from {resolveName(reference?.locations, item.location)}
-      </Text>
+      </PreviewText>
       {item.spoiled && (
-        <Badge size="sm" color="orange" variant="outline">
+        <PreviewBadge color="orange" variant="outline">
           spoiled
-        </Badge>
+        </PreviewBadge>
       )}
     </Group>
   );
@@ -256,14 +257,14 @@ function ProductsCreateRow({
   return (
     <Stack gap={2}>
       <Group gap={6}>
-        <Text size="sm" span fw={600}>
+        <PreviewText span fw={600}>
           {item.name}
-        </Text>
-        <Text size="sm" span c="dimmed">
+        </PreviewText>
+        <PreviewText span c="dimmed">
           stock in {stockQuName}, at {resolveName(reference?.locations, item.location)}
-        </Text>
+        </PreviewText>
         {item.product_group != null && (
-          <Badge size="sm">{resolveName(reference?.product_groups, item.product_group)}</Badge>
+          <PreviewBadge>{resolveName(reference?.product_groups, item.product_group)}</PreviewBadge>
         )}
       </Group>
       {/* Compact rows carry just the product's name + where it stocks; the secondary badge
@@ -271,35 +272,31 @@ function ProductsCreateRow({
       {variant === "compact" ? null : (
         <>
           <Group gap={6}>
-            <Badge size="sm" variant="outline" color="gray">
+            <PreviewBadge variant="outline" color="gray">
               shelf life: {formatDefaultBestBeforeDays(item.default_best_before_days)}
-            </Badge>
+            </PreviewBadge>
             {item.min_stock_amount != null && item.min_stock_amount !== 0 && (
-              <Badge size="sm" variant="outline" color="gray">
+              <PreviewBadge variant="outline" color="gray">
                 min stock: {item.min_stock_amount} {stockQuName}
-              </Badge>
+              </PreviewBadge>
             )}
             {purchaseQuName && purchaseQuName !== stockQuName && (
-              <Badge size="sm" variant="outline" color="gray">
+              <PreviewBadge variant="outline" color="gray">
                 purchased in {purchaseQuName}
-              </Badge>
+              </PreviewBadge>
             )}
             {consumeQuName && consumeQuName !== stockQuName && (
-              <Badge size="sm" variant="outline" color="gray">
+              <PreviewBadge variant="outline" color="gray">
                 consumed in {consumeQuName}
-              </Badge>
+              </PreviewBadge>
             )}
             {item.parent_product != null && (
-              <Badge size="sm" variant="outline" color="gray">
+              <PreviewBadge variant="outline" color="gray">
                 variant of {resolveName(reference?.products, item.parent_product)}
-              </Badge>
+              </PreviewBadge>
             )}
           </Group>
-          {item.description && (
-            <Text size="sm" c="dimmed">
-              {item.description}
-            </Text>
-          )}
+          {item.description && <PreviewText c="dimmed">{item.description}</PreviewText>}
         </>
       )}
     </Stack>
@@ -326,19 +323,17 @@ type FieldChange = { key: string; label: string; old: string | null; next: strin
 
 function ChangeLine({ change }: { change: FieldChange }) {
   return (
-    <Text size="sm">
-      <Text size="sm" span c="dimmed">
+    <PreviewText>
+      <PreviewText span c="dimmed">
         {change.label}:{" "}
-      </Text>
+      </PreviewText>
       {change.old !== null && (
-        <Text size="sm" span c="dimmed">
+        <PreviewText span c="dimmed">
           {change.old || "(empty)"} →{" "}
-        </Text>
+        </PreviewText>
       )}
-      <Text size="sm" span>
-        {change.next}
-      </Text>
-    </Text>
+      <PreviewText span>{change.next}</PreviewText>
+    </PreviewText>
   );
 }
 
@@ -375,9 +370,7 @@ function StockEntryEditRow({
   const shown = variant === "compact" ? changes.slice(0, 2) : changes;
   return (
     <Stack gap={2}>
-      <Text size="sm" fw={600}>
-        Stock entry #{item.entry_id}
-      </Text>
+      <PreviewTitle>Stock entry #{item.entry_id}</PreviewTitle>
       {shown.map((change) => (
         <ChangeLine key={change.key} change={change} />
       ))}
@@ -403,7 +396,7 @@ function StockGetPreview({ args }: PreviewProps<StockGetArgs>) {
   const locations = (args.locations ?? []).map((value) => resolveName(reference?.locations, value));
   return (
     <Stack gap="xs">
-      {products.length === 0 && locations.length === 0 && <Text size="sm">All current stock</Text>}
+      {products.length === 0 && locations.length === 0 && <PreviewText>All current stock</PreviewText>}
       {products.length > 0 && <Field label="Products">{products.join(", ")}</Field>}
       {locations.length > 0 && <Field label="Locations">{locations.join(", ")}</Field>}
       <GrocyReferenceLoadError error={error} />
@@ -413,9 +406,9 @@ function StockGetPreview({ args }: PreviewProps<StockGetArgs>) {
 
 function DetailPreview({ detail, noun }: { detail: "brief" | "full"; noun: string }) {
   return (
-    <Text size="sm">
+    <PreviewText>
       {detail === "full" ? `Full ${noun} records` : `${noun[0].toUpperCase()}${noun.slice(1)} names`}
-    </Text>
+    </PreviewText>
   );
 }
 
@@ -428,7 +421,7 @@ function QuantityUnitsListPreview({ args }: PreviewProps<QuantityUnitsListArgs>)
 }
 
 function GetSystemInfoPreview(_: PreviewProps<GetSystemInfoArgs>) {
-  return <Text size="sm">Grocy server version and system details</Text>;
+  return <PreviewText>Grocy server version and system details</PreviewText>;
 }
 
 function ShoppingListItemsRemovePreview({ args }: PreviewProps<ShoppingListItemsRemoveArgs>) {
@@ -569,9 +562,7 @@ function ProductsEditRow({
   const shown = variant === "compact" ? changes.slice(0, 2) : changes;
   return (
     <Stack gap={2}>
-      <Text size="sm" fw={600}>
-        {resolveName(reference?.products, item.product)}
-      </Text>
+      <PreviewTitle>{resolveName(reference?.products, item.product)}</PreviewTitle>
       <Stack gap={2}>
         {shown.map((change) => (
           <ChangeLine key={change.key} change={change} />
@@ -599,14 +590,14 @@ function ShoppingListGetPreview({ args }: PreviewProps<ShoppingListGetArgs>) {
   const { reference, error } = useGrocyReference();
   return (
     <Stack gap="xs">
-      <Text size="sm">
-        <Text size="sm" span c="dimmed">
+      <PreviewText>
+        <PreviewText span c="dimmed">
           List{" "}
-        </Text>
-        <Text size="sm" span fw={600}>
+        </PreviewText>
+        <PreviewText span fw={600}>
           {resolveName(reference?.shopping_lists, args.shopping_list)}
-        </Text>
-      </Text>
+        </PreviewText>
+      </PreviewText>
       <GrocyReferenceLoadError error={error} />
     </Stack>
   );
@@ -617,27 +608,27 @@ function ShoppingListAddRow({ item, reference }: { item: ShoppingItem; reference
     <Group gap={6}>
       {item.product != null ? (
         <Group gap={4}>
-          <Text size="sm" span fw={600}>
+          <PreviewText span fw={600}>
             {resolveName(reference?.products, item.product)}
-          </Text>
+          </PreviewText>
           {item.amount != null && item.amount !== 1 && (
-            <Text size="sm" span c="dimmed">
+            <PreviewText span c="dimmed">
               × {item.amount}
-            </Text>
+            </PreviewText>
           )}
         </Group>
       ) : (
-        <Text size="sm" span fw={600}>
+        <PreviewText span fw={600}>
           {item.note}
-        </Text>
+        </PreviewText>
       )}
-      <Text size="sm" span c="dimmed">
+      <PreviewText span c="dimmed">
         → {resolveName(reference?.shopping_lists, item.shopping_list)}
-      </Text>
+      </PreviewText>
       {item.product != null && item.note && (
-        <Text span size="sm" c="dimmed">
+        <PreviewText span c="dimmed">
           ({item.note})
-        </Text>
+        </PreviewText>
       )}
     </Group>
   );
@@ -672,9 +663,7 @@ function ShoppingListItemEditPreview({ args, variant }: PreviewProps<ShoppingLis
   const shown = variant === "compact" ? changes.slice(0, 2) : changes;
   return (
     <Stack gap={2}>
-      <Text size="sm" fw={600}>
-        Item #{args.item_id}
-      </Text>
+      <PreviewTitle>Item #{args.item_id}</PreviewTitle>
       <Stack gap={2}>
         {shown.map((change) => (
           <ChangeLine key={change.key} change={change} />

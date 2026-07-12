@@ -7,11 +7,18 @@
 // lenient about extra keys, since the remote server's output schemas are not in the build-time
 // catalog and can grow fields under the console.
 
-import { Badge, Group, Stack, Text } from "@mantine/core";
+import { Group, Stack } from "@mantine/core";
 import type { ReactNode } from "react";
 import { z } from "zod";
 
-import { COMPACT_ITEM_LIMIT, MoreLine, type PreviewVariant } from "../variant.tsx";
+import {
+  COMPACT_ITEM_LIMIT,
+  MoreLine,
+  PreviewBadge,
+  PreviewText,
+  PreviewTitle,
+  type PreviewVariant,
+} from "../variant.tsx";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
 
 // A failed row: any kind other than "ok", with the server's error message. Matched after the
@@ -122,13 +129,13 @@ function splitRows<Ok extends { kind: "ok" }>(rows: readonly (Ok | FailedRow)[])
 function ResultSummary({ okCount, failedCount, verb }: { okCount: number; failedCount: number; verb: string }) {
   return (
     <Group gap={6}>
-      <Text span size="sm" fw={600}>
+      <PreviewText span fw={600}>
         {okCount} {verb}
-      </Text>
+      </PreviewText>
       {failedCount > 0 && (
-        <Text span size="sm" c="red">
+        <PreviewText span c="red">
           +{failedCount} failed
-        </Text>
+        </PreviewText>
       )}
     </Group>
   );
@@ -155,11 +162,7 @@ function BatchResultView<Ok extends { kind: "ok" }>({
     return (
       <Stack gap={2}>
         <ResultSummary okCount={ok.length} failedCount={failed.length} verb={verb} />
-        {shown.length > 0 && (
-          <Text size="sm" c="dimmed">
-            {shown.map(rowName).join(" · ")}
-          </Text>
-        )}
+        {shown.length > 0 && <PreviewText c="dimmed">{shown.map(rowName).join(" · ")}</PreviewText>}
         <MoreLine count={ok.length - shown.length} />
       </Stack>
     );
@@ -171,9 +174,9 @@ function BatchResultView<Ok extends { kind: "ok" }>({
         <RowView key={i} row={row} />
       ))}
       {failed.map((row, i) => (
-        <Text key={i} size="sm" c="red">
+        <PreviewText key={i} c="red">
           ✗ {row.error}
-        </Text>
+        </PreviewText>
       ))}
     </Stack>
   );
@@ -182,22 +185,18 @@ function BatchResultView<Ok extends { kind: "ok" }>({
 function StockAddResultRow({ row }: { row: StockAddOkRow }) {
   return (
     <Group gap={6}>
-      <Text size="sm" span fw={600}>
+      <PreviewText span fw={600}>
         {row.product_name}
-      </Text>
+      </PreviewText>
       {row.amount_delta != null && (
-        <Text size="sm" span>
+        <PreviewText span>
           +{row.amount_delta} {row.qu_name}
-        </Text>
+        </PreviewText>
       )}
-      <Text size="sm" span c="dimmed">
+      <PreviewText span c="dimmed">
         {row.new_amount != null ? `→ ${row.new_amount} ${row.qu_name} in ${row.location_name}` : row.location_name}
-      </Text>
-      {row.best_before_date && (
-        <Badge size="sm" variant="outline">
-          best before {row.best_before_date}
-        </Badge>
-      )}
+      </PreviewText>
+      {row.best_before_date && <PreviewBadge variant="outline">best before {row.best_before_date}</PreviewBadge>}
     </Group>
   );
 }
@@ -221,13 +220,13 @@ function productsCreateRowName(row: ProductsCreateOkRow): string {
 function ProductsCreateResultRow({ row }: { row: ProductsCreateOkRow }) {
   return (
     <Group gap={6}>
-      <Text size="sm" span fw={600}>
+      <PreviewText span fw={600}>
         {productsCreateRowName(row)}
-      </Text>
+      </PreviewText>
       {row.product_name != null && row.created_object_id != null && (
-        <Text size="sm" span c="dimmed">
+        <PreviewText span c="dimmed">
           #{row.created_object_id}
-        </Text>
+        </PreviewText>
       )}
     </Group>
   );
@@ -252,16 +251,16 @@ function shoppingItemName(row: ShoppingListItemOkRow): string {
 function ShoppingListItemsAddResultRow({ row }: { row: ShoppingListItemOkRow }) {
   return (
     <Group gap={4}>
-      <Text size="sm" span fw={600}>
+      <PreviewText span fw={600}>
         {shoppingItemName(row)}
-      </Text>
-      <Text size="sm" span c="dimmed">
+      </PreviewText>
+      <PreviewText span c="dimmed">
         ×
-      </Text>
-      <Text size="sm" span>
+      </PreviewText>
+      <PreviewText span>
         {row.amount}
         {row.qu_name ? ` ${row.qu_name}` : ""}
-      </Text>
+      </PreviewText>
     </Group>
   );
 }
@@ -285,28 +284,24 @@ function StockEntryEditResultRow({ row }: { row: StockEntryEditOkRow }) {
   return (
     <Stack gap={2}>
       <Group gap={6}>
-        <Text size="sm" span fw={600}>
+        <PreviewText span fw={600}>
           {row.entry.product_name}
-        </Text>
-        <Text size="sm" span>
+        </PreviewText>
+        <PreviewText span>
           {row.entry.amount} {row.entry.qu_name}
-        </Text>
-        <Text size="sm" span c="dimmed">
+        </PreviewText>
+        <PreviewText span c="dimmed">
           in {row.entry.location_name} · entry #{row.entry.entry_id}
-        </Text>
-        {row.entry.open && (
-          <Badge size="sm" variant="outline">
-            opened
-          </Badge>
-        )}
+        </PreviewText>
+        {row.entry.open && <PreviewBadge variant="outline">opened</PreviewBadge>}
       </Group>
       {row.changes && (
-        <Text size="sm" c="dimmed">
+        <PreviewText c="dimmed">
           Changed:{" "}
           {Object.keys(row.changes)
             .map((field) => field.replaceAll("_", " "))
             .join(", ")}
-        </Text>
+        </PreviewText>
       )}
     </Stack>
   );
@@ -328,25 +323,21 @@ function StockGetResultView({ result, variant }: ResultPreviewProps<z.infer<type
   const rows = variant === "compact" ? result.slice(0, COMPACT_ITEM_LIMIT) : result;
   return (
     <Stack gap={4}>
-      <Text size="sm" fw={600}>
+      <PreviewTitle>
         {result.length} stock {result.length === 1 ? "item" : "items"}
-      </Text>
+      </PreviewTitle>
       {rows.map((row, i) => (
         <Group gap={6} key={i}>
-          <Text size="sm" span fw={600}>
+          <PreviewText span fw={600}>
             {row.product_name}
-          </Text>
-          <Text size="sm" span>
+          </PreviewText>
+          <PreviewText span>
             {row.amount} {row.qu_name}
-          </Text>
-          <Text size="sm" span c="dimmed">
+          </PreviewText>
+          <PreviewText span c="dimmed">
             in {row.location_name}
-          </Text>
-          {row.amount_opened > 0 && (
-            <Badge size="sm" variant="outline">
-              {row.amount_opened} opened
-            </Badge>
-          )}
+          </PreviewText>
+          {row.amount_opened > 0 && <PreviewBadge variant="outline">{row.amount_opened} opened</PreviewBadge>}
         </Group>
       ))}
       <MoreLine count={result.length - rows.length} />
@@ -358,16 +349,14 @@ function NamedRowsResultView({ result, variant }: ResultPreviewProps<z.infer<typ
   const rows = variant === "compact" ? result.slice(0, COMPACT_ITEM_LIMIT) : result;
   return (
     <Stack gap={2}>
-      <Text size="sm" fw={600}>
-        {result.length} found
-      </Text>
+      <PreviewTitle>{result.length} found</PreviewTitle>
       {rows.map((row) => (
-        <Text key={row.id} size="sm">
+        <PreviewText key={row.id}>
           {row.name}{" "}
-          <Text size="sm" span c="dimmed">
+          <PreviewText span c="dimmed">
             #{row.id}
-          </Text>
-        </Text>
+          </PreviewText>
+        </PreviewText>
       ))}
       <MoreLine count={result.length - rows.length} />
     </Stack>
@@ -382,18 +371,18 @@ function ShoppingListGetResultView({ result, variant }: ResultPreviewProps<z.inf
   const rows = variant === "compact" ? result.items.slice(0, COMPACT_ITEM_LIMIT) : result.items;
   return (
     <Stack gap={4}>
-      <Text size="sm" fw={600}>
+      <PreviewTitle>
         {result.name} · {result.items.length} items
-      </Text>
+      </PreviewTitle>
       {rows.map((row) => (
         <Group gap={6} key={row.item_id}>
-          <Text size="sm" span td={row.done ? "line-through" : undefined}>
+          <PreviewText span td={row.done ? "line-through" : undefined}>
             {row.product_name ?? row.note ?? "(note)"}
-          </Text>
-          <Text size="sm" span c="dimmed">
+          </PreviewText>
+          <PreviewText span c="dimmed">
             × {row.amount}
             {row.qu_name ? ` ${row.qu_name}` : ""} · #{row.item_id}
-          </Text>
+          </PreviewText>
         </Group>
       ))}
       <MoreLine count={result.items.length - rows.length} />
@@ -405,12 +394,12 @@ function SystemInfoResultView({ result }: ResultPreviewProps<z.infer<typeof zSys
   return (
     <Stack gap={2}>
       {Object.entries(result).map(([key, value]) => (
-        <Text size="sm" key={key}>
-          <Text size="sm" span c="dimmed">
+        <PreviewText key={key}>
+          <PreviewText span c="dimmed">
             {key.replaceAll("_", " ")}:{" "}
-          </Text>
+          </PreviewText>
           {String(value)}
-        </Text>
+        </PreviewText>
       ))}
     </Stack>
   );

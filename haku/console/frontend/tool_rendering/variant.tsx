@@ -4,13 +4,31 @@
 // first few lines. A **detailed** preview is the full form shown in the expanded detail
 // view. Leaf module (no widget deps) so index.tsx and every widget can import the type
 // without a cycle.
-import { Text } from "@mantine/core";
+import { Badge, type BadgeProps, Text, type TextProps } from "@mantine/core";
+import type { PropsWithChildren } from "react";
 
 export type PreviewVariant = "compact" | "detailed";
 
 // The props every top-level preview widget takes: the tool's parsed arguments plus the variant
 // to render. Shared so widgets (and `definePreview`) don't re-spell `{ args; variant }`.
 export type PreviewProps<Args> = { args: Args; variant: PreviewVariant };
+
+/** Tool-widget body copy. Keeping the default here prevents Mantine's larger application-level
+ * default from leaking back into one server when a renderer omits `size`. */
+export function PreviewText({ size = "sm", ...props }: PropsWithChildren<TextProps>) {
+  return <Text size={size} {...props} />;
+}
+
+/** A tool widget's primary identity: same type scale as its body, distinguished by weight rather
+ * than a one-off larger font. */
+export function PreviewTitle({ size = "sm", fw = 600, ...props }: PropsWithChildren<TextProps>) {
+  return <Text size={size} fw={fw} {...props} />;
+}
+
+/** Attribute/state pill for tool widgets. Variants and semantic colors remain call-site choices. */
+export function PreviewBadge({ size = "sm", ...props }: PropsWithChildren<BadgeProps>) {
+  return <Badge size={size} {...props} />;
+}
 
 // In compact previews, list-shaped arguments show only the first few items; the rest
 // collapse to a single "… +N more" line so a card stays scannable.
@@ -26,9 +44,9 @@ export function plural(count: number, noun: string): string {
 export function MoreLine({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
-    <Text size="xs" c="dimmed">
+    <PreviewText size="xs" c="dimmed">
       … +{count} more
-    </Text>
+    </PreviewText>
   );
 }
 

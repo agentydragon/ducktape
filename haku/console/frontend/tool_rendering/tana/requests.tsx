@@ -3,14 +3,14 @@
 // node-previews endpoint resolves names through the same operator credential that executes an
 // approved call. It deliberately does not parse Tana Paste or expose a generic MCP proxy.
 
-import { Anchor, Badge, Group, Stack, Text } from "@mantine/core";
+import { Anchor, Group, Stack } from "@mantine/core";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 
 import { Field } from "../../field.tsx";
 import { fetchTanaNodePreviews, type TanaNodePreview } from "../../tana_client.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
-import { clampBlock, type PreviewProps } from "../variant.tsx";
+import { clampBlock, PreviewBadge, PreviewText, type PreviewProps } from "../variant.tsx";
 
 export const TANA_RW_SERVER_ID = "tana-rw";
 
@@ -86,9 +86,9 @@ function TanaNodeLink({ nodeId, previews }: { nodeId: string; previews: Record<s
       {preview.name}
     </Anchor>
   ) : (
-    <Text size="sm" span className="haku-shell-mono" c="dimmed">
+    <PreviewText span className="haku-shell-mono" c="dimmed">
       {nodeId}
-    </Text>
+    </PreviewText>
   );
 }
 
@@ -108,13 +108,11 @@ function ImportTanaPastePreview({ args, variant }: PreviewProps<ImportTanaPasteA
 function GetOrCreateCalendarNodePreview({ args }: PreviewProps<GetOrCreateCalendarNodeArgs>) {
   return (
     <Group gap={6}>
-      <Badge size="sm" variant="outline">
-        {args.granularity}
-      </Badge>
-      {args.date && <Text size="sm">{args.date}</Text>}
-      <Text size="sm" c="dimmed" className="haku-shell-mono">
+      <PreviewBadge variant="outline">{args.granularity}</PreviewBadge>
+      {args.date && <PreviewText>{args.date}</PreviewText>}
+      <PreviewText c="dimmed" className="haku-shell-mono">
         {args.workspaceId}
-      </Text>
+      </PreviewText>
     </Group>
   );
 }
@@ -127,21 +125,19 @@ function TrashNodePreview({ args }: PreviewProps<TrashNodeArgs>) {
 function EditOperation({ label, edit }: { label: string; edit: z.infer<typeof zEditOperation> }) {
   return (
     <Stack gap={2}>
-      <Text size="sm" fw={600}>
-        {label}
-      </Text>
-      <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-        <Text size="sm" span c="dimmed">
+      <PreviewText fw={600}>{label}</PreviewText>
+      <PreviewText style={{ whiteSpace: "pre-wrap" }}>
+        <PreviewText span c="dimmed">
           {edit.old_string || "(empty)"}
-        </Text>
+        </PreviewText>
         {" → "}
         {edit.new_string || "(clear)"}
         {edit.replace_all && (
-          <Text size="sm" span c="dimmed">
+          <PreviewText span c="dimmed">
             {" · all matches"}
-          </Text>
+          </PreviewText>
         )}
-      </Text>
+      </PreviewText>
     </Stack>
   );
 }
@@ -167,26 +163,18 @@ function MoveNodePreview({ args }: PreviewProps<MoveNodeArgs>) {
     <Stack gap={4}>
       <Group gap={6}>
         <TanaNodeLink nodeId={args.nodeId} previews={previews} />
-        <Text size="sm" c="dimmed">
-          →
-        </Text>
+        <PreviewText c="dimmed">→</PreviewText>
         <TanaNodeLink nodeId={args.targetNodeId} previews={previews} />
       </Group>
       <Group gap={6}>
-        <Badge size="sm" variant="outline">
-          {args.position}
-        </Badge>
+        <PreviewBadge variant="outline">{args.position}</PreviewBadge>
         {args.referenceNodeId && <TanaNodeLink nodeId={args.referenceNodeId} previews={previews} />}
         {args.sourceParentId && (
-          <Text size="sm" c="dimmed">
+          <PreviewText c="dimmed">
             from <TanaNodeLink nodeId={args.sourceParentId} previews={previews} />
-          </Text>
+          </PreviewText>
         )}
-        {args.keepSourceReference && (
-          <Badge size="sm" variant="outline">
-            keep reference
-          </Badge>
-        )}
+        {args.keepSourceReference && <PreviewBadge variant="outline">keep reference</PreviewBadge>}
       </Group>
     </Stack>
   );
@@ -204,9 +192,7 @@ function SetFieldOptionPreview({ args }: PreviewProps<SetFieldOptionArgs>) {
       </Field>
       <Field label="Option">
         <Group gap={6}>
-          <Badge size="sm" variant="outline">
-            {args.mode}
-          </Badge>
+          <PreviewBadge variant="outline">{args.mode}</PreviewBadge>
           <TanaNodeLink nodeId={args.optionId} previews={previews} />
         </Group>
       </Field>

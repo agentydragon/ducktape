@@ -72,14 +72,14 @@ with the rarely-useful parts folded away:
 
 **Use the shared visual grammar; do not invent per-tool typography.**
 
-- Tool-preview body text is Mantine `Text size="sm"`. Set it explicitly, including `span`
-  fragments, so a renderer never falls back to Mantine's larger default. A bold identity/title
-  is still `size="sm"`; hierarchy comes from `fw={600}`, not a larger font.
-- Supporting or failure text is also `size="sm"` plus `c="dimmed"` or the semantic failure
+- Tool-preview body copy uses `PreviewText`, including `span` fragments. Its `sm` default keeps
+  Mantine's larger application-level default from leaking into one server. Primary identities use
+  `PreviewTitle`; it stays on the same scale and creates hierarchy with weight, not font size.
+- Supporting or failure text uses `PreviewText` plus `c="dimmed"` or the semantic failure
   color. Reserve `size="xs"` for genuinely tertiary UI such as `MoreLine`, a low-priority link,
   or card-level rationale/metadata outside the tool widget.
-- Preview badges are `size="sm"`. Use `variant="outline"` for attributes and `variant="light"`
-  for semantic state. Do not use badge size as a heading hierarchy.
+- Preview badges use `PreviewBadge`, whose default is `sm`. Use `variant="outline"` for attributes
+  and `variant="light"` for semantic state. Do not use badge size as a heading hierarchy.
 - Use the shared `Field` component for labelled values instead of hand-building `Label: value`
   rows. Use `mono` for opaque identifiers and `icon` only when the icon is unambiguous. A call's
   primary identity remains an unlabelled bold `Text`, per the vertical-space rule above.

@@ -5,10 +5,11 @@
 // `{event_id, html_link}`. Unknown extra keys pass through; a missing field fails the parse
 // (→ raw JSON fallback).
 
-import { Anchor, Stack, Text } from "@mantine/core";
+import { Anchor, Stack } from "@mantine/core";
 import { z } from "zod";
 
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
+import { PreviewText } from "../variant.tsx";
 
 const zCreateCalendarEventResult = z.looseObject({
   event_id: z.string(),
@@ -26,9 +27,9 @@ function CreateCalendarEventResultView({ result, variant }: ResultPreviewProps<C
         Open event in Google Calendar ↗
       </Anchor>
       {variant === "detailed" && (
-        <Text size="xs" c="dimmed">
+        <PreviewText size="xs" c="dimmed">
           event {result.event_id}
-        </Text>
+        </PreviewText>
       )}
     </Stack>
   );

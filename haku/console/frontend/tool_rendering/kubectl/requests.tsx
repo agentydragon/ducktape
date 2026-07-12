@@ -6,12 +6,12 @@
 // identity (cluster_auth_mode=passthrough) once approved, so rendering the exact target
 // unambiguously matters more than for narrower-scoped tools.
 
-import { Group, Stack, Text } from "@mantine/core";
+import { Group, Stack } from "@mantine/core";
 import { z } from "zod";
 
 import { Field } from "../../field.tsx";
 import { definePreview, type ToolPreview } from "../entry.tsx";
-import { clampBlock, type PreviewProps } from "../variant.tsx";
+import { clampBlock, PreviewText, type PreviewProps } from "../variant.tsx";
 
 export const KUBECTL_SERVER_ID = "kubectl-passthrough-mcp";
 
@@ -66,22 +66,18 @@ function DeleteTargetPreview({
   return (
     <Stack gap="xs">
       <Group gap={4} className="haku-shell-mono">
-        <Text size="sm" span fw={600}>
+        <PreviewText span fw={600}>
           {kind}
-        </Text>
-        <Text size="sm" span>
-          {name}
-        </Text>
+        </PreviewText>
+        <PreviewText span>{name}</PreviewText>
         {namespace && (
-          <Text size="sm" span c="dimmed">
+          <PreviewText span c="dimmed">
             in {namespace}
-          </Text>
+          </PreviewText>
         )}
       </Group>
       {gracePeriodSeconds === 0 && (
-        <Text size="sm" c="red">
-          Immediate deletion (grace period 0) — no termination grace.
-        </Text>
+        <PreviewText c="red">Immediate deletion (grace period 0) — no termination grace.</PreviewText>
       )}
     </Stack>
   );
@@ -110,9 +106,9 @@ function PodsLogPreview({ args }: PreviewProps<PodsLogArgs>) {
         {args.name}
         {args.container ? ` · ${args.container}` : ""}
       </Field>
-      <Text size="sm" c="dimmed">
+      <PreviewText c="dimmed">
         {args.previous ? "Previous container logs" : "Current logs"} · last {args.tail ?? 100} lines
-      </Text>
+      </PreviewText>
     </Stack>
   );
 }

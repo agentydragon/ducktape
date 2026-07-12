@@ -4,13 +4,12 @@
 // verbatim before approving. Its validator comes from the exact FastMCP input schema advertised
 // by tools/list, through the same generated catalog as the Gmail and Calendar previews.
 
-import { Text } from "@mantine/core";
 import { z } from "zod";
 
 import { Field } from "../../field.tsx";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
-import { clampBlock, type PreviewProps } from "../variant.tsx";
+import { clampBlock, PreviewText, type PreviewProps } from "../variant.tsx";
 
 export const HAKU_ROUTINE_SERVER_ID = "haku_routine";
 
@@ -22,13 +21,7 @@ function LaunchRoutinePreview({ args, variant }: PreviewProps<LaunchRoutineArgs>
   const shown = text ? (variant === "compact" ? clampBlock(text, 3) : text) : null;
   return (
     <Field label="Instructions">
-      {shown ? (
-        <pre className="haku-shell-json">{shown}</pre>
-      ) : (
-        <Text size="sm" c="dimmed">
-          (routine default)
-        </Text>
-      )}
+      {shown ? <pre className="haku-shell-json">{shown}</pre> : <PreviewText c="dimmed">(routine default)</PreviewText>}
     </Field>
   );
 }

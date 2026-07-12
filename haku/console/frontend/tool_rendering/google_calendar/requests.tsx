@@ -4,7 +4,7 @@
 // schema below is built from the FastMCP input schema advertised by tools/list. Execution-only
 // Pydantic cross-field validators may be stricter than that structural schema.
 
-import { Anchor, Loader, Stack, Text } from "@mantine/core";
+import { Anchor, Loader, Stack } from "@mantine/core";
 import { useEffect, useState } from "react";
 import type { z } from "zod";
 
@@ -13,7 +13,7 @@ import { Field } from "../../field.tsx";
 import { BellIcon, CalendarIcon, ClockIcon, MapPinIcon, UsersIcon } from "../../icons.tsx";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
-import type { PreviewProps } from "../variant.tsx";
+import { PreviewText, PreviewTitle, type PreviewProps } from "../variant.tsx";
 
 export const GOOGLE_CALENDAR_SERVER_ID = "google_calendar";
 
@@ -162,9 +162,7 @@ function CalendarField({ calendarId }: { calendarId: string }) {
         </Anchor>
       ) : failed ? (
         // Name lookup failed (e.g. deleted calendar, wrong account) — fall back to the raw id.
-        <Text size="sm" span>
-          {calendarId}
-        </Text>
+        <PreviewText span>{calendarId}</PreviewText>
       ) : (
         <Loader size="xs" />
       )}
@@ -178,9 +176,7 @@ function CreateCalendarEventPreview({ args, variant }: PreviewProps<CreateCalend
   const when = formatEventDateTimeRange(args.start, args.end);
   return (
     <Stack gap={6}>
-      <Text size="sm" fw={600}>
-        {args.summary}
-      </Text>
+      <PreviewTitle>{args.summary}</PreviewTitle>
       <Field icon={<ClockIcon size={15} />} label="When">
         <span title={when.title}>{when.text}</span>
       </Field>
@@ -191,11 +187,7 @@ function CreateCalendarEventPreview({ args, variant }: PreviewProps<CreateCalend
               {args.location}
             </Field>
           )}
-          {args.description && (
-            <Text size="sm" c="dimmed">
-              {args.description}
-            </Text>
-          )}
+          {args.description && <PreviewText c="dimmed">{args.description}</PreviewText>}
           {args.calendar_id && args.calendar_id !== "primary" && <CalendarField calendarId={args.calendar_id} />}
           {args.reminders && args.reminders.length > 0 && (
             <Field icon={<BellIcon size={15} />} label="Reminders">

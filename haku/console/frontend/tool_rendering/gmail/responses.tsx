@@ -3,10 +3,11 @@
 // verbatim (gmail_api/messages.py's `Draft`, camelCase wire aliases); the draft `id` deep-links
 // into Gmail's drafts view, where the operator reviews and sends it.
 
-import { Anchor, Group, Text } from "@mantine/core";
+import { Anchor, Group } from "@mantine/core";
 import { z } from "zod";
 
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
+import { PreviewText } from "../variant.tsx";
 
 // Gmail's compose view opens a draft directly by its id.
 function gmailDraftUrl(draftId: string): string {
@@ -25,9 +26,9 @@ function CreateGmailDraftResultView({ result, variant }: ResultPreviewProps<Draf
         Open draft in Gmail ↗
       </Anchor>
       {variant === "detailed" && (
-        <Text span size="xs" c="dimmed">
+        <PreviewText span size="xs" c="dimmed">
           draft {result.id}
-        </Text>
+        </PreviewText>
       )}
     </Group>
   );

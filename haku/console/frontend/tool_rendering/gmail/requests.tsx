@@ -7,7 +7,7 @@
 // below are built from the FastMCP input schemas advertised by tools/list. Execution still owns
 // cross-field rules that JSON Schema cannot express, such as add/remove label overlap.
 
-import { Anchor, Badge, Group, Loader, Stack, Text } from "@mantine/core";
+import { Anchor, Group, Loader, Stack } from "@mantine/core";
 import { useEffect, useState } from "react";
 import type { z } from "zod";
 
@@ -16,7 +16,16 @@ import { fetchGmailThreadPreviews, type GmailThreadPreview } from "../../gmail_c
 import { MailIcon } from "../../icons.tsx";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
-import { COMPACT_ITEM_LIMIT, firstLines, MoreLine, plural, type PreviewProps } from "../variant.tsx";
+import {
+  COMPACT_ITEM_LIMIT,
+  firstLines,
+  MoreLine,
+  plural,
+  PreviewBadge,
+  PreviewText,
+  PreviewTitle,
+  type PreviewProps,
+} from "../variant.tsx";
 
 export const GMAIL_SERVER_ID = "gmail";
 
@@ -42,11 +51,7 @@ function GmailThreadRow({
   showLabels: boolean;
 }) {
   if (!preview) {
-    return (
-      <Text size="sm" c="dimmed">
-        {threadId} (couldn't load preview)
-      </Text>
-    );
+    return <PreviewText c="dimmed">{threadId} (couldn't load preview)</PreviewText>;
   }
   return (
     <Stack gap={2}>
@@ -56,9 +61,9 @@ function GmailThreadRow({
       {showLabels && preview.current_label_names.length > 0 && (
         <Group gap={4}>
           {preview.current_label_names.map((name) => (
-            <Badge key={name} variant="outline" color="gray" size="sm">
+            <PreviewBadge key={name} variant="outline" color="gray">
               {name}
-            </Badge>
+            </PreviewBadge>
           ))}
         </Group>
       )}
@@ -72,14 +77,14 @@ function ThreadLabelChanges({ args }: { args: ModifyGmailThreadLabelsArgs }) {
   return (
     <Group gap={6} align="center">
       {args.add?.map((name) => (
-        <Badge size="sm" key={`+${name}`} variant="light" color="teal">
+        <PreviewBadge key={`+${name}`} variant="light" color="teal">
           + {name}
-        </Badge>
+        </PreviewBadge>
       ))}
       {args.remove?.map((name) => (
-        <Badge size="sm" key={`-${name}`} variant="light" color="red">
+        <PreviewBadge key={`-${name}`} variant="light" color="red">
           − {name}
-        </Badge>
+        </PreviewBadge>
       ))}
     </Group>
   );
@@ -116,9 +121,7 @@ function ModifyGmailThreadLabelsPreview({ args, variant }: PreviewProps<ModifyGm
     <Stack gap="xs">
       <ThreadLabelChanges args={args} />
       {error ? (
-        <Text size="sm" c="red">
-          {error}
-        </Text>
+        <PreviewText c="red">{error}</PreviewText>
       ) : previews === null ? (
         <Loader size="xs" />
       ) : (
@@ -138,10 +141,10 @@ function ModifyGmailThreadLabelsPreview({ args, variant }: PreviewProps<ModifyGm
 function CompactBody({ body }: { body: string }) {
   const { text, truncated } = firstLines(body, 2);
   return (
-    <Text size="sm" c="dimmed" style={{ whiteSpace: "pre-wrap" }}>
+    <PreviewText c="dimmed" style={{ whiteSpace: "pre-wrap" }}>
       {text}
       {truncated ? " …" : ""}
-    </Text>
+    </PreviewText>
   );
 }
 
@@ -153,13 +156,11 @@ function CreateGmailDraftPreview({ args, variant }: PreviewProps<CreateGmailDraf
   const detailed = variant === "detailed";
   return (
     <Stack gap={6}>
-      <Text size="sm" fw={600}>
-        {args.subject}
-      </Text>
+      <PreviewTitle>{args.subject}</PreviewTitle>
       <Field icon={<MailIcon size={15} />} label="Recipients">
         {args.to.join(", ")}
         {detailed && args.cc && args.cc.length > 0 && (
-          <Text size="sm" span c="dimmed">{` · cc ${args.cc.join(", ")}`}</Text>
+          <PreviewText span c="dimmed">{` · cc ${args.cc.join(", ")}`}</PreviewText>
         )}
       </Field>
       {detailed ? <pre className="haku-shell-json">{args.body}</pre> : <CompactBody body={args.body} />}
