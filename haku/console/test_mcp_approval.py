@@ -14,19 +14,24 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 import pytest_bazel
 import uvicorn
+from alembic import command as alembic_command
+from alembic.config import Config as AlembicConfig
 from fastapi.testclient import TestClient
 from fastmcp import FastMCP
 from mcp import types as mcp_types
 from pydantic import SecretStr
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Connection, Engine
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from testcontainers.postgres import PostgresContainer
 
+from haku.console.database_schema import metadata
 from haku.console.mcp_approval import AliveServerMetadata, McpMetadataProvider, McpToolExecutor, _mcp_result_to_json
 from haku.console.mcp_config import McpServerEntry
+from haku.console.tool_calls import ToolCallEventType, ToolCallStatus
 from haku.console.tools.gmail import build_mcp as build_gmail_mcp
 from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.net import pick_free_port, wait_for_port
@@ -238,6 +243,42 @@ def mcp_server_url(monkeypatch: pytest.MonkeyPatch) -> Generator[str]:
 
 def _test_app_overrides(db_url: str) -> dict[str, Any]:
     return {"database_url": SecretStr(db_url)}
+
+
+def _alembic_config(conn: Connection) -> AlembicConfig:
+    cfg = AlembicConfig()
+    cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
+    cfg.attributes["connection"] = conn
+    cfg.attributes["target_metadata"] = metadata
+    return cfg
+
+
+def _upgrade(engine: Engine, revision: str) -> None:
+    with engine.begin() as conn:
+        alembic_command.upgrade(_alembic_config(conn), revision)
+
+
+def _downgrade(engine: Engine, revision: str) -> None:
+    with engine.begin() as conn:
+        alembic_command.downgrade(_alembic_config(conn), revision)
+
+
+def _enum_values(engine: Engine) -> dict[str, tuple[str, ...]]:
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT type.typname, enum.enumlabel
+                FROM pg_type AS type
+                JOIN pg_enum AS enum ON enum.enumtypid = type.oid
+                ORDER BY type.typname, enum.enumsortorder
+                """
+            )
+        ).all()
+    return {
+        type_name: tuple(label for row_type_name, label in rows if row_type_name == type_name)
+        for type_name in {row_type_name for row_type_name, _ in rows}
+    }
 
 
 def _config_file(tmp_path: Path, mcp_server_url: str) -> Path:
@@ -877,6 +918,31 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(
     assert row["status"] == "ok"
     assert row["arguments_json"] == {"text": "world"}
     assert row["result_json"]["content"][0]["text"] == "echo:world"
+
+
+def test_historical_enum_migration_matches_fresh_head(db_url: str) -> None:
+    engine = create_engine(db_url)
+    try:
+        _upgrade(engine, "0001")
+        assert _enum_values(engine) == {
+            "tool_call_event_type": ("tool_call_submitted", "approval_pending", "tool_call_updated"),
+            "tool_call_status": ("pending_approval", "running", "ok", "error", "denied"),
+        }
+
+        _upgrade(engine, "head")
+        upgraded_values = _enum_values(engine)
+        _downgrade(engine, "base")
+        _upgrade(engine, "head")
+        fresh_values = _enum_values(engine)
+    finally:
+        engine.dispose()
+
+    current_values = {
+        "tool_call_event_type": tuple(event_type.value for event_type in ToolCallEventType),
+        "tool_call_status": tuple(status.value for status in ToolCallStatus),
+    }
+    assert upgraded_values == current_values
+    assert fresh_values == current_values
 
 
 # --- In-process MCP servers (McpToolExecutor/McpMetadataProvider in-process registration) ---

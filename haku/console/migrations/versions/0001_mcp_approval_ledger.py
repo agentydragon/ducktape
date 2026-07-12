@@ -12,22 +12,21 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import ENUM, JSONB
 
-from haku.console.tool_calls import ToolCallEventType, ToolCallStatus
-
 revision: str = "0001"
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+_TOOL_CALL_STATUS_VALUES = ("pending_approval", "running", "ok", "error", "denied")
+_TOOL_CALL_EVENT_TYPE_VALUES = ("tool_call_submitted", "approval_pending", "tool_call_updated")
+
 
 def _tool_call_status_enum(*, create_type: bool = False) -> ENUM:
-    return ENUM(*(status.value for status in ToolCallStatus), name="tool_call_status", create_type=create_type)
+    return ENUM(*_TOOL_CALL_STATUS_VALUES, name="tool_call_status", create_type=create_type)
 
 
 def _tool_call_event_type_enum(*, create_type: bool = False) -> ENUM:
-    return ENUM(
-        *(event_type.value for event_type in ToolCallEventType), name="tool_call_event_type", create_type=create_type
-    )
+    return ENUM(*_TOOL_CALL_EVENT_TYPE_VALUES, name="tool_call_event_type", create_type=create_type)
 
 
 def upgrade() -> None:

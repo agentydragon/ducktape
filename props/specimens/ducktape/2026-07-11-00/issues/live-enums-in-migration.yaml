@@ -1,0 +1,11 @@
+rationale: |
+  Migration 0001 derives its PostgreSQL enum labels from current application enums. Adding a member therefore changes what a fresh database gets from the historical revision while already-upgraded databases retain the old type, making later enum migrations diverge or fail. Historical migrations must freeze the values present at their revision and introduce later values in new revisions.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      haku/console/migrations/versions/0001_mcp_approval_ledger.py:
+        - [15, 15]
+        - [23, 30]
+    critic_scopes_expected_to_recall:
+      - [haku/console/migrations/versions/0001_mcp_approval_ledger.py]

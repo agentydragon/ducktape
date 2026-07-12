@@ -322,22 +322,6 @@ Consolidation:
 - use a full clone or deepen/fetch until the stored pin resolves; and
 - test through `Settings` and bootstrap with at least two relevant commits.
 
-### N. Historical migration 0001 imports live enums
-
-Severity: medium/high evolution hazard
-
-Recreation:
-
-- `haku/console/alembic/versions/0001_mcp_approval_ledger.py:15,23-30` imports current `ToolCallStatus` and `ToolCallEventType`
-
-Adding an enum member changes the historical migration itself. Fresh databases silently receive the new value from migration 0001; previously upgraded databases do not receive it unless a later migration alters the enum. A later unconditional `ADD VALUE` can then fail on fresh installations because 0001 already added it.
-
-Consolidation:
-
-- freeze literal historical values in migration 0001;
-- add explicit enum-change migrations; and
-- test both a frozen old schema upgraded to head and a fresh schema created at head.
-
 ### O. Screenshot history fixtures have independently drifted from production tool contracts
 
 Severity: medium
@@ -433,7 +417,7 @@ The audit checked and ruled out several tempting false positives:
 4. C and M — wake-boundary synchronization and valid history.
 5. G and H — repair security/source capability contracts.
 6. I and J — shared approval controller and correct Calendar presentation.
-7. K, L, N, and O — remove remaining method, routing, migration, and fixture shadows.
+7. K, L, and O — remove remaining method, routing, and fixture shadows.
 8. P through T — close the extension traps before enabling the affected features.
 
 ## Audit disposition
