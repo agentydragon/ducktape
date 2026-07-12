@@ -89,9 +89,11 @@ def operator_subject(conn: HTTPConnection) -> str | None:
     """The authenticated operator's opaque OIDC subject (Authentik `sub`), or None.
 
     This is the *key* the `operator_oauth` associations and the agent→operator link use — never the
-    mutable username. Prefers the app-owned OIDC session; falls back to the `x-authentik-uid` header
-    for the `operator_oidc`-unset mode (local dev / tests). In production `operator_oidc` is set, so
-    the router guards require a real session subject and a spoofed header can't reach a handler.
+    mutable username. Sourced **only** from the app-owned OIDC session: there is no `x-authentik-*`
+    request-header fallback. Those were the retired forward-auth outpost's headers; with the outpost
+    gone and traffic reaching the app directly, any client could forge them, so they are not trusted.
+    In the `operator_oidc`-unset dev/test mode there is no session middleware, so this is None and the
+    operator-only surface is simply unavailable.
 
     Takes `HTTPConnection` (the Request/WebSocket base) so the router guards work on the WebSocket
     route too."""
@@ -99,15 +101,15 @@ def operator_subject(conn: HTTPConnection) -> str | None:
         user = conn.session.get(SESSION_USER_KEY)
         if isinstance(user, dict) and isinstance(subject := user.get("subject"), str):
             return subject
-    return conn.headers.get("x-authentik-uid")
+    return None
 
 
 def operator_username(request: Request) -> str | None:
     """The authenticated operator's `preferred_username`, or None — for display/audit, never a key.
 
-    Prefers the app-owned OIDC session; falls back to the `x-authentik-username` header for the
-    `operator_oidc`-unset mode (local dev / tests). In production the session shadows the header."""
-    return operator_from_session(request) or request.headers.get("x-authentik-username")
+    Sourced only from the app-owned OIDC session; no `x-authentik-username` request-header fallback
+    (see `operator_subject` for why the retired outpost's headers are no longer trusted)."""
+    return operator_from_session(request)
 
 
 def _redirect_uri(request: Request) -> str:

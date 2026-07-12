@@ -340,11 +340,15 @@ py_library(
         ":app",
         ":config",
         ":database_migrate",
+        ":operator_auth",
         "//third_party/containers:rlocations",
         "//util:oci",
         "//util/testing:postgres",
         "@pypi//fastapi",
         "@pypi//httpx",
+        # SessionMiddleware (starlette) signs the operator session cookie with itsdangerous;
+        # operator_session_cookie mints one for tests.
+        "@pypi//itsdangerous",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pyyaml",

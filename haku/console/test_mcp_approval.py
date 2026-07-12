@@ -230,11 +230,6 @@ _AGENT_TOKEN_ENV = "HAKU_CONSOLE_TEST_AGENT_TOKEN"
 _AGENT_OPERATOR_ENV = "HAKU_CONSOLE_TEST_AGENT_OPERATOR"
 _STATIC_AGENTS = [{"agent": "haku", "token_env_var": _AGENT_TOKEN_ENV, "operator_subject_env": _AGENT_OPERATOR_ENV}]
 
-# The operator's outpost-mode headers (operator_oidc unset in these tests). A submit with a static
-# agent configured but no credential is a 401, so an operator-originated submit carries these — the
-# stand-in for the production session (`operator_subject`/`operator_username` read them as a fallback).
-_OPERATOR_HEADERS = {"X-authentik-username": "operator@example.com", "X-authentik-uid": "operator-sub"}
-
 
 @pytest.fixture(autouse=True)
 def _static_agent_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -329,9 +324,9 @@ def _csrf(client: TestClient) -> str:
 
 
 def _submit(client: TestClient, *, amount: int = 1) -> dict[str, Any]:
+    # An operator-originated submit; the client must carry an operator session (`make_client(operator=True)`).
     resp = client.post(
         "/api/tool-calls",
-        headers=_OPERATOR_HEADERS,
         json={
             "server_id": "grocy-sf",
             "tool_name": "stock_add",
@@ -408,26 +403,14 @@ def test_operator_oauth_association_drives_tool_reflection(make_client, tmp_path
             csrf_secret=SecretStr("csrf"),
             public_base_url="https://haku.test",
             tool_call_metadata_provider=metadata_provider,
+            operator=True,
         ) as client,
     ):
-        before = client.get(
-            "/api/capabilities/mcp-servers",
-            headers={"X-authentik-username": "operator@example.com", "X-authentik-uid": "operator-sub"},
-        ).json()
-        started = client.post(
-            "/api/mcp/operator-auth/grocy-sf/connect",
-            headers={
-                "X-CSRF-Token": _csrf(client),
-                "X-authentik-username": "operator@example.com",
-                "X-authentik-uid": "operator-sub",
-            },
-        )
+        before = client.get("/api/capabilities/mcp-servers").json()
+        started = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": _csrf(client)})
         state = parse_qs(urlparse(started.json()["authorization_url"]).query)["state"][0]
         callback = client.get("/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"})
-        after = client.get(
-            "/api/capabilities/mcp-servers",
-            headers={"X-authentik-username": "operator@example.com", "X-authentik-uid": "operator-sub"},
-        ).json()
+        after = client.get("/api/capabilities/mcp-servers").json()
 
     assert before["servers"][0]["status"] == "degraded"
     assert "Connect your grocy-sf MCP account" in before["servers"][0]["degraded_reason"]
@@ -447,16 +430,10 @@ def test_operator_oauth_static_client_id_skips_dynamic_registration(make_client,
             config_file=_operator_oauth_static_client_config_file(tmp_path, oauth_url, "preregistered-client"),
             csrf_secret=SecretStr("csrf"),
             public_base_url="https://haku.test",
+            operator=True,
         ) as client,
     ):
-        started = client.post(
-            "/api/mcp/operator-auth/grocy-sf/connect",
-            headers={
-                "X-CSRF-Token": _csrf(client),
-                "X-authentik-username": "operator@example.com",
-                "X-authentik-uid": "operator-sub",
-            },
-        )
+        started = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": _csrf(client)})
         assert started.status_code == 200, started.text
         auth_query = parse_qs(urlparse(started.json()["authorization_url"]).query)
         assert auth_query["client_id"] == ["preregistered-client"]
@@ -464,10 +441,7 @@ def test_operator_oauth_static_client_id_skips_dynamic_registration(make_client,
         callback = client.get(
             "/api/mcp/operator-auth/callback", params={"state": auth_query["state"][0], "code": "operator-code"}
         )
-        after = client.get(
-            "/api/mcp/operator-auth",
-            headers={"X-authentik-username": "operator@example.com", "X-authentik-uid": "operator-sub"},
-        ).json()
+        after = client.get("/api/mcp/operator-auth").json()
 
     assert callback.status_code == 200, callback.text
     assert after["associations"][0]["status"] == "connected"
@@ -537,7 +511,7 @@ def test_mcp_result_serialization_uses_mcp_wire_shape() -> None:
 
 
 def test_submit_mints_tool_call_id(make_client, tmp_path: Path, db_url: str, mcp_server_url: str) -> None:
-    with make_client(config_file=_config_file(tmp_path, mcp_server_url)) as client:
+    with make_client(config_file=_config_file(tmp_path, mcp_server_url), operator=True) as client:
         first = _submit(client)
         second = _submit(client)
     assert first["tool_call_id"].startswith("tc_")
@@ -575,11 +549,13 @@ def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
 
 def test_operator_gmail_labels_list_stays_pending(make_client, tmp_path: Path, db_url: str) -> None:
     with make_client(
-        config_file=_gmail_config_file(tmp_path), gmail_client=Mock(), tool_call_executor=EchoingExecutor()
+        config_file=_gmail_config_file(tmp_path),
+        gmail_client=Mock(),
+        tool_call_executor=EchoingExecutor(),
+        operator=True,
     ) as client:
         response = client.post(
             "/api/tool-calls",
-            headers=_OPERATOR_HEADERS,
             json={"server_id": "gmail", "tool_name": "labels_list", "arguments": {}, "wait_for_ms": 0},
         )
 
@@ -618,7 +594,9 @@ def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(make_client, tmp_p
 def test_approval_executes_tool_and_records_terminal_result(
     make_client, tmp_path: Path, db_url: str, mcp_server_url: str
 ) -> None:
-    with make_client(config_file=_config_file(tmp_path, mcp_server_url), csrf_secret=SecretStr("csrf")) as client:
+    with make_client(
+        config_file=_config_file(tmp_path, mcp_server_url), csrf_secret=SecretStr("csrf"), operator=True
+    ) as client:
         submitted = _submit(client)
         resp = client.post(
             f"/api/tool-calls/{submitted['tool_call_id']}/decision",
@@ -644,24 +622,15 @@ def test_operator_oauth_association_drives_approved_tool_execution(make_client, 
             csrf_secret=SecretStr("csrf"),
             public_base_url="https://haku.test",
             tool_call_executor=executor,
+            operator=True,
         ) as client,
     ):
-        before = client.get(
-            "/api/mcp/operator-auth",
-            headers={"X-authentik-username": "operator@example.com", "X-authentik-uid": "operator-sub"},
-        ).json()
+        before = client.get("/api/mcp/operator-auth").json()
         assert before["associations"] == [
             {"server_id": "grocy-sf", "status": "unconnected", "username": "operator@example.com"}
         ]
 
-        started = client.post(
-            "/api/mcp/operator-auth/grocy-sf/connect",
-            headers={
-                "X-CSRF-Token": _csrf(client),
-                "X-authentik-username": "operator@example.com",
-                "X-authentik-uid": "operator-sub",
-            },
-        )
+        started = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": _csrf(client)})
         assert started.status_code == 200, started.text
         authorization_url = started.json()["authorization_url"]
         parsed_authorization = urlparse(authorization_url)
@@ -675,29 +644,12 @@ def test_operator_oauth_association_drives_approved_tool_execution(make_client, 
             "/api/mcp/operator-auth/callback", params={"state": auth_query["state"][0], "code": "operator-code"}
         )
         assert callback.status_code == 200, callback.text
-        after = client.get(
-            "/api/mcp/operator-auth",
-            headers={"X-authentik-username": "operator@example.com", "X-authentik-uid": "operator-sub"},
-        ).json()
+        after = client.get("/api/mcp/operator-auth").json()
         assert after["associations"][0]["status"] == "connected"
         assert after["associations"][0]["connected_at"]
 
-        reconnect = client.post(
-            "/api/mcp/operator-auth/grocy-sf/connect",
-            headers={
-                "X-CSRF-Token": _csrf(client),
-                "X-authentik-username": "operator@example.com",
-                "X-authentik-uid": "operator-sub",
-            },
-        )
-        removed_start = client.post(
-            "/api/mcp/operator-auth/grocy-sf/start",
-            headers={
-                "X-CSRF-Token": _csrf(client),
-                "X-authentik-username": "operator@example.com",
-                "X-authentik-uid": "operator-sub",
-            },
-        )
+        reconnect = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": _csrf(client)})
+        removed_start = client.post("/api/mcp/operator-auth/grocy-sf/start", headers={"X-CSRF-Token": _csrf(client)})
         assert reconnect.status_code == 409
         assert reconnect.json()["detail"] == "MCP server grocy-sf is already connected; disconnect it first"
         assert removed_start.status_code == 404
@@ -705,11 +657,7 @@ def test_operator_oauth_association_drives_approved_tool_execution(make_client, 
         submitted = _submit(client)
         approved = client.post(
             f"/api/tool-calls/{submitted['tool_call_id']}/decision",
-            headers={
-                "X-CSRF-Token": _csrf(client),
-                "X-authentik-username": "operator@example.com",
-                "X-authentik-uid": "operator-sub",
-            },
+            headers={"X-CSRF-Token": _csrf(client)},
             json={"decision": "approve"},
         )
 
@@ -726,16 +674,13 @@ def test_operator_oauth_approval_requires_existing_association(make_client, tmp_
             config_file=_operator_oauth_config_file(tmp_path, oauth_url),
             csrf_secret=SecretStr("csrf"),
             tool_call_executor=executor,
+            operator=True,
         ) as client,
     ):
         submitted = _submit(client)
         resp = client.post(
             f"/api/tool-calls/{submitted['tool_call_id']}/decision",
-            headers={
-                "X-CSRF-Token": _csrf(client),
-                "X-authentik-username": "operator@example.com",
-                "X-authentik-uid": "operator-sub",
-            },
+            headers={"X-CSRF-Token": _csrf(client)},
             json={"decision": "approve"},
         )
         fetched = client.get(f"/api/tool-calls/{submitted['tool_call_id']}").json()
@@ -810,7 +755,9 @@ def test_routing_executes_each_agent_as_its_own_operator(
 def test_approval_denial_is_terminal_and_does_not_execute(
     make_client, tmp_path: Path, db_url: str, mcp_server_url: str
 ) -> None:
-    with make_client(config_file=_config_file(tmp_path, mcp_server_url), csrf_secret=SecretStr("csrf")) as client:
+    with make_client(
+        config_file=_config_file(tmp_path, mcp_server_url), csrf_secret=SecretStr("csrf"), operator=True
+    ) as client:
         submitted = _submit(client)
         resp = client.post(
             f"/api/tool-calls/{submitted['tool_call_id']}/decision",
@@ -827,10 +774,9 @@ def test_approval_denial_is_terminal_and_does_not_execute(
 def test_all_v1_tool_calls_require_console_approval(
     make_client, tmp_path: Path, db_url: str, mcp_server_url: str
 ) -> None:
-    with make_client(config_file=_config_file(tmp_path, mcp_server_url)) as client:
+    with make_client(config_file=_config_file(tmp_path, mcp_server_url), operator=True) as client:
         resp = client.post(
             "/api/tool-calls",
-            headers=_OPERATOR_HEADERS,
             json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "world"}, "wait_for_ms": 1000},
         )
         pending = client.get("/api/approvals/pending").json()
@@ -847,7 +793,7 @@ def test_all_v1_tool_calls_require_console_approval(
 
 
 def test_list_newest_first_keeps_the_most_recent(make_client, tmp_path: Path, db_url: str, mcp_server_url: str) -> None:
-    with make_client(config_file=_config_file(tmp_path, mcp_server_url)) as client:
+    with make_client(config_file=_config_file(tmp_path, mcp_server_url), operator=True) as client:
         first = _submit(client, amount=1)
         second = _submit(client, amount=2)
         third = _submit(client, amount=3)
@@ -867,7 +813,7 @@ def test_websocket_receives_pending_approval_event(
     make_client, tmp_path: Path, db_url: str, mcp_server_url: str
 ) -> None:
     with (
-        make_client(config_file=_config_file(tmp_path, mcp_server_url)) as client,
+        make_client(config_file=_config_file(tmp_path, mcp_server_url), operator=True) as client,
         client.websocket_connect("/api/approvals/ws") as ws,
     ):
         assert ws.receive_json() == {"type": "hello"}
@@ -883,10 +829,9 @@ def test_websocket_receives_pending_approval_event(
 def test_full_audit_log_listing_and_secret_redaction(
     make_client, tmp_path: Path, db_url: str, mcp_server_url: str
 ) -> None:
-    with make_client(config_file=_config_file(tmp_path, mcp_server_url)) as client:
+    with make_client(config_file=_config_file(tmp_path, mcp_server_url), operator=True) as client:
         operator_call = client.post(
             "/api/tool-calls",
-            headers={"X-authentik-username": "operator@example.com", "X-authentik-uid": "operator-sub"},
             json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "one"}, "wait_for_ms": 0},
         ).json()
         haku_call = client.post(
@@ -912,10 +857,11 @@ def test_full_audit_log_listing_and_secret_redaction(
 def test_postgres_store_runs_alembic_and_persists_typed_ledger(
     make_client, tmp_path: Path, db_url: str, mcp_server_url: str
 ) -> None:
-    with make_client(config_file=_config_file(tmp_path, mcp_server_url), csrf_secret=SecretStr("csrf")) as client:
+    with make_client(
+        config_file=_config_file(tmp_path, mcp_server_url), csrf_secret=SecretStr("csrf"), operator=True
+    ) as client:
         submitted = client.post(
             "/api/tool-calls",
-            headers=_OPERATOR_HEADERS,
             json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "world"}, "wait_for_ms": 0},
         ).json()
         approved = client.post(

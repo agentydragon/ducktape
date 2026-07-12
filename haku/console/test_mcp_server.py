@@ -241,7 +241,7 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
                 csrf = (await operator.get("/api/capabilities/csrf")).json()["csrf_token"]
                 decided = await operator.post(
                     f"/api/tool-calls/{tool_call_id}/decision",
-                    headers={"X-CSRF-Token": csrf, "X-Authentik-Username": "agentydragon"},
+                    headers={"X-CSRF-Token": csrf},
                     json={"decision": "approve"},
                 )
             assert decided.status_code == 200, decided.text

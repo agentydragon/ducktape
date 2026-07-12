@@ -9,12 +9,15 @@ to head (used by everything else, including `make_client`).
 
 from __future__ import annotations
 
+import base64
+import json
 import re
 from collections.abc import Callable, Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+import itsdangerous
 import pytest
 import yaml
 from fastapi.testclient import TestClient
@@ -23,8 +26,9 @@ from sqlalchemy import create_engine, text
 from testcontainers.postgres import PostgresContainer
 
 from haku.console.app import create_app
-from haku.console.config import Settings
+from haku.console.config import OperatorOidcConfig, Settings
 from haku.console.database_migrate import apply_migrations
+from haku.console.operator_auth import SESSION_USER_KEY
 from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.oci import load_oci_image
 from util.testing.postgres import force_drop_database_sync
@@ -37,6 +41,27 @@ _DEFAULT_AGENT_OPERATOR_ENV = "HAKU_CONSOLE_DEFAULT_AGENT_OPERATOR"
 _DEFAULT_STATIC_AGENTS = [
     {"agent": "console", "token_env_var": _DEFAULT_AGENT_TOKEN_ENV, "operator_subject_env": _DEFAULT_AGENT_OPERATOR_ENV}
 ]
+
+# App-owned operator auth for tests. A dummy `operator_oidc` (no live IdP needed) activates
+# SessionMiddleware + the router guards exactly as production does; tests inject the operator session
+# cookie directly rather than walking the full Authentik login (that end-to-end path is covered by
+# test_operator_auth). The retired forward-auth `x-authentik-*` headers are no longer trusted, so a
+# session is the only way to present operator identity.
+_TEST_SESSION_SECRET = "test-operator-session-secret"
+TEST_OPERATOR_OIDC = OperatorOidcConfig(
+    issuer="https://auth.test/application/o/haku-console/",
+    client_id="console",
+    client_secret=SecretStr("client-secret"),
+    session_secret=SecretStr(_TEST_SESSION_SECRET),
+)
+
+
+def operator_session_cookie(*, subject: str, username: str) -> str:
+    """A Starlette SessionMiddleware `session` cookie for a logged-in operator, mirroring its own
+    sign format (`TimestampSigner` over base64-JSON) so a TestClient can present operator identity
+    without walking the live OIDC login."""
+    data = base64.b64encode(json.dumps({SESSION_USER_KEY: {"subject": subject, "username": username}}).encode())
+    return itsdangerous.TimestampSigner(_TEST_SESSION_SECRET).sign(data).decode()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -101,8 +126,16 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
         gmail_client: Any | None = None,
         calendar_client: Any | None = None,
         in_process_servers: Any | None = None,
+        operator: bool = False,
+        operator_subject: str = "operator-sub",
+        operator_username: str = "operator@example.com",
         **settings_overrides: Any,
     ) -> Iterator[TestClient]:
+        # `operator=True` runs the app in the production app-owned-auth mode (SessionMiddleware +
+        # active router guards) and presents an authenticated operator session on the client — the
+        # replacement for the retired `x-authentik-*` header stand-in.
+        if operator and "operator_oidc" not in settings_overrides:
+            settings_overrides = {**settings_overrides, "operator_oidc": TEST_OPERATOR_OIDC}
         # haku_ui_url and database_url are required; default them, plus a config_file naming the
         # default static agent (so /mcp has a credential), so callers only override what they test.
         settings = Settings(
@@ -124,7 +157,12 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
             app.state.calendar_client = calendar_client
         if in_process_servers is not None:
             app.state.in_process_servers = in_process_servers
-        with TestClient(app) as c:
+        # When the session cookie is Secure (https public_base_url → https_only), drive the client
+        # over https so the middleware's re-signed cookie is retained and resent across requests.
+        https = operator and str(settings.public_base_url or "").startswith("https://")
+        with TestClient(app, base_url="https://testserver" if https else "http://testserver") as c:
+            if operator:
+                c.cookies.set("session", operator_session_cookie(subject=operator_subject, username=operator_username))
             yield c
 
     return _make
