@@ -1,26 +1,19 @@
 // Result rendering for the in-process `google_calendar` server (the argument-side widgets live
-// in ./requests.tsx). `create_calendar_event` returns
-// CreateCalendarEventResult {event_id, html_link} (haku/console/tools/google_calendar_client.py);
-// depending on serialization aliasing the wire keys may be those Python field names or the
-// Calendar API's own `id`/`htmlLink`, so the schema accepts either spelling and passes unknown
-// keys through. Falls back to the raw-JSON view when no event link came back.
+// in ./requests.tsx). `create_calendar_event` returns CreateCalendarEventResult
+// (haku/console/tools/google_calendar_client.py), whose Calendar-API `id`/`htmlLink` aliases
+// are validation-only — every dump emits the Python field names — so the wire shape is exactly
+// `{event_id, html_link}`. Unknown extra keys pass through; a missing field fails the parse
+// (→ raw JSON fallback).
 
 import { Anchor, Stack, Text } from "@mantine/core";
 import { z } from "zod";
 
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
 
-const zCreateCalendarEventResult = z
-  .looseObject({
-    event_id: z.string().optional(),
-    id: z.string().optional(),
-    html_link: z.string().optional(),
-    htmlLink: z.string().optional(),
-  })
-  // Normalize the two spellings; the pipe fails the parse (→ raw JSON fallback) when neither
-  // link key is present.
-  .transform((r) => ({ eventId: r.event_id ?? r.id ?? null, htmlLink: r.html_link ?? r.htmlLink }))
-  .pipe(z.object({ eventId: z.string().nullable(), htmlLink: z.string() }));
+const zCreateCalendarEventResult = z.looseObject({
+  event_id: z.string(),
+  html_link: z.string(),
+});
 
 type CreateCalendarEventResult = z.infer<typeof zCreateCalendarEventResult>;
 
@@ -29,12 +22,12 @@ function CreateCalendarEventResultView({ result, variant }: ResultPreviewProps<C
   // adds the created event's id, dimmed, for correlating with the Calendar API.
   return (
     <Stack gap={2}>
-      <Anchor href={result.htmlLink} target="_blank" rel="noreferrer" size="sm">
+      <Anchor href={result.html_link} target="_blank" rel="noreferrer" size="sm">
         Open event in Google Calendar ↗
       </Anchor>
-      {variant === "detailed" && result.eventId && (
+      {variant === "detailed" && (
         <Text size="xs" c="dimmed">
-          event {result.eventId}
+          event {result.event_id}
         </Text>
       )}
     </Stack>

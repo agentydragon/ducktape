@@ -30,3 +30,13 @@ Design + implement the policy that lets defined `gmail` calls skip the operator 
 label operations scoped to the `haku/` prefix — so haku-console's approval queue can
 auto-allow the safe, structurally-bounded subset while everything else stays human-gated.
 Scope it in `mcp_approval.py` (short-circuit `submit` to `RUNNING` for allowlisted calls).
+
+## Generate result validators from `tools/list` output schemas
+
+`export_mcp_tool_schemas.py` exports only each tool's _input_ schema. Extend it to also emit
+the `outputSchema` FastMCP advertises in `tools/list` reflection and generate result
+validators from it (mirroring the input-schema pipeline), so the in-process servers'
+hand-written result zod schemas in
+`frontend/tool_rendering/{google_calendar,gmail}/responses.tsx` (calendar event, Gmail
+`Draft`) disappear. The remote `grocy-sf` result schemas stay hand-authored until its facade
+exposes output schemas.

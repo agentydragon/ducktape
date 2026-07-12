@@ -1,0 +1,35 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# The `tana-rw` server's tool-call rendering widgets (request-only; see ../BUILD.bazel for
+# the tree's shape).
+
+js_library(
+    name = "requests",
+    srcs = ["requests.tsx"],
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//haku/console/frontend:field",
+        "//haku/console/frontend:tana_client",
+        "//haku/console/frontend/tool_rendering:entry",
+        "//haku/console/frontend/tool_rendering:variant",
+    ],
+)
+
+# Sources Tailwind must scan; aggregated by the parent's tailwind_srcs.
+filegroup(
+    name = "tailwind_srcs",
+    srcs = glob(["*.tsx"]),
+)
+
+js_library(
+    name = "requests_test",
+    srcs = ["requests.test.ts"],
+    deps = [
+        ":requests",
+        "//haku/console/frontend/tool_rendering:entry",
+    ],
+)

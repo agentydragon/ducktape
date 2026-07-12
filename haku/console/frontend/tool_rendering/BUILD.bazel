@@ -2,11 +2,12 @@ load("@aspect_rules_js//js:defs.bzl", "js_library")
 
 package(default_visibility = ["//visibility:public"])
 
-# Per-server tool-call rendering widgets, grouped server-first: each `<server>/` directory owns
-# one server's widgets — `requests.tsx` exports the server id + a { toolName -> {schema, render} }
-# map for the call's arguments, `responses.tsx` the same for its result (request-only servers have
-# no responses module). `tool_rendering` (index.tsx) dispatches to them via serverId registries,
-# safeParsing once and handing each widget already-typed data.
+# Shared leaves of the server-first tool-rendering tree plus the dispatch registry. Each
+# `<server>/` subpackage owns one server's widgets — `requests.tsx` exports the server id + a
+# { toolName -> {schema, render} } map for the call's arguments, `responses.tsx` the same for
+# its result (request-only servers have no responses module). `tool_rendering` (index.tsx)
+# dispatches to them via serverId registries, safeParsing once and handing each widget
+# already-typed data.
 
 # Compact/detailed rendering shared by every widget (the PreviewVariant type + helpers).
 # Leaf: no widget deps, so index.tsx and each widget import it without a cycle.
@@ -45,240 +46,45 @@ js_library(
 )
 
 js_library(
-    name = "gmail_requests",
-    srcs = ["gmail/requests.tsx"],
-    deps = [
-        ":entry",
-        ":variant",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-        "//haku/console/frontend:field",
-        "//haku/console/frontend:gmail_client",
-        "//haku/console/frontend:icons",
-        "//haku/console/frontend:mcp_tool_schema",
-    ],
-)
-
-js_library(
-    name = "gmail_responses",
-    srcs = ["gmail/responses.tsx"],
-    deps = [
-        ":result_entry",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-    ],
-)
-
-js_library(
-    name = "google_calendar_requests",
-    srcs = ["google_calendar/requests.tsx"],
-    deps = [
-        ":entry",
-        ":variant",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-        "//haku/console/frontend:calendar_client",
-        "//haku/console/frontend:field",
-        "//haku/console/frontend:icons",
-        "//haku/console/frontend:mcp_tool_schema",
-    ],
-)
-
-js_library(
-    name = "google_calendar_responses",
-    srcs = ["google_calendar/responses.tsx"],
-    deps = [
-        ":result_entry",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-    ],
-)
-
-js_library(
-    name = "grocy_requests",
-    srcs = ["grocy/requests.tsx"],
-    deps = [
-        ":entry",
-        ":variant",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-        "//haku/console/frontend:grocy_client",
-    ],
-)
-
-js_library(
-    name = "grocy_responses",
-    srcs = ["grocy/responses.tsx"],
-    deps = [
-        ":result_entry",
-        ":variant",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-    ],
-)
-
-js_library(
-    name = "haku_routine_requests",
-    srcs = ["haku_routine/requests.tsx"],
-    deps = [
-        ":entry",
-        ":variant",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-        "//haku/console/frontend:field",
-        "//haku/console/frontend:mcp_tool_schema",
-    ],
-)
-
-js_library(
-    name = "kubectl_requests",
-    srcs = ["kubectl/requests.tsx"],
-    deps = [
-        ":entry",
-        ":variant",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-    ],
-)
-
-js_library(
-    name = "tana_requests",
-    srcs = ["tana/requests.tsx"],
-    deps = [
-        ":entry",
-        ":variant",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-        "//haku/console/frontend:field",
-        "//haku/console/frontend:tana_client",
-    ],
-)
-
-js_library(
     name = "tool_rendering",
     srcs = ["index.tsx"],
     deps = [
         ":entry",
-        ":gmail_requests",
-        ":gmail_responses",
-        ":google_calendar_requests",
-        ":google_calendar_responses",
-        ":grocy_requests",
-        ":grocy_responses",
-        ":haku_routine_requests",
-        ":kubectl_requests",
         ":result_entry",
-        ":tana_requests",
         ":variant",
         "//:node_modules/react",
         "//:node_modules/zod",
+        "//haku/console/frontend/tool_rendering/gmail:requests",
+        "//haku/console/frontend/tool_rendering/gmail:responses",
+        "//haku/console/frontend/tool_rendering/google_calendar:requests",
+        "//haku/console/frontend/tool_rendering/google_calendar:responses",
+        "//haku/console/frontend/tool_rendering/grocy:requests",
+        "//haku/console/frontend/tool_rendering/grocy:responses",
+        "//haku/console/frontend/tool_rendering/haku_routine:requests",
+        "//haku/console/frontend/tool_rendering/kubectl:requests",
+        "//haku/console/frontend/tool_rendering/tana:requests",
     ],
 )
 
-# Sources Tailwind must scan for class names; the parent's tailwind_content_srcs
-# concatenates this into the one file the stylesheet's @source lists.
+# Sources Tailwind must scan for class names. Aggregates the server subpackages' filegroups —
+# a glob cannot cross package boundaries — so the frontend's tailwind_content_srcs keeps
+# referencing this one label.
 filegroup(
     name = "tailwind_srcs",
-    srcs = glob([
-        "*.tsx",
-        "*/*.tsx",
-    ]),
+    srcs = glob(["*.tsx"]) + [
+        "//haku/console/frontend/tool_rendering/gmail:tailwind_srcs",
+        "//haku/console/frontend/tool_rendering/google_calendar:tailwind_srcs",
+        "//haku/console/frontend/tool_rendering/grocy:tailwind_srcs",
+        "//haku/console/frontend/tool_rendering/haku_routine:tailwind_srcs",
+        "//haku/console/frontend/tool_rendering/kubectl:tailwind_srcs",
+        "//haku/console/frontend/tool_rendering/tana:tailwind_srcs",
+    ],
 )
 
 # One vitest spec per module (each test parallels the module it tests), wrapped as its own
-# js_library so the dep graph stays per-file; the parent's aggregate tsc_test + bridge_test
+# js_library so the dep graph stays per-file; the frontend's aggregate tsc_test + bridge_test
 # consume them (a js_test can't take a source file from another package directly, only via a
 # library).
-js_library(
-    name = "gmail_requests_test",
-    srcs = ["gmail/requests.test.ts"],
-    deps = [
-        ":entry",
-        ":gmail_requests",
-    ],
-)
-
-js_library(
-    name = "gmail_responses_test",
-    srcs = ["gmail/responses.test.ts"],
-    deps = [
-        ":gmail_responses",
-        ":result_entry",
-    ],
-)
-
-js_library(
-    name = "google_calendar_requests_test",
-    srcs = ["google_calendar/requests.test.ts"],
-    deps = [
-        ":entry",
-        ":google_calendar_requests",
-    ],
-)
-
-js_library(
-    name = "google_calendar_responses_test",
-    srcs = ["google_calendar/responses.test.ts"],
-    deps = [
-        ":google_calendar_responses",
-        ":result_entry",
-    ],
-)
-
-js_library(
-    name = "grocy_requests_test",
-    srcs = ["grocy/requests.test.ts"],
-    deps = [
-        ":entry",
-        ":grocy_requests",
-    ],
-)
-
-js_library(
-    name = "grocy_responses_test",
-    srcs = ["grocy/responses.test.ts"],
-    deps = [
-        ":grocy_responses",
-        ":result_entry",
-    ],
-)
-
-js_library(
-    name = "haku_routine_requests_test",
-    srcs = ["haku_routine/requests.test.ts"],
-    deps = [
-        ":entry",
-        ":haku_routine_requests",
-    ],
-)
-
-js_library(
-    name = "kubectl_requests_test",
-    srcs = ["kubectl/requests.test.ts"],
-    deps = [
-        ":entry",
-        ":kubectl_requests",
-    ],
-)
-
-js_library(
-    name = "tana_requests_test",
-    srcs = ["tana/requests.test.ts"],
-    deps = [
-        ":entry",
-        ":tana_requests",
-    ],
-)
-
 js_library(
     name = "index_test",
     srcs = ["index.test.ts"],
