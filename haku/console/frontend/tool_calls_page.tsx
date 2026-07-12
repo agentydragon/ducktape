@@ -2,11 +2,11 @@ import { Button, Group, Loader, Text } from "@mantine/core";
 import { useCallback, useState } from "react";
 
 import { approvalDisplayFields, statusColor, terminalStatusLabel } from "./approval_state.ts";
-import { approveToolCall, denyToolCall, fetchToolCalls, type ToolCallRecord } from "./client.ts";
+import { fetchToolCalls, type ToolCallRecord } from "./client.ts";
 import { ArrowLeftIcon } from "./icons.tsx";
 import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
-import { toastError, toastSuccess } from "./toast.ts";
 import { ToolCallCard } from "./tool_call_card.tsx";
+import { useToolCallDecision } from "./tool_call_decision.ts";
 import { useToolCallEvents } from "./tool_call_events.ts";
 import { useVariant } from "./variant_control.tsx";
 
@@ -35,7 +35,10 @@ function ToolCallRow({
       args={record.arguments}
       variant={variant}
       onVariantChange={setVariant}
-      status={{ label: terminalStatusLabel(record.status), color: statusColor(record.status) }}
+      status={{
+        label: deciding ? "Running" : terminalStatusLabel(record.status),
+        color: deciding ? "blue" : statusColor(record.status),
+      }}
       error={record.error}
       result={record.result}
       footer={pending ? <PendingToolCallActions busy={deciding} onApprove={onApprove} onDeny={onDeny} /> : null}
@@ -52,7 +55,6 @@ export function ToolCallsPage({ onBack }: { onBack: () => void }) {
   const [records, setRecords] = useState<ToolCallRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [decidingId, setDecidingId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -73,24 +75,7 @@ export function ToolCallsPage({ onBack }: { onBack: () => void }) {
   // denied, or finishes anywhere — the same WS signal the approval drawer uses.
   useToolCallEvents(load);
 
-  const decide = useCallback(
-    (id: string, run: () => Promise<ToolCallRecord>, okTitle: string) => {
-      setDecidingId(id);
-      run().then(
-        (record) => {
-          toastSuccess(okTitle, `${record.server_id}.${record.tool_name}: ${record.status}`);
-          setDecidingId(null);
-          load();
-        },
-        (e: unknown) => {
-          toastError("Tool call decision failed", e);
-          setDecidingId(null);
-          load();
-        }
-      );
-    },
-    [load]
-  );
+  const decisions = useToolCallDecision({ onSettled: load });
 
   return (
     <div className="haku-page">
@@ -135,13 +120,9 @@ export function ToolCallsPage({ onBack }: { onBack: () => void }) {
             <ToolCallRow
               key={record.tool_call_id}
               record={record}
-              deciding={decidingId === record.tool_call_id}
-              onApprove={() =>
-                decide(record.tool_call_id, () => approveToolCall(record.tool_call_id), "Tool call approved")
-              }
-              onDeny={(reason) =>
-                decide(record.tool_call_id, () => denyToolCall(record.tool_call_id, reason), "Tool call denied")
-              }
+              deciding={decisions.isDeciding(record.tool_call_id)}
+              onApprove={() => void decisions.approve(record)}
+              onDeny={(reason) => void decisions.deny(record, reason)}
             />
           ))}
           {records && records.length === HISTORY_LIMIT && (

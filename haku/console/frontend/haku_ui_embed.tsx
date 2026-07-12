@@ -13,14 +13,7 @@ import {
 import { type GeolocationOptions, type Outbound } from "@haku/console-bridge/protocol";
 
 import { isRoutePath, parseInbound, vetOpenLink } from "./bridge.ts";
-import {
-  approveToolCall,
-  denyToolCall,
-  fetchPendingApprovals,
-  launchRoutine,
-  type PendingApproval,
-  type ToolCallRecord,
-} from "./client.ts";
+import { fetchPendingApprovals, launchRoutine, type PendingApproval, type ToolCallRecord } from "./client.ts";
 import { ConfirmDialog, type Escalation } from "./confirm_dialog.tsx";
 import { ShellChrome } from "./console_panel.tsx";
 import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation.ts";
@@ -29,6 +22,7 @@ import { openExternal, POPUP_HINT } from "./open_external.ts";
 import { ScreenshotSession } from "./screenshot_capture.ts";
 import { hasScreenshotGrant, setScreenshotGrant } from "./screenshot_grant.ts";
 import { toastError, toastSuccess } from "./toast.ts";
+import { useToolCallDecision } from "./tool_call_decision.ts";
 import { useToolCallEvents } from "./tool_call_events.ts";
 
 // Haku's own UI service — a separate, Authentik-gated origin running in haku-sandbox —
@@ -79,7 +73,7 @@ export function HakuUiEmbed({
   const [screenshotApprovals, setScreenshotApprovals] = useState<ScreenshotApproval[]>([]);
   const screenshotApprovalsRef = useRef<ScreenshotApproval[]>([]);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
-  const [decidingApprovalIds, setDecidingApprovalIds] = useState<string[]>([]);
+  const [decidingNonToolApprovalIds, setDecidingNonToolApprovalIds] = useState<string[]>([]);
   const [recentToolCalls, setRecentToolCalls] = useState<RecentToolCall[]>([]);
   // Computed once: later routeChanged mirroring must not rewrite `src` (that would
   // reload the frame); the iframe navigates itself, the console only reflects.
@@ -188,8 +182,8 @@ export function HakuUiEmbed({
     setApprovalsOpen(true);
   }
 
-  function setDeciding(id: string, deciding: boolean) {
-    setDecidingApprovalIds((ids) =>
+  function setNonToolDeciding(id: string, deciding: boolean) {
+    setDecidingNonToolApprovalIds((ids) =>
       deciding ? (ids.includes(id) ? ids : [...ids, id]) : ids.filter((existing) => existing !== id)
     );
   }
@@ -227,7 +221,6 @@ export function HakuUiEmbed({
   function finishToolDecision(record: ToolCallRecord) {
     removeToolApproval(record.tool_call_id);
     addRecentToolCall(record);
-    setDeciding(toolApprovalQueueId(record.tool_call_id), false);
   }
 
   function addGeolocationApproval(mode: GeolocationApproval["mode"], id: string, options?: GeolocationOptions) {
@@ -274,6 +267,15 @@ export function HakuUiEmbed({
       (e: unknown) => toastError("Couldn't load tool approvals", e)
     );
   }
+
+  const toolDecisions = useToolCallDecision({
+    onSuccess: finishToolDecision,
+    onSettled: refreshToolApprovals,
+  });
+  const decidingApprovalIds = [
+    ...decidingNonToolApprovalIds,
+    ...Array.from(toolDecisions.decidingToolCallIds, toolApprovalQueueId),
+  ];
 
   // Live tool-call signal: initial fetch on mount plus a refetch on every server WS event
   // (which the server also broadcasts to every other tab, so they refresh too). Its status
@@ -412,60 +414,35 @@ export function HakuUiEmbed({
   }
 
   function approveToolApproval(approval: PendingApproval) {
-    const approvalId = toolApprovalQueueId(approval.tool_call_id);
-    setDeciding(approvalId, true);
-    void approveToolCall(approval.tool_call_id)
-      .then((record) => {
-        finishToolDecision(record);
-        toastSuccess("Tool call finished", `${record.server_id}.${record.tool_name}: ${record.status}`);
-        refreshToolApprovals();
-      })
-      .catch((e: unknown) => {
-        setDeciding(approvalId, false);
-        toastError("Tool call failed", e);
-        refreshToolApprovals();
-      });
+    void toolDecisions.approve(approval);
   }
 
   function denyToolApproval(approval: PendingApproval, reason?: string) {
-    const approvalId = toolApprovalQueueId(approval.tool_call_id);
-    setDeciding(approvalId, true);
-    void denyToolCall(approval.tool_call_id, reason || "denied from console").then(
-      (record) => {
-        finishToolDecision(record);
-        toastSuccess("Tool call denied", approval.title ?? `${approval.server_id}: ${approval.tool_name}`);
-        refreshToolApprovals();
-      },
-      (e: unknown) => {
-        setDeciding(approvalId, false);
-        toastError("Couldn't deny tool call", e);
-        refreshToolApprovals();
-      }
-    );
+    void toolDecisions.deny(approval, reason);
   }
 
   function approveGeolocationApproval(approval: GeolocationApproval) {
     const approvalId = geolocationApprovalQueueId(approval.id);
-    setDeciding(approvalId, true);
+    setNonToolDeciding(approvalId, true);
     setGeolocationGrant(true);
     setGeoGranted(true);
     if (approval.mode === "geolocationWatch") startWatch(approval.id, approval.options);
     else geolocateAndReply(approval.id, approval.options);
-    setDeciding(approvalId, false);
+    setNonToolDeciding(approvalId, false);
     advanceAfterGeolocation(approval.id);
   }
 
   function denyGeolocationApproval(approval: GeolocationApproval) {
     const approvalId = geolocationApprovalQueueId(approval.id);
-    setDeciding(approvalId, true);
+    setNonToolDeciding(approvalId, true);
     reply({ type: "geolocationResult", id: approval.id, ok: false, code: GEO_PERMISSION_DENIED, reason: "declined" });
-    setDeciding(approvalId, false);
+    setNonToolDeciding(approvalId, false);
     advanceAfterGeolocation(approval.id);
   }
 
   function approveScreenshotApproval(approval: ScreenshotApproval) {
     const approvalId = screenshotApprovalQueueId(approval.id);
-    setDeciding(approvalId, true);
+    setNonToolDeciding(approvalId, true);
     // The Approve click IS the user gesture getDisplayMedia needs — this must run directly from
     // here, never from the requestScreenshot message handler.
     void screenshotSession.start().then((r) => {
@@ -477,16 +454,16 @@ export function HakuUiEmbed({
       } else {
         reply({ type: "screenshotResult", id: approval.id, ok: false, reason: r.reason });
       }
-      setDeciding(approvalId, false);
+      setNonToolDeciding(approvalId, false);
       advanceAfterScreenshot(approval.id);
     });
   }
 
   function denyScreenshotApproval(approval: ScreenshotApproval) {
     const approvalId = screenshotApprovalQueueId(approval.id);
-    setDeciding(approvalId, true);
+    setNonToolDeciding(approvalId, true);
     reply({ type: "screenshotResult", id: approval.id, ok: false, reason: "declined" });
-    setDeciding(approvalId, false);
+    setNonToolDeciding(approvalId, false);
     advanceAfterScreenshot(approval.id);
   }
 

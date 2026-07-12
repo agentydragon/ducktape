@@ -172,29 +172,6 @@ Consolidation:
 - compare against known credential values where the trust boundary permits; and
 - either add a defensible opaque/high-entropy detector or narrow the stated guarantee.
 
-### I. Drawer and history independently orchestrate the same approval decision
-
-Severity: medium/high
-
-Recreations:
-
-- drawer flow in `haku/console/frontend/haku_ui_embed.tsx:338-369`
-- history flow in `haku/console/frontend/tool_calls_page.tsx:76-93,139-144`
-
-Observed divergences:
-
-- an empty drawer denial records `"denied from console"`; history sends no reason;
-- the drawer changes its badge to Running while deciding; history leaves it Pending;
-- success toasts render raw `server.tool` instead of the title already canonicalized by `approvalDisplayFields`; and
-- drawer-denial toast alone uses that custom title.
-
-The same operator decision therefore creates different audit records and feedback depending on surface.
-
-Consolidation:
-
-- one `useToolCallDecision` controller for approval/denial transitions; and
-- one display/toast helper based on `approvalDisplayFields`.
-
 ### J. Calendar preview reinterprets the canonical date-time model incorrectly
 
 Severity: medium/high

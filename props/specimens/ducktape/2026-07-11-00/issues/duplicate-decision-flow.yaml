@@ -1,0 +1,17 @@
+rationale: |
+  The approval drawer and full history page independently orchestrate the same approve/deny API calls, busy state, refresh, and operator feedback. The copies have already diverged: an empty drawer denial invents `"denied from console"` while history records no reason; only the drawer shows a running transition; success notifications inconsistently use raw `server.tool` identifiers or the custom title; and their error titles differ. The audit record and feedback for one decision must not depend on which UI surface the operator used. Route both surfaces through one decision controller and derive notification text from `approvalDisplayFields`.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      haku/console/frontend/haku_ui_embed.tsx:
+        - [338, 369]
+      haku/console/frontend/tool_calls_page.tsx:
+        - [76, 93]
+        - [134, 144]
+    critic_scopes_expected_to_recall:
+      - [haku/console/frontend/haku_ui_embed.tsx]
+      - [haku/console/frontend/tool_calls_page.tsx]
+    match_file_restriction:
+      - haku/console/frontend/haku_ui_embed.tsx
+      - haku/console/frontend/tool_calls_page.tsx
