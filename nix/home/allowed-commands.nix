@@ -129,6 +129,19 @@ let
         "search"
         "tree"
       ];
+
+  # bbapi — BuildBuddy API CLI. Almost entirely read-only (invocations,
+  # targets, artifacts, logs, cache scorecard, trends, executions, AI
+  # analysis); the one side-effecting subcommand is `workflow run`, which
+  # triggers a CI workflow execution. Needs network (app.buildbuddy.io), so
+  # it must run outside the sandbox — the prefix allow rule is treated as
+  # sandbox-bypassing by both Claude Code and Codex execpolicy.
+  bbapiCommands = [
+    {
+      type = "prefix";
+      cmd = "bbapi";
+    }
+  ];
 in
 {
   # All allowed commands (no sudo - these are user-accessible commands)
@@ -163,7 +176,8 @@ in
       }
     ]
     ++ wrappedCommands
-    ++ cargoMetadataCommands;
+    ++ cargoMetadataCommands
+    ++ bbapiCommands;
 
   # TODO: Add build system queries:
   # { type = "prefix"; cmd = "bazelisk fetch"; }
