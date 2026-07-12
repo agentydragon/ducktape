@@ -6,6 +6,7 @@
 // file never grows a hand-maintained `??` chain. `variant` picks the compact vs detailed rendering.
 
 import type { ReactNode } from "react";
+import type { z } from "zod";
 
 import { describeAction, renderPreview, type ToolAction, type ToolPreview } from "./entry.tsx";
 import { GMAIL_SERVER_ID, gmailPreviews } from "./gmail.tsx";
@@ -16,14 +17,31 @@ import { KUBECTL_SERVER_ID, kubectlPreviews } from "./kubectl.tsx";
 import { TANA_RW_SERVER_ID, tanaPreviews } from "./tana.tsx";
 import type { PreviewVariant } from "./variant.tsx";
 
-const REGISTRY: Record<string, Record<string, ToolPreview>> = {
+const REGISTRY = {
   [GMAIL_SERVER_ID]: gmailPreviews,
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarPreviews,
   [GROCY_SERVER_ID]: grocyPreviews,
   [HAKU_ROUTINE_SERVER_ID]: hakuRoutinePreviews,
   [KUBECTL_SERVER_ID]: kubectlPreviews,
   [TANA_RW_SERVER_ID]: tanaPreviews,
-};
+} as const satisfies Record<string, Record<string, ToolPreview>>;
+
+type PreviewRegistry = typeof REGISTRY;
+const RUNTIME_REGISTRY: Record<string, Record<string, ToolPreview>> = REGISTRY;
+
+/** A fixture whose server, tool, and arguments are tied to one registered preview schema.
+ * In-process schemas originate in FastMCP's tools/list catalog; remote-server previews retain
+ * their hand-authored Zod contract. `satisfies RegisteredToolPreviewFixture` therefore makes
+ * fixture drift a TypeScript error without widening the fixture's literal values. `z.output`
+ * is intentional: the generated adapter pins `ZodType<GeneratedArguments>` as its output type,
+ * while Zod 4 leaves that generic type's input as `unknown`. */
+export type RegisteredToolPreviewFixture = {
+  [ServerId in keyof PreviewRegistry]: {
+    [ToolName in keyof PreviewRegistry[ServerId]]: PreviewRegistry[ServerId][ToolName] extends ToolPreview<infer Schema>
+      ? { serverId: ServerId; toolName: ToolName; args: z.output<Schema> }
+      : never;
+  }[keyof PreviewRegistry[ServerId]];
+}[keyof PreviewRegistry];
 
 export function toolPreview(
   serverId: string,
@@ -31,7 +49,7 @@ export function toolPreview(
   args: Record<string, unknown>,
   variant: PreviewVariant
 ): ReactNode | null {
-  const preview = REGISTRY[serverId]?.[toolName];
+  const preview = RUNTIME_REGISTRY[serverId]?.[toolName];
   return preview ? renderPreview(preview, args, variant) : null;
 }
 
@@ -42,6 +60,6 @@ export function toolActionDescription(
   toolName: string,
   args: Record<string, unknown>
 ): ToolAction | null {
-  const preview = REGISTRY[serverId]?.[toolName];
+  const preview = RUNTIME_REGISTRY[serverId]?.[toolName];
   return preview ? describeAction(preview, args) : null;
 }

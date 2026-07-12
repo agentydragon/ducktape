@@ -273,33 +273,6 @@ Consolidation:
 - use a full clone or deepen/fetch until the stored pin resolves; and
 - test through `Settings` and bootstrap with at least two relevant commits.
 
-### O. Screenshot history fixtures have independently drifted from production tool contracts
-
-Severity: medium
-
-Owner:
-
-- actual preview contracts in `haku/console/frontend/tool_previews/google_calendar.tsx`, `kubectl.tsx`, and `grocy.tsx`
-- recent-call construction in `haku/console/frontend/approval_state.ts:111-114`
-
-Recreation:
-
-- `haku/console/frontend/screenshots/sample_data.ts`
-
-Observed divergence:
-
-- base `stock_add` uses obsolete `{product_id, amount}` arguments;
-- the Calendar history row supplies string `start`/`end` values instead of `EventDateTime` objects;
-- the kubectl row uses stale `kubectl.delete_pod` identifiers rather than `kubectl-passthrough-mcp.pods_delete`;
-- the history fixture's four rows therefore exercise generic JSON rather than custom previews; and
-- `hideAtMs=12000` is an absolute timestamp instead of `now + TTL`, so the screenshot says "Auto-hides now."
-
-Consolidation:
-
-- export typed fixture factories beside each preview registration;
-- assert that every intended custom fixture makes `toolPreview(...)` non-null; and
-- construct recent records through `makeRecentToolCall` at render time.
-
 ## Additional confirmed drift and lower-priority seams
 
 ### Source and prompt duplication
@@ -367,7 +340,7 @@ The audit checked and ruled out several tempting false positives:
 4. C and M — wake-boundary synchronization and valid history.
 5. G and H — repair security/source capability contracts.
 6. I and J — shared approval controller and correct Calendar presentation.
-7. K, L, and O — remove remaining method, routing, and fixture shadows.
+7. K and L — remove remaining method and routing shadows.
 8. P through T — close the extension traps before enabling the affected features.
 
 ## Audit disposition

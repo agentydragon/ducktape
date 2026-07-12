@@ -1,0 +1,11 @@
+rationale: |
+  The screenshot data recreates tool contracts as untyped records instead of checking them against the registered preview schemas. Its default Grocy call uses obsolete `product_id` arguments, its Calendar row supplies strings instead of `EventDateTime` objects, and its kubectl row names a different server and tool; all three therefore exercise generic JSON instead of their custom previews. The recent-call fixture also hard-codes an expired absolute `hideAtMs`. Bind custom fixtures to the preview schemas, assert that they dispatch to a custom preview, and construct recent calls through the production TTL helper.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      haku/console/frontend/screenshots/sample_data.ts:
+        - [6, 22]
+        - [24, 60]
+        - [94, 99]
+        - [145, 300]

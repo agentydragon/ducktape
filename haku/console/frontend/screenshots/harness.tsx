@@ -17,7 +17,7 @@ import { hakuTheme } from "../theme.ts";
 import { approvalDisplayFields } from "../approval_state.ts";
 import { ToolCallCard } from "../tool_call_card.tsx";
 import { ToolCallsPage } from "../tool_calls_page.tsx";
-import { PREVIEW_SAMPLES, SAMPLE_PENDING, SAMPLE_RECENT } from "./sample_data.ts";
+import { PREVIEW_SAMPLES, SAMPLE_PENDING, sampleRecentToolCalls } from "./sample_data.ts";
 
 const noop = () => {};
 
@@ -69,14 +69,13 @@ function PreviewGallery() {
   );
 }
 
-const chromeProps: ShellChromeProps = {
+const chromeProps: Omit<ShellChromeProps, "recentToolCalls"> = {
   approvalsOpen: true,
   onApprovalsOpenChange: noop,
   pendingApprovals: SAMPLE_PENDING,
   geolocationApprovals: [],
   screenshotApprovals: [],
   decidingApprovalIds: [],
-  recentToolCalls: SAMPLE_RECENT,
   onApproveTool: noop,
   onDenyTool: noop,
   onApproveGeolocation: noop,
@@ -109,7 +108,7 @@ function sceneElement(scene: string) {
       // settings + approvals) over the panel column. Approvals starts open; render.mjs clicks
       // the live and location buttons so several panels show stacked by Y (the point of the
       // layout).
-      return <ShellChrome {...chromeProps} />;
+      return <ShellChrome {...chromeProps} recentToolCalls={sampleRecentToolCalls(Date.now())} />;
     case "previews":
       return <PreviewGallery />;
     // The history page; render.mjs expands its first rows into their detailed state (opening the
