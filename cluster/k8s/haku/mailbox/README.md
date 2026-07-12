@@ -11,7 +11,7 @@ Haku (`haku@allegedly.works`) over an authenticated channel — contract in
 | `db/`        | CNPG Postgres (OVH-HA profile) — Stalwart's data/blob/search/settings store                        |
 | `bootstrap/` | Certificate, recovery credential, canonical plan, and one-shot empty-database bootstrap Job        |
 | `app/`       | Normal Stalwart Deployment + Service/HTTPRoute and Haku mailbox-token publication                  |
-| `reconcile/` | Authentik machine-token mirror and steady-state plan reconciler Job                                |
+| `reconcile/` | Steady-state plan reconciler Job using a dedicated Authentik machine identity                      |
 | `image/`     | Bazel repack of upstream Stalwart with `stalwart-cli` layered in (`ghcr.io/agentydragon/stalwart`) |
 
 ## Configuration model
@@ -53,9 +53,10 @@ deliberately tiny (its documented declarative-deployments workflow):
 - `reconcile/reconciler-job.yaml` + `reconcile/reconcile.sh` — steady-state reconciliation
   against the running management API. Kustomize hashes the plan ConfigMap;
   plan changes make Flux replace the completed Job. It authenticates as the
-  dedicated `stalwart-reconciler` Authentik machine principal, whose JWT is
-  minted automatically by `authentik-jwt-rotation` and mirrored only into the
-  trusted `haku-mailbox` namespace. It never starts another Stalwart server.
+  dedicated `stalwart-reconciler` Authentik machine principal. Terraform puts
+  its client credentials only in the trusted `haku-mailbox` namespace; each
+  Job mints an ephemeral audience-pinned JWT, applies the plan, and discards
+  it. It never starts another Stalwart server or persists the JWT.
 - `bootstrap/run.sh` — the production pod entrypoint only strips the upstream
   binary's unused file capability and starts normal Stalwart. It never applies
   configuration. Runtime and reconciler ConfigMaps are separate, so changing

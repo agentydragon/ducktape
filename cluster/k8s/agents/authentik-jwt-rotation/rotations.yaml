@@ -132,24 +132,6 @@ rotations:
     # (the re-mint then asserts expected_claims loudly).
     probe:
       url: https://haku-mailbox.allegedly.works/jmap/session
-  - name: stalwart-reconciler
-    # Dedicated Stalwart configuration principal. The one-shot mailbox
-    # bootstrap creates the matching Admin account; this token then drives all
-    # steady-state plan applies against the running management API.
-    provider_slug: stalwart-haku
-    scopes: openid profile email
-    credential_mode: user_password
-    expected_audiences:
-      - stalwart-haku
-    expected_claims:
-      email: stalwart-reconciler@allegedly.works
-    credentials_dir: /var/run/secrets/authentik/stalwart-reconciler
-    sops_file: secrets/stalwart-reconciler-jwt.yaml
-    token_field: jwt
-    k8s_secret:
-      path: cluster/k8s/haku/mailbox/app/stalwart-reconciler-token.sops.yaml
-      name: stalwart-reconciler-token
-      namespace: flux-system
   - name: alloy-otlp
     provider_slug: alloy-otlp-client-credentials
     scopes: openid profile email

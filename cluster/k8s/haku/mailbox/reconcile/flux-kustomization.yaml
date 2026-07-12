@@ -20,5 +20,3 @@ spec:
   dependsOn:
     - name: haku-mailbox
     - name: agent-machine-access-tf
-    - name: authentik-jwt-rotation
-    - name: external-secrets-config

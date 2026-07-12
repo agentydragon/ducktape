@@ -42,8 +42,8 @@ spec:
             - name: plan
               mountPath: /etc/stalwart-plan
               readOnly: true
-            - name: stalwart-token
-              mountPath: /var/run/secrets/stalwart-token
+            - name: authentik
+              mountPath: /var/run/secrets/authentik
               readOnly: true
             - name: tmp
               mountPath: /tmp
@@ -66,8 +66,8 @@ spec:
         - name: plan
           configMap:
             name: haku-mailbox-bootstrap-config
-        - name: stalwart-token
+        - name: authentik
           secret:
-            secretName: stalwart-reconciler-token
+            secretName: stalwart-reconciler-client-credentials
         - name: tmp
           emptyDir: {}

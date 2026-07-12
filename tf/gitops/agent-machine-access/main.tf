@@ -1415,9 +1415,9 @@ resource "authentik_policy_binding" "stalwart_reconciler" {
 resource "kubernetes_secret" "stalwart_reconciler_client_credentials" {
   metadata {
     name      = "stalwart-reconciler-client-credentials"
-    namespace = "agents-infra"
+    namespace = "haku-mailbox"
     annotations = {
-      description = "Credentials used by authentik-jwt-rotation to mint the Stalwart plan reconciler JWT"
+      description = "Authentik credentials used by the Stalwart reconcile Job to mint an ephemeral JWT"
     }
   }
 
