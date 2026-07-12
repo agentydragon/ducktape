@@ -2,7 +2,7 @@
 // (mock_api.ts). Kept separate so both share one source of truth.
 import { makeRecentToolCall, type RecentToolCall } from "../approval_state.ts";
 import type { McpOperatorAuthStatus, PendingApproval, ToolCallRecord } from "../client.ts";
-import type { RegisteredToolPreviewFixture } from "../tool_previews/index.tsx";
+import type { RegisteredToolPreviewFixture } from "../tool_rendering/index.tsx";
 
 const STOCK_ADD_HISTORY_FIXTURE = {
   serverId: "grocy-sf",

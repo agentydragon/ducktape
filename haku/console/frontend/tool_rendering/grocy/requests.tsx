@@ -1,6 +1,6 @@
 // Per-tool-type rendering for the remote `grocy-sf` MCP server (see
 // grocy_mcp/README.md and grocy_mcp/batch_tools.py). Falls back to the generic raw-JSON
-// view for anything that isn't shaped as expected — same caveat as kubectl.tsx:
+// view for anything that isn't shaped as expected — same caveat as kubectl/requests.tsx:
 // arguments are only validated by the tool's own schema at execution time, not at submission.
 //
 // grocy-sf's tool surface is generated from Grocy's own OpenAPI spec plus custom batch
@@ -19,9 +19,9 @@ import { Badge, Group, Stack, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 
-import { fetchGrocyReference, type GrocyReferenceResponse } from "../grocy_client.ts";
-import { definePreview, type ToolPreview } from "./entry.tsx";
-import { COMPACT_ITEM_LIMIT, MoreLine, plural, type PreviewProps, type PreviewVariant } from "./variant.tsx";
+import { fetchGrocyReference, type GrocyReferenceResponse } from "../../grocy_client.ts";
+import { definePreview, type ToolPreview } from "../entry.tsx";
+import { COMPACT_ITEM_LIMIT, MoreLine, plural, type PreviewProps, type PreviewVariant } from "../variant.tsx";
 
 export const GROCY_SERVER_ID = "grocy-sf";
 

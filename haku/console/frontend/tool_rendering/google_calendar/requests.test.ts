@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { renderPreview } from "./entry.tsx";
-import { formatEventDateTimeRange, googleCalendarPreviews } from "./google_calendar.tsx";
+import { renderPreview } from "../entry.tsx";
+import { formatEventDateTimeRange, googleCalendarPreviews } from "./requests.tsx";
 
 describe("googleCalendarPreviews", () => {
   it("renders create_calendar_event for a valid all-day event, in both variants", () => {

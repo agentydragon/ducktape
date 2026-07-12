@@ -11,12 +11,12 @@ import { Anchor, Badge, Group, Loader, Stack, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
 import type { z } from "zod";
 
-import { Field } from "../field.tsx";
-import { fetchGmailThreadPreviews, type GmailThreadPreview } from "../gmail_client.ts";
-import { MailIcon } from "../icons.tsx";
-import { mcpToolSchema } from "../mcp_tool_schema.ts";
-import { definePreview, type ToolPreview } from "./entry.tsx";
-import { COMPACT_ITEM_LIMIT, firstLines, MoreLine, plural, type PreviewProps } from "./variant.tsx";
+import { Field } from "../../field.tsx";
+import { fetchGmailThreadPreviews, type GmailThreadPreview } from "../../gmail_client.ts";
+import { MailIcon } from "../../icons.tsx";
+import { mcpToolSchema } from "../../mcp_tool_schema.ts";
+import { definePreview, type ToolPreview } from "../entry.tsx";
+import { COMPACT_ITEM_LIMIT, firstLines, MoreLine, plural, type PreviewProps } from "../variant.tsx";
 
 export const GMAIL_SERVER_ID = "gmail";
 

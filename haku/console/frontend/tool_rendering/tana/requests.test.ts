@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { renderPreview } from "./entry.tsx";
-import { tanaPreviews } from "./tana.tsx";
+import { renderPreview } from "../entry.tsx";
+import { tanaPreviews } from "./requests.tsx";
 
 describe("tanaPreviews", () => {
   it("renders each focused tool in both variants", () => {

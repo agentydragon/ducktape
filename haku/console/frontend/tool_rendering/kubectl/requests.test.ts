@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { renderPreview } from "./entry.tsx";
-import { kubectlPreviews } from "./kubectl.tsx";
+import { renderPreview } from "../entry.tsx";
+import { kubectlPreviews } from "./requests.tsx";
 
 describe("kubectlPreviews", () => {
   it("renders pods_delete for valid args", () => {

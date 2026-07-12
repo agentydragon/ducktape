@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { renderPreview } from "./entry.tsx";
-import { hakuRoutinePreviews } from "./haku_routine.tsx";
+import { renderPreview } from "../entry.tsx";
+import { hakuRoutinePreviews } from "./requests.tsx";
 
 describe("hakuRoutinePreviews", () => {
   it("renders launch_routine with per-run instructions, in both variants", () => {

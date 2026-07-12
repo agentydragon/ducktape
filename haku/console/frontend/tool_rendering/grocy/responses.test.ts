@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { renderResultPreview } from "./entry.tsx";
-import { grocyResultPreviews } from "./grocy.tsx";
+import { renderResultPreview } from "../result_entry.tsx";
+import { grocyResultPreviews } from "./responses.tsx";
 
 const STOCK_ADD_OK_ROW = {
   kind: "ok",

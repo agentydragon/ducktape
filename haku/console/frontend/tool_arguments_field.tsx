@@ -1,9 +1,9 @@
 import { Field } from "./field.tsx";
 import { JsonPreview } from "./json_preview.tsx";
-import { toolPreview } from "./tool_previews/index.tsx";
-import type { PreviewVariant } from "./tool_previews/variant.tsx";
+import { toolPreview } from "./tool_rendering/index.tsx";
+import type { PreviewVariant } from "./tool_rendering/variant.tsx";
 
-/** The arguments of a tool call: a per-tool-type widget (the tool_previews/ per-server modules)
+/** The arguments of a tool call: a per-tool-type widget (the tool_rendering/ per-server requests modules)
  * when one matches — rendered directly, since it's self-describing — else the generic
  * syntax-highlighted JSON view (compact-printed + truncated in brief mode, full in detailed),
  * which keeps an "Arguments" label so it isn't mistaken for a result. `variant` picks the compact

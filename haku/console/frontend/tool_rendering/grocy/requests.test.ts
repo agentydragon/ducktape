@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { renderPreview } from "./entry.tsx";
-import { grocyPreviews } from "./grocy.tsx";
+import { renderPreview } from "../entry.tsx";
+import { grocyPreviews } from "./requests.tsx";
 
 describe("grocyPreviews", () => {
   it("renders products_create for valid args, in both variants", () => {

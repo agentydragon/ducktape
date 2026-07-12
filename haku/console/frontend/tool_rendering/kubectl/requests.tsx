@@ -1,6 +1,6 @@
 // Per-tool-type rendering for the remote `kubectl-passthrough-mcp` MCP server (see
 // cluster/k8s/agents/kubectl-passthrough-mcp/). Falls back to the generic raw-JSON view
-// for anything that isn't shaped as expected — same caveat as gmail.tsx:
+// for anything that isn't shaped as expected — same caveat as gmail/requests.tsx:
 // arguments are only validated by the tool's own schema at execution time, not at
 // submission. Every tool here runs with the approving operator's own cluster-admin
 // identity (cluster_auth_mode=passthrough) once approved, so rendering the exact target
@@ -9,8 +9,8 @@
 import { Group, Stack, Text } from "@mantine/core";
 import { z } from "zod";
 
-import { definePreview, type ToolPreview } from "./entry.tsx";
-import { clampBlock, type PreviewProps } from "./variant.tsx";
+import { definePreview, type ToolPreview } from "../entry.tsx";
+import { clampBlock, type PreviewProps } from "../variant.tsx";
 
 export const KUBECTL_SERVER_ID = "kubectl-passthrough-mcp";
 

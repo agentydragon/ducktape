@@ -25,9 +25,9 @@ rendered. The test is a generator, not a pixel-diff gate: it passes as long as e
 renders, so it never blocks CI on "looks different", but a blank/crashed scene fails it.
 
 The `previews` scene is a gallery of **every implemented tool-call preview**, each rendered in
-both compact and detailed — when you add or change a per-server widget (`tool_previews/*.tsx`),
-add its (server, tool, sample args) to `PREVIEW_SAMPLES` in `screenshots/sample_data.ts` and
-re-check the gallery. Add a whole new scene to `screenshots/harness.tsx` (and the `SCENES` list
+both compact and detailed — when you add or change a per-server widget
+(`tool_rendering/<server>/{requests,responses}.tsx`), add its (server, tool, sample args) to
+`PREVIEW_SAMPLES` in `screenshots/sample_data.ts` and re-check the gallery. Add a whole new scene to `screenshots/harness.tsx` (and the `SCENES` list
 in `screenshots/render.mjs`) whenever you add a new surface.
 
 ## Tool-call rendering — design requirements
@@ -38,9 +38,10 @@ the **history** rows (`tool_calls_page.tsx`) — but both render through one sha
 arguments body, the result body, and the detailed Metadata); only the status badge and footer
 actions differ per surface. Each renders at one of two variants, **compact** or **detailed**,
 flipped per item by its toggle. The argument body is drawn by a per-server **preview widget**
-(`tool_previews/`), or the generic raw-JSON fallback (`tool_arguments_field.tsx`); a finished
-call's result mirrors that via `tool_results/` + `tool_result_field.tsx` (the raw-JSON result
-field is detailed-only, so compact shows a result only when a widget makes it self-describing).
+(`tool_rendering/<server>/requests.tsx`), or the generic raw-JSON fallback
+(`tool_arguments_field.tsx`); a finished call's result mirrors that via
+`tool_rendering/<server>/responses.tsx` + `tool_result_field.tsx` (the raw-JSON result field is
+detailed-only, so compact shows a result only when a widget makes it self-describing).
 Hold all of it to these rules so the whole surface reads as one thing.
 
 **Compact is for skimming.** A compact rendering answers "what is this, and do I need to look

@@ -1,5 +1,5 @@
 // Result rendering for the remote `grocy-sf` server's batch tools (the argument-side widgets
-// live in tool_previews/grocy.tsx). Each batch tool returns one row per input item — `kind:
+// live in ./requests.tsx). Each batch tool returns one row per input item — `kind:
 // "ok"` with per-op details, or a failing kind with an `error` message — so the widgets show
 // an ok/failed count summary (compact adds the first few product names) and, detailed, every
 // row with its amounts/units/locations, failed rows in red. Hand-authored against
@@ -11,8 +11,8 @@ import { Badge, Group, Stack, Text } from "@mantine/core";
 import type { ReactNode } from "react";
 import { z } from "zod";
 
-import { COMPACT_ITEM_LIMIT, MoreLine, type PreviewVariant } from "../tool_previews/variant.tsx";
-import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "./entry.tsx";
+import { COMPACT_ITEM_LIMIT, MoreLine, type PreviewVariant } from "../variant.tsx";
+import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
 
 // A failed row: any kind other than "ok", with the server's error message. Matched after the
 // ok row shape in each union, so a malformed "ok" row fails the whole parse (→ raw JSON

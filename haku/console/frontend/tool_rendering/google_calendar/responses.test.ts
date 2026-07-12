@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { renderResultPreview } from "./entry.tsx";
-import { googleCalendarResultPreviews } from "./google_calendar.tsx";
+import { renderResultPreview } from "../result_entry.tsx";
+import { googleCalendarResultPreviews } from "./responses.tsx";
 
 describe("googleCalendarResultPreviews", () => {
   it("renders create_calendar_event for the Python-field-name spelling, in both variants", () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { describeAction, renderPreview } from "./entry.tsx";
-import { gmailPreviews } from "./gmail.tsx";
+import { describeAction, renderPreview } from "../entry.tsx";
+import { gmailPreviews } from "./requests.tsx";
 
 describe("gmailPreviews", () => {
   it("renders threads_modify_labels for valid args, in both variants", () => {

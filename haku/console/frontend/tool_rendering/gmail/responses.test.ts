@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { renderResultPreview } from "./entry.tsx";
-import { gmailResultPreviews } from "./gmail.tsx";
+import { renderResultPreview } from "../result_entry.tsx";
+import { gmailResultPreviews } from "./responses.tsx";
 
 describe("gmailResultPreviews", () => {
   it("renders drafts_create for a Draft resource, in both variants", () => {

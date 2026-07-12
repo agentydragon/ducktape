@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { unwrapToolResult } from "./entry.tsx";
+import { unwrapToolResult } from "./result_entry.tsx";
 
 describe("unwrapToolResult", () => {
   it("un-wraps FastMCP's {result: …} envelope when flagged and `result` is the sole key", () => {

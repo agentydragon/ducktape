@@ -2,7 +2,7 @@ import { SegmentedControl } from "@mantine/core";
 import { useState } from "react";
 
 import { ListDetailsIcon, ListIcon } from "./icons.tsx";
-import type { PreviewVariant } from "./tool_previews/variant.tsx";
+import type { PreviewVariant } from "./tool_rendering/variant.tsx";
 
 // The per-view compact/detailed selection, shared by the history page's per-row control and the
 // drawer's cards so both spell it one way. `useVariant` owns the state; the owner threads the

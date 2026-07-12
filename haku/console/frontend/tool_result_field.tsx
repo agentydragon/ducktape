@@ -1,9 +1,9 @@
 import { Field } from "./field.tsx";
-import type { PreviewVariant } from "./tool_previews/variant.tsx";
-import { unwrapToolResult } from "./tool_results/entry.tsx";
-import { toolResultPreview } from "./tool_results/index.tsx";
+import type { PreviewVariant } from "./tool_rendering/variant.tsx";
+import { unwrapToolResult } from "./tool_rendering/result_entry.tsx";
+import { toolResultPreview } from "./tool_rendering/index.tsx";
 
-/** The result of a finished tool call: a per-tool-type widget (the tool_results/ per-server
+/** The result of a finished tool call: a per-tool-type widget (the tool_rendering/ per-server responses
  * modules) over the unwrapped CallToolResult payload when one matches, else the raw-JSON
  * "Result" field — but only in detailed, so compact cards stay skimmable (a compact card shows
  * a result only when a widget makes it self-describing, mirroring how compact never shows raw

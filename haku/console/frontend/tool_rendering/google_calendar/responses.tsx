@@ -1,5 +1,5 @@
 // Result rendering for the in-process `google_calendar` server (the argument-side widgets live
-// in tool_previews/google_calendar.tsx). `create_calendar_event` returns
+// in ./requests.tsx). `create_calendar_event` returns
 // CreateCalendarEventResult {event_id, html_link} (haku/console/tools/google_calendar_client.py);
 // depending on serialization aliasing the wire keys may be those Python field names or the
 // Calendar API's own `id`/`htmlLink`, so the schema accepts either spelling and passes unknown
@@ -8,7 +8,7 @@
 import { Anchor, Stack, Text } from "@mantine/core";
 import { z } from "zod";
 
-import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "./entry.tsx";
+import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
 
 const zCreateCalendarEventResult = z
   .looseObject({

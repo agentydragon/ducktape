@@ -4,7 +4,7 @@ import type { components } from "./api/schema";
 export type GmailThreadPreview = components["schemas"]["GmailThreadPreview"];
 
 // Gmail write-tool argument types do not come from this HTTP client's OpenAPI declarations.
-// tool_previews/gmail.tsx gets both its runtime validator and inferred static type from the
+// tool_rendering/gmail/requests.tsx gets both its runtime validator and inferred static type from the
 // input schemas the FastMCP server itself advertises; see :mcp_tool_schema.
 
 // Live subject/snippet/current-labels lookup for rendering a threads_modify_labels

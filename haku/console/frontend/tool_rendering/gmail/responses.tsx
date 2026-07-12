@@ -1,12 +1,12 @@
 // Result rendering for the in-process `gmail` server's `drafts_create` (the argument-side
-// widgets live in tool_previews/gmail.tsx). The tool returns the Gmail API Draft resource
+// widgets live in ./requests.tsx). The tool returns the Gmail API Draft resource
 // verbatim (gmail_api/messages.py's `Draft`, camelCase wire aliases); the draft `id` deep-links
 // into Gmail's drafts view, where the operator reviews and sends it.
 
 import { Anchor, Group, Text } from "@mantine/core";
 import { z } from "zod";
 
-import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "./entry.tsx";
+import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
 
 // Gmail's compose view opens a draft directly by its id.
 function gmailDraftUrl(draftId: string): string {

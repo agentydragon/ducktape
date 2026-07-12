@@ -7,10 +7,10 @@ import { Anchor, Badge, Group, Stack, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 
-import { Field } from "../field.tsx";
-import { fetchTanaNodePreviews, type TanaNodePreview } from "../tana_client.ts";
-import { definePreview, type ToolPreview } from "./entry.tsx";
-import { clampBlock, type PreviewProps } from "./variant.tsx";
+import { Field } from "../../field.tsx";
+import { fetchTanaNodePreviews, type TanaNodePreview } from "../../tana_client.ts";
+import { definePreview, type ToolPreview } from "../entry.tsx";
+import { clampBlock, type PreviewProps } from "../variant.tsx";
 
 export const TANA_RW_SERVER_ID = "tana-rw";
 
