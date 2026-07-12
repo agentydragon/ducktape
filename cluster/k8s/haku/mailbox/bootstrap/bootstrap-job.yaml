@@ -5,6 +5,9 @@ metadata:
   namespace: haku-mailbox
   annotations:
     description: Seeds an empty Stalwart datastore before the production Flux layer is applied.
+    # Flux owns this immutable one-shot Job. Global Reloader mutation strands
+    # it with no pod and no terminal status.
+    reloader.stakater.com/auto: "false"
   labels:
     app.kubernetes.io/name: haku-mailbox-bootstrap
 spec:

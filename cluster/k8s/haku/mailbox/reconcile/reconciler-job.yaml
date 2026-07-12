@@ -5,6 +5,7 @@ metadata:
   namespace: haku-mailbox
   annotations:
     description: Applies the declarative Stalwart plan to the running server with a dedicated Authentik JWT.
+    reloader.stakater.com/auto: "false"
     # The generated ConfigMap name changes with the plan. Job pod templates
     # are immutable, so Flux must replace the completed Job.
     kustomize.toolkit.fluxcd.io/force: enabled
