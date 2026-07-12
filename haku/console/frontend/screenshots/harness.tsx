@@ -14,8 +14,8 @@ import { createRoot } from "react-dom/client";
 import { ShellChrome, type ShellChromeProps } from "../console_panel.tsx";
 import { SettingsPanel } from "../settings_page.tsx";
 import { hakuTheme } from "../theme.ts";
-import { ToolActionLine } from "../tool_action_line.tsx";
-import { ToolArgumentsField } from "../tool_arguments_field.tsx";
+import { approvalDisplayFields } from "../approval_state.ts";
+import { ToolCallCard } from "../tool_call_card.tsx";
 import { ToolCallsPage } from "../tool_calls_page.tsx";
 import { PREVIEW_SAMPLES, SAMPLE_PENDING, SAMPLE_RECENT } from "./sample_data.ts";
 
@@ -30,32 +30,34 @@ function PreviewGallery() {
         <div
           style={{ maxWidth: 1000, margin: "0 auto", padding: 24, display: "flex", flexDirection: "column", gap: 28 }}
         >
-          {PREVIEW_SAMPLES.map(({ serverId, toolName, args }) => {
-            const argumentsJson = JSON.stringify(args, null, 2);
+          {PREVIEW_SAMPLES.map(({ title, serverId, toolName, args }, index) => {
+            const fields = approvalDisplayFields({
+              tool_call_id: `preview_${index}`,
+              server_id: serverId,
+              tool_name: toolName,
+              caller_principal: "haku-agent-api-token",
+              status: "pending_approval",
+              created_at: "2026-07-11T12:00:00Z",
+              updated_at: "2026-07-11T12:00:00Z",
+              arguments: args,
+              rationale: "Sample rationale for the operator.",
+              title,
+              result: null,
+              error: null,
+              denial_reason: null,
+            });
             return (
               <div key={`${serverId}.${toolName}`} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <div>
-                  <Text fw={700} size="sm" ff="monospace">
-                    {serverId}.{toolName}
-                  </Text>
-                  {/* The action-description line each card renders in its header (or the raw
-                      serverId.toolName fallback for the widget-less sample). */}
-                  <ToolActionLine serverId={serverId} toolName={toolName} args={args} />
-                </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
                   {(["compact", "detailed"] as const).map((variant) => (
-                    <section className="haku-shell-card" key={variant}>
-                      <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb={6}>
-                        {variant}
-                      </Text>
-                      <ToolArgumentsField
-                        serverId={serverId}
-                        toolName={toolName}
-                        args={args}
-                        argumentsJson={argumentsJson}
-                        variant={variant}
-                      />
-                    </section>
+                    <ToolCallCard
+                      key={variant}
+                      fields={fields}
+                      args={args}
+                      variant={variant}
+                      onVariantChange={noop}
+                      status={{ label: "Pending", color: "yellow" }}
+                    />
                   ))}
                 </div>
               </div>

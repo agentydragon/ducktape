@@ -145,8 +145,14 @@ export const SAMPLE_CALENDAR_SUMMARY = {
 // Every implemented tool-call preview, for the `previews` gallery scene (harness.tsx renders
 // each in both compact and detailed). Real server ids + tool names so the registry dispatches
 // to each widget; the final entry has no widget, exercising the raw-JSON fallback.
-export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record<string, unknown> }[] = [
+export const PREVIEW_SAMPLES: {
+  title: string;
+  serverId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+}[] = [
   {
+    title: "Add Thrive box items to stock",
     serverId: "grocy-sf",
     toolName: "stock_add",
     args: {
@@ -160,6 +166,7 @@ export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record
     },
   },
   {
+    title: "Consume spoiled and used groceries",
     serverId: "grocy-sf",
     toolName: "stock_consume",
     args: {
@@ -170,6 +177,7 @@ export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record
     },
   },
   {
+    title: "Create pantry products",
     serverId: "grocy-sf",
     toolName: "products_create",
     args: {
@@ -188,6 +196,7 @@ export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record
     },
   },
   {
+    title: "Update pantry product settings",
     serverId: "grocy-sf",
     toolName: "products_edit",
     args: {
@@ -205,6 +214,7 @@ export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record
     },
   },
   {
+    title: "Schedule dentist appointment",
     serverId: "google_calendar",
     toolName: "create_calendar_event",
     args: {
@@ -219,11 +229,13 @@ export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record
     },
   },
   {
+    title: "File planning threads for follow-up",
     serverId: "gmail",
     toolName: "threads_modify_labels",
     args: { thread_ids: ["t1", "t2", "t3", "t4"], add: ["Follow up"], remove: ["Inbox"] },
   },
   {
+    title: "Draft Q3 planning reply",
     serverId: "gmail",
     toolName: "drafts_create",
     args: {
@@ -235,11 +247,13 @@ export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record
     },
   },
   {
+    title: "Review inbox for replies",
     serverId: "haku_routine",
     toolName: "launch_routine",
     args: { text: "Scan Gmail for anything needing a reply, draft responses, and flag time-sensitive items." },
   },
   {
+    title: "Deploy the worker service",
     serverId: "kubectl-passthrough-mcp",
     toolName: "resources_create_or_update",
     args: {
@@ -248,16 +262,19 @@ export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record
     },
   },
   {
+    title: "Delete the failed worker pod",
     serverId: "kubectl-passthrough-mcp",
     toolName: "resources_delete",
     args: { apiVersion: "v1", kind: "Pod", name: "worker-6f9c2", namespace: "haku-sandbox", gracePeriodSeconds: 0 },
   },
   {
+    title: "Restart the failed worker pod",
     serverId: "kubectl-passthrough-mcp",
     toolName: "pods_delete",
     args: { name: "worker-6f9c2", namespace: "haku-sandbox" },
   },
   {
+    title: "Add planning review tasks to Tana",
     serverId: "tana-rw",
     toolName: "import_tana_paste",
     args: {
@@ -266,21 +283,25 @@ export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record
     },
   },
   {
+    title: "Open today's calendar node",
     serverId: "tana-rw",
     toolName: "get_or_create_calendar_node",
     args: { workspaceId: "workspace", granularity: "day", date: "2026-07-11" },
   },
   {
+    title: "Trash the obsolete task",
     serverId: "tana-rw",
     toolName: "trash_node",
     args: { nodeId: "task" },
   },
   {
+    title: "Rename the quarterly task",
     serverId: "tana-rw",
     toolName: "edit_node",
     args: { nodeId: "task", name: { old_string: "Quarterly", new_string: "Q3", replace_all: false } },
   },
   {
+    title: "Move the task into its project",
     serverId: "tana-rw",
     toolName: "move_node",
     args: {
@@ -293,6 +314,7 @@ export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record
   },
   {
     // No widget for this (server, tool) — the generic raw-JSON fallback (compact clamps).
+    title: "Remove purchased shopping-list items",
     serverId: "grocy-sf",
     toolName: "shopping_list_items_remove",
     args: { ids: [3, 7, 12, 15, 21, 34, 42, 55] },
