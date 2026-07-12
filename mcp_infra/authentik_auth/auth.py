@@ -37,7 +37,7 @@ from fastmcp.server.auth import MultiAuth
 from fastmcp.server.auth.auth import AuthProvider, TokenVerifier
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.server.dependencies import get_access_token
+from fastmcp.server.dependencies import get_access_token, get_http_headers
 from glide_shared.exceptions import TimeoutError as GlideTimeoutError
 from key_value.aio.protocols import AsyncKeyValue
 from mcp.server.auth.provider import TokenError
@@ -309,6 +309,20 @@ def _token_expired(token_data: dict[str, Any]) -> bool:
     return time.time() >= float(expires_at) - _EXPIRY_LEEWAY
 
 
+def _upstream_access_token() -> str:
+    """Return the bearer credential from the originating MCP request."""
+    authorization = get_http_headers(include={"authorization"}).get("authorization")
+    if authorization is not None:
+        scheme, separator, token = authorization.partition(" ")
+        if scheme.lower() != "bearer" or not separator or not token:
+            raise RuntimeError("authenticated MCP request has a malformed Authorization header")
+        return token
+    access = get_access_token()
+    if access is None:
+        raise RuntimeError("no authenticated access token in request context")
+    return access.token
+
+
 class AuthentikExchangeAuth(httpx.Auth):
     """httpx Auth that mints a proxy-provider-scoped JWT per request.
 
@@ -390,9 +404,6 @@ class AuthentikExchangeAuth(httpx.Auth):
             return str(token_data["access_token"])
 
     async def async_auth_flow(self, request: httpx.Request) -> AsyncGenerator[httpx.Request, httpx.Response]:
-        access = get_access_token()
-        if access is None:
-            raise RuntimeError("no authenticated access token in request context")
-        token = await self._get_exchanged_token(access.token)
+        token = await self._get_exchanged_token(_upstream_access_token())
         request.headers["Authorization"] = f"Bearer {token}"
         yield request

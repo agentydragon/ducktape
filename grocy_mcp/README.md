@@ -26,7 +26,7 @@ claude.ai ──OAuth (MCP spec)──▶ https://grocy-mcp-{sf,vallejo}.alleged
                                       │ generated tool call
                                       │   → httpx.AsyncClient.request(...)
                                       │     ↓ AuthentikExchangeAuth
-                                      │       1. get_access_token().token  (upstream user JWT)
+                                      │       1. originating request Authorization bearer
                                       │       2. POST https://auth.allegedly.works/application/o/token/
                                       │            grant_type=client_credentials
                                       │            client_id=<grocy proxy provider client_id>
