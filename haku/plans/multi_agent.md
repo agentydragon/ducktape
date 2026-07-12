@@ -48,17 +48,15 @@ New local-inference follow-up: <local_dispatch_zone.md>. It adapts the existing 
 perimeter to Ollama-hosted models and adds an active-model scheduler so local workers do
 not thrash model residency by running agents across multiple models at once.
 
-<<<<<<< Updated upstream
 New application follow-up: <kitchen_stocking_subagent.md>. Fleshes out the grocery-order
 bounded-write MCP line above into a first design pass for a kitchen/household-stocking
 subagent (operator, 2026-07-11) — a candidate first real workload for the oai or local zone,
 using the existing `grocy_mcp/eval` harness (already model-agnostic) to pick the tier.
-=======
+
 Capability-oriented follow-up: <capability_dispatch.md>. It generalizes zone dispatch into
 model + prompt + reviewed capability-profile launches, integrates dispatch through
 haku-console/MCP, and sketches Google-data, public-coding, garden, and specialist profiles
 without conflating provider trust with tool authority.
->>>>>>> Stashed changes
 
 ## The oai zone (step 5)
 
