@@ -92,7 +92,12 @@ py_library(
     srcs = ["pr_visuals.py"],
     data = ["pr_visuals.html.j2"],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//jinja2"],
+    deps = [
+        "@pypi//boto3",
+        "@pypi//jinja2",
+        "@pypi//pydantic",
+        "@pypi//pygithub",
+    ],
 )
 
 # === Binaries ===

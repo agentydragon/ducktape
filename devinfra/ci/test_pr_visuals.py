@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.ci.pr_visuals import build_bundle, find_test_invocation
+from devinfra.ci.pr_visuals import VisualManifest, build_bundle, find_test_invocation, upload_bundle
 
 
 def test_build_bundle_uses_full_sha_and_component(tmp_path: Path) -> None:
@@ -35,6 +35,31 @@ def test_find_test_invocation_reads_linkage(tmp_path: Path) -> None:
         json.dumps({"buildbuddy": {"bazel_invocations": [{"role": "test", "invocation_id": "inv-1"}]}})
     )
     assert find_test_invocation(tmp_path) == "inv-1"
+
+
+def test_manifest_rejects_paths() -> None:
+    with pytest.raises(ValueError, match="safe PNG basenames"):
+        VisualManifest.model_validate({"screenshots": ["../secret.png"]})
+
+
+def test_upload_publishes_index_last(tmp_path: Path) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "screen.png").write_bytes(b"png")
+    (bundle / "metadata.json").write_text("{}")
+    (bundle / "index.html").write_text("html")
+
+    class FakeS3:
+        def __init__(self) -> None:
+            self.keys: list[str] = []
+
+        def upload_file(self, _path: str, _bucket: str, key: str, **kwargs: dict[str, str]) -> None:
+            assert kwargs["ExtraArgs"]["CacheControl"].endswith("immutable")
+            self.keys.append(key)
+
+    client = FakeS3()
+    upload_bundle(bundle, endpoint="https://s3.test", bucket="visuals", key="commits/sha/component", client=client)
+    assert client.keys[-1] == "commits/sha/component/index.html"
 
 
 if __name__ == "__main__":
