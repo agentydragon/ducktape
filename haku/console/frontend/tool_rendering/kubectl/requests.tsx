@@ -11,7 +11,7 @@ import { z } from "zod";
 
 import { Field } from "../../field.tsx";
 import { definePreview, type ToolPreview } from "../entry.tsx";
-import { clampBlock, PreviewText, type PreviewProps } from "../variant.tsx";
+import { clampBlock, PreviewText, type PreviewProps } from "../vocabulary.tsx";
 
 export const KUBECTL_SERVER_ID = "kubectl-passthrough-mcp";
 

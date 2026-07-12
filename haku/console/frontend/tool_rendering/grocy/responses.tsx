@@ -18,7 +18,7 @@ import {
   PreviewText,
   PreviewTitle,
   type PreviewVariant,
-} from "../variant.tsx";
+} from "../vocabulary.tsx";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
 
 // A failed row: any kind other than "ok", with the server's error message. Matched after the

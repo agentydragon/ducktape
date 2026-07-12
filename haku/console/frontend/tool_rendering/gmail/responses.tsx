@@ -7,7 +7,7 @@ import { Anchor, Group } from "@mantine/core";
 import { z } from "zod";
 
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
-import { PreviewText } from "../variant.tsx";
+import { PreviewText } from "../vocabulary.tsx";
 
 // Gmail's compose view opens a draft directly by its id.
 function gmailDraftUrl(draftId: string): string {

@@ -1,7 +1,7 @@
 import hljs from "highlight.js/lib/core";
 import json from "highlight.js/lib/languages/json";
 
-import type { PreviewVariant } from "./tool_rendering/variant.tsx";
+import type { PreviewVariant } from "./tool_rendering/vocabulary.tsx";
 
 hljs.registerLanguage("json", json);
 

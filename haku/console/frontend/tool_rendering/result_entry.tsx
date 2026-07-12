@@ -6,7 +6,7 @@
 import type { ReactNode } from "react";
 import { z } from "zod";
 
-import type { PreviewVariant } from "./variant.tsx";
+import type { PreviewVariant } from "./vocabulary.tsx";
 
 export type ToolResultPreview<S extends z.ZodTypeAny = z.ZodTypeAny> = {
   schema: S;
@@ -17,7 +17,7 @@ export type ToolResultPreview<S extends z.ZodTypeAny = z.ZodTypeAny> = {
 };
 
 // The props every top-level result widget takes: the tool's parsed result payload plus the
-// variant to render — the result-side counterpart of variant.tsx's PreviewProps.
+// variant to render — the result-side counterpart of vocabulary.tsx's PreviewProps.
 export type ResultPreviewProps<Result> = { result: Result; variant: PreviewVariant };
 
 /** Bind a tool's result schema to the widget that renders it. `Widget` takes the schema's

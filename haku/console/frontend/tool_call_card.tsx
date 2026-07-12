@@ -5,7 +5,7 @@ import type { ApprovalDisplayFields } from "./approval_state.ts";
 import { ToolActionLine } from "./tool_action_line.tsx";
 import { ToolArgumentsField } from "./tool_arguments_field.tsx";
 import { ToolCallMeta } from "./tool_call_meta.tsx";
-import type { PreviewVariant } from "./tool_rendering/variant.tsx";
+import type { PreviewVariant } from "./tool_rendering/vocabulary.tsx";
 import { ToolResultField } from "./tool_result_field.tsx";
 import { VariantControl } from "./variant_control.tsx";
 

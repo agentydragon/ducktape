@@ -13,7 +13,7 @@ import { Field } from "../../field.tsx";
 import { BellIcon, CalendarIcon, ClockIcon, MapPinIcon, UsersIcon } from "../../icons.tsx";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
-import { PreviewText, PreviewTitle, type PreviewProps } from "../variant.tsx";
+import { PreviewText, PreviewTitle, type PreviewProps } from "../vocabulary.tsx";
 
 export const GOOGLE_CALENDAR_SERVER_ID = "google_calendar";
 

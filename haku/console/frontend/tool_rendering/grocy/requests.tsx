@@ -37,7 +37,7 @@ import {
   PreviewTitle,
   type PreviewProps,
   type PreviewVariant,
-} from "../variant.tsx";
+} from "../vocabulary.tsx";
 
 export const GROCY_SERVER_ID = "grocy-sf";
 

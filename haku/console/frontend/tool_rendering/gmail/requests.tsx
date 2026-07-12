@@ -25,7 +25,7 @@ import {
   PreviewText,
   PreviewTitle,
   type PreviewProps,
-} from "../variant.tsx";
+} from "../vocabulary.tsx";
 
 export const GMAIL_SERVER_ID = "gmail";
 

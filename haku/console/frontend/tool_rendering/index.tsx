@@ -22,7 +22,7 @@ import { HAKU_ROUTINE_SERVER_ID, hakuRoutinePreviews } from "./haku_routine/requ
 import { KUBECTL_SERVER_ID, kubectlPreviews } from "./kubectl/requests.tsx";
 import { renderResultPreview, type ToolResultPreview } from "./result_entry.tsx";
 import { TANA_RW_SERVER_ID, tanaPreviews } from "./tana/requests.tsx";
-import type { PreviewVariant } from "./variant.tsx";
+import type { PreviewVariant } from "./vocabulary.tsx";
 
 const REGISTRY = {
   [GMAIL_SERVER_ID]: gmailPreviews,

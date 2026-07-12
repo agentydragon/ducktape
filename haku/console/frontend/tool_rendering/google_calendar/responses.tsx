@@ -9,7 +9,7 @@ import { Anchor, Stack } from "@mantine/core";
 import { z } from "zod";
 
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
-import { PreviewText } from "../variant.tsx";
+import { PreviewText } from "../vocabulary.tsx";
 
 const zCreateCalendarEventResult = z.looseObject({
   event_id: z.string(),

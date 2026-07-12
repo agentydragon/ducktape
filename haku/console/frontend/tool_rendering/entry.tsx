@@ -5,7 +5,7 @@
 import type { ReactNode } from "react";
 import type { z } from "zod";
 
-import type { PreviewProps, PreviewVariant } from "./variant.tsx";
+import type { PreviewProps, PreviewVariant } from "./vocabulary.tsx";
 
 /** A registered tool's own one-line action description for the card's identity line — a
  * server-labelled verb phrase computed from the parsed args ("Gmail: Draft email", "kubectl:

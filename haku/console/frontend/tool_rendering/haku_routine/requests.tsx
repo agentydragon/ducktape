@@ -9,7 +9,7 @@ import { z } from "zod";
 import { Field } from "../../field.tsx";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
-import { clampBlock, PreviewText, type PreviewProps } from "../variant.tsx";
+import { clampBlock, PreviewText, type PreviewProps } from "../vocabulary.tsx";
 
 export const HAKU_ROUTINE_SERVER_ID = "haku_routine";
 

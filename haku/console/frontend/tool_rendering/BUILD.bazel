@@ -13,7 +13,7 @@ package(default_visibility = ["//visibility:public"])
 # Leaf: no widget deps, so index.tsx and each widget import it without a cycle.
 js_library(
     name = "variant",
-    srcs = ["variant.tsx"],
+    srcs = ["vocabulary.tsx"],
     deps = [
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -99,6 +99,6 @@ js_library(
 
 js_library(
     name = "variant_test",
-    srcs = ["variant.test.ts"],
+    srcs = ["vocabulary.test.ts"],
     deps = [":variant"],
 )

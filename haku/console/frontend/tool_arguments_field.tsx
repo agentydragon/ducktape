@@ -1,7 +1,7 @@
 import { Field } from "./field.tsx";
 import { JsonPreview } from "./json_preview.tsx";
 import { toolPreview } from "./tool_rendering/index.tsx";
-import type { PreviewVariant } from "./tool_rendering/variant.tsx";
+import type { PreviewVariant } from "./tool_rendering/vocabulary.tsx";
 
 /** The arguments of a tool call: a per-tool-type widget (the tool_rendering/ per-server requests modules)
  * when one matches — rendered directly, since it's self-describing — else the generic

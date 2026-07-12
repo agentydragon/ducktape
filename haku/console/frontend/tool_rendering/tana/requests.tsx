@@ -10,7 +10,7 @@ import { z } from "zod";
 import { Field } from "../../field.tsx";
 import { fetchTanaNodePreviews, type TanaNodePreview } from "../../tana_client.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
-import { clampBlock, PreviewBadge, PreviewText, type PreviewProps } from "../variant.tsx";
+import { clampBlock, PreviewBadge, PreviewText, type PreviewProps } from "../vocabulary.tsx";
 
 export const TANA_RW_SERVER_ID = "tana-rw";
 

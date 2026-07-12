@@ -1,5 +1,5 @@
 import { Field } from "./field.tsx";
-import type { PreviewVariant } from "./tool_rendering/variant.tsx";
+import type { PreviewVariant } from "./tool_rendering/vocabulary.tsx";
 import { unwrapToolResult } from "./tool_rendering/result_entry.tsx";
 import { toolResultPreview } from "./tool_rendering/index.tsx";
 
