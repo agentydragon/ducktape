@@ -305,11 +305,9 @@ function ApprovalsTab({
   return (
     <Stack gap="md">
       {!hasPending && !hasRecent && (
-        <section className="haku-shell-card">
-          <Text size="sm" c="dimmed">
-            No approvals pending.
-          </Text>
-        </section>
+        <Text size="sm" c="dimmed">
+          No approvals pending.
+        </Text>
       )}
       {hasPending && (
         <Stack gap="xs">
@@ -357,8 +355,8 @@ function ApprovalsTab({
 }
 
 // The approvals panel — the primary chrome surface. One block in the chrome column (below the
-// toolbar), it flexes to fill the column's height and scrolls its own list, so the smaller
-// settings/location/live panels can stack beneath it rather than being covered.
+// toolbar), it follows its content up to the available height and then scrolls its own list, so
+// the smaller settings/location/live panels can stack beneath it rather than being covered.
 function ApprovalsPanel(props: ShellChromeProps) {
   const pendingCount = props.pendingApprovals.length + props.geolocationApprovals.length;
   return (
@@ -420,8 +418,8 @@ function ChromeToggle({
 // The persistent shell chrome over the framed haku-ui: a floating top-right **toolbar** of
 // toggle buttons (squished together, no gaps) over a column that stacks its open panels **by
 // Y**, never by z-index. Each button is `filled` while its panel is open; opening more than one
-// panel stacks them vertically under the toolbar — the approvals panel flexes to fill remaining
-// height and scrolls internally, the smaller settings/location/live panels take their natural
+// panel stacks them vertically under the toolbar — the approvals panel follows its content up to
+// the available height and scrolls internally, while settings/location/live take their natural
 // height beneath it — so panels share the column instead of floating over one another. Toggles
 // are neutral gray; only genuinely semantic cues keep a color (red pending count, orange
 // offline, green live-location dot).

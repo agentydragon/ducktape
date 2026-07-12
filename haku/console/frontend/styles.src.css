@@ -150,22 +150,23 @@
   pointer-events: auto;
 }
 
-/* The approvals panel flexes to fill the column and scrolls its own list, so the smaller side
-   panels stacked beneath it stay reachable rather than being pushed off-screen. */
+/* The approvals panel follows its content until the column runs out of room, then shrinks and
+   scrolls its list so smaller side panels remain reachable. */
 .haku-shell-approvals {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
 }
 
-/* Settings panel: bounded so it can't hog the column when opened alongside approvals; its own
-   list scrolls inside. */
+/* The settings panel has the same content-sized behavior: only shrink and scroll its list when
+   the available column height constrains it. */
 .haku-shell-settings {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   min-height: 0;
-  max-height: 45vh;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;

@@ -21,9 +21,10 @@ components + **Tailwind v4** utilities — modeled on
   semantic color cues (red pending count, orange offline, green live-location dot): approvals (a
   checklist), settings (a gear), plus a crossed-wifi live-offline warning when the event socket
   is down and a location pin while the standing grant is held. Below the toolbar, the open panels
-  stack: the approvals panel (queue + a Past-tool-calls link) flexes to fill and scrolls its
-  list; the smaller settings (MCP accounts), location (stop/withdraw), and live-offline panels
-  take their natural height beneath it. Opening several shows them stacked, not overlapping.
+  stack: the approvals panel (queue + a Past-tool-calls link) follows its content until it reaches
+  the available height, then scrolls its list; settings (MCP accounts) behaves the same way, while
+  location (stop/withdraw) and live-offline panels take their natural height beneath them. Opening
+  several shows them stacked, not overlapping.
 - `settings_page.tsx` — `SettingsPanel`, the operator settings drawer (a `ShellChrome` panel
   toggled from the toolbar's gear): MCP operator account connect/reconnect/disconnect. It's a
   chrome drawer, not a route, so it stacks alongside the other panels.
