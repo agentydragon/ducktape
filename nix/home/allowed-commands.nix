@@ -64,6 +64,13 @@ let
 
   bazelCommands = prefixCommandProduct bazelExecutables bazelSubcommands;
 
+  # bbr test — BuildBuddy RBE test wrapper, the repo's preferred test runner
+  # (AGENTS.md: "Prefer bbr for build/test/query"). Same safety profile as the
+  # already-allowed `bazel test`/`bazelisk test` (writes only to build
+  # artifacts); runs outside the sandbox (Bazel RBE network) like other
+  # Bazel-family commands. Scoped to `test` only; build/query stay prompt-gated.
+  bbrTestCommands = prefixCommandProduct [ "bbr" ] [ "test" ];
+
   # Generate "nix develop <flag> <cmd>" variants for both --command and -c flags.
   nixDevelopWrapped =
     commands:
@@ -149,6 +156,7 @@ in
     gitReadOnlyCommands
     ++ ghReadOnlyCommands
     ++ bazelCommands
+    ++ bbrTestCommands
     ++ nixDevelopBazelCommands
     ++ nixCommands
     ++ [
