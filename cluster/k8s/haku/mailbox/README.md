@@ -32,10 +32,11 @@ deliberately tiny (its documented declarative-deployments workflow):
   (the built-in defaults only verify on `local_port == 25`; the listener
   is on :2525), the three listeners
   (SMTP :2525 STARTTLS, HTTP :8080, IMAP :1143 — the latter two plaintext,
-  cluster-internal only), a built-in-User-role alias +
-  `Authentication.defaultUserRoleIds` grant (externally-authenticated
-  principals get ONLY these default roles — the set ships empty, which
-  403s every JMAP/IMAP request even for a valid token),
+  cluster-internal only), built-in User and System Administrator role aliases
+  plus explicit `Authentication.defaultUserRoleIds` and
+  `defaultAdminRoleIds` grants (externally-authenticated principals get only
+  these default roles; making both mappings explicit also repairs databases
+  created before the current bootstrap path),
   an `MtaStageAuth` override so the
   DNAT'ed :2525 listener accepts unauthenticated MX traffic (the upstream
   default demands SMTP AUTH on every port except 25), and the TLS
