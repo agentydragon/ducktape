@@ -1,5 +1,18 @@
 # Nix Configuration TODOs
 
+## Design the cluster-based Syncthing topology
+
+ActivityWatch participants (`wyrm2`, `iguana`, `rugged`, and `atlas`) now own
+a deliberately narrow, Nix-managed Syncthing configuration: each has only its
+ActivityWatch send-only folder and the cluster receiver as a peer. The old
+general-purpose wyrm2 configuration is backed up locally at
+`~/backups/syncthing/2026-07-11-pre-declarative-reset` and is intentionally not
+managed or restarted.
+
+Before adding other folders or peers, decide the target cluster topology,
+identity ownership, folder ownership, and recovery procedure. Preserve this
+one-purpose configuration until that design is settled.
+
 ## Consider wiring Codex OTEL export
 
 Codex supports native OTLP exporters via `[otel]` in `config.toml`, including

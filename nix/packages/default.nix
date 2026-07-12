@@ -313,6 +313,8 @@ rec {
     ];
   };
 
+  aw-watcher-tmux = pkgs.callPackage ./aw-watcher-tmux.nix { };
+
   # Alias for programs.gnome-shell.extensions compatibility.
   gnome-shell-aiquota = aiquota;
   tana-outliner = pkgs.callPackage ./tana-outliner.nix { };

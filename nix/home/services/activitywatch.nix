@@ -3,6 +3,7 @@
   lib,
   pkgs,
   enableGui,
+  ducktapePackages,
   ...
 }:
 let
@@ -11,23 +12,26 @@ let
   syncRoot = cfg.sync.root;
   syncthingCfg = cfg.sync.syncthing;
   syncthingConfigured = syncthingCfg.certFile != null && syncthingCfg.keySopsFile != null;
-  syncPushScript = pkgs.writeShellScript "activitywatch-sync-push" ''
+  serverReadyScript = pkgs.writeShellScript "activitywatch-server-ready" ''
     set -eu
 
-    mkdir -p ${lib.escapeShellArg syncRoot}
     for _ in $(${pkgs.coreutils}/bin/seq 1 30); do
       if ${pkgs.curl}/bin/curl -fsS http://127.0.0.1:${toString cfg.sync.localPort}/api/0/info >/dev/null; then
-        exec ${pkgs.activitywatch}/bin/aw-sync \
-          --host 127.0.0.1 \
-          --port ${toString cfg.sync.localPort} \
-          --sync-dir ${lib.escapeShellArg syncRoot} \
-          sync-advanced \
-          --mode push
+        exit 0
       fi
       ${pkgs.coreutils}/bin/sleep 1
     done
 
-    echo "ActivityWatch local server is not reachable on 127.0.0.1:${toString cfg.sync.localPort}; skipping sync push"
+    echo "ActivityWatch server did not become ready on 127.0.0.1:${toString cfg.sync.localPort}" >&2
+    exit 1
+  '';
+  syncPushScript = pkgs.writeShellScript "activitywatch-sync-push" ''
+    exec ${pkgs.activitywatch}/bin/aw-sync \
+      --host 127.0.0.1 \
+      --port ${toString cfg.sync.localPort} \
+      --sync-dir ${lib.escapeShellArg syncRoot} \
+      sync-advanced \
+      --mode push
   '';
 in
 {
@@ -84,7 +88,7 @@ in
   config = lib.mkIf enableGui (
     lib.mkMerge [
       {
-        # aw-server, aw-qt (tray), aw-sync. aw-qt only starts aw-server (below);
+        # aw-server and aw-sync. The server runs headlessly under systemd;
         # awatcher owns window+AFK capture.
         home.packages = [ pkgs.activitywatch ];
       }
@@ -111,21 +115,42 @@ in
         systemd.user.services.awatcher = {
           Unit = {
             Description = "awatcher — ActivityWatch window/AFK watcher";
-            After = [ "graphical-session.target" ];
+            Requires = [ "activitywatch-server.service" ];
+            After = [
+              "activitywatch-server.service"
+              "graphical-session.target"
+            ];
             PartOf = [ "graphical-session.target" ];
           };
           Service = {
             ExecStart = "${pkgs.awatcher}/bin/awatcher";
             # awatcher exits 0 (not a failure) when the focused-window-d-bus extension
-            # isn't loaded yet (e.g. shell started before the install), and may also
-            # start before aw-qt has aw-server listening. Restart=always retries until
-            # both are up; it runs indefinitely once wired.
+            # isn't loaded yet (e.g. shell started before the install).
+            # Restart=always retries until it is available; awatcher runs indefinitely
+            # once wired.
             Restart = "always";
             RestartSec = 5;
           };
           Install = {
             WantedBy = [ "graphical-session.target" ];
           };
+        };
+
+        systemd.user.services.aw-watcher-tmux = {
+          Unit = {
+            Description = "ActivityWatch tmux session activity watcher";
+            Requires = [ "activitywatch-server.service" ];
+            After = [ "activitywatch-server.service" ];
+          };
+          Service = {
+            ExecStart = lib.getExe ducktapePackages.aw-watcher-tmux;
+            # Match tmux's user-runtime socket location (e.g.
+            # /run/user/1001/tmux-1001/default) rather than its /tmp fallback.
+            Environment = "TMUX_TMPDIR=%t";
+            Restart = "on-failure";
+            RestartSec = 5;
+          };
+          Install.WantedBy = [ "default.target" ];
         };
 
         assertions = [
@@ -142,25 +167,16 @@ in
           };
         };
 
-        # aw-qt starts only aw-server; awatcher owns the window+afk buckets.
-        xdg.configFile."activitywatch/aw-qt/aw-qt.toml".source = toTOML "aw-qt.toml" {
-          aw-qt.autostart_modules = [ "aw-server" ];
-        };
-
-        xdg.autostart = {
-          enable = true;
-          entries = [
-            (pkgs.writeText "activitywatch.desktop" ''
-              [Desktop Entry]
-              Type=Application
-              Name=ActivityWatch
-              Exec=${pkgs.activitywatch}/bin/aw-qt
-              Icon=activitywatch
-              Terminal=false
-              Categories=Utility;
-              X-GNOME-Autostart-enabled=true
-            '')
-          ];
+        systemd.user.services.activitywatch-server = {
+          Unit.Description = "ActivityWatch server";
+          Service = {
+            ExecStart = "${pkgs.activitywatch}/bin/aw-server --host 127.0.0.1 --port ${toString cfg.sync.localPort}";
+            ExecStartPost = serverReadyScript;
+            Restart = "on-failure";
+            RestartSec = 5;
+            TimeoutStartSec = 45;
+          };
+          Install.WantedBy = [ "default.target" ];
         };
 
         home.activation.activitywatchSyncDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
@@ -168,7 +184,11 @@ in
         '';
 
         systemd.user.services.activitywatch-sync-push = {
-          Unit.Description = "Push ActivityWatch buckets into Syncthing sync folder";
+          Unit = {
+            Description = "Push ActivityWatch buckets into Syncthing sync folder";
+            Requires = [ "activitywatch-server.service" ];
+            After = [ "activitywatch-server.service" ];
+          };
           Service = {
             Type = "oneshot";
             ExecStart = syncPushScript;
@@ -197,6 +217,11 @@ in
           enable = true;
           cert = toString syncthingCfg.certFile;
           key = config.sops.secrets.activitywatch_syncthing_key.path;
+          # This is the ActivityWatch-only Syncthing topology. Keep its config
+          # and database separate from any older general-purpose Syncthing
+          # state in ~/.config/syncthing; the Home Manager module also uses this
+          # path when it reconciles the managed folders and devices.
+          extraOptions = [ "--home=${config.xdg.stateHome}/syncthing" ];
           overrideDevices = true;
           overrideFolders = true;
           settings = {

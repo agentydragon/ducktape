@@ -9,6 +9,14 @@
   ...
 }:
 {
+  programs.chromium = {
+    enable = true;
+    extensions = [
+      # ActivityWatch Web Watcher — reports active tabs to the local aw-server.
+      "nglaklhklhcoonedhgnpgddginnjdadi"
+    ];
+  };
+
   environment.systemPackages =
     (with pkgs; [
       gnome-terminal
