@@ -2,14 +2,53 @@
 # The reconciler (provision.py; per-household bootstrap Job + daily CronJob)
 # converges each listed user to exactly this permission set, creating the user if
 # absent. Unlisted users are untouched — born read-only via
-# DEFAULT_PERMISSIONS=none (../app-base). Permission names are rows of
-# Grocy's permission_hierarchy table. "ADMIN" here means "grant every permission
-# Grocy knows about" — provision.py expands it to the full explicit set rather than
-# relying on Grocy's own hierarchy resolution, which was observed live (2026-07-12) to
-# NOT treat holding just the ADMIN row as satisfying descendant checks
-# (MASTER_DATA_EDIT/STOCK_PURCHASE 403'd for a user converged to exactly {ADMIN}).
+# DEFAULT_PERMISSIONS=none (../app-base). Permission names are rows of Grocy's
+# permission_hierarchy table (GET /api/objects/permission_hierarchy) — the reconciler
+# validates every name against that table live and fails loud on a typo.
+#
+# Every permission is listed explicitly per user, not just "ADMIN": Grocy's own runtime
+# check (`User::HasPermission`) does an exact-name lookup, not a hierarchy walk — holding
+# only the ADMIN row does NOT satisfy a check for a descendant permission like
+# MASTER_DATA_EDIT or STOCK_PURCHASE (confirmed live, 2026-07-12: a user converged to
+# exactly {ADMIN} still 403'd on both). So "full access" means every row below, not the
+# one ADMIN row. Keep this list in sync with `permission_hierarchy` if Grocy ever adds a
+# new permission (the reconciler's upfront validation will fail loud if it's missing here
+# but referenced by a user, but not the reverse — a new permission just sits ungranted
+# until added here).
+full_access: &full_access
+  - ADMIN
+  - USERS
+  - USERS_CREATE
+  - USERS_EDIT
+  - USERS_READ
+  - USERS_EDIT_SELF
+  - STOCK
+  - SHOPPINGLIST
+  - RECIPES
+  - CHORES
+  - BATTERIES
+  - TASKS
+  - EQUIPMENT
+  - CALENDAR
+  - STOCK_PURCHASE
+  - STOCK_CONSUME
+  - STOCK_INVENTORY
+  - STOCK_TRANSFER
+  - STOCK_OPEN
+  - STOCK_EDIT
+  - SHOPPINGLIST_ITEMS_ADD
+  - SHOPPINGLIST_ITEMS_DELETE
+  - RECIPES_MEALPLAN
+  - CHORE_TRACK_EXECUTION
+  - CHORE_UNDO_EXECUTION
+  - BATTERIES_TRACK_CHARGE_CYCLE
+  - BATTERIES_UNDO_CHARGE_CYCLE
+  - TASKS_UNDO_EXECUTION
+  - TASKS_MARK_COMPLETED
+  - MASTER_DATA_EDIT
+
 users:
-  agentydragon: [ADMIN]
-  auragon: [ADMIN]
+  agentydragon: *full_access
+  auragon: *full_access
   # Explicitly empty: haku stays read-only, converged back even if elevated in the UI.
   haku: []
