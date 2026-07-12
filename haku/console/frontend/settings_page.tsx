@@ -6,7 +6,7 @@ import {
   disconnectMcpOperatorAuth,
   fetchMcpOperatorAuthStatuses,
   type McpOperatorAuthStatus,
-  startMcpOperatorAuth,
+  connectMcpOperatorAuth,
 } from "./client.ts";
 import { openExternal, POPUP_HINT } from "./open_external.ts";
 import { toastError, toastSuccess } from "./toast.ts";
@@ -43,14 +43,9 @@ function McpAccountCard({
       </Group>
       <Group justify="flex-end" gap="xs" mt="sm">
         {connected ? (
-          <>
-            <Button size="compact-sm" variant="light" onClick={onConnect}>
-              Reconnect
-            </Button>
-            <Button size="compact-sm" variant="subtle" color="red" onClick={onDisconnect}>
-              Disconnect
-            </Button>
-          </>
+          <Button size="compact-sm" variant="subtle" color="red" onClick={onDisconnect}>
+            Disconnect
+          </Button>
         ) : (
           <Button size="compact-sm" variant="light" onClick={onConnect}>
             Connect
@@ -98,7 +93,7 @@ export function SettingsPanel() {
   }, [load]);
 
   function connect(serverId: string) {
-    startMcpOperatorAuth(serverId).then(
+    connectMcpOperatorAuth(serverId).then(
       (started) => {
         if (!openExternal(started.authorization_url)) {
           toastError("Pop-up blocked", POPUP_HINT);

@@ -388,7 +388,7 @@ def test_operator_oauth_association_drives_tool_reflection(make_client, tmp_path
             "/api/capabilities/mcp-servers", headers={"X-authentik-username": "operator@example.com"}
         ).json()
         started = client.post(
-            "/api/mcp/operator-auth/grocy-sf/start",
+            "/api/mcp/operator-auth/grocy-sf/connect",
             headers={"X-CSRF-Token": _csrf(client), "X-authentik-username": "operator@example.com"},
         )
         state = parse_qs(urlparse(started.json()["authorization_url"]).query)["state"][0]
@@ -419,7 +419,7 @@ def test_operator_oauth_static_client_id_skips_dynamic_registration(make_client,
         ) as client,
     ):
         started = client.post(
-            "/api/mcp/operator-auth/grocy-sf/start",
+            "/api/mcp/operator-auth/grocy-sf/connect",
             headers={"X-CSRF-Token": _csrf(client), "X-authentik-username": "operator@example.com"},
         )
         assert started.status_code == 200, started.text
@@ -607,7 +607,7 @@ def test_operator_oauth_association_drives_approved_tool_execution(make_client, 
         ]
 
         started = client.post(
-            "/api/mcp/operator-auth/grocy-sf/start",
+            "/api/mcp/operator-auth/grocy-sf/connect",
             headers={"X-CSRF-Token": _csrf(client), "X-authentik-username": "operator@example.com"},
         )
         assert started.status_code == 200, started.text
@@ -626,6 +626,18 @@ def test_operator_oauth_association_drives_approved_tool_execution(make_client, 
         after = client.get("/api/mcp/operator-auth", headers={"X-authentik-username": "operator@example.com"}).json()
         assert after["associations"][0]["status"] == "connected"
         assert after["associations"][0]["connected_at"]
+
+        reconnect = client.post(
+            "/api/mcp/operator-auth/grocy-sf/connect",
+            headers={"X-CSRF-Token": _csrf(client), "X-authentik-username": "operator@example.com"},
+        )
+        removed_start = client.post(
+            "/api/mcp/operator-auth/grocy-sf/start",
+            headers={"X-CSRF-Token": _csrf(client), "X-authentik-username": "operator@example.com"},
+        )
+        assert reconnect.status_code == 409
+        assert reconnect.json()["detail"] == "MCP server grocy-sf is already connected; disconnect it first"
+        assert removed_start.status_code == 404
 
         submitted = _submit(client)
         approved = client.post(

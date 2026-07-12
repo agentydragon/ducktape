@@ -17,7 +17,7 @@ export type ToolCallRecord = components["schemas"]["ToolCallRecord"];
 export type McpOperatorAuthStatus =
   | components["schemas"]["McpOperatorAuthConnected"]
   | components["schemas"]["McpOperatorAuthUnconnected"];
-export type McpOperatorAuthStartResponse = components["schemas"]["McpOperatorAuthStartResponse"];
+export type McpOperatorAuthConnectResponse = components["schemas"]["McpOperatorAuthConnectResponse"];
 
 // FastAPI error responses are `{detail: string}`; surface that real reason rather
 // than a generic message, falling back when the body isn't shaped that way. Exported
@@ -77,9 +77,9 @@ export async function fetchMcpOperatorAuthStatuses(): Promise<McpOperatorAuthSta
   return data.associations ?? [];
 }
 
-export async function startMcpOperatorAuth(serverId: string): Promise<McpOperatorAuthStartResponse> {
+export async function connectMcpOperatorAuth(serverId: string): Promise<McpOperatorAuthConnectResponse> {
   const csrfToken = await fetchCsrfToken();
-  const { data, error } = await api.POST("/api/mcp/operator-auth/{server_id}/start", {
+  const { data, error } = await api.POST("/api/mcp/operator-auth/{server_id}/connect", {
     params: { path: { server_id: serverId } },
     headers: { "X-CSRF-Token": csrfToken },
   });

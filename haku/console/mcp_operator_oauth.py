@@ -95,7 +95,7 @@ class McpOperatorAuthStatusResponse(BaseModel):
     associations: list[McpOperatorAuthStatus] = Field(default_factory=list)
 
 
-class McpOperatorAuthStartResponse(BaseModel):
+class McpOperatorAuthConnectResponse(BaseModel):
     server_id: str
     authorization_url: str
     expires_at: datetime.datetime
@@ -200,11 +200,17 @@ class PostgresMcpOperatorOAuthStore:
             ]
         )
 
-    async def start_flow(
+    async def connect_flow(
         self, *, server: McpServerEntry, operator_principal: str, public_base_url: str
-    ) -> McpOperatorAuthStartResponse:
+    ) -> McpOperatorAuthConnectResponse:
         if not _operator_oauth_enabled(server):
             raise HTTPException(status_code=404, detail=f"MCP server {server.id} does not use operator OAuth")
+        with self._sessions.begin() as session:
+            existing = session.get(McpOperatorOAuthAssociation, (server.id, operator_principal))
+            if existing is not None:
+                raise HTTPException(
+                    status_code=409, detail=f"MCP server {server.id} is already connected; disconnect it first"
+                )
         flow = await _build_operator_oauth_flow(server, public_base_url.rstrip("/"))
         with self._sessions.begin() as session:
             now = datetime.datetime.now(datetime.UTC)
@@ -232,7 +238,7 @@ class PostgresMcpOperatorOAuthStore:
                     scope=flow.scope,
                 )
             )
-        return McpOperatorAuthStartResponse(
+        return McpOperatorAuthConnectResponse(
             server_id=server.id, authorization_url=flow.authorization_url, expires_at=flow.expires_at
         )
 
@@ -251,38 +257,28 @@ class PostgresMcpOperatorOAuthStore:
             existing = session.get(
                 McpOperatorOAuthAssociation, (flow.server_id, flow.operator_principal), with_for_update=True
             )
-            if existing is None:
-                existing = McpOperatorOAuthAssociation(
-                    server_id=flow.server_id,
-                    operator_principal=flow.operator_principal,
-                    created_at=now,
-                    updated_at=now,
-                    client_id=flow.client_id,
-                    client_secret=flow.client_secret,
-                    client_secret_expires_at=flow.client_secret_expires_at,
-                    token_endpoint_auth_method=flow.token_endpoint_auth_method,
-                    token_endpoint=flow.token_endpoint,
-                    resource=flow.resource,
-                    access_token=token.access_token,
-                    refresh_token=token.refresh_token,
-                    token_type=token.token_type,
-                    scope=token.scope or flow.scope,
-                    token_expires_at=token_expires_at,
+            if existing is not None:
+                raise HTTPException(
+                    status_code=409, detail=f"MCP server {flow.server_id} is already connected; disconnect it first"
                 )
-                session.add(existing)
-            else:
-                existing.updated_at = now
-                existing.client_id = flow.client_id
-                existing.client_secret = flow.client_secret
-                existing.client_secret_expires_at = flow.client_secret_expires_at
-                existing.token_endpoint_auth_method = flow.token_endpoint_auth_method
-                existing.token_endpoint = flow.token_endpoint
-                existing.resource = flow.resource
-                existing.access_token = token.access_token
-                existing.refresh_token = token.refresh_token
-                existing.token_type = token.token_type
-                existing.scope = token.scope or flow.scope
-                existing.token_expires_at = token_expires_at
+            existing = McpOperatorOAuthAssociation(
+                server_id=flow.server_id,
+                operator_principal=flow.operator_principal,
+                created_at=now,
+                updated_at=now,
+                client_id=flow.client_id,
+                client_secret=flow.client_secret,
+                client_secret_expires_at=flow.client_secret_expires_at,
+                token_endpoint_auth_method=flow.token_endpoint_auth_method,
+                token_endpoint=flow.token_endpoint,
+                resource=flow.resource,
+                access_token=token.access_token,
+                refresh_token=token.refresh_token,
+                token_type=token.token_type,
+                scope=token.scope or flow.scope,
+                token_expires_at=token_expires_at,
+            )
+            session.add(existing)
             return _oauth_status_from_row(flow.server_id, flow.operator_principal, existing)
 
     def disconnect(self, *, server_id: str, operator_principal: str) -> None:
@@ -622,13 +618,13 @@ async def mcp_operator_auth_statuses(
     return oauth_store.list_statuses(servers=_load_servers(settings), operator_principal=_operator_principal(request))
 
 
-@router.post("/api/mcp/operator-auth/{server_id}/start")
-async def start_mcp_operator_auth(
+@router.post("/api/mcp/operator-auth/{server_id}/connect")
+async def connect_mcp_operator_auth(
     server_id: str, request: Request, csrf_protect: Csrf, settings: SettingsDep, oauth_store: OAuthStoreDep
-) -> McpOperatorAuthStartResponse:
+) -> McpOperatorAuthConnectResponse:
     await csrf_protect.validate_csrf(request)
     server = _server_entry(settings, server_id)
-    return await oauth_store.start_flow(
+    return await oauth_store.connect_flow(
         server=server,
         operator_principal=_operator_principal(request),
         public_base_url=_public_base_url(request, settings),

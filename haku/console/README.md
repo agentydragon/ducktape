@@ -70,12 +70,13 @@ Core endpoints:
 - `GET /api/capabilities/mcp-servers` — reflect the configured connected MCP servers and each
   server's `tools/list` metadata. Entries are explicitly `alive` or `degraded`; the console config
   names reachable servers, and each live MCP server remains the tool schema source.
-- `GET /api/mcp/operator-auth`, `POST /api/mcp/operator-auth/{server_id}/start`,
+- `GET /api/mcp/operator-auth`, `POST /api/mcp/operator-auth/{server_id}/connect`,
   `DELETE /api/mcp/operator-auth/{server_id}`, and `GET /api/mcp/operator-auth/callback` —
   operator account association for MCP servers whose config enables `operator_oauth` (this flow
   lives in `mcp_operator_oauth.py`, not the approval router). The catalog stays in the console
   YAML/ConfigMap; Postgres stores only short-lived DCR/PKCE flow state and per-operator token
   associations.
+  Connecting is available only while unconnected; disconnect first to replace an account link.
 - `POST /api/tool-calls` — submit a call with `server_id`, `tool_name`, exact
   `arguments`, and explicit `wait_for_ms`. The console mints the canonical `tool_call_id`.
 - `GET /api/approvals/pending`, `GET /api/approvals/events?after_event_id=...`, and
