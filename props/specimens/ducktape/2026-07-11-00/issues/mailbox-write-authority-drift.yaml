@@ -1,0 +1,16 @@
+rationale: |
+  The runtime hard rules call every data source read-only and inventory `haku-state`, `haku-sandbox`, and managed Gmail labels as autonomous write surfaces, while the mailbox guide separately grants Haku authority to mark, organize, move, and delete mail in `haku@allegedly.works`. The security inventory repeats both the universal read-only claim and the mailbox mutation capability, so the prompt carries mutually inconsistent authority rules and each new Haku-owned surface has several drifting inventories to update. Keep one canonical runtime authority inventory that distinguishes operator-owned read-only sources from explicitly scoped Haku-owned write surfaces, and have source guides and the security enforcement index point to it.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      haku/base/instructions.md:
+        - [524, 546]
+      haku/base/sources/mailbox.md:
+        - [3, 8]
+        - [63, 65]
+      haku/docs/security.md:
+        - [40, 43]
+        - [49, 49]
+    critic_scopes_expected_to_recall:
+      - [haku/base/instructions.md, haku/base/sources/mailbox.md, haku/docs/security.md]

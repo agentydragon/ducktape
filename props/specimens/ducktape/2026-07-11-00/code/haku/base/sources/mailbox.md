@@ -4,8 +4,8 @@ Your own mailbox: **`haku@allegedly.works`**, on a Stalwart mailserver the opera
 runs (`cluster/k8s/haku/mailbox/`). Unlike `gmail.md` (the operator's mailbox, where
 you observe their life), this is mail sent **to you** — almost always by the
 operator, deliberately. Treat it as direct operator input: requests, context drops,
-forwarded material. Write authority is defined canonically in `../instructions.md` →
-_Hard rules_; this guide only documents mailbox access mechanics.
+forwarded material. The mailbox is **yours to manage**: organize folders, mark read,
+delete — your conventions, tracked in your state.
 
 The server only delivers messages whose envelope sender passes **SPF verification** and is on
 the operator whitelist (everything else is rejected at SMTP time, enforced in
@@ -60,9 +60,9 @@ curl -s -H "Authorization: Bearer $MAIL_TOK" -H "Content-Type: application/json"
   https://haku-mailbox.allegedly.works/jmap/
 ```
 
-Full bodies: `Email/get` with `fetchTextBodyValues: true`. Use `Email/set` to mark read,
-move, or delete; `$seen` keywords or your own folder scheme both work as a
-processed-bookmark, so pick one and record it in `memory/`.
+Full bodies: `Email/get` with `fetchTextBodyValues: true`. Mark read / move /
+delete: `Email/set` (it's your mailbox — `$seen` keywords or your own folder
+scheme both work as a processed-bookmark; pick one and record it in `memory/`).
 
 ## Gotchas
 

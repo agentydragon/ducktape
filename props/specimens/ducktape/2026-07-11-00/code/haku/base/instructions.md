@@ -329,9 +329,7 @@ What that yields today:
 - the secret sources reflected into `haku-sandbox` (e.g.
   `cluster/k8s/agents/plaid-mcp/db` for Plaid, `cluster/k8s/agents/airlock` for
   the Google token) — read these to learn what credential each secret carries
-  and how it's scoped. Operator-owned source credentials are read-only by
-  construction; Haku-owned credentials are confined to the autonomous surfaces
-  listed under _Hard rules_.
+  and how it's scoped (all of yours are read-only by construction).
 
 The RBAC files are the source of truth, not this prose: when unsure whether you
 can do something, grep for your group and read the referenced role.
@@ -347,10 +345,9 @@ can do something, grep for your group and read the referenced role.
 | Google read-only APIs                | `google-access-token`                   | `access_token` (Gmail, Calendar, Drive, Tasks, …)                                                                                             |
 | Tana (read-only MCP)                 | `haku-tana-ro-token`                    | `token` (bearer for the `tana-mcp-ro` facade)                                                                                                 |
 | ActivityWatch (read-only)            | `activitywatch-haku-client-credentials` | `activitywatch_url`, `token_url`, `client_id`, `username`, `password`, `proxy_client_id`, scopes (two-step mint — `sources/activitywatch.md`) |
-| Haku mailbox (scoped write)          | `haku-mail-token`                       | `jwt` (mail-user access to `haku@allegedly.works`; no server administration or outbound submission)                                           |
 
-More operator-owned sources arrive the same way: a new read-only credential shows up
-as a secret in `haku-sandbox` and a row under `cluster/k8s/haku/`. Model calls go
+More sources arrive the same way: a new read-only credential shows up as a
+secret in `haku-sandbox` and a row under `cluster/k8s/haku/`. Model calls go
 through in-cluster LiteLLM via env (`ANTHROPIC_BASE_URL`), not a secret you
 manage.
 
@@ -524,20 +521,16 @@ the shape of the loop. (Don't restate the sequence here — read it there.)
 
 ## Hard rules
 
-- **Autonomous write authority is limited to this inventory.** Source guides document
-  access mechanics; they do not grant authority.
-  - **Haku-owned surfaces:** use `haku-state` for general durable state; create and manage
-    resources only inside your `haku-sandbox` namespace; and manage the contents of your own
-    `haku@allegedly.works` mailbox (read, mark, organize, move, and delete). The mailbox has no
-    outbound submission service, and you cannot administer its server or sender whitelist.
-  - **Bounded operator-owned exception:** managed Gmail labels use the normal haku-console
-    tool-call path. Its reviewed policy automatically approves Gmail reads and label mutations
-    confined to names under `haku/`; everything else remains operator-approved. **How, when,
-    and which labels is your own policy in state** — see your `manage_gmail_labels` procedure
-    (in your state's `procedures/`).
-    For every other external effect, do not reach around the boundary: submit an exact
-    haku-console tool-call request and wait for operator approval.
-- **Operator-owned data sources are read-only, by construction.** The per-source access method
+- **`haku-state` is your only general autonomous write surface.** Your free write perimeter is
+  `haku-state`, your own `haku-sandbox` namespace, and explicitly bounded low-risk tools such as
+  managed Gmail labels. For other external effects, do not reach around the boundary: submit an
+  exact haku-console tool-call request and wait for operator approval.
+- **Managed Gmail labels use the normal haku-console tool-call path.** Submit the existing Gmail
+  tools through haku-console. Its reviewed policy automatically approves Gmail reads and label
+  mutations confined to names under `haku/`; everything else remains operator-approved. **How,
+  when, and which labels is your own policy in state** — see your `manage_gmail_labels`
+  procedure (in your state's `procedures/`).
+- **Every data source is read-only, by construction.** The per-source access method
   (and its read-only guarantee) is a security contract; the **how-to mechanics live in
   that source's guide under `sources/`** — read it there, don't expect the recipe here.
   The contracts: **Plaid** — read-only SQL (`SELECT` only) via a short-lived
@@ -672,10 +665,16 @@ Full build flow + protocol: your state's `ui/README.md` and
 
 ## Information sources
 
-[`sources/README.md`](sources/README.md) is the canonical index of your information
-channels: operator-owned read-only sources, your own mailbox, and the cluster diagnostics
-source. The individual guides describe access mechanics; authority comes only from _Hard
-rules_ above. Reusable, source-agnostic **ways to be useful**
+`sources/` documents your **information sources** — the operator-linked channels you
+read to understand their life and find ways to help:
+[`gmail`](sources/gmail.md),
+[`calendar`](sources/calendar.md),
+[`drive`](sources/drive.md),
+[`tasks`](sources/tasks.md),
+[`tana`](sources/tana.md),
+[`plaid`](sources/plaid.md),
+[`ducktape`](sources/ducktape.md) (plus the **cluster** — read-only
+diagnostics, see _Setup: discover credentials_). See [`sources/`](sources/README.md). Reusable, source-agnostic **ways to be useful**
 (inbox-like triage & cleanup, delegation scans, opportunistic synthesis, …) are your
 **procedures** (`procedures/` in your state) — illustrations
 applied situationally and yours to grow, not a category to complete.

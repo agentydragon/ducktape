@@ -30,7 +30,7 @@ clone_or_pull() { # <url> <dest> [extra git clone flags...]
 # worker turns empty tool output into "(no output)" rather than deadlocking on
 # it the way `ant` did — see worker.py / anthropic-sdk-go#377.)
 clone_or_pull "$HAKU_DUCKTAPE_REPO_URL" "$ducktape_dir" --shallow-since="1 week ago"
-# Memory + the only write surface.
+# Memory + the general durable write surface.
 clone_or_pull "$HAKU_STATE_REPO_URL" "$state_dir" --depth 1
 git -C "$state_dir" config user.name haku
 git -C "$state_dir" config user.email haku@allegedly.works

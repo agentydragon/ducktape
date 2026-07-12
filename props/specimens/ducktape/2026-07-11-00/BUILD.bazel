@@ -1,7 +1,9 @@
 load("//props/specimens:defs.bzl", "specimen_targets")
 
-# Snapshot of ducktape's Haku console at ef3f4741a740473fdd8ba948451bdbf540a4c407.
-# Included: haku/console and the shared haku/console tool-call API contract it imports.
+# Snapshot of ducktape's Haku console and source-authority docs at
+# ef3f4741a740473fdd8ba948451bdbf540a4c407.
+# Included: haku/console, the shared haku/console tool-call API contract it imports,
+# and the Haku base/security files needed by the source-authority issue.
 # Excluded: unrelated monorepo packages and generated/build outputs.
 specimen_targets(
     name = "specimen",

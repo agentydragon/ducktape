@@ -20,9 +20,10 @@ live, with no image rebuild.
   <../docs/security.md> — not in base, since it spans console and cluster wiring too.
 - `AGENTS.md` — instructions for agents that **edit** this directory (not
   Haku's runtime manual).
-- `sources/` — Haku's **information sources** (the operator-linked channels it reads:
-  gmail, calendar, drive, tasks, tana, plaid, ducktape) — what each channel tells you +
-  how to read it. Inputs/reference, not a checklist.
+- `sources/` — Haku's **information channels**: operator-owned read-only sources plus
+  Haku-owned channels such as its mailbox. The guides document access mechanics; the
+  authority inventory lives in `instructions.md` → _Hard rules_. Inputs/reference, not a
+  checklist.
 
 Haku's **method** — the procedures (passes) it runs, the UI it serves, and whatever
 format that UI presents (the current "items" board is one example) — is
@@ -42,12 +43,14 @@ Gmail/Calendar reads are REST calls.
 There is **no `.claude/` permission config** (it's gitignored, and
 unnecessary): the Job runs `claude --dangerously-skip-permissions`, so Bash and
 every tool are auto-allowed. In-agent gating is not the boundary — Haku runs in
-a Pod behind the mitmproxy egress with only read-only creds and scoped RBAC,
+a Pod behind the mitmproxy egress with read-only operator-source credentials and
+Haku-owned credentials scoped to their surfaces, plus scoped RBAC,
 and that perimeter is what limits it (see `haku/PLAN.md`).
 
 Haku's **state** (memory, log, its UI + procedures, intake, and whatever working format it
-presents) lives in the separate `haku-state` repo — the only thing Haku writes, cloned
+presents) lives in the separate `haku-state` repo — its general durable write surface, cloned
 into Haku's home during a run (the web home puts it at `~/haku-state`). The repo is the
 live artifact with no seed template behind it (`haku/state_template/` was retired
 2026-07-07 — haku-ui and the method live in haku-state); an empty remote is an incident
-to surface, not a first run. Design and roadmap: `haku/PLAN.md`.
+to surface, not a first run. Bounded autonomous surfaces and exceptions are inventoried once
+in `instructions.md` → _Hard rules_. Design and roadmap: `haku/PLAN.md`.

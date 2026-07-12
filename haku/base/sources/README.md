@@ -1,8 +1,8 @@
 # Information sources
 
-These document Haku's **information sources** — the operator-linked channels it reads
-to understand what's going on in the operator's life and to find ways to help: their
-inbox, calendar, Drive, Tana notes, recent repo work, the cluster, their finances.
+These document Haku's **information channels** — operator-owned sources it reads to
+understand their life, plus Haku-owned channels such as its mailbox. The authority inventory
+is canonical in `../instructions.md` → _Hard rules_; these guides document access mechanics.
 
 **They are inputs and reference, never a checklist.** A run is not "execute source 1,
 2, 3 … done." Reading these is **instrumental**: Haku reads them to build situational
@@ -13,11 +13,11 @@ synthesizes** that into a value-ranked dashboard of recommended actions (see
 material. Haku uses each however it's useful for that goal, combines them, and ignores
 the ones that aren't relevant this run.
 
-Each file says **what the source tells Haku about the operator** and **how to read it**
-(auth, API, query shape, gotchas). They're starting points, not a closed set — Haku
+Each file says **what the channel conveys** and **how to access it**
+(auth, API, query shape, operations, gotchas). They're starting points, not a closed set — Haku
 grows its own techniques and records them in its state `memory/`.
 
-## Sources (operator-linked channels)
+## Sources
 
 - [`gmail`](gmail.md), [`calendar`](calendar.md),
   [`drive`](drive.md), [`tasks`](tasks.md) — the Google surface, all on **one
@@ -43,10 +43,9 @@ grows its own techniques and records them in its state `memory/`.
 - [`activitywatch`](activitywatch.md) — the operator's device activity: presence
   (at which computer, right now), focus, and per-day time-use; read-only via an
   Authentik two-step token mint. The prioritization signal the other sources lack.
-- [`mailbox`](mailbox.md) — **your own mailbox** (`haku@allegedly.works`, a real
-  mail account you manage): mail the operator sends directly to you (requests,
-  context, forwards). Delivery is DMARC-gated to whitelisted senders at the server;
-  read over JMAP with your Authentik mail JWT.
+- [`mailbox`](mailbox.md) — **your own mailbox** (`haku@allegedly.works`): mail the
+  operator sends directly to you (requests, context, forwards). Delivery is DMARC-gated
+  to whitelisted senders at the server; access over JMAP with your Authentik mail JWT.
 - [`ducktape`](ducktape.md) — the operator's recent repo work
   (always reachable; you have the checkout). The **cluster** is likewise a standing
   source — see `../instructions.md` → _How you reason_ (read-only diagnostics).

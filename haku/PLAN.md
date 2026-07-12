@@ -74,8 +74,8 @@ rationale:
 Consider letting Haku take **some** low-blast-radius actions autonomously — e.g. _draft an email_
 (into Drafts, not send), _explore less-restricted websites_ for research, and similar moves —
 without giving up the transparency and containment that make Haku's bounded posture safe. Existing
-autonomous write exceptions belong in `haku/docs/security.md` and `haku/base/instructions.md`, not
-here.
+autonomous write authority belongs canonically in `haku/base/instructions.md`; the security model
+documents its enforcement and points back to that inventory. Do not duplicate the inventory here.
 
 Sketch to design out later (a real mechanism-design + security effort, not built):
 

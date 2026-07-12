@@ -25,7 +25,6 @@ The highest-priority findings are:
 - long-lived runtimes refresh repositories at process startup rather than at the wake boundary;
 - console OAuth recreates part of the MCP SDK flow and has already missed a current-protocol `resource` branch;
 - OAuth status, refresh, and execution independently derive token state and can contradict or overwrite one another;
-- mailbox write authority contradicts the still-universal read-only source rule; and
 - the deterministic credential gate does not recognize Haku's own generated credential formats.
 
 The common remedy is not simply more unit tests. The recreated behavior should be removed, generated from the owner, or covered by a parity/contract test that compares the recreation directly to the owner.
@@ -176,27 +175,6 @@ Consolidation:
 - discard stale responses.
 
 Test refresh-versus-refresh and refresh-versus-reconnect interleavings.
-
-### G. Mailbox write authority contradicts the base source doctrine
-
-Severity: high
-
-Owner/recent capability:
-
-- mailbox may mark read, move, organize, and delete in `haku/base/sources/mailbox.md:3-8,63-65`
-
-Stale recreation:
-
-- universal "Every data source is read-only" rule in `haku/base/instructions.md:533-546`
-- autonomous-write inventory at `haku/base/instructions.md:524-527`, which omits mailbox
-- conflicting rows in `haku/docs/security.md:40,49`
-
-The runtime prompt now contains mutually inconsistent security instructions, and the standing mailbox write authority is missing from the central autonomous-action inventory.
-
-Consolidation:
-
-- define operator-owned sources as read-only; and
-- name Haku's own mailbox as an explicit, scoped autonomous write surface in both the base hard rules and security invariants.
 
 ### H. Credential lint recreates the credential catalog but misses Haku's own formats
 
@@ -369,7 +347,6 @@ Consolidation:
 
 ### Source and prompt duplication
 
-- `haku/base/instructions.md:666-677` lists only Gmail, Calendar, Drive, Tasks, Tana, Plaid, and Ducktape. `haku/base/sources/README.md:20-52` additionally lists Coinbase, CPAP, Grocy, ActivityWatch, and mailbox. The credentials inventory is missing several corresponding credentials. Enumerate sources once in structured metadata or make the source index the only inventory.
 - `haku/runtime/agent/agent.py:67-76` restates an older miniature `run.md` sequence and omits later base-adoption, response-reduction, approved-result-sweep, and run-manifest requirements. Keep only a pointer to the canonical procedure.
 - `haku/runtime/claude_web_env/run.md:86-98` and `bootstrap.sh:93-101` use the presence of `haku-state/items` as a readiness sentinel even though `haku/run.md:35-37` permits Haku to replace that working format. Use repository validity or a method-neutral completion marker.
 
