@@ -54,17 +54,27 @@ def make_client(fake: FakeGrocy) -> httpx.Client:
     return httpx.Client(base_url="http://grocy", transport=httpx.MockTransport(fake.handler))
 
 
-def test_converges_only_drifted_users():
-    # agentydragon already ADMIN (no PUT), haku wrongly elevated (PUT back to
-    # empty), auragon absent (auto-created, then PUT to ADMIN).
+def test_admin_expands_to_every_known_permission():
+    # "ADMIN" doesn't just grant the ADMIN row -- Grocy's own runtime permission check
+    # does an exact-name lookup (via user_permissions_resolved), not hierarchy resolution,
+    # so ADMIN must expand to literally every permission_hierarchy id to mean "everything".
+    # agentydragon holds only the ADMIN row (drift, PUT to the full set), haku wrongly
+    # elevated (PUT back to empty), auragon absent (auto-created, then PUT to the full set).
     fake = FakeGrocy({"agentydragon": {1}, "haku": {2}})
     reconcile(make_client(fake), Policy(users={"agentydragon": {"ADMIN"}, "auragon": {"ADMIN"}, "haku": set()}))
-    assert fake.puts == {"auragon": [1], "haku": []}
-    assert fake.user_permissions == {"agentydragon": {1}, "auragon": {1}, "haku": set()}
+    assert fake.puts == {"agentydragon": [1, 2], "auragon": [1, 2], "haku": []}
+    assert fake.user_permissions == {"agentydragon": {1, 2}, "auragon": {1, 2}, "haku": set()}
+
+
+def test_admin_user_already_at_full_set_is_not_repeatedly_put():
+    fake = FakeGrocy({"agentydragon": {1, 2}})
+    reconcile(make_client(fake), Policy(users={"agentydragon": {"ADMIN"}}))
+    assert fake.puts == {}
+    assert fake.user_permissions["agentydragon"] == {1, 2}
 
 
 def test_unlisted_users_untouched():
-    fake = FakeGrocy({"agentydragon": {1}, "bystander": {2}})
+    fake = FakeGrocy({"agentydragon": {1, 2}, "bystander": {2}})
     reconcile(make_client(fake), Policy(users={"agentydragon": {"ADMIN"}}))
     assert fake.puts == {}
     assert fake.user_permissions["bystander"] == {2}

@@ -3,7 +3,11 @@
 # converges each listed user to exactly this permission set, creating the user if
 # absent. Unlisted users are untouched — born read-only via
 # DEFAULT_PERMISSIONS=none (../app-base). Permission names are rows of
-# Grocy's permission_hierarchy table; ADMIN is the root and implies everything else.
+# Grocy's permission_hierarchy table. "ADMIN" here means "grant every permission
+# Grocy knows about" — provision.py expands it to the full explicit set rather than
+# relying on Grocy's own hierarchy resolution, which was observed live (2026-07-12) to
+# NOT treat holding just the ADMIN row as satisfying descendant checks
+# (MASTER_DATA_EDIT/STOCK_PURCHASE 403'd for a user converged to exactly {ADMIN}).
 users:
   agentydragon: [ADMIN]
   auragon: [ADMIN]

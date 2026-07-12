@@ -76,10 +76,22 @@ def reconcile(client: httpx.Client, policy: Policy) -> None:
         if username not in user_ids:
             raise RuntimeError(f"{username!r} user was not created by the reverse-proxy auth")
         user_id = user_ids[username]
-        desired = {permission_ids[name] for name in permission_names}
+        # "ADMIN" is documented as permission_hierarchy's root and every other permission's
+        # ancestor, but Grocy's own runtime check (`User::HasPermission`, via the
+        # `user_permissions_resolved` view) does an exact-name lookup — holding just ADMIN's
+        # row does NOT reliably satisfy a descendant check in practice (observed live,
+        # 2026-07-12: an agentydragon/auragon user converged to exactly {ADMIN} still 403'd
+        # Grocy's own API on MASTER_DATA_EDIT and STOCK_PURCHASE). Don't depend on Grocy
+        # resolving the hierarchy itself — when "ADMIN" is requested, grant literally every
+        # known permission explicitly, so "ADMIN" means everything regardless.
+        desired = (
+            set(permission_ids.values())
+            if "ADMIN" in permission_names
+            else {permission_ids[name] for name in permission_names}
+        )
         current = {int(row["permission_id"]) for row in get_json(client, f"/api/users/{user_id}/permissions")}
         if current == desired:
-            print(f"{username!r} (id={user_id}) already at {sorted(permission_names)}")
+            print(f"{username!r} (id={user_id}) already at {sorted(permission_names)} ({len(desired)} permission ids)")
             continue
         client.put(f"/api/users/{user_id}/permissions", json={"permissions": sorted(desired)}).raise_for_status()
         print(
