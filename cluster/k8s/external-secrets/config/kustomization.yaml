@@ -3,4 +3,5 @@ kind: Kustomization
 resources:
   - external-secrets-config.yaml
   - airlock-secret-store.yaml
+  - claude-sandbox-secret-store.yaml
   - flux-system-secret-store.yaml

@@ -24,6 +24,8 @@ spec:
       name: haku-worker
       namespace: haku-sandbox
   dependsOn:
+    - name: agent-shared-secrets # provides ankiweb-credentials in claude-sandbox
+    - name: external-secrets-config # provides the claude-sandbox SecretStore
     - name: haku-namespace
     - name: haku-rbac
     - name: haku-state # provides the haku-state-git-write secret in haku-sandbox
