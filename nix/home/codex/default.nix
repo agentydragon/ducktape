@@ -251,8 +251,8 @@ in
 
         Local checks:
 
-        - `codex-execpolicy check --pretty --rules "$CODEX_HOME/rules/default.rules" -- git status`
-        - `codex-execpolicy check --pretty --rules "$CODEX_HOME/rules/default.rules" -- bash -lc 'git status'`
+        - `codex execpolicy check --pretty --rules "$CODEX_HOME/rules/default.rules" -- git status`
+        - `codex execpolicy check --pretty --rules "$CODEX_HOME/rules/default.rules" -- bash -lc 'git status'`
 
         Notes:
 

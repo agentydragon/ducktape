@@ -28,8 +28,8 @@ let
     #   prefix_rule(pattern=["rm"], decision="forbidden", justification="destructive; use a safer alternative")
     #
     # Test this file locally:
-    #   codex-execpolicy check --pretty --rules "$CODEX_HOME/rules/default.rules" -- git status
-    #   codex-execpolicy check --pretty --rules "$CODEX_HOME/rules/default.rules" -- bash -lc 'git status'
+    #   codex execpolicy check --pretty --rules "$CODEX_HOME/rules/default.rules" -- git status
+    #   codex execpolicy check --pretty --rules "$CODEX_HOME/rules/default.rules" -- bash -lc 'git status'
     #
     # Codex treats matching `decision="allow"` rules as sandbox-bypassing for
     # the matched command prefix, so keep this file limited to safe commands.

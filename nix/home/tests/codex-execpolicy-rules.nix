@@ -106,7 +106,7 @@ in
   };
 
   test_has_header_pointer_to_checker = {
-    expr = lib.hasInfix "codex-execpolicy check --pretty" generated.text;
+    expr = lib.hasInfix "codex execpolicy check --pretty" generated.text;
     expected = true;
   };
 }
