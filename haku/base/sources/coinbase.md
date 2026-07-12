@@ -48,11 +48,17 @@ v3-only read can undercount the account by a wide margin (caught against the ope
 Jul 11). `/v2/accounts` lists every wallet, staked included. Keep v3 only for `fills` and
 `key_permissions`.
 
-Gotcha: there is **no** generic transactions list endpoint — top-level
-`/api/v3/brokerage/transactions` → `401` and per-account
-`/accounts/{uuid}/transactions` → `404`; trade history is `fills`. A `401` means
-the JWT is malformed (`iss`/`nonce`/`uri`), not that the key rotated — re-check
-those first.
+**Transaction history is a v2 read too** (verified 2026-07-12, 379 rows, zero permission
+errors): `GET /v2/accounts/{id}/transactions`, paginated via `pagination.next_uri` — full
+per-wallet history (buys, sells, sends, receives, `staking_reward`, internal
+`staking_transfer` pairs that net to zero). The dead ends are all **v3**: top-level
+`/api/v3/brokerage/transactions` → `401` and the v3 per-account
+`/accounts/{uuid}/transactions` → `404`; v3 trade history is `fills` (readable but empty on
+a portfolio with no Advanced Trade orders). `native_amount` is Coinbase's USD mark at
+transaction time — good for approximate cost basis, not tax-grade lots; for assets
+transferred in, receipt-FMV is a proxy and the true basis lives wherever they were
+originally bought. A `401` means the JWT is malformed (`iss`/`nonce`/`uri`), not that the
+key rotated — re-check those first.
 
 What to _do_ with the balances (mark to USD, surface large moves / new holdings) →
 the finance pass in your procedures (`procedures/finance.md`, in your state).
