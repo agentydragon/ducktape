@@ -1,0 +1,17 @@
+# Backing store for Squid's HTTP cache (cache_dir in squid.conf). seaweedfs-ovh
+# (the cluster default for app data): not node-pinned, so the proxy pod can
+# reschedule within region hil and keep its cache. Content is only immutable
+# public artifacts (credentialed hosts are `cache deny` in squid.conf) — losing it
+# costs a cold re-fetch, never correctness.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: haku-egress-proxy-cache
+  namespace: haku-egress-proxy
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: seaweedfs-ovh
+  resources:
+    requests:
+      storage: 25Gi

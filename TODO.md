@@ -74,3 +74,20 @@ Needs verification:
 ## Repository
 
 - [ ] Add an AGPL-3.0 `LICENSE` file at the repo root and standardize AGPL-3.0 license headers across source files (`README.md` declares AGPL 3.0, but there is no `LICENSE` file and headers are inconsistent)
+
+## Egress proxies
+
+- [ ] **Shared HTTP cache across egress proxies (mind the trust boundary).** As the
+      repo grows more egress proxies (e.g. `haku-egress-proxy`, and future ones per
+      trust tier), each with its **own** allowlist, they re-cache the same public
+      toolchains/wheels/base images N times. A shared artifact cache would dedupe
+      that — but naive sharing weakens the per-proxy allowlist: a cache HIT could
+      serve proxy B an object only proxy A was allowed to _fetch_, and a lower-trust
+      proxy could poison entries a higher-trust one reads. Any shared cache must
+      enforce each proxy's allowlist on **hits** (not just origin fetches) and
+      partition/authenticate entries by trust scope. Options: a Squid `cache_peer`
+      sibling hierarchy with each proxy keeping its own `http_access allowed` in
+      front (share the store, not the gate); or a separate pull-through artifact
+      cache each proxy is explicitly allowlisted to reach (see the
+      `TODO(pull-through-cache)` notes in
+      `cluster/k8s/agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml`).

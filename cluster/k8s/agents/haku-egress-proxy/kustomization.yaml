@@ -8,3 +8,13 @@ resources:
   - networkpolicy.yaml
   - cnp-haku-cloud-api-egress.yaml
   - ccnp-haku-proxy-egress.yaml
+  - cache-pvc.yaml
+generatorOptions:
+  # Stable ConfigMap name so the Deployment volume can reference it directly; the
+  # reloader annotation on the Deployment handles restart-on-change.
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: haku-egress-proxy-config
+    namespace: haku-egress-proxy
+    files:
+      - squid.conf

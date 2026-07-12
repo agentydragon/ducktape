@@ -419,3 +419,14 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_haku_egress_proxy_consistency",
+    srcs = ["test_haku_egress_proxy_consistency.py"],
+    data = ["//cluster/k8s:cluster_all_files"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

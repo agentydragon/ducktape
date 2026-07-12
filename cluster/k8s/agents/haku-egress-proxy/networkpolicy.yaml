@@ -1,12 +1,11 @@
-# Allow proxy clients (haku-sandbox + haku-ci) to reach the egress proxy (port 8080)
-# and the Authentik outpost to reach the mitmweb UI (port 8081) for proxy auth.
-# haku-ci was rehomed onto this proxy (cluster/k8s/haku-ci) as a client but its ingress
-# was missed — without it the runner/dind get `proxyconnect ... i/o timeout` on every
-# egress and all haku-ci builds fail.
+# Allow proxy clients (haku-sandbox + haku-ci) to reach the egress proxy (port 8080).
+# haku-ci was rehomed onto this proxy (cluster/k8s/haku-ci) as a client — without this
+# ingress the runner/dind get `proxyconnect ... i/o timeout` and every haku-ci build
+# fails. Squid has no web UI (unlike mitmweb), so there is no mitmweb-UI ingress rule.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-authentik-egress-proxy-ingress
+  name: allow-proxy-client-ingress
   namespace: haku-egress-proxy
 spec:
   podSelector:
@@ -22,13 +21,6 @@ spec:
               kubernetes.io/metadata.name: haku-ci
       ports:
         - port: 8080
-          protocol: TCP
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: authentik
-      ports:
-        - port: 8081
           protocol: TCP
   policyTypes:
     - Ingress
