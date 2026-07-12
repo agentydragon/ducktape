@@ -57,14 +57,15 @@ deliberately tiny (its documented declarative-deployments workflow):
   its client credentials only in the trusted `haku-mailbox` namespace; each
   Job mints an ephemeral audience-pinned JWT, applies the plan, and discards
   it. It never starts another Stalwart server or persists the JWT.
-- `bootstrap/run.sh` — the production pod entrypoint only strips the upstream
-  binary's unused file capability and starts normal Stalwart. It never applies
-  configuration. Runtime and reconciler ConfigMaps are separate, so changing
-  only the plan does not restart the mailserver. Certificate renewal still
-  restarts the production pod so Stalwart re-reads the mounted PEM files.
+- The production pod executes `/usr/local/bin/stalwart` directly and never
+  applies configuration. The in-repo image overlays the official release
+  binary at build time with mode `0755`, removing upstream's unused
+  `cap_net_bind_service` xattr so restricted pods can execute it. Certificate
+  renewal still restarts production so Stalwart re-reads the mounted PEMs.
 - The pod image is the in-repo repack from `image/BUILD.bazel` — upstream
   server + the pinned static `stalwart-cli` used by the reconciler (upstream
-  ships the CLI only as a distroless image, unusable from the Job). Published as
+  ships the CLI only as a distroless image, unusable from the Job) plus the
+  capability-free official server release binary. Published as
   `ghcr.io/agentydragon/stalwart` by the push-images workflow, tag tracked
   by Flux image automation. Upgrading Stalwart = bumping the `stalwart`
   `oci.pull` (tag + digest) and, on CLI releases, the `stalwart_cli`

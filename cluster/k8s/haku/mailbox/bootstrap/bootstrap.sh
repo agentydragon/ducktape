@@ -5,11 +5,10 @@ set -eu
 RUN=/tmp/stalwart-bootstrap
 mkdir -p "$RUN"
 export HOME="$RUN"
-cp /usr/local/bin/stalwart "$RUN/stalwart"
 
 STALWART_RECOVERY_MODE=1 \
   STALWART_RECOVERY_ADMIN="admin:${STALWART_ADMIN_PASSWORD}" \
-  "$RUN/stalwart" --config /etc/stalwart/config.json >"$RUN/recovery.log" 2>&1 &
+  /usr/local/bin/stalwart --config /etc/stalwart/config.json >"$RUN/recovery.log" 2>&1 &
 recovery_pid=$!
 
 cleanup() {

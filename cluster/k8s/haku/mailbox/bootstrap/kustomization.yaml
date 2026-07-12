@@ -15,4 +15,3 @@ configMapGenerator:
       - bootstrap.sh
       - config.json
       - mailbox-plan.ndjson
-      - run.sh

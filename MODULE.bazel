@@ -742,6 +742,17 @@ http_archive(
     urls = ["https://github.com/stalwartlabs/cli/releases/download/v1.0.10/stalwart-cli-x86_64-unknown-linux-musl.tar.xz"],
 )
 
+# Capability-free server binary overlaid onto the Stalwart OCI base. The
+# upstream image sets cap_net_bind_service on its binary; restricted pods that
+# drop all capabilities cannot exec that file even though this deployment uses
+# only unprivileged ports.
+http_archive(
+    name = "stalwart_server",
+    build_file_content = 'exports_files(["stalwart"])',
+    sha256 = "2ef28f93bff0fa22eae7c5e7bd7c234eb958cb46393a7542fda45486b889a7bf",
+    urls = ["https://github.com/stalwartlabs/stalwart/releases/download/v0.16.11/stalwart-x86_64-unknown-linux-musl.tar.gz"],
+)
+
 # Adoptium Temurin JDK 21 — provides keytool and cacerts for claude tests.
 # Build target: //third_party/jdk
 http_archive(
