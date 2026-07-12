@@ -51,14 +51,30 @@ const zShoppingListItemOkRow = z.looseObject({
   qu_name: z.string().nullish(),
 });
 
+const zStockEntryEditOkRow = z.looseObject({
+  kind: z.literal("ok"),
+  entry: z.looseObject({
+    entry_id: z.number(),
+    product_name: z.string(),
+    amount: z.number(),
+    qu_name: z.string(),
+    location_name: z.string(),
+    best_before_date: z.string().nullish(),
+    open: z.boolean(),
+  }),
+  changes: z.record(z.string(), z.looseObject({ old: z.unknown(), new: z.unknown() })).nullish(),
+});
+
 const zStockAddResult = z.array(z.union([zStockAddOkRow, zFailedRow]));
 const zProductsCreateResult = z.array(z.union([zProductsCreateOkRow, zFailedRow]));
 const zShoppingListItemsAddResult = z.array(z.union([zShoppingListItemOkRow, zFailedRow]));
+const zStockEntryEditResult = z.array(z.union([zStockEntryEditOkRow, zFailedRow]));
 
 type FailedRow = z.infer<typeof zFailedRow>;
 type StockAddOkRow = z.infer<typeof zStockAddOkRow>;
 type ProductsCreateOkRow = z.infer<typeof zProductsCreateOkRow>;
 type ShoppingListItemOkRow = z.infer<typeof zShoppingListItemOkRow>;
+type StockEntryEditOkRow = z.infer<typeof zStockEntryEditOkRow>;
 
 // The zFailedRow refine guarantees a non-"ok" kind at runtime, but zod types it as plain
 // `string` (and TS doesn't narrow a generic union by discriminant), so the ok/failed split
@@ -236,9 +252,53 @@ function ShoppingListItemsAddResultView({
   );
 }
 
+function StockEntryEditResultRow({ row }: { row: StockEntryEditOkRow }) {
+  return (
+    <Stack gap={2}>
+      <Group gap={6}>
+        <Text span fw={600}>
+          {row.entry.product_name}
+        </Text>
+        <Text span>
+          {row.entry.amount} {row.entry.qu_name}
+        </Text>
+        <Text span c="dimmed">
+          in {row.entry.location_name} · entry #{row.entry.entry_id}
+        </Text>
+        {row.entry.open && (
+          <Badge size="sm" variant="outline">
+            opened
+          </Badge>
+        )}
+      </Group>
+      {row.changes && (
+        <Text size="sm" c="dimmed">
+          Changed:{" "}
+          {Object.keys(row.changes)
+            .map((field) => field.replaceAll("_", " "))
+            .join(", ")}
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
+function StockEntryEditResultView({ result, variant }: ResultPreviewProps<z.infer<typeof zStockEntryEditResult>>) {
+  return (
+    <BatchResultView
+      rows={result}
+      variant={variant}
+      verb="edited"
+      rowName={(row) => row.entry.product_name}
+      RowView={StockEntryEditResultRow}
+    />
+  );
+}
+
 /** Per-tool result widgets for the `grocy-sf` server's list-returning batch tools. */
 export const grocyResultPreviews = {
   stock_add: defineResultPreview(zStockAddResult, StockAddResultView),
+  stock_entry_edit: defineResultPreview(zStockEntryEditResult, StockEntryEditResultView),
   products_create: defineResultPreview(zProductsCreateResult, ProductsCreateResultView),
   shopping_list_items_add: defineResultPreview(zShoppingListItemsAddResult, ShoppingListItemsAddResultView),
 } satisfies Record<string, ToolResultPreview>;

@@ -59,6 +59,32 @@ describe("grocyResultPreviews", () => {
     }
   });
 
+  it("renders stock_entry_edit rows with the updated entry and changed fields", () => {
+    for (const variant of ["compact", "detailed"] as const) {
+      expect(
+        renderResultPreview(
+          grocyResultPreviews.stock_entry_edit,
+          [
+            {
+              kind: "ok",
+              entry: {
+                entry_id: 189,
+                product_name: "Avocado Oil",
+                amount: 500,
+                qu_name: "Milliliter",
+                location_name: "Pantry",
+                best_before_date: "2027-01-15",
+                open: true,
+              },
+              changes: { price: { old: 8.99, new: 9.99 }, open: { old: false, new: true } },
+            },
+          ],
+          variant
+        )
+      ).not.toBeNull();
+    }
+  });
+
   it("returns null for a malformed ok row instead of rendering it as a failure", () => {
     // kind "ok" without the ok-row fields must fail the whole parse (→ raw JSON fallback),
     // not fall through to the failed-row branch and paint a success red.

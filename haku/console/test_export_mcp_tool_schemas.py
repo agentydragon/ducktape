@@ -44,6 +44,7 @@ async def test_exports_every_server_and_tool() -> None:
         "shopping_list_items_add",
         "stock_add",
         "stock_consume",
+        "stock_entry_edit",
     ]
     for server in schema["properties"].values():
         assert server["additionalProperties"] is False
@@ -64,6 +65,9 @@ async def test_grocy_schemas_are_inlined_and_validate() -> None:
 
     Draft202012Validator(grocy["stock_add"]).validate(
         {"items": [{"product": "Rolled oats", "amount": 2, "qu": "pack", "location": "Pantry"}]}
+    )
+    Draft202012Validator(grocy["stock_entry_edit"]).validate(
+        {"items": [{"entry_id": 189, "price": 9.99, "location": "Pantry", "clear_fields": ["note"]}]}
     )
     Draft202012Validator(grocy["products_edit"]).validate(
         {"items": [{"product": 42, "min_stock_amount": 500, "clear_fields": ["description"]}]}

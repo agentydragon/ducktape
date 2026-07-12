@@ -38,6 +38,7 @@ _SERVER_TOOL_ALLOWLIST: dict[str, frozenset[str]] = {
         {
             "stock_add",
             "stock_consume",
+            "stock_entry_edit",
             "products_create",
             "products_edit",
             "shopping_list_get",
