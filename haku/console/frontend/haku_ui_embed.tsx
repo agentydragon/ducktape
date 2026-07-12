@@ -4,9 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import {
   geolocationApprovalQueueId,
   makeRecentToolCall,
+  screenshotApprovalQueueId,
   toolApprovalQueueId,
   type GeolocationApproval,
   type RecentToolCall,
+  type ScreenshotApproval,
 } from "./approval_state.ts";
 import { type GeolocationOptions, type Outbound } from "@haku/console-bridge/protocol";
 
@@ -24,6 +26,8 @@ import { ShellChrome } from "./console_panel.tsx";
 import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation.ts";
 import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant.ts";
 import { openExternal, POPUP_HINT } from "./open_external.ts";
+import { ScreenshotSession } from "./screenshot_capture.ts";
+import { hasScreenshotGrant, setScreenshotGrant } from "./screenshot_grant.ts";
 import { toastError, toastSuccess } from "./toast.ts";
 import { useToolCallEvents } from "./tool_call_events.ts";
 
@@ -31,12 +35,15 @@ import { useToolCallEvents } from "./tool_call_events.ts";
 // embedded as a sandboxed cross-origin iframe (the whole console is now this frame). The
 // console never renders Haku's UI itself; it only frames this origin (the backend CSP
 // frame-src permits the embed) and runs the trusted **bridge**: the iframe may `openLink`,
-// `requestLaunch`, or read location (`requestGeolocation` one-shot / `startGeolocationWatch`
-// stream) via postMessage, but only the shell decides and acts (origin-checked +
-// schema-validated). `allow-same-origin`/`allow-forms` are needed for the framed app's own
-// Authentik auth; **no `allow-popups`** (only the shell opens links), **no
-// `allow="fullscreen"`**, and **no `allow="geolocation"`** (only the shell reads location,
-// per its own consent grant; it holds every location watch). See docs/containment.md.
+// `requestLaunch`, read location (`requestGeolocation` one-shot / `startGeolocationWatch`
+// stream), or `requestScreenshot` (a real tab-capture crop, not a DOM serialization) via
+// postMessage, but only the shell decides and acts (origin-checked + schema-validated).
+// `allow-same-origin`/`allow-forms` are needed for the framed app's own Authentik auth; **no
+// `allow-popups`** (only the shell opens links), **no `allow="fullscreen"`**, **no
+// `allow="geolocation"`** (only the shell reads location, per its own consent grant; it holds
+// every location watch), and **no `allow="display-capture"`** (only the shell captures screen
+// content, per its own consent grant; it holds the one live capture stream). See
+// docs/containment.md.
 
 // Restore the route the console URL carries into the frame on first mount. The console
 // hash is treated strictly as a validated path, never a URL: the src is always `uiUrl`
@@ -69,6 +76,8 @@ export function HakuUiEmbed({
   const knownToolApprovalIdsRef = useRef<Set<string> | null>(null);
   const [geolocationApprovals, setGeolocationApprovals] = useState<GeolocationApproval[]>([]);
   const geolocationApprovalsRef = useRef<GeolocationApproval[]>([]);
+  const [screenshotApprovals, setScreenshotApprovals] = useState<ScreenshotApproval[]>([]);
+  const screenshotApprovalsRef = useRef<ScreenshotApproval[]>([]);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   const [decidingApprovalIds, setDecidingApprovalIds] = useState<string[]>([]);
   const [recentToolCalls, setRecentToolCalls] = useState<RecentToolCall[]>([]);
@@ -141,6 +150,40 @@ export function HakuUiEmbed({
     setGeoGranted(false);
   }
 
+  // Standing consent to capture screenshots + whether the shell currently holds a live
+  // tab-capture stream (mirrors geoGranted/tracking above).
+  const [screenshotGranted, setScreenshotGranted] = useState(() => hasScreenshotGrant());
+  const [sharingScreen, setSharingScreen] = useState(false);
+
+  // The shell (never the iframe) holds the one live getDisplayMedia stream, reused across
+  // requests so only the first capture (or the first after the operator's browser-native "Stop
+  // sharing") needs the native picker. Created once.
+  const screenshotSessionRef = useRef<ScreenshotSession | null>(null);
+  if (!screenshotSessionRef.current) {
+    screenshotSessionRef.current = new ScreenshotSession(() => setSharingScreen(false));
+  }
+  const screenshotSession = screenshotSessionRef.current;
+
+  // Read the current frame and reply. Only meaningful while the session is active — the
+  // approval flow below is what starts it (getDisplayMedia needs a user gesture, so it can
+  // only be called from the Approve click, never from here).
+  function captureAndReplyScreenshot(id: string) {
+    const rect = iframeRef.current?.getBoundingClientRect();
+    const imageDataUrl = rect ? screenshotSession.captureFrame(rect) : null;
+    reply(
+      imageDataUrl
+        ? { type: "screenshotResult", id, ok: true, imageDataUrl }
+        : { type: "screenshotResult", id, ok: false, reason: "capture failed" }
+    );
+  }
+
+  function withdrawScreenshot() {
+    screenshotSession.stop();
+    setSharingScreen(false);
+    setScreenshotGrant(false);
+    setScreenshotGranted(false);
+  }
+
   function openApprovalQueue() {
     setApprovalsOpen(true);
   }
@@ -206,6 +249,25 @@ export function HakuUiEmbed({
     removeGeolocationApproval(id);
   }
 
+  function addScreenshotApproval(id: string) {
+    const approval: ScreenshotApproval = { id, createdAt: new Date().toISOString() };
+    const remaining = [approval, ...screenshotApprovalsRef.current.filter((existing) => existing.id !== id)];
+    screenshotApprovalsRef.current = remaining;
+    setScreenshotApprovals(remaining);
+    openApprovalQueue();
+  }
+
+  function removeScreenshotApproval(id: string): ScreenshotApproval[] {
+    const remaining = screenshotApprovalsRef.current.filter((approval) => approval.id !== id);
+    screenshotApprovalsRef.current = remaining;
+    setScreenshotApprovals(remaining);
+    return remaining;
+  }
+
+  function advanceAfterScreenshot(id: string) {
+    removeScreenshotApproval(id);
+  }
+
   function refreshToolApprovals() {
     void fetchPendingApprovals().then(
       (approvals) => applyToolApprovals(approvals),
@@ -218,8 +280,9 @@ export function HakuUiEmbed({
   // drives the shell's live-channel warning when the socket is down.
   const liveStatus = useToolCallEvents(refreshToolApprovals);
 
-  // Tear down any live browser watches if the console unmounts.
+  // Tear down any live browser watches / capture stream if the console unmounts.
   useEffect(() => () => void watcher.stopAll(), [watcher]);
+  useEffect(() => () => screenshotSession.stop(), [screenshotSession]);
 
   useEffect(() => {
     function onMessage(e: MessageEvent) {
@@ -255,6 +318,15 @@ export function HakuUiEmbed({
         stopWatch(msg.id);
         return;
       }
+      if (msg.type === "requestScreenshot") {
+        // Same grant-gate shape as geolocation, but capture ALSO needs the browser's own
+        // tab-share picker (no persistent silent grant for getDisplayMedia) — so even with the
+        // standing grant set, a dead session (operator stopped sharing) still needs a fresh
+        // approval to re-open the picker from a real click.
+        if (hasScreenshotGrant() && screenshotSession.active) captureAndReplyScreenshot(msg.id);
+        else addScreenshotApproval(msg.id);
+        return;
+      }
       if (msg.type === "routeChanged") {
         // Mirror the iframe's route into the console's own fragment so refresh/deep-links
         // restore the view. replaceState, not pushState: the iframe's hash navigations
@@ -284,6 +356,10 @@ export function HakuUiEmbed({
   useEffect(() => {
     geolocationApprovalsRef.current = geolocationApprovals;
   }, [geolocationApprovals]);
+
+  useEffect(() => {
+    screenshotApprovalsRef.current = screenshotApprovals;
+  }, [screenshotApprovals]);
 
   useEffect(() => {
     if (recentToolCalls.length === 0) return;
@@ -387,6 +463,33 @@ export function HakuUiEmbed({
     advanceAfterGeolocation(approval.id);
   }
 
+  function approveScreenshotApproval(approval: ScreenshotApproval) {
+    const approvalId = screenshotApprovalQueueId(approval.id);
+    setDeciding(approvalId, true);
+    // The Approve click IS the user gesture getDisplayMedia needs — this must run directly from
+    // here, never from the requestScreenshot message handler.
+    void screenshotSession.start().then((r) => {
+      if (r.ok) {
+        setScreenshotGrant(true);
+        setScreenshotGranted(true);
+        setSharingScreen(true);
+        captureAndReplyScreenshot(approval.id);
+      } else {
+        reply({ type: "screenshotResult", id: approval.id, ok: false, reason: r.reason });
+      }
+      setDeciding(approvalId, false);
+      advanceAfterScreenshot(approval.id);
+    });
+  }
+
+  function denyScreenshotApproval(approval: ScreenshotApproval) {
+    const approvalId = screenshotApprovalQueueId(approval.id);
+    setDeciding(approvalId, true);
+    reply({ type: "screenshotResult", id: approval.id, ok: false, reason: "declined" });
+    setDeciding(approvalId, false);
+    advanceAfterScreenshot(approval.id);
+  }
+
   function dismissRecentToolCall(toolCallId: string) {
     setRecentToolCalls((records) => records.filter((recent) => recent.record.tool_call_id !== toolCallId));
   }
@@ -407,14 +510,20 @@ export function HakuUiEmbed({
         geoGranted={geoGranted}
         tracking={tracking}
         onWithdrawGeolocation={withdrawGeolocation}
+        screenshotGranted={screenshotGranted}
+        sharingScreen={sharingScreen}
+        onWithdrawScreenshot={withdrawScreenshot}
         pendingApprovals={toolApprovals}
         geolocationApprovals={geolocationApprovals}
+        screenshotApprovals={screenshotApprovals}
         decidingApprovalIds={decidingApprovalIds}
         recentToolCalls={recentToolCalls}
         onApproveTool={approveToolApproval}
         onDenyTool={denyToolApproval}
         onApproveGeolocation={approveGeolocationApproval}
         onDenyGeolocation={denyGeolocationApproval}
+        onApproveScreenshot={approveScreenshotApproval}
+        onDenyScreenshot={denyScreenshotApproval}
         onDismissRecentToolCall={dismissRecentToolCall}
         onOpenToolCalls={onOpenToolCalls}
       />

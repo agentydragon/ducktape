@@ -55,6 +55,9 @@ export function parseInbound(data: unknown): Inbound | null {
   if (m.type === "routeChanged" && typeof m.path === "string" && isRoutePath(m.path)) {
     return { type: "routeChanged", path: m.path };
   }
+  if (m.type === "requestScreenshot" && typeof m.id === "string") {
+    return { type: "requestScreenshot", id: m.id };
+  }
   return null;
 }
 

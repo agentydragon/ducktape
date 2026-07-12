@@ -31,13 +31,17 @@ const SCENES = [
   { name: "settings", viewport: { width: 1200, height: 900 } },
   // Every implemented tool-call preview, compact | detailed side by side — tall, so give it room.
   { name: "previews", viewport: { width: 1100, height: 4800 } },
-  // The whole shell chrome: approvals panel open by default; the clicks open the live-offline
-  // and location panels (their open state is internal to the chrome) so the shot shows all
-  // three surfaces stacked by Y under the toggle-button row.
+  // The whole shell chrome: approvals panel open by default; the clicks open the live-offline,
+  // location, and screenshot panels (their open state is internal to the chrome) so the shot
+  // shows all four surfaces stacked by Y under the toggle-button row.
   {
     name: "chrome",
-    viewport: { width: 860, height: 1040 },
-    clicks: ['[aria-label="Live updates disconnected"]', '[aria-label="Location sharing: live"]'],
+    viewport: { width: 860, height: 1260 },
+    clicks: [
+      '[aria-label="Live updates disconnected"]',
+      '[aria-label="Location sharing: live"]',
+      '[aria-label="Screenshot capture: live"]',
+    ],
   },
 ];
 const COLOR_SCHEMES = ["light", "dark"];

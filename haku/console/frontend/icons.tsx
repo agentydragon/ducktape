@@ -5,6 +5,7 @@
 import IconArrowLeft from "@tabler/icons-react/dist/esm/icons/IconArrowLeft.mjs";
 import IconBell from "@tabler/icons-react/dist/esm/icons/IconBell.mjs";
 import IconCalendarEvent from "@tabler/icons-react/dist/esm/icons/IconCalendarEvent.mjs";
+import IconCamera from "@tabler/icons-react/dist/esm/icons/IconCamera.mjs";
 import IconChecklist from "@tabler/icons-react/dist/esm/icons/IconChecklist.mjs";
 import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
 import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
@@ -42,6 +43,11 @@ export function SettingsIcon(props: TablerIconProps) {
 /** Map pin — the shell's location-sharing control, and a preview's location field. */
 export function MapPinIcon(props: TablerIconProps) {
   return <IconMapPin size={20} {...props} />;
+}
+
+/** Camera — the shell's screenshot-capture control. */
+export function CameraIcon(props: TablerIconProps) {
+  return <IconCamera size={20} {...props} />;
 }
 
 /** Clock — a calendar event's when/time field. */

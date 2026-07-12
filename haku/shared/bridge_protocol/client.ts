@@ -14,6 +14,7 @@ import type {
   LaunchResult,
   OpenLinkResult,
   Outbound,
+  ScreenshotResult,
 } from "./protocol.ts";
 
 export interface BridgeClient {
@@ -22,6 +23,7 @@ export interface BridgeClient {
   requestGeolocation: (options?: GeolocationOptions) => Promise<GeolocationResult>;
   watchGeolocation: (onFix: (fix: GeolocationResult) => void, options?: GeolocationOptions) => () => void;
   notifyRouteChanged: (path: string) => void;
+  requestScreenshot: () => Promise<ScreenshotResult>;
 }
 
 export function createBridgeClient(shellOrigin: string): BridgeClient {
@@ -105,5 +107,16 @@ export function createBridgeClient(shellOrigin: string): BridgeClient {
     // F5 / deep-links of the console restore this view. Unframed, the targetOrigin check drops
     // the self-post.
     notifyRouteChanged: (path) => post({ type: "routeChanged", path }),
+
+    // Ask the shell for a screenshot of its own on-screen rect (a real capture, cropped to the
+    // iframe — not a DOM serialization), gated by a shell-owned standing grant. Resolves
+    // `ok:false` + `reason` on decline/withdraw/picker-dismissed.
+    requestScreenshot: () => {
+      const id = crypto.randomUUID();
+      return requestReply(
+        { type: "requestScreenshot", id },
+        (m): m is ScreenshotResult => m.type === "screenshotResult" && m.id === id
+      );
+    },
   };
 }

@@ -8,14 +8,17 @@ import {
   geolocationApprovalBody,
   geolocationApprovalTitle,
   recentToolCallCountdown,
+  SCREENSHOT_APPROVAL_BODY,
+  SCREENSHOT_APPROVAL_TITLE,
   statusColor,
   type GeolocationApproval,
   type RecentToolCall,
+  type ScreenshotApproval,
   terminalStatusLabel,
 } from "./approval_state.ts";
 import type { PendingApproval } from "./client.ts";
 import { Field } from "./field.tsx";
-import { ChecklistIcon, HistoryIcon, MapPinIcon, SettingsIcon, WifiOffIcon } from "./icons.tsx";
+import { CameraIcon, ChecklistIcon, HistoryIcon, MapPinIcon, SettingsIcon, WifiOffIcon } from "./icons.tsx";
 import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
 import { SettingsPanel } from "./settings_page.tsx";
 import { SUCCESS_COLOR } from "./theme.ts";
@@ -30,12 +33,15 @@ export interface ShellChromeProps {
   onApprovalsOpenChange: (open: boolean) => void;
   pendingApprovals: PendingApproval[];
   geolocationApprovals: GeolocationApproval[];
+  screenshotApprovals: ScreenshotApproval[];
   decidingApprovalIds: readonly string[];
   recentToolCalls: RecentToolCall[];
   onApproveTool: (approval: PendingApproval) => void;
   onDenyTool: (approval: PendingApproval, reason?: string) => void;
   onApproveGeolocation: (approval: GeolocationApproval) => void;
   onDenyGeolocation: (approval: GeolocationApproval) => void;
+  onApproveScreenshot: (approval: ScreenshotApproval) => void;
+  onDenyScreenshot: (approval: ScreenshotApproval) => void;
   onDismissRecentToolCall: (toolCallId: string) => void;
   onOpenToolCalls: () => void;
   // Live tool-call WebSocket health: when `offline`, the chrome shows a toggle for a warning
@@ -46,6 +52,13 @@ export interface ShellChromeProps {
   geoGranted: boolean;
   tracking: boolean;
   onWithdrawGeolocation: () => void;
+  // Screenshot chrome (rendered only while the standing grant is held): a camera toggle with a
+  // live indicator while the shell holds an active tab-capture stream, opening a stop/withdraw
+  // panel. `sharing` mirrors ScreenshotSession.active, not "a capture is in flight" — capture
+  // itself is instant once sharing.
+  screenshotGranted: boolean;
+  sharingScreen: boolean;
+  onWithdrawScreenshot: () => void;
 }
 
 // zIndex maxed so the shell chrome (toolbar + panels) sits above the full-page iframe.
@@ -103,6 +116,36 @@ function LocationPanel({ tracking, onWithdraw }: { tracking: boolean; onWithdraw
         </Text>
         <Button size="compact-sm" variant="light" color="red" fullWidth onClick={onWithdraw}>
           {tracking ? "Stop & withdraw" : "Withdraw"}
+        </Button>
+      </Stack>
+    </section>
+  );
+}
+
+// The screenshot chrome panel: opened from the camera toggle, shown only while the shell holds
+// the standing grant. "Live" means the shell currently holds an active tab-capture stream (the
+// browser's own sharing indicator is up); "Allowed" means the operator has granted the
+// capability but nothing is being captured right now — the next request will re-open the
+// browser's own share picker. Same stacked-panel shape as LocationPanel.
+function ScreenshotPanel({ sharing, onWithdraw }: { sharing: boolean; onWithdraw: () => void }) {
+  return (
+    <section className="haku-shell-card haku-shell-side-panel" aria-label="Screenshot capture">
+      <Stack gap="xs">
+        <Group justify="space-between" align="center" wrap="nowrap">
+          <Text fw={600} size="sm">
+            Screenshot capture
+          </Text>
+          <Badge color={sharing ? "teal" : "blue"} variant="light">
+            {sharing ? "Live" : "Allowed"}
+          </Badge>
+        </Group>
+        <Text size="xs" c="dimmed">
+          {sharing
+            ? "Your browser is currently sharing this tab so Haku's UI can request screenshots."
+            : "Haku's UI may ask to capture a screenshot until you withdraw consent."}
+        </Text>
+        <Button size="compact-sm" variant="light" color="red" fullWidth onClick={onWithdraw}>
+          {sharing ? "Stop & withdraw" : "Withdraw"}
         </Button>
       </Stack>
     </section>
@@ -230,6 +273,49 @@ function GeolocationApprovalCard({
   );
 }
 
+function ScreenshotApprovalCard({
+  approval,
+  deciding,
+  onApprove,
+  onDeny,
+}: {
+  approval: ScreenshotApproval;
+  deciding: boolean;
+  onApprove: () => void;
+  onDeny: () => void;
+}) {
+  const armed = useArmed(`shot-card:${approval.id}`);
+  const requested = formatTimestamp(approval.createdAt);
+  return (
+    <section className="haku-shell-card">
+      <Stack gap="sm">
+        <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
+          <Stack gap={2} style={{ minWidth: 0 }}>
+            <Text fw={600} size="sm">
+              {SCREENSHOT_APPROVAL_TITLE}
+            </Text>
+            <Text size="xs">{SCREENSHOT_APPROVAL_BODY}</Text>
+            <Text size="xs" c="dimmed" title={requested.title}>
+              Requested {requested.text}
+            </Text>
+          </Stack>
+          <Badge color={deciding ? "blue" : "yellow"} variant="light" style={{ flexShrink: 0 }}>
+            {deciding ? "Applying" : "Pending"}
+          </Badge>
+        </Group>
+        <Group justify="flex-end" gap="xs">
+          <Button size="compact-sm" variant="light" color="red" disabled={deciding || !armed} onClick={onDeny}>
+            Deny
+          </Button>
+          <Button size="compact-sm" color={SUCCESS_COLOR} disabled={deciding || !armed} onClick={onApprove}>
+            Approve
+          </Button>
+        </Group>
+      </Stack>
+    </section>
+  );
+}
+
 function RecentToolCallCard({
   recent,
   nowMs,
@@ -268,28 +354,34 @@ function RecentToolCallCard({
 function ApprovalsTab({
   pendingApprovals,
   geolocationApprovals,
+  screenshotApprovals,
   decidingApprovalIds,
   recentToolCalls,
   onApproveTool,
   onDenyTool,
   onApproveGeolocation,
   onDenyGeolocation,
+  onApproveScreenshot,
+  onDenyScreenshot,
   onDismissRecentToolCall,
 }: Pick<
   ShellChromeProps,
   | "pendingApprovals"
   | "geolocationApprovals"
+  | "screenshotApprovals"
   | "decidingApprovalIds"
   | "recentToolCalls"
   | "onApproveTool"
   | "onDenyTool"
   | "onApproveGeolocation"
   | "onDenyGeolocation"
+  | "onApproveScreenshot"
+  | "onDenyScreenshot"
   | "onDismissRecentToolCall"
 >) {
   const items = useMemo(
-    () => approvalQueueItems(pendingApprovals, geolocationApprovals),
-    [geolocationApprovals, pendingApprovals]
+    () => approvalQueueItems(pendingApprovals, geolocationApprovals, screenshotApprovals),
+    [geolocationApprovals, pendingApprovals, screenshotApprovals]
   );
   const deciding = new Set(decidingApprovalIds);
   const hasPending = items.length > 0;
@@ -314,25 +406,39 @@ function ApprovalsTab({
           <Text fw={600} size="sm">
             Pending
           </Text>
-          {items.map((item) =>
-            item.kind === "tool" ? (
-              <ToolApprovalCard
+          {items.map((item) => {
+            if (item.kind === "tool") {
+              return (
+                <ToolApprovalCard
+                  key={item.id}
+                  approval={item.approval}
+                  deciding={deciding.has(item.id)}
+                  onApprove={() => onApproveTool(item.approval)}
+                  onDeny={(reason) => onDenyTool(item.approval, reason)}
+                />
+              );
+            }
+            if (item.kind === "geolocation") {
+              return (
+                <GeolocationApprovalCard
+                  key={item.id}
+                  approval={item.approval}
+                  deciding={deciding.has(item.id)}
+                  onApprove={() => onApproveGeolocation(item.approval)}
+                  onDeny={() => onDenyGeolocation(item.approval)}
+                />
+              );
+            }
+            return (
+              <ScreenshotApprovalCard
                 key={item.id}
                 approval={item.approval}
                 deciding={deciding.has(item.id)}
-                onApprove={() => onApproveTool(item.approval)}
-                onDeny={(reason) => onDenyTool(item.approval, reason)}
+                onApprove={() => onApproveScreenshot(item.approval)}
+                onDeny={() => onDenyScreenshot(item.approval)}
               />
-            ) : (
-              <GeolocationApprovalCard
-                key={item.id}
-                approval={item.approval}
-                deciding={deciding.has(item.id)}
-                onApprove={() => onApproveGeolocation(item.approval)}
-                onDeny={() => onDenyGeolocation(item.approval)}
-              />
-            )
-          )}
+            );
+          })}
         </Stack>
       )}
       {hasRecent && (
@@ -358,7 +464,8 @@ function ApprovalsTab({
 // toolbar), it follows its content up to the available height and then scrolls its own list, so
 // the smaller settings/location/live panels can stack beneath it rather than being covered.
 function ApprovalsPanel(props: ShellChromeProps) {
-  const pendingCount = props.pendingApprovals.length + props.geolocationApprovals.length;
+  const pendingCount =
+    props.pendingApprovals.length + props.geolocationApprovals.length + props.screenshotApprovals.length;
   return (
     <aside className="haku-shell-card haku-shell-approvals" aria-label="Approvals">
       <section className="haku-shell-panel-nav">
@@ -419,18 +526,35 @@ function ChromeToggle({
 // toggle buttons (squished together, no gaps) over a column that stacks its open panels **by
 // Y**, never by z-index. Each button is `filled` while its panel is open; opening more than one
 // panel stacks them vertically under the toolbar — the approvals panel follows its content up to
-// the available height and scrolls internally, while settings/location/live take their natural
-// height beneath it — so panels share the column instead of floating over one another. Toggles
-// are neutral gray; only genuinely semantic cues keep a color (red pending count, orange
-// offline, green live-location dot).
+// the available height and scrolls internally, while settings/location/screenshot/live take
+// their natural height beneath it — so panels share the column instead of floating over one
+// another. Toggles are neutral gray; only genuinely semantic cues keep a color (red pending
+// count, orange offline, green live-location/live-capture dot).
 export function ShellChrome(props: ShellChromeProps) {
-  const { approvalsOpen, onApprovalsOpenChange, liveStatus, geoGranted, tracking, onWithdrawGeolocation } = props;
+  const {
+    approvalsOpen,
+    onApprovalsOpenChange,
+    liveStatus,
+    geoGranted,
+    tracking,
+    onWithdrawGeolocation,
+    screenshotGranted,
+    sharingScreen,
+    onWithdrawScreenshot,
+  } = props;
   const [locationOpen, setLocationOpen] = useState(false);
+  const [screenshotOpen, setScreenshotOpen] = useState(false);
   const [liveOpen, setLiveOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const pendingCount = props.pendingApprovals.length + props.geolocationApprovals.length;
+  const pendingCount =
+    props.pendingApprovals.length + props.geolocationApprovals.length + props.screenshotApprovals.length;
   const offline = liveStatus === "offline";
-  const anyPanelOpen = approvalsOpen || settingsOpen || (geoGranted && locationOpen) || (offline && liveOpen);
+  const anyPanelOpen =
+    approvalsOpen ||
+    settingsOpen ||
+    (geoGranted && locationOpen) ||
+    (screenshotGranted && screenshotOpen) ||
+    (offline && liveOpen);
   return (
     <div className="haku-shell-chrome" style={{ zIndex: PANEL_Z }}>
       <Group className="haku-shell-toolbar" gap={0} wrap="nowrap">
@@ -452,6 +576,17 @@ export function ShellChrome(props: ShellChromeProps) {
               onClick={() => setLocationOpen((o) => !o)}
             >
               <MapPinIcon />
+            </ChromeToggle>
+          </Indicator>
+        )}
+        {screenshotGranted && (
+          <Indicator color="green" size={10} offset={6} processing disabled={!sharingScreen} withBorder>
+            <ChromeToggle
+              open={screenshotOpen}
+              label={sharingScreen ? "Screenshot capture: live" : "Screenshot capture: allowed"}
+              onClick={() => setScreenshotOpen((o) => !o)}
+            >
+              <CameraIcon />
             </ChromeToggle>
           </Indicator>
         )}
@@ -480,6 +615,9 @@ export function ShellChrome(props: ShellChromeProps) {
           {approvalsOpen && <ApprovalsPanel {...props} />}
           {settingsOpen && <SettingsPanel />}
           {geoGranted && locationOpen && <LocationPanel tracking={tracking} onWithdraw={onWithdrawGeolocation} />}
+          {screenshotGranted && screenshotOpen && (
+            <ScreenshotPanel sharing={sharingScreen} onWithdraw={onWithdrawScreenshot} />
+          )}
           {offline && liveOpen && <LivePanel />}
         </div>
       )}

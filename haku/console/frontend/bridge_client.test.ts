@@ -11,7 +11,7 @@ import type { GeoPosition } from "@haku/console-bridge/protocol";
 // origin. postMessage is spied, so nothing leaves jsdom — we reply by dispatching the event
 // the client listens for.
 const SHELL = "https://shell.example";
-const { openLink, requestLaunch, requestGeolocation, watchGeolocation } = createBridgeClient(SHELL);
+const { openLink, requestLaunch, requestGeolocation, watchGeolocation, requestScreenshot } = createBridgeClient(SHELL);
 
 const POSITION: GeoPosition = {
   latitude: 37.7749,
@@ -96,6 +96,30 @@ describe("requestGeolocation", () => {
     const result = await pending;
     expect(result.ok).toBe(false);
     expect(result.code).toBe(1);
+  });
+});
+
+describe("requestScreenshot", () => {
+  it("posts requestScreenshot and resolves the matching-id ok reply", async () => {
+    const post = vi.spyOn(window.parent, "postMessage").mockImplementation(() => {});
+    const pending = requestScreenshot();
+    const sent = post.mock.calls[0][0] as { type: string; id: string };
+    expect(sent.type).toBe("requestScreenshot");
+
+    shellReply({ type: "screenshotResult", id: sent.id, ok: true, imageDataUrl: "data:image/png;base64,AAAA" });
+    const result = await pending;
+    expect(result.ok).toBe(true);
+    expect(result.imageDataUrl).toBe("data:image/png;base64,AAAA");
+  });
+
+  it("resolves ok:false with a reason on decline", async () => {
+    const post = vi.spyOn(window.parent, "postMessage").mockImplementation(() => {});
+    const pending = requestScreenshot();
+    const { id } = post.mock.calls[0][0] as { id: string };
+
+    shellReply({ type: "screenshotResult", id, ok: false, reason: "declined" });
+    const result = await pending;
+    expect(result).toEqual({ type: "screenshotResult", id, ok: false, imageDataUrl: undefined, reason: "declined" });
   });
 });
 

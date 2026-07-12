@@ -33,9 +33,10 @@ server {
     always;
   add_header Cache-Control $haku_cache_control always;
   add_header Referrer-Policy "no-referrer" always;
-  # Shell (top-level) may read geolocation for the requestGeolocation bridge action; (self)
-  # scopes it to this origin so it's never delegated to the framed haku-ui origin.
-  add_header Permissions-Policy "geolocation=(self)" always;
+  # Shell (top-level) may read geolocation for the requestGeolocation bridge action, and
+  # capture the screen for the requestScreenshot bridge action; (self) scopes both to this
+  # origin so neither is ever delegated to the framed haku-ui origin.
+  add_header Permissions-Policy "geolocation=(self), display-capture=(self)" always;
 
   proxy_http_version 1.1;
   proxy_set_header Host $host;

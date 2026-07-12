@@ -6,8 +6,10 @@ import {
   geolocationApprovalQueueId,
   makeRecentToolCall,
   recentToolCallCountdown,
+  screenshotApprovalQueueId,
   toolApprovalQueueId,
   type GeolocationApproval,
+  type ScreenshotApproval,
 } from "./approval_state.ts";
 import type { PendingApproval, ToolCallRecord } from "./client.ts";
 
@@ -34,6 +36,14 @@ function geolocationApproval(overrides: Partial<GeolocationApproval> = {}): Geol
   };
 }
 
+function screenshotApproval(overrides: Partial<ScreenshotApproval> = {}): ScreenshotApproval {
+  return {
+    id: "shot_1",
+    createdAt: "2026-07-12T10:01:00Z",
+    ...overrides,
+  };
+}
+
 function toolCallRecord(overrides: Partial<ToolCallRecord> = {}): ToolCallRecord {
   return {
     tool_call_id: "tc_1",
@@ -56,13 +66,21 @@ describe("approval queue state", () => {
   it("orders mixed tool and geolocation approvals newest first", () => {
     const items = approvalQueueItems(
       [pendingApproval({ tool_call_id: "tc_old", created_at: "2026-07-07T10:00:00Z" })],
-      [geolocationApproval({ id: "geo_new", createdAt: "2026-07-07T10:02:00Z" })]
+      [geolocationApproval({ id: "geo_new", createdAt: "2026-07-07T10:02:00Z" })],
+      []
     );
 
     expect(items.map((item) => item.id)).toEqual([
       geolocationApprovalQueueId("geo_new"),
       toolApprovalQueueId("tc_old"),
     ]);
+  });
+
+  it("mixes in screenshot approvals alongside tool and geolocation ones", () => {
+    const items = approvalQueueItems([], [], [screenshotApproval({ id: "shot_1", createdAt: "2026-07-12T10:01:00Z" })]);
+
+    expect(items.map((item) => item.id)).toEqual([screenshotApprovalQueueId("shot_1")]);
+    expect(items[0].kind).toBe("screenshot");
   });
 
   it("extracts structured display fields without collapsing everything into one JSON blob", () => {

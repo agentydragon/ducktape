@@ -41,10 +41,11 @@ APP_SHELL_CACHE_CONTROL = "no-cache, max-age=0, must-revalidate"
 IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
 NO_STORE_CACHE_CONTROL = "no-store"
 REFERRER_POLICY = "no-referrer"
-# The shell (top-level) may read geolocation for the `requestGeolocation` bridge action;
-# `(self)` scopes it to the shell origin so it is NEVER delegated to the framed haku-ui
-# origin — the frame stays unable to read location on its own (docs/containment.md).
-PERMISSIONS_POLICY = "geolocation=(self)"
+# The shell (top-level) may read geolocation for the `requestGeolocation` bridge action, and
+# capture the screen for the `requestScreenshot` bridge action; `(self)` scopes both to the
+# shell origin so neither is ever delegated to the framed haku-ui origin — the frame stays
+# unable to read location or capture the screen on its own (docs/containment.md).
+PERMISSIONS_POLICY = "geolocation=(self), display-capture=(self)"
 
 
 def _cache_control_for_path(path: str) -> str:

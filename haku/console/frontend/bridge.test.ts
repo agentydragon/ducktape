@@ -67,6 +67,18 @@ describe("parseInbound", () => {
     expect(parseInbound({ type: "requestGeolocation", id: 7 })).toBeNull();
   });
 
+  it("accepts a well-formed requestScreenshot", () => {
+    expect(parseInbound({ type: "requestScreenshot", id: "s1" })).toEqual({
+      type: "requestScreenshot",
+      id: "s1",
+    });
+  });
+
+  it("rejects requestScreenshot without a string id", () => {
+    expect(parseInbound({ type: "requestScreenshot" })).toBeNull();
+    expect(parseInbound({ type: "requestScreenshot", id: 7 })).toBeNull();
+  });
+
   it("rejects malformed / unknown payloads", () => {
     expect(parseInbound(null)).toBeNull();
     expect(parseInbound("nope")).toBeNull();

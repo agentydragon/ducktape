@@ -18,13 +18,14 @@ components + **Tailwind v4** utilities — modeled on
 - `console_panel.tsx` — the shell chrome (`ShellChrome`): a fixed top-right **floating toolbar**
   (one squished bar of toggle buttons, each `filled` when its panel is open) over a column that
   stacks its open panels **by Y, never by z-index**. Toolbar buttons are neutral gray with only
-  semantic color cues (red pending count, orange offline, green live-location dot): approvals (a
-  checklist), settings (a gear), plus a crossed-wifi live-offline warning when the event socket
-  is down and a location pin while the standing grant is held. Below the toolbar, the open panels
-  stack: the approvals panel (queue + a Past-tool-calls link) follows its content until it reaches
-  the available height, then scrolls its list; settings (MCP accounts) behaves the same way, while
-  location (stop/withdraw) and live-offline panels take their natural height beneath them. Opening
-  several shows them stacked, not overlapping.
+  semantic color cues (red pending count, orange offline, green live-location/live-capture dot):
+  approvals (a checklist), settings (a gear), plus a crossed-wifi live-offline warning when the
+  event socket is down, a location pin while the geolocation standing grant is held, and a camera
+  while the screenshot standing grant is held. Below the toolbar, the open panels stack: the
+  approvals panel (queue + a Past-tool-calls link) follows its content until it reaches the
+  available height, then scrolls its list; settings (MCP accounts) behaves the same way, while
+  location/screenshot (stop/withdraw) and live-offline panels take their natural height beneath
+  them. Opening several shows them stacked, not overlapping.
 - `settings_page.tsx` — `SettingsPanel`, the operator settings drawer (a `ShellChrome` panel
   toggled from the toolbar's gear): MCP operator account connect/reconnect/disconnect. It's a
   chrome drawer, not a route, so it stacks alongside the other panels.

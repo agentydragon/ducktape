@@ -31,8 +31,9 @@ def test_config_haku_ui_url_surfaced_and_csp_allows_framing_it(make_client) -> N
         assert f"frame-src 'self' {ui} {auth_origin}" in csp
         assert "frame-ancestors 'none'" in csp
         assert resp.headers["referrer-policy"] == "no-referrer"
-        # Geolocation is scoped to the shell origin — never delegated to the framed haku-ui.
-        assert resp.headers["permissions-policy"] == "geolocation=(self)"
+        # Geolocation and screen capture are scoped to the shell origin — never delegated to the
+        # framed haku-ui.
+        assert resp.headers["permissions-policy"] == "geolocation=(self), display-capture=(self)"
 
 
 def test_cache_policy_splits_hashed_assets_app_shell_and_api(make_client, tmp_path: Path) -> None:

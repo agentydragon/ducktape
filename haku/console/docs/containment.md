@@ -166,6 +166,50 @@ it ends. Why it must route through the shell, and how consent works:
   grant, the shell-held watch, and the one-click stop; see `../../docs/security.md` →
   _Browser-side exfiltration_.
 
+### `requestScreenshot` — capture the shell's own on-screen rect (standing grant)
+
+haku-ui posts `{type: "requestScreenshot", id}`; the shell replies with
+`{type: "screenshotResult", id, ok, imageDataUrl?, reason?}` — a PNG data URL cropped to the
+iframe's live `getBoundingClientRect()`, or `ok:false` with a reason (`declined`, `withdrawn`,
+or the browser's own picker error/dismissal). This is a real tab/window capture
+(`getDisplayMedia`), not a DOM serialization — haku-ui's own `html-to-image` fallback
+(`screenshot.ts`) exists precisely because a real capture can't be granted from inside the
+sandboxed iframe. Why it must route through the shell, and how consent works:
+
+- **The frame cannot capture the screen itself.** The iframe has **no
+  `allow="display-capture"`**, and the shell serves `Permissions-Policy: display-capture=(self)`
+  — capture is delegated to nothing. Only the trusted top-level origin can call
+  `getDisplayMedia`, so the iframe must ask.
+- **The shell holds the one live capture stream.** `screenshot_capture.ts`'s `ScreenshotSession`
+  keeps the `getDisplayMedia` stream (decoded into a hidden `<video>`) alive across requests, so
+  a prompt-injected Haku can neither start a capture silently (it needs the grant, and
+  `getDisplayMedia` itself needs a genuine operator click) nor keep one running after the
+  operator's own browser-native "Stop sharing" control or the console panel's withdraw ends it.
+- **A shell-owned standing grant is the gate** (`screenshot_grant.ts`, persisted in the shell
+  origin's `localStorage`, same shape as `geolocation_grant.ts` but its own key — cross-origin
+  isolated, so the frame can't read or forge it). The first ask with no grant queues a
+  non-modal approval card ("Allow screen capture for a screenshot?"); approving records the
+  grant **and** opens the browser's own tab-share picker in the same click (the user gesture
+  `getDisplayMedia` requires) — so subsequent requests, while the stream stays live, are instant
+  frame grabs with **no** picker and no DOM walk.
+- **Two gates, and an asymmetry from geolocation.** The shell grant is the app-level gate; the
+  browser's own `getDisplayMedia` picker is the platform-level gate — but unlike geolocation's
+  browser permission, the picker has **no persistent silent grant**: it reappears every time a
+  _new_ stream is requested. So even with the standing grant already set, if the operator's
+  browser-native "Stop sharing" ended the session, the next `requestScreenshot` still queues a
+  fresh approval card (same title, "resume" in effect) to get a real click before reopening the
+  picker — it cannot be served silently the way a granted geolocation read can.
+- **Withdrawal** is a shell control in the console panel (the camera toggle's stop/withdraw
+  panel): it stops the live stream (dropping the browser's own sharing indicator) and revokes
+  the grant. Declining the approval, withdrawing, or the operator's own "Stop sharing" all leave
+  the request unanswered only until the next ask; a request in flight at that moment resolves
+  `ok:false` with `reason` `declined`/`withdrawn`.
+- **Residual:** once granted, a captured screenshot is a datum the assumed-adversarial frame now
+  holds and can exfiltrate only via the already-accepted browser channels (whitelisted
+  `openLink`, WebRTC) — same bound as geolocation. Unlike geolocation there is no continuous
+  stream handed to the frame itself; each capture is one bounded image the frame explicitly
+  asked for. See `../../docs/security.md` → _Browser-side exfiltration_.
+
 ### `openLink` — send the operator to a URL
 
 `{type: "openLink", url}` → the shell opens it on the operator's behalf (the sandbox has no

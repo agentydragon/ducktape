@@ -54,13 +54,24 @@ export interface RouteChanged {
   path: string;
 }
 
+// Capture a screenshot of the frame's own on-screen rect (mirrors a real tab/window capture,
+// not a DOM serialization). The iframe cannot call `getDisplayMedia` itself (no
+// `allow="display-capture"`); the shell holds a live tab-capture stream behind a standing
+// operator grant and crops each request to the iframe's current `getBoundingClientRect()`.
+// `id` correlates the `ScreenshotResult`.
+export interface ScreenshotRequest {
+  type: "requestScreenshot";
+  id: string;
+}
+
 export type Inbound =
   | OpenLinkRequest
   | LaunchRequest
   | GeolocationRequest
   | GeolocationWatchStart
   | GeolocationWatchStop
-  | RouteChanged;
+  | RouteChanged
+  | ScreenshotRequest;
 
 // ── Outbound (shell → iframe): the shell's reply, so Haku's UI can react to the outcome. ──
 
@@ -93,7 +104,18 @@ export interface GeolocationResult {
   reason?: string;
 }
 
-export type Outbound = OpenLinkResult | LaunchResult | GeolocationResult;
+// The captured image (a PNG data URL, already cropped to the iframe's rect) for a
+// `ScreenshotRequest`, or `ok:false` + a reason (declined, withdrawn, or the browser's own
+// tab-share picker was dismissed).
+export interface ScreenshotResult {
+  type: "screenshotResult";
+  id: string;
+  ok: boolean;
+  imageDataUrl?: string;
+  reason?: string;
+}
+
+export type Outbound = OpenLinkResult | LaunchResult | GeolocationResult | ScreenshotResult;
 
 // Mirror of the browser Geolocation API's `PositionOptions` (getCurrentPosition's option
 // bag). Named explicitly, not aliased to the DOM type, so the wire contract is
