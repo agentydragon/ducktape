@@ -1,0 +1,34 @@
+rationale: |
+  The frontend argument validators are generated from separate Pydantic example models rather than the FastMCP tools' actual input schemas. The Gmail tool signatures accept explicit null for `add`, `remove`, and `cc`, while the example models require arrays; the Calendar signature likewise accepts null for `reminders` and `attendees` while its example model requires arrays. Calls accepted by FastMCP can therefore fail the generated Zod schemas used by the custom previews and fall back to generic JSON. Export the built FastMCP tools' input schemas so execution and rendering share one contract.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      haku/console/tools/gmail.py:
+        - [62, 68]
+        - [122, 141]
+        - [211, 228]
+      haku/console/tools/gmail_client.py:
+        - [37, 66]
+      haku/console/frontend/tool_previews/gmail.tsx:
+        - [1, 24]
+        - [168, 175]
+    note: "Gmail write-tool schemas"
+    critic_scopes_expected_to_recall:
+      - [haku/console/tools/gmail.py, haku/console/tools/gmail_client.py]
+      - [haku/console/tools/gmail.py, haku/console/frontend/tool_previews/gmail.tsx]
+
+  - occurrence_id: occ-1
+    files:
+      haku/console/tools/google_calendar.py:
+        - [45, 83]
+        - [114, 129]
+      haku/console/tools/google_calendar_client.py:
+        - [51, 66]
+      haku/console/frontend/tool_previews/google_calendar.tsx:
+        - [1, 22]
+        - [210, 215]
+    note: "Google Calendar create-event schema"
+    critic_scopes_expected_to_recall:
+      - [haku/console/tools/google_calendar.py, haku/console/tools/google_calendar_client.py]
+      - [haku/console/tools/google_calendar.py, haku/console/frontend/tool_previews/google_calendar.tsx]

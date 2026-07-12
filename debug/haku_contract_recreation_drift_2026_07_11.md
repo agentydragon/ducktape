@@ -32,33 +32,6 @@ The common remedy is not simply more unit tests. The recreated behavior should b
 
 ## Confirmed current divergence
 
-### A. FastMCP argument schemas and frontend preview schemas disagree
-
-Severity: high
-
-Owner:
-
-- `haku/console/tools/gmail.py:62-68,122-141`
-- `haku/console/tools/google_calendar.py:45-83`
-
-Recreation:
-
-- `haku/console/tools/gmail_client.py:37-66`
-- `haku/console/tools/google_calendar_client.py:51-66`
-- fake OpenAPI schema endpoints in `haku/console/tools/gmail.py:211-228` and `haku/console/tools/google_calendar.py:114-129`
-- generated Zod consumers in `haku/console/frontend/tool_previews/gmail.tsx` and `google_calendar.tsx`
-
-The actual FastMCP signatures accept explicit JSON `null` for Gmail `add`, `remove`, and `cc`, and Calendar `reminders` and `attendees`. The separately exported Pydantic/OpenAPI models allow an array or omission, but not explicit `null`.
-
-Consequently, a call accepted by the actual MCP tool can fail the generated Zod validator. `renderPreview` then selects the generic JSON fallback, losing the custom preview and title. This is the same user-visible failure class as the screenshot-gallery defect.
-
-Consolidation:
-
-- generate frontend validators from each built FastMCP tool's actual `inputSchema`; or
-- make the FastMCP tool consume the same argument model used for OpenAPI generation.
-
-Remove the fake schema-example endpoints. Add a parity test against actual `tools/list` schemas and explicit-null cases.
-
 ### B. Dispatch database state recreates Kubernetes Job lifecycle incompletely
 
 Severity: high
