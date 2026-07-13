@@ -128,9 +128,18 @@ jobs:
               # silent no-op ("is a source file, nothing will be built for
               # it") -- harmless but noisy. Filter them out up front so the
               # affected set passed to build/test only contains rules.
-              { printf 'set('; tr '\n' ' ' < /tmp/affected-raw.txt; \
+              #
+              # Each label is double-quoted inside set(...): aspect_rules_js
+              # node_modules targets for scoped pnpm packages are named with
+              # a '+' (e.g. //:.aspect_rules_js/node_modules/@lezer+json@1.0.3/dir),
+              # and an unquoted '+' in a set() expression is parsed as the
+              # set-union operator, so a PR that newly affects such a target
+              # (any PR adding a scoped npm dep) breaks the query with a
+              # syntax error. Quoting makes the '+' a literal label character.
+              quote() { sed '/^$/d; s/.*/"&"/' "$1" | tr '\n' ' '; }
+              { printf 'set('; quote /tmp/affected-raw.txt; \
                 printf ') except kind("source file", set('; \
-                tr '\n' ' ' < /tmp/affected-raw.txt; printf '))\n'; } \
+                quote /tmp/affected-raw.txt; printf '))\n'; } \
                 > /tmp/affected-query.txt
               bazel query --query_file=/tmp/affected-query.txt > /tmp/affected.txt
 
@@ -147,7 +156,7 @@ jobs:
               # set(...) embeds the same patterns in the query expression
               # instead, written to a file (--query_file) rather than argv
               # so a large affected set can't hit command-line length limits.
-              { printf 'tests(set('; tr '\n' ' ' < /tmp/affected.txt; printf '))\n'; } \
+              { printf 'tests(set('; quote /tmp/affected.txt; printf '))\n'; } \
                 > /tmp/test-query.txt
             else
               # push to devel / workflow_dispatch: full sweep.
