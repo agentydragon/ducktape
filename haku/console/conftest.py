@@ -172,3 +172,17 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
 def client(make_client: Callable[..., Any]) -> Iterator[TestClient]:
     with make_client() as c:
         yield c
+
+
+@pytest.fixture
+def make_operator_client(make_client: Callable[..., Any]) -> Callable[..., Any]:
+    """`make_client` with `operator=True` baked in: the app runs in the production app-owned-auth
+    mode (SessionMiddleware + active router guards) and the client carries an authenticated operator
+    session. Pass the same `Settings` overrides you would to `make_client`."""
+
+    @contextmanager
+    def _make(**settings_overrides: Any) -> Iterator[TestClient]:
+        with make_client(operator=True, **settings_overrides) as c:
+            yield c
+
+    return _make
