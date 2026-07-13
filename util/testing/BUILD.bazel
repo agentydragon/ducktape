@@ -111,6 +111,8 @@ py_library(
     srcs = ["asgi.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//util:net",
+        "@pypi//fastmcp",
         "@pypi//starlette",
         "@pypi//uvicorn",
     ],

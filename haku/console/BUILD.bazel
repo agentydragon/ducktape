@@ -412,15 +412,14 @@ py_test(
         "//gmail_api:labels",
         "//haku/console/tools:gmail",
         "//util:net",
+        "//util/testing:asgi",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastmcp",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
         "@pypi//starlette",
-        "@pypi//uvicorn",
         # pytest-asyncio auto mode (root conftest) needs the plugin importable at runtime.
         "@pypi//pytest_asyncio",
     ],
@@ -448,6 +447,7 @@ py_test(
         "//third_party/containers:rlocations",
         "//util:net",
         "//util:oci",
+        "//util/testing:asgi",
         "//util/testing:postgres",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//alembic",
@@ -457,11 +457,9 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
         "@pypi//testcontainers",
-        "@pypi//uvicorn",
         # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
         # needs the plugin importable at runtime for its entry-point autoload; Gazelle
         # can't see that and will try to drop this dep on regen.
