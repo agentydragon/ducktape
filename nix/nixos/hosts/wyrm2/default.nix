@@ -24,6 +24,7 @@ in
     ../../modules/bazel
     ../../modules/system-inspection-sudo.nix
     ../../modules/claude-desktop.nix
+    ../../modules/home-wifi.nix
     ../../modules/k8s-worker.nix
     ../../modules/gpu-monitor.nix
     ../../modules/attic-substituter.nix
@@ -35,6 +36,8 @@ in
   # Claude Desktop Cowork sandboxed-microVM feature (QEMU firmware + virtiofsd
   # at the Debian /usr paths the app probes).
   ducktape.cowork.enable = true;
+
+  ducktape.homeWifi.enable = true;
 
   # Pull substituter for cache.allegedly.works/{main,gaffer}. Reader JWT is
   # auto-rotated by attic-rotate-wyrm2-reader CronJob; the SOPS file is

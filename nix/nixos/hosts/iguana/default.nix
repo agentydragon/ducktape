@@ -34,6 +34,7 @@ in
     ../../modules/bazel
     ../../modules/system-inspection-sudo.nix
     ../../modules/claude-desktop.nix
+    ../../modules/home-wifi.nix
     ../../modules/k8s-worker.nix
   ];
 
@@ -43,6 +44,8 @@ in
   # Claude Desktop Cowork sandboxed-microVM feature (QEMU firmware + virtiofsd
   # at the Debian /usr paths the app probes).
   ducktape.cowork.enable = true;
+
+  ducktape.homeWifi.enable = true;
 
   # TODO: enable Attic substituter for cache.allegedly.works/{main,gaffer}.
   # Reader JWT is already auto-rotated into secrets/hosts/iguana-attic.yaml

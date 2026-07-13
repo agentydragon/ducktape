@@ -517,6 +517,14 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
+  # Home Wi-Fi credentials are consumed by system-level NetworkManager on the
+  # named NixOS hosts, so encrypt to their host identities rather than users.
+  - path_regex: secrets/shared/home-wifi\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-host
+          - *iguana-host
   # --- All-user secrets (admin + all user SSH keys) ---
   # cluster-secrets-age: Flux SOPS decryption key (TODO: consider narrowing to admin-only)
   # flux-deploy-key: ED25519 SSH key registered as GitHub deploy key
