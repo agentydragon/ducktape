@@ -75,6 +75,12 @@ spec:
             #   passthrough (and whether to inspect the rest).
             - --ignore-hosts
             - api\.anthropic\.com
+            # Same passthrough treatment for AnkiWeb sync (haku-anki): rslib's reqwest
+            # ships bundled webpki roots, so intercepted leaves would be rejected — and
+            # the traffic (haku-owned account, protobuf sync protocol) needs no
+            # inspection. CONNECT-level gating via the FQDN allowlist still applies.
+            - --ignore-hosts
+            - .*\.ankiweb\.net
           ports:
             - name: proxy
               containerPort: 8080

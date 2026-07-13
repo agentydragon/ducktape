@@ -131,6 +131,16 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
+    # AnkiWeb sync (haku-anki service, haku/plans in haku-state): sync.ankiweb.net plus
+    # the shard hosts it 308-redirects to — Anki's own firewall guidance is to allow
+    # *.ankiweb.net because hostnames change. Client is rslib's reqwest (honors
+    # HTTPS_PROXY; verified with a local CONNECT probe 2026-07-13).
+    - toFQDNs:
+        - matchPattern: "*.ankiweb.net"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
     # Allow forwarding to any in-cluster Service. Sandbox workloads keep
     # mitmproxy in-path even when targeting cluster endpoints; NO_PROXY in the
     # inject policy still permits explicit bypass for Service FQDNs that already
