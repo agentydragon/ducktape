@@ -7,9 +7,13 @@ request. A producer opts in by writing `visual-review.json` and its declared
 PNG assets as undeclared test outputs; the trusted publisher discovers those
 outputs from the tests that Bazel CI actually executed.
 
+Successful `devel` runs already publish an immutable bundle per commit plus a
+mutable per-test baseline pointer at `baselines/<slug>/latest.json`. Baseline
+identity is `(repository, canonical Bazel test label, manifest asset path)`.
+
 The next milestone is useful visual comparison, not broader producer coverage:
-publish a known-good `devel` baseline, classify each candidate asset, and show
-reviewers the baseline, candidate, and diff with clear provenance.
+classify each candidate asset against its published baseline and show reviewers
+the baseline, candidate, and diff with clear provenance.
 
 ## 1. Exercise the generic path live
 
@@ -38,31 +42,7 @@ Exit criterion: a real pull request demonstrates two independently implemented
 producers, sticky-comment maintenance across revisions, and actionable failure
 reporting.
 
-## 2. Publish `devel` baselines
-
-Run the trusted publisher for successful `devel` CI without creating pull
-request comments. For each visual-producing test, publish immutable commit data
-before updating a small mutable pointer to its newest successful baseline.
-
-Baseline identity is:
-
-```text
-(repository, canonical Bazel test label, manifest asset path)
-```
-
-The pointer records the full baseline commit SHA and enough manifest metadata
-to reject a mismatched target or repository. Candidate pages and metadata must
-record both candidate and baseline SHAs.
-
-Define retention independently from correctness. Immutable pages referenced by
-an open pull request must remain available; a baseline pointer must never name
-deleted data.
-
-Exit criterion: a successful `devel` run establishes baselines for Haku and AI
-quota, and a later pull-request run resolves only the matching target and asset
-baselines.
-
-## 3. Classify and render visual changes
+## 2. Classify and render visual changes
 
 For each PNG asset:
 
@@ -98,7 +78,7 @@ Exit criterion: fixtures cover unchanged, modified, new, removed, dimension-
 changed, and threshold-tolerated assets, and a real pull request shows correct
 side-by-side comparisons and diffs.
 
-## 4. Harden publication
+## 3. Harden publication
 
 - Extend manifest validation with media types, file counts, file sizes, decoded
   dimensions, and total decoded-pixel limits.
@@ -110,6 +90,8 @@ side-by-side comparisons and diffs.
 - Add per-pull-request workflow concurrency and cancel older runs.
 - Recheck the pull request head immediately before replacing its sticky
   comment.
+- Recheck the baseline pointer commit against the current `devel` head before
+  overwriting the mutable pointer.
 - Preserve leaf-first upload ordering as asset pages are added, keeping the
   commit index last.
 - Add bounded retries for BuildBuddy, S3, and GitHub operations while retaining
@@ -120,7 +102,7 @@ side-by-side comparisons and diffs.
 Exit criterion: fault-injection tests prove that stale runs and partial
 failures cannot publish a misleading current result.
 
-## 5. Document and expand producer coverage
+## 4. Document and expand producer coverage
 
 Write a short producer recipe next to the shared Python and JavaScript manifest
 writers. A new producer should need only to:
@@ -172,7 +154,8 @@ image, not merely a successful upload command.
 
 ## Open decisions
 
-1. Baseline pointer representation and retention policy.
+1. Retention policy for superseded baseline commit bundles and PR-referenced
+   pages.
 2. Diff visualization style and whether a later schema needs per-asset masks.
 3. Whether unchanged-only runs always maintain a short sticky comment or only
    update an existing comment.

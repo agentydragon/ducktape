@@ -11,6 +11,7 @@ from devinfra.ci.pr_visuals import (
     download_visual_tests,
     error_comment_body,
     find_test_invocations,
+    publish_baselines,
     success_comment_body,
     target_slug,
     upload_bundle,
@@ -213,6 +214,74 @@ def test_upload_publishes_all_indexes_last(tmp_path: Path) -> None:
     first_index = next(index for index, key in enumerate(client.keys) if key.endswith("index.html"))
     assert all(not key.endswith("index.html") for key in client.keys[:first_index])
     assert client.keys[-1] == "commits/sha/index.html"
+
+
+def test_publish_baselines_writes_per_test_pointer(tmp_path: Path) -> None:
+    manifest = VisualReviewManifest.model_validate(
+        {
+            "schema": "ducktape.visual-review.v1",
+            "title": "Example UI",
+            "assets": [{"path": "screen.png", "label": "Screen"}],
+        }
+    )
+    test = DownloadedVisualTest("//example:visuals", target_slug("//example:visuals"), manifest, tmp_path)
+    sha = "0123456789abcdef0123456789abcdef01234567"
+
+    class FakeS3:
+        def __init__(self) -> None:
+            self.uploads: list[tuple[str, dict[str, object], dict[str, str]]] = []
+
+        def upload_file(self, path: Path, bucket: str, key: str, **kwargs: dict[str, str]) -> None:
+            assert bucket == "visuals"
+            self.uploads.append((key, json.loads(path.read_bytes()), kwargs["ExtraArgs"]))
+
+    client = FakeS3()
+    keys = publish_baselines(
+        [test],
+        repository="agentydragon/ducktape",
+        commit_sha=sha,
+        endpoint="https://s3.test",
+        bucket="visuals",
+        public_base_url="https://s3.allegedly.works/pr-visuals/",
+        work_dir=tmp_path,
+        client=client,
+    )
+
+    slug = target_slug("//example:visuals")
+    assert keys == [f"baselines/{slug}/latest.json"]
+    assert len(client.uploads) == 1
+    key, body, extra_args = client.uploads[0]
+    assert key == f"baselines/{slug}/latest.json"
+    assert extra_args == {"CacheControl": "no-cache, max-age=0, must-revalidate", "ContentType": "application/json"}
+    assert body == {
+        "schema": "ducktape.visual-baseline.v1",
+        "repository": "agentydragon/ducktape",
+        "target_label": "//example:visuals",
+        "commit_sha": sha,
+        "asset_paths": ["screen.png"],
+        "url": f"https://s3.allegedly.works/pr-visuals/commits/{sha}/tests/{slug}/",
+    }
+
+
+def test_publish_baselines_validates_full_sha(tmp_path: Path) -> None:
+    manifest = VisualReviewManifest.model_validate(
+        {
+            "schema": "ducktape.visual-review.v1",
+            "title": "Example UI",
+            "assets": [{"path": "screen.png", "label": "Screen"}],
+        }
+    )
+    test = DownloadedVisualTest("//example:visuals", target_slug("//example:visuals"), manifest, tmp_path)
+    with pytest.raises(ValueError, match="full 40-character"):
+        publish_baselines(
+            [test],
+            repository="agentydragon/ducktape",
+            commit_sha="0123456",
+            endpoint="https://s3.test",
+            bucket="visuals",
+            public_base_url="https://s3.allegedly.works/pr-visuals/",
+            work_dir=tmp_path,
+        )
 
 
 if __name__ == "__main__":
