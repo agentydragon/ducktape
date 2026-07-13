@@ -300,14 +300,21 @@ def publish_check_run(
     token: str,
 ) -> None:
     with Github(auth=Auth.Token(token)) as github:
-        github.get_repo(repository).create_check_run(
-            name="PR visual review",
-            head_sha=commit_sha,
-            status="completed",
-            conclusion=conclusion,
-            details_url=details_url,
-            output={"title": "PR visual review", "summary": summary[:65000]},
-        )
+        repo = github.get_repo(repository)
+        output: dict[str, str | list[dict[str, str | int]]] = {"title": "PR visual review", "summary": summary[:65000]}
+        if details_url is None:
+            repo.create_check_run(
+                name="PR visual review", head_sha=commit_sha, status="completed", conclusion=conclusion, output=output
+            )
+        else:
+            repo.create_check_run(
+                name="PR visual review",
+                head_sha=commit_sha,
+                status="completed",
+                conclusion=conclusion,
+                details_url=details_url,
+                output=output,
+            )
 
 
 def current_workflow_url() -> str | None:
