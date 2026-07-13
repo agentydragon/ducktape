@@ -140,6 +140,8 @@ in
     openFirewall = true;
   };
 
+  programs.steam.enable = true;
+
   # User configuration
   users.users.${username} = {
     shell = pkgs.zsh;
