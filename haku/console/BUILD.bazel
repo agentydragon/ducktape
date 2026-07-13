@@ -196,6 +196,8 @@ py_library(
         ":mcp_config",
         ":mcp_operator_oauth",
         "//haku/console/tools:gmail_client",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
         "//mcp_infra/authentik_auth:auth",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",

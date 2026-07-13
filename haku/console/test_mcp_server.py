@@ -88,23 +88,23 @@ async def test_tool_surface_splits_pass_through_and_request(harness: _Harness) -
     async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
         tools = {t.name: t for t in await client.list_tools()}
 
-    # Gmail reads are transparent pass-through: original name, no envelope nesting.
-    assert "labels_list" in tools
-    assert "input" not in tools["labels_list"].inputSchema.get("properties", {})
+    # Gmail reads are transparent pass-through: server-prefixed name, no envelope nesting.
+    assert "gmail_labels_list" in tools
+    assert "input" not in tools["gmail_labels_list"].inputSchema.get("properties", {})
     # Gmail writes are approval-request tools with the envelope.
-    assert "request_gmail_drafts_create" in tools
-    envelope = tools["request_gmail_drafts_create"].inputSchema
+    assert "gmail_drafts_create" in tools
+    envelope = tools["gmail_drafts_create"].inputSchema
     assert set(envelope["required"]) == {"input", "rationale"}
     assert set(envelope["properties"]) == {"input", "title", "rationale", "wait_for_approval_ms"}
     # The read tools are present.
     assert {"get_tool_call", "list_tool_calls"} <= tools.keys()
-    # The promise preamble is in the request_ description.
-    assert "operator-approval queue" in tools["request_gmail_drafts_create"].description
+    # The promise preamble is in the envelope tool's description.
+    assert "operator-approval queue" in tools["gmail_drafts_create"].description
 
 
 async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harness) -> None:
     async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
-        result = await client.call_tool("labels_list", {})
+        result = await client.call_tool("gmail_labels_list", {})
 
     assert result.structured_content is not None
     assert result.structured_content["labels"][0]["name"] == "haku/triaged"
@@ -119,7 +119,7 @@ async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harn
 async def test_request_tool_returns_promise_with_deep_link(harness: _Harness) -> None:
     async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
         result = await client.call_tool(
-            "request_gmail_drafts_create",
+            "gmail_drafts_create",
             {
                 "input": {"to": ["a@b.test"], "subject": "s", "body": "b"},
                 "rationale": "test",
@@ -191,12 +191,12 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
                 )
             assert unauth.status_code == 401
 
-            # The agent (bearer) sees the upstream tool as a request_ envelope and gets a promise.
+            # The agent (bearer) sees the upstream tool behind the approval envelope and gets a promise.
             async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
                 tools = {t.name for t in await client.list_tools()}
-                assert "request_standin_echo" in tools
+                assert "standin_echo" in tools
                 result = await client.call_tool(
-                    "request_standin_echo", {"input": {"text": "hi"}, "rationale": "e2e", "wait_for_approval_ms": 0}
+                    "standin_echo", {"input": {"text": "hi"}, "rationale": "e2e", "wait_for_approval_ms": 0}
                 )
                 assert result.structured_content is not None
                 assert result.structured_content["status"] == ToolCallStatus.PENDING_APPROVAL
@@ -276,7 +276,7 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
         with serve_app_sync(create_app(settings), port=console_port) as base:
             # The static bearer still authenticates (MultiAuth composes OAuth + static).
             async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
-                assert "request_standin_echo" in {t.name for t in await client.list_tools()}
+                assert "standin_echo" in {t.name for t in await client.list_tools()}
 
             # The public proxy scheme survives the app's slash redirect. In production nginx
             # forwards this Cilium-provided header; losing it would downgrade HTTPS to HTTP here.

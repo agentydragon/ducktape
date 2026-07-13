@@ -10,12 +10,14 @@ runs when the reviewed policy allows, otherwise it returns a **promise** (a pend
 The tool surface has two buckets (v1: uniform across agents, driven by the global auto-approval
 policy):
 
-- **Pass-through** — tools the policy unconditionally auto-approves (gmail reads): registered with
-  the upstream tool's *original* name, schema, and description, so they behave like the real tool
-  and return the real result.
-- **Request** — everything else: registered as ``request_<server>_<tool>`` with an envelope
-  (``input`` + ``rationale`` + optional ``title``/``wait_for_approval_ms``) and a promise-semantics
-  preamble in the description; returns the real result *or* a promise.
+Every proxied tool is named ``<server>_<tool>`` (one uniform format — operator decision
+2026-07-13; bare upstream names hid which server a tool belonged to):
+
+- **Pass-through** — tools the policy unconditionally auto-approves (gmail reads): the upstream
+  schema and description unchanged, so they behave like the real tool and return the real result.
+- **Request** — everything else: an envelope schema (``input`` + ``rationale`` + optional
+  ``title``/``wait_for_approval_ms``) and a promise-semantics preamble in the description;
+  returns the real result *or* a promise.
 
 Both buckets, and ``POST /api/tool-calls``, run through the single ``submit_and_wait`` path.
 """
@@ -65,21 +67,23 @@ from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.tool_calls import SubmitToolCallRequest, ToolCallRecord, ToolCallStatus
 from haku.console.tools.gmail_client import GmailToolsClient
 from mcp_infra.authentik_auth.auth import OnClientAuthorized, build_authentik_auth
+from mcp_infra.naming import build_mcp_function
+from mcp_infra.prefix import MCPMountPrefix
 
 logger = logging.getLogger(__name__)
 
 SERVER_NAME = "haku-console"
-# Synchronous hold budget (ms) before a call returns a promise; overridable per request_ call.
+# Synchronous hold budget (ms) before a call returns a promise; overridable per envelope call.
 DEFAULT_WAIT_MS = 5000
 MAX_WAIT_MS = 60_000
 
 INSTRUCTIONS = (
-    "haku-console tool proxy. Tools here submit a request to the operator's approval queue rather "
-    "than running immediately. A `request_<server>_<tool>` tool takes your real arguments under "
-    "`input` plus a `rationale`; it returns the tool's result if it is approved within a few "
-    "seconds, otherwise a promise (a pending `tool_call_id` and a link for the operator to approve). "
-    "Poll `get_tool_call(tool_call_id)` to resolve a promise. Tools shown under their plain name "
-    "auto-approve and return their result directly."
+    "haku-console tool proxy. Every proxied tool is named `<server>_<tool>`. Tools whose schema "
+    "wraps the real arguments in an `input` + `rationale` envelope submit a request to the "
+    "operator's approval queue rather than running immediately: they return the tool's result if "
+    "it is approved within a few seconds, otherwise a promise (a pending `tool_call_id` and a "
+    "link the operator can approve at). Poll `get_tool_call(tool_call_id)` to resolve a promise. "
+    "Tools with the upstream tool's own schema auto-approve and return their result directly."
 )
 
 _REQUEST_PREAMBLE = (
@@ -106,7 +110,7 @@ class ConsoleMcpContext:
 
 
 class ToolCallPromise(BaseModel):
-    """Returned by a `request_` tool when the call is not yet terminal."""
+    """Returned by an approval-envelope tool when the call is not yet terminal."""
 
     status: ToolCallStatus
     tool_call_id: str
@@ -122,7 +126,7 @@ class ToolCallView(BaseModel):
 
 
 class ApprovalRequestEnvelope(BaseModel):
-    """The `request_<server>_<tool>` envelope. One model drives both the generated input schema
+    """The approval-request envelope. One model drives both the generated input schema
     (`_envelope_schema`) and parsing the incoming call (`ProxyTool.run`)."""
 
     input: dict[str, Any] = Field(description="The real arguments for the upstream tool.")
@@ -204,7 +208,7 @@ def _record_to_result(record: ToolCallRecord, settings: Settings) -> ToolResult:
 class ProxyTool(Tool):
     """A connected-server tool re-exposed through the approval queue.
 
-    ``passthrough`` tools advertise the upstream schema and take the raw args; ``request_`` tools
+    ``passthrough`` tools advertise the upstream schema and take the raw args; envelope tools
     advertise the envelope and read the call args from ``input``. Both route through
     ``submit_and_wait``.
     """
@@ -254,12 +258,13 @@ class ProxyTool(Tool):
 
 def _build_proxy_tool(context: ConsoleMcpContext, server_id: str, tool: Any, *, passthrough: bool) -> ProxyTool:
     schema = tool.input_schema if isinstance(tool.input_schema, dict) and tool.input_schema else {"type": "object"}
+    # One uniform name format for both buckets — approval semantics live in the schema and
+    # description, never in the name (operator decision 2026-07-13).
+    name = build_mcp_function(MCPMountPrefix(_sanitize_prefix(server_id)), tool.name)
     if passthrough:
-        name = tool.name
         parameters = schema
         description = tool.description or ""
     else:
-        name = f"request_{_sanitize_prefix(server_id)}_{tool.name}"
         parameters = _envelope_schema(schema)
         preamble = _REQUEST_PREAMBLE.format(tool=tool.name, server=server_id)
         description = f"{preamble}\n\n{tool.description}" if tool.description else preamble
@@ -299,7 +304,7 @@ async def _reflect_server(context: ConsoleMcpContext, server: McpServerEntry) ->
 async def register_proxy_tools(mcp: FastMCP, context: ConsoleMcpContext) -> None:
     """Reflect every connected server and register its tools into the two buckets.
 
-    Uniform (v1) surface: pass-through for unconditionally auto-approved tools, ``request_`` envelope
+    Uniform (v1) surface: pass-through for unconditionally auto-approved tools, the approval envelope
     for everything else. Degraded servers are logged and skipped.
     """
     for server in _load_servers(context.settings):
