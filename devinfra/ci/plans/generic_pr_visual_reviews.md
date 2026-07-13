@@ -24,6 +24,31 @@ discover visual-producing Bazel tests generically, compare their outputs with
 `devel`, and provide compact review navigation at commit, test, and asset
 levels.
 
+## Second consumer: AI quota
+
+`//aiquota/gnome:test_render` is the motivating second producer. It renders five
+GNOME Shell fixtures (`empty`, `extra_enabled_not_burning`, `hot`,
+`stale_fallback`, and `tints`) and compares them with checked-in PNG goldens.
+Today it writes actual, expected, and diff images to undeclared outputs only
+when a comparison fails. That is useful for diagnosing a red test, but a
+successful pull request provides no visual-review artifacts.
+
+As part of the generic rollout, make this test always publish its five
+candidate PNGs plus one `visual-review.json` manifest. Successful `devel` runs
+then establish baselines, while affected pull-request runs become candidates.
+The existing golden assertion remains the test's merge gate; the visual-review
+publisher adds review evidence and does not replace or weaken that assertion.
+
+Haku and AI quota exercise meaningfully different producer shapes:
+
+- Haku emits a tall gallery of application UI states from a browser renderer;
+- AI quota emits several independently named GNOME fixtures from a
+  parametrized Docker test and already has a noise-tolerant PNG comparator.
+
+The first generic implementation is not complete until both targets publish
+through the same manifest and discovery path with no component-specific
+publisher configuration.
+
 ## Desired contract
 
 A Bazel test opts into visual review by writing a versioned manifest named
@@ -43,7 +68,9 @@ the source of truth for the owning Bazel target.
       "path": "previews-light.png",
       "label": "Tool previews - light",
       "mediaType": "image/png",
-      "commentPriority": 100
+      "commentPriority": 100,
+      "intensityThreshold": 0,
+      "changeTolerance": 0.0
     }
   ]
 }
@@ -53,7 +80,11 @@ Version 1 supports safe PNG basenames only. Reject absolute paths, traversal,
 duplicate paths, unknown schema versions, missing files, invalid media types,
 and unreasonable file/count/dimension limits. `commentPriority` is optional;
 it selects useful inline previews without making alphabetical filename order a
-UI contract.
+UI contract. `intensityThreshold` and `changeTolerance` are optional and
+default to exact comparison. A producer may set them only when its existing
+visual test already documents and verifies an accepted rendering-noise model;
+AI quota should reuse the semantics of its current threshold-16, two-percent
+golden comparison.
 
 ## Discovery
 
@@ -118,10 +149,10 @@ For PNG assets:
 5. record changed-pixel count and percentage, dimensions, and classification;
 6. classify byte-different but pixel-identical PNGs as unchanged.
 
-Dimension changes are visual changes and must be called out explicitly. Avoid
-an arbitrary tolerance in the first version: screenshot tests should already
-be deterministic. Add thresholding only with fixtures demonstrating a real,
-accepted source of rendering noise.
+Dimension changes are visual changes and must be called out explicitly. Exact
+comparison is the default. Thresholding is producer-declared rather than a
+publisher-wide guess and requires fixtures demonstrating the accepted noise;
+AI quota's existing comparator supplies the initial non-zero-threshold case.
 
 Count changes primarily at the asset level (`5 of 18 visuals changed`). Pixel
 counts and percentages are per-asset diagnostic details, not the headline.
@@ -220,15 +251,17 @@ current head; immutable pages for superseded SHAs may remain available.
 
 - Define Pydantic models for `ducktape.visual-review.v1`.
 - Change the Haku screenshot test to emit the generic manifest.
+- Change `//aiquota/gnome:test_render` to retain all five successful candidate
+  renders and emit one generic manifest after its parametrized cases complete.
 - Add or extend `bbapi` commands to enumerate successful test results and
   undeclared outputs with canonical target labels.
 - Replace Haku-specific publisher arguments and artifact names with generic
   discovery.
 - Generate a commit page grouped by test target, initially without baselines.
 
-Exit criterion: the existing Haku test publishes through generic discovery,
-and a fixture with two visual-producing Bazel targets renders two test groups
-without publisher configuration changes.
+Exit criterion: Haku and AI quota both publish through generic discovery, and
+one affected CI run renders their separate Bazel target groups without
+workflow or publisher configuration for either target.
 
 ### 2. Per-test and per-asset navigation
 
@@ -275,14 +308,17 @@ Unit and snapshot fixtures must cover:
 - collision-free URL normalization;
 - baseline lookup and provenance;
 - unchanged, modified, new, removed, and dimension-changed PNGs;
+- AI quota's five-asset parametrized manifest and its existing rendering-noise
+  threshold semantics;
 - upload ordering and content types;
 - comment byte budgeting, priority ordering, commit links, and deep links;
 - stale publisher runs that must not replace a newer PR comment.
 
-End-to-end acceptance requires a disposable PR that affects at least two
-visual-producing tests. Verify the GitHub comment, aggregate page, per-test
-pages, per-asset pages, anonymous baseline/candidate/diff image access, and a
-subsequent revision that updates the sticky comment rather than adding another.
+End-to-end acceptance requires a disposable PR that affects both
+`//haku/console/frontend:screenshots` and `//aiquota/gnome:test_render`. Verify
+the GitHub comment, aggregate page, separate target pages, per-asset pages,
+anonymous baseline/candidate/diff image access, and a subsequent revision that
+updates the sticky comment rather than adding another.
 
 ## Non-goals
 
