@@ -21,7 +21,7 @@ from cluster.validation.k8s import ImagePolicyResource, ImageRepositoryResource,
 # haku-sandbox — not under cluster/k8s, so the validator can't see them. An operator-owned
 # Receiver here may still reference one (cluster/k8s/haku/ui-image-webhook), so exempt these
 # from the "Receiver references an undefined ImageRepository" check.
-_HAKU_STATE_IMAGE_REPOS = {"haku-ui"}
+_HAKU_STATE_IMAGE_REPOS = {"haku-anki", "haku-ui"}
 
 
 def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
