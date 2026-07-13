@@ -82,7 +82,10 @@ def list_ci_artifacts(
         if result.returncode != 0:
             failures.append(f"{invocation}: {result.stderr.strip()}")
             continue
-        artifacts = TypeAdapter(list[BuildBuddyArtifact] | None).validate_json(result.stdout) or []
+        parsed_artifacts: list[BuildBuddyArtifact] | None = TypeAdapter(list[BuildBuddyArtifact] | None).validate_json(
+            result.stdout
+        )
+        artifacts: list[BuildBuddyArtifact] = parsed_artifacts or []
         listed.extend(ListedArtifact(invocation, artifact) for artifact in artifacts)
     if not listed and len(failures) == len(invocations):
         raise RuntimeError("all BuildBuddy artifact queries failed: " + "; ".join(failures))

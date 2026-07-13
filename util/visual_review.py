@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-SCHEMA = "ducktape.visual-review.v1"
+SCHEMA: Literal["ducktape.visual-review.v1"] = "ducktape.visual-review.v1"
 MANIFEST_NAME = "visual-review.json"
 
 
