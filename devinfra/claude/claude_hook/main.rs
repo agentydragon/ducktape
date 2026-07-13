@@ -159,12 +159,8 @@ fn write_buildbuddy_bazelrc(session_dir: &Path, api_key: &str) -> Option<PathBuf
     let bb_bazelrc = session_dir.join("buildbuddy.bazelrc");
     let content = format!(
         "# BuildBuddy authentication (auto-generated per session)\n\
-         # Static configuration is in .bazelrc under build:rbe\n\
-         common --remote_header=x-buildbuddy-api-key={api_key}\n\
-         build --shell_executable=/bin/bash\n\
-         \n\
-         # Enable RBE (platforms, exec properties in .bazelrc + BUILD.bazel platform)\n\
-         build --config=rbe\n"
+         # Repositories decide whether to enable their rbe configuration.\n\
+         common:rbe --remote_header=x-buildbuddy-api-key={api_key}\n"
     );
     // Atomic write + 0600: file contains the API key (a secret).
     // Mirrors env_file.rs which uses the same pattern for the session env file.
@@ -238,9 +234,9 @@ fn write_session_bazelrc(
 
     lines.push("test --test_tag_filters=-live_openai_api".into());
 
-    // BuildBuddy remote cache: write per-session buildbuddy.bazelrc with the
-    // API key, RBE-safe shell path, and build --config=rbe, then try-import it.
-    // Keep this private: it contains the BuildBuddy API key.
+    // Write a per-session BuildBuddy credential file, scoped to repositories
+    // that enable their rbe configuration, then import it. Keep this private:
+    // it contains the BuildBuddy API key.
     if let Some(api_key) = env_overlay.get("BUILDBUDDY_API_KEY") {
         if let Some(bb_bazelrc) = write_buildbuddy_bazelrc(session_dir, api_key) {
             lines.push(format!("try-import {}", bb_bazelrc.display()));
@@ -944,13 +940,11 @@ mod tests {
             "API key must be in buildbuddy.bazelrc: {bb_content}"
         );
         assert!(
-            bb_content.contains("build --config=rbe"),
-            "RBE config must be enabled: {bb_content}"
+            bb_content.contains("common:rbe --remote_header="),
+            "API key must be scoped to the rbe config: {bb_content}"
         );
-        assert!(
-            bb_content.contains("build --shell_executable=/bin/bash"),
-            "RBE shell path must be normalized: {bb_content}"
-        );
+        assert!(!bb_content.contains("build --config=rbe"));
+        assert!(!bb_content.contains("shell_executable"));
         assert!(
             session_rc.contains(&format!("try-import {}", bb_bazelrc.display())),
             "session bazelrc must try-import buildbuddy.bazelrc: {session_rc}"

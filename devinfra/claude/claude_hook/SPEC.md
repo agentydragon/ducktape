@@ -34,7 +34,8 @@ These guarantees hold for both CLI and web profiles.
    real binaries.
 6. If `BUILDBUDDY_API_KEY` is present in the startup environment overlay, the
    daemon writes a private `buildbuddy.bazelrc`, imports it from the session
-   bazelrc, and enables `--config=rbe` plus `--shell_executable=/bin/bash`.
+   bazelrc as an `rbe`-scoped credential; the workspace owns RBE selection and
+   execution policy (see <../../docs/bazel_configuration.md>).
 7. The daemon writes a `bbr.bazelrc` tagging BuildBuddy invocations with
    `ROLE=claude-code` and `TAGS=session:<session_id>`.
 8. Profile `background_commands` run during `SessionStart`. Commands marked
@@ -80,7 +81,8 @@ commands.
    it contains `git` only when a git safety flag is enabled.
 4. A `bazelisk build <target>` run from the generated environment uses the
    session bazelrc. When `BUILDBUDDY_API_KEY` is available, that bazelrc
-   imports the private BuildBuddy rc and enables RBE.
+   imports the private `rbe`-scoped BuildBuddy credential; the Ducktape
+   workspace enables RBE.
 5. `bbr` invocations import the generated `bbr.bazelrc` and are tagged with
    `session:<sid>` in BuildBuddy.
 6. Background command output appears in the next REPL hook output as a

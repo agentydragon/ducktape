@@ -1,0 +1,3 @@
+build --aspects=//:linters.bzl%ruff
+build --output_groups=+rules_lint_report
+build --@aspect_rules_lint//lint:fail_on_violation

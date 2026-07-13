@@ -17,16 +17,15 @@ BUILDBUDDY_BAZELRC="$HOME/.config/bazel/buildbuddy.bazelrc"
 mkdir -p "$(dirname "$BUILDBUDDY_BAZELRC")"
 
 cat >"$BUILDBUDDY_BAZELRC" <<EOF
-# BuildBuddy authentication plus RBE-safe shell normalization (auto-generated)
-common --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}
-build --shell_executable=/bin/bash
+# BuildBuddy credential (auto-generated). Repositories opt into the rbe config.
+common:rbe --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}
 EOF
 
 # Override RBE container image if RBE_IMAGE is set (used by CI when
 # testing an updated RBE image before it becomes :latest).
 # remote_header platform overrides take precedence over platform exec_properties.
 if [[ -n "${RBE_IMAGE:-}" ]]; then
-  echo "build --remote_header=x-buildbuddy-platform.container-image=docker://${RBE_IMAGE}" >>"$BUILDBUDDY_BAZELRC"
+  echo "build:rbe --remote_header=x-buildbuddy-platform.container-image=docker://${RBE_IMAGE}" >>"$BUILDBUDDY_BAZELRC"
   echo "RBE image override: $RBE_IMAGE"
 fi
 

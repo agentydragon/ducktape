@@ -259,29 +259,10 @@ can build a simple `genrule`. That is a useful baseline: local genrule execution
 works under Codex and Bazel 8 when Ducktape's user/workspace rc layers are out of
 the picture.
 
-If a normal `bazelisk build` unexpectedly picks up `--config=rbe`, check for a
-stale user-level BuildBuddy import first, not the NixOS system Bazel rc:
-
-```text
-~/.bazelrc
-  try-import ~/.config/bazel/buildbuddy.bazelrc
-
-~/.config/bazel/buildbuddy.bazelrc
-  build --config=rbe
-```
-
-Current generated `~/.config/bazel/buildbuddy.bazelrc` should contain the
-BuildBuddy API header plus `build --shell_executable=/bin/bash`, but it should
-not select Ducktape's repo-local `--config=rbe`. The shell override belongs with
-the user BuildBuddy/RBE environment: on NixOS it prevents Bazel from generating
-helper scripts with `/nix/store/.../bash` shebangs that do not exist on RBE
-workers.
-
-On `rugged`, `/etc/bazel.bazelrc` contributes NixOS-local PATH and nix-ld flags
-such as `--host_action_env` and `--repo_env`; it does not enable RBE.
-Ducktape's workspace `.bazelrc` defines what `build:rbe` means, but repo-aware
-entrypoints such as `bbr`, CI, Codex Cloud, and Claude session startup should be
-what select it.
+Ducktape intentionally enables its workspace `rbe` configuration for every
+build-like command. The generated user credential is scoped to that config and
+does not affect other repositories. See <bazel_configuration.md> for rc
+ownership and execution policy.
 
 ### Disk Cache Effect Probe
 

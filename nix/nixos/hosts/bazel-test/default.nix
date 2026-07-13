@@ -21,6 +21,7 @@
 
   # Container extras (a real NixOS host already has these)
   environment.systemPackages = with pkgs; [
+    bazelisk
     coreutils
     findutils
     gnugrep

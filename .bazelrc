@@ -3,11 +3,6 @@ common --experimental_isolated_extension_usages
 # Disable Aspect telemetry (aspect_tools_telemetry) so builds don't POST to telemetry.aspect.build
 common --repo_env=DO_NOT_TRACK=1
 
-# Strict action env: actions get a fixed PATH (/bin:/usr/bin:/usr/local/bin)
-# instead of inheriting the client's PATH. Prevents NixOS /nix/store paths
-# from leaking to RBE workers. Default in Bazel 9 but not Bazel 8.
-build --incompatible_strict_action_env
-
 # Suppress -Wdeprecated-declarations from protobuf's own internal usage of its
 # deprecated APIs (FieldOptions::weak(), RepeatedPtrField(Arena*), etc.).
 # All warnings are within external/protobuf+/ — protobuf using APIs that it
@@ -66,23 +61,9 @@ build --@aspect_rules_lint//lint:fail_on_violation
 # output groups prevents the aspect actions from running.
 build:nolint --output_groups=-rules_lint_report,-mypy,-clippy_checks,-rustfmt_checks
 
-# Remote Build Execution (BuildBuddy)
-# Auth and RBE-safe shell normalization: ~/.config/bazel/buildbuddy.bazelrc
-# Host platform auto-detected; //:rbe_linux_x64 is the execution platform.
-build:rbe --remote_executor=grpcs://remote.buildbuddy.io
-build:rbe --extra_execution_platforms=//:rbe_linux_x64
-build:rbe --spawn_strategy=remote,local
-test:rbe --spawn_strategy=remote,local
-build:rbe --jobs=50
-build:rbe --remote_download_minimal
-build:rbe --bes_results_url=https://app.buildbuddy.io/invocation/
-build:rbe --bes_backend=grpcs://remote.buildbuddy.io
-common:rbe --remote_cache=grpcs://remote.buildbuddy.io
-common:rbe --remote_timeout=10m
-common:rbe --remote_cache_compression
-build:rbe --noslim_profile
-build:rbe --experimental_profile_include_target_label
-build:rbe --experimental_profile_include_primary_output
+# Remote Build Execution (BuildBuddy). Kept in an importable fragment so the
+# NixOS integration fixture exercises the exact workspace policy.
+import %workspace%/devinfra/bazel/rbe.bazelrc
 
 # Formatting: use bazel run //devinfra/format (fix) or //devinfra/format.check (check)
 # Supports: prettier (JS/TS/CSS/HTML/MD), ruff (Python), shfmt (Shell), buildifier (Bazel), rustfmt (Rust)

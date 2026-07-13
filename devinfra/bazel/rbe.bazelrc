@@ -1,0 +1,26 @@
+# Ducktape build-like commands always use BuildBuddy RBE. The user-level
+# BuildBuddy bazelrc contributes only the credential, scoped to this config.
+build --config=rbe
+
+# Strict action env prevents NixOS store paths from leaking to RBE workers.
+build:rbe --incompatible_strict_action_env
+
+# Auth: ~/.config/bazel/buildbuddy.bazelrc
+# Host platform auto-detected; //:rbe_linux_x64 is the execution platform.
+build:rbe --remote_executor=grpcs://remote.buildbuddy.io
+build:rbe --extra_execution_platforms=//:rbe_linux_x64
+# Never fall back to local execution: RBE connectivity and compatibility
+# failures must be visible, and the RBE shell path is not valid on NixOS.
+build:rbe --spawn_strategy=remote
+build:rbe --remote_local_fallback=false
+build:rbe --shell_executable=/bin/bash
+build:rbe --jobs=50
+build:rbe --remote_download_minimal
+build:rbe --bes_results_url=https://app.buildbuddy.io/invocation/
+build:rbe --bes_backend=grpcs://remote.buildbuddy.io
+common:rbe --remote_cache=grpcs://remote.buildbuddy.io
+common:rbe --remote_timeout=10m
+common:rbe --remote_cache_compression
+build:rbe --noslim_profile
+build:rbe --experimental_profile_include_target_label
+build:rbe --experimental_profile_include_primary_output

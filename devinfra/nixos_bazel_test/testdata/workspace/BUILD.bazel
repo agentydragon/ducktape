@@ -1,0 +1,16 @@
+load("@rules_python//python:defs.bzl", "py_binary")
+
+exports_files(["ruff.toml"])
+
+platform(
+    name = "rbe_linux_x64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+py_binary(
+    name = "remote_smoke",
+    srcs = ["remote_smoke.py"],
+)

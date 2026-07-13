@@ -83,7 +83,7 @@ Build outputs, invocation data, and `bbr` configuration layers live in
 
 ### NixOS hosts
 
-Running Bazel with RBE on a NixOS host requires specific flags (`--shell_executable=/bin/bash`, `--incompatible_strict_action_env`, `--host_action_env`) to keep nix-store paths off RBE workers — see <devinfra/docs/nixos_bazel_rbe.md>.
+Ducktape build-like commands use strict BuildBuddy RBE; NixOS local and remote-worker shell paths are configured separately. See <devinfra/docs/bazel_configuration.md> for the rc ownership and execution contract.
 
 ## Terraform via Bazel
 

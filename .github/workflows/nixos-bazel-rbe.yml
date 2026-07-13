@@ -1,0 +1,65 @@
+name: NixOS Bazel RBE
+
+on:
+  pull_request:
+    paths:
+      - ".bazelrc"
+      - "MODULE.bazel"
+      - "flake.nix"
+      - "devinfra/bazel/**"
+      - "devinfra/nixos_bazel_test/**"
+      - "nix/nixos/modules/bazel/**"
+      - "nix/nixos/hosts/bazel-test/**"
+      - ".github/workflows/nixos-bazel-rbe.yml"
+  push:
+    branches: [devel]
+    paths:
+      - ".bazelrc"
+      - "MODULE.bazel"
+      - "flake.nix"
+      - "devinfra/bazel/**"
+      - "devinfra/nixos_bazel_test/**"
+      - "nix/nixos/modules/bazel/**"
+      - "nix/nixos/hosts/bazel-test/**"
+      - ".github/workflows/nixos-bazel-rbe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: NixOS to BuildBuddy build and run
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Load Attic trusted pubkeys
+        id: attic_keys
+        run: echo "value=$(jq -r 'join(" ")' nix/attic-pubkeys.json)" >>"$GITHUB_OUTPUT"
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes fetch-closure
+            netrc-file = /home/runner/.config/nix/netrc
+            extra-trusted-public-keys = ${{ steps.attic_keys.outputs.value }}
+            extra-substituters = https://cache.allegedly.works/main
+            fallback = true
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Configure Nix cache authentication
+        run: |
+          mkdir -p /home/runner/.config/nix
+          umask 077
+          printf 'machine cache.allegedly.works password %s\n' "$ATTIC_TOKEN" \
+            >/home/runner/.config/nix/netrc
+
+      - name: Run NixOS Bazel RBE integration test
+        run: devinfra/nixos_bazel_test/run.sh test

@@ -18,10 +18,9 @@
   # Claude Code's sandbox overrides HOME.
   environment.etc."bazel.bazelrc".source = ./system.bazelrc;
 
-  # envfs: FUSE mount at /bin and /usr/bin resolving binaries from PATH.
-  # Bazel hardcodes /bin/bash for `bazel run` and run_shell() actions.
-  # RBE-safe --shell_executable=/bin/bash lives in the user BuildBuddy bazelrc,
-  # not here; this system module only makes /bin/bash exist locally.
+  # envfs remains useful for software that hardcodes FHS executable paths.
+  # Bazel itself uses the explicit local shell in system.bazelrc; an RBE config
+  # can override that with the remote worker's /bin/bash.
   services.envfs.enable = true;
 
   # nix-ld: provides /lib64/ld-linux-x86-64.so.2 stub so dynamically-linked

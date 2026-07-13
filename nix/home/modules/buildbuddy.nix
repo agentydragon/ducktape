@@ -10,9 +10,8 @@
   sops.templates."buildbuddy.bazelrc" = {
     path = "${config.xdg.configHome}/bazel/buildbuddy.bazelrc";
     content = ''
-      # BuildBuddy authentication plus RBE-safe shell normalization.
-      common --remote_header=x-buildbuddy-api-key=${config.sops.placeholder.buildbuddy_api_key}
-      build --shell_executable=/bin/bash
+      # Credential only: repositories decide whether to enable the rbe config.
+      common:rbe --remote_header=x-buildbuddy-api-key=${config.sops.placeholder.buildbuddy_api_key}
     '';
     mode = "0600";
   };

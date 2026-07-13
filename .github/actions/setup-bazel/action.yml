@@ -33,11 +33,6 @@ runs:
           exit 0
         fi
         "${{ github.workspace }}/devinfra/setup_buildbuddy.sh"
-        {
-          echo ""
-          echo "# Ducktape RBE default (auto-added by setup-bazel)"
-          echo "build --config=rbe"
-        } >> "$HOME/.bazelrc"
 
     - name: Enable CI quiet mode
       shell: bash

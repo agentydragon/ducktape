@@ -11,12 +11,14 @@ independent implementations**:
 | Rust session start hook (`devinfra/claude/claude_hook/main.rs`) | `web_env.sh` → `_common.sh` → `sops -d` via `SOPS_AGE_KEY` env var | Rust `write_buildbuddy_bazelrc()`                    | `SOPS_AGE_KEY` env var (set in Claude Code web UI) |
 | CI / setup script (`devinfra/setup_buildbuddy.sh`)              | `_common.sh` → `sops -d`                                           | bash heredoc                                         | `SOPS_AGE_KEY` from GHA secret                     |
 
-All three produce the same output:
+All three produce the same credential-scoped output:
 
 ```
-common --remote_header=x-buildbuddy-api-key=<decrypted key>
-build --config=rbe
+common:rbe --remote_header=x-buildbuddy-api-key=<decrypted key>
 ```
+
+Repository policy owns RBE selection; see
+<../devinfra/docs/bazel_configuration.md>.
 
 Goal: define "decrypt this secret and produce this config file" once, and reuse
 the same definition in home-manager and in the Claude Code web container (no
@@ -160,7 +162,7 @@ let
     }];
     templates = [{
       name = "buildbuddy.bazelrc";
-      content = "common --remote_header=x-buildbuddy-api-key=<SOPS:HASH:PLACEHOLDER>\nbuild --config=rbe\n";
+      content = "common:rbe --remote_header=x-buildbuddy-api-key=<SOPS:HASH:PLACEHOLDER>\n";
       path = "$HOME/.config/bazel/buildbuddy.bazelrc";
       mode = "0600";
     }];
@@ -198,8 +200,7 @@ secretDefs = {
     sopsFile = ./secrets/buildbuddy.yaml;
     key = "buildbuddy_api_key";
     template = ''
-      common --remote_header=x-buildbuddy-api-key=@SECRET@
-      build --config=rbe
+      common:rbe --remote_header=x-buildbuddy-api-key=@SECRET@
     '';
     path = ".config/bazel/buildbuddy.bazelrc";
   };
@@ -221,7 +222,7 @@ secret vs one pass), but irrelevant for a handful of secrets.
 ### Option D: Do nothing
 
 The current state has three implementations but they're all ~5 lines each and
-the template is trivial (`common --remote_header=...`). The risk of drift is
+the template is trivial (`common:rbe --remote_header=...`). The risk of drift is
 low for a single secret. The complexity of any dedup solution may not pay for
 itself until there are more shared secrets.
 
