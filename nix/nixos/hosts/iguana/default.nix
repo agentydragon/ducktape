@@ -149,6 +149,20 @@ in
     ];
   };
 
+  # Local desktop account only.  Deliberately omit `wheel` and SSH keys: Tesla
+  # is not an administrator and cannot log in remotely.
+  users.users.tesla = {
+    isNormalUser = true;
+    home = "/home/tesla";
+    description = "tesla";
+    shell = pkgs.zsh;
+    extraGroups = [
+      "networkmanager"
+      "video"
+      "audio"
+    ];
+  };
+
   # SPICE USB redirection helper (setuid root for USB device passthrough)
   security.wrappers.spice-client-glib-usb-acl-helper = {
     setuid = true;
