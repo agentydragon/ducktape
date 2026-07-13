@@ -333,6 +333,7 @@ py_test(
     data = [
         "//:nebula-mesh.json",
         "//cluster/k8s:cluster_all_files",
+        "//cluster/terraform/main:cilium-values.yaml",
         "//tf/gitops/dns-records:main.tf",
     ],
     deps = [

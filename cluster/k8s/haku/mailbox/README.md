@@ -89,13 +89,17 @@ and the `ClusterExternalSecret` in `app/` mirrors it into `haku-sandbox`.
 ## Traffic
 
 - **Port 25**: `MX allegedly.works → mx.allegedly.works` (A records on the
-  public OVH gateway roster, `tf/gitops/dns-records/`) → the
-  `haku-mailbox-smtp` Service's `externalIPs` DNAT (Cilium KPR) → Stalwart's
-  :2525 listener (STARTTLS with the cert-manager certificate). SMTP has its
-  own Service because externalIPs exposes every port of a Service; the HTTP
-  listener stays on a separate ClusterIP-only Service. If externalIPs turn
-  out not to be programmed by the Cilium config, fall back to `hostPort` +
-  node pinning (the scanner's SMB port uses that pattern).
+  public OVH gateway roster, `tf/gitops/dns-records/`) → one
+  `haku-mailbox-smtp-ingress` nginx pod per public node (`hostPort: 25`) →
+  the cluster-internal `haku-mailbox-smtp:2525` Service → Stalwart's :2525
+  listener (STARTTLS with the cert-manager certificate). This mirrors the
+  per-node hostNetwork Envoy tier used for HTTP, but remains a raw TCP
+  passthrough so Stalwart terminates SMTP STARTTLS. The proxy emits PROXY
+  protocol with the sending MTA's real address; Stalwart trusts PROXY headers
+  from the pod CIDR, while CiliumNetworkPolicy permits the SMTP backend only
+  from the labeled ingress pods. Both pieces are required: SPF evaluates the
+  apparent TCP peer, and trusting PROXY headers without the identity-aware
+  network fence would let another cluster pod forge that peer.
 - **HTTPS**: `haku-mailbox.allegedly.works` HTTPRoute → Stalwart's HTTP
   listener (JMAP + management API; management requires the admin credential
   Haku can't read).

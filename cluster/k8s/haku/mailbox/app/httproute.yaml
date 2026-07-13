@@ -8,8 +8,8 @@ metadata:
       Public route to Stalwart's HTTP listener: JMAP for haku (authenticated
       with its Authentik-issued bearer, validated by the server's OIDC
       directory) plus the management API/WebUI (admin credential only, which
-      haku cannot read). SMTP (:25) enters via the Service externalIPs, not
-      the gateway.
+      haku cannot read). SMTP (:25) enters through the per-node TCP ingress
+      DaemonSet, not the HTTP gateway.
 spec:
   parentRefs:
     - name: cluster-gateway

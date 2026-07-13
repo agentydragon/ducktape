@@ -1,5 +1,5 @@
-"""Validates public DNS records (and their externalIPs consumers) against the
-cluster node roster."""
+"""Validates public DNS records and their ingress consumers against the cluster
+node roster."""
 
 from __future__ import annotations
 
@@ -71,22 +71,52 @@ def test_wildcard_dns_records_match_public_kubernetes_nodes() -> None:
     assert _terraform_local_ips(dns_records_tf, "public_gateway_ips") == expected
 
 
-def _service_external_ips(path: Path, service_name: str) -> set[str]:
-    docs = [doc for doc in yaml.safe_load_all(path.read_text()) if doc]
-    service = one(doc for doc in docs if doc["kind"] == "Service" and doc["metadata"]["name"] == service_name)
-    return set(service["spec"]["externalIPs"])
+def _documents(path: Path) -> list[dict[str, Any]]:
+    return [doc for doc in yaml.safe_load_all(path.read_text()) if doc]
 
 
-def test_mailbox_smtp_external_ips_match_public_kubernetes_nodes() -> None:
-    """The inbound-SMTP Service must expose port 25 on the same public nodes the
-    MX / wildcard A records point at (externalIPs only accepts literal IPs, so the
-    manifest hand-duplicates the roster — this pins it to the SSOT)."""
+def _resource(path: Path, kind: str, name: str) -> dict[str, Any]:
+    return one(doc for doc in _documents(path) if doc["kind"] == kind and doc["metadata"]["name"] == name)
+
+
+def test_mailbox_smtp_ingress_covers_public_kubernetes_nodes() -> None:
+    """Every public MX node should run a source-preserving port-25 proxy."""
     hosts = _mesh_hosts(get_required_path("_main/nebula-mesh.json"))
     service_yaml = get_required_path("_main/cluster/k8s/haku/mailbox/app/service.yaml")
+    ingress_yaml = get_required_path("_main/cluster/k8s/haku/mailbox/app/smtp-ingress.yaml")
+    cilium_values = yaml.safe_load(get_required_path("_main/cluster/terraform/main/cilium-values.yaml").read_text())
 
     expected = _public_kubernetes_node_ips(hosts)
     assert expected, "nebula-mesh.json should contain at least one public Kubernetes node"
-    assert _service_external_ips(service_yaml, "haku-mailbox-smtp") == expected
+    smtp_service = _resource(service_yaml, "Service", "haku-mailbox-smtp")
+    assert "externalIPs" not in smtp_service["spec"]
+    assert smtp_service["spec"]["ports"] == [{"name": "smtp", "port": 2525, "targetPort": "smtp"}]
+
+    daemonset = _resource(ingress_yaml, "DaemonSet", "haku-mailbox-smtp-ingress")
+    pod_spec = daemonset["spec"]["template"]["spec"]
+    gateway_selector = cilium_values["gatewayAPI"]["hostNetwork"]["nodes"]["matchLabels"]
+    assert pod_spec["nodeSelector"] == gateway_selector
+    smtp_container = one(container for container in pod_spec["containers"] if container["name"] == "nginx")
+    smtp_port = one(port for port in smtp_container["ports"] if port["name"] == "smtp")
+    assert smtp_port == {"name": "smtp", "containerPort": 2525, "hostPort": 25, "protocol": "TCP"}
+
+    ingress_config = _resource(ingress_yaml, "ConfigMap", "haku-mailbox-smtp-ingress")["data"]["nginx.conf"]
+    assert "proxy_protocol on;" in ingress_config
+    assert "haku-mailbox-smtp.haku-mailbox.svc.cluster.local:2525" in ingress_config
+
+    ingress_policy = _resource(ingress_yaml, "CiliumNetworkPolicy", "haku-mailbox-smtp-ingress")
+    assert ingress_policy["spec"]["ingress"] == [
+        {"fromEntities": ["world", "host"], "toPorts": [{"ports": [{"port": "2525", "protocol": "TCP"}]}]}
+    ]
+
+    mailbox_policy = _resource(ingress_yaml, "CiliumNetworkPolicy", "haku-mailbox")
+    smtp_rule = one(
+        rule
+        for rule in mailbox_policy["spec"]["ingress"]
+        if rule.get("fromEndpoints") == [{"matchLabels": {"app.kubernetes.io/name": "haku-mailbox-smtp-ingress"}}]
+    )
+    assert smtp_rule["fromEndpoints"] == [{"matchLabels": {"app.kubernetes.io/name": "haku-mailbox-smtp-ingress"}}]
+    assert smtp_rule["toPorts"] == [{"ports": [{"port": "2525", "protocol": "TCP"}]}]
 
 
 def test_api_dns_record_matches_public_control_plane_nodes() -> None:

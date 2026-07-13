@@ -1,7 +1,7 @@
-# Two Services on purpose: externalIPs exposes EVERY port of a Service on the
-# public node IPs, so SMTP gets its own externalIPs Service while the HTTP
-# listener (JMAP + management API) stays ClusterIP-only, reachable solely
-# through the cluster-gateway HTTPRoute.
+# Two internal Services on purpose: SMTP is reachable only from the per-node
+# TCP ingress DaemonSet, while HTTP and IMAP keep their existing consumers.
+# Public port 25 is provided by smtp-ingress.yaml's hostPort, not externalIPs:
+# cross-node externalIP forwarding would SNAT the sending MTA and break SPF.
 apiVersion: v1
 kind: Service
 metadata:
@@ -9,27 +9,16 @@ metadata:
   namespace: haku-mailbox
   annotations:
     description: >-
-      Inbound SMTP entrypoint: externalIPs on the public OVH gateway nodes make
-      port 25 on any of them DNAT (via Cilium kube-proxy replacement) to the
-      Stalwart pod, so MX -> mx.allegedly.works (the wildcard/apex A records)
-      works regardless of which node the pod runs on.
+      Cluster-internal SMTP backend for the per-node haku-mailbox-smtp-ingress
+      proxies. The proxies carry the sending MTA address in PROXY protocol so
+      Stalwart can evaluate SPF against the real peer.
 spec:
   selector:
     app.kubernetes.io/name: haku-mailbox
   ports:
     - name: smtp
-      port: 25
+      port: 2525
       targetPort: smtp
-  # The same public-OVH-node roster as public_gateway_ips in
-  # tf/gitops/dns-records/main.tf (externalIPs accepts only literal IPs, so the
-  # list is duplicated); cluster/validation/test_dns_records.py pins both
-  # copies to the nebula-mesh.json roster.
-  externalIPs:
-    - 147.135.37.175 # ovh-ns102453
-    - 147.135.39.162 # ovh-ns103656
-    - 147.135.39.176 # ovh-ns103711
-    - 147.135.104.5 # ovh-ns104952
-    - 147.135.104.16 # ovh-ns104963
 ---
 apiVersion: v1
 kind: Service

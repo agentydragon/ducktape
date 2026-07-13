@@ -103,6 +103,7 @@ EXPECTED_PLAN = [
                 "name": "smtp",
                 "protocol": "smtp",
                 "bind": {"0.0.0.0:2525": True},
+                "overrideProxyTrustedNetworks": {"10.244.0.0/16": True},
                 "useTls": True,
                 "tlsImplicit": False,
             },

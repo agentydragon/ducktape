@@ -8,6 +8,7 @@ resources:
   - haku-mailbox-admin.sops.yaml
   - deployment.yaml
   - service.yaml
+  - smtp-ingress.yaml
   - httproute.yaml
   - haku-mail-token.sops.yaml
   - haku-mail-token-eso.yaml

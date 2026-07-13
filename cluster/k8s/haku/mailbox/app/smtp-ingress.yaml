@@ -1,0 +1,183 @@
+# Raw-TCP SMTP ingress on every public OVH node. This is the port-25 analogue
+# of the per-node hostNetwork Envoy tier serving HTTP: each node accepts the
+# public connection locally, then proxies to the movable Stalwart backend.
+# PROXY protocol is mandatory because SPF depends on the sending MTA's address.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: haku-mailbox-smtp-ingress
+  namespace: haku-mailbox
+data:
+  nginx.conf: |
+    pid /tmp/nginx.pid;
+    worker_processes 1;
+    error_log /dev/stderr info;
+
+    events {
+      worker_connections 256;
+    }
+
+    stream {
+      log_format smtp '$remote_addr:$remote_port -> $server_addr:$server_port '
+                      'status=$status sent=$bytes_sent received=$bytes_received '
+                      'session=$session_time';
+      access_log /dev/stdout smtp;
+
+      upstream stalwart {
+        server haku-mailbox-smtp.haku-mailbox.svc.cluster.local:2525;
+      }
+
+      server {
+        listen 2525;
+        proxy_pass stalwart;
+        proxy_protocol on;
+        proxy_connect_timeout 5s;
+        proxy_timeout 10m;
+      }
+    }
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: haku-mailbox-smtp-ingress
+  namespace: haku-mailbox
+  annotations:
+    description: >-
+      Per-public-node port-25 TCP ingress. Preserves the sending MTA address
+      through PROXY protocol so Stalwart's SPF gate remains meaningful.
+    reloader.stakater.com/auto: "true"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-mailbox-smtp-ingress
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-mailbox-smtp-ingress
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        # Same public-node selector as Cilium's hostNetwork Gateway Envoy tier.
+        topology.kubernetes.io/region: hil
+      containers:
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:1.27-alpine@sha256:28d91bdce70ad09025ea901458fdd149259d8e05982ade79d4ef2c0d9470eb48
+          ports:
+            - name: smtp
+              containerPort: 2525
+              hostPort: 25
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: smtp
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: smtp
+            periodSeconds: 30
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /var/cache/nginx
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+      volumes:
+        - name: config
+          configMap:
+            name: haku-mailbox-smtp-ingress
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        - name: cache
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Mi
+---
+# The broad CIDR trusted by Stalwart for PROXY headers is safe only together
+# with these identity-aware policies: only the ingress DaemonSet may reach the
+# SMTP backend, so another pod cannot forge a Google source address.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: haku-mailbox-smtp-ingress
+  namespace: haku-mailbox
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-mailbox-smtp-ingress
+  ingress:
+    - fromEntities:
+        - world
+        # Kubelet TCP readiness/liveness probes originate from the node.
+        - host
+      toPorts:
+        - ports:
+            - port: "2525"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: haku-mailbox
+      toPorts:
+        - ports:
+            - port: "2525"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: haku-mailbox
+  namespace: haku-mailbox
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-mailbox
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: haku-mailbox-smtp-ingress
+      toPorts:
+        - ports:
+            - port: "2525"
+              protocol: TCP
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-sandbox
+      toPorts:
+        - ports:
+            - port: "1143"
+              protocol: TCP

@@ -86,9 +86,9 @@ resource "aws_route53_record" "apex" {
 #
 # mx.allegedly.works is already covered by the wildcard, but MX targets should
 # not depend on wildcard semantics — keep an explicit A record on the same
-# public-gateway roster. Port 25 on any of these nodes reaches the mailserver
-# via the haku-mailbox-smtp Service's externalIPs
-# (cluster/k8s/haku/mailbox/app/service.yaml).
+# public-gateway roster. A haku-mailbox-smtp-ingress DaemonSet binds port 25 on
+# every node and forwards the sending MTA's address to Stalwart with PROXY
+# protocol (cluster/k8s/haku/mailbox/app/smtp-ingress.yaml).
 resource "aws_route53_record" "mx_host" {
   #checkov:skip=CKV2_AWS_23:A records point to external public gateway nodes, not AWS resources
   zone_id         = var.route53_zone_id
