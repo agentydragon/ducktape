@@ -32,9 +32,9 @@ class QuotaCache:
         except OSError:
             pass
 
-    async def fetch_all(self, providers: list[Provider]) -> AllQuotas:
+    async def fetch_all(self, providers: list[Provider], force_refresh: bool = False) -> AllQuotas:
         cached = self.read()
-        if cached is not None and datetime.now(UTC) - cached.fetched_at < self.ttl:
+        if not force_refresh and cached is not None and datetime.now(UTC) - cached.fetched_at < self.ttl:
             return cached
         prior = {pq.provider: pq for pq in cached.providers} if cached else {}
         outputs = await asyncio.gather(*(p.fetch() for p in providers))
@@ -45,20 +45,21 @@ class QuotaCache:
 
 
 class QuotaService:
-    def __init__(self, config: Config, cache: QuotaCache | None = None) -> None:
-        self.providers = _instantiate(config)
+    def __init__(self, config: Config, cache: QuotaCache | None = None, debug: bool = False) -> None:
+        self.providers = _instantiate(config, debug=debug)
         self.cache = cache or QuotaCache()
+        self.debug = debug
 
     async def fetch_all(self) -> AllQuotas:
-        return await self.cache.fetch_all(self.providers)
+        return await self.cache.fetch_all(self.providers, force_refresh=self.debug)
 
 
-def _instantiate(config: Config) -> list[Provider]:
+def _instantiate(config: Config, debug: bool = False) -> list[Provider]:
     """Build the enabled provider instances in display order."""
     candidates: list[tuple[Provider, bool]] = [
-        (ClaudeProvider(config.claude), config.claude.enabled),
-        (CodexProvider(config.codex), config.codex.enabled),
-        (ZaiProvider(config.zai), config.zai.enabled),
+        (ClaudeProvider(config.claude, debug=debug), config.claude.enabled),
+        (CodexProvider(config.codex, debug=debug), config.codex.enabled),
+        (ZaiProvider(config.zai, debug=debug), config.zai.enabled),
     ]
     return [p for p, enabled in candidates if enabled]
 
@@ -67,7 +68,7 @@ def _assemble(name: str, output: ProviderFetch, prior: ProviderQuota | None) -> 
     """Wrap a provider fetch in a `ProviderQuota`, carrying the last-known-good
     snapshot forward when the latest call did not produce usable windows."""
     success: SuccessfulProviderFetch | None = None
-    if isinstance(output.result, FetchSuccess) and (output.result.short_window or output.result.long_window):
+    if isinstance(output.result, FetchSuccess) and output.result.windows:
         success = SuccessfulProviderFetch(fetched_at=output.fetched_at, result=output.result)
     return ProviderQuota(
         provider=name, last_output=output, last_success=success or (prior.last_success if prior else None)

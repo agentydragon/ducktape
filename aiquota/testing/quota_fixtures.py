@@ -53,8 +53,7 @@ def _last_output_result(node: dict[str, Any]) -> FetchSuccess | FetchError:
     if error is not None:
         return FetchError(error=str(error))
     return FetchSuccess(
-        short_window=_window(node.get("short")),
-        long_window=_window(node.get("long")),
+        windows=[window for window in (_window(node.get("short")), _window(node.get("long"))) if window],
         extra_spend=_extra_spend(node.get("extraSpend")),
     )
 
@@ -69,8 +68,7 @@ def _last_success(node: object, *, now: datetime) -> SuccessfulProviderFetch | N
     return SuccessfulProviderFetch(
         fetched_at=fetched_at,
         result=FetchSuccess(
-            short_window=_window(node.get("short")),
-            long_window=_window(node.get("long")),
+            windows=[window for window in (_window(node.get("short")), _window(node.get("long"))) if window],
             extra_spend=_extra_spend(node.get("extraSpend")),
         ),
     )

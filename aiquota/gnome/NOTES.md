@@ -67,6 +67,6 @@ Response shape (relevant fields):
 `used_percent` is an integer 0–100. `reset_after_seconds` is seconds until reset;
 `reset_at` is a Unix epoch timestamp (backup). Both windows are optional.
 
-The `primary_window` typically covers a shorter rolling window (e.g. 1 hour);
-`secondary_window` covers a longer one (e.g. 24 hours). Exact window lengths
-are returned in `limit_window_seconds`.
+`primary_window` and `secondary_window` are transport slots, not duration
+semantics. Classify them using `limit_window_seconds`; either slot may contain
+the weekly window, and either may be absent.

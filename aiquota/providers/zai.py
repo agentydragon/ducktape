@@ -16,6 +16,7 @@ from pydantic.alias_generators import to_camel
 
 from aiquota.models import FetchError, FetchSuccess, ProviderFetch, QuotaWindow
 from aiquota.providers.base import Provider
+from aiquota.providers.debug import dump_response
 
 logger = logging.getLogger(__name__)
 
@@ -86,11 +87,20 @@ def _resolve_api_key(settings: ZaiSettings) -> str | None:
     return os.environ.get("ZAI_API_KEY")
 
 
+def _to_success(quota: _QuotaResponse) -> FetchSuccess:
+    limits = quota.data.limits if quota.data else []
+    short_limit = next((lim for lim in limits if lim.type == "TOKENS_LIMIT" and lim.unit == 3), None)
+    long_limit = next((lim for lim in limits if lim.type == "TOKENS_LIMIT" and lim.unit == 6), None)
+    windows = (_to_window(short_limit, SHORT_WINDOW_SECS), _to_window(long_limit, LONG_WINDOW_SECS))
+    return FetchSuccess(windows=[window for window in windows if window])
+
+
 class ZaiProvider(Provider):
     name = "zai"
 
-    def __init__(self, settings: ZaiSettings) -> None:
+    def __init__(self, settings: ZaiSettings, debug: bool = False) -> None:
         self.settings = settings
+        self.debug = debug
 
     async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
@@ -103,14 +113,11 @@ class ZaiProvider(Provider):
         try:
             async with httpx.AsyncClient(timeout=API_TIMEOUT_SECS) as client:
                 resp = await client.get(QUOTA_URL, headers={"Authorization": f"Bearer {key}"})
+            if self.debug:
+                dump_response(self.name, resp)
             resp.raise_for_status()
             quota = _QuotaResponse.model_validate(resp.json())
         except Exception as e:
             return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "z.ai quota fetch"))
 
-        limits = quota.data.limits if quota.data else []
-        short_limit = next((lim for lim in limits if lim.type == "TOKENS_LIMIT" and lim.unit == 3), None)
-        long_limit = next((lim for lim in limits if lim.type == "TOKENS_LIMIT" and lim.unit == 6), None)
-        short = _to_window(short_limit, SHORT_WINDOW_SECS)
-        long = _to_window(long_limit, LONG_WINDOW_SECS)
-        return ProviderFetch(fetched_at=now, result=FetchSuccess(short_window=short, long_window=long))
+        return ProviderFetch(fetched_at=now, result=_to_success(quota))

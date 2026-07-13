@@ -13,6 +13,7 @@ from aiquota.models import (
     QuotaWindow,
     SuccessfulProviderFetch,
 )
+from aiquota.providers.base import Provider
 
 if __name__ == "__main__":
     pytest_bazel.main()
@@ -46,8 +47,34 @@ def test_cache_corrupt_returns_none(tmp_path: Path) -> None:
     assert cache.read() is None
 
 
-def _success(now: datetime, **kw) -> ProviderFetch:
-    return ProviderFetch(fetched_at=now, result=FetchSuccess(**kw))
+class _CountingProvider(Provider):
+    name = "test"
+
+    def __init__(self) -> None:
+        self.fetch_count = 0
+
+    async def fetch(self) -> ProviderFetch:
+        self.fetch_count += 1
+        return _success(datetime.now(UTC))
+
+
+async def test_force_refresh_bypasses_fresh_cache(tmp_path: Path) -> None:
+    cache = QuotaCache(path=tmp_path / "cache.json")
+    provider = _CountingProvider()
+
+    await cache.fetch_all([provider])
+    await cache.fetch_all([provider])
+    await cache.fetch_all([provider], force_refresh=True)
+
+    assert provider.fetch_count == 2
+
+
+def _success(
+    now: datetime, short_window: QuotaWindow | None = None, long_window: QuotaWindow | None = None
+) -> ProviderFetch:
+    return ProviderFetch(
+        fetched_at=now, result=FetchSuccess(windows=[window for window in (short_window, long_window) if window])
+    )
 
 
 def _error(now: datetime, msg: str) -> ProviderFetch:
@@ -68,7 +95,7 @@ def test_assemble_carries_prior_last_success_forward_on_error() -> None:
     now = datetime.now(UTC)
     prior_success = SuccessfulProviderFetch(
         fetched_at=now,
-        result=FetchSuccess(short_window=QuotaWindow(used_percent=35, reset_seconds=3600, window_seconds=18000)),
+        result=FetchSuccess(windows=[QuotaWindow(used_percent=35, reset_seconds=3600, window_seconds=18000)]),
     )
     prior = ProviderQuota(provider="claude", last_output=_error(now, "HTTP 503"), last_success=prior_success)
     errored = _error(now, "HTTP 504")
@@ -92,7 +119,7 @@ def test_assemble_keeps_prior_last_success_when_fresh_success_has_no_data() -> N
     now = datetime.now(UTC)
     prior_success = SuccessfulProviderFetch(
         fetched_at=now,
-        result=FetchSuccess(long_window=QuotaWindow(used_percent=72, reset_seconds=86400, window_seconds=604800)),
+        result=FetchSuccess(windows=[QuotaWindow(used_percent=72, reset_seconds=86400, window_seconds=604800)]),
     )
     prior = ProviderQuota(provider="codex", last_output=_success(now), last_success=prior_success)
     empty = _success(now)

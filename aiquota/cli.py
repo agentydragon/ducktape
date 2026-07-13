@@ -9,15 +9,16 @@ from aiquota.config import DEFAULT_CONFIG_PATH, load as load_config
 from aiquota.render import human as render_human, tmux as render_tmux, view_model
 
 _CONFIG_OPTION = typer.Option(DEFAULT_CONFIG_PATH, "--config", "-c", help="Config file path")
+_DEBUG_OPTION = typer.Option(False, "--debug", "--verbose", "-v", help="Dump live provider responses to stderr")
 
 app = typer.Typer(add_completion=False, invoke_without_command=True)
 
 
 @app.callback()
-def main(ctx: typer.Context, config: Path = _CONFIG_OPTION) -> None:
+def main(ctx: typer.Context, config: Path = _CONFIG_OPTION, debug: bool = _DEBUG_OPTION) -> None:
     """AI subscription quota tracker."""
     ctx.ensure_object(dict)
-    ctx.obj["service"] = QuotaService(config=load_config(config))
+    ctx.obj["service"] = QuotaService(config=load_config(config), debug=debug)
     if ctx.invoked_subcommand is None:
         ctx.invoke(fetch, ctx=ctx)
 

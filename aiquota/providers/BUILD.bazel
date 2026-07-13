@@ -9,12 +9,21 @@ py_library(
 )
 
 py_library(
+    name = "debug",
+    srcs = ["debug.py"],
+    imports = ["../.."],
+    visibility = ["//aiquota:__subpackages__"],
+    deps = ["@pypi//httpx"],
+)
+
+py_library(
     name = "claude_lib",
     srcs = ["claude.py"],
     imports = ["../.."],
     visibility = ["//aiquota:__subpackages__"],
     deps = [
         ":base",
+        ":debug",
         "//aiquota:models",
         "//devinfra/claude/claude_api:usage",
         "@pypi//httpx",
@@ -29,6 +38,7 @@ py_library(
     visibility = ["//aiquota:__subpackages__"],
     deps = [
         ":base",
+        ":debug",
         "//aiquota:models",
         "@pypi//atomicwrites",
         "@pypi//httpx",
@@ -43,6 +53,7 @@ py_library(
     visibility = ["//aiquota:__subpackages__"],
     deps = [
         ":base",
+        ":debug",
         "//aiquota:models",
         "@pypi//httpx",
         "@pypi//pydantic",
@@ -50,8 +61,21 @@ py_library(
 )
 
 py_test(
+    name = "test_debug",
+    srcs = ["test_debug.py"],
+    imports = ["../.."],
+    deps = [
+        ":debug",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_claude",
     srcs = ["test_claude.py"],
+    data = ["fixtures/claude_usage.json"],
     imports = ["../.."],
     deps = [
         ":claude_lib",
@@ -65,6 +89,7 @@ py_test(
 py_test(
     name = "test_codex",
     srcs = ["test_codex.py"],
+    data = ["fixtures/codex_weekly_primary.json"],
     imports = ["../.."],
     deps = [
         ":codex_lib",
@@ -80,6 +105,7 @@ py_test(
 py_test(
     name = "test_zai",
     srcs = ["test_zai.py"],
+    data = ["fixtures/zai_quota.json"],
     imports = ["../.."],
     deps = [
         ":zai_lib",

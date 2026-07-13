@@ -12,8 +12,10 @@ if __name__ == "__main__":
 _NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 
 
-def _success(**kw) -> ProviderFetch:
-    return ProviderFetch(fetched_at=_NOW, result=FetchSuccess(**kw))
+def _success(short_window: QuotaWindow | None = None, long_window: QuotaWindow | None = None) -> ProviderFetch:
+    return ProviderFetch(
+        fetched_at=_NOW, result=FetchSuccess(windows=[window for window in (short_window, long_window) if window])
+    )
 
 
 def _failure(error: str) -> ProviderFetch:
@@ -53,7 +55,7 @@ def test_render_provider_falls_back_to_last_success_when_errored() -> None:
         last_success=SuccessfulProviderFetch(
             fetched_at=_NOW - timedelta(minutes=8),
             result=FetchSuccess(
-                long_window=QuotaWindow(used_percent=72.0, reset_seconds=86400.0, window_seconds=604800.0)
+                windows=[QuotaWindow(used_percent=72.0, reset_seconds=86400.0, window_seconds=604800.0)]
             ),
         ),
     )

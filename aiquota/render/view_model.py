@@ -64,11 +64,7 @@ def currently_over_plan(out: ProviderFetch) -> bool:
     extra = out.result.extra_spend
     if extra is None or not extra.is_enabled:
         return False
-    short = out.result.short_window
-    long = out.result.long_window
-    if short is not None and short.used_percent >= _OVER_PLAN_PERCENT:
-        return True
-    return long is not None and long.used_percent >= _OVER_PLAN_PERCENT
+    return any(window.used_percent >= _OVER_PLAN_PERCENT for window in out.result.windows)
 
 
 def _extra_status(out: ProviderFetch) -> ExtraStatus:

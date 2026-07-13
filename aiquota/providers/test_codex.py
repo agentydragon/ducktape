@@ -2,7 +2,7 @@ import base64
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest_bazel
@@ -45,6 +45,10 @@ def _auth(
 _USAGE_BODY = {
     "rate_limit": {"primary_window": {"used_percent": 12.5, "limit_window_seconds": 18000, "reset_after_seconds": 120}}
 }
+
+
+def _fixture(name: str) -> dict[str, Any]:
+    return cast(dict[str, Any], json.loads((Path(__file__).parent / "fixtures" / name).read_text()))
 
 
 async def test_refreshes_expired_access_token_before_usage(tmp_path: Path) -> None:
@@ -160,3 +164,21 @@ async def test_usage_timeout_error_is_not_blank(tmp_path: Path) -> None:
 
     assert isinstance(output.result, FetchError)
     assert output.result.error == "codex usage fetch: ReadTimeout"
+
+
+async def test_weekly_primary_window_preserves_provider_duration(tmp_path: Path) -> None:
+    token = _jwt(datetime.now(UTC) + timedelta(days=10))
+    path = tmp_path / "auth.json"
+    path.write_text(json.dumps(_auth(token)))
+
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(USAGE_URL).mock(return_value=httpx.Response(200, json=_fixture("codex_weekly_primary.json")))
+        output = await CodexProvider(CodexSettings(auth_path=path)).fetch()
+
+    assert isinstance(output.result, FetchSuccess)
+    assert len(output.result.windows) == 2
+    assert output.result.windows[0].window_seconds == 7 * 86400
+    assert output.result.windows[0].used_percent == 6
+    assert output.result.windows[0].name is None
+    assert output.result.windows[1].name == "GPT-5.3-Codex-Spark"
+    assert not output.result.windows[1].display

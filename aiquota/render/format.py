@@ -1,6 +1,6 @@
 """Shared format helpers for human and tmux renderers."""
 
-from aiquota.models import PaceResult
+from aiquota.models import PaceResult, QuotaWindow
 
 
 def format_duration(seconds: float) -> str:
@@ -13,6 +13,22 @@ def format_duration(seconds: float) -> str:
     if h > 0:
         return f"{h}h{m:02d}m"
     return f"{m}m"
+
+
+def format_window_duration(seconds: float) -> str:
+    rounded = round(seconds)
+    if rounded % 86400 == 0:
+        return f"{rounded // 86400}d"
+    if rounded % 3600 == 0:
+        return f"{rounded // 3600}h"
+    if rounded % 60 == 0:
+        return f"{rounded // 60}m"
+    return f"{rounded}s"
+
+
+def format_window_label(window: QuotaWindow) -> str:
+    duration = format_window_duration(window.window_seconds)
+    return f"{window.name} ({duration})" if window.name else duration
 
 
 def format_age(seconds: float) -> str:

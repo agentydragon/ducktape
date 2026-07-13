@@ -16,8 +16,11 @@ if __name__ == "__main__":
 _FETCHED_AT = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 
 
-def _success(**kw) -> ProviderFetch:
-    return ProviderFetch(fetched_at=_FETCHED_AT, result=FetchSuccess(**kw))
+def _success(short_window: QuotaWindow | None = None, long_window: QuotaWindow | None = None) -> ProviderFetch:
+    return ProviderFetch(
+        fetched_at=_FETCHED_AT,
+        result=FetchSuccess(windows=[window for window in (short_window, long_window) if window]),
+    )
 
 
 def _pq(provider: str, last_output: ProviderFetch) -> ProviderQuota:
@@ -97,6 +100,37 @@ def test_aligns_reset_and_pace_columns_across_providers() -> None:
     forecast_columns = [line.index("leaves") for line in lines if "leaves" in line]
     assert len(set(delta_columns)) == 1
     assert len(set(forecast_columns)) == 1
+
+
+def test_renders_provider_supplied_duration_and_name() -> None:
+    output = ProviderFetch(
+        fetched_at=_FETCHED_AT,
+        result=FetchSuccess(
+            windows=[
+                QuotaWindow(name="model-specific", used_percent=12, reset_seconds=12 * 3600, window_seconds=24 * 3600)
+            ]
+        ),
+    )
+
+    assert "model-specific (1d):  12%" in human.render(_quotas(_pq("codex", output)), now=_FETCHED_AT)
+
+
+def test_hidden_window_remains_in_model_but_is_not_rendered() -> None:
+    output = ProviderFetch(
+        fetched_at=_FETCHED_AT,
+        result=FetchSuccess(
+            windows=[
+                QuotaWindow(used_percent=7, reset_seconds=3600, window_seconds=7 * 86400),
+                QuotaWindow(name="Spark", display=False, used_percent=0, reset_seconds=3600, window_seconds=7 * 86400),
+            ]
+        ),
+    )
+
+    rendered = human.render(_quotas(_pq("codex", output)), now=_FETCHED_AT)
+    assert "7d:   7%" in rendered
+    assert "Spark" not in rendered
+    assert isinstance(output.result, FetchSuccess)
+    assert len(output.result.windows) == 2
 
 
 @pytest.mark.parametrize("fixture_name", FIXTURE_NAMES)

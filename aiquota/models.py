@@ -1,13 +1,15 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class QuotaWindow(BaseModel):
+    name: str | None = None
+    display: bool = True
     used_percent: float
-    reset_seconds: float
-    window_seconds: float
+    reset_seconds: float = Field(ge=0)
+    window_seconds: float = Field(gt=0)
     reset_at: datetime | None = None
 
 
@@ -30,15 +32,22 @@ class ExtraSpend(BaseModel):
 class FetchSuccess(BaseModel):
     """Payload from a quota fetch that returned without error.
 
-    All three fields default to None — providers sometimes respond 200 but
-    omit specific window data (e.g. codex on a fresh account returns no
-    rate_limit). That's still "success with no data", not an error.
+    Providers sometimes respond 200 but omit window data (e.g. codex on a
+    fresh account returns no rate_limit). That's still "success with no
+    data", not an error.
     """
 
     kind: Literal["success"] = "success"
-    short_window: QuotaWindow | None = None
-    long_window: QuotaWindow | None = None
+    windows: list[QuotaWindow] = Field(default_factory=list)
     extra_spend: ExtraSpend | None = None
+
+    @field_validator("windows")
+    @classmethod
+    def sort_unique_windows(cls, windows: list[QuotaWindow]) -> list[QuotaWindow]:
+        identities = [(window.name, window.window_seconds) for window in windows]
+        if len(identities) != len(set(identities)):
+            raise ValueError("quota window identities must be unique")
+        return sorted(windows, key=lambda window: (window.window_seconds, window.name is not None, window.name or ""))
 
 
 class FetchError(BaseModel):
