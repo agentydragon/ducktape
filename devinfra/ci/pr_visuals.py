@@ -1,4 +1,4 @@
-"""Publish visual-review bundles and devel baseline pointers from Bazel tests run by trusted CI."""
+"""Publish immutable visual-review bundles from Bazel tests run by trusted CI."""
 
 from __future__ import annotations
 
@@ -19,17 +19,13 @@ from typing import Any, Literal
 import boto3
 from github import Auth, Github
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, TypeAdapter
 
 from util.visual_review import MANIFEST_NAME, VisualReviewManifest
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 COMMENT_MARKER = "<!-- pr-visuals -->"
-BASELINE_POINTER_SCHEMA = "ducktape.visual-baseline.v1"
-# Mutable "latest" pointer: no repo precedent for mutable S3 objects, so force
-# revalidation and never serve a flipped baseline from an edge cache.
-BASELINE_POINTER_CACHE_CONTROL = "no-cache, max-age=0, must-revalidate"
 
 
 class BazelInvocation(BaseModel):
@@ -49,17 +45,6 @@ class BuildBuddyArtifact(BaseModel):
     label: str
     name: str
     uri: str
-
-
-class BaselinePointer(BaseModel):
-    """Mutable per-test pointer at ``baselines/<slug>/latest.json`` naming the newest successful ``devel`` baseline."""
-
-    schema_: Literal["ducktape.visual-baseline.v1"] = Field(default=BASELINE_POINTER_SCHEMA, alias="schema")
-    repository: str
-    target_label: str
-    commit_sha: str
-    asset_paths: list[str]
-    url: str
 
 
 @dataclass(frozen=True)
@@ -227,50 +212,6 @@ def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client:
         )
 
 
-def publish_baselines(
-    tests: list[DownloadedVisualTest],
-    *,
-    repository: str,
-    commit_sha: str,
-    endpoint: str,
-    bucket: str,
-    public_base_url: str,
-    work_dir: Path,
-    client: Any | None = None,
-) -> list[str]:
-    if not FULL_SHA.fullmatch(commit_sha):
-        raise ValueError("commit SHA must be the full 40-character lowercase SHA-1")
-    if not tests:
-        raise ValueError("cannot publish baselines without tests")
-
-    # Cross-commit staleness guard (a late run overwriting a newer pointer) is
-    # deferred to the plan's hardening phase; the pointer stays content-addressed.
-    s3 = client or boto3.client("s3", endpoint_url=endpoint)
-    base_url = public_base_url.rstrip("/")
-    staging = work_dir / "baselines"
-    keys: list[str] = []
-    for test in tests:
-        pointer = BaselinePointer(
-            repository=repository,
-            target_label=test.target_label,
-            commit_sha=commit_sha,
-            asset_paths=[asset.path for asset in test.manifest.assets],
-            url=f"{base_url}/commits/{commit_sha}/tests/{test.slug}/",
-        )
-        pointer_path = staging / test.slug / "latest.json"
-        pointer_path.parent.mkdir(parents=True, exist_ok=True)
-        pointer_path.write_text(json.dumps(pointer.model_dump(by_alias=True), indent=2) + "\n")
-        key = f"baselines/{test.slug}/latest.json"
-        s3.upload_file(
-            pointer_path,
-            bucket,
-            key,
-            ExtraArgs={"CacheControl": BASELINE_POINTER_CACHE_CONTROL, "ContentType": "application/json"},
-        )
-        keys.append(key)
-    return keys
-
-
 def success_comment_body(*, repository: str, commit_sha: str, url: str, tests: list[DownloadedVisualTest]) -> str:
     commit_url = f"https://github.com/{repository}/commit/{commit_sha}"
     page_url = f"{url}index.html"
@@ -370,7 +311,6 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--bucket", required=True)
     result.add_argument("--public-base-url", required=True)
     result.add_argument("--pull-request", type=int)
-    result.add_argument("--update-baselines", action="store_true")
     return result
 
 
@@ -405,17 +345,6 @@ def main() -> None:
         public_url = f"{args.public_base_url.rstrip('/')}/commits/{args.sha}/"
         public_page_url = f"{public_url}index.html"
         summary = f"{len(tests)} Bazel test target{'s' if len(tests) != 1 else ''} produced visual artifacts."
-        if args.update_baselines:
-            publish_baselines(
-                tests,
-                repository=args.repository,
-                commit_sha=args.sha,
-                endpoint=args.endpoint,
-                bucket=args.bucket,
-                public_base_url=args.public_base_url,
-                work_dir=args.work_dir,
-            )
-            summary += f" Updated {len(tests)} devel baseline pointer{'s' if len(tests) != 1 else ''}."
         if args.pull_request is not None:
             upsert_pull_request_comment(
                 repository=args.repository,

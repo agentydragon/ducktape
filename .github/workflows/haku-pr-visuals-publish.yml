@@ -57,10 +57,9 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.PR_VISUALS_SECRET_KEY }}
           AWS_REGION: us-east-1
           GITHUB_TOKEN: ${{ github.token }}
-          # PR run → comment on the PR. Devel push → publish baselines, no comment.
+          # PR run → comment on the PR. Devel push → publish the bundle, no comment.
           HEAD_SHA: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].head.sha || github.event.workflow_run.head_sha }}
           PR_NUMBER: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number || '' }}
-          UPDATE_BASELINES: ${{ github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'devel' }}
         run: |
           args=(
             --linkage-dir "$PWD/linkage"
@@ -71,9 +70,7 @@ jobs:
             --bucket pr-visuals
             --public-base-url https://s3.allegedly.works/pr-visuals
           )
-          if [ "$UPDATE_BASELINES" = "true" ]; then
-            args+=(--update-baselines)
-          else
+          if [ -n "$PR_NUMBER" ]; then
             args+=(--pull-request "$PR_NUMBER")
           fi
           bb run //devinfra/ci:pr_visuals_bin -- "${args[@]}"

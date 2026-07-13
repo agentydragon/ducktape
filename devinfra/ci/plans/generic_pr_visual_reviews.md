@@ -7,13 +7,15 @@ request. A producer opts in by writing `visual-review.json` and its declared
 PNG assets as undeclared test outputs; the trusted publisher discovers those
 outputs from the tests that Bazel CI actually executed.
 
-Successful `devel` runs already publish an immutable bundle per commit plus a
-mutable per-test baseline pointer at `baselines/<slug>/latest.json`. Baseline
-identity is `(repository, canonical Bazel test label, manifest asset path)`.
+Successful `devel` runs publish an immutable bundle per commit at
+`commits/<sha>/` — the same commit-pinned paths PR runs use — so every devel
+commit's visual output is addressable by SHA. Baseline identity is
+`(repository, canonical Bazel test label, manifest asset path)`.
 
 The next milestone is useful visual comparison, not broader producer coverage:
-classify each candidate asset against its published baseline and show reviewers
-the baseline, candidate, and diff with clear provenance.
+for each candidate asset on a pull request, resolve its baseline from the PR's
+base commit and show reviewers the baseline, candidate, and diff with clear
+provenance.
 
 ## 1. Exercise the generic path live
 
@@ -90,8 +92,6 @@ side-by-side comparisons and diffs.
 - Add per-pull-request workflow concurrency and cancel older runs.
 - Recheck the pull request head immediately before replacing its sticky
   comment.
-- Recheck the baseline pointer commit against the current `devel` head before
-  overwriting the mutable pointer.
 - Preserve leaf-first upload ordering as asset pages are added, keeping the
   commit index last.
 - Add bounded retries for BuildBuddy, S3, and GitHub operations while retaining
