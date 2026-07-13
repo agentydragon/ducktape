@@ -10,7 +10,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -321,6 +320,10 @@ def main() -> None:
         raise ValueError("GITHUB_TOKEN is required to publish the visual-review check run")
     workflow_url = current_workflow_url()
 
+    conclusion: Literal["success", "failure", "neutral"] = "neutral"
+    summary = "No tests executed by Bazel CI exposed visual-review.json."
+    comment_body: str | None = None
+    details_url: str | None = workflow_url
     try:
         tests = download_visual_tests(find_test_invocations(args.linkage_dir), args.work_dir / "tests")
         github_output = os.environ.get("GITHUB_OUTPUT")
@@ -328,58 +331,34 @@ def main() -> None:
             with Path(github_output).open("a") as output:
                 output.write(f"found={'true' if tests else 'false'}\n")
         if not tests:
-            summary = "No tests executed by Bazel CI exposed visual-review.json."
             print(f"{summary} Skipping publication.")
-            publish_check_run(
-                repository=args.repository,
-                commit_sha=args.sha,
-                conclusion="neutral",
-                summary=summary,
-                details_url=workflow_url,
-                token=github_token,
-            )
             return
 
         bundle = build_bundle(tests, args.work_dir / "site", commit_sha=args.sha, repository=args.repository)
         upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"commits/{args.sha}")
         public_url = f"{args.public_base_url.rstrip('/')}/commits/{args.sha}/"
-        public_page_url = f"{public_url}index.html"
         summary = f"{len(tests)} Bazel test target{'s' if len(tests) != 1 else ''} produced visual artifacts."
-        if args.pull_request is not None:
+        comment_body = success_comment_body(
+            repository=args.repository, commit_sha=args.sha, url=public_url, tests=tests
+        )
+        conclusion, details_url = "success", f"{public_url}index.html"
+    except Exception as error:
+        comment_body = error_comment_body(repository=args.repository, commit_sha=args.sha, error=error)
+        summary, conclusion = str(error), "failure"
+        raise
+    finally:
+        if comment_body is not None and args.pull_request is not None:
             upsert_pull_request_comment(
-                repository=args.repository,
-                pull_request=args.pull_request,
-                body=success_comment_body(repository=args.repository, commit_sha=args.sha, url=public_url, tests=tests),
-                token=github_token,
+                repository=args.repository, pull_request=args.pull_request, body=comment_body, token=github_token
             )
         publish_check_run(
             repository=args.repository,
             commit_sha=args.sha,
-            conclusion="success",
+            conclusion=conclusion,
             summary=summary,
-            details_url=public_page_url,
+            details_url=details_url,
             token=github_token,
         )
-    except Exception as error:
-        try:
-            if args.pull_request is not None:
-                upsert_pull_request_comment(
-                    repository=args.repository,
-                    pull_request=args.pull_request,
-                    body=error_comment_body(repository=args.repository, commit_sha=args.sha, error=error),
-                    token=github_token,
-                )
-            publish_check_run(
-                repository=args.repository,
-                commit_sha=args.sha,
-                conclusion="failure",
-                summary=str(error),
-                details_url=workflow_url,
-                token=github_token,
-            )
-        except Exception as reporting_error:
-            print(f"Failed to report visual-review error to GitHub: {reporting_error}", file=sys.stderr)
-        raise
 
 
 if __name__ == "__main__":
