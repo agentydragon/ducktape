@@ -1,8 +1,10 @@
 # haku-ui image webhook (operator-owned)
 
-The **operator-owned** half of haku-ui's image automation: a generic Flux `Receiver` that a
-Forgejo `package` webhook (provisioned by `tf/gitops/haku-state`) hits on image publish, so
-Flux reconciles the `haku-ui` ImageRepository immediately instead of on its 5m poll.
+The **operator-owned** half of haku-ui's image automation: a generic Flux `Receiver` that
+Forgejo `package` (image publish) and `push` (git push) webhooks — both provisioned by
+`tf/gitops/haku-state` — hit, so Flux reconciles the whole deploy chain immediately instead
+of stacking 5m polls: ImageRepository scan, ImageUpdateAutomation tag-bump commit, and the
+GitRepository fetch that feeds the `haku-state-workloads` apply.
 
 **Why this isn't in Haku's haku-state** (where the rest of the automation lives —
 its `k8s/haku-ui-image-automation/`): a `Receiver` can force-reconcile any

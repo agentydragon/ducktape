@@ -309,10 +309,14 @@ resource "kubernetes_secret" "forgejo_webhook_token" {
   }
 }
 
-# Fire a webhook on container-package publish (the CI image push) so Flux reconciles the
-# haku-ui ImageRepository immediately rather than on its 5m poll. The generic receiver doesn't
-# validate a signature, so the unguessable sha256(token) path is the secret — no `secret` in
-# the webhook config.
+# Fire a webhook on container-package publish (the CI image push) AND on git push, so Flux
+# reconciles the whole haku-ui deploy chain immediately rather than stacking 5m polls: the
+# `package` event catches the CI image landing (registry scan), the `push` event catches both
+# ImageUpdateAutomation's tag-bump commit and ordinary haku-state pushes (GitRepository fetch →
+# workloads apply). The receiver is `generic` and force-reconciles all its listed resources on
+# any hit (see cluster/k8s/haku/ui-image-webhook/receiver.yaml), so both events share one hook
+# URL. The generic receiver doesn't validate a signature, so the unguessable sha256(token) path
+# is the secret — no `secret` in the webhook config.
 #
 # Targets the *public* Flux webhook host (`flux-webhook.allegedly.works`, the same HTTPRoute
 # GitHub delivers to), NOT the in-cluster ClusterIP. Why: Forgejo blocks webhook delivery to
@@ -336,7 +340,7 @@ resource "forgejo_repository_webhook" "haku_ui_image" {
   repository_id = forgejo_repository.state.id
   type          = "forgejo"
   active        = true
-  events        = ["package"]
+  events        = ["package", "push"]
   config = {
     content_type = "json"
     url          = "https://flux-webhook.allegedly.works/hook/${sha256(join("", [random_password.forgejo_webhook_token.result, "haku-ui-forgejo", "flux-system"]))}"
