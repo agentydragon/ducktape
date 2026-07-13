@@ -46,9 +46,10 @@ deliberately tiny (its documented declarative-deployments workflow):
   idempotent across renewals — a renewal just restarts the pod (reloader)
   and the server re-reads the PEMs.
 - `bootstrap/bootstrap-job.yaml` + `bootstrap/bootstrap.sh` — one-shot empty-database
-  bootstrap. It first gives an existing production server a chance to become
-  healthy (cluster-resource recreation over a retained database needs no
-  bootstrap), then uses upstream's serialized recovery-mode + apply workflow.
+  bootstrap. It first boots normal mode just long enough for upstream to seed
+  its version-matched built-in roles and permission sets, stops it, then uses
+  upstream's recovery-mode + apply workflow. Normal and recovery servers are
+  strictly serialized and never access the database concurrently.
   Its stable ConfigMap name deliberately prevents ordinary plan changes from
   rerunning recovery mode.
 - `reconcile/reconciler-job.yaml` + `reconcile/reconcile.sh` — steady-state reconciliation
