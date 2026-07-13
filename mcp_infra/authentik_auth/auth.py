@@ -222,7 +222,7 @@ class ResilientOIDCProxy(OIDCProxy):
             await self._on_client_authorized(client.client_id, code_model.idp_tokens)
         return await super().exchange_authorization_code(client, authorization_code)
 
-    async def load_access_token(self, token: str) -> AccessToken | None:  # type: ignore[override]
+    async def load_access_token(self, token: str) -> AccessToken | None:
         """Restore the DCR client identity FastMCP's token swap discards.
 
         ``OAuthProxy.load_access_token`` returns the *upstream* validation result, whose
@@ -232,9 +232,14 @@ class ResilientOIDCProxy(OIDCProxy):
         The FastMCP reference JWT carries the real DCR ``client_id`` claim; re-attach it
         so per-agent identity (operator links, audit principals) survives the swap.
         """
-        validated = await super().load_access_token(token)
-        if validated is None:
+        upstream_validated = await super().load_access_token(token)
+        if upstream_validated is None:
             return None
+        validated = (
+            upstream_validated
+            if isinstance(upstream_validated, AccessToken)
+            else AccessToken.model_validate(upstream_validated.model_dump())
+        )
         try:
             dcr_client_id = self.jwt_issuer.verify_token(token).get("client_id")
         except Exception:
