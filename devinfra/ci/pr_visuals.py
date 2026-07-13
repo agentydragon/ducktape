@@ -162,10 +162,10 @@ def download_visual_tests(
         available = {artifact.artifact.name: artifact for artifact in target_artifacts}
         for asset in manifest.assets:
             artifact_name = f"test.outputs/{asset.path}"
-            listed = available.get(artifact_name)
-            if listed is None:
+            asset_artifact = available.get(artifact_name)
+            if asset_artifact is None:
                 raise ValueError(f"{target_label} visual manifest references missing artifact {asset.path}")
-            _download_artifact(listed, test_dir / asset.path, bbapi=bbapi, run=run)
+            _download_artifact(asset_artifact, test_dir / asset.path, bbapi=bbapi, run=run)
         tests.append(DownloadedVisualTest(target_label, slug, manifest, test_dir))
     return tests
 
