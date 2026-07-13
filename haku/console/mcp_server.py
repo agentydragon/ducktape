@@ -29,6 +29,7 @@ import datetime
 import logging
 import re
 from dataclasses import dataclass
+from functools import partial
 from typing import Any
 
 from fastapi import HTTPException
@@ -44,6 +45,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from haku.console.auto_approval import is_unconditionally_auto_approved
 from haku.console.config import Settings
 from haku.console.console_events import ConsoleEventHub
+from haku.console.mcp_agent_auth import AgentNamingOIDCProxy, OnAgentAuthorized
 from haku.console.mcp_approval import (
     DegradedServerMetadata,
     McpMetadataProvider,
@@ -66,7 +68,7 @@ from haku.console.mcp_config import (
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.tool_calls import SubmitToolCallRequest, ToolCallRecord, ToolCallStatus
 from haku.console.tools.gmail_client import GmailToolsClient
-from mcp_infra.authentik_auth.auth import OnClientAuthorized, build_authentik_auth
+from mcp_infra.authentik_auth.auth import build_authentik_auth
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 
@@ -243,6 +245,7 @@ class ProxyTool(Tool):
         record = await submit_and_wait(
             req=req,
             caller_principal=caller.principal,
+            caller_display_name=caller.display_name,
             operator_subject=caller.operator_subject,
             caller_is_agent=True,
             settings=ctx.settings,
@@ -338,7 +341,7 @@ def build_auth(
     settings: Settings,
     static_agents: list[ResolvedStaticAgent],
     client_storage: Any,
-    on_client_authorized: OnClientAuthorized | None = None,
+    on_client_authorized: OnAgentAuthorized | None = None,
 ) -> AuthProvider:
     """Compose the MCP server's auth — the credentials `/mcp` accepts.
 
@@ -351,11 +354,13 @@ def build_auth(
     """
     static = _static_bearer_verifier(static_agents)
     if settings.mcp_oauth is not None:
+        if on_client_authorized is None:
+            raise ValueError("haku-console OAuth requires an agent authorization hook")
         return build_authentik_auth(
             settings.mcp_oauth.as_authentik_auth_config(public_base_url=settings.public_base_url),
             client_storage=client_storage,
             extra_verifiers=[static] if static is not None else None,
-            on_client_authorized=on_client_authorized,
+            oidc_proxy_factory=partial(AgentNamingOIDCProxy, on_agent_authorized=on_client_authorized),
         )
     if static is None:
         raise ValueError(

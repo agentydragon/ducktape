@@ -15,6 +15,7 @@ import pytest_bazel
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import SecretStr
+from sqlalchemy.exc import IntegrityError
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -353,13 +354,21 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
 
                 consent = await anon.get(consent_url)
                 assert consent.status_code == 200
+                assert "Name this agent" in consent.text
+                assert 'name="agent_name"' in consent.text
+                assert "Application Access Request" not in consent.text
                 txn_id = re.search(r'name="txn_id" value="([^"]+)"', consent.text)
                 csrf_token = re.search(r'name="csrf_token" value="([^"]+)"', consent.text)
                 assert txn_id is not None
                 assert csrf_token is not None
                 approved = await anon.post(
                     f"{base}/mcp/consent",
-                    data={"txn_id": txn_id.group(1), "csrf_token": csrf_token.group(1), "action": "approve"},
+                    data={
+                        "txn_id": txn_id.group(1),
+                        "csrf_token": csrf_token.group(1),
+                        "agent_name": "Kitchen Claude",
+                        "action": "approve",
+                    },
                     follow_redirects=False,
                 )
                 assert approved.status_code == 302, approved.text
@@ -374,16 +383,27 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
 def test_agent_operator_link_round_trips(migrated_db_url: str) -> None:
     store = PostgresMcpOperatorOAuthStore(migrated_db_url)
     assert store.agent_operator(agent_dcr_client_id="dcr-1") is None
-    store.bind_agent_operator(agent_dcr_client_id="dcr-1", operator_subject="42")
+    assert store.agent_display_name("dcr-1") is None
+    store.bind_agent_operator(agent_dcr_client_id="dcr-1", operator_subject="42", display_name="Kitchen Claude")
     assert store.agent_operator(agent_dcr_client_id="dcr-1") == "42"
+    assert store.agent_display_name("dcr-1") == "Kitchen Claude"
     # Reauthorizing as the same operator is idempotent. A different operator must receive a new DCR
     # client id; moving the old id would transfer every already-issued token to the new tenant.
-    store.bind_agent_operator(agent_dcr_client_id="dcr-1", operator_subject="42")
+    store.bind_agent_operator(agent_dcr_client_id="dcr-1", operator_subject="42", display_name="Upstairs Claude")
+    assert store.agent_display_name("dcr-1") == "Upstairs Claude"
     with pytest.raises(ValueError, match="different operator"):
-        store.bind_agent_operator(agent_dcr_client_id="dcr-1", operator_subject="99")
+        store.bind_agent_operator(agent_dcr_client_id="dcr-1", operator_subject="99", display_name="Other Claude")
     assert store.agent_operator(agent_dcr_client_id="dcr-1") == "42"
     with pytest.raises(ValueError, match="reserved static-agent namespace"):
-        store.bind_agent_operator(agent_dcr_client_id=static_agent_client_id("haku"), operator_subject="42")
+        store.bind_agent_operator(
+            agent_dcr_client_id=static_agent_client_id("haku"), operator_subject="42", display_name="Static Haku"
+        )
+    with pytest.raises(ValueError, match="must not be empty"):
+        store.bind_agent_operator(agent_dcr_client_id="dcr-empty", operator_subject="42", display_name="  ")
+    with pytest.raises(IntegrityError):
+        store.bind_agent_operator(
+            agent_dcr_client_id="dcr-duplicate", operator_subject="42", display_name="Upstairs Claude"
+        )
 
 
 def test_operator_resolution_routes_multiple_agents_and_operators(migrated_db_url: str) -> None:
@@ -396,8 +416,8 @@ def test_operator_resolution_routes_multiple_agents_and_operators(migrated_db_ur
         ResolvedStaticAgent(agent="ops-bot", token=SecretStr("tok-ops"), operator_subject="op-ops"),
     ]
     # Two OAuth DCR agents, each auto-linked (at connect) to a different operator subject.
-    store.bind_agent_operator(agent_dcr_client_id="dcr-claude", operator_subject="op-claude")
-    store.bind_agent_operator(agent_dcr_client_id="dcr-cli", operator_subject="op-cli")
+    store.bind_agent_operator(agent_dcr_client_id="dcr-claude", operator_subject="op-claude", display_name="Claude.ai")
+    store.bind_agent_operator(agent_dcr_client_id="dcr-cli", operator_subject="op-cli", display_name="Claude CLI")
 
     def subject(client_id: str) -> str | None:
         caller = resolve_mcp_agent(client_id, static_agents, store)
@@ -412,6 +432,20 @@ def test_operator_resolution_routes_multiple_agents_and_operators(migrated_db_ur
     # Raw static names cannot collide with OAuth ids, and unknown/unlinked callers fail closed.
     assert subject("haku") is None
     assert subject("dcr-unlinked") is None
+
+
+def test_oauth_agent_resolution_keeps_stable_principal_and_friendly_name(migrated_db_url: str) -> None:
+    store = PostgresMcpOperatorOAuthStore(migrated_db_url)
+    store.bind_agent_operator(
+        agent_dcr_client_id="dcr-claude", operator_subject="op-claude", display_name="Kitchen Claude"
+    )
+
+    caller = resolve_mcp_agent("dcr-claude", [], store)
+
+    assert caller is not None
+    assert caller.principal == "dcr-claude"
+    assert caller.display_name == "Kitchen Claude"
+    assert caller.operator_subject == "op-claude"
 
 
 def test_duplicate_static_agent_ids_fail_startup(migrated_db_url: str, tmp_path: Path) -> None:

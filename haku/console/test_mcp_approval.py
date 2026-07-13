@@ -988,12 +988,38 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
                 .mappings()
                 .all()
             }
+            agent_columns = {
+                row["column_name"]: row["is_nullable"]
+                for row in conn.execute(
+                    text(
+                        """
+                        SELECT column_name, is_nullable
+                        FROM information_schema.columns
+                        WHERE table_name = 'mcp_agents'
+                        """
+                    )
+                )
+                .mappings()
+                .all()
+            }
+            agent_constraints = set(
+                conn.execute(
+                    text(
+                        """
+                        SELECT constraint_name
+                        FROM information_schema.table_constraints
+                        WHERE table_name = 'mcp_agents'
+                        """
+                    )
+                ).scalars()
+            )
             row = cast(
                 dict[str, Any],
                 conn.execute(
                     text(
                         """
-                        SELECT operator_subject, server_id, tool_name, status, arguments_json, result_json
+                        SELECT operator_subject, server_id, tool_name, caller_display_name,
+                               status, arguments_json, result_json
                         FROM mcp_tool_calls
                         WHERE tool_call_id = :tool_call_id
                         """
@@ -1006,8 +1032,8 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
     finally:
         engine.dispose()
 
-    assert version == "0007"
-    assert {"mcp_operator_oauth_associations", "mcp_operator_oauth_flows", "mcp_agent_operator"} <= tables
+    assert version == "0008"
+    assert {"mcp_operator_oauth_associations", "mcp_operator_oauth_flows", "mcp_agent_operator", "mcp_agents"} <= tables
     assert {"mcp_tool_calls_legacy_unowned", "mcp_tool_call_events_legacy_unowned"}.isdisjoint(tables)
     assert {
         "tool_call_id",
@@ -1015,6 +1041,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
         "server_id",
         "tool_name",
         "caller_principal",
+        "caller_display_name",
         "status",
         "created_at",
         "updated_at",
@@ -1028,12 +1055,63 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
         "auto_approval_evaluation",
         "approved_at",
     } == columns
+    assert agent_columns["display_name"] == "NO"
+    assert {"uq_mcp_agents_display_name", "ck_mcp_agents_display_name_not_empty"} <= agent_constraints
     assert row["operator_subject"] == "operator-sub"
     assert row["server_id"] == "smoke"
     assert row["tool_name"] == "echo"
+    assert row["caller_display_name"] == submitted["caller_display_name"]
     assert row["status"] == "ok"
     assert row["arguments_json"] == {"text": "world"}
     assert row["result_json"]["content"][0]["text"] == "echo:world"
+
+
+def test_0008_drops_history_before_requiring_caller_display_name(db_url: str) -> None:
+    engine = create_engine(db_url)
+    try:
+        _upgrade(engine, "0007")
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO mcp_tool_calls (
+                        tool_call_id, operator_subject, server_id, tool_name, caller_principal,
+                        status, created_at, updated_at, arguments_json, rationale
+                    ) VALUES (
+                        'tc_pre_names', 'operator-sub', 'smoke', 'echo', 'dcr-old',
+                        'pending_approval', now(), now(), '{}'::jsonb, 'predates required display names'
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO mcp_tool_call_events (
+                        event_type, operator_subject, tool_call_id, status, created_at
+                    ) VALUES (
+                        'tool_call_submitted', 'operator-sub', 'tc_pre_names', 'pending_approval', now()
+                    )
+                    """
+                )
+            )
+
+        _upgrade(engine, "head")
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT count(*) FROM mcp_tool_calls")).scalar_one() == 0
+            assert conn.execute(text("SELECT count(*) FROM mcp_tool_call_events")).scalar_one() == 0
+            nullable = conn.execute(
+                text(
+                    """
+                    SELECT is_nullable
+                    FROM information_schema.columns
+                    WHERE table_name = 'mcp_tool_calls' AND column_name = 'caller_display_name'
+                    """
+                )
+            ).scalar_one()
+        assert nullable == "NO"
+    finally:
+        engine.dispose()
 
 
 def test_0007_deletes_unowned_history_and_is_forward_only(db_url: str) -> None:

@@ -49,6 +49,7 @@ class ToolCallRecord(BaseModel):
     server_id: str
     tool_name: str
     caller_principal: str
+    caller_display_name: str
     status: ToolCallStatus
     created_at: datetime.datetime
     updated_at: datetime.datetime

@@ -40,6 +40,7 @@ function PreviewGallery() {
               server_id: serverId,
               tool_name: toolName,
               caller_principal: "haku-agent-api-token",
+              caller_display_name: "Kitchen Claude",
               status: finished ? "ok" : "pending_approval",
               created_at: "2026-07-11T12:00:00Z",
               updated_at: "2026-07-11T12:00:00Z",

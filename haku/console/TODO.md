@@ -30,10 +30,10 @@ The `/mcp` server (`mcp_server.py`) ships with a single global auto-approval pol
 uniform build-time tool surface. Deferred, building on a small `mcp_agents` registry table
 (`agent_id` PK, `display_name`, later `policy`):
 
-- **Consent-in-SPA agent naming** — render the OIDCProxy consent step as a styled React view
-  ("Name this agent" + Allow/Deny) instead of FastMCP's default HTML, persisting
-  `client_id -> display_name`; show the friendly name in the tool-call audit/history (join
-  `caller_principal -> mcp_agents`).
+- **Connected-agent management and history filtering** — add an operator-only UI that lists every
+  agent connected to that operator, then let the operator filter past tool calls by agent within
+  the already-mandatory operator scope. The API/query must always constrain by both authenticated
+  `operator_subject` and selected stable `agent_id`; a display name is presentation, not authority.
 - **Per-agent policy** — a `policy` column authored as a structured YAML/JSON object (parsed
   into a typed Pydantic policy, same pattern as `mcp_config.py`), edited in the console UI;
   the single global policy becomes the degenerate "same for every agent" case.

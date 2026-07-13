@@ -139,11 +139,13 @@ def create_app(settings: Settings) -> FastAPI:
     # Record the agent→operator link when an OAuth agent (claude.ai / claude CLI) completes the
     # OIDCProxy authorization-code exchange: its DCR client_id → the operator's opaque subject.
     # A missing `sub` is a misconfiguration (both providers run sub_mode=user_id), so fail loud.
-    async def _link_agent_operator(client_id: str, idp_tokens: Mapping[str, Any]) -> None:
+    async def _link_agent_operator(client_id: str, idp_tokens: Mapping[str, Any], display_name: str) -> None:
         subject = mcp_operator_oauth.operator_subject_from_idp_tokens(idp_tokens)
         if subject is None:
             raise RuntimeError(f"MCP OAuth id_token for client {client_id} carried no `sub` claim")
-        mcp_operator_oauth_store.bind_agent_operator(agent_dcr_client_id=client_id, operator_subject=subject)
+        mcp_operator_oauth_store.bind_agent_operator(
+            agent_dcr_client_id=client_id, operator_subject=subject, display_name=display_name
+        )
 
     # The OIDCProxy client-state store only exists when OAuth does; the static-bearer-only deploy has
     # no dynamic client registrations to persist.

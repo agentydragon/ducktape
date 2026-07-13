@@ -116,6 +116,16 @@ is no decision tool — so an OAuth caller cannot self-approve; approval stays i
 chrome. Approved calls execute against the console's own stored operator credentials, so an incoming
 token's blast radius is "call the console's submit/read tools" and nothing else.
 
+On an OAuth client's authorization step, Haku replaces FastMCP's generic consent HTML with a
+script-free **Name this agent** ceremony. FastMCP still owns the signed CSRF, browser-binding,
+redirect, and PKCE mechanics; Haku captures the operator-authored label in the same short-lived
+shared OAuth store and commits it only when the later Authentik-backed code exchange binds the DCR
+client ID to that operator. The stable DCR ID remains the audit principal, while the separate
+unique, non-empty `mcp_agents.display_name` is copied into each tool-call row for approvals and
+history. Migration `0008` clears the pre-name tool-call ledger rather than inventing historical
+labels. Remembered FastMCP approve/deny cookies are deliberately ignored for this opt-in flow so an
+abandoned authorization can never silently bypass the naming screen later.
+
 ### In-process MCP servers — no second deployment
 
 A `mcp.servers` entry that omits `server_url` is served by an **in-process `FastMCP`

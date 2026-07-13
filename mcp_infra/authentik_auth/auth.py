@@ -290,6 +290,8 @@ class ResilientOIDCProxy(OIDCProxy):
 
 # ── Auth builder ──────────────────────────────────────────────────────────
 
+OIDCProxyFactory = Callable[..., ResilientOIDCProxy]
+
 
 def build_authentik_auth(
     config: AuthentikAuthConfig,
@@ -298,6 +300,7 @@ def build_authentik_auth(
     client_storage: Any | None = None,
     extra_verifiers: list[TokenVerifier] | None = None,
     on_client_authorized: OnClientAuthorized | None = None,
+    oidc_proxy_factory: OIDCProxyFactory | None = None,
 ) -> AuthProvider:
     """Build OIDCProxy plus explicit direct-JWT trust for an Authentik-backed MCP server.
 
@@ -319,12 +322,14 @@ def build_authentik_auth(
         on_client_authorized: Optional hook fired during an OAuth client's authorization-code
             exchange, before the local FastMCP token is issued, with its ``client_id`` and raw
             upstream token response. Exceptions prevent local token issuance.
+        oidc_proxy_factory: Injectable proxy constructor for product-specific OAuth presentation
+            or policy. It receives the same keyword arguments as ``ResilientOIDCProxy``.
     """
     issuer = config.normalized_issuer()
     config_url = f"{issuer}/.well-known/openid-configuration"
     discovery = httpx.get(config_url, timeout=10.0).raise_for_status().json()
     jwks_uri = discovery["jwks_uri"]
-    proxy = ResilientOIDCProxy(
+    proxy = (oidc_proxy_factory or ResilientOIDCProxy)(
         config_url=config_url,
         client_id=config.oidc_client_id,
         client_secret=config.oidc_client_secret,

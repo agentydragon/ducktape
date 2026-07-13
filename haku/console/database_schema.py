@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, DateTime, Index, Text
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, Index, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -29,6 +29,7 @@ class McpToolCall(Base):
     server_id: Mapped[str] = mapped_column(Text, nullable=False)
     tool_name: Mapped[str] = mapped_column(Text, nullable=False)
     caller_principal: Mapped[str] = mapped_column(Text, nullable=False)
+    caller_display_name: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[ToolCallStatus] = mapped_column(
         StrEnumColumn(ToolCallStatus, name="tool_call_status"), nullable=False
     )
@@ -52,6 +53,7 @@ class McpToolCall(Base):
             server_id=record.server_id,
             tool_name=record.tool_name,
             caller_principal=record.caller_principal,
+            caller_display_name=record.caller_display_name,
             status=record.status,
             created_at=record.created_at,
             updated_at=record.updated_at,
@@ -72,6 +74,7 @@ class McpToolCall(Base):
             server_id=self.server_id,
             tool_name=self.tool_name,
             caller_principal=self.caller_principal,
+            caller_display_name=self.caller_display_name,
             status=self.status,
             created_at=self.created_at,
             updated_at=self.updated_at,
@@ -182,6 +185,23 @@ class McpAgentOperator(Base):
             "matching the mcp_operator_oauth_associations key so execution resolves the operator token."
         ),
     )
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class McpAgent(Base):
+    """Operator-authored presentation metadata for a stable MCP client identity."""
+
+    __tablename__ = "mcp_agents"
+    __table_args__ = (
+        UniqueConstraint("display_name", name="uq_mcp_agents_display_name"),
+        CheckConstraint("length(trim(display_name)) > 0", name="ck_mcp_agents_display_name_not_empty"),
+    )
+
+    agent_id: Mapped[str] = mapped_column(
+        Text, primary_key=True, comment="The OAuth agent's stable Dynamic Client Registration client_id."
+    )
+    display_name: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

@@ -113,7 +113,7 @@ export function approvalDisplayFields(approval: PendingApproval | ToolCallRecord
     rationale: approval.rationale ?? "",
     argumentsJson: JSON.stringify(args, null, 2) ?? "null",
     toolCallId: approval.tool_call_id,
-    callerPrincipal: approval.caller_principal ?? null,
+    callerPrincipal: approval.caller_display_name,
     createdAt: approval.created_at ?? null,
     denialReason: "denial_reason" in approval ? (approval.denial_reason ?? null) : null,
     approvalPolicyId: "approval_policy_id" in approval ? (approval.approval_policy_id ?? null) : null,

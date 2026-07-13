@@ -227,6 +227,16 @@ def test_build_authentik_auth_passes_on_client_authorized(auth_build_harness: _A
     assert auth_build_harness.oidc_proxy_cls.call_args.kwargs["on_client_authorized"] is _cb
 
 
+def test_build_authentik_auth_accepts_product_specific_proxy_factory(auth_build_harness: _AuthBuildHarness) -> None:
+    factory = Mock()
+    factory.return_value.client_registration_options = Mock()
+
+    build_authentik_auth(_config(), oidc_proxy_factory=factory)
+
+    factory.assert_called_once()
+    auth_build_harness.oidc_proxy_cls.assert_not_called()
+
+
 async def test_resilient_proxy_checks_client_ownership_before_issuing_token() -> None:
     """The ownership hook sees upstream identity before a local client token is issued."""
     proxy = ResilientOIDCProxy.__new__(ResilientOIDCProxy)

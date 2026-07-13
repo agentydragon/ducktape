@@ -128,6 +128,7 @@ class PendingApproval(BaseModel):
     title: str | None = None
     tool_name: str
     caller_principal: str
+    caller_display_name: str
     rationale: str
     arguments: dict[str, Any]
     created_at: datetime.datetime
@@ -165,6 +166,7 @@ class PostgresToolCallLedger:
         server: McpServerEntry,
         req: SubmitToolCallRequest,
         caller_principal: str,
+        caller_display_name: str,
         operator_subject: str,
         auto_approval_policy_id: str | None = None,
         auto_approval_evaluation: str | None = None,
@@ -177,6 +179,7 @@ class PostgresToolCallLedger:
                 server_id=server.id,
                 tool_name=req.tool_name,
                 caller_principal=caller_principal,
+                caller_display_name=caller_display_name,
                 status=status,
                 created_at=now,
                 updated_at=now,
@@ -390,6 +393,7 @@ def _pending_approval_from_record(record: ToolCallRecord) -> PendingApproval:
         title=record.title,
         tool_name=record.tool_name,
         caller_principal=record.caller_principal,
+        caller_display_name=record.caller_display_name,
         rationale=record.rationale,
         arguments=record.arguments,
         created_at=record.created_at,
@@ -398,10 +402,48 @@ def _pending_approval_from_record(record: ToolCallRecord) -> PendingApproval:
 
 
 @dataclass(frozen=True)
-class ToolCallCaller:
-    kind: Literal["operator", "static_agent", "oauth_agent"]
-    principal: str
+class OperatorToolCallCaller:
+    username: str
     operator_subject: str
+
+    @property
+    def principal(self) -> str:
+        return self.username
+
+    @property
+    def display_name(self) -> str:
+        return self.username
+
+
+@dataclass(frozen=True)
+class StaticAgentToolCallCaller:
+    agent: ResolvedStaticAgent
+
+    @property
+    def principal(self) -> str:
+        return self.agent.agent
+
+    @property
+    def display_name(self) -> str:
+        return self.agent.agent
+
+    @property
+    def operator_subject(self) -> str:
+        return self.agent.operator_subject
+
+
+@dataclass(frozen=True)
+class OAuthAgentToolCallCaller:
+    client_id: str
+    display_name: str
+    operator_subject: str
+
+    @property
+    def principal(self) -> str:
+        return self.client_id
+
+
+type ToolCallCaller = OperatorToolCallCaller | StaticAgentToolCallCaller | OAuthAgentToolCallCaller
 
 
 def _tool_call_caller(request: Request, static_agents: StaticAgentsDep) -> ToolCallCaller:
@@ -416,10 +458,10 @@ def _tool_call_caller(request: Request, static_agents: StaticAgentsDep) -> ToolC
     if agent is not None and subject is not None:
         raise HTTPException(status_code=400, detail="present exactly one operator or static-agent credential")
     if agent is not None:
-        return ToolCallCaller(kind="static_agent", principal=agent.agent, operator_subject=agent.operator_subject)
+        return StaticAgentToolCallCaller(agent)
     if subject is not None:
-        return ToolCallCaller(
-            kind="operator", principal=operator_auth.operator_username(request) or subject, operator_subject=subject
+        return OperatorToolCallCaller(
+            username=operator_auth.operator_username(request) or subject, operator_subject=subject
         )
     raise HTTPException(status_code=401, detail="operator or agent authentication required")
 
@@ -434,14 +476,13 @@ def resolve_mcp_agent(
     if (agent_name := static_agent_name_from_client_id(client_id)) is not None:
         for agent in static_agents:
             if agent.agent == agent_name:
-                return ToolCallCaller(
-                    kind="static_agent", principal=agent.agent, operator_subject=agent.operator_subject
-                )
+                return StaticAgentToolCallCaller(agent)
         return None
     subject = oauth_store.agent_operator(agent_dcr_client_id=client_id)
-    if subject is None:
+    display_name = oauth_store.agent_display_name(client_id)
+    if subject is None or display_name is None:
         return None
-    return ToolCallCaller(kind="oauth_agent", principal=client_id, operator_subject=subject)
+    return OAuthAgentToolCallCaller(client_id=client_id, display_name=display_name, operator_subject=subject)
 
 
 async def _execution_auth(
@@ -559,6 +600,7 @@ async def submit_and_wait(
     *,
     req: SubmitToolCallRequest,
     caller_principal: str,
+    caller_display_name: str,
     operator_subject: str,
     caller_is_agent: bool,
     settings: Settings,
@@ -587,6 +629,7 @@ async def submit_and_wait(
         server=server,
         req=req,
         caller_principal=caller_principal,
+        caller_display_name=caller_display_name,
         operator_subject=operator_subject,
         auto_approval_policy_id=auto_approval_policy_id,
         auto_approval_evaluation=auto_approval_evaluation,
@@ -625,8 +668,9 @@ async def submit_tool_call(
     return await submit_and_wait(
         req=body,
         caller_principal=caller.principal,
+        caller_display_name=caller.display_name,
         operator_subject=caller.operator_subject,
-        caller_is_agent=caller.kind == "static_agent",
+        caller_is_agent=isinstance(caller, StaticAgentToolCallCaller),
         settings=settings,
         ledger=ledger,
         hub=hub,
@@ -661,7 +705,7 @@ async def pending_approvals(request: Request, ledger: LedgerDep) -> PendingAppro
     records = ledger.list(
         operator_subject=_operator_event_subject(request), statuses=[ToolCallStatus.PENDING_APPROVAL]
     ).tool_calls
-    return PendingApprovalsResponse(approvals=[_pending_approval_from_record(r) for r in records])
+    return PendingApprovalsResponse(approvals=[_pending_approval_from_record(record) for record in records])
 
 
 @router.get("/api/approvals/events")

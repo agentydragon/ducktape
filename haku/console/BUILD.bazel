@@ -137,6 +137,21 @@ py_library(
 )
 
 py_library(
+    name = "mcp_agent_auth",
+    srcs = ["mcp_agent_auth.py"],
+    data = ["templates/mcp_agent_consent.html.j2"],
+    deps = [
+        "//mcp_infra/authentik_auth:auth",
+        "@pypi//fastmcp",
+        "@pypi//jinja2",
+        "@pypi//mcp",
+        "@pypi//py_key_value_aio",
+        "@pypi//pydantic",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
     name = "auto_approval",
     srcs = ["auto_approval.py"],
     deps = [
@@ -192,6 +207,7 @@ py_library(
         ":auto_approval",
         ":config",
         ":console_events",
+        ":mcp_agent_auth",
         ":mcp_approval",
         ":mcp_config",
         ":mcp_operator_oauth",
@@ -510,6 +526,20 @@ py_test(
         "@pypi//starlette",
         # pytest-asyncio auto mode (root conftest) needs the plugin importable at runtime.
         "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_mcp_agent_auth",
+    srcs = ["test_mcp_agent_auth.py"],
+    deps = [
+        ":mcp_agent_auth",
+        "//:conftest",
+        "//mcp_infra/authentik_auth:auth",
+        "@pypi//fastmcp",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
     ],
 )
 

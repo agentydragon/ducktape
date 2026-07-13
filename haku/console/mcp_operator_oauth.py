@@ -57,7 +57,7 @@ from sqlalchemy.orm import sessionmaker
 from haku.console import operator_auth
 from haku.console.config import Settings
 from haku.console.console_events import ConsoleEventHubDep, McpOperatorAuthChangedEvent
-from haku.console.database_schema import McpAgentOperator, McpOperatorOAuthAssociation, McpOperatorOAuthFlow
+from haku.console.database_schema import McpAgent, McpAgentOperator, McpOperatorOAuthAssociation, McpOperatorOAuthFlow
 from haku.console.deps import SettingsDep
 from haku.console.mcp_config import (
     STATIC_AGENT_CLIENT_ID_PREFIX,
@@ -347,7 +347,7 @@ class PostgresMcpOperatorOAuthStore:
             row.token_expires_at = token_expires_at
             return row.access_token
 
-    def bind_agent_operator(self, *, agent_dcr_client_id: str, operator_subject: str) -> None:
+    def bind_agent_operator(self, *, agent_dcr_client_id: str, operator_subject: str, display_name: str) -> None:
         """Immutably bind one OAuth DCR client id to its authorizing operator.
 
         Previously issued client tokens remain keyed by this id, so silently moving it would give an
@@ -356,6 +356,8 @@ class PostgresMcpOperatorOAuthStore:
         """
         if agent_dcr_client_id.startswith(STATIC_AGENT_CLIENT_ID_PREFIX):
             raise ValueError("OAuth client_id collides with the reserved static-agent namespace")
+        if not display_name.strip():
+            raise ValueError("OAuth agent display name must not be empty")
         with self._sessions.begin() as session:
             now = datetime.datetime.now(datetime.UTC)
             row = session.get(McpAgentOperator, agent_dcr_client_id, with_for_update=True)
@@ -372,12 +374,26 @@ class PostgresMcpOperatorOAuthStore:
                 if row.operator_subject != operator_subject:
                     raise ValueError("OAuth agent client_id is already bound to a different operator")
                 row.updated_at = now
+            agent = session.get(McpAgent, agent_dcr_client_id, with_for_update=True)
+            if agent is None:
+                session.add(
+                    McpAgent(agent_id=agent_dcr_client_id, display_name=display_name, created_at=now, updated_at=now)
+                )
+            else:
+                agent.display_name = display_name
+                agent.updated_at = now
 
     def agent_operator(self, agent_dcr_client_id: str) -> str | None:
         """The operator subject an OAuth agent is linked to, or None if unlinked."""
         with self._sessions.begin() as session:
             row = session.get(McpAgentOperator, agent_dcr_client_id)
             return row.operator_subject if row is not None else None
+
+    def agent_display_name(self, agent_dcr_client_id: str) -> str | None:
+        """The operator-authored label for an OAuth agent, or None for a legacy/unlinked client."""
+        with self._sessions.begin() as session:
+            row = session.get(McpAgent, agent_dcr_client_id)
+            return row.display_name if row is not None else None
 
 
 def _oauth_store(request: Request) -> PostgresMcpOperatorOAuthStore:
