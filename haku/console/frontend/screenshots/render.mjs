@@ -12,6 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { launchPuppeteerBrowser } from "../../../../util/testing/frontend_visual/puppeteer-lib.mjs";
+import { writeVisualReviewManifest } from "../../../../util/testing/frontend_visual/visual-review-manifest.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -134,14 +135,13 @@ try {
 } finally {
   await browser.close();
 }
-writeFileSync(
-  join(outDir, "haku-console-visuals.json"),
-  `${JSON.stringify(
-    {
-      screenshots: COLOR_SCHEMES.flatMap((colorScheme) => SCENES.map(({ name }) => `${name}-${colorScheme}.png`)),
-    },
-    null,
-    2
-  )}\n`
-);
+writeVisualReviewManifest(outDir, {
+  title: "Haku Console",
+  assets: COLOR_SCHEMES.flatMap((colorScheme) =>
+    SCENES.map(({ name }) => ({
+      path: `${name}-${colorScheme}.png`,
+      label: `${name} - ${colorScheme}`,
+    }))
+  ),
+});
 console.log(`\n${SCENES.length * COLOR_SCHEMES.length} screenshots in ${outDir}`);

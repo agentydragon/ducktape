@@ -1,4 +1,4 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 
 # Link npm packages for this workspace member
@@ -30,6 +30,19 @@ js_library(
     deps = [
         ":node_modules/puppeteer",
     ],
+)
+
+js_library(
+    name = "visual_review_manifest",
+    srcs = ["visual-review-manifest.mjs"],
+    tags = ["no-lint"],
+    visibility = ["//visibility:public"],
+)
+
+js_test(
+    name = "visual_review_manifest_test",
+    data = [":visual_review_manifest"],
+    entry_point = "visual-review-manifest.test.mjs",
 )
 
 # Font files for hermetic rendering.

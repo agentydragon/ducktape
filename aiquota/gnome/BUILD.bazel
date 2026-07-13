@@ -58,6 +58,7 @@ py_test(
         "//util/bazel:runfiles",
         "//util/testing:png_diff",
         "//util/testing:undeclared_outputs",
+        "//util/testing:visual_review",
         "@pypi//docker",
         "@pypi//pillow",
         "@pypi//pytest",

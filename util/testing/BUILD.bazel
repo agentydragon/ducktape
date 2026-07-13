@@ -80,6 +80,13 @@ py_library(
 )
 
 py_library(
+    name = "visual_review",
+    testonly = True,
+    srcs = ["visual_review.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "frontend_visual",
     testonly = True,
     srcs = ["frontend_visual.py"],
@@ -127,5 +134,15 @@ py_library(
         "@pypi//cryptography",
         "@pypi//pyjwt",
         "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_visual_review",
+    srcs = ["test_visual_review.py"],
+    deps = [
+        ":visual_review",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

@@ -3,61 +3,44 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>{{ title }} · {{ commit_sha }}</title>
+    <title>Visual review · {{ commit_sha }}</title>
     <style>
-      :root {
-        color-scheme: light dark;
-        font: 15px/1.45 system-ui, sans-serif;
-        background: #f4f5f7;
-        color: #16181d;
-      }
+      :root { color-scheme: light dark; font: 15px/1.45 system-ui, sans-serif; background: #f4f5f7; color: #16181d; }
       body { margin: 0; }
-      header {
-        position: sticky;
-        top: 0;
-        z-index: 1;
-        padding: 16px 24px;
-        background: color-mix(in srgb, Canvas 92%, transparent);
-        border-bottom: 1px solid #bbb;
-        backdrop-filter: blur(8px);
-      }
+      header { padding: 16px 24px; background: Canvas; border-bottom: 1px solid #bbb; }
       h1 { margin: 0 0 4px; font-size: 18px; }
+      h2 { font-size: 16px; }
       code { overflow-wrap: anywhere; font-size: 12px; }
-      main {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr));
-        gap: 20px;
-        padding: 20px;
-      }
-      figure {
-        margin: 0;
-        padding: 12px;
-        border: 1px solid #bbb;
-        border-radius: 10px;
-        background: Canvas;
-        box-shadow: 0 2px 8px #0001;
-      }
+      main { padding: 20px; }
+      section { margin-bottom: 28px; }
+      .assets { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: 16px; }
+      figure { margin: 0; padding: 10px; border: 1px solid #bbb; border-radius: 10px; background: Canvas; }
       img { display: block; width: 100%; height: auto; border-radius: 6px; background: white; }
-      figcaption { padding-top: 9px; font-weight: 600; text-transform: capitalize; }
-      @media (prefers-color-scheme: dark) {
-        :root { background: #17181b; color: #eee; }
-        figure, header { border-color: #444; }
-      }
+      figcaption { padding-top: 8px; font-weight: 600; }
+      @media (prefers-color-scheme: dark) { :root { background: #17181b; color: #eee; } figure, header { border-color: #444; } }
     </style>
   </head>
   <body>
     <header>
-      <h1>{{ title }}</h1>
-      <div>{{ repository }} · <code>{{ commit_sha }}</code></div>
+      <h1>Visual review</h1>
+      <div>{{ repository }} · <code>{{ commit_sha }}</code> · {{ tests | length }} Bazel test targets</div>
     </header>
     <main>
-      {% for screenshot in screenshots %}
-      <figure>
-        <a href="{{ screenshot.name }}">
-          <img src="{{ screenshot.name }}" alt="{{ screenshot.label }}" loading="lazy">
-        </a>
-        <figcaption>{{ screenshot.label }}</figcaption>
-      </figure>
+      {% for test in tests %}
+      <section>
+        <h2><a href="tests/{{ test.slug }}/index.html">{{ test.title }}</a></h2>
+        <p><code>{{ test.target_label }}</code> · {{ test.assets | length }} assets</p>
+        <div class="assets">
+          {% for asset in test.assets[:2] %}
+          <figure>
+            <a href="tests/{{ test.slug }}/index.html#{{ asset.path }}">
+              <img src="tests/{{ test.slug }}/{{ asset.path }}" alt="{{ asset.label }}" loading="lazy">
+            </a>
+            <figcaption>{{ asset.label }}</figcaption>
+          </figure>
+          {% endfor %}
+        </div>
+      </section>
       {% endfor %}
     </main>
   </body>

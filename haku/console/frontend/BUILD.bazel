@@ -529,6 +529,7 @@ js_test(
         ":screenshot_harness_js",
         ":styles_css",
         "//util/testing/frontend_visual:puppeteer_lib",
+        "//util/testing/frontend_visual:visual_review_manifest",
         "@playwright_browsers//:chromium-headless-shell",
     ],
     entry_point = "screenshots/render.mjs",
@@ -540,6 +541,7 @@ js_test(
     no_copy_to_bin = [
         ":screenshot_harness_js",
         "//util/testing/frontend_visual:puppeteer_lib",
+        "//util/testing/frontend_visual:visual_review_manifest",
         "@playwright_browsers//:chromium-headless-shell",
     ],
 )

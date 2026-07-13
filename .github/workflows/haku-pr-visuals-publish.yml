@@ -1,4 +1,4 @@
-name: Publish Haku PR visuals
+name: Publish PR visuals
 
 on:
   workflow_run:
@@ -41,7 +41,7 @@ jobs:
           merge-multiple: true
           path: linkage
 
-      - name: Publish Haku Console visual review
+      - name: Publish visual review
         id: visuals
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.PR_VISUALS_ACCESS_KEY }}
@@ -55,11 +55,8 @@ jobs:
             --linkage-dir "$PWD/linkage" \
             --work-dir "$RUNNER_TEMP/pr-visuals" \
             --sha "$HEAD_SHA" \
-            --component haku-console \
-            --title "Haku Console visual review" \
             --repository "$GITHUB_REPOSITORY" \
             --endpoint https://s3.allegedly.works \
             --bucket pr-visuals \
             --public-base-url https://s3.allegedly.works/pr-visuals \
-            --pull-request "$PR_NUMBER" \
-            --manifest haku-console-visuals.json
+            --pull-request "$PR_NUMBER"

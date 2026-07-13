@@ -56,6 +56,7 @@ from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
 from util.testing.png_diff import assert_png_matches_golden
 from util.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.visual_review import VisualReviewAsset, write_visual_review_manifest
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +299,17 @@ def undeclared_dir() -> Path:
     return out
 
 
+def _write_visual_review_manifest(out_dir: Path) -> None:
+    write_visual_review_manifest(
+        out_dir,
+        title="AI quota GNOME extension",
+        assets=(
+            VisualReviewAsset(path=f"{fixture_name}.png", label=fixture_name.replace("_", " "))
+            for fixture_name in FIXTURE_NAMES
+        ),
+    )
+
+
 def _crop_combined(full: Image.Image, menu_geom: tuple[int, int, int, int]) -> Image.Image:
     """Crop from menu's left edge to screen-right, from y=0 to menu bottom.
 
@@ -348,10 +360,14 @@ def test_render(
     actual_path = tmp_path / f"{fixture_name}.cropped.png"
     cropped.save(actual_path)
 
+    # Successful test results are the publisher's source of truth. Always retain
+    # the candidate and manifest, not only the failure diagnostics emitted by the
+    # golden comparator below.
+    shutil.copy(actual_path, undeclared_dir / out_name)
+    _write_visual_review_manifest(undeclared_dir)
+
     if update_golden:
-        # Skip comparison; just publish the rendered PNG so the user can
-        # cp it into __snapshots__/.
-        shutil.copy(actual_path, undeclared_dir / out_name)
+        # Skip comparison; the retained candidate can be copied into __snapshots__/.
         logger.warning("UPDATE_GOLDEN=1: wrote new golden to %s", undeclared_dir / out_name)
         return
 

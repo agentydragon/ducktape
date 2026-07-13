@@ -90,7 +90,10 @@ py_library(
 py_library(
     name = "pr_visuals",
     srcs = ["pr_visuals.py"],
-    data = ["pr_visuals.html.j2"],
+    data = [
+        "pr_visual_test.html.j2",
+        "pr_visuals.html.j2",
+    ],
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//boto3",
