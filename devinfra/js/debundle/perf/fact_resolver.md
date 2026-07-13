@@ -1,14 +1,17 @@
 # Fact-based selector resolver performance
 
-Measured profile of the post-#2398 fact-based selector resolver — the
+Historical measured profile of the post-#2398 fact-based selector resolver — the
 `source_match::ChunkResolver` (`datalog_resolver.rs`) that became the sole
 `SelectorResolver` when the AST matcher was deleted. It builds a per-chunk
 `chunk_facts` EDB once and resolves every `source_match` selector against it
 via the `selector_match` structural homomorphism.
 
-This note is the measured baseline for that path. The proposer/gate path lives
-in <proposer.md>; the older declaration-hole `source_match` micro-profile lives
-in <source_match_selector_profile.md>.
+This is a baseline for the legacy `ChunkResolver` path, not for the current
+`selector_runtime` solver used by native production selectors and
+`spec match-selector`. Current standalone-probe measurements live in
+<../debug/perf/2026_07_13_match_selector_full_domain_profile.md>. The
+proposer/gate path lives in <proposer.md>; the older declaration-hole
+`source_match` micro-profile lives in <source_match_selector_profile.md>.
 
 ## Budget
 
@@ -60,15 +63,15 @@ finding.
 Binary built `-c opt --@rules_rust//:extra_rustc_flag=-Cdebuginfo=1`. Wall is
 median of ≥3 warmed runs.
 
-| Command                             | binding-name selectors | source_match selectors |
-| ----------------------------------- | ---------------------: | ---------------------: |
-| `run --spec` (10k corpus)           |                  0.43s |                   4.4s |
-| `spec validate --spec` (10k corpus) |                  0.30s |                   4.4s |
-| `spec match-selector` (1 selector)  |                      — |      0.10s (alpha-all) |
+| Command                                   | binding-name selectors | source_match selectors |
+| ----------------------------------------- | ---------------------: | ---------------------: |
+| `run --spec` (10k corpus)                 |                  0.43s |                   4.4s |
+| `spec validate --spec` (10k corpus)       |                  0.30s |                   4.4s |
+| legacy `spec match-selector` (1 selector) |                      — |      0.10s (alpha-all) |
 
-`match-selector` (one selector against the full 10051-statement chunk) is well
-inside budget: it builds the EDB once and matches a single needle. The whole-spec
-commands pay that match 2461 times.
+That 0.10-second row describes the 2026-06-21 `ChunkResolver` implementation.
+It must not be used as a current `selector_runtime` baseline. The whole-spec
+commands in this historical workload paid the legacy match 2461 times.
 
 ### Scaling — the headline
 

@@ -335,3 +335,46 @@ Desired behavior:
 - Include declaration kind and source location in duplicate-claim diagnostics.
   The current duplicate message is hard to evaluate when minified names are
   reused.
+
+## Standalone Selector Probes Rebuild Full-Chunk Domains
+
+Observed selector:
+
+```js
+function decodeEntry(bytes) {
+  let offset = 0,
+    label,
+    children;
+  STMT_LIST_BODY;
+  return [label, children];
+}
+```
+
+This selector shape is attractive for forward compatibility: it pins the
+surrounding declaration, initial locals, and return tuple while allowing the
+parser body to drift. A current `spec match-selector` probe over a 7.14 MB
+downstream chunk found its unique target but took 19.5 seconds and peaked at
+1.56 GB RSS. A more specific version of the selector was slower, not faster, so
+the statement-list hole itself is not the demonstrated bottleneck.
+
+The solver build summary localizes the cost before search. The probe extracted
+3.13 million facts for 1.19 million AST nodes. Two variables retained domains
+containing every AST node, producing a 5.19 MB CP-SAT request with 2.38 million
+domain values even though the lowered structural constraints admitted only two
+allowed rows. Model construction alone took 10.9 seconds: 7.21 seconds building
+fact domains, 2.10 seconds lowering atoms, and 1.11 seconds simplifying allowed
+tuples. See
+<debug/perf/2026_07_13_match_selector_full_domain_profile.md> for the command,
+measurements, and interpretation.
+
+Desired behavior:
+
+- Slice selector variables to query-local candidate domains before serializing a
+  backend request. Fixed declaration kind, literals, tuple arity, and list-hole
+  anchors should prevent AST variables from retaining the full-node domain.
+- Reuse the parsed chunk, fact store, and candidate indexes when evaluating more
+  than one selector. The standalone probe should make one-selector cost visible,
+  but the production pipeline must not pay full-chunk setup once per selector.
+- Keep the existing phase summary and add a regression workload that asserts
+  domain cardinality and request size as well as elapsed time. A time budget by
+  itself would report the regression without preventing it.
