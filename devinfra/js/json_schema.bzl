@@ -3,7 +3,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
 load("@npm_ducktape//:json-schema-to-typescript/package_json.bzl", json_schema_ts_bin = "bin")
 
-def js_json_schema(name, generator, out = "types.d.ts", schema_out = None, visibility = None):
+def js_json_schema(name, generator, out = "types.d.ts", schema_out = None, args = None, visibility = None):
     """Generate a js_library with TypeScript type definitions from a JSON Schema.
 
     Runs *generator* (a binary that prints a JSON Schema to stdout),
@@ -18,7 +18,10 @@ def js_json_schema(name, generator, out = "types.d.ts", schema_out = None, visib
         schema_out: Optional package-relative path at which to expose the generator's
                     JSON Schema to runtime consumers. When set, the schema is included
                     in the output ``js_library`` alongside the generated declarations.
-        visibility: Visibility of the output ``js_library``.
+        args:       Optional list of literal flags forwarded to *generator* before the
+                    stdout redirect, for a generator that emits more than one schema
+                    (e.g. ``["--results"]``). No path expansion; values are joined as-is.
+        visibility: Visibility of the output ``js_library`` target.
 
     Example:
         js_json_schema(
@@ -27,6 +30,7 @@ def js_json_schema(name, generator, out = "types.d.ts", schema_out = None, visib
         )
     """
     json_out = schema_out or "_" + name + "_schema.json"
+    args = args or []
 
     json_schema_ts_bin.json2ts_binary(
         name = "_" + name + "_json_schema_ts_bin",
@@ -35,7 +39,7 @@ def js_json_schema(name, generator, out = "types.d.ts", schema_out = None, visib
     native.genrule(
         name = "_" + name + "_schema_json",
         outs = [json_out],
-        cmd = "$(location {}) > $@".format(generator),
+        cmd = "$(location {}) {} > $@".format(generator, " ".join(args)),
         tools = [generator],
     )
 

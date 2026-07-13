@@ -24,7 +24,9 @@ type CompiledSchema = {
   schema: z.ZodType;
 };
 
-function objectProperties(schema: JsonSchema, context: string): Record<string, JsonSchema> {
+/** Read the `properties` map off an object JSON Schema, throwing a labeled error otherwise.
+ * Shared with mcp_tool_result_schema.ts so both catalogs walk their server/tool tree identically. */
+export function objectProperties(schema: JsonSchema, context: string): Record<string, JsonSchema> {
   if (typeof schema === "boolean" || schema.type !== "object" || !schema.properties) {
     throw new Error(`${context} must be an object JSON Schema with properties`);
   }

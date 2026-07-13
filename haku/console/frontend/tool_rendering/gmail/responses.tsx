@@ -1,20 +1,23 @@
 // Result rendering for the in-process `gmail` server's `drafts_create` (the argument-side
-// widgets live in ./requests.tsx). The tool returns the Gmail API Draft resource
-// verbatim (gmail_api/messages.py's `Draft`, camelCase wire aliases); the draft `id` deep-links
-// into Gmail's drafts view, where the operator reviews and sends it.
+// widgets live in ./requests.tsx). The Zod schema is the FastMCP-advertised output schema for
+// the tool, generated in mcp_tool_result_schema.ts from tools/list: the Gmail API Draft resource
+// (gmail_api/messages.py's `Draft`, camelCase wire aliases), of which the widget uses only the
+// `id` that deep-links into Gmail's drafts view, where the operator reviews and sends it.
 
 import { Anchor, Group } from "@mantine/core";
-import { z } from "zod";
+import type { z } from "zod";
 
+import { mcpToolResultSchema } from "../../mcp_tool_result_schema.ts";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
 import { PreviewText } from "../vocabulary.tsx";
+import { GMAIL_SERVER_ID } from "./requests.tsx";
 
 // Gmail's compose view opens a draft directly by its id.
 function gmailDraftUrl(draftId: string): string {
   return `https://mail.google.com/mail/u/0/#drafts?compose=${draftId}`;
 }
 
-const zDraft = z.looseObject({ id: z.string() });
+const zDraft = mcpToolResultSchema(GMAIL_SERVER_ID, "drafts_create");
 type Draft = z.infer<typeof zDraft>;
 
 function CreateGmailDraftResultView({ result, variant }: ResultPreviewProps<Draft>) {

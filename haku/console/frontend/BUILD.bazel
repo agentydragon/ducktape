@@ -25,11 +25,33 @@ js_json_schema(
     schema_out = "api/mcp_tool_arguments.schema.json",
 )
 
+# The exact output (result) schemas advertised by the in-process MCP servers, emitted by the
+# same exporter with `--results`. :mcp_tool_result_schema mirrors :mcp_tool_schema for results,
+# so per-tool result widgets validate against FastMCP's advertised output contract rather than
+# restating it. grocy-sf is excluded (its result schemas stay hand-authored).
+js_json_schema(
+    name = "mcp_tool_results",
+    out = "api/mcp_tool_results.d.ts",
+    args = ["--results"],
+    generator = "//haku/console:export_mcp_tool_schemas_bin",
+    schema_out = "api/mcp_tool_results.schema.json",
+)
+
 js_library(
     name = "mcp_tool_schema",
     srcs = ["mcp_tool_schema.ts"],
     deps = [
         ":mcp_tool_arguments",
+        "//:node_modules/zod",
+    ],
+)
+
+js_library(
+    name = "mcp_tool_result_schema",
+    srcs = ["mcp_tool_result_schema.ts"],
+    deps = [
+        ":mcp_tool_results",
+        ":mcp_tool_schema",
         "//:node_modules/zod",
     ],
 )
@@ -562,6 +584,7 @@ tsc_bin.tsc_test(
         "geolocation.test.ts",
         "haku_ui_embed.test.ts",
         "mcp_tool_schema.test.ts",
+        "mcp_tool_result_schema.test.ts",
         "open_external.test.ts",
         "routing.test.ts",
         "settings_panel.test.ts",
@@ -574,6 +597,8 @@ tsc_bin.tsc_test(
         "tsconfig.json",
         ":main_lib",
         ":mcp_tool_arguments",
+        ":mcp_tool_result_schema",
+        ":mcp_tool_results",
         ":mcp_tool_schema",
         ":schema",
         ":screenshot_harness_lib",
@@ -605,6 +630,7 @@ vitest_bin.vitest_test(
         "bridge_client.test.ts",
         "geolocation.test.ts",
         "haku_ui_embed.test.ts",
+        "mcp_tool_result_schema.test.ts",
         "mcp_tool_schema.test.ts",
         "open_external.test.ts",
         "routing.test.ts",
@@ -618,6 +644,7 @@ vitest_bin.vitest_test(
         ":bridge",
         ":geolocation",
         ":haku_ui_embed",
+        ":mcp_tool_result_schema",
         ":mcp_tool_schema",
         ":open_external",
         ":routing",

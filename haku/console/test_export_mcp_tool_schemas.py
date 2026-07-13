@@ -9,6 +9,8 @@ from jsonschema import Draft202012Validator
 from haku.console.export_mcp_tool_schemas import (
     _validate_frontend_schema,
     build_mcp_tool_arguments_schema,
+    build_mcp_tool_results_schema,
+    export_mcp_tool_results_json,
     export_mcp_tool_schemas_json,
 )
 
@@ -110,6 +112,67 @@ async def test_nullable_fastmcp_arguments_remain_nullable() -> None:
             "attendees": None,
         }
     )
+
+
+async def test_exports_result_catalog_for_in_process_servers() -> None:
+    schema = await build_mcp_tool_results_schema()
+
+    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    assert schema["title"] == "McpToolResults"
+    assert schema["additionalProperties"] is False
+    # grocy-sf is excluded — its result schemas stay hand-authored in the frontend.
+    assert list(schema["properties"]) == ["gmail", "google_calendar", "haku_routine"]
+    assert schema["required"] == ["gmail", "google_calendar", "haku_routine"]
+
+    gmail = schema["properties"]["gmail"]["properties"]
+    # A `-> None` return (gmail.labels_delete) has only a null wrapped result, so it is omitted —
+    # the result tool set is a subset of the argument tool set.
+    assert "labels_delete" not in gmail
+    assert "drafts_create" in gmail
+    assert "threads_modify_labels" in gmail
+    # `id` is the one required field of a Draft resource.
+    assert gmail["drafts_create"].get("required") == ["id"]
+    assert list(schema["properties"]["google_calendar"]["properties"]) == ["create_calendar_event"]
+    assert list(schema["properties"]["haku_routine"]["properties"]) == ["launch_routine"]
+    for server in schema["properties"].values():
+        assert server["additionalProperties"] is False
+
+    Draft202012Validator.check_schema(schema)
+
+
+async def test_result_schemas_validate_and_terminate_recursion() -> None:
+    """Result schemas accept representative payloads, and a cyclic nested model (gmail's
+    `MessagePart.parts: list[MessagePart]`) terminates as a permissive object rather than an
+    infinite `$ref` — no surviving references reach the frontend."""
+    schema = await build_mcp_tool_results_schema()
+    gmail = schema["properties"]["gmail"]["properties"]
+    calendar = schema["properties"]["google_calendar"]["properties"]["create_calendar_event"]
+
+    serialized = json.dumps(schema)
+    assert "$defs" not in serialized
+    assert "$ref" not in serialized
+    assert "x-fastmcp-wrap-result" not in serialized
+
+    # Minimal Draft (message absent) and a full one (camelCase wire aliases from gmail_api's
+    # to_camel) both validate; the nested message's recursive `parts` items is a permissive object.
+    Draft202012Validator(gmail["drafts_create"]).validate({"id": "r-123"})
+    Draft202012Validator(gmail["drafts_create"]).validate({"id": "r-123", "message": {"id": "m1", "threadId": "t42"}})
+    message = gmail["drafts_create"]["properties"]["message"]["anyOf"][0]["properties"]
+    parts_items = message["payload"]["anyOf"][0]["properties"]["parts"]["anyOf"][0]["items"]
+    assert parts_items == {"type": "object"}
+
+    # CreateCalendarEventResult's `id`/`htmlLink` are input-only aliases, so the wire shape is the
+    # Python field names exactly.
+    Draft202012Validator(calendar).validate({"event_id": "evt-1", "html_link": "https://cal/evt-1"})
+
+
+async def test_results_catalog_is_stable_json() -> None:
+    first = await export_mcp_tool_results_json()
+    second = await export_mcp_tool_results_json()
+
+    assert first == second
+    assert json.loads(first)["title"] == "McpToolResults"
+    assert first.endswith("\n")
 
 
 @pytest.mark.parametrize("keyword", ["$defs", "$ref", "definitions"])
