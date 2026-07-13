@@ -90,9 +90,13 @@ py_library(
 py_library(
     name = "pr_visuals",
     srcs = ["pr_visuals.py"],
-    data = ["pr_visuals.html.j2"],
+    data = [
+        "pr_visuals.html.j2",
+        "//devinfra/buildbuddy_cli:bbapi",
+    ],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//util/bazel:runfiles",
         "@pypi//boto3",
         "@pypi//jinja2",
         "@pypi//pydantic",
