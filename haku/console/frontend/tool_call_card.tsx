@@ -11,10 +11,11 @@ import { VariantControl } from "./variant_control.tsx";
 
 /** One tool call, rendered the same way everywhere it appears — the approvals panel's pending and recent
  * cards and the history page's rows. It owns the shared skeleton (the identity header + action
- * line + rationale/error/denial subhead + status badge + Details toggle, the arguments body,
- * the result body, and the detailed Metadata) so all of that reads one way and lives in one
- * place. The bits that genuinely differ per surface — the status badge's label/color and the
- * footer actions (approve/deny, dismiss, countdown) — come in as props. */
+ * line + rationale/denial subhead + status badge + Details toggle, the arguments body, the
+ * result body — a finished call's result, or its error when it failed — and the detailed
+ * Metadata) so all of that reads one way and lives in one place. The bits that genuinely differ
+ * per surface — the status badge's label/color and the footer actions (approve/deny, dismiss,
+ * countdown) — come in as props. */
 export function ToolCallCard({
   fields,
   args,
@@ -55,11 +56,6 @@ export function ToolCallCard({
           </Text>
           <ToolActionLine serverId={fields.serverId} toolName={fields.toolName} args={args} />
           {fields.rationale && <Text size="xs">{fields.rationale}</Text>}
-          {error && (
-            <Text size="xs" c="red">
-              {error}
-            </Text>
-          )}
           {fields.denialReason && (
             <Text size="xs" c="dimmed">
               Denied: {fields.denialReason}
@@ -83,6 +79,15 @@ export function ToolCallCard({
           argumentsJson={fields.argumentsJson}
           variant={variant}
         />
+        {/* A failed call's error is its outcome — the failure counterpart of the result body
+            below — so it renders under the arguments, not as a head subhead. Error and result
+            are mutually exclusive (the ledger finishes a call with exactly one), so this never
+            collides with the result field. */}
+        {error && (
+          <Text size="sm" c="red">
+            {error}
+          </Text>
+        )}
         {/* Rendered for both variants; it self-gates (compact shows a result only when a
             per-tool widget makes it self-describing). */}
         <ToolResultField serverId={fields.serverId} toolName={fields.toolName} result={result} variant={variant} />
