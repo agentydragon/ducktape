@@ -14,7 +14,7 @@ from pydantic.alias_generators import to_camel
 
 from aiquota.models import ExtraSpend, FetchError, FetchSuccess, ProviderFetch, QuotaWindow
 from aiquota.providers.base import Provider
-from aiquota.providers.client import provider_client
+from aiquota.providers.client import ProviderClientFactory
 from devinfra.claude.claude_api.usage import Spend, UsageBucket, UsageResponse
 
 logger = logging.getLogger(__name__)
@@ -149,9 +149,9 @@ def _to_success(usage: UsageResponse) -> FetchSuccess:
 class ClaudeProvider(Provider):
     name = "claude"
 
-    def __init__(self, settings: ClaudeSettings, debug: bool = False) -> None:
+    def __init__(self, settings: ClaudeSettings, client_factory: ProviderClientFactory) -> None:
         self.settings = settings
-        self.debug = debug
+        self.client_factory = client_factory
 
     async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
@@ -161,7 +161,7 @@ class ClaudeProvider(Provider):
             return ProviderFetch(fetched_at=now, result=FetchError(error="no credentials found"))
 
         try:
-            async with provider_client(self.name, self.debug, {USAGE_URL}, API_TIMEOUT_SECS) as client:
+            async with self.client_factory(self.name, {USAGE_URL}, API_TIMEOUT_SECS) as client:
                 if _token_expired(creds):
                     token = await _refresh_token(path, creds, client)
                     if not token:

@@ -8,6 +8,7 @@ from aiquota.config import Config
 from aiquota.models import AllQuotas, FetchSuccess, ProviderFetch, ProviderQuota, SuccessfulProviderFetch
 from aiquota.providers.base import Provider
 from aiquota.providers.claude import ClaudeProvider
+from aiquota.providers.client import ProviderClientFactory, provider_client
 from aiquota.providers.codex import CodexProvider
 from aiquota.providers.zai import ZaiProvider
 
@@ -46,7 +47,7 @@ class QuotaCache:
 
 class QuotaService:
     def __init__(self, config: Config, cache: QuotaCache | None = None, debug: bool = False) -> None:
-        self.providers = _instantiate(config, debug=debug)
+        self.providers = _instantiate(config, client_factory=provider_client(debug))
         self.cache = cache or QuotaCache()
         self.debug = debug
 
@@ -54,12 +55,12 @@ class QuotaService:
         return await self.cache.fetch_all(self.providers, force_refresh=self.debug)
 
 
-def _instantiate(config: Config, debug: bool = False) -> list[Provider]:
+def _instantiate(config: Config, client_factory: ProviderClientFactory) -> list[Provider]:
     """Build the enabled provider instances in display order."""
     candidates: list[tuple[Provider, bool]] = [
-        (ClaudeProvider(config.claude, debug=debug), config.claude.enabled),
-        (CodexProvider(config.codex, debug=debug), config.codex.enabled),
-        (ZaiProvider(config.zai, debug=debug), config.zai.enabled),
+        (ClaudeProvider(config.claude, client_factory), config.claude.enabled),
+        (CodexProvider(config.codex, client_factory), config.codex.enabled),
+        (ZaiProvider(config.zai, client_factory), config.zai.enabled),
     ]
     return [p for p, enabled in candidates if enabled]
 

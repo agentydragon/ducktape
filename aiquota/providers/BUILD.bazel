@@ -94,6 +94,7 @@ py_test(
     data = ["fixtures/codex_weekly_primary.json"],
     imports = ["../.."],
     deps = [
+        ":client",
         ":codex_lib",
         "//:conftest",
         "//aiquota:models",

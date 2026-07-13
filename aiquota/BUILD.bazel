@@ -27,6 +27,7 @@ py_library(
         ":models",
         "//aiquota/providers:base",
         "//aiquota/providers:claude_lib",
+        "//aiquota/providers:client",
         "//aiquota/providers:codex_lib",
         "//aiquota/providers:zai_lib",
         "@pypi//platformdirs",

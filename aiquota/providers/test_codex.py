@@ -9,6 +9,7 @@ import pytest_bazel
 import respx
 
 from aiquota.models import FetchError, FetchSuccess
+from aiquota.providers.client import provider_client
 from aiquota.providers.codex import OAUTH_CLIENT_ID, TOKEN_URL, USAGE_URL, CodexProvider, CodexSettings
 
 if __name__ == "__main__":
@@ -47,6 +48,10 @@ _USAGE_BODY = {
 }
 
 
+def _provider(path: Path) -> CodexProvider:
+    return CodexProvider(CodexSettings(auth_path=path), provider_client())
+
+
 def _fixture(name: str) -> dict[str, Any]:
     return cast(dict[str, Any], json.loads((Path(__file__).parent / "fixtures" / name).read_text()))
 
@@ -69,7 +74,7 @@ async def test_refreshes_expired_access_token_before_usage(tmp_path: Path) -> No
             )
         )
         mock.get(USAGE_URL).mock(side_effect=usage_side_effect)
-        output = await CodexProvider(CodexSettings(auth_path=path)).fetch()
+        output = await _provider(path).fetch()
 
     assert post_route.call_count == 1
     assert json.loads(post_route.calls.last.request.read()) == {
@@ -105,7 +110,7 @@ async def test_unauthorized_reloads_changed_auth_before_refreshing(tmp_path: Pat
             side_effect=AssertionError("token refresh should not be called after auth file changed")
         )
         mock.get(USAGE_URL).mock(side_effect=usage_side_effect)
-        output = await CodexProvider(CodexSettings(auth_path=path)).fetch()
+        output = await _provider(path).fetch()
 
     assert isinstance(output.result, FetchSuccess)
     assert seen_get_tokens == [old, fresh]
@@ -130,7 +135,7 @@ async def test_refresh_failure_uses_token_written_by_another_process(tmp_path: P
     with respx.mock(assert_all_called=False) as mock:
         mock.post(TOKEN_URL).mock(side_effect=post_side_effect)
         mock.get(USAGE_URL).mock(side_effect=usage_side_effect)
-        output = await CodexProvider(CodexSettings(auth_path=path)).fetch()
+        output = await _provider(path).fetch()
 
     assert isinstance(output.result, FetchSuccess)
     assert seen_get_tokens == [fresh]
@@ -145,7 +150,7 @@ async def test_refresh_failure_without_new_auth_returns_fetch_error(tmp_path: Pa
     with respx.mock(assert_all_called=False) as mock:
         mock.post(TOKEN_URL).mock(return_value=httpx.Response(401, json={"error": {"code": "refresh_token_reused"}}))
         mock.get(USAGE_URL).mock(side_effect=AssertionError("usage should not be fetched after refresh failure"))
-        output = await CodexProvider(CodexSettings(auth_path=path)).fetch()
+        output = await _provider(path).fetch()
 
     assert isinstance(output.result, FetchError)
 
@@ -160,7 +165,7 @@ async def test_usage_timeout_error_is_not_blank(tmp_path: Path) -> None:
 
     with respx.mock(assert_all_called=False) as mock:
         mock.get(USAGE_URL).mock(side_effect=usage_timeout)
-        output = await CodexProvider(CodexSettings(auth_path=path)).fetch()
+        output = await _provider(path).fetch()
 
     assert isinstance(output.result, FetchError)
     assert output.result.error == "codex usage fetch: ReadTimeout"
@@ -173,7 +178,7 @@ async def test_weekly_primary_window_preserves_provider_duration(tmp_path: Path)
 
     with respx.mock(assert_all_called=False) as mock:
         mock.get(USAGE_URL).mock(return_value=httpx.Response(200, json=_fixture("codex_weekly_primary.json")))
-        output = await CodexProvider(CodexSettings(auth_path=path)).fetch()
+        output = await _provider(path).fetch()
 
     assert isinstance(output.result, FetchSuccess)
     assert len(output.result.windows) == 2

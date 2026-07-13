@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict
 
 from aiquota.models import FetchError, FetchSuccess, ProviderFetch, QuotaWindow
 from aiquota.providers.base import Provider
-from aiquota.providers.client import provider_client
+from aiquota.providers.client import ProviderClientFactory
 
 logger = logging.getLogger(__name__)
 
@@ -270,9 +270,9 @@ def _to_success(usage: _UsageResponse) -> FetchSuccess:
 class CodexProvider(Provider):
     name = "codex"
 
-    def __init__(self, settings: CodexSettings, debug: bool = False) -> None:
+    def __init__(self, settings: CodexSettings, client_factory: ProviderClientFactory) -> None:
         self.settings = settings
-        self.debug = debug
+        self.client_factory = client_factory
 
     async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
@@ -280,7 +280,7 @@ class CodexProvider(Provider):
         if not auth:
             return ProviderFetch(fetched_at=now, result=FetchError(error="no codex auth found"))
 
-        async with provider_client(self.name, self.debug, {USAGE_URL}, API_TIMEOUT_SECS) as client:
+        async with self.client_factory(self.name, {USAGE_URL}, API_TIMEOUT_SECS) as client:
             if _auth_stale(auth):
                 try:
                     auth = await _refresh_or_reload(auth, client)

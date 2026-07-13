@@ -16,7 +16,7 @@ from pydantic.alias_generators import to_camel
 
 from aiquota.models import FetchError, FetchSuccess, ProviderFetch, QuotaWindow
 from aiquota.providers.base import Provider
-from aiquota.providers.client import provider_client
+from aiquota.providers.client import ProviderClientFactory
 
 logger = logging.getLogger(__name__)
 
@@ -98,9 +98,9 @@ def _to_success(quota: _QuotaResponse) -> FetchSuccess:
 class ZaiProvider(Provider):
     name = "zai"
 
-    def __init__(self, settings: ZaiSettings, debug: bool = False) -> None:
+    def __init__(self, settings: ZaiSettings, client_factory: ProviderClientFactory) -> None:
         self.settings = settings
-        self.debug = debug
+        self.client_factory = client_factory
 
     async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
@@ -111,7 +111,7 @@ class ZaiProvider(Provider):
             )
 
         try:
-            async with provider_client(self.name, self.debug, {QUOTA_URL}, API_TIMEOUT_SECS) as client:
+            async with self.client_factory(self.name, {QUOTA_URL}, API_TIMEOUT_SECS) as client:
                 resp = await client.get(QUOTA_URL, headers={"Authorization": f"Bearer {key}"})
             resp.raise_for_status()
             quota = _QuotaResponse.model_validate(resp.json())

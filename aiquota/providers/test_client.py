@@ -12,13 +12,8 @@ async def test_provider_client_dumps_only_allowlisted_responses(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     transport = httpx.MockTransport(lambda request: httpx.Response(200, json={"used": 42}))
-    async with provider_client(
-        "example",
-        debug=True,
-        response_urls={"https://quota.example/usage"},
-        timeout=5,
-        transport=transport,
-    ) as client:
+    client_factory = provider_client(debug=True, transport=transport)
+    async with client_factory("example", {"https://quota.example/usage"}, 5) as client:
         await client.get("https://auth.example/token")
         await client.get("https://quota.example/usage")
 
