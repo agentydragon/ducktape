@@ -99,7 +99,10 @@ and the `ClusterExternalSecret` in `app/` mirrors it into `haku-sandbox`.
   from the pod CIDR, while CiliumNetworkPolicy permits the SMTP backend only
   from the labeled ingress pods. Both pieces are required: SPF evaluates the
   apparent TCP peer, and trusting PROXY headers without the identity-aware
-  network fence would let another cluster pod forge that peer.
+  network fence would let another cluster pod forge that peer. The trusted,
+  operator-only namespace opts out of Pod Security's `baseline` enforcement
+  because that profile categorically forbids `hostPort`; the pods still use
+  restrictive security contexts and Cilium policies.
 - **HTTPS**: `haku-mailbox.allegedly.works` HTTPRoute → Stalwart's HTTP
   listener (JMAP + management API; management requires the admin credential
   Haku can't read).

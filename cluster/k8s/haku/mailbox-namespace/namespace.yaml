@@ -13,3 +13,8 @@ metadata:
     goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: "auto"
     name: haku-mailbox
+    # The per-public-node SMTP ingress must bind hostPort 25. Pod Security's
+    # baseline profile forbids every hostPort, so this trusted, operator-only
+    # namespace needs privileged admission even though its workloads retain
+    # restrictive container security contexts and Cilium policies.
+    pod-security.kubernetes.io/enforce: privileged

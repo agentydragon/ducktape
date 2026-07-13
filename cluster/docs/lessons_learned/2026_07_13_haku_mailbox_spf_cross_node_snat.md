@@ -57,4 +57,7 @@ forge the source address in a PROXY header.
 
 Validation pins the DaemonSet's public-node selector and host port, the
 internal-only Service shape, the Stalwart trusted proxy range, and the network
-policy relationship. Do not weaken the SPF gate to accommodate source NAT.
+policy relationship. The namespace explicitly uses privileged Pod Security
+admission because the baseline profile rejects all host ports; the regression
+test couples that exception to the required `hostPort: 25`. Do not weaken the
+SPF gate to accommodate source NAT.

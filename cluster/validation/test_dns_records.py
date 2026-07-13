@@ -85,6 +85,7 @@ def test_mailbox_smtp_ingress_covers_public_kubernetes_nodes() -> None:
     service_yaml = get_required_path("_main/cluster/k8s/haku/mailbox/app/service.yaml")
     ingress_yaml = get_required_path("_main/cluster/k8s/haku/mailbox/app/smtp-ingress.yaml")
     ingress_config = get_required_path("_main/cluster/k8s/haku/mailbox/app/nginx.conf").read_text()
+    namespace_yaml = get_required_path("_main/cluster/k8s/haku/mailbox-namespace/namespace.yaml")
     cilium_values = yaml.safe_load(get_required_path("_main/cluster/terraform/main/cilium-values.yaml").read_text())
 
     expected = _public_kubernetes_node_ips(hosts)
@@ -100,6 +101,8 @@ def test_mailbox_smtp_ingress_covers_public_kubernetes_nodes() -> None:
     smtp_container = one(container for container in pod_spec["containers"] if container["name"] == "nginx")
     smtp_port = one(port for port in smtp_container["ports"] if port["name"] == "smtp")
     assert smtp_port == {"name": "smtp", "containerPort": 2525, "hostPort": 25, "protocol": "TCP"}
+    namespace = _resource(namespace_yaml, "Namespace", "haku-mailbox")
+    assert namespace["metadata"]["labels"]["pod-security.kubernetes.io/enforce"] == "privileged"
 
     assert "proxy_protocol on;" in ingress_config
     assert "haku-mailbox-smtp.haku-mailbox.svc.cluster.local:2525" in ingress_config
