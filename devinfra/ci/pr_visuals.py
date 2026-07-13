@@ -214,12 +214,13 @@ def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client:
 
 def success_comment_body(*, repository: str, commit_sha: str, url: str, tests: list[DownloadedVisualTest]) -> str:
     commit_url = f"https://github.com/{repository}/commit/{commit_sha}"
+    page_url = f"{url}index.html"
     lines = [
         COMMENT_MARKER,
         f"## Visual review for [`{commit_sha[:8]}`]({commit_url})",
         "",
         f"{len(tests)} Bazel test target{'s' if len(tests) != 1 else ''} produced visual artifacts. "
-        f"[Open visual review]({url}).",
+        f"[Open visual review]({page_url}).",
         "",
     ]
     lines.extend(
@@ -342,6 +343,7 @@ def main() -> None:
         bundle = build_bundle(tests, args.work_dir / "site", commit_sha=args.sha, repository=args.repository)
         upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"commits/{args.sha}")
         public_url = f"{args.public_base_url.rstrip('/')}/commits/{args.sha}/"
+        public_page_url = f"{public_url}index.html"
         summary = f"{len(tests)} Bazel test target{'s' if len(tests) != 1 else ''} produced visual artifacts."
         upsert_pull_request_comment(
             repository=args.repository,
@@ -354,7 +356,7 @@ def main() -> None:
             commit_sha=args.sha,
             conclusion="success",
             summary=summary,
-            details_url=public_url,
+            details_url=public_page_url,
             token=github_token,
         )
     except Exception as error:

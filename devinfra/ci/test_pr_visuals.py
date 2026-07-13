@@ -185,6 +185,7 @@ def test_comment_bodies_link_commit_targets_and_report_errors() -> None:
     )
 
     assert "commit/0123456789abcdef0123456789abcdef01234567" in success
+    assert "[Open visual review](https://visuals/commits/sha/index.html)" in success
     assert "tests/example-visuals-" in success
     assert "Visual review failed" in failure
     assert "missing artifact screen.png" in failure
