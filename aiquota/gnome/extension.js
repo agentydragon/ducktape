@@ -643,14 +643,15 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _renderPopupRow(item, state, staleAgeSeconds, isShort) {
-      item._bars.visible = true;
       if (state == null) {
+        item._bars.visible = false;
         item._summaryLabel.set_text("no data");
         this._setBarFill(item._timeFill, null);
         this._setBarFill(item._usageFill, null);
         this._setBarTint(item._usageFill, "unknown");
         return;
       }
+      item._bars.visible = true;
       const liveState = withLiveReset(state);
       const label = formatWindowLabel(liveState);
       const pace = computePace(liveState);

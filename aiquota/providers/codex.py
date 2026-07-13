@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict
 
 from aiquota.models import FetchError, FetchSuccess, ProviderFetch, QuotaWindow
 from aiquota.providers.base import Provider
-from aiquota.providers.debug import dump_response
+from aiquota.providers.client import provider_client
 
 logger = logging.getLogger(__name__)
 
@@ -233,10 +233,8 @@ def _usage_headers(auth: _AuthState) -> dict[str, str]:
     return headers
 
 
-async def _fetch_usage(auth: _AuthState, client: httpx.AsyncClient, debug: bool = False) -> _UsageResponse:
+async def _fetch_usage(auth: _AuthState, client: httpx.AsyncClient) -> _UsageResponse:
     resp = await client.get(USAGE_URL, headers=_usage_headers(auth))
-    if debug:
-        dump_response("codex", resp)
     resp.raise_for_status()
     return _UsageResponse.model_validate(resp.json())
 
@@ -282,7 +280,7 @@ class CodexProvider(Provider):
         if not auth:
             return ProviderFetch(fetched_at=now, result=FetchError(error="no codex auth found"))
 
-        async with httpx.AsyncClient(timeout=API_TIMEOUT_SECS) as client:
+        async with provider_client(self.name, self.debug, {USAGE_URL}, API_TIMEOUT_SECS) as client:
             if _auth_stale(auth):
                 try:
                     auth = await _refresh_or_reload(auth, client)
@@ -292,7 +290,7 @@ class CodexProvider(Provider):
                     return ProviderFetch(fetched_at=now, result=FetchError(error="codex token refresh failed"))
 
             try:
-                usage = await _fetch_usage(auth, client, self.debug)
+                usage = await _fetch_usage(auth, client)
             except httpx.HTTPStatusError as e:
                 if e.response.status_code != 401:
                     return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "codex usage fetch"))
@@ -300,7 +298,7 @@ class CodexProvider(Provider):
                     refreshed = await _refresh_or_reload(auth, client)
                     if not refreshed:
                         return ProviderFetch(fetched_at=now, result=FetchError(error="codex token refresh failed"))
-                    usage = await _fetch_usage(refreshed, client, self.debug)
+                    usage = await _fetch_usage(refreshed, client)
                 except Exception as refresh_error:
                     return ProviderFetch(
                         fetched_at=now, result=FetchError.from_exception(refresh_error, "codex token refresh")

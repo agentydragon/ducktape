@@ -9,8 +9,8 @@ py_library(
 )
 
 py_library(
-    name = "debug",
-    srcs = ["debug.py"],
+    name = "client",
+    srcs = ["client.py"],
     imports = ["../.."],
     visibility = ["//aiquota:__subpackages__"],
     deps = ["@pypi//httpx"],
@@ -23,7 +23,7 @@ py_library(
     visibility = ["//aiquota:__subpackages__"],
     deps = [
         ":base",
-        ":debug",
+        ":client",
         "//aiquota:models",
         "//devinfra/claude/claude_api:usage",
         "@pypi//httpx",
@@ -38,7 +38,7 @@ py_library(
     visibility = ["//aiquota:__subpackages__"],
     deps = [
         ":base",
-        ":debug",
+        ":client",
         "//aiquota:models",
         "@pypi//atomicwrites",
         "@pypi//httpx",
@@ -53,7 +53,7 @@ py_library(
     visibility = ["//aiquota:__subpackages__"],
     deps = [
         ":base",
-        ":debug",
+        ":client",
         "//aiquota:models",
         "@pypi//httpx",
         "@pypi//pydantic",
@@ -61,13 +61,15 @@ py_library(
 )
 
 py_test(
-    name = "test_debug",
-    srcs = ["test_debug.py"],
+    name = "test_client",
+    srcs = ["test_client.py"],
     imports = ["../.."],
     deps = [
-        ":debug",
+        ":client",
+        "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

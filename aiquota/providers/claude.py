@@ -14,7 +14,7 @@ from pydantic.alias_generators import to_camel
 
 from aiquota.models import ExtraSpend, FetchError, FetchSuccess, ProviderFetch, QuotaWindow
 from aiquota.providers.base import Provider
-from aiquota.providers.debug import dump_response
+from aiquota.providers.client import provider_client
 from devinfra.claude.claude_api.usage import Spend, UsageBucket, UsageResponse
 
 logger = logging.getLogger(__name__)
@@ -161,7 +161,7 @@ class ClaudeProvider(Provider):
             return ProviderFetch(fetched_at=now, result=FetchError(error="no credentials found"))
 
         try:
-            async with httpx.AsyncClient(timeout=API_TIMEOUT_SECS) as client:
+            async with provider_client(self.name, self.debug, {USAGE_URL}, API_TIMEOUT_SECS) as client:
                 if _token_expired(creds):
                     token = await _refresh_token(path, creds, client)
                     if not token:
@@ -169,8 +169,6 @@ class ClaudeProvider(Provider):
                 resp = await client.get(
                     USAGE_URL, headers={"Authorization": f"Bearer {token}", "anthropic-beta": "oauth-2025-04-20"}
                 )
-            if self.debug:
-                dump_response(self.name, resp)
             resp.raise_for_status()
             usage = UsageResponse.model_validate(resp.json())
         except Exception as e:

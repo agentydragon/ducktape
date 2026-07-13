@@ -16,7 +16,7 @@ from pydantic.alias_generators import to_camel
 
 from aiquota.models import FetchError, FetchSuccess, ProviderFetch, QuotaWindow
 from aiquota.providers.base import Provider
-from aiquota.providers.debug import dump_response
+from aiquota.providers.client import provider_client
 
 logger = logging.getLogger(__name__)
 
@@ -111,10 +111,8 @@ class ZaiProvider(Provider):
             )
 
         try:
-            async with httpx.AsyncClient(timeout=API_TIMEOUT_SECS) as client:
+            async with provider_client(self.name, self.debug, {QUOTA_URL}, API_TIMEOUT_SECS) as client:
                 resp = await client.get(QUOTA_URL, headers={"Authorization": f"Bearer {key}"})
-            if self.debug:
-                dump_response(self.name, resp)
             resp.raise_for_status()
             quota = _QuotaResponse.model_validate(resp.json())
         except Exception as e:
