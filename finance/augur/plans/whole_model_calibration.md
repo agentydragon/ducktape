@@ -93,8 +93,6 @@ fitting against them.
 
 ## Deferred (see TODO)
 
-- Replace loose `mapping_kind: str` + `mapping_params: dict` with a typed
-  discriminated `MarketMapping` union (issuer-event / level / inflation).
 - Drop `CalibrationCatalogConfig.issuer`: the catalog's per-market bindings
   declare their own target; the run covers the union of referenced
   issuers/series.
