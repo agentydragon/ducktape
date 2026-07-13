@@ -4,12 +4,11 @@ Authenticates remote MCP clients via Authentik (OIDCProxy) and then uses the
 caller's identity to drive Grocy's REST API, whose ingress sits behind an
 Authentik proxy provider outpost.
 
-This is deliberately a thin wrapper: `FastMCP.from_openapi` generates the
-tool surface directly from Grocy's OpenAPI 3.1 spec. The only custom wiring
-is `AuthentikExchangeAuth` (an `httpx.Auth` subclass that swaps the MCP
-user's upstream Authentik JWT for a Grocy-proxy-scoped JWT per request) and
-`TOOL_OVERRIDES` which controls naming, descriptions, enablement, and whether
-a route is exposed as a tool or an MCP resource.
+This is deliberately a thin wrapper: FastMCP's OpenAPI provider generates the
+tool surface directly from Grocy's OpenAPI 3.1 spec. A request-scoped
+dependency resolves the MCP user's upstream Authentik JWT to a
+Grocy-proxy-scoped client before each tool body runs. `TOOL_OVERRIDES` controls
+naming, descriptions, and enablement.
 
 See <grocy_mcp/README.md> for the architecture and end-to-end flow;
 <x/authentik_mcp_poc/NOTES.md> §5-§6 for why each piece of the token
@@ -23,20 +22,34 @@ import json
 import logging
 import os
 import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
-import httpx
 import uvicorn
 from fastmcp import FastMCP
-from fastmcp.server.providers.openapi import MCPType, OpenAPIResource, OpenAPIResourceTemplate, OpenAPITool, RouteMap
+from fastmcp.dependencies import Depends
+from fastmcp.server.providers.openapi import (
+    MCPType,
+    OpenAPIProvider,
+    OpenAPIResource,
+    OpenAPIResourceTemplate,
+    OpenAPITool,
+    RouteMap,
+)
 from fastmcp.utilities.openapi import HTTPRoute
 from prometheus_client import Gauge, start_http_server
-from pydantic.networks import AnyUrl
 
 from grocy_mcp.batch_tools import register_batch_tools
+from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.tool_metadata import TOOL_OVERRIDES
-from mcp_infra.authentik_auth.auth import AuthentikExchangeAuth, build_authentik_auth
+from mcp_infra.authentik_auth.auth import (
+    AuthentikTokenExchanger,
+    build_authentik_auth,
+    build_authentik_backend_token_provider,
+)
 from mcp_infra.persistence import build_client_storage
+from mcp_infra.request_scoped_openapi import HTTPClientProvider, RequestScopedOpenAPIClients
 from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
@@ -44,7 +57,7 @@ logger = logging.getLogger(__name__)
 _TOOLS = Gauge("grocy_mcp_tools", "Number of tools advertised by the Grocy MCP server")
 
 # All routes become tools by default; TOOL_OVERRIDES controls which are
-# enabled, disabled, or promoted to MCP resources.
+# enabled or disabled.
 ROUTE_MAPS = [RouteMap(pattern=r".*", mcp_type=MCPType.TOOL)]
 
 
@@ -70,12 +83,32 @@ def _load_server_instructions() -> str:
     return get_required_path("_main/grocy_mcp/server_instructions.md").read_text()
 
 
-def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient) -> FastMCP:
+def _authentik_client_provider(
+    settings: ServerSettings, exchanger: AuthentikTokenExchanger
+) -> HTTPClientProvider[GrocyClient]:
+    """Build the production dependency that resolves a Grocy client per call."""
+    assert settings.auth is not None
+    backend_token_provider = build_authentik_backend_token_provider(exchanger)
+    backend_token_dependency = Depends(backend_token_provider)
+
+    @asynccontextmanager
+    async def grocy_client(backend_token: str = backend_token_dependency) -> AsyncIterator[GrocyClient]:
+        async with GrocyClient(
+            base_url=f"{settings.grocy_url.rstrip('/')}/api",
+            headers={"Authorization": f"Bearer {backend_token}"},
+            timeout=settings.grocy_timeout,
+        ) as client:
+            yield client
+
+    return grocy_client
+
+
+def build_mcp(settings: ServerSettings, *, client_provider: HTTPClientProvider[GrocyClient]) -> FastMCP:
     """Build the FastMCP instance with generated Grocy tools, but no auth.
 
-    Callers supply the httpx client used to talk to Grocy — production wraps
-    it in `AuthentikExchangeAuth` (see `build_server`); tests and evals pass
-    a plain client.
+    Every caller supplies the same request-scoped provider abstraction.
+    Production resolves an authenticated client per invocation; tests and local
+    tooling may adapt a caller-owned client with ``borrowed_http_client_provider``.
     """
     spec = _load_openapi_spec()
 
@@ -83,8 +116,6 @@ def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient) -> FastMCP
         override = TOOL_OVERRIDES.get((route.method, route.path))
         if override is not None and not override.enabled:
             return MCPType.EXCLUDE
-        if override is not None and override.resource:
-            return MCPType.RESOURCE
         return mcp_type
 
     def _customize_component(
@@ -96,8 +127,6 @@ def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient) -> FastMCP
                 f"No tool override for {route.method} {route.path} — add it to TOOL_OVERRIDES in tool_metadata.py"
             )
         component.name = override.name
-        if isinstance(component, OpenAPIResource):
-            component.uri = AnyUrl(f"resource://{override.name}")
         if override.extra_description:
             component.description = f"{component.description}\n\n{override.extra_description}"
         # Strip output schemas — Grocy's response schemas are unreliable (wrong types,
@@ -105,16 +134,12 @@ def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient) -> FastMCP
         if isinstance(component, OpenAPITool):
             component.output_schema = None
 
-    mcp = FastMCP.from_openapi(
-        openapi_spec=spec,
-        client=client,
-        name="Grocy",
-        instructions=_load_server_instructions(),
-        route_maps=ROUTE_MAPS,
-        route_map_fn=_filter_disabled,
-        mcp_component_fn=_customize_component,
+    openapi_provider = OpenAPIProvider(
+        openapi_spec=spec, route_maps=ROUTE_MAPS, route_map_fn=_filter_disabled, mcp_component_fn=_customize_component
     )
-    register_batch_tools(mcp, client, settings)
+    openapi_provider.add_transform(RequestScopedOpenAPIClients(client_provider))
+    mcp = FastMCP(name="Grocy", instructions=_load_server_instructions(), providers=[openapi_provider])
+    register_batch_tools(mcp, settings, client_provider=client_provider)
     return mcp
 
 
@@ -122,12 +147,8 @@ def build_server(settings: ServerSettings) -> FastMCP:
     if settings.auth is None:
         raise ValueError("build_server requires ServerSettings.auth to be set (production path)")
     store = build_client_storage(settings.persistence)
-    client = httpx.AsyncClient(
-        base_url=f"{settings.grocy_url.rstrip('/')}/api",
-        auth=AuthentikExchangeAuth(settings.auth, token_store=store),
-        timeout=settings.grocy_timeout,
-    )
-    mcp = build_mcp(settings, client=client)
+    exchanger = AuthentikTokenExchanger(settings.auth)
+    mcp = build_mcp(settings, client_provider=_authentik_client_provider(settings, exchanger))
     mcp.auth = build_authentik_auth(settings.auth, client_storage=store)
     return mcp
 

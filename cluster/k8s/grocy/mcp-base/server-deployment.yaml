@@ -35,9 +35,9 @@ spec:
               protocol: TCP
           env:
             - name: LOG_LEVEL
-              value: "DEBUG"
+              value: "INFO"
             # Non-secret structured config (grocy_url, auth issuer/URLs/
-            # extra_jwt_issuers, persistence) comes from this YAML file, supplied
+            # direct_jwt_trusts, persistence) comes from this YAML file, supplied
             # per household by the overlay's grocy-mcp-config configMap. Secrets
             # stay in env below (per-household secret via overlay patch).
             - name: GROCY_MCP_CONFIG_FILE

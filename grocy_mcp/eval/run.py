@@ -16,11 +16,13 @@ from agent_framework import Agent, AgentSession, InMemoryHistoryProvider, MCPStr
 from agent_framework.anthropic import AnthropicClient
 from agent_framework.openai import OpenAIChatCompletionClient
 
+from grocy_mcp.client import GrocyClient
 from grocy_mcp.eval.cases import EvalCase
 from grocy_mcp.eval.prompts import POSTMORTEM_PROMPT, SYSTEM_PROMPT
 from grocy_mcp.eval.result_types import EvalResult
 from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.server import build_mcp
+from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 
@@ -44,8 +46,10 @@ def _build_model_client(*, api: str, model: str, base_url: str | None = None) ->
 async def _serve_mcp(grocy_base_url: str) -> AsyncGenerator[str]:
     """Serve the Grocy MCP server on a local port and yield its URL."""
     port = pick_free_port()
-    http_client = httpx.AsyncClient(base_url=f"{grocy_base_url}/api", timeout=30.0)
-    mcp = build_mcp(ServerSettings(grocy_url=grocy_base_url), client=http_client)
+    http_client = GrocyClient(base_url=f"{grocy_base_url}/api", timeout=30.0)
+    mcp = build_mcp(
+        ServerSettings(grocy_url=grocy_base_url), client_provider=borrowed_http_client_provider(http_client)
+    )
     app = mcp.http_app(path="/mcp")
 
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")

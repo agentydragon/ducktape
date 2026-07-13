@@ -5,9 +5,10 @@ batch/enriched versions. Each operation fans out concurrently via asyncio.gather
 and collects results (continue-and-collect, never fail-fast).
 
 Concurrency is bounded by an asyncio.Semaphore so that large batches don't
-overwhelm Grocy's PHP/SQLite backend or the Authentik token exchange endpoint
-(each request triggers a per-user JWT exchange). Transient errors (timeouts,
-5xx) are retried with exponential backoff.
+overwhelm Grocy's PHP/SQLite backend. The authenticated backend client is a
+FastMCP dependency resolved once before the batch tool body, then shared by its
+item workers. Transient errors (timeouts, 5xx) are retried with exponential
+backoff.
 
 IMPORTANT: reads/GETs go through _retry(), which retries transient errors
 including timeouts. Mutating requests go through _retry_mutation(), which NEVER
@@ -32,9 +33,11 @@ from typing import Annotated, Any, Literal
 
 import httpx
 from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
 from pydantic import Field
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 
+from grocy_mcp.client import GrocyClient, ResolvedQU
 from grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS, EntityType, ReadableEntityType
 from grocy_mcp.mcp_types import (
     DETAIL_DESC,
@@ -79,7 +82,7 @@ from grocy_mcp.mcp_types import (
     StockOpError,
     StockOpOk,
 )
-from grocy_mcp.resolver import EntityResolver, ResolvedQU
+from mcp_infra.request_scoped_openapi import HTTPClientProvider
 
 logger = logging.getLogger(__name__)
 
@@ -189,24 +192,27 @@ def _is_retryable_mutation(exc: BaseException) -> bool:
 # ── Tool registration ────────────────────────────────────────────────────────
 
 
-def build_batch_tools_mcp(settings: ServerSettings, *, client: httpx.AsyncClient) -> FastMCP:
+def build_batch_tools_mcp(settings: ServerSettings, *, client_provider: HTTPClientProvider[GrocyClient]) -> FastMCP:
     """A bare FastMCP with only the custom batch tools — no OpenAPI-generated tools, no auth.
 
-    Registration reads only the tool signatures, so no Grocy request is made and the `client`
-    is never called. Used to reflect the batch tools' input schemas without loading the OpenAPI
-    spec or reaching Grocy — e.g. haku-console generates its tool-call preview validators from
-    this (see `haku/console/export_mcp_tool_schemas.py`).
+    Registration reads only the tool signatures, so the provider is not called
+    until a tool invocation. Haku-console uses a borrowed inert-client provider
+    here to reflect preview schemas without reaching Grocy; see
+    `haku/console/export_mcp_tool_schemas.py`.
     """
     mcp: FastMCP = FastMCP(name="grocy-batch-tools")
-    register_batch_tools(mcp, client, settings)
+    register_batch_tools(mcp, settings, client_provider=client_provider)
     return mcp
 
 
-def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: ServerSettings) -> None:
+def register_batch_tools(
+    mcp: FastMCP, settings: ServerSettings, *, client_provider: HTTPClientProvider[GrocyClient]
+) -> None:
     """Register custom batch tools on an existing FastMCP instance."""
     sem = asyncio.Semaphore(settings.max_concurrent_requests)
     max_batch = settings.max_batch_size
-    resolver = EntityResolver(client)
+
+    client_dependency = Depends(client_provider)
 
     def _check_batch_size(items: list[Any] | set[Any], label: str) -> None:
         if len(items) > max_batch:
@@ -255,7 +261,9 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
     # ── Helpers ──────────────────────────────────────────────────────────
 
-    async def _build_enrichment_maps() -> tuple[dict[int, dict[str, Any]], dict[int, str], dict[int, str]]:
+    async def _build_enrichment_maps(
+        client: GrocyClient,
+    ) -> tuple[dict[int, dict[str, Any]], dict[int, str], dict[int, str]]:
         """One-shot reference-data fetch for `_enrich_stock_entry`.
 
         Each name/field lookup would otherwise re-fetch `/objects/<entity>`,
@@ -264,13 +272,14 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         these maps — state can't mutate mid-call so the local maps are safe.
         """
         products_raw, qu_names, location_names = await asyncio.gather(
-            resolver.all(EntityType.PRODUCT),
-            resolver.name_map(EntityType.QUANTITY_UNIT),
-            resolver.name_map(EntityType.LOCATION),
+            client.list_entities(EntityType.PRODUCT),
+            client.entity_name_map(EntityType.QUANTITY_UNIT),
+            client.entity_name_map(EntityType.LOCATION),
         )
         return ({int(p["id"]): p for p in products_raw}, qu_names, location_names)
 
     async def _enrich_stock_entry(
+        client: GrocyClient,
         entry_data: dict[str, Any],
         *,
         products_by_id: dict[int, dict[str, Any]] | None = None,
@@ -284,7 +293,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         (one fetch of each reference table for the single entry).
         """
         if products_by_id is None or qu_names is None or location_names is None:
-            products_by_id, qu_names, location_names = await _build_enrichment_maps()
+            products_by_id, qu_names, location_names = await _build_enrichment_maps(client)
 
         product_id = int(entry_data["product_id"])
         product = products_by_id.get(product_id)
@@ -317,6 +326,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     @mcp.tool()
     async def entities_create(
         items: Annotated[list[CreateItem], Field(description=f"Entities to create. Max {MAX_BATCH_SIZE} per call.")],
+        client: GrocyClient = client_dependency,
     ) -> list[CreateOk | CreateError]:
         """Create entities of any writeable type.
 
@@ -354,6 +364,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         entity_types: Annotated[
             list[ReadableEntityType], Field(description=f"Entity types to fetch. Max {MAX_BATCH_SIZE} per call.")
         ],
+        client: GrocyClient = client_dependency,
     ) -> dict[str, list[Any]]:
         """Fetch every object of one or more entity types.
 
@@ -385,6 +396,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     async def entities_get(
         entity_type: ReadableEntityType,
         object_ids: Annotated[list[int], Field(description=f"Object IDs to fetch. Max {MAX_BATCH_SIZE} per call.")],
+        client: GrocyClient = client_dependency,
     ) -> list[GetOk | GetError]:
         """Fetch specific objects by ID for one entity type.
 
@@ -427,6 +439,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 description="Locations (name or ID) to restrict to. Empty list = no location filter.",
             ),
         ],
+        client: GrocyClient = client_dependency,
     ) -> list[StockEntry]:
         """Aggregate stock-on-hand: product, amount, QU, location, best-before.
 
@@ -437,23 +450,22 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         detail (line items, prices, dates), use `stock_entries_list`
         instead.
         """
-
         stock_r, qu_names, location_names = await asyncio.gather(
             _retry(lambda: client.get("/stock")),
-            resolver.name_map(EntityType.QUANTITY_UNIT),
-            resolver.name_map(EntityType.LOCATION),
+            client.entity_name_map(EntityType.QUANTITY_UNIT),
+            client.entity_name_map(EntityType.LOCATION),
         )
         stock_r.raise_for_status()
         stock_data: list[dict[str, Any]] = stock_r.json()
 
         product_ids: set[int] = set()
         for ref in products:
-            resolved = await resolver.resolve(EntityType.PRODUCT, ref)
+            resolved = await client.resolve_entity(EntityType.PRODUCT, ref)
             product_ids.add(resolved.id)
 
         location_ids: set[int] = set()
         for ref in locations:
-            resolved = await resolver.resolve(EntityType.LOCATION, ref)
+            resolved = await client.resolve_entity(EntityType.LOCATION, ref)
             location_ids.add(resolved.id)
 
         result = []
@@ -487,7 +499,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
     # ── Stock mutations ──────────────────────────────────────────────────
 
-    async def _best_effort_new_amount(product_id: int) -> float | None:
+    async def _best_effort_new_amount(client: httpx.AsyncClient, product_id: int) -> float | None:
         """Read current stock amount after a mutation. Best-effort, never retried.
 
         Runs under `sem` like every other Grocy request, and swallows any
@@ -504,7 +516,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             logger.warning("failed to read new_amount for product %d after mutation", product_id, exc_info=True)
             return None
 
-    async def _best_effort_entry_id(product_id: int, stock_id: str) -> int | None:
+    async def _best_effort_entry_id(client: httpx.AsyncClient, product_id: int, stock_id: str) -> int | None:
         """Resolve a new stock entry's `entry_id` from its `stock_id`. Best-effort, never retried.
 
         Grocy's `/add` response carries `stock_id` — an opaque UUID identifying
@@ -532,11 +544,11 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             )
             return None
 
-    async def _stock_mutate(item: AddItem | ConsumeItem | SetItem) -> StockOpOk | StockOpError:
+    async def _stock_mutate(client: GrocyClient, item: AddItem | ConsumeItem | SetItem) -> StockOpOk | StockOpError:
         """Shared implementation for stock_add / stock_consume / stock_set."""
         try:
-            product = await resolver.resolve(EntityType.PRODUCT, item.product)
-            location = await resolver.resolve(EntityType.LOCATION, item.location)
+            product = await client.resolve_entity(EntityType.PRODUCT, item.product)
+            location = await client.resolve_entity(EntityType.LOCATION, item.location)
             qu_ref = item.qu
             if qu_ref is None:
                 # SetItem-only zeroing-out shortcut: no unit needed since
@@ -544,10 +556,10 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 assert isinstance(item, SetItem)
                 if item.new_amount != 0:
                     raise ValueError("`qu` is required unless `new_amount` is 0 (zeroing-out shortcut).")
-                product_row = await resolver.get(EntityType.PRODUCT, product.id)
+                product_row = await client.get_entity(EntityType.PRODUCT, product.id)
                 assert product_row is not None  # just resolved
                 stock_qu_id = int(product_row["qu_id_stock"])
-                stock_qu_name = await resolver.name(EntityType.QUANTITY_UNIT, stock_qu_id)
+                stock_qu_name = await client.entity_name(EntityType.QUANTITY_UNIT, stock_qu_id)
                 rqu = ResolvedQU(
                     id=stock_qu_id,
                     name=stock_qu_name,
@@ -556,7 +568,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                     conversion_factor=1.0,
                 )
             else:
-                rqu = await resolver.resolve_qu_for_product(qu_ref, product.id)
+                rqu = await client.resolve_qu_for_product(qu_ref, product.id)
             input_amount = item.new_amount if isinstance(item, SetItem) else item.amount
             stock_amount = input_amount * rqu.conversion_factor
 
@@ -573,8 +585,8 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                         # omitting `best_before_date` uses the product's shelf-life
                         # defaults, but Grocy's native default-filling has a
                         # freezer-branch bug (see `_compute_default_bbd`).
-                        product_row = await resolver.get(EntityType.PRODUCT, product.id)
-                        location_row = await resolver.get(EntityType.LOCATION, location.id)
+                        product_row = await client.get_entity(EntityType.PRODUCT, product.id)
+                        location_row = await client.get_entity(EntityType.LOCATION, location.id)
                         assert product_row is not None  # just resolved
                         assert location_row is not None  # just resolved
                         body["best_before_date"] = _compute_default_bbd(
@@ -614,10 +626,10 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             )
             if isinstance(item, AddItem) and stock_id is not None:
                 new_amount, entry_id = await asyncio.gather(
-                    _best_effort_new_amount(product.id), _best_effort_entry_id(product.id, stock_id)
+                    _best_effort_new_amount(client, product.id), _best_effort_entry_id(client, product.id, stock_id)
                 )
             else:
-                new_amount = await _best_effort_new_amount(product.id)
+                new_amount = await _best_effort_new_amount(client, product.id)
                 entry_id = None
             return StockOpOk(
                 product_name=product.name,
@@ -636,6 +648,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     @mcp.tool()
     async def stock_add(
         items: Annotated[list[AddItem], Field(description=f"Stock additions. Max {MAX_BATCH_SIZE} per call.")],
+        client: GrocyClient = client_dependency,
     ) -> list[StockOpOk | StockOpError]:
         """Add stock for one or more products.
 
@@ -656,11 +669,12 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         See also `stock_consume`, `stock_set`, `stock_transfer`.
         """
         _check_batch_size(items, "items")
-        return list(await asyncio.gather(*[_stock_mutate(item) for item in items]))
+        return list(await asyncio.gather(*[_stock_mutate(client, item) for item in items]))
 
     @mcp.tool()
     async def stock_consume(
         items: Annotated[list[ConsumeItem], Field(description=f"Stock consumptions. Max {MAX_BATCH_SIZE} per call.")],
+        client: GrocyClient = client_dependency,
     ) -> list[StockOpOk | StockOpError]:
         """Consume (use up) stock for one or more products.
 
@@ -672,11 +686,12 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         `transaction_undo`.
         """
         _check_batch_size(items, "items")
-        return list(await asyncio.gather(*[_stock_mutate(item) for item in items]))
+        return list(await asyncio.gather(*[_stock_mutate(client, item) for item in items]))
 
     @mcp.tool()
     async def stock_set(
         items: Annotated[list[SetItem], Field(description=f"Stock corrections. Max {MAX_BATCH_SIZE} per call.")],
+        client: GrocyClient = client_dependency,
     ) -> list[StockOpOk | StockOpError]:
         """Set absolute stock amounts for one or more products.
 
@@ -695,7 +710,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         See also `stock_add`, `stock_consume`, `stock_transfer`.
         """
         _check_batch_size(items, "items")
-        return list(await asyncio.gather(*[_stock_mutate(item) for item in items]))
+        return list(await asyncio.gather(*[_stock_mutate(client, item) for item in items]))
 
     # ── Stock entry read/edit ────────────────────────────────────────────
 
@@ -705,6 +720,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             list[int | str] | None, Field(description="Products (name or ID) — returns every entry for each.")
         ] = None,
         entry_ids: Annotated[list[int] | None, Field(description="Specific stock-entry IDs to fetch.")] = None,
+        client: GrocyClient = client_dependency,
     ) -> list[StockEntryOk | StockEntryError]:
         """Fetch individual stock entries — the line items that make up a product's stock.
 
@@ -722,10 +738,10 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
         if products is not None:
             _check_batch_size(products, "products")
-            products_by_id, qu_names, location_names = await _build_enrichment_maps()
+            products_by_id, qu_names, location_names = await _build_enrichment_maps(client)
             all_results: list[StockEntryOk | StockEntryError] = []
             for product_ref in products:
-                resolved = await resolver.resolve(EntityType.PRODUCT, product_ref)
+                resolved = await client.resolve_entity(EntityType.PRODUCT, product_ref)
                 try:
                     r = await _retry(functools.partial(client.get, f"/stock/products/{resolved.id}/entries"))
                     r.raise_for_status()
@@ -733,6 +749,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                     for entry_data in entries_data:
                         try:
                             detail = await _enrich_stock_entry(
+                                client,
                                 entry_data,
                                 products_by_id=products_by_id,
                                 qu_names=qu_names,
@@ -750,7 +767,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         # Entry ID mode: batch GET /stock/entry/{id}
         assert entry_ids is not None
         _check_batch_size(entry_ids, "entry_ids")
-        products_by_id, qu_names, location_names = await _build_enrichment_maps()
+        products_by_id, qu_names, location_names = await _build_enrichment_maps(client)
 
         async def _one(entry_id: int) -> StockEntryOk | StockEntryError:
             try:
@@ -759,7 +776,11 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                     r = await client.get(f"/stock/entry/{entry_id}")
                     r.raise_for_status()
                     detail = await _enrich_stock_entry(
-                        r.json(), products_by_id=products_by_id, qu_names=qu_names, location_names=location_names
+                        client,
+                        r.json(),
+                        products_by_id=products_by_id,
+                        qu_names=qu_names,
+                        location_names=location_names,
                     )
                     return StockEntryOk(entry=detail)
 
@@ -772,6 +793,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     @mcp.tool()
     async def stock_entry_edit(
         items: Annotated[list[EditStockEntryItem], Field(description=f"Entry edits. Max {MAX_BATCH_SIZE} per call.")],
+        client: GrocyClient = client_dependency,
     ) -> list[StockEntryEditOk | StockEntryError]:
         """Partial update of one or more stock entries.
 
@@ -812,7 +834,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 if item.price is not None:
                     body["price"] = item.price
                 if item.location is not None:
-                    resolved_loc = await resolver.resolve(EntityType.LOCATION, item.location)
+                    resolved_loc = await client.resolve_entity(EntityType.LOCATION, item.location)
                     body["location_id"] = resolved_loc.id
                 if item.open is not None:
                     body["open"] = item.open
@@ -843,7 +865,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 # Re-fetch to return updated state
                 updated_r = await client.get(f"/stock/entry/{item.entry_id}")
                 updated_r.raise_for_status()
-                detail = await _enrich_stock_entry(updated_r.json())
+                detail = await _enrich_stock_entry(client, updated_r.json())
                 return StockEntryEditOk(entry=detail, changes=changes or None)
             except Exception as e:
                 return StockEntryError(entry_id=item.entry_id, error=_format_exc(e))
@@ -855,6 +877,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     @mcp.tool()
     async def products_list(
         detail: Annotated[Literal["brief", "full"], Field(description=DETAIL_DESC)] = "brief",
+        client: GrocyClient = client_dependency,
     ) -> list[BriefListItem] | list[FullProduct]:
         """Returns every product defined in this Grocy instance. Create new ones with `products_create`.
 
@@ -862,7 +885,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         need this when you want the full catalogue or the `full` shape
         (default location, stock QU, etc.).
         """
-        rows = await resolver.all(EntityType.PRODUCT)
+        rows = await client.list_entities(EntityType.PRODUCT)
         if detail == "brief":
             return [BriefListItem(id=int(r["id"]), name=str(r["name"])) for r in rows]
         return [FullProduct.model_validate(r) for r in rows]
@@ -870,6 +893,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     @mcp.tool()
     async def locations_list(
         detail: Annotated[Literal["brief", "full"], Field(description=DETAIL_DESC)] = "brief",
+        client: GrocyClient = client_dependency,
     ) -> list[BriefListItem] | list[FullLocation]:
         """Returns every storage location defined in this Grocy instance. Create new ones with `locations_create`.
 
@@ -877,7 +901,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         you want to see what already exists before `products_create` or
         `stock_add`.
         """
-        rows = await resolver.all(EntityType.LOCATION)
+        rows = await client.list_entities(EntityType.LOCATION)
         if detail == "brief":
             return [BriefListItem(id=int(r["id"]), name=str(r["name"])) for r in rows]
         return [FullLocation.model_validate(r) for r in rows]
@@ -885,6 +909,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     @mcp.tool()
     async def quantity_units_list(
         detail: Annotated[Literal["brief", "full"], Field(description=DETAIL_DESC)] = "brief",
+        client: GrocyClient = client_dependency,
     ) -> list[BriefQuantityUnit] | list[FullQuantityUnit]:
         """Returns every quantity unit defined in this Grocy instance. Create new ones with `quantity_units_create`.
 
@@ -894,7 +919,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         conversions between units, list `quantity_unit_conversions` via
         `entities_list`.
         """
-        rows = await resolver.all(EntityType.QUANTITY_UNIT)
+        rows = await client.list_entities(EntityType.QUANTITY_UNIT)
         if detail == "brief":
             return [
                 BriefQuantityUnit(id=int(r["id"]), name=str(r["name"]), name_plural=r.get("name_plural")) for r in rows
@@ -904,13 +929,14 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     @mcp.tool()
     async def product_groups_list(
         detail: Annotated[Literal["brief", "full"], Field(description=DETAIL_DESC)] = "brief",
+        client: GrocyClient = client_dependency,
     ) -> list[BriefListItem] | list[FullProductGroup]:
         """Returns every product-group (category) defined in this Grocy instance.
 
         Pass product-group names or IDs to `products_create` /
         `products_edit`. Create new ones with `product_groups_create`.
         """
-        rows = await resolver.all(EntityType.PRODUCT_GROUP)
+        rows = await client.list_entities(EntityType.PRODUCT_GROUP)
         if detail == "brief":
             return [BriefListItem(id=int(r["id"]), name=str(r["name"])) for r in rows]
         return [FullProductGroup.model_validate(r) for r in rows]
@@ -918,6 +944,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     @mcp.tool()
     async def shopping_lists_list(
         detail: Annotated[Literal["brief", "full"], Field(description=DETAIL_DESC)] = "brief",
+        client: GrocyClient = client_dependency,
     ) -> list[BriefListItem] | list[FullShoppingList]:
         """Returns every shopping list defined in this Grocy instance.
 
@@ -926,7 +953,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         for items use `shopping_list_get`. Create new lists with
         `shopping_lists_create`.
         """
-        rows = await resolver.all(EntityType.SHOPPING_LIST)
+        rows = await client.list_entities(EntityType.SHOPPING_LIST)
         if detail == "brief":
             return [BriefListItem(id=int(row["id"]), name=str(row["name"])) for row in rows]
         return [FullShoppingList.model_validate(row) for row in rows]
@@ -934,7 +961,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     # ── Reference data creation ──────────────────────────────────────────
 
     async def _simple_batch_create[T](
-        items: list[T], entity_path: str, to_body: Callable[[T], dict[str, Any]]
+        client: httpx.AsyncClient, items: list[T], entity_path: str, to_body: Callable[[T], dict[str, Any]]
     ) -> list[CreateOk | CreateError]:
         """Shared implementation for simple entity creation tools."""
         _check_batch_size(items, "items")
@@ -959,6 +986,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         items: Annotated[
             list[CreateLocationItem], Field(description=f"Locations to create. Max {MAX_BATCH_SIZE} per call.")
         ],
+        client: GrocyClient = client_dependency,
     ) -> list[CreateOk | CreateError]:
         """Create one or more storage locations.
 
@@ -973,13 +1001,14 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             body["is_freezer"] = int(body["is_freezer"])  # Grocy wants 0/1
             return body
 
-        return await _simple_batch_create(items, "/objects/locations", _body)
+        return await _simple_batch_create(client, items, "/objects/locations", _body)
 
     @mcp.tool()
     async def quantity_units_create(
         items: Annotated[
             list[CreateQuantityUnitItem], Field(description=f"Units to create. Max {MAX_BATCH_SIZE} per call.")
         ],
+        client: GrocyClient = client_dependency,
     ) -> list[CreateOk | CreateError]:
         """Create one or more quantity units.
 
@@ -991,7 +1020,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         afterwards. Failed items return errors without aborting the others.
         """
         return await _simple_batch_create(
-            items, "/objects/quantity_units", lambda item: item.model_dump(exclude_none=True)
+            client, items, "/objects/quantity_units", lambda item: item.model_dump(exclude_none=True)
         )
 
     @mcp.tool()
@@ -999,6 +1028,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         items: Annotated[
             list[CreateProductGroupItem], Field(description=f"Groups to create. Max {MAX_BATCH_SIZE} per call.")
         ],
+        client: GrocyClient = client_dependency,
     ) -> list[CreateOk | CreateError]:
         """Create one or more product groups (categories).
 
@@ -1008,7 +1038,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         aborting the others.
         """
         return await _simple_batch_create(
-            items, "/objects/product_groups", lambda item: item.model_dump(exclude_none=True)
+            client, items, "/objects/product_groups", lambda item: item.model_dump(exclude_none=True)
         )
 
     @mcp.tool()
@@ -1016,6 +1046,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         items: Annotated[
             list[CreateShoppingListItem], Field(description=f"Lists to create. Max {MAX_BATCH_SIZE} per call.")
         ],
+        client: GrocyClient = client_dependency,
     ) -> list[CreateOk | CreateError]:
         """Create one or more shopping lists (metadata).
 
@@ -1026,7 +1057,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         return errors without aborting the others.
         """
         return await _simple_batch_create(
-            items, "/objects/shopping_lists", lambda item: item.model_dump(exclude_none=True)
+            client, items, "/objects/shopping_lists", lambda item: item.model_dump(exclude_none=True)
         )
 
     # ── Product management ───────────────────────────────────────────────
@@ -1036,6 +1067,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         items: Annotated[
             list[CreateProductItem], Field(description=f"Products to create. Max {MAX_BATCH_SIZE} per call.")
         ],
+        client: GrocyClient = client_dependency,
     ) -> list[CreateOk | CreateError]:
         """Create one or more products.
 
@@ -1062,16 +1094,16 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
         async def _one(item: CreateProductItem) -> CreateOk | CreateError:
             try:
-                loc = await resolver.resolve(EntityType.LOCATION, item.location)
-                squ = await resolver.resolve(EntityType.QUANTITY_UNIT, item.stock_qu)
+                loc = await client.resolve_entity(EntityType.LOCATION, item.location)
+                squ = await client.resolve_entity(EntityType.QUANTITY_UNIT, item.stock_qu)
                 pqu = (
-                    await resolver.resolve(EntityType.QUANTITY_UNIT, item.purchase_qu)
+                    await client.resolve_entity(EntityType.QUANTITY_UNIT, item.purchase_qu)
                     if item.purchase_qu is not None
                     else squ
                 )
 
                 cqu = (
-                    await resolver.resolve(EntityType.QUANTITY_UNIT, item.consume_qu)
+                    await client.resolve_entity(EntityType.QUANTITY_UNIT, item.consume_qu)
                     if item.consume_qu is not None
                     else squ
                 )
@@ -1087,10 +1119,10 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                     "due_type": item.due_type,
                 }
                 if item.parent_product is not None:
-                    parent = await resolver.resolve(EntityType.PRODUCT, item.parent_product)
+                    parent = await client.resolve_entity(EntityType.PRODUCT, item.parent_product)
                     body["parent_product_id"] = parent.id
                 if item.product_group is not None:
-                    pg = await resolver.resolve(EntityType.PRODUCT_GROUP, item.product_group)
+                    pg = await client.resolve_entity(EntityType.PRODUCT_GROUP, item.product_group)
                     body["product_group_id"] = pg.id
                 if item.description is not None:
                     body["description"] = item.description
@@ -1110,6 +1142,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     @mcp.tool()
     async def products_edit(
         items: Annotated[list[EditProductItem], Field(description=f"Product edits. Max {MAX_BATCH_SIZE} per call.")],
+        client: GrocyClient = client_dependency,
     ) -> list[EditOk | CreateError]:
         """Partial update of one or more products.
 
@@ -1124,7 +1157,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
         async def _one(item: EditProductItem) -> EditOk | CreateError:
             try:
-                resolved = await resolver.resolve(EntityType.PRODUCT, item.product)
+                resolved = await client.resolve_entity(EntityType.PRODUCT, item.product)
                 r = await client.get(f"/objects/products/{resolved.id}")
                 r.raise_for_status()
                 current: dict[str, Any] = r.json()
@@ -1133,13 +1166,15 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 if item.name is not None:
                     body["name"] = item.name
                 if item.stock_qu is not None:
-                    body["qu_id_stock"] = (await resolver.resolve(EntityType.QUANTITY_UNIT, item.stock_qu)).id
+                    body["qu_id_stock"] = (await client.resolve_entity(EntityType.QUANTITY_UNIT, item.stock_qu)).id
                 if item.location is not None:
-                    body["location_id"] = (await resolver.resolve(EntityType.LOCATION, item.location)).id
+                    body["location_id"] = (await client.resolve_entity(EntityType.LOCATION, item.location)).id
                 if item.purchase_qu is not None:
-                    body["qu_id_purchase"] = (await resolver.resolve(EntityType.QUANTITY_UNIT, item.purchase_qu)).id
+                    body["qu_id_purchase"] = (
+                        await client.resolve_entity(EntityType.QUANTITY_UNIT, item.purchase_qu)
+                    ).id
                 if item.consume_qu is not None:
-                    body["qu_id_consume"] = (await resolver.resolve(EntityType.QUANTITY_UNIT, item.consume_qu)).id
+                    body["qu_id_consume"] = (await client.resolve_entity(EntityType.QUANTITY_UNIT, item.consume_qu)).id
                 if item.min_stock_amount is not None:
                     body["min_stock_amount"] = item.min_stock_amount
                 if item.default_best_before_days is not None:
@@ -1147,9 +1182,13 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 if item.due_type is not None:
                     body["due_type"] = item.due_type
                 if item.parent_product is not None:
-                    body["parent_product_id"] = (await resolver.resolve(EntityType.PRODUCT, item.parent_product)).id
+                    body["parent_product_id"] = (
+                        await client.resolve_entity(EntityType.PRODUCT, item.parent_product)
+                    ).id
                 if item.product_group is not None:
-                    body["product_group_id"] = (await resolver.resolve(EntityType.PRODUCT_GROUP, item.product_group)).id
+                    body["product_group_id"] = (
+                        await client.resolve_entity(EntityType.PRODUCT_GROUP, item.product_group)
+                    ).id
                 if item.description is not None:
                     body["description"] = item.description
 
@@ -1174,10 +1213,11 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     @mcp.tool()
     async def product_delete(
         product: Annotated[int | str, Field(description="Product to delete. Name or ID.")],
+        client: GrocyClient = client_dependency,
     ) -> EditOk | CreateError:
         """Delete a product. Also removes every stock entry for the product — irreversible."""
         try:
-            resolved = await resolver.resolve(EntityType.PRODUCT, product)
+            resolved = await client.resolve_entity(EntityType.PRODUCT, product)
             r = await client.delete(f"/objects/products/{resolved.id}")
             r.raise_for_status()
             return EditOk(object_id=resolved.id)
@@ -1193,6 +1233,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         qu: Annotated[int | str, Field(description=QU_DESC)],
         from_location: Annotated[int | str, Field(description="Source location. Name or ID.")],
         to_location: Annotated[int | str, Field(description="Destination location. Name or ID.")],
+        client: GrocyClient = client_dependency,
     ) -> StockOpOk | StockOpError:
         """Move stock from one location to another (e.g. Cellar → Fridge).
 
@@ -1207,10 +1248,10 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         `stock_consume`, `stock_set`.
         """
         try:
-            prod = await resolver.resolve(EntityType.PRODUCT, product)
-            from_loc = await resolver.resolve(EntityType.LOCATION, from_location)
-            to_loc = await resolver.resolve(EntityType.LOCATION, to_location)
-            rqu = await resolver.resolve_qu_for_product(qu, prod.id)
+            prod = await client.resolve_entity(EntityType.PRODUCT, product)
+            from_loc = await client.resolve_entity(EntityType.LOCATION, from_location)
+            to_loc = await client.resolve_entity(EntityType.LOCATION, to_location)
+            rqu = await client.resolve_qu_for_product(qu, prod.id)
 
             stock_amount = amount * rqu.conversion_factor
 
@@ -1244,19 +1285,20 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
     # ── Shopping list ────────────────────────────────────────────────────
 
-    async def _shopping_product_info(product_id: Any) -> tuple[str | None, str | None]:
+    async def _shopping_product_info(client: GrocyClient, product_id: Any) -> tuple[str | None, str | None]:
         """Look up product name and stock QU name for a shopping-list item's product_id."""
         if product_id is None:
             return None, None
-        product = await resolver.get(EntityType.PRODUCT, int(product_id))
+        product = await client.get_entity(EntityType.PRODUCT, int(product_id))
         if product is None:
             return f"id={product_id}", None
-        qu_name = await resolver.name(EntityType.QUANTITY_UNIT, int(product["qu_id_stock"]))
+        qu_name = await client.entity_name(EntityType.QUANTITY_UNIT, int(product["qu_id_stock"]))
         return str(product["name"]), qu_name
 
     @mcp.tool()
     async def shopping_list_get(
         shopping_list: Annotated[int | str, Field(description="Shopping list. Name or ID.")],
+        client: GrocyClient = client_dependency,
     ) -> dict[str, Any]:
         """Fetch a shopping list's metadata plus every item on it.
 
@@ -1266,7 +1308,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         `note`, and `done`. Add items with `shopping_list_items_add`; empty
         the list with `shopping_list_clear`.
         """
-        sl = await resolver.resolve(EntityType.SHOPPING_LIST, shopping_list)
+        sl = await client.resolve_entity(EntityType.SHOPPING_LIST, shopping_list)
 
         r = await client.get(f"/objects/shopping_lists/{sl.id}")
         r.raise_for_status()
@@ -1280,7 +1322,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         result_items = []
         for item in items:
             product_id = item.get("product_id")
-            product_name, qu_name = await _shopping_product_info(product_id)
+            product_name, qu_name = await _shopping_product_info(client, product_id)
 
             result_items.append(
                 {
@@ -1303,6 +1345,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     @mcp.tool()
     async def shopping_list_items_add(
         items: Annotated[list[ShoppingItem], Field(description=f"Items to add. Max {MAX_BATCH_SIZE} per call.")],
+        client: GrocyClient = client_dependency,
     ) -> list[ShoppingListItemOk | ShoppingListItemError]:
         """Add items to a shopping list.
 
@@ -1321,14 +1364,14 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
         async def _one(item: ShoppingItem) -> ShoppingListItemOk | ShoppingListItemError:
             try:
-                sl = await resolver.resolve(EntityType.SHOPPING_LIST, item.shopping_list)
+                sl = await client.resolve_entity(EntityType.SHOPPING_LIST, item.shopping_list)
                 body: dict[str, Any] = {"shopping_list_id": sl.id, "amount": item.amount}
                 product_name = None
                 qu_name = None
                 if item.product is not None:
-                    prod = await resolver.resolve(EntityType.PRODUCT, item.product)
+                    prod = await client.resolve_entity(EntityType.PRODUCT, item.product)
                     body["product_id"] = prod.id
-                    product_name, qu_name = await _shopping_product_info(prod.id)
+                    product_name, qu_name = await _shopping_product_info(client, prod.id)
                 if item.note is not None:
                     body["note"] = item.note
 
@@ -1363,6 +1406,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 )
             ),
         ] = None,
+        client: GrocyClient = client_dependency,
     ) -> ShoppingListItemOk | ShoppingListItemError:
         """Partial update of one shopping-list item — only the fields you pass change.
 
@@ -1391,7 +1435,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             r = await client.put(f"/objects/shopping_list/{item_id}", json=body)
             r.raise_for_status()
 
-            product_name, qu_name = await _shopping_product_info(body.get("product_id"))
+            product_name, qu_name = await _shopping_product_info(client, body.get("product_id"))
 
             return ShoppingListItemOk(
                 item_id=item_id, product_name=product_name, amount=float(body.get("amount", 1)), qu_name=qu_name
@@ -1407,6 +1451,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 description=f"Shopping-list item IDs to remove (from `shopping_list_get`). Max {MAX_BATCH_SIZE} per call."
             ),
         ],
+        client: GrocyClient = client_dependency,
     ) -> list[ShoppingListItemOk | ShoppingListItemError]:
         """Remove specific items from a shopping list.
 
@@ -1424,7 +1469,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 r = await client.delete(f"/objects/shopping_list/{item_id}")
                 r.raise_for_status()
 
-                product_name, qu_name = await _shopping_product_info(item.get("product_id"))
+                product_name, qu_name = await _shopping_product_info(client, item.get("product_id"))
 
                 return ShoppingListItemOk(
                     item_id=item_id, product_name=product_name, amount=float(item.get("amount", 1)), qu_name=qu_name
@@ -1437,13 +1482,14 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     @mcp.tool()
     async def shopping_list_clear(
         shopping_list: Annotated[int | str, Field(description="Shopping list to clear. Name or ID.")],
+        client: GrocyClient = client_dependency,
     ) -> dict[str, Any]:
         """Empty a shopping list — removes every item, keeps the list itself.
 
         Returns `{kind: "ok", cleared: N}` with the number removed. To
         remove specific items only, use `shopping_list_items_remove`.
         """
-        sl = await resolver.resolve(EntityType.SHOPPING_LIST, shopping_list)
+        sl = await client.resolve_entity(EntityType.SHOPPING_LIST, shopping_list)
 
         r = await client.get("/objects/shopping_list")
         r.raise_for_status()
@@ -1461,13 +1507,13 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
     # ── Query tools ──────────────────────────────────────────────────────
 
-    async def _fetch_volatile_with_maps() -> tuple[dict[str, Any], dict[int, str], dict[int, str]]:
+    async def _fetch_volatile_with_maps(client: GrocyClient) -> tuple[dict[str, Any], dict[int, str], dict[int, str]]:
         """Fetch ``/stock/volatile`` and build QU + location name maps in one shot."""
         r = await _retry(lambda: client.get("/stock/volatile"))
         r.raise_for_status()
         data: dict[str, Any] = r.json()
         qu_names, location_names = await asyncio.gather(
-            resolver.name_map(EntityType.QUANTITY_UNIT), resolver.name_map(EntityType.LOCATION)
+            client.entity_name_map(EntityType.QUANTITY_UNIT), client.entity_name_map(EntityType.LOCATION)
         )
         return data, qu_names, location_names
 
@@ -1480,6 +1526,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     @mcp.tool()
     async def get_expiring_stock(
         days_ahead: Annotated[int, Field(description="Window to look ahead, in days.")],
+        client: GrocyClient = client_dependency,
     ) -> list[dict[str, Any]]:
         """Stock due to expire within the next `days_ahead` days.
 
@@ -1488,7 +1535,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         already-expired stock use `get_expired_stock`; for low-stock use
         `get_below_minimum_stock`.
         """
-        data, qu_names, location_names = await _fetch_volatile_with_maps()
+        data, qu_names, location_names = await _fetch_volatile_with_maps(client)
         cutoff = datetime.now(tz=UTC).date() + timedelta(days=days_ahead)
         result = []
 
@@ -1512,7 +1559,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         return result
 
     @mcp.tool()
-    async def get_below_minimum_stock() -> list[dict[str, Any]]:
+    async def get_below_minimum_stock(client: GrocyClient = client_dependency) -> list[dict[str, Any]]:
         """Products under their `min_stock_amount` threshold.
 
         Each row gives product name, current amount, minimum amount,
@@ -1521,7 +1568,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         via `products_create` / `products_edit`. See also
         `get_expiring_stock` and `get_expired_stock`.
         """
-        data, qu_names, _ = await _fetch_volatile_with_maps()
+        data, qu_names, _ = await _fetch_volatile_with_maps(client)
 
         result = []
         for entry in data.get("missing_products", []):
@@ -1543,7 +1590,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         return result
 
     @mcp.tool()
-    async def get_expired_stock() -> list[dict[str, Any]]:
+    async def get_expired_stock(client: GrocyClient = client_dependency) -> list[dict[str, Any]]:
         """Stock that's already past its best-before date.
 
         Each row carries product name, amount, unit, location,
@@ -1551,7 +1598,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         but not yet expired, use `get_expiring_stock`. For low-stock,
         use `get_below_minimum_stock`.
         """
-        data, qu_names, location_names = await _fetch_volatile_with_maps()
+        data, qu_names, location_names = await _fetch_volatile_with_maps(client)
 
         result = []
         for entry in data.get("expired_products", []):

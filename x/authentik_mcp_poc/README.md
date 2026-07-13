@@ -220,9 +220,9 @@ be "real":
 > 1. `OIDCProxy` does NOT pass the upstream Authentik token to the MCP client
 >    unchanged — it mints a FastMCP-signed JTI reference token. Reading the
 >    raw `Authorization` header in a tool handler gives you that reference,
->    not the upstream token. Use `get_access_token().token` instead, which
->    returns the upstream token after `OAuthProxy.load_access_token`'s
->    server-side swap.
+>    not the upstream token. Use FastMCP's `CurrentAccessToken()` dependency
+>    instead, which returns the upstream token after
+>    `OAuthProxy.load_access_token`'s server-side swap.
 > 2. Authentik's proxy outpost does NOT consult `jwt_federation_providers`
 >    when validating forward-auth Bearer headers. Its introspection is
 >    scoped to the proxy provider's own `client_id`, so it only recognizes
@@ -230,7 +230,8 @@ be "real":
 >    consulted by the `/application/o/token/` endpoint, in the
 >    `client_credentials` + JWT-bearer client-assertion path — i.e., you use
 >    it to MINT a new, backend-scoped token at tool-call time. This is what
->    `AuthentikExchangeAuth` in `mcp_infra/authentik_auth/auth.py` does.
+>    `AuthentikTokenExchanger`, called by the request-scoped dependency in
+>    `mcp_infra/authentik_auth/auth.py`, does.
 >
 > Full forensic write-up, including source-level references in both FastMCP
 > and Authentik, in <NOTES.md> §2-§5.

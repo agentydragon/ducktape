@@ -12,12 +12,19 @@ from __future__ import annotations
 
 import logging
 import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import httpx
 import uvicorn
 from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
 
-from mcp_infra.authentik_auth.auth import AuthentikExchangeAuth, build_authentik_auth
+from mcp_infra.authentik_auth.auth import (
+    AuthentikTokenExchanger,
+    build_authentik_auth,
+    build_authentik_backend_token_provider,
+)
 from x.authentik_mcp_poc.config import ServerSettings
 
 logger = logging.getLogger(__name__)
@@ -25,7 +32,18 @@ logger = logging.getLogger(__name__)
 
 def build_server(settings: ServerSettings) -> FastMCP:
     auth_config = settings.auth_config()
-    exchange_auth = AuthentikExchangeAuth(auth_config)
+    exchanger = AuthentikTokenExchanger(auth_config)
+    backend_token_provider = build_authentik_backend_token_provider(exchanger)
+    backend_token_dependency = Depends(backend_token_provider)
+
+    @asynccontextmanager
+    async def backend_client(backend_token: str = backend_token_dependency) -> AsyncIterator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(
+            base_url=settings.backend_url.rstrip("/"),
+            headers={"Authorization": f"Bearer {backend_token}"},
+            timeout=10.0,
+        ) as client:
+            yield client
 
     mcp: FastMCP = FastMCP(
         name="Authentik MCP POC",
@@ -36,9 +54,10 @@ def build_server(settings: ServerSettings) -> FastMCP:
         ),
         auth=build_authentik_auth(auth_config),
     )
+    backend_client_dependency = Depends(backend_client)
 
     @mcp.tool
-    async def whoami_via_backend() -> dict[str, object]:
+    async def whoami_via_backend(client: httpx.AsyncClient = backend_client_dependency) -> dict[str, object]:
         """Call the Authentik-proxy-protected whoami backend as the current user.
 
         Exchanges the user's upstream Authentik token for one scoped to the
@@ -46,10 +65,7 @@ def build_server(settings: ServerSettings) -> FastMCP:
         validates via introspection, injects `X-Authentik-*` identity headers,
         and the backend echoes them back.
         """
-        async with httpx.AsyncClient(
-            base_url=settings.backend_url.rstrip("/"), auth=exchange_auth, timeout=10.0
-        ) as client:
-            response = await client.get("/whoami")
+        response = await client.get("/whoami")
         return {
             "backend_status": response.status_code,
             "backend_url": str(response.request.url),

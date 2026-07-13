@@ -146,12 +146,12 @@ separate confidential "exchange client" in Authentik.
 
 No `token-exchange`. Result: `unsupported_grant_type` at tool-call time.
 
-The existing grocy/airlock pattern uses a _different_ exchange:
+The existing Grocy pattern uses a _different_ exchange:
 `grant_type=client_credentials` with `client_assertion_type=jwt-bearer`
-and the user's JWT as `client_assertion`. This is what FastMCP's
-`AuthentikExchangeAuth` implements. But kubernetes-mcp-server doesn't
-speak that dialect, and writing a FastMCP wrapper around it is a
-significant rewrite.
+and the user's JWT as `client_assertion`. The request-scoped dependency
+and `AuthentikTokenExchanger` in <../../mcp_infra/authentik_auth/auth.py>
+implement it. But kubernetes-mcp-server doesn't speak that dialect, and
+writing a FastMCP wrapper around it is a significant rewrite.
 
 ## The real fix: scope at token-issue time
 
@@ -275,5 +275,6 @@ provider's `allowed_redirect_uris`. In the Custom Connectors UI, paste:
       the current setup is arguably fine forever)
 - [ ] Consider a FastMCP wrapper pattern for future MCP servers that
       want DCR — `mcp_infra/authentik_auth/auth.py` provides
-      `build_authentik_auth` / `AuthentikExchangeAuth` which implement
-      DCR in-server plus Authentik-flavored JWT-bearer token exchange
+      `build_authentik_auth` / `AuthentikTokenExchanger`, plus the
+      request-scoped dependency that implements DCR in-server and
+      Authentik-flavored JWT-bearer token exchange

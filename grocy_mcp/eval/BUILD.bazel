@@ -33,8 +33,10 @@ py_library(
         ":cases",
         ":prompts",
         ":result_types",
+        "//grocy_mcp:client",
         "//grocy_mcp:mcp_types",
         "//grocy_mcp:server",  # transitively provides server_instructions.md via runfiles
+        "//mcp_infra:request_scoped_openapi",
         "//util:net",
         "//util/bazel:runfiles",
         "@pypi//agent_framework_anthropic",

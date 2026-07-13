@@ -41,10 +41,12 @@ from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 from opentelemetry import trace
 
+from grocy_mcp.client import GrocyClient
 from grocy_mcp.grocy_container import make_settings
 from grocy_mcp.server import build_mcp
 from grocy_mcp.test_helpers import RefData, create_refunwrap_result, unwrap_result
 from grocy_mcp.tool_metadata import TOOL_OVERRIDES
+from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -99,14 +101,11 @@ CUSTOM_TOOL_NAMES = {
 @pytest.fixture
 async def mcp_client(grocy_base_url: str) -> AsyncGenerator[Client]:
     """Function-scoped MCP client exercising the full MCP protocol in-process."""
-    http_client = httpx.AsyncClient(base_url=f"{grocy_base_url}/api", timeout=30.0)
-    try:
+    async with GrocyClient(base_url=f"{grocy_base_url}/api", timeout=30.0) as http_client:
         with tracer.start_as_current_span("build_mcp"):
-            mcp = build_mcp(make_settings(grocy_base_url), client=http_client)
+            mcp = build_mcp(make_settings(grocy_base_url), client_provider=borrowed_http_client_provider(http_client))
         async with Client(FastMCPTransport(mcp)) as client:
             yield client
-    finally:
-        await http_client.aclose()
 
 
 @pytest.fixture
@@ -121,7 +120,7 @@ async def refunwrap_result(mcp_client: Client) -> RefData:
 async def test_all_tool_names_are_customized(mcp_client: Client) -> None:
     """Every tool exposed by the MCP server has a name from TOOL_OVERRIDES or CUSTOM_TOOL_NAMES."""
     tools = await mcp_client.list_tools()
-    expected_names = {o.name for o in TOOL_OVERRIDES.values() if o.enabled and not o.resource}
+    expected_names = {o.name for o in TOOL_OVERRIDES.values() if o.enabled}
     expected_names |= CUSTOM_TOOL_NAMES
     actual_names = {t.name for t in tools}
     assert actual_names == expected_names, (

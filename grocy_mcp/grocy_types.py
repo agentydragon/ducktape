@@ -12,11 +12,11 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, BeforeValidator
 
-# ── Entity types exposed by the resolver ────────────────────────────────────
+# ── Entity types exposed by GrocyClient ─────────────────────────────────────
 
 
 class EntityType(StrEnum):
-    """Entity types the resolver can look up by name or ID.
+    """Entity types ``GrocyClient`` can look up by name or ID.
 
     Values are the Grocy API path segments (``/objects/{value}``).
     """

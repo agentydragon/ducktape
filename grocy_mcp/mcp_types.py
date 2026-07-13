@@ -27,7 +27,7 @@ MAX_BATCH_SIZE = 100
 class ServerSettings(BaseSettings):
     """Config for the Grocy MCP server.
 
-    Non-secret structured config (grocy_url, auth issuer/URLs/extra_jwt_issuers,
+    Non-secret structured config (grocy_url, auth issuer/URLs/direct_jwt_trusts,
     persistence) is loaded from the YAML file at ``GROCY_MCP_CONFIG_FILE``; secrets
     (auth ``oidc_client_secret``, …) stay in ``GROCY_MCP_*`` env from a k8s Secret.
     Env outranks the file and the two are deep-merged, so a single nested model

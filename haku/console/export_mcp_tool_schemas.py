@@ -22,12 +22,13 @@ import json
 from collections.abc import Mapping
 from typing import Any, cast
 
-import httpx
 from fastmcp import Client, FastMCP
 
 from grocy_mcp.batch_tools import build_batch_tools_mcp
+from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
 from haku.console.in_process_servers import InProcessServerDependencies, build_in_process_servers
+from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 
 GROCY_SF_SERVER_ID = "grocy-sf"
 
@@ -106,7 +107,7 @@ def build_schema_servers() -> dict[str, FastMCP]:
     """Build every server whose tools the console renders, without live credentials.
 
     The console's own in-process servers plus a batch-tools-only grocy-sf built for schema
-    reflection (its httpx client is inert — registration never calls it).
+    reflection (its Grocy client is inert — registration never calls it).
     """
 
     inert = _InertCollaborator()
@@ -118,7 +119,8 @@ def build_schema_servers() -> dict[str, FastMCP]:
         InProcessServerDependencies(gmail=dependency, calendar=dependency, routine_launcher=dependency)
     )
     servers[GROCY_SF_SERVER_ID] = build_batch_tools_mcp(
-        ServerSettings(grocy_url="https://grocy.invalid"), client=cast(httpx.AsyncClient, inert)
+        ServerSettings(grocy_url="https://grocy.invalid"),
+        client_provider=borrowed_http_client_provider(cast(GrocyClient, inert)),
     )
     return dict(sorted(servers.items()))
 

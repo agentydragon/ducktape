@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import re
 
-import httpx
 import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 from pydantic import BaseModel
 
+from grocy_mcp.client import GrocyClient
 from grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS, EntityType, ReadableEntityType, WriteableEntityType
 from grocy_mcp.mcp_types import (
     AddItem,
@@ -54,6 +54,7 @@ from grocy_mcp.mcp_types import (
     StockOpOk,
 )
 from grocy_mcp.server import build_mcp
+from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 
 # Tool-ish identifiers that appear in docstrings but aren't live tools — MCP
 # resources, type-alias names in cross-references, or FastMCP-generated
@@ -146,8 +147,8 @@ _KNOWN_NON_TOOL_TOKENS = (
 async def test_docstring_cross_links_resolve() -> None:
     """Every backtick-quoted identifier in a tool description resolves to a live tool."""
     settings = ServerSettings(grocy_url="https://grocy.example.com")
-    async with httpx.AsyncClient(base_url=f"{settings.grocy_url}/api") as http_client:
-        mcp = build_mcp(settings, client=http_client)
+    async with GrocyClient(base_url=f"{settings.grocy_url}/api") as http_client:
+        mcp = build_mcp(settings, client_provider=borrowed_http_client_provider(http_client))
         async with Client(FastMCPTransport(mcp)) as client:
             tools = await client.list_tools()
 

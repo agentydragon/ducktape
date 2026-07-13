@@ -3,44 +3,39 @@
 Three components:
 
 1. `AuthentikAuthConfig` — frozen Pydantic model capturing the auth-only
-   fields needed to wire OIDCProxy + JWTVerifier and perform JWT-bearer
+   fields needed to wire OIDCProxy + direct machine-token verifiers and perform JWT-bearer
    token exchanges against an Authentik proxy provider outpost. Because
    it's a Pydantic model, it doubles as a `BaseSettings` nested field so
    downstream servers can load auth from env vars without keeping a
    parallel `*Settings` twin.
 
 2. `build_authentik_auth` — constructs the FastMCP AuthProvider (OIDCProxy +
-   JWTVerifier + MultiAuth) that handles the MCP OAuth dance with claude.ai.
+   explicitly configured JWTVerifiers + MultiAuth) that handles the MCP OAuth dance.
 
-3. `AuthentikExchangeAuth` — an httpx.Auth subclass that transparently exchanges
+3. `AuthentikTokenExchanger` — an explicit, stateless resolver that exchanges
    the MCP user's upstream Authentik JWT for a proxy-provider-scoped JWT via
-   RFC 7521 jwt-bearer client_credentials. Tokens are cached in-memory and
-   optionally persisted to an ``AsyncKeyValue`` store (same interface FastMCP's
-   OIDCProxy uses for its state). Uses a long-lived ``AsyncOAuth2Client`` for
-   the exchange calls.
+   RFC 7521 jwt-bearer client_credentials. Callers use it from a request-scoped
+   FastMCP dependency and pass the returned credential to the backend client.
 """
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
 import logging
-import time
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse, urlunparse
 
 import httpx
+from authlib.integrations.base_client.errors import OAuthError
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from authlib.oauth2 import OAuth2Error
-from authlib.oauth2.rfc6749.wrappers import OAuth2Token
+from fastmcp.dependencies import CurrentAccessToken
+from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import MultiAuth
-from fastmcp.server.auth.auth import AuthProvider, TokenVerifier
+from fastmcp.server.auth.auth import AccessToken, AuthProvider, TokenVerifier
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.server.dependencies import get_access_token, get_http_headers
 from glide_shared.exceptions import TimeoutError as GlideTimeoutError
-from key_value.aio.protocols import AsyncKeyValue
 from mcp.server.auth.provider import TokenError
 from prometheus_client import Counter
 from pydantic import BaseModel, ConfigDict, Field
@@ -48,8 +43,6 @@ from starlette.exceptions import HTTPException
 from tenacity import AsyncRetrying, before_sleep_log, retry_if_exception, stop_after_attempt, wait_exponential
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
-
     from mcp.server.auth.provider import AuthorizationCode, RefreshToken
     from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
@@ -60,10 +53,6 @@ logger = logging.getLogger(__name__)
 # is required (without it the outpost forwards empty identity headers).
 EXCHANGE_SCOPES = "openid email profile ak_proxy"
 
-# Safety margin (seconds) for token expiry checks — authlib's
-# OAuth2Token.is_expired(leeway=N) subtracts this from expires_at.
-_EXPIRY_LEEWAY = 30
-
 # Scopes that OIDCProxy's DCR endpoint will accept from MCP clients.
 # These must also be configured as property_mappings on the Authentik OAuth2
 # provider (Authentik silently drops scopes without a matching ScopeMapping).
@@ -71,13 +60,26 @@ _EXPIRY_LEEWAY = 30
 #   can silently renew sessions without re-authenticating.
 DEFAULT_VALID_SCOPES = ["openid", "email", "profile", "offline_access"]
 
-# Invoked after an OAuth client completes the authorization-code exchange, with the client's
-# ``client_id`` and the raw upstream token response (``id_token`` etc.). A generic post-exchange hook;
-# the caller decides what to record and owns error handling — exceptions propagate out of the exchange.
+# Invoked during an OAuth client's authorization-code exchange, before the local FastMCP token is
+# issued, with the client's ``client_id`` and raw upstream token response (``id_token`` etc.). The
+# caller validates or links the identity; exceptions prevent local token issuance.
 OnClientAuthorized = Callable[[str, Mapping[str, Any]], Awaitable[None]]
+BackendTokenProvider = Callable[..., Awaitable[str]]
 
 
 # ── Config ────────────────────────────────────────────────────────────────
+
+
+class DirectJwtTrust(BaseModel):
+    """One explicitly trusted direct bearer-token issuer contract."""
+
+    model_config = ConfigDict(frozen=True)
+
+    issuer: str = Field(description="Exact JWT issuer, accepted with or without its trailing slash.")
+    audiences: tuple[str, ...] = Field(min_length=1, description="Allowed JWT audience claims for this issuer.")
+    required_scopes: tuple[str, ...] = Field(
+        default=(), description="OAuth scopes every direct token from this issuer must contain."
+    )
 
 
 class AuthentikAuthConfig(BaseModel):
@@ -85,7 +87,7 @@ class AuthentikAuthConfig(BaseModel):
 
     Core fields (oidc_issuer through public_base_url) are needed by
     `build_authentik_auth`. Exchange fields (proxy_client_id, exchange_timeout)
-    are only needed when using `AuthentikExchangeAuth` for JWT-bearer token
+    are only needed when using `AuthentikTokenExchanger` for JWT-bearer token
     exchange against a proxy provider outpost.
     """
 
@@ -97,12 +99,11 @@ class AuthentikAuthConfig(BaseModel):
     public_base_url: str
     proxy_client_id: str | None = None
     exchange_timeout: float = 10.0
-    extra_jwt_issuers: tuple[str, ...] = Field(
+    direct_jwt_trusts: tuple[DirectJwtTrust, ...] = Field(
         default=(),
-        description="Additional issuers the JWTVerifier accepts (beyond oidc_issuer). "
-        "Only valid for providers that share oidc_issuer's signing key, so the same "
-        "JWKS validates their tokens. Used for dedicated machine client_credentials "
-        "providers reaching the same MCP.",
+        description="Direct machine-token issuers accepted alongside OIDCProxy. Each must share "
+        "oidc_issuer's signing key because its JWKS validates the token. Audience and scopes are "
+        "checked within each entry rather than combined across issuers.",
     )
 
     def normalized_public_base_url(self) -> str:
@@ -133,6 +134,11 @@ UPSTREAM_REFRESH_FAILURES = Counter(
     "mcp_auth_upstream_refresh_failures_total",
     "MCP client token refreshes that failed while talking to Authentik or persisting OAuth state",
     ["outcome"],  # transient (upstream unreachable/5xx) | oauth (real OAuth error response) | storage
+)
+BACKEND_TOKEN_EXCHANGE_FAILURES = Counter(
+    "mcp_auth_backend_token_exchange_failures_total",
+    "Backend token exchanges that failed before tool execution",
+    ["outcome"],  # oauth | transport | upstream | response
 )
 
 _RETRY_AFTER_SECONDS = 60
@@ -265,12 +271,11 @@ def build_authentik_auth(
     extra_verifiers: list[TokenVerifier] | None = None,
     on_client_authorized: OnClientAuthorized | None = None,
 ) -> AuthProvider:
-    """Build OIDCProxy + JWTVerifier auth for an Authentik-backed MCP server.
+    """Build OIDCProxy plus explicit direct-JWT trust for an Authentik-backed MCP server.
 
     OIDCProxy handles the user-facing MCP OAuth dance (DCR, PKCE, consent).
-    JWTVerifier validates tool-call Bearer tokens against Authentik's JWKS,
-    whose URL is taken from the OIDC discovery document (Authentik serves
-    JWKS at ``<issuer>/jwks/``, not ``<issuer>/.well-known/jwks``).
+    Configured direct-JWT trusts validate machine Bearer tokens against
+    Authentik's discovery-advertised JWKS, audience, and required scopes.
 
     Args:
         config: Authentik auth configuration.
@@ -280,12 +285,12 @@ def build_authentik_auth(
             (DCR registrations, tokens). Defaults to FastMCP's file-based
             encrypted store under ``FASTMCP_HOME``.
         extra_verifiers: Additional ``TokenVerifier``s appended to the MultiAuth
-            after the Authentik JWTVerifier — e.g. a ``StaticTokenVerifier`` so a
+            after configured direct-JWT verifiers — e.g. a ``StaticTokenVerifier`` so a
             machine caller's fixed bearer is accepted on the same endpoint as the
             human OAuth flow. Each is tried in turn; the first to accept wins.
-        on_client_authorized: Optional hook fired after an OAuth client completes the
-            authorization-code exchange, with its ``client_id`` and the raw upstream token
-            response. Exceptions from the hook propagate out of the exchange.
+        on_client_authorized: Optional hook fired during an OAuth client's authorization-code
+            exchange, before the local FastMCP token is issued, with its ``client_id`` and raw
+            upstream token response. Exceptions prevent local token issuance.
     """
     issuer = config.normalized_issuer()
     config_url = f"{issuer}/.well-known/openid-configuration"
@@ -302,139 +307,137 @@ def build_authentik_auth(
     )
     assert proxy.client_registration_options is not None
     proxy.client_registration_options.valid_scopes = valid_scopes or DEFAULT_VALID_SCOPES
-    # Accept each issuer both with and without a trailing slash. `normalized_issuer()`
-    # strips the slash, but Authentik's per-provider tokens carry `iss` WITH a
-    # trailing slash and JWTVerifier compares `iss` to the configured issuer by exact
-    # string match — so the bare form alone rejects every real Authentik token. (Not
-    # caught before because claude.ai authenticates through OIDCProxy, never the
-    # JWTVerifier path; direct machine bearer tokens do.)
-    #
-    # extra_jwt_issuers lets the verifier also accept tokens from sibling providers
-    # that share this provider's signing key (so the same JWKS validates them) — e.g.
-    # a dedicated machine client_credentials provider whose tokens reach the same MCP.
-    issuers = [issuer, issuer + "/"]
-    for extra in config.extra_jwt_issuers:
-        bare = extra.rstrip("/")
-        issuers += [bare, bare + "/"]
-    verifiers: list[TokenVerifier] = [JWTVerifier(jwks_uri=jwks_uri, issuer=issuers)]
+    # OIDCProxy verifies its own wire tokens. Direct bearer tokens are a separate,
+    # opt-in machine path: each trust gets its own verifier so accepted issuers and
+    # audiences cannot accidentally form a cross-product. Authentik emits issuer
+    # values with a trailing slash, while hand-built fixtures often omit it.
+    verifiers: list[TokenVerifier] = []
+    for trust in config.direct_jwt_trusts:
+        bare_issuer = trust.issuer.rstrip("/")
+        verifiers.append(
+            JWTVerifier(
+                jwks_uri=jwks_uri,
+                issuer=[bare_issuer, bare_issuer + "/"],
+                audience=list(trust.audiences),
+                required_scopes=list(trust.required_scopes) or None,
+            )
+        )
     if extra_verifiers:
         verifiers.extend(extra_verifiers)
     return MultiAuth(server=proxy, verifiers=verifiers)
 
 
-# ── Token exchange auth ───────────────────────────────────────────────────
-
-_EXCHANGE_TOKEN_COLLECTION = "mcp-exchange-tokens"
+# ── Backend token exchange ─────────────────────────────────────────────────
 
 
-def _cache_key(upstream_token: str) -> str:
-    """Derive a stable, collision-free cache key from an upstream JWT."""
-    return hashlib.sha256(upstream_token.encode()).hexdigest()
+class BackendTokenExchangeError(Exception):
+    """Authentik did not return a usable backend credential."""
 
 
-def _token_expired(token_data: dict[str, Any]) -> bool:
-    """Check if a token dict has expired (with leeway)."""
-    expires_at = token_data.get("expires_at")
-    if expires_at is None:
+def _record_backend_token_exchange_failure(outcome: str, error: BaseException | None = None) -> None:
+    BACKEND_TOKEN_EXCHANGE_FAILURES.labels(outcome=outcome).inc()
+    logger.warning(
+        "Backend token exchange failed: outcome=%s error_type=%s",
+        outcome,
+        type(error).__name__ if error is not None else "missing_access_token",
+    )
+
+
+def _transient_exchange_error(error: BaseException) -> bool:
+    if isinstance(error, httpx.TransportError):
         return True
-    return time.time() >= float(expires_at) - _EXPIRY_LEEWAY
+    return isinstance(error, httpx.HTTPStatusError) and (
+        error.response.status_code == 429 or error.response.status_code >= 500
+    )
 
 
-def _upstream_access_token() -> str:
-    """Return the bearer credential from the originating MCP request."""
-    authorization = get_http_headers(include={"authorization"}).get("authorization")
-    if authorization is not None:
-        scheme, separator, token = authorization.partition(" ")
-        if scheme.lower() != "bearer" or not separator or not token:
-            raise RuntimeError("authenticated MCP request has a malformed Authorization header")
-        return token
-    access = get_access_token()
-    if access is None:
-        raise RuntimeError("no authenticated access token in request context")
-    return access.token
+def _raise_transient_token_status(response: httpx.Response) -> httpx.Response:
+    """Make retryable statuses visible before Authlib parses OAuth JSON.
+
+    Authlib raises for 5xx responses itself, but parses a 429 body directly into
+    ``OAuthError``. Raising here preserves the HTTP status so the exchange retry
+    policy can distinguish rate limiting from a terminal OAuth rejection.
+    """
+    if response.status_code == 429 or response.status_code >= 500:
+        response.raise_for_status()
+    return response
 
 
-class AuthentikExchangeAuth(httpx.Auth):
-    """httpx Auth that mints a proxy-provider-scoped JWT per request.
+class AuthentikTokenExchanger:
+    """Resolve one upstream identity token to one backend-scoped token.
 
-    Wraps a long-lived `AsyncOAuth2Client` for making token exchange calls
-    to Authentik. Exchanged tokens are cached in-memory and optionally
-    persisted to an ``AsyncKeyValue`` store for survival across pod restarts.
-
-    Call `aclose()` to release the underlying HTTP client when done.
+    The exchanger deliberately owns no token cache or shared OAuth client.
+    ``AsyncOAuth2Client.fetch_token`` mutates client-local token state, so each
+    resolution creates and closes its own client. FastMCP's request-scoped
+    dependency cache still ensures one resolution when multiple dependencies in
+    the same tool invocation share the same provider.
     """
 
-    def __init__(self, config: AuthentikAuthConfig, *, token_store: AsyncKeyValue | None = None) -> None:
+    exchange_retry_stop = stop_after_attempt(3)
+    exchange_retry_wait = wait_exponential(multiplier=0.25, max=1)
+
+    def __init__(self, config: AuthentikAuthConfig) -> None:
         if config.proxy_client_id is None:
-            raise ValueError("proxy_client_id is required for AuthentikExchangeAuth")
+            raise ValueError("proxy_client_id is required for AuthentikTokenExchanger")
         self._config = config
-        self._exchange_client = AsyncOAuth2Client(client_id=config.proxy_client_id, timeout=config.exchange_timeout)
-        self._token_store = token_store
-        # In-memory cache: upstream JWT hash → OAuth2Token.
-        self._cache: dict[str, OAuth2Token] = {}
-        self._lock = asyncio.Lock()
 
-    async def aclose(self) -> None:
-        """Close the underlying exchange client."""
-        await self._exchange_client.aclose()
+    async def exchange(self, upstream_token: str) -> str:
+        """Return a freshly resolved proxy-provider-scoped access token."""
+        try:
+            token_data: Any = None
+            async for attempt in AsyncRetrying(
+                retry=retry_if_exception(_transient_exchange_error),
+                stop=self.exchange_retry_stop,
+                wait=self.exchange_retry_wait,
+                reraise=True,
+            ):
+                with attempt:
+                    async with AsyncOAuth2Client(
+                        client_id=self._config.proxy_client_id, timeout=self._config.exchange_timeout
+                    ) as exchange_client:
+                        exchange_client.register_compliance_hook("access_token_response", _raise_transient_token_status)
+                        token_data = await exchange_client.fetch_token(
+                            url=self._config.authentik_token_endpoint(),
+                            grant_type="client_credentials",
+                            client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                            client_assertion=upstream_token,
+                            scope=EXCHANGE_SCOPES,
+                        )
+            if not isinstance(token_data, Mapping):
+                raise ValueError("token endpoint response is not an object")
+            access_token = token_data.get("access_token")
+            if not isinstance(access_token, str) or not access_token:
+                raise ValueError("token endpoint response has no access_token")
+        except OAuthError as error:
+            _record_backend_token_exchange_failure("oauth", error)
+            raise BackendTokenExchangeError from error
+        except httpx.TransportError as error:
+            _record_backend_token_exchange_failure("transport", error)
+            raise BackendTokenExchangeError from error
+        except httpx.HTTPStatusError as error:
+            _record_backend_token_exchange_failure("upstream", error)
+            raise BackendTokenExchangeError from error
+        except (httpx.HTTPError, ValueError) as error:
+            _record_backend_token_exchange_failure("response", error)
+            raise BackendTokenExchangeError from error
+        return access_token
 
-    async def _load_from_store(self, key: str) -> OAuth2Token | None:
-        """Try to load a non-expired token from the persistent store."""
-        if self._token_store is None:
-            return None
-        stored = await self._token_store.get(key, collection=_EXCHANGE_TOKEN_COLLECTION)
-        if stored is None or _token_expired(stored):
-            return None
-        return OAuth2Token(stored)
 
-    async def _save_to_store(self, key: str, token_data: OAuth2Token) -> None:
-        """Persist a token to the store with TTL matching its lifetime."""
-        if self._token_store is None:
-            return
-        expires_in = token_data.get("expires_in")
-        ttl = max(float(expires_in) - _EXPIRY_LEEWAY, 0) if expires_in is not None else None
-        await self._token_store.put(key, dict(token_data), collection=_EXCHANGE_TOKEN_COLLECTION, ttl=ttl)
+def build_authentik_backend_token_provider(exchanger: AuthentikTokenExchanger) -> BackendTokenProvider:
+    """Return a FastMCP dependency that resolves the current backend token.
 
-    async def _get_exchanged_token(self, upstream_token: str) -> str:
-        """Return a cached or freshly exchanged proxy-scoped token."""
-        key = _cache_key(upstream_token)
+    ``OIDCProxy`` first swaps its locally issued wire bearer for the stored
+    upstream Authentik JWT. ``CurrentAccessToken`` exposes that normalized
+    token; the raw HTTP Authorization header must never be used as the client
+    assertion.
+    """
 
-        # Fast path: in-memory cache (no lock).
-        cached = self._cache.get(key)
-        if cached is not None and not cached.is_expired(leeway=_EXPIRY_LEEWAY):
-            return str(cached["access_token"])
+    current_access_token = CurrentAccessToken()
 
-        async with self._lock:
-            # Re-check in-memory after acquiring lock.
-            cached = self._cache.get(key)
-            if cached is not None and not cached.is_expired(leeway=_EXPIRY_LEEWAY):
-                return str(cached["access_token"])
+    async def backend_token(access: AccessToken = current_access_token) -> str:
+        try:
+            return await exchanger.exchange(access.token)
+        except BackendTokenExchangeError as error:
+            raise ToolError("Backend authentication failed") from error
 
-            # Check persistent store.
-            restored = await self._load_from_store(key)
-            if restored is not None:
-                self._cache[key] = restored
-                logger.debug("restored exchanged token from store (expires_at=%s)", restored.get("expires_at"))
-                return str(restored["access_token"])
-
-            # Cache miss everywhere — exchange.
-            token_data: OAuth2Token = await self._exchange_client.fetch_token(
-                url=self._config.authentik_token_endpoint(),
-                grant_type="client_credentials",
-                client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-                client_assertion=upstream_token,
-                scope=EXCHANGE_SCOPES,
-            )
-            self._cache[key] = token_data
-            await self._save_to_store(key, token_data)
-            logger.debug(
-                "exchanged and cached token (expires_in=%s, expires_at=%s)",
-                token_data.get("expires_in"),
-                token_data.get("expires_at"),
-            )
-            return str(token_data["access_token"])
-
-    async def async_auth_flow(self, request: httpx.Request) -> AsyncGenerator[httpx.Request, httpx.Response]:
-        token = await self._get_exchanged_token(_upstream_access_token())
-        request.headers["Authorization"] = f"Bearer {token}"
-        yield request
+    return backend_token

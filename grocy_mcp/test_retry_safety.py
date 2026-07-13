@@ -14,12 +14,13 @@ import httpx
 import pytest
 import pytest_bazel
 import respx
-from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 
-from grocy_mcp.batch_tools import register_batch_tools
+from grocy_mcp.batch_tools import build_batch_tools_mcp
+from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
+from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 
 BASE_URL = "https://grocy.example.com/api"
 
@@ -36,8 +37,8 @@ def _settings() -> ServerSettings:
     return ServerSettings(grocy_url=BASE_URL.removesuffix("/api"), max_retries=2, retry_base_delay=0.01)
 
 
-def _setup_resolver_routes(router: respx.Router) -> None:
-    """Register routes the EntityResolver needs."""
+def _setup_entity_routes(router: respx.Router) -> None:
+    """Register routes the Grocy client's entity methods need."""
     router.get("/objects/products").respond(json=PRODUCTS)
     router.get("/objects/locations").respond(json=LOCATIONS)
     router.get("/objects/quantity_units").respond(json=QUS)
@@ -48,12 +49,11 @@ def _setup_resolver_routes(router: respx.Router) -> None:
 async def mcp_client() -> AsyncGenerator[tuple[Client, respx.Router]]:
     """MCP client + respx router for configuring per-test responses."""
     with respx.mock(base_url=BASE_URL, assert_all_called=False) as router:
-        _setup_resolver_routes(router)
-        http_client = httpx.AsyncClient(base_url=BASE_URL)
-        mcp = FastMCP("test")
-        register_batch_tools(mcp, http_client, _settings())
-        async with Client(FastMCPTransport(mcp)) as client:
-            yield client, router
+        _setup_entity_routes(router)
+        async with GrocyClient(base_url=BASE_URL) as http_client:
+            mcp = build_batch_tools_mcp(_settings(), client_provider=borrowed_http_client_provider(http_client))
+            async with Client(FastMCPTransport(mcp)) as client:
+                yield client, router
 
 
 async def test_add_stock_post_not_retried_when_get_fails(mcp_client: tuple[Client, respx.Router]) -> None:

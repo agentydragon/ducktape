@@ -288,6 +288,37 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_mcp_token_exchange_integration",
+    size = "medium",
+    srcs = ["test_mcp_token_exchange_integration.py"],
+    requires_docker = True,
+    deps = [
+        ":app",
+        ":config",
+        ":conftest",
+        ":mcp_config",
+        ":mcp_operator_oauth",
+        "//:conftest",
+        "//grocy_mcp:mcp_types",
+        "//grocy_mcp:server",
+        "//mcp_infra:persistence",
+        "//mcp_infra/authentik_auth:auth",
+        "//util:net",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
+        "@pypi//cryptography",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pyjwt",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)
+
 py_library(
     name = "app",
     srcs = ["app.py"],
@@ -353,9 +384,10 @@ py_library(
     deps = [
         ":in_process_servers",
         "//grocy_mcp:batch_tools",
+        "//grocy_mcp:client",
         "//grocy_mcp:mcp_types",
+        "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp",
-        "@pypi//httpx",
     ],
 )
 
@@ -508,7 +540,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//fastmcp",
         "@pypi//mcp",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

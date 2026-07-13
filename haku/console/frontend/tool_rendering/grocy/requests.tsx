@@ -11,7 +11,7 @@
 // account (operator_oauth) once approved.
 //
 // `product` / `location` / `qu` / `product_group` / `parent_product` / `shopping_list`
-// arguments accept either a name or a numeric ID (grocy_mcp's `EntityResolver` resolves either at
+// arguments accept either a name or a numeric ID (grocy_mcp's `GrocyClient` resolves either at
 // execution time); an ID alone renders poorly, so `useGrocyReference` fetches `{id, name}` lookups
 // once per widget via GET /api/grocy-sf/reference and every row resolves through it.
 //

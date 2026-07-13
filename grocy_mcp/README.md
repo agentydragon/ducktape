@@ -1,7 +1,7 @@
 # grocy_mcp
 
 Auth-aware remote MCP server for [Grocy](https://grocy.info/), generated from
-Grocy's OpenAPI 3.1 spec via `FastMCP.from_openapi`. Authenticates MCP
+Grocy's OpenAPI 3.1 spec via FastMCP's `OpenAPIProvider`. Authenticates MCP
 clients (claude.ai / Claude Code) through Authentik, then drives Grocy's
 REST API on behalf of the calling user through Grocy's existing Authentik
 proxy provider outpost.
@@ -23,17 +23,18 @@ There are now two households, each with its own MCP server and Grocy instance:
 claude.ai ──OAuth (MCP spec)──▶ https://grocy-mcp-{sf,vallejo}.allegedly.works/mcp
                                  (FastMCP + OIDCProxy, direct uvicorn)
                                       │
-                                      │ generated tool call
-                                      │   → httpx.AsyncClient.request(...)
-                                      │     ↓ AuthentikExchangeAuth
-                                      │       1. originating request Authorization bearer
-                                      │       2. POST https://auth.allegedly.works/application/o/token/
+                                      │ tool dependency resolution
+                                      │   1. CurrentAccessToken()
+                                      │      (upstream user JWT resolved by OIDCProxy)
+                                      │   2. POST https://auth.allegedly.works/application/o/token/
                                       │            grant_type=client_credentials
                                       │            client_id=<grocy proxy provider client_id>
                                       │            client_assertion_type=jwt-bearer
                                       │            client_assertion=<user JWT>
                                       │            scope=openid email profile ak_proxy
-                                      │       3. request.headers["Authorization"] = f"Bearer {new JWT}"
+                                      │   3. Depends(...) yields a GrocyClient carrying
+                                      │      Authorization: Bearer <new JWT>
+                                      │   4. tool body starts
                                       ▼
                               https://grocy-{sf,vallejo}.allegedly.works/api/...
                                       │
@@ -95,19 +96,21 @@ Explicitly excluded: `/chores`, `/batteries`, `/recipes`, `/tasks`, `/calendar`,
 (except `get_system_info` and `get_db_changed_time`). Add a
 `RouteMap(pattern=..., mcp_type=MCPType.TOOL)` in <server.py> to re-enable any.
 
-## Why `FastMCP.from_openapi` and not hand-written tools?
+## Why FastMCP's OpenAPI provider and not hand-written tools?
 
 Grocy already publishes a complete OpenAPI 3.1 spec at
 `/api/openapi/specification`. Hand-writing tool wrappers would duplicate
 the schema for every entity and every stock endpoint, and drift the
-moment Grocy ships a new field. `FastMCP.from_openapi` plus a route
-filter gives us the entire surface in 20 LoC.
+moment Grocy ships a new field. `OpenAPIProvider` plus a route filter gives us
+the entire surface without duplicating those schemas.
 
-Per-request auth is the only thing that needs to be custom, and
-`httpx.Auth.async_auth_flow` is exactly the right seam: it runs inside
-the request lifecycle, `await`s fine, and has access to FastMCP's
-request-scoped contextvars via `get_access_token()`. See
-<../../mcp_infra/authentik_auth/auth.py>.
+Per-call auth is the only custom execution layer. Hand-written tools declare a
+hidden `Depends(...)` client parameter. Generated `OpenAPITool` components pass
+through <../mcp_infra/request_scoped_openapi.py>, a small compatibility transform
+that supplies the same dependency because FastMCP 3.2.4 has no public
+per-invocation OpenAPI client factory. Dependency resolution completes before
+the tool body, and the exchanged credential is passed explicitly in the
+returned client; there is no cross-request token cache or ambient bearer lookup.
 
 ## Deploying
 

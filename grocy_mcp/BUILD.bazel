@@ -47,8 +47,8 @@ py_library(
 )
 
 py_library(
-    name = "resolver",
-    srcs = ["resolver.py"],
+    name = "client",
+    srcs = ["client.py"],
     visibility = ["//visibility:public"],
     deps = [
         ":grocy_types",
@@ -61,9 +61,10 @@ py_library(
     srcs = ["batch_tools.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":client",
         ":grocy_types",
         ":mcp_types",
-        ":resolver",
+        "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp",
         "@pypi//httpx",
         "@pypi//pydantic",
@@ -81,13 +82,14 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":batch_tools",
+        ":client",
         ":mcp_types",
         ":tool_metadata",
         "//mcp_infra:persistence",
+        "//mcp_infra:request_scoped_openapi",
         "//mcp_infra/authentik_auth:auth",
         "//util/bazel:runfiles",
         "@pypi//fastmcp",
-        "@pypi//httpx",
         "@pypi//prometheus_client",
         "@pypi//pydantic",
         "@pypi//uvicorn",
@@ -163,12 +165,17 @@ py_test(
     name = "test_server",
     srcs = ["test_server.py"],
     deps = [
+        ":batch_tools",
+        ":client",
         ":conftest",
         ":mcp_types",
         ":server",
         "//:conftest",
+        "//mcp_infra:request_scoped_openapi",
+        "@pypi//fastmcp",
         "@pypi//httpx",
         "@pypi//prometheus_client",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -177,12 +184,13 @@ py_test(
     name = "test_docstring_cross_links",
     srcs = ["test_docstring_cross_links.py"],
     deps = [
+        ":client",
         ":conftest",
         ":mcp_types",
         ":server",
         "//:conftest",
+        "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp",
-        "@pypi//httpx",
         "@pypi//pytest_bazel",
     ],
 )
@@ -206,9 +214,10 @@ py_binary(
     srcs = ["dump_tools.py"],
     main_module = "grocy_mcp.dump_tools",
     deps = [
+        ":client",
         ":mcp_types",
         ":server",
-        "@pypi//httpx",
+        "//mcp_infra:request_scoped_openapi",
     ],
 )
 
@@ -217,9 +226,11 @@ py_test(
     srcs = ["test_retry_safety.py"],
     deps = [
         ":batch_tools",
+        ":client",
         ":conftest",
         ":mcp_types",
         "//:conftest",
+        "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp",
         "@pypi//httpx",
         "@pypi//pytest",
@@ -229,14 +240,13 @@ py_test(
 )
 
 py_test(
-    name = "test_resolver",
-    srcs = ["test_resolver.py"],
+    name = "test_client",
+    srcs = ["test_client.py"],
     deps = [
+        ":client",
         ":conftest",
         ":grocy_types",
-        ":resolver",
         "//:conftest",
-        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//respx",
@@ -259,6 +269,7 @@ py_test(
     srcs = ["test_e2e.py"],
     requires_docker = True,
     deps = [
+        ":client",
         ":conftest",
         ":grocy_container",
         ":grocy_fixtures",
@@ -266,6 +277,7 @@ py_test(
         ":test_helpers",
         ":tool_metadata",
         "//:conftest",
+        "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",

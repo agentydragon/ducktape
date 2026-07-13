@@ -10,8 +10,7 @@ stable across Grocy versions. If a new version adds a route we don't
 have an override for, the server crashes at startup so it can be added.
 
 Tools can be disabled by setting ``enabled=False``. Disabled tools are
-excluded from the MCP server entirely. Tools with ``resource=True`` are
-exposed as MCP resources instead of tools.
+excluded from the MCP server entirely.
 """
 
 from __future__ import annotations
@@ -24,7 +23,6 @@ class ToolOverride:
     name: str
     extra_description: str | None = None
     enabled: bool = True
-    resource: bool = False
     tags: set[str] = field(default_factory=set)
 
 

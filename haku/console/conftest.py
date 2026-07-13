@@ -48,6 +48,8 @@ _DEFAULT_STATIC_AGENTS = [
 # test_operator_auth). The retired forward-auth `x-authentik-*` headers are no longer trusted, so a
 # session is the only way to present operator identity.
 _TEST_SESSION_SECRET = "test-operator-session-secret"
+_TEST_CSRF_SECRET = SecretStr("test-csrf-secret")
+_TEST_PUBLIC_BASE_URL = "https://haku.test"
 TEST_OPERATOR_OIDC = OperatorOidcConfig(
     issuer="https://auth.test/application/o/haku-console/",
     client_id="console",
@@ -201,10 +203,13 @@ def client(make_operator_client: Callable[..., Any]) -> Iterator[TestClient]:
 def make_operator_client(make_client: Callable[..., Any]) -> Callable[..., Any]:
     """`make_client` with `operator=True` baked in: the app runs in the production app-owned-auth
     mode (SessionMiddleware + active router guards) and the client carries an authenticated operator
-    session. Pass the same `Settings` overrides you would to `make_client`."""
+    session. Stable CSRF and public-origin defaults are supplied; pass the same `Settings` overrides
+    you would to `make_client` when a test needs different values."""
 
     @contextmanager
     def _make(**settings_overrides: Any) -> Iterator[TestClient]:
+        settings_overrides.setdefault("csrf_secret", _TEST_CSRF_SECRET)
+        settings_overrides.setdefault("public_base_url", _TEST_PUBLIC_BASE_URL)
         with make_client(operator=True, **settings_overrides) as c:
             yield c
 

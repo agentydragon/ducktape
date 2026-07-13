@@ -1,8 +1,9 @@
-"""Tests for AuthentikAuthConfig, AuthentikExchangeAuth, and ResilientOIDCProxy."""
+"""Tests for AuthentikAuthConfig, AuthentikTokenExchanger, and ResilientOIDCProxy."""
 
 from __future__ import annotations
 
-import time
+from collections.abc import Generator
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
@@ -10,26 +11,23 @@ from unittest.mock import AsyncMock, Mock, patch
 import httpx
 import pytest
 import pytest_bazel
+from authlib.integrations.httpx_client import AsyncOAuth2Client as AuthlibAsyncOAuth2Client
 from authlib.oauth2 import OAuth2Error
-from authlib.oauth2.rfc6749.wrappers import OAuth2Token
 from fastmcp.server.auth.auth import TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from glide_shared.exceptions import TimeoutError as GlideTimeoutError
-from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.provider import RefreshToken, TokenError
 from prometheus_client import REGISTRY
 from starlette.exceptions import HTTPException
 from tenacity import wait_none
 
 from mcp_infra.authentik_auth.auth import (
-    _EXCHANGE_TOKEN_COLLECTION,
-    _EXPIRY_LEEWAY,
     AuthentikAuthConfig,
-    AuthentikExchangeAuth,
+    AuthentikTokenExchanger,
+    BackendTokenExchangeError,
+    DirectJwtTrust,
     ResilientOIDCProxy,
-    _cache_key,
-    _upstream_access_token,
     build_authentik_auth,
 )
 
@@ -48,6 +46,44 @@ def _config(
         public_base_url=public_base_url,
         proxy_client_id=proxy_client_id,
     )
+
+
+def _direct_trust(
+    issuer: str = "https://auth.example.com/application/o/machine/",
+    audience: str = "machine",
+    required_scopes: tuple[str, ...] = ("openid",),
+) -> DirectJwtTrust:
+    return DirectJwtTrust(issuer=issuer, audiences=(audience,), required_scopes=required_scopes)
+
+
+@dataclass(frozen=True)
+class _AuthBuildHarness:
+    discovery_response: Mock
+    http_get: Mock
+    oidc_proxy_cls: Mock
+    jwt_verifier_cls: Mock
+    multi_auth_cls: Mock
+
+
+@pytest.fixture
+def auth_build_harness() -> Generator[_AuthBuildHarness]:
+    discovery_response = Mock()
+    discovery_response.raise_for_status.return_value = discovery_response
+    discovery_response.json.return_value = {"jwks_uri": "https://auth.example.com/application/o/test/jwks/"}
+    with (
+        patch("mcp_infra.authentik_auth.auth.httpx.get", return_value=discovery_response) as http_get,
+        patch("mcp_infra.authentik_auth.auth.ResilientOIDCProxy") as oidc_proxy_cls,
+        patch("mcp_infra.authentik_auth.auth.JWTVerifier") as jwt_verifier_cls,
+        patch("mcp_infra.authentik_auth.auth.MultiAuth") as multi_auth_cls,
+    ):
+        oidc_proxy_cls.return_value.client_registration_options = Mock()
+        yield _AuthBuildHarness(
+            discovery_response=discovery_response,
+            http_get=http_get,
+            oidc_proxy_cls=oidc_proxy_cls,
+            jwt_verifier_cls=jwt_verifier_cls,
+            multi_auth_cls=multi_auth_cls,
+        )
 
 
 def test_token_endpoint_simple() -> None:
@@ -84,10 +120,15 @@ def test_proxy_client_id_optional() -> None:
     assert cfg.proxy_client_id is None
 
 
+def test_direct_jwt_trust_requires_an_audience() -> None:
+    with pytest.raises(ValueError, match="at least 1 item"):
+        DirectJwtTrust(issuer="https://auth.example.com/application/o/machine/", audiences=())
+
+
 # ── build_authentik_auth tests ────────────────────────────────────────────
 
 
-def test_build_authentik_auth_uses_jwks_uri_from_discovery() -> None:
+def test_build_authentik_auth_uses_jwks_uri_from_discovery(auth_build_harness: _AuthBuildHarness) -> None:
     """JWTVerifier must receive the jwks_uri advertised by the OIDC discovery
     doc — not a hand-built path. Authentik serves JWKS at `<issuer>/jwks/`,
     not `<issuer>/.well-known/jwks`; baking the wrong URL into auth.py once
@@ -101,29 +142,21 @@ def test_build_authentik_auth_uses_jwks_uri_from_discovery() -> None:
         "token_endpoint": "https://auth.example.com/application/o/token/",
     }
 
-    discovery_response = AsyncMock()
-    discovery_response.raise_for_status = lambda: discovery_response
-    discovery_response.json = lambda: discovery_doc
+    auth_build_harness.discovery_response.json.return_value = discovery_doc
+    build_authentik_auth(_config().model_copy(update={"direct_jwt_trusts": (_direct_trust(),)}))
 
-    with (
-        patch("mcp_infra.authentik_auth.auth.httpx.get", return_value=discovery_response) as http_get,
-        patch("mcp_infra.authentik_auth.auth.ResilientOIDCProxy") as oidc_proxy_cls,
-        patch("mcp_infra.authentik_auth.auth.JWTVerifier") as jwt_verifier_cls,
-        patch("mcp_infra.authentik_auth.auth.MultiAuth"),
-    ):
-        oidc_proxy_cls.return_value.client_registration_options = AsyncMock()
-        build_authentik_auth(_config())
-
-    assert any("/.well-known/openid-configuration" in str(call.args[0]) for call in http_get.call_args_list)
-    jwt_verifier_cls.assert_called_once()
-    kwargs = jwt_verifier_cls.call_args.kwargs
+    assert any(
+        "/.well-known/openid-configuration" in str(call.args[0]) for call in auth_build_harness.http_get.call_args_list
+    )
+    auth_build_harness.jwt_verifier_cls.assert_called_once()
+    kwargs = auth_build_harness.jwt_verifier_cls.call_args.kwargs
     assert kwargs["jwks_uri"] == advertised_jwks, (
         f"JWTVerifier got hand-built jwks_uri {kwargs['jwks_uri']!r} instead of the "
         f"discovery-advertised {advertised_jwks!r}"
     )
 
 
-def test_build_authentik_auth_accepts_issuer_with_trailing_slash() -> None:
+def test_build_authentik_auth_accepts_issuer_with_trailing_slash(auth_build_harness: _AuthBuildHarness) -> None:
     """JWTVerifier must accept the issuer both with and without a trailing slash.
 
     Authentik's per-provider tokens carry `iss` WITH a trailing slash, but
@@ -131,92 +164,67 @@ def test_build_authentik_auth_accepts_issuer_with_trailing_slash() -> None:
     so the bare form alone rejects every real Authentik token. Regression: this
     silently blocked all direct machine bearer tokens (e.g. haku → grocy MCP).
     """
-    discovery_response = AsyncMock()
-    discovery_response.raise_for_status = lambda: discovery_response
-    discovery_response.json = lambda: {"jwks_uri": "https://auth.example.com/application/o/test/jwks/"}
-
-    with (
-        patch("mcp_infra.authentik_auth.auth.httpx.get", return_value=discovery_response),
-        patch("mcp_infra.authentik_auth.auth.ResilientOIDCProxy") as oidc_proxy_cls,
-        patch("mcp_infra.authentik_auth.auth.JWTVerifier") as jwt_verifier_cls,
-        patch("mcp_infra.authentik_auth.auth.MultiAuth"),
-    ):
-        oidc_proxy_cls.return_value.client_registration_options = AsyncMock()
-        build_authentik_auth(_config(issuer="https://auth.example.com/application/o/test/"))
-
-    issuer = jwt_verifier_cls.call_args.kwargs["issuer"]
-    assert "https://auth.example.com/application/o/test/" in issuer  # the form Authentik actually emits
-    assert "https://auth.example.com/application/o/test" in issuer
-
-
-def test_build_authentik_auth_includes_extra_jwt_issuers() -> None:
-    """extra_jwt_issuers widen the JWTVerifier's accepted issuers (both slash forms),
-    so a sibling provider sharing the signing key (e.g. a dedicated machine
-    client_credentials provider) is accepted on the same MCP.
-    """
-    discovery_response = AsyncMock()
-    discovery_response.raise_for_status = lambda: discovery_response
-    discovery_response.json = lambda: {"jwks_uri": "https://auth.example.com/application/o/test/jwks/"}
-
-    cfg = _config(issuer="https://auth.example.com/application/o/test/").model_copy(
-        update={"extra_jwt_issuers": ("https://auth.example.com/application/o/machine/",)}
+    build_authentik_auth(
+        _config().model_copy(
+            update={"direct_jwt_trusts": (_direct_trust(issuer="https://auth.example.com/application/o/machine/"),)}
+        )
     )
-    with (
-        patch("mcp_infra.authentik_auth.auth.httpx.get", return_value=discovery_response),
-        patch("mcp_infra.authentik_auth.auth.ResilientOIDCProxy") as oidc_proxy_cls,
-        patch("mcp_infra.authentik_auth.auth.JWTVerifier") as jwt_verifier_cls,
-        patch("mcp_infra.authentik_auth.auth.MultiAuth"),
-    ):
-        oidc_proxy_cls.return_value.client_registration_options = AsyncMock()
-        build_authentik_auth(cfg)
 
-    issuer = jwt_verifier_cls.call_args.kwargs["issuer"]
+    issuer = auth_build_harness.jwt_verifier_cls.call_args.kwargs["issuer"]
     assert "https://auth.example.com/application/o/machine/" in issuer
     assert "https://auth.example.com/application/o/machine" in issuer
-    assert "https://auth.example.com/application/o/test/" in issuer  # primary still present
 
 
-def test_build_authentik_auth_appends_extra_verifiers() -> None:
-    """extra_verifiers ride the MultiAuth after the Authentik JWTVerifier, so a
-    machine caller's StaticTokenVerifier is accepted on the same endpoint as the
-    human OAuth flow alongside a static bearer.
-    """
-    discovery_response = AsyncMock()
-    discovery_response.raise_for_status = lambda: discovery_response
-    discovery_response.json = lambda: {"jwks_uri": "https://auth.example.com/application/o/test/jwks/"}
+def test_build_authentik_auth_keeps_direct_jwt_trusts_separate(auth_build_harness: _AuthBuildHarness) -> None:
+    cfg = _config().model_copy(
+        update={
+            "direct_jwt_trusts": (
+                _direct_trust(),
+                _direct_trust(
+                    issuer="https://auth.example.com/application/o/other-machine/",
+                    audience="other-machine",
+                    required_scopes=("profile",),
+                ),
+            )
+        }
+    )
+    build_authentik_auth(cfg)
 
+    assert auth_build_harness.jwt_verifier_cls.call_count == 2
+    first, second = (call.kwargs for call in auth_build_harness.jwt_verifier_cls.call_args_list)
+    assert first == {
+        "jwks_uri": "https://auth.example.com/application/o/test/jwks/",
+        "issuer": ["https://auth.example.com/application/o/machine", "https://auth.example.com/application/o/machine/"],
+        "audience": ["machine"],
+        "required_scopes": ["openid"],
+    }
+    assert second == {
+        "jwks_uri": "https://auth.example.com/application/o/test/jwks/",
+        "issuer": [
+            "https://auth.example.com/application/o/other-machine",
+            "https://auth.example.com/application/o/other-machine/",
+        ],
+        "audience": ["other-machine"],
+        "required_scopes": ["profile"],
+    }
+
+
+def test_build_authentik_auth_appends_extra_verifiers(auth_build_harness: _AuthBuildHarness) -> None:
     sentinel = cast("TokenVerifier", object())
-    with (
-        patch("mcp_infra.authentik_auth.auth.httpx.get", return_value=discovery_response),
-        patch("mcp_infra.authentik_auth.auth.ResilientOIDCProxy") as oidc_proxy_cls,
-        patch("mcp_infra.authentik_auth.auth.JWTVerifier") as jwt_verifier_cls,
-        patch("mcp_infra.authentik_auth.auth.MultiAuth") as multi_auth_cls,
-    ):
-        oidc_proxy_cls.return_value.client_registration_options = AsyncMock()
-        build_authentik_auth(_config(), extra_verifiers=[sentinel])
+    build_authentik_auth(_config(), extra_verifiers=[sentinel])
 
-    verifiers = multi_auth_cls.call_args.kwargs["verifiers"]
-    assert verifiers == [jwt_verifier_cls.return_value, sentinel]  # JWT first, extra appended
+    auth_build_harness.jwt_verifier_cls.assert_not_called()
+    assert auth_build_harness.multi_auth_cls.call_args.kwargs["verifiers"] == [sentinel]
 
 
-def test_build_authentik_auth_passes_on_client_authorized() -> None:
+def test_build_authentik_auth_passes_on_client_authorized(auth_build_harness: _AuthBuildHarness) -> None:
     """on_client_authorized is handed to the OIDCProxy for its pre-token ownership check."""
-    discovery_response = AsyncMock()
-    discovery_response.raise_for_status = lambda: discovery_response
-    discovery_response.json = lambda: {"jwks_uri": "https://auth.example.com/application/o/test/jwks/"}
 
     async def _cb(client_id: str, idp_tokens: Any) -> None: ...
 
-    with (
-        patch("mcp_infra.authentik_auth.auth.httpx.get", return_value=discovery_response),
-        patch("mcp_infra.authentik_auth.auth.ResilientOIDCProxy") as oidc_proxy_cls,
-        patch("mcp_infra.authentik_auth.auth.JWTVerifier"),
-        patch("mcp_infra.authentik_auth.auth.MultiAuth"),
-    ):
-        oidc_proxy_cls.return_value.client_registration_options = AsyncMock()
-        build_authentik_auth(_config(), on_client_authorized=_cb)
+    build_authentik_auth(_config(), on_client_authorized=_cb)
 
-    assert oidc_proxy_cls.call_args.kwargs["on_client_authorized"] is _cb
+    assert auth_build_harness.oidc_proxy_cls.call_args.kwargs["on_client_authorized"] is _cb
 
 
 async def test_resilient_proxy_checks_client_ownership_before_issuing_token() -> None:
@@ -250,204 +258,140 @@ async def test_resilient_proxy_checks_client_ownership_before_issuing_token() ->
     assert order == ["ownership", "token"]
 
 
-# ── AuthentikExchangeAuth tests ───────────────────────────────────────────
+# ── AuthentikTokenExchanger tests ─────────────────────────────────────────
 
 
 def _exchange_config() -> AuthentikAuthConfig:
     return _config(proxy_client_id="proxy-id")
 
 
-def _make_token(access_token: str = "exchanged-jwt", expires_in: int = 3600) -> OAuth2Token:
-    return OAuth2Token({"access_token": access_token, "expires_in": expires_in, "token_type": "bearer"})
+class _FakeOAuthClient:
+    def __init__(self, factory: _OAuthClientFactory, *, client_id: str, timeout: float) -> None:
+        self.factory = factory
+        self.client_id = client_id
+        self.timeout = timeout
+        self.fetches: list[dict[str, Any]] = []
+        self.compliance_hooks: list[tuple[str, Any]] = []
+        self.closed = False
+
+    async def __aenter__(self) -> _FakeOAuthClient:
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        self.closed = True
+
+    async def fetch_token(self, **kwargs: Any) -> Any:
+        self.fetches.append(kwargs)
+        effect = self.factory.effects.pop(0)
+        if isinstance(effect, BaseException):
+            raise effect
+        return effect
+
+    def register_compliance_hook(self, hook_type: str, hook: Any) -> None:
+        self.compliance_hooks.append((hook_type, hook))
 
 
-def test_exchange_auth_requires_proxy_client_id() -> None:
+class _OAuthClientFactory:
+    def __init__(self) -> None:
+        self.effects: list[Any] = []
+        self.clients: list[_FakeOAuthClient] = []
+
+    def __call__(self, *, client_id: str, timeout: float) -> _FakeOAuthClient:
+        client = _FakeOAuthClient(self, client_id=client_id, timeout=timeout)
+        self.clients.append(client)
+        return client
+
+
+@pytest.fixture
+def oauth_client_factory(monkeypatch: pytest.MonkeyPatch) -> _OAuthClientFactory:
+    factory = _OAuthClientFactory()
+    monkeypatch.setattr("mcp_infra.authentik_auth.auth.AsyncOAuth2Client", factory)
+    monkeypatch.setattr(AuthentikTokenExchanger, "exchange_retry_wait", wait_none())
+    return factory
+
+
+def test_token_exchanger_requires_proxy_client_id() -> None:
     with pytest.raises(ValueError, match="proxy_client_id is required"):
-        AuthentikExchangeAuth(_config())
+        AuthentikTokenExchanger(_config())
 
 
-async def test_exchange_auth_fetches_and_caches_token() -> None:
-    auth = AuthentikExchangeAuth(_exchange_config())
-    mock_token = _make_token()
+async def test_token_exchanger_returns_explicit_result_without_cross_call_state(
+    oauth_client_factory: _OAuthClientFactory,
+) -> None:
+    oauth_client_factory.effects.extend([{"access_token": "backend-1"}, {"access_token": "backend-2"}])
+    exchanger = AuthentikTokenExchanger(_exchange_config())
+    assert await exchanger.exchange("upstream-authentik-jwt") == "backend-1"
+    assert await exchanger.exchange("upstream-authentik-jwt") == "backend-2"
 
-    with patch.object(auth._exchange_client, "fetch_token", new_callable=AsyncMock, return_value=mock_token) as fetch:
-        # First call: cache miss → fetch.
-        token = await auth._get_exchanged_token("upstream-jwt-1")
-        assert token == "exchanged-jwt"
-        assert fetch.call_count == 1
-
-        # Second call with same upstream token: cache hit → no fetch.
-        token = await auth._get_exchanged_token("upstream-jwt-1")
-        assert token == "exchanged-jwt"
-        assert fetch.call_count == 1
-
-        # Different upstream token: cache miss → fetch again.
-        mock_token2 = _make_token(access_token="exchanged-jwt-2")
-        fetch.return_value = mock_token2
-        token = await auth._get_exchanged_token("upstream-jwt-2")
-        assert token == "exchanged-jwt-2"
-        assert fetch.call_count == 2
-
-    await auth.aclose()
-
-
-async def test_exchange_auth_refetches_expired_token() -> None:
-    auth = AuthentikExchangeAuth(_exchange_config())
-
-    # Token that expires immediately (expires_at in the past).
-    expired_token = OAuth2Token({"access_token": "old", "expires_at": int(time.time()) - 1, "token_type": "bearer"})
-    fresh_token = _make_token(access_token="fresh")
-
-    with patch.object(auth._exchange_client, "fetch_token", new_callable=AsyncMock) as fetch:
-        fetch.return_value = expired_token
-        token = await auth._get_exchanged_token("upstream")
-        assert token == "old"
-        assert fetch.call_count == 1
-
-        # Token is expired → should re-fetch.
-        fetch.return_value = fresh_token
-        token = await auth._get_exchanged_token("upstream")
-        assert token == "fresh"
-        assert fetch.call_count == 2
-
-    await auth.aclose()
+    assert len(oauth_client_factory.clients) == 2
+    assert all(client.closed for client in oauth_client_factory.clients)
+    for client in oauth_client_factory.clients:
+        assert client.client_id == "proxy-id"
+        assert client.timeout == 10.0
+        assert client.fetches == [
+            {
+                "url": "https://auth.example.com/application/o/token/",
+                "grant_type": "client_credentials",
+                "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                "client_assertion": "upstream-authentik-jwt",
+                "scope": "openid email profile ak_proxy",
+            }
+        ]
+        assert [hook_type for hook_type, _ in client.compliance_hooks] == ["access_token_response"]
 
 
-async def test_exchange_auth_respects_leeway() -> None:
-    auth = AuthentikExchangeAuth(_exchange_config())
+@pytest.mark.parametrize("failure_kind", ["transport", "upstream-5xx"])
+async def test_token_exchanger_retries_transient_failure_with_fresh_client(
+    oauth_client_factory: _OAuthClientFactory, failure_kind: str
+) -> None:
+    request = httpx.Request("POST", "https://auth.example.com/application/o/token/")
+    failure: BaseException
+    if failure_kind == "transport":
+        failure = httpx.ConnectError("temporary DNS failure", request=request)
+    else:
+        failure = httpx.HTTPStatusError("HTTP 503", request=request, response=httpx.Response(503, request=request))
+    oauth_client_factory.effects.extend([failure, {"access_token": "backend-after-retry"}])
 
-    # Token that expires within the leeway window — should be treated as expired.
-    almost_expired = OAuth2Token(
-        {"access_token": "almost", "expires_at": int(time.time()) + _EXPIRY_LEEWAY - 1, "token_type": "bearer"}
+    assert await AuthentikTokenExchanger(_exchange_config()).exchange("upstream-authentik-jwt") == (
+        "backend-after-retry"
     )
-    fresh = _make_token(access_token="fresh")
-
-    with patch.object(auth._exchange_client, "fetch_token", new_callable=AsyncMock) as fetch:
-        fetch.return_value = almost_expired
-        await auth._get_exchanged_token("upstream")
-
-        fetch.return_value = fresh
-        token = await auth._get_exchanged_token("upstream")
-        assert token == "fresh"
-        assert fetch.call_count == 2
-
-    await auth.aclose()
+    assert len(oauth_client_factory.clients) == 2
+    assert all(client.closed for client in oauth_client_factory.clients)
 
 
-# ── Token store persistence tests ─────────────────────────────────────────
+async def test_token_exchanger_retries_real_authlib_429(monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts = 0
+
+    async def token_endpoint(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(
+                429, json={"error": "temporarily_unavailable", "error_description": "rate limited"}, request=request
+            )
+        return httpx.Response(200, json={"access_token": "backend-after-rate-limit"}, request=request)
+
+    class RealOAuthClient(AuthlibAsyncOAuth2Client):
+        def __init__(self, *, client_id: str, timeout: float) -> None:
+            super().__init__(client_id=client_id, timeout=timeout, transport=httpx.MockTransport(token_endpoint))
+
+    monkeypatch.setattr("mcp_infra.authentik_auth.auth.AsyncOAuth2Client", RealOAuthClient)
+    monkeypatch.setattr(AuthentikTokenExchanger, "exchange_retry_wait", wait_none())
+
+    assert await AuthentikTokenExchanger(_exchange_config()).exchange("upstream-authentik-jwt") == (
+        "backend-after-rate-limit"
+    )
+    assert attempts == 2
 
 
-async def test_exchange_auth_persists_to_store() -> None:
-    store = MemoryStore()
-    auth = AuthentikExchangeAuth(_exchange_config(), token_store=store)
-    mock_token = _make_token()
+@pytest.mark.parametrize("token_data", [None, [], "not-an-object", {}, {"access_token": ""}])
+async def test_token_exchanger_sanitizes_malformed_success_response(
+    oauth_client_factory: _OAuthClientFactory, token_data: Any
+) -> None:
+    oauth_client_factory.effects.append(token_data)
 
-    with patch.object(auth._exchange_client, "fetch_token", new_callable=AsyncMock, return_value=mock_token):
-        await auth._get_exchanged_token("upstream-jwt")
-
-    # Verify token was persisted.
-    key = _cache_key("upstream-jwt")
-    stored = await store.get(key, collection=_EXCHANGE_TOKEN_COLLECTION)
-    assert stored is not None
-    assert stored["access_token"] == "exchanged-jwt"
-
-    await auth.aclose()
-
-
-async def test_exchange_auth_restores_from_store() -> None:
-    store = MemoryStore()
-    upstream = "upstream-jwt"
-    key = _cache_key(upstream)
-
-    # Pre-populate the store with a valid token.
-    token_data: dict[str, Any] = {
-        "access_token": "stored-jwt",
-        "expires_at": int(time.time()) + 3600,
-        "expires_in": 3600,
-        "token_type": "bearer",
-    }
-    await store.put(key, token_data, collection=_EXCHANGE_TOKEN_COLLECTION)
-
-    auth = AuthentikExchangeAuth(_exchange_config(), token_store=store)
-
-    with patch.object(auth._exchange_client, "fetch_token", new_callable=AsyncMock) as fetch:
-        token = await auth._get_exchanged_token(upstream)
-        assert token == "stored-jwt"
-        assert fetch.call_count == 0
-
-    await auth.aclose()
-
-
-async def test_exchange_auth_ignores_expired_store_entry() -> None:
-    store = MemoryStore()
-    upstream = "upstream-jwt"
-    key = _cache_key(upstream)
-
-    # Pre-populate with an expired token.
-    expired_data: dict[str, Any] = {
-        "access_token": "stale-jwt",
-        "expires_at": int(time.time()) - 1,
-        "token_type": "bearer",
-    }
-    await store.put(key, expired_data, collection=_EXCHANGE_TOKEN_COLLECTION)
-
-    auth = AuthentikExchangeAuth(_exchange_config(), token_store=store)
-    fresh = _make_token(access_token="fresh-jwt")
-
-    with patch.object(auth._exchange_client, "fetch_token", new_callable=AsyncMock, return_value=fresh) as fetch:
-        token = await auth._get_exchanged_token(upstream)
-        assert token == "fresh-jwt"
-        assert fetch.call_count == 1
-
-    await auth.aclose()
-
-
-async def test_exchange_auth_works_without_store() -> None:
-    """Backward compat: no store → pure in-memory caching."""
-    auth = AuthentikExchangeAuth(_exchange_config())
-    assert auth._token_store is None
-    mock_token = _make_token()
-
-    with patch.object(auth._exchange_client, "fetch_token", new_callable=AsyncMock, return_value=mock_token) as fetch:
-        token = await auth._get_exchanged_token("upstream")
-        assert token == "exchanged-jwt"
-        assert fetch.call_count == 1
-
-        # Cache hit.
-        token = await auth._get_exchanged_token("upstream")
-        assert token == "exchanged-jwt"
-        assert fetch.call_count == 1
-
-    await auth.aclose()
-
-
-def test_upstream_access_token_uses_originating_request_header() -> None:
-    with (
-        patch(
-            "mcp_infra.authentik_auth.auth.get_http_headers", return_value={"authorization": "Bearer operator-token"}
-        ),
-        patch(
-            "mcp_infra.authentik_auth.auth.get_access_token", return_value=SimpleNamespace(token="stale-haku-token")
-        ) as parsed_access,
-    ):
-        assert _upstream_access_token() == "operator-token"
-    parsed_access.assert_not_called()
-
-
-def test_upstream_access_token_falls_back_outside_http_request() -> None:
-    with (
-        patch("mcp_infra.authentik_auth.auth.get_http_headers", return_value={}),
-        patch("mcp_infra.authentik_auth.auth.get_access_token", return_value=SimpleNamespace(token="background-token")),
-    ):
-        assert _upstream_access_token() == "background-token"
-
-
-def test_upstream_access_token_rejects_malformed_originating_header() -> None:
-    with (
-        patch("mcp_infra.authentik_auth.auth.get_http_headers", return_value={"authorization": "Basic credentials"}),
-        pytest.raises(RuntimeError, match="malformed Authorization header"),
-    ):
-        _upstream_access_token()
+    with pytest.raises(BackendTokenExchangeError):
+        await AuthentikTokenExchanger(_exchange_config()).exchange("upstream-authentik-jwt")
 
 
 # ── ResilientOIDCProxy tests ──────────────────────────────────────────────

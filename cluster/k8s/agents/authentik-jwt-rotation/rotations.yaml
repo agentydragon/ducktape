@@ -75,7 +75,7 @@ rotations:
     # Source JWT for haku's read-only access to the grocy-sf MCP. Issued by the
     # dedicated grocy-mcp-haku-sf provider (30-day validity; shares grocy-mcp-sf's
     # signing key so the MCP's JWKS validates it, and the MCP accepts its issuer via
-    # GROCY_MCP_AUTH__EXTRA_JWT_ISSUERS). No exchange_scopes — the MCP runs the
+    # direct_jwt_trusts). No exchange_scopes — the MCP runs the
     # jwt-bearer exchange into the grocy-sf proxy itself. The outpost then injects
     # X-authentik-username=haku → the read-only `haku` Grocy user (empty perms).
     provider_slug: grocy-mcp-haku-sf

@@ -137,6 +137,30 @@ py_library(
 )
 
 py_library(
+    name = "request_scoped_openapi",
+    srcs = ["request_scoped_openapi.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+    ],
+)
+
+py_test(
+    name = "test_request_scoped_openapi",
+    srcs = ["test_request_scoped_openapi.py"],
+    deps = [
+        ":request_scoped_openapi",
+        "//:conftest",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "static_bearer",
     srcs = ["static_bearer.py"],
     visibility = ["//:__subpackages__"],
