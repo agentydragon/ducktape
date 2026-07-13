@@ -32,7 +32,10 @@ server {
   proxy_set_header Host $host;
   proxy_set_header X-Real-IP $remote_addr;
   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-  proxy_set_header X-Forwarded-Proto $scheme;
+  # This service's public HTTPRoute is pinned to the https-wildcard listener. The same-pod upstream
+  # hop is plain HTTP, so `$scheme` would generate public downgrade redirects; do not trust a
+  # client-supplied forwarding header either. Direct local development uses FastAPI, not this image.
+  proxy_set_header X-Forwarded-Proto https;
 
   # Response headers are owned per-server: nginx sets CSP/Cache-Control/Referrer/Permissions ONLY on
   # the static content it serves itself (the two static locations below). The FastAPI app sets those

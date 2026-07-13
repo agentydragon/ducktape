@@ -246,6 +246,11 @@ Service). The operator browser logs in via Authentik OIDC (`HAKU_CONSOLE_OPERATO
 scoped to the agent-facing submit/read routes only), and agents authenticate to the always-mounted
 `/mcp` via `MultiAuth` (OIDCProxy DCR + the `static_agents`' fixed bearers, `HAKU_CONSOLE_MCP_OAUTH__*`;
 the DCR/token state persists in the console's own Postgres via `HAKU_CONSOLE_MCP_OAUTH_PERSISTENCE__*`).
+`HAKU_CONSOLE_PUBLIC_BASE_URL` is the single canonical public origin for both flows: operator login
+uses `<origin>/auth/callback`, while the agent-facing OAuth issuer and callback are derived as
+`<origin>/mcp` and `<origin>/mcp/auth/callback`. Only OAuth discovery is also exposed at the origin's
+standard `/.well-known/oauth-*` paths; the two clients' credentials, sessions, and operational
+routes remain separate.
 The console refuses to start without operator OIDC or with no `/mcp` credential at all (no static
 agent and no `mcp_oauth`).
 Both OAuth2 providers and their client secrets

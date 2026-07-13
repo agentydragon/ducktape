@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncGenerator, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ from starlette.routing import Mount, Route
 
 from gmail_api.labels import GmailLabel, LabelsListResponse, LabelType
 from haku.console.app import create_app
+from haku.console.config import McpOAuthConfig
 from haku.console.conftest import console_settings, operator_session_cookie, write_config
 from haku.console.console_events import ConsoleEventHub
 from haku.console.mcp_approval import McpMetadataProvider, McpToolExecutor, PostgresToolCallLedger, resolve_mcp_agent
@@ -29,7 +31,6 @@ from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_server import ConsoleMcpContext, build_console_mcp, register_proxy_tools
 from haku.console.tool_calls import ToolCallStatus
 from haku.console.tools import gmail as gmail_tools
-from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
 from util.net import pick_free_port
 from util.testing.asgi import serve_app_sync, serve_fastmcp
 
@@ -261,27 +262,113 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
             config_file=_console_config(tmp_path, upstream_url),
             csrf_secret=SecretStr("csrf"),
             ui_base_url="https://haku.test",
-            mcp_oauth=AuthentikAuthConfig(
-                oidc_issuer=oidc_base,
-                oidc_client_id="console",
-                oidc_client_secret="secret",
-                public_base_url=f"http://127.0.0.1:{console_port}",
+            public_base_url=f"http://127.0.0.1:{console_port}",
+            mcp_oauth=McpOAuthConfig(
+                oidc_issuer=oidc_base, oidc_client_id="console", oidc_client_secret=SecretStr("secret")
             ),
+            # Match production's shared Postgres-backed DCR/token state, but use this test's
+            # isolated database instead of FastMCP's implicit process-global file store.
+            mcp_oauth_persistence={
+                "kind": "postgres",
+                "url": migrated_db_url.replace("postgresql+psycopg://", "postgresql://", 1),
+            },
         )
         with serve_app_sync(create_app(settings), port=console_port) as base:
             # The static bearer still authenticates (MultiAuth composes OAuth + static).
             async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
                 assert "request_standin_echo" in {t.name for t in await client.list_tools()}
 
-            # OAuth is advertised: an unauthenticated request is challenged with resource metadata.
+            # The public proxy scheme survives the app's slash redirect. In production nginx
+            # forwards this Cilium-provided header; losing it would downgrade HTTPS to HTTP here.
             async with httpx.AsyncClient() as anon:
+                slash_redirect = await anon.get(
+                    f"{base}/mcp", headers={"Host": "haku.test", "X-Forwarded-Proto": "https"}, follow_redirects=False
+                )
+                assert slash_redirect.status_code == 307
+                assert slash_redirect.headers["location"] == "https://haku.test/mcp/"
+
+                # Walk the production OAuth discovery chain from the challenge through DCR. The
+                # well-known documents live at the origin root, while every operational endpoint
+                # and callback remains namespaced under /mcp (separate from operator /auth/*).
                 unauth = await anon.post(
                     f"{base}/mcp/",
                     headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"},
                     json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
                 )
                 assert unauth.status_code == 401
-                assert "resource_metadata" in unauth.headers.get("www-authenticate", "").lower()
+                challenge = unauth.headers.get("www-authenticate", "")
+                match = re.search(r'resource_metadata="([^"]+)"', challenge, flags=re.IGNORECASE)
+                assert match is not None, challenge
+                resource_metadata_url = match.group(1)
+                assert resource_metadata_url == f"{base}/.well-known/oauth-protected-resource/mcp/"
+
+                protected_response = await anon.get(resource_metadata_url)
+                assert protected_response.status_code == 200, protected_response.text
+                protected = protected_response.json()
+                assert protected["resource"] == f"{base}/mcp/"
+                assert protected["authorization_servers"] == [f"{base}/mcp"]
+
+                authorization_metadata_url = f"{base}/.well-known/oauth-authorization-server/mcp"
+                authorization_response = await anon.get(authorization_metadata_url)
+                assert authorization_response.status_code == 200, authorization_response.text
+                authorization = authorization_response.json()
+                assert authorization["issuer"] == f"{base}/mcp"
+                assert authorization["authorization_endpoint"] == f"{base}/mcp/authorize"
+                assert authorization["token_endpoint"] == f"{base}/mcp/token"
+                assert authorization["registration_endpoint"] == f"{base}/mcp/register"
+
+                registration = await anon.post(
+                    authorization["registration_endpoint"],
+                    json={
+                        "client_name": "claude.ai",
+                        "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"],
+                        "grant_types": ["authorization_code", "refresh_token"],
+                        "response_types": ["code"],
+                        "token_endpoint_auth_method": "client_secret_post",
+                        "scope": "openid email profile offline_access",
+                    },
+                )
+                assert registration.status_code == 201, registration.text
+                registered = registration.json()
+                assert registered["client_id"]
+                assert registered["client_secret"]
+
+                authorize = await anon.get(
+                    authorization["authorization_endpoint"],
+                    params={
+                        "response_type": "code",
+                        "client_id": registered["client_id"],
+                        "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+                        "scope": "openid email profile offline_access",
+                        "state": "client-state",
+                        "code_challenge": "A" * 43,
+                        "code_challenge_method": "S256",
+                        "resource": f"{base}/mcp/",
+                    },
+                    follow_redirects=False,
+                )
+                assert authorize.status_code == 302
+                consent_url = authorize.headers["location"]
+                assert consent_url.startswith(f"{base}/mcp/consent?txn_id=")
+
+                consent = await anon.get(consent_url)
+                assert consent.status_code == 200
+                txn_id = re.search(r'name="txn_id" value="([^"]+)"', consent.text)
+                csrf_token = re.search(r'name="csrf_token" value="([^"]+)"', consent.text)
+                assert txn_id is not None
+                assert csrf_token is not None
+                approved = await anon.post(
+                    f"{base}/mcp/consent",
+                    data={"txn_id": txn_id.group(1), "csrf_token": csrf_token.group(1), "action": "approve"},
+                    follow_redirects=False,
+                )
+                assert approved.status_code == 302, approved.text
+                upstream_authorize = httpx.URL(approved.headers["location"])
+                assert str(upstream_authorize).startswith(f"{oidc_base}/authorize?")
+                assert upstream_authorize.params["redirect_uri"] == f"{base}/mcp/auth/callback"
+
+                # Discovery is shared at root, not the operational OAuth surface.
+                assert (await anon.post(f"{base}/register", json={})).status_code == 404
 
 
 def test_agent_operator_link_round_trips(migrated_db_url: str) -> None:

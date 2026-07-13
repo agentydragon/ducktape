@@ -170,6 +170,26 @@ def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:
         assert raw.count(marker) == 1, f"missing or duplicated Flux marker: {marker}"
 
 
+def test_haku_console_oauth_edge_contract(k8s_dir: Path) -> None:
+    """Haku serves only on TLS, preserves one canonical origin, and emits HSTS at the edge."""
+    route = yaml.safe_load((k8s_dir / "haku" / "console" / "httproute.yaml").read_text(encoding="utf-8"))
+    assert route["spec"]["parentRefs"] == [
+        {"name": "cluster-gateway", "namespace": "gateway-system", "sectionName": "https-wildcard"}
+    ]
+    assert route["spec"]["rules"][0]["filters"] == [
+        {
+            "type": "ResponseHeaderModifier",
+            "responseHeaderModifier": {"set": [{"name": "Strict-Transport-Security", "value": "max-age=31536000"}]},
+        }
+    ]
+
+    deployment = yaml.safe_load((k8s_dir / "haku" / "console" / "deployment.yaml").read_text(encoding="utf-8"))
+    server = next(c for c in deployment["spec"]["template"]["spec"]["containers"] if c["name"] == "server")
+    literal_env = {entry["name"]: entry["value"] for entry in server["env"] if "value" in entry}
+    assert literal_env["HAKU_CONSOLE_PUBLIC_BASE_URL"] == "https://haku.allegedly.works"
+    assert "HAKU_CONSOLE_MCP_OAUTH__PUBLIC_BASE_URL" not in {entry["name"] for entry in server["env"]}
+
+
 def test_retry_policy(cluster: ParsedCluster) -> None:
     check_retry_policy(cluster)
 

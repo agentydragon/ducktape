@@ -18,10 +18,21 @@ spec:
   parentRefs:
     - name: cluster-gateway
       namespace: gateway-system
+      # Do not attach this backend route to the plaintext listener: the gateway's HTTP-only route
+      # owns port 80 and redirects it to HTTPS.
+      sectionName: https-wildcard
   hostnames:
     - "haku.allegedly.works"
   rules:
-    - backendRefs:
+    - filters:
+        # Set at the TLS-aware edge so both nginx-served SPA responses and FastAPI responses carry
+        # the policy; neither same-pod HTTP hop can reliably infer that it terminated HTTPS.
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: "max-age=31536000"
+      backendRefs:
         - name: haku-console
           port: 8080
       # The MCP streamable-HTTP/SSE stream and the OAuth dance can outlast the default.

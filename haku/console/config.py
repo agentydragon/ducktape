@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Self
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
@@ -17,6 +17,11 @@ from mcp_infra.persistence import FilePersistence, PersistenceConfig
 # operator-facing deep-link to review past runs (there's no runs-listing API).
 _FIRE_URL = "https://api.anthropic.com/v1/claude_code/routines/{id}/fire"
 _PAGE_URL = "https://claude.ai/code/routines/{id}"
+
+# Public path of the agent-facing MCP resource. The outer console origin is the shared source of
+# truth; MCP OAuth derives its issuer/callback URLs from this path instead of accepting a second,
+# independently configurable public URL that can drift away from the actual mount.
+MCP_PATH = "/mcp"
 
 
 class LaunchRoutineConfig(BaseModel):
@@ -60,6 +65,30 @@ class OperatorOidcConfig(BaseModel):
     @property
     def server_metadata_url(self) -> str:
         return f"{self.issuer.rstrip('/')}/.well-known/openid-configuration"
+
+
+class McpOAuthConfig(BaseModel):
+    """Credentials for Haku's agent-facing OAuth authorization-server proxy.
+
+    Unlike the reusable ``AuthentikAuthConfig``, this Haku-specific config deliberately has no
+    ``public_base_url``. The public MCP URL is always ``Settings.public_base_url`` + ``/mcp``, so
+    the issuer, DCR endpoints, and callback cannot be configured for a different mount. Operator
+    login uses separate credentials and session state; only the canonical origin is shared.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    oidc_issuer: str
+    oidc_client_id: str
+    oidc_client_secret: SecretStr
+
+    def as_authentik_auth_config(self, *, public_base_url: str) -> AuthentikAuthConfig:
+        return AuthentikAuthConfig(
+            oidc_issuer=self.oidc_issuer,
+            oidc_client_id=self.oidc_client_id,
+            oidc_client_secret=self.oidc_client_secret.get_secret_value(),
+            public_base_url=f"{public_base_url.rstrip('/')}{MCP_PATH}",
+        )
 
 
 class Settings(BaseSettings):
@@ -121,9 +150,10 @@ class Settings(BaseSettings):
 
     # OAuth for the agent-facing MCP server: an Authentik-backed OIDCProxy handling the MCP OAuth
     # dance (DCR + PKCE) for claude.ai / the `claude` CLI, composed with the static agent bearer via
-    # MultiAuth. Reads HAKU_CONSOLE_MCP_OAUTH__{OIDC_ISSUER,OIDC_CLIENT_ID,OIDC_CLIENT_SECRET,PUBLIC_BASE_URL}.
-    # Unset → the static bearer is the only accepted credential (no OAuth).
-    mcp_oauth: AuthentikAuthConfig | None = None
+    # MultiAuth. Reads HAKU_CONSOLE_MCP_OAUTH__{OIDC_ISSUER,OIDC_CLIENT_ID,OIDC_CLIENT_SECRET}; its
+    # public URL is derived from top-level public_base_url + MCP_PATH. Unset → the static bearer
+    # is the only accepted credential (no OAuth).
+    mcp_oauth: McpOAuthConfig | None = None
     # Client-state store for OIDCProxy's dynamic client registrations. Valkey in deploy (survives
     # across replicas / restarts); the file default suits single-process/dev.
     mcp_oauth_persistence: PersistenceConfig = Field(default_factory=FilePersistence)

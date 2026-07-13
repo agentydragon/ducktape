@@ -28,7 +28,7 @@ from fastapi_csrf_protect.exceptions import CsrfProtectError
 from starlette.middleware.sessions import SessionMiddleware
 
 from haku.console import capabilities, console_events, mcp_approval, mcp_operator_oauth, mcp_server, operator_auth
-from haku.console.config import Settings
+from haku.console.config import MCP_PATH, Settings
 from haku.console.database_migrate import apply_migrations
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.in_process_servers import InProcessServerDependencies, build_in_process_servers
@@ -148,12 +148,10 @@ def create_app(settings: Settings) -> FastAPI:
     # The OIDCProxy client-state store only exists when OAuth does; the static-bearer-only deploy has
     # no dynamic client registrations to persist.
     mcp_oauth_storage = build_client_storage(settings.mcp_oauth_persistence) if settings.mcp_oauth is not None else None
-    console_mcp = mcp_server.build_console_mcp(
-        console_mcp_context,
-        auth=mcp_server.build_auth(
-            settings, static_agents, mcp_oauth_storage, on_client_authorized=_link_agent_operator
-        ),
+    mcp_auth = mcp_server.build_auth(
+        settings, static_agents, mcp_oauth_storage, on_client_authorized=_link_agent_operator
     )
+    console_mcp = mcp_server.build_console_mcp(console_mcp_context, auth=mcp_auth)
     mcp_asgi = console_mcp.http_app(path="/")
 
     @asynccontextmanager
@@ -172,7 +170,12 @@ def create_app(settings: Settings) -> FastAPI:
         finally:
             await console_event_hub.aclose()
 
+    # OAuth protected-resource and authorization-server discovery are origin-level RFC routes even
+    # though the operational MCP/OAuth handlers remain isolated under /mcp. FastMCP cannot infer an
+    # outer ASGI mount, so explicitly expose only its well-known routes here; the static-bearer-only
+    # provider returns no routes.
     app = FastAPI(title="Haku console", lifespan=_lifespan)
+    app.router.routes.extend(mcp_auth.get_well_known_routes(mcp_path="/"))
     # The capability router reads settings off app.state (see haku.console.capabilities).
     app.state.settings = settings
     app.state.static_agents = static_agents
@@ -257,7 +260,7 @@ def create_app(settings: Settings) -> FastAPI:
     )
 
     # Agent-facing MCP server (streamable HTTP), mounted after the API routers and before the SPA.
-    app.mount("/mcp", mcp_asgi)
+    app.mount(MCP_PATH, mcp_asgi)
 
     # Optional direct local/dev fallback. Production serves the SPA from the
     # haku-console-static nginx image and leaves static_dir unset on this process.

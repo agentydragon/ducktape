@@ -347,7 +347,7 @@ def build_auth(
     static = _static_bearer_verifier(static_agents)
     if settings.mcp_oauth is not None:
         return build_authentik_auth(
-            settings.mcp_oauth,
+            settings.mcp_oauth.as_authentik_auth_config(public_base_url=settings.public_base_url),
             client_storage=client_storage,
             extra_verifiers=[static] if static is not None else None,
             on_client_authorized=on_client_authorized,

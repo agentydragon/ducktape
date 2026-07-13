@@ -14,6 +14,10 @@ Two Authentik OAuth2 providers, minted by `tf/gitops/agent-machine-access` (appl
 `haku-console` for operator browser login and `haku-console-mcp` for the `/mcp` OIDCProxy
 upstream), write their client secrets + the operator session-signing secret into the
 `haku-console-oidc` Secret; single-user access is Authentik's application access policy.
+The MCP issuer/callback URL is derived from the console's canonical
+`HAKU_CONSOLE_PUBLIC_BASE_URL` plus `/mcp`; it is not separately configurable. Root
+`/.well-known/oauth-*` discovery points clients to those namespaced MCP OAuth endpoints, while
+operator browser OAuth remains under `/auth/*` with its own provider and session.
 The OIDCProxy's dynamic-client-registration + token state (shared across the two replicas) is
 backed by the console's own Postgres (`HAKU_CONSOLE_MCP_OAUTH_PERSISTENCE__KIND=postgres`,
 py-key-value's `PostgreSQLStore` auto-creating a `mcp_oauth_kv` table) — no separate valkey, unlike

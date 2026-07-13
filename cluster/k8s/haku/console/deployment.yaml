@@ -165,12 +165,10 @@ spec:
             # the `claude` CLI on /mcp, composed with the static agent bearer via MultiAuth. The
             # provider + client secret are minted by tf/gitops/agent-machine-access (application
             # slug `haku-console-mcp`, redirect https://haku.allegedly.works/mcp/auth/callback).
-            # public_base_url is the console origin (root, not /mcp) — matching airlock; FastMCP's
-            # OIDCProxy is mount-aware for its callback.
+            # The MCP public URL is derived in-app from HAKU_CONSOLE_PUBLIC_BASE_URL + /mcp. Keep a
+            # single canonical public origin: FastMCP itself is not aware of the outer ASGI mount.
             - name: HAKU_CONSOLE_MCP_OAUTH__OIDC_ISSUER
               value: https://auth.allegedly.works/application/o/haku-console-mcp/
-            - name: HAKU_CONSOLE_MCP_OAUTH__PUBLIC_BASE_URL
-              value: https://haku.allegedly.works
             - name: HAKU_CONSOLE_MCP_OAUTH__OIDC_CLIENT_ID
               valueFrom:
                 secretKeyRef:

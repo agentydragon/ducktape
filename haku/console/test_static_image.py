@@ -61,6 +61,12 @@ def test_static_image_cache_contract() -> None:
         assert missing.status_code == 404
         assert missing.headers["cache-control"] == "no-store"
 
+        rendered = container.get_wrapped_container().exec_run(["nginx", "-T"])
+        assert rendered.exit_code == 0, rendered.output
+        nginx_config = rendered.output.decode()
+        assert "proxy_set_header X-Forwarded-Proto https;" in nginx_config
+        assert "proxy_set_header X-Forwarded-Proto $scheme;" not in nginx_config
+
 
 if __name__ == "__main__":
     pytest_bazel.main()
