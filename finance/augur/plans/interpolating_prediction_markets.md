@@ -4,12 +4,14 @@ Status: **position / framing doc** (2026-06-04). States what augur's exogenous `
 conceptually. The current execution target is the standalone `loom/` program.
 
 Execution home (2026-06-09): this position is being built out as the standalone `loom/`
-program — see `loom/PLAN.md`. augur consumes its WorldSet artifacts through a
-bridge on augur's side.
+program — see `loom/PLAN.md`. **Conceptually**, loom emits a serialized **`WorldSet`** (a
+sampled set of joint world trajectories) that augur would consume through a thin bridge on
+augur's side — framing only: both the `WorldSet` artifact and the bridge are plan-stage, not
+implemented (loom's "WorldSet M0" / "Augur bridge M4" milestones).
 
 Companion reading:
 
-- `loom/PLAN.md` — how this framing is being built as a WorldSet-producing program.
+- `loom/PLAN.md` — how this framing is being built as a WorldSet-producing program (defines the plan-stage `WorldSet` artifact; states no implementation exists yet).
 - `augur/plans/whole_model_calibration.md` / `augur/plans/prediction_market_calibration.md` — the
   calibration machinery and PE-channel fit as they stand today.
 
