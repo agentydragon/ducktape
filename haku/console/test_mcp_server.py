@@ -2,19 +2,15 @@
 
 from __future__ import annotations
 
-import threading
 from collections.abc import AsyncGenerator, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 from unittest.mock import Mock
 
 import httpx
 import pytest
 import pytest_bazel
-import uvicorn
-import yaml
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import SecretStr
@@ -25,7 +21,7 @@ from starlette.routing import Mount, Route
 
 from gmail_api.labels import GmailLabel, LabelsListResponse, LabelType
 from haku.console.app import create_app
-from haku.console.config import Settings
+from haku.console.conftest import console_settings, write_config
 from haku.console.mcp_approval import (
     McpMetadataProvider,
     McpToolExecutor,
@@ -39,7 +35,8 @@ from haku.console.mcp_server import ConsoleMcpContext, build_console_mcp, regist
 from haku.console.tool_calls import ToolCallStatus
 from haku.console.tools import gmail as gmail_tools
 from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
-from util.net import pick_free_port, wait_for_port
+from util.net import pick_free_port
+from util.testing.asgi import serve_app_sync, serve_fastmcp
 
 # The `/mcp` static bearer used across these tests, and the static-agent config that binds it to the
 # `haku` agent id (which acts as operator subject "42"). Env-referenced, like the deploy.
@@ -47,11 +44,6 @@ _AGENT_TOKEN = "agent-token"
 _AGENT_TOKEN_ENV = "HAKU_CONSOLE_TEST_AGENT_TOKEN"
 _AGENT_OPERATOR_ENV = "HAKU_CONSOLE_TEST_AGENT_OPERATOR"
 _STATIC_AGENTS = [{"agent": "haku", "token_env_var": _AGENT_TOKEN_ENV, "operator_subject_env": _AGENT_OPERATOR_ENV}]
-
-
-def _write_config(path: Path, config: dict[str, Any]) -> Path:
-    path.write_text(yaml.safe_dump(config), encoding="utf-8")
-    return path
 
 
 @pytest.fixture(autouse=True)
@@ -72,13 +64,8 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
     gmail_client.labels_list.return_value = LabelsListResponse(
         labels=[GmailLabel(id="Label_1", name="haku/triaged", type=LabelType.USER)]
     )
-    config_file = _write_config(tmp_path / "console.yaml", {"mcp": {"servers": [{"id": "gmail"}]}})
-    settings = Settings(
-        haku_ui_url="https://haku-ui.test",
-        database_url=SecretStr(migrated_db_url),
-        config_file=config_file,
-        ui_base_url="https://haku.test",
-    )
+    config_file = write_config(tmp_path / "console.yaml", {"mcp": {"servers": [{"id": "gmail"}]}})
+    settings = console_settings(migrated_db_url, config_file=config_file, ui_base_url="https://haku.test")
     in_process = {gmail_tools.GMAIL_SERVER_ID: gmail_tools.build_mcp(gmail_client)}
     context = ConsoleMcpContext(
         settings=settings,
@@ -97,7 +84,7 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
     # need an authenticated caller (`_agent_id`). The verifier maps `agent-token` → client_id "haku".
     mcp_app = server.http_app(path="/")
     app = Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=mcp_app.lifespan)
-    with _serve(app) as base:
+    with serve_app_sync(app) as base:
         yield _Harness(base=base, ledger=context.ledger)
 
 
@@ -168,22 +155,6 @@ async def test_get_tool_call_missing_raises(harness: _Harness) -> None:
 
 
 @contextmanager
-def _serve(app: Starlette, port: int | None = None) -> Generator[str]:
-    port = port or pick_free_port()
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    try:
-        wait_for_port("127.0.0.1", port, timeout_secs=10)
-        yield f"http://127.0.0.1:{port}"
-    finally:
-        server.should_exit = True
-        thread.join(timeout=10)
-        if thread.is_alive():
-            raise RuntimeError("test server did not stop")
-
-
-@contextmanager
 def _serve_upstream() -> Generator[str]:
     """A real upstream MCP server process stand-in (echo tool) served over streamable HTTP."""
     upstream: FastMCP = FastMCP("standin")
@@ -193,14 +164,12 @@ def _serve_upstream() -> Generator[str]:
         """Echo a string back."""
         return f"echo:{text}"
 
-    mcp_app = upstream.http_app(path="/")
-    app = Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=mcp_app.lifespan)
-    with _serve(app) as base:
-        yield f"{base}/mcp"
+    with serve_fastmcp(upstream) as url:
+        yield url
 
 
 def _console_config(tmp_path: Path, upstream_url: str) -> Path:
-    return _write_config(
+    return write_config(
         tmp_path / "console.yaml",
         {"static_agents": _STATIC_AGENTS, "mcp": {"servers": [{"id": "standin", "server_url": upstream_url}]}},
     )
@@ -208,14 +177,13 @@ def _console_config(tmp_path: Path, upstream_url: str) -> Path:
 
 async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_path: Path) -> None:
     with _serve_upstream() as upstream_url:
-        settings = Settings(
-            haku_ui_url="https://haku-ui.test",
-            database_url=SecretStr(migrated_db_url),
+        settings = console_settings(
+            migrated_db_url,
             config_file=_console_config(tmp_path, upstream_url),
             csrf_secret=SecretStr("csrf"),
             ui_base_url="https://haku.test",
         )
-        with _serve(create_app(settings)) as base:
+        with serve_app_sync(create_app(settings)) as base:
             async with httpx.AsyncClient() as anon:
                 # No bearer -> unauthorized. Hit /mcp/ directly (the mount redirects /mcp -> /mcp/).
                 unauth = await anon.post(
@@ -281,7 +249,7 @@ def _serve_mock_oidc() -> Generator[str]:
         return JSONResponse({"keys": []})
 
     app = Starlette(routes=[Route("/.well-known/openid-configuration", discovery), Route("/jwks", jwks)])
-    with _serve(app) as base:
+    with serve_app_sync(app) as base:
         yield base
 
 
@@ -289,9 +257,8 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
     with _serve_mock_oidc() as oidc_base, _serve_upstream() as upstream_url:
         # public_base_url is the console's own URL, so choose its port before building the app.
         console_port = pick_free_port()
-        settings = Settings(
-            haku_ui_url="https://haku-ui.test",
-            database_url=SecretStr(migrated_db_url),
+        settings = console_settings(
+            migrated_db_url,
             config_file=_console_config(tmp_path, upstream_url),
             csrf_secret=SecretStr("csrf"),
             ui_base_url="https://haku.test",
@@ -302,7 +269,7 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
                 public_base_url=f"http://127.0.0.1:{console_port}",
             ),
         )
-        with _serve(create_app(settings), port=console_port) as base:
+        with serve_app_sync(create_app(settings), port=console_port) as base:
             # The static bearer still authenticates (MultiAuth composes OAuth + static).
             async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
                 assert "request_standin_echo" in {t.name for t in await client.list_tools()}

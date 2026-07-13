@@ -21,7 +21,8 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from haku.console.app import create_app
-from haku.console.config import OperatorOidcConfig, Settings
+from haku.console.config import OperatorOidcConfig
+from haku.console.conftest import console_settings
 from util.net import pick_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
@@ -66,9 +67,9 @@ async def test_credential_matrix_through_real_app(
         subject=_OPERATOR_SUBJECT,
         extra_id_token_claims={"preferred_username": _OPERATOR_USERNAME},
     )
-    settings = Settings(
+    settings = console_settings(
+        migrated_db_url,
         haku_ui_url="about:blank",
-        database_url=SecretStr(migrated_db_url),
         config_file=_static_agent_config(tmp_path),
         public_base_url=console_url,
         operator_oidc=OperatorOidcConfig(

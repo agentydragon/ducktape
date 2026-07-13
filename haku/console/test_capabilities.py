@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from haku.console.config import LaunchRoutineConfig
+from haku.console.conftest import csrf_token
 
 ROUTINE_ID = "trig_test"
 FIRE_URL = f"https://api.anthropic.com/v1/claude_code/routines/{ROUTINE_ID}/fire"
@@ -44,19 +45,13 @@ def test_config_routine_url_none_when_unconfigured(client) -> None:
     assert client.get("/api/config").json()["launch_routine_url"] is None
 
 
-def _csrf(client: TestClient) -> str:
-    token = client.get("/api/capabilities/csrf").json()["csrf_token"]
-    assert isinstance(token, str)
-    return token
-
-
 @respx.mock
 def test_launch_routine_fires_with_server_side_bearer(cap_client) -> None:
     session_url = "https://claude.ai/code/session_test123"
     route = respx.post(FIRE_URL).mock(
         return_value=httpx.Response(200, json={"claude_code_session_url": session_url, "type": "routine_fire"})
     )
-    resp = cap_client.post("/api/capabilities/launch-routine", headers={"X-CSRF-Token": _csrf(cap_client)})
+    resp = cap_client.post("/api/capabilities/launch-routine", headers={"X-CSRF-Token": csrf_token(cap_client)})
     assert resp.status_code == 200
     assert resp.json() == {"session_url": session_url}
     # The bearer + required anthropic-version header are attached server-side; the
@@ -75,7 +70,7 @@ def test_launch_routine_forwards_custom_text(cap_client) -> None:
     )
     resp = cap_client.post(
         "/api/capabilities/launch-routine",
-        headers={"X-CSRF-Token": _csrf(cap_client)},
+        headers={"X-CSRF-Token": csrf_token(cap_client)},
         json={"text": "scan CPAP and summarize anomalies"},
     )
     assert resp.status_code == 200
@@ -89,7 +84,7 @@ def test_launch_routine_blank_text_uses_routine_default(cap_client) -> None:
         return_value=httpx.Response(200, json={"claude_code_session_url": session_url, "type": "routine_fire"})
     )
     resp = cap_client.post(
-        "/api/capabilities/launch-routine", headers={"X-CSRF-Token": _csrf(cap_client)}, json={"text": "   "}
+        "/api/capabilities/launch-routine", headers={"X-CSRF-Token": csrf_token(cap_client)}, json={"text": "   "}
     )
     assert resp.status_code == 200
     assert json.loads(route.calls.last.request.content) == {}
@@ -100,7 +95,7 @@ def test_launch_routine_surfaces_upstream_error_detail(cap_client) -> None:
     respx.post(FIRE_URL).mock(
         return_value=httpx.Response(400, json={"error": {"message": "anthropic-version: header is required"}})
     )
-    resp = cap_client.post("/api/capabilities/launch-routine", headers={"X-CSRF-Token": _csrf(cap_client)})
+    resp = cap_client.post("/api/capabilities/launch-routine", headers={"X-CSRF-Token": csrf_token(cap_client)})
     assert resp.status_code == 502
     # The real upstream reason is propagated to the client, not a bare 502.
     assert "anthropic-version: header is required" in resp.json()["detail"]
@@ -117,13 +112,13 @@ def test_launch_routine_without_csrf_token_is_rejected(cap_client) -> None:
 @respx.mock
 def test_launch_routine_upstream_failure_is_502(cap_client) -> None:
     respx.post(FIRE_URL).mock(return_value=httpx.Response(500))
-    resp = cap_client.post("/api/capabilities/launch-routine", headers={"X-CSRF-Token": _csrf(cap_client)})
+    resp = cap_client.post("/api/capabilities/launch-routine", headers={"X-CSRF-Token": csrf_token(cap_client)})
     assert resp.status_code == 502
 
 
 def test_launch_routine_unconfigured_is_503(make_client: Callable[..., Any]) -> None:
     with make_client(csrf_secret=SecretStr("test-csrf-secret")) as c:
-        resp = c.post("/api/capabilities/launch-routine", headers={"X-CSRF-Token": _csrf(c)})
+        resp = c.post("/api/capabilities/launch-routine", headers={"X-CSRF-Token": csrf_token(c)})
     assert resp.status_code == 503
 
 

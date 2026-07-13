@@ -64,6 +64,26 @@ def operator_session_cookie(*, subject: str, username: str) -> str:
     return itsdangerous.TimestampSigner(_TEST_SESSION_SECRET).sign(data).decode()
 
 
+def write_config(path: Path, config: dict[str, Any]) -> Path:
+    """Dump a console config dict to `path` as YAML (the deploy-time config-file format)."""
+    path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    return path
+
+
+def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
+    """The console `Settings` tests need — required `haku_ui_url`/`database_url` defaulted, per-test
+    `overrides` spread last. Shared by `make_client` and by the tests that serve `create_app` over a
+    real socket (so they can't go through `make_client`'s `TestClient`)."""
+    return Settings(**{"haku_ui_url": "https://haku-ui.test", "database_url": SecretStr(migrated_db_url), **overrides})
+
+
+def csrf_token(client: TestClient) -> str:
+    """Fetch a CSRF token (and set the signed double-submit cookie) via `GET /api/capabilities/csrf`."""
+    token = client.get("/api/capabilities/csrf").json()["csrf_token"]
+    assert isinstance(token, str)
+    return token
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _preload_postgres_images() -> None:
     load_oci_image(RYUK)
@@ -115,8 +135,7 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
     ``Settings`` overrides (e.g. ``config_file=...``, ``mcp_oauth=...``)."""
     monkeypatch.setenv(_DEFAULT_AGENT_TOKEN_ENV, "default-agent-token")
     monkeypatch.setenv(_DEFAULT_AGENT_OPERATOR_ENV, "default-op")
-    default_config = tmp_path / "console_default.yaml"
-    default_config.write_text(yaml.safe_dump({"static_agents": _DEFAULT_STATIC_AGENTS}), encoding="utf-8")
+    default_config = write_config(tmp_path / "console_default.yaml", {"static_agents": _DEFAULT_STATIC_AGENTS})
 
     @contextmanager
     def _make(
@@ -136,16 +155,9 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
         # replacement for the retired `x-authentik-*` header stand-in.
         if operator and "operator_oidc" not in settings_overrides:
             settings_overrides = {**settings_overrides, "operator_oidc": TEST_OPERATOR_OIDC}
-        # haku_ui_url and database_url are required; default them, plus a config_file naming the
-        # default static agent (so /mcp has a credential), so callers only override what they test.
-        settings = Settings(
-            **{
-                "haku_ui_url": "https://haku-ui.test",
-                "database_url": SecretStr(migrated_db_url),
-                "config_file": default_config,
-                **settings_overrides,
-            }
-        )
+        # database_url + haku_ui_url are defaulted by console_settings; config_file names the default
+        # static agent (so /mcp has a credential) unless a test overrides it (spread last, so it wins).
+        settings = console_settings(migrated_db_url, **{"config_file": default_config, **settings_overrides})
         app = create_app(settings)
         if tool_call_executor is not None:
             app.state.tool_call_executor = tool_call_executor
