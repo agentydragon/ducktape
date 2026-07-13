@@ -2,10 +2,11 @@
 
 Upstream ships the CLI only as a distroless image (a bare static binary — no
 shell to copy it out of in an initContainer) and as release tarballs; the
-server image carries no CLI at all. The haku-mailbox bootstrap and reconciler
-Jobs (../app/{bootstrap,reconcile}.sh) need both binaries, so this
-repack layers the pinned static CLI and a capability-free copy of the official
-server release binary onto the pinned upstream image. All pins live in
+server image carries no CLI at all. The haku-mailbox init container needs both
+binaries so it can run normal Stalwart, apply the plan locally, and exit before
+the production container starts. This repack layers the pinned static CLI and a
+capability-free copy of the official server release binary onto the pinned
+upstream image. All pins live in
 MODULE.bazel (`stalwart` oci.pull, `stalwart_server` and `stalwart_cli`
 http_archives) — bump them together on Stalwart upgrades.
 

@@ -4,8 +4,20 @@ kind: Kustomization
 # rotator's publication point); everything else carries namespace: haku-mailbox
 # explicitly.
 resources:
+  - certificate.yaml
+  - haku-mailbox-admin.sops.yaml
   - deployment.yaml
   - service.yaml
   - httproute.yaml
   - haku-mail-token.sops.yaml
   - haku-mail-token-eso.yaml
+configMapGenerator:
+  - name: haku-mailbox-config
+    namespace: haku-mailbox
+    options:
+      annotations:
+        kustomize.toolkit.fluxcd.io/substitute: disabled
+    files:
+      - initialize.sh
+      - config.json
+      - mailbox-plan.ndjson

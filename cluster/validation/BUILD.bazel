@@ -386,6 +386,17 @@ py_test(
 )
 
 py_test(
+    name = "test_mailbox_plan",
+    srcs = ["test_mailbox_plan.py"],
+    data = ["//cluster/k8s:cluster_all_files"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
     name = "test_flux_build",
     srcs = ["test_flux_build.py"],
     # validate_flux_build needs the whole tree the root kustomization references.
@@ -397,7 +408,6 @@ py_test(
         "//cluster/k8s:flux_system_files",
         "//cluster/k8s/haku/dispatch/dispatcher:manifests",
         "//cluster/k8s/haku/dispatch/litellm:manifests",
-        "//cluster/k8s/haku/mailbox/bootstrap:manifests",
         "//cluster/k8s/litellm/app:manifests",
         "//cluster/k8s/litellm/tana:manifests",
         "//cluster/k8s/talos-cloud-controller-manager:manifests",

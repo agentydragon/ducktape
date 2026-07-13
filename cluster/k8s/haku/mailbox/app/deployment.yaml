@@ -1,9 +1,10 @@
 # Stalwart mailserver: haku's mailbox (haku@allegedly.works), receive-only.
 # Haku is a mail *user*, never the server admin: all policy (the SPF-gated
 # sender whitelist, listeners, the OIDC directory) is the operator-owned
-# provisioning plan in ../bootstrap, applied idempotently by the separate
-# reconcile Flux layer. Authentication is exclusively Authentik OIDC bearer
-# tokens (the stalwart-haku provider); no mailbox password exists.
+# provisioning plan mounted into this Pod. An init container applies it with a
+# temporary fallback admin before production starts. Authentication is
+# exclusively Authentik OIDC bearer tokens (the stalwart-haku provider); no
+# mailbox password exists.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -39,6 +40,45 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+      initContainers:
+        - name: initialize
+          image: ghcr.io/agentydragon/stalwart:devel-20260712224645-ee1a7eb # {"$imagepolicy": "flux-system:stalwart"}
+          command: ["/bin/sh", "/etc/stalwart/initialize.sh"]
+          terminationMessagePolicy: FallbackToLogsOnError
+          env:
+            - name: STALWART_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-mailbox-db-app
+                  key: password
+            - name: STALWART_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-mailbox-admin
+                  key: password
+            - name: STALWART_PUBLIC_URL
+              value: https://haku-mailbox.allegedly.works
+          volumeMounts:
+            - name: config
+              mountPath: /etc/stalwart
+              readOnly: true
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              add: ["NET_BIND_SERVICE"]
+              drop: ["ALL"]
       containers:
         - name: stalwart
           # In-repo repack of stalwartlabs/stalwart with stalwart-cli layered
@@ -50,7 +90,7 @@ spec:
           command: ["/usr/local/bin/stalwart", "--config", "/etc/stalwart/config.json"]
           # Surface crash output in pod status (.lastState.terminated.message):
           # pods/log in this namespace is RBAC-fenced to the operator, but pod
-          # status is diagnostics-readable — without this, a bootstrap failure
+          # status is diagnostics-readable — without this, an initialization failure
           # is a black box to agent sessions.
           terminationMessagePolicy: FallbackToLogsOnError
           ports:
@@ -106,7 +146,7 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: haku-mailbox-bootstrap-config
+            name: haku-mailbox-config
             defaultMode: 0555
         - name: tls
           secret:

@@ -2,6 +2,7 @@ import json
 from typing import Any
 
 import pytest_bazel
+import yaml
 
 from util.bazel.runfiles import get_required_path
 
@@ -12,6 +13,13 @@ def upsert(object_type: str, match_on: list[str], **values: Any) -> dict[str, An
 
 def update(object_type: str, value: dict[str, Any]) -> dict[str, Any]:
     return {"@type": "update", "object": object_type, "value": value}
+
+
+def destroy(object_type: str, value: dict[str, Any] | None = None) -> dict[str, Any]:
+    operation: dict[str, Any] = {"@type": "destroy", "object": object_type}
+    if value is not None:
+        operation["value"] = value
+    return operation
 
 
 WHITELIST_SCRIPT = """\
@@ -40,6 +48,7 @@ EXPECTED_PLAN = [
         },
     ),
     upsert("Domain", ["name"], dom={"name": "allegedly.works", "description": "Haku mailbox domain"}),
+    destroy("Account", {"name": "stalwart-reconciler"}),
     upsert(
         "Account",
         ["name"],
@@ -49,19 +58,6 @@ EXPECTED_PLAN = [
                 "name": "haku",
                 "domainId": "#dom",
                 "description": "Haku background agent (auth: Authentik OIDC bearer only)",
-            }
-        },
-    ),
-    upsert(
-        "Account",
-        ["name"],
-        **{
-            "acct-reconciler": {
-                "@type": "User",
-                "name": "stalwart-reconciler",
-                "domainId": "#dom",
-                "roles": {"@type": "Admin"},
-                "description": "Declarative plan reconciler (dedicated Authentik machine identity)",
             }
         },
     ),
@@ -98,9 +94,10 @@ EXPECTED_PLAN = [
             }
         },
     ),
+    destroy("NetworkListener"),
     upsert(
         "NetworkListener",
-        ["protocol"],
+        ["name"],
         **{
             "lst-smtp": {
                 "name": "smtp",
@@ -113,16 +110,7 @@ EXPECTED_PLAN = [
             "lst-imap": {"name": "imap", "protocol": "imap", "bind": {"0.0.0.0:1143": True}, "useTls": False},
         },
     ),
-    upsert("Role", ["description"], **{"role-user": {"description": "User"}}),
-    upsert("Role", ["description"], **{"role-admin": {"description": "System Administrator"}}),
-    update(
-        "Authentication",
-        {
-            "directoryId": "#dir-authentik",
-            "defaultUserRoleIds": {"#role-user": True},
-            "defaultAdminRoleIds": {"#role-admin": True, "#role-user": True},
-        },
-    ),
+    update("Authentication", {"directoryId": "#dir-authentik"}),
     update(
         "MtaStageAuth",
         {"require": {"match": {"0": {"if": "local_port == 2525", "then": "false"}}, "else": "local_port != 25"}},
@@ -141,9 +129,36 @@ EXPECTED_PLAN = [
 
 
 def test_mailbox_plan_matches_readable_python_specification() -> None:
-    plan_path = get_required_path("ducktape/cluster/k8s/haku/mailbox/bootstrap/mailbox-plan.ndjson")
+    plan_path = get_required_path("_main/cluster/k8s/haku/mailbox/app/mailbox-plan.ndjson")
     actual = [json.loads(line) for line in plan_path.read_text().splitlines() if line.strip()]
     assert actual == EXPECTED_PLAN
+
+
+def test_mailbox_initialization_is_serialized_and_init_only() -> None:
+    deployment_path = get_required_path("_main/cluster/k8s/haku/mailbox/app/deployment.yaml")
+    deployment = yaml.safe_load(deployment_path.read_text())
+
+    assert deployment["spec"]["strategy"]["type"] == "Recreate"
+    pod_spec = deployment["spec"]["template"]["spec"]
+    assert len(pod_spec["initContainers"]) == 1
+    assert len(pod_spec["containers"]) == 1
+
+    initialize = pod_spec["initContainers"][0]
+    production = pod_spec["containers"][0]
+    assert initialize["image"] == production["image"]
+    assert initialize["command"] == ["/bin/sh", "/etc/stalwart/initialize.sh"]
+
+    initialize_env = {item["name"] for item in initialize["env"]}
+    production_env = {item["name"] for item in production["env"]}
+    assert "STALWART_ADMIN_PASSWORD" in initialize_env
+    assert "STALWART_ADMIN_PASSWORD" not in production_env
+    assert "STALWART_RECOVERY_ADMIN" not in initialize_env | production_env
+
+    assert initialize["securityContext"]["capabilities"] == {"add": ["NET_BIND_SERVICE"], "drop": ["ALL"]}
+    assert production["securityContext"]["capabilities"] == {"drop": ["ALL"]}
+
+    config_volume = next(volume for volume in pod_spec["volumes"] if volume["name"] == "config")
+    assert config_volume["configMap"]["name"] == "haku-mailbox-config"
 
 
 if __name__ == "__main__":
