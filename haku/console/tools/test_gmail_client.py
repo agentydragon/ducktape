@@ -351,7 +351,9 @@ def test_delete_label_calls_delete(svc: _FakeGmailService, client: GmailToolsCli
 def test_create_draft_encodes_mime_and_returns_draft_resource(svc: _FakeGmailService, client: GmailToolsClient) -> None:
     svc.draft_response = _dump(_draft("d1", "m1"))
     result = client.drafts_create(
-        CreateGmailDraftArgs(to=["a@example.com"], cc=["b@example.com"], subject="Hi", body="Hello there")
+        CreateGmailDraftArgs(
+            to=["a@example.com"], cc=["b@example.com"], bcc=["c@example.com"], subject="Hi", body="Hello there"
+        )
     )
     assert result.id == "d1"
     assert result.message is not None
@@ -360,6 +362,7 @@ def test_create_draft_encodes_mime_and_returns_draft_resource(svc: _FakeGmailSer
     decoded = base64.urlsafe_b64decode(body["message"]["raw"]).decode()
     assert "To: a@example.com" in decoded
     assert "Cc: b@example.com" in decoded
+    assert "Bcc: c@example.com" in decoded
     assert "Subject: Hi" in decoded
     assert "Hello there" in decoded
 
@@ -396,13 +399,15 @@ def test_get_draft_passes_format(svc: _FakeGmailService, client: GmailToolsClien
 def test_update_draft_replaces_message_and_carries_id(svc: _FakeGmailService, client: GmailToolsClient) -> None:
     svc.draft_response = _dump(_draft("d1", "m1"))
     result = client.drafts_update(
-        UpdateGmailDraftArgs(draft_id="d9", to=["a@example.com"], subject="Re", body="edited")
+        UpdateGmailDraftArgs(draft_id="d9", to=["a@example.com"], cc=["b@x"], bcc=["c@x"], subject="Re", body="edited")
     )
     assert result.id == "d1"
     params = _call(svc, "drafts.update")
     assert params["id"] == "d9"
     decoded = base64.urlsafe_b64decode(params["message"]["raw"]).decode()
     assert "To: a@example.com" in decoded
+    assert "Cc: b@x" in decoded
+    assert "Bcc: c@x" in decoded
     assert "Subject: Re" in decoded
     assert "edited" in decoded
 

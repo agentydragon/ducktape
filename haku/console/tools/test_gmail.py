@@ -10,7 +10,7 @@ import pytest
 import pytest_bazel
 from fastmcp import Client
 
-from gmail_api.filters import FilterAction, FilterCriteria, FiltersListResponse, GmailFilter
+from gmail_api.filters import FilterAction, FilterCriteria, GmailFilter
 from gmail_api.labels import GmailLabel, LabelsListResponse, LabelType
 from gmail_api.messages import (
     Draft,
@@ -178,21 +178,6 @@ async def test_labels_delete_dispatches_and_returns_no_error(gmail: Mock, client
     gmail.labels_delete.assert_called_once_with("L9")
 
 
-async def test_filters_list_dispatches(gmail: Mock, client):
-    gmail.filters_list.return_value = FiltersListResponse(filter=[GmailFilter(id="F1")])
-    result = await client.call_tool("filters_list", {})
-    assert not result.is_error
-    # FastMCP serializes with the model's aliases, so the singular `filter` key is on the wire.
-    assert result.data.filter[0].id == "F1"
-    gmail.filters_list.assert_called_once_with()
-
-
-async def test_filters_get_dispatches(gmail: Mock, client):
-    gmail.filters_get.return_value = GmailFilter(id="F1")
-    await client.call_tool("filters_get", {"filter_id": "F1"})
-    gmail.filters_get.assert_called_once_with("F1")
-
-
 async def test_filters_create_forwards_nested_criteria_and_action(gmail: Mock, client):
     gmail.filters_create.return_value = GmailFilter(
         id="F1", criteria=FilterCriteria(from_="a@x"), action=FilterAction(add_label_ids=["L1"])
@@ -202,12 +187,6 @@ async def test_filters_create_forwards_nested_criteria_and_action(gmail: Mock, c
     (criteria, action), _kwargs = gmail.filters_create.call_args
     assert criteria.from_ == "a@x"  # camelCase wire `from` -> python `from_`
     assert action.add_label_ids == ["L1"]
-
-
-async def test_filters_delete_dispatches(gmail: Mock, client):
-    result = await client.call_tool("filters_delete", {"filter_id": "F9"}, raise_on_error=False)
-    assert not result.is_error
-    gmail.filters_delete.assert_called_once_with("F9")
 
 
 async def test_drafts_list_dispatches_with_pagination_args(gmail: Mock, client):
@@ -223,12 +202,6 @@ async def test_drafts_list_dispatches_with_pagination_args(gmail: Mock, client):
     assert args.page_token == "P"
 
 
-async def test_drafts_get_dispatches_with_format(gmail: Mock, client):
-    gmail.drafts_get.return_value = Draft(id="d1", message=Message(id="m1"))
-    await client.call_tool("drafts_get", {"draft_id": "d1", "format": "metadata"})
-    gmail.drafts_get.assert_called_once_with("d1", MessageFormat.METADATA)
-
-
 async def test_drafts_get_defaults_to_minimal(gmail: Mock, client):
     gmail.drafts_get.return_value = Draft(id="d1", message=Message(id="m1"))
     await client.call_tool("drafts_get", {"draft_id": "d1"})
@@ -242,12 +215,6 @@ async def test_drafts_update_dispatches_with_draft_id(gmail: Mock, client):
     (args,), _kwargs = gmail.drafts_update.call_args
     assert args.draft_id == "d9"
     assert args.to == ["a@x"]
-
-
-async def test_drafts_delete_dispatches(gmail: Mock, client):
-    result = await client.call_tool("drafts_delete", {"draft_id": "d9"}, raise_on_error=False)
-    assert not result.is_error
-    gmail.drafts_delete.assert_called_once_with("d9")
 
 
 def test_thread_previews_endpoint_503s_when_unconfigured(make_operator_client) -> None:

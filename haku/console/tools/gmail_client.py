@@ -73,6 +73,7 @@ class CreateGmailDraftArgs(BaseModel):
     subject: str
     body: str = Field(description="Plain-text message body.")
     cc: list[str] = Field(default_factory=list)
+    bcc: list[str] = Field(default_factory=list, description="Bcc recipient email addresses.")
     thread_id: str | None = Field(default=None, description="Existing Gmail thread ID to draft a reply within.")
 
 
@@ -261,6 +262,8 @@ def _draft_body(args: CreateGmailDraftArgs) -> dict[str, Any]:
     message["Subject"] = args.subject
     if args.cc:
         message["Cc"] = ", ".join(args.cc)
+    if args.bcc:
+        message["Bcc"] = ", ".join(args.bcc)
     raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
     body: dict[str, Any] = {"message": {"raw": raw}}
     if args.thread_id:

@@ -24,6 +24,13 @@ to a Gmail API method:
   language, IMAP/POP (filters are already exposed).
 - **Watch / stop** — `users.{watch,stop}` (push notifications; needs a Pub/Sub topic).
 
+**Draft message shape is flat.** `drafts_create`/`drafts_update` take plain-text
+`to`/`cc`/`bcc`/`subject`/`body` and build the MIME server-side, so they leave a lot on the
+table — attachments, an HTML alternative part, arbitrary headers, or a raw RFC 2822 message.
+If a workflow needs more than the flat fields, accept a richer message representation from the
+client (e.g. an `html_body`, an attachments list, or a raw passthrough) rather than growing the
+flat parameter list one field at a time.
+
 ## Agent-facing MCP server (`/mcp`) — deferred follow-ups
 
 The `/mcp` server (`mcp_server.py`) ships with a single global auto-approval policy and a

@@ -181,13 +181,14 @@ def build_mcp(gmail: GmailToolsClient) -> FastMCP:
         subject: str,
         body: Annotated[str, Field(description="Plain-text message body.")],
         cc: Annotated[list[str] | None, Field(default=None)] = None,
+        bcc: Annotated[list[str] | None, Field(default=None, description="Bcc recipient email addresses.")] = None,
         thread_id: Annotated[
             str | None, Field(default=None, description="Existing Gmail thread ID to keep the draft within.")
         ] = None,
     ) -> Draft:
         """Replace a Gmail draft's message (mirrors users.drafts.update)."""
         args = UpdateGmailDraftArgs(
-            draft_id=draft_id, to=to, subject=subject, body=body, cc=cc or [], thread_id=thread_id
+            draft_id=draft_id, to=to, subject=subject, body=body, cc=cc or [], bcc=bcc or [], thread_id=thread_id
         )
         return gmail.drafts_update(args)
 
@@ -212,12 +213,13 @@ def build_mcp(gmail: GmailToolsClient) -> FastMCP:
         subject: str,
         body: Annotated[str, Field(description="Plain-text message body.")],
         cc: Annotated[list[str] | None, Field(default=None)] = None,
+        bcc: Annotated[list[str] | None, Field(default=None, description="Bcc recipient email addresses.")] = None,
         thread_id: Annotated[
             str | None, Field(default=None, description="Existing Gmail thread ID to draft a reply within.")
         ] = None,
     ) -> Draft:
         """Create a Gmail draft (never sent automatically — the operator sends it from Gmail)."""
-        args = CreateGmailDraftArgs(to=to, subject=subject, body=body, cc=cc or [], thread_id=thread_id)
+        args = CreateGmailDraftArgs(to=to, subject=subject, body=body, cc=cc or [], bcc=bcc or [], thread_id=thread_id)
         return gmail.drafts_create(args)
 
     @mcp.tool
