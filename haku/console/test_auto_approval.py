@@ -36,6 +36,10 @@ async def _policy_id(tool_name: str, arguments: dict, **kwargs):
         ("messages_get", {"message_id": "m1", "format": "raw"}),
         ("labels_list", {}),
         ("labels_get", {"label_id": "INBOX"}),
+        ("filters_list", {}),
+        ("filters_get", {"filter_id": "F1"}),
+        ("drafts_list", {}),
+        ("drafts_get", {"draft_id": "d1"}),
     ],
 )
 async def test_all_gmail_reads_are_auto_approved(tool_name: str, arguments: dict) -> None:
@@ -43,6 +47,20 @@ async def test_all_gmail_reads_are_auto_approved(tool_name: str, arguments: dict
     assert policy_id == UNCONDITIONAL_AUTO_APPROVAL_ID
     assert evaluation is not None
     assert "allowlisted" in evaluation
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [
+        ("filters_create", {"criteria": {"from": "a@x"}, "action": {"addLabelIds": ["L1"]}}),
+        ("filters_delete", {"filter_id": "F9"}),
+        ("drafts_update", {"draft_id": "d9", "to": ["a@x"], "subject": "S", "body": "B"}),
+        ("drafts_delete", {"draft_id": "d9"}),
+    ],
+)
+async def test_gmail_writes_stay_manual(tool_name: str, arguments: dict) -> None:
+    policy_id, _evaluation = await _decision(tool_name, arguments)
+    assert policy_id is None
 
 
 async def test_read_requires_valid_registered_tool_arguments() -> None:

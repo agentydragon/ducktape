@@ -59,7 +59,7 @@ Provider config: `agents/airlock/config.yaml` (`haku_console_google`); the same 
 OAuth client as `google` is reused via
 `HAKU_CONSOLE_GOOGLE_CLIENT_ID/SECRET` (`agents/airlock/deployment.yaml`).
 
-Scopes: `calendar.events`, `gmail.modify`, `gmail.compose`, plus every read-only scope the
+Scopes: `calendar.events`, `gmail.modify`, `gmail.compose`, `gmail.settings.basic`, plus every read-only scope the
 `google` provider carries (`gmail.readonly`, `drive.readonly`, `drive.activity.readonly`,
 `calendar.readonly`, `tasks.readonly`, `contacts.readonly`, `documents.readonly`,
 `spreadsheets.readonly`, `presentations.readonly`, `youtube.readonly`) — kept in one grant

@@ -13,9 +13,11 @@ import pytest
 import pytest_bazel
 from pydantic import BaseModel
 
+from gmail_api.filters import FilterAction, FilterCriteria, GmailFilter, SizeComparison
 from gmail_api.labels import CreateLabelRequest, GmailLabel, LabelType, PatchLabelRequest
 from gmail_api.messages import (
     Draft,
+    DraftsListResponse,
     Message,
     MessageFormat,
     MessagePart,
@@ -29,8 +31,10 @@ from haku.console.tools.gmail_client import (
     CreateGmailDraftArgs,
     GmailLabelRef,
     GmailToolsClient,
+    ListDraftsArgs,
     ModifyGmailThreadLabelsArgs,
     SearchThreadsArgs,
+    UpdateGmailDraftArgs,
     preview_gmail_threads,
 )
 
@@ -127,9 +131,56 @@ class _FakeDrafts:
     def __init__(self, svc: "_FakeGmailService") -> None:
         self._svc = svc
 
+    def list(self, *, userId, **kwargs):  # noqa: N803
+        self._svc.calls.append(("drafts.list", kwargs))
+        return _Executable(self._svc.drafts_list_response)
+
+    def get(self, *, userId, id, format):  # noqa: N803
+        self._svc.calls.append(("drafts.get", {"id": id, "format": format}))
+        return _Executable(self._svc.draft_responses[id])
+
     def create(self, *, userId, body):  # noqa: N803
         self._svc.calls.append(("drafts.create", body))
         return _Executable(self._svc.draft_response)
+
+    def update(self, *, userId, id, body):  # noqa: N803
+        self._svc.calls.append(("drafts.update", {"id": id, **body}))
+        return _Executable(self._svc.draft_response)
+
+    def delete(self, *, userId, id):  # noqa: N803
+        self._svc.calls.append(("drafts.delete", {"id": id}))
+        return _Executable({})
+
+
+class _FakeFilters:
+    def __init__(self, svc: "_FakeGmailService") -> None:
+        self._svc = svc
+
+    def list(self, *, userId):  # noqa: N803
+        self._svc.calls.append(("filters.list", {}))
+        return _Executable(self._svc.filters_list_response)
+
+    def get(self, *, userId, id):  # noqa: N803
+        self._svc.calls.append(("filters.get", {"id": id}))
+        return _Executable(self._svc.filter_responses[id])
+
+    def create(self, *, userId, body):  # noqa: N803
+        self._svc.created_filter_seq += 1
+        result = {"id": f"Filter_{self._svc.created_filter_seq}", **body}
+        self._svc.calls.append(("filters.create", body))
+        return _Executable(result)
+
+    def delete(self, *, userId, id):  # noqa: N803
+        self._svc.calls.append(("filters.delete", {"id": id}))
+        return _Executable({})
+
+
+class _FakeSettings:
+    def __init__(self, svc: "_FakeGmailService") -> None:
+        self._svc = svc
+
+    def filters(self) -> _FakeFilters:
+        return _FakeFilters(self._svc)
 
 
 class _FakeUsers:
@@ -148,6 +199,9 @@ class _FakeUsers:
     def drafts(self) -> _FakeDrafts:
         return _FakeDrafts(self._svc)
 
+    def settings(self) -> _FakeSettings:
+        return _FakeSettings(self._svc)
+
 
 @dataclass
 class _FakeGmailService:
@@ -155,10 +209,15 @@ class _FakeGmailService:
     label_responses: dict[str, dict[str, Any]] = field(default_factory=dict)
     thread_responses: dict[str, dict[str, Any]] = field(default_factory=dict)
     message_responses: dict[str, dict[str, Any]] = field(default_factory=dict)
+    draft_responses: dict[str, dict[str, Any]] = field(default_factory=dict)
+    filter_responses: dict[str, dict[str, Any]] = field(default_factory=dict)
     threads_list_response: dict[str, Any] = field(default_factory=dict)
+    drafts_list_response: dict[str, Any] = field(default_factory=dict)
+    filters_list_response: dict[str, Any] = field(default_factory=dict)
     draft_response: dict[str, Any] = field(default_factory=dict)
     calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     created_label_seq: int = 0
+    created_filter_seq: int = 0
 
     def users(self) -> _FakeUsers:
         return _FakeUsers(self)
@@ -309,6 +368,90 @@ def test_create_draft_reply_carries_thread_id(svc: _FakeGmailService, client: Gm
     svc.draft_response = _dump(_draft("d1", "m1"))
     client.drafts_create(CreateGmailDraftArgs(to=["a@example.com"], subject="Re", body="ok", thread_id="t1"))
     assert _call(svc, "drafts.create")["message"]["threadId"] == "t1"
+
+
+def test_list_drafts_passes_query_and_pagination(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    svc.drafts_list_response = _dump(
+        DraftsListResponse(drafts=[Draft(id="d1", message=Message(id="m1"))], next_page_token="NEXT")
+    )
+    result = client.drafts_list(ListDraftsArgs(query="receipts", max_results=5, page_token="PREV"))
+    assert [draft.id for draft in result.drafts] == ["d1"]
+    assert result.next_page_token == "NEXT"
+    assert _call(svc, "drafts.list") == {"q": "receipts", "maxResults": 5, "pageToken": "PREV"}
+
+
+def test_list_drafts_omits_optional_params(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    svc.drafts_list_response = _dump(DraftsListResponse())
+    client.drafts_list(ListDraftsArgs())
+    assert _call(svc, "drafts.list") == {"maxResults": 25}
+
+
+def test_get_draft_passes_format(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    svc.draft_responses["d1"] = _dump(_draft("d1", "m1"))
+    result = client.drafts_get("d1", MessageFormat.METADATA)
+    assert result.id == "d1"
+    assert _call(svc, "drafts.get") == {"id": "d1", "format": "metadata"}
+
+
+def test_update_draft_replaces_message_and_carries_id(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    svc.draft_response = _dump(_draft("d1", "m1"))
+    result = client.drafts_update(
+        UpdateGmailDraftArgs(draft_id="d9", to=["a@example.com"], subject="Re", body="edited")
+    )
+    assert result.id == "d1"
+    params = _call(svc, "drafts.update")
+    assert params["id"] == "d9"
+    decoded = base64.urlsafe_b64decode(params["message"]["raw"]).decode()
+    assert "To: a@example.com" in decoded
+    assert "Subject: Re" in decoded
+    assert "edited" in decoded
+
+
+def test_delete_draft_calls_delete(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    client.drafts_delete("d9")
+    assert _call(svc, "drafts.delete") == {"id": "d9"}
+
+
+def test_list_filters_returns_real_filter_models(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    # Gmail's filters list key is the singular `filter`.
+    svc.filters_list_response = {
+        "filter": [
+            _dump(GmailFilter(id="F1", criteria=FilterCriteria(from_="alice@example.com"), action=FilterAction()))
+        ]
+    }
+    result = client.filters_list()
+    assert [f.id for f in result.filter] == ["F1"]  # singular `filter` field, verbatim
+    assert result.filter[0].criteria.from_ == "alice@example.com"
+
+
+def test_get_filter_parses_criteria_and_action(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    svc.filter_responses["F1"] = _dump(
+        GmailFilter(
+            id="F1",
+            criteria=FilterCriteria(has_attachment=True, size=10, size_comparison=SizeComparison.LARGER),
+            action=FilterAction(add_label_ids=["Label_1"], forward="bob@example.com"),
+        )
+    )
+    result = client.filters_get("F1")
+    assert result.criteria.has_attachment is True
+    assert result.criteria.size == 10
+    assert result.criteria.size_comparison == SizeComparison.LARGER
+    assert result.action.add_label_ids == ["Label_1"]
+    assert result.action.forward == "bob@example.com"
+    assert _call(svc, "filters.get") == {"id": "F1"}
+
+
+def test_create_filter_sends_criteria_and_action_body(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    result = client.filters_create(FilterCriteria(from_="spam@example.com"), FilterAction(remove_label_ids=["INBOX"]))
+    assert result.id == "Filter_1"
+    body = _call(svc, "filters.create")
+    assert body["criteria"] == {"from": "spam@example.com"}  # camelCase wire alias, exclude_none
+    assert body["action"] == {"removeLabelIds": ["INBOX"]}
+
+
+def test_delete_filter_calls_delete(svc: _FakeGmailService, client: GmailToolsClient) -> None:
+    client.filters_delete("F9")
+    assert _call(svc, "filters.delete") == {"id": "F9"}
 
 
 def test_batch_modify_creates_missing_add_label_and_modifies_threads(

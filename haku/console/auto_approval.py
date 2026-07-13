@@ -23,7 +23,19 @@ GROCY_SF_SERVER_ID = "grocy-sf"
 TANA_RW_SERVER_ID = "tana-rw"
 
 # Gmail read tools auto-approved for any authenticated agent regardless of arguments.
-GMAIL_READ_TOOLS = frozenset({"threads_list", "threads_get", "messages_get", "labels_list", "labels_get"})
+GMAIL_READ_TOOLS = frozenset(
+    {
+        "threads_list",
+        "threads_get",
+        "messages_get",
+        "labels_list",
+        "labels_get",
+        "filters_list",
+        "filters_get",
+        "drafts_list",
+        "drafts_get",
+    }
+)
 # Gmail mutations that may auto-approve depending on arguments (haku/-prefixed labels).
 GMAIL_CONDITIONAL_TOOLS = frozenset({"threads_modify_labels", "labels_patch", "labels_delete"})
 

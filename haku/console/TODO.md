@@ -6,8 +6,9 @@ actionable checklist. Remove entries once done.
 ## `gmail` MCP server — Gmail API affordances not yet exposed
 
 The in-process `gmail` server (`tools/gmail.py`) currently mirrors a slice of Gmail's REST
-API (thread/message/label reads, draft creation, thread-label changes, label CRUD). Add the
-rest as approval-gated tools when a workflow needs them — each maps to a Gmail API method:
+API (thread/message/label/filter reads, draft CRUD, thread-label changes, label CRUD, filter
+create/delete). Add the rest as approval-gated tools when a workflow needs them — each maps
+to a Gmail API method:
 
 - **Send / reply** — `users.messages.send`, `users.drafts.send`. High blast radius (mail
   leaves the account); keep firmly approval-gated, never a candidate for auto-approve.
@@ -16,12 +17,11 @@ rest as approval-gated tools when a workflow needs them — each maps to a Gmail
 - **Message-level label changes** — `users.messages.modify`, `users.messages.batchModify`
   (today only whole-thread label changes are exposed, via the synthesized
   `batch_modify_thread_labels`).
-- **Drafts** — `users.drafts.{list,get,update,delete}` (create already exposed).
 - **Attachments** — `users.messages.attachments.get` (fetch attachment bytes).
 - **Raw import/insert** — `users.messages.{import,insert}`.
 - **History** — `users.history.list` (incremental sync since a `historyId`).
-- **Settings** — `users.settings.*`: filters (`filters.{list,get,create,delete}`),
-  forwarding, vacation responder, send-as, delegates, language, IMAP/POP.
+- **Settings** — `users.settings.*`: forwarding, vacation responder, send-as, delegates,
+  language, IMAP/POP (filters are already exposed).
 - **Watch / stop** — `users.{watch,stop}` (push notifications; needs a Pub/Sub topic).
 
 ## Agent-facing MCP server (`/mcp`) — deferred follow-ups

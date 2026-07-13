@@ -1,10 +1,11 @@
 """Gmail operations behind haku-console's `gmail` MCP server.
 
 The read tools mirror Gmail's REST API: `labels_list`/`labels_get`/`threads_list`/
-`threads_get`/`messages_get` return Gmail's own resource shapes (`gmail_api.messages`,
-`gmail_api.labels`) **verbatim** — no content-type prioritization, no body decoding, no
-field flattening. `format` passes straight through to Gmail. The write tools (draft
-creation, thread-label changes, label CRUD) act on any label/thread and are mediated by
+`threads_get`/`messages_get`/`filters_list`/`filters_get`/`drafts_list`/`drafts_get` return
+Gmail's own resource shapes (`gmail_api.messages`, `gmail_api.labels`, `gmail_api.filters`)
+**verbatim** — no content-type prioritization, no body decoding, no field flattening. `format`
+passes straight through to Gmail. The write tools (draft create/update/delete, thread-label
+changes, label CRUD, filter create/delete) act on any resource and are mediated by
 haku-console's manual-or-policy approval pipeline. See `haku/docs/security.md`.
 """
 
@@ -17,8 +18,17 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
+from gmail_api.filters import FilterAction, FilterCriteria, FiltersListResponse, GmailFilter
 from gmail_api.labels import CreateLabelRequest, GmailLabel, LabelsListResponse, LabelType, PatchLabelRequest
-from gmail_api.messages import Draft, Message, MessageFormat, Thread, ThreadFormat, ThreadsListResponse
+from gmail_api.messages import (
+    Draft,
+    DraftsListResponse,
+    Message,
+    MessageFormat,
+    Thread,
+    ThreadFormat,
+    ThreadsListResponse,
+)
 
 GMAIL_SERVER_ID = "gmail"
 _THREAD_URL = "https://mail.google.com/mail/u/0/#all/{thread_id}"
@@ -66,6 +76,12 @@ class CreateGmailDraftArgs(BaseModel):
     thread_id: str | None = Field(default=None, description="Existing Gmail thread ID to draft a reply within.")
 
 
+class UpdateGmailDraftArgs(CreateGmailDraftArgs):
+    """Replace a Gmail draft's message (mirrors users.drafts.update)."""
+
+    draft_id: str = Field(description="ID of the existing draft to replace.")
+
+
 # --- read-tool input ---
 class SearchThreadsArgs(BaseModel):
     query: str = Field(
@@ -73,6 +89,14 @@ class SearchThreadsArgs(BaseModel):
         "(e.g. 'from:alice after:2026/01/01 is:unread')."
     )
     max_results: int = Field(default=25, ge=1, le=500, description="Maximum threads per page.")
+    page_token: str | None = Field(
+        default=None, description="`next_page_token` from a previous response; omit for the first page."
+    )
+
+
+class ListDraftsArgs(BaseModel):
+    query: str | None = Field(default=None, description="Optional Gmail search query to filter drafts.")
+    max_results: int = Field(default=25, ge=1, le=500, description="Maximum drafts per page.")
     page_token: str | None = Field(
         default=None, description="`next_page_token` from a previous response; omit for the first page."
     )
@@ -132,6 +156,42 @@ class GmailToolsClient:
             self.service.users().messages().get(userId="me", id=message_id, format=message_format.value).execute()
         )
 
+    def filters_list(self) -> FiltersListResponse:
+        return FiltersListResponse.model_validate(self.service.users().settings().filters().list(userId="me").execute())
+
+    def filters_get(self, filter_id: str) -> GmailFilter:
+        return GmailFilter.model_validate(
+            self.service.users().settings().filters().get(userId="me", id=filter_id).execute()
+        )
+
+    def filters_create(self, criteria: FilterCriteria, action: FilterAction) -> GmailFilter:
+        body = {
+            "criteria": criteria.model_dump(by_alias=True, exclude_none=True),
+            "action": action.model_dump(by_alias=True, exclude_none=True),
+        }
+        return GmailFilter.model_validate(
+            self.service.users().settings().filters().create(userId="me", body=body).execute()
+        )
+
+    def filters_delete(self, filter_id: str) -> None:
+        self.service.users().settings().filters().delete(userId="me", id=filter_id).execute()
+
+    def drafts_list(self, args: ListDraftsArgs) -> DraftsListResponse:
+        params: dict[str, Any] = {"userId": "me", "maxResults": args.max_results}
+        if args.query is not None:
+            params["q"] = args.query
+        if args.page_token is not None:
+            params["pageToken"] = args.page_token
+        return DraftsListResponse.model_validate(self.service.users().drafts().list(**params).execute())
+
+    def drafts_get(self, draft_id: str, draft_format: MessageFormat) -> Draft:
+        return Draft.model_validate(
+            self.service.users().drafts().get(userId="me", id=draft_id, format=draft_format.value).execute()
+        )
+
+    def drafts_delete(self, draft_id: str) -> None:
+        self.service.users().drafts().delete(userId="me", id=draft_id).execute()
+
     # --- writes ---
     def threads_modify_labels(self, args: ModifyGmailThreadLabelsArgs) -> ModifyGmailThreadLabelsResult:
         existing = {label.name: label.id for label in self._user_labels()}
@@ -172,16 +232,13 @@ class GmailToolsClient:
         return GmailLabelRef(name=created.name, id=created.id)
 
     def drafts_create(self, args: CreateGmailDraftArgs) -> Draft:
-        message = MIMEText(args.body)
-        message["To"] = ", ".join(args.to)
-        message["Subject"] = args.subject
-        if args.cc:
-            message["Cc"] = ", ".join(args.cc)
-        raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
-        body: dict[str, Any] = {"message": {"raw": raw}}
-        if args.thread_id:
-            body["message"]["threadId"] = args.thread_id
-        return Draft.model_validate(self.service.users().drafts().create(userId="me", body=body).execute())
+        return Draft.model_validate(self.service.users().drafts().create(userId="me", body=_draft_body(args)).execute())
+
+    def drafts_update(self, args: UpdateGmailDraftArgs) -> Draft:
+        body = {"id": args.draft_id, **_draft_body(args)}
+        return Draft.model_validate(
+            self.service.users().drafts().update(userId="me", id=args.draft_id, body=body).execute()
+        )
 
     def labels_create(self, request: CreateLabelRequest) -> GmailLabel:
         body = request.model_dump(by_alias=True, exclude_none=True)
@@ -195,6 +252,20 @@ class GmailToolsClient:
 
     def labels_delete(self, label_id: str) -> None:
         self.service.users().labels().delete(userId="me", id=label_id).execute()
+
+
+def _draft_body(args: CreateGmailDraftArgs) -> dict[str, Any]:
+    """Build the `message` body for `drafts.create`/`drafts.update` from plain-text fields."""
+    message = MIMEText(args.body)
+    message["To"] = ", ".join(args.to)
+    message["Subject"] = args.subject
+    if args.cc:
+        message["Cc"] = ", ".join(args.cc)
+    raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+    body: dict[str, Any] = {"message": {"raw": raw}}
+    if args.thread_id:
+        body["message"]["threadId"] = args.thread_id
+    return body
 
 
 def preview_gmail_threads(service: Any, thread_ids: list[str]) -> dict[str, GmailThreadPreview]:

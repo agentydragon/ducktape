@@ -6,6 +6,7 @@ py_library(
     name = "gmail_client",
     srcs = ["gmail_client.py"],
     deps = [
+        "//gmail_api:filters",
         "//gmail_api:labels",
         "//gmail_api:messages",
         "@pypi//pydantic",
@@ -24,6 +25,7 @@ py_library(
     visibility = ["//haku/console:__subpackages__"],
     deps = [
         ":gmail_client",
+        "//gmail_api:filters",
         "//gmail_api:labels",
         "//gmail_api:messages",
         "//gmail_api:service",
@@ -94,6 +96,7 @@ py_test(
         ":gmail",
         ":gmail_client",
         "//:conftest",
+        "//gmail_api:filters",
         "//gmail_api:labels",
         "//gmail_api:messages",
         "//haku/console:conftest",
@@ -123,6 +126,7 @@ py_test(
     deps = [
         ":gmail_client",
         "//:conftest",
+        "//gmail_api:filters",
         "//gmail_api:labels",
         "//gmail_api:messages",
         "@pypi//pytest",

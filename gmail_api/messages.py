@@ -94,3 +94,13 @@ class ThreadsListResponse(BaseModel):
     threads: list[Thread] = Field(default_factory=list)
     next_page_token: str | None = None
     result_size_estimate: int | None = None
+
+
+class DraftsListResponse(BaseModel):
+    """Response body of `users.drafts.list` (draft stubs plus pagination)."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    drafts: list[Draft] = Field(default_factory=list)
+    next_page_token: str | None = None
+    result_size_estimate: int | None = None

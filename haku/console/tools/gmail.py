@@ -25,6 +25,7 @@ from fastmcp import FastMCP
 from googleapiclient.discovery import build
 from pydantic import Field
 
+from gmail_api.filters import FilterAction, FilterCriteria, FiltersListResponse, GmailFilter
 from gmail_api.labels import (
     CreateLabelRequest,
     GmailLabel,
@@ -33,27 +34,39 @@ from gmail_api.labels import (
     MessageListVisibility,
     PatchLabelRequest,
 )
-from gmail_api.messages import Draft, Message, MessageFormat, Thread, ThreadFormat, ThreadsListResponse
+from gmail_api.messages import (
+    Draft,
+    DraftsListResponse,
+    Message,
+    MessageFormat,
+    Thread,
+    ThreadFormat,
+    ThreadsListResponse,
+)
 from gmail_api.service import credentials_from_token_dir
 from haku.console.tools.gmail_client import (
     GMAIL_SERVER_ID,
     CreateGmailDraftArgs,
     GmailThreadPreviewsResponse,
     GmailToolsClient,
+    ListDraftsArgs,
     ModifyGmailThreadLabelsArgs,
     ModifyGmailThreadLabelsResult,
     SearchThreadsArgs,
+    UpdateGmailDraftArgs,
     preview_gmail_threads,
 )
 
-# The write scopes the label/draft tools need. `gmail.modify` also covers every read the
-# search/get tools do, so no read-only scope is required. The mounted `haku_console_google`
-# Airlock token (shared with the `google_calendar` server) carries these plus the read-only
-# scopes; requesting a subset here is harmless — the externally-rotated access token already
-# holds whatever Airlock granted. See cluster/k8s/haku/console/README.md.
+# The write scopes the label/draft/filter tools need. `gmail.modify` also covers every read the
+# search/get tools do, so no read-only scope is required; `gmail.settings.basic` covers filter
+# CRUD. The mounted `haku_console_google` Airlock token (shared with the `google_calendar`
+# server) carries these plus the read-only scopes; requesting a subset here is harmless — the
+# externally-rotated access token already holds whatever Airlock granted.
+# See cluster/k8s/haku/console/README.md.
 GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify"
 GMAIL_COMPOSE_SCOPE = "https://www.googleapis.com/auth/gmail.compose"
-GMAIL_SCOPES = [GMAIL_MODIFY_SCOPE, GMAIL_COMPOSE_SCOPE]
+GMAIL_SETTINGS_BASIC_SCOPE = "https://www.googleapis.com/auth/gmail.settings.basic"
+GMAIL_SCOPES = [GMAIL_MODIFY_SCOPE, GMAIL_COMPOSE_SCOPE, GMAIL_SETTINGS_BASIC_SCOPE]
 
 
 # Module-level, not local to build_mcp(): `from __future__ import annotations` makes every
@@ -72,10 +85,10 @@ def build_mcp(gmail: GmailToolsClient) -> FastMCP:
     mcp: FastMCP = FastMCP(
         name=GMAIL_SERVER_ID,
         strict_input_validation=True,
-        instructions="Privileged Gmail tools. Reads (search/get threads, messages, labels) mirror Gmail's REST "
-        "API and return its resource shapes verbatim; writes create drafts, change thread labels, and manage "
-        "labels. Calls go through haku-console's approval and audit pipeline; its reviewed decision may auto-approve "
-        "standing label-read authority and mutations confined to haku/.",
+        instructions="Privileged Gmail tools. Reads (search/get threads, messages, labels, filters, drafts) mirror "
+        "Gmail's REST API and return its resource shapes verbatim; writes create/update/delete drafts, change thread "
+        "labels, manage labels, and manage filters. Calls go through haku-console's approval and audit pipeline; its "
+        "reviewed decision may auto-approve standing read authority and label mutations confined to haku/.",
     )
 
     @mcp.tool
@@ -118,6 +131,72 @@ def build_mcp(gmail: GmailToolsClient) -> FastMCP:
     async def labels_get(label_id: Annotated[str, Field(description="Gmail label ID.")]) -> GmailLabel:
         """Fetch one Gmail label including its message/thread counts (mirrors users.labels.get)."""
         return gmail.labels_get(label_id)
+
+    @mcp.tool
+    async def filters_list() -> FiltersListResponse:
+        """List every Gmail filter (mirrors users.settings.filters.list; the response key is singular `filter`)."""
+        return gmail.filters_list()
+
+    @mcp.tool
+    async def filters_get(filter_id: Annotated[str, Field(description="Gmail filter ID.")]) -> GmailFilter:
+        """Fetch one Gmail filter — its match criteria and action (mirrors users.settings.filters.get)."""
+        return gmail.filters_get(filter_id)
+
+    @mcp.tool
+    async def filters_create(criteria: FilterCriteria, action: FilterAction) -> GmailFilter:
+        """Create a Gmail filter (mirrors users.settings.filters.create). Both `criteria` and `action` are required."""
+        return gmail.filters_create(criteria, action)
+
+    @mcp.tool
+    async def filters_delete(
+        filter_id: Annotated[str, Field(description="ID of the filter to delete (from filters_list/filters_get).")],
+    ) -> None:
+        """Delete a Gmail filter (mirrors users.settings.filters.delete)."""
+        gmail.filters_delete(filter_id)
+
+    @mcp.tool
+    async def drafts_list(
+        query: Annotated[
+            str | None, Field(default=None, description="Optional Gmail search query to filter drafts.")
+        ] = None,
+        max_results: Annotated[int, Field(ge=1, le=500, description="Maximum drafts per page.")] = 25,
+        page_token: Annotated[
+            str | None, Field(default=None, description="`next_page_token` from a previous response; omit for page 1.")
+        ] = None,
+    ) -> DraftsListResponse:
+        """List Gmail drafts (mirrors users.drafts.list): draft stubs plus `next_page_token` for paging."""
+        return gmail.drafts_list(ListDraftsArgs(query=query, max_results=max_results, page_token=page_token))
+
+    @mcp.tool
+    async def drafts_get(
+        draft_id: Annotated[str, Field(description="Gmail draft ID.")], format: MessageFormat = MessageFormat.MINIMAL
+    ) -> Draft:
+        """Fetch a Gmail draft (mirrors users.drafts.get). `format` sets the detail level of the draft's message."""
+        return gmail.drafts_get(draft_id, format)
+
+    @mcp.tool
+    async def drafts_update(
+        draft_id: Annotated[str, Field(description="ID of the draft to replace (from drafts_list/drafts_get).")],
+        to: Annotated[list[str], Field(min_length=1, description="Recipient email addresses.")],
+        subject: str,
+        body: Annotated[str, Field(description="Plain-text message body.")],
+        cc: Annotated[list[str] | None, Field(default=None)] = None,
+        thread_id: Annotated[
+            str | None, Field(default=None, description="Existing Gmail thread ID to keep the draft within.")
+        ] = None,
+    ) -> Draft:
+        """Replace a Gmail draft's message (mirrors users.drafts.update)."""
+        args = UpdateGmailDraftArgs(
+            draft_id=draft_id, to=to, subject=subject, body=body, cc=cc or [], thread_id=thread_id
+        )
+        return gmail.drafts_update(args)
+
+    @mcp.tool
+    async def drafts_delete(
+        draft_id: Annotated[str, Field(description="ID of the draft to delete (from drafts_list/drafts_get).")],
+    ) -> None:
+        """Delete a Gmail draft (mirrors users.drafts.delete)."""
+        gmail.drafts_delete(draft_id)
 
     @mcp.tool
     async def threads_modify_labels(

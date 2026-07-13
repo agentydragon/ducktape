@@ -23,6 +23,14 @@ async def test_exports_every_server_and_tool() -> None:
     assert schema["required"] == ["gmail", "google_calendar", "grocy-sf", "haku_routine"]
     assert list(schema["properties"]["gmail"]["properties"]) == [
         "drafts_create",
+        "drafts_delete",
+        "drafts_get",
+        "drafts_list",
+        "drafts_update",
+        "filters_create",
+        "filters_delete",
+        "filters_get",
+        "filters_list",
         "labels_create",
         "labels_delete",
         "labels_get",
