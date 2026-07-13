@@ -93,6 +93,38 @@ def _test_mcp_server() -> FastMCP:
         """List shopping lists, mirroring grocy-sf's shopping_lists_list(detail="brief")."""
         return [{"id": 5, "name": "Weekly"}]
 
+    @server.tool()
+    async def shopping_list_get(shopping_list: int | str) -> dict[str, Any]:
+        """Fetch one shopping list's items, mirroring grocy-sf's shopping_list_get. The reference
+        lookup calls this once per list (by id) to flatten every item for the shopping-list
+        edit/remove previews; a dict return is inlined into structured content (items at the top
+        level, not under "result")."""
+        assert shopping_list == 5, f"reference lookup should pass the list id, got {shopping_list!r}"
+        return {
+            "name": "Weekly",
+            "description": None,
+            "items": [
+                {
+                    "item_id": 11,
+                    "product_name": "Milk",
+                    "product_id": 1,
+                    "amount": 2.0,
+                    "qu_name": "Liter",
+                    "note": None,
+                    "done": False,
+                },
+                {
+                    "item_id": 12,
+                    "product_name": None,
+                    "product_id": None,
+                    "amount": 1.0,
+                    "qu_name": None,
+                    "note": "paper towels?",
+                    "done": False,
+                },
+            ],
+        }
+
     return server
 
 
@@ -397,6 +429,7 @@ def test_reflection_lists_connected_servers_without_leaking_credentials(
         "quantity_units_list",
         "product_groups_list",
         "shopping_lists_list",
+        "shopping_list_get",
     }
     assert tools["stock_add"]["status"] == "alive"
     assert tools["stock_add"]["input_schema"]["type"] == "object"
@@ -524,6 +557,19 @@ def test_grocy_sf_reference_resolves_ids_to_names(make_operator_client, console_
         "quantity_units": [{"id": 3, "name": "Liter"}],
         "product_groups": [{"id": 4, "name": "Dairy"}],
         "shopping_lists": [{"id": 5, "name": "Weekly"}],
+        # Flattened from the per-list `shopping_list_get` call; `product_id` is dropped by
+        # `GrocyShoppingListItem`, which keeps only the fields the edit/remove previews render.
+        "shopping_list_items": [
+            {"item_id": 11, "product_name": "Milk", "note": None, "amount": 2.0, "qu_name": "Liter", "done": False},
+            {
+                "item_id": 12,
+                "product_name": None,
+                "note": "paper towels?",
+                "amount": 1.0,
+                "qu_name": None,
+                "done": False,
+            },
+        ],
     }
 
 
@@ -1182,6 +1228,7 @@ async def test_metadata_provider_reflects_in_process_server_tools() -> None:
         "quantity_units_list",
         "product_groups_list",
         "shopping_lists_list",
+        "shopping_list_get",
     }
 
 
