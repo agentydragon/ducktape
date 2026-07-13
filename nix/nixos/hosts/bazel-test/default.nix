@@ -6,6 +6,17 @@
 # On container start, /init (systemd) runs NixOS activation: /etc, nix-ld,
 # home-manager (bazelrc, direnv), etc. No manual wiring needed.
 { modulesPath, pkgs, ... }:
+let
+  rbeSmoke = pkgs.writeShellApplication {
+    name = "nixos-bazel-rbe-smoke";
+    runtimeInputs = with pkgs; [
+      bazelisk
+      coreutils
+      gnugrep
+    ];
+    text = builtins.readFile ../../../../devinfra/nixos_bazel_test/smoke_test.sh;
+  };
+in
 {
   imports = [
     (modulesPath + "/virtualisation/docker-image.nix")
@@ -21,7 +32,7 @@
 
   # Container extras (a real NixOS host already has these)
   environment.systemPackages = with pkgs; [
-    bazelisk
+    rbeSmoke
     coreutils
     findutils
     gnugrep

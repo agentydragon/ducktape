@@ -117,59 +117,8 @@ run_container() {
       return 1
     fi
 
-    docker exec "$container_id" /run/current-system/sw/bin/mkdir -p /workspace
-    docker exec "$container_id" /run/current-system/sw/bin/cp -a /source/. /workspace/
-    docker exec "$container_id" /run/current-system/sw/bin/cp /rbe.bazelrc /workspace/.bazelrc
-    docker exec "$container_id" /run/current-system/sw/bin/bash -c \
-      '/run/current-system/sw/bin/cat /workspace/workspace.bazelrc >>/workspace/.bazelrc'
-
     set +e
-    docker exec \
-      -e PATH=/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin \
-      -w /workspace \
-      "$container_id" /run/current-system/sw/bin/bash -c '
-      set -euo pipefail
-      set +u
-      source /etc/set-environment
-      set -u
-      echo "=== NixOS filesystem checks ==="
-      echo "/bin/bash exists: $(test -e /bin/bash && echo YES || echo NO)"
-      echo "Bash location: $(which bash)"
-      echo "NIX_LD=${NIX_LD:-unset}"
-      echo "NIX_LD_LIBRARY_PATH=${NIX_LD_LIBRARY_PATH:-unset}"
-      echo ""
-
-      echo "=== Credentialed Ducktape RBE build + local run ==="
-      set +e
-      output="$(bazelisk run \
-        --noremote_accept_cached \
-        --execution_log_json_file=/tmp/rbe-execution.json \
-        //:remote_smoke 2>&1)"
-      bazel_status=$?
-      set -e
-      printf "%s\n" "$output"
-      if ((bazel_status != 0)); then
-        exit "$bazel_status"
-      fi
-      grep -Fq "ducktape-nixos-rbe-smoke-ok" <<<"$output"
-      if ! grep -Fq "\"runner\": \"remote\"" /tmp/rbe-execution.json; then
-        echo "execution log did not record remote execution:" >&2
-        cat /tmp/rbe-execution.json >&2
-        exit 1
-      fi
-      grep -Fq "\"mnemonic\": \"AspectRulesLintRuff\"" /tmp/rbe-execution.json
-      if grep -F "\"runner\":" /tmp/rbe-execution.json | grep -Fvq "\"runner\": \"remote\""; then
-        echo "execution log contains a non-remote action:" >&2
-        grep -F "\"runner\":" /tmp/rbe-execution.json >&2
-        exit 1
-      fi
-      if grep -Fq 'processwrapper-sandbox' <<<"$output"; then
-        echo "eligible action unexpectedly fell back to local execution" >&2
-        exit 1
-      fi
-
-      echo "=== NixOS configured Bazel executed the action remotely and ran its output locally ==="
-    '
+    docker exec "$container_id" /run/current-system/sw/bin/nixos-bazel-rbe-smoke
     local exit_code=$?
     set -e
     if ((exit_code != 0)); then
@@ -188,11 +137,7 @@ run_container() {
     container_id=$(docker run -d "${docker_args[@]}" "$IMAGE_NAME:latest" /init)
     echo "Waiting for NixOS activation..."
     sleep 3
-    docker exec "$container_id" /run/current-system/sw/bin/mkdir -p /workspace
-    docker exec "$container_id" /run/current-system/sw/bin/cp -a /source/. /workspace/
-    docker exec "$container_id" /run/current-system/sw/bin/cp /rbe.bazelrc /workspace/.bazelrc
-    docker exec "$container_id" /run/current-system/sw/bin/bash -c \
-      '/run/current-system/sw/bin/cat /workspace/workspace.bazelrc >>/workspace/.bazelrc'
+    docker exec "$container_id" /run/current-system/sw/bin/nixos-bazel-rbe-smoke --prepare-only
     echo "Container $container_id running. Dropping into shell..."
     docker exec -it \
       -e PATH=/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin \
