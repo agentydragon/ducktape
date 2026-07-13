@@ -1,4 +1,4 @@
-# Fact-based selector resolver performance
+# Historical profile: fact-based selector resolver
 
 Historical measured profile of the post-#2398 fact-based selector resolver — the
 `source_match::ChunkResolver` (`datalog_resolver.rs`) that became the sole
@@ -6,19 +6,22 @@ Historical measured profile of the post-#2398 fact-based selector resolver — t
 `chunk_facts` EDB once and resolves every `source_match` selector against it
 via the `selector_match` structural homomorphism.
 
-This is a baseline for the legacy `ChunkResolver` path, not for the current
-`selector_runtime` solver used by native production selectors and
-`spec match-selector`. Current standalone-probe measurements live in
-<../debug/perf/2026_07_13_match_selector_full_domain_profile.md>. The
-proposer/gate path lives in <proposer.md>; the older declaration-hole
-`source_match` micro-profile lives in <source_match_selector_profile.md>.
+This note is the measured baseline for that legacy path, not the current target
+architecture. The selector cutover now routes native production selectors and
+`match-selector` baseline probes through `selector_runtime`; remaining work is
+to delete the production `ChunkResolver` projection fallback tracked in
+<../../plans/selector_constraint_model.md>. The current solver-path fastbuild versus
+optimized profile lives in
+<2026_07_13_match_selector_full_domain_profile.md>. The proposer/gate path lives
+in <../../perf/proposer.md>; the older declaration-hole `source_match`
+micro-profile lives in <../../perf/source_match_selector_profile.md>.
 
 ## Budget
 
 Interactive commands target under 10s on warmed inputs; sustained runs over 60s
 on the largest known downstream specs are priority bugs unless the command is an
 explicit offline/profile mode (AGENTS.md / TODO.md). The largest known
-downstream chunk is ~6.9 MiB / 204k lines (<source_match_selector_profile.md> →
+downstream chunk is ~6.9 MiB / 204k lines (<../../perf/source_match_selector_profile.md> →
 "Filter Latency").
 
 ## Workload (2026-06-21)
@@ -138,17 +141,17 @@ are met with wide margin at 40k.** Extrapolating the 1.3 exponent, the 6.9 MiB /
 on the order of ~25s — inside the 60s blocker, though a follow-up re-measure on a
 real chunk is warranted (the synthetic statements are simpler; see the caveat
 above). Re-profile recipe unchanged:
-`debug/perf/2026_06_21_fact_resolver_source_match/command.sh`.
+`2026_06_21_fact_resolver_source_match/command.sh`.
 
 ## Call-graph profile (callgrind, Ir-only)
 
 `perf` is unavailable in this environment, so the call-graph profile uses
 `valgrind --tool=callgrind` (Ir-only, `--cache-sim=no --branch-sim=no`) — the
 same recipe the prior whole-spec callgrind run used
-(`debug/perf/2026_06_17_dogfood_apply_whole_spec/command.sh`) and the right tool
+(`2026_06_17_dogfood_apply_whole_spec/command.sh`) and the right tool
 for the "exact call counts + call graph" intent. Target: `run --spec` over the
 10k source_match corpus. Total: 34.95 billion Ir. Artifacts:
-`debug/perf/2026_06_21_fact_resolver_source_match/`.
+`2026_06_21_fact_resolver_source_match/`.
 
 Inclusive (call-graph) spine:
 
@@ -228,7 +231,7 @@ super-linear slope, not just a microbenchmark.
    index (declaration kind + var kind/declarator count + cheap literal/ident
    fingerprint) once and intersect postings before recursive matching, so each
    selector touches only plausible candidates. This is the shared per-chunk
-   source-match index the TODO P2 #1 and <source_match_selector_profile.md> →
+   source-match index the TODO P2 #1 and <../../perf/source_match_selector_profile.md> →
    "Remaining Work" already call for; the partial `intersect_postings` /
    `matching_body_indices` machinery (0.12% / 3.21%) is the seam to extend. This
    is what removes the quadratic.

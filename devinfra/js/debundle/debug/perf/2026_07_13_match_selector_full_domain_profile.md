@@ -1,33 +1,41 @@
-# `match-selector` full-domain profile
+# `match-selector` fastbuild versus optimized profile
 
 ## Finding
 
-A single `spec match-selector` probe over a 7.14 MB downstream chunk took 19.5
-seconds and peaked at 1.56 GB RSS. The selector found one unique target. The
-dominant demonstrated cost is full-chunk fact-domain construction, not search
-ambiguity and not the statement-list hole by itself.
+A `spec match-selector` probe over a 7.14 MB downstream chunk takes 19.80
+seconds with target-config `fastbuild` binaries but 3.86 seconds with `-c opt`.
+Both runs find the same unique target and peak near 1.55 GB RSS.
 
-This is far too close to the intended sub-20-second budget for an entire large
-debundle run. Standalone probes and production selector resolution need a
-query-local domain-slicing boundary; production must also reuse chunk analysis
-across selectors.
+The earlier 19.5-second result was therefore not a production-pipeline
+baseline. The pipeline's debundler attribute uses `cfg = "exec"`; direct
+`bb run //devinfra/js/debundle:debundle` instead builds the runnable target in
+the requested target configuration, which defaults to fastbuild. Always record
+the compilation mode with selector timings.
+
+The profile still exposes a real representation bug: lowering the
+`STMT_LIST_BODY` carrier leaves two unreferenced AST variables with full
+1,190,984-node domains. This inflates the request and memory footprint, but it
+does not make OR-Tools slow: the saved request takes 0.02 seconds in the
+optimized sidecar.
 
 ## Reproduction
 
-Build the debundler and its CP-SAT sidecar:
+Build and download both optimized binaries:
 
 ```bash
-bbr build //devinfra/js/debundle:debundle \
+bazelisk build -c opt --remote_download_outputs=all \
+  //devinfra/js/debundle:debundle \
   //devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver
 ```
 
-For direct binary profiling, point the runtime at the sidecar, enable its summary,
-and time the command:
+Then point the debundler at the sidecar, enable request and summary artifacts,
+and time the probe:
 
 ```bash
 export DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER=/path/to/selector_cpsat_solver
 export DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SUMMARY_JSON_DIR=/tmp/selector-summary
-/usr/bin/time -f 'elapsed=%e maxrss_kb=%M' \
+export DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_REQUEST_PROTO_DIR=/tmp/selector-summary
+/usr/bin/time -f 'elapsed=%e user=%U sys=%S maxrss_kb=%M' \
   /path/to/debundle spec match-selector \
   --source-file /path/to/7mb-primary-chunk.js \
   --match 'function decodeEntry(bytes) { let offset = 0, label, children; STMT_LIST_BODY; return [label, children]; }' \
@@ -35,21 +43,25 @@ export DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SUMMARY_JSON_DIR=/tmp/selector-summary
   --format json
 ```
 
-Observed result:
+Rebuild with `-c fastbuild --remote_download_outputs=all` for the comparison.
 
-```text
-unique target at body index 1649
-elapsed=19.51
-maxrss_kb=1560536
-```
+## Measurements
 
-A control probe containing the function's full readable body returned no match
-in 33.36 seconds with 1.57 GB RSS. That falsifies the earlier hypothesis that
-the broad `STMT_LIST_*` hole was sufficient to explain the latency.
+| Phase                         |    Fastbuild |    Optimized |
+| ----------------------------- | -----------: | -----------: |
+| whole probe                   |       19.80s |        3.86s |
+| fact-domain construction      |        7.18s |        1.41s |
+| atom lowering                 |        2.10s |        0.25s |
+| allowed-tuple simplification  |        1.10s |        0.11s |
+| variables and targets         |        0.44s |        0.13s |
+| complete model construction   |       10.85s |        1.91s |
+| saved request through sidecar |        0.12s |        0.02s |
+| maximum RSS                   | 1,560,108 KB | 1,546,124 KB |
 
-## Build summary
+The fastbuild whole run consumed 19.05 seconds of user CPU and 0.54 seconds of
+system CPU. It was CPU-bound rather than blocked on I/O or the sidecar.
 
-The compiled model summary reported:
+The compiled problem was identical in both modes:
 
 | Measure                                |           Value |
 | -------------------------------------- | --------------: |
@@ -65,33 +77,26 @@ The compiled model summary reported:
 | serialized request size                | 5,194,536 bytes |
 | total serialized domain values         |       2,383,797 |
 
-Model construction took 10.92 seconds:
+The optimized sidecar replay was measured by feeding the saved protobuf to
+`selector_cpsat_solver` on stdin. This isolates protobuf decoding, model
+construction, presolve, solving, response encoding, and process startup from the
+Rust frontend.
 
-| Phase                        | Elapsed |
-| ---------------------------- | ------: |
-| fact domains                 |   7.21s |
-| atom lowering                |   2.10s |
-| allowed-tuple simplification |   1.11s |
-| variables and targets        |   0.48s |
+## What the frontend does
 
-Only two allowed rows survived structural lowering, yet two variables still
-carried the full 1.19-million-node domain into a 5.19 MB backend request. CP-SAT
-is therefore receiving a needlessly large representation of a narrowly
-constrained query.
+The probe parses and hashes the complete JavaScript AST, extracts 3.13 million
+tagged facts, and then clones or indexes them into relation sets, parent/child
+maps, literal/name indexes, a value dictionary, and sparse variable domains.
+This involves millions of tree/hash operations, string clones, comparisons,
+sorts, and deduplications; it is not equivalent to allocating a few flat arrays.
+Fastbuild magnifies that CPU work because Rust dependencies are not optimized.
 
-## Required boundary
+## Remaining work
 
-The fix should reduce work before backend serialization:
-
-1. Apply declaration-shape and fixed-anchor candidate indexes before assigning
-   domains to selector variables.
-2. Propagate allowed-table support into those domains so values absent from all
-   surviving rows are removed.
-3. Build the parsed chunk, fact store, and stable indexes once per chunk and
-   reuse them across the production selector program.
-4. Add a large-chunk regression that checks maximum variable-domain cardinality
-   and serialized request size. Retain elapsed and RSS as outer guardrails.
-
-Per-selector timing remains useful diagnosis, but a timeout or match budget
-would only cap the symptom. It would not make the common unique-match path fit
-the whole-pipeline budget.
+1. In native source-match lowering, avoid allocating node variables for the
+   skipped expression-statement and identifier nodes that carry list holes.
+2. Reject or prune unreferenced variables before backend serialization.
+3. Add a regression that asserts no full AST domain remains for this selector
+   and records serialized request size and RSS separately from elapsed time.
+4. Measure the complete downstream pipeline using its actual execution-config
+   debundler before prioritizing broader fact-store/index reuse.
