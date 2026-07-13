@@ -9,7 +9,7 @@
 @layer base {
   :root {
     color-scheme: light dark;
-    --haku-page-bg: #fbfaf6;
+    --haku-page-bg: #fff7d6;
     --haku-panel-bg: #fffdf8;
     --haku-border: #d8d0df;
     /* Neutral gray code surface (matches the neutral dark-mode code bg below), not a tint. */
@@ -29,7 +29,7 @@
     /* Follow Mantine's neutral dark surfaces, as used by the location popover. The
        shell used to tint every page and card dark green, which made this chrome
        feel unrelated to both that popover and Haku's lavender/cream mark. */
-    --haku-page-bg: var(--mantine-color-dark-8);
+    --haku-page-bg: #24202e;
     --haku-panel-bg: var(--mantine-color-dark-7);
     --haku-border: var(--mantine-color-dark-4);
     --haku-code-bg: var(--mantine-color-dark-6);

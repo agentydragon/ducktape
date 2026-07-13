@@ -86,14 +86,14 @@
 }
 
 .quota-bar-track {
-  height: 4px;
+  height: 8px;
   background-color: rgba(255, 255, 255, 0.14);
-  border-radius: 2px;
+  border-radius: 4px;
 }
 
 .quota-bar-fill {
-  height: 4px;
-  border-radius: 2px;
+  height: 8px;
+  border-radius: 4px;
   background-color: #6e6e6e;
 }
 
