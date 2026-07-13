@@ -375,6 +375,7 @@
             name = "ducktape-citools";
             paths = [
               ducktapePkgs.bb
+              ducktapePkgs.bbapi
               pkgs.sops
             ];
           };

@@ -17,8 +17,6 @@ from github import Auth, Github
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel, field_validator
 
-from util.bazel.runfiles import get_required_path
-
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 COMPONENT = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -51,34 +49,50 @@ class VisualManifest(BaseModel):
         return value
 
 
-def find_test_invocation(linkage_dir: Path) -> str:
+def find_test_invocations(linkage_dir: Path) -> list[str]:
+    invocations: list[BazelInvocation] = []
     for path in sorted(linkage_dir.glob("*.json")):
         record = LinkageRecord.model_validate_json(path.read_text())
-        for invocation in record.buildbuddy.bazel_invocations:
-            if invocation.role == "test":
-                return invocation.invocation_id
-    raise ValueError("no Bazel test invocation found in BuildBuddy linkage")
+        invocations.extend(record.buildbuddy.bazel_invocations)
+    if not invocations:
+        raise ValueError("no Bazel invocations found in BuildBuddy linkage")
+    ordered = sorted(invocations, key=lambda invocation: invocation.role != "test")
+    return list(dict.fromkeys(invocation.invocation_id for invocation in ordered))
 
 
 def download_screenshots(
-    invocation: str, manifest_name: str, destination: Path, *, bbapi: Path | str = "bbapi", run: Runner = subprocess.run
+    invocations: list[str],
+    manifest_name: str,
+    destination: Path,
+    *,
+    bbapi: Path = Path("bbapi"),
+    run: Runner = subprocess.run,
 ) -> bool:
-    listing = run([str(bbapi), "artifact", "list", invocation], check=True, text=True, capture_output=True).stdout
-    if manifest_name not in listing:
+    listing = ""
+    invocation = ""
+    failures: list[str] = []
+    for candidate in invocations:
+        result = run([bbapi, "artifact", "list", candidate], check=False, text=True, capture_output=True)
+        if result.returncode != 0:
+            failures.append(f"{candidate}: {result.stderr.strip()}")
+            continue
+        if manifest_name in result.stdout:
+            invocation = candidate
+            listing = result.stdout
+            break
+    if not invocation:
+        if len(failures) == len(invocations):
+            raise RuntimeError("all BuildBuddy artifact queries failed: " + "; ".join(failures))
         return False
     destination.mkdir(parents=True, exist_ok=True)
     manifest_path = destination / manifest_name
-    run(
-        [str(bbapi), "artifact", "download", invocation, manifest_name, "-o", str(manifest_path)], check=True, text=True
-    )
+    run([bbapi, "artifact", "download", invocation, manifest_name, "-o", manifest_path], check=True, text=True)
     expected = VisualManifest.model_validate_json(manifest_path.read_text()).screenshots
     missing = [name for name in expected if name not in listing]
     if missing:
         raise ValueError(f"partial screenshot set in BuildBuddy: missing {', '.join(missing)}")
     for name in expected:
-        run(
-            [str(bbapi), "artifact", "download", invocation, name, "-o", str(destination / name)], check=True, text=True
-        )
+        run([bbapi, "artifact", "download", invocation, name, "-o", destination / name], check=True, text=True)
     return True
 
 
@@ -183,8 +197,7 @@ def parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = parser().parse_args()
     screenshots = args.work_dir / "screenshots"
-    bbapi = get_required_path("_main/devinfra/buildbuddy_cli/bbapi_/bbapi")
-    found = download_screenshots(find_test_invocation(args.linkage_dir), args.manifest, screenshots, bbapi=bbapi)
+    found = download_screenshots(find_test_invocations(args.linkage_dir), args.manifest, screenshots)
     github_output = os.environ.get("GITHUB_OUTPUT")
     if github_output:
         with Path(github_output).open("a") as output:

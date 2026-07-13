@@ -1,10 +1,17 @@
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 import pytest_bazel
 
-from devinfra.ci.pr_visuals import VisualManifest, build_bundle, find_test_invocation, upload_bundle
+from devinfra.ci.pr_visuals import (
+    VisualManifest,
+    build_bundle,
+    download_screenshots,
+    find_test_invocations,
+    upload_bundle,
+)
 
 
 def test_build_bundle_uses_full_sha_and_component(tmp_path: Path) -> None:
@@ -30,11 +37,43 @@ def test_build_bundle_rejects_abbreviated_sha(tmp_path: Path) -> None:
         build_bundle(tmp_path, tmp_path, commit_sha="0123456", component="ui", title="UI", repository="repo")
 
 
-def test_find_test_invocation_reads_linkage(tmp_path: Path) -> None:
+def test_find_test_invocations_prefers_test_role_then_keeps_fallbacks(tmp_path: Path) -> None:
     (tmp_path / "linkage.json").write_text(
-        json.dumps({"buildbuddy": {"bazel_invocations": [{"role": "test", "invocation_id": "inv-1"}]}})
+        json.dumps(
+            {
+                "buildbuddy": {
+                    "bazel_invocations": [
+                        {"role": "query", "invocation_id": "inv-query"},
+                        {"role": "test", "invocation_id": "inv-test"},
+                        {"role": "command-2", "invocation_id": "inv-real-test"},
+                    ]
+                }
+            }
+        )
     )
-    assert find_test_invocation(tmp_path) == "inv-1"
+    assert find_test_invocations(tmp_path) == ["inv-test", "inv-query", "inv-real-test"]
+
+
+def test_download_screenshots_falls_back_to_later_invocation(tmp_path: Path) -> None:
+    commands: list[list[str | Path]] = []
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        if command[2] == "list":
+            if command[3] == "missing":
+                return subprocess.CompletedProcess(command, 1, "", "invocation not found")
+            return subprocess.CompletedProcess(command, 0, "haku-console-visuals.json\npreview.png\n", "")
+        output = Path(command[-1])
+        if command[4] == "haku-console-visuals.json":
+            output.write_text('{"screenshots":["preview.png"]}')
+        else:
+            output.write_bytes(b"png")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    assert download_screenshots(
+        ["missing", "real"], "haku-console-visuals.json", tmp_path / "screenshots", run=fake_run
+    )
+    assert commands[1] == [Path("bbapi"), "artifact", "list", "real"]
 
 
 def test_manifest_rejects_paths() -> None:
