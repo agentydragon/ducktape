@@ -21,6 +21,11 @@ let
       mcp = pyprev.mcp.overridePythonAttrs (old: {
         version = "1.26.0";
         inherit (pkgsUnstable.python3Packages.mcp) src;
+        # Dependency builds should not run upstream's ~1,000-test suite. It is
+        # slow and includes timing-sensitive SSE tests; Ducktape packages have
+        # explicit importsCheck gates below for the runtime contract we use.
+        doCheck = false;
+        dontUsePytestCheck = true;
         # 1.26.0 added pyjwt + typing-inspection to its runtime deps
         # (nixpkgs 25.11's derivation still encodes the 1.15.0 set).
         dependencies =
