@@ -322,7 +322,7 @@ func listArtifactsResolved(c *client, invocationID string) ([]artifact, error) {
 	if err != nil {
 		return nil, err
 	}
-	var all []artifact
+	all := make([]artifact, 0)
 	for _, id := range ids {
 		arts, err := listArtifacts(c, id)
 		if err != nil {

@@ -84,6 +84,7 @@ py_library(
     testonly = True,
     srcs = ["visual_review.py"],
     visibility = ["//visibility:public"],
+    deps = ["//util:visual_review"],
 )
 
 py_library(
@@ -142,6 +143,7 @@ py_test(
     srcs = ["test_visual_review.py"],
     deps = [
         ":visual_review",
+        "//util:visual_review",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

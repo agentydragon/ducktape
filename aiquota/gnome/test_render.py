@@ -56,7 +56,8 @@ from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
 from util.testing.png_diff import assert_png_matches_golden
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_review import VisualReviewAsset, write_visual_review_manifest
+from util.testing.visual_review import write_visual_review_manifest
+from util.visual_review import VisualReviewAsset
 
 logger = logging.getLogger(__name__)
 

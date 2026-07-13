@@ -55,6 +55,7 @@ py_test(
     deps = [
         "//aiquota/testing:quota_fixtures",
         "//util:oci",
+        "//util:visual_review",
         "//util/bazel:runfiles",
         "//util/testing:png_diff",
         "//util/testing:undeclared_outputs",

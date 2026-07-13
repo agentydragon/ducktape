@@ -5,6 +5,7 @@ import pytest
 import pytest_bazel
 
 from util.testing.visual_review import VisualReviewAsset, write_visual_review_manifest
+from util.visual_review import VisualReviewManifest
 
 
 def test_write_visual_review_manifest(tmp_path: Path) -> None:
@@ -12,6 +13,7 @@ def test_write_visual_review_manifest(tmp_path: Path) -> None:
         tmp_path, title="Example UI", assets=[VisualReviewAsset(path="screen.png", label="Screen")]
     )
 
+    assert VisualReviewManifest.model_validate_json(destination.read_text()).title == "Example UI"
     assert json.loads(destination.read_text()) == {
         "schema": "ducktape.visual-review.v1",
         "title": "Example UI",

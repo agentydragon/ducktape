@@ -7,8 +7,6 @@ import pytest_bazel
 
 from devinfra.ci.pr_visuals import (
     DownloadedVisualTest,
-    VisualAsset,
-    VisualManifest,
     build_bundle,
     download_visual_tests,
     error_comment_body,
@@ -17,6 +15,7 @@ from devinfra.ci.pr_visuals import (
     target_slug,
     upload_bundle,
 )
+from util.visual_review import VisualReviewAsset, VisualReviewManifest
 
 
 def test_find_test_invocations_prefers_test_role_then_keeps_fallbacks(tmp_path: Path) -> None:
@@ -117,11 +116,18 @@ def test_download_visual_tests_rejects_missing_declared_asset(tmp_path: Path) ->
         download_visual_tests(["invocation"], tmp_path / "tests", run=fake_run)
 
 
+def test_download_visual_tests_treats_null_artifact_list_as_empty(tmp_path: Path) -> None:
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, "null", "")
+
+    assert download_visual_tests(["invocation"], tmp_path / "tests", run=fake_run) == []
+
+
 def test_build_bundle_groups_tests_and_writes_target_pages(tmp_path: Path) -> None:
     source = tmp_path / "source"
     source.mkdir()
     (source / "screen.png").write_bytes(b"png")
-    manifest = VisualManifest.model_validate(
+    manifest = VisualReviewManifest.model_validate(
         {
             "schema": "ducktape.visual-review.v1",
             "title": "Example UI",
@@ -147,9 +153,9 @@ def test_build_bundle_rejects_abbreviated_sha(tmp_path: Path) -> None:
 
 def test_manifest_rejects_paths_and_duplicates() -> None:
     with pytest.raises(ValueError, match="safe PNG basenames"):
-        VisualAsset(path="../secret.png", label="secret")
+        VisualReviewAsset(path="../secret.png", label="secret")
     with pytest.raises(ValueError, match="must be unique"):
-        VisualManifest.model_validate(
+        VisualReviewManifest.model_validate(
             {
                 "schema": "ducktape.visual-review.v1",
                 "title": "UI",
@@ -159,7 +165,7 @@ def test_manifest_rejects_paths_and_duplicates() -> None:
 
 
 def test_comment_bodies_link_commit_targets_and_report_errors() -> None:
-    manifest = VisualManifest.model_validate(
+    manifest = VisualReviewManifest.model_validate(
         {
             "schema": "ducktape.visual-review.v1",
             "title": "Example UI",

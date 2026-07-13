@@ -19,12 +19,13 @@ from typing import Any, Literal
 import boto3
 from github import Auth, Github
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from pydantic import BaseModel, Field, TypeAdapter, field_validator
+from pydantic import BaseModel, TypeAdapter
+
+from util.visual_review import MANIFEST_NAME, VisualReviewManifest
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 COMMENT_MARKER = "<!-- pr-visuals -->"
-MANIFEST_NAME = "visual-review.json"
 
 
 class BazelInvocation(BaseModel):
@@ -46,34 +47,6 @@ class BuildBuddyArtifact(BaseModel):
     uri: str
 
 
-class VisualAsset(BaseModel):
-    path: str
-    label: str
-
-    @field_validator("path")
-    @classmethod
-    def validate_path(cls, value: str) -> str:
-        if Path(value).name != value or not value.endswith(".png"):
-            raise ValueError("visual asset paths must be safe PNG basenames")
-        return value
-
-
-class VisualManifest(BaseModel):
-    schema_: Literal["ducktape.visual-review.v1"] = Field(alias="schema")
-    title: str
-    assets: list[VisualAsset]
-
-    @field_validator("assets")
-    @classmethod
-    def validate_assets(cls, value: list[VisualAsset]) -> list[VisualAsset]:
-        if not value:
-            raise ValueError("visual manifest must declare at least one asset")
-        paths = [asset.path for asset in value]
-        if len(paths) != len(set(paths)):
-            raise ValueError("visual manifest asset paths must be unique")
-        return value
-
-
 @dataclass(frozen=True)
 class ListedArtifact:
     invocation_id: str
@@ -84,7 +57,7 @@ class ListedArtifact:
 class DownloadedVisualTest:
     target_label: str
     slug: str
-    manifest: VisualManifest
+    manifest: VisualReviewManifest
     directory: Path
 
 
@@ -109,10 +82,8 @@ def list_ci_artifacts(
         if result.returncode != 0:
             failures.append(f"{invocation}: {result.stderr.strip()}")
             continue
-        listed.extend(
-            ListedArtifact(invocation, artifact)
-            for artifact in TypeAdapter(list[BuildBuddyArtifact]).validate_json(result.stdout)
-        )
+        artifacts = TypeAdapter(list[BuildBuddyArtifact] | None).validate_json(result.stdout) or []
+        listed.extend(ListedArtifact(invocation, artifact) for artifact in artifacts)
     if not listed and len(failures) == len(invocations):
         raise RuntimeError("all BuildBuddy artifact queries failed: " + "; ".join(failures))
     return listed
@@ -158,7 +129,7 @@ def download_visual_tests(
         test_dir = destination / slug
         manifest_path = test_dir / MANIFEST_NAME
         _download_artifact(manifests[0], manifest_path, bbapi=bbapi, run=run)
-        manifest = VisualManifest.model_validate_json(manifest_path.read_text())
+        manifest = VisualReviewManifest.model_validate_json(manifest_path.read_text())
 
         available = {artifact.artifact.name: artifact for artifact in target_artifacts}
         for asset in manifest.assets:
