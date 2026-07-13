@@ -22,3 +22,7 @@ configMapGenerator:
       - initialize.sh
       - config.json
       - mailbox-plan.ndjson
+  - name: haku-mailbox-smtp-ingress
+    namespace: haku-mailbox
+    files:
+      - nginx.conf

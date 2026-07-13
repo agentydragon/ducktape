@@ -2,40 +2,6 @@
 # of the per-node hostNetwork Envoy tier serving HTTP: each node accepts the
 # public connection locally, then proxies to the movable Stalwart backend.
 # PROXY protocol is mandatory because SPF depends on the sending MTA's address.
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: haku-mailbox-smtp-ingress
-  namespace: haku-mailbox
-data:
-  nginx.conf: |
-    pid /tmp/nginx.pid;
-    worker_processes 1;
-    error_log /dev/stderr info;
-
-    events {
-      worker_connections 256;
-    }
-
-    stream {
-      log_format smtp '$remote_addr:$remote_port -> $server_addr:$server_port '
-                      'status=$status sent=$bytes_sent received=$bytes_received '
-                      'session=$session_time';
-      access_log /dev/stdout smtp;
-
-      upstream stalwart {
-        server haku-mailbox-smtp.haku-mailbox.svc.cluster.local:2525;
-      }
-
-      server {
-        listen 2525;
-        proxy_pass stalwart;
-        proxy_protocol on;
-        proxy_connect_timeout 5s;
-        proxy_timeout 10m;
-      }
-    }
----
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
