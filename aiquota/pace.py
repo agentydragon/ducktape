@@ -4,8 +4,6 @@ STABLE_FRACTION = 0.05
 
 
 def compute_pace(w: QuotaWindow) -> PaceResult | None:
-    if w.window_seconds <= 0:
-        return None
     elapsed_secs = w.window_seconds - w.reset_seconds
     elapsed_frac = elapsed_secs / w.window_seconds
     expected_percent = elapsed_frac * 100

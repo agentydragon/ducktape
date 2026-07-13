@@ -24,9 +24,11 @@ def test_compute_pace_ahead() -> None:
     assert pace.projected_at_reset > 100
 
 
-def test_compute_pace_zero_window() -> None:
-    w = QuotaWindow(used_percent=50.0, reset_seconds=0.0, window_seconds=0.0)
-    assert compute_pace(w) is None
+def test_compute_pace_at_reset() -> None:
+    w = QuotaWindow(used_percent=50.0, reset_seconds=0.0, window_seconds=18000.0)
+    pace = compute_pace(w)
+    assert pace is not None
+    assert pace.projected_at_reset == 50.0
 
 
 def test_compute_pace_early_unstable() -> None:

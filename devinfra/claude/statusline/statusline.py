@@ -23,6 +23,7 @@ from rich.text import Text
 from aiquota.cache import QuotaService
 from aiquota.config import DEFAULT_CONFIG_PATH, Config, load as load_config
 from aiquota.models import ExtraSpend, FetchSuccess, ProviderQuota, QuotaWindow
+from aiquota.render.format import format_window_label
 from devinfra.claude.claude_api.credentials import read_credentials
 from devinfra.claude.claude_api.statusline import ContextWindow, Input
 from devinfra.claude.session_paths import default_cache_dir, hook_daemon_sock
@@ -52,36 +53,33 @@ def _format_extra_spend(extra: ExtraSpend) -> str:
     return f"extra ${extra.used_usd:.0f}/${extra.monthly_limit_usd:.0f} ({extra.utilization:.0f}%)"
 
 
-def _quota_windows(pq: ProviderQuota) -> tuple[QuotaWindow | None, QuotaWindow | None, ExtraSpend | None, datetime]:
-    """Return (short, long, extra, fetched_at), preferring the latest fetch and
-    falling back to the last successful snapshot (mirroring aiquota's tmux renderer)."""
+def _quota_windows(pq: ProviderQuota) -> tuple[list[QuotaWindow], ExtraSpend | None, datetime]:
+    """Return displayable windows, preferring the latest successful fetch."""
     result = pq.last_output.result
-    if isinstance(result, FetchSuccess) and (result.short_window or result.long_window):
-        return result.short_window, result.long_window, result.extra_spend, pq.last_output.fetched_at
+    if isinstance(result, FetchSuccess) and result.windows:
+        return [window for window in result.windows if window.display], result.extra_spend, pq.last_output.fetched_at
     if pq.last_success is not None:
         succ = pq.last_success.result
-        return succ.short_window, succ.long_window, succ.extra_spend, pq.last_success.fetched_at
-    return None, None, None, pq.last_output.fetched_at
+        return [window for window in succ.windows if window.display], succ.extra_spend, pq.last_success.fetched_at
+    return [], None, pq.last_output.fetched_at
 
 
 def _format_quota(quota: ProviderQuota | None, *, now: datetime) -> Text | None:
     if quota is None:
         return None
-    short, long, extra, fetched_at = _quota_windows(quota)
+    windows, extra, fetched_at = _quota_windows(quota)
     parts: list[str] = []
-    if short is not None and short.used_percent >= 70:
-        parts.append(f"5h:{short.used_percent:.0f}%")
-    if long is not None:
-        part = f"7d:{long.used_percent:.0f}%"
-        remaining_s = long.reset_seconds
+    for window in windows:
+        part = f"{format_window_label(window)}:{window.used_percent:.0f}%"
+        remaining_s = window.reset_seconds
         if remaining_s > 0:
             remaining = timedelta(seconds=remaining_s)
             part += f" rst {_format_delta(remaining)}"
             # Project time until exhaustion based on burn rate.
             # Only show if projected to hit 100% before the window resets.
-            util = long.used_percent
+            util = window.used_percent
             if util > 0:
-                elapsed_s = long.window_seconds - remaining_s
+                elapsed_s = window.window_seconds - remaining_s
                 if elapsed_s > 0:
                     time_to_exhaust = timedelta(seconds=(100 - util) / util * elapsed_s)
                     if time_to_exhaust < remaining:

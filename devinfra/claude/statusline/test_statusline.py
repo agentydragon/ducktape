@@ -145,7 +145,7 @@ def _make_quota(
         provider=provider,
         last_output=ProviderFetch(
             fetched_at=fetched_at or datetime.now(UTC),
-            result=FetchSuccess(short_window=short, long_window=long, extra_spend=extra),
+            result=FetchSuccess(windows=[window for window in (short, long) if window], extra_spend=extra),
         ),
     )
 
@@ -162,7 +162,7 @@ def test_format_quota_empty():
     ("short_util", "long_util", "expected"),
     [
         pytest.param(80.0, 35.0, "5h:80% 7d:35%", id="both_buckets"),
-        pytest.param(6.0, 35.0, "7d:35%", id="five_hour_below_70_hidden"),
+        pytest.param(6.0, 35.0, "5h:6% 7d:35%", id="both_buckets_low_short"),
         pytest.param(85.0, None, "5h:85%", id="five_hour_only_high"),
     ],
 )
@@ -179,10 +179,20 @@ def test_format_quota_buckets(short_util: float, long_util: float | None, expect
     assert result.plain == expected
 
 
-def test_format_quota_five_hour_low_hidden():
+def test_format_quota_uses_provider_window_name_and_duration():
+    now = datetime.now(UTC)
+    window = QuotaWindow(name="Monthly", used_percent=35, reset_seconds=0, window_seconds=30 * 86400)
+    result = _format_quota(_make_quota(long=window, fetched_at=now), now=now)
+    assert result is not None
+    assert result.plain == "Monthly (30d):35%"
+
+
+def test_format_quota_single_five_hour_window():
     now = datetime.now(UTC)
     short = QuotaWindow(used_percent=12.5, reset_seconds=0, window_seconds=_SHORT_WINDOW_SECS)
-    assert _format_quota(_make_quota(short=short, fetched_at=now), now=now) is None
+    result = _format_quota(_make_quota(short=short, fetched_at=now), now=now)
+    assert result is not None
+    assert result.plain == "5h:12%"
 
 
 @pytest.mark.parametrize(
@@ -266,15 +276,13 @@ def test_format_quota_no_extra_spend():
     assert "extra" not in result.plain
 
 
-def test_format_quota_short_zero_long_full():
+def test_format_quota_displays_provider_visible_windows():
     now = datetime.now(UTC)
     short = QuotaWindow(used_percent=0.0, reset_seconds=0, window_seconds=_SHORT_WINDOW_SECS)
     long = QuotaWindow(used_percent=100.0, reset_seconds=0, window_seconds=_LONG_WINDOW_SECS)
     result = _format_quota(_make_quota(short=short, long=long, fetched_at=now), now=now)
     assert result is not None
-    # 5h at 0% is below 70 threshold so hidden, but 7d at 100% shown
-    assert "7d:100%" in result.plain
-    assert "5h" not in result.plain
+    assert result.plain == "5h:0% 7d:100%"
 
 
 def test_format_context_none():

@@ -9,10 +9,7 @@ class ProviderClientFactory(Protocol):
     def __call__(self, provider: str, response_urls: set[str], timeout: float) -> httpx.AsyncClient: ...
 
 
-def provider_client(
-    debug: bool = False,
-    transport: httpx.AsyncBaseTransport | None = None,
-) -> ProviderClientFactory:
+def provider_client(debug: bool = False, transport: httpx.AsyncBaseTransport | None = None) -> ProviderClientFactory:
     def create(provider: str, response_urls: set[str], timeout: float) -> httpx.AsyncClient:
         async def dump_response(response: httpx.Response) -> None:
             if str(response.request.url) not in response_urls:
@@ -29,9 +26,7 @@ def provider_client(
             print(body, file=sys.stderr)
 
         return httpx.AsyncClient(
-            timeout=timeout,
-            transport=transport,
-            event_hooks={"response": [dump_response]} if debug else None,
+            timeout=timeout, transport=transport, event_hooks={"response": [dump_response]} if debug else None
         )
 
     return create

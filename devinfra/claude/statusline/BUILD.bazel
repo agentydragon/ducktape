@@ -6,6 +6,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//aiquota:cache",
+        "//aiquota/render:format_lib",
         "//devinfra/claude:session_paths",
         "//devinfra/claude/claude_api:credentials",
         "//devinfra/claude/claude_api:statusline",

@@ -10,7 +10,6 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 
-import httpx
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 

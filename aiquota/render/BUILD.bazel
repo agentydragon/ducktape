@@ -5,7 +5,7 @@ py_library(
     name = "format_lib",
     srcs = ["format.py"],
     imports = ["../.."],
-    visibility = ["//aiquota:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = ["//aiquota:models"],
 )
 
