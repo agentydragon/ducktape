@@ -19,6 +19,7 @@ import { ShellChrome } from "./shell_chrome.tsx";
 import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation.ts";
 import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant.ts";
 import { openExternal, POPUP_HINT } from "./open_external.ts";
+import { rememberEmbedPath, viewForPathname } from "./routing.ts";
 import { ScreenshotSession } from "./screenshot_capture.ts";
 import { hasScreenshotGrant, setScreenshotGrant } from "./screenshot_grant.ts";
 import { toastError, toastSuccess } from "./toast.ts";
@@ -39,17 +40,27 @@ import { useConsoleEvents } from "./console_events.ts";
 // content, per its own consent grant; it holds the one live capture stream). See
 // docs/containment.md.
 
-// Restore the route the console URL carries into the frame on first mount. The console
-// hash is treated strictly as a validated path, never a URL: the src is always `uiUrl`
-// with only its fragment replaced, so the frame origin stays pinned. Fragments never
-// reach servers and survive the in-frame Authentik 302 chain when an SSO session already
-// exists; an interactive login may drop the fragment (degrades to haku-ui's home view).
-export function initialFrameSrc(uiUrl: string, consoleHash: string): string {
-  const path = consoleHash.replace(/^#/, "");
+// Restore the route the console URL carries into the frame on first mount. haku-ui
+// speaks real History-API paths now, so the console pathname mirrors the frame route
+// directly; a legacy `#/…` console URL still wins when present (old bookmarks). The
+// input is treated strictly as a validated path, never a URL: the src is always `uiUrl`
+// with only its pathname replaced, so the frame origin stays pinned. Paths (unlike the
+// old fragments) survive the whole in-frame Authentik redirect chain, interactive login
+// included — the rd parameter carries them.
+export function initialFrameSrc(uiUrl: string, routePath: string): string {
+  const path = routePath.replace(/^#/, "");
   if (!isRoutePath(path)) return uiUrl;
   const src = new URL(uiUrl);
-  src.hash = path;
+  src.pathname = path;
   return src.toString();
+}
+
+/** The haku-ui route the current console URL carries: a legacy `#/…` fragment wins
+ * (old-form deep links always mean "open that"); otherwise the console pathname —
+ * unless it's a console-own view's path, which carries no frame route. */
+export function routeFromLocation(loc: { pathname: string; hash: string }): string {
+  if (loc.hash.startsWith("#/")) return loc.hash.slice(1);
+  return viewForPathname(loc.pathname) === "embed" ? loc.pathname : "/";
 }
 
 export function HakuUiEmbed({
@@ -77,7 +88,7 @@ export function HakuUiEmbed({
   const [recentToolCalls, setRecentToolCalls] = useState<RecentToolCall[]>([]);
   // Computed once: later routeChanged mirroring must not rewrite `src` (that would
   // reload the frame); the iframe navigates itself, the console only reflects.
-  const [frameSrc] = useState(() => initialFrameSrc(uiUrl, window.location.hash));
+  const [frameSrc] = useState(() => initialFrameSrc(uiUrl, routeFromLocation(window.location)));
   const origin = new URL(uiUrl).origin;
   const activeAction: Escalation | null = pending;
 
@@ -330,10 +341,16 @@ export function HakuUiEmbed({
         return;
       }
       if (msg.type === "routeChanged") {
-        // Mirror the iframe's route into the console's own fragment so refresh/deep-links
-        // restore the view. replaceState, not pushState: the iframe's hash navigations
-        // already create joint-session-history entries, so Back works via the frame.
-        history.replaceState(null, "", `#${msg.path}`);
+        // Mirror the iframe's route into the console's own pathname so refresh/deep-links
+        // restore the view (path-form URLs are the copyable ones — operator, 2026-07-13).
+        // replaceState, not pushState: the iframe's own history navigations already create
+        // joint-session-history entries, so Back works via the frame. Skip while a
+        // console-own view (e.g. /tool-calls) holds the pathname — just remember the
+        // route for the return trip.
+        rememberEmbedPath(msg.path);
+        if (viewForPathname(window.location.pathname) === "embed") {
+          history.replaceState(null, "", msg.path);
+        }
         return;
       }
       // openLink: scheme-gate + whitelist; whitelisted opens directly, off-whitelist confirms.

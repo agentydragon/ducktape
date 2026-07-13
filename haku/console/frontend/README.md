@@ -11,9 +11,10 @@ components + **Tailwind v4** utilities — modeled on
 - `main.tsx` (wraps the app in `MantineProvider`) → `app.tsx` (routes between the console
   views) → `haku_ui_embed.tsx` (the full-page framed haku-ui plus shell chrome, bridge, and
   confirmations) or `tool_calls_page.tsx` (the full-page past-tool-calls history).
-- `routing.ts` — the console's tiny pathname router. Two views keyed on URL **path**
-  (`/` embed, `/tool-calls` history) so console navigation never
-  collides with the hash, which is reserved for mirroring the framed haku-ui route.
+- `routing.ts` — the console's tiny pathname router. `/tool-calls` is the console's own
+  history view; **every other path is the mirrored haku-ui route** (the embed), so
+  path-form deep links restore both shell and frame. The last embed path is remembered
+  across a `/tool-calls` detour.
 - `shell_chrome.tsx` — the shell chrome (`ShellChrome`): a fixed top-right **floating toolbar**
   (one squished bar of toggle buttons, each `filled` when its panel is selected) over its active
   panel. The toggles behave as deselectable tabs, so at most one panel is open. Toolbar buttons are neutral gray with only

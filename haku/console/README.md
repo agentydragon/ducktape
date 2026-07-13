@@ -177,9 +177,10 @@ postMessage — opening a link (`openLink`), launching a run (`requestLaunch`), 
 operator's location, either one-shot (`requestGeolocation`) or as a continuous stream the
 shell holds (`startGeolocationWatch`); location is gated by a shell-owned standing consent
 grant since the iframe has no `allow="geolocation"`. The shell origin-checks,
-schema-validates, and decides/confirms before acting. It also mirrors the iframe's hash route
-(`routeChanged`, validated as a path) into the console's own URL fragment so refresh and deep
-links restore the view. A persistent top-right floating toolbar (`shell_chrome.tsx`'s
+schema-validates, and decides/confirms before acting. It also mirrors the iframe's route
+(`routeChanged`, validated as a path) into the console's own **pathname** so refresh and deep
+links — path-form URLs included — restore the view (legacy `#/…` console URLs still restore).
+A persistent top-right floating toolbar (`shell_chrome.tsx`'s
 `ShellChrome`, each button `filled` while its panel is selected) opens the shell's own trusted
 chrome: a checklist button — badged with a callout light when a tool call is awaiting approval —
 toggles the approval queue panel (with a link to the full-page past-tool-calls history); a gear
@@ -193,10 +194,9 @@ See <docs/containment.md>.
 
 Beyond the approvals panel's ephemeral "Recent" list, the console owns a **full-page history view**
 of the authenticated operator's tool-call audit ledger (`frontend/tool_calls_page.tsx`), reached from the
-approvals panel and living at its own route, `/tool-calls` (`frontend/routing.ts`). Because
-the console's own pages are distinguished by URL **path** — the hash stays reserved for
-mirroring the framed haku-ui route — the shell renders the history view instead of the
-iframe when the path matches. It reads `GET /api/tool-calls?newest_first=true`, so the
+approvals panel and living at its own route, `/tool-calls` (`frontend/routing.ts`). The console's own
+`/tool-calls` path is reserved; every other path mirrors the framed haku-ui route, and the
+shell renders the history view instead of the iframe when the reserved path matches. It reads `GET /api/tool-calls?newest_first=true`, so the
 newest calls survive the query's limit. Production's nginx already serves the SPA for any
 non-asset/API path; `app.py`'s dev fallback mirrors that so deep links work locally too.
 
