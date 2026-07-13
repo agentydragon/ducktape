@@ -1,5 +1,5 @@
 // Shared vocabulary for per-server preview widgets, including compact vs detailed rendering. A **compact**
-// preview is the scannable form shown on a drawer approval card (and anywhere space is
+// preview is the scannable form shown on an approvals panel card (and anywhere space is
 // tight): list-shaped arguments collapse to their first few items, long bodies to their
 // first few lines. A **detailed** preview is the full form shown in the expanded detail
 // view. Leaf module (no widget deps) so index.tsx and every widget can import the type

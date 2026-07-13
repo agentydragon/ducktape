@@ -3,7 +3,7 @@ import { Field } from "./field.tsx";
 
 /** The provenance a tool call carries that isn't about *what it does* — who asked, the exact
  * request time, and the canonical id. Rarely needed while triaging, so it rides behind one
- * collapsed "Metadata" disclosure in the detailed drawer cards and history rows, keeping the
+ * collapsed "Metadata" disclosure in the detailed approvals panel cards and history rows, keeping the
  * detailed body focused on the arguments/result. */
 export function ToolCallMeta({
   serverId,

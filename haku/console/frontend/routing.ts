@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 // never the hash — because the hash is already reserved for mirroring the framed
 // haku-ui route (haku_ui_embed.tsx's routeChanged handler), so a path keeps the console's
 // own navigation from colliding with the frame's. (Operator settings is no longer a
-// separate view — it's a chrome drawer panel; see console_panel.tsx's ShellChrome.)
+// separate view — it's a shell-chrome panel; see shell_chrome.tsx's ShellChrome.)
 //
 //   "/"            → the full-page haku-ui embed (the trusted shell)
 //   "/tool-calls"  → the console's own full-page history of every past MCP tool call

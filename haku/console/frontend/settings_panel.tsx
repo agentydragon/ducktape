@@ -1,19 +1,56 @@
-import { Badge, Button, Group, Loader, Stack, Text } from "@mantine/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Anchor, Badge, Button, Group, Loader, Stack, Text } from "@mantine/core";
+import { useCallback, useState } from "react";
 
 import { shortDate } from "./approval_state.ts";
 import {
   disconnectMcpOperatorAuth,
+  fetchDeploymentInfo,
   fetchMcpOperatorAuthStatuses,
+  type DeploymentInfo,
   type McpOperatorAuthStatus,
   connectMcpOperatorAuth,
 } from "./client.ts";
+import { useConsoleEvents } from "./console_events.ts";
 import { openExternal, POPUP_HINT } from "./open_external.ts";
 import { toastError, toastSuccess } from "./toast.ts";
 
-// Other console tabs (and the OAuth-callback page) post here when an MCP account link
-// changes, so an open Settings page refetches without a manual reload.
-const MCP_AUTH_CHANNEL = "haku-console-mcp-auth";
+type DeploymentVersion = {
+  label: string;
+  image: DeploymentInfo["server"];
+};
+
+export function deploymentVersions(deployment: DeploymentInfo): DeploymentVersion[] {
+  const { server, frontend } = deployment;
+  if (server.source_commit && server.source_commit === frontend.source_commit) {
+    return [{ label: "Deployed", image: server }];
+  }
+  return [
+    ...(server.source_commit ? [{ label: "Server", image: server }] : []),
+    ...(frontend.source_commit ? [{ label: "Web", image: frontend }] : []),
+  ];
+}
+
+function VersionLink({ version }: { version: DeploymentVersion }) {
+  const commit = version.image.source_commit?.slice(0, 12);
+  if (!commit) return null;
+  const content = version.image.source_commit_url ? (
+    <Anchor href={version.image.source_commit_url} target="_blank" rel="noreferrer" size="xs" ff="monospace">
+      {commit}
+    </Anchor>
+  ) : (
+    <Text size="xs" ff="monospace">
+      {commit}
+    </Text>
+  );
+  return (
+    <Group gap="xs" wrap="nowrap" title={version.image.image_tag ?? version.label}>
+      <Text size="xs" c="dimmed">
+        {version.label}
+      </Text>
+      {content}
+    </Group>
+  );
+}
 
 function McpAccountCard({
   status,
@@ -56,41 +93,42 @@ function McpAccountCard({
   );
 }
 
-// Operator settings — the console's rarely-touched MCP account linkage, rendered as a stacking
-// panel in the shell chrome (toggled from the toolbar's gear), alongside the approvals panel.
+// Operator settings — the console's rarely-touched MCP account linkage, rendered as one of the
+// shell chrome's mutually exclusive panels.
 export function SettingsPanel() {
   const [statuses, setStatuses] = useState<McpOperatorAuthStatus[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
+  const [statusesError, setStatusesError] = useState<string | null>(null);
+  const [deploymentError, setDeploymentError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const channelRef = useRef<BroadcastChannel | null>(null);
+  const versions = deployment ? deploymentVersions(deployment) : [];
 
-  const load = useCallback((notifyPeers = false) => {
-    if (notifyPeers) channelRef.current?.postMessage({ type: "mcpAuthChanged" });
+  const load = useCallback(() => {
     setLoading(true);
-    fetchMcpOperatorAuthStatuses().then(
-      (s) => {
-        setStatuses(s);
-        setError(null);
-        setLoading(false);
+    const statusesRequest = fetchMcpOperatorAuthStatuses().then(
+      (nextStatuses) => {
+        setStatuses(nextStatuses);
+        setStatusesError(null);
       },
       (e: unknown) => {
-        setError(e instanceof Error ? e.message : String(e));
-        setLoading(false);
+        setStatusesError(e instanceof Error ? e.message : String(e));
       }
     );
+    const deploymentRequest = fetchDeploymentInfo().then(
+      (nextDeployment) => {
+        setDeployment(nextDeployment);
+        setDeploymentError(null);
+      },
+      (e: unknown) => {
+        setDeploymentError(e instanceof Error ? e.message : String(e));
+      }
+    );
+    void Promise.all([statusesRequest, deploymentRequest]).then(() => setLoading(false));
   }, []);
 
-  useEffect(() => {
-    load();
-    if (!("BroadcastChannel" in window)) return;
-    const channel = new BroadcastChannel(MCP_AUTH_CHANNEL);
-    channelRef.current = channel;
-    channel.onmessage = () => load();
-    return () => {
-      if (channelRef.current === channel) channelRef.current = null;
-      channel.close();
-    };
-  }, [load]);
+  useConsoleEvents((event) => {
+    if (event.event_type === "sync" || event.event_type === "mcp_operator_auth_changed") load();
+  });
 
   function connect(serverId: string) {
     connectMcpOperatorAuth(serverId).then(
@@ -109,7 +147,6 @@ export function SettingsPanel() {
     disconnectMcpOperatorAuth(serverId).then(
       () => {
         toastSuccess("MCP account disconnected", serverId);
-        load(true);
       },
       (e: unknown) => toastError("Couldn't disconnect MCP account", e)
     );
@@ -132,12 +169,12 @@ export function SettingsPanel() {
               account.
             </Text>
           </section>
-          {error && (
+          {statusesError && (
             <Text c="red" size="sm">
-              Failed to load MCP accounts: {error}
+              Failed to load MCP accounts: {statusesError}
             </Text>
           )}
-          {!statuses && !error && (
+          {!statuses && !statusesError && (
             <Group justify="center" p="xl">
               <Loader />
             </Group>
@@ -157,6 +194,26 @@ export function SettingsPanel() {
               onDisconnect={() => disconnect(status.server_id)}
             />
           ))}
+          {deployment && (
+            <section className="haku-shell-card">
+              <Text fw={600}>Version</Text>
+              <Stack gap={2} mt={4}>
+                {versions.map((version) => (
+                  <VersionLink key={version.label} version={version} />
+                ))}
+                {versions.length === 0 && (
+                  <Text size="xs" c="dimmed">
+                    Deployment metadata unavailable.
+                  </Text>
+                )}
+              </Stack>
+            </section>
+          )}
+          {deploymentError && (
+            <Text c="red" size="sm">
+              Failed to load deployment version: {deploymentError}
+            </Text>
+          )}
         </Stack>
       </div>
     </aside>

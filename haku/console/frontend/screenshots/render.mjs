@@ -33,17 +33,12 @@ const SCENES = [
   // Every implemented tool-call preview, compact | detailed side by side. Capture the full
   // document so adding a preview cannot silently push later entries below a fixed viewport.
   { name: "previews", viewport: { width: 1100, height: 900 }, fullPage: true },
-  // The whole shell chrome: approvals panel open by default; the clicks open the live-offline
-  // location, and screenshot panels (their open state is internal to the chrome) so the shot
-  // shows all four surfaces stacked by Y under the toggle-button row.
+  // The whole shell chrome: approvals starts selected; switch to screenshot so the capture checks
+  // both the active tab styling and its mutually exclusive panel.
   {
     name: "chrome",
     viewport: { width: 860, height: 1260 },
-    clicks: [
-      '[aria-label="Live updates disconnected"]',
-      '[aria-label="Location sharing: live"]',
-      '[aria-label="Screenshot capture: live"]',
-    ],
+    clicks: ['[aria-label="Screenshot capture: live"]'],
   },
 ];
 const COLOR_SCHEMES = ["light", "dark"];

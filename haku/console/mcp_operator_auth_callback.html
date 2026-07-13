@@ -21,12 +21,5 @@
   <body>
     <h1>$title</h1>
     <p><code>$message</code></p>
-    <!-- Notify any open console tab (the Settings page listens on this channel) that the
-         operator's MCP account linkage changed, so it refetches without a manual reload. -->
-    <script>
-      try {
-        new BroadcastChannel("haku-console-mcp-auth").postMessage({ type: "$payload" });
-      } catch (_) {}
-    </script>
   </body>
 </html>

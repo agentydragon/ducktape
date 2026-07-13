@@ -106,7 +106,7 @@
 }
 
 /* The shell chrome column: fixed top-right, a vertical flex stack of the toggle-button row and
-   the open panels. Panels stack by Y (never overlap by z-index); the container is
+   the selected panel. Panel toggles are mutually exclusive; the container is
    pointer-transparent so empty column space still clicks through to the framed haku-ui, while
    the button row and panels catch their own clicks. */
 .haku-shell-chrome {
@@ -173,13 +173,13 @@
 }
 
 /* Location / live-channel panels: natural height, so they sit compactly under the approvals
-   panel in the stack. */
+   selected panel. */
 .haku-shell-side-panel {
   flex: 0 0 auto;
 }
 
 /* Full-page console views on their own routes (past-tool-calls history in
-   tool_calls_page.tsx, operator settings in settings_page.tsx) — each replaces the framed
+   tool_calls_page.tsx, operator settings in settings_panel.tsx) — each replaces the framed
    haku-ui rather than overlaying it. Shared page chrome, so both use these classes. */
 .haku-page {
   position: fixed;
@@ -225,7 +225,7 @@
 }
 
 /* Full-page cards sit on a solid page background, not floating over the iframe like the
-   drawer's — so drop the drawer's lift shadow and let the border alone delineate them. */
+   approvals panel's — so drop the panel's lift shadow and let the border alone delineate them. */
 .haku-page .haku-shell-card {
   box-shadow: none;
 }

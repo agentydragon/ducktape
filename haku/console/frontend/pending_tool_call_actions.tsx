@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import { SUCCESS_COLOR } from "./theme.ts";
 
-// The approve/deny control for a pending tool call, shared by the drawer approval card and the
+// The approve/deny control for a pending tool call, shared by the approvals panel card and the
 // history row so both spell it one way. The optional free-text reason sits to the LEFT of the
 // buttons on one row, its purpose carried by the placeholder rather than a stacked label.
 //
@@ -12,7 +12,7 @@ import { SUCCESS_COLOR } from "./theme.ts";
 // endpoint to persist a reason on approve (mcp_approval.py) and a neutral placeholder here.
 export function PendingToolCallActions({
   busy,
-  // The drawer arms its buttons after a short delay to guard against a misclick on a card that
+  // The approvals panel arms its buttons after a short delay to guard against a misclick on a card that
   // just appeared; the history page has no such delay, so it defaults to armed.
   armed = true,
   onApprove,

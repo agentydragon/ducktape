@@ -3,6 +3,7 @@ load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
@@ -28,6 +29,21 @@ py_library(
     name = "models",
     srcs = ["models.py"],
     deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "deployment",
+    srcs = ["deployment.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_deployment",
+    srcs = ["test_deployment.py"],
+    deps = [
+        ":deployment",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_library(
@@ -104,6 +120,7 @@ py_library(
     data = ["mcp_operator_auth_callback.html"],
     deps = [
         ":config",
+        ":console_events",
         ":database_migrate",
         ":database_schema",
         ":deps",
@@ -135,6 +152,7 @@ py_library(
     deps = [
         ":auto_approval",
         ":config",
+        ":console_events",
         ":database_migrate",
         ":database_schema",
         ":deps",
@@ -147,7 +165,6 @@ py_library(
         "@pypi//fastapi_csrf_protect",
         "@pypi//fastmcp",
         "@pypi//mcp",
-        "@pypi//psycopg",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
@@ -174,6 +191,7 @@ py_library(
     deps = [
         ":auto_approval",
         ":config",
+        ":console_events",
         ":mcp_approval",
         ":mcp_config",
         ":mcp_operator_oauth",
@@ -197,6 +215,33 @@ py_library(
         "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "console_events",
+    srcs = ["console_events.py"],
+    deps = [
+        ":config",
+        ":operator_auth",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//fastapi",
+        "@pypi//psycopg",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_console_events",
+    srcs = ["test_console_events.py"],
+    deps = [
+        ":console_events",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -242,7 +287,9 @@ py_library(
     deps = [
         ":capabilities",
         ":config",
+        ":console_events",
         ":database_migrate",
+        ":deployment",
         ":in_process_servers",
         ":mcp_approval",
         ":mcp_config",
@@ -263,8 +310,8 @@ py_library(
         "@pypi//itsdangerous",
         "@pypi//starlette",
         "@pypi//uvicorn",
-        # uvicorn needs a WebSocket protocol impl at runtime or every /api/approvals/ws
-        # upgrade fails ("Unsupported upgrade request") — the drawer's live channel (#2977).
+        # uvicorn needs a WebSocket protocol impl at runtime or every /api/events/ws
+        # upgrade fails ("Unsupported upgrade request") — the console's live channel (#2977).
         "@pypi//websockets",
     ],
 )
@@ -541,6 +588,26 @@ oci_image(
     },
     tars = [":static_tar"],
     visibility = ["//visibility:public"],
+)
+
+oci_layout_rloc(
+    name = "static_test_image",
+    testonly = True,
+    image = ":static_image",
+)
+
+py_test(
+    name = "test_static_image",
+    size = "medium",
+    srcs = ["test_static_image.py"],
+    data = [":static_test_image"],
+    requires_docker = True,
+    deps = [
+        "//util:oci",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//testcontainers",
+    ],
 )
 
 oci_load(

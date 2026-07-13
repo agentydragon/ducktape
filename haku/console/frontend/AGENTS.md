@@ -3,7 +3,7 @@
 ## Editing console visuals — always screenshot and eyeball
 
 When you change anything visual in this SPA — the past-tool-calls history view
-(`tool_calls_page.tsx`), the console panel/drawer (`console_panel.tsx`), the panel toggle,
+(`tool_calls_page.tsx`), the shell chrome (`shell_chrome.tsx`), a panel toggle,
 the tool-call cards, or their styles (`styles.src.css`) — regenerate and **look at** the
 screenshots before handing off:
 
@@ -14,7 +14,7 @@ bbr test //haku/console/frontend:screenshots
 It renders each surface (`screenshots/harness.tsx`) in both light and dark themes to PNGs (two
 per scene: `history` — its first rows expanded into their detailed state with the Metadata
 disclosure open, the rest left compact — `chrome` — the shell chrome with its
-approvals/settings/location/live panels stacked — plus `settings` and `previews`) in the test's
+the shell chrome with its mutually exclusive panel tabs — plus `settings` and `previews`) in the test's
 **undeclared outputs**.
 Browser rendering runs on the RBE worker, so this is a `bbr` test, not a local `bb run`. Fetch
 the PNGs
@@ -32,7 +32,7 @@ in `screenshots/render.mjs`) whenever you add a new surface.
 
 ## Tool-call rendering — design requirements
 
-A tool call shows up in two places — the approval **drawer** cards (`console_panel.tsx`) and
+A tool call shows up in two places — the **approvals panel** cards (`shell_chrome.tsx`) and
 the **history** rows (`tool_calls_page.tsx`) — but both render through one shared component,
 `tool_call_card.tsx` (identity header + action line + status badge + `Details` toggle, the
 arguments body, the result body, and the detailed Metadata); only the status badge and footer

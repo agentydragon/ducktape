@@ -5,7 +5,7 @@ import { ListDetailsIcon, ListIcon } from "./icons.tsx";
 import type { PreviewVariant } from "./tool_rendering/vocabulary.tsx";
 
 // The per-view compact/detailed selection, shared by the history page's per-row control and the
-// drawer's cards so both spell it one way. `useVariant` owns the state; the owner threads the
+// approvals panel's cards so both spell it one way. `useVariant` owns the state; the owner threads the
 // resulting `variant` down (to ToolArgumentsField and to gate the detail-only fields) and the
 // `setVariant` up to the control, so the choice propagates rather than being hardcoded per leaf.
 export function useVariant(initial: PreviewVariant): [PreviewVariant, (v: PreviewVariant) => void] {

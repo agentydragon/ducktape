@@ -9,10 +9,11 @@
 import "./mock_api.ts";
 
 import { MantineProvider } from "@mantine/core";
+import { useState } from "react";
 import { createRoot } from "react-dom/client";
 
-import { ShellChrome, type ShellChromeProps } from "../console_panel.tsx";
-import { SettingsPanel } from "../settings_page.tsx";
+import { SettingsPanel } from "../settings_panel.tsx";
+import { ShellChrome, type ShellChromeProps } from "../shell_chrome.tsx";
 import { hakuTheme } from "../theme.ts";
 import { approvalDisplayFields } from "../approval_state.ts";
 import { ToolCallCard } from "../tool_call_card.tsx";
@@ -32,7 +33,7 @@ function PreviewGallery() {
         >
           {PREVIEW_SAMPLES.map(({ title, serverId, toolName, args, result }, index) => {
             // A sample with a result renders as a finished OK call (so the result body shows);
-            // one without stays pending, like the approval drawer's cards.
+            // one without stays pending, like the approvals panel's cards.
             const finished = result != null;
             const fields = approvalDisplayFields({
               tool_call_id: `preview_${index}`,
@@ -73,9 +74,7 @@ function PreviewGallery() {
   );
 }
 
-const chromeProps: Omit<ShellChromeProps, "recentToolCalls"> = {
-  approvalsOpen: true,
-  onApprovalsOpenChange: noop,
+const chromeProps: Omit<ShellChromeProps, "approvalsOpen" | "onApprovalsOpenChange" | "recentToolCalls"> = {
   pendingApprovals: SAMPLE_PENDING,
   geolocationApprovals: [],
   screenshotApprovals: [],
@@ -97,10 +96,22 @@ const chromeProps: Omit<ShellChromeProps, "recentToolCalls"> = {
   onWithdrawScreenshot: noop,
 };
 
+function ShellChromeScene() {
+  const [approvalsOpen, setApprovalsOpen] = useState(true);
+  return (
+    <ShellChrome
+      {...chromeProps}
+      approvalsOpen={approvalsOpen}
+      onApprovalsOpenChange={setApprovalsOpen}
+      recentToolCalls={sampleRecentToolCalls(Date.now())}
+    />
+  );
+}
+
 function sceneElement(scene: string) {
   switch (scene) {
     case "settings":
-      // The settings drawer panel (a chrome surface); fetches /api/mcp/operator-auth on mount —
+      // The settings panel (a chrome surface); fetches /api/mcp/operator-auth on mount —
       // mock_api.ts serves SAMPLE_MCP. Boxed to a panel-ish width for the shot.
       return (
         <div style={{ maxWidth: 520, margin: 16 }}>
@@ -109,10 +120,9 @@ function sceneElement(scene: string) {
       );
     case "chrome":
       // The whole shell chrome: the toggle-button toolbar (offline warning + location pin +
-      // settings + approvals) over the panel column. Approvals starts open; render.mjs clicks
-      // the live and location buttons so several panels show stacked by Y (the point of the
-      // layout).
-      return <ShellChrome {...chromeProps} recentToolCalls={sampleRecentToolCalls(Date.now())} />;
+      // settings + approvals) over the panel column. Approvals starts open; render.mjs switches
+      // between the mutually exclusive panel tabs.
+      return <ShellChromeScene />;
     case "previews":
       return <PreviewGallery />;
     // The history page; render.mjs expands its first rows into their detailed state (opening the

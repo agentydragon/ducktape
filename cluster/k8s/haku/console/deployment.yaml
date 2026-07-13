@@ -32,13 +32,10 @@ metadata:
 spec:
   replicas: 2
   strategy:
-    type: RollingUpdate
-    # maxUnavailable: 0 means the new pod must be Ready before an old one is torn
-    # down, so a deploy never drops to zero endpoints (unlike the single-replica
-    # Recreate strategy this replaces, which always had a brief full outage).
-    rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
+    # The static image keeps only its current fingerprinted assets. Recreate prevents mixed-version
+    # replicas from serving a new shell and an old pod's missing chunk during the same page load;
+    # the tradeoff is a brief console outage while both replicas restart.
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: haku-console
@@ -65,6 +62,13 @@ spec:
             - name: api
               containerPort: 8080
           env:
+            # Runtime deployment metadata for the Settings panel. Tags come from the same Flux
+            # policies as the images, preserving reproducible image contents while exposing the
+            # commits selected by this pod manifest.
+            - name: HAKU_CONSOLE_IMAGE_TAG
+              value: devel-20260713014452-83da566 # {"$imagepolicy": "flux-system:haku-console:tag"}
+            - name: HAKU_CONSOLE_STATIC_IMAGE_TAG
+              value: devel-20260713015518-bfad4bf # {"$imagepolicy": "flux-system:haku-console-static:tag"}
             # Capability tier: the launch-routine action. The console builds both the
             # (public) fire URL and the claude.ai/code page deep-link from this routine
             # (trigger) id; the bearer comes from the haku-console-only secret so Haku

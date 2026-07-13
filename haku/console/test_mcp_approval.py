@@ -25,6 +25,7 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
+from starlette.websockets import WebSocketDisconnect
 
 from haku.console.conftest import csrf_token, write_config
 from haku.console.database_schema import McpOperatorOAuthAssociation, metadata
@@ -379,16 +380,25 @@ def test_operator_oauth_association_drives_tool_reflection(make_operator_client,
             public_base_url="https://haku.test",
             tool_call_metadata_provider=metadata_provider,
         ) as client,
+        client.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as events,
     ):
+        assert events.receive_json() == {"event_type": "hello"}
         before = client.get("/api/capabilities/mcp-servers").json()
         started = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": csrf_token(client)})
         state = parse_qs(urlparse(started.json()["authorization_url"]).query)["state"][0]
         callback = client.get("/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"})
+        association_event = events.receive_json()
         after = client.get("/api/capabilities/mcp-servers").json()
 
     assert before["servers"][0]["status"] == "degraded"
     assert "Connect your grocy-sf MCP account" in before["servers"][0]["degraded_reason"]
     assert callback.status_code == 200, callback.text
+    assert "BroadcastChannel" not in callback.text
+    assert association_event == {
+        "event_type": "mcp_operator_auth_changed",
+        "server_id": "grocy-sf",
+        "status": "connected",
+    }
     assert after["servers"][0]["status"] == "alive"
     assert metadata_provider.auth_tokens == ["operator-access-token"]
     assert "bearer_token_secret" not in str(after)
@@ -769,8 +779,8 @@ def test_list_newest_first_keeps_the_most_recent(operator_client: TestClient) ->
 
 
 def test_websocket_receives_pending_approval_event(operator_client: TestClient) -> None:
-    with operator_client.websocket_connect("/api/approvals/ws") as ws:
-        assert ws.receive_json() == {"type": "hello"}
+    with operator_client.websocket_connect("/api/events/ws") as ws:
+        assert ws.receive_json() == {"event_type": "hello"}
         submitted = _submit(operator_client)
         event = ws.receive_json()
         events = operator_client.get("/api/approvals/events", params={"after_event_id": 0}).json()
@@ -778,6 +788,16 @@ def test_websocket_receives_pending_approval_event(operator_client: TestClient) 
     assert event["tool_call_id"] == submitted["tool_call_id"]
     assert event["status"] == "pending_approval"
     assert events["events"][0]["event_id"] == event["event_id"]
+
+
+def test_websocket_rejects_cross_origin(make_operator_client) -> None:
+    with (
+        make_operator_client(public_base_url="https://haku.test") as client,
+        pytest.raises(WebSocketDisconnect) as exc_info,
+        client.websocket_connect("/api/events/ws", headers={"Origin": "https://haku-ui.test"}),
+    ):
+        pass
+    assert exc_info.value.code == 1008
 
 
 def test_full_audit_log_listing_and_secret_redaction(operator_client: TestClient) -> None:

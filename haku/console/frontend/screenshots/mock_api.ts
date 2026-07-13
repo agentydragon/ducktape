@@ -5,6 +5,7 @@
 // (render.mjs) so the relative "/api/…" URL parses in the origin-less setContent page.
 import {
   SAMPLE_CALENDAR_SUMMARY,
+  SAMPLE_DEPLOYMENT,
   SAMPLE_GMAIL_THREADS,
   SAMPLE_GROCY_REFERENCE,
   SAMPLE_MCP,
@@ -27,6 +28,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
   const url = requestUrl(input);
   // Order matters: match the more specific /api/mcp/... path before /api/tool-calls.
   if (url.includes("/api/mcp/operator-auth")) return jsonResponse({ associations: SAMPLE_MCP });
+  if (url.includes("/api/deployment")) return jsonResponse(SAMPLE_DEPLOYMENT);
   // The grocy widgets resolve id→name references and read products' current field values for
   // the products_edit old→new diff — the sample reference carries both.
   if (url.includes("/api/grocy-sf/reference")) return jsonResponse(SAMPLE_GROCY_REFERENCE);

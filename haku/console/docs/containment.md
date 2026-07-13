@@ -83,17 +83,17 @@ Security rests on two things instead:
    a bridge request, which the shell re-gates with its own CSRF + confirm + bearer.
 2. **The shell is the only trustworthy approval surface.** Immediate bridge escalations render as
    a **top-layer `<dialog>.showModal()` with a backdrop**. Queueable approvals render in the
-   shell-owned non-modal drawer. In both cases the iframe cannot draw over the trusted controls,
+   shell-owned non-modal approvals panel. In both cases the iframe cannot draw over the trusted controls,
    read them, or intercept their clicks. Anti-clickjacking hygiene: explicit action text, a
    deliberate click on a freshly-rendered button, no click-through.
 
 Fullscreen is withheld from the iframe (no `allow="fullscreen"`) so it can't spoof browser
 chrome.
 
-**The console panel (⚙ escape button).** A persistent shell-owned control, fixed above the
-full-page frame, opens the console panel (`console_panel.tsx`) — trusted chrome the frame
-can't render into, holding shell-owned status and controls (today: the location-sharing
-grant + withdraw; future shell config/views slot in here). It is **not** a consent surface:
+**The shell chrome.** A persistent shell-owned toolbar, fixed above the full-page frame, opens one
+of the trusted panels in `shell_chrome.tsx` — chrome the frame can't render into, holding
+shell-owned status and controls (today: approvals, Settings, location-sharing, screenshot capture,
+and live-channel status). It is **not** a consent surface:
 it only reveals state and _reduces_ privilege, so — unlike `ConfirmDialog` — it needn't be a
 top-layer `<dialog>`. The one authority moment (granting a capability) always stays in the
 top-layer confirm. Consistent with invariant #4: a persistent panel is not a trust
@@ -123,8 +123,8 @@ The `<tool-call>` affordance does **not** give the iframe a direct console bridg
 haku-ui frontend posts to its own same-origin backend, that backend reads
 `tool_requests/<id>.yaml` from haku-state and calls haku-console's
 `POST /api/tool-calls` with the configured console agent API token. If approval is
-required, haku-console notifies its trusted frontend (`/api/approvals/ws`, with REST catch-up from
-`/api/approvals/pending`) and renders the non-modal approval drawer itself. The iframe can request a
+required, haku-console notifies its trusted frontend (`/api/events/ws`, with REST catch-up from
+`/api/approvals/pending`) and renders the non-modal approvals panel itself. The iframe can request a
 tool call, but cannot approve one or forge console chrome.
 
 ### `requestGeolocation` / `startGeolocationWatch` — read the operator's location (standing grant)
@@ -146,7 +146,7 @@ it ends. Why it must route through the shell, and how consent works:
   `navigator.geolocation.watchPosition` **in the shell** (`geolocation.ts` → `GeolocationWatcher`),
   keyed by the bridge `id`; each fix is relayed to the frame. So a prompt-injected Haku can
   neither start a watch silently (it needs the grant) nor keep one the operator has stopped
-  (the shell owns `clearWatch`) — the console panel's "Stop" is a real kill switch.
+  (the shell owns `clearWatch`) — the Location panel's "Stop" is a real kill switch.
 - **A shell-owned standing grant is the gate** (`geolocation_grant.ts`, persisted in the
   shell origin's `localStorage` — cross-origin isolated, so the frame can't read or forge
   it). The **first** ask with no grant pops the top-layer consent confirm ("Allow Haku to use
@@ -156,7 +156,7 @@ it ends. Why it must route through the shell, and how consent works:
 - **Two independent gates.** The shell grant is the app-level gate; the browser's own
   geolocation permission (its native prompt on first read, its site-settings revoke) is the
   platform-level gate. Both must be "on" to read; withdrawing either stops reads.
-- **Withdrawal** is a shell control in the console panel (the ⚙ escape button, below): it
+- **Withdrawal** is a shell control in the Location panel: it
   stops every live watch and revokes the grant. Declining the confirm, withdrawing, or the
   watch ending yields `code: 1` (`PERMISSION_DENIED`; `reason` `declined`/`withdrawn`) so the
   frame treats it exactly like a native denial. The ⚙ indicator pulses while a watch streams.
@@ -184,7 +184,7 @@ sandboxed iframe. Why it must route through the shell, and how consent works:
   keeps the `getDisplayMedia` stream (decoded into a hidden `<video>`) alive across requests, so
   a prompt-injected Haku can neither start a capture silently (it needs the grant, and
   `getDisplayMedia` itself needs a genuine operator click) nor keep one running after the
-  operator's own browser-native "Stop sharing" control or the console panel's withdraw ends it.
+  operator's own browser-native "Stop sharing" control or the Screenshot panel's withdraw ends it.
 - **A shell-owned standing grant is the gate** (`screenshot_grant.ts`, persisted in the shell
   origin's `localStorage`, same shape as `geolocation_grant.ts` but its own key — cross-origin
   isolated, so the frame can't read or forge it). The first ask with no grant queues a
@@ -199,7 +199,7 @@ sandboxed iframe. Why it must route through the shell, and how consent works:
   browser-native "Stop sharing" ended the session, the next `requestScreenshot` still queues a
   fresh approval card (same title, "resume" in effect) to get a real click before reopening the
   picker — it cannot be served silently the way a granted geolocation read can.
-- **Withdrawal** is a shell control in the console panel (the camera toggle's stop/withdraw
+- **Withdrawal** is a shell control in the Screenshot panel (the camera toggle's stop/withdraw
   panel): it stops the live stream (dropping the browser's own sharing indicator) and revokes
   the grant. Declining the approval, withdrawing, or the operator's own "Stop sharing" all leave
   the request unanswered only until the next ask; a request in flight at that moment resolves

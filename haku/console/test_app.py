@@ -36,6 +36,25 @@ def test_config_haku_ui_url_surfaced_and_csp_allows_framing_it(make_client) -> N
         assert resp.headers["permissions-policy"] == "geolocation=(self), display-capture=(self)"
 
 
+def test_deployment_metadata_comes_from_runtime_image_tags(make_client, monkeypatch) -> None:
+    monkeypatch.setenv("HAKU_CONSOLE_IMAGE_TAG", "devel-20260713014452-83da566")
+    monkeypatch.setenv("HAKU_CONSOLE_STATIC_IMAGE_TAG", "devel-20260713015518-bfad4bf")
+
+    with make_client() as c:
+        assert c.get("/api/deployment").json() == {
+            "server": {
+                "image_tag": "devel-20260713014452-83da566",
+                "source_commit": "83da566",
+                "source_commit_url": "https://github.com/agentydragon/ducktape/commit/83da566",
+            },
+            "frontend": {
+                "image_tag": "devel-20260713015518-bfad4bf",
+                "source_commit": "bfad4bf",
+                "source_commit_url": "https://github.com/agentydragon/ducktape/commit/bfad4bf",
+            },
+        }
+
+
 def test_cache_policy_splits_hashed_assets_app_shell_and_api(make_client, tmp_path: Path) -> None:
     static_dir = tmp_path / "web"
     assets_dir = static_dir / "assets"
@@ -45,7 +64,8 @@ def test_cache_policy_splits_hashed_assets_app_shell_and_api(make_client, tmp_pa
 
     with make_client(static_dir=static_dir) as c:
         assert c.get("/assets/main-abcdef123456.js").headers["cache-control"] == ("public, max-age=31536000, immutable")
-        assert c.get("/").headers["cache-control"] == "no-cache, max-age=0, must-revalidate"
+        assert c.get("/assets/missing.js").headers["cache-control"] == "no-store"
+        assert c.get("/").headers["cache-control"] == "no-store"
         assert c.get("/api/config").headers["cache-control"] == "no-store"
         assert c.get("/healthz").headers["cache-control"] == "no-store"
 
@@ -61,7 +81,7 @@ def test_spa_route_deep_link_serves_index(make_client, tmp_path: Path) -> None:
         resp = c.get("/tool-calls")
         assert resp.status_code == 200
         assert "id='root'" in resp.text
-        assert resp.headers["cache-control"] == "no-cache, max-age=0, must-revalidate"
+        assert resp.headers["cache-control"] == "no-store"
 
 
 if __name__ == "__main__":

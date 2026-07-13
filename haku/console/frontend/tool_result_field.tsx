@@ -9,7 +9,7 @@ import { toolResultPreview } from "./tool_rendering/index.tsx";
  * a result only when a widget makes it self-describing, mirroring how compact never shows raw
  * arguments JSON of a widget-rendered call). Detailed always offers the exact stored envelope
  * behind a `Raw result` disclosure once a widget rendered. Renders nothing while there is no
- * result yet. Shared by the approval drawer's recent cards and the history view. */
+ * result yet. Shared by the approvals panel's recent cards and the history view. */
 export function ToolResultField({
   serverId,
   toolName,

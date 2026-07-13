@@ -1,17 +1,19 @@
 # Cache policy for the static content nginx serves ITSELF (fingerprinted assets are immutable; the
-# SPA shell is always revalidated). Backend responses are NOT listed here — the FastAPI app owns
+# SPA shell is never stored). Backend responses are NOT listed here — the FastAPI app owns
 # their Cache-Control (haku/console/app.py `_cache_control_for_path`) and the proxied locations below
 # pass it through untouched.
-map $uri $haku_cache_control {
-  ~^/assets/ "public, max-age=31536000, immutable";
-  default    "no-cache, max-age=0, must-revalidate";
+# Rolling replicas can briefly miss another version's fingerprinted asset. Cache successful assets
+# forever, but never preserve a transient error response.
+map $status $haku_asset_cache_control {
+  ~^[23]  "public, max-age=31536000, immutable";
+  default "no-store";
 }
 
 # WebSocket upgrade passthrough for the live tool-call event socket
-# (/api/approvals/ws). `proxy_http_version 1.1` alone is not enough — nginx only
+# (/api/events/ws). `proxy_http_version 1.1` alone is not enough — nginx only
 # forwards the Upgrade/Connection handshake headers when they're set explicitly,
 # so without this the WS handshake is silently downgraded to a plain request and
-# the socket fails (the console's approval drawer then only updates on reload).
+# the socket fails (the console's approvals panel then only updates on reload).
 # `close` for non-upgrade requests keeps ordinary keepalive to the FastAPI upstream.
 map $http_upgrade $connection_upgrade {
   default upgrade;
@@ -44,7 +46,7 @@ server {
     add_header Content-Security-Policy
       "frame-src 'self' ${HAKU_CONSOLE_HAKU_UI_URL} ${HAKU_CONSOLE_AUTH_ORIGIN}; frame-ancestors 'none'"
       always;
-    add_header Cache-Control $haku_cache_control always;
+    add_header Cache-Control $haku_asset_cache_control always;
     add_header Referrer-Policy "no-referrer" always;
     add_header Permissions-Policy "geolocation=(self), display-capture=(self)" always;
   }
@@ -58,7 +60,7 @@ server {
 
   location /api/ {
     proxy_pass http://127.0.0.1:8080;
-    # Carry the WebSocket handshake through to FastAPI (/api/approvals/ws).
+    # Carry the WebSocket handshake through to FastAPI (/api/events/ws).
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $connection_upgrade;
     # WS connections are long-lived; don't let the proxy read timeout kill an idle
@@ -93,10 +95,12 @@ server {
 
   location / {
     try_files $uri /index.html;
+    etag off;
+    if_modified_since off;
     add_header Content-Security-Policy
       "frame-src 'self' ${HAKU_CONSOLE_HAKU_UI_URL} ${HAKU_CONSOLE_AUTH_ORIGIN}; frame-ancestors 'none'"
       always;
-    add_header Cache-Control $haku_cache_control always;
+    add_header Cache-Control "no-store" always;
     add_header Referrer-Policy "no-referrer" always;
     add_header Permissions-Policy "geolocation=(self), display-capture=(self)" always;
   }

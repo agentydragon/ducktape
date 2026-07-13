@@ -22,12 +22,12 @@ from starlette.routing import Mount, Route
 from gmail_api.labels import GmailLabel, LabelsListResponse, LabelType
 from haku.console.app import create_app
 from haku.console.conftest import console_settings, write_config
+from haku.console.console_events import ConsoleEventHub
 from haku.console.mcp_approval import (
     McpMetadataProvider,
     McpToolExecutor,
     PostgresToolCallLedger,
-    ToolCallEventHub,
-    _agent_operator,
+    operator_subject_for_agent,
 )
 from haku.console.mcp_config import ResolvedStaticAgent
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
@@ -71,7 +71,7 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
         settings=settings,
         static_agents=[ResolvedStaticAgent(agent="haku", token=SecretStr(_AGENT_TOKEN), operator_subject="42")],
         ledger=PostgresToolCallLedger(migrated_db_url),
-        hub=ToolCallEventHub(migrated_db_url),
+        hub=ConsoleEventHub(migrated_db_url),
         executor=McpToolExecutor(in_process),
         oauth_store=PostgresMcpOperatorOAuthStore(migrated_db_url),
         metadata_provider=McpMetadataProvider(in_process),
@@ -309,13 +309,13 @@ def test_operator_resolution_routes_multiple_agents_and_operators(migrated_db_ur
     store.upsert_agent_operator(agent_dcr_client_id="dcr-cli", operator_subject="op-cli")
 
     # Static agents route by their config binding; the subjects never cross over.
-    assert _agent_operator("haku", static_agents, store) == "op-haku"
-    assert _agent_operator("ops-bot", static_agents, store) == "op-ops"
+    assert operator_subject_for_agent("haku", static_agents, store) == "op-haku"
+    assert operator_subject_for_agent("ops-bot", static_agents, store) == "op-ops"
     # OAuth agents route by their linked operator.
-    assert _agent_operator("dcr-claude", static_agents, store) == "op-claude"
-    assert _agent_operator("dcr-cli", static_agents, store) == "op-cli"
+    assert operator_subject_for_agent("dcr-claude", static_agents, store) == "op-claude"
+    assert operator_subject_for_agent("dcr-cli", static_agents, store) == "op-cli"
     # An unknown/unlinked caller resolves to no operator (fails closed into the 409 connect path).
-    assert _agent_operator("dcr-unlinked", static_agents, store) is None
+    assert operator_subject_for_agent("dcr-unlinked", static_agents, store) is None
 
 
 if __name__ == "__main__":

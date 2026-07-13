@@ -9,7 +9,7 @@ import type { PreviewVariant } from "./tool_rendering/vocabulary.tsx";
 import { ToolResultField } from "./tool_result_field.tsx";
 import { VariantControl } from "./variant_control.tsx";
 
-/** One tool call, rendered the same way everywhere it appears — the drawer's pending and recent
+/** One tool call, rendered the same way everywhere it appears — the approvals panel's pending and recent
  * cards and the history page's rows. It owns the shared skeleton (the identity header + action
  * line + rationale/error/denial subhead + status badge + Details toggle, the arguments body,
  * the result body, and the detailed Metadata) so all of that reads one way and lives in one

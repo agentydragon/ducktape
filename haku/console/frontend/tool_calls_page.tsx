@@ -7,7 +7,7 @@ import { ArrowLeftIcon } from "./icons.tsx";
 import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
 import { ToolCallCard } from "./tool_call_card.tsx";
 import { useToolCallDecision } from "./tool_call_decision.ts";
-import { useToolCallEvents } from "./tool_call_events.ts";
+import { useConsoleEvents } from "./console_events.ts";
 import { useVariant } from "./variant_control.tsx";
 
 // Matches the backend's `le=500` cap on GET /api/tool-calls (mcp_approval.py).
@@ -47,10 +47,10 @@ function ToolCallRow({
 }
 
 // The console's own full-page view of the whole tool-call audit ledger — a bigger,
-// persistent counterpart to the shell drawer's ephemeral "Recent" list. Its own route
+// persistent counterpart to the approvals panel's ephemeral "Recent" list. Its own route
 // (routing.ts → "/tool-calls"), so the framed haku-ui is unmounted while it's open.
 // A pending call that streams in (via the live WS signal) can be approved/denied here too,
-// through the same CSRF-gated endpoints the drawer uses, without going back to the shell.
+// through the same CSRF-gated endpoints the approvals panel uses, without going back to the shell.
 export function ToolCallsPage({ onBack }: { onBack: () => void }) {
   const [records, setRecords] = useState<ToolCallRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -72,8 +72,8 @@ export function ToolCallsPage({ onBack }: { onBack: () => void }) {
   }, []);
 
   // Live: initial load on mount plus a refetch whenever a tool call is submitted, approved,
-  // denied, or finishes anywhere — the same WS signal the approval drawer uses.
-  useToolCallEvents(load);
+  // denied, or finishes anywhere — the same WS signal the approvals panel uses.
+  useConsoleEvents(load);
 
   const decisions = useToolCallDecision({ onSettled: load });
 

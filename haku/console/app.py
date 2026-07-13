@@ -25,9 +25,10 @@ from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
 from starlette.middleware.sessions import SessionMiddleware
 
-from haku.console import capabilities, mcp_approval, mcp_operator_oauth, mcp_server, operator_auth
+from haku.console import capabilities, console_events, mcp_approval, mcp_operator_oauth, mcp_server, operator_auth
 from haku.console.config import Settings
 from haku.console.database_migrate import apply_migrations
+from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.in_process_servers import InProcessServerDependencies, build_in_process_servers
 from haku.console.mcp_config import resolve_static_agents
 from haku.console.models import ConfigResponse
@@ -40,7 +41,7 @@ from haku.console.tools import (
 )
 from mcp_infra.persistence import build_client_storage
 
-APP_SHELL_CACHE_CONTROL = "no-cache, max-age=0, must-revalidate"
+APP_SHELL_CACHE_CONTROL = "no-store"
 IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
 NO_STORE_CACHE_CONTROL = "no-store"
 REFERRER_POLICY = "no-referrer"
@@ -51,8 +52,8 @@ REFERRER_POLICY = "no-referrer"
 PERMISSIONS_POLICY = "geolocation=(self), display-capture=(self)"
 
 
-def _cache_control_for_path(path: str) -> str:
-    if path.startswith("/assets/"):
+def _cache_control_for_path(path: str, status_code: int) -> str:
+    if path.startswith("/assets/") and status_code < 400:
         return IMMUTABLE_ASSET_CACHE_CONTROL
     # The app is authoritative for the cache policy of every backend surface it serves — nginx no
     # longer sets Cache-Control on proxied responses (haku/console/default.conf.template), so these
@@ -68,7 +69,7 @@ def create_app(settings: Settings) -> FastAPI:
     # the test fixture), not here. Cross-replica fan-out (Postgres LISTEN/NOTIFY) is started by the
     # lifespan below, since the listen loop needs a running event loop.
     database_url = settings.database_url.get_secret_value()
-    tool_call_event_hub = mcp_approval.ToolCallEventHub(database_url)
+    console_event_hub = console_events.ConsoleEventHub(database_url)
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(database_url)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(database_url)
     # The static machine agents (fixed bearer → operator subject) from the config file; resolved once
@@ -99,7 +100,7 @@ def create_app(settings: Settings) -> FastAPI:
         settings=settings,
         static_agents=static_agents,
         ledger=tool_call_ledger,
-        hub=tool_call_event_hub,
+        hub=console_event_hub,
         executor=tool_call_executor,
         oauth_store=mcp_operator_oauth_store,
         metadata_provider=tool_call_metadata_provider,
@@ -129,7 +130,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-        await tool_call_event_hub.start()
+        await console_event_hub.start()
         try:
             # Pre-warm the OIDCProxy client-state store so the first OAuth request isn't slowed by a
             # cold connect (see mcp_infra/oauth_facade/server.py).
@@ -141,7 +142,7 @@ def create_app(settings: Settings) -> FastAPI:
                 await mcp_server.register_proxy_tools(console_mcp, console_mcp_context)
                 yield
         finally:
-            await tool_call_event_hub.aclose()
+            await console_event_hub.aclose()
 
     app = FastAPI(title="Haku console", lifespan=_lifespan)
     # The capability router reads settings off app.state (see haku.console.capabilities).
@@ -151,7 +152,7 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.mcp_operator_oauth_store = mcp_operator_oauth_store
     app.state.gmail_client = gmail_client
     app.state.calendar_client = calendar_client
-    app.state.tool_call_event_hub = tool_call_event_hub
+    app.state.console_event_hub = console_event_hub
     app.state.in_process_servers = in_process_servers
     app.state.tool_call_executor = tool_call_executor
     app.state.tool_call_metadata_provider = tool_call_metadata_provider
@@ -166,7 +167,7 @@ def create_app(settings: Settings) -> FastAPI:
     async def _security_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         response = await call_next(request)
         response.headers["Content-Security-Policy"] = csp
-        response.headers["Cache-Control"] = _cache_control_for_path(request.url.path)
+        response.headers["Cache-Control"] = _cache_control_for_path(request.url.path, response.status_code)
         response.headers["Referrer-Policy"] = REFERRER_POLICY
         response.headers["Permissions-Policy"] = PERMISSIONS_POLICY
         return response
@@ -197,12 +198,19 @@ def create_app(settings: Settings) -> FastAPI:
         mcp_approval.agent_router, dependencies=[Depends(operator_auth.require_operator_or_static_agent)]
     )
     app.include_router(capabilities.router, dependencies=operator_only)
+    app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(mcp_approval.router, dependencies=operator_only)
     app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
     app.include_router(gmail_tools.router, dependencies=operator_only)
     app.include_router(google_calendar_tools.router, dependencies=operator_only)
     app.include_router(grocy_tools.router, dependencies=operator_only)
     app.include_router(tana_tools.router, dependencies=operator_only)
+
+    deployment_info = build_deployment_info()
+
+    @app.get("/api/deployment", dependencies=operator_only)
+    async def deployment() -> DeploymentInfo:
+        return deployment_info
 
     @app.get("/api/config", dependencies=operator_only)
     async def config() -> ConfigResponse:

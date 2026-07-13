@@ -44,7 +44,7 @@ UI can ask for the capability but can never script or spoof it.
 
 **Migration (in progress):** launch is moving off this bespoke tier onto the standard MCP
 approval queue — the `haku_routine` in-process MCP server's `launch_routine` tool (below)
-fires the same routine, gated by the ordinary approval drawer instead of a separate confirm.
+fires the same routine, gated by the ordinary approvals panel instead of a separate confirm.
 This capability path stays only until haku-ui submits `launch_routine` through its backend and
 the `requestLaunch` bridge verb is dropped, at which point `capabilities.py` retires entirely
 (the shared `GET /api/capabilities/csrf` endpoint moves; it's used by the approval + operator-auth
@@ -80,7 +80,7 @@ Core endpoints:
 - `POST /api/tool-calls` — submit a call with `server_id`, `tool_name`, exact
   `arguments`, and explicit `wait_for_ms`. The console mints the canonical `tool_call_id`.
 - `GET /api/approvals/pending`, `GET /api/approvals/events?after_event_id=...`, and
-  `WebSocket /api/approvals/ws` — frontend catch-up + notifications. REST remains the source of
+  `WebSocket /api/events/ws` — operator-subject-routed frontend catch-up + notifications. REST remains the source of
   truth; the WebSocket only wakes the shell to refresh.
 - `POST /api/tool-calls/{tool_call_id}/decision` — CSRF-gated trusted-frontend approval/denial.
 - `GET /api/tool-calls` / `GET /api/tool-calls/{tool_call_id}` — audit/result reads for Haku's
@@ -89,7 +89,7 @@ Core endpoints:
 
 Backend callers authenticate with a configured **static agent** bearer (`static_agents` in the
 config file — each an agent id bound to one operator subject, both env-referenced). Browser-origin
-approvals use the operator's Authentik session plus CSRF. The approval drawer renders in trusted
+approvals use the operator's Authentik session plus CSRF. The approvals panel renders in trusted
 console chrome, not inside Haku's iframe, and does not block the framed Haku UI. If a server enables
 `operator_oauth`, approval execution
 uses the approving operator's linked OAuth token and refuses to move the call out of
@@ -179,21 +179,21 @@ shell holds (`startGeolocationWatch`); location is gated by a shell-owned standi
 grant since the iframe has no `allow="geolocation"`. The shell origin-checks,
 schema-validates, and decides/confirms before acting. It also mirrors the iframe's hash route
 (`routeChanged`, validated as a path) into the console's own URL fragment so refresh and deep
-links restore the view. A persistent top-right floating toolbar (`console_panel.tsx`'s
-`ShellChrome`, each button `filled` while its panel is open) opens the shell's own trusted
+links restore the view. A persistent top-right floating toolbar (`shell_chrome.tsx`'s
+`ShellChrome`, each button `filled` while its panel is selected) opens the shell's own trusted
 chrome: a checklist button — badged with a callout light when a tool call is awaiting approval —
 toggles the approval queue panel (with a link to the full-page past-tool-calls history); a gear
 toggles the Settings panel (MCP account connect/reconnect/disconnect); a location-sharing pin
 (shown only while consent is held, with a live indicator when location is actively read) toggles
 a stop/withdraw panel; and a crossed-wifi button appears when the live event socket is down.
-Opening more than one panel stacks them vertically under the toolbar rather than overlapping.
+These controls behave as deselectable tabs, so at most one panel is open.
 See <docs/containment.md>.
 
 ## Past tool calls — full-page history
 
-Beyond the drawer's ephemeral "Recent" list, the console owns a **full-page history view**
+Beyond the approvals panel's ephemeral "Recent" list, the console owns a **full-page history view**
 of the whole tool-call audit ledger (`frontend/tool_calls_page.tsx`), reached from the
-console panel and living at its own route, `/tool-calls` (`frontend/routing.ts`). Because
+approvals panel and living at its own route, `/tool-calls` (`frontend/routing.ts`). Because
 the console's own pages are distinguished by URL **path** — the hash stays reserved for
 mirroring the framed haku-ui route — the shell renders the history view instead of the
 iframe when the path matches. It reads `GET /api/tool-calls?newest_first=true`, so the
@@ -226,8 +226,16 @@ image and a separate `haku-console-static` nginx image that bakes in the
 fingerprinted SPA. nginx serves `/` and `/assets/*`, proxies `/api/*`, `/healthz`,
 `/mcp`, `/auth/*`, and the `/.well-known/oauth-*` discovery paths to FastAPI on
 localhost, and sets cache policy by route (`/assets/*` immutable, app shell
-revalidated, API/health/mcp/auth uncached). No runtime asset copy or shared web
+never stored, missing assets and API/health/mcp/auth uncached). No runtime asset copy or shared web
 volume is used.
+
+The Deployment uses `Recreate` because each static image contains only its current bundle. This
+trades a brief rollout outage for an atomic version boundary: a page cannot receive HTML from one
+replica version and request its fingerprinted asset from another.
+
+The server receives both Flux-selected image tags through `HAKU_CONSOLE_{,STATIC_}IMAGE_TAG`.
+`GET /api/deployment` parses their commit suffixes at runtime for the Settings version links. This
+keeps build stamping out of the OCI layers, so image contents remain reproducible.
 
 **Auth is app-owned** (the Authentik forward-auth proxy outpost that used to gate
 `haku.allegedly.works` is retired; the HTTPRoute now points straight at the console

@@ -23,6 +23,7 @@ api.use({
 });
 
 export type ConfigResponse = components["schemas"]["ConfigResponse"];
+export type DeploymentInfo = components["schemas"]["DeploymentInfo"];
 export type LaunchRoutineResult = components["schemas"]["LaunchRoutineResult"];
 export type ApprovalDecisionResponse = components["schemas"]["ApprovalDecisionResponse"];
 type ApprovalDecisionRequest = components["schemas"]["ApprovalDecisionRequest"];
@@ -47,6 +48,12 @@ export function errorDetail(error: unknown, fallback: string): string {
 export async function fetchConfig(): Promise<ConfigResponse> {
   const { data, error } = await api.GET("/api/config");
   if (error || !data) throw new Error(errorDetail(error, "Failed to load config"));
+  return data;
+}
+
+export async function fetchDeploymentInfo(): Promise<DeploymentInfo> {
+  const { data, error } = await api.GET("/api/deployment");
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load deployment information"));
   return data;
 }
 

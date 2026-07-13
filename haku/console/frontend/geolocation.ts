@@ -53,7 +53,7 @@ export type WatchEmit = { ok: true; position: GeoPosition } | { ok: false; code:
 // per-watch id (the iframe's correlation id). Each active watch pushes fixes/errors to
 // `emit(id, ...)` until stopped. The shell (not the iframe) holds every watch, so a
 // prompt-injected Haku can neither start one without the consent grant nor keep one the
-// operator has stopped — `stopAll` is the console panel's kill switch.
+// operator has stopped — `stopAll` is the Location panel's kill switch.
 export class GeolocationWatcher {
   private readonly watches = new Map<string, number>(); // bridge watch id → browser watch id
 

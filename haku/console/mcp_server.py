@@ -41,14 +41,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.auto_approval import is_unconditionally_auto_approved
 from haku.console.config import Settings
+from haku.console.console_events import ConsoleEventHub
 from haku.console.mcp_approval import (
     DegradedServerMetadata,
     McpMetadataProvider,
     McpToolExecutor,
     PostgresToolCallLedger,
     ServerMetadata,
-    ToolCallEventHub,
     ToolCallListResponse,
+    operator_subject_for_agent,
     submit_and_wait,
 )
 from haku.console.mcp_config import (
@@ -95,7 +96,7 @@ class ConsoleMcpContext:
     settings: Settings
     static_agents: list[ResolvedStaticAgent]
     ledger: PostgresToolCallLedger
-    hub: ToolCallEventHub
+    hub: ConsoleEventHub
     executor: McpToolExecutor
     oauth_store: PostgresMcpOperatorOAuthStore
     metadata_provider: McpMetadataProvider
@@ -230,9 +231,14 @@ class ProxyTool(Tool):
             title=title,
             wait_for_ms=max(0, min(int(wait_ms), MAX_WAIT_MS)),
         )
+        caller_principal = _agent_id()
+        operator_subject = operator_subject_for_agent(caller_principal, ctx.static_agents, ctx.oauth_store)
+        if operator_subject is None:
+            raise RuntimeError(f"agent {caller_principal} has no linked operator subject")
         record = await submit_and_wait(
             req=req,
-            caller_principal=_agent_id(),
+            caller_principal=caller_principal,
+            operator_subject=operator_subject,
             caller_is_agent=True,
             static_agents=ctx.static_agents,
             settings=ctx.settings,

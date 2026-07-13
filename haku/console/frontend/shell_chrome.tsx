@@ -20,10 +20,10 @@ import type { PendingApproval } from "./client.ts";
 import { Field } from "./field.tsx";
 import { CameraIcon, ChecklistIcon, HistoryIcon, MapPinIcon, SettingsIcon, WifiOffIcon } from "./icons.tsx";
 import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
-import { SettingsPanel } from "./settings_page.tsx";
+import { SettingsPanel } from "./settings_panel.tsx";
 import { SUCCESS_COLOR } from "./theme.ts";
 import { ToolCallCard } from "./tool_call_card.tsx";
-import type { LiveStatus } from "./tool_call_events.ts";
+import type { LiveStatus } from "./console_events.ts";
 import { useVariant, VariantControl } from "./variant_control.tsx";
 
 export interface ShellChromeProps {
@@ -95,8 +95,8 @@ function RecentCountdown({ recent, nowMs }: { recent: RecentToolCall; nowMs: num
 
 // The location-sharing panel: opened from the map-pin toggle, shown only while the shell holds
 // the standing grant. Carries the current state and the stop/withdraw kill switch (a rare
-// one-tap action best reachable straight from the chrome). Rendered as a stacked panel in the
-// chrome column, not a floating popover, so it sits under its sibling panels by Y.
+// one-tap action best reachable straight from the chrome). It occupies the shell's one shared
+// panel slot, just like approvals, screenshot capture, and settings.
 function LocationPanel({ tracking, onWithdraw }: { tracking: boolean; onWithdraw: () => void }) {
   return (
     <section className="haku-shell-card haku-shell-side-panel" aria-label="Location sharing">
@@ -126,7 +126,7 @@ function LocationPanel({ tracking, onWithdraw }: { tracking: boolean; onWithdraw
 // the standing grant. "Live" means the shell currently holds an active tab-capture stream (the
 // browser's own sharing indicator is up); "Allowed" means the operator has granted the
 // capability but nothing is being captured right now — the next request will re-open the
-// browser's own share picker. Same stacked-panel shape as LocationPanel.
+// browser's own share picker.
 function ScreenshotPanel({ sharing, onWithdraw }: { sharing: boolean; onWithdraw: () => void }) {
   return (
     <section className="haku-shell-card haku-shell-side-panel" aria-label="Screenshot capture">
@@ -157,7 +157,7 @@ function ScreenshotPanel({ sharing, onWithdraw }: { sharing: boolean; onWithdraw
 // invisible — the approvals list just silently stops updating between reloads (the exact
 // failure the missing nginx WS upgrade caused). The socket auto-reconnects, so the toggle
 // clears itself once it's back.
-function LivePanel() {
+function OfflinePanel() {
   return (
     <section className="haku-shell-card haku-shell-side-panel" aria-label="Live updates offline">
       <Stack gap="xs">
@@ -516,20 +516,23 @@ function ChromeToggle({
       color={color}
       onClick={onClick}
       aria-label={label}
+      aria-pressed={open}
     >
       {children}
     </ActionIcon>
   );
 }
 
-// The persistent shell chrome over the framed haku-ui: a floating top-right **toolbar** of
-// toggle buttons (squished together, no gaps) over a column that stacks its open panels **by
-// Y**, never by z-index. Each button is `filled` while its panel is open; opening more than one
-// panel stacks them vertically under the toolbar — the approvals panel follows its content up to
-// the available height and scrolls internally, while settings/location/screenshot/live take
-// their natural height beneath it — so panels share the column instead of floating over one
-// another. Toggles are neutral gray; only genuinely semantic cues keep a color (red pending
-// count, orange offline, green live-location/live-capture dot).
+export type ShellPanel = "approvals" | "settings" | "location" | "screenshot" | "offline";
+
+export function nextShellPanel(selected: ShellPanel | null, clicked: ShellPanel): ShellPanel | null {
+  return selected === clicked ? null : clicked;
+}
+
+// The persistent shell chrome over the framed haku-ui: a floating top-right toolbar whose
+// mutually-exclusive toggles behave like deselectable tabs. Toggles are neutral gray; only
+// genuinely semantic cues keep a color (red pending count, orange offline, green
+// live-location/live-capture dot).
 export function ShellChrome(props: ShellChromeProps) {
   const {
     approvalsOpen,
@@ -542,28 +545,41 @@ export function ShellChrome(props: ShellChromeProps) {
     sharingScreen,
     onWithdrawScreenshot,
   } = props;
-  const [locationOpen, setLocationOpen] = useState(false);
-  const [screenshotOpen, setScreenshotOpen] = useState(false);
-  const [liveOpen, setLiveOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [openPanel, setOpenPanel] = useState<ShellPanel | null>(null);
   const pendingCount =
     props.pendingApprovals.length + props.geolocationApprovals.length + props.screenshotApprovals.length;
   const offline = liveStatus === "offline";
-  const anyPanelOpen =
-    approvalsOpen ||
-    settingsOpen ||
-    (geoGranted && locationOpen) ||
-    (screenshotGranted && screenshotOpen) ||
-    (offline && liveOpen);
+  const selectedPanel = approvalsOpen ? "approvals" : openPanel;
+
+  useEffect(() => {
+    if (approvalsOpen) setOpenPanel(null);
+  }, [approvalsOpen]);
+
+  useEffect(() => {
+    if (
+      (openPanel === "location" && !geoGranted) ||
+      (openPanel === "screenshot" && !screenshotGranted) ||
+      (openPanel === "offline" && !offline)
+    ) {
+      setOpenPanel(null);
+    }
+  }, [geoGranted, offline, openPanel, screenshotGranted]);
+
+  function togglePanel(panel: ShellPanel) {
+    const next = nextShellPanel(selectedPanel, panel);
+    onApprovalsOpenChange(next === "approvals");
+    setOpenPanel(next === "approvals" ? null : next);
+  }
+
   return (
     <div className="haku-shell-chrome" style={{ zIndex: PANEL_Z }}>
       <Group className="haku-shell-toolbar" gap={0} wrap="nowrap">
         {offline && (
           <ChromeToggle
-            open={liveOpen}
+            open={selectedPanel === "offline"}
             label="Live updates disconnected"
             color="orange"
-            onClick={() => setLiveOpen((o) => !o)}
+            onClick={() => togglePanel("offline")}
           >
             <WifiOffIcon />
           </ChromeToggle>
@@ -571,9 +587,9 @@ export function ShellChrome(props: ShellChromeProps) {
         {geoGranted && (
           <Indicator color="green" size={10} offset={6} processing disabled={!tracking} withBorder>
             <ChromeToggle
-              open={locationOpen}
+              open={selectedPanel === "location"}
               label={tracking ? "Location sharing: live" : "Location sharing: allowed"}
-              onClick={() => setLocationOpen((o) => !o)}
+              onClick={() => togglePanel("location")}
             >
               <MapPinIcon />
             </ChromeToggle>
@@ -582,15 +598,15 @@ export function ShellChrome(props: ShellChromeProps) {
         {screenshotGranted && (
           <Indicator color="green" size={10} offset={6} processing disabled={!sharingScreen} withBorder>
             <ChromeToggle
-              open={screenshotOpen}
+              open={selectedPanel === "screenshot"}
               label={sharingScreen ? "Screenshot capture: live" : "Screenshot capture: allowed"}
-              onClick={() => setScreenshotOpen((o) => !o)}
+              onClick={() => togglePanel("screenshot")}
             >
               <CameraIcon />
             </ChromeToggle>
           </Indicator>
         )}
-        <ChromeToggle open={settingsOpen} label="Settings" onClick={() => setSettingsOpen((o) => !o)}>
+        <ChromeToggle open={selectedPanel === "settings"} label="Settings" onClick={() => togglePanel("settings")}>
           <SettingsIcon />
         </ChromeToggle>
         <Indicator
@@ -604,21 +620,23 @@ export function ShellChrome(props: ShellChromeProps) {
           <ChromeToggle
             open={approvalsOpen}
             label={approvalsOpen ? "Close approvals" : "Open approvals"}
-            onClick={() => onApprovalsOpenChange(!approvalsOpen)}
+            onClick={() => togglePanel("approvals")}
           >
             <ChecklistIcon />
           </ChromeToggle>
         </Indicator>
       </Group>
-      {anyPanelOpen && (
+      {selectedPanel && (
         <div className="haku-shell-panels">
-          {approvalsOpen && <ApprovalsPanel {...props} />}
-          {settingsOpen && <SettingsPanel />}
-          {geoGranted && locationOpen && <LocationPanel tracking={tracking} onWithdraw={onWithdrawGeolocation} />}
-          {screenshotGranted && screenshotOpen && (
+          {selectedPanel === "approvals" && <ApprovalsPanel {...props} />}
+          {selectedPanel === "settings" && <SettingsPanel />}
+          {selectedPanel === "location" && geoGranted && (
+            <LocationPanel tracking={tracking} onWithdraw={onWithdrawGeolocation} />
+          )}
+          {selectedPanel === "screenshot" && screenshotGranted && (
             <ScreenshotPanel sharing={sharingScreen} onWithdraw={onWithdrawScreenshot} />
           )}
-          {offline && liveOpen && <LivePanel />}
+          {selectedPanel === "offline" && offline && <OfflinePanel />}
         </div>
       )}
     </div>

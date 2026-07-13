@@ -15,7 +15,7 @@ import { type GeolocationOptions, type Outbound } from "@haku/console-bridge/pro
 import { isRoutePath, parseInbound, vetOpenLink } from "./bridge.ts";
 import { fetchPendingApprovals, launchRoutine, type PendingApproval, type ToolCallRecord } from "./client.ts";
 import { ConfirmDialog, type Escalation } from "./confirm_dialog.tsx";
-import { ShellChrome } from "./console_panel.tsx";
+import { ShellChrome } from "./shell_chrome.tsx";
 import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation.ts";
 import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant.ts";
 import { openExternal, POPUP_HINT } from "./open_external.ts";
@@ -23,7 +23,7 @@ import { ScreenshotSession } from "./screenshot_capture.ts";
 import { hasScreenshotGrant, setScreenshotGrant } from "./screenshot_grant.ts";
 import { toastError, toastSuccess } from "./toast.ts";
 import { useToolCallDecision } from "./tool_call_decision.ts";
-import { useToolCallEvents } from "./tool_call_events.ts";
+import { useConsoleEvents } from "./console_events.ts";
 
 // Haku's own UI service — a separate, Authentik-gated origin running in haku-sandbox —
 // embedded as a sandboxed cross-origin iframe (the whole console is now this frame). The
@@ -104,7 +104,7 @@ export function HakuUiEmbed({
   }
 
   // Standing consent to share location + whether a live watch is currently streaming, both
-  // mirrored for the console panel (below). The message handler reads the authoritative grant
+  // mirrored for the shell chrome (below). The message handler reads the authoritative grant
   // flag from storage (hasGeolocationGrant) directly, so it never goes stale in the effect
   // closure; these mirrors only drive rendering.
   const [geoGranted, setGeoGranted] = useState(() => hasGeolocationGrant());
@@ -280,7 +280,7 @@ export function HakuUiEmbed({
   // Live tool-call signal: initial fetch on mount plus a refetch on every server WS event
   // (which the server also broadcasts to every other tab, so they refresh too). Its status
   // drives the shell's live-channel warning when the socket is down.
-  const liveStatus = useToolCallEvents(refreshToolApprovals);
+  const liveStatus = useConsoleEvents(refreshToolApprovals);
 
   // Tear down any live browser watches / capture stream if the console unmounts.
   useEffect(() => () => void watcher.stopAll(), [watcher]);
@@ -304,7 +304,7 @@ export function HakuUiEmbed({
       if (msg.type === "requestGeolocation") {
         // The iframe can only ask; the shell owns the standing grant. With consent already
         // given ("allow until withdrawn"), serve directly; otherwise queue a trusted shell
-        // approval in the non-modal drawer so Haku's UI remains usable.
+        // approval in the non-modal approvals panel so Haku's UI remains usable.
         if (hasGeolocationGrant()) geolocateAndReply(msg.id, msg.options);
         else addGeolocationApproval("geolocation", msg.id, msg.options);
         return;

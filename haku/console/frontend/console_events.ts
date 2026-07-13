@@ -1,21 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 
 // The live channel's health, surfaced so the shell can show when it's broken (a dead socket
-// means the approval drawer only updates on reload — the operator must be told, not left
+// means the approvals panel only updates on reload — the operator must be told, not left
 // silently stale). `connecting` is the pre-open grace state (no alarm during the handshake);
 // `offline` persists across reconnect attempts until one succeeds, so the indicator doesn't
 // blink between backoff tries.
 export type LiveStatus = "connecting" | "live" | "offline";
 
-// The console's "tool-call state may have changed, re-read it" signal, shared by every surface
-// that shows tool calls (the approval drawer and the full history view). The authoritative
-// source is the server-pushed `/api/approvals/ws` WebSocket: the backend's ToolCallEventHub
-// broadcasts every submit/approve/deny/finish to every connected tab (across replicas via
-// Postgres LISTEN/NOTIFY), so a change in one tab reaches the others through the server.
+export type ConsoleEvent = { event_type: string };
+
+// The authoritative server-pushed event signal shared by console surfaces. `/api/events/ws`
+// carries tool-call and operator-link changes across replicas via Postgres LISTEN/NOTIFY.
 // `onEvent` fires once on mount (initial read), on every event, and again on reconnect (to
 // catch up on anything missed while the socket was down). The returned `LiveStatus` lets the
 // shell chrome flag a dead channel.
-export function useToolCallEvents(onEvent: () => void): LiveStatus {
+export function useConsoleEvents(onEvent: (event: ConsoleEvent) => void): LiveStatus {
   // Held in a ref so a changing callback identity never re-opens the socket.
   const onEventRef = useRef(onEvent);
   useEffect(() => {
@@ -25,8 +24,8 @@ export function useToolCallEvents(onEvent: () => void): LiveStatus {
   const [status, setStatus] = useState<LiveStatus>("connecting");
 
   useEffect(() => {
-    const fire = () => onEventRef.current();
-    fire(); // initial read; the WS below only delivers subsequent changes
+    const sync = () => onEventRef.current({ event_type: "sync" });
+    sync(); // initial read; the WS below only delivers subsequent changes
 
     // Only a real web origin can open the WS. A screenshot harness renders from an origin-less
     // about:blank page, where the initial read above already populated the view and
@@ -35,7 +34,7 @@ export function useToolCallEvents(onEvent: () => void): LiveStatus {
     const { protocol, href } = window.location;
     if (protocol !== "https:" && protocol !== "http:") return;
 
-    const url = new URL("/api/approvals/ws", href);
+    const url = new URL("/api/events/ws", href);
     url.protocol = protocol === "https:" ? "wss:" : "ws:";
 
     let closed = false;
@@ -50,17 +49,26 @@ export function useToolCallEvents(onEvent: () => void): LiveStatus {
         if (closed) return;
         backoffMs = 1000;
         setStatus("live");
-        fire(); // catch up on any events missed while the socket was down
+        sync(); // catch up on any events missed while the socket was down
       };
-      ws.onmessage = () => {
-        if (!closed) fire();
+      ws.onmessage = (message) => {
+        if (closed) return;
+        try {
+          const event: unknown = JSON.parse(String(message.data));
+          if (!event || typeof event !== "object" || !("event_type" in event) || typeof event.event_type !== "string") {
+            throw new Error("console event is missing event_type");
+          }
+          onEventRef.current(event as ConsoleEvent);
+        } catch (error) {
+          console.error("Invalid console event", error);
+        }
       };
       // onerror always precedes onclose; let onclose drive the state + reconnect so both a
       // failed handshake and a dropped connection funnel through one path.
       ws.onclose = () => {
         if (closed) return;
         setStatus("offline");
-        fire(); // one REST refetch so a momentary blip still refreshes the view
+        sync(); // one REST refetch so a momentary blip still refreshes the view
         reconnectTimer = window.setTimeout(connect, backoffMs);
         backoffMs = Math.min(backoffMs * 2, 30_000);
       };

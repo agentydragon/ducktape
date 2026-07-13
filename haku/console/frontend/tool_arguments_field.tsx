@@ -8,7 +8,7 @@ import type { PreviewVariant } from "./tool_rendering/vocabulary.tsx";
  * syntax-highlighted JSON view (compact-printed + truncated in brief mode, full in detailed),
  * which keeps an "Arguments" label so it isn't mistaken for a result. `variant` picks the compact
  * (skim) or detailed form; detailed always offers the exact raw JSON behind a disclosure even when
- * a widget rendered. Shared by the approval drawer and the past-tool-calls history view. */
+ * a widget rendered. Shared by the approvals panel and the past-tool-calls history view. */
 export function ToolArgumentsField({
   serverId,
   toolName,

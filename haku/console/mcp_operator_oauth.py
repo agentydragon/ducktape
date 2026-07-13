@@ -56,6 +56,7 @@ from sqlalchemy.orm import sessionmaker
 
 from haku.console import operator_auth
 from haku.console.config import Settings
+from haku.console.console_events import ConsoleEventHubDep, McpOperatorAuthChangedEvent
 from haku.console.database_schema import McpAgentOperator, McpOperatorOAuthAssociation, McpOperatorOAuthFlow
 from haku.console.deps import SettingsDep
 from haku.console.mcp_config import McpServerEntry, _load_servers, _operator_oauth_enabled, _server_entry
@@ -641,13 +642,12 @@ async def _refresh_operator_oauth_token(association: OperatorOAuthRefreshState) 
 
 # The callback page is served here (not from the SPA) because the OAuth provider redirects
 # straight to this backend endpoint, where the code→token exchange runs; the page's only job
-# is to report the outcome and nudge any open console tab. The markup lives in a sibling
+# is to report the outcome. The server publishes association changes through the console event
+# hub. The markup lives in a sibling
 # .html file (loaded once at import) so it stays lintable rather than a Python blob;
 # `string.Template` `$` placeholders avoid colliding with the CSS/JS braces.
-# TODO: make this a SPA-style page instead of a backend-served .html template — have the
-# callback run the token exchange, then redirect to a frontend SPA route (e.g.
-# /mcp-auth-complete?status=…) that renders the outcome and posts the BroadcastChannel nudge,
-# so all markup lives in the frontend rather than this .html + Python pair.
+# TODO: make this a SPA-style page instead of a backend-served .html template — have the callback
+# run the token exchange, then redirect to a frontend route that renders the outcome.
 _CALLBACK_TEMPLATE = Template((Path(__file__).parent / "mcp_operator_auth_callback.html").read_text(encoding="utf-8"))
 
 
@@ -655,9 +655,7 @@ def _oauth_callback_response(ok: bool, message: str, *, status_code: int = 200) 
     title = "MCP account connected" if ok else "MCP account connection failed"
     return HTMLResponse(
         status_code=status_code,
-        content=_CALLBACK_TEMPLATE.substitute(
-            title=html.escape(title), message=html.escape(message), payload="mcpAuthChanged" if ok else "mcpAuthFailed"
-        ),
+        content=_CALLBACK_TEMPLATE.substitute(title=html.escape(title), message=html.escape(message)),
     )
 
 
@@ -685,10 +683,14 @@ async def connect_mcp_operator_auth(
 
 @router.delete("/api/mcp/operator-auth/{server_id}")
 async def disconnect_mcp_operator_auth(
-    server_id: str, request: Request, csrf_protect: Csrf, oauth_store: OAuthStoreDep
+    server_id: str, request: Request, csrf_protect: Csrf, oauth_store: OAuthStoreDep, event_hub: ConsoleEventHubDep
 ) -> McpOperatorAuthUnconnected:
     await csrf_protect.validate_csrf(request)
-    oauth_store.disconnect(server_id=server_id, operator_subject=_operator_subject(request))
+    operator_subject = _operator_subject(request)
+    oauth_store.disconnect(server_id=server_id, operator_subject=operator_subject)
+    await event_hub.broadcast(
+        operator_subject, [McpOperatorAuthChangedEvent(server_id=server_id, status="disconnected")]
+    )
     return McpOperatorAuthUnconnected(server_id=server_id, username=_operator_username(request))
 
 
@@ -696,6 +698,7 @@ async def disconnect_mcp_operator_auth(
 async def mcp_operator_auth_callback(
     request: Request,
     oauth_store: OAuthStoreDep,
+    event_hub: ConsoleEventHubDep,
     state: str | None = None,
     code: str | None = None,
     error: str | None = None,
@@ -709,4 +712,7 @@ async def mcp_operator_auth_callback(
     except HTTPException as e:
         detail = e.detail if isinstance(e.detail, str) else "MCP OAuth callback failed."
         return _oauth_callback_response(False, detail, status_code=e.status_code)
+    await event_hub.broadcast(
+        _operator_subject(request), [McpOperatorAuthChangedEvent(server_id=status.server_id, status="connected")]
+    )
     return _oauth_callback_response(True, f"Connected {status.server_id} for {_operator_username(request)}.")

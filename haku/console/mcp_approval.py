@@ -12,16 +12,12 @@ linkage (used when a server executes as the operator's own account) lives in
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import datetime
-import json
 import logging
 import secrets
-from collections.abc import Iterable
 from typing import Annotated, Any, Literal, cast
 
-import psycopg
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi_csrf_protect import CsrfProtect
 from fastmcp.client import Client
 from mcp import types as mcp_types
@@ -32,6 +28,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from haku.console import operator_auth
 from haku.console.auto_approval import auto_approve_tool_call
 from haku.console.config import Settings
+from haku.console.console_events import ConsoleEventHub, ConsoleEventHubDep
 from haku.console.database_schema import McpToolCall, McpToolCallEvent
 from haku.console.deps import SettingsDep
 from haku.console.mcp_config import (
@@ -73,12 +70,28 @@ Csrf = Annotated[CsrfProtect, Depends()]
 
 
 TERMINAL_STATUSES = {ToolCallStatus.OK, ToolCallStatus.ERROR, ToolCallStatus.DENIED}
+DEV_OPERATOR_SUBJECT = "development-operator"
 
 
 class ToolMetadataBase(BaseModel):
     name: str
     description: str | None = None
     input_schema: dict[str, Any] = Field(default_factory=dict)
+
+
+def _operator_event_subject(request: Request, settings: Settings) -> str:
+    """Audience for operator-facing events.
+
+    Production reads the authenticated OIDC ``sub``. The OIDC-unset local/test mode has no browser
+    identity at all, so use one explicit development audience rather than weakening the production
+    path or making approval execution depend on an unavailable session.
+    """
+    subject = operator_auth.operator_subject(request)
+    if subject is not None:
+        return subject
+    if settings.operator_oidc is None:
+        return DEV_OPERATOR_SUBJECT
+    raise HTTPException(status_code=401, detail="no authenticated operator subject on the request")
 
 
 class AliveToolMetadata(ToolMetadataBase):
@@ -289,91 +302,6 @@ class PostgresToolCallLedger:
         return row
 
 
-def _psycopg_dsn(database_url: str) -> str:
-    # SQLAlchemy's "+psycopg" driver suffix isn't a real libpq scheme; strip it so
-    # psycopg's own AsyncConnection.connect() (used here for LISTEN/NOTIFY, outside
-    # SQLAlchemy) accepts the DSN directly.
-    return database_url.replace("postgresql+psycopg://", "postgresql://", 1)
-
-
-class ToolCallEventHub:
-    """WebSocket fan-out to this pod's connected clients, relayed across every
-    haku-console replica via Postgres LISTEN/NOTIFY (when a database is configured) —
-    so a client connected to one pod still gets the live nudge for an event a
-    *different* pod handled, not just events its own pod happened to process.
-    `broadcast()` always publishes (NOTIFY when DB-backed, direct local delivery
-    otherwise, e.g. in tests with no database); actual WebSocket sends happen only in
-    `_deliver_locally`, invoked either directly or from the NOTIFY listen loop — the
-    publishing pod hears its own NOTIFY back too, so there's no separate "local vs.
-    remote" delivery path to keep in sync.
-    """
-
-    _CHANNEL = "haku_console_tool_call_events"
-
-    def __init__(self, database_url: str) -> None:
-        self._connections: set[WebSocket] = set()
-        self._dsn = _psycopg_dsn(database_url)
-        self._listen_task: asyncio.Task[None] | None = None
-
-    async def start(self) -> None:
-        self._listen_task = asyncio.create_task(self._listen_loop())
-
-    async def aclose(self) -> None:
-        if self._listen_task is None:
-            return
-        self._listen_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await self._listen_task
-
-    async def connect(self, websocket: WebSocket) -> None:
-        await websocket.accept()
-        self._connections.add(websocket)
-
-    def disconnect(self, websocket: WebSocket) -> None:
-        self._connections.discard(websocket)
-
-    async def broadcast(self, events: Iterable[ToolCallEvent]) -> None:
-        payloads = [e.model_dump(mode="json") for e in events]
-        if not payloads:
-            return
-        # NOTIFY reaches every replica's listen loop, including this pod's own — so local websocket
-        # delivery happens there, not here, and there is no separate local-vs-remote path.
-        async with await psycopg.AsyncConnection.connect(self._dsn, autocommit=True) as conn:
-            for payload in payloads:
-                await conn.execute("SELECT pg_notify(%s, %s)", (self._CHANNEL, json.dumps(payload)))
-
-    async def _deliver_locally(self, payloads: list[dict[str, Any]]) -> None:
-        if not self._connections:
-            return
-        dead: list[WebSocket] = []
-        for ws in self._connections:
-            try:
-                for payload in payloads:
-                    await ws.send_json(payload)
-            except Exception:
-                dead.append(ws)
-        for ws in dead:
-            self.disconnect(ws)
-
-    async def _listen_loop(self) -> None:
-        while True:
-            try:
-                async with await psycopg.AsyncConnection.connect(self._dsn, autocommit=True) as conn:
-                    await conn.execute(f"LISTEN {self._CHANNEL}")
-                    async for note in conn.notifies():
-                        try:
-                            payload = json.loads(note.payload)
-                        except ValueError:
-                            logger.exception("failed to parse tool-call event notification payload")
-                            continue
-                        await self._deliver_locally([payload])
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.exception("tool-call event listen loop failed; reconnecting")
-                await asyncio.sleep(1)
-
-
 class McpToolExecutor:
     def __init__(self, in_process_servers: InProcessServers | None = None) -> None:
         self._in_process = in_process_servers or {}
@@ -415,10 +343,6 @@ def _static_agents(request: Request) -> list[ResolvedStaticAgent]:
     return cast("list[ResolvedStaticAgent]", request.app.state.static_agents)
 
 
-def _hub(request: Request) -> ToolCallEventHub:
-    return cast(ToolCallEventHub, request.app.state.tool_call_event_hub)
-
-
 def _executor(request: Request) -> McpToolExecutor:
     return cast(McpToolExecutor, request.app.state.tool_call_executor)
 
@@ -428,7 +352,6 @@ def _metadata_provider(request: Request) -> McpMetadataProvider:
 
 
 LedgerDep = Annotated[PostgresToolCallLedger, Depends(_ledger)]
-HubDep = Annotated[ToolCallEventHub, Depends(_hub)]
 ExecutorDep = Annotated[McpToolExecutor, Depends(_executor)]
 MetadataProviderDep = Annotated[McpMetadataProvider, Depends(_metadata_provider)]
 StaticAgentsDep = Annotated[list[ResolvedStaticAgent], Depends(_static_agents)]
@@ -475,14 +398,14 @@ def _caller_principal(request: Request, static_agents: StaticAgentsDep) -> str:
 CallerPrincipalDep = Annotated[str, Depends(_caller_principal)]
 
 
-def _agent_operator(
+def operator_subject_for_agent(
     caller_principal: str, static_agents: list[ResolvedStaticAgent], oauth_store: PostgresMcpOperatorOAuthStore
 ) -> str | None:
-    """The operator an auto-approved operator_oauth call runs as, resolved from the calling agent.
+    """The operator subject bound to an authenticated agent.
 
     A configured static agent → its explicit `operator_subject` binding; any other authenticated agent
     is an OAuth DCR client → the operator it linked at connect (`None` if unlinked, which fails closed
-    into the 409 "connect your account" path)."""
+    into the 409 "connect your account" path for operator-backed execution)."""
     for agent in static_agents:
         if agent.agent == caller_principal:
             return agent.operator_subject
@@ -526,9 +449,10 @@ async def _maybe_execute(
     record: ToolCallRecord,
     server: McpServerEntry,
     ledger: PostgresToolCallLedger,
-    hub: ToolCallEventHub,
+    hub: ConsoleEventHub,
     executor: McpToolExecutor,
     auth_token: str | None,
+    operator_subject: str,
 ) -> ToolCallRecord:
     if record.status != ToolCallStatus.RUNNING:
         return record
@@ -538,7 +462,7 @@ async def _maybe_execute(
         updated, event = ledger.finish(record.tool_call_id, result=None, error=str(e))
     else:
         updated, event = ledger.finish(record.tool_call_id, result=result, error=None)
-    await hub.broadcast([event])
+    await hub.broadcast(operator_subject, [event])
     logger.info(
         "tool call %s finished status=%s server=%s tool=%s",
         updated.tool_call_id,
@@ -597,11 +521,12 @@ async def submit_and_wait(
     *,
     req: SubmitToolCallRequest,
     caller_principal: str,
+    operator_subject: str,
     caller_is_agent: bool,
     static_agents: list[ResolvedStaticAgent],
     settings: Settings,
     ledger: PostgresToolCallLedger,
-    hub: ToolCallEventHub,
+    hub: ConsoleEventHub,
     executor: McpToolExecutor,
     oauth_store: PostgresMcpOperatorOAuthStore,
     in_process_servers: InProcessServers,
@@ -628,7 +553,7 @@ async def submit_and_wait(
         auto_approval_policy_id=auto_approval_policy_id,
         auto_approval_evaluation=auto_approval_evaluation,
     )
-    await hub.broadcast(events)
+    await hub.broadcast(operator_subject, events)
     if created:
         logger.info(
             "tool call %s submitted status=%s server=%s tool=%s caller=%s approval_policy=%s auto_approval=%s",
@@ -647,9 +572,11 @@ async def submit_and_wait(
         # servers) uses the caller's own resolved credential.
         execution_principal = caller_principal
         if _operator_oauth_enabled(server):
-            execution_principal = _agent_operator(caller_principal, static_agents, oauth_store) or caller_principal
+            execution_principal = (
+                operator_subject_for_agent(caller_principal, static_agents, oauth_store) or caller_principal
+            )
         auth_token = await _execution_auth(server, execution_principal, oauth_store)
-        record = await _maybe_execute(record, server, ledger, hub, executor, auth_token)
+        record = await _maybe_execute(record, server, ledger, hub, executor, auth_token, operator_subject)
     return await _wait_terminal(ledger, record.tool_call_id, req.wait_for_ms)
 
 
@@ -659,15 +586,21 @@ async def submit_tool_call(
     request: Request,
     settings: SettingsDep,
     ledger: LedgerDep,
-    hub: HubDep,
+    hub: ConsoleEventHubDep,
     executor: ExecutorDep,
     oauth_store: OAuthStoreDep,
     static_agents: StaticAgentsDep,
     caller: CallerPrincipalDep,
 ) -> ToolCallRecord:
+    operator_subject = (
+        operator_auth.operator_subject(request)
+        or operator_subject_for_agent(caller, static_agents, oauth_store)
+        or caller
+    )
     return await submit_and_wait(
         req=body,
         caller_principal=caller,
+        operator_subject=operator_subject,
         caller_is_agent=any(caller == agent.agent for agent in static_agents),
         static_agents=static_agents,
         settings=settings,
@@ -715,14 +648,15 @@ async def decide_approval(
     csrf_protect: Csrf,
     settings: SettingsDep,
     ledger: LedgerDep,
-    hub: HubDep,
+    hub: ConsoleEventHubDep,
     executor: ExecutorDep,
     oauth_store: OAuthStoreDep,
 ) -> ApprovalDecisionResponse:
     await csrf_protect.validate_csrf(request)
+    event_operator_subject = _operator_event_subject(request, settings)
     if body.decision == "deny":
         record, event = ledger.deny(tool_call_id, body.reason)
-        await hub.broadcast([event])
+        await hub.broadcast(event_operator_subject, [event])
         logger.info(
             "tool call %s denied server=%s tool=%s reason=%r",
             record.tool_call_id,
@@ -735,21 +669,9 @@ async def decide_approval(
     server = _server_entry(settings, pending.server_id)
     # Only operator_oauth execution runs as the approving operator; other servers use their configured
     # credential, so an operator subject isn't required to approve a call there.
-    operator_subject = _operator_subject(request) if _operator_oauth_enabled(server) else ""
-    auth_token = await _execution_auth(server, operator_subject, oauth_store)
+    execution_subject = event_operator_subject if _operator_oauth_enabled(server) else ""
+    auth_token = await _execution_auth(server, execution_subject, oauth_store)
     running, running_event = ledger.mark_running(tool_call_id)
-    await hub.broadcast([running_event])
-    finished = await _maybe_execute(running, server, ledger, hub, executor, auth_token)
+    await hub.broadcast(event_operator_subject, [running_event])
+    finished = await _maybe_execute(running, server, ledger, hub, executor, auth_token, event_operator_subject)
     return ApprovalDecisionResponse(tool_call=finished)
-
-
-@router.websocket("/api/approvals/ws")
-async def approvals_ws(websocket: WebSocket) -> None:
-    hub = websocket.app.state.tool_call_event_hub
-    await hub.connect(websocket)
-    try:
-        await websocket.send_json({"type": "hello"})
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        hub.disconnect(websocket)

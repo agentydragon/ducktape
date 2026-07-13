@@ -1,7 +1,7 @@
 // Deterministic sample data for the screenshot scenes (harness.tsx) and the API stub
 // (mock_api.ts). Kept separate so both share one source of truth.
 import { makeRecentToolCall, type RecentToolCall } from "../approval_state.ts";
-import type { McpOperatorAuthStatus, PendingApproval, ToolCallRecord } from "../client.ts";
+import type { DeploymentInfo, McpOperatorAuthStatus, PendingApproval, ToolCallRecord } from "../client.ts";
 import type { GrocyReferenceResponse } from "../grocy_client.ts";
 import type { RegisteredToolPreviewFixture } from "../tool_rendering/index.tsx";
 
@@ -166,6 +166,19 @@ export const SAMPLE_MCP: McpOperatorAuthStatus[] = [
     scope: "read write",
   },
 ];
+
+export const SAMPLE_DEPLOYMENT: DeploymentInfo = {
+  server: {
+    image_tag: "devel-20260713014452-83da566",
+    source_commit: "83da566",
+    source_commit_url: "https://github.com/agentydragon/ducktape/commit/83da566",
+  },
+  frontend: {
+    image_tag: "devel-20260713015518-bfad4bf",
+    source_commit: "bfad4bf",
+    source_commit_url: "https://github.com/agentydragon/ducktape/commit/bfad4bf",
+  },
+};
 
 // Subject/label lookups the Gmail thread-labels widget fetches; served by mock_api so both
 // preview variants render real subjects (compact shows the first few, detailed adds labels).
@@ -453,7 +466,7 @@ const CUSTOM_PREVIEW_SAMPLES = [
       to: ["ops@allegedly.works"],
       cc: ["rai@allegedly.works"],
       subject: "Re: Q3 planning",
-      body: "Hi team,\n\nThanks for the notes. A few thoughts on the roadmap:\n- Ship the console settings page\n- Then the previews gallery\n- Circle back on datetime formatting\n\nBest,\nRai",
+      body: "Hi team,\n\nThanks for the notes. A few thoughts on the roadmap:\n- Ship the console Settings panel\n- Then the previews gallery\n- Circle back on datetime formatting\n\nBest,\nRai",
       thread_id: "thread-42",
     },
     result: callToolResult({
