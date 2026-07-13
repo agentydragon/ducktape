@@ -63,11 +63,13 @@ ranked menu rather than an automatic accept list.
 - **A single-statement `else`/`if`/`for`/while body takes `STMT`, not `STMT_LIST`**;
   `STMT_LIST` is for a block body.
 - **The declaration keyword must match the source** (`var`/`let`/`const`).
-- **`match-selector` over-reports uniqueness.** A holed skeleton like
-  `function X(ANYTHING){STMT_LIST}` matches 1000+ nodes because `X` and the params
-  alpha-rename; uniqueness must come from a kept literal or rich signature, not a
-  holed shape. The byte-identical regen gate (e.g. `regen_js_test`) is the
-  authoritative arbiter of whether a selector is safe to land — not `match-selector`.
+- **`match-selector` proves only today's single-selector match.** A holed
+  skeleton like `function X(ANYTHING){STMT_LIST}` matches 1000+ nodes because
+  `X` and the params alpha-rename; uniqueness must come from a kept literal or
+  rich signature, not a holed shape. A unique `match-selector` result proves the
+  candidate's current chunk match, not forward compatibility or whole-spec
+  safety. The byte-identical regen gate (e.g. `regen_js_test`) is the
+  authoritative arbiter of whether a selector is safe to land.
 
 ## Anchor strength tiers (strongest → weakest)
 

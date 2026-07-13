@@ -45,11 +45,12 @@ The selector **mechanics** — hole forms (`ANYTHING`, `STMT_LIST`, `CLASS_REST`
 
 ## The toolkit
 
-Four debundler subcommands. The first three (`selector-debt`,
-`synthesize-selectors`, `match-selector`) read the chunk + `modules/` tree directly
-— no pipeline build, no owner graph. The fourth (`spec validate`) is the whole-spec
-gate and needs the full pipeline (see Setup). Treat the **minimizer as a
-first-class instrument**, not a last resort:
+Four debundler subcommands. `selector-debt` and `synthesize-selectors` read the
+chunk + `modules/` tree directly; `match-selector` reads just the chunk and a
+candidate selector. None of those three need a pipeline build or owner graph.
+The fourth (`spec validate`) is the whole-spec gate and needs the full pipeline
+(see Setup). Treat the **minimizer as a first-class instrument**, not a last
+resort:
 
 - **`spec selector-debt`** — the census. Ranks fragile name pins; add
   `--source-file` to also surface the near-ambiguous structural selectors (see the
@@ -86,14 +87,17 @@ near-ambiguous structural selectors from its `--source-file` pass.
 
 ## Setup
 
-The per-selector loop is **binary-only**: `selector-debt`, `synthesize-selectors`,
-and `match-selector` read the chunk + the `modules/` tree directly — no pipeline
-build, no owner graph, no `DEBUNDLE_GRAPH`/`DEBUNDLE_OUT`. A built `debundle` binary
-(or the pinned released one) plus the upstream snapshot is their whole toolchain.
-Export `DEBUNDLE_MODULES` / `DEBUNDLE_SOURCE_ROOT` (see `cli_basics.md` above). Use a
-per-agent Bazel output base under `/tmp` to avoid lock contention, exactly as the
-other debundle skills do. In a consuming repo the CLI label is `@ducktape//...`;
-inside the debundler repo, drop the prefix.
+The per-selector loop is **binary-only**: `selector-debt` and
+`synthesize-selectors` read the chunk + the `modules/` tree directly, while
+`match-selector` reads just the chunk and candidate selector. None of them need
+a pipeline build, owner graph, or `DEBUNDLE_GRAPH`/`DEBUNDLE_OUT`. A built
+`debundle` binary (or the pinned released one) plus the upstream snapshot is
+their whole toolchain. Export `DEBUNDLE_MODULES` / `DEBUNDLE_SOURCE_ROOT` (see
+`cli_basics.md` above); `match-selector` can also be run with explicit
+`--source-file` / `--source-root --chunk` flags. Use a per-agent Bazel output
+base under `/tmp` to avoid lock contention, exactly as the other debundle
+skills do. In a consuming repo the CLI label is `@ducktape//...`; inside the
+debundler repo, drop the prefix.
 
 The whole-spec gate is the exception. `spec validate` (and `debundle run`) is the
 realizability/cycle pipeline in dry-run, so it needs the full `debundle` **pipeline
