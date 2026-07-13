@@ -149,6 +149,27 @@ def test_ntfy_provider_headers_parse_as_yaml_map(k8s_dir: Path) -> None:
     assert all(isinstance(key, str) and isinstance(value, str) for key, value in headers.items())
 
 
+def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:
+    """The runtime commit stamp and cache-safe rollout strategy must track the actual images."""
+    deployment_path = k8s_dir / "haku" / "console" / "deployment.yaml"
+    raw = deployment_path.read_text(encoding="utf-8")
+    deployment = yaml.safe_load(raw)
+
+    assert deployment["spec"]["strategy"] == {"type": "Recreate"}
+    containers = {container["name"]: container for container in deployment["spec"]["template"]["spec"]["containers"]}
+    runtime_tags = {entry["name"]: entry["value"] for entry in containers["server"]["env"] if "value" in entry}
+    assert containers["server"]["image"].rsplit(":", 1)[1] == runtime_tags["HAKU_CONSOLE_IMAGE_TAG"]
+    assert containers["static"]["image"].rsplit(":", 1)[1] == runtime_tags["HAKU_CONSOLE_STATIC_IMAGE_TAG"]
+
+    for marker in (
+        '# {"$imagepolicy": "flux-system:haku-console"}',
+        '# {"$imagepolicy": "flux-system:haku-console:tag"}',
+        '# {"$imagepolicy": "flux-system:haku-console-static"}',
+        '# {"$imagepolicy": "flux-system:haku-console-static:tag"}',
+    ):
+        assert raw.count(marker) == 1, f"missing or duplicated Flux marker: {marker}"
+
+
 def test_retry_policy(cluster: ParsedCluster) -> None:
     check_retry_policy(cluster)
 

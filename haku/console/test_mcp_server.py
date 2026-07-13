@@ -21,15 +21,10 @@ from starlette.routing import Mount, Route
 
 from gmail_api.labels import GmailLabel, LabelsListResponse, LabelType
 from haku.console.app import create_app
-from haku.console.conftest import console_settings, write_config
+from haku.console.conftest import console_settings, operator_session_cookie, write_config
 from haku.console.console_events import ConsoleEventHub
-from haku.console.mcp_approval import (
-    McpMetadataProvider,
-    McpToolExecutor,
-    PostgresToolCallLedger,
-    operator_subject_for_agent,
-)
-from haku.console.mcp_config import ResolvedStaticAgent
+from haku.console.mcp_approval import McpMetadataProvider, McpToolExecutor, PostgresToolCallLedger, resolve_mcp_agent
+from haku.console.mcp_config import ResolvedStaticAgent, static_agent_client_id
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_server import ConsoleMcpContext, build_console_mcp, register_proxy_tools
 from haku.console.tool_calls import ToolCallStatus
@@ -112,7 +107,7 @@ async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harn
 
     assert result.structured_content is not None
     assert result.structured_content["labels"][0]["name"] == "haku/triaged"
-    calls = harness.ledger.list().tool_calls
+    calls = harness.ledger.list(operator_subject="42").tool_calls
     assert len(calls) == 1
     assert calls[0].status == ToolCallStatus.OK
     assert calls[0].tool_name == "labels_list"
@@ -177,13 +172,15 @@ def _console_config(tmp_path: Path, upstream_url: str) -> Path:
 
 async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_path: Path) -> None:
     with _serve_upstream() as upstream_url:
+        console_port = pick_free_port()
         settings = console_settings(
             migrated_db_url,
             config_file=_console_config(tmp_path, upstream_url),
             csrf_secret=SecretStr("csrf"),
             ui_base_url="https://haku.test",
+            public_base_url=f"http://127.0.0.1:{console_port}",
         )
-        with serve_app_sync(create_app(settings)) as base:
+        with serve_app_sync(create_app(settings), port=console_port) as base:
             async with httpx.AsyncClient() as anon:
                 # No bearer -> unauthorized. Hit /mcp/ directly (the mount redirects /mcp -> /mcp/).
                 unauth = await anon.post(
@@ -205,7 +202,9 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
                 tool_call_id = result.structured_content["tool_call_id"]
 
             # The operator approves via the CSRF-gated decision endpoint -> the real upstream runs.
-            async with httpx.AsyncClient(base_url=base) as operator:
+            async with httpx.AsyncClient(
+                base_url=base, cookies={"session": operator_session_cookie(subject="42", username="operator")}
+            ) as operator:
                 csrf = (await operator.get("/api/capabilities/csrf")).json()["csrf_token"]
                 decided = await operator.post(
                     f"/api/tool-calls/{tool_call_id}/decision",
@@ -288,11 +287,16 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
 def test_agent_operator_link_round_trips(migrated_db_url: str) -> None:
     store = PostgresMcpOperatorOAuthStore(migrated_db_url)
     assert store.agent_operator(agent_dcr_client_id="dcr-1") is None
-    store.upsert_agent_operator(agent_dcr_client_id="dcr-1", operator_subject="42")
+    store.bind_agent_operator(agent_dcr_client_id="dcr-1", operator_subject="42")
     assert store.agent_operator(agent_dcr_client_id="dcr-1") == "42"
-    # Re-linking the same agent updates in place (idempotent reconnect) — no duplicate row.
-    store.upsert_agent_operator(agent_dcr_client_id="dcr-1", operator_subject="99")
-    assert store.agent_operator(agent_dcr_client_id="dcr-1") == "99"
+    # Reauthorizing as the same operator is idempotent. A different operator must receive a new DCR
+    # client id; moving the old id would transfer every already-issued token to the new tenant.
+    store.bind_agent_operator(agent_dcr_client_id="dcr-1", operator_subject="42")
+    with pytest.raises(ValueError, match="different operator"):
+        store.bind_agent_operator(agent_dcr_client_id="dcr-1", operator_subject="99")
+    assert store.agent_operator(agent_dcr_client_id="dcr-1") == "42"
+    with pytest.raises(ValueError, match="reserved static-agent namespace"):
+        store.bind_agent_operator(agent_dcr_client_id=static_agent_client_id("haku"), operator_subject="42")
 
 
 def test_operator_resolution_routes_multiple_agents_and_operators(migrated_db_url: str) -> None:
@@ -305,17 +309,57 @@ def test_operator_resolution_routes_multiple_agents_and_operators(migrated_db_ur
         ResolvedStaticAgent(agent="ops-bot", token=SecretStr("tok-ops"), operator_subject="op-ops"),
     ]
     # Two OAuth DCR agents, each auto-linked (at connect) to a different operator subject.
-    store.upsert_agent_operator(agent_dcr_client_id="dcr-claude", operator_subject="op-claude")
-    store.upsert_agent_operator(agent_dcr_client_id="dcr-cli", operator_subject="op-cli")
+    store.bind_agent_operator(agent_dcr_client_id="dcr-claude", operator_subject="op-claude")
+    store.bind_agent_operator(agent_dcr_client_id="dcr-cli", operator_subject="op-cli")
 
-    # Static agents route by their config binding; the subjects never cross over.
-    assert operator_subject_for_agent("haku", static_agents, store) == "op-haku"
-    assert operator_subject_for_agent("ops-bot", static_agents, store) == "op-ops"
-    # OAuth agents route by their linked operator.
-    assert operator_subject_for_agent("dcr-claude", static_agents, store) == "op-claude"
-    assert operator_subject_for_agent("dcr-cli", static_agents, store) == "op-cli"
-    # An unknown/unlinked caller resolves to no operator (fails closed into the 409 connect path).
-    assert operator_subject_for_agent("dcr-unlinked", static_agents, store) is None
+    def subject(client_id: str) -> str | None:
+        caller = resolve_mcp_agent(client_id, static_agents, store)
+        return caller.operator_subject if caller is not None else None
+
+    # Static agents route by their explicitly namespaced config binding; the subjects never cross.
+    assert subject(static_agent_client_id("haku")) == "op-haku"
+    assert subject(static_agent_client_id("ops-bot")) == "op-ops"
+    # OAuth agents route by their linked DCR identity.
+    assert subject("dcr-claude") == "op-claude"
+    assert subject("dcr-cli") == "op-cli"
+    # Raw static names cannot collide with OAuth ids, and unknown/unlinked callers fail closed.
+    assert subject("haku") is None
+    assert subject("dcr-unlinked") is None
+
+
+def test_duplicate_static_agent_ids_fail_startup(migrated_db_url: str, tmp_path: Path) -> None:
+    config_file = write_config(
+        tmp_path / "duplicate-agent.yaml",
+        {
+            "static_agents": [
+                *_STATIC_AGENTS,
+                {"agent": "haku", "token_env_var": _AGENT_TOKEN_ENV, "operator_subject_env": _AGENT_OPERATOR_ENV},
+            ]
+        },
+    )
+    with pytest.raises(RuntimeError, match="duplicate static agent id"):
+        create_app(console_settings(migrated_db_url, config_file=config_file))
+
+
+def test_duplicate_static_agent_tokens_fail_startup(
+    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HAKU_CONSOLE_TEST_AGENT2_OPERATOR", "99")
+    config_file = write_config(
+        tmp_path / "duplicate-token.yaml",
+        {
+            "static_agents": [
+                *_STATIC_AGENTS,
+                {
+                    "agent": "ops-bot",
+                    "token_env_var": _AGENT_TOKEN_ENV,
+                    "operator_subject_env": "HAKU_CONSOLE_TEST_AGENT2_OPERATOR",
+                },
+            ]
+        },
+    )
+    with pytest.raises(RuntimeError, match="duplicate static agent bearer tokens"):
+        create_app(console_settings(migrated_db_url, config_file=config_file))
 
 
 if __name__ == "__main__":

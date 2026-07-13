@@ -203,20 +203,18 @@ class ResilientOIDCProxy(OIDCProxy):
     async def exchange_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
     ) -> OAuthToken:
-        """Issue the FastMCP token, then invoke ``on_client_authorized`` with the client's id and the
-        raw upstream token response (read from the stored code before ``super()`` consumes it).
+        """Validate/link the authorized upstream identity before issuing the FastMCP token.
 
-        Exceptions from the hook (or the pre-read) propagate out of the exchange — the caller owns the
-        error policy; this proxy does not swallow them.
+        The raw upstream token response is read from the stored code before ``super()`` consumes it.
+        Hook failures propagate before a local token is minted, so an immutable client-ownership
+        check cannot fail after handing a cross-tenant credential to the caller.
         """
-        idp_tokens: Mapping[str, Any] | None = None
         if self._on_client_authorized is not None:
             code_model = await self._code_store.get(key=authorization_code.code)
-            idp_tokens = code_model.idp_tokens if code_model is not None else None
-        token = await super().exchange_authorization_code(client, authorization_code)
-        if self._on_client_authorized is not None and idp_tokens is not None and client.client_id:
-            await self._on_client_authorized(client.client_id, idp_tokens)
-        return token
+            if code_model is None or not client.client_id:
+                raise RuntimeError("authorized MCP client is missing its stored upstream identity")
+            await self._on_client_authorized(client.client_id, code_model.idp_tokens)
+        return await super().exchange_authorization_code(client, authorization_code)
 
     async def exchange_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: RefreshToken, scopes: list[str]

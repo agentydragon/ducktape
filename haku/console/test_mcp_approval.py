@@ -345,8 +345,10 @@ class EchoingExecutor:
         return {"content": [{"type": "text", "text": f"{server.id}:{tool_name}"}], "isError": False}
 
 
-def test_reflection_lists_connected_servers_without_leaking_credentials(make_client, console_config: Path) -> None:
-    with make_client(config_file=console_config) as client:
+def test_reflection_lists_connected_servers_without_leaking_credentials(
+    make_operator_client, console_config: Path
+) -> None:
+    with make_operator_client(config_file=console_config) as client:
         resp = client.get("/api/capabilities/mcp-servers")
     assert resp.status_code == 200
     body = resp.json()
@@ -389,6 +391,8 @@ def test_operator_oauth_association_drives_tool_reflection(make_operator_client,
         callback = client.get("/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"})
         association_event = events.receive_json()
         after = client.get("/api/capabilities/mcp-servers").json()
+        disconnected = client.delete("/api/mcp/operator-auth/grocy-sf", headers={"X-CSRF-Token": csrf_token(client)})
+        disassociation_event = events.receive_json()
 
     assert before["servers"][0]["status"] == "degraded"
     assert "Connect your grocy-sf MCP account" in before["servers"][0]["degraded_reason"]
@@ -398,6 +402,12 @@ def test_operator_oauth_association_drives_tool_reflection(make_operator_client,
         "event_type": "mcp_operator_auth_changed",
         "server_id": "grocy-sf",
         "status": "connected",
+    }
+    assert disconnected.status_code == 200, disconnected.text
+    assert disassociation_event == {
+        "event_type": "mcp_operator_auth_changed",
+        "server_id": "grocy-sf",
+        "status": "disconnected",
     }
     assert after["servers"][0]["status"] == "alive"
     assert metadata_provider.auth_tokens == ["operator-access-token"]
@@ -432,8 +442,44 @@ def test_operator_oauth_static_client_id_skips_dynamic_registration(
     assert after["associations"][0]["status"] == "connected"
 
 
-def test_grocy_sf_reference_resolves_ids_to_names(make_client, console_config: Path) -> None:
-    with make_client(config_file=console_config) as client:
+def test_operator_oauth_callback_is_bound_to_flow_operator(make_operator_client, tmp_path: Path, db_url: str) -> None:
+    with (
+        _remote_oauth_url() as oauth_url,
+        make_operator_client(
+            config_file=_operator_oauth_config_file(tmp_path, oauth_url),
+            csrf_secret=SecretStr("csrf"),
+            operator_subject="operator-a",
+            operator_username="a@example.com",
+        ) as operator_a,
+        make_operator_client(
+            config_file=_operator_oauth_config_file(tmp_path, oauth_url),
+            csrf_secret=SecretStr("csrf"),
+            operator_subject="operator-b",
+            operator_username="b@example.com",
+        ) as operator_b,
+    ):
+        started = operator_a.post(
+            "/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": csrf_token(operator_a)}
+        )
+        state = parse_qs(urlparse(started.json()["authorization_url"]).query)["state"][0]
+
+        wrong_operator = operator_b.get(
+            "/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"}
+        )
+        completed = operator_a.get("/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"})
+        a_status = operator_a.get("/api/mcp/operator-auth").json()["associations"][0]
+        b_status = operator_b.get("/api/mcp/operator-auth").json()["associations"][0]
+
+    assert wrong_operator.status_code == 403
+    assert "different operator" in wrong_operator.text
+    # A mismatched session does not consume the flow: its owner can still complete it.
+    assert completed.status_code == 200, completed.text
+    assert a_status["status"] == "connected"
+    assert b_status["status"] == "unconnected"
+
+
+def test_grocy_sf_reference_resolves_ids_to_names(make_operator_client, console_config: Path) -> None:
+    with make_operator_client(config_file=console_config) as client:
         resp = client.get("/api/grocy-sf/reference")
     assert resp.status_code == 200, resp.text
     assert resp.json() == {
@@ -463,10 +509,10 @@ def test_grocy_sf_reference_resolves_ids_to_names(make_client, console_config: P
 
 
 def test_reflection_marks_unreachable_servers_degraded(
-    make_client, tmp_path: Path, db_url: str, monkeypatch: pytest.MonkeyPatch
+    make_operator_client, tmp_path: Path, db_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("HAKU_CONSOLE_MCP_CREDENTIAL_HAKU_CONSOLE_GROCY_SF_TOKEN", "test-token")
-    with make_client(config_file=_config_file(tmp_path, "http://127.0.0.1:1/mcp")) as client:
+    with make_operator_client(config_file=_config_file(tmp_path, "http://127.0.0.1:1/mcp")) as client:
         resp = client.get("/api/capabilities/mcp-servers")
     assert resp.status_code == 200
     server = resp.json()["servers"][0]
@@ -502,22 +548,36 @@ def test_submit_mints_tool_call_id(operator_client: TestClient) -> None:
     assert second["tool_call_id"] != first["tool_call_id"]
 
 
+def test_tool_call_rejects_ambiguous_operator_and_agent_credentials(operator_client: TestClient) -> None:
+    response = operator_client.post(
+        "/api/tool-calls",
+        headers={"Authorization": "Bearer tool-token"},
+        json={"server_id": "smoke", "tool_name": "echo", "arguments": {}, "wait_for_ms": 0},
+    )
+    assert response.status_code == 400
+    assert "exactly one" in response.json()["detail"]
+
+
 def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
-    make_client, tmp_path: Path, db_url: str
+    make_client, make_operator_client, tmp_path: Path, db_url: str
 ) -> None:
     gmail = Mock()
-    with make_client(
-        config_file=_gmail_config_file(tmp_path),
-        gmail_client=gmail,
-        in_process_servers={"gmail": build_gmail_mcp(gmail)},
-        tool_call_executor=EchoingExecutor(),
-    ) as client:
+    config_file = _gmail_config_file(tmp_path)
+    with (
+        make_client(
+            config_file=config_file,
+            gmail_client=gmail,
+            in_process_servers={"gmail": build_gmail_mcp(gmail)},
+            tool_call_executor=EchoingExecutor(),
+        ) as client,
+        make_operator_client(config_file=config_file, operator_subject="op-haku") as operator,
+    ):
         response = client.post(
             "/api/tool-calls",
             headers={"Authorization": "Bearer tool-token"},
             json={"server_id": "gmail", "tool_name": "labels_list", "arguments": {}, "wait_for_ms": 0},
         )
-        pending = client.get("/api/approvals/pending").json()
+        pending = operator.get("/api/approvals/pending").json()
 
     assert response.status_code == 200, response.text
     record = response.json()
@@ -531,7 +591,11 @@ def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
 
 def test_operator_gmail_labels_list_stays_pending(make_operator_client, tmp_path: Path, db_url: str) -> None:
     with make_operator_client(
-        config_file=_gmail_config_file(tmp_path), gmail_client=Mock(), tool_call_executor=EchoingExecutor()
+        config_file=_gmail_config_file(tmp_path),
+        gmail_client=Mock(),
+        tool_call_executor=EchoingExecutor(),
+        # Matching a configured agent id must not turn an operator into an auto-approved agent.
+        operator_username="haku",
     ) as client:
         response = client.post(
             "/api/tool-calls",
@@ -544,13 +608,17 @@ def test_operator_gmail_labels_list_stays_pending(make_operator_client, tmp_path
     assert response.json()["auto_approval_evaluation"] is None
 
 
-def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(make_client, tmp_path: Path, db_url: str) -> None:
+def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(
+    make_client, make_operator_client, tmp_path: Path, db_url: str
+) -> None:
     gmail = Mock()
-    with make_client(
-        config_file=_gmail_config_file(tmp_path),
-        gmail_client=gmail,
-        in_process_servers={"gmail": build_gmail_mcp(gmail)},
-    ) as client:
+    config_file = _gmail_config_file(tmp_path)
+    with (
+        make_client(
+            config_file=config_file, gmail_client=gmail, in_process_servers={"gmail": build_gmail_mcp(gmail)}
+        ) as client,
+        make_operator_client(config_file=config_file, operator_subject="op-haku") as operator,
+    ):
         response = client.post(
             "/api/tool-calls",
             headers={"Authorization": "Bearer tool-token"},
@@ -561,7 +629,7 @@ def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(make_client, tmp_p
                 "wait_for_ms": 0,
             },
         )
-        pending = client.get("/api/approvals/pending").json()["approvals"]
+        pending = operator.get("/api/approvals/pending").json()["approvals"]
 
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "pending_approval"
@@ -717,6 +785,7 @@ def test_routing_executes_each_agent_as_its_own_operator(
         config_file=write_config(tmp_path / "routing.yaml", config), tool_call_executor=executor
     ) as client:
         # products_list is an unconditionally auto-approved grocy read, so each call runs immediately.
+        call_ids: list[str] = []
         for bearer in ("tool-token", "ops-token"):
             resp = client.post(
                 "/api/tool-calls",
@@ -725,6 +794,11 @@ def test_routing_executes_each_agent_as_its_own_operator(
             )
             assert resp.status_code == 200, resp.text
             assert resp.json()["status"] == "ok", resp.json()
+            call_ids.append(resp.json()["tool_call_id"])
+
+        for bearer, expected_call_id in zip(("tool-token", "ops-token"), call_ids, strict=True):
+            listed = client.get("/api/tool-calls", headers={"Authorization": f"Bearer {bearer}"}).json()["tool_calls"]
+            assert [call["tool_call_id"] for call in listed] == [expected_call_id]
 
     # haku's call executed with op-haku's token; ops-bot's with op-ops's — each routed to its operator.
     assert executor.auth_tokens == ["grocy-token-haku", "grocy-token-ops"]
@@ -762,6 +836,46 @@ def test_all_v1_tool_calls_require_console_approval(operator_client: TestClient)
     assert listed["tool_calls"][0]["tool_call_id"] == body["tool_call_id"]
 
 
+def test_operator_tenants_cannot_read_or_decide_each_others_calls(make_operator_client, console_config: Path) -> None:
+    with (
+        make_operator_client(
+            config_file=console_config,
+            csrf_secret=SecretStr("csrf"),
+            operator_subject="operator-a",
+            operator_username="a@example.com",
+        ) as operator_a,
+        make_operator_client(
+            config_file=console_config,
+            csrf_secret=SecretStr("csrf"),
+            operator_subject="operator-b",
+            operator_username="b@example.com",
+        ) as operator_b,
+    ):
+        submitted = _submit(operator_a)
+        call_id = submitted["tool_call_id"]
+
+        assert [row["tool_call_id"] for row in operator_a.get("/api/tool-calls").json()["tool_calls"]] == [call_id]
+        assert operator_b.get("/api/tool-calls").json()["tool_calls"] == []
+        assert operator_b.get(f"/api/tool-calls/{call_id}").status_code == 404
+        assert operator_b.get("/api/approvals/pending").json()["approvals"] == []
+        assert operator_b.get("/api/approvals/events").json()["events"] == []
+
+        b_csrf = csrf_token(operator_b)
+        for decision in ("deny", "approve"):
+            response = operator_b.post(
+                f"/api/tool-calls/{call_id}/decision", headers={"X-CSRF-Token": b_csrf}, json={"decision": decision}
+            )
+            assert response.status_code == 404
+
+        approved = operator_a.post(
+            f"/api/tool-calls/{call_id}/decision",
+            headers={"X-CSRF-Token": csrf_token(operator_a)},
+            json={"decision": "approve"},
+        )
+        assert approved.status_code == 200, approved.text
+        assert approved.json()["tool_call"]["status"] == "ok"
+
+
 def test_list_newest_first_keeps_the_most_recent(operator_client: TestClient) -> None:
     first = _submit(operator_client, amount=1)
     second = _submit(operator_client, amount=2)
@@ -779,7 +893,7 @@ def test_list_newest_first_keeps_the_most_recent(operator_client: TestClient) ->
 
 
 def test_websocket_receives_pending_approval_event(operator_client: TestClient) -> None:
-    with operator_client.websocket_connect("/api/events/ws") as ws:
+    with operator_client.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as ws:
         assert ws.receive_json() == {"event_type": "hello"}
         submitted = _submit(operator_client)
         event = ws.receive_json()
@@ -800,27 +914,31 @@ def test_websocket_rejects_cross_origin(make_operator_client) -> None:
     assert exc_info.value.code == 1008
 
 
-def test_full_audit_log_listing_and_secret_redaction(operator_client: TestClient) -> None:
-    operator_call = operator_client.post(
-        "/api/tool-calls",
-        json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "one"}, "wait_for_ms": 0},
-    ).json()
-    haku_call = operator_client.post(
-        "/api/tool-calls",
-        headers={"Authorization": "Bearer tool-token"},
-        json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "two"}, "wait_for_ms": 0},
-    ).json()
-    body = operator_client.get("/api/tool-calls").json()
-    pending = operator_client.get(
-        "/api/tool-calls", params=[("status", "pending_approval"), ("since", "1970-01-01T00:00:00+00:00")]
-    ).json()
-    future = operator_client.get("/api/tool-calls", params={"since": "2999-01-01T00:00:00+00:00"}).json()
-    ids = {r["tool_call_id"] for r in body["tool_calls"]}
-    assert {operator_call["tool_call_id"], haku_call["tool_call_id"]} <= ids
-    pending_ids = {r["tool_call_id"] for r in pending["tool_calls"]}
-    assert {operator_call["tool_call_id"], haku_call["tool_call_id"]} <= pending_ids
+def test_audit_log_is_tenant_scoped_and_redacts_secrets(
+    make_client, make_operator_client, console_config: Path
+) -> None:
+    with (
+        make_client(config_file=console_config) as agent,
+        make_operator_client(config_file=console_config, operator_subject="operator-sub") as operator,
+        make_operator_client(config_file=console_config, operator_subject="op-haku") as haku_operator,
+    ):
+        operator_call = operator.post(
+            "/api/tool-calls",
+            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "one"}, "wait_for_ms": 0},
+        ).json()
+        haku_call = agent.post(
+            "/api/tool-calls",
+            headers={"Authorization": "Bearer tool-token"},
+            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "two"}, "wait_for_ms": 0},
+        ).json()
+        operator_body = operator.get("/api/tool-calls").json()
+        haku_body = haku_operator.get("/api/tool-calls").json()
+        future = operator.get("/api/tool-calls", params={"since": "2999-01-01T00:00:00+00:00"}).json()
+
+    assert [row["tool_call_id"] for row in operator_body["tool_calls"]] == [operator_call["tool_call_id"]]
+    assert [row["tool_call_id"] for row in haku_body["tool_calls"]] == [haku_call["tool_call_id"]]
     assert future["tool_calls"] == []
-    dumped = str(body)
+    dumped = str([operator_body, haku_body])
     assert "haku-console-grocy-sf-token" not in dumped
     assert "tool-token" not in dumped
 
@@ -876,7 +994,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
                 conn.execute(
                     text(
                         """
-                        SELECT server_id, tool_name, status, arguments_json, result_json
+                        SELECT operator_subject, server_id, tool_name, status, arguments_json, result_json
                         FROM mcp_tool_calls
                         WHERE tool_call_id = :tool_call_id
                         """
@@ -889,10 +1007,12 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
     finally:
         engine.dispose()
 
-    assert version == "0006"
+    assert version == "0007"
     assert {"mcp_operator_oauth_associations", "mcp_operator_oauth_flows", "mcp_agent_operator"} <= tables
+    assert {"mcp_tool_calls_legacy_unowned", "mcp_tool_call_events_legacy_unowned"}.isdisjoint(tables)
     assert {
         "tool_call_id",
+        "operator_subject",
         "server_id",
         "tool_name",
         "caller_principal",
@@ -909,6 +1029,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
         "auto_approval_evaluation",
         "approved_at",
     } == columns
+    assert row["operator_subject"] == "operator-sub"
     assert row["server_id"] == "smoke"
     assert row["tool_name"] == "echo"
     assert row["status"] == "ok"
@@ -916,7 +1037,95 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
     assert row["result_json"]["content"][0]["text"] == "echo:world"
 
 
-def test_historical_enum_migration_matches_fresh_head(db_url: str) -> None:
+def test_0007_deletes_unowned_history_and_is_forward_only(db_url: str) -> None:
+    engine = create_engine(db_url)
+    try:
+        _upgrade(engine, "0006")
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO mcp_tool_calls (
+                        tool_call_id, server_id, tool_name, caller_principal, status,
+                        created_at, updated_at, arguments_json, rationale
+                    ) VALUES (
+                        'tc_legacy', 'smoke', 'echo', 'legacy-user', 'pending_approval',
+                        now(), now(), '{}'::jsonb, 'legacy call with no persisted owner'
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO mcp_tool_call_events (event_type, tool_call_id, status, created_at)
+                    VALUES
+                        ('tool_call_submitted', 'tc_legacy', 'pending_approval', now()),
+                        ('tool_call_submitted', 'tc_orphan', 'pending_approval', now())
+                    """
+                )
+            )
+
+        _upgrade(engine, "head")
+        with engine.connect() as conn:
+            active_calls = conn.execute(text("SELECT count(*) FROM mcp_tool_calls")).scalar_one()
+            active_events = conn.execute(text("SELECT count(*) FROM mcp_tool_call_events")).scalar_one()
+            legacy_tables = set(
+                conn.execute(
+                    text(
+                        """
+                        SELECT table_name
+                        FROM information_schema.tables
+                        WHERE table_schema = 'public'
+                          AND table_name IN (
+                            'mcp_tool_calls_legacy_unowned',
+                            'mcp_tool_call_events_legacy_unowned'
+                          )
+                        """
+                    )
+                ).scalars()
+            )
+            nullable = {
+                (row["table_name"], row["is_nullable"])
+                for row in conn.execute(
+                    text(
+                        """
+                        SELECT table_name, is_nullable
+                        FROM information_schema.columns
+                        WHERE column_name = 'operator_subject'
+                          AND table_name IN ('mcp_tool_calls', 'mcp_tool_call_events')
+                        """
+                    )
+                ).mappings()
+            }
+            indexes = set(
+                conn.execute(
+                    text(
+                        """
+                        SELECT indexname
+                        FROM pg_indexes
+                        WHERE schemaname = 'public'
+                          AND tablename IN ('mcp_tool_calls', 'mcp_tool_call_events')
+                        """
+                    )
+                ).scalars()
+            )
+
+        assert active_calls == 0
+        assert active_events == 0
+        assert legacy_tables == set()
+        assert nullable == {("mcp_tool_calls", "NO"), ("mcp_tool_call_events", "NO")}
+        assert {
+            "idx_mcp_tool_calls_operator_subject_created_at",
+            "idx_mcp_tool_call_events_operator_subject_event_id",
+        } <= indexes
+        with pytest.raises(RuntimeError, match="forward-only"):
+            _downgrade(engine, "0006")
+    finally:
+        engine.dispose()
+
+
+def test_historical_enum_migration_reaches_current_head(db_url: str) -> None:
     engine = create_engine(db_url)
     try:
         _upgrade(engine, "0001")
@@ -927,9 +1136,6 @@ def test_historical_enum_migration_matches_fresh_head(db_url: str) -> None:
 
         _upgrade(engine, "head")
         upgraded_values = _enum_values(engine)
-        _downgrade(engine, "base")
-        _upgrade(engine, "head")
-        fresh_values = _enum_values(engine)
     finally:
         engine.dispose()
 
@@ -938,7 +1144,6 @@ def test_historical_enum_migration_matches_fresh_head(db_url: str) -> None:
         "tool_call_status": tuple(status.value for status in ToolCallStatus),
     }
     assert upgraded_values == current_values
-    assert fresh_values == current_values
 
 
 # --- In-process MCP servers (McpToolExecutor/McpMetadataProvider in-process registration) ---

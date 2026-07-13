@@ -19,6 +19,19 @@ from pydantic import BaseModel, Field, SecretStr
 
 from haku.console.config import Settings
 
+STATIC_AGENT_CLIENT_ID_PREFIX = "static-agent:"
+
+
+def static_agent_client_id(agent: str) -> str:
+    """Namespace FastMCP's static client ids away from OAuth DCR client ids."""
+    return f"{STATIC_AGENT_CLIENT_ID_PREFIX}{agent}"
+
+
+def static_agent_name_from_client_id(client_id: str) -> str | None:
+    if not client_id.startswith(STATIC_AGENT_CLIENT_ID_PREFIX):
+        return None
+    return client_id.removeprefix(STATIC_AGENT_CLIENT_ID_PREFIX)
+
 
 class McpOperatorOAuthConfig(BaseModel):
     enabled: bool = True
@@ -95,10 +108,18 @@ def resolve_static_agents(settings: Settings) -> list[ResolvedStaticAgent]:
     Raises if a named env var is missing — a misconfigured agent fails loud at startup rather than
     silently accepting no callers. Resolve once (create_app) and reuse; do not read per request."""
     resolved: list[ResolvedStaticAgent] = []
+    seen_agents: set[str] = set()
+    seen_tokens: set[str] = set()
     for entry in _load_config(settings).static_agents:
+        if entry.agent in seen_agents:
+            raise RuntimeError(f"duplicate static agent id {entry.agent!r}")
+        seen_agents.add(entry.agent)
         token = os.environ.get(entry.token_env_var)
         if not token:
             raise RuntimeError(f"missing token env var {entry.token_env_var} for agent {entry.agent!r}")
+        if token in seen_tokens:
+            raise RuntimeError("duplicate static agent bearer tokens")
+        seen_tokens.add(token)
         subject = os.environ.get(entry.operator_subject_env)
         if not subject:
             raise RuntimeError(

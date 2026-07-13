@@ -2,10 +2,11 @@
 # SPA shell is never stored). Backend responses are NOT listed here — the FastAPI app owns
 # their Cache-Control (haku/console/app.py `_cache_control_for_path`) and the proxied locations below
 # pass it through untouched.
-# Rolling replicas can briefly miss another version's fingerprinted asset. Cache successful assets
-# forever, but never preserve a transient error response.
+# Cache fingerprinted successful assets forever, but never preserve a redirect or transient error.
 map $status $haku_asset_cache_control {
-  ~^[23]  "public, max-age=31536000, immutable";
+  200     "public, max-age=31536000, immutable";
+  206     "public, max-age=31536000, immutable";
+  304     "public, max-age=31536000, immutable";
   default "no-store";
 }
 

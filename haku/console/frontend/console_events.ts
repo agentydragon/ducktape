@@ -41,6 +41,9 @@ export function useConsoleEvents(onEvent: (event: ConsoleEvent) => void): LiveSt
     let ws: WebSocket | null = null;
     let reconnectTimer: number | undefined;
     let backoffMs = 1000;
+    // LISTEN/NOTIFY is an invalidation fast path, not a durable queue. A bounded catch-up keeps the
+    // REST-backed view correct even across an undetected half-open DB connection or a failed NOTIFY.
+    const syncTimer = window.setInterval(sync, 30_000);
 
     const connect = () => {
       if (closed) return;
@@ -77,6 +80,7 @@ export function useConsoleEvents(onEvent: (event: ConsoleEvent) => void): LiveSt
 
     return () => {
       closed = true;
+      window.clearInterval(syncTimer);
       if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
       ws?.close();
     };

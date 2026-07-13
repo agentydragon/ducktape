@@ -26,9 +26,9 @@ PAGE_URL = f"https://claude.ai/code/routines/{ROUTINE_ID}"
 
 
 @pytest.fixture
-def cap_client(make_client: Callable[..., Any]) -> Iterator[TestClient]:
+def cap_client(make_operator_client: Callable[..., Any]) -> Iterator[TestClient]:
     """Console app with the launch-routine capability configured (over the seeded remote)."""
-    with make_client(
+    with make_operator_client(
         launch_routine=LaunchRoutineConfig(routine_id=ROUTINE_ID, token=SecretStr("sk-test-token")),
         csrf_secret=SecretStr("test-csrf-secret"),
     ) as c:
@@ -116,8 +116,8 @@ def test_launch_routine_upstream_failure_is_502(cap_client) -> None:
     assert resp.status_code == 502
 
 
-def test_launch_routine_unconfigured_is_503(make_client: Callable[..., Any]) -> None:
-    with make_client(csrf_secret=SecretStr("test-csrf-secret")) as c:
+def test_launch_routine_unconfigured_is_503(make_operator_client: Callable[..., Any]) -> None:
+    with make_operator_client(csrf_secret=SecretStr("test-csrf-secret")) as c:
         resp = c.post("/api/capabilities/launch-routine", headers={"X-CSRF-Token": csrf_token(c)})
     assert resp.status_code == 503
 

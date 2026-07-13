@@ -19,9 +19,13 @@ class Base(DeclarativeBase):
 
 class McpToolCall(Base):
     __tablename__ = "mcp_tool_calls"
-    __table_args__ = (Index("idx_mcp_tool_calls_created_at", "created_at"),)
+    __table_args__ = (
+        Index("idx_mcp_tool_calls_created_at", "created_at"),
+        Index("idx_mcp_tool_calls_operator_subject_created_at", "operator_subject", "created_at"),
+    )
 
     tool_call_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    operator_subject: Mapped[str] = mapped_column(Text, nullable=False)
     server_id: Mapped[str] = mapped_column(Text, nullable=False)
     tool_name: Mapped[str] = mapped_column(Text, nullable=False)
     caller_principal: Mapped[str] = mapped_column(Text, nullable=False)
@@ -41,9 +45,10 @@ class McpToolCall(Base):
     approved_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     @classmethod
-    def from_record(cls, record: ToolCallRecord) -> McpToolCall:
+    def from_record(cls, record: ToolCallRecord, *, operator_subject: str) -> McpToolCall:
         return cls(
             tool_call_id=record.tool_call_id,
+            operator_subject=operator_subject,
             server_id=record.server_id,
             tool_name=record.tool_name,
             caller_principal=record.caller_principal,
@@ -84,12 +89,16 @@ class McpToolCall(Base):
 
 class McpToolCallEvent(Base):
     __tablename__ = "mcp_tool_call_events"
-    __table_args__ = (Index("idx_mcp_tool_call_events_tool_call_id_event_id", "tool_call_id", "event_id"),)
+    __table_args__ = (
+        Index("idx_mcp_tool_call_events_tool_call_id_event_id", "tool_call_id", "event_id"),
+        Index("idx_mcp_tool_call_events_operator_subject_event_id", "operator_subject", "event_id"),
+    )
 
     event_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     event_type: Mapped[ToolCallEventType] = mapped_column(
         StrEnumColumn(ToolCallEventType, name="tool_call_event_type"), nullable=False
     )
+    operator_subject: Mapped[str] = mapped_column(Text, nullable=False)
     tool_call_id: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[ToolCallStatus] = mapped_column(
         StrEnumColumn(ToolCallStatus, name="tool_call_status"), nullable=False

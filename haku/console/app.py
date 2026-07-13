@@ -12,14 +12,16 @@ configured for a direct local/dev fallback.
 from __future__ import annotations
 
 import logging
+import os
 import secrets
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, MutableMapping
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
@@ -52,8 +54,34 @@ REFERRER_POLICY = "no-referrer"
 PERMISSIONS_POLICY = "geolocation=(self), display-capture=(self)"
 
 
+class _ConsoleStaticFiles(StaticFiles):
+    """Direct dev static serving that never conditionally reuses the SPA shell.
+
+    Bazel-normalized mtimes and same-sized shells can otherwise produce a false 304 after the
+    embedded fingerprint changes. Production nginx has the same contract via ``etag off`` and
+    ``if_modified_since off``.
+    """
+
+    def file_response(
+        self,
+        full_path: str | os.PathLike[str],
+        stat_result: os.stat_result,
+        scope: MutableMapping[str, Any],
+        status_code: int = 200,
+    ) -> Response:
+        path = Path(full_path)
+        if path.name == "index.html":
+            return Response(
+                content=path.read_bytes(),
+                headers={"Cache-Control": APP_SHELL_CACHE_CONTROL},
+                media_type="text/html",
+                status_code=status_code,
+            )
+        return super().file_response(full_path, stat_result, scope, status_code=status_code)
+
+
 def _cache_control_for_path(path: str, status_code: int) -> str:
-    if path.startswith("/assets/") and status_code < 400:
+    if path.startswith("/assets/") and status_code in {200, 206, 304}:
         return IMMUTABLE_ASSET_CACHE_CONTROL
     # The app is authoritative for the cache policy of every backend surface it serves — nginx no
     # longer sets Cache-Control on proxied responses (haku/console/default.conf.template), so these
@@ -115,7 +143,7 @@ def create_app(settings: Settings) -> FastAPI:
         subject = mcp_operator_oauth.operator_subject_from_idp_tokens(idp_tokens)
         if subject is None:
             raise RuntimeError(f"MCP OAuth id_token for client {client_id} carried no `sub` claim")
-        mcp_operator_oauth_store.upsert_agent_operator(agent_dcr_client_id=client_id, operator_subject=subject)
+        mcp_operator_oauth_store.bind_agent_operator(agent_dcr_client_id=client_id, operator_subject=subject)
 
     # The OIDCProxy client-state store only exists when OAuth does; the static-bearer-only deploy has
     # no dynamic client registrations to persist.
@@ -189,10 +217,9 @@ def create_app(settings: Settings) -> FastAPI:
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
-    # Two router-level guards enforce the /api/* auth split (both no-op unless operator_oidc is set —
-    # the dev/test mode has no in-app guard, as before). Operator-only routers require an operator
-    # session; the agent-facing tool-call router (submit + read/sweep) also accepts a static agent's
-    # bearer. A route added to a guarded router is protected by default — no path list to maintain.
+    # Two router-level guards enforce the /api/* auth split. Operator-only routers require an
+    # operator session; the agent-facing tool-call router (submit + read/sweep) also accepts a static
+    # agent's bearer. A route added to a guarded router is protected by default — no path list.
     operator_only = [Depends(operator_auth.require_operator)]
     app.include_router(
         mcp_approval.agent_router, dependencies=[Depends(operator_auth.require_operator_or_static_agent)]
@@ -218,18 +245,16 @@ def create_app(settings: Settings) -> FastAPI:
         launch = settings.launch_routine
         return ConfigResponse(launch_routine_url=launch.page_url if launch else None, haku_ui_url=settings.haku_ui_url)
 
-    # Operator browser auth (Authentik OIDC), replacing the proxy outpost. Gated on config so nothing
-    # changes when unset (the outpost still guards; tests/dev run without it). SessionMiddleware
-    # establishes request.session, which the router guards read; https_only follows the public origin.
-    if settings.operator_oidc is not None:
-        app.state.operator_oauth = operator_auth.build_oauth(settings.operator_oidc)
-        app.include_router(operator_auth.router)
-        app.add_middleware(
-            SessionMiddleware,
-            secret_key=settings.operator_oidc.session_secret.get_secret_value(),
-            https_only=(settings.public_base_url or "").startswith("https://"),
-            same_site="lax",
-        )
+    # Operator browser auth is mandatory. SessionMiddleware establishes request.session, which the
+    # router guards read; https_only follows the canonical public origin.
+    app.state.operator_oauth = operator_auth.build_oauth(settings.operator_oidc)
+    app.include_router(operator_auth.router)
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=settings.operator_oidc.session_secret.get_secret_value(),
+        https_only=settings.public_base_url.startswith("https://"),
+        same_site="lax",
+    )
 
     # Agent-facing MCP server (streamable HTTP), mounted after the API routers and before the SPA.
     app.mount("/mcp", mcp_asgi)
@@ -245,10 +270,10 @@ def create_app(settings: Settings) -> FastAPI:
         # Mirror that here — registered before the mount so it wins — so the dev fallback
         # can deep-link a console route instead of 404ing.
         @app.get("/tool-calls")
-        async def _spa_route() -> FileResponse:
-            return FileResponse(index_file)
+        async def _spa_route() -> Response:
+            return Response(content=index_file.read_bytes(), media_type="text/html")
 
-        app.mount("/", StaticFiles(directory=settings.static_dir, html=True), name="spa")
+        app.mount("/", _ConsoleStaticFiles(directory=settings.static_dir, html=True), name="spa")
 
     return app
 

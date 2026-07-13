@@ -23,7 +23,7 @@ components + **Tailwind v4** utilities — modeled on
   while the screenshot standing grant is held. The approvals panel (queue + a Past-tool-calls
   link) follows its content until it reaches the available height, then scrolls its list.
 - `settings_panel.tsx` — `SettingsPanel`, the operator settings panel
-  toggled from the toolbar's gear): MCP operator account connect/reconnect/disconnect plus linked
+  toggled from the toolbar's gear: MCP operator account connect/reconnect/disconnect plus linked
   server/web deployment commits. It is shell chrome, not a route.
 - `open_external.ts` — `openExternal(url)`: opens a link in a new tab with the opener
   severed, shared by the embed shell (the `openLink` bridge action) and the settings panel

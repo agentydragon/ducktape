@@ -49,7 +49,7 @@ from haku.console.mcp_approval import (
     PostgresToolCallLedger,
     ServerMetadata,
     ToolCallListResponse,
-    operator_subject_for_agent,
+    resolve_mcp_agent,
     submit_and_wait,
 )
 from haku.console.mcp_config import (
@@ -59,6 +59,7 @@ from haku.console.mcp_config import (
     _credential_token,
     _load_servers,
     _operator_oauth_enabled,
+    static_agent_client_id,
 )
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.tool_calls import SubmitToolCallRequest, ToolCallRecord, ToolCallStatus
@@ -231,16 +232,15 @@ class ProxyTool(Tool):
             title=title,
             wait_for_ms=max(0, min(int(wait_ms), MAX_WAIT_MS)),
         )
-        caller_principal = _agent_id()
-        operator_subject = operator_subject_for_agent(caller_principal, ctx.static_agents, ctx.oauth_store)
-        if operator_subject is None:
-            raise RuntimeError(f"agent {caller_principal} has no linked operator subject")
+        client_id = _agent_id()
+        caller = resolve_mcp_agent(client_id, ctx.static_agents, ctx.oauth_store)
+        if caller is None:
+            raise RuntimeError(f"agent {client_id} has no linked operator subject")
         record = await submit_and_wait(
             req=req,
-            caller_principal=caller_principal,
-            operator_subject=operator_subject,
+            caller_principal=caller.principal,
+            operator_subject=caller.operator_subject,
             caller_is_agent=True,
-            static_agents=ctx.static_agents,
             settings=ctx.settings,
             ledger=ctx.ledger,
             hub=ctx.hub,
@@ -322,7 +322,10 @@ def _static_bearer_verifier(static_agents: list[ResolvedStaticAgent]) -> StaticT
     if not static_agents:
         return None
     return StaticTokenVerifier(
-        tokens={agent.token.get_secret_value(): {"client_id": agent.agent, "scopes": []} for agent in static_agents}
+        tokens={
+            agent.token.get_secret_value(): {"client_id": static_agent_client_id(agent.agent), "scopes": []}
+            for agent in static_agents
+        }
     )
 
 
@@ -369,11 +372,18 @@ def build_console_mcp(context: ConsoleMcpContext, auth: AuthProvider | None = No
         auth = _static_bearer_verifier(context.static_agents)
     mcp.auth = auth
 
+    def current_operator_subject() -> str:
+        client_id = _agent_id()
+        caller = resolve_mcp_agent(client_id, context.static_agents, context.oauth_store)
+        if caller is None:
+            raise ToolError(f"agent {client_id} has no linked operator subject")
+        return caller.operator_subject
+
     @mcp.tool
     async def get_tool_call(tool_call_id: str) -> ToolCallView:
         """Read one tool call (resolve a promise): status, result/error, and its approval link."""
         try:
-            record = context.ledger.get(tool_call_id)
+            record = context.ledger.get(tool_call_id, operator_subject=current_operator_subject())
         except HTTPException as e:
             raise ToolError(str(e.detail))
         return ToolCallView(call=record, url=_tool_call_url(context.settings, tool_call_id))
@@ -387,7 +397,11 @@ def build_console_mcp(context: ConsoleMcpContext, auth: AuthProvider | None = No
     ) -> list[ToolCallView]:
         """List recent tool calls (newest first by default), optionally filtered by status/since."""
         resp: ToolCallListResponse = context.ledger.list(
-            statuses=status, since=since, limit=limit, newest_first=newest_first
+            operator_subject=current_operator_subject(),
+            statuses=status,
+            since=since,
+            limit=limit,
+            newest_first=newest_first,
         )
         return [ToolCallView(call=r, url=_tool_call_url(context.settings, r.tool_call_id)) for r in resp.tool_calls]
 

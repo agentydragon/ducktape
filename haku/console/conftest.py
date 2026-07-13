@@ -74,7 +74,15 @@ def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
     """The console `Settings` tests need — required `haku_ui_url`/`database_url` defaulted, per-test
     `overrides` spread last. Shared by `make_client` and by the tests that serve `create_app` over a
     real socket (so they can't go through `make_client`'s `TestClient`)."""
-    return Settings(**{"haku_ui_url": "https://haku-ui.test", "database_url": SecretStr(migrated_db_url), **overrides})
+    return Settings(
+        **{
+            "haku_ui_url": "https://haku-ui.test",
+            "database_url": SecretStr(migrated_db_url),
+            "public_base_url": "https://haku.test",
+            "operator_oidc": TEST_OPERATOR_OIDC,
+            **overrides,
+        }
+    )
 
 
 def csrf_token(client: TestClient) -> str:
@@ -151,11 +159,8 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
         operator_username: str = "operator@example.com",
         **settings_overrides: Any,
     ) -> Iterator[TestClient]:
-        # `operator=True` runs the app in the production app-owned-auth mode (SessionMiddleware +
-        # active router guards) and presents an authenticated operator session on the client — the
-        # replacement for the retired `x-authentik-*` header stand-in.
-        if operator and "operator_oidc" not in settings_overrides:
-            settings_overrides = {**settings_overrides, "operator_oidc": TEST_OPERATOR_OIDC}
+        # Every app uses production-shaped OIDC settings. `operator=True` presents an authenticated
+        # signed session; false leaves the client anonymous for auth-boundary/static-agent tests.
         # config_file defaults to the config naming the default static agent (so /mcp has a
         # credential); a test overrides it by passing its own. haku_ui_url + database_url come from
         # console_settings.
@@ -177,7 +182,7 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
             app.state.in_process_servers = in_process_servers
         # When the session cookie is Secure (https public_base_url → https_only), drive the client
         # over https so the middleware's re-signed cookie is retained and resent across requests.
-        https = operator and str(settings.public_base_url or "").startswith("https://")
+        https = settings.public_base_url.startswith("https://")
         with TestClient(app, base_url="https://testserver" if https else "http://testserver") as c:
             if operator:
                 c.cookies.set("session", operator_session_cookie(subject=operator_subject, username=operator_username))
@@ -187,8 +192,8 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
 
 
 @pytest.fixture
-def client(make_client: Callable[..., Any]) -> Iterator[TestClient]:
-    with make_client() as c:
+def client(make_operator_client: Callable[..., Any]) -> Iterator[TestClient]:
+    with make_operator_client() as c:
         yield c
 
 

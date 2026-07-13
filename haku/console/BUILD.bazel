@@ -233,8 +233,15 @@ py_library(
 
 py_test(
     name = "test_console_events",
+    size = "medium",
     srcs = ["test_console_events.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
     deps = [
+        ":conftest",
         ":console_events",
         "//:conftest",
         "@pypi//fastapi",

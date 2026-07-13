@@ -6,7 +6,7 @@ app, no hand-minted session: the operator credential is obtained by actually wal
 
 Two guards enforce the split (`operator_auth`): the agent-facing tool-call routes accept an operator
 session OR a static agent's bearer; the operator-only surfaces (approvals, account linking) require an
-operator session. When ``operator_oidc`` is unset (dev/test) both guards no-op.
+operator session. OIDC configuration is mandatory; there is no unauthenticated development mode.
 """
 
 from __future__ import annotations
@@ -17,8 +17,7 @@ import httpx
 import pytest
 import pytest_bazel
 import yaml
-from fastapi.testclient import TestClient
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
 from haku.console.app import create_app
 from haku.console.config import OperatorOidcConfig
@@ -100,11 +99,28 @@ async def test_credential_matrix_through_real_app(
             assert (await operator.get("/api/mcp/operator-auth")).status_code == 200  # operator-only
 
 
-def test_guards_noop_without_operator_oidc(client: TestClient) -> None:
-    # operator_oidc unset (dev/test / outpost mode): the in-app guards do not run, so `/api/*` is open
-    # without a credential — both the agent-facing and operator-only surfaces.
-    assert client.get("/api/tool-calls").status_code == 200  # agent-facing
-    assert client.get("/api/config").status_code == 200  # operator-only
+def test_guards_reject_anonymous_requests_with_test_oidc(make_client) -> None:
+    with make_client() as client:
+        assert client.get("/api/tool-calls").status_code == 401  # agent-facing
+        assert client.get("/api/config").status_code == 401  # operator-only
+
+
+def test_operator_oidc_is_required(migrated_db_url: str) -> None:
+    with pytest.raises(ValidationError, match="operator_oidc"):
+        console_settings(migrated_db_url, operator_oidc=None)
+
+
+def test_operator_oidc_requires_canonical_public_origin(migrated_db_url: str) -> None:
+    oidc = OperatorOidcConfig(
+        issuer="https://auth.test/application/o/haku-console/",
+        client_id="console",
+        client_secret=SecretStr("secret"),
+        session_secret=SecretStr("session"),
+    )
+    with pytest.raises(ValidationError, match="public_base_url"):
+        console_settings(migrated_db_url, operator_oidc=oidc, public_base_url=None)
+    with pytest.raises(ValidationError, match="canonical http"):
+        console_settings(migrated_db_url, operator_oidc=oidc, public_base_url="https://haku.test/a/path")
 
 
 if __name__ == "__main__":

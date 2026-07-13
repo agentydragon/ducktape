@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Self
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
@@ -39,9 +41,9 @@ class LaunchRoutineConfig(BaseModel):
 class OperatorOidcConfig(BaseModel):
     """Authentik OIDC relying-party config for operator **browser** login.
 
-    When set, the console authenticates the operator's browser itself (Authentik authorization-code
-    flow → signed session cookie), replacing the Authentik proxy outpost that guards
-    `haku.allegedly.works` today. Agent access to `/mcp` uses its own MultiAuth and is unaffected.
+    The console authenticates the operator's browser itself (Authentik authorization-code flow →
+    signed session cookie), replacing the retired Authentik proxy outpost. Agent access to `/mcp`
+    uses its own MultiAuth and is unaffected.
     Reads `HAKU_CONSOLE_OPERATOR_OIDC__{ISSUER,CLIENT_ID,CLIENT_SECRET,SESSION_SECRET}`. The redirect
     URI is built from the top-level `public_base_url` + `/auth/callback`.
 
@@ -85,9 +87,9 @@ class Settings(BaseSettings):
     # The console never renders Haku's UI itself. See docs/containment.md.
     haku_ui_url: str
     auth_origin: str = "https://auth.allegedly.works"
-    # Public console origin used for OAuth redirect URIs. When unset, the MCP
-    # operator-auth API derives it from Host/X-Forwarded-* request headers.
-    public_base_url: str | None = None
+    # Canonical public console origin used for OAuth redirects, secure-cookie policy, and
+    # WebSocket origin checks. Required: there is no unauthenticated runtime mode.
+    public_base_url: str
 
     # Optional YAML file for deploy-time console configuration that does not belong
     # in env vars. Secret values stay in env/Kubernetes Secret references; this file
@@ -126,6 +128,19 @@ class Settings(BaseSettings):
     # across replicas / restarts); the file default suits single-process/dev.
     mcp_oauth_persistence: PersistenceConfig = Field(default_factory=FilePersistence)
 
-    # Operator browser login (Authentik OIDC), replacing the proxy outpost. When set, `/api/*` and
-    # the SPA require an operator session; unset → no app-level browser auth (outpost still guards).
-    operator_oidc: OperatorOidcConfig | None = None
+    # Operator browser login (Authentik OIDC), replacing the proxy outpost. Required in every
+    # runtime, including development; tests use the repo's hermetic OIDC fixture.
+    operator_oidc: OperatorOidcConfig
+
+    @model_validator(mode="after")
+    def _operator_auth_requires_canonical_public_origin(self) -> Self:
+        parsed = urlsplit(self.public_base_url)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("public_base_url must be a canonical http(s) origin without a path, query, or fragment")
+        return self

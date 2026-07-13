@@ -161,20 +161,20 @@ async def test_labels_delete_dispatches_and_returns_no_error(gmail: Mock, client
     gmail.labels_delete.assert_called_once_with("L9")
 
 
-def test_thread_previews_endpoint_503s_when_unconfigured(make_client) -> None:
-    with make_client() as http_client:
+def test_thread_previews_endpoint_503s_when_unconfigured(make_operator_client) -> None:
+    with make_operator_client() as http_client:
         resp = http_client.get("/api/gmail/thread-previews", params={"thread_id": ["t1"]})
         assert resp.status_code == 503
 
 
-def test_thread_previews_endpoint_composes_preview_over_the_client_service(make_client) -> None:
+def test_thread_previews_endpoint_composes_preview_over_the_client_service(make_operator_client) -> None:
     previews = {
         "t1": GmailThreadPreview(subject="Test", snippet="hi", current_label_names=["haku/x"], gmail_url="https://x/t1")
     }
     gmail = Mock()  # non-None so the endpoint doesn't 503; its .service is handed to the reader
     with (
         patch("haku.console.tools.gmail.preview_gmail_threads", return_value=previews) as preview_mock,
-        make_client(gmail_client=gmail) as http_client,
+        make_operator_client(gmail_client=gmail) as http_client,
     ):
         resp = http_client.get("/api/gmail/thread-previews", params={"thread_id": ["t1"]})
     assert resp.status_code == 200

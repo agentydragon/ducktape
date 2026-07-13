@@ -192,7 +192,7 @@ See <docs/containment.md>.
 ## Past tool calls — full-page history
 
 Beyond the approvals panel's ephemeral "Recent" list, the console owns a **full-page history view**
-of the whole tool-call audit ledger (`frontend/tool_calls_page.tsx`), reached from the
+of the authenticated operator's tool-call audit ledger (`frontend/tool_calls_page.tsx`), reached from the
 approvals panel and living at its own route, `/tool-calls` (`frontend/routing.ts`). Because
 the console's own pages are distinguished by URL **path** — the hash stays reserved for
 mirroring the framed haku-ui route — the shell renders the history view instead of the
@@ -206,7 +206,8 @@ non-asset/API path; `app.py`'s dev fallback mirrors that so deep links work loca
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `app.py`                     | FastAPI `create_app`. `GET /api/config`, `GET /healthz`, CSRF config, mounts the capability router. It can serve the SPA for local/direct fallback when `HAKU_CONSOLE_STATIC_DIR` is set.                                           |
 | `capabilities.py`            | Capability-tier router (`/api/capabilities/*`): CSRF-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer and optional per-run text; `GET /csrf` issues the double-submit token. |
-| `mcp_approval.py`            | MCP approval queue router: MCP server reflection, tool-call submit/list/result endpoints, trusted approval decisions, WebSocket notifications, and Postgres-backed audit state in deploy.                                           |
+| `mcp_approval.py`            | MCP approval queue router: MCP server reflection, operator-scoped tool-call submit/list/result endpoints, trusted approval decisions, and Postgres-backed audit state in deploy.                                                    |
+| `console_events.py`          | Pydantic console-event shapes plus operator-scoped cross-replica WebSocket fan-out through Postgres LISTEN/NOTIFY.                                                                                                                  |
 | `mcp_config.py`              | The connected-MCP-server catalog (deploy-time YAML model) plus how to reach each entry: in-process/remote transport and static bearer credential. Shared by `mcp_approval` and `mcp_operator_oauth`.                                |
 | `in_process_servers.py`      | Canonical builder catalog for the Gmail, Google Calendar, and routine FastMCP servers, shared by the production app and schema exporter.                                                                                            |
 | `mcp_operator_oauth.py`      | Operator OAuth account linkage for servers that execute as the operator's own account: the DCR/PKCE flow, Postgres token storage/refresh, and the `/api/mcp/operator-auth/*` connect/disconnect/callback endpoints.                 |
@@ -230,8 +231,9 @@ never stored, missing assets and API/health/mcp/auth uncached). No runtime asset
 volume is used.
 
 The Deployment uses `Recreate` because each static image contains only its current bundle. This
-trades a brief rollout outage for an atomic version boundary: a page cannot receive HTML from one
-replica version and request its fingerprinted asset from another.
+creates an atomic version boundary: a page cannot receive HTML from one replica version and request
+its fingerprinted asset from another. It also means the console is wholly unavailable until a
+replacement is Ready; a broken release causes an unbounded outage and must be fixed forward.
 
 The server receives both Flux-selected image tags through `HAKU_CONSOLE_{,STATIC_}IMAGE_TAG`.
 `GET /api/deployment` parses their commit suffixes at runtime for the Settings version links. This
@@ -244,14 +246,17 @@ Service). The operator browser logs in via Authentik OIDC (`HAKU_CONSOLE_OPERATO
 scoped to the agent-facing submit/read routes only), and agents authenticate to the always-mounted
 `/mcp` via `MultiAuth` (OIDCProxy DCR + the `static_agents`' fixed bearers, `HAKU_CONSOLE_MCP_OAUTH__*`;
 the DCR/token state persists in the console's own Postgres via `HAKU_CONSOLE_MCP_OAUTH_PERSISTENCE__*`).
-The console refuses to start with no `/mcp` credential at all (no static agent and no `mcp_oauth`).
+The console refuses to start without operator OIDC or with no `/mcp` credential at all (no static
+agent and no `mcp_oauth`).
 Both OAuth2 providers and their client secrets
 (the `haku-console-oidc` Secret) are minted by `tf/gitops/agent-machine-access`; single-user
 access is Authentik's application access policy.
 
 Postgres is **required**: it backs the approval ledger and the operator OAuth token store, and the
 console applies its Alembic migrations once at startup (`app.main`, before serving) — never as a
-side effect of constructing a store.
+side effect of constructing a store. Migration 0007 introduces operator ownership, deletes
+pre-ownership ledger rows whose owner cannot be inferred, and is deliberately forward-only:
+removing the tenant key would make new multi-operator rows global to old code.
 
 Non-root, dropped caps, no service-account token. Credentials: the
 `haku-routine-launch-token` secret (the launch capability bearer; `HAKU_CONSOLE_LAUNCH_ROUTINE__TOKEN`),

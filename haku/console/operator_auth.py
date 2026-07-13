@@ -1,9 +1,8 @@
 """Operator **browser** authentication for haku-console (Authentik OIDC).
 
-When `settings.operator_oidc` is configured, the console authenticates the operator's browser
-itself via the Authentik authorization-code flow, storing the identity in a signed session cookie —
-replacing the Authentik proxy outpost that guards `haku.allegedly.works` today. Agent access to
-`/mcp` uses its own MultiAuth (OIDCProxy DCR + static bearer) and is unaffected.
+The console authenticates the operator's browser itself via the Authentik authorization-code flow,
+storing the identity in a signed session cookie. Agent access to `/mcp` uses its own MultiAuth
+(OIDCProxy DCR + static bearer) and is unaffected.
 
 Two router-level dependency guards enforce the split (applied by `app.py` when it includes each
 router, so a new route on a guarded router is protected by default):
@@ -13,9 +12,8 @@ router, so a new route on a guarded router is protected by default):
 - `require_operator_or_static_agent` — the agent-facing tool-call routes (submit + read/sweep): an
   operator session OR a configured static agent's bearer.
 
-Both no-op in the `operator_oidc`-unset dev/test mode (the outpost/absence was the guard then). The
-static SPA (served by nginx) stays public; on a 401 the frontend redirects to `/auth/login`. `/mcp`
-(its own MultiAuth), `/healthz`, and `/auth/*` are not under `/api/` and carry their own auth.
+The static SPA (served by nginx) stays public; on a 401 the frontend redirects to `/auth/login`.
+`/mcp` (its own MultiAuth), `/healthz`, and `/auth/*` are not under `/api/` and carry their own auth.
 """
 
 from __future__ import annotations
@@ -92,9 +90,6 @@ def operator_subject(conn: HTTPConnection) -> str | None:
     mutable username. Sourced **only** from the app-owned OIDC session: there is no `x-authentik-*`
     request-header fallback. Those were the retired forward-auth outpost's headers; with the outpost
     gone and traffic reaching the app directly, any client could forge them, so they are not trusted.
-    In the `operator_oidc`-unset dev/test mode there is no session middleware, so this is None and the
-    operator-only surface is simply unavailable.
-
     Takes `HTTPConnection` (the Request/WebSocket base) so the router guards work on the WebSocket
     route too."""
     if "session" in conn.scope:
@@ -114,7 +109,7 @@ def operator_username(request: Request) -> str | None:
 
 def _redirect_uri(request: Request) -> str:
     settings = cast(Settings, request.app.state.settings)
-    base = (settings.public_base_url or str(request.base_url)).rstrip("/")
+    base = settings.public_base_url.rstrip("/")
     return f"{base}/auth/callback"
 
 
@@ -162,19 +157,12 @@ def _static_agents(conn: HTTPConnection) -> list[ResolvedStaticAgent]:
     return cast("list[ResolvedStaticAgent]", conn.app.state.static_agents)
 
 
-def _app_owned_auth(conn: HTTPConnection) -> bool:
-    """Whether the app owns operator auth (``operator_oidc`` configured). When it doesn't — the
-    ``operator_oidc``-unset dev/test mode — the router guards no-op, matching the pre-app-owned-auth
-    behavior where no in-app `/api/*` guard ran at all."""
-    return cast(Settings, conn.app.state.settings).operator_oidc is not None
-
-
 def require_operator(conn: HTTPConnection) -> None:
     """Router-level guard for the operator-only surface: the caller must present an authenticated
     operator session (an OIDC subject). Applied to the operator routers so a newly added route there
     is protected by default — no path list to keep in sync. Typed on `HTTPConnection` so it guards
     the WebSocket route as well as HTTP routes."""
-    if _app_owned_auth(conn) and operator_subject(conn) is None:
+    if operator_subject(conn) is None:
         raise HTTPException(status_code=401, detail="operator authentication required")
 
 
@@ -182,7 +170,5 @@ def require_operator_or_static_agent(conn: HTTPConnection) -> None:
     """Router-level guard for the agent-facing tool-call routes (submit + read/sweep): an operator
     session OR a configured static agent's bearer. The operator-only surfaces (approvals, decisions,
     account linking) are never reachable by an agent bearer because they live under `require_operator`."""
-    if not _app_owned_auth(conn):
-        return
     if operator_subject(conn) is None and authenticated_static_agent(conn, _static_agents(conn)) is None:
         raise HTTPException(status_code=401, detail="operator or agent authentication required")

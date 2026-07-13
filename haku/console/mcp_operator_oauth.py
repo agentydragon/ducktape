@@ -59,7 +59,13 @@ from haku.console.config import Settings
 from haku.console.console_events import ConsoleEventHubDep, McpOperatorAuthChangedEvent
 from haku.console.database_schema import McpAgentOperator, McpOperatorOAuthAssociation, McpOperatorOAuthFlow
 from haku.console.deps import SettingsDep
-from haku.console.mcp_config import McpServerEntry, _load_servers, _operator_oauth_enabled, _server_entry
+from haku.console.mcp_config import (
+    STATIC_AGENT_CLIENT_ID_PREFIX,
+    McpServerEntry,
+    _load_servers,
+    _operator_oauth_enabled,
+    _server_entry,
+)
 
 Csrf = Annotated[CsrfProtect, Depends()]
 
@@ -265,10 +271,14 @@ class PostgresMcpOperatorOAuthStore:
             server_id=server.id, authorization_url=flow.authorization_url, expires_at=flow.expires_at
         )
 
-    async def complete_callback(self, *, state: str, code: str, username: str) -> McpOperatorAuthStatus:
+    async def complete_callback(
+        self, *, state: str, code: str, operator_subject: str, username: str
+    ) -> McpOperatorAuthStatus:
         with self._sessions.begin() as session:
             if (row := session.get(McpOperatorOAuthFlow, state)) is None:
                 raise HTTPException(status_code=404, detail="OAuth flow not found or already used")
+            if row.operator_subject != operator_subject:
+                raise HTTPException(status_code=403, detail="OAuth flow belongs to a different operator")
             session.delete(row)
             flow = OperatorOAuthFlowState.from_row(row)
         now = datetime.datetime.now(datetime.UTC)
@@ -337,8 +347,15 @@ class PostgresMcpOperatorOAuthStore:
             row.token_expires_at = token_expires_at
             return row.access_token
 
-    def upsert_agent_operator(self, *, agent_dcr_client_id: str, operator_subject: str) -> None:
-        """Record (or update) which operator subject an OAuth agent (keyed by its DCR client_id) acts as."""
+    def bind_agent_operator(self, *, agent_dcr_client_id: str, operator_subject: str) -> None:
+        """Immutably bind one OAuth DCR client id to its authorizing operator.
+
+        Previously issued client tokens remain keyed by this id, so silently moving it would give an
+        old token access to another operator's ledger. Reauthorizing for the same subject is
+        idempotent; a different subject must register a different client identity.
+        """
+        if agent_dcr_client_id.startswith(STATIC_AGENT_CLIENT_ID_PREFIX):
+            raise ValueError("OAuth client_id collides with the reserved static-agent namespace")
         with self._sessions.begin() as session:
             now = datetime.datetime.now(datetime.UTC)
             row = session.get(McpAgentOperator, agent_dcr_client_id, with_for_update=True)
@@ -352,7 +369,8 @@ class PostgresMcpOperatorOAuthStore:
                     )
                 )
             else:
-                row.operator_subject = operator_subject
+                if row.operator_subject != operator_subject:
+                    raise ValueError("OAuth agent client_id is already bound to a different operator")
                 row.updated_at = now
 
     def agent_operator(self, agent_dcr_client_id: str) -> str | None:
@@ -384,16 +402,8 @@ def _operator_username(request: Request) -> str:
     return operator_auth.operator_username(request) or "operator"
 
 
-def _public_base_url(request: Request, settings: Settings) -> str:
-    if settings.public_base_url:
-        return settings.public_base_url.rstrip("/")
-    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme).split(",", 1)[0].strip()
-    host = (
-        (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc)
-        .split(",", 1)[0]
-        .strip()
-    )
-    return f"{proto}://{host}"
+def _public_base_url(settings: Settings) -> str:
+    return settings.public_base_url.rstrip("/")
 
 
 def _oauth_status_from_row(
@@ -677,7 +687,7 @@ async def connect_mcp_operator_auth(
     await csrf_protect.validate_csrf(request)
     server = _server_entry(settings, server_id)
     return await oauth_store.connect_flow(
-        server=server, operator_subject=_operator_subject(request), public_base_url=_public_base_url(request, settings)
+        server=server, operator_subject=_operator_subject(request), public_base_url=_public_base_url(settings)
     )
 
 
@@ -707,12 +717,15 @@ async def mcp_operator_auth_callback(
         return _oauth_callback_response(False, f"MCP OAuth authorization failed: {error}", status_code=400)
     if not state or not code:
         return _oauth_callback_response(False, "MCP OAuth callback is missing state or code.", status_code=400)
+    operator_subject = _operator_subject(request)
     try:
-        status = await oauth_store.complete_callback(state=state, code=code, username=_operator_username(request))
+        status = await oauth_store.complete_callback(
+            state=state, code=code, operator_subject=operator_subject, username=_operator_username(request)
+        )
     except HTTPException as e:
         detail = e.detail if isinstance(e.detail, str) else "MCP OAuth callback failed."
         return _oauth_callback_response(False, detail, status_code=e.status_code)
     await event_hub.broadcast(
-        _operator_subject(request), [McpOperatorAuthChangedEvent(server_id=status.server_id, status="connected")]
+        operator_subject, [McpOperatorAuthChangedEvent(server_id=status.server_id, status="connected")]
     )
     return _oauth_callback_response(True, f"Connected {status.server_id} for {_operator_username(request)}.")

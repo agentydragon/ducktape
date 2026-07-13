@@ -42,9 +42,18 @@ def test_static_image_cache_contract() -> None:
         assert revalidated.status_code == 200
         assert revalidated.headers["cache-control"] == "no-store"
 
+        deep_link = httpx.get(f"{base_url}/tool-calls")
+        assert deep_link.status_code == 200
+        assert deep_link.text == shell.text
+        assert deep_link.headers["cache-control"] == "no-store"
+        assert "etag" not in deep_link.headers
+
         match = re.search(r'src="(?P<path>/assets/[^"]+\.js)"', shell.text)
         assert match is not None
-        asset = httpx.get(f"{base_url}{match.group('path')}")
+        asset_path = match.group("path")
+        # Immutable is safe only because the bundle names the content, not merely its role.
+        assert re.search(r"[-.][A-Za-z0-9_-]{8,}\.js$", asset_path)
+        asset = httpx.get(f"{base_url}{asset_path}")
         assert asset.status_code == 200
         assert asset.headers["cache-control"] == "public, max-age=31536000, immutable"
 

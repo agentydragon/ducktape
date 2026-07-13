@@ -460,9 +460,8 @@ function ApprovalsTab({
   );
 }
 
-// The approvals panel — the primary chrome surface. One block in the chrome column (below the
-// toolbar), it follows its content up to the available height and then scrolls its own list, so
-// the smaller settings/location/live panels can stack beneath it rather than being covered.
+// The approvals panel — the primary chrome surface. It occupies the shared panel slot below the
+// toolbar, follows its content up to the available height, and then scrolls its own list.
 function ApprovalsPanel(props: ShellChromeProps) {
   const pendingCount =
     props.pendingApprovals.length + props.geolocationApprovals.length + props.screenshotApprovals.length;
@@ -529,6 +528,12 @@ export function nextShellPanel(selected: ShellPanel | null, clicked: ShellPanel)
   return selected === clicked ? null : clicked;
 }
 
+export function selectedShellPanel(approvalsOpen: boolean, openPanel: ShellPanel | null): ShellPanel | null {
+  // A newly arriving approval may light the badge, but must not preempt an explicit operator
+  // selection—especially the location/screenshot kill-switch panels.
+  return openPanel ?? (approvalsOpen ? "approvals" : null);
+}
+
 // The persistent shell chrome over the framed haku-ui: a floating top-right toolbar whose
 // mutually-exclusive toggles behave like deselectable tabs. Toggles are neutral gray; only
 // genuinely semantic cues keep a color (red pending count, orange offline, green
@@ -549,11 +554,7 @@ export function ShellChrome(props: ShellChromeProps) {
   const pendingCount =
     props.pendingApprovals.length + props.geolocationApprovals.length + props.screenshotApprovals.length;
   const offline = liveStatus === "offline";
-  const selectedPanel = approvalsOpen ? "approvals" : openPanel;
-
-  useEffect(() => {
-    if (approvalsOpen) setOpenPanel(null);
-  }, [approvalsOpen]);
+  const selectedPanel = selectedShellPanel(approvalsOpen, openPanel);
 
   useEffect(() => {
     if (
@@ -618,8 +619,8 @@ export function ShellChrome(props: ShellChromeProps) {
           label={pendingCount > 0 ? pendingCount : undefined}
         >
           <ChromeToggle
-            open={approvalsOpen}
-            label={approvalsOpen ? "Close approvals" : "Open approvals"}
+            open={selectedPanel === "approvals"}
+            label={selectedPanel === "approvals" ? "Close approvals" : "Open approvals"}
             onClick={() => togglePanel("approvals")}
           >
             <ChecklistIcon />

@@ -13,8 +13,8 @@ bbr test //haku/console/frontend:screenshots
 
 It renders each surface (`screenshots/harness.tsx`) in both light and dark themes to PNGs (two
 per scene: `history` — its first rows expanded into their detailed state with the Metadata
-disclosure open, the rest left compact — `chrome` — the shell chrome with its
-the shell chrome with its mutually exclusive panel tabs — plus `settings` and `previews`) in the test's
+disclosure open, the rest left compact — `chrome` — the shell chrome with its mutually exclusive
+panel tabs — plus `settings` and `previews`) in the test's
 **undeclared outputs**.
 Browser rendering runs on the RBE worker, so this is a `bbr` test, not a local `bb run`. Fetch
 the PNGs

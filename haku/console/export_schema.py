@@ -19,7 +19,7 @@ import yaml
 from pydantic import SecretStr
 
 from haku.console.app import create_app
-from haku.console.config import Settings
+from haku.console.config import OperatorOidcConfig, Settings
 
 
 def main() -> None:
@@ -47,6 +47,13 @@ def main() -> None:
     settings = Settings(
         haku_ui_url="about:blank",
         database_url=SecretStr("postgresql+psycopg://placeholder/db"),
+        public_base_url="https://haku-console.invalid",
+        operator_oidc=OperatorOidcConfig(
+            issuer="https://auth.invalid/application/o/haku-console/",
+            client_id="schema",
+            client_secret=SecretStr("placeholder-client-secret"),
+            session_secret=SecretStr("placeholder-session-secret"),
+        ),
         config_file=config_file,
     )
     print(json.dumps(create_app(settings).openapi(), indent=2))

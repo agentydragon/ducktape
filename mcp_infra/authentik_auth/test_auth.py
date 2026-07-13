@@ -200,7 +200,7 @@ def test_build_authentik_auth_appends_extra_verifiers() -> None:
 
 
 def test_build_authentik_auth_passes_on_client_authorized() -> None:
-    """on_client_authorized is handed to the OIDCProxy so it can fire a post-exchange hook."""
+    """on_client_authorized is handed to the OIDCProxy for its pre-token ownership check."""
     discovery_response = AsyncMock()
     discovery_response.raise_for_status = lambda: discovery_response
     discovery_response.json = lambda: {"jwks_uri": "https://auth.example.com/application/o/test/jwks/"}
@@ -219,9 +219,8 @@ def test_build_authentik_auth_passes_on_client_authorized() -> None:
     assert oidc_proxy_cls.call_args.kwargs["on_client_authorized"] is _cb
 
 
-async def test_resilient_proxy_invokes_on_client_authorized_after_exchange() -> None:
-    """exchange_authorization_code issues the token via super(), then invokes on_client_authorized
-    with the client's id and the upstream token response."""
+async def test_resilient_proxy_checks_client_ownership_before_issuing_token() -> None:
+    """The ownership hook sees upstream identity before a local client token is issued."""
     proxy = ResilientOIDCProxy.__new__(ResilientOIDCProxy)
     proxy._on_client_authorized = AsyncMock()
     idp_tokens = {"id_token": "jwt-value", "access_token": "at"}
@@ -231,12 +230,24 @@ async def test_resilient_proxy_invokes_on_client_authorized_after_exchange() -> 
     auth_code = SimpleNamespace(code="the-code")
     issued = object()
 
-    with patch.object(OAuthProxy, "exchange_authorization_code", AsyncMock(return_value=issued)) as super_exch:
+    order: list[str] = []
+
+    async def record_ownership(*_: Any) -> None:
+        order.append("ownership")
+
+    async def issue_token(*_: Any) -> object:
+        order.append("token")
+        return issued
+
+    proxy._on_client_authorized.side_effect = record_ownership
+    super_exchange = AsyncMock(side_effect=issue_token)
+    with patch.object(OAuthProxy, "exchange_authorization_code", super_exchange) as super_exch:
         result = await ResilientOIDCProxy.exchange_authorization_code(proxy, cast(Any, client), cast(Any, auth_code))
 
     assert result is issued
     super_exch.assert_awaited_once()
     proxy._on_client_authorized.assert_awaited_once_with("dcr-xyz", idp_tokens)
+    assert order == ["ownership", "token"]
 
 
 # ── AuthentikExchangeAuth tests ───────────────────────────────────────────

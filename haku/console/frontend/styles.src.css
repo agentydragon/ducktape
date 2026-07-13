@@ -150,8 +150,8 @@
   pointer-events: auto;
 }
 
-/* The approvals panel follows its content until the column runs out of room, then shrinks and
-   scrolls its list so smaller side panels remain reachable. */
+/* The selected approvals panel follows its content until the column runs out of room, then shrinks
+   and scrolls its list. */
 .haku-shell-approvals {
   flex: 0 1 auto;
   min-height: 0;
@@ -172,15 +172,13 @@
   gap: 0.5rem;
 }
 
-/* Location / live-channel panels: natural height, so they sit compactly under the approvals
-   selected panel. */
+/* Location / screenshot / live-channel panels use their compact natural height. */
 .haku-shell-side-panel {
   flex: 0 0 auto;
 }
 
-/* Full-page console views on their own routes (past-tool-calls history in
-   tool_calls_page.tsx, operator settings in settings_panel.tsx) — each replaces the framed
-   haku-ui rather than overlaying it. Shared page chrome, so both use these classes. */
+/* Full-page console views on their own routes (currently past-tool-calls history in
+   tool_calls_page.tsx) replace the framed haku-ui rather than overlaying it. */
 .haku-page {
   position: fixed;
   inset: 0;

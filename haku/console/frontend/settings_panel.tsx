@@ -1,5 +1,5 @@
 import { Anchor, Badge, Button, Group, Loader, Stack, Text } from "@mantine/core";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { shortDate } from "./approval_state.ts";
 import {
@@ -101,30 +101,45 @@ export function SettingsPanel() {
   const [statusesError, setStatusesError] = useState<string | null>(null);
   const [deploymentError, setDeploymentError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const loadGeneration = useRef(0);
   const versions = deployment ? deploymentVersions(deployment) : [];
 
   const load = useCallback(() => {
+    const generation = ++loadGeneration.current;
     setLoading(true);
     const statusesRequest = fetchMcpOperatorAuthStatuses().then(
       (nextStatuses) => {
+        if (generation !== loadGeneration.current) return;
         setStatuses(nextStatuses);
         setStatusesError(null);
       },
       (e: unknown) => {
+        if (generation !== loadGeneration.current) return;
         setStatusesError(e instanceof Error ? e.message : String(e));
       }
     );
     const deploymentRequest = fetchDeploymentInfo().then(
       (nextDeployment) => {
+        if (generation !== loadGeneration.current) return;
         setDeployment(nextDeployment);
         setDeploymentError(null);
       },
       (e: unknown) => {
+        if (generation !== loadGeneration.current) return;
         setDeploymentError(e instanceof Error ? e.message : String(e));
       }
     );
-    void Promise.all([statusesRequest, deploymentRequest]).then(() => setLoading(false));
+    void Promise.all([statusesRequest, deploymentRequest]).then(() => {
+      if (generation === loadGeneration.current) setLoading(false);
+    });
   }, []);
+
+  useEffect(
+    () => () => {
+      loadGeneration.current += 1;
+    },
+    []
+  );
 
   useConsoleEvents((event) => {
     if (event.event_type === "sync" || event.event_type === "mcp_operator_auth_changed") load();
