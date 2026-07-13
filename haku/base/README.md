@@ -28,7 +28,6 @@ live, with no image rebuild.
 Haku's **method** — the procedures (passes) it runs, the UI it serves, and whatever
 format that UI presents (the current "items" board is one example) — is
 **not here.** It lives in, and only in, Haku's `haku-state` repo.
-(The full "what lives where" is in `AGENTS.md`.)
 
 The step-by-step run procedure lives in `haku/run.md` (environment-neutral;
 per-environment entrypoints like `haku/runtime/claude_web_env/run.md` just layer setup
