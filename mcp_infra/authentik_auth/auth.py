@@ -222,6 +222,29 @@ class ResilientOIDCProxy(OIDCProxy):
             await self._on_client_authorized(client.client_id, code_model.idp_tokens)
         return await super().exchange_authorization_code(client, authorization_code)
 
+    async def load_access_token(self, token: str) -> AccessToken | None:  # type: ignore[override]
+        """Restore the DCR client identity FastMCP's token swap discards.
+
+        ``OAuthProxy.load_access_token`` returns the *upstream* validation result, whose
+        ``client_id`` is the proxy's own upstream client — so every OAuth agent collapses
+        onto one identity (observed live 2026-07-13: agent→operator lookups keyed by DCR
+        client_id failed with "agent haku-console-mcp has no linked operator subject").
+        The FastMCP reference JWT carries the real DCR ``client_id`` claim; re-attach it
+        so per-agent identity (operator links, audit principals) survives the swap.
+        """
+        validated = await super().load_access_token(token)
+        if validated is None:
+            return None
+        try:
+            dcr_client_id = self.jwt_issuer.verify_token(token).get("client_id")
+        except Exception:
+            # super() accepted the token, so an unverifiable JWT here means a non-JWT
+            # verifier matched (e.g. a static bearer path) — keep its identity as-is.
+            return validated
+        if dcr_client_id and dcr_client_id != validated.client_id:
+            return validated.model_copy(update={"client_id": dcr_client_id})
+        return validated
+
     async def exchange_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: RefreshToken, scopes: list[str]
     ) -> OAuthToken:

@@ -13,7 +13,7 @@ import pytest
 import pytest_bazel
 from authlib.integrations.httpx_client import AsyncOAuth2Client as AuthlibAsyncOAuth2Client
 from authlib.oauth2 import OAuth2Error
-from fastmcp.server.auth.auth import TokenVerifier
+from fastmcp.server.auth.auth import AccessToken, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from glide_shared.exceptions import TimeoutError as GlideTimeoutError
@@ -256,6 +256,38 @@ async def test_resilient_proxy_checks_client_ownership_before_issuing_token() ->
     super_exch.assert_awaited_once()
     proxy._on_client_authorized.assert_awaited_once_with("dcr-xyz", idp_tokens)
     assert order == ["ownership", "token"]
+
+
+async def test_resilient_proxy_restores_dcr_client_id_after_token_swap() -> None:
+    """FastMCP's token swap returns the upstream client identity; the override re-attaches the
+    DCR client_id from the reference JWT so per-agent identity survives (the "agent
+    haku-console-mcp has no linked operator subject" class of failure)."""
+    proxy = ResilientOIDCProxy.__new__(ResilientOIDCProxy)
+    upstream = AccessToken(token="upstream-at", client_id="upstream-client", scopes=[], expires_at=None)
+    proxy._jwt_issuer = cast(Any, SimpleNamespace(verify_token=lambda _t: {"client_id": "dcr-xyz", "jti": "j"}))
+    with patch.object(OAuthProxy, "load_access_token", AsyncMock(return_value=upstream)):
+        result = await ResilientOIDCProxy.load_access_token(proxy, "fastmcp-jwt")
+    assert result is not None
+    assert result.client_id == "dcr-xyz"
+    assert result.token == "upstream-at"
+
+
+async def test_resilient_proxy_load_access_token_keeps_non_jwt_identity() -> None:
+    """A token super() accepted but the reference-JWT issuer can't verify (a non-JWT verifier
+    matched) keeps its identity untouched; a rejected token stays rejected."""
+    proxy = ResilientOIDCProxy.__new__(ResilientOIDCProxy)
+
+    def boom(_t: str) -> dict:
+        raise ValueError("not a fastmcp jwt")
+
+    proxy._jwt_issuer = cast(Any, SimpleNamespace(verify_token=boom))
+    accepted = AccessToken(token="t", client_id="static-agent", scopes=[], expires_at=None)
+    with patch.object(OAuthProxy, "load_access_token", AsyncMock(return_value=accepted)):
+        result = await ResilientOIDCProxy.load_access_token(proxy, "opaque-bearer")
+    assert result is accepted
+
+    with patch.object(OAuthProxy, "load_access_token", AsyncMock(return_value=None)):
+        assert await ResilientOIDCProxy.load_access_token(proxy, "bad") is None
 
 
 # ── AuthentikTokenExchanger tests ─────────────────────────────────────────
