@@ -1,3 +1,4 @@
+import { CodeBlock } from "./code_block.tsx";
 import { Field } from "./field.tsx";
 import type { PreviewVariant } from "./tool_rendering/vocabulary.tsx";
 import { unwrapToolResult } from "./tool_rendering/result_entry.tsx";
@@ -28,7 +29,7 @@ export function ToolResultField({
     return (
       <div className="haku-shell-fields">
         <Field label="Result">
-          <pre className="haku-shell-json">{JSON.stringify(result, null, 2)}</pre>
+          <CodeBlock language="json" value={JSON.stringify(result, null, 2)} />
         </Field>
       </div>
     );
@@ -41,7 +42,7 @@ export function ToolResultField({
           <summary>Raw result</summary>
           {/* The disclosure stays byte-exact-ish (the stored envelope, not the unwrapped
               payload), so the widget's ranking never costs the real, copyable result. */}
-          <pre className="haku-shell-json">{JSON.stringify(result, null, 2)}</pre>
+          <CodeBlock language="json" value={JSON.stringify(result, null, 2)} />
         </details>
       )}
     </>

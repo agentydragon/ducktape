@@ -6,6 +6,7 @@
 
 import { z } from "zod";
 
+import { CodeBlock } from "../../code_block.tsx";
 import { Field } from "../../field.tsx";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
@@ -21,7 +22,7 @@ function LaunchRoutinePreview({ args, variant }: PreviewProps<LaunchRoutineArgs>
   const shown = text ? (variant === "compact" ? clampBlock(text, 3) : text) : null;
   return (
     <Field label="Instructions">
-      {shown ? <pre className="haku-shell-json">{shown}</pre> : <PreviewText c="dimmed">(routine default)</PreviewText>}
+      {shown ? <CodeBlock value={shown} /> : <PreviewText c="dimmed">(routine default)</PreviewText>}
     </Field>
   );
 }

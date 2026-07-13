@@ -9,9 +9,10 @@
 import { Group, Stack } from "@mantine/core";
 import { z } from "zod";
 
+import { CodeBlock } from "../../code_block.tsx";
 import { Field } from "../../field.tsx";
 import { definePreview, type ToolPreview } from "../entry.tsx";
-import { clampBlock, PreviewText, type PreviewProps } from "../vocabulary.tsx";
+import { PreviewText, type PreviewProps } from "../vocabulary.tsx";
 
 export const KUBECTL_SERVER_ID = "kubectl-passthrough-mcp";
 
@@ -48,8 +49,14 @@ type PodsDeleteArgs = z.infer<typeof zPodsDeleteArgs>;
 type PodsLogArgs = z.infer<typeof zPodsLogArgs>;
 
 function ResourcesApplyPreview({ args, variant }: PreviewProps<ResourcesCreateOrUpdateArgs>) {
-  const resource = variant === "compact" ? clampBlock(args.resource, 3) : args.resource;
-  return <pre className="haku-shell-json">{resource}</pre>;
+  return (
+    <CodeBlock
+      language="yaml"
+      value={args.resource}
+      compact={variant === "compact"}
+      lineNumbers={variant === "detailed"}
+    />
+  );
 }
 
 function DeleteTargetPreview({

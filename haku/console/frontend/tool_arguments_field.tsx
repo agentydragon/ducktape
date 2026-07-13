@@ -1,3 +1,4 @@
+import { CodeBlock } from "./code_block.tsx";
 import { Field } from "./field.tsx";
 import { JsonPreview } from "./json_preview.tsx";
 import { toolPreview } from "./tool_rendering/index.tsx";
@@ -38,7 +39,7 @@ export function ToolArgumentsField({
           <summary>Raw arguments</summary>
           {/* The disclosure stays byte-exact (JSON.stringify), so reflow/truncation never costs
               the real, copyable payload. */}
-          <pre className="haku-shell-json">{argumentsJson}</pre>
+          <CodeBlock language="json" value={argumentsJson} />
         </details>
       )}
     </>

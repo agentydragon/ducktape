@@ -341,33 +341,11 @@
   font-size: 0.82rem;
 }
 
-.haku-shell-json {
-  max-height: 14rem;
+/* CodeBlock's CodeMirror wrapper. The `.cm-editor` inside carries the border/bg/radius
+   (code_block.tsx's HAKU_THEME); the json/yaml token hues come from the --haku-json-* vars via
+   CodeMirror's HighlightStyle. */
+.haku-codeblock {
   margin: 0;
-  overflow: auto;
-  border: 1px solid var(--haku-border);
-  border-radius: 6px;
-  background: var(--haku-code-bg);
-  color: var(--haku-code-fg);
-  padding: 0.55rem;
-  font-size: 0.82rem;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-/* highlight.js json tokens over the neutral code surface (see --haku-json-* vars). Punctuation
-   and braces carry no token class, so they inherit --haku-code-fg. */
-.haku-shell-json .hljs-attr {
-  color: var(--haku-json-key);
-}
-.haku-shell-json .hljs-string {
-  color: var(--haku-json-string);
-}
-.haku-shell-json .hljs-number {
-  color: var(--haku-json-number);
-}
-.haku-shell-json .hljs-literal {
-  color: var(--haku-json-literal);
 }
 
 .haku-shell-disclosure {

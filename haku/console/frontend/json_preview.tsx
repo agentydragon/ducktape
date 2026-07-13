@@ -1,15 +1,12 @@
-import hljs from "highlight.js/lib/core";
-import json from "highlight.js/lib/languages/json";
-
+import { CodeBlock } from "./code_block.tsx";
 import type { PreviewVariant } from "./tool_rendering/vocabulary.tsx";
-
-hljs.registerLanguage("json", json);
 
 // Width-aware pretty-print: a value whose one-line form fits within `maxLength` (accounting for
 // the current indent) stays inline; only larger arrays/objects break, one child per line, each
 // child re-evaluated the same way. So `[1, 2, 3, 4, 5]` stays one line while a big nested object
-// expands. (A local ~30-line take on json-stringify-pretty-compact — kept in-repo because adding
-// that npm dep needs a pnpm-lock regen this environment's egress policy currently blocks.)
+// expands. (A local take on json-stringify-pretty-compact — kept in-repo because adding that npm
+// dep needs a pnpm-lock regen this environment's egress policy currently blocks.) The width-aware
+// layout is what gives CodeMirror meaningful structure to fold in compact mode.
 function inlineJson(v: unknown): string {
   if (v === null || typeof v !== "object") return JSON.stringify(v) ?? "null";
   if (Array.isArray(v)) return `[${v.map(inlineJson).join(", ")}]`;
@@ -35,49 +32,20 @@ function compactStringify(value: unknown, maxLength: number, indent: string, uni
   return `{\n${body}\n${indent}}`;
 }
 
-// Compact-mode caps so a preview stays scannable; detailed shows the value in full. The compact
-// printer keeps short arrays/objects inline and only breaks larger ones, so `[1, 2, 3, 4, 5]`
-// stays one line — MAX_WIDTH is the fit-or-expand threshold.
-const COMPACT_ARRAY_ITEMS = 6;
-const COMPACT_OBJECT_ENTRIES = 8;
-const COMPACT_STRING_CHARS = 80;
-const COMPACT_DEPTH = 3;
+// MAX_WIDTH is the fit-or-expand threshold: short arrays/objects stay inline, larger ones break one
+// child per line. Detailed shows the value in full; compact auto-folds it to fill the block.
 const MAX_WIDTH = 72;
 
-// Structurally truncate a value for compact rendering. Elided array tails / object key sets and
-// over-deep or over-long leaves are replaced with valid-JSON string sentinels (`…(+N more)`,
-// `[…]`, `{…}`, `…`) so the printed result stays parseable and highlights cleanly — unlike
-// clamping the printed string, which cuts mid-token and drops the highlighting on the tail.
-function truncate(value: unknown, depth: number): unknown {
-  if (typeof value === "string") {
-    return value.length > COMPACT_STRING_CHARS ? `${value.slice(0, COMPACT_STRING_CHARS)}…` : value;
-  }
-  if (Array.isArray(value)) {
-    if (depth <= 0) return "[…]";
-    const head: unknown[] = value.slice(0, COMPACT_ARRAY_ITEMS).map((v) => truncate(v, depth - 1));
-    if (value.length > COMPACT_ARRAY_ITEMS) head.push(`…(+${value.length - COMPACT_ARRAY_ITEMS} more)`);
-    return head;
-  }
-  if (value && typeof value === "object") {
-    if (depth <= 0) return "{…}";
-    const entries = Object.entries(value as Record<string, unknown>);
-    const kept: Record<string, unknown> = {};
-    for (const [k, v] of entries.slice(0, COMPACT_OBJECT_ENTRIES)) kept[k] = truncate(v, depth - 1);
-    if (entries.length > COMPACT_OBJECT_ENTRIES) kept["…"] = `(+${entries.length - COMPACT_OBJECT_ENTRIES} more)`;
-    return kept;
-  }
-  return value;
-}
-
-/** A tool call's arguments as a syntax-highlighted JSON code block. Width-aware pretty-printing
- * keeps short collections inline and only breaks larger ones; highlight.js colors it (json grammar
- * only, registered above — the lean core import, not the all-languages barrel). In compact mode the
- * value is structurally truncated first, so the block stays short while keeping both highlighting
- * and structure. */
+/** A tool call's arguments as a syntax-highlighted, foldable JSON code block. Compact auto-folds to
+ * fill the block with leading entries (see CodeBlock); detailed shows the full value with line
+ * numbers. Width-aware pretty-print keeps short collections inline either way. */
 export function JsonPreview({ value, variant }: { value: unknown; variant: PreviewVariant }) {
-  const shown = variant === "compact" ? truncate(value, COMPACT_DEPTH) : value;
-  const code = compactStringify(shown, MAX_WIDTH, "");
-  // hljs escapes the input, so its span-wrapped output is safe to inject.
-  const html = hljs.highlight(code, { language: "json", ignoreIllegals: true }).value;
-  return <pre className="haku-shell-json hljs" dangerouslySetInnerHTML={{ __html: html }} />;
+  return (
+    <CodeBlock
+      language="json"
+      value={compactStringify(value, MAX_WIDTH, "")}
+      compact={variant === "compact"}
+      lineNumbers={variant === "detailed"}
+    />
+  );
 }

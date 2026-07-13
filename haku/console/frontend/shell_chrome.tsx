@@ -17,6 +17,7 @@ import {
   terminalStatusLabel,
 } from "./approval_state.ts";
 import type { PendingApproval } from "./client.ts";
+import { CodeBlock } from "./code_block.tsx";
 import { Field } from "./field.tsx";
 import { CameraIcon, ChecklistIcon, HistoryIcon, MapPinIcon, SettingsIcon, WifiOffIcon } from "./icons.tsx";
 import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
@@ -251,7 +252,7 @@ function GeolocationApprovalCard({
             </Field>
             {approval.options && (
               <Field label="Options">
-                <pre className="haku-shell-json">{JSON.stringify(approval.options, null, 2)}</pre>
+                <CodeBlock language="json" value={JSON.stringify(approval.options, null, 2)} />
               </Field>
             )}
             <details className="haku-shell-disclosure">

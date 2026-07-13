@@ -11,6 +11,7 @@ import { Anchor, Group, Loader, Stack } from "@mantine/core";
 import { useEffect, useState } from "react";
 import type { z } from "zod";
 
+import { CodeBlock } from "../../code_block.tsx";
 import { Field } from "../../field.tsx";
 import { fetchGmailThreadPreviews, type GmailThreadPreview } from "../../gmail_client.ts";
 import { MailIcon } from "../../icons.tsx";
@@ -163,7 +164,7 @@ function CreateGmailDraftPreview({ args, variant }: PreviewProps<CreateGmailDraf
           <PreviewText span c="dimmed">{` · cc ${args.cc.join(", ")}`}</PreviewText>
         )}
       </Field>
-      {detailed ? <pre className="haku-shell-json">{args.body}</pre> : <CompactBody body={args.body} />}
+      {detailed ? <CodeBlock value={args.body} /> : <CompactBody body={args.body} />}
       {args.thread_id && (
         <Anchor href={gmailThreadUrl(args.thread_id)} target="_blank" rel="noreferrer" size="xs">
           Reply in thread ↗

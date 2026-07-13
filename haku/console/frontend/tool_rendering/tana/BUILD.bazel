@@ -12,6 +12,7 @@ js_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//:node_modules/zod",
+        "//haku/console/frontend:code_block",
         "//haku/console/frontend:field",
         "//haku/console/frontend:tana_client",
         "//haku/console/frontend/tool_rendering:entry",

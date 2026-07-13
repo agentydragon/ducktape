@@ -7,6 +7,7 @@ import { Anchor, Group, Stack } from "@mantine/core";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 
+import { CodeBlock } from "../../code_block.tsx";
 import { Field } from "../../field.tsx";
 import { fetchTanaNodePreviews, type TanaNodePreview } from "../../tana_client.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
@@ -100,7 +101,7 @@ function ImportTanaPastePreview({ args, variant }: PreviewProps<ImportTanaPasteA
       <Field label="Under">
         <TanaNodeLink nodeId={args.parentNodeId} previews={previews} />
       </Field>
-      <pre className="haku-shell-json">{content}</pre>
+      <CodeBlock value={content} />
     </Stack>
   );
 }
