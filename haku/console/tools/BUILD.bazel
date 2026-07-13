@@ -62,6 +62,22 @@ py_library(
     ],
 )
 
+py_test(
+    name = "test_grocy",
+    srcs = ["test_grocy.py"],
+    deps = [
+        ":grocy",
+        "//:conftest",
+        "//haku/console:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
+        # needs the plugin importable at runtime for its entry-point autoload; Gazelle
+        # can't see that and will try to drop this dep on regen.
+        "@pypi//pytest_asyncio",
+    ],
+)
+
 py_library(
     name = "tana",
     srcs = ["tana.py"],

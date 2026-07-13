@@ -261,6 +261,17 @@ export const SAMPLE_GROCY_REFERENCE: GrocyReferenceResponse = {
     { id: 40, name: "Weekly" },
     { id: 41, name: "Costco run" },
   ],
+  // Shopping-list items, so `shopping_list_item_edit` (item 42) and `shopping_list_items_remove`
+  // (8 ids) render resolved names. A couple of the remove ids (15, 34) are deliberately absent to
+  // exercise the `Item #id` fallback; item 12 is note-only.
+  shopping_list_items: [
+    { item_id: 3, product_name: "Milk", note: null, amount: 1, qu_name: "Carton", done: false },
+    { item_id: 7, product_name: "Spinach", note: null, amount: 200, qu_name: "Gram", done: false },
+    { item_id: 12, product_name: null, note: "paper towels?", amount: 1, qu_name: null, done: false },
+    { item_id: 21, product_name: "Dark chocolate", note: null, amount: 2, qu_name: "Bar", done: true },
+    { item_id: 42, product_name: "Almond butter", note: null, amount: 1, qu_name: "Jar", done: false },
+    { item_id: 55, product_name: "Rolled oats", note: null, amount: 2, qu_name: "Pack", done: false },
+  ],
 };
 
 // The calendar-name lookup the create-event widget fetches for a non-primary calendar_id;

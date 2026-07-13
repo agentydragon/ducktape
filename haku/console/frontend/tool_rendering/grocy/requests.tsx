@@ -119,6 +119,29 @@ function resolveProduct(products: GrocyProduct[] | undefined, value: string | nu
   return typeof value === "number" ? products?.find((p) => p.id === value) : products?.find((p) => p.name === value);
 }
 
+// A shopping-list item's current record, carried by the reference so `shopping_list_item_edit`
+// (and `shopping_list_items_remove`) can resolve a bare `item_id` to a product/note and show the
+// item's current amount/note/done for an old→new diff.
+type ShoppingListRefItem = GrocyReferenceResponse["shopping_list_items"][number];
+
+function resolveShoppingItem(
+  items: ShoppingListRefItem[] | undefined,
+  itemId: number
+): ShoppingListRefItem | undefined {
+  return items?.find((item) => item.item_id === itemId);
+}
+
+// Identity label for a shopping-list item: product name, else its note, else a bare `Item #id`
+// fallback (used while the reference loads or for an unknown id). Mirrors `shoppingItemName`.
+function shoppingItemLabel(item: ShoppingListRefItem | undefined, itemId: number): string {
+  return item?.product_name ?? item?.note ?? `Item #${itemId}`;
+}
+
+// `amount` rendered with its quantity unit, e.g. `3 pack` (no unit for note-only items).
+function formatAmount(amount: number, qu: string | null | undefined): string {
+  return `${amount}${qu ? ` ${qu}` : ""}`;
+}
+
 function GrocyReferenceLoadError({ error }: { error: string | null }) {
   if (!error) return null;
   return <PreviewText c="red">Couldn't resolve product/location names: {error}</PreviewText>;
@@ -424,19 +447,45 @@ function GetSystemInfoPreview(_: PreviewProps<GetSystemInfoArgs>) {
   return <PreviewText>Grocy server version and system details</PreviewText>;
 }
 
-function ShoppingListItemsRemovePreview({ args }: PreviewProps<ShoppingListItemsRemoveArgs>) {
+function ShoppingListItemsRemoveRow({
+  itemId,
+  reference,
+}: {
+  itemId: number;
+  reference: GrocyReferenceResponse | null;
+}) {
+  const item = resolveShoppingItem(reference?.shopping_list_items, itemId);
   return (
-    <Field label="Shopping-list item IDs" mono>
-      {args.item_ids.join(", ")}
-    </Field>
+    <Group gap={6}>
+      <PreviewText span fw={600}>
+        {shoppingItemLabel(item, itemId)}
+      </PreviewText>
+      {item && (
+        <PreviewText span c="dimmed">
+          × {formatAmount(item.amount, item.qu_name)}
+        </PreviewText>
+      )}
+    </Group>
+  );
+}
+
+function ShoppingListItemsRemovePreview({ args, variant }: PreviewProps<ShoppingListItemsRemoveArgs>) {
+  return (
+    <GrocyItemsPreview
+      items={args.item_ids}
+      variant={variant}
+      gap={4}
+      renderRow={(itemId, reference) => <ShoppingListItemsRemoveRow itemId={itemId} reference={reference} />}
+    />
   );
 }
 
 type NameMap = { id: number; name: string }[] | undefined;
 
 // The old value to show for a field: `null` while the reference loads (so no old side renders),
-// else the resolved value or "(none)" when the field is currently unset.
-function oldValue(current: GrocyProduct | undefined, resolved: string | null): string | null {
+// else the resolved value or "(none)" when the field is currently unset. Generic over the
+// current record (a product or a shopping-list item) — only its presence matters.
+function oldValue<T>(current: T | undefined, resolved: string | null): string | null {
   return current ? (resolved ?? NONE) : null;
 }
 
@@ -645,31 +694,62 @@ function ShoppingListItemsAddPreview({ args, variant }: PreviewProps<ShoppingLis
   );
 }
 
-// Shopping-list items are keyed only by `item_id`, and the reference holds no item detail, so
-// (unlike products_edit) the edit preview shows the new values without an old→new diff.
-function shoppingItemEditChanges(args: ShoppingListItemEditArgs): FieldChange[] {
+// `shopping_list_item_edit` keys off a bare `item_id`; the reference carries each item's current
+// amount/note/done, so — like `productEditChanges` — we render an old→new diff. While the
+// reference loads (or the item is unknown) `current` is undefined and only the new side shows.
+function shoppingItemEditChanges(
+  args: ShoppingListItemEditArgs,
+  current: ShoppingListRefItem | undefined
+): FieldChange[] {
+  const unit = current?.qu_name ?? null;
   return [
-    args.amount != null ? { key: "amount", label: "amount", old: null, next: String(args.amount) } : null,
-    args.note != null ? { key: "note", label: "note", old: null, next: args.note } : null,
-    args.done != null ? { key: "done", label: "done", old: null, next: args.done ? "yes" : "no" } : null,
+    args.amount != null
+      ? {
+          key: "amount",
+          label: "amount",
+          old: oldValue(current, current ? formatAmount(current.amount, current.qu_name) : null),
+          next: formatAmount(args.amount, unit),
+        }
+      : null,
+    args.note != null
+      ? { key: "note", label: "note", old: oldValue(current, current?.note ?? null), next: args.note }
+      : null,
+    args.done != null
+      ? {
+          key: "done",
+          label: "done",
+          old: oldValue(current, current ? (current.done ? "yes" : "no") : null),
+          next: args.done ? "yes" : "no",
+        }
+      : null,
+    // `EditShoppingListField` is just `note` today; resolve that one's old value, leave any
+    // future field's old side blank until this grows an arm for it.
     ...(args.clear_fields ?? []).map(
-      (field): FieldChange => ({ key: `clear_${field}`, label: field, old: null, next: CLEARED })
+      (field): FieldChange => ({
+        key: `clear_${field}`,
+        label: field.replaceAll("_", " "),
+        old: field === "note" ? oldValue(current, current?.note ?? null) : null,
+        next: CLEARED,
+      })
     ),
   ].filter((c): c is FieldChange => c != null);
 }
 
 function ShoppingListItemEditPreview({ args, variant }: PreviewProps<ShoppingListItemEditArgs>) {
-  const changes = shoppingItemEditChanges(args);
+  const { reference, error } = useGrocyReference();
+  const current = resolveShoppingItem(reference?.shopping_list_items, args.item_id);
+  const changes = shoppingItemEditChanges(args, current);
   const shown = variant === "compact" ? changes.slice(0, 2) : changes;
   return (
     <Stack gap={2}>
-      <PreviewTitle>Item #{args.item_id}</PreviewTitle>
+      <PreviewTitle>{shoppingItemLabel(current, args.item_id)}</PreviewTitle>
       <Stack gap={2}>
         {shown.map((change) => (
           <ChangeLine key={change.key} change={change} />
         ))}
         <MoreLine count={changes.length - shown.length} />
       </Stack>
+      <GrocyReferenceLoadError error={error} />
     </Stack>
   );
 }
