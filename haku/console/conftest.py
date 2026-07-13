@@ -145,6 +145,7 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
         gmail_client: Any | None = None,
         calendar_client: Any | None = None,
         in_process_servers: Any | None = None,
+        config_file: Path | None = None,
         operator: bool = False,
         operator_subject: str = "operator-sub",
         operator_username: str = "operator@example.com",
@@ -155,9 +156,14 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
         # replacement for the retired `x-authentik-*` header stand-in.
         if operator and "operator_oidc" not in settings_overrides:
             settings_overrides = {**settings_overrides, "operator_oidc": TEST_OPERATOR_OIDC}
-        # database_url + haku_ui_url are defaulted by console_settings; config_file names the default
-        # static agent (so /mcp has a credential) unless a test overrides it (spread last, so it wins).
-        settings = console_settings(migrated_db_url, **{"config_file": default_config, **settings_overrides})
+        # config_file defaults to the config naming the default static agent (so /mcp has a
+        # credential); a test overrides it by passing its own. haku_ui_url + database_url come from
+        # console_settings.
+        settings = console_settings(
+            migrated_db_url,
+            config_file=config_file if config_file is not None else default_config,
+            **settings_overrides,
+        )
         app = create_app(settings)
         if tool_call_executor is not None:
             app.state.tool_call_executor = tool_call_executor
