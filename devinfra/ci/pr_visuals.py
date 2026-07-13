@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -237,9 +238,7 @@ def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client:
         )
 
 
-def upsert_pull_request_comment(
-    *, repository: str, pull_request: int, commit_sha: str, url: str, tests: list[DownloadedVisualTest], token: str
-) -> None:
+def success_comment_body(*, repository: str, commit_sha: str, url: str, tests: list[DownloadedVisualTest]) -> str:
     commit_url = f"https://github.com/{repository}/commit/{commit_sha}"
     lines = [
         COMMENT_MARKER,
@@ -253,7 +252,28 @@ def upsert_pull_request_comment(
         f"- [`{test.target_label}`]({url}tests/{test.slug}/index.html): {len(test.manifest.assets)} assets"
         for test in tests
     )
-    body = "\n".join(lines)
+    return "\n".join(lines)
+
+
+def error_comment_body(*, repository: str, commit_sha: str, error: Exception) -> str:
+    commit_url = f"https://github.com/{repository}/commit/{commit_sha}"
+    message = str(error).replace("```", "'''")[:2000]
+    return "\n".join(
+        [
+            COMMENT_MARKER,
+            f"## Visual review failed for [`{commit_sha[:8]}`]({commit_url})",
+            "",
+            "> [!CAUTION]",
+            "> Bazel CI produced an invalid or incomplete visual-review artifact set.",
+            "",
+            "```text",
+            message,
+            "```",
+        ]
+    )
+
+
+def upsert_pull_request_comment(*, repository: str, pull_request: int, body: str, token: str) -> None:
     with Github(auth=Auth.Token(token)) as github:
         issue = github.get_repo(repository).get_issue(pull_request)
         existing = next(
@@ -268,6 +288,35 @@ def upsert_pull_request_comment(
             issue.create_comment(body)
         else:
             existing.edit(body)
+
+
+def publish_check_run(
+    *,
+    repository: str,
+    commit_sha: str,
+    conclusion: Literal["success", "failure", "neutral"],
+    summary: str,
+    details_url: str | None,
+    token: str,
+) -> None:
+    with Github(auth=Auth.Token(token)) as github:
+        github.get_repo(repository).create_check_run(
+            name="PR visual review",
+            head_sha=commit_sha,
+            status="completed",
+            conclusion=conclusion,
+            details_url=details_url,
+            output={"title": "PR visual review", "summary": summary[:65000]},
+        )
+
+
+def current_workflow_url() -> str | None:
+    server = os.environ.get("GITHUB_SERVER_URL")
+    repository = os.environ.get("GITHUB_REPOSITORY")
+    run_id = os.environ.get("GITHUB_RUN_ID")
+    if not server or not repository or not run_id:
+        return None
+    return f"{server}/{repository}/actions/runs/{run_id}"
 
 
 def parser() -> argparse.ArgumentParser:
@@ -285,29 +334,65 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = parser().parse_args()
-    tests = download_visual_tests(find_test_invocations(args.linkage_dir), args.work_dir / "tests")
-    github_output = os.environ.get("GITHUB_OUTPUT")
-    if github_output:
-        with Path(github_output).open("a") as output:
-            output.write(f"found={'true' if tests else 'false'}\n")
-    if not tests:
-        print("No tests executed by Bazel CI exposed visual-review.json; skipping publication")
-        return
-
-    bundle = build_bundle(tests, args.work_dir / "site", commit_sha=args.sha, repository=args.repository)
-    upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"commits/{args.sha}")
     github_token = os.environ.get("GITHUB_TOKEN")
     if not github_token:
         raise ValueError("GITHUB_TOKEN is required to maintain the pull-request comment")
-    public_url = f"{args.public_base_url.rstrip('/')}/commits/{args.sha}/"
-    upsert_pull_request_comment(
-        repository=args.repository,
-        pull_request=args.pull_request,
-        commit_sha=args.sha,
-        url=public_url,
-        tests=tests,
-        token=github_token,
-    )
+    workflow_url = current_workflow_url()
+
+    try:
+        tests = download_visual_tests(find_test_invocations(args.linkage_dir), args.work_dir / "tests")
+        github_output = os.environ.get("GITHUB_OUTPUT")
+        if github_output:
+            with Path(github_output).open("a") as output:
+                output.write(f"found={'true' if tests else 'false'}\n")
+        if not tests:
+            summary = "No tests executed by Bazel CI exposed visual-review.json."
+            print(f"{summary} Skipping publication.")
+            publish_check_run(
+                repository=args.repository,
+                commit_sha=args.sha,
+                conclusion="neutral",
+                summary=summary,
+                details_url=workflow_url,
+                token=github_token,
+            )
+            return
+
+        bundle = build_bundle(tests, args.work_dir / "site", commit_sha=args.sha, repository=args.repository)
+        upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"commits/{args.sha}")
+        public_url = f"{args.public_base_url.rstrip('/')}/commits/{args.sha}/"
+        summary = f"{len(tests)} Bazel test target{'s' if len(tests) != 1 else ''} produced visual artifacts."
+        upsert_pull_request_comment(
+            repository=args.repository,
+            pull_request=args.pull_request,
+            body=success_comment_body(repository=args.repository, commit_sha=args.sha, url=public_url, tests=tests),
+            token=github_token,
+        )
+        publish_check_run(
+            repository=args.repository,
+            commit_sha=args.sha,
+            conclusion="success",
+            summary=summary,
+            details_url=public_url,
+            token=github_token,
+        )
+    except Exception as error:
+        body = error_comment_body(repository=args.repository, commit_sha=args.sha, error=error)
+        try:
+            upsert_pull_request_comment(
+                repository=args.repository, pull_request=args.pull_request, body=body, token=github_token
+            )
+            publish_check_run(
+                repository=args.repository,
+                commit_sha=args.sha,
+                conclusion="failure",
+                summary=str(error),
+                details_url=workflow_url,
+                token=github_token,
+            )
+        except Exception as reporting_error:
+            print(f"Failed to report visual-review error to GitHub: {reporting_error}", file=sys.stderr)
+        raise
 
 
 if __name__ == "__main__":

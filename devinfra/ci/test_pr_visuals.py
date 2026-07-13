@@ -11,7 +11,9 @@ from devinfra.ci.pr_visuals import (
     VisualManifest,
     build_bundle,
     download_visual_tests,
+    error_comment_body,
     find_test_invocations,
+    success_comment_body,
     target_slug,
     upload_bundle,
 )
@@ -154,6 +156,32 @@ def test_manifest_rejects_paths_and_duplicates() -> None:
                 "assets": [{"path": "same.png", "label": "one"}, {"path": "same.png", "label": "two"}],
             }
         )
+
+
+def test_comment_bodies_link_commit_targets_and_report_errors() -> None:
+    manifest = VisualManifest.model_validate(
+        {
+            "schema": "ducktape.visual-review.v1",
+            "title": "Example UI",
+            "assets": [{"path": "screen.png", "label": "Screen"}],
+        }
+    )
+    test = DownloadedVisualTest("//example:visuals", target_slug("//example:visuals"), manifest, Path("source"))
+    sha = "0123456789abcdef0123456789abcdef01234567"
+
+    success = success_comment_body(
+        repository="agentydragon/ducktape", commit_sha=sha, url="https://visuals/commits/sha/", tests=[test]
+    )
+    failure = error_comment_body(
+        repository="agentydragon/ducktape",
+        commit_sha=sha,
+        error=ValueError("//example:visuals references missing artifact screen.png"),
+    )
+
+    assert "commit/0123456789abcdef0123456789abcdef01234567" in success
+    assert "tests/example-visuals-" in success
+    assert "Visual review failed" in failure
+    assert "missing artifact screen.png" in failure
 
 
 def test_upload_publishes_all_indexes_last(tmp_path: Path) -> None:
