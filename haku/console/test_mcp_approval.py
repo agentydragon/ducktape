@@ -28,8 +28,16 @@ from starlette.websockets import WebSocketDisconnect
 
 from haku.console.conftest import csrf_token, write_config
 from haku.console.database_schema import McpOperatorOAuthAssociation, metadata
-from haku.console.mcp_approval import AliveServerMetadata, McpMetadataProvider, McpToolExecutor, _mcp_result_to_json
+from haku.console.mcp_approval import (
+    AliveServerMetadata,
+    McpMetadataProvider,
+    McpToolExecutor,
+    _execution_auth,
+    _mcp_result_to_json,
+)
 from haku.console.mcp_config import McpServerEntry
+from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
+from haku.console.operator_auth import operator_subject
 from haku.console.tool_calls import ToolCallEventType, ToolCallStatus
 from haku.console.tools.gmail import build_mcp as build_gmail_mcp
 from util.net import pick_free_port
@@ -379,6 +387,19 @@ class RecordingExecutor:
         return {"content": [{"type": "text", "text": f"{server.id}:{tool_name}"}], "isError": False}
 
 
+def _record_execution_subjects(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    subjects: list[str] = []
+
+    async def recording_execution_auth(
+        server: McpServerEntry, operator_subject: str, oauth_store: PostgresMcpOperatorOAuthStore
+    ) -> str | None:
+        subjects.append(operator_subject)
+        return await _execution_auth(server, operator_subject, oauth_store)
+
+    monkeypatch.setattr("haku.console.mcp_approval._execution_auth", recording_execution_auth)
+    return subjects
+
+
 class RecordingMetadataProvider:
     def __init__(self) -> None:
         self.auth_tokens: list[str | None] = []
@@ -530,10 +551,22 @@ def test_operator_oauth_callback_is_bound_to_flow_operator(
     assert b_status["status"] == "unconnected"
 
 
-def test_grocy_sf_reference_resolves_ids_to_names(make_operator_client, console_config: Path) -> None:
-    with make_operator_client(config_file=console_config) as client:
+def test_grocy_sf_reference_resolves_ids_to_names(
+    make_operator_client, console_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    resolved_subjects: list[str] = []
+
+    def recording_operator_subject(request: Request) -> str:
+        subject = operator_subject(request)
+        assert subject is not None
+        resolved_subjects.append(subject)
+        return subject
+
+    monkeypatch.setattr("haku.console.mcp_approval._operator_subject", recording_operator_subject)
+    with make_operator_client(config_file=console_config, operator_subject="configured-credential-sub") as client:
         resp = client.get("/api/grocy-sf/reference")
     assert resp.status_code == 200, resp.text
+    assert resolved_subjects == ["configured-credential-sub"]
     assert resp.json() == {
         "products": [
             {
@@ -721,10 +754,37 @@ def test_approval_executes_tool_and_records_terminal_result(operator_client: Tes
     assert fetched == decided
 
 
-def test_operator_oauth_association_drives_approved_tool_execution(
-    make_operator_client, operator_oauth_config_file: Path, recording_executor: RecordingExecutor
+def test_configured_credential_approval_passes_real_operator_subject(
+    make_operator_client, console_config: Path, recording_executor: RecordingExecutor, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    with make_operator_client(config_file=operator_oauth_config_file, tool_call_executor=recording_executor) as client:
+    execution_subjects = _record_execution_subjects(monkeypatch)
+    with make_operator_client(
+        config_file=console_config, operator_subject="configured-credential-sub", tool_call_executor=recording_executor
+    ) as client:
+        submitted = _submit(client)
+        approved = client.post(
+            f"/api/tool-calls/{submitted['tool_call_id']}/decision",
+            headers={"X-CSRF-Token": csrf_token(client)},
+            json={"decision": "approve"},
+        )
+
+    assert approved.status_code == 200, approved.text
+    assert execution_subjects == ["configured-credential-sub"]
+    assert recording_executor.auth_tokens == ["test-token"]
+
+
+def test_operator_oauth_association_drives_approved_tool_execution(
+    make_operator_client,
+    operator_oauth_config_file: Path,
+    recording_executor: RecordingExecutor,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    execution_subjects = _record_execution_subjects(monkeypatch)
+    with make_operator_client(
+        config_file=operator_oauth_config_file,
+        operator_subject="operator-oauth-sub",
+        tool_call_executor=recording_executor,
+    ) as client:
         before = client.get("/api/mcp/operator-auth").json()
         assert before["associations"] == [
             {"server_id": "grocy-sf", "status": "unconnected", "username": "operator@example.com"}
@@ -765,6 +825,7 @@ def test_operator_oauth_association_drives_approved_tool_execution(
 
     assert approved.status_code == 200, approved.text
     assert approved.json()["tool_call"]["status"] == "ok"
+    assert execution_subjects == ["operator-oauth-sub"]
     assert recording_executor.auth_tokens == ["operator-access-token"]
 
 

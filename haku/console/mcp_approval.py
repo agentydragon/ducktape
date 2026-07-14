@@ -432,10 +432,7 @@ async def operator_authenticated_client(
     way to bypass the approval queue for mutating calls.
     """
     server = _server_entry(settings, server_id)
-    # The operator subject is only consulted for operator_oauth servers; for others the credential
-    # token is used, so don't require an operator subject on the request there.
-    operator_subject = _operator_subject(request) if _operator_oauth_enabled(server) else ""
-    auth_token = await _execution_auth(server, operator_subject, oauth_store)
+    auth_token = await _execution_auth(server, _operator_subject(request), oauth_store)
     return Client(_transport(server, {}), auth=auth_token)
 
 
@@ -653,10 +650,7 @@ async def decide_approval(
         return ApprovalDecisionResponse(tool_call=record)
     pending = ledger.get(tool_call_id, actor=actor)
     server = _server_entry(settings, pending.server_id)
-    # Only operator_oauth execution runs as the approving operator; other servers use their configured
-    # credential, so an operator subject isn't required to approve a call there.
-    execution_subject = event_operator_subject if _operator_oauth_enabled(server) else ""
-    auth_token = await _execution_auth(server, execution_subject, oauth_store)
+    auth_token = await _execution_auth(server, event_operator_subject, oauth_store)
     running, running_event = ledger.mark_running(tool_call_id, operator_subject=event_operator_subject)
     await hub.broadcast(event_operator_subject, [running_event])
     finished = await _maybe_execute(running, server, ledger, hub, executor, auth_token, event_operator_subject)
