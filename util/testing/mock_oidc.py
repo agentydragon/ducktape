@@ -160,7 +160,12 @@ def build_mock_oidc_app(
     ) -> dict[str, Any]:
         now = int(time.time())
         base_claims = {"iss": canonical_issuer, "sub": token_subject, "iat": now, "exp": now + 3600, "scope": scope}
-        access_token = sign_jwt(private_key, {**base_claims, "aud": resource or canonical_issuer})
+        access_claims = (
+            {**base_claims, "aud": client_id, "azp": client_id}
+            if authentik_compatible
+            else {**base_claims, "aud": resource or canonical_issuer}
+        )
+        access_token = sign_jwt(private_key, access_claims)
         id_claims = {**base_claims, "aud": client_id, "azp": client_id, **extra_claims}
         if nonce is not None:
             id_claims["nonce"] = nonce
