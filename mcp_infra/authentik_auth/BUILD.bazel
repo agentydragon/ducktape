@@ -6,7 +6,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//authlib",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//mcp",
         "@pypi//prometheus_client",
@@ -34,7 +34,7 @@ py_test(
         ":auth",
         ":conftest",
         "@pypi//authlib",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//mcp",
         "@pypi//prometheus_client",

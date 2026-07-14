@@ -45,6 +45,6 @@ py_library(
         "//skills/eval_infra:docker_exec",
         "//third_party/containers:rlocations",
         "//util:oci",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )

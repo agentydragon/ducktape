@@ -13,7 +13,7 @@ py_library(
     name = "auto_attach",
     srcs = ["auto_attach.py"],
     visibility = ["//x/agent_server:__subpackages__"],
-    deps = ["@pypi//fastmcp"],
+    deps = ["@pypi//fastmcp_slim"],
 )
 
 py_library(
@@ -51,7 +51,7 @@ py_library(
         "//x/agent_server/server:runtime",
         "//x/agent_server/server:system_message",
         "@pypi//aiodocker",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
 )
@@ -84,7 +84,7 @@ py_library(
         "//openai_utils:model",
         "//x/agent_server/persist:sqlite",
         "@pypi//aiodocker",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )
 
@@ -116,7 +116,7 @@ py_test(
         "//x/agent_server:conftest",
         "//x/agent_server/mcp/approval_policy:engine",
         "//x/agent_server/runtime:container",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep

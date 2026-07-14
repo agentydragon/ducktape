@@ -11,7 +11,7 @@ py_library(
         "//mcp_infra/enhanced:flat_mixin",
         "//mcp_infra/enhanced:server",
         "//openai_utils:pydantic_strict_mode",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
 )
@@ -23,7 +23,7 @@ py_library(
     deps = [
         ":compositor",
         "//mcp_infra:snapshots",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )
 
@@ -37,7 +37,7 @@ py_library(
         "//mcp_infra:prefix",
         "//mcp_infra:snapshots",
         "//mcp_infra/enhanced:server",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )
 
@@ -47,7 +47,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//mcp_infra:prefix",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )
 
@@ -59,7 +59,7 @@ py_library(
         ":compositor",
         "//mcp_infra:resource_utils",
         "//mcp_infra/notifications:types",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mcp",
     ],
 )
@@ -94,7 +94,7 @@ py_library(
         "//mcp_infra/enhanced:server",
         "//mcp_infra/resources:types",
         "//openai_utils:pydantic_strict_mode",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//pydantic",
     ],
@@ -112,7 +112,7 @@ py_library(
         "//mcp_infra:prefix",
         "//mcp_infra:snapshots",
         "//mcp_infra:tool_schemas",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//pydantic",
     ],
@@ -149,7 +149,7 @@ py_test(
         "//mcp_infra:prefix",
         "//mcp_infra/testing:fixtures",
         "//mcp_infra/testing:stdio_app",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -174,7 +174,7 @@ py_test(
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
         "//mcp_infra/testing:fixtures",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
@@ -198,7 +198,7 @@ py_test(
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
         "//mcp_infra/testing:fixtures",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",

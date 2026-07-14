@@ -126,7 +126,7 @@ manifest:
     fastapi_users: fastapi_users
     fastapi_users_db_sqlalchemy: fastapi_users_db_sqlalchemy
     fastjsonschema: fastjsonschema
-    fastmcp: fastmcp
+    fastmcp: fastmcp_slim
     fastuuid: fastuuid
     filelock: filelock
     flask: flask
@@ -551,7 +551,7 @@ manifest:
     sympy: sympy
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: takethetime
+    takethetime: TakeTheTime
     tenacity: tenacity
     terminado: terminado
     testcontainers.arangodb: testcontainers
@@ -660,4 +660,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 4aa8ae383650b5688945d286d785888e1c7ddcf06eb9811d3bc3ed818d5e2517
+integrity: 04e6478be21d6d1cdc7eb22dda4c3fe9ab33723a2b86c4a427330af88013c4b8

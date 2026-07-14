@@ -195,7 +195,7 @@ py_library(
         "//agent_core:mcp_provider",
         "//openai_utils:client_factory",
         "//openai_utils:model",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )
 

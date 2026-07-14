@@ -19,7 +19,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":typed_stubs",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )
 
@@ -29,7 +29,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//mcp_infra/enhanced:flat_mixin",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
 )

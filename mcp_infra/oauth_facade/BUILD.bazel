@@ -20,7 +20,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":config",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )
 
@@ -31,7 +31,7 @@ py_library(
     deps = [
         ":config",
         ":proxy",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//prometheus_client",
     ],
 )
@@ -48,7 +48,7 @@ py_library(
         "//mcp_infra:static_bearer",
         "//mcp_infra:tool_filter",
         "//mcp_infra/authentik_auth:auth",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//prometheus_client",
         "@pypi//starlette",
         "@pypi//uvicorn",
@@ -75,7 +75,7 @@ py_test(
         ":proxy",
         "//airlock:conftest",
         "//mcp_infra:tool_filter",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -102,7 +102,7 @@ py_test(
         ":upstream_probe",
         "//airlock:conftest",
         "//mcp_infra/authentik_auth:auth",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
     ],
 )

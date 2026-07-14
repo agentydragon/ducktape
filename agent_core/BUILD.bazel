@@ -147,7 +147,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":tool_provider",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mcp",
     ],
 )
@@ -231,7 +231,7 @@ py_test(
         "//openai_utils:model",
         "//openai_utils:pydantic_strict_mode",
         "//openai_utils/testing:openai_mock",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pyhamcrest",

@@ -30,7 +30,7 @@ py_library(
         "//gmail_api:messages",
         "//gmail_api:service",
         "@pypi//fastapi",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//google_api_python_client",
         "@pypi//pydantic",
     ],
@@ -44,7 +44,7 @@ py_library(
         ":google_calendar_client",
         "//gmail_api:service",
         "@pypi//fastapi",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//google_api_python_client",
         "@pypi//pydantic",
     ],
@@ -99,7 +99,7 @@ py_library(
     visibility = ["//haku/console:__subpackages__"],
     deps = [
         "//haku/console:config",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//pydantic",
     ],
@@ -116,7 +116,7 @@ py_test(
         "//gmail_api:labels",
         "//gmail_api:messages",
         "//haku/console:conftest",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
@@ -158,7 +158,7 @@ py_test(
         ":google_calendar_client",
         "//:conftest",
         "//haku/console:conftest",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
         # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
         # needs the plugin importable at runtime for its entry-point autoload; Gazelle
@@ -184,7 +184,7 @@ py_test(
     deps = [
         ":routine",
         "//:conftest",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
         # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
         # needs the plugin importable at runtime for its entry-point autoload; Gazelle

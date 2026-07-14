@@ -33,7 +33,7 @@ py_library(
         "//mcp_infra/enhanced:server",
         "//openai_utils:pydantic_strict_mode",
         "//x/inop/prompting:prompt_engineer",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
 )

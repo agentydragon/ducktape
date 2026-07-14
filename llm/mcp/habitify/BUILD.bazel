@@ -85,7 +85,7 @@ py_library(
     deps = [
         ":config",
         ":habitify_client",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )
 
@@ -110,7 +110,7 @@ py_library(
         ":habitify_client",
         ":tools",
         ":types",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )
 

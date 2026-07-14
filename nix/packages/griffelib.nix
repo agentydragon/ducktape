@@ -1,4 +1,4 @@
-# Required by fastmcp 3.2.x; not in nixpkgs 25.11.
+# Required by fastmcp 3.x; not in nixpkgs 25.11.
 {
   lib,
   python3Packages,

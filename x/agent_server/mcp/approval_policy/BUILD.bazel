@@ -25,7 +25,7 @@ py_library(
         "//x/agent_server/policy_eval:container",
         "//x/agent_server/policy_eval:runner",
         "@pypi//aiodocker",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mako",
         "@pypi//mcp",
         "@pypi//pydantic",
@@ -48,7 +48,7 @@ py_test(
         "//x/agent_server:presets",
         "//x/agent_server/mcp:conftest",
         "//x/agent_server/testing:approval_policy_testdata",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -72,7 +72,7 @@ py_test(
         "//x/agent_server:conftest",
         "//x/agent_server/mcp:conftest",
         "//x/agent_server/policies:policy_types",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -101,7 +101,7 @@ py_test(
         "//openai_utils:model",
         "//x/agent_server:conftest",
         "//x/agent_server/mcp:conftest",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -128,7 +128,7 @@ py_test(
         "//x/agent_server:conftest",
         "//x/agent_server/policies:policy_types",
         "//x/agent_server/testing:approval_policy_testdata",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",

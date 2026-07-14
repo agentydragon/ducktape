@@ -49,7 +49,7 @@ py_test(
         "//openai_utils:pydantic_strict_mode",
         "//openai_utils/testing:openai_mock",
         "//x/agent_server:conftest",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep

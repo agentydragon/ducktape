@@ -15,7 +15,7 @@ py_library(
         "//skills/info_gathering/evals/twenty_questions/x/shared:cli",
         "//skills/info_gathering/evals/twenty_questions/x/shared:output",
         "//skills/info_gathering/evals/twenty_questions/x/shared:variants",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//langchain_anthropic",
         "@pypi//langchain_core",
         "@pypi//langchain_mcp_adapters",

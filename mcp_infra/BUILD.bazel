@@ -79,7 +79,7 @@ py_library(
     name = "config_loader",
     srcs = ["config_loader.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//fastmcp"],
+    deps = ["@pypi//fastmcp_slim"],
 )
 
 py_library(
@@ -95,7 +95,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//agent_core:pydantic_utils",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
 )
@@ -105,7 +105,7 @@ py_library(
     srcs = ["mcp_types.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
 )
@@ -124,7 +124,7 @@ py_library(
         ":naming",
         ":prefix",
         ":resource_utils",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
 )
@@ -141,7 +141,7 @@ py_library(
     srcs = ["request_scoped_openapi.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//httpx",
     ],
 )
@@ -152,7 +152,7 @@ py_test(
     deps = [
         ":request_scoped_openapi",
         "//:conftest",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -183,7 +183,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//mcp_utils",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
 )
@@ -204,7 +204,7 @@ py_library(
     srcs = ["tool_filter.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
 )
@@ -215,7 +215,7 @@ py_test(
     deps = [
         ":conftest",
         ":tool_filter",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -228,7 +228,7 @@ py_library(
     deps = [
         ":flat_tool",
         ":prefix",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
 )

@@ -52,7 +52,7 @@ py_library(
     deps = [
         ":config",
         "@pypi//fastapi",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -67,7 +67,7 @@ py_library(
         "//haku/console/tools:google_calendar",
         "//haku/console/tools:google_calendar_client",
         "//haku/console/tools:routine",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )
 
@@ -142,7 +142,7 @@ py_library(
     srcs = ["auto_approval.py"],
     deps = [
         "//haku/console/tools:gmail_client",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//jsonschema",
     ],
 )
@@ -164,7 +164,7 @@ py_library(
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
@@ -202,7 +202,7 @@ py_library(
         "//mcp_infra/authentik_auth:auth",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//pydantic",
     ],
@@ -311,7 +311,7 @@ py_test(
         "//util/testing:asgi",
         "//util/testing:mock_oidc",
         "@pypi//cryptography",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pyjwt",
@@ -346,7 +346,7 @@ py_library(
         "//mcp_infra:persistence",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         # SessionMiddleware (starlette) signs the operator session cookie with itsdangerous.
         "@pypi//itsdangerous",
         "@pypi//starlette",
@@ -390,7 +390,7 @@ py_library(
         "//grocy_mcp:client",
         "//grocy_mcp:mcp_types",
         "//mcp_infra:request_scoped_openapi",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )
 
@@ -503,7 +503,7 @@ py_test(
         "//util:net",
         "//util/testing:asgi",
         "@ducktape_haku//haku/console:tool_calls",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -541,7 +541,7 @@ py_test(
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//alembic",
         "@pypi//fastapi",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

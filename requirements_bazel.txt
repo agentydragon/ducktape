@@ -468,7 +468,7 @@ attrs==25.4.0 \
 authlib==1.7.2 \
     --hash=sha256:2cea25fefcd4e7173bdf1372c0afc265c8034b23a8cd5dcb6a9164b826c64231 \
     --hash=sha256:3e1faedc9d87e7d56a164eca3ccb6ace0d61b94abe83e92242f8dc8bba9b4a9f
-    # via fastmcp
+    # via fastmcp-slim
 aw-client==0.5.12 \
     --hash=sha256:12bd6cbc02a06e970267f7f192a31a0036b4a9f9ae0852bd0a8bc718b9b8ea5a \
     --hash=sha256:824b5e83abe755d5f089bbbf87eaabdc8895220c1642904a5aa6b66fba09b6ba
@@ -1306,7 +1306,7 @@ cycler==0.12.1 \
 cyclopts==4.8.0 \
     --hash=sha256:92cc292d18d8be372e58d8bce1aa966d30f819a5fb3fee02bd2ad4a6bb403f29 \
     --hash=sha256:ef353da05fec36587d4ebce7a6e4b27515d775d184a23bab4b01426f93ddc8d4
-    # via fastmcp
+    # via fastmcp-slim
 datalayer-pycrdt==0.12.17 \
     --hash=sha256:02deff7f9def6120fc7f1f4686bcc4a00e836f18f7614cd85dd4e4e18e808b13 \
     --hash=sha256:0850d6bd070bbcf13ebb252492fc1260a6fccd3d071f63eb27d68467ad585d19 \
@@ -1520,7 +1520,7 @@ et-xmlfile==2.0.0 \
 exceptiongroup==1.3.1 \
     --hash=sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219 \
     --hash=sha256:a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598
-    # via fastmcp
+    # via fastmcp-slim
 execnet==2.1.2 \
     --hash=sha256:63d83bfdd9a23e35b9c6a3261412324f964c2ec8dcd8d3c6916ee9373e0befcd \
     --hash=sha256:67fba928dd5a544b783f6056f449e5e3931a5c378b128bc18501f7ea79e296ec
@@ -1599,12 +1599,16 @@ fastjsonschema==2.21.2 \
     --hash=sha256:1c797122d0a86c5cace2e54bf4e819c36223b552017172f32c5c024a6b77e463 \
     --hash=sha256:b1eb43748041c880796cd077f1a07c3d94e93ae84bba5ed36800a33554ae05de
     # via nbformat
-fastmcp==3.2.4 \
-    --hash=sha256:083ecb75b44a4169e7fc0f632f94b781bdb0ff877c6b35b9877cbb566fd4d4d1 \
-    --hash=sha256:e6c9c429171041455e47ab94bb3f83c4657622a0ec28922f6940053959bd58a9
+fastmcp==3.4.4 \
+    --hash=sha256:378202e26ec15b23819d9a1c0d1b0ebda096bc712720532010a0b82a45c2b1df \
+    --hash=sha256:f86f208713212260068cf55c32936839eee856fefc7808e18a032f31eb0f718e
     # via
     #   ducktape (pyproject.toml)
     #   pydantic-ai-slim
+fastmcp-slim[client, server]==3.4.4 \
+    --hash=sha256:9d3a6327b9ee835188eb7323fc3b5d4cd061631b48da8ece56794bb538972505 \
+    --hash=sha256:dcaa3e0be2127d7eacdce592c2ef0039204923dc0ec396454615cb4a3275b078
+    # via fastmcp
 fastuuid==0.14.0 \
     --hash=sha256:05a8dde1f395e0c9b4be515b7a521403d1e8349443e7641761af07c7ad1624b1 \
     --hash=sha256:0737606764b29785566f968bd8005eace73d3666bd0862f33a760796e26d1ede \
@@ -2019,7 +2023,7 @@ griffe==1.15.0 \
 griffelib==2.0.0 \
     --hash=sha256:01284878c966508b6d6f1dbff9b6fa607bc062d8261c5c7253cb285b06422a7f
     # via
-    #   fastmcp
+    #   fastmcp-slim
     #   pydantic-ai-slim
 grpcio==1.78.0 \
     --hash=sha256:082653eecbdf290e6e3e2c276ab2c54b9e7c299e07f4221872380312d8cf395e \
@@ -2211,7 +2215,7 @@ httpx==0.28.1 \
     #   ducktape (pyproject.toml)
     #   anthropic
     #   chromadb
-    #   fastmcp
+    #   fastmcp-slim
     #   genai-prices
     #   huggingface-hub
     #   inspect-ai
@@ -2594,7 +2598,9 @@ jmespath==1.1.0 \
 joserfc==1.7.3 \
     --hash=sha256:116955c2587139dba20621fd0bd7fc9255fa960c9fe7f43c43ebef2e801dcfcf \
     --hash=sha256:7c39f3f2c943dbc03122747fa8ebbd8e156e54904cf25651b452f4d2634a6075
-    # via authlib
+    # via
+    #   authlib
+    #   fastmcp-slim
 json-repair==0.25.2 \
     --hash=sha256:161a56d7e6bbfd4cad3a614087e3e0dbd0e10d402dd20dc7db418432428cb32b \
     --hash=sha256:51d67295c3184b6c41a3572689661c6128cef6cfc9fb04db63130709adfc5bf0
@@ -2630,7 +2636,7 @@ jsonref==1.1.0 \
     --hash=sha256:590dc7773df6c21cbf948b5dac07a72a251db28b0238ceecce0a2abfa8ec30a9
     # via
     #   crewai
-    #   fastmcp
+    #   fastmcp-slim
     #   inspect-ai
 jsonschema[format-nongpl]==4.26.0 \
     --hash=sha256:0c26707e2efad8aa1bfc5b7ce170f3fccc2e4918ff85989ba9ffa9facb2be326 \
@@ -2647,7 +2653,7 @@ jsonschema[format-nongpl]==4.26.0 \
 jsonschema-path==0.4.5 \
     --hash=sha256:7d77a2c3f3ec569a40efe5c5f942c44c1af2a6f96fe0866794c9ef5b8f87fd65 \
     --hash=sha256:c6cd7d577ae290c7defd4f4029e86fdb248ca1bd41a07557795b3c95e5144918
-    # via fastmcp
+    # via fastmcp-slim
 jsonschema-specifications==2025.9.1 \
     --hash=sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe \
     --hash=sha256:b540987f239e745613c7a9176f3edb72b832a4ac465cf02712288397832b5e8d
@@ -3346,7 +3352,7 @@ mcp[cli]==1.26.0 \
     #   claude-agent-sdk
     #   claude-code-sdk
     #   crewai
-    #   fastmcp
+    #   fastmcp-slim
     #   jupyter-mcp-server
     #   langchain-mcp-adapters
     #   openai-agents
@@ -4004,7 +4010,7 @@ openai-agents==0.12.5 \
 openapi-pydantic==0.5.1 \
     --hash=sha256:a3a09ef4586f5bd760a8df7f43028b60cafb6d9f61de2acba9574766255ab146 \
     --hash=sha256:ff6835af6bde7a459fb93eb93bb92b8749b754fc6e51b2f1590a19dc3005ee0d
-    # via fastmcp
+    # via fastmcp-slim
 openpyxl==3.1.5 \
     --hash=sha256:5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2 \
     --hash=sha256:cf0e3cf56142039133628b5acffe8ef0c12bc902d2aadd3e0fe5878dc08d1050
@@ -4017,7 +4023,7 @@ opentelemetry-api==1.39.1 \
     #   agent-framework-core
     #   chromadb
     #   crewai
-    #   fastmcp
+    #   fastmcp-slim
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-sdk
@@ -4204,7 +4210,7 @@ packaging==25.0 \
     #   arch
     #   build
     #   deprecation
-    #   fastmcp
+    #   fastmcp-slim
     #   huggingface-hub
     #   ipykernel
     #   jupyter-events
@@ -4438,7 +4444,7 @@ platformdirs==4.9.4 \
     --hash=sha256:68a9a4619a666ea6439f2ff250c12a853cd1cbd5158d258bd824a7df6be2f868
     # via
     #   ducktape (pyproject.toml)
-    #   fastmcp
+    #   fastmcp-slim
     #   inspect-ai
     #   jupyter-core
     #   pint
@@ -4845,7 +4851,7 @@ py-key-value-aio[filetree, keyring, memory, valkey]==0.4.4 \
     --hash=sha256:e3012e6243ed7cc09bb05457bd4d03b1ba5c2b1ca8700096b3927db79ffbbe55
     # via
     #   ducktape (pyproject.toml)
-    #   fastmcp
+    #   fastmcp-slim
 pyarrow==23.0.1 \
     --hash=sha256:00be9576d970c31defb5c32eb72ef585bf600ef6d0a82d5eccaae96639cf9d07 \
     --hash=sha256:07deae7783782ac7250989a7b2ecde9b3c343a643f82e8a4df03d93b633006f0 \
@@ -5284,7 +5290,7 @@ pydantic[email]==2.12.5 \
     #   crewai
     #   fastapi
     #   fastapi-csrf-protect
-    #   fastmcp
+    #   fastmcp-slim
     #   genai-prices
     #   homeassistant-api
     #   inspect-ai
@@ -5444,6 +5450,7 @@ pydantic-settings==2.13.1 \
     #   ducktape (pyproject.toml)
     #   crewai
     #   fastapi-csrf-protect
+    #   fastmcp-slim
     #   mcp
 pyee==13.0.1 \
     --hash=sha256:0b931f7c14535667ed4c7e0d531716368715e860b988770fc7eb8578d1f67fc8 \
@@ -5654,7 +5661,7 @@ pyperclip==1.11.0 \
     --hash=sha256:244035963e4428530d9e3a6101a1ef97209c6825edab1567beac148ccc1db1b6 \
     --hash=sha256:299403e9ff44581cb9ba2ffeed69c7aa96a008622ad0c46cb575ca75b5b84273
     # via
-    #   fastmcp
+    #   fastmcp-slim
     #   mitmproxy
 pypika==0.51.1 \
     --hash=sha256:77985b4d7ce71b9905255bf12468cf598349e98837c037541cfc240e528aec46 \
@@ -5751,7 +5758,7 @@ python-dotenv==1.2.2 \
     #   ducktape (pyproject.toml)
     #   agent-framework-core
     #   crewai
-    #   fastmcp
+    #   fastmcp-slim
     #   inspect-ai
     #   litellm
     #   mcp
@@ -5769,6 +5776,7 @@ python-multipart==0.0.32 \
     # via
     #   ducktape (pyproject.toml)
     #   fastapi-users
+    #   fastmcp-slim
     #   mcp
 python-slugify==8.0.4 \
     --hash=sha256:276540b79961052b66b7d116620b36518847f52d5fd9e3a70164fc8c50faa6b8 \
@@ -5867,7 +5875,7 @@ pyyaml==6.0.3 \
     # via
     #   ducktape (pyproject.toml)
     #   chromadb
-    #   fastmcp
+    #   fastmcp-slim
     #   huggingface-hub
     #   inspect-ai
     #   jsonschema-path
@@ -6197,7 +6205,7 @@ rich==14.3.3 \
     #   ducktape (pyproject.toml)
     #   chromadb
     #   cyclopts
-    #   fastmcp
+    #   fastmcp-slim
     #   inspect-ai
     #   instructor
     #   rich-rst
@@ -6686,6 +6694,7 @@ starlette==1.3.1 \
     # via
     #   fastapi
     #   fastapi-csrf-protect
+    #   fastmcp-slim
     #   mcp
     #   sse-starlette
 statsmodels==0.14.6 \
@@ -7100,6 +7109,7 @@ typing-extensions==4.15.0 \
     #   chromadb
     #   ezdxf
     #   fastapi
+    #   fastmcp-slim
     #   flexcache
     #   flexparser
     #   grpcio
@@ -7154,7 +7164,7 @@ uc-micro-py==2.0.0 \
 uncalled-for==0.2.0 \
     --hash=sha256:2c0bd338faff5f930918f79e7eb9ff48290df2cb05fcc0b40a7f334e55d4d85f \
     --hash=sha256:b4f8fdbcec328c5a113807d653e041c5094473dd4afa7c34599ace69ccb7e69f
-    # via fastmcp
+    # via fastmcp-slim
 unidiff==0.7.5 \
     --hash=sha256:2e5f0162052248946b9f0970a40e9e124236bf86c82b70821143a6fc1dea2574 \
     --hash=sha256:c93bf2265cc1ba2a520e415ab05da587370bc2a3ae9e0414329f54f0c2fc09e8
@@ -7254,7 +7264,7 @@ uvicorn[standard]==0.41.0 \
     # via
     #   ducktape (pyproject.toml)
     #   chromadb
-    #   fastmcp
+    #   fastmcp-slim
     #   jupyter-mcp-server
     #   mcp
 uvloop==0.22.1 \
@@ -7498,7 +7508,7 @@ watchfiles==1.1.1 \
     --hash=sha256:f8979280bdafff686ba5e4d8f97840f929a87ed9cdf133cbbd42f7766774d2aa \
     --hash=sha256:f9a2ae5c91cecc9edd47e041a930490c31c3afb1f5e6d71de3dc671bfaca02bf
     # via
-    #   fastmcp
+    #   fastmcp-slim
     #   uvicorn
 wcwidth==0.6.0 \
     --hash=sha256:1a3a1e510b553315f8e146c54764f4fb6264ffad731b3d78088cdb1478ffbdad \
@@ -7596,7 +7606,7 @@ websockets==15.0.1 \
     --hash=sha256:fcd5cf9e305d7b8338754470cf69cf81f420459dbae8a3b40cee57417f4614a7
     # via
     #   ducktape (pyproject.toml)
-    #   fastmcp
+    #   fastmcp-slim
     #   homeassistant-api
     #   jupyter-nbmodel-client
     #   uvicorn

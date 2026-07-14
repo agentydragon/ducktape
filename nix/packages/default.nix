@@ -7,49 +7,93 @@
 }:
 let
   # The ducktape umbrella wheel is built (on Bazel) against
-  # `fastmcp>=3.2.4,<3.3` + `mcp==1.26.0` (see requirements_bazel.txt). nixpkgs
-  # 25.11 ships fastmcp 2.12 + mcp 1.15, and even nixos-unstable only has
-  # fastmcp 2.14. To let the MCP-using entry points (`git-commit-ai`,
-  # `gmail-archiver`) import on NixOS we vendor mcp 1.26 (rebuilt against
-  # the stable python interpreter) and the four packages that fastmcp 3
-  # needs but nixpkgs doesn't carry: fastmcp itself, griffelib, uncalled-for,
-  # and py-key-value-aio. Applied via a python interpreter override so the
-  # whole closure shares one consistent site-packages.
+  # `fastmcp==3.4.4` + `mcp==1.26.0` (see requirements_bazel.txt). nixpkgs
+  # 25.11 ships fastmcp 2.12 + mcp 1.15, and even nixos-unstable ships an older
+  # FastMCP. To let the MCP-using entry points (`git-commit-ai`,
+  # `gmail-archiver`) import on NixOS, package FastMCP's root and slim
+  # distributions plus the dependencies that nixpkgs does not carry. Rebuild
+  # newer upstream package sources against the stable Python interpreter so
+  # the whole closure shares one consistent site-packages.
   python3 = pkgs.python3.override {
     self = python3;
-    packageOverrides = pyfinal: pyprev: {
-      mcp = pyprev.mcp.overridePythonAttrs (old: {
-        version = "1.26.0";
-        inherit (pkgsUnstable.python3Packages.mcp) src;
-        # Dependency builds should not run upstream's ~1,000-test suite. It is
-        # slow and includes timing-sensitive SSE tests; Ducktape packages have
-        # explicit importsCheck gates below for the runtime contract we use.
-        doCheck = false;
-        dontUsePytestCheck = true;
-        # 1.26.0 added pyjwt + typing-inspection to its runtime deps
-        # (nixpkgs 25.11's derivation still encodes the 1.15.0 set).
-        dependencies =
-          old.dependencies
-          ++ (with pyprev; [
-            pyjwt
-            cryptography
-            typing-inspection
-          ]);
-      });
-      uncalled-for = pkgs.callPackage ./uncalled-for.nix {
-        python3Packages = pyfinal;
+    packageOverrides =
+      pyfinal: pyprev:
+      let
+        fastmcpPackages = pkgs.callPackage ./fastmcp.nix {
+          python3Packages = pyfinal;
+          inherit (pyfinal) griffelib py-key-value-aio uncalled-for;
+        };
+      in
+      {
+        mcp = pyprev.mcp.overridePythonAttrs (old: {
+          version = "1.26.0";
+          inherit (pkgsUnstable.python3Packages.mcp) src;
+          # Dependency builds should not run upstream's ~1,000-test suite. It is
+          # slow and includes timing-sensitive SSE tests; Ducktape packages have
+          # explicit importsCheck gates below for the runtime contract we use.
+          doCheck = false;
+          dontUsePytestCheck = true;
+          # 1.26.0 added pyjwt + typing-inspection to its runtime deps
+          # (nixpkgs 25.11's derivation still encodes the 1.15.0 set).
+          dependencies =
+            old.dependencies
+            ++ (with pyprev; [
+              pyjwt
+              cryptography
+              typing-inspection
+            ]);
+        });
+        # FastMCP 3.4.4 requires newer security floors than nixpkgs 25.11:
+        # Starlette >=1.0.1 and python-multipart >=0.0.26. Reuse only the
+        # unstable source/version while retaining the stable Python closure.
+        starlette = pyprev.starlette.overridePythonAttrs {
+          inherit (pkgsUnstable.python3Packages.starlette) src version;
+        };
+        annotated-doc = pyfinal.buildPythonPackage {
+          pname = "annotated-doc";
+          inherit (pkgsUnstable.python3Packages.annotated-doc) src version;
+          pyproject = true;
+          build-system = [ pyfinal.pdm-backend ];
+          nativeCheckInputs = with pyfinal; [
+            pytestCheckHook
+            typing-extensions
+          ];
+          pythonImportsCheck = [ "annotated_doc" ];
+        };
+        # The stable FastAPI release still calls Starlette APIs removed before
+        # 1.1. Rebuild the compatible release for this same Python interpreter;
+        # it is also a check dependency of sse-starlette in MCP's closure.
+        fastapi = pyprev.fastapi.overridePythonAttrs (old: {
+          inherit (pkgsUnstable.python3Packages.fastapi) src version;
+          dependencies = [ pyfinal.annotated-doc ] ++ old.dependencies;
+          nativeCheckInputs =
+            old.nativeCheckInputs
+            ++ (with pyfinal; [
+              a2wsgi
+              pwdlib
+              pytest-timeout
+              pytest-xdist
+            ]);
+          disabledTestPaths = old.disabledTestPaths ++ [
+            "tests/test_tutorial/test_static_files"
+            "tests/test_tutorial/test_custom_docs_ui"
+            "tests/test_tutorial/test_graphql/test_tutorial001.py"
+          ];
+        });
+        python-multipart = pyprev.python-multipart.overridePythonAttrs {
+          inherit (pkgsUnstable.python3Packages.python-multipart) src version patches;
+        };
+        uncalled-for = pkgs.callPackage ./uncalled-for.nix {
+          python3Packages = pyfinal;
+        };
+        py-key-value-aio = pkgs.callPackage ./py-key-value-aio.nix {
+          python3Packages = pyfinal;
+        };
+        griffelib = pkgs.callPackage ./griffelib.nix {
+          python3Packages = pyfinal;
+        };
+        inherit (fastmcpPackages) fastmcp fastmcp-slim;
       };
-      py-key-value-aio = pkgs.callPackage ./py-key-value-aio.nix {
-        python3Packages = pyfinal;
-      };
-      griffelib = pkgs.callPackage ./griffelib.nix {
-        python3Packages = pyfinal;
-      };
-      fastmcp = pkgs.callPackage ./fastmcp.nix {
-        python3Packages = pyfinal;
-        inherit (pyfinal) griffelib py-key-value-aio uncalled-for;
-      };
-    };
   };
   python3Packages = python3.pkgs;
   # CI wheels land in the nix store as "source" (no .whl extension).
@@ -225,7 +269,7 @@ rec {
       structlog
       tenacity
       typer
-      fastmcp
+      python3Packages.fastmcp
       mcp
       pyhamcrest
       click
@@ -339,11 +383,10 @@ rec {
   # Claude Desktop (GUI app): Anthropic's Electron desktop client, from the
   # official apt repo .deb. Distinct from Claude Code (the CLI).
   claude-desktop = pkgs.callPackage ./claude-desktop.nix { };
-  # fastmcp's client CLI (`fastmcp call|list <url> --auth <bearer>`) exposed as a
-  # standalone app for agent closures (flake.nix `.#agent-haku`). The library
-  # is consumed by the `ducktape` wheel above via `python3Packages.fastmcp`; this
-  # re-exposes its console script (fastmcp 3.x, pinned in fastmcp.nix) as an app.
-  fastmcp = python3Packages.toPythonApplication python3Packages.fastmcp;
+  # fastmcp-slim owns the client CLI (`fastmcp call|list <url> --auth <bearer>`);
+  # expose it as a standalone app for agent closures (flake.nix `.#agent-haku`).
+  # The root metapackage remains the dependency consumed by the ducktape wheel.
+  fastmcp = python3Packages.toPythonApplication python3Packages.fastmcp-slim;
   bebas-neue-font = pkgs.callPackage ./bebas-neue-font.nix { };
   bb = pkgs.callPackage ./bb.nix { inherit artifacts; };
   telegram-desktop = pkgs.callPackage ./telegram-desktop.nix { };

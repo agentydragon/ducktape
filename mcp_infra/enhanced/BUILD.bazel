@@ -8,7 +8,7 @@ py_library(
         "//agent_core:pydantic_utils",
         "//mcp_infra:flat_tool",
         "//openai_utils:json_schema",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//pydantic",
     ],
@@ -20,7 +20,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//mcp_infra:urls",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//pydantic",
     ],
@@ -32,7 +32,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//openai_utils:pydantic_strict_mode",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )
 
@@ -45,7 +45,7 @@ py_library(
         ":oob_notify_mixin",
         ":openai_strict_mixin",
         "@pypi//anyio",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mcp",
     ],
 )
@@ -57,7 +57,7 @@ py_library(
     deps = [
         ":flat_mixin",
         ":openai_strict_mixin",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )
 
@@ -69,7 +69,7 @@ py_test(
         "//mcp_infra:conftest",
         "//mcp_infra/stubs:typed_stubs",
         "//openai_utils:pydantic_strict_mode",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//more_itertools",
         "@pypi//pydantic",
@@ -85,7 +85,7 @@ py_test(
         ":server",
         "//mcp_infra:conftest",
         "//openai_utils:pydantic_strict_mode",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -99,7 +99,7 @@ py_test(
         ":server",
         "//mcp_infra:conftest",
         "@pypi//anyio",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//pytest_bazel",
     ],
@@ -112,7 +112,7 @@ py_test(
         ":server",
         "//mcp_infra:conftest",
         "//mcp_infra:urls",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
     ],
 )

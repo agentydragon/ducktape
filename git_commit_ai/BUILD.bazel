@@ -130,7 +130,7 @@ py_library(
         "//openai_utils:client_factory",
         "//openai_utils:model",
         "//openai_utils:pydantic_strict_mode",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mako",
         "@pypi//pydantic",
         "@pypi//pygit2",

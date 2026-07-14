@@ -15,7 +15,7 @@ py_library(
         "//skills/info_gathering/evals/twenty_questions/x/shared:output",
         "//skills/info_gathering/evals/twenty_questions/x/shared:variants",
         "@pypi//crewai",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//types_protobuf",  # mypy: transitive via crewai → googleapis-common-protos
     ],

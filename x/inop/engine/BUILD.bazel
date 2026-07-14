@@ -35,7 +35,7 @@ py_library(
         "//x/inop/prompting:summarizer",
         "//x/inop/prompting:truncation_utils",
         "@pypi//aiodocker",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )
 

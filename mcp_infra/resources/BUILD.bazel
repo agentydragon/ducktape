@@ -18,7 +18,7 @@ py_test(
         "//mcp_infra:conftest",
         "//mcp_infra:prefix",
         "//mcp_infra/compositor:resources_server",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -47,7 +47,7 @@ py_test(
     srcs = ["test_notifications.py"],
     deps = [
         "//mcp_infra:conftest",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

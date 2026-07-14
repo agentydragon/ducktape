@@ -13,7 +13,7 @@ py_library(
         "//openai_utils:pydantic_strict_mode",
         "//x/agent_server/persist:sqlite",
         "@pypi//aiosqlite",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
 )
@@ -28,7 +28,7 @@ py_test(
         "//x/agent_server/mcp:conftest",
         "//x/agent_server/mcp/chat",
         "//x/agent_server/testing:chat_stubs",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep

@@ -72,7 +72,7 @@ py_test(
     deps = [
         ":conftest",
         ":submit_server",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -97,7 +97,7 @@ py_library(
         "//mcp_infra/display:rich_display",
         "//openai_utils:model",
         "@pypi//aiodocker",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mako",
     ],
 )
@@ -116,7 +116,7 @@ py_library(
         "//util:docker",
         "//util:net",
         "@pypi//aiodocker",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )
 
@@ -129,7 +129,7 @@ py_library(
         "//mcp_infra/enhanced:server",
         "//openai_utils:pydantic_strict_mode",
         "//x/editor_agent/runtime:constants",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )
 

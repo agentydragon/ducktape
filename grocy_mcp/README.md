@@ -107,7 +107,7 @@ the entire surface without duplicating those schemas.
 Per-call auth is the only custom execution layer. Hand-written tools declare a
 hidden `Depends(...)` client parameter. Generated `OpenAPITool` components pass
 through <../mcp_infra/request_scoped_openapi.py>, a small compatibility transform
-that supplies the same dependency because FastMCP 3.2.4 has no public
+that supplies the same dependency because FastMCP 3.4.4 has no public
 per-invocation OpenAPI client factory. Dependency resolution completes before
 the tool body, and the exchanged credential is passed explicitly in the
 returned client; there is no cross-request token cache or ambient bearer lookup.

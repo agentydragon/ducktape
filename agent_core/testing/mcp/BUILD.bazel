@@ -24,7 +24,7 @@ py_library(
         "//agent_core:tool_provider",
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest",
     ],
 )
@@ -41,7 +41,7 @@ py_library(
         "//mcp_infra/exec:docker",
         "//mcp_infra/exec:models",
         "//openai_utils:model",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pytest",
     ],

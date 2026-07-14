@@ -59,6 +59,6 @@ py_library(
         "//x/inop/engine:models",
         "//x/inop/io:file_utils",
         "@pypi//aiodocker",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )

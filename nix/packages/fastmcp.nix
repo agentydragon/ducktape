@@ -1,5 +1,6 @@
-# fastmcp 3.x — required by the ducktape umbrella wheel. Nixpkgs 25.11 only
-# ships 2.x; this build matches the Bazel-side pin in requirements_bazel.txt.
+# FastMCP 3.x is split into a dependency-bearing implementation distribution
+# (`fastmcp-slim`) and a root metapackage (`fastmcp`). Build both from the same
+# upstream source so their versions cannot drift.
 {
   lib,
   python3Packages,
@@ -8,73 +9,113 @@
   uncalled-for,
   fetchFromGitHub,
 }:
-python3Packages.buildPythonPackage rec {
-  pname = "fastmcp";
-  version = "3.2.4";
-  pyproject = true;
+let
+  version = "3.4.4";
 
   src = fetchFromGitHub {
     owner = "PrefectHQ";
     repo = "fastmcp";
     tag = "v${version}";
-    hash = "sha256-rJpxPvqAaa6/vXhG1+R9dI32cY/54e6I+F/zyBVoqBM=";
+    hash = "sha256-aqFht99jbBIg6tFBlHeWebC0xDtind5w4+RIAdXJ50U=";
   };
 
-  # `uv-dynamic-versioning` reads the version from `git describe`; the source
-  # tarball has no .git, so substitute a static version into the build
-  # metadata to keep hatchling happy.
-  postPatch = ''
-    substituteInPlace pyproject.toml \
-      --replace-fail 'dynamic = ["version"]' 'version = "${version}"' \
-      --replace-fail 'source = "uv-dynamic-versioning"' "" \
-      --replace-fail 'requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]' \
-                     'requires = ["hatchling"]'
-  '';
-
-  build-system = with python3Packages; [ hatchling ];
-
-  dependencies =
-    (with python3Packages; [
-      authlib
-      cyclopts
-      exceptiongroup
-      griffelib
-      httpx
-      jsonref
-      jsonschema-path
-      mcp
-      openapi-pydantic
-      opentelemetry-api
-      packaging
-      platformdirs
-      pydantic
-      email-validator
-      pyperclip
-      python-dotenv
-      pyyaml
-      rich
-      uvicorn
-      watchfiles
-      websockets
-    ])
-    ++ [
-      py-key-value-aio
-      uncalled-for
-    ];
-
-  # The full test suite needs network, optional providers (anthropic,
-  # openai, gemini), and live MCP servers. We rely on Bazel-side tests for
-  # ducktape's actual usage of fastmcp; the Nix package only needs to import.
-  doCheck = false;
-
-  pythonImportsCheck = [
-    "fastmcp"
-    "fastmcp.server.providers.proxy"
+  build-system = with python3Packages; [
+    hatchling
+    uv-dynamic-versioning
   ];
 
-  meta = {
-    description = "Fast Pythonic way to build MCP servers and clients";
-    homepage = "https://github.com/PrefectHQ/fastmcp";
-    license = lib.licenses.asl20;
+  fastmcp-slim = python3Packages.buildPythonPackage {
+    pname = "fastmcp-slim";
+    inherit version src build-system;
+    pyproject = true;
+
+    sourceRoot = "${src.name}/fastmcp_slim";
+
+    # The GitHub archive has no `.git` directory for uv-dynamic-versioning to
+    # inspect. Its documented bypass keeps both distributions on the tag's
+    # exact version without rewriting upstream metadata.
+    env.UV_DYNAMIC_VERSIONING_BYPASS = version;
+
+    # Install the base package together with FastMCP's `client` and `server`
+    # extras. The root `fastmcp` distribution depends on this complete runtime.
+    dependencies =
+      (with python3Packages; [
+        # Base dependencies.
+        email-validator
+        platformdirs
+        pydantic
+        pydantic-settings
+        python-dotenv
+        rich
+        typing-extensions
+
+        # `mcp` extra shared by the client and server extras.
+        exceptiongroup
+        httpx
+        mcp
+        opentelemetry-api
+        starlette
+
+        # Client and server extras.
+        authlib
+        cyclopts
+        jsonref
+        jsonschema-path
+        joserfc
+        openapi-pydantic
+        packaging
+        pyperclip
+        python-multipart
+        pyyaml
+        uvicorn
+        watchfiles
+        websockets
+      ])
+      ++ [
+        griffelib
+        py-key-value-aio
+        uncalled-for
+      ];
+
+    # The full test suite needs network, optional providers (anthropic,
+    # openai, gemini), and live MCP servers. Ducktape exercises its FastMCP
+    # use through Bazel; these imports guard the Nix runtime closure.
+    doCheck = false;
+
+    pythonImportsCheck = [
+      "fastmcp"
+      "fastmcp.server.auth.oidc_proxy"
+      "fastmcp.server.auth.providers.jwt"
+    ];
+
+    meta = {
+      description = "Dependency-slim FastMCP implementation with client and server support";
+      homepage = "https://github.com/PrefectHQ/fastmcp";
+      license = lib.licenses.asl20;
+      mainProgram = "fastmcp";
+    };
   };
+
+  fastmcp = python3Packages.buildPythonPackage {
+    pname = "fastmcp";
+    inherit version src build-system;
+    pyproject = true;
+
+    env.UV_DYNAMIC_VERSIONING_BYPASS = version;
+
+    dependencies = [ fastmcp-slim ];
+
+    doCheck = false;
+
+    pythonImportsCheck = [ "fastmcp" ];
+
+    meta = {
+      description = "Fast Pythonic way to build MCP servers and clients";
+      homepage = "https://github.com/PrefectHQ/fastmcp";
+      license = lib.licenses.asl20;
+    };
+  };
+in
+{
+  inherit fastmcp fastmcp-slim;
 }

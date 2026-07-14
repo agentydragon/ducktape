@@ -6,7 +6,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//mcp_utils",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mcp",
     ],
 )

@@ -9,7 +9,7 @@ import pytest
 import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
-from fastmcp.server import FastMCP
+from fastmcp.server import create_proxy
 from mcp import McpError, types as mtypes
 
 from mcp_infra.enhanced.flat_mixin import FlatModelMixin
@@ -111,7 +111,7 @@ async def test_policy_gateway_middleware_backend_stamp_misuse_via_proxy(
     # Backend raises an McpError with a spoofed gateway stamp
     # Wrap backend in a FastMCP proxy so downstream errors arrive as result-path
     # CallToolResult (structured ErrorData preserved)
-    proxy = FastMCP.as_proxy(make_policy_test_backend)
+    proxy = create_proxy(make_policy_test_backend)
 
     async with make_policy_gateway_client({"proxy": proxy}) as sess:
         with pytest.raises(ToolError) as ei:

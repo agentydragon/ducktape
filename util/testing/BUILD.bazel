@@ -120,7 +120,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//util:net",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//starlette",
         "@pypi//uvicorn",
     ],

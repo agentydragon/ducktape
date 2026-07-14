@@ -48,7 +48,7 @@ py_test(
         ":conftest",
         ":formatting",
         ":server",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

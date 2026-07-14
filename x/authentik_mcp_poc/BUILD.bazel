@@ -32,7 +32,7 @@ py_library(
     deps = [
         ":config",
         "//mcp_infra/authentik_auth:auth",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//uvicorn",
     ],

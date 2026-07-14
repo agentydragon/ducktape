@@ -14,7 +14,7 @@ py_library(
         "//mcp_infra/compositor",
         "//mcp_infra/exec:models",
         "//openai_utils:model",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic_core",
     ],
 )
@@ -48,7 +48,7 @@ py_library(
         "//mcp_infra/exec:models",
         "//openai_utils:model",
         "@pypi//compact_json",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pydantic_core",
         "@pypi//rich",

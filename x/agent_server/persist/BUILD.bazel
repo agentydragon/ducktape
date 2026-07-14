@@ -36,7 +36,7 @@ py_library(
         "//x/agent_server/models:proposal_status",
         "//x/agent_server/runtime:auto_attach",
         "@pypi//aiosqlite",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pydantic_core",
     ],
@@ -50,7 +50,7 @@ py_library(
         "//agent_core:events",
         "//x/agent_server:agent_types",
         "//x/agent_server/models:proposal_status",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
 )

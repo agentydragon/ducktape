@@ -46,7 +46,7 @@ py_library(
         "//mcp_infra/stubs:typed_stubs",
         "//util/bazel:subprocess",
         "@pypi//aiodocker",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest",
     ],
 )
@@ -57,7 +57,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//openai_utils:model",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//pydantic",
     ],

@@ -10,7 +10,7 @@ py_library(
     deps = [
         "//util:env",
         "@pypi//authlib",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//uvicorn",
     ],
 )

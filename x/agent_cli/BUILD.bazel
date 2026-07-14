@@ -20,7 +20,7 @@ py_library(
         "//openai_utils:model",
         "//util:logging",
         "//util:typer",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//rich",
         "@pypi//typer",
     ],

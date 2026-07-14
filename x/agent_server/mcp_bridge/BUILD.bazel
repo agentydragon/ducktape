@@ -10,7 +10,7 @@ py_test(
         "//mcp_infra:resource_utils",
         "//x/agent_server:conftest",
         "//x/agent_server/persist:types",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -27,7 +27,7 @@ py_test(
         ":auth",
         ":registry",
         "//x/agent_server:conftest",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -45,7 +45,7 @@ py_library(
         "//mcp_infra/enhanced:server",
         "//openai_utils:pydantic_strict_mode",
         "//x/agent_server:presets",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
 )
@@ -87,6 +87,6 @@ py_library(
         "//x/agent_server/persist:sqlite",
         "//x/agent_server/runtime:container",
         "@pypi//aiodocker",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
     ],
 )

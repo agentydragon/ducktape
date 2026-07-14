@@ -12,7 +12,7 @@ py_library(
         "//openai_utils:pydantic_strict_mode",
         "//x/agent_server/server:bus",
         "@pypi//aiohttp",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//mautrix",
         "@pypi//pydantic",
     ],
@@ -42,7 +42,7 @@ py_test(
         "//mcp_infra/testing:notifications",
         "//mcp_infra/testing:stdio_notifier_lib",
         "//x/agent_server/notifications",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",

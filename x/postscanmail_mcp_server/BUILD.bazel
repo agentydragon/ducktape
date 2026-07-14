@@ -8,7 +8,7 @@ py_library(
     srcs = ["server.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//uvicorn",
     ],
@@ -26,7 +26,7 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":server",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//respx",
     ],
@@ -38,7 +38,7 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # runtime dep: root conftest sets asyncio_mode="auto"

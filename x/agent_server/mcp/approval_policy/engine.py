@@ -266,6 +266,33 @@ def _remap_reserved_backend_error(e: Exception, name: str) -> None:
         ) from e
 
 
+def _remap_reserved_backend_result(result: ToolResult, name: str) -> None:
+    """Remap reserved policy messages returned on the MCP tool-error path.
+
+    FastMCP proxies preserve upstream ``isError`` results instead of raising a
+    ``ToolError``.  That means a mounted backend's error reaches middleware as a
+    ``ToolResult`` and never passes through ``_remap_reserved_backend_error``.
+    Inspect only error-result text so successful tool output cannot be mistaken
+    for an attempted policy denial.
+    """
+    if not result.is_error:
+        return
+
+    text = "\n".join(block.text for block in result.content if isinstance(block, mtypes.TextContent))
+    if (
+        (POLICY_DENIED_ABORT_MSG in text)
+        or (POLICY_DENIED_CONTINUE_MSG in text)
+        or (POLICY_EVALUATOR_ERROR_MSG in text)
+    ):
+        raise McpError(
+            ErrorData(
+                code=POLICY_BACKEND_RESERVED_MISUSE_CODE,
+                message=POLICY_BACKEND_RESERVED_MISUSE_MSG,
+                data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "backend_code": "unknown"},
+            )
+        )
+
+
 _DENIAL_MAP: dict[ApprovalDecision, tuple[int, str]] = {
     ApprovalDecision.DENY_ABORT: (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_ABORT_MSG),
     ApprovalDecision.DENY_CONTINUE: (POLICY_DENIED_CONTINUE_CODE, POLICY_DENIED_CONTINUE_MSG),
@@ -347,10 +374,13 @@ class _PolicyGatewayMiddleware(Middleware):
             call_id = uuid.uuid4().hex
             self._inflight[call_id] = tool_key
             try:
-                return await call_next(context)
-            except Exception as e:
-                _remap_reserved_backend_error(e, name)
-                raise
+                try:
+                    result = await call_next(context)
+                except Exception as e:
+                    _remap_reserved_backend_error(e, name)
+                    raise
+                _remap_reserved_backend_result(result, name)
+                return result
             finally:
                 self._inflight.pop(call_id, None)
 
@@ -376,10 +406,12 @@ class _PolicyGatewayMiddleware(Middleware):
             if self._record is not None:
                 await self._record(call_id, tool_key, ApprovalOutcome.POLICY_ALLOW)
             try:
-                return await call_next(context)
+                result = await call_next(context)
             except Exception as e:
                 _remap_reserved_backend_error(e, name)
                 raise
+            _remap_reserved_backend_result(result, name)
+            return result
         if isinstance(decision_obj, DenyContinueDecision):
             if self._record is not None:
                 await self._record(call_id, tool_key, ApprovalOutcome.POLICY_DENY_CONTINUE)

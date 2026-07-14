@@ -92,7 +92,7 @@ py_library(
         "//x/agent_server/runtime:registry",
         "@pypi//aiodocker",
         "@pypi//fastapi",
-        "@pypi//fastmcp",
+        "@pypi//fastmcp_slim",
         "@pypi//uvicorn",
     ],
 )
