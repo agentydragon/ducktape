@@ -5,7 +5,7 @@ Quick switching between git worktrees with copy-on-write for rapid prototyping.
 ## Features
 
 - Quick switching with relative path preservation
-- Copy-on-write worktree duplication (macOS: clonefile, Linux: reflink, fallback: rsync)
+- Copy-on-write worktree duplication (reflink, fallback: rsync)
 - Process detection for safe cleanup
 - Zsh integration via fd3 IPC
 - GitHub PR status via background daemon

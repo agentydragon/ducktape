@@ -33,7 +33,6 @@ class WellKnownServers(StrEnum):
     UI = "ui"
     APPROVAL_POLICY = "approval_policy"
     RESOURCES = "resources"
-    SEATBELT_EXEC = "seatbelt_exec"
 
 
 class WellKnownTools(StrEnum):
@@ -42,7 +41,6 @@ class WellKnownTools(StrEnum):
     GET_STATUS = "get_status"
     PROPOSE = "propose"
     WITHDRAW = "withdraw"
-    SANDBOX_EXEC = "sandbox_exec"
 
 
 class ApprovalContext(BaseModel):
@@ -51,7 +49,6 @@ class ApprovalContext(BaseModel):
     server: str
     tool: str
     arguments: dict[str, Any] = Field(default_factory=dict)
-    seatbelt_policy: Any = None
 
 
 def load_default_policy_source() -> str:

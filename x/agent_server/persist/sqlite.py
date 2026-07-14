@@ -353,8 +353,6 @@ WHERE agent_id = ? AND id = ?
             await db.execute("DELETE FROM policy_proposals WHERE agent_id = ? AND id = ?", (agent_id, proposal_id))
             await db.commit()
 
-    # Seatbelt templates are volume-backed via Docker; no DB APIs in final shape
-
     # Events and approvals ----------------------------------------------------
     async def append_event(self, *, agent_id: AgentID, seq: int, ts: datetime, event: Event) -> None:
         # Serialize Pydantic event to dict with aliases

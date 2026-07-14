@@ -111,7 +111,7 @@ Enhanced `wt rm` will use `lsof` or similar tools to detect active processes in 
 
 ### Performance Optimizations
 
-The system will use COW (copy-on-write) techniques, particularly APFS clonefile on macOS, for faster worktree hydration. Daemon health monitoring will continuously attempt to start `gitstatusd` processes where needed, reporting availability through a health RPC that clients can check to provide appropriate user feedback.
+The system will use copy-on-write reflinks where supported for faster worktree hydration. Daemon health monitoring will continuously attempt to start `gitstatusd` processes where needed, reporting availability through a health RPC that clients can check to provide appropriate user feedback.
 
 ### Integration Ecosystem
 

@@ -109,11 +109,10 @@ DOCKER_EXEC_TOOL_NAME = "exec"
 
 **No production code violations** - all production code uses `build_mcp_function()` helper.
 
-### Test Code (10 occurrences - acceptable)
+### Test Code (8 occurrences - acceptable)
 
 Tests using direct FastMCP client `.call_tool()` with string literals:
 
-- `tests/mcp/sandboxed_jupyter/test_*.py` (2 files)
 - `tests/mcp/enhanced/flat_model/test_decorator.py` (4 calls)
 - `tests/mcp/approval_policy/test_policy_validation.py` (3 calls)
 - `tests/mcp/test_pg_middleware.py` (1 call)

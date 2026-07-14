@@ -18,7 +18,6 @@ exclude = [
     "props/testing/fixtures/testdata",
     "py_detectors/rules/**/bad/**",
     "py_detectors/rules/**/ok/**",
-    "x/sandboxed_jupyter/testdata",
     "x/sysrw/testdata",
     "tana/testdata",
     "props/specimens/*/*/code",

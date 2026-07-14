@@ -19,7 +19,6 @@ py_library(
     testonly = True,
     visibility = ["//mcp_infra:__subpackages__"],
     deps = [
-        ":_markers",
         ":conftest",
         "//agent_core/testing:fixtures",
         "//agent_core/testing/mcp:fixtures",
@@ -66,13 +65,6 @@ py_test(
         "@pypi//pytest_asyncio",
         "@pypi//testcontainers",
     ],
-)
-
-py_library(
-    name = "_markers",
-    srcs = ["_markers.py"],
-    visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pytest"],
 )
 
 py_library(

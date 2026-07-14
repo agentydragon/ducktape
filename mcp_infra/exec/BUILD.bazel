@@ -30,7 +30,7 @@ py_library(
     ],
 )
 
-# Image reading utility (shared by direct, seatbelt, bwrap, docker)
+# Image reading utility (shared by direct, bwrap, and docker)
 py_library(
     name = "read_image",
     srcs = ["read_image.py"],
@@ -95,25 +95,6 @@ oci_load(
     image = ":direct_image",
     repo_tags = ["exec-backend:latest"],
     visibility = ["//visibility:public"],
-)
-
-# macOS seatbelt sandbox exec MCP server
-py_library(
-    name = "seatbelt",
-    srcs = ["seatbelt.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":models",
-        ":read_image",
-        "//mcp_infra/enhanced:flat_mixin",
-        "//mcp_infra/enhanced:server",
-        "//mcp_infra/seatbelt:model",
-        "//mcp_infra/seatbelt:runner",
-        "@pypi//anyio",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//pydantic",
-    ],
 )
 
 # Linux bubblewrap sandbox exec MCP server
@@ -207,24 +188,6 @@ py_test(
         ":subprocess",
         "//mcp_infra/testing:exec_stubs",
         "@pypi//fastmcp_slim",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_seatbelt",
-    srcs = ["test_seatbelt.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":models",
-        ":seatbelt",
-        "//mcp_infra:_markers",
-        "//mcp_infra/seatbelt:model",
-        "//mcp_infra/testing:exec_stubs",
-        "@pypi//fastmcp_slim",
-        "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],

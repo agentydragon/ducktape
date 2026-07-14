@@ -21,7 +21,6 @@ py_library(
     deps = [
         "//mcp_infra/exec:bwrap",
         "//mcp_infra/exec:models",
-        "//mcp_infra/exec:seatbelt",
         "//mcp_infra/exec:subprocess",
         "//mcp_infra/stubs:server_stubs",
     ],

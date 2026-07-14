@@ -65,11 +65,11 @@ class Configuration:
 
     @property
     def daemon_socket_path(self) -> Path:
-        """Path to daemon UNIX socket with macOS length-safe fallback.
+        """Path to daemon UNIX socket with a length-safe fallback.
 
         Notes:
-        - Use the real (resolved) path for length checks to avoid /var → /private/var
-          symlink surprises on macOS. The kernel enforces the limit on the real path.
+        - Use the real (resolved) path for length checks because the kernel enforces
+          the limit on the real path.
         - If too long, fall back to a stable short path under /tmp derived from WT_DIR.
         """
         real_wt_dir = self.wt_dir.resolve()

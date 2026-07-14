@@ -130,14 +130,6 @@ Use `sandbox.filesystem.allowWrite` for paths that only Bash needs to write
 (caches, build artifacts). Use `additionalDirectories` for paths that are
 actual working directories (code repos).
 
-## macOS
-
-On macOS, the sandbox uses `sandbox-exec` with dynamically generated
-[Seatbelt](https://reverse.put.as/wp-content/uploads/2011/09/Apple-Sandbox-Guide-v1.0.pdf)
-profiles instead of bwrap. Seatbelt profiles support glob patterns natively
-(unlike bwrap, which needs concrete paths). Violation monitoring reads from
-the macOS system log store.
-
 ## References
 
 - <https://github.com/anthropic-experimental/sandbox-runtime> — open-source

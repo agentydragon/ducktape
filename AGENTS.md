@@ -2,7 +2,7 @@
 
 ## Target Platform
 
-Linux by default. macOS-only components (Seatbelt, Sandboxer) are explicitly documented.
+Linux only.
 
 ## Nix Devshell / Missing Tools
 
