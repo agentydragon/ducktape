@@ -1,9 +1,12 @@
 # Credit System v2 — Design Document
 
-Status: future design, not implemented. This predates the Postgres-only,
-server-authoritative cutover; any implementation should use the current
-`balance`, `sessions`, `ledger_events`, and action endpoints documented in
-<../README.md>, not the old Y.Doc/CRDT storage model.
+Status: future design, not implemented. Anchored on the current
+server-authoritative Postgres model: credit is computed and persisted
+server-side on each `/actions/*` mutation (recorded in `ledger_events`,
+surfaced read-only through `/state`); see <../README.md>. The mechanics
+below are additive — a per-user `credit_state` row plus server computation
+on `session.complete`. The frontend only displays derived values; it never
+computes credits.
 
 ## Overview
 
@@ -18,9 +21,10 @@ mechanics that layer on top of that base:
 5. **First-5-minutes bonus** — daily kick-start credit
 6. **Break time** — earned breaks that continue credit accrual
 
-All constants are defined in one Python module (`credit_constants.py`) and
-one JS object (`CREDIT_CONSTANTS` in a new `frontend/src/credit_engine.js`)
-so they can be tweaked without touching business logic.
+All constants live in one server-side Python module (`x/study_casino/credit_constants.py`)
+so they can be tweaked without touching business logic. Derived values
+(streak, multiplier, next milestone, bonuses) are surfaced to the frontend
+read-only via `/state`; the frontend only displays them.
 
 ---
 
@@ -135,19 +139,11 @@ Where:
 
 ### Persistence
 
-The streak state is stored server-side in the user's Postgres database in a
-new `streak_state` table:
-
-```python
-class StreakState:
-    current_streak_days: int          # consecutive days with >= 5 min study
-    last_qualifying_date: date | None # last Pacific date that qualified
-    rest_days_available: int           # earned but unused rest days
-    rest_days_used: int                # total rest days consumed (for stats)
-```
-
-This state must stay server-side because the server computes it
-authoritatively on every session completion.
+Streak state lives server-side, in the per-user `credit_state` row (see
+[Database Schema Changes](#database-schema-changes)): `streak_days`,
+`last_qualifying_date`, `rest_days_used`. `rest_days_available` is derived,
+not stored (see section 3). This state stays server-side because the server
+computes it authoritatively on every session completion.
 
 ### Computation
 
@@ -273,12 +269,8 @@ awards).
 
 ### Persistence
 
-A new `daily_bonuses` table (or set in `streak_state`):
-
-```python
-class DailyBonusState:
-    last_first_bonus_date: date | None  # Pacific date the bonus was last awarded
-```
+`last_first_bonus_date` is a column on the per-user `credit_state` row (see
+[Database Schema Changes](#database-schema-changes)).
 
 ### Behavior
 
@@ -458,11 +450,12 @@ balance.
 
 ## Database Schema Changes
 
-New table `credit_state` (one row per user):
+New per-user table `credit_state` — PK `user_id`, matching every other
+per-user table (`balance`, `sessions`, …; see <../models.py>):
 
 ```sql
 CREATE TABLE credit_state (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
+    user_id TEXT PRIMARY KEY,                  -- matches _USER_ID (OIDC sub)
 
     -- Streak
     streak_days INTEGER NOT NULL DEFAULT 0,
@@ -484,7 +477,7 @@ CREATE TABLE credit_state (
 );
 ```
 
-Alembic migration `0004_credit_state.py`.
+Alembic migration `0003_credit_state.py` (next sequential after `0002_rng_audit`).
 
 ---
 
