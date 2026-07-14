@@ -25,9 +25,9 @@ from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig, OperatorOidcConfig
 from haku.console.conftest import console_settings, operator_session_cookie, write_config
 from haku.console.operator_identity import VerifiedExternalIdentity
-from haku.console.tool_call_actor import OperatorActor
-from haku.console.tool_call_service import ToolCallApplicationService
-from haku.console.tool_calls import ToolCallStatus
+from haku.console.tool_call_actor import OperatorActor, ToolCallActor
+from haku.console.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
+from haku.console.tool_calls import SubmitToolCallRequest, ToolCallRecord, ToolCallStatus
 from haku.console.tools import gmail as gmail_tools
 from mcp_infra.persistence import PostgresPersistence
 from util.net import pick_free_port
@@ -177,6 +177,29 @@ async def test_request_tool_returns_promise_with_deep_link(harness: _Harness) ->
         assert view["call"]["status"] == ToolCallStatus.PENDING_APPROVAL
         assert view["call"]["tool_name"] == "drafts_create"
         assert view["url"] == f"https://haku.test/tool-calls/{tool_call_id}"
+
+
+async def test_request_tool_preserves_explicit_zero_wait(harness: _Harness, monkeypatch: pytest.MonkeyPatch) -> None:
+    submitted_waits: list[int] = []
+
+    async def capture_request(*, req: SubmitToolCallRequest, actor: ToolCallActor) -> ToolCallRecord:
+        assert actor.operator_id == harness.operator_id
+        submitted_waits.append(req.wait_for_ms)
+        raise ToolCallNotFoundError("captured request")
+
+    monkeypatch.setattr(harness.tool_calls, "submit_and_wait", capture_request)
+    async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
+        with pytest.raises(ToolError, match="captured request"):
+            await client.call_tool(
+                "gmail_drafts_create",
+                {
+                    "input": {"to": ["a@b.test"], "subject": "s", "body": "b"},
+                    "rationale": "test",
+                    "wait_for_approval_ms": 0,
+                },
+            )
+
+    assert submitted_waits == [0]
 
 
 async def test_get_tool_call_missing_raises(harness: _Harness) -> None:

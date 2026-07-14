@@ -207,7 +207,7 @@ class ProxyTool(Tool):
         else:
             env = ApprovalRequestEnvelope.model_validate(arguments)
             call_args, rationale, title = env.input, env.rationale, env.title
-            wait_ms = env.wait_for_approval_ms or DEFAULT_WAIT_MS
+            wait_ms = DEFAULT_WAIT_MS if env.wait_for_approval_ms is None else env.wait_for_approval_ms
         ctx = self.context
         req = SubmitToolCallRequest(
             server_id=self.server_id,
