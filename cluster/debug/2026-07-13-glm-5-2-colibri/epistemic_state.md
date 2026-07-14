@@ -149,6 +149,16 @@ storage for the decisive full-model benchmark.
 - Update: the scoped Proxmox/Nix configuration is validated; the private-cache failure
   does not affect the live disk or the host experiment.
 
+### E11: LiteLLM-to-host reachability
+
+- Action: bound a temporary read-only HTTP server to wyrm2's Kubernetes node address
+  `10.42.0.20` on high port 18000 and requested it from a live LiteLLM pod.
+- Result: the LiteLLM pod at `10.42.0.16` received HTTP 200. No Cilium policy in the
+  current manifests selects the LiteLLM or Ollama namespaces.
+- Update: the host experiment can be exposed without an overlay proxy or policy change.
+  After the model gate passes, use an authenticated Colibri listener plus a
+  selectorless Service/EndpointSlice and a generated LiteLLM OpenAI-provider entry.
+
 ## 6. Current Posterior State
 
 - A staged host experiment remains justified: CUDA and the SSD access pattern pass,
