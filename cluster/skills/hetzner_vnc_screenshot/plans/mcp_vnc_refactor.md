@@ -1,6 +1,8 @@
-# Plan: Hetzner VNC Skill Refactor
+# Sketch: Hetzner VNC → MCP VNC Refactor
 
-Replace the bespoke binary with standard components for full VNC control.
+Sketch for replacing the bespoke `WebSocketStreamAdapter` with standard
+components (unwebsockify + an off-the-shelf VNC MCP server) for full desktop
+control. Not scheduled for implementation.
 
 ---
 
