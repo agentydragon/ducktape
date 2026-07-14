@@ -1,77 +1,59 @@
-# Private Flake Input Gotchas
+# Private Gaffer Artifacts
 
-Problems encountered when consuming private GitHub repos as Nix flake inputs,
-particularly `gaffer-private` (`git+ssh://...?lfs=1`).
+`gaffer-private` is **not** a flake input. Ducktape never fetches its source
+code while evaluating or deploying this flake.
 
-**Current status**: The `gaffer-private` flake input and all `google-drive`
-module references are commented out in `flake.nix` and the host configs.
-Search for `nix/docs/private_flake_inputs.md` to find all disabled sites.
-
-## Problems
-
-### 1. SSH agent not available under `sudo`
-
-`sudo nixos-rebuild switch` runs Nix's git fetcher as root. Root doesn't
-inherit the user's `SSH_AUTH_SOCK`, so SSH authentication to GitHub fails:
+Private binaries built by `gaffer-private` CI—currently `drivefs` and
+`drivectl`—are consumed as pinned Nix store closures from the private Attic
+cache:
 
 ```
-git@github.com: Permission denied (publickey).
+gaffer-private CI
+  -> cache.allegedly.works/gaffer
+  -> nix/gaffer-pins.json
+  -> nix/packages/gaffer.nix (builtins.fetchClosure)
+  -> nix/home/modules/google-drive.nix
 ```
 
-**Workaround** (clunky — requires the user to remember the incantation):
+This keeps source-repository authentication, Git LFS, and CI checkout concerns
+on the producer side. Consumer hosts need only an authorized cache reader and
+the pinned closure paths.
 
-```bash
-sudo SSH_AUTH_SOCK="$SSH_AUTH_SOCK" nixos-rebuild switch --flake .#<host>
-```
+## Consumer contract
 
-The SSH agent must have a key loaded (`ssh-add -l` to check).
+- [`nix/gaffer-pins.json`](../gaffer-pins.json) is the checked-in record of
+  `store_path`, source revision, and version for each published artifact.
+- [`nix/packages/gaffer.nix`](../packages/gaffer.nix) turns those pins into
+  hermetic `builtins.fetchClosure` dependencies from
+  `https://cache.allegedly.works/gaffer`.
+- [`nix/nixos/modules/attic-substituter.nix`](../nixos/modules/attic-substituter.nix)
+  configures the cache URL, its trusted signing key, and a SOPS-rendered
+  per-host reader JWT. The token must permit `gaffer:r`.
+- [`nix/home/modules/google-drive.nix`](../home/modules/google-drive.nix) is
+  the only current consumer. A host opts in with
+  `services.google-drive.enable = true`.
 
-### 2. `git-lfs` not on root's PATH → `narHash` mismatch
+If a pin is absent, its package is absent; do not add a source flake input as a
+fallback. If the cache is unavailable, Nix cannot realize these private
+closures because Ducktape intentionally has neither their source nor a local
+build recipe.
 
-When a flake input uses `?lfs=1`, Nix's git fetcher shells out to `git-lfs`
-to smudge LFS pointers into actual file content. If `git-lfs` is only
-installed per-user (via home-manager's `programs.git.lfs.enable`), root
-can't find it. The fetch silently succeeds but returns LFS pointer stubs
-instead of real content, producing a different NAR hash than what `flake.lock`
-recorded:
+## Publishing and updating
 
-```
-error: mismatch in field 'narHash' of input '...'
-```
+1. Build and push the artifact in `gaffer-private` CI to the `gaffer` cache.
+2. Update `nix/gaffer-pins.json` with the resulting store path, revision, and
+   version through the producer's pin-update workflow.
+3. Deploy the Ducktape configuration to a host with an enabled Attic
+   substituter and a `gaffer:r` reader token.
 
-This is confusing because the rev and ref match — only the hash differs, with
-no indication that LFS smudging failed.
+Keep the private closures out of the `main` and `public` caches. The complete
+cache isolation and CI publishing contract is documented in
+[`cluster/docs/nix_cache.md`](../../cluster/docs/nix_cache.md).
 
-**Fix** (not yet applied): Install `git-lfs` system-wide in
-`nix/nixos/modules/base.nix` so root has it.
+## Retired flake-input approach
 
-### 3. CI can't fetch private SSH inputs
-
-GitHub Actions runners don't have SSH keys for private repos. A
-`GITHUB_TOKEN` only works for `github:` scheme inputs, not `git+ssh://`.
-
-## Attempted workaround: SOPS-encrypted GitHub PAT in nix-daemon
-
-Commit `36271d26a` ("Wire gaffer-private fetch token into nix-daemon") tried
-to solve problems 1 and 3 by:
-
-- Storing a fine-grained GitHub PAT in SOPS
-  (`secrets/shared/gaffer-private-fetch-pat.yaml`)
-- Decrypting it via sops-nix into an `EnvironmentFile` for
-  `nix-daemon.service`
-- Exposing it as `GITHUB_TOKEN_GAFFER_PRIVATE`
-
-This was reverted in `03367e978` ("Unwire drivectl release-asset rollout")
-because it didn't actually work: the flake input uses `git+ssh://`, and Nix's
-`access-tokens` / `GITHUB_TOKEN` mechanism only applies to `github:` scheme
-URLs. The environment variable name (`GITHUB_TOKEN_GAFFER_PRIVATE`) also
-wasn't in Nix's expected `access-tokens` format. The SOPS secret file still
-exists on disk but is unused.
-
-## Long-term fix
-
-These problems go away if private packages are served from a Nix binary cache
-(Attic, Cachix, etc.) instead of fetched as Git flake inputs. The cache
-approach decouples build-time secrets (push token, needed only in the
-gaffer-private CI) from deploy-time requirements (no SSH key or LFS needed to
-consume cached NARs). See `TODO.md` items on private cache setup.
+The previous `git+ssh://...?lfs=1` `gaffer-private` flake input was removed.
+Its failure modes—root lacking an SSH agent or `git-lfs`, and CI lacking a
+private-repository deploy key—no longer apply to consumers. The old
+SOPS-encrypted GitHub fetch PAT is unused; its eventual deletion remains
+tracked in the repository TODO list.
