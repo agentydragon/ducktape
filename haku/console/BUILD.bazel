@@ -215,8 +215,10 @@ py_library(
         ":mcp_config",
         ":mcp_operator_oauth",
         ":operator_auth",
+        ":operator_identity",
         ":tool_call_actor",
         ":tool_call_service",
+        "//haku/console/agents:models",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
@@ -370,6 +372,7 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 

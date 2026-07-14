@@ -40,7 +40,7 @@ from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_server import ConsoleMcpContext, build_console_mcp, register_proxy_tools
 from haku.console.operator_identity import OperatorIdentityTrust, VerifiedExternalIdentity
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.tool_call_actor import AgentActor, OperatorActor
+from haku.console.tool_call_actor import OperatorActor
 from haku.console.tool_call_service import ToolCallApplicationService
 from haku.console.tool_calls import ToolCallStatus
 from haku.console.tools import gmail as gmail_tools
@@ -166,12 +166,13 @@ async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harn
 
     assert result.structured_content is not None
     assert result.structured_content["labels"][0]["name"] == "haku/triaged"
-    calls = harness.tool_calls.list_tool_calls(actor=AgentActor(principal="haku", operator_id=harness.operator_id))
+    calls = harness.tool_calls.list_tool_calls(actor=OperatorActor(operator_id=harness.operator_id))
     assert len(calls) == 1
     assert calls[0].status == ToolCallStatus.OK
     assert calls[0].tool_name == "labels_list"
     # The pass-through call is audited as the static agent that presented the bearer.
-    assert calls[0].caller_principal == "haku"
+    assert calls[0].caller.kind == "agent"
+    assert calls[0].caller.display_name == "haku"
 
 
 async def test_request_tool_returns_promise_with_deep_link(harness: _Harness) -> None:

@@ -870,7 +870,7 @@ def test_submit_mints_tool_call_id(operator_client: TestClient, migrated_db_url:
     first = _submit(operator_client)
     second = _submit(operator_client)
     assert first["tool_call_id"].startswith("tc_")
-    assert UUID(first["caller_principal"]) == _operator_id(migrated_db_url, "operator-sub")
+    assert first["caller"] == {"kind": "operator"}
     assert first["status"] == "pending_approval"
     assert "approval_id" not in first
     assert second["tool_call_id"] != first["tool_call_id"]

@@ -19,7 +19,11 @@ function pendingApproval(overrides: Partial<PendingApproval> = {}): PendingAppro
     server_id: "grocy-sf",
     title: "Remove bought items",
     tool_name: "shopping_list_items_remove",
-    caller_principal: "haku-agent-api-token",
+    caller: {
+      kind: "agent",
+      agent_id: "11111111-1111-4111-8111-111111111111",
+      display_name: "Haku agent",
+    },
     rationale: "already in stock",
     arguments: { ids: [1, 2, 3] },
     created_at: "2026-07-07T10:00:00Z",
@@ -49,7 +53,7 @@ function toolCallRecord(overrides: Partial<ToolCallRecord> = {}): ToolCallRecord
     tool_call_id: "tc_1",
     server_id: "grocy-sf",
     tool_name: "shopping_list_items_remove",
-    caller_principal: "operator",
+    caller: { kind: "operator" },
     status: "ok",
     created_at: "2026-07-07T10:00:00Z",
     updated_at: "2026-07-07T10:00:10Z",
@@ -90,6 +94,8 @@ describe("approval queue state", () => {
     expect(fields.toolName).toBe("shopping_list_items_remove");
     expect(fields.argumentsJson).toContain('"ids"');
     expect(fields.toolCallId).toBe("tc_1");
+    expect(fields.callerDisplayName).toBe("Haku agent");
+    expect(fields.callerAgentId).toBe("11111111-1111-4111-8111-111111111111");
   });
 
   it("surfaces auto-approval policy provenance for terminal calls", () => {

@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Annotated, Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -49,11 +50,24 @@ class ApprovalDecisionRequest(BaseModel):
     reason: str | None = None
 
 
+class OperatorToolCallCaller(BaseModel):
+    kind: Literal["operator"] = "operator"
+
+
+class AgentToolCallCaller(BaseModel):
+    kind: Literal["agent"] = "agent"
+    agent_id: UUID
+    display_name: str
+
+
+type ToolCallCaller = Annotated[OperatorToolCallCaller | AgentToolCallCaller, Field(discriminator="kind")]
+
+
 class ToolCallRecord(BaseModel):
     tool_call_id: str
     server_id: str
     tool_name: str
-    caller_principal: str
+    caller: ToolCallCaller
     status: ToolCallStatus
     created_at: datetime.datetime
     updated_at: datetime.datetime

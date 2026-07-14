@@ -69,7 +69,11 @@ export function PreviewCard({ fixture, variant }: { fixture: PreviewFixture; var
     tool_call_id: `preview_${serverId}.${toolName}`,
     server_id: serverId,
     tool_name: toolName,
-    caller_principal: "haku-agent-api-token",
+    caller: {
+      kind: "agent",
+      agent_id: "11111111-1111-4111-8111-111111111111",
+      display_name: "Haku agent",
+    },
     status: finished ? "ok" : "pending_approval",
     created_at: "2026-07-11T12:00:00Z",
     updated_at: "2026-07-11T12:00:00Z",

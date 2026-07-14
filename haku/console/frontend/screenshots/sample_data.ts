@@ -70,7 +70,11 @@ function toolCall(overrides: Partial<ToolCallRecord> & Pick<ToolCallRecord, "too
   return {
     server_id: STOCK_ADD_HISTORY_FIXTURE.serverId,
     tool_name: STOCK_ADD_HISTORY_FIXTURE.toolName,
-    caller_principal: "haku-agent-api-token",
+    caller: {
+      kind: "agent",
+      agent_id: "11111111-1111-4111-8111-111111111111",
+      display_name: "Haku agent",
+    },
     status: "ok",
     created_at: "2026-07-09T14:32:00Z",
     updated_at: "2026-07-09T14:32:04Z",
@@ -118,7 +122,7 @@ export const SAMPLE_TOOL_CALLS: ToolCallRecord[] = [
     rationale: "Booked a dentist appointment from the confirmation email.",
     error: "Calendar API returned 403: insufficient scope for calendar.events.",
     result: null,
-    caller_principal: "operator",
+    caller: { kind: "operator" },
     arguments: CALENDAR_HISTORY_FIXTURE.args,
   }),
   toolCall({
@@ -130,7 +134,7 @@ export const SAMPLE_TOOL_CALLS: ToolCallRecord[] = [
     rationale: "The worker pod has been CrashLoopBackOff for 20 minutes; restart it.",
     denial_reason: "Not without a rollout plan — investigate the crash first.",
     result: null,
-    caller_principal: "operator",
+    caller: { kind: "operator" },
     arguments: KUBECTL_HISTORY_FIXTURE.args,
   }),
 ];
@@ -141,7 +145,11 @@ export const SAMPLE_PENDING: PendingApproval[] = [
     server_id: "grocy-sf",
     tool_name: "shopping_list_items_remove",
     title: "Remove bought items from the weekly list",
-    caller_principal: "haku-agent-api-token",
+    caller: {
+      kind: "agent",
+      agent_id: "11111111-1111-4111-8111-111111111111",
+      display_name: "Haku agent",
+    },
     rationale: "These are already in stock after the Thrive delivery, so drop them from the list.",
     arguments: { ids: [3, 7, 12] },
     created_at: "2026-07-09T14:40:00Z",
@@ -152,7 +160,11 @@ export const SAMPLE_PENDING: PendingApproval[] = [
     server_id: STOCK_ADD_PENDING_FIXTURE.serverId,
     tool_name: STOCK_ADD_PENDING_FIXTURE.toolName,
     title: "Add Thrive box items to Grocy",
-    caller_principal: "haku-agent-api-token",
+    caller: {
+      kind: "agent",
+      agent_id: "11111111-1111-4111-8111-111111111111",
+      display_name: "Haku agent",
+    },
     rationale: "Thrive box delivered; adding its items to inventory.",
     arguments: STOCK_ADD_PENDING_FIXTURE.args,
     created_at: "2026-07-09T14:41:00Z",

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -11,13 +10,10 @@ import pytest_bazel
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import IntegrityError
 
 from haku.console.config import OperatorIdentityConfig
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import metadata
-from haku.console.mcp_approval import PostgresToolCallLedger
-from haku.console.mcp_config import McpServerEntry
 from haku.console.operator_identity import (
     InactiveOperatorError,
     OperatorIdentityTrust,
@@ -25,8 +21,6 @@ from haku.console.operator_identity import (
     VerifiedExternalIdentity,
 )
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.tool_call_actor import AgentActor
-from haku.console.tool_calls import SubmitToolCallRequest
 
 _TRUST_DOMAIN = "auth.test/authentik-user-id/v1"
 _BROWSER_ISSUER = "https://auth.test/application/o/haku-console/"
@@ -336,41 +330,6 @@ def test_0008_preserves_only_exact_seeded_durable_rows_and_drops_ephemeral_state
         assert links == []
         assert fastmcp_state_count == 0
         assert counts == {"identities": 0, "flows": 0, "calls": 0, "events": 0}
-    finally:
-        engine.dispose()
-
-
-def test_tool_call_event_owner_must_match_owning_call(migrated_db_url: str) -> None:
-    store = _store(migrated_db_url)
-    owner = store.resolve_configured_external_user_key("call-owner")
-    other = store.resolve_configured_external_user_key("other-owner")
-    ledger = PostgresToolCallLedger(migrated_db_url)
-    record, _ = ledger.submit(
-        server=McpServerEntry(id="server"),
-        req=SubmitToolCallRequest(
-            server_id="server", tool_name="tool", arguments={}, rationale="constraint test", wait_for_ms=0
-        ),
-        actor=AgentActor(principal="agent", operator_id=owner),
-    )
-    engine = create_engine(migrated_db_url)
-    try:
-        with pytest.raises(IntegrityError), engine.begin() as conn:
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO mcp_tool_call_events (
-                        event_type, operator_id, tool_call_id, status, created_at
-                    ) VALUES (
-                        'tool_call_updated', :operator_id, :tool_call_id, 'pending_approval', :created_at
-                    )
-                    """
-                ),
-                {
-                    "operator_id": other,
-                    "tool_call_id": record.tool_call_id,
-                    "created_at": datetime.datetime.now(datetime.UTC),
-                },
-            )
     finally:
         engine.dispose()
 

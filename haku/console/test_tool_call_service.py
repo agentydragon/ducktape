@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 from collections.abc import Iterable
 from itertools import pairwise
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
+from sqlalchemy import create_engine, text
 
 from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC, console_settings, write_config
 from haku.console.mcp_approval import PostgresToolCallLedger
@@ -107,13 +109,66 @@ def _actors(database_url: str) -> dict[str, ToolCallActor]:
         "a": identities.resolve_configured_external_user_key("service-operator-a"),
         "b": identities.resolve_configured_external_user_key("service-operator-b"),
     }
+
+    def agent(name: str, operator_id: UUID) -> AgentActor:
+        agent_id = uuid4()
+        reservation_id = uuid4()
+        binding_id = uuid4()
+        now = datetime.datetime.now(datetime.UTC)
+        engine = create_engine(database_url)
+        try:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO agents (
+                            agent_id, owner_operator_id, current_name_reservation_id, status,
+                            created_at, updated_at, activated_at
+                        ) VALUES (
+                            :agent_id, :operator_id, :reservation_id, 'active', :now, :now, :now
+                        )
+                        """
+                    ),
+                    {"agent_id": agent_id, "operator_id": operator_id, "reservation_id": reservation_id, "now": now},
+                )
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO agent_name_reservations (
+                            reservation_id, display_name, display_name_key, agent_id,
+                            created_at, activated_at
+                        ) VALUES (
+                            :reservation_id, :name, :name, :agent_id, :now, :now
+                        )
+                        """
+                    ),
+                    {"reservation_id": reservation_id, "name": name, "agent_id": agent_id, "now": now},
+                )
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO credential_bindings (
+                            binding_id, agent_id, kind, status, generation,
+                            created_at, updated_at, issued_at, activated_at
+                        ) VALUES (
+                            :binding_id, :agent_id, 'static', 'active', 1,
+                            :now, :now, :now, :now
+                        )
+                        """
+                    ),
+                    {"binding_id": binding_id, "agent_id": agent_id, "now": now},
+                )
+        finally:
+            engine.dispose()
+        return AgentActor(agent_id=agent_id, operator_id=operator_id, binding_id=binding_id)
+
     actors: dict[str, ToolCallActor] = {
         "oa": OperatorActor(operator_id=operator_ids["a"]),
         "ob": OperatorActor(operator_id=operator_ids["b"]),
-        "aa1": AgentActor(principal="agent-a1", operator_id=operator_ids["a"]),
-        "ab1": AgentActor(principal="agent-b1", operator_id=operator_ids["b"]),
-        "aa2": AgentActor(principal="agent-a2", operator_id=operator_ids["a"]),
-        "ab2": AgentActor(principal="agent-b2", operator_id=operator_ids["b"]),
+        "aa1": agent("agent-a1", operator_ids["a"]),
+        "ab1": agent("agent-b1", operator_ids["b"]),
+        "aa2": agent("agent-a2", operator_ids["a"]),
+        "ab2": agent("agent-b2", operator_ids["b"]),
     }
     return actors
 
@@ -422,6 +477,39 @@ async def test_finish_only_accepts_running_calls(migrated_db_url: str) -> None:
     assert finished.status is ToolCallStatus.OK
     with pytest.raises(ToolCallStateConflictError, match="not running"):
         ledger.finish(record.tool_call_id, actor=operator, result={"again": True}, error=None)
+
+
+async def test_binding_revoked_after_execution_authorization_does_not_strand_running_call(migrated_db_url: str) -> None:
+    actors = _actors(migrated_db_url)
+    agent = actors["aa1"]
+    assert isinstance(agent, AgentActor)
+    ledger = PostgresToolCallLedger(migrated_db_url)
+    record, _ = ledger.submit(
+        server=McpServerEntry(id="operator-backend"),
+        req=_request(owner="revoked-during-execution"),
+        actor=agent,
+        auto_approval_policy_id="policy:test",
+    )
+
+    assert ledger.authorize_execution(record.tool_call_id, actor=agent) == agent.operator_id
+    engine = create_engine(migrated_db_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    UPDATE credential_bindings
+                    SET status = 'revoked', updated_at = now(), ended_at = now(), end_reason = 'test revocation'
+                    WHERE binding_id = :binding_id
+                    """
+                ),
+                {"binding_id": agent.binding_id},
+            )
+    finally:
+        engine.dispose()
+
+    finished, _ = ledger.finish(record.tool_call_id, actor=agent, result={"ok": True}, error=None)
+    assert finished.status is ToolCallStatus.OK
 
 
 if __name__ == "__main__":

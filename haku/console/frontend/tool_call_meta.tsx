@@ -8,13 +8,13 @@ import { Field } from "./field.tsx";
 export function ToolCallMeta({
   serverId,
   toolName,
-  callerPrincipal,
+  callerDisplayName,
   createdAt,
   toolCallId,
 }: {
   serverId: string;
   toolName: string;
-  callerPrincipal: string | null;
+  callerDisplayName: string;
   createdAt: string | null;
   toolCallId: string;
 }) {
@@ -26,7 +26,7 @@ export function ToolCallMeta({
         <Field label="Tool" mono>
           {serverId}.{toolName}
         </Field>
-        {callerPrincipal && <Field label="Caller">{callerPrincipal}</Field>}
+        <Field label="Caller">{callerDisplayName}</Field>
         {requested && (
           <Field label="Requested">
             <span title={requested.title}>{requested.text}</span>

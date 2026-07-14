@@ -12,7 +12,11 @@ from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActo
 from haku.console.tools.gmail import build_mcp
 
 TEST_OPERATOR_ID = UUID("00000000-0000-0000-0000-000000000001")
-AGENT_ACTOR = AgentActor(principal="test-agent", operator_id=TEST_OPERATOR_ID)
+AGENT_ACTOR = AgentActor(
+    agent_id=UUID("00000000-0000-0000-0000-000000000002"),
+    operator_id=TEST_OPERATOR_ID,
+    binding_id=UUID("00000000-0000-0000-0000-000000000003"),
+)
 OPERATOR_ACTOR = OperatorActor(operator_id=TEST_OPERATOR_ID)
 
 

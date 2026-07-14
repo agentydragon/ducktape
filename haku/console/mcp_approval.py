@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime
 import secrets
+from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Never, cast
 from uuid import UUID
 
@@ -20,12 +21,21 @@ from fastapi_csrf_protect import CsrfProtect
 from fastmcp.client import Client
 from mcp import types as mcp_types
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, select
+from sqlalchemy import and_, create_engine, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.sql import Select
 
+from haku.console.agents.models import AgentStatus, CredentialBindingStatus
 from haku.console.config import Settings
-from haku.console.database_schema import McpToolCall, McpToolCallEvent
+from haku.console.database_schema import (
+    Agent,
+    AgentNameReservation,
+    CredentialBinding,
+    McpToolCall,
+    McpToolCallEvent,
+    McpToolCallPrincipal,
+    Operator,
+)
 from haku.console.deps import SettingsDep
 from haku.console.mcp_config import (
     InProcessServers,
@@ -39,6 +49,7 @@ from haku.console.mcp_config import (
 )
 from haku.console.mcp_operator_oauth import OAuthStoreDep, PostgresMcpOperatorOAuthStore
 from haku.console.operator_auth import OperatorActorDep, ToolCallActorDep
+from haku.console.operator_identity import OperatorStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
     BackendAccountNotConnectedError,
@@ -48,8 +59,11 @@ from haku.console.tool_call_service import (
     backend_auth_for_operator,
 )
 from haku.console.tool_calls import (
+    AgentToolCallCaller,
     ApprovalDecisionRequest,
+    OperatorToolCallCaller,
     SubmitToolCallRequest,
+    ToolCallCaller,
     ToolCallEvent,
     ToolCallEventType,
     ToolCallRecord,
@@ -111,7 +125,7 @@ class PendingApproval(BaseModel):
     server_id: str
     title: str | None = None
     tool_name: str
-    caller_principal: str
+    caller: ToolCallCaller
     rationale: str
     arguments: dict[str, Any]
     created_at: datetime.datetime
@@ -134,6 +148,22 @@ class ApprovalDecisionResponse(BaseModel):
     tool_call: ToolCallRecord
 
 
+@dataclass(frozen=True, slots=True)
+class _OperatorToolCallPrincipal:
+    operator_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class _AgentToolCallPrincipal:
+    binding_id: UUID
+    agent_id: UUID
+    operator_id: UUID
+    display_name: str
+
+
+type _ResolvedToolCallPrincipal = _OperatorToolCallPrincipal | _AgentToolCallPrincipal
+
+
 class PostgresToolCallLedger:
     """Postgres-backed approval ledger for the deployed console."""
 
@@ -152,21 +182,30 @@ class PostgresToolCallLedger:
         auto_approval_policy_id: str | None = None,
         auto_approval_evaluation: str | None = None,
     ) -> tuple[ToolCallRecord, list[ToolCallEvent]]:
-        match actor:
-            case AgentActor(principal=caller_principal, operator_id=operator_id):
-                pass
-            case OperatorActor(operator_id=operator_id):
-                caller_principal = str(operator_id)
-            case _:
-                raise TypeError(f"unsupported tool-call actor: {type(actor).__name__}")
         with self._sessions.begin() as session:
+            tool_call_id = f"tc_{secrets.token_hex(12)}"
+            match actor:
+                case AgentActor():
+                    display_name = self._require_active_agent_binding(session, actor)
+                    caller: ToolCallCaller = AgentToolCallCaller(agent_id=actor.agent_id, display_name=display_name)
+                    principal = McpToolCallPrincipal(
+                        tool_call_id=tool_call_id, operator_id=None, binding_id=actor.binding_id
+                    )
+                case OperatorActor():
+                    self._require_active_operator(session, actor.operator_id)
+                    caller = OperatorToolCallCaller()
+                    principal = McpToolCallPrincipal(
+                        tool_call_id=tool_call_id, operator_id=actor.operator_id, binding_id=None
+                    )
+                case _:
+                    raise TypeError(f"unsupported tool-call actor: {type(actor).__name__}")
             now = datetime.datetime.now(datetime.UTC)
             status = ToolCallStatus.RUNNING if auto_approval_policy_id is not None else ToolCallStatus.PENDING_APPROVAL
             record = ToolCallRecord(
-                tool_call_id=f"tc_{secrets.token_hex(12)}",
+                tool_call_id=tool_call_id,
                 server_id=server.id,
                 tool_name=req.tool_name,
-                caller_principal=caller_principal,
+                caller=caller,
                 status=status,
                 created_at=now,
                 updated_at=now,
@@ -177,8 +216,10 @@ class PostgresToolCallLedger:
                 auto_approval_evaluation=auto_approval_evaluation,
                 approved_at=now if auto_approval_policy_id is not None else None,
             )
-            session.add(McpToolCall.from_record(record, operator_id=operator_id))
-            events = [self._insert_event(session, ToolCallEventType.TOOL_CALL_SUBMITTED, record, operator_id)]
+            session.add(self._row_from_record(record))
+            session.flush()
+            session.add(principal)
+            events = [self._insert_event(session, ToolCallEventType.TOOL_CALL_SUBMITTED, record)]
             events.append(
                 self._insert_event(
                     session,
@@ -186,7 +227,6 @@ class PostgresToolCallLedger:
                     if auto_approval_policy_id is not None
                     else ToolCallEventType.APPROVAL_PENDING,
                     record,
-                    operator_id,
                 )
             )
             return record, events
@@ -195,9 +235,9 @@ class PostgresToolCallLedger:
         with self._sessions.begin() as session:
             stmt = self._scope_to_actor(select(McpToolCall).where(McpToolCall.tool_call_id == tool_call_id), actor)
             row = session.scalars(stmt).first()
-        if row is None:
-            raise ToolCallNotFoundError("tool call not found")
-        return row.to_record()
+            if row is None:
+                raise ToolCallNotFoundError("tool call not found")
+            return self._record(session, row)
 
     def list_tool_calls(
         self,
@@ -219,15 +259,19 @@ class PostgresToolCallLedger:
             # oldest-first for pending-approval reads.
             order = McpToolCall.created_at.desc() if newest_first else McpToolCall.created_at
             rows = session.scalars(stmt.order_by(order).limit(limit)).all()
-        return [row.to_record() for row in rows]
+            return [self._record(session, row) for row in rows]
 
     def events_after_id(self, *, actor: OperatorActor, after_event_id: int = 0) -> list[ToolCallEvent]:
         operator_id = self._operator_id(actor)
         with self._sessions.begin() as session:
             rows = session.scalars(
                 select(McpToolCallEvent)
+                .join(McpToolCall, McpToolCall.tool_call_id == McpToolCallEvent.tool_call_id)
+                .join(McpToolCallPrincipal, McpToolCallPrincipal.tool_call_id == McpToolCall.tool_call_id)
+                .outerjoin(CredentialBinding, CredentialBinding.binding_id == McpToolCallPrincipal.binding_id)
+                .outerjoin(Agent, Agent.agent_id == CredentialBinding.agent_id)
                 .where(McpToolCallEvent.event_id > after_event_id)
-                .where(McpToolCallEvent.operator_id == operator_id)
+                .where(or_(McpToolCallPrincipal.operator_id == operator_id, Agent.owner_operator_id == operator_id))
                 .order_by(McpToolCallEvent.event_id)
             ).all()
         return [row.to_event() for row in rows]
@@ -247,7 +291,12 @@ class PostgresToolCallLedger:
             raise ValueError("finish requires exactly one of result or error")
         with self._sessions.begin() as session:
             row = self._row_by_tool_call_id(session, tool_call_id, actor)
-            current = row.to_record()
+            principal = self._principal(session, tool_call_id)
+            if isinstance(actor, AgentActor) and (
+                not isinstance(principal, _AgentToolCallPrincipal) or principal.binding_id != actor.binding_id
+            ):
+                raise ToolCallStateConflictError("tool call was not submitted by this credential binding")
+            current = self._record_from_principal(row, principal)
             if current.status != ToolCallStatus.RUNNING:
                 raise ToolCallStateConflictError(f"tool call is not running; status={current.status}")
             status = ToolCallStatus.OK if error is None else ToolCallStatus.ERROR
@@ -255,9 +304,27 @@ class PostgresToolCallLedger:
             row.updated_at = datetime.datetime.now(datetime.UTC)
             row.result_json = result
             row.error = error
-            updated = row.to_record()
-            event = self._insert_event(session, ToolCallEventType.TOOL_CALL_UPDATED, updated, actor.operator_id)
+            updated = self._record_from_principal(row, principal)
+            event = self._insert_event(session, ToolCallEventType.TOOL_CALL_UPDATED, updated)
             return updated, event
+
+    def authorize_execution(self, tool_call_id: str, *, actor: ToolCallActor) -> UUID:
+        """Revalidate the exact durable principal immediately before external execution."""
+        with self._sessions.begin() as session:
+            row = self._row_by_tool_call_id(session, tool_call_id, actor)
+            if row.status is not ToolCallStatus.RUNNING:
+                raise ToolCallStateConflictError(f"tool call is not running; status={row.status}")
+            principal = self._principal(session, tool_call_id)
+            match actor:
+                case AgentActor():
+                    if not isinstance(principal, _AgentToolCallPrincipal) or principal.binding_id != actor.binding_id:
+                        raise ToolCallStateConflictError("tool call was not submitted by this credential binding")
+                    self._require_active_agent_binding(session, actor)
+                    return actor.operator_id
+                case OperatorActor():
+                    return self._require_executable_principal(session, principal, actor.operator_id)
+                case _:
+                    raise TypeError(f"unsupported tool-call actor: {type(actor).__name__}")
 
     def _transition_pending_approval(
         self, tool_call_id: str, status: ToolCallStatus, *, actor: OperatorActor, denial_reason: str | None = None
@@ -265,28 +332,25 @@ class PostgresToolCallLedger:
         operator_id = self._operator_id(actor)
         with self._sessions.begin() as session:
             row = self._row_by_tool_call_id(session, tool_call_id, actor)
-            record = row.to_record()
+            principal = self._principal(session, tool_call_id)
+            record = self._record_from_principal(row, principal)
             if record.status != ToolCallStatus.PENDING_APPROVAL:
                 raise ToolCallStateConflictError(f"tool call is not pending approval; status={record.status}")
+            if status is ToolCallStatus.RUNNING:
+                self._require_executable_principal(session, principal, operator_id)
             row.status = status
             row.updated_at = datetime.datetime.now(datetime.UTC)
             row.denial_reason = denial_reason
             if status == ToolCallStatus.RUNNING:
                 row.approved_at = row.updated_at
-            updated = row.to_record()
-            event = self._insert_event(session, ToolCallEventType.TOOL_CALL_UPDATED, updated, operator_id)
+            updated = self._record_from_principal(row, principal)
+            event = self._insert_event(session, ToolCallEventType.TOOL_CALL_UPDATED, updated)
             return updated, event
 
-    def _insert_event(
-        self, session: Session, event_type: ToolCallEventType, record: ToolCallRecord, operator_id: UUID
-    ) -> ToolCallEvent:
+    def _insert_event(self, session: Session, event_type: ToolCallEventType, record: ToolCallRecord) -> ToolCallEvent:
         created_at = datetime.datetime.now(datetime.UTC)
         row = McpToolCallEvent(
-            event_type=event_type,
-            operator_id=operator_id,
-            tool_call_id=record.tool_call_id,
-            status=record.status,
-            created_at=created_at,
+            event_type=event_type, tool_call_id=record.tool_call_id, status=record.status, created_at=created_at
         )
         session.add(row)
         session.flush()
@@ -294,7 +358,7 @@ class PostgresToolCallLedger:
 
     def _row_by_tool_call_id(self, session: Session, tool_call_id: str, actor: ToolCallActor) -> McpToolCall:
         stmt = self._scope_to_actor(select(McpToolCall).where(McpToolCall.tool_call_id == tool_call_id), actor)
-        row = session.scalars(stmt.with_for_update()).first()
+        row = session.scalars(stmt.with_for_update(of=McpToolCall)).first()
         if row is None:
             raise ToolCallNotFoundError("tool call not found")
         return row
@@ -302,13 +366,158 @@ class PostgresToolCallLedger:
     @staticmethod
     def _scope_to_actor(stmt: Select[tuple[McpToolCall]], actor: ToolCallActor) -> Select[tuple[McpToolCall]]:
         """Apply the one canonical tool-call ownership predicate to reads and locked writes."""
+        stmt = (
+            stmt.join(McpToolCallPrincipal, McpToolCallPrincipal.tool_call_id == McpToolCall.tool_call_id)
+            .outerjoin(CredentialBinding, CredentialBinding.binding_id == McpToolCallPrincipal.binding_id)
+            .outerjoin(Agent, Agent.agent_id == CredentialBinding.agent_id)
+        )
         match actor:
-            case AgentActor(principal=principal, operator_id=operator_id):
-                return stmt.where(McpToolCall.operator_id == operator_id, McpToolCall.caller_principal == principal)
+            case AgentActor(agent_id=agent_id):
+                return stmt.where(Agent.agent_id == agent_id)
             case OperatorActor(operator_id=operator_id):
-                return stmt.where(McpToolCall.operator_id == operator_id)
+                return stmt.where(
+                    or_(McpToolCallPrincipal.operator_id == operator_id, Agent.owner_operator_id == operator_id)
+                )
             case _:
                 raise TypeError(f"unsupported tool-call actor: {type(actor).__name__}")
+
+    @staticmethod
+    def _row_from_record(record: ToolCallRecord) -> McpToolCall:
+        return McpToolCall(
+            tool_call_id=record.tool_call_id,
+            server_id=record.server_id,
+            tool_name=record.tool_name,
+            status=record.status,
+            created_at=record.created_at,
+            updated_at=record.updated_at,
+            arguments_json=record.arguments,
+            rationale=record.rationale,
+            title=record.title,
+            result_json=record.result,
+            error=record.error,
+            denial_reason=record.denial_reason,
+            approval_policy_id=record.approval_policy_id,
+            auto_approval_evaluation=record.auto_approval_evaluation,
+            approved_at=record.approved_at,
+        )
+
+    def _record(self, session: Session, row: McpToolCall) -> ToolCallRecord:
+        return self._record_from_principal(row, self._principal(session, row.tool_call_id))
+
+    @staticmethod
+    def _record_from_principal(row: McpToolCall, principal: _ResolvedToolCallPrincipal) -> ToolCallRecord:
+        caller: ToolCallCaller
+        if isinstance(principal, _OperatorToolCallPrincipal):
+            caller = OperatorToolCallCaller()
+        else:
+            caller = AgentToolCallCaller(agent_id=principal.agent_id, display_name=principal.display_name)
+        return ToolCallRecord(
+            tool_call_id=row.tool_call_id,
+            server_id=row.server_id,
+            tool_name=row.tool_name,
+            caller=caller,
+            status=row.status,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+            arguments=row.arguments_json,
+            rationale=row.rationale,
+            title=row.title,
+            result=row.result_json,
+            error=row.error,
+            denial_reason=row.denial_reason,
+            approval_policy_id=row.approval_policy_id,
+            auto_approval_evaluation=row.auto_approval_evaluation,
+            approved_at=row.approved_at,
+        )
+
+    @staticmethod
+    def _principal(session: Session, tool_call_id: str) -> _ResolvedToolCallPrincipal:
+        result = session.execute(
+            select(
+                McpToolCallPrincipal,
+                CredentialBinding.agent_id,
+                Agent.owner_operator_id,
+                AgentNameReservation.display_name,
+            )
+            .outerjoin(CredentialBinding, CredentialBinding.binding_id == McpToolCallPrincipal.binding_id)
+            .outerjoin(Agent, Agent.agent_id == CredentialBinding.agent_id)
+            .outerjoin(
+                AgentNameReservation,
+                and_(
+                    AgentNameReservation.agent_id == Agent.agent_id,
+                    AgentNameReservation.reservation_id == Agent.current_name_reservation_id,
+                ),
+            )
+            .where(McpToolCallPrincipal.tool_call_id == tool_call_id)
+        ).first()
+        if result is None:
+            raise RuntimeError(f"tool call {tool_call_id!r} has no durable principal")
+        row, agent_id, operator_id, display_name = result
+        if row.operator_id is not None:
+            if row.binding_id is not None:
+                raise RuntimeError(f"tool call {tool_call_id!r} has contradictory principal variants")
+            return _OperatorToolCallPrincipal(operator_id=row.operator_id)
+        if row.binding_id is None or agent_id is None or operator_id is None or display_name is None:
+            raise RuntimeError(f"tool call {tool_call_id!r} has an incomplete agent principal")
+        return _AgentToolCallPrincipal(
+            binding_id=row.binding_id, agent_id=agent_id, operator_id=operator_id, display_name=display_name
+        )
+
+    @staticmethod
+    def _require_active_operator(session: Session, operator_id: UUID) -> None:
+        found = session.scalar(
+            select(Operator.operator_id)
+            .where(Operator.operator_id == operator_id, Operator.status == OperatorStatus.ACTIVE)
+            .with_for_update()
+        )
+        if found is None:
+            raise ToolCallStateConflictError("operator is not active")
+
+    @staticmethod
+    def _require_active_agent_binding(session: Session, actor: AgentActor) -> str:
+        display_name = session.scalar(
+            select(AgentNameReservation.display_name)
+            .select_from(CredentialBinding)
+            .join(Agent, Agent.agent_id == CredentialBinding.agent_id)
+            .join(Operator, Operator.operator_id == Agent.owner_operator_id)
+            .join(
+                AgentNameReservation,
+                and_(
+                    AgentNameReservation.agent_id == Agent.agent_id,
+                    AgentNameReservation.reservation_id == Agent.current_name_reservation_id,
+                ),
+            )
+            .where(
+                CredentialBinding.binding_id == actor.binding_id,
+                CredentialBinding.agent_id == actor.agent_id,
+                CredentialBinding.status == CredentialBindingStatus.ACTIVE,
+                Agent.agent_id == actor.agent_id,
+                Agent.owner_operator_id == actor.operator_id,
+                Agent.status == AgentStatus.ACTIVE,
+                Operator.operator_id == actor.operator_id,
+                Operator.status == OperatorStatus.ACTIVE,
+            )
+            .with_for_update()
+        )
+        if display_name is None:
+            raise ToolCallStateConflictError("agent credential binding is not active")
+        return display_name
+
+    def _require_executable_principal(
+        self, session: Session, principal: _ResolvedToolCallPrincipal, operator_id: UUID
+    ) -> UUID:
+        if isinstance(principal, _OperatorToolCallPrincipal):
+            if principal.operator_id != operator_id:
+                raise ToolCallNotFoundError("tool call not found")
+            self._require_active_operator(session, operator_id)
+            return operator_id
+        if principal.operator_id != operator_id:
+            raise ToolCallNotFoundError("tool call not found")
+        self._require_active_agent_binding(
+            session,
+            AgentActor(agent_id=principal.agent_id, operator_id=principal.operator_id, binding_id=principal.binding_id),
+        )
+        return operator_id
 
     @staticmethod
     def _operator_id(actor: OperatorActor) -> UUID:
@@ -374,7 +583,7 @@ def _pending_approval_from_record(record: ToolCallRecord) -> PendingApproval:
         server_id=record.server_id,
         title=record.title,
         tool_name=record.tool_name,
-        caller_principal=record.caller_principal,
+        caller=record.caller,
         rationale=record.rationale,
         arguments=record.arguments,
         created_at=record.created_at,

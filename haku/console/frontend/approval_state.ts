@@ -31,7 +31,8 @@ export interface ApprovalDisplayFields {
   rationale: string;
   argumentsJson: string;
   toolCallId: string;
-  callerPrincipal: string | null;
+  callerDisplayName: string;
+  callerAgentId: string | null;
   createdAt: string | null;
   denialReason: string | null;
   approvalPolicyId: string | null;
@@ -113,7 +114,8 @@ export function approvalDisplayFields(approval: PendingApproval | ToolCallRecord
     rationale: approval.rationale ?? "",
     argumentsJson: JSON.stringify(args, null, 2) ?? "null",
     toolCallId: approval.tool_call_id,
-    callerPrincipal: approval.caller_principal ?? null,
+    callerDisplayName: approval.caller.kind === "agent" ? approval.caller.display_name : "Operator",
+    callerAgentId: approval.caller.kind === "agent" ? approval.caller.agent_id : null,
     createdAt: approval.created_at ?? null,
     denialReason: "denial_reason" in approval ? (approval.denial_reason ?? null) : null,
     approvalPolicyId: "approval_policy_id" in approval ? (approval.approval_policy_id ?? null) : null,

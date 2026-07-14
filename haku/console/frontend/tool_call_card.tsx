@@ -95,7 +95,7 @@ export function ToolCallCard({
           <ToolCallMeta
             serverId={fields.serverId}
             toolName={fields.toolName}
-            callerPrincipal={fields.callerPrincipal}
+            callerDisplayName={fields.callerDisplayName}
             createdAt={fields.createdAt}
             toolCallId={fields.toolCallId}
           />

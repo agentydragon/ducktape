@@ -75,6 +75,8 @@ class ToolCallRepository(Protocol):
         self, tool_call_id: str, *, actor: ToolCallActor, result: dict[str, Any] | None, error: str | None
     ) -> tuple[ToolCallRecord, ToolCallEvent]: ...
 
+    def authorize_execution(self, tool_call_id: str, *, actor: ToolCallActor) -> UUID: ...
+
 
 class ToolExecutor(Protocol):
     async def execute(
@@ -175,7 +177,7 @@ class ToolCallApplicationService:
             record.status,
             record.server_id,
             record.tool_name,
-            record.caller_principal,
+            record.caller,
             record.approval_policy_id,
             record.auto_approval_evaluation,
         )
@@ -251,6 +253,7 @@ class ToolCallApplicationService:
     ) -> ToolCallRecord:
         if record.status != ToolCallStatus.RUNNING:
             return record
+        execution_operator_id = self._repository.authorize_execution(record.tool_call_id, actor=actor)
         cancellation: asyncio.CancelledError | None = None
         try:
             result = await self._executor.execute(server, record.tool_name, record.arguments, auth_token)
@@ -266,7 +269,7 @@ class ToolCallApplicationService:
         # RUNNING is already durable. Publish its preceding events only after terminal persistence,
         # so a broken event adapter cannot prevent execution and strand the row. One ordered batch
         # also prevents observers from seeing the terminal event before the RUNNING event.
-        await self._publish(actor.operator_id, [*preceding_events, event])
+        await self._publish(execution_operator_id, [*preceding_events, event])
         logger.info(
             "tool call %s finished status=%s server=%s tool=%s",
             updated.tool_call_id,

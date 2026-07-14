@@ -13,8 +13,9 @@ class OperatorActor:
 
 @dataclass(frozen=True, slots=True)
 class AgentActor:
-    principal: str
+    agent_id: UUID
     operator_id: UUID
+    binding_id: UUID
 
 
 type ToolCallActor = OperatorActor | AgentActor
