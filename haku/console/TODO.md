@@ -33,13 +33,10 @@ flat parameter list one field at a time.
 
 ## Agent-facing MCP server (`/mcp`) — deferred follow-ups
 
-The `/mcp` server (`mcp_server.py`) ships with a single global auto-approval policy and a
-uniform build-time tool surface. The ordered identity, enrollment, and authorization cutover
-is specified in <../../plans/oauth_architecture.md>. Do not extend the legacy DCR-client mapping
-or introduce a standalone `mcp_agents` registry before that cutover establishes canonical
-Operators, Agents, grants, and credential bindings.
-
-After the cutover:
+The `/mcp` server (`mcp_server.py`) now resolves canonical Operators, Agents, grants, and
+credential bindings through one authority, while retaining a single global auto-approval policy
+and uniform build-time tool surface. The architecture is specified in
+<../../plans/oauth_architecture.md>. The next product slices are:
 
 - **Connected Agents** — add an Operator-scoped API and UI showing each Agent's name, client
   software, scopes, status, creation and last-seen times, and reconnect history.
