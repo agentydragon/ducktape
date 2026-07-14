@@ -40,6 +40,9 @@ spec:
           # no version-tag discipline). Bump by repulling :latest and re-pinning.
           image: eceasy/cli-proxy-api@sha256:aeaa68c78e53e7efcc42187170218c83369cdffbb706ea70584fd72c072b7fcd
           workingDir: /CLIProxyAPI
+          # The image has CMD [./CLIProxyAPI] but no ENTRYPOINT, so k8s `args` alone would
+          # replace the binary. Set `command` explicitly and pass -config via args.
+          command: ["./CLIProxyAPI"]
           args: [-config, /config/config.yaml]
           ports:
             - name: http
