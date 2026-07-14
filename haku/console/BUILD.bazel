@@ -167,7 +167,6 @@ py_library(
     deps = [
         ":config",
         ":tool_call_actor",
-        "//:conftest",
         "//haku/console/agents:authorization",
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//mcp_infra:persistence",
@@ -213,7 +212,6 @@ py_library(
         ":operator_identity",
         ":tool_call_actor",
         ":tool_call_service",
-        "//haku/console/agents:models",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
@@ -416,6 +414,7 @@ py_test(
         ":config",
         ":mcp_agent_auth",
         ":tool_call_actor",
+        "//:conftest",
         "//haku/console/agents:authorization",
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//mcp_infra:persistence",
