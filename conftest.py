@@ -19,7 +19,6 @@ def pytest_configure(config: pytest.Config) -> None:
 
     # Test categories
     config.addinivalue_line("markers", "integration: integration tests")
-    config.addinivalue_line("markers", "slow: marks tests as slow")
     config.addinivalue_line("markers", "e2e: end-to-end UI tests using playwright")
 
     # External requirements - LLM APIs
@@ -30,7 +29,6 @@ def pytest_configure(config: pytest.Config) -> None:
     # Platform markers
     config.addinivalue_line("markers", "macos: macOS-only tests")
     config.addinivalue_line("markers", "shell: shell integration tests")
-    config.addinivalue_line("markers", "asyncio: tests that use pytest-asyncio")
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:
@@ -52,7 +50,7 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
         pytest.fail("OPENAI_API_KEY not set — cannot run live OpenAI test")
 
 
-def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Automatically add markers based on other markers."""
     for item in items:
         # sandbox-exec tests are implicitly macOS-only
