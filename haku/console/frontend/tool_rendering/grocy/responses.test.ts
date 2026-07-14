@@ -125,6 +125,16 @@ describe("grocyResultPreviews", () => {
     expect(renderResultPreview(grocyResultPreviews.stock_add, [{ kind: "ok" }], "detailed")).toBeNull();
   });
 
+  it("returns null for an unknown row variant so the caller can render raw JSON", () => {
+    expect(
+      renderResultPreview(
+        grocyResultPreviews.stock_add,
+        [{ kind: "rate_limited", error: "retry later", retry_after_seconds: 10 }],
+        "detailed"
+      )
+    ).toBeNull();
+  });
+
   it("returns null when the payload is not a list (e.g. the un-unwrapped envelope)", () => {
     expect(renderResultPreview(grocyResultPreviews.stock_add, { result: [STOCK_ADD_OK_ROW] }, "compact")).toBeNull();
   });

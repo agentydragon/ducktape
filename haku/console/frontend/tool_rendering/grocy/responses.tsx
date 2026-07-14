@@ -21,11 +21,8 @@ import {
 } from "../vocabulary.tsx";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
 
-// A failed row: any kind other than "ok", with the server's error message. Matched after the
-// ok row shape in each union, so a malformed "ok" row fails the whole parse (→ raw JSON
-// fallback) instead of rendering as a failure.
-const zFailedRow = z.looseObject({
-  kind: z.string().refine((kind) => kind !== "ok"),
+const zErrorRow = z.looseObject({
+  kind: z.literal("error"),
   error: z.string(),
 });
 
@@ -96,31 +93,28 @@ const zShoppingListGetResult = z.looseObject({
   ),
 });
 
-const zStockAddResult = z.array(z.union([zStockAddOkRow, zFailedRow]));
-const zProductsCreateResult = z.array(z.union([zProductsCreateOkRow, zFailedRow]));
-const zShoppingListItemsAddResult = z.array(z.union([zShoppingListItemOkRow, zFailedRow]));
-const zStockEntryEditResult = z.array(z.union([zStockEntryEditOkRow, zFailedRow]));
+const zStockAddResult = z.array(z.discriminatedUnion("kind", [zStockAddOkRow, zErrorRow]));
+const zProductsCreateResult = z.array(z.discriminatedUnion("kind", [zProductsCreateOkRow, zErrorRow]));
+const zShoppingListItemsAddResult = z.array(z.discriminatedUnion("kind", [zShoppingListItemOkRow, zErrorRow]));
+const zStockEntryEditResult = z.array(z.discriminatedUnion("kind", [zStockEntryEditOkRow, zErrorRow]));
 const zStockGetResult = z.array(zStockEntryRow);
 const zProductsListResult = z.array(zNamedRow);
 const zQuantityUnitsListResult = z.array(zQuantityUnitRow);
 const zSystemInfoResult = z.looseObject({});
-const zShoppingListItemsRemoveResult = z.array(z.union([zShoppingListItemOkRow, zFailedRow]));
+const zShoppingListItemsRemoveResult = z.array(z.discriminatedUnion("kind", [zShoppingListItemOkRow, zErrorRow]));
 
-type FailedRow = z.infer<typeof zFailedRow>;
+type ErrorRow = z.infer<typeof zErrorRow>;
 type StockAddOkRow = z.infer<typeof zStockAddOkRow>;
 type ProductsCreateOkRow = z.infer<typeof zProductsCreateOkRow>;
 type ShoppingListItemOkRow = z.infer<typeof zShoppingListItemOkRow>;
 type StockEntryEditOkRow = z.infer<typeof zStockEntryEditOkRow>;
 
-// The zFailedRow refine guarantees a non-"ok" kind at runtime, but zod types it as plain
-// `string` (and TS doesn't narrow a generic union by discriminant), so the ok/failed split
-// casts by kind here, once for every widget.
-function splitRows<Ok extends { kind: "ok" }>(rows: readonly (Ok | FailedRow)[]): { ok: Ok[]; failed: FailedRow[] } {
+function splitRows<Ok extends { kind: "ok" }>(rows: readonly (Ok | ErrorRow)[]): { ok: Ok[]; failed: ErrorRow[] } {
   const ok: Ok[] = [];
-  const failed: FailedRow[] = [];
+  const failed: ErrorRow[] = [];
   for (const row of rows) {
-    if (row.kind === "ok") ok.push(row as Ok);
-    else failed.push(row as FailedRow);
+    if (row.kind === "ok") ok.push(row);
+    else failed.push(row);
   }
   return { ok, failed };
 }
@@ -150,7 +144,7 @@ function BatchResultView<Ok extends { kind: "ok" }>({
   rowName,
   RowView,
 }: {
-  rows: readonly (Ok | FailedRow)[];
+  rows: readonly (Ok | ErrorRow)[];
   variant: PreviewVariant;
   verb: string;
   rowName: (row: Ok) => string;
