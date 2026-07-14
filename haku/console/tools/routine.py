@@ -2,7 +2,7 @@
 
 Fires the Haku claude-code-web routine behind haku-console's operator-approval queue:
 `launch_routine` is an ordinary approval-gated MCP tool, so a launch flows through the same
-submit → approve → execute pipeline as every other console tool call (`mcp_approval.py`),
+submit → approve → execute application-service pipeline as every other console tool call,
 not a bespoke capability path. The routine (trigger) id + fire bearer come from the mounted
 `haku-routine-launch-token` secret via `LaunchRoutineConfig`; the bearer stays in this
 process (the `haku-console` namespace Haku can't read). See `haku/docs/security.md`.

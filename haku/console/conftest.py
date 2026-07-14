@@ -172,22 +172,19 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
             config_file=config_file if config_file is not None else default_config,
             **settings_overrides,
         )
-        app = create_app(settings)
+        app = create_app(
+            settings,
+            tool_call_executor=tool_call_executor,
+            tool_call_metadata_provider=tool_call_metadata_provider,
+            gmail_client=gmail_client,
+            calendar_client=calendar_client,
+            in_process_servers=in_process_servers,
+        )
         operator_identity = None
         if operator:
             operator_identity = app.state.operator_identity_store.resolve_verified_identity(
                 VerifiedExternalIdentity(issuer=settings.operator_oidc.issuer, subject=operator_external_user_key)
             )
-        if tool_call_executor is not None:
-            app.state.tool_call_executor = tool_call_executor
-        if tool_call_metadata_provider is not None:
-            app.state.tool_call_metadata_provider = tool_call_metadata_provider
-        if gmail_client is not None:
-            app.state.gmail_client = gmail_client
-        if calendar_client is not None:
-            app.state.calendar_client = calendar_client
-        if in_process_servers is not None:
-            app.state.in_process_servers = in_process_servers
         # When the session cookie is Secure (https public_base_url → https_only), drive the client
         # over https so the middleware's re-signed cookie is retained and resent across requests.
         https = settings.public_base_url.startswith("https://")

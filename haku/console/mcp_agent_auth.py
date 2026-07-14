@@ -13,10 +13,11 @@ from mcp.server.auth.provider import TokenError
 from starlette.exceptions import HTTPException
 
 from haku.console.config import Settings
-from haku.console.mcp_config import ResolvedStaticAgent, static_agent_client_id
+from haku.console.mcp_config import ResolvedStaticAgent, static_agent_client_id, static_agent_name_from_client_id
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.operator_identity import OperatorIdentityError, VerifiedExternalIdentity
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.tool_call_actor import AgentActor
 from mcp_infra.authentik_auth.fastmcp_proxy import DownstreamClientIdentityOIDCProxy
 from mcp_infra.authentik_auth.oidc_principal import (
     AuthentikOidcPrincipalResolver,
@@ -81,6 +82,26 @@ class OAuthMcpAuth:
 
 
 type McpAuth = StaticMcpAuth | OAuthMcpAuth
+
+
+def resolve_mcp_agent(
+    client_id: str,
+    static_agents: list[ResolvedStaticAgent],
+    oauth_store: PostgresMcpOperatorOAuthStore,
+    identity_store: PostgresOperatorIdentityStore,
+) -> AgentActor | None:
+    """Resolve one authenticated MCP client id to its active canonical Operator."""
+    static_name = static_agent_name_from_client_id(client_id)
+    if static_name is not None:
+        agent = next((agent for agent in static_agents if agent.agent == static_name), None)
+        if agent is None or not identity_store.is_active(agent.operator_id):
+            return None
+        return AgentActor(principal=agent.agent, operator_id=agent.operator_id)
+
+    operator_id = oauth_store.agent_operator(client_id)
+    if operator_id is None or not identity_store.is_active(operator_id):
+        return None
+    return AgentActor(principal=client_id, operator_id=operator_id)
 
 
 class _AgentOperatorLinkRejectedError(Exception):

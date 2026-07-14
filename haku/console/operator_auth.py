@@ -57,10 +57,10 @@ def authenticated_static_agent(
 ) -> ResolvedStaticAgent | None:
     """The static agent whose configured bearer this request presents, or None.
 
-    The one place a presented agent token maps to its `ResolvedStaticAgent` — which carries both the
-    audit identity (`agent`) and the canonical Operator it acts as (`operator_id`). Both the agent-facing
-    router guard (`require_operator_or_static_agent`) and the tool-call caller resolution
-    (`mcp_approval`) route through it, so there is a single token→agent→operator mapping."""
+    The one HTTP boundary where a presented static-agent bearer maps to its
+    `ResolvedStaticAgent`, carrying both audit identity (`agent`) and canonical Operator
+    (`operator_id`). The agent-facing router guard and `ToolCallActorDep` share this resolution;
+    FastMCP separately resolves its already-verified `client_id` in `mcp_agent_auth`."""
     return next((a for a in static_agents if presents_agent_bearer(conn, a.token.get_secret_value())), None)
 
 
@@ -228,20 +228,15 @@ def _tool_call_actor(conn: HTTPConnection, static_agents: StaticAgentsDep) -> To
 ToolCallActorDep = Annotated[ToolCallActor, Depends(_tool_call_actor)]
 
 
-def require_operator(conn: HTTPConnection) -> None:
+def require_operator(actor: OperatorActorDep) -> None:
     """Router-level guard for the operator-only surface: the caller must present an authenticated
     canonical Operator session. Applied to the operator routers so a newly added route there is
-    protected by default — no path list to keep in sync. Typed on `HTTPConnection` so it guards the
-    WebSocket route as well as HTTP routes."""
-    _operator_actor(conn)
+    protected by default — no path list to keep in sync. FastAPI caches the same actor dependency
+    for the guard and route handler, so identity is resolved exactly once per request."""
 
 
-def require_operator_or_static_agent(conn: HTTPConnection) -> None:
+def require_operator_or_static_agent(actor: ToolCallActorDep) -> None:
     """Router-level guard for the agent-facing tool-call routes (submit + read/sweep): an operator
     session OR a configured static agent's bearer. The operator-only surfaces (approvals, decisions,
-    account linking) are never reachable by an agent bearer because they live under `require_operator`."""
-    if operator_session(conn) is not None:
-        return
-    agent = authenticated_static_agent(conn, _static_agents(conn))
-    if agent is None or not _identity_store(conn).is_active(agent.operator_id):
-        raise HTTPException(status_code=401, detail="operator or agent authentication required")
+    account linking) are never reachable by an agent bearer because they live under `require_operator`.
+    The actor dependency is shared with the route through FastAPI's per-request dependency cache."""

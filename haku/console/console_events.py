@@ -234,7 +234,7 @@ ConsoleEventHubDep = Annotated[ConsoleEventHub, Depends(_event_hub)]
 
 
 @router.websocket("/api/events/ws")
-async def console_events_ws(websocket: WebSocket) -> None:
+async def console_events_ws(websocket: WebSocket, actor: operator_auth.OperatorActorDep) -> None:
     hub = cast(ConsoleEventHub, websocket.app.state.console_event_hub)
     settings = cast(Settings, websocket.app.state.settings)
     public_url = urlsplit(settings.public_base_url)
@@ -242,11 +242,7 @@ async def console_events_ws(websocket: WebSocket) -> None:
     if websocket.headers.get("origin") != expected_origin:
         await websocket.close(code=1008, reason="invalid websocket origin")
         return
-    operator_session = operator_auth.operator_session(websocket)
-    if operator_session is None:
-        await websocket.close(code=1008, reason="operator authentication required")
-        return
-    if not await hub.connect(websocket, operator_session.operator_id):
+    if not await hub.connect(websocket, actor.operator_id):
         return
     try:
         await websocket.send_json(ConsoleHelloEvent().model_dump(mode="json"))

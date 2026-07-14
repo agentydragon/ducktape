@@ -345,7 +345,7 @@ def test_tool_call_event_owner_must_match_owning_call(migrated_db_url: str) -> N
     owner = store.resolve_configured_external_user_key("call-owner")
     other = store.resolve_configured_external_user_key("other-owner")
     ledger = PostgresToolCallLedger(migrated_db_url)
-    record, _, _ = ledger.submit(
+    record, _ = ledger.submit(
         server=McpServerEntry(id="server"),
         req=SubmitToolCallRequest(
             server_id="server", tool_name="tool", arguments={}, rationale="constraint test", wait_for_ms=0

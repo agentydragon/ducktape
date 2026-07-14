@@ -41,6 +41,7 @@ from haku.console.mcp_config import McpServerEntry
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore, _BuiltOperatorOAuthFlow
 from haku.console.operator_identity import InactiveOperatorError, OperatorIdentityTrust, OperatorStatus
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.tool_call_service import backend_auth_for_operator
 from haku.console.tool_calls import ToolCallEventType, ToolCallStatus
 from haku.console.tools.gmail import build_mcp as build_gmail_mcp
 from util.net import pick_free_port
@@ -420,7 +421,14 @@ def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID
         operator_ids.append(operator_id)
         return await _execution_auth(server, operator_id, oauth_store)
 
+    async def recording_service_auth(
+        *, server: McpServerEntry, operator_id: UUID, oauth_store: PostgresMcpOperatorOAuthStore
+    ) -> str | None:
+        operator_ids.append(operator_id)
+        return await backend_auth_for_operator(server=server, operator_id=operator_id, oauth_store=oauth_store)
+
     monkeypatch.setattr("haku.console.mcp_approval._execution_auth", recording_execution_auth)
+    monkeypatch.setattr("haku.console.tool_call_service.backend_auth_for_operator", recording_service_auth)
     return operator_ids
 
 
@@ -1145,32 +1153,50 @@ def test_routing_executes_each_agent_as_its_own_operator(
     assert recording_executor.auth_tokens == ["grocy-token-haku", "grocy-token-ops"]
 
 
-def test_sibling_agents_only_read_their_own_calls_within_one_operator(
+def test_two_operator_two_agent_http_authorization_matrix(
     make_client, make_operator_client, tmp_path: Path, mcp_server_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("HAKU_CONSOLE_TEST_SIBLING_AGENT_TOKEN", "sibling-token")
-    monkeypatch.setenv("HAKU_CONSOLE_TEST_SIBLING_AGENT_OPERATOR", "op-haku")
+    agent_specs = (
+        ("haku", "tool-token", "op-haku", _AGENT_TOKEN_ENV, _AGENT_OPERATOR_ENV),
+        (
+            "haku-sibling",
+            "haku-sibling-token",
+            "op-haku",
+            "HAKU_CONSOLE_TEST_HAKU_SIBLING_TOKEN",
+            "HAKU_CONSOLE_TEST_HAKU_SIBLING_OPERATOR",
+        ),
+        ("ops", "ops-token", "op-ops", "HAKU_CONSOLE_TEST_OPS_TOKEN", "HAKU_CONSOLE_TEST_OPS_OPERATOR"),
+        (
+            "ops-sibling",
+            "ops-sibling-token",
+            "op-ops",
+            "HAKU_CONSOLE_TEST_OPS_SIBLING_TOKEN",
+            "HAKU_CONSOLE_TEST_OPS_SIBLING_OPERATOR",
+        ),
+    )
+    for _, token, operator_key, token_env, operator_env in agent_specs:
+        monkeypatch.setenv(token_env, token)
+        monkeypatch.setenv(operator_env, operator_key)
     config = _config(
         [{"id": "grocy-sf", "server_url": mcp_server_url, "bearer_token_secret": "haku-console-grocy-sf-token"}]
     )
     config["static_agents"] = [
-        *_STATIC_AGENTS,
-        {
-            "agent": "sibling",
-            "token_env_var": "HAKU_CONSOLE_TEST_SIBLING_AGENT_TOKEN",
-            "operator_subject_env": "HAKU_CONSOLE_TEST_SIBLING_AGENT_OPERATOR",
-        },
+        {"agent": name, "token_env_var": token_env, "operator_subject_env": operator_env}
+        for name, _, _, token_env, operator_env in agent_specs
     ]
-    config_file = write_config(tmp_path / "sibling_agents.yaml", config)
+    config_file = write_config(tmp_path / "two_operator_agents.yaml", config)
 
     with (
         make_client(config_file=config_file) as agents,
         make_operator_client(
             config_file=config_file, operator_external_user_key="op-haku", operator_username="owner@example.com"
-        ) as operator,
+        ) as operator_a,
+        make_operator_client(
+            config_file=config_file, operator_external_user_key="op-ops", operator_username="ops@example.com"
+        ) as operator_b,
     ):
-        call_ids: list[str] = []
-        for bearer, amount in (("tool-token", 1), ("sibling-token", 2)):
+        call_ids: dict[str, str] = {}
+        for amount, (name, bearer, _, _, _) in enumerate(agent_specs, start=1):
             response = agents.post(
                 "/api/tool-calls",
                 headers={"Authorization": f"Bearer {bearer}"},
@@ -1182,21 +1208,66 @@ def test_sibling_agents_only_read_their_own_calls_within_one_operator(
                 },
             )
             assert response.status_code == 200, response.text
-            call_ids.append(response.json()["tool_call_id"])
+            call_ids[name] = response.json()["tool_call_id"]
 
-        for bearer, own_call_id, sibling_call_id in (
-            ("tool-token", call_ids[0], call_ids[1]),
-            ("sibling-token", call_ids[1], call_ids[0]),
-        ):
+        call_ids["operator-a"] = _submit(operator_a, amount=5)["tool_call_id"]
+        call_ids["operator-b"] = _submit(operator_b, amount=6)["tool_call_id"]
+
+        for name, bearer, _, _, _ in agent_specs:
+            own_call_id = call_ids[name]
             headers = {"Authorization": f"Bearer {bearer}"}
             listed = agents.get("/api/tool-calls", headers=headers).json()["tool_calls"]
             assert [call["tool_call_id"] for call in listed] == [own_call_id]
             assert agents.get(f"/api/tool-calls/{own_call_id}", headers=headers).status_code == 200
-            assert agents.get(f"/api/tool-calls/{sibling_call_id}", headers=headers).status_code == 404
+            for foreign_call_id in set(call_ids.values()) - {own_call_id}:
+                assert agents.get(f"/api/tool-calls/{foreign_call_id}", headers=headers).status_code == 404
+            assert agents.get("/api/approvals/pending", headers=headers).status_code == 401
+            assert agents.get("/api/approvals/events", headers=headers).status_code == 401
+            assert (
+                agents.post(
+                    f"/api/tool-calls/{own_call_id}/decision", headers=headers, json={"decision": "deny"}
+                ).status_code
+                == 401
+            )
 
-        operator_calls = operator.get("/api/tool-calls").json()["tool_calls"]
-        assert [call["tool_call_id"] for call in operator_calls] == call_ids
-        assert all(operator.get(f"/api/tool-calls/{call_id}").status_code == 200 for call_id in call_ids)
+        operator_expected = {
+            "a": {call_ids["haku"], call_ids["haku-sibling"], call_ids["operator-a"]},
+            "b": {call_ids["ops"], call_ids["ops-sibling"], call_ids["operator-b"]},
+        }
+        for operator, own_ids, foreign_ids in (
+            (operator_a, operator_expected["a"], operator_expected["b"]),
+            (operator_b, operator_expected["b"], operator_expected["a"]),
+        ):
+            listed_ids = {call["tool_call_id"] for call in operator.get("/api/tool-calls").json()["tool_calls"]}
+            pending_ids = {call["tool_call_id"] for call in operator.get("/api/approvals/pending").json()["approvals"]}
+            event_ids = {event["tool_call_id"] for event in operator.get("/api/approvals/events").json()["events"]}
+            assert listed_ids == pending_ids == event_ids == own_ids
+            assert all(operator.get(f"/api/tool-calls/{call_id}").status_code == 200 for call_id in own_ids)
+            assert all(operator.get(f"/api/tool-calls/{call_id}").status_code == 404 for call_id in foreign_ids)
+
+        # Decision ownership is checked before OAuth lookup, transition, or execution.
+        for operator, foreign_call_id in ((operator_a, call_ids["ops"]), (operator_b, call_ids["haku"])):
+            response = operator.post(
+                f"/api/tool-calls/{foreign_call_id}/decision",
+                headers={"X-CSRF-Token": csrf_token(operator)},
+                json={"decision": "approve"},
+            )
+            assert response.status_code == 404
+
+        approved = operator_a.post(
+            f"/api/tool-calls/{call_ids['haku']}/decision",
+            headers={"X-CSRF-Token": csrf_token(operator_a)},
+            json={"decision": "approve"},
+        )
+        denied = operator_b.post(
+            f"/api/tool-calls/{call_ids['ops']}/decision",
+            headers={"X-CSRF-Token": csrf_token(operator_b)},
+            json={"decision": "deny", "reason": "no"},
+        )
+        assert approved.status_code == 200, approved.text
+        assert approved.json()["tool_call"]["status"] == "ok"
+        assert denied.status_code == 200, denied.text
+        assert denied.json()["tool_call"]["status"] == "denied"
 
 
 def test_approval_denial_is_terminal_and_does_not_execute(operator_client: TestClient) -> None:
@@ -1229,6 +1300,19 @@ def test_all_v1_tool_calls_require_console_approval(operator_client: TestClient)
     assert pending["approvals"][0]["tool_call_id"] == body["tool_call_id"]
     assert pending["approvals"][0]["title"] is None
     assert listed["tool_calls"][0]["tool_call_id"] == body["tool_call_id"]
+
+
+def test_unknown_server_maps_to_http_not_found(operator_client: TestClient) -> None:
+    submitted = operator_client.post(
+        "/api/tool-calls", json={"server_id": "missing", "tool_name": "echo", "arguments": {}, "wait_for_ms": 0}
+    )
+    connected = operator_client.post(
+        "/api/mcp/operator-auth/missing/connect", headers={"X-CSRF-Token": csrf_token(operator_client)}
+    )
+
+    for response in (submitted, connected):
+        assert response.status_code == 404
+        assert response.json()["detail"] == "unknown MCP server: missing"
 
 
 def test_operator_tenants_cannot_read_or_decide_each_others_calls(make_operator_client, console_config: Path) -> None:
@@ -1291,6 +1375,44 @@ def test_websocket_receives_pending_approval_event(operator_client: TestClient) 
     assert event["tool_call_id"] == submitted["tool_call_id"]
     assert event["status"] == "pending_approval"
     assert events["events"][0]["event_id"] == event["event_id"]
+
+
+def test_two_operator_websockets_only_receive_their_interleaved_tool_calls(
+    make_operator_client, console_config: Path
+) -> None:
+    with (
+        make_operator_client(
+            config_file=console_config,
+            operator_external_user_key="websocket-operator-a",
+            operator_username="a@example.com",
+        ) as operator_a,
+        make_operator_client(
+            config_file=console_config,
+            operator_external_user_key="websocket-operator-b",
+            operator_username="b@example.com",
+        ) as operator_b,
+        operator_a.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as events_a,
+        operator_b.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as events_b,
+    ):
+        assert events_a.receive_json() == {"event_type": "hello"}
+        assert events_b.receive_json() == {"event_type": "hello"}
+        submitted = [
+            ("a", _submit(operator_a, amount=1)["tool_call_id"]),
+            ("b", _submit(operator_b, amount=2)["tool_call_id"]),
+            ("a", _submit(operator_a, amount=3)["tool_call_id"]),
+            ("b", _submit(operator_b, amount=4)["tool_call_id"]),
+        ]
+        # Each submit publishes submitted + approval-pending. Global event ids interleave tenants;
+        # each socket must still see only its own two call ids.
+        received_a = [events_a.receive_json() for _ in range(4)]
+        received_b = [events_b.receive_json() for _ in range(4)]
+
+    expected_a = {call_id for owner, call_id in submitted if owner == "a"}
+    expected_b = {call_id for owner, call_id in submitted if owner == "b"}
+    assert {event["tool_call_id"] for event in received_a} == expected_a
+    assert {event["tool_call_id"] for event in received_b} == expected_b
+    assert expected_a.isdisjoint({event["tool_call_id"] for event in received_b})
+    assert expected_b.isdisjoint({event["tool_call_id"] for event in received_a})
 
 
 def test_websocket_rejects_cross_origin(make_operator_client) -> None:

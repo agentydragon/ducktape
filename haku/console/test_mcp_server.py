@@ -33,14 +33,15 @@ from haku.console.conftest import (
     write_config,
 )
 from haku.console.console_events import ConsoleEventHub
-from haku.console.mcp_agent_auth import build_auth
-from haku.console.mcp_approval import McpMetadataProvider, McpToolExecutor, PostgresToolCallLedger, resolve_mcp_agent
+from haku.console.mcp_agent_auth import build_auth, resolve_mcp_agent
+from haku.console.mcp_approval import McpMetadataProvider, McpToolExecutor, PostgresToolCallLedger
 from haku.console.mcp_config import ResolvedStaticAgent, static_agent_client_id
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_server import ConsoleMcpContext, build_console_mcp, register_proxy_tools
 from haku.console.operator_identity import OperatorIdentityTrust, VerifiedExternalIdentity
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor, OperatorActor
+from haku.console.tool_call_service import ToolCallApplicationService
 from haku.console.tool_calls import ToolCallStatus
 from haku.console.tools import gmail as gmail_tools
 from mcp_infra.persistence import PostgresPersistence
@@ -54,6 +55,8 @@ _AGENT_TOKEN = "agent-token"
 _AGENT_TOKEN_ENV = "HAKU_CONSOLE_TEST_AGENT_TOKEN"
 _AGENT_OPERATOR_ENV = "HAKU_CONSOLE_TEST_AGENT_OPERATOR"
 _SIBLING_AGENT_TOKEN = "sibling-agent-token"
+_OTHER_AGENT_TOKEN = "other-agent-token"
+_OTHER_SIBLING_AGENT_TOKEN = "other-sibling-agent-token"
 _STATIC_AGENTS = [{"agent": "haku", "token_env_var": _AGENT_TOKEN_ENV, "operator_subject_env": _AGENT_OPERATOR_ENV}]
 
 
@@ -66,8 +69,9 @@ def _static_agent_env(monkeypatch: pytest.MonkeyPatch) -> None:
 @dataclass
 class _Harness:
     base: str  # base URL of the served console MCP; open `Client(f"{base}/mcp", auth=_AGENT_TOKEN)`
-    ledger: PostgresToolCallLedger
+    tool_calls: ToolCallApplicationService
     operator_id: UUID
+    other_operator_id: UUID
 
 
 def _identity_store(database_url: str) -> PostgresOperatorIdentityStore:
@@ -90,21 +94,33 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
     in_process = {gmail_tools.GMAIL_SERVER_ID: gmail_tools.build_mcp(gmail_client)}
     identity_store = _identity_store(migrated_db_url)
     operator_id = identity_store.resolve_configured_external_user_key("42")
+    other_operator_id = identity_store.resolve_configured_external_user_key("99")
     oauth_store = PostgresMcpOperatorOAuthStore(migrated_db_url, operator_identity_store=identity_store)
+    ledger = PostgresToolCallLedger(migrated_db_url)
+    hub = ConsoleEventHub(migrated_db_url, operator_identity_store=identity_store)
+    tool_calls = ToolCallApplicationService(
+        settings=settings,
+        repository=ledger,
+        event_publisher=hub,
+        executor=McpToolExecutor(in_process),
+        oauth_store=oauth_store,
+        in_process_servers=in_process,
+        gmail_client=gmail_client,
+    )
     context = ConsoleMcpContext(
         settings=settings,
         static_agents=[
             ResolvedStaticAgent(agent="haku", token=SecretStr(_AGENT_TOKEN), operator_id=operator_id),
             ResolvedStaticAgent(agent="sibling", token=SecretStr(_SIBLING_AGENT_TOKEN), operator_id=operator_id),
+            ResolvedStaticAgent(agent="other", token=SecretStr(_OTHER_AGENT_TOKEN), operator_id=other_operator_id),
+            ResolvedStaticAgent(
+                agent="other-sibling", token=SecretStr(_OTHER_SIBLING_AGENT_TOKEN), operator_id=other_operator_id
+            ),
         ],
-        ledger=PostgresToolCallLedger(migrated_db_url),
-        hub=ConsoleEventHub(migrated_db_url, operator_identity_store=identity_store),
-        executor=McpToolExecutor(in_process),
+        tool_calls=tool_calls,
         oauth_store=oauth_store,
         identity_store=identity_store,
         metadata_provider=McpMetadataProvider(in_process),
-        in_process_servers=in_process,
-        gmail_client=gmail_client,
     )
     server = build_console_mcp(
         context,
@@ -121,7 +137,7 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
     mcp_app = server.http_app(path="/")
     app = Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=mcp_app.lifespan)
     with serve_app_sync(app) as base:
-        yield _Harness(base=base, ledger=context.ledger, operator_id=operator_id)
+        yield _Harness(base=base, tool_calls=tool_calls, operator_id=operator_id, other_operator_id=other_operator_id)
 
 
 async def test_tool_surface_splits_pass_through_and_request(harness: _Harness) -> None:
@@ -150,7 +166,7 @@ async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harn
 
     assert result.structured_content is not None
     assert result.structured_content["labels"][0]["name"] == "haku/triaged"
-    calls = harness.ledger.list(actor=AgentActor(principal="haku", operator_id=harness.operator_id)).tool_calls
+    calls = harness.tool_calls.list_tool_calls(actor=AgentActor(principal="haku", operator_id=harness.operator_id))
     assert len(calls) == 1
     assert calls[0].status == ToolCallStatus.OK
     assert calls[0].tool_name == "labels_list"
@@ -189,7 +205,7 @@ async def test_get_tool_call_missing_raises(harness: _Harness) -> None:
             await client.call_tool("get_tool_call", {"tool_call_id": "tc_does_not_exist"})
 
 
-async def test_sibling_mcp_agents_only_read_their_own_calls(harness: _Harness) -> None:
+async def test_two_operator_two_agent_mcp_read_matrix(harness: _Harness) -> None:
     async def submit_draft(token: str, subject: str) -> str:
         async with Client(f"{harness.base}/mcp", auth=token) as client:
             result = await client.call_tool(
@@ -203,12 +219,15 @@ async def test_sibling_mcp_agents_only_read_their_own_calls(harness: _Harness) -
         assert result.structured_content is not None
         return str(result.structured_content["tool_call_id"])
 
-    call_ids = [await submit_draft(_AGENT_TOKEN, "haku"), await submit_draft(_SIBLING_AGENT_TOKEN, "sibling")]
+    agents = (
+        (_AGENT_TOKEN, "haku"),
+        (_SIBLING_AGENT_TOKEN, "sibling"),
+        (_OTHER_AGENT_TOKEN, "other"),
+        (_OTHER_SIBLING_AGENT_TOKEN, "other-sibling"),
+    )
+    call_ids = [await submit_draft(token, name) for token, name in agents]
 
-    for token, own_call_id, sibling_call_id in (
-        (_AGENT_TOKEN, call_ids[0], call_ids[1]),
-        (_SIBLING_AGENT_TOKEN, call_ids[1], call_ids[0]),
-    ):
+    for (token, _), own_call_id in zip(agents, call_ids, strict=True):
         async with Client(f"{harness.base}/mcp", auth=token) as client:
             listed = await client.call_tool("list_tool_calls", {})
             assert listed.structured_content is not None
@@ -216,11 +235,16 @@ async def test_sibling_mcp_agents_only_read_their_own_calls(harness: _Harness) -
             own = await client.call_tool("get_tool_call", {"tool_call_id": own_call_id})
             assert own.structured_content is not None
             assert own.structured_content["call"]["tool_call_id"] == own_call_id
-            with pytest.raises(ToolError, match="not found"):
-                await client.call_tool("get_tool_call", {"tool_call_id": sibling_call_id})
+            for foreign_call_id in set(call_ids) - {own_call_id}:
+                with pytest.raises(ToolError, match="not found"):
+                    await client.call_tool("get_tool_call", {"tool_call_id": foreign_call_id})
 
-    operator_calls = harness.ledger.list(actor=OperatorActor(operator_id=harness.operator_id)).tool_calls
-    assert [call.tool_call_id for call in operator_calls] == call_ids
+    operator_calls = harness.tool_calls.list_tool_calls(actor=OperatorActor(operator_id=harness.operator_id))
+    other_operator_calls = harness.tool_calls.list_tool_calls(
+        actor=OperatorActor(operator_id=harness.other_operator_id)
+    )
+    assert [call.tool_call_id for call in operator_calls] == call_ids[:2]
+    assert [call.tool_call_id for call in other_operator_calls] == call_ids[2:]
 
 
 # ── End-to-end: real upstream MCP server + console served over HTTP + real Postgres ──────────

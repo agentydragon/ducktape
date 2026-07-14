@@ -1,21 +1,18 @@
 """Operator-approved MCP tool calls owned by haku-console.
 
-This router is the privileged tool-call ledger: callers can discover connected MCP
-servers, submit exact calls against any reflected tool, and read the console-owned
-result/audit state. Calls run immediately only when a reviewed auto-approval policy
-matches; all others wait for an operator decision in trusted console chrome. The
-connected-server catalog lives in `mcp_config`; operator OAuth account
-linkage (used when a server executes as the operator's own account) lives in
+This module contains the FastAPI/wire adapter plus the current Postgres repository,
+MCP executor, and metadata-reflection adapters. `ToolCallApplicationService` owns the
+actor-scoped lifecycle: calls run immediately only when reviewed policy matches; all
+others wait for an operator decision in trusted console chrome. The connected-server
+catalog lives in `mcp_config`; operator OAuth account linkage lives in
 `mcp_operator_oauth`.
 """
 
 from __future__ import annotations
 
-import asyncio
 import datetime
-import logging
 import secrets
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Literal, Never, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -25,29 +22,32 @@ from mcp import types as mcp_types
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.sql import Select
 
-from haku.console.auto_approval import auto_approve_tool_call
 from haku.console.config import Settings
-from haku.console.console_events import ConsoleEventHub, ConsoleEventHubDep
 from haku.console.database_schema import McpToolCall, McpToolCallEvent
 from haku.console.deps import SettingsDep
 from haku.console.mcp_config import (
     InProcessServers,
     McpServerEntry,
-    ResolvedStaticAgent,
+    McpServerNotFoundError,
     _credential_token,
     _load_servers,
     _operator_oauth_enabled,
     _server_entry,
     _transport,
-    static_agent_name_from_client_id,
 )
 from haku.console.mcp_operator_oauth import OAuthStoreDep, PostgresMcpOperatorOAuthStore
 from haku.console.operator_auth import OperatorActorDep, ToolCallActorDep
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
+from haku.console.tool_call_service import (
+    BackendAccountNotConnectedError,
+    ToolCallApplicationService,
+    ToolCallNotFoundError,
+    ToolCallStateConflictError,
+    backend_auth_for_operator,
+)
 from haku.console.tool_calls import (
-    ApprovalDecision,
     ApprovalDecisionRequest,
     SubmitToolCallRequest,
     ToolCallEvent,
@@ -55,9 +55,6 @@ from haku.console.tool_calls import (
     ToolCallRecord,
     ToolCallStatus,
 )
-from haku.console.tools.gmail_client import GmailToolsClient
-
-logger = logging.getLogger(__name__)
 
 # Operator-only routes (reflection, approvals, decisions). app.py guards this router with
 # `require_operator`.
@@ -67,9 +64,6 @@ router = APIRouter(tags=["mcp-approval"])
 # reaches them, and nothing else.
 agent_router = APIRouter(tags=["mcp-approval"])
 Csrf = Annotated[CsrfProtect, Depends()]
-
-
-TERMINAL_STATUSES = {ToolCallStatus.OK, ToolCallStatus.ERROR, ToolCallStatus.DENIED}
 
 
 class ToolMetadataBase(BaseModel):
@@ -157,11 +151,17 @@ class PostgresToolCallLedger:
         actor: ToolCallActor,
         auto_approval_policy_id: str | None = None,
         auto_approval_evaluation: str | None = None,
-    ) -> tuple[ToolCallRecord, list[ToolCallEvent], bool]:
+    ) -> tuple[ToolCallRecord, list[ToolCallEvent]]:
+        match actor:
+            case AgentActor(principal=caller_principal, operator_id=operator_id):
+                pass
+            case OperatorActor(operator_id=operator_id):
+                caller_principal = str(operator_id)
+            case _:
+                raise TypeError(f"unsupported tool-call actor: {type(actor).__name__}")
         with self._sessions.begin() as session:
             now = datetime.datetime.now(datetime.UTC)
             status = ToolCallStatus.RUNNING if auto_approval_policy_id is not None else ToolCallStatus.PENDING_APPROVAL
-            caller_principal = actor.principal if isinstance(actor, AgentActor) else str(actor.operator_id)
             record = ToolCallRecord(
                 tool_call_id=f"tc_{secrets.token_hex(12)}",
                 server_id=server.id,
@@ -177,8 +177,8 @@ class PostgresToolCallLedger:
                 auto_approval_evaluation=auto_approval_evaluation,
                 approved_at=now if auto_approval_policy_id is not None else None,
             )
-            session.add(McpToolCall.from_record(record, operator_id=actor.operator_id))
-            events = [self._insert_event(session, ToolCallEventType.TOOL_CALL_SUBMITTED, record, actor.operator_id)]
+            session.add(McpToolCall.from_record(record, operator_id=operator_id))
+            events = [self._insert_event(session, ToolCallEventType.TOOL_CALL_SUBMITTED, record, operator_id)]
             events.append(
                 self._insert_event(
                     session,
@@ -186,26 +186,20 @@ class PostgresToolCallLedger:
                     if auto_approval_policy_id is not None
                     else ToolCallEventType.APPROVAL_PENDING,
                     record,
-                    actor.operator_id,
+                    operator_id,
                 )
             )
-            return record, events, True
+            return record, events
 
     def get(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallRecord:
         with self._sessions.begin() as session:
-            stmt = (
-                select(McpToolCall)
-                .where(McpToolCall.tool_call_id == tool_call_id)
-                .where(McpToolCall.operator_id == actor.operator_id)
-            )
-            if isinstance(actor, AgentActor):
-                stmt = stmt.where(McpToolCall.caller_principal == actor.principal)
+            stmt = self._scope_to_actor(select(McpToolCall).where(McpToolCall.tool_call_id == tool_call_id), actor)
             row = session.scalars(stmt).first()
         if row is None:
-            raise HTTPException(status_code=404, detail="tool call not found")
+            raise ToolCallNotFoundError("tool call not found")
         return row.to_record()
 
-    def list(
+    def list_tool_calls(
         self,
         *,
         actor: ToolCallActor,
@@ -213,11 +207,9 @@ class PostgresToolCallLedger:
         since: datetime.datetime | None = None,
         limit: int = 100,
         newest_first: bool = False,
-    ) -> ToolCallListResponse:
+    ) -> list[ToolCallRecord]:
         with self._sessions.begin() as session:
-            stmt = select(McpToolCall).where(McpToolCall.operator_id == actor.operator_id)
-            if isinstance(actor, AgentActor):
-                stmt = stmt.where(McpToolCall.caller_principal == actor.principal)
+            stmt = self._scope_to_actor(select(McpToolCall), actor)
             if since is not None:
                 stmt = stmt.where(McpToolCall.updated_at > since)
             if statuses:
@@ -227,10 +219,10 @@ class PostgresToolCallLedger:
             # oldest-first for pending-approval reads.
             order = McpToolCall.created_at.desc() if newest_first else McpToolCall.created_at
             rows = session.scalars(stmt.order_by(order).limit(limit)).all()
-        records = [row.to_record() for row in rows]
-        return ToolCallListResponse(tool_calls=records)
+        return [row.to_record() for row in rows]
 
-    def events_after_id(self, *, operator_id: UUID, after_event_id: int = 0) -> ToolCallEventsResponse:
+    def events_after_id(self, *, actor: OperatorActor, after_event_id: int = 0) -> list[ToolCallEvent]:
+        operator_id = self._operator_id(actor)
         with self._sessions.begin() as session:
             rows = session.scalars(
                 select(McpToolCallEvent)
@@ -238,42 +230,44 @@ class PostgresToolCallLedger:
                 .where(McpToolCallEvent.operator_id == operator_id)
                 .order_by(McpToolCallEvent.event_id)
             ).all()
-        return ToolCallEventsResponse(events=[row.to_event() for row in rows])
+        return [row.to_event() for row in rows]
 
-    def mark_running(self, tool_call_id: str, *, operator_id: UUID) -> tuple[ToolCallRecord, ToolCallEvent]:
-        return self._transition_pending_approval(tool_call_id, ToolCallStatus.RUNNING, operator_id=operator_id)
+    def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> tuple[ToolCallRecord, ToolCallEvent]:
+        return self._transition_pending_approval(tool_call_id, ToolCallStatus.RUNNING, actor=actor)
 
-    def deny(self, tool_call_id: str, reason: str | None, *, operator_id: UUID) -> tuple[ToolCallRecord, ToolCallEvent]:
-        return self._transition_pending_approval(
-            tool_call_id, ToolCallStatus.DENIED, operator_id=operator_id, denial_reason=reason
-        )
+    def deny(
+        self, tool_call_id: str, reason: str | None, *, actor: OperatorActor
+    ) -> tuple[ToolCallRecord, ToolCallEvent]:
+        return self._transition_pending_approval(tool_call_id, ToolCallStatus.DENIED, actor=actor, denial_reason=reason)
 
     def finish(
-        self, tool_call_id: str, *, operator_id: UUID, result: dict[str, Any] | None, error: str | None
+        self, tool_call_id: str, *, actor: ToolCallActor, result: dict[str, Any] | None, error: str | None
     ) -> tuple[ToolCallRecord, ToolCallEvent]:
         if (result is None) == (error is None):
             raise ValueError("finish requires exactly one of result or error")
         with self._sessions.begin() as session:
-            row = self._row_by_tool_call_id(session, tool_call_id, operator_id)
+            row = self._row_by_tool_call_id(session, tool_call_id, actor)
+            current = row.to_record()
+            if current.status != ToolCallStatus.RUNNING:
+                raise ToolCallStateConflictError(f"tool call is not running; status={current.status}")
             status = ToolCallStatus.OK if error is None else ToolCallStatus.ERROR
             row.status = status
             row.updated_at = datetime.datetime.now(datetime.UTC)
             row.result_json = result
             row.error = error
             updated = row.to_record()
-            event = self._insert_event(session, ToolCallEventType.TOOL_CALL_UPDATED, updated, operator_id)
+            event = self._insert_event(session, ToolCallEventType.TOOL_CALL_UPDATED, updated, actor.operator_id)
             return updated, event
 
     def _transition_pending_approval(
-        self, tool_call_id: str, status: ToolCallStatus, *, operator_id: UUID, denial_reason: str | None = None
+        self, tool_call_id: str, status: ToolCallStatus, *, actor: OperatorActor, denial_reason: str | None = None
     ) -> tuple[ToolCallRecord, ToolCallEvent]:
+        operator_id = self._operator_id(actor)
         with self._sessions.begin() as session:
-            row = self._row_by_tool_call_id(session, tool_call_id, operator_id)
+            row = self._row_by_tool_call_id(session, tool_call_id, actor)
             record = row.to_record()
             if record.status != ToolCallStatus.PENDING_APPROVAL:
-                raise HTTPException(
-                    status_code=409, detail=f"tool call is not pending approval; status={record.status}"
-                )
+                raise ToolCallStateConflictError(f"tool call is not pending approval; status={record.status}")
             row.status = status
             row.updated_at = datetime.datetime.now(datetime.UTC)
             row.denial_reason = denial_reason
@@ -298,16 +292,31 @@ class PostgresToolCallLedger:
         session.flush()
         return row.to_event()
 
-    def _row_by_tool_call_id(self, session: Session, tool_call_id: str, operator_id: UUID) -> McpToolCall:
-        row = session.scalars(
-            select(McpToolCall)
-            .where(McpToolCall.tool_call_id == tool_call_id)
-            .where(McpToolCall.operator_id == operator_id)
-            .with_for_update()
-        ).first()
+    def _row_by_tool_call_id(self, session: Session, tool_call_id: str, actor: ToolCallActor) -> McpToolCall:
+        stmt = self._scope_to_actor(select(McpToolCall).where(McpToolCall.tool_call_id == tool_call_id), actor)
+        row = session.scalars(stmt.with_for_update()).first()
         if row is None:
-            raise HTTPException(status_code=404, detail="tool call not found")
+            raise ToolCallNotFoundError("tool call not found")
         return row
+
+    @staticmethod
+    def _scope_to_actor(stmt: Select[tuple[McpToolCall]], actor: ToolCallActor) -> Select[tuple[McpToolCall]]:
+        """Apply the one canonical tool-call ownership predicate to reads and locked writes."""
+        match actor:
+            case AgentActor(principal=principal, operator_id=operator_id):
+                return stmt.where(McpToolCall.operator_id == operator_id, McpToolCall.caller_principal == principal)
+            case OperatorActor(operator_id=operator_id):
+                return stmt.where(McpToolCall.operator_id == operator_id)
+            case _:
+                raise TypeError(f"unsupported tool-call actor: {type(actor).__name__}")
+
+    @staticmethod
+    def _operator_id(actor: OperatorActor) -> UUID:
+        match actor:
+            case OperatorActor(operator_id=operator_id):
+                return operator_id
+            case _:
+                raise TypeError(f"operator actor required, got {type(actor).__name__}")
 
 
 class McpToolExecutor:
@@ -343,20 +352,10 @@ class McpMetadataProvider:
         return AliveServerMetadata(server_id=server.id, title=server.id, tools=reflected)
 
 
-def _ledger(request: Request) -> PostgresToolCallLedger:
-    return cast(PostgresToolCallLedger, request.app.state.tool_call_ledger)
-
-
-def _executor(request: Request) -> McpToolExecutor:
-    return cast(McpToolExecutor, request.app.state.tool_call_executor)
-
-
 def _metadata_provider(request: Request) -> McpMetadataProvider:
     return cast(McpMetadataProvider, request.app.state.tool_call_metadata_provider)
 
 
-LedgerDep = Annotated[PostgresToolCallLedger, Depends(_ledger)]
-ExecutorDep = Annotated[McpToolExecutor, Depends(_executor)]
 MetadataProviderDep = Annotated[McpMetadataProvider, Depends(_metadata_provider)]
 
 
@@ -383,38 +382,13 @@ def _pending_approval_from_record(record: ToolCallRecord) -> PendingApproval:
     )
 
 
-def resolve_mcp_agent(
-    client_id: str,
-    static_agents: list[ResolvedStaticAgent],
-    oauth_store: PostgresMcpOperatorOAuthStore,
-    identity_store: PostgresOperatorIdentityStore,
-) -> AgentActor | None:
-    """Resolve FastMCP's namespaced static id or OAuth DCR id into one tenant identity."""
-    if (agent_name := static_agent_name_from_client_id(client_id)) is not None:
-        for agent in static_agents:
-            if agent.agent == agent_name:
-                if not identity_store.is_active(agent.operator_id):
-                    return None
-                return AgentActor(principal=agent.agent, operator_id=agent.operator_id)
-        return None
-    operator_id = oauth_store.agent_operator(agent_dcr_client_id=client_id)
-    if operator_id is None:
-        return None
-    return AgentActor(principal=client_id, operator_id=operator_id)
-
-
 async def _execution_auth(
     server: McpServerEntry, operator_id: UUID, oauth_store: PostgresMcpOperatorOAuthStore
 ) -> str | None:
-    if _operator_oauth_enabled(server):
-        token = await oauth_store.access_token_for(server=server, operator_id=operator_id)
-        if not token:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Connect your {server.id} MCP account in the console before approving this tool call.",
-            )
-        return token
-    return _credential_token(server)
+    try:
+        return await backend_auth_for_operator(server=server, operator_id=operator_id, oauth_store=oauth_store)
+    except BackendAccountNotConnectedError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 async def operator_authenticated_client(
@@ -428,50 +402,26 @@ async def operator_authenticated_client(
     the returned client; it grants no more than a real approval already would, and is not a
     way to bypass the approval queue for mutating calls.
     """
-    server = _server_entry(settings, server_id)
+    try:
+        server = _server_entry(settings, server_id)
+    except McpServerNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
     auth_token = await _execution_auth(server, actor.operator_id, oauth_store)
     return Client(_transport(server, {}), auth=auth_token)
 
 
-async def _maybe_execute(
-    record: ToolCallRecord,
-    server: McpServerEntry,
-    ledger: PostgresToolCallLedger,
-    hub: ConsoleEventHub,
-    executor: McpToolExecutor,
-    auth_token: str | None,
-    operator_id: UUID,
-) -> ToolCallRecord:
-    if record.status != ToolCallStatus.RUNNING:
-        return record
-    try:
-        result = await executor.execute(server, record.tool_name, record.arguments, auth_token)
-    except Exception as e:
-        updated, event = ledger.finish(record.tool_call_id, operator_id=operator_id, result=None, error=str(e))
-    else:
-        updated, event = ledger.finish(record.tool_call_id, operator_id=operator_id, result=result, error=None)
-    await hub.broadcast(operator_id, [event])
-    logger.info(
-        "tool call %s finished status=%s server=%s tool=%s",
-        updated.tool_call_id,
-        updated.status,
-        updated.server_id,
-        updated.tool_name,
-    )
-    return updated
+def _tool_call_service(request: Request) -> ToolCallApplicationService:
+    return cast(ToolCallApplicationService, request.app.state.tool_call_service)
 
 
-async def _wait_terminal(
-    ledger: PostgresToolCallLedger, tool_call_id: str, actor: ToolCallActor, wait_for_ms: int
-) -> ToolCallRecord:
-    deadline = asyncio.get_running_loop().time() + (wait_for_ms / 1000)
-    while True:
-        record = ledger.get(tool_call_id, actor=actor)
-        if record.status in TERMINAL_STATUSES or wait_for_ms <= 0:
-            return record
-        if asyncio.get_running_loop().time() >= deadline:
-            return record
-        await asyncio.sleep(0.05)
+ToolCallServiceDep = Annotated[ToolCallApplicationService, Depends(_tool_call_service)]
+
+
+def _raise_tool_call_http_error(
+    error: McpServerNotFoundError | ToolCallNotFoundError | ToolCallStateConflictError,
+) -> Never:
+    status_code = 409 if isinstance(error, ToolCallStateConflictError) else 404
+    raise HTTPException(status_code=status_code, detail=str(error)) from error
 
 
 async def _metadata_for_request(
@@ -515,112 +465,54 @@ async def mcp_servers(
     )
 
 
-async def submit_and_wait(
-    *,
-    req: SubmitToolCallRequest,
-    actor: ToolCallActor,
-    settings: Settings,
-    ledger: PostgresToolCallLedger,
-    hub: ConsoleEventHub,
-    executor: McpToolExecutor,
-    oauth_store: PostgresMcpOperatorOAuthStore,
-    in_process_servers: InProcessServers,
-    gmail_client: GmailToolsClient | None,
-) -> ToolCallRecord:
-    """Submit a tool call, auto-approve + execute if policy allows, then wait up to
-    ``req.wait_for_ms`` for a terminal status. The single execution/approval path shared by the
-    HTTP endpoint (``POST /api/tool-calls``) and the console MCP server (``mcp_server``).
-    The actor variant gates the auto-approval policy (machine agents, not interactive operators)
-    and is also the read-authorization scope for the resulting call."""
-    server = _server_entry(settings, req.server_id)
-    auto_approval_policy_id, auto_approval_evaluation = await auto_approve_tool_call(
-        actor=actor,
-        server_id=server.id,
-        tool_name=req.tool_name,
-        arguments=req.arguments,
-        label_prefix=settings.gmail_auto_approve_label_prefix,
-        gmail=gmail_client,
-        mcp=in_process_servers.get(server.id),
-    )
-    record, events, created = ledger.submit(
-        server=server,
-        req=req,
-        actor=actor,
-        auto_approval_policy_id=auto_approval_policy_id,
-        auto_approval_evaluation=auto_approval_evaluation,
-    )
-    await hub.broadcast(actor.operator_id, events)
-    if created:
-        logger.info(
-            "tool call %s submitted status=%s server=%s tool=%s caller=%s approval_policy=%s auto_approval=%s",
-            record.tool_call_id,
-            record.status,
-            record.server_id,
-            record.tool_name,
-            record.caller_principal,
-            record.approval_policy_id,
-            record.auto_approval_evaluation,
-        )
-    if record.status == ToolCallStatus.RUNNING:
-        # The tenant was resolved once before persistence. Never re-resolve a mutable agent mapping
-        # between submission and execution: an operator_oauth call must use this stored owner.
-        auth_token = await _execution_auth(server, actor.operator_id, oauth_store)
-        record = await _maybe_execute(record, server, ledger, hub, executor, auth_token, actor.operator_id)
-    return await _wait_terminal(ledger, record.tool_call_id, actor, req.wait_for_ms)
-
-
 @agent_router.post("/api/tool-calls")
 async def submit_tool_call(
-    body: SubmitToolCallRequest,
-    request: Request,
-    settings: SettingsDep,
-    ledger: LedgerDep,
-    hub: ConsoleEventHubDep,
-    executor: ExecutorDep,
-    oauth_store: OAuthStoreDep,
-    actor: ToolCallActorDep,
+    body: SubmitToolCallRequest, service: ToolCallServiceDep, actor: ToolCallActorDep
 ) -> ToolCallRecord:
-    return await submit_and_wait(
-        req=body,
-        actor=actor,
-        settings=settings,
-        ledger=ledger,
-        hub=hub,
-        executor=executor,
-        oauth_store=oauth_store,
-        in_process_servers=cast(InProcessServers, request.app.state.in_process_servers),
-        gmail_client=cast(GmailToolsClient | None, request.app.state.gmail_client),
-    )
+    try:
+        return await service.submit_and_wait(req=body, actor=actor)
+    except BackendAccountNotConnectedError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except (McpServerNotFoundError, ToolCallNotFoundError, ToolCallStateConflictError) as error:
+        _raise_tool_call_http_error(error)
 
 
 @agent_router.get("/api/tool-calls")
 async def list_tool_calls(
-    ledger: LedgerDep,
+    service: ToolCallServiceDep,
     actor: ToolCallActorDep,
     status: Annotated[list[ToolCallStatus] | None, Query()] = None,
     since: datetime.datetime | None = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     newest_first: bool = False,
 ) -> ToolCallListResponse:
-    return ledger.list(actor=actor, statuses=status, since=since, limit=limit, newest_first=newest_first)
+    return ToolCallListResponse(
+        tool_calls=service.list_tool_calls(
+            actor=actor, statuses=status, since=since, limit=limit, newest_first=newest_first
+        )
+    )
 
 
 @agent_router.get("/api/tool-calls/{tool_call_id}")
-async def get_tool_call(tool_call_id: str, ledger: LedgerDep, actor: ToolCallActorDep) -> ToolCallRecord:
-    return ledger.get(tool_call_id, actor=actor)
+async def get_tool_call(tool_call_id: str, service: ToolCallServiceDep, actor: ToolCallActorDep) -> ToolCallRecord:
+    try:
+        return service.get(tool_call_id, actor=actor)
+    except (ToolCallNotFoundError, ToolCallStateConflictError) as error:
+        _raise_tool_call_http_error(error)
 
 
 @router.get("/api/approvals/pending")
-async def pending_approvals(ledger: LedgerDep, actor: OperatorActorDep) -> PendingApprovalsResponse:
-    records = ledger.list(actor=actor, statuses=[ToolCallStatus.PENDING_APPROVAL]).tool_calls
-    return PendingApprovalsResponse(approvals=[_pending_approval_from_record(r) for r in records])
+async def pending_approvals(service: ToolCallServiceDep, actor: OperatorActorDep) -> PendingApprovalsResponse:
+    return PendingApprovalsResponse(
+        approvals=[_pending_approval_from_record(record) for record in service.pending_approvals(actor=actor)]
+    )
 
 
 @router.get("/api/approvals/events")
 async def approval_events(
-    ledger: LedgerDep, actor: OperatorActorDep, after_event_id: int = 0
+    service: ToolCallServiceDep, actor: OperatorActorDep, after_event_id: int = 0
 ) -> ToolCallEventsResponse:
-    return ledger.events_after_id(operator_id=actor.operator_id, after_event_id=after_event_id)
+    return ToolCallEventsResponse(events=service.events_after_id(actor=actor, after_event_id=after_event_id))
 
 
 @router.post("/api/tool-calls/{tool_call_id}/decision")
@@ -629,32 +521,14 @@ async def decide_approval(
     body: ApprovalDecisionRequest,
     request: Request,
     csrf_protect: Csrf,
-    settings: SettingsDep,
-    ledger: LedgerDep,
-    hub: ConsoleEventHubDep,
-    executor: ExecutorDep,
-    oauth_store: OAuthStoreDep,
+    service: ToolCallServiceDep,
     actor: OperatorActorDep,
 ) -> ApprovalDecisionResponse:
     await csrf_protect.validate_csrf(request)
-    event_operator_id = actor.operator_id
-    if body.decision is ApprovalDecision.DENY:
-        record, event = ledger.deny(tool_call_id, body.reason, operator_id=event_operator_id)
-        await hub.broadcast(event_operator_id, [event])
-        logger.info(
-            "tool call %s denied server=%s tool=%s reason=%r",
-            record.tool_call_id,
-            record.server_id,
-            record.tool_name,
-            body.reason,
-        )
-        return ApprovalDecisionResponse(tool_call=record)
-    if body.decision is not ApprovalDecision.APPROVE:
-        raise AssertionError(f"Unhandled approval {body.decision=}")
-    pending = ledger.get(tool_call_id, actor=actor)
-    server = _server_entry(settings, pending.server_id)
-    auth_token = await _execution_auth(server, event_operator_id, oauth_store)
-    running, running_event = ledger.mark_running(tool_call_id, operator_id=event_operator_id)
-    await hub.broadcast(event_operator_id, [running_event])
-    finished = await _maybe_execute(running, server, ledger, hub, executor, auth_token, event_operator_id)
-    return ApprovalDecisionResponse(tool_call=finished)
+    try:
+        tool_call = await service.decide(tool_call_id=tool_call_id, decision=body, actor=actor)
+    except BackendAccountNotConnectedError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except (McpServerNotFoundError, ToolCallNotFoundError, ToolCallStateConflictError) as error:
+        _raise_tool_call_http_error(error)
+    return ApprovalDecisionResponse(tool_call=tool_call)

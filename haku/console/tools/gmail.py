@@ -7,8 +7,8 @@ approval and audit pipeline; reviewed policy may auto-approve existing label too
 
 Built as a real `FastMCP` server and attached to `McpToolExecutor`/`McpMetadataProvider`
 as an **in-process** transport (`fastmcp.client.Client` accepts a `FastMCP` instance
-directly), so the whole approval/audit/CSRF/reflection pipeline in `mcp_approval.py` runs
-unchanged; only the transport differs from a remote server's. Registered as MCP server id
+directly), so the application service's approval/audit lifecycle and the HTTP adapter's
+CSRF/reflection behavior run unchanged; only the transport differs from a remote server's. Registered as MCP server id
 `gmail` in `cluster/k8s/haku/console/config.yaml` (no `server_url`). Shares the
 `haku_console_google` Airlock token with the `google_calendar` server. See
 `haku/docs/security.md` for the credential/consent model, and `haku/console/TODO.md` for

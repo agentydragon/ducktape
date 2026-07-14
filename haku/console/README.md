@@ -56,10 +56,12 @@ haku-state git credential or clone at all.
 
 ## MCP approval queue — authored tool calls, console-approved
 
-The console also owns the privileged MCP-tool escape hatch (`mcp_approval.py`). Haku or haku-ui can
-submit a precise tool call; the console mints the canonical `tool_call_id`, records the audit entry,
-runs the reviewed auto-approval decision, asks the trusted console frontend for approval when it
-does not match, executes the MCP tool, and keeps the result. The decision validates arguments
+The console also owns the privileged MCP-tool escape hatch. `ToolCallApplicationService` in
+`tool_call_service.py` is the actor-scoped lifecycle boundary; the HTTP routes in
+`mcp_approval.py` are an adapter over it. Haku or haku-ui can submit a precise tool call; the
+service mints the canonical `tool_call_id`, records the audit entry, runs the reviewed
+auto-approval decision, asks the trusted console frontend for approval when it does not match,
+executes the MCP tool, and keeps the result. The decision validates arguments
 against the existing FastMCP tool's generated schema; its audit-safe evaluation string is recorded
 even when the call stays manual, while errors are logged and fail closed. haku-state stores only authored requests
 (`tool_requests/*.yaml`) and UI affordances (`<tool-call request="...">`); there is no
@@ -102,8 +104,9 @@ execution on an `operator_oauth` server.
 
 `mcp_server.py` mounts a native MCP server at `/mcp` so a connected Claude client (the claude.ai
 custom connector / the `claude` CLI) can call the connected-server tools directly — the same
-submit → auto-approve → execute → wait path as `POST /api/tool-calls` (the shared `submit_and_wait`
-helper), never a divergent one. The surface is two buckets: tools the policy **unconditionally**
+submit → auto-approve → execute → wait path as `POST /api/tool-calls`
+(`ToolCallApplicationService.submit_and_wait`), never a divergent one. The surface is two buckets:
+tools the policy **unconditionally**
 auto-approves (gmail reads, read-only grocy-sf, tana `get_or_create_calendar_node`) appear as
 transparent **pass-throughs** (original name/schema, real result); everything else appears as
 `request_<server>_<tool>` with an envelope `{input, title?, rationale, wait_for_approval_ms?}` that
@@ -126,8 +129,9 @@ A `mcp.servers` entry that omits `server_url` is served by an **in-process `Fast
 instance** instead of a remote server reached over the network: `fastmcp.client.Client`
 accepts a `FastMCP` object directly (an in-memory `FastMCPTransport`), so
 `McpToolExecutor`/`McpMetadataProvider` run the exact same `Client(...)` calls either
-way — same approval/audit/CSRF pipeline, same live `tools/list` reflection, just a
-different transport (`_transport()` in `mcp_approval.py` picks the registered in-process
+way — the application service still owns approval/audit and the HTTP adapter still owns CSRF,
+with the same live `tools/list` reflection and just a different transport (`_transport()` in
+`mcp_approval.py` picks the registered in-process
 `FastMCP` for a server id, falling back to `server_url`). There are three today, built like
 standalone MCP servers from `@mcp.tool`-decorated functions. The only transport difference is that
 `create_app` hands the `FastMCP` object straight to the executor instead of serving it over
@@ -206,21 +210,24 @@ non-asset/API path; `app.py`'s dev fallback mirrors that so deep links work loca
 
 ## Layout
 
-| Path                         | Role                                                                                                                                                                                                                                |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `app.py`                     | FastAPI `create_app`. `GET /api/config`, `GET /healthz`, CSRF config, mounts the capability router. It can serve the SPA for local/direct fallback when `HAKU_CONSOLE_STATIC_DIR` is set.                                           |
-| `capabilities.py`            | Capability-tier router (`/api/capabilities/*`): CSRF-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer and optional per-run text; `GET /csrf` issues the double-submit token. |
-| `mcp_approval.py`            | MCP approval queue router: MCP server reflection, operator-scoped tool-call submit/list/result endpoints, trusted approval decisions, and Postgres-backed audit state in deploy.                                                    |
-| `console_events.py`          | Pydantic console-event shapes plus operator-scoped cross-replica WebSocket fan-out through Postgres LISTEN/NOTIFY.                                                                                                                  |
-| `mcp_config.py`              | The connected-MCP-server catalog (deploy-time YAML model) plus how to reach each entry: in-process/remote transport and static bearer credential. Shared by `mcp_approval` and `mcp_operator_oauth`.                                |
-| `in_process_servers.py`      | Canonical builder catalog for the Gmail, Google Calendar, and routine FastMCP servers, shared by the production app and schema exporter.                                                                                            |
-| `mcp_operator_oauth.py`      | Operator OAuth account linkage for servers that execute as the operator's own account: the DCR/PKCE flow, Postgres token storage/refresh, and the `/api/mcp/operator-auth/*` connect/disconnect/callback endpoints.                 |
-| `migrations/`                | Alembic migrations for the deployed haku-console database; the console applies them at app startup before serving the API.                                                                                                          |
-| `models.py`                  | Pydantic `ConfigResponse` — the `/api/config` response model.                                                                                                                                                                       |
-| `config.py`                  | Env settings (`HAKU_CONSOLE_*`).                                                                                                                                                                                                    |
-| `export_schema.py`           | Prints the OpenAPI schema; the frontend generates its TypeScript types from it.                                                                                                                                                     |
-| `export_mcp_tool_schemas.py` | Reflects the real in-process servers through MCP `tools/list` and prints their exact input schemas for generated frontend validators and types.                                                                                     |
-| `frontend/`                  | React SPA (esbuild bundle) — see `frontend/README.md`.                                                                                                                                                                              |
+| Path                         | Role                                                                                                                                                                                                                                                                   |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app.py`                     | Composition root for FastAPI, FastMCP, storage, execution, event delivery, and the shared `ToolCallApplicationService`; public app state exposes the service rather than its ledger/executor internals. Also serves config/health and the optional local SPA fallback. |
+| `capabilities.py`            | Capability-tier router (`/api/capabilities/*`): CSRF-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer and optional per-run text; `GET /csrf` issues the double-submit token.                                    |
+| `tool_call_service.py`       | Actor-scoped application boundary for policy evaluation, submit/read/poll, decisions, execution orchestration, and event publication.                                                                                                                                  |
+| `mcp_approval.py`            | FastAPI/wire adapter plus the current Postgres tool-call repository, MCP executor, and metadata-reflection adapters. It does not own lifecycle orchestration.                                                                                                          |
+| `mcp_server.py`              | FastMCP transport adapter for proxy and result-read tools; resolves the request dependency to an `AgentActor` through `mcp_agent_auth` and delegates lifecycle operations to the application service.                                                                  |
+| `mcp_agent_auth.py`          | Agent-facing MCP authentication composition and the single MCP `client_id`-to-`AgentActor` resolver.                                                                                                                                                                   |
+| `console_events.py`          | Pydantic console-event shapes plus operator-scoped cross-replica WebSocket fan-out through Postgres LISTEN/NOTIFY.                                                                                                                                                     |
+| `mcp_config.py`              | Connected-MCP-server catalog plus in-process/remote transport and static bearer resolution, shared by the application service, reflection adapter, and operator OAuth linkage.                                                                                         |
+| `in_process_servers.py`      | Canonical builder catalog for the Gmail, Google Calendar, and routine FastMCP servers, shared by the production app and schema exporter.                                                                                                                               |
+| `mcp_operator_oauth.py`      | Operator OAuth account linkage for servers that execute as the operator's own account: the DCR/PKCE flow, Postgres token storage/refresh, and the `/api/mcp/operator-auth/*` connect/disconnect/callback endpoints.                                                    |
+| `migrations/`                | Alembic migrations for the deployed haku-console database; the console applies them at app startup before serving the API.                                                                                                                                             |
+| `models.py`                  | Pydantic `ConfigResponse` — the `/api/config` response model.                                                                                                                                                                                                          |
+| `config.py`                  | Env settings (`HAKU_CONSOLE_*`).                                                                                                                                                                                                                                       |
+| `export_schema.py`           | Prints the OpenAPI schema; the frontend generates its TypeScript types from it.                                                                                                                                                                                        |
+| `export_mcp_tool_schemas.py` | Reflects the real in-process servers through MCP `tools/list` and prints their exact input schemas for generated frontend validators and types.                                                                                                                        |
+| `frontend/`                  | React SPA (esbuild bundle) — see `frontend/README.md`.                                                                                                                                                                                                                 |
 
 ## Perimeter / deploy
 

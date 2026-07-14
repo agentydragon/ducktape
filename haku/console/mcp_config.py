@@ -3,8 +3,8 @@
 The console's deploy-time YAML names the MCP servers Haku may drive through the approval
 queue; this module models that config, looks entries up by id, and resolves how to reach
 each one — the in-process `FastMCP` transport or remote URL, and the static bearer
-credential where one applies. Both the approval router (`mcp_approval`) and the operator
-OAuth linkage (`mcp_operator_oauth`) build on this shared substrate.
+credential where one applies. The tool-call application service, reflection adapter
+(`mcp_approval`), and operator OAuth linkage (`mcp_operator_oauth`) build on this shared substrate.
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ import re
 from uuid import UUID
 
 import yaml
-from fastapi import HTTPException
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field, SecretStr
 
@@ -22,6 +21,10 @@ from haku.console.config import Settings
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 
 STATIC_AGENT_CLIENT_ID_PREFIX = "static-agent:"
+
+
+class McpServerNotFoundError(LookupError):
+    """The configured connected-server catalog has no entry for the requested id."""
 
 
 def static_agent_client_id(agent: str) -> str:
@@ -161,7 +164,7 @@ def _server_entry(settings: Settings, server_id: str) -> McpServerEntry:
     for server in _load_servers(settings):
         if server.id == server_id:
             return server
-    raise HTTPException(status_code=404, detail=f"unknown MCP server: {server_id}")
+    raise McpServerNotFoundError(f"unknown MCP server: {server_id}")
 
 
 def _operator_oauth_enabled(server: McpServerEntry) -> bool:

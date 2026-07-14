@@ -56,9 +56,10 @@ After the cutover:
 - **Per-tool-call deep link** — a `/tool-calls/<id>` SPA route (`routing.ts` +
   `tool_calls_page.tsx`) that opens/highlights the specific call the promise `url` points at
   (today the URL loads the console but not that exact call).
-- **Notification-driven approval waits** — replace `_wait_terminal`'s 50 ms database polling
-  with a deadline-bounded wakeup carried by PostgreSQL `LISTEN`/`NOTIFY` (building on the
-  existing console event channel), followed by one final actor-scoped ledger read. This must work
+- **Notification-driven approval waits** — replace `tool_call_service.py`'s
+  `ToolCallApplicationService._wait_terminal` 50 ms database polling with a deadline-bounded,
+  lost-wakeup-safe wakeup carried by PostgreSQL `LISTEN`/`NOTIFY` (building on the existing
+  console event channel), followed by one final actor-scoped repository read. This must work
   across replicas and preserve the current timeout/promise behavior.
 
 ## Generate result validators from `tools/list` output schemas

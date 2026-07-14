@@ -35,12 +35,19 @@ from haku.console import (
     mcp_operator_oauth,
     mcp_server,
     operator_auth,
+    tool_call_service,
 )
 from haku.console.config import MCP_PATH, Settings
 from haku.console.database_migrate import apply_migrations
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.in_process_servers import InProcessServerDependencies, build_in_process_servers
-from haku.console.mcp_config import LoadedStaticAgent, ResolvedStaticAgent, load_static_agents, resolve_static_agents
+from haku.console.mcp_config import (
+    InProcessServers,
+    LoadedStaticAgent,
+    ResolvedStaticAgent,
+    load_static_agents,
+    resolve_static_agents,
+)
 from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
@@ -114,6 +121,11 @@ def create_app(
     *,
     loaded_static_agents: list[LoadedStaticAgent] | None = None,
     resolved_static_agents: list[ResolvedStaticAgent] | None = None,
+    tool_call_executor: mcp_approval.McpToolExecutor | None = None,
+    tool_call_metadata_provider: mcp_approval.McpMetadataProvider | None = None,
+    gmail_client: gmail_tools.GmailToolsClient | None = None,
+    calendar_client: google_calendar_tools.CalendarToolsClient | None = None,
+    in_process_servers: InProcessServers | None = None,
 ) -> FastAPI:
     # Postgres is required: it backs the approval ledger and the operator OAuth store, both always
     # constructed. Construction is lazy (no connect); migrations run once at startup (app.main /
@@ -139,35 +151,42 @@ def create_app(
         static_agents = resolved_static_agents
     # Google clients back the two in-process MCP servers (gmail, google_calendar) and their
     # approval-render read endpoints (gmail thread previews, calendar-name resolution).
-    gmail_client = None
-    calendar_client = None
-    if settings.google_token_dir is not None:
+    if gmail_client is None and settings.google_token_dir is not None:
         gmail_client = gmail_tools.build_gmail_client(settings.google_token_dir)
+    if calendar_client is None and settings.google_token_dir is not None:
         calendar_client = google_calendar_tools.build_calendar_client(settings.google_token_dir)
     # `haku_routine` fires the Haku claude-code-web routine as an approval-gated MCP tool (the
     # standard queue), superseding the bespoke launch-routine capability tier. Same
     # `launch_routine` config/secret; independent of the Google grant above.
     routine_launcher = routine_tools.RoutineLauncher(settings.launch_routine) if settings.launch_routine else None
-    in_process_servers = build_in_process_servers(
-        InProcessServerDependencies(gmail=gmail_client, calendar=calendar_client, routine_launcher=routine_launcher)
+    if in_process_servers is None:
+        in_process_servers = build_in_process_servers(
+            InProcessServerDependencies(gmail=gmail_client, calendar=calendar_client, routine_launcher=routine_launcher)
+        )
+    if tool_call_executor is None:
+        tool_call_executor = mcp_approval.McpToolExecutor(in_process_servers)
+    if tool_call_metadata_provider is None:
+        tool_call_metadata_provider = mcp_approval.McpMetadataProvider(in_process_servers)
+    tool_calls = tool_call_service.ToolCallApplicationService(
+        settings=settings,
+        repository=tool_call_ledger,
+        event_publisher=console_event_hub,
+        executor=tool_call_executor,
+        oauth_store=mcp_operator_oauth_store,
+        in_process_servers=in_process_servers,
+        gmail_client=gmail_client,
     )
-    tool_call_executor = mcp_approval.McpToolExecutor(in_process_servers)
-    tool_call_metadata_provider = mcp_approval.McpMetadataProvider(in_process_servers)
 
     # The console's own agent-facing MCP server, mounted at /mcp — the console's whole reason to run.
-    # Its tools re-expose the connected servers through the same approval ledger. Always built;
+    # Its tools re-expose the connected servers through the same application service. Always built;
     # `build_auth` fails loud if nothing can authenticate to it (no static agent, no OAuth).
     console_mcp_context = mcp_server.ConsoleMcpContext(
         settings=settings,
         static_agents=static_agents,
-        ledger=tool_call_ledger,
-        hub=console_event_hub,
-        executor=tool_call_executor,
+        tool_calls=tool_calls,
         oauth_store=mcp_operator_oauth_store,
         identity_store=operator_identity_store,
         metadata_provider=tool_call_metadata_provider,
-        in_process_servers=in_process_servers,
-        gmail_client=gmail_client,
     )
 
     mcp_auth = mcp_agent_auth.build_auth(
@@ -206,13 +225,12 @@ def create_app(
     app.state.settings = settings
     app.state.static_agents = static_agents
     app.state.operator_identity_store = operator_identity_store
-    app.state.tool_call_ledger = tool_call_ledger
+    app.state.tool_call_service = tool_calls
     app.state.mcp_operator_oauth_store = mcp_operator_oauth_store
     app.state.gmail_client = gmail_client
     app.state.calendar_client = calendar_client
     app.state.console_event_hub = console_event_hub
     app.state.in_process_servers = in_process_servers
-    app.state.tool_call_executor = tool_call_executor
     app.state.tool_call_metadata_provider = tool_call_metadata_provider
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed

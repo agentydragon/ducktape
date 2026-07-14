@@ -6,9 +6,9 @@ approving operator's cluster-admin identity). For those, the operator links thei
 once through an OAuth authorization-code + PKCE flow; the console runs Dynamic Client
 Registration (or uses a pre-registered `static_client_id`), stores the resulting token
 association, and refreshes it as needed. This module owns that flow, its Postgres-backed
-storage, and the connect/disconnect/callback endpoints. The approval router
-(`mcp_approval`) consumes the linked token via `access_token_for` when it executes an
-approved call; the catalog of which servers use operator OAuth lives in `mcp_config`.
+storage, and the connect/disconnect/callback endpoints. `ToolCallApplicationService`
+consumes the linked token via `access_token_for` before executing an approved call; the
+catalog of which servers use operator OAuth lives in `mcp_config`.
 """
 
 from __future__ import annotations
@@ -60,6 +60,7 @@ from haku.console.deps import SettingsDep
 from haku.console.mcp_config import (
     STATIC_AGENT_CLIENT_ID_PREFIX,
     McpServerEntry,
+    McpServerNotFoundError,
     _load_servers,
     _operator_oauth_enabled,
     _server_entry,
@@ -727,7 +728,10 @@ async def connect_mcp_operator_auth(
     actor: OperatorActorDep,
 ) -> McpOperatorAuthConnectResponse:
     await csrf_protect.validate_csrf(request)
-    server = _server_entry(settings, server_id)
+    try:
+        server = _server_entry(settings, server_id)
+    except McpServerNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
     return await oauth_store.connect_flow(
         server=server, operator_id=actor.operator_id, public_base_url=_public_base_url(settings)
     )

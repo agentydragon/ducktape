@@ -1,9 +1,9 @@
 """haku-console's own MCP server: the connected-server tools, re-exposed to a Claude agent.
 
 An interactive MCP client (the claude.ai custom connector or the ``claude`` CLI) connects here
-and calls the console's connected-server tools directly. Every call is **submitted to the existing
-approval queue rather than executed inline** (`mcp_approval.submit_and_wait`): it auto-approves +
-runs when the reviewed policy allows, otherwise it returns a **promise** (a pending
+and calls the console's connected-server tools directly. Every call is **submitted through the
+shared application service rather than executed inline** (`ToolCallApplicationService.submit_and_wait`):
+it auto-approves and runs when the reviewed policy allows, otherwise it returns a **promise** (a pending
 ``tool_call_id`` plus an operator-facing deep link) that the agent resolves later via
 ``get_tool_call``.
 
@@ -31,7 +31,6 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from fastapi import HTTPException
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
@@ -43,20 +42,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.auto_approval import is_unconditionally_auto_approved
 from haku.console.config import Settings
-from haku.console.console_events import ConsoleEventHub
-from haku.console.mcp_approval import (
-    DegradedServerMetadata,
-    McpMetadataProvider,
-    McpToolExecutor,
-    PostgresToolCallLedger,
-    ServerMetadata,
-    ToolCallListResponse,
-    resolve_mcp_agent,
-    submit_and_wait,
-)
+from haku.console.mcp_agent_auth import resolve_mcp_agent
+from haku.console.mcp_approval import DegradedServerMetadata, McpMetadataProvider, ServerMetadata
 from haku.console.mcp_config import (
-    InProcessServers,
     McpServerEntry,
+    McpServerNotFoundError,
     ResolvedStaticAgent,
     _credential_token,
     _load_servers,
@@ -65,8 +55,13 @@ from haku.console.mcp_config import (
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor
+from haku.console.tool_call_service import (
+    BackendAccountNotConnectedError,
+    ToolCallApplicationService,
+    ToolCallNotFoundError,
+    ToolCallStateConflictError,
+)
 from haku.console.tool_calls import SubmitToolCallRequest, ToolCallRecord, ToolCallStatus
-from haku.console.tools.gmail_client import GmailToolsClient
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 
@@ -96,18 +91,14 @@ _REQUEST_PREAMBLE = (
 
 @dataclass(frozen=True)
 class ConsoleMcpContext:
-    """The app-state singletons the MCP tools need — the same objects the HTTP router uses."""
+    """The application service and MCP-specific adapters needed by the FastMCP transport."""
 
     settings: Settings
     static_agents: list[ResolvedStaticAgent]
-    ledger: PostgresToolCallLedger
-    hub: ConsoleEventHub
-    executor: McpToolExecutor
+    tool_calls: ToolCallApplicationService
     oauth_store: PostgresMcpOperatorOAuthStore
     identity_store: PostgresOperatorIdentityStore
     metadata_provider: McpMetadataProvider
-    in_process_servers: InProcessServers
-    gmail_client: GmailToolsClient | None
 
 
 class ToolCallPromise(BaseModel):
@@ -207,7 +198,7 @@ def _record_to_result(record: ToolCallRecord, settings: Settings) -> ToolResult:
 
 
 class ProxyTool(Tool):
-    """A connected-server tool re-exposed through the approval queue.
+    """A connected-server tool re-exposed through the shared application service.
 
     ``passthrough`` tools advertise the upstream schema and take the raw args; envelope tools
     advertise the envelope and read the call args from ``input``. Both route through
@@ -238,17 +229,15 @@ class ProxyTool(Tool):
             wait_for_ms=max(0, min(int(wait_ms), MAX_WAIT_MS)),
         )
         actor = _resolve_current_mcp_agent(ctx)
-        record = await submit_and_wait(
-            req=req,
-            actor=actor,
-            settings=ctx.settings,
-            ledger=ctx.ledger,
-            hub=ctx.hub,
-            executor=ctx.executor,
-            oauth_store=ctx.oauth_store,
-            in_process_servers=ctx.in_process_servers,
-            gmail_client=ctx.gmail_client,
-        )
+        try:
+            record = await ctx.tool_calls.submit_and_wait(req=req, actor=actor)
+        except (
+            BackendAccountNotConnectedError,
+            McpServerNotFoundError,
+            ToolCallNotFoundError,
+            ToolCallStateConflictError,
+        ) as error:
+            raise ToolError(str(error)) from error
         return _record_to_result(record, ctx.settings)
 
 
@@ -332,9 +321,9 @@ def build_console_mcp(context: ConsoleMcpContext, *, auth: AuthProvider) -> Fast
     async def get_tool_call(tool_call_id: str, actor: AgentActor = current_agent_dependency) -> ToolCallView:
         """Read one tool call (resolve a promise): status, result/error, and its approval link."""
         try:
-            record = context.ledger.get(tool_call_id, actor=actor)
-        except HTTPException as e:
-            raise ToolError(str(e.detail))
+            record = context.tool_calls.get(tool_call_id, actor=actor)
+        except (ToolCallNotFoundError, ToolCallStateConflictError) as error:
+            raise ToolError(str(error)) from error
         return ToolCallView(call=record, url=_tool_call_url(context.settings, tool_call_id))
 
     @mcp.tool
@@ -346,10 +335,10 @@ def build_console_mcp(context: ConsoleMcpContext, *, auth: AuthProvider) -> Fast
         actor: AgentActor = current_agent_dependency,
     ) -> list[ToolCallView]:
         """List recent tool calls (newest first by default), optionally filtered by status/since."""
-        resp: ToolCallListResponse = context.ledger.list(
+        records = context.tool_calls.list_tool_calls(
             actor=actor, statuses=status, since=since, limit=limit, newest_first=newest_first
         )
-        return [ToolCallView(call=r, url=_tool_call_url(context.settings, r.tool_call_id)) for r in resp.tool_calls]
+        return [ToolCallView(call=r, url=_tool_call_url(context.settings, r.tool_call_id)) for r in records]
 
     return mcp
 
