@@ -143,7 +143,7 @@ class EnrollmentInteraction(Base):
             "correlation_release_after > expires_at", name="ck_enrollment_interactions_correlation_outlives_interaction"
         ),
         CheckConstraint(
-            "(browser_identity_id IS NULL) = (browser_binding_digest IS NULL)",
+            "browser_binding_digest IS NULL OR browser_identity_id IS NOT NULL",
             name="ck_enrollment_interactions_browser_binding_shape",
         ),
         CheckConstraint(
@@ -164,6 +164,7 @@ class EnrollmentInteraction(Base):
                 phase = 'awaiting_approval'
                 AND browser_nonce_digest IS NULL
                 AND browser_identity_id IS NOT NULL
+                AND browser_binding_digest IS NOT NULL
                 AND decision_digest IS NULL
                 AND reconnect_agent_id IS NULL
                 AND closed_at IS NULL
@@ -172,6 +173,7 @@ class EnrollmentInteraction(Base):
                 phase IN ('allowed', 'exchanging')
                 AND browser_nonce_digest IS NULL
                 AND browser_identity_id IS NOT NULL
+                AND browser_binding_digest IS NOT NULL
                 AND decision_digest IS NOT NULL
                 AND closed_at IS NULL
                 AND closure_reason IS NULL
@@ -179,6 +181,7 @@ class EnrollmentInteraction(Base):
                 phase = 'completed'
                 AND browser_nonce_digest IS NULL
                 AND browser_identity_id IS NOT NULL
+                AND browser_binding_digest IS NULL
                 AND decision_digest IS NOT NULL
                 AND closed_at IS NOT NULL
                 AND closure_reason IS NOT NULL
@@ -187,6 +190,7 @@ class EnrollmentInteraction(Base):
                 phase = 'denied'
                 AND browser_nonce_digest IS NULL
                 AND browser_identity_id IS NOT NULL
+                AND browser_binding_digest IS NULL
                 AND decision_digest IS NOT NULL
                 AND reconnect_agent_id IS NULL
                 AND closed_at IS NOT NULL
@@ -195,6 +199,7 @@ class EnrollmentInteraction(Base):
             ) OR (
                 phase IN ('expired', 'failed')
                 AND browser_nonce_digest IS NULL
+                AND browser_binding_digest IS NULL
                 AND closed_at IS NOT NULL
                 AND closure_reason IS NOT NULL
                 AND btrim(closure_reason) <> ''

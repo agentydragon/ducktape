@@ -413,7 +413,7 @@ def _record_issuance_and_complete(engine: Engine, graph: AgentGraph) -> None:
             text(
                 """
                 UPDATE enrollment_interactions
-                SET phase = 'completed', closed_at = :now,
+                SET phase = 'completed', browser_binding_digest = NULL, closed_at = :now,
                     closure_reason = 'token_family_persisted', updated_at = :now
                 WHERE interaction_id = :interaction_id
                 """

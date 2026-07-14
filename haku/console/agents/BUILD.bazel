@@ -38,6 +38,44 @@ py_library(
 )
 
 py_library(
+    name = "authorization",
+    srcs = ["authorization.py"],
+    deps = [
+        ":enrollment",
+        ":models",
+        ":naming",
+        "//haku/console:database_schema",
+        "//haku/console:operator_identity",
+        "//haku/console:operator_identity_store",
+        "//haku/console/mcp_auth:fastmcp_adapter",
+        "//mcp_infra/authentik_auth:oidc_principal",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_authorization",
+    size = "medium",
+    srcs = ["test_authorization.py"],
+    requires_docker = True,
+    deps = [
+        ":authorization",
+        ":enrollment",
+        "//:conftest",
+        "//haku/console:database_migrate",
+        "//haku/console:operator_identity",
+        "//haku/console:operator_identity_store",
+        "//haku/console/mcp_auth:fastmcp_adapter",
+        "//mcp_infra/authentik_auth:oidc_principal",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "enrollment_routes",
     srcs = ["enrollment_routes.py"],
     deps = [

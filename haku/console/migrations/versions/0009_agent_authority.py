@@ -124,7 +124,7 @@ def _create_authority_tables() -> None:
             "correlation_release_after > expires_at", name="ck_enrollment_interactions_correlation_outlives_interaction"
         ),
         sa.CheckConstraint(
-            "(browser_identity_id IS NULL) = (browser_binding_digest IS NULL)",
+            "browser_binding_digest IS NULL OR browser_identity_id IS NOT NULL",
             name="ck_enrollment_interactions_browser_binding_shape",
         ),
         sa.CheckConstraint(
@@ -145,6 +145,7 @@ def _create_authority_tables() -> None:
                 phase = 'awaiting_approval'
                 AND browser_nonce_digest IS NULL
                 AND browser_identity_id IS NOT NULL
+                AND browser_binding_digest IS NOT NULL
                 AND decision_digest IS NULL
                 AND reconnect_agent_id IS NULL
                 AND closed_at IS NULL
@@ -153,6 +154,7 @@ def _create_authority_tables() -> None:
                 phase IN ('allowed', 'exchanging')
                 AND browser_nonce_digest IS NULL
                 AND browser_identity_id IS NOT NULL
+                AND browser_binding_digest IS NOT NULL
                 AND decision_digest IS NOT NULL
                 AND closed_at IS NULL
                 AND closure_reason IS NULL
@@ -160,6 +162,7 @@ def _create_authority_tables() -> None:
                 phase = 'completed'
                 AND browser_nonce_digest IS NULL
                 AND browser_identity_id IS NOT NULL
+                AND browser_binding_digest IS NULL
                 AND decision_digest IS NOT NULL
                 AND closed_at IS NOT NULL
                 AND closure_reason IS NOT NULL
@@ -168,6 +171,7 @@ def _create_authority_tables() -> None:
                 phase = 'denied'
                 AND browser_nonce_digest IS NULL
                 AND browser_identity_id IS NOT NULL
+                AND browser_binding_digest IS NULL
                 AND decision_digest IS NOT NULL
                 AND reconnect_agent_id IS NULL
                 AND closed_at IS NOT NULL
@@ -176,6 +180,7 @@ def _create_authority_tables() -> None:
             ) OR (
                 phase IN ('expired', 'failed')
                 AND browser_nonce_digest IS NULL
+                AND browser_binding_digest IS NULL
                 AND closed_at IS NOT NULL
                 AND closure_reason IS NOT NULL
                 AND btrim(closure_reason) <> ''
@@ -660,16 +665,29 @@ def _create_row_invariant_triggers() -> None:
                     USING ERRCODE = '23514';
             END IF;
 
-            IF OLD.browser_identity_id IS NOT NULL AND
-               ROW(NEW.browser_identity_id, NEW.browser_binding_digest)
-               IS DISTINCT FROM
-               ROW(OLD.browser_identity_id, OLD.browser_binding_digest) THEN
-                RAISE EXCEPTION 'browser identity and binding are immutable once established'
+            IF OLD.browser_identity_id IS NOT NULL
+               AND NEW.browser_identity_id IS DISTINCT FROM OLD.browser_identity_id THEN
+                RAISE EXCEPTION 'browser identity is immutable once established'
                     USING ERRCODE = '23514';
             END IF;
             IF OLD.browser_identity_id IS NULL AND NEW.browser_identity_id IS NOT NULL
                AND NOT (OLD.phase = 'awaiting_browser' AND NEW.phase = 'awaiting_approval') THEN
                 RAISE EXCEPTION 'browser identity may only be established on browser arrival'
+                    USING ERRCODE = '23514';
+            END IF;
+            IF OLD.browser_binding_digest IS NULL AND NEW.browser_binding_digest IS NOT NULL THEN
+                RAISE EXCEPTION 'consumed browser binding cannot be restored'
+                    USING ERRCODE = '23514';
+            END IF;
+            IF OLD.browser_binding_digest IS NOT NULL
+               AND NEW.browser_binding_digest IS NOT NULL
+               AND NEW.browser_binding_digest IS DISTINCT FROM OLD.browser_binding_digest THEN
+                RAISE EXCEPTION 'browser binding cannot be replaced'
+                    USING ERRCODE = '23514';
+            END IF;
+            IF OLD.browser_binding_digest IS NOT NULL AND NEW.browser_binding_digest IS NULL
+               AND NEW.phase NOT IN ('completed', 'denied', 'expired', 'failed') THEN
+                RAISE EXCEPTION 'browser binding may only be cleared in a terminal phase'
                     USING ERRCODE = '23514';
             END IF;
 
@@ -1683,11 +1701,10 @@ def _create_deferred_graph_invariants() -> None:
                 OR NOT EXISTS (
                     SELECT 1 FROM credential_bindings
                     WHERE agent_id = NEW.agent_id
-                      AND status = 'expired'
-                      AND end_reason = 'activation_timeout'
+                      AND status IN ('revoked', 'expired', 'failed')
                 )
             ) THEN
-                RAISE EXCEPTION 'abandoned Agent requires activation-timeout terminal bindings'
+                RAISE EXCEPTION 'abandoned Agent requires terminal bindings and no live binding'
                     USING ERRCODE = '23514';
             END IF;
             IF TG_OP = 'UPDATE' AND OLD.status = 'draft' AND NEW.status = 'active'
