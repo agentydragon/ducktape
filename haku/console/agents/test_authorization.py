@@ -581,6 +581,52 @@ async def test_exchange_uses_the_live_correlation_reservation_after_tuple_reuse(
     assert claimed_interaction_id == new_interaction_id
 
 
+async def test_exchange_rejects_principal_from_different_operator_without_mutating_approval(db_url: str) -> None:
+    harness = _harness(db_url)
+    request, interaction_id = await _allow_create(
+        harness, label="wrong-operator", display_name="Wrong Operator Rejected"
+    )
+    other_subject = "different-operator"
+    other_identity = harness.identities.resolve_verified_identity(
+        VerifiedExternalIdentity(issuer=_MCP_ISSUER, subject=other_subject)
+    )
+    assert other_identity.operator_id != harness.browser.operator_id
+
+    with pytest.raises(EnrollmentRejectedError):
+        await harness.authority.begin_exchange(
+            correlation=request.correlation,
+            client=request.client,
+            principal=VerifiedOidcPrincipal(issuer=_MCP_ISSUER, subject=other_subject),
+            granted_scopes=frozenset({"tools:call"}),
+        )
+
+    engine = create_engine(db_url)
+    with engine.connect() as conn:
+        state = conn.execute(
+            text(
+                """
+                SELECT interaction.phase::TEXT,
+                       interaction.browser_binding_digest IS NOT NULL AS has_browser_binding,
+                       (
+                           SELECT count(*) FROM agent_name_reservations AS name
+                           WHERE name.pending_interaction_id = interaction.interaction_id
+                       ) AS pending_names,
+                       (
+                           SELECT count(*) FROM authorization_grants AS auth_grant
+                           WHERE auth_grant.enrollment_interaction_id = interaction.interaction_id
+                       ) AS grants,
+                       (SELECT count(*) FROM credential_bindings) AS bindings,
+                       (SELECT count(*) FROM agents) AS agents
+                FROM enrollment_interactions AS interaction
+                WHERE interaction.interaction_id = :interaction_id
+                """
+            ),
+            {"interaction_id": interaction_id},
+        ).one()
+    engine.dispose()
+    assert state == ("allowed", True, 1, 0, 0, 0)
+
+
 async def test_exchange_timeout_and_preissuance_revoke_abandon_new_agents(db_url: str) -> None:
     harness = _harness(db_url)
     request = _request("exchange-expiry")
