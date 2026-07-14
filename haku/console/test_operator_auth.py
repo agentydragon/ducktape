@@ -105,6 +105,23 @@ def test_guards_reject_anonymous_requests_with_test_oidc(make_client) -> None:
         assert client.get("/api/config").status_code == 401  # operator-only
 
 
+@pytest.mark.parametrize("path", ["/api/tool-calls", "/api/config", "/api/capabilities/csrf", "/api/mcp/operator-auth"])
+def test_retired_authentik_headers_cannot_authenticate_an_operator(make_client, path: str) -> None:
+    """The app-owned OIDC session is the only operator identity boundary.
+
+    These headers were trustworthy only behind the retired Authentik forward-auth
+    outpost. Public requests reach Haku directly now, so accepting either value
+    would let an anonymous caller enter operator-only routes and mint the matching
+    double-submit CSRF token.
+    """
+    with make_client() as client:
+        response = client.get(
+            path, headers={"X-Authentik-Uid": "forged-operator-subject", "X-Authentik-Username": "forged-operator"}
+        )
+
+    assert response.status_code == 401
+
+
 def test_operator_oidc_is_required(migrated_db_url: str) -> None:
     with pytest.raises(ValidationError, match="operator_oidc"):
         console_settings(migrated_db_url, operator_oidc=None)
