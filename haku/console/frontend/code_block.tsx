@@ -15,7 +15,7 @@ import {
   syntaxHighlighting,
   syntaxTreeAvailable,
 } from "@codemirror/language";
-import type { Extension } from "@codemirror/state";
+import type { EditorState, Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { useMemo } from "react";
@@ -70,9 +70,8 @@ function visibleLineBudget(view: EditorView): number {
 // The value-blocks of the top-level entries (the foldable children of the outermost container),
 // scanned line-by-line via the language's own `foldable`. The whole-document container is returned
 // by `foldable` over the full doc; it is skipped (descended past, never folded) so what remains are
-// the per-entry blocks — grammar-agnostic, no hardcoded node names.
-function topLevelContainers(view: EditorView): { from: number; to: number; span: number }[] {
-  const { state } = view;
+// the per-entry blocks — grammar-agnostic, no hardcoded node names. Needs a parsed tree.
+function topLevelContainers(state: EditorState): { from: number; to: number; span: number }[] {
   const doc = state.doc;
   const outer = foldable(state, doc.line(1).from, doc.line(doc.lines).to);
   const containers: { from: number; to: number; span: number }[] = [];
@@ -90,33 +89,36 @@ function topLevelContainers(view: EditorView): { from: number; to: number; span:
   return containers;
 }
 
-// Compact policy: fill the height with leading top-level entries and fold the rest to headers. Walk
-// containers in order; expand one while its span fits in the remaining budget MINUS one line per
-// container still after it (the breadth cap — every later entry keeps at least its header, so one
-// verbose field can't crowd out the rest). `overhead` = braces/scalar lines always visible.
-function foldCompact(view: EditorView): void {
-  const doc = view.state.doc;
-  if (doc.lines <= 1) return;
-  const budget = visibleLineBudget(view);
-  if (doc.lines <= budget) return; // already fits
-  const containers = topLevelContainers(view);
-  if (containers.length === 0) return; // nothing structural to fold; let maxHeight scroll
+// Compact policy, as a pure decision: given a parsed state and a visible-line budget, which
+// top-level container ranges to fold so leading entries fill the height. Walk containers in order;
+// expand one while its span fits in the remaining budget MINUS one line per container still after it
+// (the breadth cap — every later entry keeps at least its header, so one verbose field can't crowd
+// out the rest); the LAST sibling always expands (folding it would waste the remaining height, so it
+// scrolls instead). `overhead` = braces/scalar lines always visible. No DOM, no dispatch — passed a
+// budget by the ViewPlugin (which measures it) and unit-tested headlessly.
+export function chooseCompactFolds(state: EditorState, budget: number): readonly { from: number; to: number }[] {
+  const doc = state.doc;
+  if (doc.lines <= 1 || doc.lines <= budget) return []; // already fits
+  const containers = topLevelContainers(state);
+  if (containers.length === 0) return []; // nothing structural to fold; let maxHeight scroll
   const overhead = doc.lines - containers.reduce((sum, c) => sum + c.span, 0);
   let remaining = budget - overhead;
   const folds: { from: number; to: number }[] = [];
   for (let i = 0; i < containers.length; i++) {
     const after = containers.length - i - 1;
     const { from, to, span } = containers[i];
-    // Expand when it fits alongside one header line per sibling still after it (the breadth cap),
-    // OR when it is the last sibling — folding the last one would waste the remaining height, so it
-    // expands and scrolls instead, keeping the block full of real content.
     if (after === 0 || span <= remaining - after) {
-      remaining -= span;
+      remaining -= span; // expand
     } else {
       folds.push({ from, to }); // collapse a too-big middle sibling to its header line
       remaining -= 1;
     }
   }
+  return folds;
+}
+
+function foldCompact(view: EditorView): void {
+  const folds = chooseCompactFolds(view.state, visibleLineBudget(view));
   if (folds.length) view.dispatch({ effects: folds.map((f) => foldEffect.of(f)) });
 }
 

@@ -136,6 +136,10 @@ jobs:
               # set-union operator, so a PR that newly affects such a target
               # (any PR adding a scoped npm dep) breaks the query with a
               # syntax error. Quoting makes the '+' a literal label character.
+              #
+              # TODO: this set()/except/tests() query shuffling in shell is brittle; consider a
+              # small python helper that takes affected-raw.txt and writes the resolved affected
+              # set + test-query files directly, instead of building query expressions in shell.
               quote() { sed '/^$/d; s/.*/"&"/' "$1" | tr '\n' ' '; }
               { printf 'set('; quote /tmp/affected-raw.txt; \
                 printf ') except kind("source file", set('; \
