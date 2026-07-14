@@ -188,11 +188,12 @@ in
     };
 
     # Google Fi cellular connection profile.
-    # IPv6 never-default: many WiFi networks only provide ULA IPv6 (no default
-    # route). Cellular provides global IPv6 with a default route, which causes
-    # all IPv6 traffic to silently route over cellular — breaking apps that
-    # can't traverse carrier NAT. Disabling the IPv6 default is conservative
-    # but safe on all networks. TODO: revisit if true IPv6 failover is needed.
+    # IPv6 is temporarily disabled so the IPv4 interface can use MTU 1200 after
+    # an IPv4 DF-ping investigation found a ~1256-byte path ceiling and missing
+    # ICMP fragmentation feedback. That does NOT prove native Fi IPv6 has the
+    # same defect: the modem advertises an ipv4v6 bearer, but the active profile
+    # currently requests IPv4 only. Re-enable only after the controlled test in
+    # debug/rugged/network.md.
     # IPv4 route-metric 1050: WiFi (metric 600) is preferred when available;
     # cellular is used as failover when WiFi is down.
     networking.networkmanager.ensureProfiles.profiles.google-fi = {
@@ -203,11 +204,13 @@ in
       };
       gsm = {
         apn = "h2g2";
-        # MTU 1200: outgoing path MTU on Google Fi is ~1228 bytes (confirmed by
-        # DF-bit ping probing) and ICMP Fragmentation Needed is suppressed, so
-        # PMTU discovery never fires. Bearer-reported MTU is 1436 but the actual
-        # path drops packets silently above ~1228B. With MTU 1200, TCP MSS=1160
-        # and max IP packet=1200B, safely under the path limit.
+        # MTU 1200: conservative cap retained while the Fi PMTU investigation is
+        # revalidated. Earlier DF-ping reports suggested a ~1228-byte ceiling
+        # with missing ICMP feedback, but the preserved decisive failure was a
+        # Cilium-over-Nebula cellular path; that nested path alone cannot prove
+        # the direct Fi IPv4 ceiling. The bearer reports MTU 1436. Run
+        # debug/rugged/fi-ipv4-mtu-probe.sh before changing this value, and keep
+        # that result separate from the native IPv6 experiment in network.md.
         # gsm.mtu is the correct NM property for cellular interface MTU;
         # ipv4.mtu is ignored for GSM connections (ModemManager owns the bearer).
         mtu = 1200;
@@ -215,13 +218,19 @@ in
       ipv4 = {
         method = "auto";
         route-metric = 1050;
+        # Keep Wi-Fi's resolver authoritative while both links are up. Fi's
+        # resolver synthesizes DNS64 AAAA records for IPv4-only public hosts;
+        # otherwise an application can try that address over Wi-Fi's unrelated
+        # IPv6 default route before falling back to IPv4. A higher numeric
+        # priority loses to the ordinary Wi-Fi connection, but Fi DNS remains
+        # available when Wi-Fi is absent. See debug/rugged/network.md.
+        dns-priority = 200;
       };
       ipv6 = {
-        # Disabled: Linux enforces a 1280-byte minimum MTU on IPv6-enabled
-        # interfaces (RFC 2460). With ipv4v6 bearer, this overrides gsm.mtu=1200
-        # and pins the interface at 1280, which exceeds the ~1256B path MTU
-        # ceiling on Google Fi (confirmed by DF-bit probing). Disabling IPv6
-        # removes the floor and lets gsm.mtu=1200 actually take effect.
+        # Disabled temporarily: IPv6 interfaces cannot use the 1200-byte GSM
+        # MTU because IPv6 requires at least 1280. The prior ~1256-byte result
+        # came from IPv4 DF probing, so it is an unresolved hypothesis—not proof
+        # that native Fi IPv6 is broken. See debug/rugged/network.md.
         method = "disabled";
       };
     };

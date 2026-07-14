@@ -98,9 +98,12 @@ Nebula endpoints and you get a tunnel-in-tunnel amplification loop. Incident:
 ## Caveat: roaming nodes
 
 A single global Cilium `MTU` assumes a 1500 underlay. `rugged` (roaming laptop on
-cellular) has a much smaller path MTU (~1162, see
-`cluster/debug/2026-06-02-tofu-apply-hangs-from-rugged-mtu.md`). The fix for roaming
-nodes is TCP MSS clamping / PMTU probing, not the global MTU.
+cellular) has a historically smaller **Cilium-over-Nebula** usable path (see
+`cluster/debug/2026-06-02-tofu-apply-hangs-from-rugged-mtu.md`). That result
+includes both overlays; it is not a direct-Fi or native-IPv6 measurement. The
+fix for roaming nodes is a measured host-specific MSS/PMTU mitigation, not the
+global MTU. In particular, a generic route-MTU clamp at `nebula1` may observe
+only its inner 1420-byte TUN MTU rather than the cellular underlay limit.
 
 ## References
 

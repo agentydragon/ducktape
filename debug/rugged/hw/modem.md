@@ -5,7 +5,8 @@
 **Current state (2026-05-02)**: Fully declarative. FCC unlock, modem
 enable, and Google Fi connection all happen automatically via the NixOS
 module <nix/nixos/hosts/rugged/foxconn-wwan.nix>. Works alongside WiFi
-(IPv6 `never-default` prevents cellular from hijacking IPv6 traffic).
+(IPv6 is temporarily disabled while we distinguish a proven IPv4 PMTU issue
+from untested native Fi IPv6; see <../network.md>).
 **Suspend/resume (2026-05-19)**: At least 2 suspend/resume cycles
 survived without a wedge (2026-05-18/19). The
 `--test-low-power-suspend-resume` MM flag appears to be doing its job.
@@ -59,6 +60,7 @@ make the down-and-back look alarming. See "Harden try-5g" TODO.
 | eSIM provisioning & wedge debugging  | <foxflss_wwan.md> §Modem Reset Methods etc.   |
 | Throughput / throttle investigations | <foxflss_wwan.md> §Physical SIM throughput    |
 | Suspend/resume root cause + fix plan | <modem_suspend_research.md>                   |
+| Wi-Fi/WWAN DNS and Git SSH delays    | <../network.md>                               |
 
 ## Tools
 

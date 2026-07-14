@@ -13,7 +13,6 @@ In `nix/nixos/hosts/rugged/default.nix`:
 
 ```nix
 networking.modemmanager.enable = true;
-programs.nm-applet.enable = true;
 ```
 
 ## SIM Inventory (2026-04-30)
@@ -88,10 +87,12 @@ After step 5, the modem registers on Google Fi (5G NR, 92% signal observed).
 
 - ~~**Declarative NixOS setup**~~: Done. See <nix/nixos/hosts/rugged/foxconn-wwan.nix>.
   FoxFlss packaged, wired as MM `fcc-unlock.d` script, declarative NM profile
-  with `ipv6.never-default` and IPv4 failover (metric 1050).
+  with IPv6 temporarily disabled during the Fi MTU/PMTUD investigation and
+  IPv4 failover (metric 1050).
 - ~~**NM connection**~~: Done. Declarative "Google Fi" profile via
-  `networking.networkmanager.ensureProfiles`. IPv6 `never-default` prevents
-  cellular from hijacking IPv6 traffic when WiFi only has ULA addresses.
+  `networking.networkmanager.ensureProfiles`. The observed sub-1280 result was
+  IPv4-only; native Fi IPv6 remains untested while the profile requests IPv4.
+  See <../network.md>.
 
 ### Remaining work
 

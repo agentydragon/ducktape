@@ -1,8 +1,9 @@
 # Tofu apply hangs from rugged over Cilium/Nebula — Path MTU mismatch
 
 **Date**: 2026-06-02
-**Status**: Confirmed root cause. WiFi underlay fixes the apply hangs. Permanent
-fix (MSS clamping at `nebula1` egress) not yet applied.
+**Status**: Confirmed root cause. WiFi underlay fixes the apply hangs. No
+permanent roaming fix has been applied; the original generic `nebula1` MSS
+clamp needs revalidation against the current outer Fi path.
 **Triggering work**: OVH node renames (2026-06).
 
 ## Symptom (the headline behavior)
@@ -208,17 +209,19 @@ In order of preference:
    `terraform/main` to a Terraform CR is non-trivial because of its
    bootstrap-time scope, but a one-shot `kubectl run` with tofu + state
    credentials would unblock all current rugged-as-client work.
-2. **TCP MSS clamping at rugged's `nebula1` egress** so MSS gets clamped to
-   the Nebula MTU automatically. iptables/nftables rule on `nebula1` with
-   `--clamp-mss-to-pmtu`. Fixes ALL TCP flows from rugged through Nebula
-   regardless of inner overlay.
+2. **Host-specific TCP MSS handling on rugged**, but only after measuring the
+   current outer Fi path. A generic `--clamp-mss-to-pmtu` match at `nebula1`
+   can see its inner 1420-byte TUN route rather than the cellular constraint,
+   so it is not by itself a safe answer. Use a measured static cap or a
+   demonstrably convergent PMTU-probing policy.
 3. **Reduce Cilium pod MTU** to fit the worst-case path budget. Currently
    1412; would need ≤ 1162 to be safe over rugged's Google Fi path
    (1300 nebula - 50 vxlan - some slack). Aggressive — affects all
    pod-to-pod traffic cluster-wide. Documented in the 2026-02-11 lesson.
-4. **Set `net.ipv4.tcp_mtu_probing=1`** on rugged. Linux-side probe-based
-   pmtu discovery; recovers from broken-ICMP networks. Doesn't fix the
-   underlying mismatch but lets TCP find the working size organically.
+4. **Evaluate `net.ipv4.tcp_mtu_probing=1` on rugged.** Linux-side probe-based
+   PMTU discovery can recover from broken ICMP, but it does not remove the
+   underlying mismatch. Test it against a large real cluster write before
+   declaring it a fix.
 
 ## Resolution: WiFi fixed it (2026-06-02 ~02:30 PDT)
 
@@ -254,31 +257,20 @@ Result: `tofu plan` against PG state succeeded with **0.5-2.2% retransmission
 rate** (vs 64% on Google Fi). `tofu apply` of pilot 2 (kimsufi-cp-0 →
 ovh-ns102453) completed with successful state writeback.
 
-## Permanent fix to apply (not done yet)
+## Permanent fix: remeasure before implementation
 
-Even with WiFi, rugged's Cilium config is fragile — depending on PMTUD ICMP
-delivery from intermediate routers. For roaming/cellular reliability, add an
-nftables MSS clamp on `nebula1` egress so SYN's MSS is rewritten to fit the
-tunnel MTU regardless of ICMP feedback:
+Even with WiFi, rugged's Cilium config depends on PMTUD ICMP delivery from
+intermediate routers. The original recommendation here to use an nftables
+`rt mtu` MSS clamp at `nebula1` must **not** be applied verbatim: the current
+route to a Nebula peer reports the inner `nebula1` MTU (1420), while the Fi
+device is configured at 1200. That expression therefore cannot automatically
+account for the smaller outer cellular budget.
 
-```nftables
-table inet nebula-mss {
-  chain forward {
-    type filter hook forward priority 0; policy accept;
-    oifname "nebula1" tcp flags syn tcp option maxseg size set rt mtu
-  }
-  chain output {
-    type filter hook output priority 0; policy accept;
-    oifname "nebula1" tcp flags syn tcp option maxseg size set rt mtu
-  }
-}
-```
-
-Or simpler equivalent via iptables-nft. This belongs in
-`nix/nixos/modules/nebula.nix` (or equivalent home-manager NixOS module).
-
-Also worth setting cluster-wide: `net.ipv4.tcp_mtu_probing=1` (PLPMTUD) via
-Talos sysctl patches — falls back to probe-based PMTUD when ICMP is broken.
+First remeasure direct Fi PMTU and a forced Cilium-over-Nebula path. Then use
+either a host-specific static MSS cap derived from the observed outer limit or
+a PMTU-probing policy proven by a large cluster write. Do not reduce global
+Cilium MTU for one roaming host. The current experiment sequence is maintained
+in <../../debug/rugged/network.md>.
 
 ## Rename project progress
 
