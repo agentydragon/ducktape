@@ -262,6 +262,83 @@ problem: validate a host-specific MSS/PMTU mitigation before changing the
 global Cilium MTU, because a global reduction penalizes every fixed-underlay
 node and still does not prove anything about native Fi IPv6.
 
+#### Fi-only Nebula remeasurement and mitigation (2026-07-13)
+
+With Wi-Fi disabled, `wwan0` was the sole default route at MTU 1200 while
+`nebula1` remained MTU 1420. Small mesh pings, mesh DNS, node TCP endpoints, and
+a 6 MiB ClusterIP metrics response all worked. Full 1420-byte inner DF pings
+also delivered 20/20 packets, but only because Linux fragmented each encrypted
+outer IPv4 packet: the measured no-fragment inner ceiling was 1140 bytes, and
+ten full-size pings added 22 outer fragments with no fragment failures. This
+was not a blanket Nebula outage at measurement time; it was a fragile
+dependency on Fi carrying outer fragments.
+
+The reversible route probe then produced the expected kernel route (`mtu 1100
+advmss 1060`) without changing the device. The ordinary-route phase had one of
+three Wyrm2 node-exporter connections time out at three seconds; all three
+route-MTU attempts and all three post-removal attempts completed. The 6.24 MiB
+ClusterIP response completed in every phase, including in 1.61 seconds with the
+route override. An inner 1100-byte DF ping passed 2/2, while an 1108-byte packet
+was rejected locally with `Message too long`. Fragment counters increase when
+Cilium VXLAN is deliberately split before Nebula, so counter volume alone is
+not a success metric; the live post-activation capture must confirm that the
+resulting encrypted Fi packets fit the outer MTU.
+
+The mesh roster now declares `destination_mtu: 1100` for Rugged. Consumers turn
+that single policy into symmetric exact kernel routes: Rugged uses `mtu 1100
+advmss 1060` toward every peer, while each other managed Linux peer uses 1100
+only for `10.42.0.30/32`. A direct Nebula packet involving Rugged is then at
+most 1160 bytes on the outer IPv4 wire; a relayed packet is at most 1192 bytes,
+fitting `wwan0`'s 1200 MTU. Routes between all other managed Linux nodes remain
+at 1420; Pixel6 deliberately uses the global 1100 fallback for all of its mesh
+traffic because Android exposes only one VPN-interface MTU.
+
+For bulk IPv4 TCP, this changes wire efficiency by only about 2–3%, not 20–30%.
+It does create roughly 30% more packets and Nebula crypto operations, so a
+packet-rate- or CPU-bound transfer can lose more throughput than the byte
+overhead alone suggests. The permanent conservative policy is acceptable for
+one roaming node and avoids distributed signaling whenever Rugged changes
+uplinks.
+
+These routes are installed in Nebula's systemd `ExecStartPost`, not encoded as
+Nebula `tun.routes`. Nebula 1.10.3 has an upstream Linux TUN initialization bug
+that can otherwise lower the actual TUN device to the last smaller route MTU,
+breaking the 1420-byte Cilium contract. The bug is visible in
+[`overlay/tun_linux.go`](https://github.com/slackhq/nebula/blob/f573e8a26695278f9d71587390fbfe0d0933aa21/overlay/tun_linux.go#L185-L200)
+and remains present upstream as of this investigation.
+
+The symmetric routes size Rugged-originated traffic and remote-originated UDP,
+ICMP, and Cilium VXLAN before Nebula encryption. Ordinary TCP also negotiates
+the 1060-byte advertised MSS. Mobile Nebula cannot install Linux-style
+per-destination MTUs, so its generated import uses 1100 as the phone's global
+TUN MTU. Run `debug/rugged/nebula-fi-mtu-probe.sh` on the Fi-only path to compare
+repeated baseline, route-MTU, and restored phases, including a real ClusterIP
+transfer and fragmentation counters.
+
+#### Live activation result
+
+The Rugged NixOS generation was switched to this policy on 2026-07-13. The
+live `nebula1` device stayed at MTU 1420, and systemd installed nine exact peer
+routes with `mtu 1100 advmss 1060`. Both the Wi-Fi control run and the Fi-only
+run passed 1100-byte inner DF pings, mesh DNS, a node HTTP endpoint, and a
+6,263,649-byte ClusterIP response. The Fi-only response completed in 3.05
+seconds.
+
+The decisive `wwan0` capture contained 277 outbound Nebula packets. Full-size
+direct packets were 1160 bytes and full-size relayed packets were 1192 bytes;
+the maximum was 1192 on the 1200-byte underlay. Every captured packet had DF
+set, with zero nonzero fragment offsets and zero more-fragments flags. Rugged's
+outbound Nebula traffic therefore no longer relies on IPv4 fragmentation.
+
+This activation covers Rugged's half of the symmetric policy. The repository
+also renders the reciprocal `10.42.0.30/32` route for NixOS peers, Talos nodes,
+and Atlas, plus a global 1100 fallback in the generated Pixel6 import. Those
+peer configurations must be deployed before claiming that all
+remote-originated UDP, ICMP, and Cilium traffic toward Rugged avoids outer
+fragmentation. TCP is largely protected already by the 1060-byte MSS that
+Rugged advertises, and the live inbound transfers succeeded, but that is not a
+substitute for completing the peer rollout and re-importing the phone config.
+
 Nebula's DNS configuration is also intentionally split: only
 `*.nebula.allegedly.works` queries go to lighthouse DNS; it has no role in
 resolving public names such as `github.com`.

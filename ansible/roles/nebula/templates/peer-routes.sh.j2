@@ -1,0 +1,28 @@
+#!/bin/sh
+# Managed by Ansible (nebula role)
+set -eu
+
+attempt=0
+until /usr/sbin/ip link show nebula1 >/dev/null 2>&1; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 30 ]; then
+    echo "nebula1 did not appear after 30 seconds" >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+{% set local_host = nebula_mesh_hosts[inventory_hostname] %}
+{% for peer_name, peer in nebula_mesh_hosts.items() %}
+{% if peer_name != inventory_hostname and (local_host.destination_mtu is defined or peer.destination_mtu is defined) %}
+{% if local_host.destination_mtu is defined and peer.destination_mtu is defined %}
+{% set route_mtu = [local_host.destination_mtu, peer.destination_mtu] | min %}
+{% elif local_host.destination_mtu is defined %}
+{% set route_mtu = local_host.destination_mtu %}
+{% else %}
+{% set route_mtu = peer.destination_mtu %}
+{% endif %}
+/usr/sbin/ip -4 route replace table main {{ peer.nebula_ip }}/32 \
+  dev nebula1 scope link proto static mtu {{ route_mtu }} advmss {{ route_mtu - 40 }}
+{% endif %}
+{% endfor %}

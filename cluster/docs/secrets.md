@@ -231,10 +231,13 @@ bb run //cluster/scripts:render_mobile_nebula_config -- \
 
 The generated config reads lighthouse IPs and public endpoints from
 `nebula-mesh.json`, so VPS endpoint changes do not need hand-edits in the phone
-config. By default it also installs Nebula lighthouse DNS resolvers for mesh names. On
-Android, Mobile Nebula applies those DNS resolvers to the active VPN network rather than
-true per-domain split DNS; if that causes public DNS trouble while the VPN is enabled,
-regenerate with `--no-dns` and use direct `10.42.x.y` addresses.
+config. It also lowers the mobile TUN to the smallest declared
+`destination_mtu`, because mobile platforms do not expose Linux-style
+per-destination route MTUs. Regenerate and re-import after either topology or
+MTU policy changes. DNS is omitted by default because Android applies Mobile
+Nebula's resolvers to the whole VPN rather than implementing true per-domain
+split DNS. Use `--dns` only when that global behavior is intentional;
+otherwise, reach mesh services by direct `10.42.x.y` addresses.
 
 ### After cert rotation
 

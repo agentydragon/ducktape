@@ -17,10 +17,37 @@ let
   # See cluster/docs/mesh_membership.md for add/remove/re-IP flow.
   meshConfig = builtins.fromJSON (builtins.readFile ../../../nebula-mesh.json);
   meshHosts = lib.attrValues meshConfig.hosts;
+  localMeshHost = meshConfig.hosts.${config.networking.hostName} or { };
+  meshPeerHosts = lib.attrValues (
+    lib.filterAttrs (name: _host: name != config.networking.hostName) meshConfig.hosts
+  );
   meshLighthouses = map (h: h.nebula_ip) (lib.filter (h: h.lighthouse or false) meshHosts);
   meshStaticHostMap = lib.listToAttrs (
     map (h: lib.nameValuePair h.nebula_ip [ h.endpoint ]) (lib.filter (h: h ? endpoint) meshHosts)
   );
+  routeMTUFor =
+    host:
+    let
+      constraints = lib.filter (mtu: mtu != null) [
+        (localMeshHost.destination_mtu or null)
+        (host.destination_mtu or null)
+      ];
+    in
+    if constraints == [ ] then
+      null
+    else
+      lib.foldl' lib.min (builtins.head constraints) (builtins.tail constraints);
+  peerRoutes = lib.filter (route: route.mtu != null) (
+    map (host: {
+      ip = host.nebula_ip;
+      mtu = routeMTUFor host;
+    }) meshPeerHosts
+  );
+  peerRouteSetup = lib.concatMapStringsSep "\n" (route: ''
+    ${pkgs.iproute2}/bin/ip -4 route replace table main ${route.ip}/32 \
+      dev nebula1 scope link proto static mtu ${toString route.mtu} \
+      advmss ${toString (route.mtu - 40)}
+  '') peerRoutes;
   generatedConfig = builtins.toJSON {
     pki = {
       ca = cfg.caCertPath;
@@ -121,6 +148,13 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = builtins.hasAttr config.networking.hostName meshConfig.hosts;
+        message = "ducktape.nebulaMesh requires networking.hostName to exist in nebula-mesh.json";
+      }
+    ];
+
     environment.systemPackages = [ pkgs.nebula ];
 
     environment.etc."nebula/config.yaml".text = generatedConfig;
@@ -165,7 +199,9 @@ in
         # *.nebula.allegedly.works queries to lighthouse DNS. Public DNS
         # is unaffected even when cluster nodes are down (unlike the old
         # +DefaultRoute approach which broke all DNS on outage).
-        ExecStartPost = pkgs.writeShellScript "nebula-dns-setup" ''
+        ExecStartPost = pkgs.writeShellScript "nebula-post-start" ''
+          set -euo pipefail
+
           for i in $(seq 1 30); do
             if ${pkgs.iproute2}/bin/ip link show nebula1 &>/dev/null; then
               break
@@ -175,6 +211,13 @@ in
           ${pkgs.systemd}/bin/resolvectl dns nebula1 ${lib.concatStringsSep " " cfg.lighthouses}
           ${pkgs.systemd}/bin/resolvectl domain nebula1 ~nebula.allegedly.works
           ${pkgs.systemd}/bin/resolvectl default-route nebula1 false
+
+          ${lib.optionalString (peerRoutes != [ ]) ''
+            # Nebula 1.10.3 can incorrectly lower the TUN device to the last
+            # tun.routes entry during startup. Install host kernel routes only
+            # after Nebula has created nebula1, preserving its 1420 device MTU.
+            ${peerRouteSetup}
+          ''}
         '';
         Restart = "on-failure";
         RestartSec = "5";
