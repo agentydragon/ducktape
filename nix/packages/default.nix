@@ -248,15 +248,13 @@ rec {
     pname = "ducktape";
     description = "Ducktape command-line tools";
     mainProgram = "git-commit-ai";
-    # bazel-output-base-gc is exercised as an installed console script by
-    # nix-wheel-check.yml. That PR-source artifact override works before the
-    # first release containing devinfra.gc has replaced the existing pin.
     importsCheck = [
       "difftree.cli"
       "git_commit_ai.cli"
       "gmail_archiver.main"
       "cluster.skills.hetzner_vnc_screenshot.vnc_screenshot"
       "cluster.skills.proxmox_vm.vm_interact"
+      "devinfra.gc.output_base_gc"
     ];
     propagatedBuildInputs = with python3Packages; [
       aiodocker

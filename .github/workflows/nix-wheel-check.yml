@@ -123,16 +123,3 @@ jobs:
         env:
           DUCKTAPE_ARTIFACT_OVERRIDES: ${{ steps.overrides.outputs.overrides }}
         run: nix build --impure --no-link --print-out-paths ${{ steps.inputs.outputs.nix_pkgs }}
-
-      # This is an installed-command check rather than a permanent importsCheck:
-      # the pinned ducktape wheel predates this entry point until the first
-      # post-merge release and sync-pins run. The PR artifact override above
-      # supplies the new wheel here, so missing package files, entry-point
-      # wiring, or Nix runtime dependencies still fail before merge.
-      - name: Smoke-test Bazel output-base GC command
-        env:
-          DUCKTAPE_ARTIFACT_OVERRIDES: ${{ steps.overrides.outputs.overrides }}
-        run: |
-          set -euo pipefail
-          out=$(nix build --impure --no-link --print-out-paths .#packages.x86_64-linux.ducktape)
-          "$out/bin/bazel-output-base-gc" --help >/dev/null

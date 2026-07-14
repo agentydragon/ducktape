@@ -41,8 +41,8 @@ bazel-output-base-gc --sizes
 ```
 
 The released command is the runnable recipe. Component tests cover its behavior,
-and Nix CI smoke-tests the installed entry point. Size calculation invokes `du`
-and can be slow; omit `--sizes` for a quick first pass on a large root. Use
+and Nix CI imports its backing module from the wheel. Size calculation invokes
+`du` and can be slow; omit `--sizes` for a quick first pass on a large root. Use
 `--all` when retained bases matter to the investigation.
 
 The GC scans one output-user-root at a time. Its default is
