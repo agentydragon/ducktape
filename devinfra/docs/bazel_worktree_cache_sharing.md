@@ -53,12 +53,15 @@ repository cache. Keep `--experimental_repository_cache_hardlinks` disabled on
 `wyrm2`: hardlinks only work when repository cache and output bases are on the
 same filesystem.
 
-## Bazelrc Proposal
+## Implementation
 
-The first implementation is rugged-only. Bazel already defaults
-`--output_user_root`, per-worktree `--output_base`, and `--repository_cache` into
-the shared `~/.cache/bazel/_bazel_$USER` tree there, so only enable caches that
-are not already on by default:
+Lives in the shared `nix/home/modules/bazel-cache.nix` module (option
+`ducktape.bazelCache`), enabled by both `rugged` and `wyrm2`. Bazel already
+defaults `--output_user_root`, per-worktree `--output_base`, and
+`--repository_cache` into the shared `~/.cache/bazel/_bazel_$USER` tree, so the
+module only enables caches that are not already on by default. The one per-host
+knob is `diskCacheGcMaxSize` — `wyrm2` lowers it from the `200G` default because
+its `cache/disk` shares a 150G SSD with the per-worktree output bases.
 
 ```nix
 let

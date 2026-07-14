@@ -10,6 +10,7 @@
 {
   imports = [
     ../home.nix
+    ../modules/bazel-cache.nix
     ../modules/forgejo-ssh.nix
     ../modules/no-screensaver.nix
     ../modules/kubeconfig.nix
@@ -22,6 +23,15 @@
   ducktape.attic = {
     enable = true;
     sopsFile = ../../../secrets/home/wyrm2/attic.yaml;
+  };
+
+  # Shared Bazel disk + repo-contents cache across local worktrees
+  # (see ../modules/bazel-cache.nix). The 150G SSD holds both the cache/disk and
+  # the per-worktree output bases, so cap the disk cache well below the default
+  # 200G; repo-contents sharing is the bigger win here regardless.
+  ducktape.bazelCache = {
+    enable = true;
+    diskCacheGcMaxSize = "80G";
   };
 
   ducktape.sopsEnv = {
