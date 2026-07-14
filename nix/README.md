@@ -12,7 +12,11 @@ nix/
 ├── home/          # home-manager user configurations
 │   ├── home.nix   # Shared home-manager config
 │   ├── hosts/     # Per-host home config
-│   └── packages/  # Custom Nix packages
+│   ├── modules/   # Shared Home Manager modules
+│   ├── programs/  # Reusable Home Manager program modules
+│   └── skills.nix # Shared AI-tool skill deployment helper
+├── packages/      # Custom Nix packages
+├── lib/           # Shared Nix helpers
 └── TODO.md        # Future improvements
 ```
 
@@ -48,13 +52,14 @@ from `$USER`/`$HOME` so the same profile works for whatever user the web contain
 
 ### NixOS System Configs (`nixosConfigurations`)
 
-| Host        | Type     | Description                                            |
-| ----------- | -------- | ------------------------------------------------------ |
-| `iguana`    | Physical | ThinkPad X1 Extreme                                    |
-| `rugged`    | Physical | Dell Rugged 12 tablet                                  |
-| `wyrm2`     | VM       | Dev workstation VM (Proxmox)                           |
-| `gecko`     | VM       | Headless CLI-only VM (Proxmox) for Claude Code / Codex |
-| `bootstrap` | VM/Image | Minimal bootstrap image                                |
+| Host        | Type     | Description                                                 |
+| ----------- | -------- | ----------------------------------------------------------- |
+| `iguana`    | Physical | ThinkPad X1 Extreme                                         |
+| `rugged`    | Physical | Dell Rugged 12 tablet                                       |
+| `wyrm2`     | VM       | Dev workstation VM (Proxmox)                                |
+| `gecko`     | VM       | Headless CLI-only VM (Proxmox) for Claude Code / Codex      |
+| `agent-box` | VM       | Headless multi-user VM for unattended Codex and z.ai agents |
+| `bootstrap` | VM/Image | Minimal bootstrap image                                     |
 
 ### Home-Manager Configs (`homeConfigurations`)
 

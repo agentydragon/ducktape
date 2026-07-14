@@ -76,8 +76,6 @@ in
   };
 
   environment.systemPackages = with pkgs; [
-    neovim
-    tmux
     htop
     btop
     ripgrep

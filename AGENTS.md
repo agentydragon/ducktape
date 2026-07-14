@@ -130,6 +130,20 @@ When renaming/moving/deleting files or symbols, search **all references** across
 
 **Atomic API changes**: update all callers in the same commit. No transitional shims within this monorepo.
 
+### Declarative configuration scope
+
+Before enabling, autostarting, or installing a declaratively managed feature,
+search the entire configuration tree for existing ownership and overlapping
+providers (for example, GNOME built-ins, tray applets, system packages, and Home
+Manager modules). Keep one clear owner unless the duplication is intentional
+and documented.
+
+When a setting could apply to a class of hosts or only selected hosts, make the
+scope explicit: use a shared module/profile for genuine class-wide behavior and
+host-level opt-in for exceptions. Do not infer that a feature belongs everywhere
+merely because it works on one host. If the intended scope is unclear, ask the
+user before broadening it.
+
 ## Profiling
 
 Use real profilers for performance investigations: `perf`, Callgrind

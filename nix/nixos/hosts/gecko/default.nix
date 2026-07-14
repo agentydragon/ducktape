@@ -34,8 +34,6 @@ in
   ducktape.systemInspectionSudo.enable = true;
 
   environment.systemPackages = with pkgs; [
-    neovim
-    tmux
     htop
     btop
     ripgrep

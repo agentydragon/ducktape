@@ -29,6 +29,8 @@
 }:
 {
   imports = [
+    ../../modules/neovim.nix
+    ../../modules/tmux.nix
     ../../modules/sops-env.nix # ducktape.sopsEnv
     ../../modules/buildbuddy.nix # BuildBuddy creds -> bazelrc + BUILDBUDDY_API_KEY
     ../../modules/forgejo-ssh.nix # Forgejo bot push key + git.allegedly.works ssh block
