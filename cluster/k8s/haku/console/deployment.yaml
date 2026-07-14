@@ -35,8 +35,8 @@ spec:
     # The static image keeps only its current fingerprinted assets. Recreate prevents mixed-version
     # replicas from serving a new shell and an old pod's missing chunk during the same page load;
     # the tradeoff is full console unavailability until the replacement becomes Ready. A broken
-    # release therefore causes an unbounded outage and must be fixed forward (migration 0008 also
-    # makes rollback across the canonical Operator ownership boundary deliberately unsafe).
+    # release therefore causes an unbounded outage and must be fixed forward (the canonical
+    # authority schema also makes rollback across its ownership boundary deliberately unsafe).
     type: Recreate
   selector:
     matchLabels:

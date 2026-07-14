@@ -126,9 +126,8 @@ process-local store or Valkey.
 
 ### Canonical Agent authority and enrollment
 
-Migration `0009` is the terminal Agent-authority cutover. It removed the legacy DCR-client mapping
-and old tool-call identity, intentionally dropped past calls, and installed one Postgres graph shared
-by interactive OAuth and configured static Agents:
+Alembic revision `0009` is the single forward-only database baseline. It directly installs one
+Postgres graph shared by interactive OAuth and configured static Agents:
 
 ```text
 Operator -> IdentityAnchor -> OidcIdentity
@@ -348,16 +347,11 @@ Both OAuth2 providers and their client secrets
 access is Authentik's application access policy.
 
 Postgres is **required**: it backs Operator/Agent authority, the approval ledger, FastMCP state, and
-the Operator OAuth token store. The
-console applies its Alembic migrations once at startup (`app.main`, before serving) — never as a
-side effect of constructing a store. Forward-only migration 0008 creates canonical Operators,
-identity anchors, and exact issuer-scoped OIDC identities; cuts every live association, agent link,
-ledger row, and event over to Operator UUID ownership; preserves only exactly seeded downstream
-backend-token associations; and invalidates all FastMCP registrations/token families plus derived
-DCR links so OAuth agents must authorize again, with fresh local registration where applicable,
-under canonical ownership. Forward-only migration `0009` then installs the canonical Agent/name/
-binding/grant/tool-principal graph, bootstraps static Agents, drops the legacy DCR mapping and past
-tool calls, and activates the Haku-owned enrollment adapter without a second authority.
+the Operator OAuth token store. The console applies its Alembic baseline once at startup (`app.main`,
+before serving) — never as a side effect of constructing a store. Baseline `0009` directly creates
+the canonical Operator/identity and Agent/name/binding/grant/tool-principal graph. Its revision ID is
+deliberately retained from the deployed migration lineage: a database already stamped `0009` is a
+no-op, while a fresh database creates the same frozen schema.
 
 Non-root, dropped caps, no service-account token. Credentials: the
 `haku-routine-launch-token` secret (the launch capability bearer; `HAKU_CONSOLE_LAUNCH_ROUTINE__TOKEN`),
