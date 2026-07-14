@@ -94,14 +94,14 @@ def csrf_token(client: TestClient) -> str:
     return token
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def _preload_postgres_images() -> None:
     load_oci_image(RYUK)
     load_oci_image(POSTGRES_18)
 
 
 @pytest.fixture(scope="session")
-def postgres_container() -> Generator[PostgresContainer]:
+def postgres_container(_preload_postgres_images: None) -> Generator[PostgresContainer]:
     container = PostgresContainer(image=POSTGRES_18.tag, username="postgres", password="postgres", dbname="postgres")
     container.start()
     try:
