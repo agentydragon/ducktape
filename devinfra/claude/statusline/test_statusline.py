@@ -17,13 +17,12 @@ from devinfra.claude.statusline.statusline import (
     _detect_quota_route,
     _format_context,
     _format_quota,
+    _quota_segments,
     render,
 )
 
 _SHORT_WINDOW_SECS = 5 * 3600
 _LONG_WINDOW_SECS = 7 * 86400
-_LITELLM_ZAI_ROUTE = QuotaRoute(provider="zai", label="litellm→zai")
-_UNKNOWN_LITELLM_ROUTE = QuotaRoute(provider=None, label="litellm→?")
 
 
 FULL_INPUT_JSON = json.dumps(
@@ -330,10 +329,16 @@ def test_format_context_colors(pct: float, expected_text: str, expected_style: s
             "https://api.z.ai/api/anthropic", "glm-5.2", QuotaRoute(provider="zai", label="zai"), id="direct_zai"
         ),
         pytest.param(
-            "https://litellm.allegedly.works", "glm-5.2-anthropic", _LITELLM_ZAI_ROUTE, id="litellm_glm_fallback"
+            "https://litellm.allegedly.works",
+            "glm-5.2-anthropic",
+            QuotaRoute(provider="zai", label="litellm→zai"),
+            id="litellm_glm_fallback",
         ),
         pytest.param(
-            "https://litellm.allegedly.works", "some-model-alias", _UNKNOWN_LITELLM_ROUTE, id="ambiguous_litellm"
+            "https://litellm.allegedly.works",
+            "some-model-alias",
+            QuotaRoute(provider=None, label="litellm→?"),
+            id="ambiguous_litellm",
         ),
         pytest.param(
             "https://unknown-proxy.example",
@@ -414,51 +419,53 @@ def test_render_minimal(snapshot: SnapshotAssertion):
 
 
 @pytest.mark.parametrize(
-    ("quota_route", "include_quota", "quota_error", "expected_parts", "unexpected"),
+    ("base_url", "model_id", "include_quota", "quota_error", "expected"),
     [
-        pytest.param(_LITELLM_ZAI_ROUTE, True, None, ("litellm→zai", "5h:24%", "7d:61%"), None, id="known_with_quota"),
         pytest.param(
-            _LITELLM_ZAI_ROUTE, False, None, ("litellm→zai quota unavailable",), None, id="known_without_quota"
-        ),
-        pytest.param(
-            _UNKNOWN_LITELLM_ROUTE,
+            "https://litellm.allegedly.works",
+            "glm-5.2-anthropic",
             True,
             None,
-            ("litellm→? quota unknown",),
-            "7d:61%",
+            "litellm→zai 5h:24% 7d:61%",
+            id="known_with_quota",
+        ),
+        pytest.param(
+            "https://litellm.allegedly.works",
+            "glm-5.2-anthropic",
+            False,
+            None,
+            "litellm→zai quota unavailable",
+            id="known_without_quota",
+        ),
+        pytest.param(
+            "https://litellm.allegedly.works",
+            "some-model-alias",
+            True,
+            None,
+            "litellm→? quota unknown",
             id="unknown_suppresses_mismatched_quota",
         ),
         pytest.param(
-            _LITELLM_ZAI_ROUTE,
+            "https://litellm.allegedly.works",
+            "glm-5.2-anthropic",
             False,
             "aiquota config error",
-            ("litellm→zai aiquota config error",),
-            "quota unavailable",
+            "litellm→zai aiquota config error",
             id="config_error",
         ),
     ],
 )
-def test_render_quota_route_status(
-    full_input: Input,
-    quota_route: QuotaRoute,
-    include_quota: bool,
-    quota_error: str | None,
-    expected_parts: tuple[str, ...],
-    unexpected: str | None,
+def test_detect_and_format_quota_segments(
+    base_url: str, model_id: str, include_quota: bool, quota_error: str | None, expected: str
 ):
-    result = render(
-        full_input,
-        is_subscription=True,
-        quota=_render_quota(seven_day_util=61.0, five_hour_util=24.0) if include_quota else None,
-        home=Path("/home/user"),
-        now=_NOW,
-        daemon_healthy=True,
-        quota_route=quota_route,
-        quota_error=quota_error,
+    route = _detect_quota_route(base_url=base_url, model_id=model_id)
+    quota = (
+        _render_quota(seven_day_util=61.0, seven_day_resets_in=timedelta(), five_hour_util=24.0)
+        if include_quota
+        else None
     )
-    assert all(part in result for part in expected_parts)
-    if unexpected is not None:
-        assert unexpected not in result
+    segments = _quota_segments(quota, route=route, error=quota_error, now=_NOW)
+    assert " ".join(segment.plain for segment in segments) == expected
 
 
 if __name__ == "__main__":

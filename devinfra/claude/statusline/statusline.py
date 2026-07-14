@@ -115,6 +115,24 @@ def _format_context(ctx: ContextWindow | None) -> Text | None:
     return Text(f"ctx:{pct:.0f}%", style=style)
 
 
+def _quota_segments(
+    quota: ProviderQuota | None, *, route: QuotaRoute | None, error: str | None, now: datetime
+) -> list[Text]:
+    if error is not None:
+        route_prefix = f"{route.label} " if route is not None and route.label is not None else ""
+        return [Text(f"{route_prefix}{error}", style="red")]
+    if route is not None and route.provider is None:
+        return [Text(f"{route.label or 'provider→?'} quota unknown", style="dim")]
+
+    quota_text = _format_quota(quota, now=now)
+    if quota_text is not None:
+        route_segments = [Text(route.label, style="dim")] if route is not None and route.label is not None else []
+        return [*route_segments, quota_text]
+    if route is not None and route.label is not None:
+        return [Text(f"{route.label} quota unavailable", style="dim")]
+    return []
+
+
 def _format_daemon(healthy: bool) -> Text:
     if healthy:
         return Text("daemon ✓", style="green")
@@ -192,19 +210,7 @@ def render(
     if context_text is not None:
         segments.append(context_text)
 
-    if quota_error is not None:
-        route_prefix = f"{quota_route.label} " if quota_route is not None and quota_route.label is not None else ""
-        segments.append(Text(f"{route_prefix}{quota_error}", style="red"))
-    elif quota_route is not None and quota_route.provider is None:
-        segments.append(Text(f"{quota_route.label or 'provider→?'} quota unknown", style="dim"))
-    else:
-        quota_text = _format_quota(quota, now=now)
-        if quota_text is not None:
-            if quota_route is not None and quota_route.label is not None:
-                segments.append(Text(quota_route.label, style="dim"))
-            segments.append(quota_text)
-        elif quota_route is not None and quota_route.label is not None:
-            segments.append(Text(f"{quota_route.label} quota unavailable", style="dim"))
+    segments.extend(_quota_segments(quota, route=quota_route, error=quota_error, now=now))
 
     segments.append(_format_daemon(daemon_healthy))
 
