@@ -157,6 +157,7 @@ async def test_oauth_auth_composes_one_authority_storage_and_optional_static_ver
         client_id="haku-agent",
         client_secret="oauth-secret",
         base_url="https://haku.test/mcp",
+        resource_base_url="https://haku.test",
         client_storage=storage,
         expected_issuer="https://auth.test/application/o/haku-agent/",
         grant_authority=authority,

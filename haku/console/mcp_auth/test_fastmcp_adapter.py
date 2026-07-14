@@ -195,6 +195,7 @@ def test_proxy_builds_principal_resolver_from_fastmcp_discovery() -> None:
             client_id="upstream-client",
             client_secret="upstream-secret",
             base_url="https://haku.example.test/",
+            resource_base_url="https://haku.example.test/",
             client_storage=cast(Any, client_storage),
             expected_issuer="https://auth.example.test/application/o/haku/",
             grant_authority=cast(Any, _authority()),
@@ -209,6 +210,7 @@ def test_proxy_builds_principal_resolver_from_fastmcp_discovery() -> None:
     )
     storage = cast(BearerFailureObservingKeyValue, constructor["client_storage"])
     assert cast(Any, storage).key_value is client_storage
+    assert constructor["resource_base_url"] == "https://haku.example.test/"
     assert "token_verifier" not in constructor
     assert cast(Any, proxy)._principal_resolver is resolver
 

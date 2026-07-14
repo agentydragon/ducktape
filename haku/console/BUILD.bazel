@@ -179,8 +179,6 @@ py_library(
     name = "mcp_mount",
     srcs = ["mcp_mount.py"],
     deps = [
-        "@pypi//fastmcp_slim",
-        "@pypi//pydantic",
         "@pypi//starlette",
     ],
 )

@@ -205,12 +205,11 @@ def create_app(
     mcp_auth = mcp_agent_auth.build_auth(
         settings, agent_authority=agent_authority, static_credentials=static_credential_registry
     )
-    mounted_mcp_auth = mcp_mount.MountPrefixResourceAuthProvider(mcp_auth.provider)
-    console_mcp = mcp_server.build_console_mcp(console_mcp_context, auth=mounted_mcp_auth)
+    console_mcp = mcp_server.build_console_mcp(console_mcp_context, auth=mcp_auth.provider)
     console_mcp.add_middleware(
         HakuAgentGrantMiddleware(agent_authority, static_actor_resolver=mcp_auth.static_actor_resolver)
     )
-    mcp_asgi = console_mcp.http_app(path="/")
+    mcp_asgi = console_mcp.http_app(path=MCP_PATH)
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -236,7 +235,7 @@ def create_app(
     # outer ASGI mount, so explicitly expose only its well-known routes here; the static-bearer-only
     # provider returns no routes.
     app = FastAPI(title="Haku console", lifespan=_lifespan)
-    app.router.routes.extend(mounted_mcp_auth.get_well_known_routes())
+    app.router.routes.extend(mcp_auth.provider.get_well_known_routes(mcp_path=MCP_PATH))
     # The capability router reads settings off app.state (see haku.console.capabilities).
     app.state.settings = settings
     app.state.agent_authority = agent_authority

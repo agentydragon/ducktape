@@ -126,6 +126,7 @@ def build_auth(
             client_id=config.oidc_client_id,
             client_secret=config.oidc_client_secret,
             base_url=config.normalized_public_base_url(),
+            resource_base_url=settings.public_base_url,
             client_storage=storage,
             expected_issuer=config.oidc_issuer,
             grant_authority=agent_authority,

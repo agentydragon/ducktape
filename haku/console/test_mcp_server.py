@@ -451,6 +451,9 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
                 slash_redirect = await anon.get(f"{base}/mcp/", follow_redirects=False)
                 assert slash_redirect.status_code == 307
                 assert slash_redirect.headers["location"] == "/mcp"
+                duplicate_transport = await anon.post(f"{base}/mcp/mcp", follow_redirects=False)
+                assert duplicate_transport.status_code == 307
+                assert duplicate_transport.headers["location"] == "/mcp"
 
                 # Walk the production OAuth discovery chain from the challenge through DCR. The
                 # well-known documents live at the origin root, while every operational endpoint

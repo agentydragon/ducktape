@@ -536,6 +536,7 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
         client_id: str,
         client_secret: str,
         base_url: str,
+        resource_base_url: str,
         client_storage: OAuthClientStorage,
         expected_issuer: str,
         grant_authority: AgentGrantAuthority,
@@ -545,6 +546,7 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
             client_id=client_id,
             client_secret=client_secret,
             base_url=base_url,
+            resource_base_url=resource_base_url,
             require_authorization_consent="external",
             client_storage=BearerFailureObservingKeyValue(client_storage),
         )
