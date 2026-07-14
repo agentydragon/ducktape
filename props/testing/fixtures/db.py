@@ -21,10 +21,9 @@ from props.db.database import Database
 from props.db.setup import ensure_database_exists
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.sync import SpecimenBundle, refresh_examples_matview, sync_specimen
-from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.bazel.runfiles import get_required_path
-from util.oci import load_oci_image
 from util.testing.postgres import force_drop_database_sync
+from util.testing.postgres_fixtures import start_postgres_container
 
 tracer = trace.get_tracer(__name__)
 
@@ -56,14 +55,7 @@ def postgres_container() -> Generator[PostgresContainer]:
     All tests share this container but get isolated databases.
     """
     with tracer.start_as_current_span("postgres_container fixture"):
-        load_oci_image(RYUK)
-        load_oci_image(POSTGRES_18)
-
-        with tracer.start_as_current_span("PostgresContainer startup"):
-            container = PostgresContainer(
-                image=POSTGRES_18.tag, username="postgres", password="postgres", dbname="postgres"
-            )
-            container.start()
+        container = start_postgres_container()
 
     try:
         yield container

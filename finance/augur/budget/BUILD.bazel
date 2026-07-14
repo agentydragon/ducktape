@@ -52,6 +52,7 @@ py_test(
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
         "@pypi//alembic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
