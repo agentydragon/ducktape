@@ -675,7 +675,8 @@ def _create_row_invariant_triggers() -> None:
                 RAISE EXCEPTION 'browser identity may only be established on browser arrival'
                     USING ERRCODE = '23514';
             END IF;
-            IF OLD.browser_binding_digest IS NULL AND NEW.browser_binding_digest IS NOT NULL THEN
+            IF OLD.browser_binding_digest IS NULL AND NEW.browser_binding_digest IS NOT NULL
+               AND NOT (OLD.phase = 'awaiting_browser' AND NEW.phase = 'awaiting_approval') THEN
                 RAISE EXCEPTION 'consumed browser binding cannot be restored'
                     USING ERRCODE = '23514';
             END IF;
