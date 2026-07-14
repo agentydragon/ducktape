@@ -26,6 +26,7 @@ from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig
 from haku.console.conftest import console_settings, operator_session_cookie, write_config
 from haku.console.console_events import ConsoleEventHub
+from haku.console.mcp_agent_auth import build_auth
 from haku.console.mcp_approval import McpMetadataProvider, McpToolExecutor, PostgresToolCallLedger, resolve_mcp_agent
 from haku.console.mcp_config import ResolvedStaticAgent, static_agent_client_id
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
@@ -82,7 +83,10 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
         in_process_servers=in_process,
         gmail_client=gmail_client,
     )
-    server = build_console_mcp(context)
+    server = build_console_mcp(
+        context,
+        auth=build_auth(context.settings, context.static_agents, operator_oauth_store=context.oauth_store).provider,
+    )
     await register_proxy_tools(server, context)
     # Serve over HTTP: the in-memory transport can't carry the static bearer, and the proxy tools
     # need an authenticated caller (`_agent_id`). The verifier maps `agent-token` → client_id "haku".

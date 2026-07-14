@@ -16,13 +16,11 @@ from __future__ import annotations
 import base64
 import datetime
 import secrets
-from collections.abc import Mapping
 from pathlib import Path
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Literal, cast
 from urllib.parse import quote, urlencode, urljoin
 
 import httpx
-import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi_csrf_protect import CsrfProtect
@@ -73,23 +71,6 @@ MCP_OPERATOR_AUTH_FLOW_TTL = datetime.timedelta(minutes=10)
 MCP_OPERATOR_AUTH_REFRESH_SKEW = datetime.timedelta(seconds=60)
 
 router = APIRouter(tags=["mcp-operator-oauth"])
-
-
-def operator_subject_from_idp_tokens(idp_tokens: Mapping[str, Any]) -> str | None:
-    """The operator's opaque OIDC subject from an OAuth agent's upstream token response.
-
-    Decodes the upstream ``id_token`` (freshly issued by Authentik in this exchange, so no local
-    signature check is needed) and returns its ``sub`` — the same opaque identifier the operator
-    browser session and the `mcp_operator_oauth_associations` key use (both console providers run
-    ``sub_mode=user_id``, so ``sub`` is the stable Authentik user id, consistent across providers).
-    ``None`` when there is no id_token or ``sub`` claim.
-    """
-    id_token = idp_tokens.get("id_token")
-    if not isinstance(id_token, str):
-        return None
-    claims = jwt.decode(id_token, options={"verify_signature": False, "verify_aud": False})
-    subject = claims.get("sub")
-    return subject if isinstance(subject, str) else None
 
 
 class McpOperatorAuthStatusBase(BaseModel):

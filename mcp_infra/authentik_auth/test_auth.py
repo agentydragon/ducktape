@@ -62,7 +62,8 @@ def _direct_trust(
 @dataclass(frozen=True)
 class _AuthBuildHarness:
     http_get: Mock
-    oidc_proxy_cls: Mock
+    downstream_proxy_cls: Mock
+    authorization_hook_proxy_cls: Mock
     jwt_verifier_cls: Mock
     multi_auth_cls: Mock
 
@@ -71,16 +72,19 @@ class _AuthBuildHarness:
 def auth_build_harness() -> Generator[_AuthBuildHarness]:
     with (
         patch("mcp_infra.authentik_auth.auth.httpx.get") as http_get,
-        patch("mcp_infra.authentik_auth.auth.ClientAuthorizationHookOIDCProxy") as oidc_proxy_cls,
+        patch("mcp_infra.authentik_auth.auth.DownstreamClientIdentityOIDCProxy") as downstream_proxy_cls,
+        patch("mcp_infra.authentik_auth.auth.ClientAuthorizationHookOIDCProxy") as authorization_hook_proxy_cls,
         patch("mcp_infra.authentik_auth.auth.JWTVerifier") as jwt_verifier_cls,
         patch("mcp_infra.authentik_auth.auth.MultiAuth") as multi_auth_cls,
     ):
-        oidc_proxy_cls.return_value.oidc_config = OIDCConfiguration(
-            strict=False, jwks_uri="https://auth.example.com/application/o/test/jwks/"
-        )
+        for proxy_cls in (downstream_proxy_cls, authorization_hook_proxy_cls):
+            proxy_cls.return_value.oidc_config = OIDCConfiguration(
+                strict=False, jwks_uri="https://auth.example.com/application/o/test/jwks/"
+            )
         yield _AuthBuildHarness(
             http_get=http_get,
-            oidc_proxy_cls=oidc_proxy_cls,
+            downstream_proxy_cls=downstream_proxy_cls,
+            authorization_hook_proxy_cls=authorization_hook_proxy_cls,
             jwt_verifier_cls=jwt_verifier_cls,
             multi_auth_cls=multi_auth_cls,
         )
@@ -131,7 +135,7 @@ def test_direct_jwt_trust_requires_an_audience() -> None:
 def test_build_authentik_auth_uses_proxy_discovery_jwks_uri(auth_build_harness: _AuthBuildHarness) -> None:
     """Direct JWT verification reuses OIDCProxy's validated discovery result."""
     advertised_jwks = "https://auth.example.com/application/o/test/jwks/"
-    auth_build_harness.oidc_proxy_cls.return_value.oidc_config = OIDCConfiguration(
+    auth_build_harness.downstream_proxy_cls.return_value.oidc_config = OIDCConfiguration(
         strict=False, jwks_uri=advertised_jwks
     )
     build_authentik_auth(_config().model_copy(update={"direct_jwt_trusts": (_direct_trust(),)}))
@@ -145,20 +149,22 @@ def test_build_authentik_auth_uses_proxy_discovery_jwks_uri(auth_build_harness: 
 def test_build_authentik_auth_sets_default_scopes_through_proxy_api(auth_build_harness: _AuthBuildHarness) -> None:
     build_authentik_auth(_config())
 
-    auth_build_harness.oidc_proxy_cls.return_value.update_default_scopes.assert_called_once_with(DEFAULT_VALID_SCOPES)
+    auth_build_harness.downstream_proxy_cls.return_value.update_default_scopes.assert_called_once_with(
+        DEFAULT_VALID_SCOPES
+    )
 
 
 def test_build_authentik_auth_sets_custom_scopes_through_proxy_api(auth_build_harness: _AuthBuildHarness) -> None:
     custom_scopes = ["openid", "propose", "read"]
     build_authentik_auth(_config(), valid_scopes=custom_scopes)
 
-    auth_build_harness.oidc_proxy_cls.return_value.update_default_scopes.assert_called_once_with(custom_scopes)
+    auth_build_harness.downstream_proxy_cls.return_value.update_default_scopes.assert_called_once_with(custom_scopes)
 
 
 def test_build_authentik_auth_requires_authorization_consent(auth_build_harness: _AuthBuildHarness) -> None:
     build_authentik_auth(_config())
 
-    assert auth_build_harness.oidc_proxy_cls.call_args.kwargs["require_authorization_consent"] is True
+    assert auth_build_harness.downstream_proxy_cls.call_args.kwargs["require_authorization_consent"] is True
 
 
 def test_build_authentik_auth_accepts_issuer_with_trailing_slash(auth_build_harness: _AuthBuildHarness) -> None:
@@ -222,17 +228,30 @@ def test_build_authentik_auth_appends_extra_verifiers(auth_build_harness: _AuthB
     assert auth_build_harness.multi_auth_cls.call_args.kwargs["verifiers"] == [sentinel]
 
 
-def test_build_authentik_auth_passes_on_client_authorized(auth_build_harness: _AuthBuildHarness) -> None:
-    """on_client_authorized is handed to the OIDCProxy for its pre-token ownership check."""
+def test_build_authentik_auth_uses_downstream_identity_proxy_without_authorization_hook(
+    auth_build_harness: _AuthBuildHarness,
+) -> None:
+    build_authentik_auth(_config())
+
+    auth_build_harness.downstream_proxy_cls.assert_called_once()
+    auth_build_harness.authorization_hook_proxy_cls.assert_not_called()
+
+
+def test_build_authentik_auth_uses_authorization_hook_proxy_when_requested(
+    auth_build_harness: _AuthBuildHarness,
+) -> None:
+    """The opt-in hook sees upstream identity before FastMCP issues its local token."""
 
     async def _cb(client_id: str, idp_tokens: Any) -> None: ...
 
     build_authentik_auth(_config(), on_client_authorized=_cb)
 
-    assert auth_build_harness.oidc_proxy_cls.call_args.kwargs["on_client_authorized"] is _cb
+    auth_build_harness.downstream_proxy_cls.assert_not_called()
+    auth_build_harness.authorization_hook_proxy_cls.assert_called_once()
+    assert auth_build_harness.authorization_hook_proxy_cls.call_args.kwargs["on_client_authorized"] is _cb
 
 
-def test_compatibility_layers_are_independently_named_without_changing_builder_behavior() -> None:
+def test_compatibility_layers_are_independently_named_without_changing_runtime_behavior() -> None:
     assert issubclass(DownstreamClientIdentityOIDCProxy, RetryableRefreshOIDCProxy)
     assert issubclass(ClientAuthorizationHookOIDCProxy, DownstreamClientIdentityOIDCProxy)
 

@@ -277,18 +277,17 @@ class ClientAuthorizationHookOIDCProxy(DownstreamClientIdentityOIDCProxy):
     the hook and its callers atomically.
     """
 
-    def __init__(self, *args: Any, on_client_authorized: OnClientAuthorized | None = None, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, on_client_authorized: OnClientAuthorized, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._on_client_authorized = on_client_authorized
 
     async def exchange_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
     ) -> OAuthToken:
-        if self._on_client_authorized is not None:
-            code_model = await self._code_store.get(key=authorization_code.code)
-            if code_model is None or not client.client_id:
-                raise RuntimeError("authorized MCP client is missing its stored upstream identity")
-            await self._on_client_authorized(client.client_id, code_model.idp_tokens)
+        code_model = await self._code_store.get(key=authorization_code.code)
+        if code_model is None or not client.client_id:
+            raise RuntimeError("authorized MCP client is missing its stored upstream identity")
+        await self._on_client_authorized(client.client_id, code_model.idp_tokens)
         return await super().exchange_authorization_code(client, authorization_code)
 
 
@@ -326,17 +325,25 @@ def build_authentik_auth(
     """
     issuer = config.normalized_issuer()
     config_url = f"{issuer}/.well-known/openid-configuration"
-    # Preserve the current behavior while naming each FastMCP compatibility
-    # repair independently. P2 removes the Haku hook from this builder.
-    proxy = ClientAuthorizationHookOIDCProxy(
-        config_url=config_url,
-        client_id=config.oidc_client_id,
-        client_secret=config.oidc_client_secret,
-        base_url=config.normalized_public_base_url(),
-        require_authorization_consent=True,
-        client_storage=client_storage,
-        on_client_authorized=on_client_authorized,
-    )
+    if on_client_authorized is None:
+        proxy = DownstreamClientIdentityOIDCProxy(
+            config_url=config_url,
+            client_id=config.oidc_client_id,
+            client_secret=config.oidc_client_secret,
+            base_url=config.normalized_public_base_url(),
+            require_authorization_consent=True,
+            client_storage=client_storage,
+        )
+    else:
+        proxy = ClientAuthorizationHookOIDCProxy(
+            config_url=config_url,
+            client_id=config.oidc_client_id,
+            client_secret=config.oidc_client_secret,
+            base_url=config.normalized_public_base_url(),
+            require_authorization_consent=True,
+            client_storage=client_storage,
+            on_client_authorized=on_client_authorized,
+        )
     proxy.update_default_scopes(valid_scopes or DEFAULT_VALID_SCOPES)
     # OIDCProxy verifies its own wire tokens. Direct bearer tokens are a separate,
     # opt-in machine path: each trust gets its own verifier so accepted issuers and

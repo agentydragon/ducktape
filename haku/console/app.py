@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import secrets
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, MutableMapping
+from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -27,7 +27,15 @@ from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
 from starlette.middleware.sessions import SessionMiddleware
 
-from haku.console import capabilities, console_events, mcp_approval, mcp_operator_oauth, mcp_server, operator_auth
+from haku.console import (
+    capabilities,
+    console_events,
+    mcp_agent_auth,
+    mcp_approval,
+    mcp_operator_oauth,
+    mcp_server,
+    operator_auth,
+)
 from haku.console.config import MCP_PATH, Settings
 from haku.console.database_migrate import apply_migrations
 from haku.console.deployment import DeploymentInfo, build_deployment_info
@@ -135,16 +143,7 @@ def create_app(settings: Settings) -> FastAPI:
         gmail_client=gmail_client,
     )
 
-    # Record the agent→operator link when an OAuth agent (claude.ai / claude CLI) completes the
-    # OIDCProxy authorization-code exchange: its DCR client_id → the operator's opaque subject.
-    # A missing `sub` is a misconfiguration (both providers run sub_mode=user_id), so fail loud.
-    async def _link_agent_operator(client_id: str, idp_tokens: Mapping[str, Any]) -> None:
-        subject = mcp_operator_oauth.operator_subject_from_idp_tokens(idp_tokens)
-        if subject is None:
-            raise RuntimeError(f"MCP OAuth id_token for client {client_id} carried no `sub` claim")
-        mcp_operator_oauth_store.bind_agent_operator(agent_dcr_client_id=client_id, operator_subject=subject)
-
-    mcp_auth = mcp_server.build_auth(settings, static_agents, on_client_authorized=_link_agent_operator)
+    mcp_auth = mcp_agent_auth.build_auth(settings, static_agents, operator_oauth_store=mcp_operator_oauth_store)
     console_mcp = mcp_server.build_console_mcp(console_mcp_context, auth=mcp_auth.provider)
     mcp_asgi = console_mcp.http_app(path="/")
 
@@ -155,7 +154,7 @@ def create_app(settings: Settings) -> FastAPI:
             # Pre-warm the OIDCProxy client-state store so the first OAuth request isn't slowed by a
             # cold connect (see mcp_infra/oauth_facade/server.py). The OAuth variant always carries
             # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
-            if isinstance(mcp_auth, mcp_server.OAuthMcpAuth):
+            if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
                 await mcp_auth.storage.setup()
             # FastMCP's streamable-http session manager runs under mcp_asgi.lifespan; reflect the
             # connected servers into the tool surface once it is up.
