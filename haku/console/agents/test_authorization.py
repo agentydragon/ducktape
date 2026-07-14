@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import re
+import threading
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
@@ -12,8 +13,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.exc import IntegrityError, TimeoutError as SQLAlchemyTimeoutError
 
 from haku.console.agents.authorization import (
@@ -217,31 +217,6 @@ async def _create_grant(
             grant_id=grant.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
         )
     return grant
-
-
-async def _wait_until_connection_is_lock_blocked(engine: Engine, *, blocker_pid: int, task: asyncio.Task[None]) -> None:
-    with engine.connect() as conn:
-        for _ in range(200):
-            waiting = conn.execute(
-                text(
-                    """
-                        SELECT EXISTS (
-                            SELECT 1 FROM pg_stat_activity
-                            WHERE datname = current_database()
-                              AND state = 'active'
-                              AND :blocker_pid = ANY(pg_blocking_pids(pid))
-                        )
-                        """
-                ),
-                {"blocker_pid": blocker_pid},
-            ).scalar_one()
-            if waiting:
-                return
-            if task.done():
-                await task
-                pytest.fail("authority operation completed before reaching its expected row lock")
-            await asyncio.sleep(0.01)
-    pytest.fail("authority operation did not reach its expected row lock")
 
 
 async def test_create_decision_is_idempotent_and_grant_activates_then_revokes(db_url: str) -> None:
@@ -774,6 +749,16 @@ async def test_revoke_waits_for_interaction_before_locking_grant_graph(db_url: s
     authority = PostgresAgentAuthority(
         db_url, public_base_url="https://haku.test", operator_identity_store=harness.identities, clock=harness.clock
     )
+    interaction_lock_attempted = threading.Event()
+
+    def observe_interaction_lock(
+        _connection: object, _cursor: object, statement: str, _parameters: object, _context: object, _executemany: bool
+    ) -> None:
+        normalized = statement.casefold()
+        if "enrollment_interactions" in normalized and "for update" in normalized:
+            interaction_lock_attempted.set()
+
+    event.listen(authority._engine, "before_cursor_execute", observe_interaction_lock)
     engine = create_engine(db_url)
     owner = engine.connect()
     transaction = owner.begin()
@@ -788,7 +773,6 @@ async def test_revoke_waits_for_interaction_before_locking_grant_graph(db_url: s
             ),
             {"grant_id": grant.grant_id},
         ).one()
-        blocker_pid = owner.execute(text("SELECT pg_backend_pid()")).scalar_one()
         owner.execute(
             text(
                 "SELECT interaction_id FROM enrollment_interactions WHERE interaction_id = :interaction_id FOR UPDATE"
@@ -796,7 +780,8 @@ async def test_revoke_waits_for_interaction_before_locking_grant_graph(db_url: s
             {"interaction_id": interaction_id},
         )
         task = asyncio.create_task(authority.revoke_grant(grant_id=grant.grant_id))
-        await _wait_until_connection_is_lock_blocked(engine, blocker_pid=blocker_pid, task=task)
+        assert await asyncio.to_thread(interaction_lock_attempted.wait, 5)
+        assert not task.done()
         owner.execute(
             text("SELECT binding_id FROM credential_bindings WHERE binding_id = :binding_id FOR UPDATE NOWAIT"),
             {"binding_id": binding_id},
@@ -809,6 +794,7 @@ async def test_revoke_waits_for_interaction_before_locking_grant_graph(db_url: s
         owner.close()
         if task is not None and not task.done():
             await task
+        event.remove(authority._engine, "before_cursor_execute", observe_interaction_lock)
         engine.dispose()
 
 
