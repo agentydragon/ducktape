@@ -12,6 +12,10 @@
  * To inspect failures: check TEST_UNDECLARED_OUTPUTS_DIR for *-actual.png + *-diff.png.
  */
 
+// `document` is the browser page's, referenced inside page.evaluate callbacks (which run in the
+// headless page, not Node) — declare it so this Node script lints under the .mjs node-globals block.
+/* global document */
+
 import puppeteer from "puppeteer";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { PNG } from "pngjs";

@@ -36,22 +36,48 @@ const REGISTRY = {
 type PreviewRegistry = typeof REGISTRY;
 const RUNTIME_REGISTRY: Record<string, Record<string, ToolPreview>> = REGISTRY;
 
-const RESULT_REGISTRY: Record<string, Record<string, ToolResultPreview>> = {
+// `as const` (like REGISTRY) so RegisteredResultPayload below can resolve each tool's literal
+// result schema; RUNTIME_RESULT_REGISTRY is the widened twin toolResultPreview indexes by string.
+const RESULT_REGISTRY = {
   [GMAIL_SERVER_ID]: gmailResultPreviews,
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarResultPreviews,
   [GROCY_SERVER_ID]: grocyResultPreviews,
-};
+} as const satisfies Record<string, Record<string, ToolResultPreview>>;
+type ResultRegistry = typeof RESULT_REGISTRY;
+const RUNTIME_RESULT_REGISTRY: Record<string, Record<string, ToolResultPreview>> = RESULT_REGISTRY;
 
-/** A fixture whose server, tool, and arguments are tied to one registered preview schema.
- * In-process schemas originate in FastMCP's tools/list catalog; remote-server previews retain
- * their hand-authored Zod contract. `satisfies RegisteredToolPreviewFixture` therefore makes
- * fixture drift a TypeScript error without widening the fixture's literal values. `z.output`
- * is intentional: the generated adapter pins `ZodType<GeneratedArguments>` as its output type,
- * while Zod 4 leaves that generic type's input as `unknown`. */
+/** The raw result payload a registered result widget parses for one (serverId, toolName); `never`
+ * when the tool has no result widget, so a fixture for it cannot carry a result. Mirrors how the
+ * argument side ties args to each tool's argument schema. */
+type RegisteredResultPayload<
+  ServerId extends string,
+  ToolName extends PropertyKey,
+> = ServerId extends keyof ResultRegistry
+  ? ToolName extends keyof ResultRegistry[ServerId]
+    ? ResultRegistry[ServerId][ToolName] extends ToolResultPreview<infer ResultSchema>
+      ? z.output<ResultSchema>
+      : never
+    : never
+  : never;
+
+/** A fixture whose server, tool, and arguments (plus optional result) are tied to one registered
+ * preview schema. In-process schemas originate in FastMCP's tools/list catalog; remote-server
+ * previews retain their hand-authored Zod contract. `satisfies RegisteredToolPreviewFixture`
+ * therefore makes fixture drift a TypeScript error without widening the fixture's literal values.
+ * `result?` is the tool's raw return value, typed by its result widget's schema where one is
+ * registered (else `never`, so the fixture cannot carry a result); the screenshot harness wraps it
+ * into the stored CallToolResult envelope. `z.output` is intentional: the generated adapter pins
+ * `ZodType<GeneratedArguments>` as its output type, while Zod 4 leaves that generic type's input
+ * as `unknown`. */
 export type RegisteredToolPreviewFixture = {
   [ServerId in keyof PreviewRegistry]: {
     [ToolName in keyof PreviewRegistry[ServerId]]: PreviewRegistry[ServerId][ToolName] extends ToolPreview<infer Schema>
-      ? { serverId: ServerId; toolName: ToolName; args: z.output<Schema> }
+      ? {
+          serverId: ServerId;
+          toolName: ToolName;
+          args: z.output<Schema>;
+          result?: RegisteredResultPayload<ServerId, ToolName>;
+        }
       : never;
   }[keyof PreviewRegistry[ServerId]];
 }[keyof PreviewRegistry];
@@ -85,6 +111,6 @@ export function toolResultPreview(
   payload: unknown,
   variant: PreviewVariant
 ): ReactNode | null {
-  const preview = RESULT_REGISTRY[serverId]?.[toolName];
+  const preview = RUNTIME_RESULT_REGISTRY[serverId]?.[toolName];
   return preview ? renderResultPreview(preview, payload, variant) : null;
 }

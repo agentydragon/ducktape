@@ -147,48 +147,6 @@ locals {
 
   nebula_configs = merge(local.nebula_configs_lighthouse, local.nebula_configs_client)
 
-  # Either endpoint may require a smaller inner-packet MTU than the mesh-wide
-  # nebula1 MTU. Install exact host routes on Talos mesh nodes, taking the
-  # smaller endpoint constraint, so Linux segments/fragments before handing
-  # packets to Nebula. This keeps the tun device itself at 1420 for Cilium and
-  # leaves all unrelated mesh traffic unchanged.
-  #
-  # Keep this in the legacy machine.network.interfaces config instead of a
-  # route-only LinkConfig, which would disable Talos' default DHCP operators.
-  # The explicit dhcp=false applies only to nebula1; physical-interface DHCP
-  # remains untouched.
-  nebula_destination_mtu_routes = {
-    for source_name in local.nebula_managed_hosts :
-    source_name => [
-      for destination_name, destination in local.nebula_hosts : {
-        network = "${destination.nebula_ip}/32"
-        mtu = min(
-          try(local.nebula_hosts[source_name].destination_mtu, 1420),
-          try(destination.destination_mtu, 1420),
-        )
-      }
-      if destination_name != source_name && (
-        can(local.nebula_hosts[source_name].destination_mtu) ||
-        can(destination.destination_mtu)
-      )
-    ]
-  }
-
-  nebula_destination_mtu_patches = {
-    for host_name, routes in local.nebula_destination_mtu_routes :
-    host_name => length(routes) == 0 ? [] : [yamlencode({
-      machine = {
-        network = {
-          interfaces = [{
-            interface = "nebula1"
-            dhcp      = false
-            routes    = routes
-          }]
-        }
-      }
-    })]
-  }
-
   # Per-node ExtensionServiceConfig documents (apiVersion: v1alpha1 /
   # kind: ExtensionServiceConfig): mount Nebula certs + config into the extension
   # service's filesystem. The extension runs: nebula -config /usr/local/etc/nebula/config.yml
@@ -222,10 +180,7 @@ locals {
   # Combined list of patches per node (used in config_patches concat).
   nebula_machine_patches = {
     for key in keys(local.nebula_node_names) :
-    key => concat(
-      [local.nebula_extension_config[key]],
-      local.nebula_destination_mtu_patches[key],
-    )
+    key => [local.nebula_extension_config[key]]
   }
 }
 

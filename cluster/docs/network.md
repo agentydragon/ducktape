@@ -64,20 +64,14 @@ Hard max for this stack: `nebula1 = 1440`, `MTU = 1440` → pod 1390 (exact-fit,
 
 ## Config locations
 
-| What                          | File                                        |
-| ----------------------------- | ------------------------------------------- |
-| Cilium `MTU`, tunnel          | `cluster/terraform/main/cilium-values.yaml` |
-| Nebula `tun.mtu`, PKI         | `cluster/terraform/main/nebula.tf`          |
-| OVH peer `/32` routes         | `cluster/terraform/main/ovh-nodes.tf`       |
-| Per-destination MTU policy    | `nebula-mesh.json` (repo root)              |
-| NixOS peer-route consumer     | `nix/nixos/modules/nebula.nix`              |
-| Talos peer-route consumer     | `cluster/terraform/main/nebula.tf`          |
-| Ansible peer-route consumer   | `ansible/roles/nebula`                      |
-| Mesh roster and policy schema | `cluster/scripts/nebula_mesh.py`            |
+| What                  | File                                        |
+| --------------------- | ------------------------------------------- |
+| Cilium `MTU`, tunnel  | `cluster/terraform/main/cilium-values.yaml` |
+| Nebula `tun.mtu`, PKI | `cluster/terraform/main/nebula.tf`          |
+| OVH peer `/32` routes | `cluster/terraform/main/ovh-nodes.tf`       |
+| Mesh roster (SSOT)    | `nebula-mesh.json` (repo root)              |
 
-The cluster-wide Cilium/Nebula settings are managed by OpenTofu, Talos machine
-config, and Helm. Host-specific route MTUs originate in the mesh roster and are
-rendered by each host manager. None are Flux resources.
+Both are infra-managed (OpenTofu + Talos machine config / Helm), **not Flux**.
 
 Gotcha: Nebula's `lighthouse.local_allow_list` (in `nebula.tf` and
 `nix/nixos/modules/nebula.nix`) must keep excluding `cilium*`/`lxc*` interfaces
@@ -110,29 +104,6 @@ includes both overlays; it is not a direct-Fi or native-IPv6 measurement. The
 fix for roaming nodes is a measured host-specific MSS/PMTU mitigation, not the
 global MTU. In particular, a generic route-MTU clamp at `nebula1` may observe
 only its inner 1420-byte TUN MTU rather than the cellular underlay limit.
-
-Rugged therefore declares `destination_mtu: 1100` in `nebula-mesh.json` while
-keeping both Cilium and the `nebula1` device at 1420. Consumers turn that one
-policy into symmetric exact routes: Rugged uses 1100 toward every peer, and
-every other managed Linux peer uses 1100 only toward Rugged. Thus direct and
-relayed packets involving Rugged fit its 1200-byte Fi underlay without changing
-the MTU between other managed Linux pairs. The mobile-wide fallback described
-below is the deliberate exception.
-
-For bulk IPv4 TCP, moving from an inner MTU of 1420 to 1100 increases wire bytes
-by roughly 2–3%, although it produces about 30% more packets and per-packet
-crypto work. That is a reasonable permanent tradeoff for one roaming node; it
-is not a reason to lower the mesh-wide MTU. Android exposes one VPN-interface
-MTU rather than Linux-style per-route MTUs, so the generated Mobile Nebula
-import uses the smallest declared `destination_mtu` as its global TUN MTU. This
-lowers only the mobile client's mesh traffic; regenerate and re-import its
-configuration after a constraint changes.
-
-Do not express the smaller routes as Nebula `tun.routes` while the upstream
-Linux TUN initialization bug compares route MTUs against the old zero
-`MaxMTU`: on startup it can lower the TUN device itself to 1100. NixOS and
-Ansible deliberately install kernel routes after Nebula starts, while Talos
-reconciles the same kernel route outside Nebula.
 
 ## References
 

@@ -137,21 +137,8 @@ py_library(
         "@pypi//jinja2",
         "@pypi//mcp",
         "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "mcp_agent_auth",
-    srcs = ["mcp_agent_auth.py"],
-    deps = [
-        ":config",
-        ":mcp_config",
-        ":mcp_operator_oauth",
-        "//mcp_infra:persistence",
-        "//mcp_infra/authentik_auth:auth",
-        "@pypi//fastmcp_slim",
         "@pypi//pyjwt",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -231,7 +218,9 @@ py_library(
         ":tool_call_actor",
         "//haku/console/tools:gmail_client",
         "//mcp_infra:naming",
+        "//mcp_infra:persistence",
         "//mcp_infra:prefix",
+        "//mcp_infra/authentik_auth:auth",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
@@ -319,24 +308,7 @@ py_test(
     srcs = ["test_mcp_operator_oauth.py"],
     deps = [
         ":mcp_operator_oauth",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_mcp_agent_auth",
-    srcs = ["test_mcp_agent_auth.py"],
-    deps = [
-        ":config",
-        ":mcp_agent_auth",
-        ":mcp_config",
-        ":mcp_operator_oauth",
-        "//:conftest",
-        "//mcp_infra:persistence",
-        "@pypi//pydantic",
         "@pypi//pyjwt",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -383,7 +355,6 @@ py_library(
         ":database_migrate",
         ":deployment",
         ":in_process_servers",
-        ":mcp_agent_auth",
         ":mcp_approval",
         ":mcp_config",
         ":mcp_operator_oauth",
@@ -545,7 +516,6 @@ py_test(
         ":app",
         ":config",
         ":conftest",
-        ":mcp_agent_auth",
         ":mcp_approval",
         ":mcp_config",
         ":mcp_operator_oauth",
@@ -557,7 +527,6 @@ py_test(
         "//mcp_infra:persistence",
         "//util:net",
         "//util/testing:asgi",
-        "//util/testing:mock_oidc",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",

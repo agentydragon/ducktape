@@ -521,16 +521,15 @@ js_library(
     deps = [
         ":approval_state",
         ":client",
-        ":grocy_client",
         ":settings_panel",
         ":shell_chrome",
         ":theme",
-        ":tool_call_card",
         ":tool_calls_page",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//haku/console/frontend/tool_rendering",
+        "//haku/console/frontend/tool_rendering/screenshot:mock_data",
     ],
 )
 

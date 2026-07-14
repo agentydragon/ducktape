@@ -58,7 +58,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: server
-          image: ghcr.io/agentydragon/haku-console:devel-20260714084330-f353cc6 # {"$imagepolicy": "flux-system:haku-console"}
+          image: ghcr.io/agentydragon/haku-console:devel-20260714040507-b83762a # {"$imagepolicy": "flux-system:haku-console"}
           imagePullPolicy: Always
           ports:
             - name: api
@@ -68,7 +68,7 @@ spec:
             # policies as the images, preserving reproducible image contents while exposing the
             # commits selected by this pod manifest.
             - name: HAKU_CONSOLE_IMAGE_TAG
-              value: devel-20260714084330-f353cc6 # {"$imagepolicy": "flux-system:haku-console:tag"}
+              value: devel-20260714040507-b83762a # {"$imagepolicy": "flux-system:haku-console:tag"}
             - name: HAKU_CONSOLE_STATIC_IMAGE_TAG
               value: devel-20260714042222-0beed76 # {"$imagepolicy": "flux-system:haku-console-static:tag"}
             # Capability tier: the launch-routine action. The console builds both the

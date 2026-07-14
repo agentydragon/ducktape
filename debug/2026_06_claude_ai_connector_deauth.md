@@ -101,9 +101,6 @@ shared.
    surface as `invalid_grant`. Note: whether claude.ai retries after a 503 at
    `/token` is unverified — but `invalid_grant` is guaranteed-terminal, 503
    at least may be retried.
-   The class was later split without changing behavior: shared refresh handling
-   is `RetryableRefreshOIDCProxy`, downstream DCR identity restoration is its own
-   focused shim, and the current raw-token authorization hook is independently named.
 2. **Alerting**: `mcp_auth_upstream_refresh_failures_total{outcome}` counter,
    scraped via new metrics ports + ServiceMonitors on
    manifold/postscanmail/plaid-db facades and grocy MCP servers (tana already

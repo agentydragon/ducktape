@@ -2,9 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { recentToolCallTtlMs } from "../approval_state.ts";
 import { toolPreview } from "../tool_rendering/index.tsx";
-import { unwrapToolResult } from "../tool_rendering/result_entry.tsx";
-import { toolResultPreview } from "../tool_rendering/index.tsx";
-import { PREVIEW_SAMPLES, SAMPLE_PENDING, SAMPLE_TOOL_CALLS, sampleRecentToolCalls } from "./sample_data.ts";
+import { SAMPLE_PENDING, SAMPLE_TOOL_CALLS, sampleRecentToolCalls } from "./sample_data.ts";
 
 const CUSTOM_HISTORY_IDS = new Set(["tc_1", "tc_2", "tc_3"]);
 const CUSTOM_PENDING_IDS = new Set(["tc_p2"]);
@@ -27,27 +25,6 @@ describe("screenshot tool-call fixtures", () => {
     }
     for (const approval of customPending) {
       expectCustomPreview(approval.server_id, approval.tool_name, approval.arguments ?? {});
-    }
-  });
-
-  it("dispatches every gallery fixture", () => {
-    for (const { serverId, toolName, args } of PREVIEW_SAMPLES) {
-      expectCustomPreview(serverId, toolName, args);
-    }
-  });
-
-  it("dispatches every gallery result payload to a custom result preview", () => {
-    const withResults = PREVIEW_SAMPLES.filter(({ result }) => result != null);
-    // Covers every server with a result widget plus both fallback paths.
-    expect(withResults.length).toBeGreaterThanOrEqual(5);
-    for (const { serverId, toolName, result } of withResults) {
-      const key = `${serverId}.${toolName}`;
-      const payload = unwrapToolResult(result);
-      expect(payload, key).not.toBeNull();
-      for (const variant of ["compact", "detailed"] as const) {
-        const node = toolResultPreview(serverId, toolName, payload, variant);
-        expect(node, `${key} (${variant})`).not.toBeNull();
-      }
     }
   });
 

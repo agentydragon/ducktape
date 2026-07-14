@@ -1,0 +1,53 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Shared preview-screenshot harness. `card.tsx`/`mount.tsx`/`mock.ts`/`mock_data.ts` are the
+# library targets each per-server harness imports; `render` wraps the shared Puppeteer driver each
+# server's `js_test` runs as its entry point (a js_library because js_test entry_point can't
+# reference a cross-package source file directly).
+js_library(
+    name = "render",
+    srcs = ["render.mjs"],
+)
+
+js_library(
+    name = "mock_data",
+    srcs = ["mock_data.ts"],
+    deps = [
+        "//haku/console/frontend:grocy_client",
+    ],
+)
+
+js_library(
+    name = "mock",
+    srcs = ["mock.ts"],
+    deps = [
+        ":mock_data",
+    ],
+)
+
+js_library(
+    name = "card",
+    srcs = ["card.tsx"],
+    deps = [
+        "//:node_modules/react",
+        "//haku/console/frontend:approval_state",
+        "//haku/console/frontend:client",
+        "//haku/console/frontend:tool_call_card",
+        "//haku/console/frontend/tool_rendering:variant",
+    ],
+)
+
+js_library(
+    name = "mount",
+    srcs = ["mount.tsx"],
+    deps = [
+        ":card",
+        ":mock",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react-dom",
+        "//haku/console/frontend:theme",
+        "//haku/console/frontend/tool_rendering:variant",
+    ],
+)

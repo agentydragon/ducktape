@@ -1,4 +1,5 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//haku/console/frontend/tool_rendering/screenshot:screenshot_test.bzl", "preview_screenshots")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -40,6 +41,20 @@ filegroup(
     srcs = glob(["*.tsx"]),
 )
 
+# Preview-screenshot fixtures for this server (rendered by the `:previews` target below). Each
+# (serverId, toolName, args) `satisfies RegisteredToolPreviewFixture`, so a stale id/arg is a
+# type error against the registry's real Zod schemas.
+# The esbuild entry the `:previews` target bundles into an IIFE — this server's fixtures plus the
+# mount call (mount imports the fetch mock first).
+js_library(
+    name = "preview_harness",
+    srcs = ["preview_harness.tsx"],
+    deps = [
+        "//haku/console/frontend/tool_rendering",
+        "//haku/console/frontend/tool_rendering/screenshot:mount",
+    ],
+)
+
 js_library(
     name = "requests_test",
     srcs = ["requests.test.ts"],
@@ -55,5 +70,17 @@ js_library(
     deps = [
         ":responses",
         "//haku/console/frontend/tool_rendering:result_entry",
+    ],
+)
+
+# One preview screenshot `js_test` for this server: bundles preview_harness.tsx (this server's
+# fixtures + the shared mount) and runs the shared render driver; :preview_harness's transitive
+# deps (shared harness, gmail widgets, //:node_modules) are what esbuild bundles.
+preview_screenshots(
+    name = "previews",
+    entry = "preview_harness.tsx",
+    deps = [
+        ":preview_harness",
+        "//:node_modules",
     ],
 )

@@ -162,4 +162,14 @@ export default [
       "no-unused-vars": ["error", unusedVarsOptions],
     },
   },
+
+  // ── Node scripts (.mjs): Puppeteer/Playwright drivers, manifest writers ──
+  // These run under Node, not the browser, so grant Node globals (process/console/setTimeout/…).
+  // Without this they trip no-undef under js.recommended's env-less default — which is why the
+  // visual-test .mjs drivers have historically carried `tags = ["no-lint"]`; this block lets them
+  // (and new drivers like the per-server screenshot render.mjs) lint instead of opting out.
+  {
+    files: ["**/*.mjs"],
+    languageOptions: { globals: globals.node },
+  },
 ];

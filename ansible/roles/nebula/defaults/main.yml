@@ -15,6 +15,3 @@ nebula_upstream_dns:
 
 # Path to shared mesh config (nebula-mesh.json at repo root)
 nebula_mesh_config_file: "{{ playbook_dir }}/../nebula-mesh.json"
-
-# Installed as ExecStartPost so route overrides follow nebula1 recreation.
-nebula_peer_route_script_path: /usr/local/bin/nebula-peer-routes

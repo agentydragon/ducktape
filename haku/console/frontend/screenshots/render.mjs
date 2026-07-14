@@ -1,12 +1,15 @@
-// Screenshot generator for the console's own visual surfaces. Inlines the compiled
-// stylesheet and the bundled harness (harness.tsx) into a headless-Chromium page, one
-// scene and theme per load, and writes a PNG for every combination. This is a generator for eyeballing the
-// visuals — NOT a pixel-diff regression gate — so it never fails on "looks different"; it
-// fails only if a scene crashes or renders an empty #app (waitForSelector below throws).
+// Screenshot generator for the console's full-page visual surfaces (the history view, shell
+// chrome, and settings panel). Inlines the compiled stylesheet and bundled harness into a
+// headless-Chromium page, one scene and theme per load, and writes a PNG for every combination.
+// A generator for eyeballing the visuals — NOT a pixel-diff gate — so it never fails on "looks
+// different"; it fails only if a scene crashes or renders an empty #app (waitForSelector throws).
 //
-// It runs as an RBE js_test (browser rendering needs the RBE worker's display stack — a
-// local Bazel can't fetch repos in web sessions), writing the PNGs to the test's
-// undeclared outputs. See frontend/AGENTS.md for how to run it and fetch the PNGs.
+// Per-tool preview cards live in their own per-server `:previews` targets under
+// tool_rendering/<server>/ (shared driver: tool_rendering/screenshot/render.mjs).
+//
+// Runs as an RBE js_test (browser rendering needs the RBE worker's display stack — a local Bazel
+// can't fetch repos in web sessions), writing the PNGs to the test's undeclared outputs. See
+// frontend/AGENTS.md for how to run it and fetch the PNGs.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,10 +19,9 @@ import { writeVisualReviewManifest } from "../../../../util/testing/frontend_vis
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-// The console's full-page application surfaces (ToolCallsPage, ShellChrome) are
-// position:fixed, so a viewport screenshot — not an #app element shot — is what captures
-// them. The preview gallery opts into a full-document shot below. Each scene is a separate
-// page load driven by window.__SCENE__ (see harness.tsx).
+// The console's full-page application surfaces (ToolCallsPage, ShellChrome) are position:fixed,
+// so a viewport screenshot — not an #app element shot — is what captures them. Each scene is a
+// separate page load driven by window.__SCENE__ (see harness.tsx).
 const SCENES = [
   // The history page, showing both row states in one shot: flip the first row's Brief/Full
   // selector to Full (its segments are icons, so match the "Full" icon by aria-label) and open
@@ -31,9 +33,6 @@ const SCENES = [
     clicks: ['[aria-label="Full"]', "summary::-p-text(Metadata)"],
   },
   { name: "settings", viewport: { width: 1200, height: 900 } },
-  // Every implemented tool-call preview, compact | detailed side by side. Capture the full
-  // document so adding a preview cannot silently push later entries below a fixed viewport.
-  { name: "previews", viewport: { width: 1100, height: 900 }, fullPage: true },
   // The whole shell chrome: approvals starts selected; switch to screenshot so the capture checks
   // both the active tab styling and its mutually exclusive panel.
   {
@@ -99,6 +98,7 @@ const browser = await launchPuppeteerBrowser({
     "--force-color-profile=srgb",
   ],
 });
+const assets = [];
 try {
   for (const colorScheme of COLOR_SCHEMES) {
     for (const { name, viewport, click, clicks, fullPage = false } of SCENES) {
@@ -120,10 +120,10 @@ try {
         await page.click(selector);
         await new Promise((r) => setTimeout(r, 300));
       }
-      const dest = join(outDir, `${name}-${colorScheme}.png`);
-      const png = await page.screenshot({ fullPage });
-      writeFileSync(dest, png);
-      console.log(`wrote ${dest}`);
+      const file = `${name}-${colorScheme}.png`;
+      writeFileSync(join(outDir, file), await page.screenshot({ fullPage }));
+      assets.push({ path: file, label: `${name} - ${colorScheme}` });
+      console.log(`wrote ${join(outDir, file)}`);
       await page.close();
     }
   }
@@ -132,11 +132,6 @@ try {
 }
 writeVisualReviewManifest(outDir, {
   title: "Haku Console",
-  assets: COLOR_SCHEMES.flatMap((colorScheme) =>
-    SCENES.map(({ name }) => ({
-      path: `${name}-${colorScheme}.png`,
-      label: `${name} - ${colorScheme}`,
-    }))
-  ),
+  assets,
 });
-console.log(`\n${SCENES.length * COLOR_SCHEMES.length} screenshots in ${outDir}`);
+console.log(`\n${assets.length} screenshots in ${outDir}`);

@@ -11,11 +11,10 @@ screenshots before handing off:
 bbr test //haku/console/frontend:screenshots
 ```
 
-It renders each surface (`screenshots/harness.tsx`) in both light and dark themes to PNGs (two
-per scene: `history` — its first rows expanded into their detailed state with the Metadata
-disclosure open, the rest left compact — `chrome` — the shell chrome with its mutually exclusive
-panel tabs — plus `settings` and `previews`) in the test's
-**undeclared outputs**.
+It renders each surface (`screenshots/harness.tsx`) in both light and dark themes to PNGs in the
+test's **undeclared outputs**: two per full-page scene (`history` — its first rows expanded into
+their detailed state with the Metadata disclosure open, the rest left compact — `chrome` — the
+shell chrome with its mutually exclusive panel tabs — and `settings`).
 Browser rendering runs on the RBE worker, so this is a `bbr` test, not a local `bb run`. Fetch
 the PNGs
 with the `buildbuddy_api` skill (download the target's undeclared test outputs), then open every
@@ -24,11 +23,19 @@ overflows or collides, and that both content and chrome read clearly — not mer
 rendered. The test is a generator, not a pixel-diff gate: it passes as long as every scene
 renders, so it never blocks CI on "looks different", but a blank/crashed scene fails it.
 
-The `previews` scene is a gallery of **every implemented tool-call preview**, each rendered in
-both compact and detailed — when you add or change a per-server widget
-(`tool_rendering/<server>/{requests,responses}.tsx`), add its (server, tool, sample args) to
-`PREVIEW_SAMPLES` in `screenshots/sample_data.ts` and re-check the gallery. Add a whole new scene to `screenshots/harness.tsx` (and the `SCENES` list
-in `screenshots/render.mjs`) whenever you add a new surface.
+The per-tool-call **preview cards** are a separate `:previews` `js_test` per MCP server, co-located
+with the widgets under `tool_rendering/<server>/` (`preview_fixtures.ts` + `preview_harness.tsx`),
+sharing one harness in `tool_rendering/screenshot/` (`card.tsx` renders a standalone `ToolCallCard`
+at the real approvals-panel width; `render.mjs` screenshots each fixture × variant × theme; the
+`preview_screenshots` macro wires the native-esbuild bundle + `js_test`). Each server's target
+emits its own `visual-review.json`, and `pr_visuals.py` aggregates them — so each tool-call preview
+is its own figure on the PR-visuals page, and a widget change re-runs only that server's screenshots
+(per-target Bazel caching). When you add or change a per-server widget
+(`tool_rendering/<server>/{requests,responses}.tsx`), add a fixture to that server's
+`preview_fixtures.ts` (it `satisfies RegisteredToolPreviewFixture`, so a stale id/arg is a type
+error) and re-run `bbr test //haku/console/frontend/tool_rendering/<server>:previews`. Add a whole
+new scene to `screenshots/harness.tsx` (and the `SCENES` list in `screenshots/render.mjs`) whenever
+you add a new surface.
 
 ## Tool-call rendering — design requirements
 

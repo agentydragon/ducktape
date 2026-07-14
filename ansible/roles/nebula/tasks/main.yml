@@ -2,21 +2,13 @@
 # Install and configure Nebula mesh network + dnsmasq for hostname resolution
 
 # Roster schema (SSOT): nebula-mesh.json is a {"hosts": {name: {...}}} map.
-# We derive the same mesh values the Nix/TF consumers do (see
+# We derive the same two values the Nix/TF consumers do (see
 # nix/nixos/modules/nebula.nix, cluster/terraform/main/nebula.tf):
 #   - lighthouses:      nebula_ip of every host with lighthouse=true
 #   - static_host_map:  nebula_ip -> [endpoint] for every host with an endpoint
-#   - peer route MTUs:   the smaller constraint declared by either endpoint
 - name: Load mesh roster from nebula-mesh.json
   ansible.builtin.set_fact:
     nebula_mesh_hosts: "{{ (lookup('file', nebula_mesh_config_file) | from_json).hosts }}"
-  tags: [nebula, config]
-
-- name: Verify current host exists in mesh roster
-  ansible.builtin.assert:
-    that:
-      - inventory_hostname in nebula_mesh_hosts
-    fail_msg: "{{ inventory_hostname }} is missing from {{ nebula_mesh_config_file }}"
   tags: [nebula, config]
 
 - name: Derive lighthouse IPs from mesh roster
@@ -56,12 +48,6 @@
   notify: Restart nebula
   tags: [nebula, install]
 
-- name: Install Nebula peer route dependency
-  ansible.builtin.apt:
-    name: iproute2
-    state: present
-  tags: [nebula, install]
-
 - name: Install nebula-cert binary from GitHub
   github_release_install:
     release_spec:
@@ -73,16 +59,6 @@
       dest_path: /usr/local/bin/nebula-cert
       extract_file: nebula-cert
   tags: [nebula, install]
-
-- name: Deploy Nebula peer route setup
-  ansible.builtin.template:
-    src: peer-routes.sh.j2
-    dest: "{{ nebula_peer_route_script_path }}"
-    owner: root
-    group: root
-    mode: "0755"
-  notify: Restart nebula
-  tags: [nebula, install, config]
 
 - name: Deploy nebula systemd service
   ansible.builtin.copy:
@@ -97,7 +73,6 @@
       SyslogIdentifier=nebula-%i
       ExecReload=/bin/kill -HUP $MAINPID
       ExecStart=/usr/local/bin/nebula -config /etc/nebula/%i.yaml
-      ExecStartPost={{ nebula_peer_route_script_path }}
       Restart=always
 
       [Install]

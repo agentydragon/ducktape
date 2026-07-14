@@ -1,4 +1,5 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//haku/console/frontend/tool_rendering/screenshot:screenshot_test.bzl", "preview_screenshots")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -31,5 +32,23 @@ js_library(
     deps = [
         ":requests",
         "//haku/console/frontend/tool_rendering:entry",
+    ],
+)
+
+js_library(
+    name = "preview_harness",
+    srcs = ["preview_harness.tsx"],
+    deps = [
+        "//haku/console/frontend/tool_rendering",
+        "//haku/console/frontend/tool_rendering/screenshot:mount",
+    ],
+)
+
+preview_screenshots(
+    name = "previews",
+    entry = "preview_harness.tsx",
+    deps = [
+        ":preview_harness",
+        "//:node_modules",
     ],
 )
