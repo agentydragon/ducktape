@@ -35,7 +35,6 @@ This ensures each test runs in complete isolation without daemon interference.
 import os
 
 import pygit2
-import pytest
 import pytest_bazel
 
 from wt.shared.git_utils import GitRunOptions, git_run
@@ -55,7 +54,6 @@ from wt.testing.asserts import assert_output_contains
 # kill_daemon_and_verify function now provided by conftest.py
 
 
-@pytest.mark.integration
 class TestCLIIntegration:
     def setup_method(self):
         """No global process killing; per-test fixtures handle isolation."""
@@ -168,7 +166,6 @@ class TestCLIIntegration:
         assert_output_contains(res.stdout, wt_path / "subdir")
 
 
-@pytest.mark.integration
 class TestRealGitOperations:
     """Tests that verify actual git operations work correctly."""
 

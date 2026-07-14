@@ -27,8 +27,6 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 ## tests use shell_runner; legacy helper removed
 
 
-@pytest.mark.integration
-@pytest.mark.shell
 class TestShellIntegration:
     def test_help_command_basic(self, test_config, shell_runner):
         """Test that help command works through shell integration."""
@@ -148,8 +146,6 @@ echo "$create_exit:$to_wt_exit:$to_main_exit:$pwd_before:$pwd_after"
         assert after == str(real_temp_repo)
 
 
-@pytest.mark.integration
-@pytest.mark.shell
 class TestShellIntegrationEdgeCases:
     def test_shell_environment_isolation(self, test_config, shell_runner):
         """Test that shell environment is properly isolated."""

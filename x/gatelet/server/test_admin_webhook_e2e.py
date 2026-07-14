@@ -35,8 +35,6 @@ from x.gatelet.server.security import hash_password
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
-pytestmark = [pytest.mark.e2e]
-
 TEST_ADMIN_PASSWORD = "gatelet"
 
 

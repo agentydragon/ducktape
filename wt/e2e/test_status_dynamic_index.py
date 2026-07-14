@@ -9,7 +9,6 @@ from wt.testing.utils import wait_until
 pytestmark = pytest.mark.timeout(20)
 
 
-@pytest.mark.integration
 def test_worktree_add_then_remove_reflected_in_status(wt_cli, pygit2_repo, real_temp_repo):
     # Initially, status should show no worktrees
     r0 = wt_cli.status(timeout=timedelta(seconds=10.0))

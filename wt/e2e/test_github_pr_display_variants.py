@@ -111,7 +111,6 @@ def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict[str, Any])
             return result
 
 
-@pytest.mark.integration
 @pytest.mark.parametrize(
     ("variant", "expects"),
     [

@@ -24,7 +24,6 @@ def cli_runner_with_env(cli_runner, wt_env):
     return _run_with_mocked_status
 
 
-@pytest.mark.integration
 class TestCLIOutputFormat:
     @patch("wt.client.wt_client.WtClient.get_status")
     def test_status_table_rendering(self, mock_get_status, cli_runner_with_env, build_status_response):

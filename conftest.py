@@ -17,18 +17,12 @@ def pytest_configure(config: pytest.Config) -> None:
     # Enable pytest-asyncio auto mode for all tests
     config.option.asyncio_mode = "auto"
 
-    # Test categories
-    config.addinivalue_line("markers", "integration: integration tests")
-    config.addinivalue_line("markers", "e2e: end-to-end UI tests using playwright")
-
     # External requirements - LLM APIs
     config.addinivalue_line("markers", "live_openai_api: tests requiring OPENAI_API_KEY")
-    config.addinivalue_line("markers", "real_github: tests requiring network access to GitHub")
     config.addinivalue_line("markers", "requires_sandbox_exec: tests requiring macOS sandbox-exec")
 
     # Platform markers
     config.addinivalue_line("markers", "macos: macOS-only tests")
-    config.addinivalue_line("markers", "shell: shell integration tests")
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:

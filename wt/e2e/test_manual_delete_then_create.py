@@ -1,10 +1,7 @@
 import shutil
 from datetime import timedelta
 
-import pytest
 import pytest_bazel
-
-pytestmark = pytest.mark.integration
 
 
 def test_manual_delete_of_old_worktree_does_not_break_new_create(real_temp_repo, wt_cli):

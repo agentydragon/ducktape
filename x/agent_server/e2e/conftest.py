@@ -11,9 +11,6 @@ from x.agent_server.agent_types import AgentID
 from x.agent_server.server.app import create_app
 from x.agent_server.testing.helpers import ServerHandle, start_uvicorn_app
 
-# Auto-apply e2e marker to all tests in this directory
-pytestmark = [pytest.mark.e2e]
-
 
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-asyncio auto mode for e2e tests."""

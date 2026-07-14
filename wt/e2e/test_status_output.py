@@ -16,7 +16,6 @@ from wt.testing.utils import wait_until
 pytestmark = pytest.mark.timeout(10)
 
 
-@pytest.mark.integration
 def test_status_lists_multiple_worktrees(real_temp_repo, wt_cli):
     """Create two worktrees and ensure `wt sh` status output reflects them."""
 

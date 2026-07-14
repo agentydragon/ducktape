@@ -10,7 +10,7 @@ import pytest_bazel
 from x.sandboxed_jupyter._markers import REQUIRES_SANDBOX_EXEC
 
 # Run these stdio-handshake tests in a dedicated xdist group to avoid flakiness
-pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.shell, pytest.mark.xdist_group("sj_stdio")]
+pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.xdist_group("sj_stdio")]
 
 # Mark xfail if external tooling is not available
 if not shutil.which("jupyter-mcp-server"):

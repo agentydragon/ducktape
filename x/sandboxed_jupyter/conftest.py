@@ -6,7 +6,7 @@ import pytest
 
 from x.sandboxed_jupyter._markers import REQUIRES_SANDBOX_EXEC
 
-pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.shell]
+pytestmark = [*REQUIRES_SANDBOX_EXEC]
 
 
 @pytest.fixture

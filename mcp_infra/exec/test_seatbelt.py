@@ -24,7 +24,7 @@ from mcp_infra.seatbelt.model import (
 )
 from mcp_infra.testing.exec_stubs import SeatbeltExecServerStub
 
-pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.shell]
+pytestmark = [*REQUIRES_SANDBOX_EXEC]
 
 
 @pytest.fixture

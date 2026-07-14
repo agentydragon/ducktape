@@ -13,7 +13,6 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
-import pytest
 import pytest_bazel
 
 from wt.shared.fixtures import PRFixtureEntry
@@ -39,8 +38,6 @@ def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict[str, Any])
             return result
 
 
-@pytest.mark.integration
-@pytest.mark.real_github
 def test_github_pr_display_with_mocked_pygithub(real_temp_repo, config_factory, tmp_path, write_pr_fixtures, wt_cli):
     # Prepare config with GitHub enabled
     factory = config_factory(real_temp_repo)

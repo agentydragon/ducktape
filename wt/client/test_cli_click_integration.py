@@ -6,7 +6,6 @@ These tests use Click's CliRunner with patched WtClient methods.
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 import pytest_bazel
 from typer.testing import CliRunner
 
@@ -15,7 +14,6 @@ from wt.shared.protocol import WorktreeID, WorktreeInfo, WorktreeListResult
 from wt.testing.asserts import assert_output_contains
 
 
-@pytest.mark.integration
 class TestNewCLIIntegration:
     @patch("wt.client.wt_client.WtClient.get_status")
     def test_default_status_command(self, mock_get_status, wt_env, build_status_response):
