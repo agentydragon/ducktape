@@ -29,6 +29,7 @@ class EnrollmentPage:
     suggested_agent_name: str
     reconnectable_agents: tuple[ReconnectableAgent, ...]
     form_token: str
+    upstream_authorization_url: str
 
 
 @dataclass(frozen=True, slots=True)

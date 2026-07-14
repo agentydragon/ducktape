@@ -14,6 +14,13 @@ from haku.console.agents.enrollment_page import (
 )
 
 _CSP_NONCE = "test_nonce_0123456789abcdef0123456789abcdef"
+_AUTHORIZATION_URL = "https://auth.example.test/authorize?opaque=1"
+
+
+def _render(view: AgentEnrollmentPageView, *, csp_nonce: str = _CSP_NONCE, status_code: int = 200):
+    return render_agent_enrollment_page(
+        view, csp_nonce=csp_nonce, form_action_url=_AUTHORIZATION_URL, status_code=status_code
+    )
 
 
 def _view() -> AgentEnrollmentPageView:
@@ -35,7 +42,7 @@ def _view() -> AgentEnrollmentPageView:
 
 
 def test_enrollment_page_presents_new_reconnect_and_deny_actions() -> None:
-    response = render_agent_enrollment_page(_view(), csp_nonce=_CSP_NONCE)
+    response = _render(_view())
     page = BeautifulSoup(response.body, "html.parser")
 
     assert response.status_code == 200
@@ -95,7 +102,7 @@ def test_enrollment_page_presents_new_reconnect_and_deny_actions() -> None:
 
 def test_enrollment_page_autoescapes_every_untrusted_value_and_locks_down_browser() -> None:
     hostile = '<script>alert("cookie")</script><img src=x onerror="steal()">'
-    response = render_agent_enrollment_page(
+    response = _render(
         replace(
             _view(),
             operator_display_name=hostile,
@@ -107,7 +114,6 @@ def test_enrollment_page_autoescapes_every_untrusted_value_and_locks_down_browse
             reconnect_agents=(ReconnectAgentView(agent_id=hostile, display_name=hostile),),
             error=hostile,
         ),
-        csp_nonce=_CSP_NONCE,
         status_code=422,
     )
     body = response.body.decode()
@@ -116,11 +122,12 @@ def test_enrollment_page_autoescapes_every_untrusted_value_and_locks_down_browse
 
     assert response.status_code == 422
     assert response.headers["Cache-Control"] == "no-store"
-    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert response.headers["Referrer-Policy"] == "strict-origin"
     assert response.headers["Permissions-Policy"] == "geolocation=(), display-capture=()"
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert csp == (
-        "default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; "
+        "default-src 'none'; base-uri 'none'; form-action 'self' https://auth.example.test; "
+        "frame-ancestors 'none'; "
         f"script-src 'none'; style-src 'nonce-{_CSP_NONCE}'"
     )
     assert "unsafe-inline" not in csp
@@ -144,9 +151,7 @@ def test_enrollment_page_autoescapes_every_untrusted_value_and_locks_down_browse
 
 
 def test_enrollment_page_explains_when_reconnect_is_unavailable() -> None:
-    page = BeautifulSoup(
-        render_agent_enrollment_page(replace(_view(), reconnect_agents=()), csp_nonce=_CSP_NONCE).body, "html.parser"
-    )
+    page = BeautifulSoup(_render(replace(_view(), reconnect_agents=())).body, "html.parser")
 
     assert len(page.find_all("form")) == 2
     assert page.find("select", attrs={"name": "agent_id"}) is None
@@ -157,7 +162,14 @@ def test_enrollment_page_explains_when_reconnect_is_unavailable() -> None:
 
 def test_enrollment_page_rejects_a_nonce_that_could_inject_csp() -> None:
     with pytest.raises(ValueError, match="URL-safe base64"):
-        render_agent_enrollment_page(_view(), csp_nonce="nonce'; script-src 'unsafe-inline'")
+        _render(_view(), csp_nonce="nonce'; script-src 'unsafe-inline'")
+
+
+def test_enrollment_page_rejects_an_origin_that_could_inject_csp() -> None:
+    with pytest.raises(ValueError, match="whitespace or control"):
+        render_agent_enrollment_page(
+            _view(), csp_nonce=_CSP_NONCE, form_action_url="https://auth.example.test\nscript-src 'unsafe-inline'"
+        )
 
 
 if __name__ == "__main__":

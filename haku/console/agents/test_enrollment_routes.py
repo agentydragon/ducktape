@@ -48,6 +48,7 @@ def _page() -> EnrollmentPage:
         suggested_agent_name="Claude",
         reconnectable_agents=(ReconnectableAgent(agent_id=AGENT_ID, display_name="Kitchen Claude"),),
         form_token=FORM_TOKEN,
+        upstream_authorization_url="https://auth.example.test/authorize?opaque=1",
     )
 
 
@@ -160,6 +161,7 @@ def test_get_binds_the_browser_and_sets_a_path_scoped_http_only_cookie() -> None
     assert f'action="{BASE_PATH}/new"' in response.text
     assert f'action="{BASE_PATH}/reconnect"' in response.text
     assert f'action="{BASE_PATH}/deny"' in response.text
+    assert "form-action 'self' https://auth.example.test" in response.headers["content-security-policy"]
 
 
 def test_create_reconnect_and_deny_are_separate_typed_endpoints() -> None:
@@ -196,17 +198,18 @@ def test_create_reconnect_and_deny_are_separate_typed_endpoints() -> None:
     assert service.decisions[2]["decision"] == DenyEnrollmentDecision(form_token=FORM_TOKEN)
 
 
-def test_post_rejects_cross_site_or_missing_browser_binding_before_deciding() -> None:
+def test_post_rejects_invalid_origin_or_missing_browser_binding_before_deciding() -> None:
     client, service = _client()
     _open(client)
 
-    cross_site = client.post(
-        f"{BASE_PATH}/new",
-        data={"form_token": FORM_TOKEN, "agent_name": "Claude"},
-        headers={"Origin": "https://evil.test"},
-    )
-    assert cross_site.status_code == 403
-    assert service.decisions == []
+    for origin in (None, "null", "https://evil.test"):
+        headers = {} if origin is None else {"Origin": origin}
+        rejected = client.post(
+            f"{BASE_PATH}/new", data={"form_token": FORM_TOKEN, "agent_name": "Claude"}, headers=headers
+        )
+        assert rejected.status_code == 403
+        assert rejected.json() == {"detail": "invalid Agent enrollment origin"}
+        assert service.decisions == []
 
     client.cookies.clear()
     missing_cookie = client.post(

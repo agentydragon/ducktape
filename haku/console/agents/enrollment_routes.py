@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import secrets
 from typing import Annotated, Never, cast
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -30,6 +30,7 @@ from haku.console.agents.enrollment import (
 from haku.console.agents.enrollment_page import (
     AgentEnrollmentPageView,
     ReconnectAgentView,
+    http_origin,
     render_agent_enrollment_page,
 )
 from haku.console.agents.naming import InvalidAgentNameError
@@ -71,8 +72,7 @@ def _login_redirect(interaction_id: UUID, browser_nonce: str | None) -> Redirect
 
 
 def _public_origin(settings: Settings) -> str:
-    parsed = urlsplit(settings.public_base_url)
-    return f"{parsed.scheme}://{parsed.netloc}"
+    return http_origin(settings.public_base_url)
 
 
 def _require_same_origin(request: Request) -> None:
@@ -134,6 +134,7 @@ def _render_page(
             error=error,
         ),
         csp_nonce=secrets.token_urlsafe(32),
+        form_action_url=page.upstream_authorization_url,
         status_code=status_code,
     )
     response.set_cookie(

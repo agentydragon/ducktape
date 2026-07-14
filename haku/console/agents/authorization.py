@@ -1353,6 +1353,7 @@ class PostgresAgentAuthority:
                 ReconnectableAgent(agent_id=row.agent_id, display_name=row.display_name) for row in reconnect_rows
             ),
             form_token=form_token,
+            upstream_authorization_url=interaction.upstream_authorization_url,
         )
 
     @staticmethod
