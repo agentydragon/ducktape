@@ -555,6 +555,8 @@ py_test(
         ":database_schema",
         ":mcp_approval",
         ":mcp_config",
+        ":mcp_operator_oauth",
+        ":operator_auth",
         "//:conftest",
         "//haku/console/tools:gmail",
         "//third_party/containers:rlocations",
