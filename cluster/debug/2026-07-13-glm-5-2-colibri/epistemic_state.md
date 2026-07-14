@@ -1,6 +1,6 @@
 # Epistemic State: GLM-5.2 on wyrm2 via Colibri
 
-## Last updated: 2026-07-14T16:43:51-07:00
+## Last updated: 2026-07-14T16:48:58-07:00
 
 ## 1. Objective
 
@@ -232,6 +232,18 @@ storage for the decisive full-model benchmark.
 - Update: drafting works, but its larger expert union cancels the saved forwards on
   this disk-streamed placement.
 
+### E18: Explicit expert-top-p tradeoff
+
+- Action: repeated the refined non-MTP placement with adaptive expert top-p 0.7,
+  which drops low-weight routed experts and is documented by Colibri as carrying a
+  small quality cost.
+- Result: throughput increased to 0.37 tok/s by reducing expert loads from 862.5 to
+  494.8 per emitted token. The run remained coherent, but still missed the 0.5 tok/s
+  gate. A placement imbalance put only 36.2 GB of experts in VRAM, raised the RAM
+  resident set to 70.5 GB, and left about 10 GB host memory available during decode.
+- Update: even the bounded quality tradeoff does not make the model useful enough for
+  the planned LiteLLM route on this host.
+
 ## 6. Current Posterior State
 
 - The host experiment works correctly and produces coherent GLM-5.2 output, but the
@@ -240,15 +252,13 @@ storage for the decisive full-model benchmark.
   future Kubernetes deployment can separately use the existing SSD-backed OpenEBS
   storage class instead of coupling the pod to this experiment mount.
 - Do not add the model to cluster LiteLLM under the original success criterion. A
-  bounded expert-top-p run may characterize the available speed/quality tradeoff,
-  but it does not change the full-quality verdict.
+  bounded expert-top-p run reached 0.37 tok/s, but it does not change the full-quality
+  verdict and also remains below the gate.
 
 ## 7. Action Queue
 
-1. Measure one explicitly quality-trading `--topp 0.7` run separately from the
-   full-quality result.
-2. Keep the checkpoint and draft PR as a reproducible host experiment.
-3. Do not implement the LiteLLM route unless the user explicitly accepts sub-threshold
+1. Keep the checkpoint and draft PR as a reproducible host experiment.
+2. Do not implement the LiteLLM route unless the user explicitly accepts sub-threshold
    throughput or a quality tradeoff.
 
 ## 8. Decision Tree
