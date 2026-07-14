@@ -136,6 +136,19 @@ storage for the decisive full-model benchmark.
   staging transfer, copy its Hugging Face local-dir resume state to this filesystem,
   and resume the download directly on the SSD.
 
+### E10: Declarative configuration validation
+
+- Action: ran the targeted repository pre-commit suite, a narrowed Nix evaluation of
+  the new filesystem option, and the Bazel-managed Terraform lint and validation
+  targets.
+- Result: pre-commit passed, the filesystem evaluates to the intended `/dev/vdi`
+  ext4 mount, and `//cluster/terraform/main:lint` plus
+  `//cluster/terraform/main:validate` built successfully through BuildBuddy. Full
+  wyrm2 closure evaluation is currently blocked in an unrelated Home Manager package
+  by a 401 from the private gaffer binary cache.
+- Update: the scoped Proxmox/Nix configuration is validated; the private-cache failure
+  does not affect the live disk or the host experiment.
+
 ## 6. Current Posterior State
 
 - A staged host experiment remains justified: CUDA and the SSD access pattern pass,
