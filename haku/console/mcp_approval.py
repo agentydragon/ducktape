@@ -150,6 +150,24 @@ class ApprovalDecisionResponse(BaseModel):
     tool_call: ToolCallRecord
 
 
+@dataclass(frozen=True)
+class OperatorToolCallScope:
+    """All tool calls owned by one authenticated operator."""
+
+    operator_subject: str
+
+
+@dataclass(frozen=True)
+class AgentToolCallScope:
+    """Only one authenticated agent's calls within its owning operator tenant."""
+
+    operator_subject: str
+    caller_principal: str
+
+
+type ToolCallScope = OperatorToolCallScope | AgentToolCallScope
+
+
 class PostgresToolCallLedger:
     """Postgres-backed approval ledger for the deployed console."""
 
@@ -201,13 +219,16 @@ class PostgresToolCallLedger:
             )
             return record, events, True
 
-    def get(self, tool_call_id: str, *, operator_subject: str) -> ToolCallRecord:
+    def get(self, tool_call_id: str, *, scope: ToolCallScope) -> ToolCallRecord:
         with self._sessions.begin() as session:
-            row = session.scalars(
+            stmt = (
                 select(McpToolCall)
                 .where(McpToolCall.tool_call_id == tool_call_id)
-                .where(McpToolCall.operator_subject == operator_subject)
-            ).first()
+                .where(McpToolCall.operator_subject == scope.operator_subject)
+            )
+            if isinstance(scope, AgentToolCallScope):
+                stmt = stmt.where(McpToolCall.caller_principal == scope.caller_principal)
+            row = session.scalars(stmt).first()
         if row is None:
             raise HTTPException(status_code=404, detail="tool call not found")
         return row.to_record()
@@ -215,14 +236,16 @@ class PostgresToolCallLedger:
     def list(
         self,
         *,
-        operator_subject: str,
+        scope: ToolCallScope,
         statuses: list[ToolCallStatus] | None = None,
         since: datetime.datetime | None = None,
         limit: int = 100,
         newest_first: bool = False,
     ) -> ToolCallListResponse:
         with self._sessions.begin() as session:
-            stmt = select(McpToolCall).where(McpToolCall.operator_subject == operator_subject)
+            stmt = select(McpToolCall).where(McpToolCall.operator_subject == scope.operator_subject)
+            if isinstance(scope, AgentToolCallScope):
+                stmt = stmt.where(McpToolCall.caller_principal == scope.caller_principal)
             if since is not None:
                 stmt = stmt.where(McpToolCall.updated_at > since)
             if statuses:
@@ -427,6 +450,12 @@ def _tool_call_caller(request: Request, static_agents: StaticAgentsDep) -> ToolC
 ToolCallCallerDep = Annotated[ToolCallCaller, Depends(_tool_call_caller)]
 
 
+def _tool_call_scope(caller: ToolCallCaller) -> ToolCallScope:
+    if caller.kind == "operator":
+        return OperatorToolCallScope(operator_subject=caller.operator_subject)
+    return AgentToolCallScope(operator_subject=caller.operator_subject, caller_principal=caller.principal)
+
+
 def resolve_mcp_agent(
     client_id: str, static_agents: list[ResolvedStaticAgent], oauth_store: PostgresMcpOperatorOAuthStore
 ) -> ToolCallCaller | None:
@@ -510,11 +539,11 @@ async def _maybe_execute(
 
 
 async def _wait_terminal(
-    ledger: PostgresToolCallLedger, tool_call_id: str, operator_subject: str, wait_for_ms: int
+    ledger: PostgresToolCallLedger, tool_call_id: str, scope: ToolCallScope, wait_for_ms: int
 ) -> ToolCallRecord:
     deadline = asyncio.get_running_loop().time() + (wait_for_ms / 1000)
     while True:
-        record = ledger.get(tool_call_id, operator_subject=operator_subject)
+        record = ledger.get(tool_call_id, scope=scope)
         if record.status in TERMINAL_STATUSES or wait_for_ms <= 0:
             return record
         if asyncio.get_running_loop().time() >= deadline:
@@ -608,7 +637,12 @@ async def submit_and_wait(
         # between submission and execution: an operator_oauth call must use this stored owner.
         auth_token = await _execution_auth(server, operator_subject, oauth_store)
         record = await _maybe_execute(record, server, ledger, hub, executor, auth_token, operator_subject)
-    return await _wait_terminal(ledger, record.tool_call_id, operator_subject, req.wait_for_ms)
+    read_scope: ToolCallScope
+    if caller_is_agent:
+        read_scope = AgentToolCallScope(operator_subject=operator_subject, caller_principal=caller_principal)
+    else:
+        read_scope = OperatorToolCallScope(operator_subject=operator_subject)
+    return await _wait_terminal(ledger, record.tool_call_id, read_scope, req.wait_for_ms)
 
 
 @agent_router.post("/api/tool-calls")
@@ -647,19 +681,20 @@ async def list_tool_calls(
     newest_first: bool = False,
 ) -> ToolCallListResponse:
     return ledger.list(
-        operator_subject=caller.operator_subject, statuses=status, since=since, limit=limit, newest_first=newest_first
+        scope=_tool_call_scope(caller), statuses=status, since=since, limit=limit, newest_first=newest_first
     )
 
 
 @agent_router.get("/api/tool-calls/{tool_call_id}")
 async def get_tool_call(tool_call_id: str, ledger: LedgerDep, caller: ToolCallCallerDep) -> ToolCallRecord:
-    return ledger.get(tool_call_id, operator_subject=caller.operator_subject)
+    return ledger.get(tool_call_id, scope=_tool_call_scope(caller))
 
 
 @router.get("/api/approvals/pending")
 async def pending_approvals(request: Request, ledger: LedgerDep) -> PendingApprovalsResponse:
     records = ledger.list(
-        operator_subject=_operator_event_subject(request), statuses=[ToolCallStatus.PENDING_APPROVAL]
+        scope=OperatorToolCallScope(operator_subject=_operator_event_subject(request)),
+        statuses=[ToolCallStatus.PENDING_APPROVAL],
     ).tool_calls
     return PendingApprovalsResponse(approvals=[_pending_approval_from_record(r) for r in records])
 
@@ -694,7 +729,7 @@ async def decide_approval(
             body.reason,
         )
         return ApprovalDecisionResponse(tool_call=record)
-    pending = ledger.get(tool_call_id, operator_subject=event_operator_subject)
+    pending = ledger.get(tool_call_id, scope=OperatorToolCallScope(operator_subject=event_operator_subject))
     server = _server_entry(settings, pending.server_id)
     # Only operator_oauth execution runs as the approving operator; other servers use their configured
     # credential, so an operator subject isn't required to approve a call there.

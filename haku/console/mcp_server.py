@@ -45,6 +45,7 @@ from haku.console.auto_approval import is_unconditionally_auto_approved
 from haku.console.config import Settings
 from haku.console.console_events import ConsoleEventHub
 from haku.console.mcp_approval import (
+    AgentToolCallScope,
     DegradedServerMetadata,
     McpMetadataProvider,
     McpToolExecutor,
@@ -377,18 +378,18 @@ def build_console_mcp(context: ConsoleMcpContext, auth: AuthProvider | None = No
         auth = _static_bearer_verifier(context.static_agents)
     mcp.auth = auth
 
-    def current_operator_subject() -> str:
+    def current_agent_scope() -> AgentToolCallScope:
         client_id = _agent_id()
         caller = resolve_mcp_agent(client_id, context.static_agents, context.oauth_store)
         if caller is None:
             raise ToolError(f"agent {client_id} has no linked operator subject")
-        return caller.operator_subject
+        return AgentToolCallScope(operator_subject=caller.operator_subject, caller_principal=caller.principal)
 
     @mcp.tool
     async def get_tool_call(tool_call_id: str) -> ToolCallView:
         """Read one tool call (resolve a promise): status, result/error, and its approval link."""
         try:
-            record = context.ledger.get(tool_call_id, operator_subject=current_operator_subject())
+            record = context.ledger.get(tool_call_id, scope=current_agent_scope())
         except HTTPException as e:
             raise ToolError(str(e.detail))
         return ToolCallView(call=record, url=_tool_call_url(context.settings, tool_call_id))
@@ -402,11 +403,7 @@ def build_console_mcp(context: ConsoleMcpContext, auth: AuthProvider | None = No
     ) -> list[ToolCallView]:
         """List recent tool calls (newest first by default), optionally filtered by status/since."""
         resp: ToolCallListResponse = context.ledger.list(
-            operator_subject=current_operator_subject(),
-            statuses=status,
-            since=since,
-            limit=limit,
-            newest_first=newest_first,
+            scope=current_agent_scope(), statuses=status, since=since, limit=limit, newest_first=newest_first
         )
         return [ToolCallView(call=r, url=_tool_call_url(context.settings, r.tool_call_id)) for r in resp.tool_calls]
 

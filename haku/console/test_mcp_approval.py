@@ -855,6 +855,60 @@ def test_routing_executes_each_agent_as_its_own_operator(
     assert recording_executor.auth_tokens == ["grocy-token-haku", "grocy-token-ops"]
 
 
+def test_sibling_agents_only_read_their_own_calls_within_one_operator(
+    make_client, make_operator_client, tmp_path: Path, mcp_server_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HAKU_CONSOLE_TEST_SIBLING_AGENT_TOKEN", "sibling-token")
+    monkeypatch.setenv("HAKU_CONSOLE_TEST_SIBLING_AGENT_OPERATOR", "op-haku")
+    config = _config(
+        [{"id": "grocy-sf", "server_url": mcp_server_url, "bearer_token_secret": "haku-console-grocy-sf-token"}]
+    )
+    config["static_agents"] = [
+        *_STATIC_AGENTS,
+        {
+            "agent": "sibling",
+            "token_env_var": "HAKU_CONSOLE_TEST_SIBLING_AGENT_TOKEN",
+            "operator_subject_env": "HAKU_CONSOLE_TEST_SIBLING_AGENT_OPERATOR",
+        },
+    ]
+    config_file = write_config(tmp_path / "sibling_agents.yaml", config)
+
+    with (
+        make_client(config_file=config_file) as agents,
+        make_operator_client(
+            config_file=config_file, operator_subject="op-haku", operator_username="owner@example.com"
+        ) as operator,
+    ):
+        call_ids: list[str] = []
+        for bearer, amount in (("tool-token", 1), ("sibling-token", 2)):
+            response = agents.post(
+                "/api/tool-calls",
+                headers={"Authorization": f"Bearer {bearer}"},
+                json={
+                    "server_id": "grocy-sf",
+                    "tool_name": "stock_add",
+                    "arguments": {"items": [{"product_id": 123, "amount": amount}]},
+                    "wait_for_ms": 0,
+                },
+            )
+            assert response.status_code == 200, response.text
+            call_ids.append(response.json()["tool_call_id"])
+
+        for bearer, own_call_id, sibling_call_id in (
+            ("tool-token", call_ids[0], call_ids[1]),
+            ("sibling-token", call_ids[1], call_ids[0]),
+        ):
+            headers = {"Authorization": f"Bearer {bearer}"}
+            listed = agents.get("/api/tool-calls", headers=headers).json()["tool_calls"]
+            assert [call["tool_call_id"] for call in listed] == [own_call_id]
+            assert agents.get(f"/api/tool-calls/{own_call_id}", headers=headers).status_code == 200
+            assert agents.get(f"/api/tool-calls/{sibling_call_id}", headers=headers).status_code == 404
+
+        operator_calls = operator.get("/api/tool-calls").json()["tool_calls"]
+        assert [call["tool_call_id"] for call in operator_calls] == call_ids
+        assert all(operator.get(f"/api/tool-calls/{call_id}").status_code == 200 for call_id in call_ids)
+
+
 def test_approval_denial_is_terminal_and_does_not_execute(operator_client: TestClient) -> None:
     submitted = _submit(operator_client)
     resp = operator_client.post(

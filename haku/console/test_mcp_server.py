@@ -25,7 +25,14 @@ from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig
 from haku.console.conftest import console_settings, operator_session_cookie, write_config
 from haku.console.console_events import ConsoleEventHub
-from haku.console.mcp_approval import McpMetadataProvider, McpToolExecutor, PostgresToolCallLedger, resolve_mcp_agent
+from haku.console.mcp_approval import (
+    AgentToolCallScope,
+    McpMetadataProvider,
+    McpToolExecutor,
+    OperatorToolCallScope,
+    PostgresToolCallLedger,
+    resolve_mcp_agent,
+)
 from haku.console.mcp_config import ResolvedStaticAgent, static_agent_client_id
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_server import ConsoleMcpContext, build_console_mcp, register_proxy_tools
@@ -39,6 +46,7 @@ from util.testing.asgi import serve_app_sync, serve_fastmcp
 _AGENT_TOKEN = "agent-token"
 _AGENT_TOKEN_ENV = "HAKU_CONSOLE_TEST_AGENT_TOKEN"
 _AGENT_OPERATOR_ENV = "HAKU_CONSOLE_TEST_AGENT_OPERATOR"
+_SIBLING_AGENT_TOKEN = "sibling-agent-token"
 _STATIC_AGENTS = [{"agent": "haku", "token_env_var": _AGENT_TOKEN_ENV, "operator_subject_env": _AGENT_OPERATOR_ENV}]
 
 
@@ -65,7 +73,10 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
     in_process = {gmail_tools.GMAIL_SERVER_ID: gmail_tools.build_mcp(gmail_client)}
     context = ConsoleMcpContext(
         settings=settings,
-        static_agents=[ResolvedStaticAgent(agent="haku", token=SecretStr(_AGENT_TOKEN), operator_subject="42")],
+        static_agents=[
+            ResolvedStaticAgent(agent="haku", token=SecretStr(_AGENT_TOKEN), operator_subject="42"),
+            ResolvedStaticAgent(agent="sibling", token=SecretStr(_SIBLING_AGENT_TOKEN), operator_subject="42"),
+        ],
         ledger=PostgresToolCallLedger(migrated_db_url),
         hub=ConsoleEventHub(migrated_db_url),
         executor=McpToolExecutor(in_process),
@@ -108,7 +119,7 @@ async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harn
 
     assert result.structured_content is not None
     assert result.structured_content["labels"][0]["name"] == "haku/triaged"
-    calls = harness.ledger.list(operator_subject="42").tool_calls
+    calls = harness.ledger.list(scope=AgentToolCallScope(operator_subject="42", caller_principal="haku")).tool_calls
     assert len(calls) == 1
     assert calls[0].status == ToolCallStatus.OK
     assert calls[0].tool_name == "labels_list"
@@ -145,6 +156,40 @@ async def test_get_tool_call_missing_raises(harness: _Harness) -> None:
     async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
         with pytest.raises(ToolError, match="not found"):
             await client.call_tool("get_tool_call", {"tool_call_id": "tc_does_not_exist"})
+
+
+async def test_sibling_mcp_agents_only_read_their_own_calls(harness: _Harness) -> None:
+    async def submit_draft(token: str, subject: str) -> str:
+        async with Client(f"{harness.base}/mcp", auth=token) as client:
+            result = await client.call_tool(
+                "gmail_drafts_create",
+                {
+                    "input": {"to": ["a@b.test"], "subject": subject, "body": "body"},
+                    "rationale": "test agent read isolation",
+                    "wait_for_approval_ms": 0,
+                },
+            )
+        assert result.structured_content is not None
+        return str(result.structured_content["tool_call_id"])
+
+    call_ids = [await submit_draft(_AGENT_TOKEN, "haku"), await submit_draft(_SIBLING_AGENT_TOKEN, "sibling")]
+
+    for token, own_call_id, sibling_call_id in (
+        (_AGENT_TOKEN, call_ids[0], call_ids[1]),
+        (_SIBLING_AGENT_TOKEN, call_ids[1], call_ids[0]),
+    ):
+        async with Client(f"{harness.base}/mcp", auth=token) as client:
+            listed = await client.call_tool("list_tool_calls", {})
+            assert listed.structured_content is not None
+            assert [view["call"]["tool_call_id"] for view in listed.structured_content["result"]] == [own_call_id]
+            own = await client.call_tool("get_tool_call", {"tool_call_id": own_call_id})
+            assert own.structured_content is not None
+            assert own.structured_content["call"]["tool_call_id"] == own_call_id
+            with pytest.raises(ToolError, match="not found"):
+                await client.call_tool("get_tool_call", {"tool_call_id": sibling_call_id})
+
+    operator_calls = harness.ledger.list(scope=OperatorToolCallScope(operator_subject="42")).tool_calls
+    assert [call.tool_call_id for call in operator_calls] == call_ids
 
 
 # ── End-to-end: real upstream MCP server + console served over HTTP + real Postgres ──────────
