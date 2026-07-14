@@ -15,11 +15,9 @@ from __future__ import annotations
 
 import base64
 import datetime
-import html
 import secrets
 from collections.abc import Mapping
 from pathlib import Path
-from string import Template
 from typing import Annotated, Any, Literal, cast
 from urllib.parse import quote, urlencode, urljoin
 
@@ -28,6 +26,7 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi_csrf_protect import CsrfProtect
+from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 from mcp.client.auth.oauth2 import PKCEParameters
 from mcp.client.auth.utils import (
     build_oauth_authorization_server_metadata_discovery_urls,
@@ -653,19 +652,32 @@ async def _refresh_operator_oauth_token(association: OperatorOAuthRefreshState) 
 # The callback page is served here (not from the SPA) because the OAuth provider redirects
 # straight to this backend endpoint, where the code→token exchange runs; the page's only job
 # is to report the outcome. The server publishes association changes through the console event
-# hub. The markup lives in a sibling
-# .html file (loaded once at import) so it stays lintable rather than a Python blob;
-# `string.Template` `$` placeholders avoid colliding with the CSS/JS braces.
+# hub. The markup lives in a sibling template (loaded once at import) so it stays lintable
+# rather than a Python blob.
 # TODO: make this a SPA-style page instead of a backend-served .html template — have the callback
 # run the token exchange, then redirect to a frontend route that renders the outcome.
-_CALLBACK_TEMPLATE = Template((Path(__file__).parent / "mcp_operator_auth_callback.html").read_text(encoding="utf-8"))
+_CALLBACK_TEMPLATE = Environment(
+    loader=FileSystemLoader(Path(__file__).parent),
+    autoescape=select_autoescape(enabled_extensions=("html", "j2")),
+    undefined=StrictUndefined,
+).get_template("mcp_operator_auth_callback.html.j2")
 
 
 def _oauth_callback_response(ok: bool, message: str, *, status_code: int = 200) -> HTMLResponse:
     title = "MCP account connected" if ok else "MCP account connection failed"
+    csp_nonce = secrets.token_urlsafe(32)
     return HTMLResponse(
         status_code=status_code,
-        content=_CALLBACK_TEMPLATE.substitute(title=html.escape(title), message=html.escape(message)),
+        content=_CALLBACK_TEMPLATE.render(title=title, message=message, csp_nonce=csp_nonce),
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Security-Policy": (
+                "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; "
+                f"script-src 'none'; style-src 'nonce-{csp_nonce}'"
+            ),
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
