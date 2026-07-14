@@ -25,6 +25,7 @@ from haku.console.agents.authorization import (
 from haku.console.agents.enrollment import (
     CreateAgentDecision,
     EnrollmentAllowed,
+    EnrollmentBrowserBindingError,
     EnrollmentBrowserSession,
     EnrollmentDecisionConflictError,
     ReconnectAgentDecision,
@@ -184,9 +185,7 @@ async def _open(harness: Harness, request: AuthorizationRequest) -> tuple[UUID, 
     return interaction_id, page.form_token
 
 
-async def _create_grant(
-    harness: Harness, *, label: str, display_name: str, activate: bool = False
-) -> GrantAuthorization:
+async def _allow_create(harness: Harness, *, label: str, display_name: str) -> tuple[AuthorizationRequest, UUID]:
     request = _request(label)
     interaction_id, form_token = await _open(harness, request)
     result = await harness.authority.decide(
@@ -196,6 +195,13 @@ async def _create_grant(
         decision=CreateAgentDecision(form_token=form_token, display_name=display_name),
     )
     assert isinstance(result, EnrollmentAllowed)
+    return request, interaction_id
+
+
+async def _create_grant(
+    harness: Harness, *, label: str, display_name: str, activate: bool = False
+) -> GrantAuthorization:
+    request, _interaction_id = await _allow_create(harness, label=label, display_name=display_name)
     grant = await harness.authority.begin_exchange(
         correlation=request.correlation,
         client=request.client,
@@ -253,6 +259,13 @@ async def test_create_decision_is_idempotent_and_grant_activates_then_revokes(db
         interaction_id=interaction_id, browser=harness.browser, interaction_cookie=form_token, decision=decision
     )
     assert first == second
+    with pytest.raises(EnrollmentBrowserBindingError):
+        await harness.authority.decide(
+            interaction_id=interaction_id,
+            browser=harness.browser,
+            interaction_cookie=form_token,
+            decision=CreateAgentDecision(form_token="different-form-token", display_name=decision.display_name),
+        )
     with pytest.raises(EnrollmentDecisionConflictError):
         await harness.authority.decide(
             interaction_id=interaction_id,
@@ -395,6 +408,159 @@ async def test_activation_timeout_abandons_new_agent_but_only_expires_reconnect(
     assert statuses[active.actor.binding_id] == "active"
     assert statuses[replacement.actor.binding_id] == "expired"
     assert agent_statuses[active.actor.binding_id] == "active"
+
+
+async def test_expiry_maintenance_sweeps_allowed_response_loss_and_skips_locked_rows(db_url: str) -> None:
+    harness = _harness(db_url)
+    _locked_request, locked_interaction_id = await _allow_create(
+        harness, label="locked-allowed", display_name="Locked Allowed"
+    )
+    harness.clock.advance(datetime.timedelta(seconds=1))
+    _unlocked_request, unlocked_interaction_id = await _allow_create(
+        harness, label="unlocked-allowed", display_name="Unlocked Allowed"
+    )
+    harness.clock.advance(datetime.timedelta(minutes=11))
+
+    engine = create_engine(db_url)
+    owner = engine.connect()
+    transaction = owner.begin()
+    try:
+        owner.execute(
+            text(
+                "SELECT interaction_id FROM enrollment_interactions WHERE interaction_id = :interaction_id FOR UPDATE"
+            ),
+            {"interaction_id": locked_interaction_id},
+        )
+        async with harness.authority.expiry_maintenance(interval=datetime.timedelta(milliseconds=10), batch_size=1):
+            rows = {
+                row.interaction_id: row
+                for row in owner.execute(
+                    text(
+                        """
+                        SELECT interaction.interaction_id, interaction.phase::TEXT,
+                               interaction.browser_binding_digest,
+                               EXISTS (
+                                   SELECT 1 FROM agent_name_reservations AS name
+                                   WHERE name.pending_interaction_id = interaction.interaction_id
+                               ) AS has_pending_name
+                        FROM enrollment_interactions AS interaction
+                        WHERE interaction.interaction_id IN (:locked, :unlocked)
+                        """
+                    ),
+                    {"locked": locked_interaction_id, "unlocked": unlocked_interaction_id},
+                )
+            }
+            assert rows[locked_interaction_id].phase == "allowed"
+            assert rows[locked_interaction_id].has_pending_name is True
+            assert rows[unlocked_interaction_id].phase == "expired"
+            assert rows[unlocked_interaction_id].browser_binding_digest is None
+            assert rows[unlocked_interaction_id].has_pending_name is False
+
+            transaction.commit()
+            for _ in range(200):
+                with engine.connect() as observer:
+                    row = observer.execute(
+                        text(
+                            """
+                            SELECT interaction.phase::TEXT, interaction.browser_binding_digest,
+                                   EXISTS (
+                                       SELECT 1 FROM agent_name_reservations AS name
+                                       WHERE name.pending_interaction_id = interaction.interaction_id
+                                   ) AS has_pending_name
+                            FROM enrollment_interactions AS interaction
+                            WHERE interaction.interaction_id = :interaction_id
+                            """
+                        ),
+                        {"interaction_id": locked_interaction_id},
+                    ).one()
+                if row.phase == "expired":
+                    break
+                await asyncio.sleep(0.01)
+            else:
+                pytest.fail("periodic expiry maintenance did not catch the previously locked row")
+            assert row.browser_binding_digest is None
+            assert row.has_pending_name is False
+    finally:
+        if transaction.is_active:
+            transaction.rollback()
+        owner.close()
+        engine.dispose()
+
+
+async def test_expiry_sweep_terminates_exchanging_response_loss(db_url: str) -> None:
+    harness = _harness(db_url)
+    request, interaction_id = await _allow_create(harness, label="lost-exchange", display_name="Lost Exchange Sweep")
+    grant = await harness.authority.begin_exchange(
+        correlation=request.correlation,
+        client=request.client,
+        principal=harness.principal,
+        granted_scopes=frozenset({"tools:call"}),
+    )
+    harness.clock.advance(datetime.timedelta(minutes=11))
+
+    assert await harness.authority.sweep_expired_state() == 1
+    assert await harness.authority.sweep_expired_state() == 0
+
+    engine = create_engine(db_url)
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT interaction.phase::TEXT, interaction.browser_binding_digest,
+                       interaction.closure_reason, binding.status::TEXT AS binding_status,
+                       binding.end_reason, agent.status::TEXT AS agent_status
+                FROM authorization_grants AS auth_grant
+                JOIN enrollment_interactions AS interaction
+                  ON interaction.interaction_id = auth_grant.enrollment_interaction_id
+                JOIN credential_bindings AS binding ON binding.binding_id = auth_grant.binding_id
+                JOIN agents AS agent ON agent.agent_id = binding.agent_id
+                WHERE auth_grant.grant_id = :grant_id
+                  AND interaction.interaction_id = :interaction_id
+                """
+            ),
+            {"grant_id": grant.grant_id, "interaction_id": interaction_id},
+        ).one()
+    engine.dispose()
+    assert row.phase == "expired"
+    assert row.browser_binding_digest is None
+    assert row.closure_reason == "expiry_sweep"
+    assert row.binding_status == "failed"
+    assert row.end_reason == "expiry_sweep"
+    assert row.agent_status == "abandoned"
+
+
+async def test_expiry_sweep_terminates_issued_response_loss(db_url: str) -> None:
+    harness = _harness(db_url)
+    grant = await _create_grant(harness, label="lost-issued", display_name="Lost Issued Sweep")
+    harness.clock.advance(datetime.timedelta(minutes=16))
+
+    assert await harness.authority.sweep_expired_state() == 1
+    assert await harness.authority.sweep_expired_state() == 0
+
+    engine = create_engine(db_url)
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT interaction.phase::TEXT, interaction.browser_binding_digest,
+                       binding.status::TEXT AS binding_status, binding.end_reason,
+                       agent.status::TEXT AS agent_status
+                FROM authorization_grants AS auth_grant
+                JOIN enrollment_interactions AS interaction
+                  ON interaction.interaction_id = auth_grant.enrollment_interaction_id
+                JOIN credential_bindings AS binding ON binding.binding_id = auth_grant.binding_id
+                JOIN agents AS agent ON agent.agent_id = binding.agent_id
+                WHERE auth_grant.grant_id = :grant_id
+                """
+            ),
+            {"grant_id": grant.grant_id},
+        ).one()
+    engine.dispose()
+    assert row.phase == "completed"
+    assert row.browser_binding_digest is None
+    assert row.binding_status == "expired"
+    assert row.end_reason == "activation_timeout"
+    assert row.agent_status == "abandoned"
 
 
 async def test_exchange_uses_the_live_correlation_reservation_after_tuple_reuse(db_url: str) -> None:

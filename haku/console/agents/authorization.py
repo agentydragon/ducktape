@@ -7,8 +7,10 @@ import datetime
 import hashlib
 import hmac
 import json
+import logging
 import secrets
-from collections.abc import Callable, Collection
+from collections.abc import AsyncIterator, Callable, Collection
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import TypeVar
 from urllib.parse import urlencode, urlsplit
@@ -81,9 +83,13 @@ from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
 _INTERACTION_LIFETIME = datetime.timedelta(minutes=10)
 _CORRELATION_RETENTION = datetime.timedelta(hours=2)
 _ACTIVATION_LIFETIME = datetime.timedelta(minutes=15)
+_EXPIRY_SWEEP_INTERVAL = datetime.timedelta(minutes=1)
+_EXPIRY_SWEEP_BATCH_SIZE = 100
 _BROWSER_SECRET_BYTES = 32
 
 _T = TypeVar("_T")
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,6 +211,109 @@ class PostgresAgentAuthority:
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("Agent authority clock must return a timezone-aware datetime")
         return now
+
+    async def sweep_expired_state(self, *, batch_size: int = _EXPIRY_SWEEP_BATCH_SIZE) -> int:
+        """Expire one unlocked batch of stale enrollment and activation state."""
+
+        if batch_size <= 0:
+            raise ValueError("expiry sweep batch size must be positive")
+        return await self._database_call(lambda: self._sweep_expired_state(batch_size))
+
+    @asynccontextmanager
+    async def expiry_maintenance(
+        self, *, interval: datetime.timedelta = _EXPIRY_SWEEP_INTERVAL, batch_size: int = _EXPIRY_SWEEP_BATCH_SIZE
+    ) -> AsyncIterator[None]:
+        """Sweep before serving, then periodically for this application lifetime."""
+
+        if interval <= datetime.timedelta():
+            raise ValueError("expiry sweep interval must be positive")
+        await self._drain_expired_state(batch_size)
+        stop = asyncio.Event()
+        async with asyncio.TaskGroup() as tasks:
+            tasks.create_task(
+                self._run_expiry_maintenance(stop, interval=interval, batch_size=batch_size),
+                name="haku-agent-authority-expiry",
+            )
+            try:
+                yield
+            finally:
+                stop.set()
+
+    async def _run_expiry_maintenance(
+        self, stop: asyncio.Event, *, interval: datetime.timedelta, batch_size: int
+    ) -> None:
+        while True:
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=interval.total_seconds())
+                return
+            except TimeoutError:
+                try:
+                    await self._drain_expired_state(batch_size)
+                except AgentGrantAuthorityUnavailableError:
+                    logger.warning("Agent authority expiry sweep unavailable; retrying", exc_info=True)
+
+    async def _drain_expired_state(self, batch_size: int) -> None:
+        while await self.sweep_expired_state(batch_size=batch_size) == batch_size:
+            pass
+
+    def _sweep_expired_state(self, batch_size: int) -> int:
+        now = self._now()
+        processed = 0
+        nonterminal_phases = {
+            EnrollmentPhase.AWAITING_BROWSER,
+            EnrollmentPhase.AWAITING_APPROVAL,
+            EnrollmentPhase.ALLOWED,
+            EnrollmentPhase.EXCHANGING,
+        }
+        with self._sessions.begin() as session:
+            interactions = session.scalars(
+                select(EnrollmentInteraction)
+                .where(EnrollmentInteraction.phase.in_(nonterminal_phases), EnrollmentInteraction.expires_at <= now)
+                .order_by(EnrollmentInteraction.expires_at, EnrollmentInteraction.interaction_id)
+                .limit(batch_size)
+                .with_for_update(skip_locked=True)
+            ).all()
+            for interaction in interactions:
+                self._expire_interaction(session, interaction, now, "expiry_sweep")
+            processed += len(interactions)
+
+            remaining = batch_size - processed
+            if remaining > 0:
+                issued_interaction_ids = (
+                    select(AuthorizationGrant.enrollment_interaction_id)
+                    .join(CredentialBinding, CredentialBinding.binding_id == AuthorizationGrant.binding_id)
+                    .where(
+                        CredentialBinding.status == CredentialBindingStatus.ISSUED,
+                        AuthorizationGrant.token_family_persisted_at.is_not(None),
+                        AuthorizationGrant.token_family_persisted_at <= now - self._activation_lifetime,
+                    )
+                )
+                issued_interactions = session.scalars(
+                    select(EnrollmentInteraction)
+                    .where(
+                        EnrollmentInteraction.phase == EnrollmentPhase.COMPLETED,
+                        EnrollmentInteraction.interaction_id.in_(issued_interaction_ids),
+                    )
+                    .order_by(EnrollmentInteraction.closed_at, EnrollmentInteraction.interaction_id)
+                    .limit(remaining)
+                    .with_for_update(skip_locked=True)
+                ).all()
+                for interaction in issued_interactions:
+                    grant_id = session.scalar(
+                        select(AuthorizationGrant.grant_id).where(
+                            AuthorizationGrant.enrollment_interaction_id == interaction.interaction_id
+                        )
+                    )
+                    if grant_id is None:
+                        continue
+                    rows = self._locked_grant_rows(session, grant_id)
+                    if rows is None:
+                        continue
+                    grant, binding, agent, _operator, _client = rows
+                    if self._activation_expired(grant, binding, now):
+                        self._expire_unactivated_binding(binding, agent, now)
+                processed += len(issued_interactions)
+        return processed
 
     async def reconcile_static_agents(
         self, definitions: Collection[StaticAgentDefinition]
@@ -652,6 +761,8 @@ class PostgresAgentAuthority:
             if interaction is None:
                 raise EnrollmentInteractionNotFoundError
             self._require_browser_identity(session, browser)
+            if not hmac.compare_digest(interaction_cookie, decision.form_token):
+                raise EnrollmentBrowserBindingError
             if now >= interaction.expires_at:
                 self._expire_interaction(session, interaction, now, "operator_decision_timeout")
                 error = EnrollmentInteractionExpiredError()
@@ -680,8 +791,6 @@ class PostgresAgentAuthority:
                 )
             else:
                 self._require_interaction_browser(interaction, browser, interaction_cookie)
-                if not hmac.compare_digest(interaction_cookie, decision.form_token):
-                    raise EnrollmentBrowserBindingError
                 if isinstance(decision, CreateAgentDecision):
                     assert normalized_name is not None
                     self._lock_key(session, "agent-name", normalized_name.reservation_key)
@@ -1008,13 +1117,7 @@ class PostgresAgentAuthority:
             ):
                 raise GrantRejectedError
             if self._activation_expired(grant, binding, now):
-                binding.status = CredentialBindingStatus.EXPIRED
-                binding.ended_at = now
-                binding.end_reason = "activation_timeout"
-                binding.updated_at = now
-                if binding.supersedes_binding_id is None:
-                    agent.status = AgentStatus.ABANDONED
-                    agent.updated_at = now
+                self._expire_unactivated_binding(binding, agent, now)
                 rejection = GrantRejectedError()
             elif binding.status is CredentialBindingStatus.ISSUED:
                 expected_agent_status = (
@@ -1334,3 +1437,13 @@ class PostgresAgentAuthority:
             and grant.token_family_persisted_at is not None
             and now >= grant.token_family_persisted_at + self._activation_lifetime
         )
+
+    @staticmethod
+    def _expire_unactivated_binding(binding: CredentialBinding, agent: Agent, now: datetime.datetime) -> None:
+        binding.status = CredentialBindingStatus.EXPIRED
+        binding.ended_at = now
+        binding.end_reason = "activation_timeout"
+        binding.updated_at = now
+        if binding.supersedes_binding_id is None:
+            agent.status = AgentStatus.ABANDONED
+            agent.updated_at = now
