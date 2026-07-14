@@ -1,6 +1,6 @@
 # Epistemic State: GLM-5.2 on wyrm2 via Colibri
 
-## Last updated: 2026-07-14T14:31:05-07:00
+## Last updated: 2026-07-14T14:37:28-07:00
 
 ## 1. Objective
 
@@ -182,6 +182,20 @@ storage for the decisive full-model benchmark.
 - Update: download completion is now the only gate before `coli plan`, `coli doctor`,
   and the decisive full-model run. Keep benchmark traffic isolated from the active
   transfer because the architecture fixture already demonstrated contention.
+
+### E14: Independent checkpoint completeness gate
+
+- Action: queried the public Hugging Face repository metadata and deliberately ran
+  `coli plan` and `coli doctor` against the partial local directory.
+- Result: revision `3cc8db99b1b13fc79325d987ba3c1c430766b3b8` contains 150 files
+  totaling 383,760,077,466 bytes: 141 main safetensor shards, three MTP shards, and
+  six metadata/tokenizer files. With only 36 shards present, `coli plan` produced a
+  warning-free 96.8 GB plan. `coli doctor` rejected the directory because
+  `tokenizer.json` had not arrived, but independently marked the incomplete 36-shard
+  set valid.
+- Update: neither tool establishes repository completeness. Require the downloader's
+  successful exit plus all 150 expected paths and 144 expected safetensors before
+  using their final resource report.
 
 ## 6. Current Posterior State
 
