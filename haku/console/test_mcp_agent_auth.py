@@ -67,6 +67,8 @@ def _credentials(*tokens: str) -> StaticAgentCredentialRegistry:
 def _oauth_proxy() -> Mock:
     proxy = Mock(spec=HakuAgentOAuthProxy)
     proxy.base_url = None
+    proxy.resource_base_url = None
+    proxy.required_scopes = []
     cast(AsyncMock, proxy.verify_token).return_value = None
     return proxy
 
