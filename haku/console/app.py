@@ -32,6 +32,7 @@ from haku.console import (
     console_events,
     mcp_agent_auth,
     mcp_approval,
+    mcp_mount,
     mcp_operator_oauth,
     mcp_server,
     operator_auth,
@@ -204,7 +205,8 @@ def create_app(
     mcp_auth = mcp_agent_auth.build_auth(
         settings, agent_authority=agent_authority, static_credentials=static_credential_registry
     )
-    console_mcp = mcp_server.build_console_mcp(console_mcp_context, auth=mcp_auth.provider)
+    mounted_mcp_auth = mcp_mount.MountPrefixResourceAuthProvider(mcp_auth.provider)
+    console_mcp = mcp_server.build_console_mcp(console_mcp_context, auth=mounted_mcp_auth)
     console_mcp.add_middleware(
         HakuAgentGrantMiddleware(agent_authority, static_actor_resolver=mcp_auth.static_actor_resolver)
     )
@@ -234,7 +236,7 @@ def create_app(
     # outer ASGI mount, so explicitly expose only its well-known routes here; the static-bearer-only
     # provider returns no routes.
     app = FastAPI(title="Haku console", lifespan=_lifespan)
-    app.router.routes.extend(mcp_auth.provider.get_well_known_routes(mcp_path="/"))
+    app.router.routes.extend(mounted_mcp_auth.get_well_known_routes())
     # The capability router reads settings off app.state (see haku.console.capabilities).
     app.state.settings = settings
     app.state.agent_authority = agent_authority
@@ -325,7 +327,7 @@ def create_app(
     )
 
     # Agent-facing MCP server (streamable HTTP), mounted after the API routers and before the SPA.
-    app.mount(MCP_PATH, mcp_asgi)
+    mcp_mount.mount_mcp_app(app, path=MCP_PATH, mcp_app=mcp_asgi)
 
     # Optional direct local/dev fallback. Production serves the SPA from the
     # haku-console-static nginx image and leaves static_dir unset on this process.

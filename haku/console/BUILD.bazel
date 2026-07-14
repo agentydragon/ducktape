@@ -176,6 +176,16 @@ py_library(
 )
 
 py_library(
+    name = "mcp_mount",
+    srcs = ["mcp_mount.py"],
+    deps = [
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
     name = "auto_approval",
     srcs = ["auto_approval.py"],
     deps = [
@@ -207,6 +217,7 @@ py_library(
         ":database_schema",
         ":deps",
         ":mcp_config",
+        ":mcp_mount",
         ":mcp_operator_oauth",
         ":operator_auth",
         ":operator_identity",

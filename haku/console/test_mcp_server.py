@@ -290,9 +290,9 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
         )
         with serve_app_sync(app, port=console_port) as base:
             async with httpx.AsyncClient() as anon:
-                # No bearer -> unauthorized. Hit /mcp/ directly (the mount redirects /mcp -> /mcp/).
+                # No bearer -> unauthorized at the exact canonical resource URL.
                 unauth = await anon.post(
-                    f"{base}/mcp/",
+                    f"{base}/mcp",
                     headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"},
                     json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
                 )
@@ -447,20 +447,16 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
             async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
                 assert "standin_echo" in {t.name for t in await client.list_tools()}
 
-            # The public proxy scheme survives the app's slash redirect. In production nginx
-            # forwards this Cilium-provided header; losing it would downgrade HTTPS to HTTP here.
             async with httpx.AsyncClient() as anon:
-                slash_redirect = await anon.get(
-                    f"{base}/mcp", headers={"Host": "haku.test", "X-Forwarded-Proto": "https"}, follow_redirects=False
-                )
+                slash_redirect = await anon.get(f"{base}/mcp/", follow_redirects=False)
                 assert slash_redirect.status_code == 307
-                assert slash_redirect.headers["location"] == "https://haku.test/mcp/"
+                assert slash_redirect.headers["location"] == "/mcp"
 
                 # Walk the production OAuth discovery chain from the challenge through DCR. The
                 # well-known documents live at the origin root, while every operational endpoint
                 # and callback remains namespaced under /mcp (separate from operator /auth/*).
                 unauth = await anon.post(
-                    f"{base}/mcp/",
+                    f"{base}/mcp",
                     headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"},
                     json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
                 )
@@ -469,12 +465,12 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
                 match = re.search(r'resource_metadata="([^"]+)"', challenge, flags=re.IGNORECASE)
                 assert match is not None, challenge
                 resource_metadata_url = match.group(1)
-                assert resource_metadata_url == f"{base}/.well-known/oauth-protected-resource/mcp/"
+                assert resource_metadata_url == f"{base}/.well-known/oauth-protected-resource/mcp"
 
                 protected_response = await anon.get(resource_metadata_url)
                 assert protected_response.status_code == 200, protected_response.text
                 protected = protected_response.json()
-                assert protected["resource"] == f"{base}/mcp/"
+                assert protected["resource"] == f"{base}/mcp"
                 assert protected["authorization_servers"] == [f"{base}/mcp"]
 
                 authorization_metadata_url = f"{base}/.well-known/oauth-authorization-server/mcp"
@@ -485,6 +481,7 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
                 assert authorization["authorization_endpoint"] == f"{base}/mcp/authorize"
                 assert authorization["token_endpoint"] == f"{base}/mcp/token"
                 assert authorization["registration_endpoint"] == f"{base}/mcp/register"
+                assert authorization["client_id_metadata_document_supported"] is True
 
                 registration = await anon.post(
                     authorization["registration_endpoint"],
@@ -513,7 +510,7 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
                         "state": "client-state",
                         "code_challenge": _pkce_challenge(code_verifier),
                         "code_challenge_method": "S256",
-                        "resource": f"{base}/mcp/",
+                        "resource": f"{base}/mcp",
                     },
                     follow_redirects=False,
                 )
