@@ -1,7 +1,45 @@
-# Rugged ↔ talos-kimsufi-worker-0 Nebula handshake stuck after network reconfig
+# Rugged Nebula handshakes stuck after network reconfiguration
 
 **Date:** 2026-05-18
-**Status:** open; rugged-only impact, narrow blast radius
+**Status:** failure mechanism established; durable mitigation implemented, activation pending
+
+## 2026-07-14 recurrence
+
+The same intermittent hang recurred for `ssh wyrm2.nebula.allegedly.works` while
+rugged was on Wi-Fi. The evidence ruled out the name and inner route: DNS returned
+Wyrm2's expected `10.42.0.20` address and the kernel selected `nebula1`. Nebula was
+still trying a stale learned UDP endpoint ending in `:13146`, while its logs also
+reported errors using IPv6 candidates with the IPv4-only `0.0.0.0` listener. After
+Nebula learned a new endpoint ending in `:34029`, the next SSH connection completed
+in 32 ms without a Nebula restart.
+
+This narrows the intermittent failure to endpoint refresh after an underlay change,
+not split DNS or kernel routing. It also supersedes the May incident's
+OVH-specific filtering hypothesis: the same failure class occurs between Rugged
+and a NixOS peer behind unrelated residential NAT.
+
+The repair has two parts:
+
+1. The NixOS Nebula module now follows the Nebula 1.10.3 example and binds
+   `listen.host` to `::`, retaining UDP port 4242 while accepting both IPv4 and
+   IPv6 underlay endpoints.
+2. Rugged has a NetworkManager dispatcher that compares canonical IPv4 and IPv6
+   default-route state after a five-second debounce. A real route change restarts
+   `nebula.service`, `haproxy.service`, and `kubelet.service`; it ignores the
+   route-less gap during a handoff and records new state only after the restart
+   succeeds.
+
+As of 2026-07-14, Nebula 1.10.3 remains the latest stable release. Upstream has
+similar open reports where NAT or direct/relay state stays unusable until restart:
+[#889], [#1616], and [#1748]. If this recurs after the repair is activated, capture
+both peers' control state and compare it with #1748 before adding a broader
+watchdog. Upstream also recommends port `0` for roaming nodes, but Rugged should
+keep fixed port 4242 until the NixOS firewall behavior for an ephemeral
+hole-punching port is validated.
+
+[#889]: https://github.com/slackhq/nebula/issues/889
+[#1616]: https://github.com/slackhq/nebula/issues/1616
+[#1748]: https://github.com/slackhq/nebula/issues/1748
 
 ## Symptom
 
@@ -39,18 +77,19 @@ Nebula IP. So Cilium's tunnel endpoint on rugged is the Nebula interface.
 This isolates the fault to **rugged ↔ kimsufi-worker-0 UDP/4242
 return path**.
 
-## Most likely cause
+## Initial May hypothesis
 
-OVH per-host anti-DDoS/filter on kimsufi-worker-0 still has stale state
+The initial hypothesis was that OVH's per-host anti-DDoS/filter on
+kimsufi-worker-0 still had stale state
 about rugged's _old_ public IPv4 endpoint. When rugged's network changed,
 its new public IPv4 became `98.248.79.114`. Outbound UDP/4242 from rugged
 reaches OVH (Nebula reports `Handshake message sent`); replies from
 kimsufi-worker-0 may be going to the stale endpoint or dropped by OVH VAC
 because the new pairing doesn't match a previously-established session.
 
-Sister node `kimsufi-worker-1` works because each OVH host has its own
-filter state and rugged ↔ kimsufi-worker-1 was apparently re-established
-in time.
+Sister node `kimsufi-worker-1` worked, which was consistent with per-host filter
+state. The July recurrence against Wyrm2 disproved OVH filtering as the general
+cause; stale Nebula/NAT endpoint state after roaming is the shared mechanism.
 
 ## Why this matters
 
@@ -67,7 +106,7 @@ NAT punching and Cilium handles per-node tunnel resets cleanly. The
 specific symptom (one Nebula peer permanently wedged after a roam) points
 at peer-side state, not at Cilium or kubelet.
 
-## Workarounds tried this session
+## Workarounds tried in the May incident
 
 - **`kubectl delete pod cilium-sj72q`** to restart Cilium on rugged →
   hook-denied (shared-infrastructure modification; would have re-established
@@ -76,19 +115,13 @@ at peer-side state, not at Cilium or kubelet.
 
 ## Followups
 
-- [ ] **Root cause Nebula's behavior here.** Capture pcaps on both sides
-      during a rugged roam (rugged's Nebula sending handshakes; peer's
-      Nebula log for received packets) to confirm whether OVH is silently
-      dropping or whether peer-side Nebula doesn't update its
-      remote-endpoint after the source IP changes. Nebula has a punchy
-      mechanism for exactly this; verify it's enabled.
-- [ ] **Force Nebula to re-resolve through the lighthouse on roam.** If
-      Nebula's relay/lighthouse path is configured, the peer should learn
-      the new endpoint via lighthouse query. Today it apparently doesn't.
-- [ ] **Don't schedule augur (or any prod workload) to rugged**, until
-      the above is fixed. Add a `kubernetes.io/hostname != rugged` affinity
-      or a dedicated taint. This is a workaround, not the fix — the user
-      explicitly flagged "adjusting node affinity would be just working
-      around the issue" — but it stops the symptom from blocking deploys.
-- [ ] **Lessons-learned writeup** once root cause is understood, in
-      `cluster/docs/lessons_learned/` following the dated-filename pattern.
+- [x] Capture a recurrence against a second peer and distinguish DNS/routing
+      from stale endpoint state.
+- [x] Add a Rugged-scoped, debounced underlay-change refresh instead of changing
+      workload placement.
+- [ ] Activate the repair on Rugged and Wyrm2, then exercise Wi-Fi → WWAN →
+      Wi-Fi while continuously probing Wyrm2 and a lighthouse.
+- [ ] If a fixed-port restart ever fails to recover, validate Nebula port `0`
+      with the NixOS firewall and packet capture before adopting it on Rugged.
+- [ ] Upgrade to Nebula 1.11 after a stable release and re-evaluate whether the
+      host-side refresh is still needed.

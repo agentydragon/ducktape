@@ -27,7 +27,7 @@ Restart Nebula on **every non-lighthouse peer** (the lighthouses are already fre
 
 ```bash
 # NixOS (wyrm2, rugged, iguana):
-sudo systemctl restart nebula@config
+sudo systemctl restart nebula.service
 
 # Talos (control-plane + worker nodes):
 talosctl -n <node> service nebula restart

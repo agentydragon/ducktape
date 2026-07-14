@@ -48,7 +48,9 @@ let
       use_relays = true;
     };
     listen = {
-      host = "0.0.0.0";
+      # Nebula's 1.10.3 example binds a dual-stack socket so roaming peers can
+      # use either IPv4 or IPv6 underlay endpoints.
+      host = "::";
       port = 4242;
     };
     punchy = {
@@ -87,6 +89,7 @@ let
       ];
     };
   };
+  nebulaConfig = pkgs.writeText "nebula-config.yaml" generatedConfig;
 in
 {
   options.ducktape.nebulaMesh = {
@@ -123,7 +126,7 @@ in
   config = lib.mkIf cfg.enable {
     environment.systemPackages = [ pkgs.nebula ];
 
-    environment.etc."nebula/config.yaml".text = generatedConfig;
+    environment.etc."nebula/config.yaml".source = nebulaConfig;
 
     # Nebula mesh UDP port
     networking.firewall.allowedUDPPorts = [ 4242 ];
@@ -146,6 +149,7 @@ in
 
     systemd.services.nebula = {
       description = "Nebula mesh network";
+      restartTriggers = [ nebulaConfig ];
       after = [
         "network-online.target"
         "systemd-resolved.service"

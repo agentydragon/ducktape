@@ -38,6 +38,7 @@ in
     ../../modules/k8s-worker.nix
     ./ipu7-camera.nix
     ./foxconn-wwan.nix
+    ./nebula-underlay-refresh.nix
     ./local_llm_arc.nix
     ./local_llm_npu.nix
     ./gpu-debug.nix

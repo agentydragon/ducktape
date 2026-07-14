@@ -357,14 +357,14 @@ in
       '';
     };
 
-    # haproxy needs Nebula up to reach CP nodes.
-    # TODO: Consider adding partOf = [ "nebula.service" ] so restarting nebula
-    # cascades to haproxy → kubelet. Currently requires manual restart of all
-    # three after cert rotation. Risk: PartOf also propagates stop, which may
-    # be too aggressive if nebula flaps briefly.
+    # haproxy needs Nebula up to reach CP nodes. Give all three services the
+    # same config trigger so a Nix activation restarts the worker stack in
+    # dependency order. Runtime restarts stay explicit rather than using
+    # PartOf, which would propagate every transient Nebula stop.
     systemd.services.haproxy = {
       after = [ "nebula.service" ];
       requires = [ "nebula.service" ];
+      restartTriggers = [ config.environment.etc."nebula/config.yaml".source ];
     };
 
     # Kubelet systemd service
@@ -373,7 +373,10 @@ in
       # Restart kubelet when its config file changes. kubelet reads --config
       # only at startup; a nixos-rebuild switch that changes the config won't
       # take effect until kubelet restarts.
-      restartTriggers = [ kubeletConfigYaml ];
+      restartTriggers = [
+        kubeletConfigYaml
+        config.environment.etc."nebula/config.yaml".source
+      ];
       after = [
         "network-online.target"
         "containerd.service"
