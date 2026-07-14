@@ -30,30 +30,28 @@ import logging
 import re
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth.auth import AuthProvider
-from fastmcp.server.dependencies import get_access_token
 from fastmcp.tools import Tool, ToolResult
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.auto_approval import is_unconditionally_auto_approved
 from haku.console.config import Settings
-from haku.console.mcp_agent_auth import resolve_mcp_agent
 from haku.console.mcp_approval import DegradedServerMetadata, McpMetadataProvider, ServerMetadata
+from haku.console.mcp_auth.fastmcp_adapter import get_agent_actor
 from haku.console.mcp_config import (
     McpServerEntry,
     McpServerNotFoundError,
-    ResolvedStaticAgent,
     _credential_token,
     _load_servers,
     _operator_oauth_enabled,
 )
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor
 from haku.console.tool_call_service import (
     BackendAccountNotConnectedError,
@@ -94,10 +92,11 @@ class ConsoleMcpContext:
     """The application service and MCP-specific adapters needed by the FastMCP transport."""
 
     settings: Settings
-    static_agents: list[ResolvedStaticAgent]
+    # Presentation-only reflection candidates. Runtime call authority always comes from
+    # ``get_agent_actor`` and never from this list.
+    reflection_operator_ids: tuple[UUID, ...]
     tool_calls: ToolCallApplicationService
     oauth_store: PostgresMcpOperatorOAuthStore
-    identity_store: PostgresOperatorIdentityStore
     metadata_provider: McpMetadataProvider
 
 
@@ -131,16 +130,6 @@ class ApprovalRequestEnvelope(BaseModel):
             f"(default {DEFAULT_WAIT_MS}, max {MAX_WAIT_MS})."
         ),
     )
-
-
-def _agent_id() -> str:
-    """The calling agent's identity: an OAuth DCR client_id, or a static agent's configured id (the
-    static bearer verifier maps each agent token to its `client_id`). Every `/mcp` caller is
-    authenticated, so a missing token is a bug, not an anonymous call."""
-    token = get_access_token()
-    if token is None or not token.client_id:
-        raise RuntimeError("no authenticated agent on the MCP request")
-    return token.client_id
 
 
 def _sanitize_prefix(server_id: str) -> str:
@@ -228,7 +217,7 @@ class ProxyTool(Tool):
             title=title,
             wait_for_ms=max(0, min(int(wait_ms), MAX_WAIT_MS)),
         )
-        actor = _resolve_current_mcp_agent(ctx)
+        actor = get_agent_actor()
         try:
             record = await ctx.tool_calls.submit_and_wait(req=req, actor=actor)
         except (
@@ -272,8 +261,8 @@ async def _reflect_server(context: ConsoleMcpContext, server: McpServerEntry) ->
     whose canonical Operator has a connected token — and degrade if none is connected.
     """
     if _operator_oauth_enabled(server):
-        for agent in context.static_agents:
-            token = await context.oauth_store.access_token_for(server=server, operator_id=agent.operator_id)
+        for operator_id in context.reflection_operator_ids:
+            token = await context.oauth_store.access_token_for(server=server, operator_id=operator_id)
             if token:
                 return await context.metadata_provider.metadata(server, token)
         return DegradedServerMetadata(
@@ -312,10 +301,7 @@ def build_console_mcp(context: ConsoleMcpContext, *, auth: AuthProvider) -> Fast
     mcp: FastMCP = FastMCP(name=SERVER_NAME, instructions=INSTRUCTIONS)
     mcp.auth = auth
 
-    def current_agent() -> AgentActor:
-        return _resolve_current_mcp_agent(context)
-
-    current_agent_dependency = Depends(current_agent)
+    current_agent_dependency = Depends(get_agent_actor)
 
     @mcp.tool
     async def get_tool_call(tool_call_id: str, actor: AgentActor = current_agent_dependency) -> ToolCallView:
@@ -341,12 +327,3 @@ def build_console_mcp(context: ConsoleMcpContext, *, auth: AuthProvider) -> Fast
         return [ToolCallView(call=r, url=_tool_call_url(context.settings, r.tool_call_id)) for r in records]
 
     return mcp
-
-
-def _resolve_current_mcp_agent(context: ConsoleMcpContext) -> AgentActor:
-    """Resolve the authenticated MCP token into Haku's request actor."""
-    client_id = _agent_id()
-    actor = resolve_mcp_agent(client_id, context.static_agents, context.oauth_store, context.identity_store)
-    if actor is None:
-        raise ToolError(f"agent {client_id} has no active linked Operator")
-    return actor

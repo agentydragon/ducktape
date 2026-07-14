@@ -18,7 +18,6 @@ The static SPA (served by nginx) stays public; on a 401 the frontend redirects t
 
 from __future__ import annotations
 
-import hmac
 import logging
 import secrets
 import time
@@ -33,8 +32,10 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from starlette.requests import HTTPConnection
 
+from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentRejectedError
 from haku.console.config import OperatorOidcConfig, Settings
-from haku.console.mcp_config import ResolvedStaticAgent
+from haku.console.mcp_agent_auth import StaticAgentCredentialRegistry
+from haku.console.mcp_auth.fastmcp_adapter import AgentGrantAuthorityUnavailableError
 from haku.console.operator_identity import OperatorIdentityError, VerifiedExternalIdentity
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
@@ -51,22 +52,11 @@ _MAX_RETURN_TO_LENGTH = 2048
 router = APIRouter(prefix="/auth", tags=["operator-auth"])
 
 
-def presents_agent_bearer(conn: HTTPConnection, token: str) -> bool:
-    """Constant-time check that the connection carries `token` as its Bearer credential."""
-    presented = conn.headers.get("authorization", "").encode()
-    return hmac.compare_digest(presented, f"Bearer {token}".encode())
-
-
-def authenticated_static_agent(
-    conn: HTTPConnection, static_agents: list[ResolvedStaticAgent]
-) -> ResolvedStaticAgent | None:
-    """The static agent whose configured bearer this request presents, or None.
-
-    The one HTTP boundary where a presented static-agent bearer maps to its
-    `ResolvedStaticAgent`, carrying both audit identity (`agent`) and canonical Operator
-    (`operator_id`). The agent-facing router guard and `ToolCallActorDep` share this resolution;
-    FastMCP separately resolves its already-verified `client_id` in `mcp_agent_auth`."""
-    return next((a for a in static_agents if presents_agent_bearer(conn, a.token.get_secret_value())), None)
+def _presented_bearer(conn: HTTPConnection) -> str | None:
+    scheme, separator, credential = conn.headers.get("authorization", "").partition(" ")
+    if not separator or scheme.lower() != "bearer" or not credential:
+        return None
+    return credential
 
 
 class OperatorResponse(BaseModel):
@@ -231,11 +221,12 @@ async def me(request: Request) -> OperatorResponse:
     return OperatorResponse(username=session.username)
 
 
-def _static_agents(conn: HTTPConnection) -> list[ResolvedStaticAgent]:
-    return cast("list[ResolvedStaticAgent]", conn.app.state.static_agents)
+def _agent_authority(conn: HTTPConnection) -> PostgresAgentAuthority:
+    return cast(PostgresAgentAuthority, conn.app.state.agent_authority)
 
 
-StaticAgentsDep = Annotated[list[ResolvedStaticAgent], Depends(_static_agents)]
+def _static_credentials(conn: HTTPConnection) -> StaticAgentCredentialRegistry:
+    return cast(StaticAgentCredentialRegistry, conn.app.state.static_agent_credentials)
 
 
 def _operator_actor(conn: HTTPConnection) -> OperatorActor:
@@ -248,16 +239,27 @@ def _operator_actor(conn: HTTPConnection) -> OperatorActor:
 OperatorActorDep = Annotated[OperatorActor, Depends(_operator_actor)]
 
 
-def _tool_call_actor(conn: HTTPConnection, static_agents: StaticAgentsDep) -> ToolCallActor:
+async def _tool_call_actor(conn: HTTPConnection) -> ToolCallActor:
     """Resolve exactly one presented credential into its audit identity and tenant."""
-    agent = authenticated_static_agent(conn, static_agents)
+    bearer = _presented_bearer(conn)
     session = operator_session(conn)
-    if agent is not None and session is not None:
+    if bearer is not None and session is not None:
         raise HTTPException(status_code=400, detail="present exactly one operator or static-agent credential")
-    if agent is not None:
-        if not _identity_store(conn).is_active(agent.operator_id):
-            raise HTTPException(status_code=401, detail="static agent's operator is disabled or missing")
-        return AgentActor(principal=agent.agent, operator_id=agent.operator_id)
+    if bearer is not None:
+        fingerprint = _static_credentials(conn).configured_fingerprint(bearer)
+        if fingerprint is None:
+            raise HTTPException(status_code=401, detail="static Agent credential is not configured")
+        try:
+            authorization = await _agent_authority(conn).static_authorization_for_fingerprint(fingerprint=fingerprint)
+        except StaticAgentRejectedError:
+            raise HTTPException(status_code=401, detail="static Agent credential is not active") from None
+        except AgentGrantAuthorityUnavailableError:
+            raise HTTPException(
+                status_code=503, detail="Agent authorization is temporarily unavailable", headers={"Retry-After": "60"}
+            ) from None
+        return AgentActor(
+            agent_id=authorization.agent_id, operator_id=authorization.operator_id, binding_id=authorization.binding_id
+        )
     if session is not None:
         return OperatorActor(operator_id=session.operator_id)
     raise HTTPException(status_code=401, detail="operator or agent authentication required")

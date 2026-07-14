@@ -124,7 +124,7 @@ spec:
               value: "postgresql+psycopg://$(HAKU_CONSOLE_DB_USER):$(HAKU_CONSOLE_DB_PASSWORD)@$(HAKU_CONSOLE_DB_HOST):$(HAKU_CONSOLE_DB_PORT)/$(HAKU_CONSOLE_DB_NAME)"
             # Haku's own backend static agent: the `haku` entry in config.yaml's `static_agents`
             # references these two env vars — the bearer (below) and controller-fed stable external
-            # user key (further down). The agent id `haku` is the audit caller_principal and /mcp client_id.
+            # user key (further down). config.yaml owns the durable Agent UUID and display name.
             - name: HAKU_CONSOLE_AGENT_HAKU_TOKEN
               valueFrom:
                 secretKeyRef:

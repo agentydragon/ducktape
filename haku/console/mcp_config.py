@@ -15,27 +15,14 @@ from uuid import UUID
 
 import yaml
 from fastmcp import FastMCP
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 
+from haku.console.agents.naming import normalize_agent_name
 from haku.console.config import Settings
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-
-STATIC_AGENT_CLIENT_ID_PREFIX = "static-agent:"
 
 
 class McpServerNotFoundError(LookupError):
     """The configured connected-server catalog has no entry for the requested id."""
-
-
-def static_agent_client_id(agent: str) -> str:
-    """Namespace FastMCP's static client ids away from OAuth DCR client ids."""
-    return f"{STATIC_AGENT_CLIENT_ID_PREFIX}{agent}"
-
-
-def static_agent_name_from_client_id(client_id: str) -> str | None:
-    if not client_id.startswith(STATIC_AGENT_CLIENT_ID_PREFIX):
-        return None
-    return client_id.removeprefix(STATIC_AGENT_CLIENT_ID_PREFIX)
 
 
 class McpOperatorOAuthConfig(BaseModel):
@@ -68,41 +55,56 @@ class ConsoleMcpConfig(BaseModel):
 
 
 class StaticAgentEntry(BaseModel):
-    """A static machine agent: a fixed bearer token bound to one operator.
+    """Controller-owned identity and secret reference for one static Agent slot.
 
-    `agent` is the agent's stable identity — the `/mcp` static bearer's `client_id` and the audit
-    `caller_principal`. The bearer and stable external user key are named env vars, not literals: the
-    value lives in the deployment Secret, never in this YAML. The external key is resolved through
-    the configured identity trust domain at startup and never carried on live request paths.
+    The UUID is the durable Agent identity. The display name is presentation only, globally reserved
+    under Haku's compatibility-caseless normalization. Secret and owner values remain env references.
     """
 
-    agent: str
+    agent_id: UUID
+    display_name: str
     token_env_var: str
     # External deploy contract retained for safe image/config rollout: the value is Authentik's
     # stable OIDC `sub`/user_id seed. It is resolved to an Operator UUID once at startup and is
     # never live request authority.
     operator_subject_env: str
 
+    @field_validator("display_name")
+    @classmethod
+    def _require_normalized_display_name(cls, value: str) -> str:
+        normalized = normalize_agent_name(value)
+        if normalized.display_name != value:
+            raise ValueError(f"static Agent display_name must be normalized as {normalized.display_name!r}")
+        return value
+
 
 class LoadedStaticAgent(BaseModel):
     """A static agent after reading env references, but before canonical Operator resolution."""
 
-    agent: str
+    agent_id: UUID
+    display_name: str
+    secret_reference: str
     token: SecretStr
     operator_external_user_key: str
-
-
-class ResolvedStaticAgent(BaseModel):
-    """A static agent whose configured owner has been resolved to a canonical Operator."""
-
-    agent: str
-    token: SecretStr
-    operator_id: UUID
 
 
 class ConsoleConfigFile(BaseModel):
     mcp: ConsoleMcpConfig = Field(default_factory=ConsoleMcpConfig)
     static_agents: list[StaticAgentEntry] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _require_unique_static_agent_identity(self) -> ConsoleConfigFile:
+        agent_ids: set[UUID] = set()
+        name_keys: set[str] = set()
+        for agent in self.static_agents:
+            name_key = normalize_agent_name(agent.display_name).reservation_key
+            if agent.agent_id in agent_ids:
+                raise ValueError(f"duplicate static Agent id {agent.agent_id}")
+            if name_key in name_keys:
+                raise ValueError(f"duplicate normalized static Agent display name {agent.display_name!r}")
+            agent_ids.add(agent.agent_id)
+            name_keys.add(name_key)
+        return self
 
 
 def _load_config(settings: Settings) -> ConsoleConfigFile:
@@ -123,41 +125,29 @@ def load_static_agents(settings: Settings) -> list[LoadedStaticAgent]:
     Raises if a named env var is missing — a misconfigured agent fails loud at startup rather than
     silently accepting no callers. Resolve once (create_app) and reuse; do not read per request."""
     loaded: list[LoadedStaticAgent] = []
-    seen_agents: set[str] = set()
     seen_tokens: set[str] = set()
     for entry in _load_config(settings).static_agents:
-        if entry.agent in seen_agents:
-            raise RuntimeError(f"duplicate static agent id {entry.agent!r}")
-        seen_agents.add(entry.agent)
         token = os.environ.get(entry.token_env_var)
         if not token:
-            raise RuntimeError(f"missing token env var {entry.token_env_var} for agent {entry.agent!r}")
+            raise RuntimeError(f"missing token env var {entry.token_env_var} for Agent {entry.agent_id}")
         if token in seen_tokens:
             raise RuntimeError("duplicate static agent bearer tokens")
         seen_tokens.add(token)
         external_user_key = os.environ.get(entry.operator_subject_env)
         if not external_user_key:
             raise RuntimeError(
-                f"missing operator external-user-key env var {entry.operator_subject_env} for agent {entry.agent!r}"
+                f"missing operator external-user-key env var {entry.operator_subject_env} for Agent {entry.agent_id}"
             )
         loaded.append(
-            LoadedStaticAgent(agent=entry.agent, token=SecretStr(token), operator_external_user_key=external_user_key)
+            LoadedStaticAgent(
+                agent_id=entry.agent_id,
+                display_name=entry.display_name,
+                secret_reference=entry.token_env_var,
+                token=SecretStr(token),
+                operator_external_user_key=external_user_key,
+            )
         )
     return loaded
-
-
-def resolve_static_agents(
-    loaded_agents: list[LoadedStaticAgent], identity_store: PostgresOperatorIdentityStore
-) -> list[ResolvedStaticAgent]:
-    """Resolve every configured static-agent owner to a canonical active Operator."""
-    return [
-        ResolvedStaticAgent(
-            agent=agent.agent,
-            token=agent.token,
-            operator_id=identity_store.resolve_configured_external_user_key(agent.operator_external_user_key),
-        )
-        for agent in loaded_agents
-    ]
 
 
 def _server_entry(settings: Settings, server_id: str) -> McpServerEntry:

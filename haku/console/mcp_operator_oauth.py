@@ -55,10 +55,9 @@ from sqlalchemy.orm import sessionmaker
 from haku.console import operator_auth
 from haku.console.config import Settings
 from haku.console.console_events import ConsoleEventHubDep, McpOperatorAuthChangedEvent
-from haku.console.database_schema import McpAgentOperator, McpOperatorOAuthAssociation, McpOperatorOAuthFlow
+from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow
 from haku.console.deps import SettingsDep
 from haku.console.mcp_config import (
-    STATIC_AGENT_CLIENT_ID_PREFIX,
     McpServerEntry,
     McpServerNotFoundError,
     _load_servers,
@@ -66,7 +65,6 @@ from haku.console.mcp_config import (
     _server_entry,
 )
 from haku.console.operator_auth import OperatorActorDep
-from haku.console.operator_identity import InactiveOperatorError
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 
 Csrf = Annotated[CsrfProtect, Depends()]
@@ -374,42 +372,6 @@ class PostgresMcpOperatorOAuthStore:
             row.token_expires_at = token_expires_at
             row.token_revision += 1
             return row.access_token
-
-    def bind_agent_operator(self, *, agent_dcr_client_id: str, operator_id: UUID) -> None:
-        """Immutably bind one OAuth DCR client id to its authorizing operator.
-
-        Previously issued client tokens remain keyed by this id, so silently moving it would give an
-        old token access to another operator's ledger. Reauthorizing for the same Operator is
-        idempotent; a different Operator must register a different client identity.
-        """
-        if agent_dcr_client_id.startswith(STATIC_AGENT_CLIENT_ID_PREFIX):
-            raise ValueError("OAuth client_id collides with the reserved static-agent namespace")
-        with self._sessions.begin() as session:
-            self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            now = datetime.datetime.now(datetime.UTC)
-            row = session.get(McpAgentOperator, agent_dcr_client_id, with_for_update=True)
-            if row is None:
-                session.add(
-                    McpAgentOperator(
-                        agent_dcr_client_id=agent_dcr_client_id, operator_id=operator_id, created_at=now, updated_at=now
-                    )
-                )
-            else:
-                if row.operator_id != operator_id:
-                    raise ValueError("OAuth agent client_id is already bound to a different operator")
-                row.updated_at = now
-
-    def agent_operator(self, agent_dcr_client_id: str) -> UUID | None:
-        """The active canonical Operator an OAuth agent is linked to, or None if unavailable."""
-        with self._sessions.begin() as session:
-            row = session.get(McpAgentOperator, agent_dcr_client_id)
-            if row is None:
-                return None
-            try:
-                self._operator_identity_store.require_active_in_transaction(session, row.operator_id)
-            except InactiveOperatorError:
-                return None
-            return row.operator_id
 
 
 def _oauth_store(request: Request) -> PostgresMcpOperatorOAuthStore:
