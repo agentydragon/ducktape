@@ -128,7 +128,7 @@ class AuthentikAuthConfig(BaseModel):
         return urlunparse(parsed._replace(path=f"{prefix}{marker}token/"))
 
 
-# ── Resilient refresh proxy ───────────────────────────────────────────────
+# ── Retryable refresh proxy ───────────────────────────────────────────────
 
 UPSTREAM_REFRESH_FAILURES = Counter(
     "mcp_auth_upstream_refresh_failures_total",
@@ -176,8 +176,8 @@ def _upstream_oauth_rejection(exc: BaseException | None) -> bool:
     return isinstance(exc, OAuth2Error | httpx.HTTPStatusError)
 
 
-class ResilientOIDCProxy(OIDCProxy):
-    """OIDCProxy that doesn't convert transient upstream failures into invalid_grant.
+class RetryableRefreshOIDCProxy(OIDCProxy):
+    """Keep transient upstream refresh failures retryable for MCP clients.
 
     FastMCP's `OAuthProxy.exchange_refresh_token` wraps the upstream refresh call
     in a blanket `except Exception` and raises
@@ -201,54 +201,6 @@ class ResilientOIDCProxy(OIDCProxy):
     # the wait.
     refresh_retry_stop = stop_after_attempt(3)
     refresh_retry_wait = wait_exponential(multiplier=0.5, max=2)
-
-    def __init__(self, *args: Any, on_client_authorized: OnClientAuthorized | None = None, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._on_client_authorized = on_client_authorized
-
-    async def exchange_authorization_code(
-        self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
-    ) -> OAuthToken:
-        """Validate/link the authorized upstream identity before issuing the FastMCP token.
-
-        The raw upstream token response is read from the stored code before ``super()`` consumes it.
-        Hook failures propagate before a local token is minted, so an immutable client-ownership
-        check cannot fail after handing a cross-tenant credential to the caller.
-        """
-        if self._on_client_authorized is not None:
-            code_model = await self._code_store.get(key=authorization_code.code)
-            if code_model is None or not client.client_id:
-                raise RuntimeError("authorized MCP client is missing its stored upstream identity")
-            await self._on_client_authorized(client.client_id, code_model.idp_tokens)
-        return await super().exchange_authorization_code(client, authorization_code)
-
-    async def load_access_token(self, token: str) -> AccessToken | None:
-        """Restore the DCR client identity FastMCP's token swap discards.
-
-        ``OAuthProxy.load_access_token`` returns the *upstream* validation result, whose
-        ``client_id`` is the proxy's own upstream client — so every OAuth agent collapses
-        onto one identity (observed live 2026-07-13: agent→operator lookups keyed by DCR
-        client_id failed with "agent haku-console-mcp has no linked operator subject").
-        The FastMCP reference JWT carries the real DCR ``client_id`` claim; re-attach it
-        so per-agent identity (operator links, audit principals) survives the swap.
-        """
-        upstream_validated = await super().load_access_token(token)
-        if upstream_validated is None:
-            return None
-        validated = (
-            upstream_validated
-            if isinstance(upstream_validated, AccessToken)
-            else AccessToken.model_validate(upstream_validated.model_dump())
-        )
-        try:
-            dcr_client_id = self.jwt_issuer.verify_token(token).get("client_id")
-        except Exception:
-            # super() accepted the token, so an unverifiable JWT here means a non-JWT
-            # verifier matched (e.g. a static bearer path) — keep its identity as-is.
-            return validated
-        if dcr_client_id and dcr_client_id != validated.client_id:
-            return validated.model_copy(update={"client_id": dcr_client_id})
-        return validated
 
     async def exchange_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: RefreshToken, scopes: list[str]
@@ -288,6 +240,57 @@ class ResilientOIDCProxy(OIDCProxy):
         raise AssertionError("unreachable")  # the retry loop always returns or raises
 
 
+class DownstreamClientIdentityOIDCProxy(RetryableRefreshOIDCProxy):
+    """Restore the downstream DCR client identity after FastMCP's token swap."""
+
+    async def load_access_token(self, token: str) -> AccessToken | None:
+        """Reattach the identity from the signed FastMCP reference token.
+
+        ``OAuthProxy.load_access_token`` returns the upstream verifier's result,
+        whose ``client_id`` is the proxy's upstream client. The FastMCP reference
+        JWT retains the downstream DCR ``client_id`` needed by Haku and Airlock.
+        """
+        upstream_validated = await super().load_access_token(token)
+        if upstream_validated is None:
+            return None
+        validated = (
+            upstream_validated
+            if isinstance(upstream_validated, AccessToken)
+            else AccessToken.model_validate(upstream_validated.model_dump())
+        )
+        try:
+            dcr_client_id = self.jwt_issuer.verify_token(token).get("client_id")
+        except Exception:
+            # super() accepted the token, so an unverifiable JWT here means a non-JWT
+            # verifier matched (e.g. a static bearer path) — keep its identity as-is.
+            return validated
+        if dcr_client_id and dcr_client_id != validated.client_id:
+            return validated.model_copy(update={"client_id": dcr_client_id})
+        return validated
+
+
+class ClientAuthorizationHookOIDCProxy(DownstreamClientIdentityOIDCProxy):
+    """Run the configured raw-token hook before FastMCP issues a token.
+
+    This compatibility layer names the current behavior without making it part
+    of the target Haku authorization API. The Haku adapter replacement removes
+    the hook and its callers atomically.
+    """
+
+    def __init__(self, *args: Any, on_client_authorized: OnClientAuthorized, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._on_client_authorized = on_client_authorized
+
+    async def exchange_authorization_code(
+        self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
+    ) -> OAuthToken:
+        code_model = await self._code_store.get(key=authorization_code.code)
+        if code_model is None or not client.client_id:
+            raise RuntimeError("authorized MCP client is missing its stored upstream identity")
+        await self._on_client_authorized(client.client_id, code_model.idp_tokens)
+        return await super().exchange_authorization_code(client, authorization_code)
+
+
 # ── Auth builder ──────────────────────────────────────────────────────────
 
 
@@ -322,15 +325,25 @@ def build_authentik_auth(
     """
     issuer = config.normalized_issuer()
     config_url = f"{issuer}/.well-known/openid-configuration"
-    proxy = ResilientOIDCProxy(
-        config_url=config_url,
-        client_id=config.oidc_client_id,
-        client_secret=config.oidc_client_secret,
-        base_url=config.normalized_public_base_url(),
-        require_authorization_consent=True,
-        client_storage=client_storage,
-        on_client_authorized=on_client_authorized,
-    )
+    if on_client_authorized is None:
+        proxy = DownstreamClientIdentityOIDCProxy(
+            config_url=config_url,
+            client_id=config.oidc_client_id,
+            client_secret=config.oidc_client_secret,
+            base_url=config.normalized_public_base_url(),
+            require_authorization_consent=True,
+            client_storage=client_storage,
+        )
+    else:
+        proxy = ClientAuthorizationHookOIDCProxy(
+            config_url=config_url,
+            client_id=config.oidc_client_id,
+            client_secret=config.oidc_client_secret,
+            base_url=config.normalized_public_base_url(),
+            require_authorization_consent=True,
+            client_storage=client_storage,
+            on_client_authorized=on_client_authorized,
+        )
     proxy.update_default_scopes(valid_scopes or DEFAULT_VALID_SCOPES)
     # OIDCProxy verifies its own wire tokens. Direct bearer tokens are a separate,
     # opt-in machine path: each trust gets its own verifier so accepted issuers and

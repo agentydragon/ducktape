@@ -124,7 +124,7 @@ def _root(
 
 def _create_cli_dependencies(*, verbose: bool = False):
     config = load_config()
-    formatter = ViewFormatter(daemon_log_path=config.daemon_log_file)
+    formatter = ViewFormatter(daemon_log_path=config.daemon_log_file, github_repo=config.github_repo)
     configure_logging(log_level=LogLevel.INFO if verbose else LogLevel.WARNING)
     daemon_client = WtClient(config, verbose=verbose)
     return config, formatter, daemon_client

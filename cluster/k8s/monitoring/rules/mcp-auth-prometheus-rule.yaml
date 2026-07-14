@@ -12,7 +12,7 @@ spec:
         # An OIDCProxy-fronted MCP server (oauth facades, grocy-mcp) failed to
         # refresh a client's token against Authentik or persist refreshed OAuth
         # state. Before the
-        # ResilientOIDCProxy fix this instantly killed the claude.ai connector
+        # RetryableRefreshOIDCProxy fix this instantly killed the claude.ai connector
         # (invalid_grant is terminal); now transient failures answer 503, but
         # each one still means claude.ai saw an error and the connector may
         # need a manual Reconnect. RCA:

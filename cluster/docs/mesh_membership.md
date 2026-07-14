@@ -1,16 +1,18 @@
 # Nebula mesh — adding, removing, and re-IPing hosts
 
 The mesh host roster is a single JSON file at the repo root,
-`nebula-mesh.json`. Five places read it:
+`nebula-mesh.json`. Six places read it:
 
-- `nix/nixos/modules/nebula.nix` — derives `lighthouses` + `staticHostMap`
+- `nix/nixos/modules/nebula.nix` — derives `lighthouses`, `staticHostMap`, and
+  peer MTU routes
 - `nix/nixos/modules/k8s-worker.nix` — derives `controlPlaneEndpoints` (haproxy
   backends for kubelet)
 - `cluster/terraform/main/nebula.tf` — per-node ExtensionServiceConfig YAMLs,
-  plus a `check {}` block asserting that roster endpoints match the live
-  OVH IPs
+  per-node MTU route patches, plus a `check {}` block asserting that roster
+  endpoints match the live OVH IPs
 - `cluster/terraform/main/persistent-auth.tf` — issues per-host Nebula certs
   for every tofu-managed entry
+- `ansible/roles/nebula` — renders Atlas's config and peer MTU routes
 - `cluster/scripts/render_mobile_nebula_config.py` — mobile client config
 
 Pydantic schema and validation: `cluster/scripts/nebula_mesh.py`, exercised by
@@ -26,9 +28,20 @@ Pydantic schema and validation: `cluster/scripts/nebula_mesh.py`, exercised by
   "lighthouse":   true | false,         // default false
   "relay":        true | false,         // default false
   "managed_by":   "tofu-ovh" | "tofu-proxmox" | "nixos" | "ansible" | "mobile",
-  "cert_groups":  [...]                 // optional; embedded in the Nebula cert
+  "cert_groups":  [...],                // optional; embedded in the Nebula cert
+  "destination_mtu": 1100               // optional; MTU all peers use when sending to this host
 }
 ```
+
+`destination_mtu` is a per-destination exception to the mesh-wide Nebula TUN
+MTU of 1420. Set it only when the named host's underlay cannot reliably carry
+the normal encrypted packet size; omit the field rather than setting it to
+`null` when no exception applies. Other hosts install an exact `/32` route to
+that destination, while the constrained host uses the same MTU toward all
+peers. This makes managed Linux paths symmetric without changing traffic
+between other managed Linux pairs. Mobile Nebula's global fallback is the
+deliberate exception: all of that mobile client's mesh traffic uses the
+smallest declared constraint.
 
 ## Add a host
 
@@ -43,7 +56,9 @@ any TF apply.
 2. Edit `nebula-mesh.json`: add the host with `nebula_ip`, `endpoint`, role,
    `lighthouse: true`, `relay: true`, `managed_by: "tofu-ovh"`,
    `cert_groups: ["lighthouse"]`.
-3. Add a row to `local.nebula_tf_key_to_host` in `cluster/terraform/main/nebula.tf`.
+3. Add the host to `local.kimsufi_servers` in
+   `cluster/terraform/main/ovh-nodes.tf`; the Terraform-managed Nebula host set
+   is derived from that inventory.
 4. `bazel run //cluster:bootstrap` — `persistent-auth` issues the cert,
    `nebula.tf` builds the per-node config, the drift `check` verifies the
    endpoint matches live OVH data.
@@ -64,7 +79,12 @@ For nodes not provisioned by TF: `wyrm2`/`rugged`/`iguana` (`nixos`), `atlas`
    lighthouse (unless you really mean to serve as one).
 3. Deploy on the host — `nixos-rebuild switch` (nixos),
    `ansible-playbook <host>.yaml --tags nebula` (ansible), or mobile import.
-   Other hosts don't need to know about behind-NAT hosts.
+   Other hosts don't need to know about an ordinary behind-NAT host. If the
+   entry sets `destination_mtu`, redeploy every managed route-policy consumer:
+   apply the Talos Terraform configuration, rebuild the NixOS peers, and run
+   the Nebula role on Atlas. Also regenerate and re-import each Mobile Nebula
+   configuration; mobile uses the smallest declared constraint as its global
+   TUN MTU because the platform does not expose per-route MTUs.
 
 ## Remove a host
 
@@ -72,8 +92,8 @@ For nodes not provisioned by TF: `wyrm2`/`rugged`/`iguana` (`nixos`), `atlas`
 
 1. Cordon + drain in k8s (existing flow).
 2. Edit `nebula-mesh.json`: delete the host entry.
-3. Remove the matching row from `local.nebula_tf_key_to_host` in nebula.tf
-   if applicable.
+3. Remove the matching inventory entry from `local.kimsufi_servers` (or the
+   legacy `local.kimsufi_cp_servers`) in `cluster/terraform/main/ovh-nodes.tf`.
 4. `bazel run //cluster:bootstrap`. TF destroys the underlying resource and
    prunes the cert; remaining Talos nodes get refreshed configs.
 5. **Restart Nebula on remaining lighthouses** (e.g., `talosctl service nebula
@@ -83,13 +103,19 @@ restart -n <ip>`). Without this, the lighthouses sit in silent
    ages out.
 6. `nixos-rebuild switch` on roaming/NixOS hosts to refresh `staticHostMap`
    and `controlPlaneEndpoints`.
+7. Run the Nebula role on Atlas if the removed host had `destination_mtu`.
 
 ### NixOS / laptop / mobile host
 
 1. Edit `nebula-mesh.json`: delete entry.
-2. `nixos-rebuild switch` on remaining hosts.
-3. Optionally delete `secrets/nebula/<host>.crt` and the SOPS key.
-4. CA revocation is out of scope — we don't run an OCSP/CRL flow.
+2. If the entry had `destination_mtu`, apply the Talos Terraform
+   configuration, rebuild the remaining NixOS peers, and run the Nebula role
+   on Atlas so every reciprocal route is removed. Regenerate and re-import
+   Mobile Nebula configurations so their global fallback is recalculated.
+3. Otherwise, rebuild only hosts that consumed an endpoint or lighthouse
+   setting from the removed entry.
+4. Optionally delete `secrets/nebula/<host>.crt` and the SOPS key.
+5. CA revocation is out of scope — we don't run an OCSP/CRL flow.
 
 ## Provider re-IPs a host
 
@@ -112,6 +138,8 @@ OVH reallocates a Kimsufi IP:
 - At least two reachable lighthouses (no SPOF for roaming clients).
 - At least one `control-plane` (otherwise `controlPlaneEndpoints` would be
   empty).
+- `destination_mtu`, when set, is between Nebula's 500-byte route minimum and
+  the mesh TUN MTU of 1420.
 
 TF `check "nebula_mesh_endpoint_drift"` runs at plan time and catches mismatch
 against live `data.ovh_dedicated_server.*` IPs.

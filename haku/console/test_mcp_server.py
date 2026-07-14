@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import re
+import secrets
 from collections.abc import AsyncGenerator, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -16,15 +19,14 @@ from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import SecretStr, ValidationError
 from starlette.applications import Starlette
-from starlette.requests import Request
-from starlette.responses import JSONResponse
-from starlette.routing import Mount, Route
+from starlette.routing import Mount
 
 from gmail_api.labels import GmailLabel, LabelsListResponse, LabelType
 from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig
 from haku.console.conftest import console_settings, operator_session_cookie, write_config
 from haku.console.console_events import ConsoleEventHub
+from haku.console.mcp_agent_auth import build_auth
 from haku.console.mcp_approval import McpMetadataProvider, McpToolExecutor, PostgresToolCallLedger, resolve_mcp_agent
 from haku.console.mcp_config import ResolvedStaticAgent, static_agent_client_id
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
@@ -35,6 +37,7 @@ from haku.console.tools import gmail as gmail_tools
 from mcp_infra.persistence import PostgresPersistence
 from util.net import pick_free_port
 from util.testing.asgi import serve_app_sync, serve_fastmcp
+from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 # The `/mcp` static bearer used across these tests, and the static-agent config that binds it to the
 # `haku` agent id (which acts as operator subject "42"). Env-referenced, like the deploy.
@@ -80,7 +83,10 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
         in_process_servers=in_process,
         gmail_client=gmail_client,
     )
-    server = build_console_mcp(context)
+    server = build_console_mcp(
+        context,
+        auth=build_auth(context.settings, context.static_agents, operator_oauth_store=context.oauth_store).provider,
+    )
     await register_proxy_tools(server, context)
     # Serve over HTTP: the in-memory transport can't carry the static bearer, and the proxy tools
     # need an authenticated caller (`_agent_id`). The verifier maps `agent-token` → client_id "haku".
@@ -267,32 +273,26 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
 
 @contextmanager
 def _serve_mock_oidc() -> Generator[str]:
-    """A minimal OIDC discovery endpoint so `build_authentik_auth` can construct the OIDCProxy."""
-
-    async def discovery(request: Request) -> JSONResponse:
-        base = str(request.base_url).rstrip("/")
-        return JSONResponse(
-            {
-                "issuer": base,
-                "authorization_endpoint": f"{base}/authorize",
-                "token_endpoint": f"{base}/token",
-                "jwks_uri": f"{base}/jwks",
-                "userinfo_endpoint": f"{base}/userinfo",
-                "response_types_supported": ["code"],
-                "grant_types_supported": ["authorization_code", "refresh_token"],
-                "subject_types_supported": ["public"],
-                "id_token_signing_alg_values_supported": ["RS256"],
-                "code_challenge_methods_supported": ["S256"],
-                "scopes_supported": ["openid", "email", "profile", "offline_access"],
-            }
-        )
-
-    async def jwks(request: Request) -> JSONResponse:
-        return JSONResponse({"keys": []})
-
-    app = Starlette(routes=[Route("/.well-known/openid-configuration", discovery), Route("/jwks", jwks)])
-    with serve_app_sync(app) as base:
+    """A signed OIDC provider whose stable subject represents the authorizing operator."""
+    private_key, public_key = generate_rsa_keypair()
+    oidc_port = pick_free_port()
+    oidc_base = f"http://127.0.0.1:{oidc_port}"
+    app = build_mock_oidc_app(
+        issuer_url=oidc_base, private_key=private_key, public_key=public_key, subject="operator-42"
+    )
+    with serve_app_sync(app, port=oidc_port) as base:
         yield base
+
+
+def _pkce_challenge(code_verifier: str) -> str:
+    return base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest()).rstrip(b"=").decode()
+
+
+def _hidden_input(page: str, name: str) -> str:
+    match = re.search(rf'<input[^>]+name="{name}"[^>]+value="([^"]+)"', page)
+    if match is None:
+        raise AssertionError(f"OAuth consent page has no {name!r} input")
+    return match.group(1)
 
 
 def test_mcp_oauth_requires_shared_persistence() -> None:
@@ -403,6 +403,7 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
                 assert registered["client_id"]
                 assert registered["client_secret"]
 
+                code_verifier = secrets.token_urlsafe(32)
                 authorize = await anon.get(
                     authorization["authorization_endpoint"],
                     params={
@@ -411,7 +412,7 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
                         "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
                         "scope": "openid email profile offline_access",
                         "state": "client-state",
-                        "code_challenge": "A" * 43,
+                        "code_challenge": _pkce_challenge(code_verifier),
                         "code_challenge_method": "S256",
                         "resource": f"{base}/mcp/",
                     },
@@ -423,19 +424,59 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
 
                 consent = await anon.get(consent_url)
                 assert consent.status_code == 200
-                txn_id = re.search(r'name="txn_id" value="([^"]+)"', consent.text)
-                csrf_token = re.search(r'name="csrf_token" value="([^"]+)"', consent.text)
-                assert txn_id is not None
-                assert csrf_token is not None
                 approved = await anon.post(
                     f"{base}/mcp/consent",
-                    data={"txn_id": txn_id.group(1), "csrf_token": csrf_token.group(1), "action": "approve"},
+                    data={
+                        "txn_id": _hidden_input(consent.text, "txn_id"),
+                        "csrf_token": _hidden_input(consent.text, "csrf_token"),
+                        "action": "approve",
+                    },
                     follow_redirects=False,
                 )
                 assert approved.status_code == 302, approved.text
                 upstream_authorize = httpx.URL(approved.headers["location"])
                 assert str(upstream_authorize).startswith(f"{oidc_base}/authorize?")
                 assert upstream_authorize.params["redirect_uri"] == f"{base}/mcp/auth/callback"
+
+                upstream_callback = await anon.get(str(upstream_authorize), follow_redirects=False)
+                assert upstream_callback.status_code == 302, upstream_callback.text
+                assert upstream_callback.headers["location"].startswith(f"{base}/mcp/auth/callback?")
+
+                downstream_callback = await anon.get(upstream_callback.headers["location"], follow_redirects=False)
+                assert downstream_callback.status_code == 302, downstream_callback.text
+                client_callback = httpx.URL(downstream_callback.headers["location"])
+                assert client_callback.scheme == "https"
+                assert client_callback.host == "claude.ai"
+                assert client_callback.path == "/api/mcp/auth_callback"
+                assert client_callback.params["state"] == "client-state"
+
+                exchanged = await anon.post(
+                    authorization["token_endpoint"],
+                    data={
+                        "grant_type": "authorization_code",
+                        "code": client_callback.params["code"],
+                        "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+                        "client_id": registered["client_id"],
+                        "client_secret": registered["client_secret"],
+                        "code_verifier": code_verifier,
+                    },
+                )
+                assert exchanged.status_code == 200, exchanged.text
+                access_token = exchanged.json()["access_token"]
+                assert isinstance(access_token, str)
+                assert access_token
+
+                # The authorization-code exchange binds the exact downstream DCR identity to the
+                # stable upstream operator subject before FastMCP issues the local bearer.
+                oauth_store = PostgresMcpOperatorOAuthStore(migrated_db_url)
+                assert oauth_store.agent_operator(agent_dcr_client_id=registered["client_id"]) == "operator-42"
+
+                # The returned bearer authenticates to the real mounted MCP server and retains the
+                # DCR identity needed to resolve that operator link.
+                async with Client(f"{base}/mcp", auth=access_token) as oauth_client:
+                    assert {"get_tool_call", "list_tool_calls", "standin_echo"} <= {
+                        tool.name for tool in await oauth_client.list_tools()
+                    }
 
                 # Discovery is shared at root, not the operational OAuth surface.
                 assert (await anon.post(f"{base}/register", json={})).status_code == 404

@@ -62,7 +62,10 @@ def render_config(*, ca: str, cert: str, key: str, mesh: nebula_mesh.Mesh, inclu
         "cipher": "aes",
         "logging": {"level": "info", "format": "text"},
         "timers": {"connection_alive_interval": 5, "pending_deletion_interval": 10},
-        "tun": {"dev": "tun1", "mtu": DEFAULT_MTU},
+        # Android's VpnService exposes one interface MTU, not per-route MTUs.
+        # Use the smallest roster constraint so every mobile path involving a
+        # constrained peer is safe without lowering the managed Linux mesh.
+        "tun": {"dev": "tun1", "mtu": mesh.minimum_path_mtu(DEFAULT_MTU)},
         "firewall": {
             "outbound": [{"port": "any", "proto": "any", "host": "any"}],
             "inbound": [{"port": "any", "proto": "any", "host": "any"}],

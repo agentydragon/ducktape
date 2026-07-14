@@ -12,10 +12,16 @@ import os
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Role = Literal["control-plane", "worker", "laptop", "non-k8s"]
 ManagedBy = Literal["tofu-ovh", "tofu-proxmox", "nixos", "ansible", "mobile"]
+
+# Cilium depends on the mesh-wide Nebula TUN MTU staying at 1420. A host with a
+# smaller path can instead advertise a conservative destination-specific route
+# MTU without changing that shared interface contract.
+MIN_DESTINATION_MTU = 500
+MESH_TUN_MTU = 1420
 
 
 class Host(BaseModel):
@@ -34,6 +40,21 @@ class Host(BaseModel):
     cert_groups: list[str] = Field(
         default_factory=list, description="Groups embedded in the Nebula cert (currently unused by firewall rules)"
     )
+    destination_mtu: int | None = Field(
+        default=None,
+        strict=True,
+        ge=MIN_DESTINATION_MTU,
+        le=MESH_TUN_MTU,
+        description="Optional MTU all mesh paths involving this host must use",
+    )
+
+    @field_validator("destination_mtu", mode="before")
+    @classmethod
+    def destination_mtu_must_not_be_null(cls, value: object) -> object:
+        """Keep direct JSON consumers from interpreting null as an MTU."""
+        if value is None:
+            raise ValueError("omit destination_mtu instead of setting it to null")
+        return value
 
 
 class Mesh(BaseModel):
@@ -54,6 +75,11 @@ class Mesh(BaseModel):
 
     def control_plane_endpoints(self, port: int = 6443) -> list[str]:
         return [f"{h.nebula_ip}:{port}" for h in self.hosts.values() if h.role == "control-plane"]
+
+    def minimum_path_mtu(self, default: int) -> int:
+        """Return a global fallback for consumers without per-peer MTU routes."""
+        constraints = [h.destination_mtu for h in self.hosts.values() if h.destination_mtu is not None]
+        return min([default, *constraints])
 
 
 def repo_root() -> Path:

@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlunparse
 
 import click
 from colorama import Style
@@ -45,8 +44,13 @@ def format_sync_status(ahead: int, behind: int, *, compact: bool = False) -> str
 
 
 class ViewFormatter:
-    def __init__(self, daemon_log_path: Path | None = None):
+    def __init__(self, daemon_log_path: Path | None = None, github_repo: str = ""):
         self.daemon_log_path = daemon_log_path
+        self.github_repo = github_repo
+
+    def _pr_url(self, pr_number: int) -> str:
+        """GitHub PR URL for the configured repo."""
+        return f"https://github.com/{self.github_repo}/pull/{pr_number}"
 
     def make_hyperlink(self, url: str, text: str) -> str:
         if os.getenv("TERM_PROGRAM") in ("iTerm.app", "vscode") or os.getenv("COLORTERM"):
@@ -99,10 +103,7 @@ class ViewFormatter:
             pr_number = d.pr_number
             pr_state = d.pr_state
 
-            # Create clickable hyperlink - fall back to plain text if not supported
-            # Hardcoded helper: map PR number -> http://go/pull/{n}
-            go_url = urlunparse(("http", "go", f"/pull/{pr_number}", "", "", ""))
-            clickable_link = self.make_hyperlink(go_url, f"#{pr_number}")
+            clickable_link = self.make_hyperlink(self._pr_url(pr_number), f"#{pr_number}")
 
             # Add lines changed info if available
             lines_info = ""
@@ -149,9 +150,7 @@ class ViewFormatter:
         if not isinstance(status.pr_info, PRInfoOk):
             return ""
         pr_number = status.pr_info.pr_data.pr_number
-        # Hardcoded helper: map PR number -> http://go/pull/{n}
-        go_url = urlunparse(("http", "go", f"/pull/{pr_number}", "", "", ""))
-        return self.make_hyperlink(go_url, f"#{pr_number}")
+        return self.make_hyperlink(self._pr_url(pr_number), f"#{pr_number}")
 
     def _get_pr_status_column(self, status: StatusResult) -> str:
         """Get PR status text column."""
@@ -280,10 +279,8 @@ class ViewFormatter:
             pr_number = d.pr_number
             pr_state = d.pr_state
 
-            # Create clickable link for detailed view
-            click.echo(
-                f"🔗 PR #{pr_number} ({self.make_hyperlink(f'http://go/pull/{pr_number}', f'go/pull/{pr_number}')})"
-            )
+            pr_url = self._pr_url(pr_number)
+            click.echo(f"🔗 PR #{pr_number} ({self.make_hyperlink(pr_url, pr_url)})")
 
             # Format detailed PR status
             status_text = self.get_pr_status_text(
