@@ -46,3 +46,22 @@ py_test(
         "@pypi//valkey_glide",
     ],
 )
+
+py_test(
+    name = "test_consent_integration",
+    srcs = ["test_consent_integration.py"],
+    deps = [
+        ":auth",
+        ":conftest",
+        "//util:net",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//py_key_value_aio",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)
