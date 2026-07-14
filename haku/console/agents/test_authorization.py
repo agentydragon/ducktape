@@ -13,6 +13,8 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 
 from haku.console.agents.authorization import (
     PostgresAgentAuthority,
@@ -211,6 +213,34 @@ async def _create_grant(
     return grant
 
 
+async def _wait_until_connection_is_lock_blocked(
+    engine: Engine, *, application_name: str, task: asyncio.Task[None]
+) -> None:
+    with engine.connect() as conn:
+        for _ in range(200):
+            waiting = conn.execute(
+                text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1 FROM pg_stat_activity
+                        WHERE datname = current_database()
+                          AND application_name = :application_name
+                          AND state = 'active'
+                          AND wait_event_type = 'Lock'
+                    )
+                    """
+                ),
+                {"application_name": application_name},
+            ).scalar_one()
+            if waiting:
+                return
+            if task.done():
+                await task
+                pytest.fail("authority operation completed before reaching its expected row lock")
+            await asyncio.sleep(0.01)
+    pytest.fail("authority operation did not reach its expected row lock")
+
+
 async def test_create_decision_is_idempotent_and_grant_activates_then_revokes(db_url: str) -> None:
     harness = _harness(db_url)
     request = _request("create")
@@ -367,6 +397,49 @@ async def test_activation_timeout_abandons_new_agent_but_only_expires_reconnect(
     assert agent_statuses[active.actor.binding_id] == "active"
 
 
+async def test_exchange_uses_the_live_correlation_reservation_after_tuple_reuse(db_url: str) -> None:
+    harness = _harness(db_url)
+    request = _request("correlation-reuse")
+    old_url = await harness.authority.reserve_authorization(
+        request=request, upstream_authorization_url="https://auth.test/authorize/old"
+    )
+    old_interaction_id, _old_nonce = _interaction_from_url(old_url)
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM enrollment_correlation_reservations WHERE interaction_id = :interaction_id"),
+            {"interaction_id": old_interaction_id},
+        )
+    harness.clock.advance(datetime.timedelta(seconds=1))
+    new_url = await harness.authority.reserve_authorization(
+        request=request, upstream_authorization_url="https://auth.test/authorize/new"
+    )
+    new_interaction_id, new_nonce = _interaction_from_url(new_url)
+    assert new_interaction_id != old_interaction_id
+    page = await harness.authority.open_interaction(
+        interaction_id=new_interaction_id, browser_nonce=new_nonce, interaction_cookie=None, browser=harness.browser
+    )
+    await harness.authority.decide(
+        interaction_id=new_interaction_id,
+        browser=harness.browser,
+        interaction_cookie=page.form_token,
+        decision=CreateAgentDecision(form_token=page.form_token, display_name="Reused Correlation"),
+    )
+    grant = await harness.authority.begin_exchange(
+        correlation=request.correlation,
+        client=request.client,
+        principal=harness.principal,
+        granted_scopes=frozenset({"tools:call"}),
+    )
+    with engine.connect() as conn:
+        claimed_interaction_id = conn.execute(
+            text("SELECT enrollment_interaction_id FROM authorization_grants WHERE grant_id = :grant_id"),
+            {"grant_id": grant.grant_id},
+        ).scalar_one()
+    engine.dispose()
+    assert claimed_interaction_id == new_interaction_id
+
+
 async def test_exchange_timeout_and_preissuance_revoke_abandon_new_agents(db_url: str) -> None:
     harness = _harness(db_url)
     request = _request("exchange-expiry")
@@ -481,6 +554,101 @@ async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: st
     assert b"second-token" not in stored_fingerprints
 
 
+async def test_static_reconcile_revokes_removed_definition_and_restores_stable_slot(db_url: str) -> None:
+    harness = _harness(db_url)
+    definition = StaticAgentDefinition(
+        agent_id=uuid4(),
+        display_name="Removable Configured Agent",
+        operator_id=harness.browser.operator_id,
+        secret_reference="env:REMOVABLE_AGENT_TOKEN",
+        token_fingerprint=fingerprint_static_token("first-removable-token"),
+    )
+    initial = (await harness.authority.reconcile_static_agents([definition]))[0]
+
+    assert await harness.authority.reconcile_static_agents([]) == ()
+    with pytest.raises(StaticAgentRejectedError):
+        await harness.authority.static_authorization_for_binding(binding_id=initial.binding_id)
+    with pytest.raises(StaticAgentRejectedError):
+        await harness.authority.static_authorization_for_fingerprint(fingerprint=definition.token_fingerprint)
+
+    restored_definition = StaticAgentDefinition(
+        agent_id=definition.agent_id,
+        display_name=definition.display_name,
+        operator_id=definition.operator_id,
+        secret_reference=definition.secret_reference,
+        token_fingerprint=fingerprint_static_token("rotated-after-removal"),
+    )
+    restored = (await harness.authority.reconcile_static_agents([restored_definition]))[0]
+    assert restored.agent_id == initial.agent_id
+    engine = create_engine(db_url)
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT binding_id, generation, supersedes_binding_id, status::TEXT, end_reason
+                FROM credential_bindings WHERE agent_id = :agent_id ORDER BY generation
+                """
+            ),
+            {"agent_id": definition.agent_id},
+        ).all()
+        agent_status = conn.execute(
+            text("SELECT status::TEXT FROM agents WHERE agent_id = :agent_id"), {"agent_id": definition.agent_id}
+        ).scalar_one()
+    engine.dispose()
+    assert rows == [
+        (initial.binding_id, 1, None, "revoked", "static_configuration_removed"),
+        (restored.binding_id, 2, initial.binding_id, "active", None),
+    ]
+    assert agent_status == "active"
+
+
+async def test_revoke_waits_for_interaction_before_locking_grant_graph(db_url: str) -> None:
+    harness = _harness(db_url)
+    grant = await _create_grant(harness, label="lock-order", display_name="Lock Ordered Agent")
+    application_name = f"authority-lock-order-{uuid4()}"
+    authority = PostgresAgentAuthority(
+        f"{db_url}?application_name={application_name}",
+        public_base_url="https://haku.test",
+        operator_identity_store=harness.identities,
+        clock=harness.clock,
+    )
+    engine = create_engine(db_url)
+    owner = engine.connect()
+    transaction = owner.begin()
+    task: asyncio.Task[None] | None = None
+    try:
+        interaction_id, binding_id = owner.execute(
+            text(
+                """
+                SELECT enrollment_interaction_id, binding_id
+                FROM authorization_grants WHERE grant_id = :grant_id
+                """
+            ),
+            {"grant_id": grant.grant_id},
+        ).one()
+        owner.execute(
+            text(
+                "SELECT interaction_id FROM enrollment_interactions WHERE interaction_id = :interaction_id FOR UPDATE"
+            ),
+            {"interaction_id": interaction_id},
+        )
+        task = asyncio.create_task(authority.revoke_grant(grant_id=grant.grant_id))
+        await _wait_until_connection_is_lock_blocked(engine, application_name=application_name, task=task)
+        owner.execute(
+            text("SELECT binding_id FROM credential_bindings WHERE binding_id = :binding_id FOR UPDATE NOWAIT"),
+            {"binding_id": binding_id},
+        )
+        transaction.commit()
+        await task
+    finally:
+        if transaction.is_active:
+            transaction.rollback()
+        owner.close()
+        if task is not None and not task.done():
+            await task
+        engine.dispose()
+
+
 async def test_database_outage_maps_to_authority_unavailable() -> None:
     database_url = "postgresql+psycopg://postgres:postgres@127.0.0.1:1/unavailable"
     identities = PostgresOperatorIdentityStore(
@@ -493,6 +661,16 @@ async def test_database_outage_maps_to_authority_unavailable() -> None:
         await authority.reserve_authorization(
             request=_request("outage"), upstream_authorization_url="https://auth.test/authorize"
         )
+
+
+async def test_sqlalchemy_pool_timeout_maps_to_authority_unavailable(db_url: str) -> None:
+    harness = _harness(db_url)
+
+    def time_out() -> None:
+        raise SQLAlchemyTimeoutError("connection pool exhausted")
+
+    with pytest.raises(AgentGrantAuthorityUnavailableError):
+        await harness.authority._database_call(time_out)
 
 
 async def test_exchange_revalidates_operator_after_principal_resolution(db_url: str) -> None:

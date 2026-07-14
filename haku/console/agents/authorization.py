@@ -15,7 +15,7 @@ from urllib.parse import urlencode, urlsplit
 from uuid import UUID, uuid4
 
 from sqlalchemy import create_engine, delete, func, select, text
-from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError, TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.orm import Session, sessionmaker
 
 from haku.console.agents.enrollment import (
@@ -193,6 +193,8 @@ class PostgresAgentAuthority:
     async def _database_call(self, operation: Callable[[], _T]) -> _T:
         try:
             return await asyncio.to_thread(operation)
+        except SQLAlchemyTimeoutError as error:
+            raise AgentGrantAuthorityUnavailableError from error
         except DBAPIError as error:
             if _database_is_unavailable(error):
                 raise AgentGrantAuthorityUnavailableError from error
@@ -207,7 +209,7 @@ class PostgresAgentAuthority:
     async def reconcile_static_agents(
         self, definitions: Collection[StaticAgentDefinition]
     ) -> tuple[StaticAgentAuthorization, ...]:
-        """Make configured static slots current, rotating changed fingerprints atomically."""
+        """Make this complete desired static-Agent set current atomically."""
 
         return await self._database_call(lambda: self._reconcile_static_agents(definitions))
 
@@ -218,6 +220,7 @@ class PostgresAgentAuthority:
         now = self._now()
         authorizations: list[StaticAgentAuthorization] = []
         with self._sessions.begin() as session:
+            self._lock_key(session, "static-agent-reconcile")
             for definition, name in sorted(prepared, key=lambda item: item[0].agent_id.int):
                 self._lock_key(session, "static-agent", str(definition.agent_id))
                 self._operator_identities.require_active_in_transaction(session, definition.operator_id)
@@ -252,7 +255,10 @@ class PostgresAgentAuthority:
                     )
                     session.flush()
                 else:
-                    if agent.owner_operator_id != definition.operator_id or agent.status is not AgentStatus.ACTIVE:
+                    if agent.owner_operator_id != definition.operator_id or agent.status not in {
+                        AgentStatus.ACTIVE,
+                        AgentStatus.DISABLED,
+                    }:
                         raise StaticAgentDefinitionError(
                             f"static Agent slot {definition.agent_id} conflicts with durable Agent ownership or status"
                         )
@@ -345,6 +351,29 @@ class PostgresAgentAuthority:
                     )
                 )
                 authorizations.append(StaticAgentAuthorization(agent.agent_id, binding_id, agent.owner_operator_id))
+                if agent.status is AgentStatus.DISABLED:
+                    agent.status = AgentStatus.ACTIVE
+                    agent.updated_at = now
+
+            desired_agent_ids = tuple(definition.agent_id for definition, _name in prepared)
+            removed = session.execute(
+                select(Agent, CredentialBinding)
+                .join(CredentialBinding, CredentialBinding.agent_id == Agent.agent_id)
+                .where(
+                    CredentialBinding.kind == CredentialKind.STATIC,
+                    CredentialBinding.status == CredentialBindingStatus.ACTIVE,
+                    Agent.agent_id.not_in(desired_agent_ids),
+                )
+                .order_by(Agent.agent_id)
+                .with_for_update()
+            ).all()
+            for agent, binding in removed:
+                binding.status = CredentialBindingStatus.REVOKED
+                binding.ended_at = now
+                binding.end_reason = "static_configuration_removed"
+                binding.updated_at = now
+                agent.status = AgentStatus.DISABLED
+                agent.updated_at = now
         return tuple(authorizations)
 
     async def static_authorization_for_binding(self, *, binding_id: UUID) -> StaticAgentAuthorization:
@@ -742,15 +771,19 @@ class PostgresAgentAuthority:
         authorization: GrantAuthorization | None = None
         with self._sessions.begin() as session:
             self._lock_key(session, "agent-correlation", *self._correlation_parts(correlation))
-            interaction = session.scalar(
-                select(EnrollmentInteraction)
+            reservation = session.execute(
+                select(EnrollmentCorrelationReservation)
                 .where(
-                    EnrollmentInteraction.client_id == correlation.client_id,
-                    EnrollmentInteraction.redirect_uri == correlation.redirect_uri,
-                    EnrollmentInteraction.code_challenge == correlation.code_challenge,
+                    EnrollmentCorrelationReservation.client_id == correlation.client_id,
+                    EnrollmentCorrelationReservation.redirect_uri == correlation.redirect_uri,
+                    EnrollmentCorrelationReservation.code_challenge == correlation.code_challenge,
+                    EnrollmentCorrelationReservation.release_after > func.clock_timestamp(),
                 )
                 .with_for_update()
-            )
+            ).scalar_one_or_none()
+            if reservation is None:
+                raise EnrollmentRejectedError
+            interaction = session.get(EnrollmentInteraction, reservation.interaction_id, with_for_update=True)
             if interaction is None:
                 raise EnrollmentRejectedError
             if now >= interaction.expires_at:
@@ -894,12 +927,14 @@ class PostgresAgentAuthority:
         now = self._now()
         error: Exception | None = None
         with self._sessions.begin() as session:
+            interaction = self._lock_grant_interaction(session, grant_id)
+            if interaction is None:
+                raise EnrollmentRejectedError
             rows = self._locked_grant_rows(session, grant_id)
             if rows is None:
                 raise EnrollmentRejectedError
             grant, binding, _agent, operator, client = rows
-            interaction = session.get(EnrollmentInteraction, grant.enrollment_interaction_id, with_for_update=True)
-            if interaction is None:
+            if grant.enrollment_interaction_id != interaction.interaction_id:
                 raise EnrollmentRejectedError
             if (
                 grant.token_family_persisted_at is not None
@@ -1043,10 +1078,15 @@ class PostgresAgentAuthority:
     def _revoke_grant(self, grant_id: UUID) -> None:
         now = self._now()
         with self._sessions.begin() as session:
+            interaction = self._lock_grant_interaction(session, grant_id)
+            if interaction is None:
+                raise GrantRejectedError
             rows = self._locked_grant_rows(session, grant_id)
             if rows is None:
                 raise GrantRejectedError
             grant, binding, agent, _operator, _client = rows
+            if grant.enrollment_interaction_id != interaction.interaction_id:
+                raise GrantRejectedError
             if binding.status in {
                 CredentialBindingStatus.REVOKED,
                 CredentialBindingStatus.EXPIRED,
@@ -1068,14 +1108,12 @@ class PostgresAgentAuthority:
             elif previous_status is CredentialBindingStatus.ACTIVE and agent.status is AgentStatus.ACTIVE:
                 agent.status = AgentStatus.DISABLED
                 agent.updated_at = now
-            if binding.status is CredentialBindingStatus.FAILED:
-                interaction = session.get(EnrollmentInteraction, grant.enrollment_interaction_id, with_for_update=True)
-                if interaction is not None and interaction.phase is EnrollmentPhase.EXCHANGING:
-                    interaction.phase = EnrollmentPhase.FAILED
-                    interaction.browser_binding_digest = None
-                    interaction.closed_at = now
-                    interaction.closure_reason = "revoked_before_issuance"
-                    interaction.updated_at = now
+            if binding.status is CredentialBindingStatus.FAILED and interaction.phase is EnrollmentPhase.EXCHANGING:
+                interaction.phase = EnrollmentPhase.FAILED
+                interaction.browser_binding_digest = None
+                interaction.closed_at = now
+                interaction.closure_reason = "revoked_before_issuance"
+                interaction.updated_at = now
 
     @staticmethod
     def _correlation_parts(correlation: AuthorizationCorrelation) -> tuple[str, str, str]:
@@ -1278,6 +1316,15 @@ class PostgresAgentAuthority:
         if row is None:
             return None
         return row[0], row[1], row[2], row[3], row[4]
+
+    @staticmethod
+    def _lock_grant_interaction(session: Session, grant_id: UUID) -> EnrollmentInteraction | None:
+        interaction_id = session.scalar(
+            select(AuthorizationGrant.enrollment_interaction_id).where(AuthorizationGrant.grant_id == grant_id)
+        )
+        if interaction_id is None:
+            return None
+        return session.get(EnrollmentInteraction, interaction_id, with_for_update=True)
 
     def _activation_expired(
         self, grant: AuthorizationGrant, binding: CredentialBinding, now: datetime.datetime
