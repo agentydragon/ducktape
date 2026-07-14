@@ -15,7 +15,7 @@ from authlib.integrations.httpx_client import AsyncOAuth2Client as AuthlibAsyncO
 from authlib.oauth2 import OAuth2Error
 from fastmcp.server.auth.auth import AccessToken, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
-from fastmcp.server.auth.oidc_proxy import OIDCProxy
+from fastmcp.server.auth.oidc_proxy import OIDCConfiguration, OIDCProxy
 from glide_shared.exceptions import TimeoutError as GlideTimeoutError
 from mcp.server.auth.provider import RefreshToken, TokenError
 from prometheus_client import REGISTRY
@@ -23,6 +23,7 @@ from starlette.exceptions import HTTPException
 from tenacity import wait_none
 
 from mcp_infra.authentik_auth.auth import (
+    DEFAULT_VALID_SCOPES,
     AuthentikAuthConfig,
     AuthentikTokenExchanger,
     BackendTokenExchangeError,
@@ -58,7 +59,6 @@ def _direct_trust(
 
 @dataclass(frozen=True)
 class _AuthBuildHarness:
-    discovery_response: Mock
     http_get: Mock
     oidc_proxy_cls: Mock
     jwt_verifier_cls: Mock
@@ -67,18 +67,16 @@ class _AuthBuildHarness:
 
 @pytest.fixture
 def auth_build_harness() -> Generator[_AuthBuildHarness]:
-    discovery_response = Mock()
-    discovery_response.raise_for_status.return_value = discovery_response
-    discovery_response.json.return_value = {"jwks_uri": "https://auth.example.com/application/o/test/jwks/"}
     with (
-        patch("mcp_infra.authentik_auth.auth.httpx.get", return_value=discovery_response) as http_get,
+        patch("mcp_infra.authentik_auth.auth.httpx.get") as http_get,
         patch("mcp_infra.authentik_auth.auth.ResilientOIDCProxy") as oidc_proxy_cls,
         patch("mcp_infra.authentik_auth.auth.JWTVerifier") as jwt_verifier_cls,
         patch("mcp_infra.authentik_auth.auth.MultiAuth") as multi_auth_cls,
     ):
-        oidc_proxy_cls.return_value.client_registration_options = Mock()
+        oidc_proxy_cls.return_value.oidc_config = OIDCConfiguration(
+            strict=False, jwks_uri="https://auth.example.com/application/o/test/jwks/"
+        )
         yield _AuthBuildHarness(
-            discovery_response=discovery_response,
             http_get=http_get,
             oidc_proxy_cls=oidc_proxy_cls,
             jwt_verifier_cls=jwt_verifier_cls,
@@ -128,32 +126,37 @@ def test_direct_jwt_trust_requires_an_audience() -> None:
 # ── build_authentik_auth tests ────────────────────────────────────────────
 
 
-def test_build_authentik_auth_uses_jwks_uri_from_discovery(auth_build_harness: _AuthBuildHarness) -> None:
-    """JWTVerifier must receive the jwks_uri advertised by the OIDC discovery
-    doc — not a hand-built path. Authentik serves JWKS at `<issuer>/jwks/`,
-    not `<issuer>/.well-known/jwks`; baking the wrong URL into auth.py once
-    silently broke JWT validation on every /mcp call.
-    """
+def test_build_authentik_auth_uses_proxy_discovery_jwks_uri(auth_build_harness: _AuthBuildHarness) -> None:
+    """Direct JWT verification reuses OIDCProxy's validated discovery result."""
     advertised_jwks = "https://auth.example.com/application/o/test/jwks/"
-    discovery_doc = {
-        "issuer": "https://auth.example.com/application/o/test/",
-        "jwks_uri": advertised_jwks,
-        "authorization_endpoint": "https://auth.example.com/application/o/authorize/",
-        "token_endpoint": "https://auth.example.com/application/o/token/",
-    }
-
-    auth_build_harness.discovery_response.json.return_value = discovery_doc
+    auth_build_harness.oidc_proxy_cls.return_value.oidc_config = OIDCConfiguration(
+        strict=False, jwks_uri=advertised_jwks
+    )
     build_authentik_auth(_config().model_copy(update={"direct_jwt_trusts": (_direct_trust(),)}))
 
-    assert any(
-        "/.well-known/openid-configuration" in str(call.args[0]) for call in auth_build_harness.http_get.call_args_list
-    )
+    auth_build_harness.http_get.assert_not_called()
     auth_build_harness.jwt_verifier_cls.assert_called_once()
     kwargs = auth_build_harness.jwt_verifier_cls.call_args.kwargs
-    assert kwargs["jwks_uri"] == advertised_jwks, (
-        f"JWTVerifier got hand-built jwks_uri {kwargs['jwks_uri']!r} instead of the "
-        f"discovery-advertised {advertised_jwks!r}"
-    )
+    assert kwargs["jwks_uri"] == advertised_jwks
+
+
+def test_build_authentik_auth_sets_default_scopes_through_proxy_api(auth_build_harness: _AuthBuildHarness) -> None:
+    build_authentik_auth(_config())
+
+    auth_build_harness.oidc_proxy_cls.return_value.update_default_scopes.assert_called_once_with(DEFAULT_VALID_SCOPES)
+
+
+def test_build_authentik_auth_sets_custom_scopes_through_proxy_api(auth_build_harness: _AuthBuildHarness) -> None:
+    custom_scopes = ["openid", "propose", "read"]
+    build_authentik_auth(_config(), valid_scopes=custom_scopes)
+
+    auth_build_harness.oidc_proxy_cls.return_value.update_default_scopes.assert_called_once_with(custom_scopes)
+
+
+def test_build_authentik_auth_requires_authorization_consent(auth_build_harness: _AuthBuildHarness) -> None:
+    build_authentik_auth(_config())
+
+    assert auth_build_harness.oidc_proxy_cls.call_args.kwargs["require_authorization_consent"] is True
 
 
 def test_build_authentik_auth_accepts_issuer_with_trailing_slash(auth_build_harness: _AuthBuildHarness) -> None:

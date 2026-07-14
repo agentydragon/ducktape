@@ -322,8 +322,6 @@ def build_authentik_auth(
     """
     issuer = config.normalized_issuer()
     config_url = f"{issuer}/.well-known/openid-configuration"
-    discovery = httpx.get(config_url, timeout=10.0).raise_for_status().json()
-    jwks_uri = discovery["jwks_uri"]
     proxy = ResilientOIDCProxy(
         config_url=config_url,
         client_id=config.oidc_client_id,
@@ -333,8 +331,7 @@ def build_authentik_auth(
         client_storage=client_storage,
         on_client_authorized=on_client_authorized,
     )
-    assert proxy.client_registration_options is not None
-    proxy.client_registration_options.valid_scopes = valid_scopes or DEFAULT_VALID_SCOPES
+    proxy.update_default_scopes(valid_scopes or DEFAULT_VALID_SCOPES)
     # OIDCProxy verifies its own wire tokens. Direct bearer tokens are a separate,
     # opt-in machine path: each trust gets its own verifier so accepted issuers and
     # audiences cannot accidentally form a cross-product. Authentik emits issuer
@@ -344,7 +341,7 @@ def build_authentik_auth(
         bare_issuer = trust.issuer.rstrip("/")
         verifiers.append(
             JWTVerifier(
-                jwks_uri=jwks_uri,
+                jwks_uri=str(proxy.oidc_config.jwks_uri),
                 issuer=[bare_issuer, bare_issuer + "/"],
                 audience=list(trust.audiences),
                 required_scopes=list(trust.required_scopes) or None,

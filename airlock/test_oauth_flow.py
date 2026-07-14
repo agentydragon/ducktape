@@ -48,9 +48,7 @@ def _build_multiauth(*, oidc_url: str, airlock_url: str, extra_verifiers: list |
         base_url=f"{airlock_url}/mcp",
         require_authorization_consent=False,
     )
-    # OIDCProxy doesn't expose valid_scopes; patch DCR validation to accept our scopes.
-    assert proxy.client_registration_options is not None
-    proxy.client_registration_options.valid_scopes = _ALL_SCOPES
+    proxy.update_default_scopes(_ALL_SCOPES)
     return MultiAuth(server=proxy, verifiers=extra_verifiers or [])
 
 
