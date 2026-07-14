@@ -1,0 +1,19 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: cli-proxy-api
+  namespace: cli-proxy-api
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "cli-proxy-api.allegedly.works"
+  rules:
+    # CLIProxyAPI streams model responses (incl. long Codex reasoning); allow long requests.
+    - timeouts:
+        request: "600s"
+        backendRequest: "600s"
+      backendRefs:
+        - name: cli-proxy-api
+          port: 8317

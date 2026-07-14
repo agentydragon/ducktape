@@ -203,7 +203,12 @@ def _harness(db_url: str, *, subject: str = "operator-user") -> Harness:
     browser_identity = identities.resolve_verified_identity(
         VerifiedExternalIdentity(issuer=_BROWSER_ISSUER, subject=subject)
     )
-    clock = MutableClock(datetime.datetime(2026, 7, 14, 20, 0, tzinfo=datetime.UTC))
+    # Correlation reservations are deliberately evaluated against PostgreSQL's
+    # clock, so ground the mutable test clock in that same time domain.
+    with _orm_session(db_url) as session:
+        database_now = session.scalar(select(func.clock_timestamp()))
+    assert isinstance(database_now, datetime.datetime)
+    clock = MutableClock(database_now)
     authority = PostgresAgentAuthority(
         db_url,
         public_base_url="https://haku.test",

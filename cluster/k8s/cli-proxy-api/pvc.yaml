@@ -1,0 +1,14 @@
+# Holds the Codex OAuth auth.json that CLIProxyAPI refreshes in place. Single replica
+# (Recreate strategy) because the refresh token is rotated by this one writer.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cli-proxy-api-data
+  namespace: cli-proxy-api
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: seaweedfs-ovh
+  resources:
+    requests:
+      storage: 1Gi
