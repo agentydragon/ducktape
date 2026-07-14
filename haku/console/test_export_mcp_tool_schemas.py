@@ -122,15 +122,17 @@ async def test_nullable_fastmcp_arguments_remain_nullable() -> None:
     )
 
 
-async def test_exports_result_catalog_for_in_process_servers() -> None:
+async def test_exports_result_catalog() -> None:
     schema = await build_mcp_tool_results_schema()
 
     assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
     assert schema["title"] == "McpToolResults"
     assert schema["additionalProperties"] is False
-    # grocy-sf is excluded — its result schemas stay hand-authored in the frontend.
-    assert list(schema["properties"]) == ["gmail", "google_calendar", "haku_routine"]
-    assert schema["required"] == ["gmail", "google_calendar", "haku_routine"]
+    # grocy-sf's batch tools are reflected (typed ducktape result models), limited to the same
+    # preview allowlist as its argument schemas. get_system_info is an OpenAPI tool with no batch
+    # counterpart, so it is absent and its widget stays hand-authored.
+    assert list(schema["properties"]) == ["gmail", "google_calendar", "grocy-sf", "haku_routine"]
+    assert schema["required"] == ["gmail", "google_calendar", "grocy-sf", "haku_routine"]
 
     gmail = schema["properties"]["gmail"]["properties"]
     # A `-> None` return (gmail.labels_delete) has only a null wrapped result, so it is omitted —
@@ -142,10 +144,62 @@ async def test_exports_result_catalog_for_in_process_servers() -> None:
     assert gmail["drafts_create"].get("required") == ["id"]
     assert list(schema["properties"]["google_calendar"]["properties"]) == ["create_calendar_event"]
     assert list(schema["properties"]["haku_routine"]["properties"]) == ["launch_routine"]
+    assert list(schema["properties"]["grocy-sf"]["properties"]) == [
+        "products_create",
+        "products_edit",
+        "products_list",
+        "quantity_units_list",
+        "shopping_list_get",
+        "shopping_list_item_edit",
+        "shopping_list_items_add",
+        "shopping_list_items_remove",
+        "stock_add",
+        "stock_consume",
+        "stock_entry_edit",
+        "stock_get",
+    ]
+    assert "get_system_info" not in schema["properties"]["grocy-sf"]["properties"]
     for server in schema["properties"].values():
         assert server["additionalProperties"] is False
 
     Draft202012Validator.check_schema(schema)
+
+
+async def test_grocy_result_schemas_validate() -> None:
+    """grocy-sf batch-tool result schemas accept representative payloads and stay reference-free.
+    shopping_list_get returns an untyped dict, so its schema carries no properties — the boundary
+    that keeps that one widget hand-authored."""
+    schema = await build_mcp_tool_results_schema()
+    grocy = schema["properties"]["grocy-sf"]["properties"]
+
+    serialized = json.dumps(grocy)
+    assert "$defs" not in serialized
+    assert "$ref" not in serialized
+    assert "x-fastmcp-wrap-result" not in serialized
+
+    # stock_add returns a list of StockOpOk | StockOpError; `kind` defaults so it is optional.
+    Draft202012Validator(grocy["stock_add"]).validate(
+        [{"product_name": "Oats", "qu_name": "pack", "location_name": "Pantry"}]
+    )
+    Draft202012Validator(grocy["stock_add"]).validate([{"kind": "error", "error": "boom"}])
+    # products_list is a union of brief/full array rows; both carry id + name.
+    Draft202012Validator(grocy["products_list"]).validate([{"id": 1, "name": "Oats"}])
+    Draft202012Validator(grocy["stock_get"]).validate(
+        [
+            {
+                "product_id": 1,
+                "product_name": "Oats",
+                "amount": 2,
+                "amount_opened": 0,
+                "qu_name": "pack",
+                "location_name": "Pantry",
+            }
+        ]
+    )
+
+    # shopping_list_get's return type is an untyped dict → an empty object schema with no
+    # properties, so it cannot drive a generated result widget and stays hand-authored.
+    assert grocy["shopping_list_get"].get("properties") in (None, {})
 
 
 async def test_result_schemas_validate_and_terminate_recursion() -> None:

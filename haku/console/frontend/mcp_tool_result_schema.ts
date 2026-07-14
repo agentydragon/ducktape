@@ -25,7 +25,10 @@ type CompiledResultSchema = {
 };
 
 function compileResultCatalog(): CompiledResultSchema[] {
-  const servers = objectProperties(mcpToolResultsSchema as JsonSchema, "MCP tool result schema catalog");
+  // `as unknown as JsonSchema` (rather than the plain `as JsonSchema` the argument catalog uses):
+  // grocy-sf's nested array-of-union result schemas widen the JSON module's inferred type past what
+  // TS considers structurally overlapping with JsonSchema, though the value is valid JSON Schema.
+  const servers = objectProperties(mcpToolResultsSchema as unknown as JsonSchema, "MCP tool result schema catalog");
   const compiled: CompiledResultSchema[] = [];
 
   for (const [serverId, serverSchema] of Object.entries(servers)) {

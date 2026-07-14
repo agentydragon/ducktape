@@ -9,9 +9,12 @@ describe("generated MCP tool result schemas", () => {
     expect(new Set(keys).size).toBe(keys.length);
     expect(keys).toContain("gmail.drafts_create");
     expect(keys).toContain("google_calendar.create_calendar_event");
-    // A `-> None` return has no structured result, and grocy-sf stays hand-authored.
+    // A `-> None` return has no structured result, so it has no entry.
     expect(keys).not.toContain("gmail.labels_delete");
-    expect(keys.every((key) => !key.startsWith("grocy-sf."))).toBe(true);
+    // grocy-sf's batch-tool result schemas are now reflected (the allowlisted preview tools).
+    expect(keys.filter((key) => key.startsWith("grocy-sf."))).toHaveLength(12);
+    expect(keys).toContain("grocy-sf.stock_add");
+    expect(keys).toContain("grocy-sf.products_list");
   });
 
   it("parses a Draft resource and rejects one missing its id", () => {

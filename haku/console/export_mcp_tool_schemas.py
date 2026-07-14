@@ -287,25 +287,30 @@ async def build_mcp_tool_arguments_schema() -> dict[str, Any]:
 async def build_mcp_tool_results_schema() -> dict[str, Any]:
     """Return one deterministic JSON Schema catalog of each tool's advertised output schema.
 
-    The output-side mirror of :func:`build_mcp_tool_arguments_schema`. Only the in-process
-    servers are included: their return types are trusted ducktape Pydantic models, so the
-    ``outputSchema`` FastMCP derives from them is a reliable single source of truth.
-    ``grocy-sf`` is excluded — its result schemas stay hand-authored in the frontend (see
-    ``tool_rendering/grocy/responses.tsx``) because the facade does not reliably expose them.
-    FastMCP publishes an output schema for every tool (a ``-> None`` return is wrapped as a null
-    ``{result: null}``); such null results have no structured value to render, so they are omitted
-    and a server's result tool set is a subset of its argument tool set.
+    The output-side mirror of :func:`build_mcp_tool_arguments_schema`. Every reflected server's
+    tools carry trusted return types — the in-process servers' ducktape Pydantic models and
+    ``grocy-sf``'s custom batch tools (also ducktape Pydantic models in ``grocy_mcp.mcp_types``) —
+    so the ``outputSchema`` FastMCP derives from them is a reliable single source of truth. The
+    grocy-sf OpenAPI tools are not reflected here at all: the exporter builds only the batch tools,
+    and grocy-sf strips output schemas from its OpenAPI tools at runtime anyway
+    (``grocy_mcp/server.py``) because Grocy's response shapes are unreliable. ``grocy-sf`` is
+    limited to ``_SERVER_TOOL_ALLOWLIST`` just like its argument schemas; ``get_system_info`` (an
+    OpenAPI tool with no batch counterpart) therefore has no generated result schema and its widget
+    stays hand-authored. FastMCP publishes an output schema for every tool (a ``-> None`` return is
+    wrapped as a null ``{result: null}``); such null results have no structured value to render, so
+    they are omitted and a server's result tool set is a subset of its argument tool set.
     """
 
     server_properties: dict[str, Any] = {}
     for server_id, server in build_schema_servers().items():
-        if server_id == GROCY_SF_SERVER_ID:
-            continue
+        allowlist = _SERVER_TOOL_ALLOWLIST.get(server_id)
         async with Client(server) as client:
             tools = sorted(await client.list_tools(), key=lambda tool: tool.name)
 
         tool_properties: dict[str, Any] = {}
         for tool in tools:
+            if allowlist is not None and tool.name not in allowlist:
+                continue
             output_schema = tool.outputSchema
             if output_schema is None:
                 continue
@@ -315,6 +320,10 @@ async def build_mcp_tool_results_schema() -> dict[str, Any]:
             if schema.get("type") == "null":
                 continue  # `-> None` return: nothing structured to render
             tool_properties[tool.name] = schema
+
+        if allowlist is not None and set(tool_properties) != set(allowlist):
+            missing = ", ".join(sorted(allowlist - set(tool_properties)))
+            raise ValueError(f"{server_id} is missing allowlisted preview tools: {missing}")
 
         server_properties[server_id] = {
             "type": "object",
