@@ -40,7 +40,12 @@ from util.testing.postgres_fixtures import postgres_container
 _DEFAULT_AGENT_TOKEN_ENV = "HAKU_CONSOLE_DEFAULT_AGENT_TOKEN"
 _DEFAULT_AGENT_OPERATOR_ENV = "HAKU_CONSOLE_DEFAULT_AGENT_OPERATOR"
 _DEFAULT_STATIC_AGENTS = [
-    {"agent": "console", "token_env_var": _DEFAULT_AGENT_TOKEN_ENV, "operator_subject_env": _DEFAULT_AGENT_OPERATOR_ENV}
+    {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "display_name": "Console Test Agent",
+        "token_env_var": _DEFAULT_AGENT_TOKEN_ENV,
+        "operator_subject_env": _DEFAULT_AGENT_OPERATOR_ENV,
+    }
 ]
 
 # App-owned operator auth for tests. A dummy `operator_oidc` (no live IdP needed) activates

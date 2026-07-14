@@ -86,7 +86,12 @@ def _static_agent_config(tmp_path: Path) -> Path:
         yaml.safe_dump(
             {
                 "static_agents": [
-                    {"agent": "haku", "token_env_var": _AGENT_TOKEN_ENV, "operator_subject_env": _AGENT_OPERATOR_ENV}
+                    {
+                        "agent_id": "10000000-0000-4000-8000-000000000001",
+                        "display_name": "Haku",
+                        "token_env_var": _AGENT_TOKEN_ENV,
+                        "operator_subject_env": _AGENT_OPERATOR_ENV,
+                    }
                 ]
             }
         ),

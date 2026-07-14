@@ -256,7 +256,14 @@ def preregistered_remote_oauth_url() -> Generator[str]:
 _AGENT_TOKEN = "tool-token"
 _AGENT_TOKEN_ENV = "HAKU_CONSOLE_TEST_AGENT_TOKEN"
 _AGENT_OPERATOR_ENV = "HAKU_CONSOLE_TEST_AGENT_OPERATOR"
-_STATIC_AGENTS = [{"agent": "haku", "token_env_var": _AGENT_TOKEN_ENV, "operator_subject_env": _AGENT_OPERATOR_ENV}]
+_STATIC_AGENTS = [
+    {
+        "agent_id": "30000000-0000-4000-8000-000000000001",
+        "display_name": "Haku",
+        "token_env_var": _AGENT_TOKEN_ENV,
+        "operator_subject_env": _AGENT_OPERATOR_ENV,
+    }
+]
 
 
 @pytest.fixture(autouse=True)
@@ -1125,7 +1132,8 @@ def test_routing_executes_each_agent_as_its_own_operator(
     config["static_agents"] = [
         *_STATIC_AGENTS,
         {
-            "agent": "ops-bot",
+            "agent_id": "30000000-0000-4000-8000-000000000002",
+            "display_name": "Ops Bot",
             "token_env_var": "HAKU_CONSOLE_TEST_AGENT2_TOKEN",
             "operator_subject_env": "HAKU_CONSOLE_TEST_AGENT2_OPERATOR",
         },
@@ -1181,8 +1189,13 @@ def test_two_operator_two_agent_http_authorization_matrix(
         [{"id": "grocy-sf", "server_url": mcp_server_url, "bearer_token_secret": "haku-console-grocy-sf-token"}]
     )
     config["static_agents"] = [
-        {"agent": name, "token_env_var": token_env, "operator_subject_env": operator_env}
-        for name, _, _, token_env, operator_env in agent_specs
+        {
+            "agent_id": f"30000000-0000-4000-8000-{index:012d}",
+            "display_name": name.replace("-", " ").title(),
+            "token_env_var": token_env,
+            "operator_subject_env": operator_env,
+        }
+        for index, (name, _, _, token_env, operator_env) in enumerate(agent_specs, start=10)
     ]
     config_file = write_config(tmp_path / "two_operator_agents.yaml", config)
 

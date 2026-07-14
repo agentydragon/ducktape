@@ -117,6 +117,7 @@ def create_app(
     settings: Settings,
     *,
     loaded_static_agents: list[LoadedStaticAgent] | None = None,
+    static_agent_definitions: tuple[StaticAgentDefinition, ...] | None = None,
     tool_call_executor: mcp_approval.McpToolExecutor | None = None,
     tool_call_metadata_provider: mcp_approval.McpMetadataProvider | None = None,
     gmail_client: gmail_tools.GmailToolsClient | None = None,
@@ -138,18 +139,27 @@ def create_app(
         database_url, public_base_url=settings.public_base_url, operator_identity_store=operator_identity_store
     )
     # Read env-backed static credentials before migrations in ``main`` so the forward-only cutover
-    # can seed exact owner identities. Tests/new databases may let create_app read them here.
-    loaded_static_agents = loaded_static_agents if loaded_static_agents is not None else load_static_agents(settings)
-    static_agent_definitions = tuple(
-        StaticAgentDefinition(
-            agent_id=agent.agent_id,
-            display_name=agent.display_name,
-            operator_id=operator_identity_store.resolve_configured_external_user_key(agent.operator_external_user_key),
-            secret_reference=agent.secret_reference,
-            token_fingerprint=fingerprint_static_token(agent.token.get_secret_value()),
+    # can seed exact owner identities. Tests/new databases may let create_app read them here. Schema
+    # generation may inject already-canonical definitions because it deliberately has no database;
+    # this is the same authority input reconciled at startup, not a request-time identity shortcut.
+    if loaded_static_agents is not None and static_agent_definitions is not None:
+        raise ValueError("loaded_static_agents and static_agent_definitions are mutually exclusive")
+    if static_agent_definitions is None:
+        loaded_static_agents = (
+            loaded_static_agents if loaded_static_agents is not None else load_static_agents(settings)
         )
-        for agent in loaded_static_agents
-    )
+        static_agent_definitions = tuple(
+            StaticAgentDefinition(
+                agent_id=agent.agent_id,
+                display_name=agent.display_name,
+                operator_id=operator_identity_store.resolve_configured_external_user_key(
+                    agent.operator_external_user_key
+                ),
+                secret_reference=agent.secret_reference,
+                token_fingerprint=fingerprint_static_token(agent.token.get_secret_value()),
+            )
+            for agent in loaded_static_agents
+        )
     static_credential_registry = mcp_agent_auth.StaticAgentCredentialRegistry(
         fingerprints=tuple(definition.token_fingerprint for definition in static_agent_definitions)
     )

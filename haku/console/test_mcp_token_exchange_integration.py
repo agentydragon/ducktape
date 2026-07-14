@@ -163,7 +163,12 @@ def _console_config(path: Path, downstream_url: str) -> Path:
         path,
         {
             "static_agents": [
-                {"agent": "haku", "token_env_var": _AGENT_TOKEN_ENV, "operator_subject_env": _AGENT_OPERATOR_ENV}
+                {
+                    "agent_id": "20000000-0000-4000-8000-000000000001",
+                    "display_name": "Haku",
+                    "token_env_var": _AGENT_TOKEN_ENV,
+                    "operator_subject_env": _AGENT_OPERATOR_ENV,
+                }
             ],
             "mcp": {
                 "servers": [
