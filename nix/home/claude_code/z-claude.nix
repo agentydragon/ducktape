@@ -15,7 +15,6 @@ pkgs.writeShellScriptBin "z-claude" ''
     ANTHROPIC_BASE_URL=https://litellm.allegedly.works \
     ANTHROPIC_AUTH_TOKEN="$LITELLM_ZAI_KEY" \
     ANTHROPIC_MODEL=glm-5.2-anthropic \
-    CLAUDE_STATUSLINE_ROUTE=litellm:zai \
     claude --disallowed-tools "WebFetch WebSearch" \
     "$@"
 ''

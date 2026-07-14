@@ -9,7 +9,6 @@ GNOME extension.
 """
 
 import asyncio
-import logging
 import os
 import socket
 import sys
@@ -22,7 +21,7 @@ from rich.console import Console
 from rich.text import Text
 
 from aiquota.cache import QuotaService
-from aiquota.config import DEFAULT_CONFIG_PATH, Config, load as load_config
+from aiquota.config import DEFAULT_CONFIG_PATH, load as load_config
 from aiquota.models import ExtraSpend, FetchSuccess, ProviderQuota, QuotaWindow
 from aiquota.render.format import format_window_label
 from devinfra.claude.claude_api.credentials import read_credentials
@@ -31,8 +30,6 @@ from devinfra.claude.session_paths import default_cache_dir, hook_daemon_sock
 
 _STALE_THRESHOLD = timedelta(seconds=10)
 _SEP = Text(" ")
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -137,33 +134,22 @@ def _daemon_healthy(sock_path: Path, timeout: float = 0.5) -> bool:
         return False
 
 
-def _detect_quota_route(*, base_url: str, model_id: str, explicit_route: str) -> QuotaRoute:
+def _detect_quota_route(*, base_url: str, model_id: str) -> QuotaRoute:
     """Attribute a session to a quota provider, failing closed when ambiguous.
 
-    Wrappers that know their upstream should set ``CLAUDE_STATUSLINE_ROUTE`` to
-    ``<transport>:<provider>``. Endpoint and model detection remain as fallbacks
-    for direct sessions and older wrappers.
+    Direct endpoints identify their provider. The repository's LiteLLM endpoint
+    additionally uses the model slug to distinguish GLM from unknown routes.
     """
-    if explicit_route:
-        transport, separator, provider = explicit_route.partition(":")
-        if separator and transport in {"direct", "litellm"} and provider in {"claude", "zai"}:
-            if transport == "direct" and provider == "claude":
-                return QuotaRoute(provider="claude")
-            provider_label = "z.ai" if provider == "zai" else "claude"
-            label = provider_label if transport == "direct" else f"litellm→{provider_label}"
-            return QuotaRoute(provider=provider, label=label)
-        return QuotaRoute(provider=None, label="route→?")
-
     if not base_url:
         return QuotaRoute(provider="claude")
     host = urlparse(base_url).hostname or ""
     if host == "api.anthropic.com":
         return QuotaRoute(provider="claude")
     if host == "z.ai" or host.endswith(".z.ai"):
-        return QuotaRoute(provider="zai", label="z.ai")
+        return QuotaRoute(provider="zai", label="zai")
     if host == "litellm.allegedly.works":
         if model_id.lower().startswith("glm-"):
-            return QuotaRoute(provider="zai", label="litellm→z.ai")
+            return QuotaRoute(provider="zai", label="litellm→zai")
         return QuotaRoute(provider=None, label="litellm→?")
     return QuotaRoute(provider=None, label="proxy→?")
 
@@ -177,6 +163,7 @@ def render(
     now: datetime,
     daemon_healthy: bool,
     quota_route: QuotaRoute | None = None,
+    quota_error: str | None = None,
 ) -> str:
     """Render the statusline as a plain string."""
     model_name = (data.model.display_name or data.model.id) if data.model else "unknown"
@@ -205,7 +192,10 @@ def render(
     if context_text is not None:
         segments.append(context_text)
 
-    if quota_route is not None and quota_route.provider is None:
+    if quota_error is not None:
+        route_prefix = f"{quota_route.label} " if quota_route is not None and quota_route.label is not None else ""
+        segments.append(Text(f"{route_prefix}{quota_error}", style="red"))
+    elif quota_route is not None and quota_route.provider is None:
         segments.append(Text(f"{quota_route.label or 'provider→?'} quota unknown", style="dim"))
     else:
         quota_text = _format_quota(quota, now=now)
@@ -242,24 +232,21 @@ def main() -> None:
     is_subscription = oauth is not None and oauth.subscription_type is not None
 
     model_id = (data.model.id if data.model is not None else "") or os.environ.get("ANTHROPIC_MODEL", "")
-    quota_route = _detect_quota_route(
-        base_url=os.environ.get("ANTHROPIC_BASE_URL", ""),
-        model_id=model_id,
-        explicit_route=os.environ.get("CLAUDE_STATUSLINE_ROUTE", ""),
-    )
+    quota_route = _detect_quota_route(base_url=os.environ.get("ANTHROPIC_BASE_URL", ""), model_id=model_id)
 
     # Quota comes from aiquota's shared cache (read + populated by fetch_all).
     # Do not fetch or display any provider's quota when attribution is unknown.
     quota: ProviderQuota | None = None
+    quota_error: str | None = None
     if quota_route.provider is not None:
         try:
             config = load_config(DEFAULT_CONFIG_PATH)
         except Exception:
-            logger.debug("Failed to load aiquota config, using defaults", exc_info=True)
-            config = Config()
-        service = QuotaService(config=config)
-        quotas = asyncio.run(service.fetch_all())
-        quota = next((pq for pq in quotas.providers if pq.provider == quota_route.provider), None)
+            quota_error = "aiquota config error"
+        else:
+            service = QuotaService(config=config)
+            quotas = asyncio.run(service.fetch_all())
+            quota = next((pq for pq in quotas.providers if pq.provider == quota_route.provider), None)
 
     home_env = os.environ.get("HOME")
     output = render(
@@ -270,6 +257,7 @@ def main() -> None:
         now=datetime.now(UTC),
         daemon_healthy=_daemon_healthy(hook_daemon_sock(data.session_id)),
         quota_route=quota_route,
+        quota_error=quota_error,
     )
     sys.stdout.write(output)
 

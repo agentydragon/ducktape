@@ -22,7 +22,7 @@ from devinfra.claude.statusline.statusline import (
 
 _SHORT_WINDOW_SECS = 5 * 3600
 _LONG_WINDOW_SECS = 7 * 86400
-_LITELLM_ZAI_ROUTE = QuotaRoute(provider="zai", label="litellm→z.ai")
+_LITELLM_ZAI_ROUTE = QuotaRoute(provider="zai", label="litellm→zai")
 _UNKNOWN_LITELLM_ROUTE = QuotaRoute(provider=None, label="litellm→?")
 
 
@@ -324,39 +324,31 @@ def test_format_context_colors(pct: float, expected_text: str, expected_style: s
 
 
 @pytest.mark.parametrize(
-    ("base_url", "model_id", "explicit_route", "expected"),
+    ("base_url", "model_id", "expected"),
     [
         pytest.param(
-            "https://litellm.allegedly.works",
-            "glm-5.2-anthropic",
-            "litellm:zai",
-            _LITELLM_ZAI_ROUTE,
-            id="explicit_litellm_zai",
+            "https://api.z.ai/api/anthropic", "glm-5.2", QuotaRoute(provider="zai", label="zai"), id="direct_zai"
         ),
         pytest.param(
-            "https://api.z.ai/api/anthropic", "glm-5.2", "", QuotaRoute(provider="zai", label="z.ai"), id="direct_zai"
+            "https://litellm.allegedly.works", "glm-5.2-anthropic", _LITELLM_ZAI_ROUTE, id="litellm_glm_fallback"
         ),
         pytest.param(
-            "https://litellm.allegedly.works", "glm-5.2-anthropic", "", _LITELLM_ZAI_ROUTE, id="litellm_glm_fallback"
-        ),
-        pytest.param(
-            "https://litellm.allegedly.works", "some-model-alias", "", _UNKNOWN_LITELLM_ROUTE, id="ambiguous_litellm"
+            "https://litellm.allegedly.works", "some-model-alias", _UNKNOWN_LITELLM_ROUTE, id="ambiguous_litellm"
         ),
         pytest.param(
             "https://unknown-proxy.example",
             "claude-opus-4-6",
-            "",
             QuotaRoute(provider=None, label="proxy→?"),
             id="ambiguous_proxy",
         ),
         pytest.param(
-            "https://api.anthropic.com", "claude-opus-4-6", "", QuotaRoute(provider="claude"), id="default_anthropic"
+            "https://api.anthropic.com", "claude-opus-4-6", QuotaRoute(provider="claude"), id="default_anthropic"
         ),
-        pytest.param("", "claude-opus-4-6", "", QuotaRoute(provider="claude"), id="unset"),
+        pytest.param("", "claude-opus-4-6", QuotaRoute(provider="claude"), id="unset"),
     ],
 )
-def test_detect_quota_route(base_url: str, model_id: str, explicit_route: str, expected: QuotaRoute):
-    assert _detect_quota_route(base_url=base_url, model_id=model_id, explicit_route=explicit_route) == expected
+def test_detect_quota_route(base_url: str, model_id: str, expected: QuotaRoute):
+    assert _detect_quota_route(base_url=base_url, model_id=model_id) == expected
 
 
 # Fixed "now" for deterministic quota formatting
@@ -422,16 +414,27 @@ def test_render_minimal(snapshot: SnapshotAssertion):
 
 
 @pytest.mark.parametrize(
-    ("quota_route", "include_quota", "expected_parts", "unexpected"),
+    ("quota_route", "include_quota", "quota_error", "expected_parts", "unexpected"),
     [
-        pytest.param(_LITELLM_ZAI_ROUTE, True, ("litellm→z.ai", "5h:24%", "7d:61%"), None, id="known_with_quota"),
-        pytest.param(_LITELLM_ZAI_ROUTE, False, ("litellm→z.ai quota unavailable",), None, id="known_without_quota"),
+        pytest.param(_LITELLM_ZAI_ROUTE, True, None, ("litellm→zai", "5h:24%", "7d:61%"), None, id="known_with_quota"),
+        pytest.param(
+            _LITELLM_ZAI_ROUTE, False, None, ("litellm→zai quota unavailable",), None, id="known_without_quota"
+        ),
         pytest.param(
             _UNKNOWN_LITELLM_ROUTE,
             True,
+            None,
             ("litellm→? quota unknown",),
             "7d:61%",
             id="unknown_suppresses_mismatched_quota",
+        ),
+        pytest.param(
+            _LITELLM_ZAI_ROUTE,
+            False,
+            "aiquota config error",
+            ("litellm→zai aiquota config error",),
+            "quota unavailable",
+            id="config_error",
         ),
     ],
 )
@@ -439,6 +442,7 @@ def test_render_quota_route_status(
     full_input: Input,
     quota_route: QuotaRoute,
     include_quota: bool,
+    quota_error: str | None,
     expected_parts: tuple[str, ...],
     unexpected: str | None,
 ):
@@ -450,6 +454,7 @@ def test_render_quota_route_status(
         now=_NOW,
         daemon_healthy=True,
         quota_route=quota_route,
+        quota_error=quota_error,
     )
     assert all(part in result for part in expected_parts)
     if unexpected is not None:
