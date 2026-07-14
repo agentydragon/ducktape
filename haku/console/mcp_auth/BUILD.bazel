@@ -9,6 +9,7 @@ py_library(
         "fastmcp_adapter.py",
     ],
     deps = [
+        "//haku/console:tool_call_actor",
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:fastmcp_proxy",
         "//mcp_infra/authentik_auth:oidc_principal",
@@ -26,6 +27,7 @@ py_test(
     deps = [
         ":fastmcp_adapter",
         "//:conftest",
+        "//haku/console:tool_call_actor",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//mcp",

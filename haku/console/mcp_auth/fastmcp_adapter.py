@@ -46,6 +46,7 @@ from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse, Response
 
+from haku.console.tool_call_actor import AgentActor
 from mcp_infra.authentik_auth.fastmcp_proxy import RetryableRefreshOIDCProxy
 from mcp_infra.authentik_auth.oidc_principal import (
     AuthentikOidcPrincipalResolver,
@@ -109,13 +110,13 @@ class AuthorizationRequest:
 class GrantAuthorization:
     """A current binding-backed resolution of a Haku grant.
 
-    ``binding_id`` is an ephemeral resolved result for Haku's request boundary;
-    it is not embedded in the OAuth token.  ``client_id`` remains binding and
-    audit evidence, not the key from which an Agent is identified.
+    ``actor`` is the terminal canonical principal resolved by Haku's authority;
+    none of its IDs are embedded in the OAuth token. ``client_id`` remains
+    credential-binding and audit evidence, not an Agent identity key.
     """
 
     grant_id: UUID
-    binding_id: UUID
+    actor: AgentActor
     client_id: str
     allowed_scopes: frozenset[str]
 
@@ -179,10 +180,10 @@ class AgentGrantAuthority(Protocol):
     async def revoke_grant(self, *, grant_id: UUID) -> None: ...
 
 
-class StaticToolCredentialDiscriminator(Protocol):
-    """Recognize one already-verified non-OAuth credential for tool dispatch."""
+class StaticAgentActorResolver(Protocol):
+    """Resolve one verified non-OAuth credential to a canonical active actor."""
 
-    def is_recognized_static_credential(self, access_token: AccessToken) -> bool: ...
+    async def resolve_static_actor(self, access_token: AccessToken) -> AgentActor | None: ...
 
 
 class DuplicateAuthorizationError(Exception):
@@ -203,6 +204,10 @@ class GrantRejectedError(Exception):
 
 class AgentGrantAuthorityUnavailableError(Exception):
     """Haku cannot currently make an authoritative grant decision."""
+
+
+class AgentActorAuthorityUnavailableError(Exception):
+    """Haku cannot currently resolve a verified credential's canonical actor."""
 
 
 class BearerVerificationUnavailableError(AuthenticationError):
@@ -323,8 +328,8 @@ class FailureObservingJWTVerifier(JWTVerifier):
             raise
 
 
-class AgentGrantActivationUnavailableError(ToolError):
-    """A verified tool call could not activate/check its grant; retry is safe."""
+class AgentActorResolutionUnavailableError(ToolError):
+    """A verified tool call could not resolve its canonical actor; retry is safe."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -354,12 +359,22 @@ _GRANT_REQUEST_CONTEXT: ContextVar[GrantRequestContext | None] = ContextVar(
 _BEARER_FAILURE_OBSERVATION: ContextVar[_BearerFailureObservation | None] = ContextVar(
     "haku_bearer_failure_observation", default=None
 )
+_AGENT_ACTOR_CONTEXT: ContextVar[AgentActor | None] = ContextVar("haku_agent_actor", default=None)
 
 
 def current_grant_request_context() -> GrantRequestContext | None:
     """Return the grant being checked inside the current bearer verification."""
 
     return _GRANT_REQUEST_CONTEXT.get()
+
+
+def get_agent_actor() -> AgentActor:
+    """FastMCP dependency accessor for the current authenticated Agent."""
+
+    actor = _AGENT_ACTOR_CONTEXT.get()
+    if actor is None:
+        raise ToolError("Agent actor is unavailable outside an authenticated tool call")
+    return actor
 
 
 def observe_bearer_operational_failure(error: BaseException) -> None:
@@ -444,13 +459,10 @@ class HakuAgentGrantMiddleware(FastMCPMiddleware):
     """
 
     def __init__(
-        self,
-        grant_authority: AgentGrantAuthority,
-        *,
-        static_credentials: StaticToolCredentialDiscriminator | None = None,
+        self, grant_authority: AgentGrantAuthority, *, static_actor_resolver: StaticAgentActorResolver | None = None
     ) -> None:
         self._grant_authority = grant_authority
-        self._static_credentials = static_credentials
+        self._static_actor_resolver = static_actor_resolver
 
     async def on_call_tool(
         self,
@@ -461,9 +473,30 @@ class HakuAgentGrantMiddleware(FastMCPMiddleware):
         if token is None:
             raise ToolError("Agent grant is missing")
         if "upstream_claims" not in token.claims:
-            if self._static_credentials is not None and self._static_credentials.is_recognized_static_credential(token):
-                return await call_next(context)
+            actor = await self._resolve_static_actor(token)
+        else:
+            actor = await self._activate_oauth_actor(token)
+
+        actor_token = _AGENT_ACTOR_CONTEXT.set(actor)
+        try:
+            return await call_next(context)
+        finally:
+            _AGENT_ACTOR_CONTEXT.reset(actor_token)
+
+    async def _resolve_static_actor(self, token: AccessToken) -> AgentActor:
+        if self._static_actor_resolver is None:
             raise ToolError("Agent grant is missing")
+        try:
+            actor = _validate_agent_actor(await self._static_actor_resolver.resolve_static_actor(token))
+        except (AgentActorAuthorityUnavailableError, AgentGrantAuthorityUnavailableError) as error:
+            raise AgentActorResolutionUnavailableError(
+                "Agent authorization is temporarily unavailable; retry the tool call"
+            ) from error
+        except GrantRejectedError:
+            raise ToolError("Agent grant is missing") from None
+        return actor
+
+    async def _activate_oauth_actor(self, token: AccessToken) -> AgentActor:
         try:
             grant_id = _grant_id_from_claims(token.claims)
             client_id = _required_nonblank_string(token.client_id, field_name="client_id")
@@ -479,10 +512,10 @@ class HakuAgentGrantMiddleware(FastMCPMiddleware):
         except GrantRejectedError:
             raise ToolError("Agent grant is not active") from None
         except AgentGrantAuthorityUnavailableError as error:
-            raise AgentGrantActivationUnavailableError(
+            raise AgentActorResolutionUnavailableError(
                 "Agent authorization is temporarily unavailable; retry the tool call"
             ) from error
-        return await call_next(context)
+        return authorization.actor
 
 
 class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
@@ -668,7 +701,7 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
             after = await self._grant_authority.grant_for_refresh(
                 grant_id=reference.grant_id, client_id=client_id, requested_scopes=issued_scopes
             )
-            _require_same_binding(authorization, after, scopes=issued_scopes)
+            _require_same_actor(authorization, after, scopes=issued_scopes)
         except GrantRejectedError:
             raise TokenError("invalid_grant", _INVALID_GRANT) from None
         except AgentGrantAuthorityUnavailableError as error:
@@ -725,7 +758,7 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
             after = await self._grant_authority.grant_for_access(
                 grant_id=reference.grant_id, client_id=reference.client_id, token_scopes=returned_scopes
             )
-            _require_same_binding(authorization, after, scopes=returned_scopes)
+            _require_same_actor(authorization, after, scopes=returned_scopes)
         except (GrantRejectedError, KeyError, TypeError, ValueError):
             return None
         except AgentGrantAuthorityUnavailableError as error:
@@ -901,18 +934,31 @@ def _validate_grant_authorization(
     if (
         not isinstance(authorization.grant_id, UUID)
         or authorization.grant_id.int == 0
-        or not isinstance(authorization.binding_id, UUID)
-        or authorization.binding_id.int == 0
         or authorization.grant_id != grant_id
         or authorization.client_id != client_id
         or not scopes <= authorization.allowed_scopes
     ):
         raise GrantRejectedError
+    _validate_agent_actor(authorization.actor)
 
 
-def _require_same_binding(before: GrantAuthorization, after: GrantAuthorization, *, scopes: frozenset[str]) -> None:
+def _validate_agent_actor(actor: object) -> AgentActor:
+    if (
+        not isinstance(actor, AgentActor)
+        or not isinstance(actor.agent_id, UUID)
+        or actor.agent_id.int == 0
+        or not isinstance(actor.operator_id, UUID)
+        or actor.operator_id.int == 0
+        or not isinstance(actor.binding_id, UUID)
+        or actor.binding_id.int == 0
+    ):
+        raise GrantRejectedError
+    return actor
+
+
+def _require_same_actor(before: GrantAuthorization, after: GrantAuthorization, *, scopes: frozenset[str]) -> None:
     _validate_grant_authorization(after, grant_id=before.grant_id, client_id=before.client_id, scopes=scopes)
-    if after.binding_id != before.binding_id:
+    if after.actor != before.actor:
         raise GrantRejectedError
 
 
