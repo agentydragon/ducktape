@@ -20,7 +20,7 @@ import logging
 from collections.abc import Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol, SupportsFloat, override
+from typing import TYPE_CHECKING, Any, Protocol, SupportsFloat, cast, override
 from uuid import UUID
 
 import fastmcp
@@ -241,7 +241,8 @@ class BearerFailureObservingKeyValue(BaseWrapper):
     @override
     async def get(self, key: str, *, collection: str | None = None) -> dict[str, Any] | None:
         try:
-            return await super().get(key, collection=collection)
+            value = await super().get(key, collection=collection)
+            return cast(dict[str, Any] | None, value)
         except Exception as error:
             observe_bearer_operational_failure(error)
             raise
@@ -249,7 +250,8 @@ class BearerFailureObservingKeyValue(BaseWrapper):
     @override
     async def get_many(self, keys: Sequence[str], *, collection: str | None = None) -> list[dict[str, Any] | None]:
         try:
-            return await super().get_many(keys, collection=collection)
+            values = await super().get_many(keys, collection=collection)
+            return cast(list[dict[str, Any] | None], values)
         except Exception as error:
             observe_bearer_operational_failure(error)
             raise
@@ -257,7 +259,8 @@ class BearerFailureObservingKeyValue(BaseWrapper):
     @override
     async def ttl(self, key: str, *, collection: str | None = None) -> tuple[dict[str, Any] | None, float | None]:
         try:
-            return await super().ttl(key, collection=collection)
+            value_and_ttl = await super().ttl(key, collection=collection)
+            return cast(tuple[dict[str, Any] | None, float | None], value_and_ttl)
         except Exception as error:
             observe_bearer_operational_failure(error)
             raise
@@ -267,7 +270,8 @@ class BearerFailureObservingKeyValue(BaseWrapper):
         self, keys: Sequence[str], *, collection: str | None = None
     ) -> list[tuple[dict[str, Any] | None, float | None]]:
         try:
-            return await super().ttl_many(keys, collection=collection)
+            values_and_ttls = await super().ttl_many(keys, collection=collection)
+            return cast(list[tuple[dict[str, Any] | None, float | None]], values_and_ttls)
         except Exception as error:
             observe_bearer_operational_failure(error)
             raise
@@ -300,7 +304,8 @@ class BearerFailureObservingKeyValue(BaseWrapper):
     @override
     async def delete(self, key: str, *, collection: str | None = None) -> bool:
         try:
-            return await super().delete(key, collection=collection)
+            deleted = await super().delete(key, collection=collection)
+            return cast(bool, deleted)
         except Exception as error:
             observe_bearer_operational_failure(error)
             raise
@@ -308,7 +313,8 @@ class BearerFailureObservingKeyValue(BaseWrapper):
     @override
     async def delete_many(self, keys: Sequence[str], *, collection: str | None = None) -> int:
         try:
-            return await super().delete_many(keys, collection=collection)
+            deleted = await super().delete_many(keys, collection=collection)
+            return cast(int, deleted)
         except Exception as error:
             observe_bearer_operational_failure(error)
             raise
