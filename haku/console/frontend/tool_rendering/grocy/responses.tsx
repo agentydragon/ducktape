@@ -1,16 +1,18 @@
 // Result rendering for the remote `grocy-sf` server's batch tools (the argument-side widgets
-// live in ./requests.tsx). Each batch tool returns one row per input item — `kind:
-// "ok"` with per-op details, or a failing kind with an `error` message — so the widgets show
-// an ok/failed count summary (compact adds the first few product names) and, detailed, every
-// row with its amounts/units/locations, failed rows in red. Hand-authored against
-// grocy_mcp/mcp_types.py's StockOpOk / CreateOk / ShoppingListItemOk (+ their error rows) and
-// lenient about extra keys, since the remote server's output schemas are not in the build-time
-// catalog and can grow fields under the console.
+// live in ./requests.tsx). Each batch tool returns one row per input item — `kind: "ok"` with
+// per-op details, or `kind: "error"` with an `error` message — so the widgets show an ok/failed
+// count summary (compact adds the first few product names) and, detailed, every row with its
+// amounts/units/locations, failed rows in red. The result schemas are the FastMCP-advertised
+// output schemas (generated in mcp_tool_result_schema.ts from tools/list). The two tools with no
+// reliable generated schema — `shopping_list_get` (returns a bare dict → empty output schema) and
+// `get_system_info` (an OpenAPI tool with no batch counterpart, not in the catalog) — keep
+// hand-authored schemas at the bottom.
 
 import { Group, Stack } from "@mantine/core";
 import type { ReactNode } from "react";
 import { z } from "zod";
 
+import { mcpToolResultSchema } from "../../mcp_tool_result_schema.ts";
 import {
   COMPACT_ITEM_LIMIT,
   MoreLine,
@@ -20,64 +22,30 @@ import {
   type PreviewVariant,
 } from "../vocabulary.tsx";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
+import { GROCY_SERVER_ID } from "./requests.tsx";
 
-const zErrorRow = z.looseObject({
-  kind: z.literal("error"),
-  error: z.string(),
-});
+// A batch result is a list of per-item rows: an ok variant (per-op details) or an error variant
+// (an `error` message). FastMCP emits the union as `anyOf`; both variants carry an optional `kind`
+// default, so split on `error` presence rather than the `kind` discriminant. The ok row for a given
+// tool is the array element without an `error` field.
+type ErrorRow = { error: string };
+type OkRowOf<Result> = Result extends (infer Element)[] ? Exclude<Element, ErrorRow> : never;
 
-// grocy_mcp's StockOpOk. `new_amount`/`entry_id`/`best_before_date` are best-effort on the
-// server (null when a follow-up read fails), so nullish here.
-const zStockAddOkRow = z.looseObject({
-  kind: z.literal("ok"),
-  product_name: z.string(),
-  amount_delta: z.number().nullish(),
-  new_amount: z.number().nullish(),
-  qu_name: z.string(),
-  location_name: z.string(),
-  best_before_date: z.string().nullish(),
-});
+const zStockAddResult = mcpToolResultSchema(GROCY_SERVER_ID, "stock_add");
+const zProductsCreateResult = mcpToolResultSchema(GROCY_SERVER_ID, "products_create");
+const zShoppingListItemsAddResult = mcpToolResultSchema(GROCY_SERVER_ID, "shopping_list_items_add");
+const zShoppingListItemsRemoveResult = mcpToolResultSchema(GROCY_SERVER_ID, "shopping_list_items_remove");
+const zStockEntryEditResult = mcpToolResultSchema(GROCY_SERVER_ID, "stock_entry_edit");
+const zStockGetResult = mcpToolResultSchema(GROCY_SERVER_ID, "stock_get");
+const zProductsListResult = mcpToolResultSchema(GROCY_SERVER_ID, "products_list");
+const zQuantityUnitsListResult = mcpToolResultSchema(GROCY_SERVER_ID, "quantity_units_list");
 
-// grocy_mcp's CreateOk carries only `created_object_id` today; `product_name` is accepted so a
-// server that starts naming its rows renders names without a schema change here.
-const zProductsCreateOkRow = z.looseObject({
-  kind: z.literal("ok"),
-  created_object_id: z.number().nullish(),
-  product_name: z.string().nullish(),
-});
+type StockAddOkRow = OkRowOf<z.infer<typeof zStockAddResult>>;
+type ProductsCreateOkRow = OkRowOf<z.infer<typeof zProductsCreateResult>>;
+type ShoppingListItemOkRow = OkRowOf<z.infer<typeof zShoppingListItemsAddResult>>;
+type StockEntryEditOkRow = OkRowOf<z.infer<typeof zStockEntryEditResult>>;
 
-// grocy_mcp's ShoppingListItemOk. `product_name`/`qu_name` are null for note-only items.
-const zShoppingListItemOkRow = z.looseObject({
-  kind: z.literal("ok"),
-  item_id: z.number(),
-  product_name: z.string().nullish(),
-  amount: z.number(),
-  qu_name: z.string().nullish(),
-});
-
-const zStockEntryEditOkRow = z.looseObject({
-  kind: z.literal("ok"),
-  entry: z.looseObject({
-    entry_id: z.number(),
-    product_name: z.string(),
-    amount: z.number(),
-    qu_name: z.string(),
-    location_name: z.string(),
-    best_before_date: z.string().nullish(),
-    open: z.boolean(),
-  }),
-  changes: z.record(z.string(), z.looseObject({ old: z.unknown(), new: z.unknown() })).nullish(),
-});
-const zStockEntryRow = z.looseObject({
-  product_name: z.string(),
-  amount: z.number(),
-  amount_opened: z.number(),
-  qu_name: z.string(),
-  location_name: z.string(),
-  best_before_date: z.string().nullish(),
-});
-const zNamedRow = z.looseObject({ id: z.number(), name: z.string() });
-const zQuantityUnitRow = zNamedRow.extend({ name_plural: z.string().nullish() });
+// These two have no reliable generated result schema, so they stay hand-authored (see header).
 const zShoppingListGetResult = z.looseObject({
   name: z.string(),
   description: z.string().nullish(),
@@ -92,29 +60,17 @@ const zShoppingListGetResult = z.looseObject({
     })
   ),
 });
-
-const zStockAddResult = z.array(z.discriminatedUnion("kind", [zStockAddOkRow, zErrorRow]));
-const zProductsCreateResult = z.array(z.discriminatedUnion("kind", [zProductsCreateOkRow, zErrorRow]));
-const zShoppingListItemsAddResult = z.array(z.discriminatedUnion("kind", [zShoppingListItemOkRow, zErrorRow]));
-const zStockEntryEditResult = z.array(z.discriminatedUnion("kind", [zStockEntryEditOkRow, zErrorRow]));
-const zStockGetResult = z.array(zStockEntryRow);
-const zProductsListResult = z.array(zNamedRow);
-const zQuantityUnitsListResult = z.array(zQuantityUnitRow);
 const zSystemInfoResult = z.looseObject({});
-const zShoppingListItemsRemoveResult = z.array(z.discriminatedUnion("kind", [zShoppingListItemOkRow, zErrorRow]));
 
-type ErrorRow = z.infer<typeof zErrorRow>;
-type StockAddOkRow = z.infer<typeof zStockAddOkRow>;
-type ProductsCreateOkRow = z.infer<typeof zProductsCreateOkRow>;
-type ShoppingListItemOkRow = z.infer<typeof zShoppingListItemOkRow>;
-type StockEntryEditOkRow = z.infer<typeof zStockEntryEditOkRow>;
-
-function splitRows<Ok extends { kind: "ok" }>(rows: readonly (Ok | ErrorRow)[]): { ok: Ok[]; failed: ErrorRow[] } {
+function splitRows<Ok extends object>(rows: readonly (Ok | ErrorRow)[]): { ok: Ok[]; failed: ErrorRow[] } {
   const ok: Ok[] = [];
   const failed: ErrorRow[] = [];
   for (const row of rows) {
-    if (row.kind === "ok") ok.push(row);
-    else failed.push(row);
+    // An error row carries an `error` field; an ok row never does (see grocy_mcp.mcp_types). The
+    // `in` check picks the branch at runtime; both sides are cast because a generic `Ok` can't be
+    // narrowed away from `ErrorRow` structurally.
+    if ("error" in row) failed.push(row as ErrorRow);
+    else ok.push(row as Ok);
   }
   return { ok, failed };
 }
@@ -135,9 +91,9 @@ function ResultSummary({ okCount, failedCount, verb }: { okCount: number; failed
   );
 }
 
-/** Shared shape of all three batch-result widgets: the count summary, then compact's first few
- * row names (+ "… +N more") or detailed's full per-row lines with failed rows in red. */
-function BatchResultView<Ok extends { kind: "ok" }>({
+/** Shared shape of the batch-result widgets: the count summary, then compact's first few row names
+ * (+ "… +N more") or detailed's full per-row lines with failed rows in red. */
+function BatchResultView<Ok extends object>({
   rows,
   variant,
   verb,
@@ -150,7 +106,7 @@ function BatchResultView<Ok extends { kind: "ok" }>({
   rowName: (row: Ok) => string;
   RowView: (props: { row: Ok }) => ReactNode;
 }) {
-  const { ok, failed } = splitRows(rows);
+  const { ok, failed } = splitRows<Ok>(rows);
   if (variant === "compact") {
     const shown = ok.slice(0, COMPACT_ITEM_LIMIT);
     return (
@@ -207,8 +163,9 @@ function StockAddResultView({ result, variant }: ResultPreviewProps<z.infer<type
   );
 }
 
+// CreateOk carries only `created_object_id` (no name), so a created row is identified by its id.
 function productsCreateRowName(row: ProductsCreateOkRow): string {
-  return row.product_name ?? (row.created_object_id != null ? `product #${row.created_object_id}` : "product");
+  return row.created_object_id != null ? `product #${row.created_object_id}` : "product";
 }
 
 function ProductsCreateResultRow({ row }: { row: ProductsCreateOkRow }) {
@@ -217,11 +174,6 @@ function ProductsCreateResultRow({ row }: { row: ProductsCreateOkRow }) {
       <PreviewText span fw={600}>
         {productsCreateRowName(row)}
       </PreviewText>
-      {row.product_name != null && row.created_object_id != null && (
-        <PreviewText span c="dimmed">
-          #{row.created_object_id}
-        </PreviewText>
-      )}
     </Group>
   );
 }
@@ -339,7 +291,9 @@ function StockGetResultView({ result, variant }: ResultPreviewProps<z.infer<type
   );
 }
 
-function NamedRowsResultView({ result, variant }: ResultPreviewProps<z.infer<typeof zProductsListResult>>) {
+// products_list and quantity_units_list both return rows shaped `{id, name}` (a brief/full union);
+// either's result is assignable here, so the view is decoupled from one specific schema.
+function NamedRowsResultView({ result, variant }: ResultPreviewProps<{ id: number; name: string }[]>) {
   const rows = variant === "compact" ? result.slice(0, COMPACT_ITEM_LIMIT) : result;
   return (
     <Stack gap={2}>

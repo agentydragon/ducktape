@@ -69,6 +69,7 @@ describe("grocyResultPreviews", () => {
               kind: "ok",
               entry: {
                 entry_id: 189,
+                product_id: 11,
                 product_name: "Avocado Oil",
                 amount: 500,
                 qu_name: "Milliliter",
@@ -91,6 +92,7 @@ describe("grocyResultPreviews", () => {
         grocyResultPreviews.stock_get,
         [
           {
+            product_id: 1,
             product_name: "Oats",
             amount: 500,
             amount_opened: 0,
