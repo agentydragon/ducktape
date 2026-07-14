@@ -1,0 +1,80 @@
+# CLIProxyAPI: Anthropic Messages (/v1/messages) <-> ChatGPT/Codex subscription backend,
+# with tool-call translation (function_call -> tool_use). Backs the `codex-claude` wrapper.
+# Goes direct to chatgpt.com; it holds and auto-refreshes its OWN Codex OAuth session in
+# the PVC (see README for the one-time device login). Bypasses LiteLLM for codex.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cli-proxy-api
+  namespace: cli-proxy-api
+  labels:
+    app.kubernetes.io/name: cli-proxy-api
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cli-proxy-api
+  # Recreate: single owner of the refresh-rotated Codex token on the PVC.
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cli-proxy-api
+    spec:
+      # seaweedfs-ovh PVC; the SeaweedFS CSI node plugin runs on OVH (hil-ovh) nodes.
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      initContainers:
+        - name: init-auth-dir
+          image: busybox:1.37
+          command: [sh, -c, "mkdir -p /data/auth"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      containers:
+        - name: cli-proxy-api
+          # Pinned by digest (eceasy/cli-proxy-api is a third-party Docker Hub image with
+          # no version-tag discipline). Bump by repulling :latest and re-pinning.
+          image: eceasy/cli-proxy-api@sha256:aeaa68c78e53e7efcc42187170218c83369cdffbb706ea70584fd72c072b7fcd
+          workingDir: /CLIProxyAPI
+          # The image has CMD [./CLIProxyAPI] but no ENTRYPOINT, so k8s `args` alone would
+          # replace the binary. Set `command` explicitly and pass -config via args.
+          command: ["./CLIProxyAPI"]
+          args: [-config, /config/config.yaml]
+          ports:
+            - name: http
+              containerPort: 8317
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: 8317
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8317
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: config
+          secret:
+            secretName: cli-proxy-api-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: cli-proxy-api-data
