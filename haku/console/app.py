@@ -160,7 +160,7 @@ def create_app(settings: Settings) -> FastAPI:
         try:
             # Pre-warm the OIDCProxy client-state store so the first OAuth request isn't slowed by a
             # cold connect (see mcp_infra/oauth_facade/server.py).
-            if mcp_oauth_storage is not None and hasattr(mcp_oauth_storage, "setup"):
+            if mcp_oauth_storage is not None:
                 await mcp_oauth_storage.setup()
             # FastMCP's streamable-http session manager runs under mcp_asgi.lifespan; reflect the
             # connected servers into the tool surface once it is up.

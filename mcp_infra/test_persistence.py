@@ -7,6 +7,7 @@ from collections.abc import Generator
 
 import pytest
 import pytest_bazel
+from key_value.aio.stores.postgresql import PostgreSQLStore
 from key_value.aio.stores.valkey import ValkeyStore
 from testcontainers.postgres import PostgresContainer
 
@@ -41,6 +42,7 @@ def test_build_client_storage_variants() -> None:
 
 async def test_postgres_store_round_trip(postgres_url: str) -> None:
     store = build_client_storage(PostgresPersistence(kind="postgres", url=postgres_url, table_name="mcp_oauth_kv"))
+    assert isinstance(store, PostgreSQLStore)
     await store.setup()  # auto_create=True -> creates the table on first setup
 
     await store.put("agent-1", {"client_secret": "s"}, collection="clients")

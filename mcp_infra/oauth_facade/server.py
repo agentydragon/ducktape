@@ -22,14 +22,16 @@ from mcp_infra.authentik_auth.auth import build_authentik_auth
 from mcp_infra.oauth_facade.config import FacadeSettings
 from mcp_infra.oauth_facade.proxy import build_proxy_server
 from mcp_infra.oauth_facade.upstream_probe import ProbeState, run_probe_loop
-from mcp_infra.persistence import build_client_storage
+from mcp_infra.persistence import OAuthClientStorage, build_client_storage
 from mcp_infra.static_bearer import StaticBearerGuard
 from mcp_infra.tool_filter import ToolFilterMiddleware
 
 logger = logging.getLogger(__name__)
 
 
-def build_server(settings: FacadeSettings, *, auth_provider: Any | None = None) -> tuple[Any, Any]:
+def build_server(
+    settings: FacadeSettings, *, auth_provider: Any | None = None
+) -> tuple[Any, OAuthClientStorage | None]:
     """Build the facade FastMCP server. `auth_provider` is injectable for tests.
 
     Returns `(server, client_storage)` so the caller can pre-warm the storage
@@ -86,7 +88,7 @@ def create_app(settings: FacadeSettings, *, auth_provider: Any | None = None) ->
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
-        if client_storage is not None and hasattr(client_storage, "setup"):
+        if client_storage is not None:
             await client_storage.setup()
             logger.info("client_storage pre-warmed (no lazy first-request init)")
         # Metrics on a dedicated cluster-internal port, off the public HTTPRoute.

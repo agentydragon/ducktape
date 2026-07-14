@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from key_value.aio.stores.postgresql import PostgreSQLStore
 from key_value.aio.stores.valkey import ValkeyStore
@@ -33,9 +33,10 @@ class PostgresPersistence(BaseModel):
 
 
 PersistenceConfig = Annotated[FilePersistence | ValkeyPersistence | PostgresPersistence, Field(discriminator="kind")]
+type OAuthClientStorage = ValkeyStore | PostgreSQLStore
 
 
-def build_client_storage(persistence: PersistenceConfig) -> Any:
+def build_client_storage(persistence: PersistenceConfig) -> OAuthClientStorage | None:
     match persistence:
         case ValkeyPersistence(host=h, port=p, db=d):
             return ValkeyStore(host=h, port=p, db=d)
