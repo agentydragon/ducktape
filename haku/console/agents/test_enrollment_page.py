@@ -18,7 +18,10 @@ _CSP_NONCE = "test_nonce_0123456789abcdef0123456789abcdef"
 
 def _view() -> AgentEnrollmentPageView:
     return AgentEnrollmentPageView(
-        form_action="/auth/agents/enrollment/interaction-123",
+        create_form_action="/auth/agent-enrollment/interaction-123/new",
+        reconnect_form_action="/auth/agent-enrollment/interaction-123/reconnect",
+        deny_form_action="/auth/agent-enrollment/interaction-123/deny",
+        form_token="form-token",
         operator_display_name="Rai",
         client_software="Claude.ai",
         redirect_host="claude.ai",
@@ -51,37 +54,32 @@ def test_enrollment_page_presents_new_reconnect_and_deny_actions() -> None:
 
     forms = page.find_all("form")
     assert len(forms) == 3
-    assert {form["action"] for form in forms} == {"/auth/agents/enrollment/interaction-123"}
+    assert [form["action"] for form in forms] == [
+        "/auth/agent-enrollment/interaction-123/new",
+        "/auth/agent-enrollment/interaction-123/reconnect",
+        "/auth/agent-enrollment/interaction-123/deny",
+    ]
+    assert [form.find("input", attrs={"name": "form_token"})["value"] for form in forms] == [
+        "form-token",
+        "form-token",
+        "form-token",
+    ]
 
     create_form = forms[0]
-    create_kind = create_form.find("input", attrs={"name": "enrollment_kind"})
     name_input = create_form.find("input", attrs={"name": "agent_name"})
-    create_decision = create_form.find("button", attrs={"name": "decision"})
-    assert create_kind is not None
     assert name_input is not None
-    assert create_decision is not None
-    assert create_kind["value"] == "create"
     assert name_input["required"] == ""
     assert name_input["maxlength"] == str(AGENT_NAME_MAX_LENGTH)
     assert name_input["value"] == "Kitchen Claude"
-    assert create_decision["value"] == "allow"
 
     reconnect_form = forms[1]
-    reconnect_kind = reconnect_form.find("input", attrs={"name": "enrollment_kind"})
-    reconnect_decision = reconnect_form.find("button", attrs={"name": "decision"})
-    assert reconnect_kind is not None
-    assert reconnect_decision is not None
-    assert reconnect_kind["value"] == "reconnect"
     assert [option["value"] for option in reconnect_form.find_all("option")] == ["agent-1", "agent-2"]
     assert [option.get_text(strip=True) for option in reconnect_form.find_all("option")] == [
         "Desk Claude",
         "Travel Claude",
     ]
-    assert reconnect_decision["value"] == "allow"
-
-    deny_button = forms[2].find("button", attrs={"name": "decision"})
+    deny_button = forms[2].find("button")
     assert deny_button is not None
-    assert deny_button["value"] == "deny"
     assert deny_button["formnovalidate"] == ""
 
     details_element = page.find("details")
@@ -100,6 +98,7 @@ def test_enrollment_page_autoescapes_every_untrusted_value_and_locks_down_browse
         replace(
             _view(),
             operator_display_name=hostile,
+            form_token=hostile,
             client_software=hostile,
             redirect_host=hostile,
             scopes=(hostile,),
@@ -117,6 +116,7 @@ def test_enrollment_page_autoescapes_every_untrusted_value_and_locks_down_browse
     assert response.status_code == 422
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert response.headers["Permissions-Policy"] == "geolocation=(), display-capture=()"
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert csp == (
         "default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; "
@@ -136,6 +136,7 @@ def test_enrollment_page_autoescapes_every_untrusted_value_and_locks_down_browse
     assert error.get_text() == hostile
     assert option.get_text() == hostile
     assert option["value"] == hostile
+    assert all(form.find("input", attrs={"name": "form_token"})["value"] == hostile for form in page.find_all("form"))
 
 
 def test_enrollment_page_explains_when_reconnect_is_unavailable() -> None:

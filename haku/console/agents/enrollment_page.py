@@ -25,7 +25,10 @@ class ReconnectAgentView:
 
 @dataclass(frozen=True, slots=True)
 class AgentEnrollmentPageView:
-    form_action: str
+    create_form_action: str
+    reconnect_form_action: str
+    deny_form_action: str
+    form_token: str
     operator_display_name: str
     client_software: str
     redirect_host: str
@@ -51,6 +54,7 @@ def render_agent_enrollment_page(
                 f"script-src 'none'; style-src 'nonce-{csp_nonce}'"
             ),
             "Referrer-Policy": "no-referrer",
+            "Permissions-Policy": "geolocation=(), display-capture=()",
             "X-Content-Type-Options": "nosniff",
         },
     )

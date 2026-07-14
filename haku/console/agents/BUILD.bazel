@@ -27,6 +27,25 @@ py_library(
     ],
 )
 
+py_library(
+    name = "enrollment",
+    srcs = ["enrollment.py"],
+)
+
+py_library(
+    name = "enrollment_routes",
+    srcs = ["enrollment_routes.py"],
+    deps = [
+        ":enrollment",
+        ":enrollment_page",
+        ":naming",
+        "//haku/console:config",
+        "//haku/console:operator_auth",
+        "@pypi//fastapi",
+        "@pypi//starlette",
+    ],
+)
+
 py_test(
     name = "test_enrollment_page",
     srcs = ["test_enrollment_page.py"],
@@ -35,5 +54,18 @@ py_test(
         "@pypi//beautifulsoup4",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_enrollment_routes",
+    srcs = ["test_enrollment_routes.py"],
+    deps = [
+        ":enrollment",
+        ":enrollment_routes",
+        "//haku/console:operator_auth",
+        "@pypi//fastapi",
+        "@pypi//pytest_bazel",
+        "@pypi//python_multipart",
     ],
 )

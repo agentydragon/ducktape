@@ -210,8 +210,8 @@
       <section class="choice" aria-labelledby="create-agent-heading">
         <h2 id="create-agent-heading">Create a new agent</h2>
         <p class="hint">Give this agent a unique name you will recognize in approvals and history.</p>
-        <form method="post" action="{{ view.form_action }}">
-          <input type="hidden" name="enrollment_kind" value="create" />
+        <form method="post" action="{{ view.create_form_action }}">
+          <input type="hidden" name="form_token" value="{{ view.form_token }}" />
           <label for="agent-name">Agent name</label>
           <input
             id="agent-name"
@@ -224,7 +224,7 @@
             value="{{ view.suggested_agent_name }}"
             placeholder="e.g. Kitchen Claude"
           />
-          <button class="allow" type="submit" name="decision" value="allow">Allow new agent</button>
+          <button class="allow" type="submit">Allow new agent</button>
         </form>
       </section>
 
@@ -232,23 +232,24 @@
         <h2 id="reconnect-agent-heading">Reconnect an existing agent</h2>
         {% if view.reconnect_agents %}
           <p class="hint">Replace that agent's current MCP connection without creating a second identity.</p>
-          <form method="post" action="{{ view.form_action }}">
-            <input type="hidden" name="enrollment_kind" value="reconnect" />
+          <form method="post" action="{{ view.reconnect_form_action }}">
+            <input type="hidden" name="form_token" value="{{ view.form_token }}" />
             <label for="reconnect-agent">Existing agent</label>
             <select id="reconnect-agent" name="agent_id" required>
               {% for agent in view.reconnect_agents %}
                 <option value="{{ agent.agent_id }}">{{ agent.display_name }}</option>
               {% endfor %}
             </select>
-            <button class="allow" type="submit" name="decision" value="allow">Allow reconnection</button>
+            <button class="allow" type="submit">Allow reconnection</button>
           </form>
         {% else %}
           <p class="unavailable">You do not have an existing agent available to reconnect.</p>
         {% endif %}
       </section>
 
-      <form class="deny-form" method="post" action="{{ view.form_action }}">
-        <button class="deny" type="submit" name="decision" value="deny" formnovalidate>Deny request</button>
+      <form class="deny-form" method="post" action="{{ view.deny_form_action }}">
+        <input type="hidden" name="form_token" value="{{ view.form_token }}" />
+        <button class="deny" type="submit" formnovalidate>Deny request</button>
       </form>
 
       <details>

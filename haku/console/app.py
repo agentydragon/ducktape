@@ -242,10 +242,12 @@ def create_app(
     @app.middleware("http")
     async def _security_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         response = await call_next(request)
-        response.headers["Content-Security-Policy"] = csp
+        # Route-owned HTML responses (Agent enrollment and OAuth completion) carry a stricter,
+        # nonce-bound policy. Preserve it; this default governs the SPA/API surfaces.
+        response.headers.setdefault("Content-Security-Policy", csp)
         response.headers["Cache-Control"] = _cache_control_for_path(request.url.path, response.status_code)
-        response.headers["Referrer-Policy"] = REFERRER_POLICY
-        response.headers["Permissions-Policy"] = PERMISSIONS_POLICY
+        response.headers.setdefault("Referrer-Policy", REFERRER_POLICY)
+        response.headers.setdefault("Permissions-Policy", PERMISSIONS_POLICY)
         return response
 
     # CSRF for the capability tier: a header-located double-submit token (the SPA
