@@ -50,6 +50,7 @@ from haku.console.mcp_operator_oauth import (
 from haku.console.operator_auth import OperatorActorDep, ToolCallActorDep
 from haku.console.tool_call_actor import AgentActor, ToolCallActor
 from haku.console.tool_calls import (
+    ApprovalDecision,
     ApprovalDecisionRequest,
     SubmitToolCallRequest,
     ToolCallEvent,
@@ -640,7 +641,7 @@ async def decide_approval(
 ) -> ApprovalDecisionResponse:
     await csrf_protect.validate_csrf(request)
     event_operator_subject = actor.operator_subject
-    if body.decision == "deny":
+    if body.decision is ApprovalDecision.DENY:
         record, event = ledger.deny(tool_call_id, body.reason, operator_subject=event_operator_subject)
         await hub.broadcast(event_operator_subject, [event])
         logger.info(
@@ -651,6 +652,8 @@ async def decide_approval(
             body.reason,
         )
         return ApprovalDecisionResponse(tool_call=record)
+    if body.decision is not ApprovalDecision.APPROVE:
+        raise AssertionError(f"Unhandled approval {body.decision=}")
     pending = ledger.get(tool_call_id, actor=actor)
     server = _server_entry(settings, pending.server_id)
     # Only operator_oauth execution runs as the approving operator; other servers use their configured

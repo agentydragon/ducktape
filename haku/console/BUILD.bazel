@@ -179,6 +179,17 @@ py_library(
 )
 
 py_test(
+    name = "test_tool_call_contract",
+    srcs = ["test_tool_call_contract.py"],
+    deps = [
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_auto_approval",
     srcs = ["test_auto_approval.py"],
     deps = [

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -30,6 +30,11 @@ class ToolCallEventType(StrEnum):
     TOOL_CALL_UPDATED = "tool_call_updated"
 
 
+class ApprovalDecision(StrEnum):
+    APPROVE = "approve"
+    DENY = "deny"
+
+
 class SubmitToolCallRequest(BaseModel):
     server_id: str
     tool_name: str
@@ -40,7 +45,7 @@ class SubmitToolCallRequest(BaseModel):
 
 
 class ApprovalDecisionRequest(BaseModel):
-    decision: Literal["approve", "deny"]
+    decision: ApprovalDecision
     reason: str | None = None
 
 
