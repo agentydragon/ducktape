@@ -19,7 +19,7 @@ The MCP issuer/callback URL is derived from the console's canonical
 `/.well-known/oauth-*` discovery points clients to those namespaced MCP OAuth endpoints, while
 operator browser OAuth remains under `/auth/*` with its own provider and session.
 The OIDCProxy's dynamic-client-registration + token state (shared across the two replicas) is
-backed by the console's own Postgres (`HAKU_CONSOLE_MCP_OAUTH_PERSISTENCE__KIND=postgres`,
+backed by the console's own Postgres (`HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__KIND=postgres`,
 py-key-value's `PostgreSQLStore` auto-creating a `mcp_oauth_kv` table) — no separate valkey, unlike
 the grocy/tana MCP facades. Deviation from those facades: the operator browser login is the console's
 own app-native OIDC (not an outpost and not a separate SPA), so a 401 from `/api/*` bounces the

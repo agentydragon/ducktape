@@ -6,11 +6,11 @@ from pathlib import Path
 from typing import Self
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
-from mcp_infra.persistence import FilePersistence, PersistenceConfig
+from mcp_infra.persistence import SharedPersistenceConfig
 
 # Both URLs are built from the routine (trigger) id, so only the id + token are
 # configured. The fire endpoint performs the launch; the claude.ai page is the
@@ -73,7 +73,9 @@ class McpOAuthConfig(BaseModel):
     Unlike the reusable ``AuthentikAuthConfig``, this Haku-specific config deliberately has no
     ``public_base_url``. The public MCP URL is always ``Settings.public_base_url`` + ``/mcp``, so
     the issuer, DCR endpoints, and callback cannot be configured for a different mount. Operator
-    login uses separate credentials and session state; only the canonical origin is shared.
+    login uses separate credentials and session state; only the canonical origin is shared. OAuth
+    always includes a shared Postgres/Valkey client-state store; process-local file persistence is
+    not a valid Haku deployment or development mode because registrations must survive restarts.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -81,6 +83,7 @@ class McpOAuthConfig(BaseModel):
     oidc_issuer: str
     oidc_client_id: str
     oidc_client_secret: SecretStr
+    persistence: SharedPersistenceConfig
 
     def as_authentik_auth_config(self, *, public_base_url: str) -> AuthentikAuthConfig:
         return AuthentikAuthConfig(
@@ -150,14 +153,11 @@ class Settings(BaseSettings):
 
     # OAuth for the agent-facing MCP server: an Authentik-backed OIDCProxy handling the MCP OAuth
     # dance (DCR + PKCE) for claude.ai / the `claude` CLI, composed with the static agent bearer via
-    # MultiAuth. Reads HAKU_CONSOLE_MCP_OAUTH__{OIDC_ISSUER,OIDC_CLIENT_ID,OIDC_CLIENT_SECRET}; its
-    # public URL is derived from top-level public_base_url + MCP_PATH. Unset → the static bearer
-    # is the only accepted credential (no OAuth).
+    # MultiAuth. Reads HAKU_CONSOLE_MCP_OAUTH__{OIDC_ISSUER,OIDC_CLIENT_ID,OIDC_CLIENT_SECRET} plus
+    # HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__*; its public URL is derived from top-level
+    # public_base_url + MCP_PATH. Unset → the static bearer is the only accepted credential (no
+    # OAuth, and therefore no OAuth store).
     mcp_oauth: McpOAuthConfig | None = None
-    # Client-state store for OIDCProxy's dynamic client registrations. Valkey in deploy (survives
-    # across replicas / restarts); the file default suits single-process/dev.
-    mcp_oauth_persistence: PersistenceConfig = Field(default_factory=FilePersistence)
-
     # Operator browser login (Authentik OIDC), replacing the proxy outpost. Required in every
     # runtime, including development; tests use the repo's hermetic OIDC fixture.
     operator_oidc: OperatorOidcConfig

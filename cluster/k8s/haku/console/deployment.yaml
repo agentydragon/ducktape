@@ -180,13 +180,14 @@ spec:
                   name: haku-console-oidc
                   key: mcp_client_secret
             # OIDCProxy dynamic-client-registration + token state, shared across the 2 replicas so
-            # a claude.ai DCR registration survives a re-schedule (the file default would strand it
-            # per-pod). Backed by the console's own Postgres (py-key-value's PostgreSQLStore
-            # auto-creates its table), so there is no separate valkey to run. The URL is the asyncpg
+            # a claude.ai DCR registration survives a re-schedule (process-local file storage would
+            # strand it per-pod and is not a valid Haku OAuth mode). Backed by the console's own
+            # Postgres (py-key-value's PostgreSQLStore auto-creates its table), so there is no
+            # separate valkey to run. The URL is the asyncpg
             # form (plain postgresql://), NOT the SQLAlchemy postgresql+psycopg:// the ORM uses.
-            - name: HAKU_CONSOLE_MCP_OAUTH_PERSISTENCE__KIND
+            - name: HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__KIND
               value: postgres
-            - name: HAKU_CONSOLE_MCP_OAUTH_PERSISTENCE__URL
+            - name: HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__URL
               value: "postgresql://$(HAKU_CONSOLE_DB_USER):$(HAKU_CONSOLE_DB_PASSWORD)@$(HAKU_CONSOLE_DB_HOST):$(HAKU_CONSOLE_DB_PORT)/$(HAKU_CONSOLE_DB_NAME)"
             # Operator browser login (Authentik OIDC), replacing the forward-auth proxy outpost:
             # the console authenticates the operator itself (authorization-code -> signed session

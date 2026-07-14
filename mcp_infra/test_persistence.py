@@ -1,5 +1,5 @@
-"""`build_client_storage` maps each config variant to the right backend, and `PostgresPersistence`
-round-trips through the real py-key-value `PostgreSQLStore` (postgres testcontainer)."""
+"""Persistence configs map to the intended py-key-value backend, including a real Postgres
+round-trip and the shared-store builder's non-optional contract."""
 
 from __future__ import annotations
 
@@ -11,7 +11,13 @@ from key_value.aio.stores.postgresql import PostgreSQLStore
 from key_value.aio.stores.valkey import ValkeyStore
 from testcontainers.postgres import PostgresContainer
 
-from mcp_infra.persistence import FilePersistence, PostgresPersistence, ValkeyPersistence, build_client_storage
+from mcp_infra.persistence import (
+    FilePersistence,
+    PostgresPersistence,
+    ValkeyPersistence,
+    build_client_storage,
+    build_shared_client_storage,
+)
 from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.oci import load_oci_image
 
@@ -37,11 +43,15 @@ def postgres_url() -> Generator[str]:
 
 def test_build_client_storage_variants() -> None:
     assert build_client_storage(FilePersistence()) is None
-    assert isinstance(build_client_storage(ValkeyPersistence(kind="valkey", host="valkey.example.com")), ValkeyStore)
+    assert isinstance(
+        build_shared_client_storage(ValkeyPersistence(kind="valkey", host="valkey.example.com")), ValkeyStore
+    )
 
 
 async def test_postgres_store_round_trip(postgres_url: str) -> None:
-    store = build_client_storage(PostgresPersistence(kind="postgres", url=postgres_url, table_name="mcp_oauth_kv"))
+    store = build_shared_client_storage(
+        PostgresPersistence(kind="postgres", url=postgres_url, table_name="mcp_oauth_kv")
+    )
     assert isinstance(store, PostgreSQLStore)
     await store.setup()  # auto_create=True -> creates the table on first setup
 

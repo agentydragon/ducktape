@@ -41,7 +41,6 @@ from haku.console.tools import (
     routine as routine_tools,
     tana as tana_tools,
 )
-from mcp_infra.persistence import build_client_storage
 
 APP_SHELL_CACHE_CONTROL = "no-store"
 IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
@@ -145,13 +144,8 @@ def create_app(settings: Settings) -> FastAPI:
             raise RuntimeError(f"MCP OAuth id_token for client {client_id} carried no `sub` claim")
         mcp_operator_oauth_store.bind_agent_operator(agent_dcr_client_id=client_id, operator_subject=subject)
 
-    # The OIDCProxy client-state store only exists when OAuth does; the static-bearer-only deploy has
-    # no dynamic client registrations to persist.
-    mcp_oauth_storage = build_client_storage(settings.mcp_oauth_persistence) if settings.mcp_oauth is not None else None
-    mcp_auth = mcp_server.build_auth(
-        settings, static_agents, mcp_oauth_storage, on_client_authorized=_link_agent_operator
-    )
-    console_mcp = mcp_server.build_console_mcp(console_mcp_context, auth=mcp_auth)
+    mcp_auth = mcp_server.build_auth(settings, static_agents, on_client_authorized=_link_agent_operator)
+    console_mcp = mcp_server.build_console_mcp(console_mcp_context, auth=mcp_auth.provider)
     mcp_asgi = console_mcp.http_app(path="/")
 
     @asynccontextmanager
@@ -159,9 +153,10 @@ def create_app(settings: Settings) -> FastAPI:
         await console_event_hub.start()
         try:
             # Pre-warm the OIDCProxy client-state store so the first OAuth request isn't slowed by a
-            # cold connect (see mcp_infra/oauth_facade/server.py).
-            if mcp_oauth_storage is not None:
-                await mcp_oauth_storage.setup()
+            # cold connect (see mcp_infra/oauth_facade/server.py). The OAuth variant always carries
+            # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
+            if isinstance(mcp_auth, mcp_server.OAuthMcpAuth):
+                await mcp_auth.storage.setup()
             # FastMCP's streamable-http session manager runs under mcp_asgi.lifespan; reflect the
             # connected servers into the tool surface once it is up.
             async with mcp_asgi.lifespan(app):
@@ -175,7 +170,7 @@ def create_app(settings: Settings) -> FastAPI:
     # outer ASGI mount, so explicitly expose only its well-known routes here; the static-bearer-only
     # provider returns no routes.
     app = FastAPI(title="Haku console", lifespan=_lifespan)
-    app.router.routes.extend(mcp_auth.get_well_known_routes(mcp_path="/"))
+    app.router.routes.extend(mcp_auth.provider.get_well_known_routes(mcp_path="/"))
     # The capability router reads settings off app.state (see haku.console.capabilities).
     app.state.settings = settings
     app.state.static_agents = static_agents

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, assert_never
 
 from key_value.aio.stores.postgresql import PostgreSQLStore
 from key_value.aio.stores.valkey import ValkeyStore
@@ -33,14 +33,21 @@ class PostgresPersistence(BaseModel):
 
 
 PersistenceConfig = Annotated[FilePersistence | ValkeyPersistence | PostgresPersistence, Field(discriminator="kind")]
+SharedPersistenceConfig = Annotated[ValkeyPersistence | PostgresPersistence, Field(discriminator="kind")]
 type OAuthClientStorage = ValkeyStore | PostgreSQLStore
 
 
-def build_client_storage(persistence: PersistenceConfig) -> OAuthClientStorage | None:
+def build_shared_client_storage(persistence: SharedPersistenceConfig) -> OAuthClientStorage:
     match persistence:
         case ValkeyPersistence(host=h, port=p, db=d):
             return ValkeyStore(host=h, port=p, db=d)
         case PostgresPersistence(url=u, table_name=t):
             return PostgreSQLStore(url=u, table_name=t)
         case _:
-            return None
+            assert_never(persistence)
+
+
+def build_client_storage(persistence: PersistenceConfig) -> OAuthClientStorage | None:
+    if isinstance(persistence, FilePersistence):
+        return None
+    return build_shared_client_storage(persistence)

@@ -114,7 +114,9 @@ Authentik-backed `OIDCProxy` (DCR + PKCE for claude.ai / `claude`, DCR/token sta
 console's Postgres) composed with the configured `static_agents`' fixed bearers. The `/mcp` surface only submits/reads — there
 is no decision tool — so an OAuth caller cannot self-approve; approval stays in trusted console
 chrome. Approved calls execute against the console's own stored operator credentials, so an incoming
-token's blast radius is "call the console's submit/read tools" and nothing else.
+token's blast radius is "call the console's submit/read tools" and nothing else. OAuth configuration
+includes a required shared Postgres/Valkey persistence variant; Haku never falls back to FastMCP's
+process-local default store.
 
 ### In-process MCP servers — no second deployment
 
@@ -245,7 +247,7 @@ Service). The operator browser logs in via Authentik OIDC (`HAKU_CONSOLE_OPERATO
 → signed session cookie; router-level dependency guards protect `/api/*`, with the agent bearer
 scoped to the agent-facing submit/read routes only), and agents authenticate to the always-mounted
 `/mcp` via `MultiAuth` (OIDCProxy DCR + the `static_agents`' fixed bearers, `HAKU_CONSOLE_MCP_OAUTH__*`;
-the DCR/token state persists in the console's own Postgres via `HAKU_CONSOLE_MCP_OAUTH_PERSISTENCE__*`).
+the DCR/token state persists in the console's own Postgres via `HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__*`).
 `HAKU_CONSOLE_PUBLIC_BASE_URL` is the single canonical public origin for both flows: operator login
 uses `<origin>/auth/callback`, while the agent-facing OAuth issuer and callback are derived as
 `<origin>/mcp` and `<origin>/mcp/auth/callback`. Only OAuth discovery is also exposed at the origin's

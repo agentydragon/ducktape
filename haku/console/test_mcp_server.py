@@ -14,7 +14,7 @@ import pytest
 import pytest_bazel
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -38,6 +38,7 @@ from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_server import ConsoleMcpContext, build_console_mcp, register_proxy_tools
 from haku.console.tool_calls import ToolCallStatus
 from haku.console.tools import gmail as gmail_tools
+from mcp_infra.persistence import PostgresPersistence
 from util.net import pick_free_port
 from util.testing.asgi import serve_app_sync, serve_fastmcp
 
@@ -300,6 +301,33 @@ def _serve_mock_oidc() -> Generator[str]:
         yield base
 
 
+def test_mcp_oauth_requires_shared_persistence() -> None:
+    provider = {
+        "oidc_issuer": "https://auth.example.test/application/o/haku-console-mcp/",
+        "oidc_client_id": "console",
+        "oidc_client_secret": "secret",
+    }
+    with pytest.raises(ValidationError, match="persistence"):
+        McpOAuthConfig.model_validate(provider)
+    with pytest.raises(ValidationError, match="persistence"):
+        McpOAuthConfig.model_validate({**provider, "persistence": {"kind": "file"}})
+
+
+def test_mcp_oauth_reads_nested_shared_persistence_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HAKU_CONSOLE_MCP_OAUTH__OIDC_ISSUER", "https://auth.example.test/application/o/mcp/")
+    monkeypatch.setenv("HAKU_CONSOLE_MCP_OAUTH__OIDC_CLIENT_ID", "console")
+    monkeypatch.setenv("HAKU_CONSOLE_MCP_OAUTH__OIDC_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__KIND", "postgres")
+    monkeypatch.setenv("HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__URL", "postgresql://db.example.test/haku")
+
+    oauth = console_settings("postgresql+psycopg://db.example.test/haku").mcp_oauth
+
+    assert oauth is not None
+    assert oauth.persistence == PostgresPersistence(
+        kind="postgres", url="postgresql://db.example.test/haku", table_name="mcp_oauth_kv"
+    )
+
+
 async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path: Path) -> None:
     with _serve_mock_oidc() as oidc_base, _serve_upstream() as upstream_url:
         # public_base_url is the console's own URL, so choose its port before building the app.
@@ -311,14 +339,15 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
             ui_base_url="https://haku.test",
             public_base_url=f"http://127.0.0.1:{console_port}",
             mcp_oauth=McpOAuthConfig(
-                oidc_issuer=oidc_base, oidc_client_id="console", oidc_client_secret=SecretStr("secret")
+                oidc_issuer=oidc_base,
+                oidc_client_id="console",
+                oidc_client_secret=SecretStr("secret"),
+                # Match production's shared Postgres-backed DCR/token state, but use this test's
+                # isolated database instead of FastMCP's implicit process-global file store.
+                persistence=PostgresPersistence(
+                    kind="postgres", url=migrated_db_url.replace("postgresql+psycopg://", "postgresql://", 1)
+                ),
             ),
-            # Match production's shared Postgres-backed DCR/token state, but use this test's
-            # isolated database instead of FastMCP's implicit process-global file store.
-            mcp_oauth_persistence={
-                "kind": "postgres",
-                "url": migrated_db_url.replace("postgresql+psycopg://", "postgresql://", 1),
-            },
         )
         with serve_app_sync(create_app(settings), port=console_port) as base:
             # The static bearer still authenticates (MultiAuth composes OAuth + static).

@@ -70,6 +70,7 @@ from haku.console.tool_calls import SubmitToolCallRequest, ToolCallRecord, ToolC
 from haku.console.tools.gmail_client import GmailToolsClient
 from mcp_infra.authentik_auth.auth import OnClientAuthorized, build_authentik_auth
 from mcp_infra.naming import build_mcp_function
+from mcp_infra.persistence import OAuthClientStorage, build_shared_client_storage
 from mcp_infra.prefix import MCPMountPrefix
 
 logger = logging.getLogger(__name__)
@@ -331,35 +332,52 @@ def _static_bearer_verifier(static_agents: list[ResolvedStaticAgent]) -> StaticT
     )
 
 
+@dataclass(frozen=True)
+class StaticMcpAuth:
+    provider: AuthProvider
+
+
+@dataclass(frozen=True)
+class OAuthMcpAuth:
+    provider: AuthProvider
+    storage: OAuthClientStorage
+
+
+type McpAuth = StaticMcpAuth | OAuthMcpAuth
+
+
 def build_auth(
-    settings: Settings,
-    static_agents: list[ResolvedStaticAgent],
-    client_storage: Any,
-    on_client_authorized: OnClientAuthorized | None = None,
-) -> AuthProvider:
+    settings: Settings, static_agents: list[ResolvedStaticAgent], on_client_authorized: OnClientAuthorized | None = None
+) -> McpAuth:
     """Compose the MCP server's auth — the credentials `/mcp` accepts.
 
     An Authentik-backed OIDCProxy (DCR + PKCE for claude.ai / the ``claude`` CLI) when
     ``settings.mcp_oauth`` is configured, composed with the static agent bearers via MultiAuth
     (`build_authentik_auth`'s ``extra_verifiers``); the static bearers alone when no OAuth is
-    configured. Raises when neither is set — a `/mcp` server no one can authenticate to is a
-    misconfiguration, not a mode to run in. ``on_client_authorized`` is invoked when an OAuth client
-    completes the authorization-code exchange (haku-console uses it to record the agent→operator link).
+    configured. The return type makes OAuth's required shared storage inseparable from its provider;
+    a ``None`` storage is not an OAuth mode. Raises when neither credential is set — a `/mcp` server
+    no one can authenticate to is a misconfiguration, not a mode to run in.
+    ``on_client_authorized`` is invoked when an OAuth client completes the authorization-code
+    exchange (haku-console uses it to record the agent→operator link).
     """
     static = _static_bearer_verifier(static_agents)
     if settings.mcp_oauth is not None:
-        return build_authentik_auth(
-            settings.mcp_oauth.as_authentik_auth_config(public_base_url=settings.public_base_url),
-            client_storage=client_storage,
-            extra_verifiers=[static] if static is not None else None,
-            on_client_authorized=on_client_authorized,
+        storage = build_shared_client_storage(settings.mcp_oauth.persistence)
+        return OAuthMcpAuth(
+            provider=build_authentik_auth(
+                settings.mcp_oauth.as_authentik_auth_config(public_base_url=settings.public_base_url),
+                client_storage=storage,
+                extra_verifiers=[static] if static is not None else None,
+                on_client_authorized=on_client_authorized,
+            ),
+            storage=storage,
         )
     if static is None:
         raise ValueError(
             "haku-console /mcp has no configured credential: set at least one static agent "
             "(config_file `static_agents`) or `mcp_oauth`"
         )
-    return static
+    return StaticMcpAuth(provider=static)
 
 
 def build_console_mcp(context: ConsoleMcpContext, auth: AuthProvider | None = None) -> FastMCP:
