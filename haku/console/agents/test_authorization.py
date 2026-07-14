@@ -324,7 +324,7 @@ async def test_create_decision_is_idempotent_and_grant_activates_then_revokes(db
         grant_id=grant.grant_id, evidence=TokenFamilyEvidence(access_jti="access-create", refresh_jti="refresh-create")
     )
     assert (
-        await harness.authority.grant_for_access(
+        await harness.authority.resolve_grant(
             grant_id=grant.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
         )
     ).actor.binding_id == grant.actor.binding_id
@@ -334,8 +334,8 @@ async def test_create_decision_is_idempotent_and_grant_activates_then_revokes(db
     assert activated.actor == grant.actor
     await harness.authority.revoke_grant(grant_id=grant.grant_id)
     with pytest.raises(GrantRejectedError):
-        await harness.authority.grant_for_refresh(
-            grant_id=grant.grant_id, client_id=_CLIENT_ID, requested_scopes=frozenset({"tools:call"})
+        await harness.authority.resolve_grant(
+            grant_id=grant.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
         )
 
     with _orm_session(db_url) as session:
@@ -362,7 +362,7 @@ async def test_activation_timeout_abandons_new_agent_but_only_expires_reconnect(
     initial = await _create_grant(harness, label="initial-timeout", display_name="Initial Timeout")
     harness.clock.advance(datetime.timedelta(minutes=16))
     with pytest.raises(GrantRejectedError):
-        await harness.authority.grant_for_access(
+        await harness.authority.resolve_grant(
             grant_id=initial.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
         )
 

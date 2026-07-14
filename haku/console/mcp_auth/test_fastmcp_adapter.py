@@ -91,8 +91,7 @@ def _authority() -> SimpleNamespace:
         reserve_authorization=AsyncMock(return_value="https://haku.example.test/agent-enrollment/interaction"),
         begin_exchange=AsyncMock(return_value=_authorization()),
         record_token_family=AsyncMock(),
-        grant_for_access=AsyncMock(return_value=_authorization()),
-        grant_for_refresh=AsyncMock(return_value=_authorization()),
+        resolve_grant=AsyncMock(return_value=_authorization()),
         activate_for_tool_call=AsyncMock(return_value=_authorization()),
         revoke_grant=AsyncMock(),
     )
@@ -405,11 +404,11 @@ async def test_refresh_preserves_grant_and_rechecks_same_binding_after_rotation(
         result = await proxy.exchange_refresh_token(cast(Any, _client()), refresh, ["read"])
 
     assert result.refresh_token == "new-refresh"
-    assert authority.grant_for_refresh.await_count == 2
-    assert authority.grant_for_refresh.await_args_list[0].kwargs == {
+    assert authority.resolve_grant.await_count == 2
+    assert authority.resolve_grant.await_args_list[0].kwargs == {
         "grant_id": GRANT_ID,
         "client_id": CLIENT_ID,
-        "requested_scopes": SCOPES,
+        "token_scopes": SCOPES,
     }
 
 
@@ -437,7 +436,7 @@ async def test_refresh_rejects_scope_broadening_inside_fastmcp_hook() -> None:
 
 async def test_revoked_during_refresh_never_returns_rotated_credentials() -> None:
     authority = _authority()
-    authority.grant_for_refresh.side_effect = [_authorization(), GrantRejectedError()]
+    authority.resolve_grant.side_effect = [_authorization(), GrantRejectedError()]
     proxy = _bare_proxy(authority=authority)
     _install_token_payloads(
         proxy,
@@ -485,7 +484,7 @@ async def test_access_load_resolves_grant_before_and_after_fastmcp_validation() 
     current = seen_contexts[0]
     assert cast(Any, current).authorization.actor.binding_id == BINDING_ID
     assert current_grant_request_context() is None
-    assert authority.grant_for_access.await_count == 2
+    assert authority.resolve_grant.await_count == 2
 
 
 async def test_clean_invalid_or_revoked_bearer_is_a_clean_non_match() -> None:
@@ -494,7 +493,7 @@ async def test_clean_invalid_or_revoked_bearer_is_a_clean_non_match() -> None:
     assert await proxy.load_access_token("random-bearer") is None
 
     authority = _authority()
-    authority.grant_for_access.side_effect = GrantRejectedError()
+    authority.resolve_grant.side_effect = GrantRejectedError()
     proxy = _bare_proxy(authority=authority)
     _install_token_payloads(proxy, {"revoked": _payload(jti="revoked-jti")})
     with patch.object(RetryableRefreshOIDCProxy, "load_access_token", new=AsyncMock()) as parent:

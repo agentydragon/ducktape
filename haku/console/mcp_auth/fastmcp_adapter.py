@@ -165,12 +165,8 @@ class AgentGrantAuthority(Protocol):
 
     async def record_token_family(self, *, grant_id: UUID, evidence: TokenFamilyEvidence) -> None: ...
 
-    async def grant_for_access(
+    async def resolve_grant(
         self, *, grant_id: UUID, client_id: str, token_scopes: frozenset[str]
-    ) -> GrantAuthorization: ...
-
-    async def grant_for_refresh(
-        self, *, grant_id: UUID, client_id: str, requested_scopes: frozenset[str]
     ) -> GrantAuthorization: ...
 
     async def activate_for_tool_call(
@@ -683,8 +679,8 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
         ):
             raise TokenError("invalid_grant", _INVALID_GRANT)
         try:
-            authorization = await self._grant_authority.grant_for_refresh(
-                grant_id=reference.grant_id, client_id=client_id, requested_scopes=frozenset(scopes)
+            authorization = await self._grant_authority.resolve_grant(
+                grant_id=reference.grant_id, client_id=client_id, token_scopes=frozenset(scopes)
             )
             _validate_grant_authorization(
                 authorization, grant_id=reference.grant_id, client_id=client_id, scopes=frozenset(scopes)
@@ -704,8 +700,8 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
             token, grant_id=authorization.grant_id, client_id=client_id, allowed_scopes=authorization.allowed_scopes
         )
         try:
-            after = await self._grant_authority.grant_for_refresh(
-                grant_id=reference.grant_id, client_id=client_id, requested_scopes=issued_scopes
+            after = await self._grant_authority.resolve_grant(
+                grant_id=reference.grant_id, client_id=client_id, token_scopes=issued_scopes
             )
             _require_same_actor(authorization, after, scopes=issued_scopes)
         except GrantRejectedError:
@@ -724,7 +720,7 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
             return None
 
         try:
-            authorization = await self._grant_authority.grant_for_access(
+            authorization = await self._grant_authority.resolve_grant(
                 grant_id=reference.grant_id, client_id=reference.client_id, token_scopes=reference.scopes
             )
             _validate_grant_authorization(
@@ -761,7 +757,7 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
             returned_scopes = frozenset(access_token.scopes)
             if returned_grant_id != reference.grant_id or not returned_scopes <= reference.scopes:
                 raise GrantRejectedError
-            after = await self._grant_authority.grant_for_access(
+            after = await self._grant_authority.resolve_grant(
                 grant_id=reference.grant_id, client_id=reference.client_id, token_scopes=returned_scopes
             )
             _require_same_actor(authorization, after, scopes=returned_scopes)

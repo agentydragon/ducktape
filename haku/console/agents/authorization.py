@@ -1079,17 +1079,10 @@ class PostgresAgentAuthority:
         if error is not None:
             raise error
 
-    async def grant_for_access(
+    async def resolve_grant(
         self, *, grant_id: UUID, client_id: str, token_scopes: frozenset[str]
     ) -> GrantAuthorization:
         return await self._database_call(lambda: self._resolve_grant(grant_id, client_id, token_scopes, activate=False))
-
-    async def grant_for_refresh(
-        self, *, grant_id: UUID, client_id: str, requested_scopes: frozenset[str]
-    ) -> GrantAuthorization:
-        return await self._database_call(
-            lambda: self._resolve_grant(grant_id, client_id, requested_scopes, activate=False)
-        )
 
     async def activate_for_tool_call(
         self, *, grant_id: UUID, client_id: str, token_scopes: frozenset[str]
