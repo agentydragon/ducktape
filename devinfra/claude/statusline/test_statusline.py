@@ -341,6 +341,12 @@ def test_format_context_colors(pct: float, expected_text: str, expected_style: s
             id="ambiguous_litellm",
         ),
         pytest.param(
+            "https://cli-proxy-api.allegedly.works",
+            "gpt-5.6-sol",
+            QuotaRoute(provider="codex", label="oai"),
+            id="cli_proxy_api_codex",
+        ),
+        pytest.param(
             "https://unknown-proxy.example",
             "claude-opus-4-6",
             QuotaRoute(provider=None, label="proxy→?"),
@@ -403,10 +409,11 @@ def test_render_api_billing(full_input: Input, snapshot: SnapshotAssertion):
     [
         pytest.param(QuotaRoute(provider="zai", label="zai"), id="direct_zai"),
         pytest.param(QuotaRoute(provider="zai", label="litellm→zai"), id="litellm_zai"),
+        pytest.param(QuotaRoute(provider="codex", label="oai"), id="cli_proxy_api_codex"),
     ],
 )
-def test_render_zai_flat_rate_hides_cost(full_input: Input, route: QuotaRoute):
-    """z.ai is a flat subscription — per-session USD cost does not apply."""
+def test_render_flat_rate_hides_cost(full_input: Input, route: QuotaRoute):
+    """Flat-rate subscriptions (z.ai, Codex via CLIProxyAPI) — per-session USD cost does not apply."""
     result = render(
         full_input,
         is_subscription=False,

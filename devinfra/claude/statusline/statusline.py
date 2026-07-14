@@ -165,6 +165,10 @@ def _detect_quota_route(*, base_url: str, model_id: str) -> QuotaRoute:
         return QuotaRoute(provider="claude")
     if host == "z.ai" or host.endswith(".z.ai"):
         return QuotaRoute(provider="zai", label="zai")
+    if host == "cli-proxy-api.allegedly.works":
+        # codex-claude wrapper → CLIProxyAPI → ChatGPT/Codex subscription.
+        # Quota is read by the `codex` provider from ~/.codex/auth.json.
+        return QuotaRoute(provider="codex", label="oai")
     if host == "litellm.allegedly.works":
         if model_id.lower().startswith("glm-"):
             return QuotaRoute(provider="zai", label="litellm→zai")
@@ -198,11 +202,12 @@ def render(
             cwd = "~" + cwd[len(home_str) :]
 
     # Per-session USD cost only applies to Anthropic per-token API billing.
-    # Hide it for Anthropic subscriptions and z.ai — both are flat-rate, so the
-    # cost Claude Code derives per-token is meaningless for them.
+    # Hide it for Anthropic subscriptions, z.ai, and Codex (ChatGPT sub via
+    # CLIProxyAPI) — all flat-rate, so the per-token cost Claude Code derives
+    # is meaningless for them.
     # TODO: Wire up Admin API (/v1/organizations/cost_report) with a read-only
     # admin key to show current-month API cost in the statusline.
-    flat_rate = is_subscription or (quota_route is not None and quota_route.provider == "zai")
+    flat_rate = is_subscription or (quota_route is not None and quota_route.provider in ("zai", "codex"))
     if flat_rate:
         segments: list[Text] = [Text(f"{model_name} {cwd}")]
     else:
