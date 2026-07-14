@@ -64,6 +64,13 @@ def _credentials(*tokens: str) -> StaticAgentCredentialRegistry:
     return StaticAgentCredentialRegistry(fingerprints=tuple(fingerprint_static_token(token) for token in tokens))
 
 
+def _oauth_proxy() -> Mock:
+    proxy = Mock(spec=HakuAgentOAuthProxy)
+    proxy.base_url = None
+    cast(AsyncMock, proxy.verify_token).return_value = None
+    return proxy
+
+
 async def test_static_auth_resolves_the_exact_active_binding_actor() -> None:
     authority = _authority()
     auth = build_auth(_settings(), agent_authority=authority, static_credentials=_credentials(_TOKEN))
@@ -130,8 +137,7 @@ async def test_oauth_auth_composes_one_authority_storage_and_optional_static_ver
     )
     authority = _authority()
     storage = Mock()
-    proxy = Mock(spec=HakuAgentOAuthProxy)
-    cast(AsyncMock, proxy.verify_token).return_value = None
+    proxy = _oauth_proxy()
     with (
         patch("haku.console.mcp_agent_auth.build_shared_client_storage", return_value=storage),
         patch("haku.console.mcp_agent_auth.HakuAgentOAuthProxy", return_value=proxy) as proxy_class,
@@ -169,7 +175,7 @@ def test_oauth_auth_does_not_invent_a_static_resolver_without_static_credentials
     )
     with (
         patch("haku.console.mcp_agent_auth.build_shared_client_storage", return_value=Mock()),
-        patch("haku.console.mcp_agent_auth.HakuAgentOAuthProxy", return_value=Mock(spec=HakuAgentOAuthProxy)),
+        patch("haku.console.mcp_agent_auth.HakuAgentOAuthProxy", return_value=_oauth_proxy()),
     ):
         auth = build_auth(_settings(mcp_oauth=oauth), agent_authority=_authority(), static_credentials=_credentials())
 

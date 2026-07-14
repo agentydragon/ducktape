@@ -332,7 +332,7 @@ def _serve_mock_oidc() -> Generator[_MockOidc]:
         private_key=private_key,
         public_key=public_key,
         subject="42",
-        extra_id_token_claims={"sub": "wrong-id-token-operator"},
+        extra_id_token_claims={"preferred_username": "Rai"},
         authentik_compatible=True,
     )
     with serve_app_sync(app, port=oidc_port) as base:

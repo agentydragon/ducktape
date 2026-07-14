@@ -28,6 +28,13 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.websockets import WebSocketDisconnect
 
+from haku.console.agents.models import (
+    AgentStatus,
+    ClientRegistrationKind,
+    CredentialBindingStatus,
+    CredentialKind,
+    EnrollmentPhase,
+)
 from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC, csrf_token, write_config
 from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow, metadata
 from haku.console.mcp_approval import (
@@ -1513,14 +1520,30 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
                 .mappings()
                 .all()
             }
+            principal_columns = {
+                row["column_name"]
+                for row in conn.execute(
+                    text(
+                        """
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_name = 'mcp_tool_call_principals'
+                        """
+                    )
+                )
+                .mappings()
+                .all()
+            }
             row = cast(
                 dict[str, Any],
                 conn.execute(
                     text(
                         """
-                        SELECT operator_id, server_id, tool_name, status, arguments_json, result_json
-                        FROM mcp_tool_calls
-                        WHERE tool_call_id = :tool_call_id
+                        SELECT principal.operator_id, call.server_id, call.tool_name, call.status,
+                               call.arguments_json, call.result_json
+                        FROM mcp_tool_calls AS call
+                        JOIN mcp_tool_call_principals AS principal USING (tool_call_id)
+                        WHERE call.tool_call_id = :tool_call_id
                         """
                     ),
                     {"tool_call_id": submitted["tool_call_id"]},
@@ -1531,22 +1554,30 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
     finally:
         engine.dispose()
 
-    assert version == "0008"
+    assert version == "0009"
     assert {
         "operators",
         "identity_anchors",
         "oidc_identities",
+        "client_software",
+        "enrollment_interactions",
+        "enrollment_correlation_reservations",
+        "agents",
+        "agent_name_reservations",
+        "credential_bindings",
+        "authorization_grants",
+        "static_credentials",
+        "mcp_tool_call_principals",
         "mcp_operator_oauth_associations",
         "mcp_operator_oauth_flows",
-        "mcp_agent_operator",
     } <= tables
-    assert {"mcp_tool_calls_legacy_unowned", "mcp_tool_call_events_legacy_unowned"}.isdisjoint(tables)
+    assert {"mcp_agent_operator", "mcp_tool_calls_legacy_unowned", "mcp_tool_call_events_legacy_unowned"}.isdisjoint(
+        tables
+    )
     assert {
         "tool_call_id",
-        "operator_id",
         "server_id",
         "tool_name",
-        "caller_principal",
         "status",
         "created_at",
         "updated_at",
@@ -1560,6 +1591,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
         "auto_approval_evaluation",
         "approved_at",
     } == columns
+    assert principal_columns == {"tool_call_id", "operator_id", "binding_id"}
     assert row["operator_id"] == _operator_id(db_url, "operator-sub")
     assert row["server_id"] == "smoke"
     assert row["tool_name"] == "echo"
@@ -1671,6 +1703,11 @@ def test_historical_enum_migration_reaches_current_head(db_url: str) -> None:
         engine.dispose()
 
     current_values = {
+        "agent_status": tuple(status.value for status in AgentStatus),
+        "client_registration_kind": tuple(kind.value for kind in ClientRegistrationKind),
+        "credential_binding_status": tuple(status.value for status in CredentialBindingStatus),
+        "credential_kind": tuple(kind.value for kind in CredentialKind),
+        "enrollment_phase": tuple(phase.value for phase in EnrollmentPhase),
         "operator_status": tuple(status.value for status in OperatorStatus),
         "tool_call_event_type": tuple(event_type.value for event_type in ToolCallEventType),
         "tool_call_status": tuple(status.value for status in ToolCallStatus),

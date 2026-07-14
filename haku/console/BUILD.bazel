@@ -167,6 +167,7 @@ py_library(
     deps = [
         ":config",
         ":tool_call_actor",
+        "//:conftest",
         "//haku/console/agents:authorization",
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//mcp_infra:persistence",
@@ -706,6 +707,7 @@ py_test(
         ":operator_identity_store",
         ":tool_call_service",
         "//:conftest",
+        "//haku/console/agents:models",
         "//haku/console/tools:gmail",
         "//third_party/containers:rlocations",
         "//util:net",
