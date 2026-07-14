@@ -227,11 +227,11 @@ async def test_create_decision_is_idempotent_and_grant_activates_then_revokes(db
         await harness.authority.grant_for_access(
             grant_id=grant.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
         )
-    ).binding_id == grant.binding_id
+    ).actor.binding_id == grant.actor.binding_id
     activated = await harness.authority.activate_for_tool_call(
         grant_id=grant.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
     )
-    assert activated.binding_id == grant.binding_id
+    assert activated.actor == grant.actor
     await harness.authority.revoke_grant(grant_id=grant.grant_id)
     with pytest.raises(GrantRejectedError):
         await harness.authority.grant_for_refresh(
@@ -282,7 +282,7 @@ async def test_activation_timeout_abandons_new_agent_but_only_expires_reconnect(
     with engine.connect() as conn:
         agent_id = conn.execute(
             text("SELECT agent_id FROM credential_bindings WHERE binding_id = :binding_id"),
-            {"binding_id": active.binding_id},
+            {"binding_id": active.actor.binding_id},
         ).scalar_one()
     reconnect_decision = ReconnectAgentDecision(form_token=form_token, agent_id=agent_id)
     first = await harness.authority.decide(
@@ -321,7 +321,11 @@ async def test_activation_timeout_abandons_new_agent_but_only_expires_reconnect(
                 ORDER BY binding_id
                 """
             ),
-            {"initial": initial.binding_id, "active": active.binding_id, "replacement": replacement.binding_id},
+            {
+                "initial": initial.actor.binding_id,
+                "active": active.actor.binding_id,
+                "replacement": replacement.actor.binding_id,
+            },
         ).all()
         statuses = {row.binding_id: row.status for row in rows}
         agent_statuses = dict(
@@ -334,15 +338,15 @@ async def test_activation_timeout_abandons_new_agent_but_only_expires_reconnect(
                     WHERE binding.binding_id IN (:initial, :active)
                     """
                 ),
-                {"initial": initial.binding_id, "active": active.binding_id},
+                {"initial": initial.actor.binding_id, "active": active.actor.binding_id},
             ).all()
         )
     engine.dispose()
-    assert statuses[initial.binding_id] == "expired"
-    assert agent_statuses[initial.binding_id] == "abandoned"
-    assert statuses[active.binding_id] == "active"
-    assert statuses[replacement.binding_id] == "expired"
-    assert agent_statuses[active.binding_id] == "active"
+    assert statuses[initial.actor.binding_id] == "expired"
+    assert agent_statuses[initial.actor.binding_id] == "abandoned"
+    assert statuses[active.actor.binding_id] == "active"
+    assert statuses[replacement.actor.binding_id] == "expired"
+    assert agent_statuses[active.actor.binding_id] == "active"
 
 
 async def test_exchange_timeout_and_preissuance_revoke_abandon_new_agents(db_url: str) -> None:

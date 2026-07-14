@@ -47,6 +47,7 @@ py_library(
         "//haku/console:database_schema",
         "//haku/console:operator_identity",
         "//haku/console:operator_identity_store",
+        "//haku/console:tool_call_actor",
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//mcp_infra/authentik_auth:oidc_principal",
         "@pypi//sqlalchemy",

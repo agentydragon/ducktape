@@ -75,6 +75,7 @@ from haku.console.operator_identity import (
     VerifiedExternalIdentity,
 )
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.tool_call_actor import AgentActor
 from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
 
 _INTERACTION_LIFETIME = datetime.timedelta(minutes=10)
@@ -870,8 +871,8 @@ class PostgresAgentAuthority:
                     )
                 )
                 authorization = GrantAuthorization(
+                    actor=AgentActor(agent_id=agent_id, operator_id=resolved.operator_id, binding_id=binding_id),
                     grant_id=grant_id,
-                    binding_id=binding_id,
                     client_id=interaction.client_id,
                     allowed_scopes=granted_scopes,
                 )
@@ -1005,12 +1006,26 @@ class PostgresAgentAuthority:
                     binding.updated_at = now
                     agent.last_seen_at = now
                     agent.updated_at = now
-                authorization = GrantAuthorization(grant_id, binding.binding_id, client_id, allowed)
+                authorization = GrantAuthorization(
+                    actor=AgentActor(
+                        agent_id=agent.agent_id, operator_id=operator.operator_id, binding_id=binding.binding_id
+                    ),
+                    grant_id=grant_id,
+                    client_id=client_id,
+                    allowed_scopes=allowed,
+                )
             elif binding.status is CredentialBindingStatus.ACTIVE and agent.status is AgentStatus.ACTIVE:
                 if activate:
                     agent.last_seen_at = now
                     agent.updated_at = now
-                authorization = GrantAuthorization(grant_id, binding.binding_id, client_id, allowed)
+                authorization = GrantAuthorization(
+                    actor=AgentActor(
+                        agent_id=agent.agent_id, operator_id=operator.operator_id, binding_id=binding.binding_id
+                    ),
+                    grant_id=grant_id,
+                    client_id=client_id,
+                    allowed_scopes=allowed,
+                )
             else:
                 rejection = GrantRejectedError()
         if rejection is not None:
