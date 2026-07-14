@@ -272,10 +272,37 @@ data "sops_file" "zai_clients_key" {
   source_file = "${path.module}/litellm-zai-clients-key.yaml"
 }
 
+# zai-clients team: proxy-side catch-all routing Claude Code's claude-* slugs to
+# z.ai GLM. Attached to the zai_clients virtual key below (laptop z-claude alias +
+# agent-box zai user). Two mechanisms:
+#  - model_aliases: rewrite the two real Claude deployments (which ARE in
+#    model_list and would otherwise reach real Anthropic) to GLM.
+#  - router_settings.fallbacks [{"*": [...]}]: any claude-* slug NOT in
+#    model_list (future Anthropic releases, claude-sonnet-4-5, etc.) hits
+#    NotFoundError and falls back to GLM — zero maintenance on new versions.
+# Non-claude/non-GLM slugs are still blocked by the key's models allowlist
+# (claude-* + glm-*-anthropic), so z.ai-only containment holds.
+resource "litellm_team" "zai_clients" {
+  team_alias = "zai-clients"
+  model_aliases = {
+    "claude-sonnet-5"  = "glm-5.2-anthropic"
+    "claude-haiku-4-5" = "glm-5.2-anthropic"
+  }
+  router_settings = {
+    fallbacks = [
+      {
+        model           = "*"
+        fallback_models = ["glm-5.2-anthropic"]
+      }
+    ]
+  }
+}
+
 resource "litellm_key" "zai_clients" {
   key_alias = "zai-clients"
   key       = data.sops_file.zai_clients_key.data["litellm_zai_key"]
-  models    = local.zai_lane_models
+  models    = concat(["claude-*"], local.zai_lane_models)
+  team_id   = litellm_team.zai_clients.id
   metadata = {
     consumer = "laptop-z-claude, agent-box-zai"
   }
