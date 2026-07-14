@@ -35,7 +35,7 @@ from fastmcp.utilities.auth import parse_scopes
 from mcp import types as mcp_types
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
 from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
-from mcp.server.auth.provider import AuthorizeError, RefreshToken, TokenError
+from mcp.server.auth.provider import AccessToken as McpAccessToken, AuthorizeError, RefreshToken, TokenError
 from starlette.authentication import AuthenticationError
 from starlette.exceptions import HTTPException
 from starlette.middleware import Middleware as StarletteMiddleware
@@ -611,7 +611,7 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
             access_token = access_token.model_copy(update={"client_id": reference.client_id})
         return access_token
 
-    async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
+    async def revoke_token(self, token: McpAccessToken | RefreshToken) -> None:
         expected_token_use = "refresh" if isinstance(token, RefreshToken) else "access"
         try:
             reference = self._reference_grant(token.token, expected_token_use=expected_token_use)
@@ -753,7 +753,7 @@ def _grant_id_from_upstream_claims(value: object) -> UUID:
 
 def _required_client_id(client_id: str | None) -> str:
     if client_id is None or not client_id.strip():
-        raise AuthorizeError("invalid_client", "Client ID is required")
+        raise AuthorizeError("invalid_request", "Client ID is required")
     return client_id
 
 
