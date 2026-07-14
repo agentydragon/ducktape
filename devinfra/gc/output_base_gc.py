@@ -94,7 +94,7 @@ type DeletionResult = DeletedBase | SkippedBase | FailedBase
 def parse_duration(value: str) -> int:
     """Parse a compact non-negative duration and return seconds."""
     seconds = parse_timespan(value)
-    if seconds is None or seconds < 0:
+    if not isinstance(seconds, int) or seconds < 0:
         raise argparse.ArgumentTypeError("duration must be non-negative, such as 30m, 12h, or 7d")
     return seconds
 
@@ -496,8 +496,9 @@ def render_report(inspections: Sequence[Inspection], *, include_kept: bool, incl
     )
     if include_sizes:
         candidate_sizes = [sizes[item.path] for item in inspections if isinstance(item, PrunableBase)]
-        if all(size is not None for size in candidate_sizes):
-            parts[-1] += f"; {humanize.naturalsize(sum(candidate_sizes), binary=True)} prunable"
+        available_sizes = [size for size in candidate_sizes if size is not None]
+        if len(available_sizes) == len(candidate_sizes):
+            parts[-1] += f"; {humanize.naturalsize(sum(available_sizes), binary=True)} prunable"
         else:
             parts[-1] += "; prunable size unavailable"
     return "\n".join(parts)

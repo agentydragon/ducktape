@@ -44,11 +44,16 @@ after its worktree is removed; `--older-than 0s` opts out when immediate
 reclamation is intentional:
 
 ```bash
-bb run //devinfra:bazel_output_base_gc
-bb run //devinfra:bazel_output_base_gc -- --all --sizes
-bb run //devinfra:bazel_output_base_gc -- --delete
-bb run //devinfra:bazel_output_base_gc -- --older-than 0s --delete
+bazel-output-base-gc
+bazel-output-base-gc --all --sizes
+bazel-output-base-gc --delete
+bazel-output-base-gc --older-than 0s --delete
 ```
+
+The command is distributed in the released, artifact-pinned Nix `ducktape`
+package. While developing an unmerged version from this repository, run the
+source target instead:
+`bb run //devinfra/gc:bazel_output_base_gc -- --all`.
 
 The tool only auto-selects direct-child, default MD5-named output bases whose
 recorded workspace no longer exists. It requires the persisted NUL-delimited

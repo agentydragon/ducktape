@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra import bazel_output_base_gc as gc
+from devinfra.gc import output_base_gc as gc
 
 
 def _base_name(workspace: Path) -> str:

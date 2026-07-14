@@ -1,0 +1,35 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//skills:defs.bzl", "skill_package")
+
+py_library(
+    name = "bazel_output_base_gc_lib",
+    srcs = ["output_base_gc.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//humanize",
+        "@pypi//pytimeparse",
+        "@pypi//tabulate",
+    ],
+)
+
+py_binary(
+    name = "bazel_output_base_gc",
+    main_module = "devinfra.gc.output_base_gc",
+    visibility = ["//visibility:public"],
+    deps = [":bazel_output_base_gc_lib"],
+)
+
+py_test(
+    name = "test_bazel_output_base_gc",
+    srcs = ["test_bazel_output_base_gc.py"],
+    deps = [
+        ":bazel_output_base_gc_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+skill_package(
+    name = "clean_workspaces",
+    srcs = ["SKILL.md"],
+)

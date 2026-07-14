@@ -246,8 +246,11 @@ rec {
 
   ducktape = mkWheel {
     pname = "ducktape";
-    description = "CLI tools (git-commit-ai, difftree, gmail-archiver)";
+    description = "Ducktape command-line tools";
     mainProgram = "git-commit-ai";
+    # bazel-output-base-gc is exercised as an installed console script by
+    # nix-wheel-check.yml. That PR-source artifact override works before the
+    # first release containing devinfra.gc has replaced the existing pin.
     importsCheck = [
       "difftree.cli"
       "git_commit_ai.cli"
@@ -274,6 +277,9 @@ rec {
       pyhamcrest
       click
       unidiff
+      humanize
+      pytimeparse
+      tabulate
       beautifulsoup4
       google-api-python-client
       google-auth-httplib2

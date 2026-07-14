@@ -299,6 +299,7 @@ py_package(
         "agent_core",
         "cluster.skills.hetzner_vnc_screenshot",
         "cluster.skills.proxmox_vm",
+        "devinfra.gc",
         "difftree",
         "git_commit_ai",
         "gmail_api",
@@ -321,6 +322,7 @@ py_package(
         "//gmail_archiver:main",
         "//cluster/skills/hetzner_vnc_screenshot:vnc_screenshot",
         "//cluster/skills/proxmox_vm:vm_interact",
+        "//devinfra/gc:bazel_output_base_gc_lib",
     ],
 )
 
@@ -329,6 +331,7 @@ py_wheel(
     distribution = "ducktape",
     entry_points = {
         "console_scripts": [
+            "bazel-output-base-gc = devinfra.gc.output_base_gc:main",
             "git-commit-ai = git_commit_ai.cli:main",
             "difftree = difftree.cli:main",
             "gmail-archiver = gmail_archiver.main:app",
@@ -373,6 +376,10 @@ py_wheel(
         "pillow>=10.0.0",
         "websockets>=15.0",
         "ducktape-util",
+        # bazel-output-base-gc deps
+        "humanize>=4.0.0",
+        "pytimeparse>=1.1.8",
+        "tabulate>=0.9",
     ],
     version = "0.1.0",
     deps = [":ducktape_pkg"],

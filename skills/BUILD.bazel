@@ -17,6 +17,7 @@ pkg_zip(
         "//devinfra/buildbuddy_cli/skills/buildbuddy_api:buildbuddy_api_files",
         "//devinfra/ci/skills/cihealth:cihealth_files",
         "//devinfra/claude/skills/web_selfcheck:web_selfcheck_files",
+        "//devinfra/gc:clean_workspaces_files",
         "//devinfra/js/debundle/skills/debundle_architect:debundle_architect_files",
         "//devinfra/js/debundle/skills/debundle_intake:debundle_intake_files",
         "//devinfra/js/debundle/skills/debundle_integrator:debundle_integrator_files",
