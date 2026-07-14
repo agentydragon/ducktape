@@ -13,7 +13,7 @@ from __future__ import annotations
 import datetime
 import secrets
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal, Never, cast
+from typing import Annotated, Any, Literal, Never, TypeVar, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -163,6 +163,8 @@ class _AgentToolCallPrincipal:
 
 type _ResolvedToolCallPrincipal = _OperatorToolCallPrincipal | _AgentToolCallPrincipal
 
+_SelectRow = TypeVar("_SelectRow", bound=tuple[Any, ...])
+
 
 class PostgresToolCallLedger:
     """Postgres-backed approval ledger for the deployed console."""
@@ -233,11 +235,11 @@ class PostgresToolCallLedger:
 
     def get(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallRecord:
         with self._sessions.begin() as session:
-            stmt = self._scope_to_actor(select(McpToolCall).where(McpToolCall.tool_call_id == tool_call_id), actor)
-            row = session.scalars(stmt).first()
-            if row is None:
+            stmt = self._record_projection_stmt(actor).where(McpToolCall.tool_call_id == tool_call_id)
+            projection = session.execute(stmt).tuples().first()
+            if projection is None:
                 raise ToolCallNotFoundError("tool call not found")
-            return self._record(session, row)
+            return self._record_from_projection(*projection)
 
     def list_tool_calls(
         self,
@@ -249,7 +251,7 @@ class PostgresToolCallLedger:
         newest_first: bool = False,
     ) -> list[ToolCallRecord]:
         with self._sessions.begin() as session:
-            stmt = self._scope_to_actor(select(McpToolCall), actor)
+            stmt = self._record_projection_stmt(actor)
             if since is not None:
                 stmt = stmt.where(McpToolCall.updated_at > since)
             if statuses:
@@ -258,8 +260,8 @@ class PostgresToolCallLedger:
             # view wants those); the default ascending order stays the queue-friendly
             # oldest-first for pending-approval reads.
             order = McpToolCall.created_at.desc() if newest_first else McpToolCall.created_at
-            rows = session.scalars(stmt.order_by(order).limit(limit)).all()
-            return [self._record(session, row) for row in rows]
+            projections = session.execute(stmt.order_by(order).limit(limit)).tuples().all()
+            return [self._record_from_projection(*projection) for projection in projections]
 
     def events_after_id(self, *, actor: OperatorActor, after_event_id: int = 0) -> list[ToolCallEvent]:
         operator_id = self._operator_id(actor)
@@ -364,7 +366,7 @@ class PostgresToolCallLedger:
         return row
 
     @staticmethod
-    def _scope_to_actor(stmt: Select[tuple[McpToolCall]], actor: ToolCallActor) -> Select[tuple[McpToolCall]]:
+    def _scope_to_actor(stmt: Select[_SelectRow], actor: ToolCallActor) -> Select[_SelectRow]:
         """Apply the one canonical tool-call ownership predicate to reads and locked writes."""
         stmt = (
             stmt.join(McpToolCallPrincipal, McpToolCallPrincipal.tool_call_id == McpToolCall.tool_call_id)
@@ -380,6 +382,28 @@ class PostgresToolCallLedger:
                 )
             case _:
                 raise TypeError(f"unsupported tool-call actor: {type(actor).__name__}")
+
+    @classmethod
+    def _record_projection_stmt(
+        cls, actor: ToolCallActor
+    ) -> Select[tuple[McpToolCall, McpToolCallPrincipal, UUID, UUID, str]]:
+        """Select a scoped call together with the exact durable principal used to render it."""
+        return cls._scope_to_actor(
+            select(
+                McpToolCall,
+                McpToolCallPrincipal,
+                CredentialBinding.agent_id,
+                Agent.owner_operator_id,
+                AgentNameReservation.display_name,
+            ),
+            actor,
+        ).outerjoin(
+            AgentNameReservation,
+            and_(
+                AgentNameReservation.agent_id == Agent.agent_id,
+                AgentNameReservation.reservation_id == Agent.current_name_reservation_id,
+            ),
+        )
 
     @staticmethod
     def _row_from_record(record: ToolCallRecord) -> McpToolCall:
@@ -401,8 +425,19 @@ class PostgresToolCallLedger:
             approved_at=record.approved_at,
         )
 
-    def _record(self, session: Session, row: McpToolCall) -> ToolCallRecord:
-        return self._record_from_principal(row, self._principal(session, row.tool_call_id))
+    @classmethod
+    def _record_from_projection(
+        cls,
+        row: McpToolCall,
+        principal_row: McpToolCallPrincipal,
+        agent_id: UUID | None,
+        operator_id: UUID | None,
+        display_name: str | None,
+    ) -> ToolCallRecord:
+        principal = cls._resolve_principal(
+            row.tool_call_id, principal_row, agent_id=agent_id, operator_id=operator_id, display_name=display_name
+        )
+        return cls._record_from_principal(row, principal)
 
     @staticmethod
     def _record_from_principal(row: McpToolCall, principal: _ResolvedToolCallPrincipal) -> ToolCallRecord:
@@ -453,6 +488,19 @@ class PostgresToolCallLedger:
         if result is None:
             raise RuntimeError(f"tool call {tool_call_id!r} has no durable principal")
         row, agent_id, operator_id, display_name = result
+        return PostgresToolCallLedger._resolve_principal(
+            tool_call_id, row, agent_id=agent_id, operator_id=operator_id, display_name=display_name
+        )
+
+    @staticmethod
+    def _resolve_principal(
+        tool_call_id: str,
+        row: McpToolCallPrincipal,
+        *,
+        agent_id: UUID | None,
+        operator_id: UUID | None,
+        display_name: str | None,
+    ) -> _ResolvedToolCallPrincipal:
         if row.operator_id is not None:
             if row.binding_id is not None:
                 raise RuntimeError(f"tool call {tool_call_id!r} has contradictory principal variants")

@@ -707,6 +707,7 @@ py_test(
         ":operator_auth",
         ":operator_identity",
         ":operator_identity_store",
+        ":tool_call_actor",
         ":tool_call_service",
         "//:conftest",
         "//haku/console/agents:models",

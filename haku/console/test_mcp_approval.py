@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from fastmcp import FastMCP
 from mcp import types as mcp_types
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import sessionmaker
 from starlette.applications import Starlette
@@ -48,6 +48,7 @@ from haku.console.mcp_approval import (
     AliveServerMetadata,
     McpMetadataProvider,
     McpToolExecutor,
+    PostgresToolCallLedger,
     _execution_auth,
     _mcp_result_to_json,
 )
@@ -55,8 +56,9 @@ from haku.console.mcp_config import McpServerEntry
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore, _BuiltOperatorOAuthFlow
 from haku.console.operator_identity import InactiveOperatorError, OperatorIdentityTrust, OperatorStatus
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.tool_call_actor import OperatorActor
 from haku.console.tool_call_service import backend_auth_for_operator
-from haku.console.tool_calls import ToolCallEventType, ToolCallStatus
+from haku.console.tool_calls import AgentToolCallCaller, OperatorToolCallCaller, ToolCallEventType, ToolCallStatus
 from haku.console.tools.gmail import build_mcp as build_gmail_mcp
 from util.net import pick_free_port
 from util.testing.asgi import serve_app_sync, serve_fastmcp
@@ -1379,6 +1381,53 @@ def test_list_newest_first_keeps_the_most_recent(operator_client: TestClient) ->
     assert [r["tool_call_id"] for r in newest_two["tool_calls"]] == [third["tool_call_id"], second["tool_call_id"]]
     # The default (no newest_first) stays oldest-first for the pending-approval queue.
     assert [r["tool_call_id"] for r in oldest["tool_calls"]] == ids
+
+
+def test_ledger_get_and_list_load_principal_projection_in_one_query(
+    make_client, make_operator_client, console_config: Path, migrated_db_url: str
+) -> None:
+    with (
+        make_client(config_file=console_config) as agent,
+        make_operator_client(config_file=console_config, operator_external_user_key="op-haku") as operator,
+    ):
+        agent_response = agent.post(
+            "/api/tool-calls",
+            headers={"Authorization": "Bearer tool-token"},
+            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "agent"}, "wait_for_ms": 0},
+        )
+        assert agent_response.status_code == 200, agent_response.text
+        agent_call_id = cast(str, agent_response.json()["tool_call_id"])
+        operator_call_id = cast(str, _submit(operator)["tool_call_id"])
+
+    ledger = PostgresToolCallLedger(migrated_db_url)
+    actor = OperatorActor(operator_id=_operator_id(migrated_db_url, "op-haku"))
+    statements: list[str] = []
+
+    def record_tool_call_query(
+        _connection: object, _cursor: object, statement: str, _parameters: object, _context: object, _executemany: bool
+    ) -> None:
+        if "mcp_tool_call" in statement.casefold():
+            statements.append(statement)
+
+    event.listen(ledger._engine, "before_cursor_execute", record_tool_call_query)
+    try:
+        listed = ledger.list_tool_calls(actor=actor)
+        assert len(statements) == 1, statements
+
+        by_id = {record.tool_call_id: record for record in listed}
+        assert set(by_id) == {agent_call_id, operator_call_id}
+        assert by_id[agent_call_id].caller == AgentToolCallCaller(
+            agent_id=UUID("30000000-0000-4000-8000-000000000001"), display_name="Haku"
+        )
+        assert by_id[operator_call_id].caller == OperatorToolCallCaller()
+
+        statements.clear()
+        fetched = ledger.get(agent_call_id, actor=actor)
+        assert len(statements) == 1, statements
+        assert fetched == by_id[agent_call_id]
+    finally:
+        event.remove(ledger._engine, "before_cursor_execute", record_tool_call_query)
+        ledger._engine.dispose()
 
 
 def test_websocket_receives_pending_approval_event(operator_client: TestClient) -> None:
