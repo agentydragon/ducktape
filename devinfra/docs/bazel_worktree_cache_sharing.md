@@ -31,6 +31,43 @@ expensive content cache underneath separate output bases:
 Remote execution/cache already shares action work across machines. It does not
 share local analysis state between worktrees.
 
+## Output-base Lifecycle
+
+Deleting a Git worktree does not delete its per-workspace output base. Bazel's
+`--experimental_disk_cache_gc_*` options govern only the shared `cache/disk`
+tree; they do not reclaim hashed output bases.
+
+Run the local GC tool after worktree cleanup; it is a manual sweep, not part of
+`wt rm` or a scheduled job. The default command is a dry run. Its seven-day
+inactivity grace is conservative, so a recently built base is initially kept
+after its worktree is removed; `--older-than 0s` opts out when immediate
+reclamation is intentional:
+
+```bash
+bb run //devinfra:bazel_output_base_gc
+bb run //devinfra:bazel_output_base_gc -- --all --sizes
+bb run //devinfra:bazel_output_base_gc -- --delete
+bb run //devinfra:bazel_output_base_gc -- --older-than 0s --delete
+```
+
+The tool only auto-selects direct-child, default MD5-named output bases whose
+recorded workspace no longer exists. It requires the persisted NUL-delimited
+`server/cmdline`, `README`, and `DO_NOT_BUILD_HERE` records to agree; verifies
+the workspace-path hash; and rejects live servers, symlinks, and nested mounts.
+Missing or contradictory provenance is reported as `REVIEW` and never deleted
+automatically. Deletion repeats the checks while holding Bazel's byte-range
+lock, refusing a busy lock, then moves the base to a sibling quarantine before
+removing it with the standard Python directory remover.
+
+A failed removal leaves its `.bazel-output-base-gc-*` quarantine visible as
+`REVIEW` on the next run. Resolve the reported mount or permission problem,
+confirm no process uses it, then remove that quarantine manually.
+
+Shared `cache/repos`, `cache/repo-contents`, and `cache/disk` directories and the
+`install` base are outside the eligible naming scheme and remain untouched.
+Only one output-user-root is scanned. Pass `--output-user-root PATH` for an
+explicit non-default root; session and temporary roots are not auto-discovered.
+
 ## Recommended Layout
 
 Use one cache root per user:
