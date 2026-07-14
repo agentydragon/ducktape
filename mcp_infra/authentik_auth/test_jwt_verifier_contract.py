@@ -105,7 +105,7 @@ async def jwt_contract_harness(
                 http_client=jwks_client,
             )
 
-        monkeypatch.setattr("mcp_infra.authentik_auth.auth.ResilientOIDCProxy", _RejectingOIDCProxy)
+        monkeypatch.setattr("mcp_infra.authentik_auth.auth.ClientAuthorizationHookOIDCProxy", _RejectingOIDCProxy)
         monkeypatch.setattr("mcp_infra.authentik_auth.auth.JWTVerifier", build_verifier)
 
         auth = build_authentik_auth(

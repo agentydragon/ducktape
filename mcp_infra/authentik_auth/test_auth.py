@@ -1,4 +1,4 @@
-"""Tests for AuthentikAuthConfig, AuthentikTokenExchanger, and ResilientOIDCProxy."""
+"""Tests for Authentik auth construction, exchange, and compatibility shims."""
 
 from __future__ import annotations
 
@@ -27,8 +27,10 @@ from mcp_infra.authentik_auth.auth import (
     AuthentikAuthConfig,
     AuthentikTokenExchanger,
     BackendTokenExchangeError,
+    ClientAuthorizationHookOIDCProxy,
     DirectJwtTrust,
-    ResilientOIDCProxy,
+    DownstreamClientIdentityOIDCProxy,
+    RetryableRefreshOIDCProxy,
     build_authentik_auth,
 )
 
@@ -69,7 +71,7 @@ class _AuthBuildHarness:
 def auth_build_harness() -> Generator[_AuthBuildHarness]:
     with (
         patch("mcp_infra.authentik_auth.auth.httpx.get") as http_get,
-        patch("mcp_infra.authentik_auth.auth.ResilientOIDCProxy") as oidc_proxy_cls,
+        patch("mcp_infra.authentik_auth.auth.ClientAuthorizationHookOIDCProxy") as oidc_proxy_cls,
         patch("mcp_infra.authentik_auth.auth.JWTVerifier") as jwt_verifier_cls,
         patch("mcp_infra.authentik_auth.auth.MultiAuth") as multi_auth_cls,
     ):
@@ -230,9 +232,14 @@ def test_build_authentik_auth_passes_on_client_authorized(auth_build_harness: _A
     assert auth_build_harness.oidc_proxy_cls.call_args.kwargs["on_client_authorized"] is _cb
 
 
-async def test_resilient_proxy_checks_client_ownership_before_issuing_token() -> None:
+def test_compatibility_layers_are_independently_named_without_changing_builder_behavior() -> None:
+    assert issubclass(DownstreamClientIdentityOIDCProxy, RetryableRefreshOIDCProxy)
+    assert issubclass(ClientAuthorizationHookOIDCProxy, DownstreamClientIdentityOIDCProxy)
+
+
+async def test_client_authorization_hook_checks_ownership_before_issuing_token() -> None:
     """The ownership hook sees upstream identity before a local client token is issued."""
-    proxy = ResilientOIDCProxy.__new__(ResilientOIDCProxy)
+    proxy = ClientAuthorizationHookOIDCProxy.__new__(ClientAuthorizationHookOIDCProxy)
     proxy._on_client_authorized = AsyncMock()
     idp_tokens = {"id_token": "jwt-value", "access_token": "at"}
     proxy._code_store = AsyncMock()
@@ -253,7 +260,9 @@ async def test_resilient_proxy_checks_client_ownership_before_issuing_token() ->
     proxy._on_client_authorized.side_effect = record_ownership
     super_exchange = AsyncMock(side_effect=issue_token)
     with patch.object(OAuthProxy, "exchange_authorization_code", super_exchange) as super_exch:
-        result = await ResilientOIDCProxy.exchange_authorization_code(proxy, cast(Any, client), cast(Any, auth_code))
+        result = await ClientAuthorizationHookOIDCProxy.exchange_authorization_code(
+            proxy, cast(Any, client), cast(Any, auth_code)
+        )
 
     assert result is issued
     super_exch.assert_awaited_once()
@@ -261,24 +270,24 @@ async def test_resilient_proxy_checks_client_ownership_before_issuing_token() ->
     assert order == ["ownership", "token"]
 
 
-async def test_resilient_proxy_restores_dcr_client_id_after_token_swap() -> None:
+async def test_downstream_identity_proxy_restores_dcr_client_id_after_token_swap() -> None:
     """FastMCP's token swap returns the upstream client identity; the override re-attaches the
     DCR client_id from the reference JWT so per-agent identity survives (the "agent
     haku-console-mcp has no linked operator subject" class of failure)."""
-    proxy = ResilientOIDCProxy.__new__(ResilientOIDCProxy)
+    proxy = DownstreamClientIdentityOIDCProxy.__new__(DownstreamClientIdentityOIDCProxy)
     upstream = AccessToken(token="upstream-at", client_id="upstream-client", scopes=[], expires_at=None)
     proxy._jwt_issuer = cast(Any, SimpleNamespace(verify_token=lambda _t: {"client_id": "dcr-xyz", "jti": "j"}))
     with patch.object(OAuthProxy, "load_access_token", AsyncMock(return_value=upstream)):
-        result = await ResilientOIDCProxy.load_access_token(proxy, "fastmcp-jwt")
+        result = await DownstreamClientIdentityOIDCProxy.load_access_token(proxy, "fastmcp-jwt")
     assert result is not None
     assert result.client_id == "dcr-xyz"
     assert result.token == "upstream-at"
 
 
-async def test_resilient_proxy_load_access_token_keeps_non_jwt_identity() -> None:
+async def test_downstream_identity_proxy_keeps_non_jwt_identity() -> None:
     """A token super() accepted but the reference-JWT issuer can't verify (a non-JWT verifier
     matched) keeps its identity untouched; a rejected token stays rejected."""
-    proxy = ResilientOIDCProxy.__new__(ResilientOIDCProxy)
+    proxy = DownstreamClientIdentityOIDCProxy.__new__(DownstreamClientIdentityOIDCProxy)
 
     def boom(_t: str) -> dict:
         raise ValueError("not a fastmcp jwt")
@@ -286,11 +295,11 @@ async def test_resilient_proxy_load_access_token_keeps_non_jwt_identity() -> Non
     proxy._jwt_issuer = cast(Any, SimpleNamespace(verify_token=boom))
     accepted = AccessToken(token="t", client_id="static-agent", scopes=[], expires_at=None)
     with patch.object(OAuthProxy, "load_access_token", AsyncMock(return_value=accepted)):
-        result = await ResilientOIDCProxy.load_access_token(proxy, "opaque-bearer")
+        result = await DownstreamClientIdentityOIDCProxy.load_access_token(proxy, "opaque-bearer")
     assert result is accepted
 
     with patch.object(OAuthProxy, "load_access_token", AsyncMock(return_value=None)):
-        assert await ResilientOIDCProxy.load_access_token(proxy, "bad") is None
+        assert await DownstreamClientIdentityOIDCProxy.load_access_token(proxy, "bad") is None
 
 
 # ── AuthentikTokenExchanger tests ─────────────────────────────────────────
@@ -429,7 +438,7 @@ async def test_token_exchanger_sanitizes_malformed_success_response(
         await AuthentikTokenExchanger(_exchange_config()).exchange("upstream-authentik-jwt")
 
 
-# ── ResilientOIDCProxy tests ──────────────────────────────────────────────
+# ── RetryableRefreshOIDCProxy tests ───────────────────────────────────────
 #
 # These pin the load-bearing assumption that FastMCP's OAuthProxy raises its
 # blanket TokenError("invalid_grant") `from` the original httpx exception — and
@@ -438,12 +447,12 @@ async def test_token_exchanger_sanitizes_malformed_success_response(
 
 
 @pytest.fixture
-def proxy(monkeypatch: pytest.MonkeyPatch) -> ResilientOIDCProxy:
+def proxy(monkeypatch: pytest.MonkeyPatch) -> RetryableRefreshOIDCProxy:
     # OIDCProxy.__init__ fetches OIDC discovery over the network, so skip it;
     # each test installs the minimum state needed for its branch. Do not wait
     # between retries in tests.
-    monkeypatch.setattr(ResilientOIDCProxy, "refresh_retry_wait", wait_none())
-    return object.__new__(ResilientOIDCProxy)
+    monkeypatch.setattr(RetryableRefreshOIDCProxy, "refresh_retry_wait", wait_none())
+    return object.__new__(RetryableRefreshOIDCProxy)
 
 
 def _invalid_grant_from(cause: BaseException | None) -> TokenError:
@@ -464,7 +473,7 @@ def _failures(outcome: str) -> float:
     return REGISTRY.get_sample_value("mcp_auth_upstream_refresh_failures_total", {"outcome": outcome}) or 0.0
 
 
-async def test_resilient_proxy_transient_5xx_becomes_503(proxy: ResilientOIDCProxy) -> None:
+async def test_retryable_refresh_proxy_transient_5xx_becomes_503(proxy: RetryableRefreshOIDCProxy) -> None:
     """Authentik down (gateway 503) must NOT surface as invalid_grant."""
     before = _failures("transient")
     with (
@@ -481,7 +490,7 @@ async def test_resilient_proxy_transient_5xx_becomes_503(proxy: ResilientOIDCPro
     assert _failures("transient") == before + 1
 
 
-async def test_resilient_proxy_dns_failure_becomes_503(proxy: ResilientOIDCProxy) -> None:
+async def test_retryable_refresh_proxy_dns_failure_becomes_503(proxy: RetryableRefreshOIDCProxy) -> None:
     """DNS resolution failure (cluster DNS outage) is transient, not invalid_grant."""
     dns_error = httpx.ConnectError("[Errno -3] Temporary failure in name resolution")
     with (
@@ -492,7 +501,7 @@ async def test_resilient_proxy_dns_failure_becomes_503(proxy: ResilientOIDCProxy
     assert exc_info.value.status_code == 503
 
 
-async def test_resilient_proxy_retries_then_succeeds(proxy: ResilientOIDCProxy) -> None:
+async def test_retryable_refresh_proxy_retries_then_succeeds(proxy: RetryableRefreshOIDCProxy) -> None:
     """A blip on the first attempt is absorbed by the in-process retry."""
     token = object()
     with patch.object(
@@ -502,7 +511,7 @@ async def test_resilient_proxy_retries_then_succeeds(proxy: ResilientOIDCProxy) 
     assert upstream.call_count == 2
 
 
-async def test_resilient_proxy_oauth_state_store_timeout_becomes_503(proxy: ResilientOIDCProxy) -> None:
+async def test_retryable_refresh_proxy_oauth_state_store_timeout_becomes_503(proxy: RetryableRefreshOIDCProxy) -> None:
     """A Valkey/glide timeout while persisting rotated OAuth state is transient.
 
     This is the path seen in grocy-sf logs: Authentik returned 200, then
@@ -524,7 +533,9 @@ async def test_resilient_proxy_oauth_state_store_timeout_becomes_503(proxy: Resi
     assert _failures("storage") == before + 1
 
 
-async def test_resilient_proxy_oauth_state_store_timeout_retries_then_succeeds(proxy: ResilientOIDCProxy) -> None:
+async def test_retryable_refresh_proxy_oauth_state_store_timeout_retries_then_succeeds(
+    proxy: RetryableRefreshOIDCProxy,
+) -> None:
     token = object()
     with patch.object(
         OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=[GlideTimeoutError("timed out"), token])
@@ -538,8 +549,8 @@ async def test_resilient_proxy_oauth_state_store_timeout_retries_then_succeeds(p
     [_http_error(400), OAuth2Error(description="Token is invalid or expired")],
     ids=["http-4xx", "authlib-oauth2error"],
 )
-async def test_resilient_proxy_genuine_oauth_error_stays_invalid_grant(
-    proxy: ResilientOIDCProxy, upstream_rejection: Exception
+async def test_retryable_refresh_proxy_genuine_oauth_error_stays_invalid_grant(
+    proxy: RetryableRefreshOIDCProxy, upstream_rejection: Exception
 ) -> None:
     """Authentik actually rejecting the grant (4xx / OAuth error response) must
     still surface as invalid_grant so the client knows to re-authenticate."""
@@ -555,7 +566,7 @@ async def test_resilient_proxy_genuine_oauth_error_stays_invalid_grant(
     assert _failures("oauth") == before + 1
 
 
-async def test_resilient_proxy_local_token_errors_pass_through(proxy: ResilientOIDCProxy) -> None:
+async def test_retryable_refresh_proxy_local_token_errors_pass_through(proxy: RetryableRefreshOIDCProxy) -> None:
     """TokenErrors with no upstream cause (unknown refresh token, missing JTI
     mapping) are local invalid_grant — re-raised untouched, no retry, and NOT
     counted as an upstream failure (they'd false-fire the alert)."""

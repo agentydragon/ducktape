@@ -362,6 +362,7 @@ py_test(
         ":conftest",
         "//airlock/oauth:provider",
         "//mcp_infra:prefix",
+        "//mcp_infra/authentik_auth:auth",
         "//util:net",
         "//util/testing:mock_oidc",
         "@pypi//fastmcp_slim",
