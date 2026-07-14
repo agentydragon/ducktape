@@ -3,7 +3,10 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 exports_files(
-    ["proxy-config.yaml"],
+    [
+        "chatgpt-proxy-config.yaml",
+        "proxy-config.yaml",
+    ],
     visibility = ["//debug/litellm_probe:__pkg__"],
 )
 
@@ -27,7 +30,16 @@ py_binary(
 py_test(
     name = "test_generate_litellm",
     srcs = ["test_generate_litellm.py"],
-    data = ["proxy-config.yaml"],
+    data = [
+        "chatgpt-deployment.yaml",
+        "chatgpt-proxy-config.yaml",
+        "chatgpt-service.yaml",
+        "deployment.yaml",
+        "httproute.yaml",
+        "kustomization.yaml",
+        "proxy-config.yaml",
+        "service.yaml",
+    ],
     deps = [
         ":generate_litellm",
         "//util/bazel:runfiles",
