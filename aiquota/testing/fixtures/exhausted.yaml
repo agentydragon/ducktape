@@ -1,0 +1,21 @@
+# Exact exhausted-window regression based on a real z.ai response.
+# The terminal short window shows only its reset countdown and exhausted state;
+# its prior pace delta and projected exhaustion time are no longer actionable.
+claude:
+  short: { usedPercent: 0, resetSeconds: 0, windowSeconds: 18000 }
+  long: { usedPercent: 88, resetSeconds: 313200, windowSeconds: 604800 }
+  lastFetch: 1
+  error: null
+  extraSpend: null
+codex:
+  short: null
+  long: { usedPercent: 36, resetSeconds: 507600, windowSeconds: 604800 }
+  lastFetch: 1
+  error: null
+  extraSpend: null
+zai:
+  short: { usedPercent: 100, resetSeconds: 10860, windowSeconds: 18000 }
+  long: { usedPercent: 30, resetSeconds: 154800, windowSeconds: 604800 }
+  lastFetch: 1
+  error: null
+  extraSpend: null

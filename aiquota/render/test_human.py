@@ -60,6 +60,44 @@ def test_renders_both_windows_with_reset_and_pace(snapshot: SnapshotAssertion) -
     assert out == snapshot
 
 
+@pytest.mark.parametrize("used_percent", [100, 105])
+def test_exhausted_window_suppresses_pace_and_projection(used_percent: float) -> None:
+    out = human.render(
+        _quotas(
+            _pq(
+                "zai",
+                _success(
+                    short_window=QuotaWindow(
+                        used_percent=used_percent, reset_seconds=3 * 3600 + 60, window_seconds=5 * 3600
+                    )
+                ),
+            )
+        ),
+        now=_FETCHED_AT,
+    )
+
+    assert out == f"zai\n  5h: {round(used_percent):>3d}%  ↻ 3h01m  exhausted"
+    assert "Δ" not in out
+    assert "exhausts" not in out
+
+
+def test_subthreshold_usage_does_not_render_as_exhausted() -> None:
+    out = human.render(
+        _quotas(
+            _pq(
+                "zai",
+                _success(
+                    short_window=QuotaWindow(used_percent=99.9, reset_seconds=3 * 3600 + 60, window_seconds=5 * 3600)
+                ),
+            )
+        ),
+        now=_FETCHED_AT,
+    )
+
+    assert "5h:  99%" in out
+    assert "exhausted" not in out
+
+
 def test_aligns_reset_and_pace_columns_across_providers() -> None:
     out = human.render(
         _quotas(

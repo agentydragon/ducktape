@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from aiquota.models import AllQuotas, ExtraSpend, FetchSuccess, QuotaWindow, SuccessfulProviderFetch
-from aiquota.pace import compute_pace
+from aiquota.pace import compute_pace, is_exhausted
 from aiquota.render.format import format_age, format_duration, format_pace, format_pace_forecast, format_window_label
 from aiquota.render.view_model import ProviderView, to_view
 
@@ -131,11 +131,24 @@ def _active_windows_line(windows: list[QuotaWindow]) -> str:
 
 def _active_window_part(window: QuotaWindow) -> str:
     label = format_window_label(window)
-    return f"{label}: {round(window.used_percent):>3d}% ↻ {format_duration(window.reset_seconds)}"
+    return f"{label}: {_display_used_percent(window):>3d}% ↻ {format_duration(window.reset_seconds)}"
+
+
+def _display_used_percent(w: QuotaWindow) -> int:
+    rounded = round(w.used_percent)
+    return rounded if is_exhausted(w) else min(rounded, 99)
 
 
 def _window_row(w: QuotaWindow) -> _WindowRow:
-    used = f"{round(w.used_percent):>3d}%"
+    used = f"{_display_used_percent(w):>3d}%"
+    if is_exhausted(w):
+        return _WindowRow(
+            label=format_window_label(w),
+            used=used,
+            reset=format_duration(w.reset_seconds),
+            pace=None,
+            forecast="exhausted",
+        )
     pace = compute_pace(w)
     pace_str = format_pace(pace)
     return _WindowRow(

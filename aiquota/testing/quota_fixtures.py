@@ -17,7 +17,7 @@ from aiquota.models import (
     SuccessfulProviderFetch,
 )
 
-FIXTURE_NAMES = ("empty", "tints", "hot", "extra_enabled_not_burning", "stale_fallback")
+FIXTURE_NAMES = ("empty", "tints", "hot", "exhausted", "extra_enabled_not_burning", "stale_fallback")
 PROVIDER_ORDER = ("claude", "codex", "zai")
 DEFAULT_NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 

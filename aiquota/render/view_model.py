@@ -17,9 +17,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from aiquota.models import AllQuotas, FetchSuccess, ProviderFetch, ProviderQuota, SuccessfulProviderFetch
-
-# Same threshold as render/human.py — see _OVER_PLAN_PERCENT there for rationale.
-_OVER_PLAN_PERCENT = 100.0
+from aiquota.pace import is_exhausted
 
 ExtraStatus = Literal["none", "informational", "active"]
 
@@ -64,7 +62,7 @@ def currently_over_plan(out: ProviderFetch) -> bool:
     extra = out.result.extra_spend
     if extra is None or not extra.is_enabled:
         return False
-    return any(window.used_percent >= _OVER_PLAN_PERCENT for window in out.result.windows)
+    return any(is_exhausted(window) for window in out.result.windows)
 
 
 def _extra_status(out: ProviderFetch) -> ExtraStatus:

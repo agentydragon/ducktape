@@ -16,6 +16,7 @@ py_library(
     visibility = ["//aiquota:__subpackages__"],
     deps = [
         "//aiquota:models",
+        "//aiquota:pace",
         "@pypi//pydantic",
     ],
 )

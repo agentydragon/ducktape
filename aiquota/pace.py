@@ -1,6 +1,11 @@
 from aiquota.models import PaceResult, QuotaWindow
 
 STABLE_FRACTION = 0.05
+EXHAUSTED_PERCENT = 100.0
+
+
+def is_exhausted(w: QuotaWindow) -> bool:
+    return w.used_percent >= EXHAUSTED_PERCENT
 
 
 def compute_pace(w: QuotaWindow) -> PaceResult | None:

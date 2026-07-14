@@ -6,7 +6,7 @@
     7d:  48%  ↻ 5d12h  Δ+27%  exhausts ~3d21h before reset
   zai
     5h:  49%  ↻ 2h45m  Δ+4%   exhausts ~24m before reset
-    7d: 100%  ↻ 6d14h  Δ+94%  exhausts ~6d14h before reset
+    7d: 100%  ↻ 6d14h  exhausted
   '''
 # ---
 # name: test_renders_shared_fixture[empty]
@@ -17,6 +17,18 @@
     no data
   zai
     no data
+  '''
+# ---
+# name: test_renders_shared_fixture[exhausted]
+  '''
+  claude
+    5h:   0%  ↻ 0m
+    7d:  88%  ↻ 3d15h  Δ+40%  exhausts ~3d3h before reset
+  codex
+    7d:  36%  ↻ 5d21h  Δ+20%  exhausts ~3d21h before reset
+  zai
+    5h: 100%  ↻ 3h01m  exhausted
+    7d:  30%  ↻ 1d19h  Δ-44%  leaves ~60% unused at reset
   '''
 # ---
 # name: test_renders_shared_fixture[extra_enabled_not_burning]

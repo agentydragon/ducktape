@@ -24,7 +24,7 @@ Update flow when the rendering changes intentionally:
         --remote_upload_local_results=false --nocache_test_results
 
     INV=<invocation-id from build output>
-    for f in empty tints hot extra_enabled_not_burning stale_fallback; do
+    for f in empty tints hot exhausted extra_enabled_not_burning stale_fallback; do
       bbapi artifact download "$INV" "test.outputs/$f.png" \\
         -o "aiquota/gnome/__snapshots__/$f.png"
     done

@@ -144,6 +144,16 @@ function computePace({ usedPercent, resetSeconds, windowSeconds }) {
   return { elapsedFrac, deviation, projectedAtReset, secondsToExhaust, stable };
 }
 
+function isExhausted(state) {
+  return state?.usedPercent >= 100;
+}
+
+function formatUsedPercent(state) {
+  if (state?.usedPercent == null) return "?";
+  const rounded = Math.round(state.usedPercent);
+  return `${isExhausted(state) ? rounded : Math.min(rounded, 99)}%`;
+}
+
 function tintFor({ pace, usedPercent, isShort }) {
   if (usedPercent == null) return "unknown";
   if (isShort && usedPercent >= SHORT_WIN_HOT_PERCENT) return "hot";
@@ -561,7 +571,8 @@ const QuotaIndicator = GObject.registerClass(
         return;
       }
       const liveWindows = windows.map((window) => withLiveReset(window));
-      const paces = liveWindows.map((window) => computePace(window));
+      const paces = liveWindows.map((window) => (isExhausted(window) ? null : computePace(window)));
+      const exhaustedWindows = liveWindows.filter((window) => isExhausted(window));
       const longestDuration = Math.max(...liveWindows.map((window) => window.windowSeconds));
       const tints = liveWindows.map((window, index) =>
         tintFor({
@@ -572,7 +583,7 @@ const QuotaIndicator = GObject.registerClass(
       );
       const overPlan = state.currentlyOverPlan === true;
       const stale = staleAge != null || isStaleFetch(state.lastFetch);
-      const tint = overPlan ? "hot" : stale ? "stale" : bindingTint(tints);
+      const tint = overPlan ? "hot" : stale ? "stale" : exhaustedWindows.length > 0 ? "hot" : bindingTint(tints);
       this._setTint(icon, paceLabel, tint);
       let summaryIndex = liveWindows.length - 1;
       for (let index = liveWindows.length - 1; index >= 0; index--) {
@@ -584,6 +595,10 @@ const QuotaIndicator = GObject.registerClass(
       const paceText = formatPace(paces[summaryIndex]) ?? "";
       if (overPlan) {
         paceLabel.set_text(`${formatCompactDollars(state.extraSpend.used_usd)} ⚡`);
+      } else if (exhaustedWindows.length > 0) {
+        // Multiple exhausted windows keep the provider blocked until the last reset.
+        const resetSeconds = Math.max(...exhaustedWindows.map((window) => window.resetSeconds));
+        paceLabel.set_text(`↻${formatDuration(resetSeconds)}`);
       } else {
         paceLabel.set_text(paceText);
       }
@@ -638,7 +653,7 @@ const QuotaIndicator = GObject.registerClass(
     _formatExtraActiveWindow(state) {
       const liveState = withLiveReset(state);
       const label = formatWindowLabel(liveState);
-      const used = liveState.usedPercent != null ? `${Math.round(liveState.usedPercent)}%` : "?";
+      const used = formatUsedPercent(liveState);
       return `${label}: ${used} ↻${formatDuration(liveState.resetSeconds)}`;
     }
 
@@ -654,14 +669,19 @@ const QuotaIndicator = GObject.registerClass(
       item._bars.visible = true;
       const liveState = withLiveReset(state);
       const label = formatWindowLabel(liveState);
-      const pace = computePace(liveState);
-      const used = liveState.usedPercent != null ? `${Math.round(liveState.usedPercent)}%` : "?";
+      const exhausted = isExhausted(liveState);
+      const pace = exhausted ? null : computePace(liveState);
+      const used = formatUsedPercent(liveState);
       const reset = `↻${formatDuration(liveState.resetSeconds)}`;
       const paceStr = formatPace(pace);
       const forecast = formatForecast(pace, liveState.resetSeconds);
       const parts = [used, reset];
-      if (paceStr) parts.push(`Δ${paceStr}`);
-      if (forecast) parts.push(forecast);
+      if (exhausted) {
+        parts.push("exhausted");
+      } else {
+        if (paceStr) parts.push(`Δ${paceStr}`);
+        if (forecast) parts.push(forecast);
+      }
       item._summaryLabel.set_text(`${label}: ${parts.join("  ")}`);
 
       this._setBarFill(item._timeFill, elapsedFraction(liveState));

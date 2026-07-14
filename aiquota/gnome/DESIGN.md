@@ -170,6 +170,7 @@ Edge cases:
 - **First 5% of window** (`time_elapsed_fraction < 0.05`): pace is too noisy. Suppress pace output, fall back to plain "% used".
 - **Last 5% of window**: same — pace becomes hyper-sensitive. Just show "% used" and time-to-reset.
 - **`used_percent == 0`**: forecast is "infinite surplus" — display `-` rather than a number.
+- **`used_percent >= 100`**: the window is already exhausted. Suppress pace and projections, show the reset countdown with an exhausted state, and use a hot reset countdown in the panel unless extra usage is active.
 
 ### Cumulative pace vs. instantaneous burn rate
 

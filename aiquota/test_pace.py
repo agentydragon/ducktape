@@ -1,7 +1,7 @@
 import pytest_bazel
 
 from aiquota.models import QuotaWindow
-from aiquota.pace import binding_tint, compute_pace, tint_for
+from aiquota.pace import binding_tint, compute_pace, is_exhausted, tint_for
 
 if __name__ == "__main__":
     pytest_bazel.main()
@@ -36,6 +36,12 @@ def test_compute_pace_early_unstable() -> None:
     pace = compute_pace(w)
     assert pace is not None
     assert not pace.stable
+
+
+def test_exhausted_threshold() -> None:
+    assert not is_exhausted(QuotaWindow(used_percent=99.9, reset_seconds=9000, window_seconds=18000))
+    assert is_exhausted(QuotaWindow(used_percent=100, reset_seconds=9000, window_seconds=18000))
+    assert is_exhausted(QuotaWindow(used_percent=105, reset_seconds=9000, window_seconds=18000))
 
 
 def test_tint_for_hot_short() -> None:
