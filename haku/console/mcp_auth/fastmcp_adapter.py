@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import inspect
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, SupportsFloat, cast, override
@@ -873,33 +873,34 @@ def assert_fastmcp_adapter_compatibility() -> None:
 
     if fastmcp.__version__ != _SUPPORTED_FASTMCP_VERSION:
         raise AssertionError(f"HakuAgentOAuthProxy supports FastMCP {_SUPPORTED_FASTMCP_VERSION} only")
-    inherited_public_methods = ("get_routes", "_handle_idp_callback", "load_authorization_code", "register_client")
-    for method_name in inherited_public_methods:
-        if getattr(HakuAgentOAuthProxy, method_name) is not getattr(OAuthProxy, method_name):
-            raise AssertionError(f"Haku must leave OAuthProxy.{method_name} untouched")
+    if HakuAgentOAuthProxy.get_routes is not OAuthProxy.get_routes:
+        raise AssertionError("Haku must leave OAuthProxy.get_routes untouched")
+    if HakuAgentOAuthProxy._handle_idp_callback is not OAuthProxy._handle_idp_callback:
+        raise AssertionError("Haku must leave OAuthProxy._handle_idp_callback untouched")
+    if HakuAgentOAuthProxy.load_authorization_code is not OAuthProxy.load_authorization_code:
+        raise AssertionError("Haku must leave OAuthProxy.load_authorization_code untouched")
+    if HakuAgentOAuthProxy.register_client is not OAuthProxy.register_client:
+        raise AssertionError("Haku must leave OAuthProxy.register_client untouched")
 
-    expected_signatures = {
-        "authorize": ("self", "client", "params"),
-        "exchange_authorization_code": ("self", "client", "authorization_code"),
-        "exchange_refresh_token": ("self", "client", "refresh_token", "scopes"),
-        "load_access_token": ("self", "token"),
-        "revoke_token": ("self", "token"),
-        "_extract_upstream_claims": ("self", "idp_tokens"),
-        "_translate_scopes_from_idp": ("self", "scopes"),
-        "_try_transparent_refresh": ("self", "upstream_token_set"),
-    }
-    for method_name, expected in expected_signatures.items():
-        actual = tuple(inspect.signature(getattr(OAuthProxy, method_name)).parameters)
-        if actual != expected:
-            raise AssertionError(f"OAuthProxy.{method_name} signature changed: {actual!r}")
-
-    multi_auth_verify = tuple(inspect.signature(MultiAuth.verify_token).parameters)
-    if multi_auth_verify != ("self", "token"):
-        raise AssertionError(f"MultiAuth.verify_token signature changed: {multi_auth_verify!r}")
+    _assert_method_parameters(OAuthProxy.authorize, ("self", "client", "params"))
+    _assert_method_parameters(OAuthProxy.exchange_authorization_code, ("self", "client", "authorization_code"))
+    _assert_method_parameters(OAuthProxy.exchange_refresh_token, ("self", "client", "refresh_token", "scopes"))
+    _assert_method_parameters(OAuthProxy.load_access_token, ("self", "token"))
+    _assert_method_parameters(OAuthProxy.revoke_token, ("self", "token"))
+    _assert_method_parameters(OAuthProxy._extract_upstream_claims, ("self", "idp_tokens"))
+    _assert_method_parameters(OAuthProxy._translate_scopes_from_idp, ("self", "scopes"))
+    _assert_method_parameters(OAuthProxy._try_transparent_refresh, ("self", "upstream_token_set"))
+    _assert_method_parameters(MultiAuth.verify_token, ("self", "token"))
     if HakuFailurePreservingMultiAuth.get_routes is not MultiAuth.get_routes:
         raise AssertionError("Haku auth composite must leave MultiAuth route delegation untouched")
     if HakuFailurePreservingMultiAuth.get_well_known_routes is not MultiAuth.get_well_known_routes:
         raise AssertionError("Haku auth composite must leave MultiAuth discovery delegation untouched")
+
+
+def _assert_method_parameters(method: Callable[..., Any], expected: tuple[str, ...]) -> None:
+    actual = tuple(inspect.signature(method).parameters)
+    if actual != expected:
+        raise AssertionError(f"{method.__qualname__} signature changed: {actual!r}")
 
 
 def _grant_id_from_claims(claims: Mapping[str, Any]) -> UUID:
