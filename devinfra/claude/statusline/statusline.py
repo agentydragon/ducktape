@@ -197,10 +197,13 @@ def render(
         if cwd.startswith(home_str):
             cwd = "~" + cwd[len(home_str) :]
 
-    # Hide per-session cost for subscription users (it's meaningless).
+    # Per-session USD cost only applies to Anthropic per-token API billing.
+    # Hide it for Anthropic subscriptions and z.ai — both are flat-rate, so the
+    # cost Claude Code derives per-token is meaningless for them.
     # TODO: Wire up Admin API (/v1/organizations/cost_report) with a read-only
     # admin key to show current-month API cost in the statusline.
-    if is_subscription:
+    flat_rate = is_subscription or (quota_route is not None and quota_route.provider == "zai")
+    if flat_rate:
         segments: list[Text] = [Text(f"{model_name} {cwd}")]
     else:
         cost = data.cost.total_cost_usd if data.cost else 0.0

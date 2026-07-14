@@ -398,6 +398,27 @@ def test_render_api_billing(full_input: Input, snapshot: SnapshotAssertion):
     assert result == snapshot
 
 
+@pytest.mark.parametrize(
+    "route",
+    [
+        pytest.param(QuotaRoute(provider="zai", label="zai"), id="direct_zai"),
+        pytest.param(QuotaRoute(provider="zai", label="litellm→zai"), id="litellm_zai"),
+    ],
+)
+def test_render_zai_flat_rate_hides_cost(full_input: Input, route: QuotaRoute):
+    """z.ai is a flat subscription — per-session USD cost does not apply."""
+    result = render(
+        full_input,
+        is_subscription=False,
+        quota=None,
+        home=Path("/home/user"),
+        now=_NOW,
+        daemon_healthy=True,
+        quota_route=route,
+    )
+    assert "$" not in result
+
+
 def test_render_subscription_high_usage(full_input: Input, snapshot: SnapshotAssertion):
     """Subscription user burning fast — shows dry warning."""
     result = render(
