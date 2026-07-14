@@ -72,7 +72,7 @@ def operator_session_cookie(
     """A Starlette SessionMiddleware `session` cookie for a logged-in operator, mirroring its own
     sign format (`TimestampSigner` over base64-JSON) so a TestClient can present operator identity
     without walking the live OIDC login."""
-    session = {
+    session: dict[str, object] = {
         SESSION_USER_KEY: {
             "operator_id": operator_id,
             "identity_id": identity_id,
