@@ -19,36 +19,47 @@ function foldedEntryNames(doc: string, lang: "json" | "yaml", budget: number): s
 
 describe("chooseCompactFolds", () => {
   it("folds a too-big middle sibling, keeping the leading and trailing entries visible", () => {
-    const doc = [
-      "first:",
-      "  a: 1",
-      "middle:",
-      "  a: 1",
-      "  b: 2",
-      "  c: 3",
-      "  d: 4",
-      "  e: 5",
-      "last:",
-      "  z: 9",
-    ].join("\n");
+    const doc = `first:
+  a: 1
+middle:
+  a: 1
+  b: 2
+  c: 3
+  d: 4
+  e: 5
+last:
+  z: 9`;
     // budget 5: `first` (2 lines) fits, `middle` (6) does not and folds, `last` is the final
     // sibling so it expands instead of folding.
     expect(foldedEntryNames(doc, "yaml", 5)).toEqual(["middle"]);
   });
 
   it("folds a verbose leading field rather than letting it starve a later field", () => {
-    const doc = ["huge:", "  a: 1", "  b: 2", "  c: 3", "  d: 4", "  e: 5", "small:", "  x: 1"].join("\n");
+    const doc = `huge:
+  a: 1
+  b: 2
+  c: 3
+  d: 4
+  e: 5
+small:
+  x: 1`;
     // The breadth cap reserves a header line for `small`, so `huge` folds even though it's first.
     expect(foldedEntryNames(doc, "yaml", 4)).toEqual(["huge"]);
   });
 
   it("does not fold when the payload already fits the budget", () => {
-    const doc = ["a: 1", "b: 2", "c: 3"].join("\n");
+    const doc = `a: 1
+b: 2
+c: 3`;
     expect(foldedEntryNames(doc, "yaml", 10)).toEqual([]);
   });
 
   it("leaves nothing to fold in a flat object whose only container is the root", () => {
-    const doc = ["{", '  "a": 1,', '  "b": 2,', '  "c": 3', "}"].join("\n");
+    const doc = `{
+  "a": 1,
+  "b": 2,
+  "c": 3
+}`;
     expect(foldedEntryNames(doc, "json", 2)).toEqual([]);
   });
 });
