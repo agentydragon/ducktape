@@ -26,13 +26,13 @@ spec:
       terminationGracePeriodSeconds: 90
       initContainers:
         # The seed is only disaster-recovery bootstrap material. LiteLLM rotates
-        # the live token on the PVC, so never overwrite an existing auth file.
+        # the live token on the PVC, so preserve any complete auth file.
         - name: seed-chatgpt-auth
           image: litellm/litellm:1.90.2
           command:
             - sh
             - -c
-            - test -f /data/chatgpt/auth.json || cp /seed/auth.json /data/chatgpt/auth.json
+            - grep -q '"refresh_token"' /data/chatgpt/auth.json || cp /seed/auth.json /data/chatgpt/auth.json
           volumeMounts:
             - name: chatgpt-auth
               mountPath: /data/chatgpt

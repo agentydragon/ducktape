@@ -58,6 +58,9 @@ def test_chatgpt_auth_state_is_absent_from_main_deployment() -> None:
     assert chatgpt["spec"]["strategy"] == {"type": "Recreate"}
     assert "initContainers" not in main_pod
     assert [container["name"] for container in chatgpt_pod["initContainers"]] == ["seed-chatgpt-auth"]
+    assert chatgpt_pod["initContainers"][0]["command"][-1] == (
+        "grep -q '\"refresh_token\"' /data/chatgpt/auth.json || cp /seed/auth.json /data/chatgpt/auth.json"
+    )
     assert "CHATGPT_TOKEN_DIR" not in {env["name"] for env in main_pod["containers"][0]["env"]}
     assert "CHATGPT_TOKEN_DIR" in {env["name"] for env in chatgpt_pod["containers"][0]["env"]}
     assert {volume["name"] for volume in main_pod["volumes"]}.isdisjoint({"chatgpt-auth", "chatgpt-auth-seed"})
