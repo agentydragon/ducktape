@@ -16,11 +16,16 @@
   config,
   pkgs,
   lib,
+  inputs,
   username,
   ...
 }:
 let
   keys = import ../../../ssh-keys.nix;
+  pkgsMaster = import inputs.nixpkgs-master {
+    inherit (pkgs.stdenv.hostPlatform) system;
+    config.allowUnfree = true;
+  };
 in
 {
   imports = [
@@ -62,6 +67,18 @@ in
 
   # IPU7 webcam (Intel Lunar Lake, OV08X40 sensor)
   ducktape.ipu7Camera.enable = true;
+
+  # The unpatched Linux 7.1 Xe/TTM allocator can enter a high-order-memory
+  # fragmentation loop: kswapd -> Xe BO eviction -> GPU VM rebind -> repeat.
+  # On this host it causes active zram/disk swap with ~19 GiB available; see
+  # debug/rugged/stalls/report.md.  The pinned Linux 7.2-rc2 contains upstream commit
+  # ba7fd1634228 ("drm/xe: Set TTM device beneficial_order to 9 (2M)"), so
+  # boot it for an A/B test.
+  #
+  # CLEANUP: remove this host-only override after a released kernel containing
+  # the repair is selected by `pkgs.linuxPackages_latest` and the triggered
+  # capture proves the swap/compaction storm remains gone.
+  boot.kernelPackages = lib.mkForce pkgsMaster.linuxPackages_testing;
 
   # Claude Desktop Cowork sandboxed-microVM feature (QEMU firmware + virtiofsd
   # at the Debian /usr paths the app probes).

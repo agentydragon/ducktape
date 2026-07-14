@@ -1,5 +1,109 @@
 # Rugged Periodic Stall Investigation
 
+## 2026-07-13: Xe/TTM high-order allocation swap storm
+
+### Finding
+
+`rugged` can actively page while 16--19 GiB of RAM is free, even with
+`vm.swappiness = 10`. This is not historical zram occupancy or ordinary
+low-memory reclaim. The cause is a high-order allocation loop in the Intel
+Xe/TTM graphics path on the booted Linux 7.1.2 kernel:
+
+```text
+Chrome GPU process / GNOME Shell
+  -> Mesa Iris batch flush
+  -> xe_exec_ioctl -> xe_vm_validate_rebind
+  -> xe_ttm_tt_populate -> TTM high-order allocation
+  -> compaction -> kswapd -> unrelated anonymous-page swapout
+```
+
+The allocation path needs physically contiguous 2--4 MiB blocks (orders 9 and
+10). A large amount of free RAM does not imply that one such contiguous block
+exists. When the high-order attempt fails, compaction and background reclaim
+can page cold anonymous memory even though the normal memory zone is well above
+its usual watermarks. `swappiness` biases the type of reclaim after that work
+has begun; it is not a prohibition on this kind of reclaim.
+
+### Captured evidence
+
+The first privileged trace, `/tmp/rugged-memory-fragmentation-20260713-191239`,
+showed Chrome's GPU process and GNOME Shell as the direct compaction callers,
+with 148 order-10 and 41 order-9 kswapd wakes. Its call-graph follow-up at
+`/tmp/rugged-memory-fragmentation-20260713-191725` resolved both callers through
+Mesa Iris, `xe_ttm_tt_populate`, TTM, and the page allocator.
+
+The triggered watcher capture,
+`/tmp/rugged-memory-fragmentation-20260713-193606`, makes the failure mode
+quantitative. It triggered immediately at 20,863 swap-out pages/s (about
+81 MiB/s) and 76 compaction stalls/s. During the following 30 seconds, while
+19 GiB remained available:
+
+- `pswpout` increased by 237,732 pages (0.91 GiB) and `pswpin` by 377,261
+  pages (1.44 GiB).
+- `kswapd` scanned 1,767,503 pages (6.74 GiB) and reclaimed 1,557,221 pages
+  (5.94 GiB).
+- Compaction stalled 1,280 times: 1,151 failures and 129 successes.
+- `kswapd` received 159 order-10 (4 MiB) and 47 order-9 (2 MiB) wakeups.
+- `/proc/pagetypeinfo` had no free Normal-zone order-9 or order-10 blocks in
+  any migratetype before or after the capture.
+
+Chrome made 914 direct compaction attempts and GNOME Shell 662. The immediate
+requesters are ordinary desktop rendering, not Bazel, containerd, kubelet, or a
+cgroup memory limit. All user cgroups had `memory.high=max` and
+`memory.max=max`; DAMON reclaim was idle in the original sampling.
+
+### zram accounting
+
+zram is RAM-backed. Its compressed physical footprint is charged as used RAM,
+not included in `MemFree`; its logical contents appear in the Swap meter. Do
+not add the two numbers. The current problem is the advancing `pswpin` and
+`pswpout` counters, not the fact that zram retains old pages.
+
+### Upstream correlation and test kernel
+
+This matches the upstream Xe/TTM series
+[`mm, drm/ttm, drm/xe: Avoid reclaim/eviction loops under fragmentation`](https://lore.gitlab.freedesktop.org/drm-ai-reviews/review-patch1-20260421012608.1474950-2-matthew.brost%40intel.com/t/),
+which describes substantial free memory plus:
+
+```text
+kswapd -> Xe shrinker -> buffer-object eviction -> exec-ioctl rebind -> repeat
+```
+
+Its stated reproducer is Chrome WebGL. The Xe portion of the repair landed as
+[`ba7fd1634228`](https://github.com/torvalds/linux/commit/ba7fd1634228),
+`drm/xe: Set TTM device beneficial_order to 9 (2M)`, after Linux 7.1. The
+booted 7.1.2 kernel lacks it.
+
+`nix/nixos/hosts/rugged/default.nix` temporarily selects the existing
+Nixpkgs-master `linuxPackages_testing` set. It evaluates to Linux 7.2-rc2 and
+contains that exact Xe allocation-policy change. The host override has a
+cleanup condition: remove it after a released `linuxPackages_latest` kernel
+contains the repair and this test proves the storm remains gone.
+
+### A/B runbook and acceptance criteria
+
+After rebuilding/switching and rebooting, confirm the test kernel:
+
+```bash
+uname -r  # expected: 7.2-rc2
+```
+
+During ordinary Chrome + GNOME use, leave this diagnostic-only watcher running:
+
+```bash
+sudo -E debug/rugged/stalls/capture_memory_fragmentation.sh \
+  --watch 14400 --duration 30
+```
+
+It records a one-second `watch.tsv`, and only on a simultaneous spike of at
+least 16 MiB/s swap-out and 10 compaction stalls/s does it collect perf call
+graphs, `/proc/pagetypeinfo`, VM counters, and Xe DRM debugfs client state.
+
+Success is no trigger over a representative normal-use window. A material
+partial improvement is no sustained swap I/O or meaningful high-order kswapd
+wakes even if a capture occurs. Failure is a rapid trigger near the recorded
+baseline with the same Xe TTM/rebind stack.
+
 Date: 2026-05-19
 Host: `rugged`
 
