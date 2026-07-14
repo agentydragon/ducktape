@@ -91,21 +91,28 @@ endpoints:
 
   - name: LiteLLM
     group: ai
-    url: http://litellm.ollama.svc.cluster.local:4000/health
+    url: http://litellm.litellm.svc.cluster.local:4000/health/liveliness
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: ChatGPT LiteLLM
+    group: ai
+    url: http://litellm-chatgpt.litellm.svc.cluster.local:4000/health/liveliness
     interval: 60s
     conditions:
       - "[STATUS] == 200"
 
   - name: LiteLLM inference
     group: ai
-    url: http://litellm.ollama.svc.cluster.local:4000/v1/chat/completions
+    url: http://litellm.litellm.svc.cluster.local:4000/v1/chat/completions
     method: POST
     headers:
       Content-Type: application/json
       Authorization: "Bearer ${LITELLM_API_KEY}"
     body: |
       {
-        "model": "gpt-oss-20b-128k",
+        "model": "gpt-oss-20b-128k-openai-chat",
         "messages": [{"role": "user", "content": "Respond with exactly the number that equals 5 times 7"}],
         "max_tokens": 1000
       }

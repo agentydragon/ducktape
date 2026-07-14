@@ -284,7 +284,7 @@ repos:
             cluster/k8s/agents/claude-sandbox-firecracker/config\.yaml|
             # act_runner config mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/haku-ci/config\.yaml|
-            cluster/k8s/litellm/app/proxy-config\.yaml|
+            cluster/k8s/litellm/app/(chatgpt-)?proxy-config\.yaml|
             cluster/k8s/litellm/tana/proxy-config\.yaml|
             cluster/k8s/haku/dispatch/litellm/workers-litellm-config\.yaml|
             cluster/k8s/haku/console/config\.yaml|

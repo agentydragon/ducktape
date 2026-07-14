@@ -4,9 +4,9 @@
 #
 # Virtual keys / per-key budgets are enabled: DATABASE_URL points at the litellm-db
 # CNPG cluster (../db/). LiteLLM runs the Prisma schema migration on startup; the
-# RollingUpdate maxSurge:0/maxUnavailable:1 strategy below means pods restart one at a
-# time, and Prisma's advisory lock covers the rare both-pods-restart case. Keys are
-# minted declaratively by tf/gitops/litellm-keys (see haku/plans/multi_agent.md).
+# Prisma's advisory lock protects schema migration when both pods start together.
+# Keys are minted declaratively by tf/gitops/litellm-keys (see
+# haku/plans/multi_agent.md).
 # Models deliberately stay in the generated config, NOT the DB — see
 # general_settings.store_model_in_db in generate_litellm.py.
 apiVersion: apps/v1
@@ -20,27 +20,14 @@ metadata:
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 2
-  # 2 replicas for HA. Ollama/z.ai/Langfuse are all remote, so those are cleanly
-  # stateless. The one exception is the chatgpt provider's auth.json on the RWX
-  # chatgpt-auth PVC: both replicas share it and either may refresh+rewrite it.
-  #
-  # TODO(chatgpt-token-race): shared-token concurrency hazard. LiteLLM rewrites
-  # auth.json in place on refresh; with >1 replica two pods can refresh the same
-  # account concurrently and, because OpenAI rotates refresh tokens, invalidate
-  # each other's token — taking chatgpt models down until the seed is refreshed.
-  # Accepted for now: access tokens last ~10 days so the race window is a few
-  # seconds per refresh. Proper fix if it bites: move the chatgpt provider into a
-  # dedicated single-replica proxy and route chatgpt models to it from here.
-  #
-  # maxSurge:0/maxUnavailable:1 keeps >=1 pod serving during rollout and caps
-  # concurrent pods (writers) at replicas. type:Recreate is avoided because
-  # server-side apply rejects transitioning the already-RollingUpdate live
-  # Deployment to Recreate while the API-defaulted rollingUpdate block is present.
+  # ChatGPT OAuth state lives in the separate single-replica litellm-chatgpt
+  # Deployment. This proxy is stateless, so a broken provider cannot block its
+  # startup and normal rollouts can preserve both serving replicas.
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: litellm
@@ -51,31 +38,8 @@ spec:
     spec:
       serviceAccountName: litellm
       terminationGracePeriodSeconds: 90
-      initContainers:
-        # Seed the ChatGPT provider's OAuth token onto the writable PVC, but only
-        # if absent — LiteLLM refreshes/rotates the token in place, and the seed
-        # secret is not updated after rotation, so we must never clobber the live file.
-        - name: seed-chatgpt-auth
-          image: litellm/litellm:1.90.2
-          command:
-            - sh
-            - -c
-            - test -f /data/chatgpt/auth.json || cp /seed/auth.json /data/chatgpt/auth.json
-          volumeMounts:
-            - name: chatgpt-auth
-              mountPath: /data/chatgpt
-            - name: chatgpt-auth-seed
-              mountPath: /seed
-              readOnly: true
-      # Must run on hil-ovh. The chatgpt-auth PVC is seaweedfs-ovh, and the SeaweedFS
-      # CSI node plugin only runs on OVH nodes (zone hil-ovh) and reports no topology
-      # keys — so allowedTopologies can't steer the scheduler and a pod that lands
-      # elsewhere can't mount the PVC and hangs Pending. The old `prefer region=proxmox`
-      # affinity (for ollama GPU co-location) did exactly that, wedging a replica on
-      # wyrm2. Losing co-location is acceptable: ollama calls just cross the mesh, and
-      # external-provider models keep serving when home is offline either way.
-      # TODO(seaweedfs-csi-on-wyrm2): once the CSI runs on wyrm2, restore the proxmox
-      # preference — see cluster/docs/plan.md Next Actions.
+      # Keep the public multi-provider proxy in OVH so external providers remain
+      # available during a home outage. Ollama requests can cross the mesh to wyrm2.
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       containers:
@@ -147,10 +111,6 @@ spec:
                 secretKeyRef:
                   name: langfuse-secrets
                   key: LANGFUSE_INIT_PROJECT_SECRET_KEY
-            # ChatGPT provider reads/writes $CHATGPT_TOKEN_DIR/auth.json on the
-            # litellm-chatgpt-auth PVC (writable; auto-refreshed & rewritten).
-            - name: CHATGPT_TOKEN_DIR
-              value: /data/chatgpt
           livenessProbe:
             httpGet:
               path: /health/liveliness
@@ -188,8 +148,6 @@ spec:
             - name: config
               mountPath: /etc/litellm
               readOnly: true
-            - name: chatgpt-auth
-              mountPath: /data/chatgpt
       volumes:
         - name: config
           configMap:
@@ -197,9 +155,3 @@ spec:
             items:
               - key: config.yaml
                 path: config.yaml
-        - name: chatgpt-auth
-          persistentVolumeClaim:
-            claimName: litellm-chatgpt-auth
-        - name: chatgpt-auth-seed
-          secret:
-            secretName: litellm-chatgpt-auth-seed
