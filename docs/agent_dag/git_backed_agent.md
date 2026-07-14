@@ -149,7 +149,8 @@ Mutable code and templates
 - `ApprovalPolicyProposal` (directory state + PR)
   - `state/policy/proposals/<id>/policy.py`, optional `metadata.yaml` with author/date/title.
   - Proposal lifecycle via PRs; merge triggers activation validation.
-    Forks and runtime linkage
+
+## Forks and runtime linkage
 
 - `AgentFork` (event: `agent_forked`)
   - `from_branch`, `to_branch`, `at_event` (`EventId`), and a `volume_plan[]` with entries `{volume: VolumeId, mode: keep|fork|discard, kept_by: branch}`.
