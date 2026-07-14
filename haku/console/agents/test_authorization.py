@@ -328,19 +328,20 @@ async def test_activation_timeout_abandons_new_agent_but_only_expires_reconnect(
             },
         ).all()
         statuses = {row.binding_id: row.status for row in rows}
-        agent_statuses = dict(
-            conn.execute(
+        agent_statuses: dict[UUID, str] = {
+            row.binding_id: row.agent_status
+            for row in conn.execute(
                 text(
                     """
-                    SELECT binding.binding_id, agent.status::TEXT
+                    SELECT binding.binding_id, agent.status::TEXT AS agent_status
                     FROM credential_bindings AS binding
                     JOIN agents AS agent ON agent.agent_id = binding.agent_id
                     WHERE binding.binding_id IN (:initial, :active)
                     """
                 ),
                 {"initial": initial.actor.binding_id, "active": active.actor.binding_id},
-            ).all()
-        )
+            )
+        }
     engine.dispose()
     assert statuses[initial.actor.binding_id] == "expired"
     assert agent_statuses[initial.actor.binding_id] == "abandoned"
