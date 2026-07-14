@@ -12,10 +12,18 @@ from syrupy.assertion import SnapshotAssertion
 from aiquota.models import ExtraSpend, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
 from devinfra.claude.claude_api.credentials import read_credentials
 from devinfra.claude.claude_api.statusline import ContextWindow, Input
-from devinfra.claude.statusline.statusline import _format_context, _format_quota, _is_zai_session, render
+from devinfra.claude.statusline.statusline import (
+    QuotaRoute,
+    _detect_quota_route,
+    _format_context,
+    _format_quota,
+    render,
+)
 
 _SHORT_WINDOW_SECS = 5 * 3600
 _LONG_WINDOW_SECS = 7 * 86400
+_LITELLM_ZAI_ROUTE = QuotaRoute(provider="zai", label="litellm→z.ai")
+_UNKNOWN_LITELLM_ROUTE = QuotaRoute(provider=None, label="litellm→?")
 
 
 FULL_INPUT_JSON = json.dumps(
@@ -316,15 +324,39 @@ def test_format_context_colors(pct: float, expected_text: str, expected_style: s
 
 
 @pytest.mark.parametrize(
-    ("base_url", "expected"),
+    ("base_url", "model_id", "explicit_route", "expected"),
     [
-        pytest.param("https://api.z.ai/api/anthropic", True, id="z_claude"),
-        pytest.param("https://api.anthropic.com", False, id="default_anthropic"),
-        pytest.param("", False, id="unset"),
+        pytest.param(
+            "https://litellm.allegedly.works",
+            "glm-5.2-anthropic",
+            "litellm:zai",
+            _LITELLM_ZAI_ROUTE,
+            id="explicit_litellm_zai",
+        ),
+        pytest.param(
+            "https://api.z.ai/api/anthropic", "glm-5.2", "", QuotaRoute(provider="zai", label="z.ai"), id="direct_zai"
+        ),
+        pytest.param(
+            "https://litellm.allegedly.works", "glm-5.2-anthropic", "", _LITELLM_ZAI_ROUTE, id="litellm_glm_fallback"
+        ),
+        pytest.param(
+            "https://litellm.allegedly.works", "some-model-alias", "", _UNKNOWN_LITELLM_ROUTE, id="ambiguous_litellm"
+        ),
+        pytest.param(
+            "https://unknown-proxy.example",
+            "claude-opus-4-6",
+            "",
+            QuotaRoute(provider=None, label="proxy→?"),
+            id="ambiguous_proxy",
+        ),
+        pytest.param(
+            "https://api.anthropic.com", "claude-opus-4-6", "", QuotaRoute(provider="claude"), id="default_anthropic"
+        ),
+        pytest.param("", "claude-opus-4-6", "", QuotaRoute(provider="claude"), id="unset"),
     ],
 )
-def test_is_zai_session(base_url: str, expected: bool):
-    assert _is_zai_session(base_url) is expected
+def test_detect_quota_route(base_url: str, model_id: str, explicit_route: str, expected: QuotaRoute):
+    assert _detect_quota_route(base_url=base_url, model_id=model_id, explicit_route=explicit_route) == expected
 
 
 # Fixed "now" for deterministic quota formatting
@@ -387,6 +419,41 @@ def test_render_minimal(snapshot: SnapshotAssertion):
     data = Input.model_validate_json("{}")
     result = render(data, is_subscription=False, quota=None, home=None, now=_NOW, daemon_healthy=False)
     assert result == snapshot
+
+
+@pytest.mark.parametrize(
+    ("quota_route", "include_quota", "expected_parts", "unexpected"),
+    [
+        pytest.param(_LITELLM_ZAI_ROUTE, True, ("litellm→z.ai", "5h:24%", "7d:61%"), None, id="known_with_quota"),
+        pytest.param(_LITELLM_ZAI_ROUTE, False, ("litellm→z.ai quota unavailable",), None, id="known_without_quota"),
+        pytest.param(
+            _UNKNOWN_LITELLM_ROUTE,
+            True,
+            ("litellm→? quota unknown",),
+            "7d:61%",
+            id="unknown_suppresses_mismatched_quota",
+        ),
+    ],
+)
+def test_render_quota_route_status(
+    full_input: Input,
+    quota_route: QuotaRoute,
+    include_quota: bool,
+    expected_parts: tuple[str, ...],
+    unexpected: str | None,
+):
+    result = render(
+        full_input,
+        is_subscription=True,
+        quota=_render_quota(seven_day_util=61.0, five_hour_util=24.0) if include_quota else None,
+        home=Path("/home/user"),
+        now=_NOW,
+        daemon_healthy=True,
+        quota_route=quota_route,
+    )
+    assert all(part in result for part in expected_parts)
+    if unexpected is not None:
+        assert unexpected not in result
 
 
 if __name__ == "__main__":
