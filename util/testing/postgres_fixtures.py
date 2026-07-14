@@ -31,9 +31,10 @@ def _daemon_has_image(tag: str) -> bool:
 
 
 def start_postgres_container() -> PostgresContainer:
-    """Preload Ryuk + Postgres 18 (unless the daemon already has them), then start the container."""
-    if not (_daemon_has_image(RYUK.tag) and _daemon_has_image(POSTGRES_18.tag)):
+    """Preload Ryuk + Postgres 18 (skipping any the daemon already has), then start the container."""
+    if not _daemon_has_image(RYUK.tag):
         load_oci_image(RYUK)
+    if not _daemon_has_image(POSTGRES_18.tag):
         load_oci_image(POSTGRES_18)
     container = PostgresContainer(image=POSTGRES_18.tag, username="postgres", password="postgres", dbname="postgres")
     container.start()
