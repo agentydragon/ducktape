@@ -1,0 +1,13 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# extern crate name is `codex_protocol` so codex-shell-command's
+# `use codex_protocol::parse_command::ParsedCommand` resolves to this stub.
+rust_library(
+    name = "codex_protocol_stub",
+    srcs = ["lib.rs"],
+    crate_name = "codex_protocol",
+    edition = "2024",
+    rustc_flags = ["--cap-lints=allow"],
+)

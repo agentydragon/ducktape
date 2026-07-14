@@ -664,6 +664,20 @@ http_file(
     urls = ["https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"],
 )
 
+# openai/codex source — consumed via overlaid BUILD files by the execpolicy audit
+# tool (//x/codex_execpolicy_audit). Pinned to a specific commit; the overlay patch
+# adds BUILD.bazel to the two crates we need (shell-command, utils/absolute-path) and
+# drops the schemars/ts-rs derives from absolute-path. Bump commit + re-roll patch +
+# update sha256 together.
+http_archive(
+    name = "codex",
+    patch_strip = 1,
+    patches = ["//x/codex_execpolicy_audit:codex_bazel_overlay.patch"],
+    sha256 = "6e84a59661aab07686061da4e8f37b9bb828ac3ecf2ea5e69ee482fcc72fed13",
+    strip_prefix = "codex-9e552e9d15ba52bed7077d5357f3e18e330f8f38",
+    urls = ["https://github.com/openai/codex/archive/9e552e9d15ba52bed7077d5357f3e18e330f8f38.tar.gz"],
+)
+
 # Grocy OpenAPI 3.1 spec — fetched verbatim from the upstream repo so
 # `//grocy_mcp:server` can drive `FastMCP.from_openapi` without
 # vendoring the 100 KB JSON in-tree. Refresh by bumping the tag and

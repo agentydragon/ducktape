@@ -92,6 +92,19 @@ proptest = "^1.6.0"
 rusty-leveldb = "^4.0.1"
 v8_valueserializer = "^0.1.2"
 prometheus = "^0.13.4"
+# x/codex_execpolicy_audit — pulled in so crate_universe renders them into @crates
+# for the overlaid codex-shell-command + codex-utils-absolute-path BUILD files.
+# Versions pinned to openai/codex's workspace deps for API compatibility.
+base64 = "0.22.1"
+dirs = "6"
+dunce = "1.0.4"
+once_cell = "1.20.2"
+tree-sitter = "0.25.10"
+tree-sitter-bash = "0.25"
+which = "8"
+# codex-utils-absolute-path (a dep of codex-shell-command) derives JsonSchema + TS.
+schemars = "0.8.22"
+ts-rs = "11"
 
 [[bin]]
 name = "ducktape_fake"

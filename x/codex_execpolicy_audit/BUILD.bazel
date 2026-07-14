@@ -1,0 +1,41 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "codex_execpolicy_audit",
+    srcs = [
+        "src/audit.rs",
+        "src/main.rs",
+        "src/rollout.rs",
+        "src/rules.rs",
+    ],
+    crate_root = "src/main.rs",
+    edition = "2024",
+    rustc_flags = ["--cap-lints=allow"],
+    deps = [
+        "@codex//codex-rs/shell-command:shell_command",
+        # ParsedCommand stub (extern name `codex_protocol`) — avoids the heavy
+        # codex-protocol closure that codex-shell-command would otherwise pull.
+        "//x/codex_execpolicy_audit/codex_protocol_stub",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:dirs",
+        "@crates//:regex",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:shlex",
+    ],
+)
+
+rust_test(
+    name = "rules_test",
+    srcs = ["src/rules.rs"],
+    edition = "2024",
+    rustc_flags = ["--cap-lints=allow"],
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:regex",
+        "@crates//:serde_json",
+    ],
+)

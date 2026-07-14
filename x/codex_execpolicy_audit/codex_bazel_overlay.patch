@@ -1,0 +1,66 @@
+diff --git a/codex-rs/shell-command/BUILD.bazel b/codex-rs/shell-command/BUILD.bazel
+index 9eaa137..4dcd419 100644
+--- a/codex-rs/shell-command/BUILD.bazel
++++ b/codex-rs/shell-command/BUILD.bazel
+@@ -1,7 +1,29 @@
+-load("//:defs.bzl", "codex_rust_crate")
++load("@rules_rust//rust:defs.bzl", "rust_library")
+ 
+-codex_rust_crate(
+-    name = "shell-command",
+-    compile_data = ["src/command_safety/powershell_parser.ps1"],
++package(default_visibility = ["//visibility:public"])
++
++# ducktape overlay — replaces codex's codex_rust_crate macro BUILD. Deps wired to
++# ducktape's @crates; codex-protocol dropped (ParsedCommand stubbed locally).
++rust_library(
++    name = "shell_command",
+     crate_name = "codex_shell_command",
++    edition = "2024",
++    srcs = glob(["src/**/*.rs"]),
++    compile_data = ["src/command_safety/powershell_parser.ps1"],
++    deps = [
++        "@crates//:base64",
++        "@crates//:libc",
++        "@crates//:once_cell",
++        "@crates//:regex",
++        "@crates//:serde",
++        "@crates//:serde_json",
++        "@crates//:shlex",
++        "@crates//:tree-sitter",
++        "@crates//:tree-sitter-bash",
++        "@crates//:url",
++        "@crates//:which",
++        "@codex//codex-rs/utils/absolute-path:absolute_path",
++        "@//x/codex_execpolicy_audit/codex_protocol_stub:codex_protocol_stub",
++    ],
++    rustc_flags = ["--cap-lints=allow"],
+ )
+diff --git a/codex-rs/utils/absolute-path/BUILD.bazel b/codex-rs/utils/absolute-path/BUILD.bazel
+index 4464e10..d8201f7 100644
+--- a/codex-rs/utils/absolute-path/BUILD.bazel
++++ b/codex-rs/utils/absolute-path/BUILD.bazel
+@@ -1,6 +1,20 @@
+-load("//:defs.bzl", "codex_rust_crate")
++load("@rules_rust//rust:defs.bzl", "rust_library")
+ 
+-codex_rust_crate(
+-    name = "absolute-path",
++package(default_visibility = ["//visibility:public"])
++
++# ducktape overlay — replaces codex's codex_rust_crate macro BUILD. Deps wired to
++# ducktape's @crates (incl. schemars/ts-rs that AbsolutePath derives).
++rust_library(
++    name = "absolute_path",
+     crate_name = "codex_utils_absolute_path",
++    edition = "2024",
++    srcs = glob(["src/**/*.rs"]),
++    deps = [
++        "@crates//:dirs",
++        "@crates//:dunce",
++        "@crates//:schemars",
++        "@crates//:serde",
++        "@crates//:ts-rs",
++    ],
++    rustc_flags = ["--cap-lints=allow"],
+ )
