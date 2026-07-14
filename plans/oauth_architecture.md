@@ -1,0 +1,1186 @@
+# OAuth and identity architecture across Ducktape
+
+- **Status:** proposed architecture and migration plan; research only, awaiting approval before implementation
+- **Written:** 2026-07-13
+- **Repository baseline:** `origin/devel` at `0f7d84d42`; includes the FastMCP repin and the complete low-risk Haku cleanup sequence through PR #3162
+- **Haku prototype reviewed:** PR [#3122](https://github.com/agentydragon/ducktape/pull/3122), squashed commit `3e8f7a311`; prototype-only claims are labeled below
+- **Approved implementation completed:** FastMCP `3.4.4`, the latest stable release verified on 2026-07-13, is pinned on `devel`
+- **Scope:** MCP authorization, Haku Console agent identity, browser OIDC, Authentik, OAuth-backed applications, and machine credentials in this repository
+
+## Decision
+
+Default to FastMCP as the OAuth authorization-server proxy and resource-server engine for FastMCP-based services that need a local MCP-compatible authorization-server facade. Preserve direct Authentik JWT validation or `RemoteAuthProvider` for servers that only need to accept tokens from an external issuer. Do not replace FastMCP's proxy with a home-grown FastAPI/Authlib authorization server unless the adapter containment gate fails and the evaluated existing-AS fallbacks also fail; do not centralize every OAuth role into a new Ducktape auth service.
+
+The long-term boundary should be:
+
+- Authentik authenticates people and machines, applies IdP policy, and issues or exchanges upstream credentials.
+- FastMCP implements the MCP-facing OAuth protocol: discovery, client metadata, authorization transactions, PKCE, redirect validation, codes, local access and refresh tokens, token swap, and MCP bearer verification.
+- FastAPI and Starlette compose the web application, routes, dependencies, sessions, CSRF protection, and Jinja templates.
+- Haku owns the `Operator`, `Agent`, agent-enrollment ceremony, agent names, ownership, lifecycle, UI, and audit semantics.
+- Haku is multi-Operator and multi-Agent: an Agent acts on behalf of exactly one owning Operator, Agent reads never widen to sibling Agents, and any non-auto-approved call is visible and decidable only by that Operator.
+- Airlock owns its operator authorization policy and its external-provider credential-broker workflow.
+- Shared Ducktape packages expose narrow, typed protocol building blocks. They must not know Haku's Agent model or Airlock's business policy.
+
+FastMCP does not yet expose enough public API for Haku's enrollment ceremony. After this plan is approved, the recommended implementation is one Haku-local, version-pinned compatibility adapter with contract tests. Ducktape will not currently make an upstream FastMCP contribution or wait for one. The ideal future deletion condition is a FastMCP release that independently exposes these public seams:
+
+1. an application-owned **post-IdP, pre-client-redirect authorization checkpoint** that receives a verified upstream principal while preserving FastMCP's downstream transaction, client/redirect/resource validation, and PKCE machinery, with an explicit framework-owned browser-binding and CSRF contract for that checkpoint; and
+2. an opaque application authorization context, containing only Haku's `grant_id`, that FastMCP preserves through code persistence, access/refresh-token creation, refresh rotation, token loading, and revocation; and
+3. lifecycle notifications after code/token-family persistence succeeds or fails, plus supported refresh/revocation checks. Haku performs request-time first-use activation and grant enforcement after FastMCP verifies the bearer.
+
+A renderer hook at FastMCP's current consent point is not enough. Current FastMCP consent happens before the browser visits Authentik. The IdP callback then exchanges the code, stores a raw upstream token response, immediately creates the downstream code, and redirects to the MCP client. Haku cannot safely create an operator-owned Agent until the adapter has explicitly validated the chosen upstream token and resolved a verified `(issuer, subject)`.
+
+The current `ResilientOIDCProxy` has legitimate reasons to exist, but its name and scope are too broad. It contains three unrelated compatibility repairs. Those repairs should be isolated, named after the behavior they repair, linked to upstream issues, and deleted independently when the pinned FastMCP version no longer needs them.
+
+FastMCP `3.4.4` is now the repository baseline. PR [#3146](https://github.com/agentydragon/ducktape/pull/3146) updated the Python/Bazel lock, the `fastmcp-slim` package split, and the Nix packages together; its focused OAuth/Haku suite, Nix closures, CLI smoke tests, all-files pre-commit, and GitHub CI passed. Recheck the latest stable release before every future repin rather than treating `3.4.4` as a permanent ceiling. This baseline includes FastMCP PR [#3960](https://github.com/PrefectHQ/fastmcp/pull/3960), which changed `require_authorization_consent=True` to always show consent after a confused-deputy vulnerability in remembered consent. Ducktape pins that behavior with the repeated-authorization integration test landed in PR #3154.
+
+FastMCP encrypts its default file store, but in both `3.2.4` and `3.4.4` it uses a supplied `client_storage` exactly as passed. Ducktape therefore serializes FastMCP state as ordinary JSONB or Valkey values. This plan accepts the repo's Postgres/Valkey services as a private trusted storage boundary. Application-level encryption is optional defense-in-depth, not a prerequisite for the architecture work.
+
+## Non-goals
+
+This plan does not:
+
+- make Authentik the database for Haku agents;
+- treat OAuth consent, browser login, agent enrollment, and downstream-provider connection as one generic flow;
+- require every MCP server to use `OIDCProxy`;
+- require a standalone identity microservice;
+- depend on an unreleased Authentik DCR implementation or MCP SDK v2;
+- use an OAuth `client_id`, an access-token JTI, a username, or a display name as Haku's canonical agent identity; or
+- promise that an MCP client will notify Haku when a user removes or forgets a connector.
+
+## The terms that must not collapse together
+
+Most of the current architectural friction comes from one identifier being asked to mean several different things. These entities have different owners, cardinalities, and lifecycles.
+
+| Entity                      | What it identifies                                              | Owner                                             | Stable for                                                     | Must not be used as                               |
+| --------------------------- | --------------------------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------- |
+| OAuth client software       | Claude.ai, Claude Code, Codex, or another client implementation | Client author / authorization server registration | A client registration or published Client ID Metadata Document | A Haku agent installation                         |
+| OAuth `client_id`           | The registered client software metadata                         | Authorization server                              | DCR record, preregistration, or CIMD document                  | A person, grant, device, or Haku `agent_id`       |
+| Resource owner              | The person authorizing access                                   | Upstream IdP                                      | An issuer-scoped subject                                       | A mutable username                                |
+| OIDC identity               | `(issuer, subject)`                                             | Authentik and the application linking it          | An IdP identity                                                | A bare `sub` assumed global across issuers        |
+| Haku Operator               | A local Haku account/owner                                      | Haku                                              | Product lifetime                                               | An Authentik provider slug                        |
+| Haku Agent                  | A named actor the operator recognizes                           | Haku                                              | Until explicitly disabled/deleted                              | A token, DCR row, or display string               |
+| OAuth agent grant           | One authorization relationship between a client and an Agent    | Haku plus the MCP authorization server            | One token family / reconnect lifecycle                         | The Agent itself                                  |
+| Access token                | A bearer credential for a resource and scopes                   | Authorization server                              | Minutes or hours                                               | Durable identity                                  |
+| Refresh token               | A credential that rotates a token family                        | Authorization server                              | Until expiry/revocation/rotation                               | Durable identity                                  |
+| Browser session             | A browser's logged-in application session                       | Haku/Props/etc.                                   | Session lifetime                                               | An MCP credential                                 |
+| Authorization transaction   | One in-progress `/authorize` attempt                            | FastMCP                                           | Minutes                                                        | A client registration or Agent                    |
+| Consent interaction binding | Browser/form binding and CSRF state for one interaction         | FastMCP built-in consent or the Haku adapter      | Minutes; one-time for Haku enrollment                          | Proof of operator identity or an Agent credential |
+
+The current MCP authorization specification makes this distinction especially important. Its preferred order is preregistration, then a Client ID Metadata Document, then DCR as a fallback. A CIMD `client_id` is an HTTPS URL naming shared client software. Multiple people and installations can therefore present the same `client_id`. DCR is explicitly a machine-to-machine registration operation without a resource owner. Agent naming cannot live at `/register`, and `client_id` cannot be the Agent primary key. See the [MCP 2025-11-25 authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization).
+
+The intended product experience can still be described as “register this Agent.” A new MCP client dynamically registers or otherwise presents its client metadata, then opens the browser authorization flow. After Authentik identifies the Operator, Haku shows the requesting client and scopes and asks: authorize this new Agent to act as this Operator, and what should it be called? Acceptance creates the Haku Agent plus its credential binding/grant. It does not turn the unauthenticated DCR endpoint itself into a form or identity boundary.
+
+## Current Ducktape topology
+
+Ducktape does not have one OAuth problem. It currently has at least seven different roles.
+
+### MCP authorization server and resource server
+
+`<../mcp_infra/authentik_auth/auth.py>` builds a FastMCP `OIDCProxy` and optional direct JWT verifiers under `MultiAuth`. Consumers include:
+
+- the generic credentialed facades in `<../mcp_infra/oauth_facade/>`;
+- the identity-preserving Grocy servers in `<../grocy_mcp/>`;
+- Haku Console's agent-facing `/mcp` endpoint in `<../haku/console/mcp_server.py>`; and
+- Airlock's MCP endpoint in `<../airlock/app.py>`.
+
+This is a legitimate shared layer, but the file currently combines:
+
+- Authentik URL/configuration conventions;
+- synchronous OIDC discovery;
+- FastMCP construction;
+- direct-JWT trust construction;
+- three FastMCP compatibility repairs;
+- metrics and retry policy; and
+- Authentik-specific JWT-bearer delegation to proxy outposts.
+
+Those are related, but not one abstraction.
+
+### Generic credentialed MCP facades
+
+`<../mcp_infra/oauth_facade/>` fronts an upstream HTTP or stdio MCP server with an Authentik gate. Tana read-write, Manifold, PostScan Mail, and Plaid DB deployments use this general shape. The upstream credential is server-held, so the incoming human identity controls admission but is intentionally erased before the backend hop.
+
+That behavior is valid, but it should be named honestly: it is a **credentialed facade**, not identity delegation. The authorization question is “may this operator reach this shared backend credential?”
+
+### Identity-preserving delegation
+
+`<../grocy_mcp/server.py>` and `AuthentikTokenExchanger` implement a different pattern. The incoming, verified Authentik user token is exchanged via an Authentik JWT-bearer assertion for a token scoped to a proxy provider. The backend outpost sees the same user and injects trusted identity headers.
+
+That is a **delegating token exchange**, not the generic facade pattern. It should remain distinct in names, types, tests, and threat model.
+
+### Haku Console's three OAuth roles
+
+Haku is simultaneously:
+
+1. a browser OIDC relying party for the operator, using Authlib and a signed Starlette session in `<../haku/console/operator_auth.py>`;
+2. an MCP resource server plus local OAuth proxy for agents, using FastMCP in `<../haku/console/mcp_server.py>`; and
+3. an OAuth client connecting the operator to downstream MCP servers, with durable flow/token state in `<../haku/console/mcp_operator_oauth.py>`.
+
+These roles share an operator domain, but they are different protocol directions. Combining them into one “Haku OAuth” class would make the boundaries worse.
+
+### Airlock's four auth roles
+
+Airlock is intended to be simultaneously:
+
+1. an MCP resource server and OAuth proxy;
+2. a browser SPA protected by direct Authentik JWTs;
+3. a credential broker for Oura, Google, and BSC grants; and
+4. a target of machine credentials from OpenClaw and other proposers.
+
+The external-provider broker in `<../airlock/oauth/>` is not MCP authorization. It authorizes Airlock to hold shared downstream API credentials and publish them into Kubernetes Secrets. Its policy and lifecycle belong to Airlock even if Authlib supplies the HTTP protocol mechanics. The current proxy-enabled deployment does not correctly compose all intended direct-JWT contracts; the focused audit below treats that as wiring to repair, not proof those paths currently work.
+
+### Ordinary browser OIDC relying parties
+
+Haku and Props use Authlib's Starlette client integration. Study Casino hand-rolls discovery, state, token exchange, and session logic in `<../x/study_casino/auth.py>` and uses `preferred_username` as durable application identity. These applications need a small shared relying-party helper, not an authorization-server framework.
+
+### Direct Authentik OAuth for native servers
+
+`kubectl-passthrough-mcp` and `kubectl-sandbox-mcp` use the upstream Kubernetes MCP server with preregistered public clients and Authentik-issued JWTs. Authentik scopes the identity at token issue; the MCP server validates/passes through that token. These do not need FastMCP `OIDCProxy` because Authentik can directly issue a token acceptable to the resource server.
+
+`<../cluster/docs/mcp_oauth_authentik_notes.md>` still describes DCR as the default MCP expectation. The current MCP specification prefers preregistration/CIMD and treats DCR as fallback, so that document needs a standards update without changing the deployed preregistration design.
+
+### Reverse-proxy SSO and machine credentials
+
+Authentik proxy outposts, oauth2-proxy deployments, client-credentials rotators, direct long-lived JWTs, static bearer tokens, and JWT-bearer exchanges are additional distinct modes. They are not interchangeable just because all eventually put a bearer in an HTTP header.
+
+## Responsibility map
+
+| Component                  | It should own                                                                                                                              | It should not own                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| MCP specification          | Client/resource-server behavior, discovery, registration mechanisms, PKCE, resource indicators, bearer usage                               | Ducktape's Agent model or an authorization-server implementation             |
+| MCP Python SDK             | OAuth provider protocol, standard authorization/token/register/revoke route handlers and models                                            | Haku UI and domain policy                                                    |
+| FastMCP                    | MCP AS/RS composition, OAuth proxy state machine, storage, local tokens, token swap, `MultiAuth`, authorization checks                     | Product-specific agent records or templates                                  |
+| FastAPI                    | Application routing, dependencies, exception handling, OpenAPI, application composition                                                    | OAuth protocol correctness by itself                                         |
+| Starlette                  | ASGI routing/mounts/lifespan, middleware, sessions, requests/responses, Jinja integration                                                  | Durable identity, token storage, or authorization policy                     |
+| Authlib client integration | Browser RP discovery, state/nonce, authorization-code exchange, token parsing                                                              | MCP authorization-server routes                                              |
+| Authlib OAuth server core  | A useful model for separating request validation, user interaction, and response completion                                                | A ready-made FastAPI MCP authorization server; Authlib ships no such adapter |
+| Authentik                  | Human and service authentication, IdP sessions, provider access policies, claims/scopes, token issuance, logout/revocation where supported | Haku agent naming, Haku grant records, or Airlock's product policy           |
+| `mcp_infra`                | Typed FastMCP/Authentik composition, token verification/exchange, narrow compatibility shims                                               | Haku/Airlock domain state or HTML                                            |
+| Haku                       | Operator/Agent identity, enrollment, ownership, names, revoke/disable UI, audit filtering                                                  | Reimplementing OAuth redirects, PKCE, codes, or token rotation               |
+| Airlock                    | Operator policy and downstream credential-broker semantics                                                                                 | A second hand-written generic OAuth library                                  |
+
+The MCP specification explicitly says the MCP server is an OAuth resource server and that authorization-server implementation details are out of scope. FastMCP fills that implementation gap. FastAPI's security helpers validate credentials at application endpoints; they do not create an OAuth authorization server. Starlette supplies public composition seams such as `AuthenticationMiddleware`, `SessionMiddleware`, and `Jinja2Templates`.
+
+Authlib's authorization-server examples show the missing shape clearly: validate the protocol request, obtain a consent grant, let the application authenticate/render/decide, then complete the authorization response. We want that separation inside FastMCP rather than a second implementation beside it. See [Authlib's authorization-server documentation](https://docs.authlib.org/en/latest/flask/2/authorization-server.html).
+
+## The target Haku flow
+
+There are two nested OAuth flows, a browser, and one Haku ceremony, not one flow. The MCP client launches the browser but does not receive or authenticate with the browser's cookies.
+
+```text
+MCP client            Browser               Haku/FastMCP             Authentik          Haku domain
+    |                    |                         |                       |                   |
+    | discover/register  |                         |                       |                   |
+    |--------------------------------------------->|                       |                   |
+    | open /authorize + state + PKCE               |                       |                   |
+    |------------------->|------------------------>| create transaction T  |                   |
+    |                    |<------------------------| redirect + upstream state (+ PKCE)          |
+    |                    |------------------------------------------------>| authenticate       |
+    |                    |<------------------------------------------------| callback            |
+    |                    |------------------------>| exchange IdP code     |                   |
+    |                    |                         | verify token; resolve Operator ----------->|
+    |                    |                         | create EnrollmentInteraction I ---------->|
+    |                    |<------------------------| render enrollment for I and Operator       |
+    |                    | name/create/reconnect   |                       |                   |
+    |                    |------------------------>| validate CSRF + I     |                   |
+    |                    |                         | reserve draft Agent and issuing grant G -->|
+    |                    |                         | persist code with opaque grant_id          |
+    |                    |                         | notify code persistence ------------------>|
+    |                    |<------------------------| redirect with downstream code              |
+    |<-------------------|                         |                       |                   |
+    | POST /token + verifier                       |                       |                   |
+    |--------------------------------------------->| persist token family for G                 |
+    | Bearer token carrying/resolving only G       |                       |                   |
+    |<---------------------------------------------|                       |                   |
+    | MCP call                                     |                       |                   |
+    |--------------------------------------------->| verify bearer and resolve G                |
+    |                                              | first-use activate/enforce -------------->|
+```
+
+The state domains in that diagram must stay separate:
+
+- the MCP client's outer OAuth `state` and PKCE verifier;
+- FastMCP's upstream OAuth `state` and optional forwarded PKCE state; if Haku chooses ID-token identity, an adapter-owned OIDC nonce and nonce check;
+- the local `EnrollmentInteraction`, one-time browser/form binding, and CSRF token; and
+- an optional Haku browser session.
+
+They may be correlated through opaque server-side identifiers, but one must not substitute for another.
+
+## FastMCP's intended extension ladder
+
+Use the least powerful layer that fits each server.
+
+### 1. `TokenVerifier`
+
+Use a verifier when the server only needs to accept already-issued tokens. `JWTVerifier` is appropriate when Authentik directly issues a JWT with the correct issuer, audience, and scopes.
+
+Examples: native Kubernetes MCP servers and direct machine JWT paths.
+
+### 2. `RemoteAuthProvider`
+
+Use `RemoteAuthProvider` when the MCP resource server validates tokens from a known external authorization server and needs to advertise that server through protected-resource metadata. This is a cleaner fit than `OIDCProxy` when no DCR/CIMD facade, local token family, or upstream-token translation is required.
+
+### 3. `OAuthProxy` / `OIDCProxy`
+
+Use `OIDCProxy` when the upstream provider is OIDC and the MCP client needs an MCP-compatible local authorization-server facade: DCR/CIMD, redirect validation, local codes/tokens, or token translation. This is the right layer for the generic facades, Grocy, and Haku's interactive MCP clients.
+
+### 4. `MultiAuth`
+
+Use `MultiAuth` to compose one route-owning interactive authorization server with explicit additional token verifiers. Each verifier must represent one coherent trust contract. Do not build issuer/audience cross-products from independently merged lists.
+
+Examples: Haku interactive agents plus static agents; Airlock interactive MCP clients plus the exact direct machine/browser JWT issuers it intentionally accepts.
+
+FastMCP `3.4.4` treats every verifier exception as a non-match inside `MultiAuth`. Use stock `MultiAuth` only where that failure policy is acceptable. Haku's grant/store-aware provider needs an adapter-owned composite that continues on a clean `None` but preserves classified operational failures such as a database or OAuth-state-store outage.
+
+### 5. `OAuthProvider`
+
+Implement the full public MCP SDK provider protocol only if Ducktape truly needs a custom authorization server. This means owning client lookup/registration, authorization, code exchange, token refresh, token loading, and revocation. It is a substantial security surface and is not justified merely to change a consent page.
+
+### 6. ASGI composition
+
+Mount `mcp.http_app()` as a Starlette subapplication. Parent FastAPI dependencies apply only to parent-owned `APIRouter` routes; they do not secure the mounted FastMCP app. Preserve the FastMCP lifespan, let its auth provider secure `/mcp`, and expose root well-known routes explicitly when mounting under a prefix.
+
+FastMCP `custom_route` is not wrapped by FastMCP's `RequireAuthMiddleware`. Its auth-context middleware may parse a supplied bearer, but absence or invalidity is not rejected. It is appropriate for health/readiness, not Haku's authenticated agent-management UI. Use an owning FastAPI router with explicit dependencies instead.
+
+## What is public, protected-in-practice, and private
+
+For the pinned FastMCP `3.4.4`, treat these boundaries differently. References to `3.2.4` below are historical comparisons used to explain why the compatibility code exists, not a supported second runtime.
+
+### Public and intended
+
+- `AuthProvider`, `TokenVerifier`, `RemoteAuthProvider`, `OAuthProvider`, and `MultiAuth`;
+- `OAuthProxy` and `OIDCProxy` constructor configuration;
+- `get_routes()`, `get_well_known_routes()`, and `get_middleware()`;
+- FastAPI/Starlette mounting with the FastMCP lifespan;
+- `AuthCheck` and scope/tag authorization at tools/resources/prompts;
+- `OIDCProxy` token-verifier injection;
+- public `OAuthProxy` scope configuration, including constructor `valid_scopes` where exposed and `update_default_scopes()` on an already-built `OIDCProxy`; and
+- standard provider protocol methods if implementing a complete `OAuthProvider`.
+
+### Protected-in-practice, not compatibility-promised
+
+FastMCP's provider subclasses override methods such as `_create_upstream_oauth_client`, scope translation hooks, and `_extract_upstream_claims`. A Ducktape subclass can use one of these only when:
+
+- the override is isolated in a compatibility module;
+- the exact upstream version is pinned;
+- a contract test demonstrates why it exists; and
+- an existing upstream tracking reference, when available, plus a local rationale and deletion condition are recorded.
+
+The leading underscore still means upstream may change it without compatibility guarantees.
+
+### Unequivocally private
+
+- `_transaction_store`;
+- `_code_store`;
+- `_client_storage`, `_client_store`, and their collection/model layouts;
+- `_show_consent_page()` and `_submit_consent()`;
+- consent cookie names and encoding helpers; and
+- rewriting the body of FastMCP's generated response.
+
+Haku currently needs behavior that is only reachable through this private group. That is a framework gap, not a reason to pretend the APIs are stable.
+
+FastMCP issue [#4299](https://github.com/PrefectHQ/fastmcp/issues/4299) requests a custom consent renderer and remains open with no milestone or implementation. A renderer alone is insufficient for Haku because Haku also needs validated custom form data, verified upstream identity, and grant-scoped claims/lifecycle.
+
+## Why `ResilientOIDCProxy` exists, and what to do with it
+
+`ResilientOIDCProxy` in `<../mcp_infra/authentik_auth/auth.py>` is currently three patches in one subclass.
+
+| Current behavior                                                                                                                              | Why it exists                                                                                                           | Long-term disposition                                                                                                                                        |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Reclassify transient upstream refresh and selected Valkey refresh-persistence timeouts as retryable `503` instead of terminal `invalid_grant` | FastMCP wraps broad upstream refresh failures as `invalid_grant`; clients may permanently mark a connector disconnected | Keep as a narrow refresh patch; separately repair bearer-load/composite failure erasure, and delete each when a tested release preserves classified failures |
+| Restore downstream DCR `client_id` after token swap                                                                                           | FastMCP returns the upstream verifier's `AccessToken`, whose `client_id` is the proxy's upstream client                 | Replace Haku identity use with opaque local `grant_id` context; retain `client_id` only as client-software metadata                                          |
+| Run prototype `on_client_authorized` by reading `_code_store` at the start of authorization-code exchange                                     | PR #3122 needs ownership linking before a downstream token escapes                                                      | Move out of generic infrastructure; replace with the Haku-owned adapter lifecycle                                                                            |
+
+The class should be renamed to something honest such as `FastMCPOIDCCompatibility` and split by behavior. “Resilient” incorrectly suggests a general reliability wrapper and hides identity/lifecycle patches.
+
+PR #3122 adds an arbitrary `oidc_proxy_factory` to `build_authentik_auth()`; the `origin/devel` baseline does not have that seam. The prototype should not retain it. That inversion gives product code a way to replace the protocol core while generic infrastructure still claims to know its concrete semantics. Instead:
+
+- expose lower-level typed construction pieces;
+- let generic consumers call a simple stock convenience builder; and
+- let Haku explicitly construct a Haku compatibility adapter from those pieces.
+
+PR #3159 replaced direct mutation of `proxy.client_registration_options.valid_scopes` with FastMCP's public `update_default_scopes()` and reuses the typed `proxy.oidc_config.jwks_uri` for direct JWT verifiers. Ducktape no longer issues a second discovery request in this builder. Keep those public APIs pinned by contract tests rather than reintroducing private registration-model access.
+
+## Current FastMCP sequence versus the required Haku sequence
+
+The position of the interaction is a load-bearing design decision.
+
+### FastMCP today
+
+```text
+downstream /authorize
+  -> FastMCP pre-IdP consent page
+  -> consent POST
+  -> redirect to Authentik
+  -> Authentik callback exchanges code for raw upstream token response
+  -> FastMCP immediately creates downstream code
+  -> redirect to MCP client
+```
+
+At the built-in consent page, FastMCP knows the downstream client metadata, requested scopes, redirect URI, transaction, and browser binding. It does not yet know the authenticated upstream user. At the callback, it has a raw upstream token response but no public verified-principal result or application interaction before redirecting the browser. In FastMCP `3.4.4`, `OIDCProxy` defaults `verify_id_token=False`, and the stock proxy does not generate or check an OIDC nonce.
+
+The current Haku naming prototype collects an untrusted pending name at the first point and links it at code exchange by reading private stores. This can be made to work for a pinned version, but it has four structural problems:
+
+- pending input is keyed by `client_id`, so concurrent flows and shared CIMD/preregistered IDs collide;
+- Haku must decode raw upstream token material because FastMCP does not provide a verified principal hook;
+- a uniqueness or ownership error can arise after the browser has left the form, where the token endpoint cannot recover with a useful UI; and
+- Haku state can commit at token exchange before FastMCP finishes persisting the token family.
+
+### Required synchronous ceremony
+
+The target flow above must preserve this order: validate downstream client/redirect/scopes/PKCE, authenticate at Authentik, explicitly validate the chosen upstream token and resolve the Operator, create a one-time `EnrollmentInteraction`, run Haku's naming/reconnect decision while browser errors remain recoverable, persist the code and token family with opaque `grant_id` context, then activate the binding on its first successfully verified MCP request.
+
+This Haku page replaces the security role of FastMCP's generic consent screen; it must still clearly show the client software, redirect hostname, scopes, and the action being authorized. FastMCP continues to own downstream client, redirect, resource, transaction, and PKCE validation. The Haku adapter owns the post-IdP interaction's explicit consent, one-time browser/form binding, and CSRF validation. With `require_authorization_consent="external"`, FastMCP `3.4.4` does not create or verify its built-in consent cookies.
+
+### Local adapter decision gate
+
+With the FastMCP upgrade landed, run a short local compatibility spike against exactly `3.4.4`. Then choose explicitly:
+
+1. **Current recommendation:** carry a narrowly vendored or Haku-local patch to the callback state machine, pinned and diff-tested against one FastMCP release. For an interaction inserted into the middle of a state machine, a small explicit patch can be easier to audit than overrides of several mutually dependent private methods.
+2. **Safe product fallback:** keep stock FastMCP consent, issue a quarantined grant, and expose no Haku tools until the operator names/activates it in an authenticated Haku page. The MCP client receives an enrollment URL/status tool. This is worse UX but avoids private OAuth state coupling.
+3. **External-AS fallback:** if the local adapter crosses the containment threshold and quarantine UX is unacceptable, run a bounded Hydra-as-MCP-AS proof while retaining Authentik as the identity provider. Adopt it only after actual-client CIMD/DCR and RFC 8707/audience tests pass and its app-owned consent challenge carries the Haku grant lifecycle cleanly.
+4. **Future simplification:** if a released FastMCP version later exposes the required public post-IdP interaction and grant hooks, migrate to those APIs and delete the local adapter. No current upstream contribution is part of this plan.
+5. **Last escalation:** implement a Haku-specific Authlib authorization server and use FastMCP as the resource server/verifier only if the local adapter is too coupled, quarantine is unacceptable, and no existing AS passes the required seam/conformance tests.
+
+Do not describe FastMCP issue #4299 as a planned solution. It is an open renderer request without a milestone, and its requested renderer is at the pre-IdP consent point.
+
+Because no upstream contribution is planned, treat the adapter as owned compatibility code with no assumed removal date:
+
+- support exactly one pinned FastMCP version at a time;
+- block every FastMCP upgrade on a source diff of the touched callback/code/token-family paths and the complete adapter contract suite;
+- keep the patch confined to one Haku compatibility module plus the smallest mechanically maintained upstream delta;
+- record which private symbols and serialized fields it depends on;
+- exercise authorize, deny, code persistence, token issue, refresh, token load, local revoke, expiry, retry, and reconciliation; and
+- abandon the adapter for quarantine or the bounded Hydra proof if an upgrade requires Haku to own redirect validation, PKCE, token generation, or more than the callback/context lifecycle. Reconsider a custom authorization server only if both alternatives fail and quarantine is unacceptable.
+
+## Target Haku identity model
+
+### What an Agent is
+
+A Haku Agent is a local, operator-recognized actor. It is not proof of a physical process or installation. OAuth has no installation-attestation primitive, and a copied bearer makes two processes indistinguishable. The product may call a record “Claude.ai work connector” or “Claude on laptop,” but the security statement is only: an active credential binding authenticated as this Haku Agent.
+
+Use a local immutable UUID for every canonical entity.
+
+```text
+Operator
+  1 ─── * IdentityAnchor ─── * OidcIdentity
+  1 ─── * Agent
+
+Agent
+  1 ─── * CredentialBinding
+  0..1 ─ active CredentialBinding
+  1 ─── * AgentNameReservation
+
+CredentialBinding
+  * ─── 1 Agent
+  1 ─── 0..1 AuthorizationGrant (OAuth bindings only)
+  1 ─── 0..1 StaticCredential (static bindings only)
+
+AuthorizationGrant
+  * ─── 1 ClientSoftware
+  * ─── 1 OidcIdentity (authorization provenance)
+
+EnrollmentInteraction
+  * ─── 1 OidcIdentity
+  * ─── 1 ClientSoftware
+  0..1 ─ resulting AuthorizationGrant
+
+ClientSoftware
+  metadata only: DCR, CIMD, or preregistered client identity
+```
+
+Recommended records:
+
+| Record                  | Important fields and invariants                                                                                                                                                                                                                                                                                                                               |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Operator`              | `operator_id UUID`, lifecycle status; no protocol identifier as PK                                                                                                                                                                                                                                                                                            |
+| `IdentityAnchor`        | `anchor_id UUID`, immutable `operator_id`, configured `trust_domain`, stable external user key; unique `(trust_domain, stable_external_user_key)` so concurrent first logins at different issuers converge on one Operator                                                                                                                                    |
+| `OidcIdentity`          | `identity_id UUID`, immutable `anchor_id`, exact verified `issuer`, `subject`, timestamps; unique `(issuer, subject)`. Relinking requires an explicit audited account-link migration, never an ordinary foreign-key update                                                                                                                                    |
+| `EnrollmentInteraction` | random `interaction_id UUID`, immutable verified `identity_id`, client-software reference, validated downstream transaction reference, exact requested scopes and redirect/client presentation snapshot, expiry, one-time browser-binding hash, `pending/allowed/completed/denied/expired/failed`, and optional resulting `grant_id`; denial creates no grant |
+| `Agent`                 | `agent_id UUID`, immutable `owner_operator_id`, required `current_name_reservation_id` referencing a reservation owned by this Agent, `draft/active/disabled/deleted`, optional `active_binding_id`, `last_seen_at`; current display/key derive from the reservation rather than being copied                                                                 |
+| `AgentNameReservation`  | required normalized non-empty immutable display string and globally unique normalized key linked to one Agent; every activated current or historical name remains reserved, while cleanup may delete a never-activated draft reservation                                                                                                                      |
+| `ClientSoftware`        | local UUID, registration kind, OAuth `client_id`, validated redirect set/metadata hash, observed name/icon; all presentation metadata untrusted                                                                                                                                                                                                               |
+| `CredentialBinding`     | `binding_id UUID`, `agent_id`, enum-valued credential kind, `issuing/issued/active/revoked/expired/failed`, external family identifier, generation and optional `supersedes_binding_id`; exactly one subtype row and at most one active binding per Agent                                                                                                     |
+| `AuthorizationGrant`    | `grant_id UUID`, unique `binding_id`, immutable authorizing `identity_id` provenance, required client-software reference, exact scopes, `issuing/issued/active/revoked/expired/failed`, timestamps and revoke reason; Agent owner and authorizing identity must resolve to the same Operator                                                                  |
+| `StaticCredential`      | unique `binding_id`, secret reference or fingerprint and rotation metadata; Agent derives through the binding                                                                                                                                                                                                                                                 |
+| `ToolCallAuthorization` | mandatory one-to-one authorization provenance for an Agent-originated tool call, keyed by `tool_call_id` and submitting `binding_id`; decision/execution revalidate the binding instead of transferring queued authority to a replacement credential                                                                                                          |
+
+An OAuth access token should carry or resolve only a stable `grant_id`; Haku then resolves `grant_id -> CredentialBinding -> Agent -> Operator` and verifies every row remains active. `agent_id`, display name, and owner do not need to be copied into the token. `client_id` remains valuable client-software audit metadata but is never the lookup key for the Agent.
+
+FastMCP already has an internal `upstream_token_id` stable across refresh rotations. The local adapter must preserve Haku's opaque `grant_id` across the same token family without making Haku read that private model. Access and refresh token JTIs continue to rotate and are not grant IDs.
+
+### Canonical Operator and multiple Authentik issuers
+
+The correct external identity key is `(issuer, subject)`, but Haku intentionally has separate per-provider Authentik issuers for browser login and MCP proxy login. Both providers currently appear configured to use Authentik's `user_id` subject namespace. Equal `sub` values across issuers are not an OIDC guarantee, so Haku must make that Authentik-specific contract explicit rather than infer it.
+
+Therefore:
+
+- store each exact verified `(issuer, subject)` as its own immutable `OidcIdentity`;
+- link multiple identities through one `IdentityAnchor` only inside a configured **identity trust domain** with a documented and integration-tested Authentik subject-mode contract, or through a dedicated stable Authentik user-ID claim verified at both issuers;
+- atomically upsert the unique `(trust_domain, stable_external_user_key)` anchor so simultaneous browser and MCP first logins cannot create two Operators;
+- keep `IdentityAnchor.operator_id` and `OidcIdentity.anchor_id` immutable. Account merge or link correction is an explicit audited migration because ordinary relinking would rewrite the apparent provenance of historical grants;
+- reject issuers outside that allowlist even if their `sub` string matches; and
+- on every create or reconnect, require the verified identity, `EnrollmentInteraction`, browser session, authorizing grant, and Agent owner to resolve to the same active Operator in one locked transaction; and
+- block rollout and require an explicit account-link migration if an issuer's subject mode or stable-ID claim changes.
+
+Never recover this identity by `jwt.decode(..., verify_signature=False)`. The adapter must validate signature, exact issuer, expected audience/upstream client, expiry, the chosen token type, and a non-empty `sub` before constructing a principal. If the design chooses the ID token, the adapter also generates, stores, sends, and verifies an OIDC nonce; an access-token design must not claim nonce validation it does not perform.
+
+### Display-name rules
+
+The user-visible Agent name is required, globally unique, and non-empty. Implement that contract as:
+
+- preserve an NFC-normalized display string for presentation;
+- trim leading/trailing Unicode whitespace and collapse internal Unicode whitespace runs to one ASCII space;
+- reject control characters and bidirectional override/isolate characters;
+- enforce a maximum of 80 Unicode scalar values after presentation normalization;
+- compute `display_name_key` as NFKC plus Unicode case-folding of the normalized display string; and
+- require `Agent.current_name_reservation_id` at the database boundary and enforce that it references a reservation owned by that Agent; derive the current display string and key from that row instead of copying them onto `Agent`.
+
+Implement the required ownership cycle with a deferrable owned composite foreign key such as `(agent_id, current_name_reservation_id) -> AgentNameReservation(agent_id, reservation_id)`, plus the reservation's Agent foreign key, or an equivalent deferred database constraint. Initial Agent/name creation, rename, and draft cleanup must commit atomically without a nullable intermediate state.
+
+Names remain reserved forever after an Agent becomes active, including historical names after rename and names of disabled or tombstoned Agents, so audit references never acquire a different meaning. Rename first inserts a new globally unique reservation and then switches the Agent's required `current_name_reservation_id` in the same transaction; it never deletes the old reservation. An expired draft Agent is not an established identity and releases its reservation during cleanup. Since global uniqueness can reveal existence and permits namespace squatting, return conflicts only inside authenticated operator interaction and rate-limit creation. If Ducktape becomes meaningfully multi-tenant, revisit global uniqueness; it is retained here because it is an explicit product requirement.
+
+### Reconnect semantics
+
+OAuth cannot prove that a new authorization is the same installation as an old one. On reauthorization:
+
+- creating a new Agent creates a new name and grant;
+- reconnecting an existing Agent must be an explicit operator choice on the post-IdP page;
+- reconnect creates an `issuing` grant/binding with `supersedes_binding_id` and a generation while the current binding remains active. First-use activation uses compare-and-set: it succeeds only if `Agent.active_binding_id` still equals that expected predecessor, then atomically installs the new binding and revokes the old one. A delayed older reconnect fails and revokes itself rather than superseding a newer binding; and
+- Haku must never infer “same Agent” from `client_id`, `client_name`, redirect URI, or `(client_id, subject)`.
+
+Static agents use the same Agent row and global naming rules. Bootstrap creates a `StaticCredential` binding for each existing configured static principal. Rotation creates a replacement binding and atomically supersedes the old one; a static token and OAuth token are never simultaneously active for one Agent. If two independently usable credentials are desired, model them as two named Agents.
+
+## Typed callers without denormalized identity
+
+Use a discriminated union for the canonical caller:
+
+```python
+@dataclass(frozen=True)
+class OperatorPrincipal:
+    operator_id: UUID
+
+
+@dataclass(frozen=True)
+class AgentPrincipal:
+    agent_id: UUID
+
+
+type ToolCallPrincipal = OperatorPrincipal | AgentPrincipal
+```
+
+The credential resolver, not the principal value, derives the owning Operator and display label. Authentication provenance is a separate context keyed only by `binding_id`; that binding derives the Agent. Do not construct an identity object that repeats `agent.agent` as principal and display name and also carries a copied `operator_subject`. That makes three fields drift together.
+
+Represent the union relationally with an `operator_principal_id` foreign key and an `agent_principal_id` foreign key plus a check that exactly one is non-null. Do not store a string `principal_kind`, copied `operator_id`, binding ID, grant ID, or display label on the tool-call row. Operator filtering joins through immutable `Agent.owner_operator_id`. Every Agent-originated call has a mandatory one-to-one `ToolCallAuthorization` record containing only `tool_call_id`, the submitting `binding_id`, and the authorization facts that must be revalidated; its Agent and Operator derive through the binding. Manual decision and execution revalidate that same binding/grant/Agent/Operator chain, so work queued under a revoked or superseded binding cannot execute later. If immutable historical labels later become an audit requirement, add an explicitly named `principal_display_name_snapshot` or an `AgentRenamed` event; do not smuggle a mutable label into the canonical principal. The current migration is allowed to drop past tool calls, so there is no need to invent historical identities while normalizing the model.
+
+### One authorization boundary for multi-Operator, multi-Agent Haku
+
+The persisted principal above and the request-time authorization capability are related but different. Resolve each request exactly once into this discriminated union:
+
+```python
+@dataclass(frozen=True)
+class OperatorActor:
+    operator_id: UUID
+
+
+@dataclass(frozen=True)
+class AgentActor:
+    agent_id: UUID
+    operator_id: UUID
+    binding_id: UUID
+
+
+type RequestActor = OperatorActor | AgentActor
+```
+
+`AgentActor.operator_id` and `binding_id` are transient, server-derived authorization context, not copied persisted identity fields. The only constructor for `AgentActor` verifies the complete active chain `credential -> grant/static credential -> binding -> Agent -> Operator`; a browser session constructs only `OperatorActor`. No route should independently combine a bearer `client_id`, session subject, display name, or optional tenant argument.
+
+Put submit, read, poll, approve, deny, and execute behind one Haku tool-call application service. Its rules are:
+
+- an `AgentActor` may submit calls on behalf of its owning Operator and read or poll only calls whose canonical Agent principal is that same `agent_id`;
+- an `OperatorActor` may read all calls owned by that Operator, including calls from all of their Agents and direct Operator calls, but none owned by another Operator;
+- auto-approval evaluates only Agent-originated calls and receives the full `AgentActor`. The first implementation may use one shared policy, while this interface permits later per-Agent policy without changing authentication;
+- a call not auto-approved enters only its owning Operator's queue. Approval and denial select the call inside that Operator's scope and record the deciding Operator; an Agent can never approve its own call;
+- approval and execution of an Agent-originated call revalidate its mandatory `ToolCallAuthorization.binding_id`; revoking, disabling, or superseding that binding before execution makes the call non-executable rather than transferring its authority to a replacement binding;
+- backend OAuth credentials are selected for the resolved Operator only after the call and Agent ownership have been authorized; and
+- websocket/event fanout is keyed by Operator, while Agent-facing result reads retain the narrower Agent predicate.
+
+Repository methods must require an `OperatorActor` or `AgentActor`; there is no default, `None`, or unscoped ledger method. Apply ownership in the `SELECT`/`UPDATE ... FOR UPDATE` statement rather than fetching by ID and checking afterward. Keep raw SQLAlchemy sessions behind the repository, and include the canonical Operator/Agent IDs in every cache, pending-state, event, and idempotency key whose data is tenant-specific. The database foreign keys and exactly-one-principal check encode the ownership graph; the request actor provides the mandatory query scope without persisting a duplicate owner on every call.
+
+Test this boundary as a reusable cross-product: at least two Operators, two Agents per Operator, direct Operator calls, and revoked/unlinked bindings. For every HTTP route, MCP tool, websocket/event path, decision transition, result poll, and backend-token lookup, assert own access succeeds and sibling-Agent, cross-Operator, ambiguous-credential, revoked-binding, and unlinked-client access fails. This matrix is the guard against a newly added path accidentally becoming global.
+
+## Enrollment and issuance state machine
+
+FastMCP KV state and Haku Postgres cannot share a transaction. Safety comes from a fail-closed state machine and reconciliation, not from pretending the writes are atomic.
+
+```text
+EnrollmentInteraction
+  pending -> allowed
+  allowed -> completed  # downstream authorization-code persistence succeeded
+  pending -> denied
+  pending -> expired
+  pending/allowed -> failed
+
+AuthorizationGrant / CredentialBinding
+  issuing -> issued
+  issuing/issued -> active  # first successfully verified MCP request
+  issuing/issued -> failed/expired
+  active -> revoked/expired
+```
+
+Rules:
+
+1. Pending input is keyed by a random `EnrollmentInteraction.interaction_id`, never `client_id`.
+2. The interaction is bound server-side to the validated downstream transaction, exact client/scopes/redirect presentation, explicitly verified `OidcIdentity`, resolved Operator, expiry, and one-time browser/form binding.
+3. Allow and deny consume `pending` with compare-and-set. A duplicate browser POST returns the already-recorded outcome; denial creates no Agent, grant, binding, or credential.
+4. Name uniqueness, owner consistency, and reconnect ownership are decided in one locked browser-POST transaction. The verified identity, browser session, interaction, Agent owner, and authorizing grant must resolve to the same active Operator. A conflict re-renders the form.
+5. Allowing a new name creates its reservation, a `draft` Agent, and an `issuing` binding/grant, then records that grant on the interaction. Reconnect adds an `issuing` binding/grant with an expected predecessor and generation without disturbing the active binding.
+6. FastMCP persists only opaque Haku `grant_id` context with the authorization code and token family. It does not copy `agent_id` or owner/display fields. Successful downstream authorization-code persistence completes the allowed interaction; persistence failure marks it failed and does not activate the grant.
+7. Token-family persistence may best-effort mark the grant `issued`, but it does not activate the Agent. On the first MCP request, FastMCP first verifies the bearer and yields `grant_id`; one Haku transaction promotes `issuing/issued` to `active`. Reconnect activation compare-and-sets `Agent.active_binding_id` from its recorded predecessor; a stale out-of-order reconnect revokes itself.
+8. This first-use rule defines response-loss semantics. If the token response is lost after the code is consumed, no MCP request arrives and no Agent becomes active. A same-code retry may fail under ordinary OAuth one-time-code rules and require reauthorization; it must never activate from token-family existence alone. An optional exact-request token-response replay cache may improve UX, but is not required for correctness.
+9. A reconciler expires abandoned interactions and `issuing/issued` grants. It deletes a never-activated draft Agent and its name reservation after the enrollment/token lifetime, deletes any corresponding token family best-effort, and never activates a grant merely because one store contains it.
+10. Every MCP request checks the grant, binding, Agent, and Operator status. The first valid request may perform the activation transition above; later requests require `active`. The adapter must patch both FastMCP `3.4.4` failure-loss points: `OAuthProxy.load_access_token()` catches all exceptions and returns `None`, and `MultiAuth.verify_token()` catches all source exceptions and falls through. Haku database, JTI-map, upstream-token-store, Postgres, or Valkey unavailability must remain a retryable service error, not a false `401` that causes clients to deauthorize.
+11. Refresh requires an already active grant/binding before rotating tokens, preserves `grant_id`, and cannot activate an issuing grant or resurrect a revoked one.
+12. Local revoke first marks the Haku grant/binding inactive, making denial authoritative on the next access or refresh use. It then asks the adapter's pinned token-family revocation operation to remove that one family's local refresh metadata, access JTI mappings, and upstream-token records; product code never reads `_code_store` or token-store internals. FastMCP `3.4.4`'s public `revoke_token()` is not family deletion: it removes refresh metadata and best-effort calls the upstream endpoint while other records otherwise expire by TTL.
+
+## Scope domains
+
+Three scope domains must be typed separately even when some strings happen to match.
+
+| Domain                            | Examples                                          | Meaning                                                    |
+| --------------------------------- | ------------------------------------------------- | ---------------------------------------------------------- |
+| Downstream MCP resource scopes    | `read`, `propose`, `decide`, tool-specific scopes | What the MCP client may do at this resource server         |
+| Upstream identity/provider scopes | `openid`, `email`, `profile`, `offline_access`    | Claims/session behavior requested from Authentik           |
+| Backend delegation scopes         | `openid email profile ak_proxy`                   | What an exchanged token may do at a backend proxy provider |
+
+Replace one unqualified `valid_scopes` list with a policy object that states:
+
+- scopes advertised and accepted from the MCP client;
+- scopes required by the MCP resource;
+- scopes sent to Authentik for identity and refresh behavior;
+- any explicit mapping between downstream and upstream scope names; and
+- scopes used only for backend token exchange.
+
+Tests must prove scope preservation across initial authorization, local refresh, upstream refresh, and token swap. An upstream verifier's identity scopes must not overwrite the downstream grant's resource scopes, and Authentik property-mapping requirements must not silently broaden what the MCP client can do.
+
+## Cookies and sessions
+
+The consent cookie is not a credential the MCP HTTP client uses. The browser and MCP client are often different processes. FastMCP's built-in consent modes use their own short-lived consent cookie, but `require_authorization_consent="external"` skips that page and its cookie validation.
+
+The synchronous Haku adapter must therefore create an opaque, short-lived, one-time interaction binding when it renders the post-IdP page. A cookie plus form token is the simplest design; an equivalent server-bound capability is acceptable. It provides two narrower guarantees:
+
+- double-submit CSRF: the submitted form token matches the browser-bound interaction state; and
+- page binding: the browser that saw interaction `I` is the browser submitting the decision for `I`.
+
+It does not prove that this browser process initiated the MCP client's outer OAuth request. A copied or cross-browser authorization URL must still pass Authentik authentication and show a visible, explicit Haku approval page; it must never inherit a silent allow decision.
+
+The authority to activate an Agent comes from the conjunction of:
+
+- a valid, unexpired, pending `EnrollmentInteraction` tied to the validated authorization transaction;
+- validated downstream client/redirect/PKCE data;
+- a verified upstream Operator identity;
+- an explicit allow decision and valid CSRF/browser binding; and
+- a successful Haku grant transition.
+
+A cookie alone proves none of those. The Haku binding should contain only an opaque, short-lived, one-time interaction capability scoped to one path and interaction. Require `Secure`, `HttpOnly`, an intentional `SameSite`, `Cache-Control: no-store`, a restrictive CSP including `frame-ancestors`, and referrer protection. Do not store names, tokens, raw claims, or durable authorization in it.
+
+Starlette `SessionMiddleware` uses signed client-side cookies. Its documentation says session contents are readable, though not modifiable. It is suitable for small browser login state, not secrets or centrally revocable high-value grants. Haku's operator session should have an explicit TTL and reauthentication policy; local logout clears that session but does not revoke MCP agents or necessarily terminate the Authentik SSO session.
+
+## Revocation, logout, disconnect, and “deauth”
+
+There is no reliable generic notification when Claude.ai, Claude Code, or another MCP client merely deletes local credentials or removes a connector. Silence is not revocation.
+
+Keep these operations distinct:
+
+| Operation                                 | Effect                                                                           |
+| ----------------------------------------- | -------------------------------------------------------------------------------- |
+| Haku browser logout                       | Clears Haku's browser session                                                    |
+| Authentik OIDC logout/back-channel logout | Ends or signals an IdP login session where supported                             |
+| RFC 7009 token revocation                 | A cooperating OAuth client or server asks an AS to invalidate a token            |
+| RFC 7592 client-registration deletion     | Removes/manages a dynamic client registration where implemented                  |
+| Downstream MCP account disconnect         | Deletes/revokes Haku's stored token for another MCP server                       |
+| Haku Agent revoke/disable                 | Makes every credential binding for that Agent fail Haku authorization            |
+| Haku grant revoke                         | Invalidates one OAuth relationship/token family while retaining the Agent record |
+
+Haku needs its own authoritative revoke path:
+
+1. atomically mark the grant/binding revoked in Haku;
+2. make every request check that state so revocation is immediately enforced;
+3. ask the pinned adapter to delete the associated local refresh-token metadata, access-token JTI mappings, and upstream-token record as cleanup, without making cleanup success the authorization gate;
+4. best-effort call upstream Authentik revocation when advertised;
+5. retain the Agent/audit record unless the operator explicitly deletes it; and
+6. reconcile incomplete cleanup until the local token family is gone.
+
+Revocation is successful when Haku denies local access, not when FastMCP-family cleanup or the best-effort upstream call succeeds. Define and test a propagation target (normally one request, bounded only by any explicit verifier cache). A cleanup outage leaves denial effective and is reconciled later. `last_seen_at` can inform UI but must not infer deauthorization.
+
+Authentik account disablement is a separate propagation path. A local Haku Operator disable is enforced on the next request. An Authentik-only disable is detected when the upstream token is next validated or refreshed unless an event sync is added; IdP logout alone is not revocation. Configure and document upstream/local access-token lifetimes so the worst-case Authentik-disable latency is no more than one hour, verify refresh rejection cannot leave the Haku grant active, and show that bound in the Connected Agents UI/runbook. Add Authentik event-driven disable synchronization later only if a shorter bound becomes a product requirement.
+
+## OAuth state storage boundary
+
+### Current behavior
+
+FastMCP's `UpstreamTokenSet` and authorization-code models contain upstream access tokens, refresh tokens, ID-token/raw responses, and client binding data. FastMCP wraps only its internally created file store in `FernetEncryptionWrapper`. Ducktape's `<../mcp_infra/persistence.py>` returns raw `PostgreSQLStore` or `ValkeyStore` objects, and Airlock's `<../airlock/kv_store.py>` stores JSONB directly. Passing either as `client_storage` means the application layer does not add encryption.
+
+Haku's outbound MCP OAuth associations in `<../haku/console/database_schema.py>` also store `client_secret`, access token, and refresh token as ordinary text columns. Airlock intentionally writes external-provider tokens to Kubernetes Secrets.
+
+### Accepted posture
+
+- Treat the OAuth Postgres databases, Valkey instances, Kubernetes Secrets, their backups, and their administrative readers as part of the private credential boundary.
+- Preserve network policy, database credentials, RBAC, namespace isolation, and backup access controls appropriate for bearer credentials.
+- Redact token values and OAuth form bodies from logs, metrics, exceptions, database inspection tooling, and undeclared test outputs.
+- Keep FastMCP JWT signing keys, upstream OIDC client secrets, and browser-session secrets logically separate where practical; rotating one should not unexpectedly invalidate unrelated layers.
+- Document whether each Airlock external credential is intentionally a singleton service credential or per-operator.
+
+If the shared persistence helper can wrap custom stores with FastMCP's standard encryption without complicating key ownership or rotation, that is a reasonable default defense-in-depth improvement. It should be a separate optional change with a deliberate reconnect/migration plan, not a blocker for Agent identity or the authorization-interaction design.
+
+## DCR and CIMD abuse controls
+
+Supporting unknown client metadata is an internet-facing input surface, not only an interoperability feature.
+
+Require:
+
+- registration and authorization rate limits per source and transaction quotas;
+- TTLs and garbage collection for DCR clients, transactions, codes, and abandoned grants;
+- exact redirect validation and explicit loopback rules;
+- CIMD fetch timeouts, response-size limits, redirect limits, public-address enforcement, DNS-rebinding defenses, and caching;
+- autoescaped rendering of text client metadata, with names/icons treated as untrusted presentation;
+- a visible redirect hostname and CIMD origin rendered as text on the Haku authorization page;
+- no remote client icon by default; if icons are later supported, proxy and sanitize a strict raster-only media allowlist rather than embedding arbitrary URLs or SVG;
+- CSP and no third-party active content on the authorization page; and
+- tests for client-brand impersonation and confused-deputy redirects.
+
+For high-value Haku deployments, preregistration-only is a credible policy, not a failure of architecture. Keep CIMD/DCR enablement an explicit server policy. As checked on 2026-07-13, Authentik's DCR feature request [#8751](https://github.com/goauthentik/authentik/issues/8751) was open, assigned to the `2026.8.0` milestone, and had no implementation PR. Reassess after an actual release and interoperability test; do not make it a dependency. Even if Authentik ships DCR, it will register client software, not create Haku Agents.
+
+## Would a DCR-capable identity provider help?
+
+It is a legitimate option, but DCR is not the missing Haku abstraction. DCR creates a client-software registration before a resource owner is present. It does not name an Agent, bind that Agent to an Operator, provide a post-login product interaction, or define Haku's grant/revocation lifecycle.
+
+A sufficiently MCP-capable external authorization server could still simplify the generic case:
+
+- MCP resource servers could use `RemoteAuthProvider` or direct JWT verification instead of running a local `OIDCProxy` facade;
+- client registration, token revocation, issuer policy, and signing could live in one authorization server; and
+- preregistration, CIMD, and DCR policy could be enforced consistently across MCP resources.
+
+That does not require replacing Authentik cluster-wide. A lower-risk experiment would run a dedicated MCP authorization server federated to Authentik for human authentication. Only replace Authentik as the general IdP if a separate evaluation shows value beyond MCP DCR.
+
+Keycloak is the most concrete self-hosted candidate found in this research. As checked on 2026-07-13, its official documentation reports support for RFC 7591 DCR and RFC 7592 registration management, and experimental CIMD support. The same official MCP guide classifies MCP `2025-11-25` support as partial because Keycloak does not yet process RFC 8707 `resource` indicators. Therefore it is not currently a drop-in standards upgrade over FastMCP for this repository. Its extension system might host a Haku ceremony, but then Ducktape would own a Keycloak extension and its lifecycle instead of a FastMCP adapter.
+
+Ory Hydra is the more architecturally relevant alternative, but it is an authorization server rather than a replacement identity provider. Its documented design delegates login and consent to application-owned HTTP endpoints through opaque challenges, and its project advertises DCR and registration management. Haku could remain the owner of the post-Authentik naming/consent interaction and Agent database while Hydra owns clients, codes, token families, and revocation. That is a cleaner seam than moving Haku policy into a Keycloak authenticator or Authentik flow.
+
+Hydra also adds a stateful public/admin service and database. This research found no official proof of current CIMD support or exact RFC 8707 behavior, so neither may be assumed. A Hydra path must pass the real MCP client/resource conformance matrix below before it can displace the local FastMCP adapter.
+
+Evaluate any alternative authorization server against this pass/fail matrix before considering migration:
+
+1. correct MCP protected-resource and authorization-server discovery when resources are mounted under paths;
+2. interoperable preregistration, CIMD, and DCR with the actual Claude.ai, Claude Code, and other target clients;
+3. RFC 8707 `resource` handling and exact audience validation that rejects cross-resource token replay;
+4. public-client PKCE, redirect, loopback, DCR/CIMD SSRF, rate-limit, and registration-management behavior;
+5. a post-authentication, pre-code application interaction receiving a verified principal, where remembered/skipped generic consent can never bypass Haku enrollment for a new grant or reconnect;
+6. opaque Haku `grant_id` context preserved through code, access/refresh tokens, rotation, token load/introspection, and revocation;
+7. supported lifecycle events or APIs for Haku's fail-closed activation and local revoke semantics;
+8. stable Authentik-federated identity linkage, or a fully costed identity/policy/application migration;
+9. GitOps ownership, backup/restore, upgrades, observability, and incident procedures; and
+10. deletion of enough local proxy/compatibility code to justify adding or replacing a control-plane service.
+
+If a candidate passes the protocol items but lacks the Haku interaction/grant items, it may still replace `OIDCProxy` for generic facades while Haku keeps its local adapter. That mixed deployment is acceptable only if the operational benefit exceeds the loss of one uniform MCP auth path. Do not switch IdPs solely to obtain DCR. Prefer a bounded Hydra-as-MCP-AS proof over a cluster-wide IdP migration if the FastMCP adapter crosses its containment threshold.
+
+## Airlock's auth composition needs a focused correction
+
+The following are code-level findings from the repository baseline, not claims that the live deployment was exploited or smoke-tested during this investigation.
+
+### External-provider connection routes
+
+`<../airlock/oauth/routes.py>` currently exposes `GET /oauth/authorize/{provider_name}` without an Airlock authorization dependency. The callback is necessarily reachable without an Airlock bearer, but the initiation endpoint should not be. A public caller can currently start a flow; if a provider user then completes that attacker-started flow, it can replace the singleton credential in the configured Kubernetes Secret.
+
+The target shape is:
+
+1. an authenticated operator-only `POST /api/oauth/providers/{provider}/connect` starts the flow;
+2. the dependency requires a specific broker-management permission, rather than inheriting `read` accidentally;
+3. the server creates a random, one-time, expiring state record bound to the initiating operator principal, provider, redirect URI, PKCE verifier, intended action, and expected current credential generation;
+4. the callback remains public and authorizes only by atomically consuming that capability; possession of `state` does not prove that the callback browser currently has an Airlock operator session;
+5. replacing an existing singleton credential requires an explicit confirmation or a separately authorized action, and compare-and-set on the expected generation prevents an older concurrent flow overwriting a newer credential; and
+6. completion records who connected the provider, when, which scopes were granted, and which singleton credential was replaced.
+
+The current code already binds provider and PKCE verifier and uses `dict.pop()` before the successful exchange path. Retain that one-time atomic consumption, then add expiry, bounds, initiating-operator/action/generation binding, and consumption on every terminal callback path including provider errors. Keep callback URLs/query strings out of logs and referrers. If Airlock runs multiple replicas or callbacks must survive a restart, use its existing private Postgres store.
+
+The frontend should call the authenticated POST and follow the returned redirect URL. A bare `<a href="/oauth/authorize/...">` cannot attach its bearer or protect a state-changing initiation operation.
+
+### Separate the four Authentik trust contracts
+
+`<../cluster/k8s/agents/airlock/config.yaml>` configures the browser issuer as `/application/o/airlock/` and client ID `airlock-operator`. The OIDC proxy credentials come from the separate `airlock-oidc-proxy` provider. Claude Code is configured against the direct public-PKCE issuer `/application/o/claude-code-airlock/`, and OpenClaw uses `/application/o/openclaw-agent/`. `<../airlock/app.py>` currently passes the browser issuer to `OIDCProxy` with the proxy provider's credentials, then omits direct JWT verifiers in that proxy branch.
+
+That configuration is trying to make one issuer field cover four roles. Model them as exact trust contracts:
+
+```python
+@dataclass(frozen=True)
+class InteractiveMcpAuthorization:
+    issuer: IssuerUrl  # /application/o/airlock-oidc-proxy/
+    client_id: OAuthClientId
+    client_secret: SecretStr
+    downstream_scopes: frozenset[McpScope]
+
+
+@dataclass(frozen=True)
+class DirectJwtAuthorization:
+    issuer: IssuerUrl
+    audiences: frozenset[Audience]
+    required_scopes: frozenset[McpScope]
+```
+
+| Contract                         | Exact issuer/client            | Intended authority                                                                              |
+| -------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------- |
+| MCP-compatible interactive proxy | `airlock-oidc-proxy`           | `/mcp`, `propose` and `read` only unless its Authentik mappings deliberately add more           |
+| Browser operator                 | `airlock` / `airlock-operator` | ordinary `/api`, `read` and `decide`; broker connection needs an explicit management permission |
+| Claude Code direct public client | `claude-code-airlock`          | `/mcp`, `propose` and `read`                                                                    |
+| OpenClaw machine                 | `openclaw-agent`               | `/mcp`, only its explicitly mapped machine scopes                                               |
+
+The current Airlock builder advertises `decide` through the proxy even though `<../tf/gitops/airlock-oidc-proxy/main.tf>` maps only `openid`, `propose`, and `read`. The immediate correction is to stop advertising `decide` there unless policy explicitly changes the provider mapping.
+
+Do not pass one permissive `MultiAuth` object to every route. Compose trust by surface:
+
+| Surface                           | Accepted trust                                                                                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/mcp`                            | Local `OIDCProxy` tokens plus exact direct verifiers for `claude-code-airlock` and `openclaw-agent`; browser operator JWT only if deliberately required |
+| Ordinary `/api/*`                 | Exact `airlock-operator` browser JWT only                                                                                                               |
+| Provider-connect POST             | Exact `airlock-operator` browser JWT plus broker-management permission                                                                                  |
+| Provider callback                 | One-time server-side state capability only; no bearer requirement                                                                                       |
+| `/healthz` and OIDC client config | Explicitly public, minimal responses                                                                                                                    |
+
+Do not assume that sharing an Authentik signing key makes issuer and audience interchangeable. Add an end-to-end test for every intended path and a negative test proving that credentials accepted on one surface are rejected on the others.
+
+### Let Authlib handle provider HTTP mechanics
+
+Airlock should continue to own the provider catalog, scope requests, singleton-vs-per-operator policy, Kubernetes publication, refresh scheduling, and UI. Replace the hand-written authorization URL, PKCE, token exchange, refresh, and error parsing in `<../airlock/oauth/provider.py>` incrementally with Authlib's OAuth client primitives. That reduces protocol code without turning Airlock into a generic OAuth framework.
+
+Provider-specific quirks should be small typed adapters around Authlib. Kubernetes Secret writes are an Airlock application side effect after a validated grant; they do not belong in the OAuth client library.
+
+## A small browser OIDC relying-party package
+
+Haku and Props already use Authlib plus Starlette sessions. Study Casino duplicates discovery, state cookies, token exchange, userinfo, and HMAC session encoding, then uses mutable `preferred_username` as the durable key. The right shared abstraction is a small relying-party helper, not a universal auth service.
+
+Place it under a proposed neutral package such as `web_auth/oidc/` and keep its surface narrow:
+
+- typed issuer, client, redirect, requested-claim, and session settings;
+- Authlib Starlette/FastAPI client registration;
+- a verified `OidcIdentity(issuer, subject, claims)` result;
+- standard login/callback/logout helpers with state/nonce and safe redirect handling;
+- consistent session-cookie defaults and a session-version hook; and
+- test fixtures around `<../util/testing/mock_oidc.py>`.
+
+Each application still owns:
+
+- its routes and post-login destination;
+- issuer allowlists and local-account linking;
+- authorization policy;
+- session lifetime and reauthentication requirements; and
+- what logout means for that product.
+
+Migrate Study Casino's durable identity from username to a local user UUID linked to `(issuer, subject)`. Preserve username only as presentation metadata. Haku and Props can adopt the helper only where it removes duplication; do not force a synchronized rewrite of already-correct application code.
+
+## Typed authentication and credential modes
+
+`AuthentikAuthConfig` currently has required OIDC-proxy fields plus optional exchange fields and an open-ended list of direct JWT trusts. Across the repository, strings and nullable fields allow invalid combinations that are discovered only at startup.
+
+Use discriminated configuration models instead:
+
+```python
+class IncomingAuthKind(Enum):
+    INTERACTIVE_OIDC_PROXY = auto()
+    REMOTE_JWT = auto()
+    STATIC_BEARER = auto()
+
+
+class InteractiveOidcProxy(BaseModel):
+    kind: Literal[IncomingAuthKind.INTERACTIVE_OIDC_PROXY]
+    issuer: IssuerUrl
+    client: ConfidentialClient
+    scopes: McpScopePolicy
+
+
+class RemoteJwt(BaseModel):
+    kind: Literal[IncomingAuthKind.REMOTE_JWT]
+    issuer: IssuerUrl
+    audiences: frozenset[Audience]
+    required_scopes: frozenset[McpScope]
+
+
+class StaticBearer(BaseModel):
+    kind: Literal[IncomingAuthKind.STATIC_BEARER]
+    credential_ref: SecretReference
+    principal: StaticAgentId
+```
+
+Define a separate enum-tagged union for outgoing `ClientCredentials` and `JwtBearerDelegation`. Use enums or constrained wrapper types for closed sets such as registration kind, grant status, principal kind, credential kind, and scope domain. A serialized YAML/JSON tag is necessarily text at the configuration boundary, but application code receives an enum member and exhaustive union, never compares bare string literals. OAuth scope values themselves remain strings because they are an extensible protocol namespace; the type should prevent a downstream MCP scope from being passed where an upstream identity scope is expected.
+
+Do not create one giant union consumed everywhere. Separate incoming-auth modes, outgoing credential modes, and backend-delegation modes so a server can accept only configurations relevant to its role.
+
+## Authentik and GitOps ownership
+
+Authentik configuration currently spans blueprints, several Terraform modules, Kubernetes manifests, and generated/reflected Secrets. That is reasonable only if each provider/application has one declared owner.
+
+A workable ownership rule is:
+
+- Authentik blueprints own public or Authentik-internal objects that require no generated secret to leave Authentik, including shared flows, scope mappings, groups, and proxy outposts where appropriate.
+- GitOps Terraform owns confidential OAuth providers whose generated client secret must be published to a Kubernetes workload or external controller.
+- The consuming Kubernetes application owns only the reference to that generated Secret and its issuer/client configuration, never an independently copied credential.
+- One central inventory records provider slug, application slug, protocol role, issuer mode, audiences, scopes, redirect URIs, source-of-truth path, secret consumers, and lifecycle owner.
+
+The Kagent configuration demonstrates why this is necessary: `<../cluster/k8s/authentik/app/blueprints/kagent-sso.yaml>` declares a proxy provider/application/outpost named `kagent`, while `<../tf/gitops/sso-providers/provider_kagent.tf>` declares an OIDC provider/application with the same application slug for oauth2-proxy. Choose the active architecture, give the application one owner, and delete the orphaned competing definition after live verification.
+
+Shared scope mappings also need one owner. A provider may reference a shared mapping, but must not recreate a semantically similar mapping under another controller. Add CI that rejects duplicate Authentik application slugs, provider names, client IDs where uniqueness is expected, and overlapping ownership declarations.
+
+## Good patterns
+
+### Compose protocol engines; own product interactions
+
+Use FastMCP, Authlib, FastAPI, and Starlette for the protocol and web mechanics they implement. Let Haku and Airlock own their domain records and interaction text. The composition boundary is a typed verified result plus a lifecycle hook, not access to a library's internal stores.
+
+### Model identity and credentials separately
+
+A principal is a canonical local ID. A credential binding is evidence accepted for that principal. A display name is presentation. An OAuth client describes software. Keeping those records separate makes revocation, reconnect, renaming, and audit behavior explicit.
+
+### Make authorization transitions explicit and idempotent
+
+Use named states, unique transaction IDs, compare-and-set transitions, expiry, and reconciliation. Fail closed while preserving retryable server failures as `503`, rather than lying to clients with `invalid_grant`.
+
+### Keep compatibility patches narrow
+
+Every protected/private FastMCP use should have:
+
+- one compatibility module;
+- an exact version pin;
+- a focused contract test against the behavior being repaired;
+- an upstream tracking reference when one already exists, otherwise a local rationale;
+- an owner and deletion condition; and
+- no Haku domain code in generic `mcp_infra`.
+
+### Render application HTML as application HTML
+
+Put Haku's authorization/enrollment template in a separate Jinja file owned by Haku. Use Jinja autoescaping and pass structured values. Autoescape protects HTML contexts, not URL safety: render redirect/CIMD origins as text, generate form actions locally with `url_for`, and do not render remote client icons by default. Do not concatenate HTML in Python and do not manually escape fields before handing them to an autoescaping template. Add snapshot or browser tests for hostile client names, redirect origins, scopes, empty names, duplicate names, and CSRF failures.
+
+### Audit decisions, not secrets
+
+Record actor IDs, transaction/grant IDs, client-software IDs, requested and granted scopes, timestamps, state transitions, and reasons. Do not record codes, bearer tokens, refresh tokens, client secrets, full callbacks, or raw form bodies.
+
+## Patterns to avoid
+
+| Avoid                                                | Why                                                                                | Prefer                                                            |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Agent creation in DCR `/register`                    | DCR has no authenticated resource owner and identifies client software             | Post-IdP authorization interaction                                |
+| Agent keyed by OAuth `client_id`                     | CIMD/preregistered IDs are shared and DCR IDs can be recreated                     | Local UUID Agent plus grant/binding records                       |
+| `getattr()` probes of framework internals            | Converts version drift into runtime behavior                                       | Typed public hook or isolated pinned adapter                      |
+| Arbitrary `oidc_proxy_factory` injection             | Generic infrastructure cannot safely promise semantics of an unknown protocol core | Explicit stock builder plus product-owned adapter construction    |
+| Raw `id_token` decode without verification           | Confuses attacker-controlled claims with authenticated identity                    | Adapter-validated token and typed verified principal              |
+| Optional-heavy universal auth config                 | Admits issuer/client/audience combinations that make no semantic sense             | Discriminated role-specific config                                |
+| Bare strings for closed domain variants              | Typos and impossible states survive type checking                                  | Enums/discriminated unions                                        |
+| One untyped scope list                               | Mixes MCP authority, identity claims, and backend delegation                       | Domain-specific scope policies                                    |
+| Product HTML in `mcp_infra` or Python strings        | Couples generic protocol code to one UI and invites escaping mistakes              | Haku-owned Jinja template                                         |
+| Manual HTML escaping                                 | Easy to double-escape or miss a context                                            | Template autoescape and safe structured rendering                 |
+| FastMCP `custom_route` for authenticated UI          | It is outside `RequireAuthMiddleware`; parsed auth context is not enforcement      | Parent-owned FastAPI router with explicit dependencies            |
+| Copying owner/name into a principal object           | Creates denormalized fields that drift                                             | Canonical IDs plus joins; explicit snapshots only for audit       |
+| Treating logout or inactivity as revocation          | Client credential deletion is not observable                                       | Haku grant/Agent revoke state checked per request                 |
+| Catching every upstream exception as `invalid_grant` | Transient outages permanently disconnect cooperative clients                       | OAuth errors as terminal; transport/storage failures as retryable |
+| A central Ducktape auth microservice                 | Adds a network trust hop without removing application policy                       | Small libraries plus Authentik and app-owned domain state         |
+| A full custom AS just to add a form                  | Reimplements the most security-sensitive OAuth machinery                           | FastMCP hook, quarantine UX, or pinned adapter                    |
+
+## Architecture options and decision thresholds
+
+| Option                                       | Protocol ownership                  | Product UX                                     | Upgrade cost                 | Security/audit shape                                                                            | Recommendation                                                     |
+| -------------------------------------------- | ----------------------------------- | ---------------------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Stock FastMCP only                           | Upstream                            | Generic consent only                           | Lowest                       | Strongest supported boundary, no synchronous Agent naming                                       | Use for generic facades; insufficient for desired Haku UX          |
+| Stock FastMCP plus quarantined unnamed grant | Upstream                            | Naming happens after token issue; client waits | Low                          | Public APIs and fail-closed resource policy                                                     | Safest fallback if upstream hook is unavailable                    |
+| Public FastMCP interaction/grant hooks       | Upstream protocol, Haku interaction | Desired synchronous flow                       | Low if released upstream     | Best separation and testability                                                                 | Ideal future deletion condition; no current contribution planned   |
+| Haku-local pinned callback adapter/patch     | FastMCP plus narrow local delta     | Desired synchronous flow                       | Medium per FastMCP upgrade   | Auditable only if isolated and contract-tested                                                  | Recommended implementation after approval                          |
+| Ducktape custom `OAuthProvider`              | Ducktape owns full MCP AS           | Fully custom                                   | High and permanent           | Large security surface                                                                          | Only after the explicit escalation threshold                       |
+| Authentik directly as MCP AS                 | Authentik                           | Authentik interaction                          | Medium if/when compatible    | Good central IdP policy, but no Haku grant ceremony and incomplete current MCP registration fit | Use for preregistered native servers, not Haku Agents              |
+| Hydra MCP-only AS plus Authentik identity    | Hydra protocol, Haku login/consent  | Desired app-owned synchronous flow             | High initial, medium ongoing | Clean interaction boundary; current CIMD/resource-indicator behavior still unproven             | Formal fallback proof if the FastMCP adapter exceeds its threshold |
+| Keycloak as IdP/AS                           | Keycloak plus custom extension      | Desired only through owned Java provider       | High initial and ongoing     | DCR/7592 and experimental CIMD, but current MCP 2025-11 is partial without RFC 8707             | No switch solely for DCR                                           |
+| Replace Authentik cluster-wide               | New general IdP/AS                  | Depends on candidate                           | Very high                    | Migrates every app, identity, policy, secret, and runbook                                       | No MCP-only justification; evaluate as a separate program          |
+
+The choice is not “FastMCP or FastAPI.” FastAPI composes routes and application policy; FastMCP or a custom `OAuthProvider` supplies the authorization-server state machine. Likewise, Authlib can implement that state machine but does not make owning it free.
+
+## Recommended package and ownership layout
+
+The exact filenames can change during implementation, but the dependency direction should not.
+
+```text
+mcp_infra/
+  auth/
+    models.py                 # typed incoming auth modes and scope domains
+    authentik_metadata.py     # discovery, normalized issuers, typed metadata
+    providers.py              # stock TokenVerifier/RemoteAuth/OIDCProxy/MultiAuth composition
+    fastmcp_compat.py         # version-pinned shims only
+    token_exchange.py         # Authentik JWT-bearer backend delegation
+  persistence.py              # private store construction, optional standard wrapper
+
+web_auth/
+  oidc/
+    models.py                 # OidcIdentity and RP config
+    starlette_client.py       # Authlib integration and safe session defaults
+    testing.py                # mock-IdP fixtures/helpers
+
+haku/console/
+  auth/                       # browser operator RP composition
+  agents/
+    models.py                 # Operator, Agent, Grant, CredentialBinding domain types
+    repository.py             # Postgres operations and state transitions
+    enrollment.py             # Haku interaction policy/service
+    principal.py              # credential -> canonical principal resolution
+    routes.py                 # authenticated management routes
+    templates/
+      authorize_agent.html
+  mcp_auth/
+    provider.py               # Haku composition of FastMCP + interaction adapter
+    fastmcp_adapter.py        # owned, version-pinned private seam
+
+airlock/
+  auth.py                     # separate MCP, browser API, and broker trust compositions
+  oauth/
+    broker.py                 # Airlock credential-broker policy
+    routes.py                 # authenticated start + public one-time callback
+    provider.py               # thin Authlib provider adapter
+```
+
+Do not create packages merely to match this tree. Extract a module when it gives one concept a clear owner or eliminates a real dependency cycle.
+
+## Low-discussion runway after the FastMCP repin
+
+The first successor PRs should improve invariants without choosing Haku's private FastMCP adapter, final schema, IdP, or storage design. A runway PR qualifies only when it:
+
+- fixes one demonstrated invariant or characterizes one upstream compatibility boundary;
+- introduces no Agent/grant/binding schema and no new FastMCP private-state dependency;
+- changes no encryption, IdP ownership, or product enrollment choice;
+- has a focused negative test or static type proof that exposes the current weakness; and
+- leaves the code closer to the final typed authorization boundary rather than adding another parallel path.
+
+### Landed baseline
+
+The following work is now on `devel` and should be treated as the starting point, not repeated:
+
+- PR [#3139](https://github.com/agentydragon/ducktape/pull/3139) pins the retired proxy-header boundary: forged `X-Authentik-*` headers do not authenticate browser routes.
+- PR [#3140](https://github.com/agentydragon/ducktape/pull/3140) closes same-Operator sibling-Agent reads with mandatory Operator-versus-Agent query scope. It is intentionally transitional because persistence still uses external string principals.
+- PR [#3142](https://github.com/agentydragon/ducktape/pull/3142) renders the existing operator OAuth callback with an autoescaping Jinja template in a separate file, plus CSP, no-store, and hostile-input coverage.
+- PR [#3146](https://github.com/agentydragon/ducktape/pull/3146) repins the repository atomically to FastMCP `3.4.4` and its `fastmcp-slim` package layout.
+- PR [#3145](https://github.com/agentydragon/ducktape/pull/3145) replaces duplicate string-tagged caller/scope DTOs with `OperatorActor | AgentActor`, uses stable Authentik `sub` rather than username as the Operator authorization identity, and injects Agent actors into FastMCP FunctionTools through `Depends`.
+- PR [#3143](https://github.com/agentydragon/ducktape/pull/3143) types the supported OAuth storage lifecycle as `ValkeyStore | PostgreSQLStore | None` and removes production `hasattr(..., "setup")` probing.
+- PR [#3149](https://github.com/agentydragon/ducktape/pull/3149) moves actor types to a Haku domain module, passes the complete actor to auto-approval, and injects `OperatorActor` into browser routes through FastAPI dependencies.
+- PR [#3150](https://github.com/agentydragon/ducktape/pull/3150) replaces the remaining MCP content `getattr`/`hasattr` probing with concrete `CallToolResult` and `TextContent` variants.
+- PR [#3152](https://github.com/agentydragon/ducktape/pull/3152) makes Haku MCP auth a `StaticMcpAuth | OAuthMcpAuth` union whose OAuth variant carries a required shared Postgres/Valkey store; generic consumers may still choose FastMCP's file/default store.
+- PR [#3151](https://github.com/agentydragon/ducktape/pull/3151) models Grocy success/error rows as literal discriminated variants and removes frontend casts while preserving unknown-shape fallback.
+- PR [#3154](https://github.com/agentydragon/ducktape/pull/3154) adds a hermetic FastMCP `3.4.4` integration test proving a second authorization for the same browser and client still presents consent when `require_authorization_consent=True`; a mutation to remembered consent makes the test fail.
+- PR [#3156](https://github.com/agentydragon/ducktape/pull/3156) removes the fake empty Operator subject from non-`operator_oauth` execution paths and proves the stable authenticated subject reaches auth resolution.
+- PR [#3157](https://github.com/agentydragon/ducktape/pull/3157) replaces raw approval-decision strings with a shared `StrEnum` while preserving the `"approve" | "deny"` JSON and generated TypeScript wire contract.
+- PR [#3160](https://github.com/agentydragon/ducktape/pull/3160) adds the two direct Bazel dependencies required by the focused #3156 regression test; it contains no production change.
+- PR [#3159](https://github.com/agentydragon/ducktape/pull/3159) uses FastMCP's public `update_default_scopes()` API and typed OIDC discovery result instead of mutating registration internals or issuing a duplicate discovery request.
+- PR [#3162](https://github.com/agentydragon/ducktape/pull/3162) pins real RS256/JWKS verifier behavior across key selection, issuer variants, audience lists, required scopes, and negative trust cases.
+
+### Runway complete
+
+The low-discussion runway is complete. Pause before the material Haku schema and adapter choices below.
+
+Do not fold the 50 ms tool-call wait loop into this stamp queue. Its replacement should use a lost-wakeup-safe Postgres notification protocol: register the waiter, repeat the actor-scoped read, wake on the matching invalidation, and always perform a final actor-scoped read at the deadline. `LISTEN/NOTIFY` is an invalidation channel, not the durable source of truth.
+
+### Clear findings just beyond the five-second queue
+
+Airlock advertises `decide`, while the checked-in Authentik proxy provider maps only `openid`, `propose`, and `read`. Correcting that mismatch is likely right, but first write down which of Airlock's interactive proxy, direct MCP, Claude Code, and OpenClaw credentials needs each scope; do not infer the whole route trust contract from one list. Likewise, Airlock callback state should be consumed before provider errors, expire, remain bounded, and be consumed on all terminal paths. Both are high-confidence security work, but the former needs a trust-contract check and the latter is a larger state-machine change, so discuss them after the smaller queue rather than presenting them as instant stamps.
+
+Closed PR [#3085](https://github.com/agentydragon/ducktape/pull/3085) contains only a historical `debug/` security review. Its high-severity `x-authentik-*` fallback finding is already fixed on `devel`, including the forged-header regression behavior, so leave the stale review note unmerged. A separate edge rule stripping the two retired identity headers is reasonable tiny defense-in-depth if desired; a namespace `NetworkPolicy` needs rollout validation and is not part of this five-second runway.
+
+Now pause. Splitting route trust, authenticating provider-connect initiation, introducing the canonical Haku schema, and implementing the post-IdP adapter are principled next phases, but they encode material design and rollout choices.
+
+### What to preserve from PR #3122 during the runway
+
+Treat PR [#3122](https://github.com/agentydragon/ducktape/pull/3122) as a parts bin, not a binary merge decision.
+
+| Disposition                    | Pieces                                                                                                                                                                                                                       | Reason                                                                                                                   |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Preserve as security contracts | One DCR client cannot be rebound across Operators; unlinked clients fail closed; static and OAuth client namespaces cannot collide; multiple clients remain distinguishable; every Operator query keeps its tenant predicate | These are correct multi-Operator/multi-Agent invariants independent of the final schema                                  |
+| Translated on `devel`          | Agent-facing call reads add the current client principal to the already-required Operator ownership predicate through `AgentActor`                                                                                           | A DCR `client_id` is a valid current credential-binding discriminator even though it is not the Agent primary key        |
+| Reuse with the final flow      | Haku-owned Jinja template, autoescaping/CSP and hostile-input tests, required/non-empty/unique-name tests, real authorization-code fixture, Connected Agents/filter TODO, and discriminated-union intent                     | Useful product and test assets, but landing them alone creates dead code                                                 |
+| Supersede                      | DCR `client_id` as Agent primary key; pending names keyed only by `client_id`; copied caller display/owner fields; raw upstream token decoding; generic `oidc_proxy_factory`; private-store lifecycle choreography           | These encode the prototype architecture and either collide across concurrent/shared-client flows or denormalize identity |
+
+The key distinction is that `client_id` restoration from PR #3121 remains necessary on FastMCP `3.4.4` to identify the presenting downstream credential today. Preserve it as a version-pinned compatibility shim and as input to `AgentActor` resolution. In the final model, translate that credential evidence to `grant_id -> binding_id -> agent_id -> operator_id`; never promote the client registration itself to the Agent.
+
+## Concrete migration plan
+
+Each phase should be a reviewable PR with its own acceptance tests. Do not combine the FastMCP upgrade, Haku schema rewrite, Airlock security correction, and Authentik ownership cleanup into one change.
+
+### Phase 0: security and protocol baseline
+
+1. **Complete:** PR #3146 atomically repinned Python, Bazel, Nix, and the `fastmcp_slim` package layout to FastMCP `3.4.4`. Keep the exact-version compatibility matrix as an upgrade gate.
+2. **Complete transition:** PR #3140 closed same-Operator cross-Agent reads; PR #3145 then replaced the parallel caller/scope DTOs with a typed `OperatorActor | AgentActor`. The string persistence keys remain transitional until Phase 3 introduces canonical IDs.
+3. **Complete:** PR #3139 proves forged retired identity headers remain untrusted. PR #3154 adds the repeated-consent test for the repinned confused-deputy fix, and PR #3162 pins the direct RS256/JWKS trust contract; keep redirect and PKCE validation FastMCP-owned.
+4. **Pending:** split the three `ResilientOIDCProxy` behaviors into focused compatibility tests before changing their implementation. Remove any behavior already fixed upstream.
+5. **Pending and discussion-worthy:** correct Airlock's issuer/client composition and protect external-provider flow initiation after documenting its route/credential trust matrix. Add live-compatible integration tests before refactoring its provider client.
+6. **Complete:** treat Postgres/Valkey/Kubernetes Secrets as the accepted private storage boundary. PR #3143 removes lifecycle duck typing without adding encryption. PR #3152 makes Haku's OAuth composition carry a non-optional shared store and nests it under the OAuth config. Optionally evaluate FastMCP's standard storage wrapper in an independent later change; do not block Agent identity work on encryption.
+
+### Phase 1: shared vocabulary and configuration
+
+1. Introduce typed issuer, audience, scope-domain, incoming-auth, and outgoing-credential models under `mcp_infra`.
+2. Split metadata discovery, provider composition, token exchange, and compatibility code out of `<../mcp_infra/authentik_auth/auth.py>`.
+3. Replace optional-field construction with discriminated configuration at consumers atomically; do not add transitional parallel APIs within the monorepo.
+4. Do not carry PR #3122's `oidc_proxy_factory` forward; Haku will explicitly own construction of its adapter.
+5. Preserve the two valid shared service patterns as named constructors: credentialed facade and identity-preserving JWT-bearer delegation.
+
+### Phase 2: local FastMCP adapter spike and decision
+
+1. Build a minimal proof against the current FastMCP release that inserts a post-IdP interaction while retaining FastMCP's downstream transaction, client/redirect/resource validation, PKCE, code, and token machinery. Explicitly implement the Haku-owned post-IdP consent, one-time browser/form binding, and CSRF validation.
+2. Define an explicit verified-principal resolver. Before extracting `sub`, validate signature, exact issuer, expected audience/upstream client, expiry, chosen token type, and required claims. If identity comes from an ID token, generate/store/send/check an OIDC nonce; if it comes from an access token, do not claim nonce validation.
+3. Define the interaction contract around that verified principal, an immutable downstream transaction view, a one-time `EnrollmentInteraction`, and a structured allow/deny/continue result.
+4. Define opaque `grant_id` context preserved through code persistence, access/refresh-token creation, refresh rotation, token load, and the adapter's pinned one-family revocation operation. Product code never reads private FastMCP stores.
+5. Define end-to-end bearer failure classification. The adapter-owned composite continues on a clean verifier `None`, but preserves classified operational failures through both `OAuthProxy.load_access_token()` and `MultiAuth.verify_token()` so store outages produce retryable service errors rather than false authentication failures.
+6. Define cancellation, retry, expiry, exception, duplicate-submission, and concurrent-interaction semantics locally. A callback with unspecified lifecycle is not a sufficient API.
+7. Define after-persistence success/failure notification, response-loss behavior, and first-verified-request activation; prove no token-family existence alone activates a grant.
+8. Pin and diff-test the smallest callback/context/token-family patch needed for that contract; do not make an upstream contribution as part of this work.
+9. Record the decision between the exact pinned adapter and the quarantine fallback. Do not proceed on the assumption that issue #4299 will solve it.
+10. If the adapter exceeds its containment threshold, run the bounded Hydra-as-MCP-AS proof with Authentik upstream. Do not deploy it unless the pass/fail matrix shows current-client CIMD/DCR interoperability, exact resource binding, clean Haku grant lifecycle, and enough deleted local complexity. Current Keycloak documentation fails the same gate on RFC 8707, so a cluster-wide Keycloak migration is not this fallback.
+
+### Phase 3: normalize Haku identity and audit data
+
+1. Add local `Operator`, `IdentityAnchor`, `OidcIdentity`, `EnrollmentInteraction`, `Agent`, `AgentNameReservation`, `AuthorizationGrant`, and `CredentialBinding` records with UUIDs and database invariants.
+2. The schema may land dormant, but do not populate canonical identities or grants from the current unverified raw-token hook. Production writes and cutover require Phase 2's verified-principal resolver first.
+3. Make the Agent's current display name non-null and normalized non-empty, and reserve every activated current or historical normalized name globally in Postgres.
+4. Define the configured Authentik identity trust domain and atomically link browser and MCP issuer-scoped identities through the unique stable external-user anchor. Make identity-to-Operator links immutable outside an explicit audited migration.
+5. Replace stringly `ToolCallCaller` data with persisted `OperatorPrincipal | AgentPrincipal` and request-time `OperatorActor | AgentActor` unions. Make the credential resolver the only constructor for actors and resolve owner/display data through repositories.
+6. Put submission, read/poll, policy evaluation, decision, and execution behind one tool-call application service. Remove public unscoped ledger methods and route-local identity reconstruction.
+7. Store exactly one canonical Operator or Agent foreign key on new tool calls, with no copied owner/binding/grant/display fields. Require a separate binding-keyed `ToolCallAuthorization` for every Agent submission and revalidate it at decision and execution.
+8. Bootstrap each existing static-agent configuration into a named Agent plus static binding, validate global name uniqueness at startup/migration, and define atomic token rotation. Drop existing past tool calls during this migration as explicitly permitted rather than preserving denormalized identities.
+9. Run the two-Operator × two-Agent cross-product against every HTTP/MCP/event/decision/execution path before switching production reads to the new model.
+
+### Phase 4: implement Haku enrollment at the chosen seam
+
+1. Keep PR #3122's naming/template concern in Haku, but replace its private-store choreography. Remove the prototype's generic `oidc_proxy_factory` and Haku-specific lifecycle hook from `<../mcp_infra/authentik_auth/auth.py>`. Replace the stale consent-in-SPA and `client_id -> display_name` design in `<../haku/console/TODO.md>` before it guides implementation.
+2. After client metadata registration, Authentik login, and explicit upstream-token verification, create a one-time `EnrollmentInteraction` and show the Haku-owned “register this Agent” page. Identify the requesting client/scopes, state that the Agent will act as this Operator, require its globally unique name, and provide explicit authorize/deny actions.
+3. Add the Haku-owned Jinja template, autoescape, strict CSP, no-store headers, adapter-owned one-time browser/form binding, CSRF validation, and explicit allow/deny actions.
+4. Key pending interactions by a random interaction ID and immutable verified identity/client/transaction context; never by `client_id`.
+5. Present create-new and explicit reconnect-existing choices. In one locked transaction, require the interaction identity, browser session, Agent owner, and resulting grant to resolve to the same active Operator and validate global name uniqueness while the browser can correct a conflict.
+6. Carry only stable `grant_id` context into the downstream token family and activate/reconnect only on its first successfully verified MCP request. Use generation plus predecessor compare-and-set so concurrent reconnects cannot activate out of order.
+7. Enforce active Operator, Agent, grant, binding, scope, and operational-failure classification on every MCP request and refresh.
+8. Add expiry/reconciliation for abandoned interactions, draft name reservations, `issuing/issued` grants, and incomplete token-family cleanup.
+
+### Phase 5: finish the Haku product lifecycle
+
+1. Build an operator-only Connected Agents UI showing display name, client-software metadata, scopes, created/last-seen timestamps, status, and reconnect history.
+2. Add grant revoke, Agent disable, Agent tombstone-delete, and rename operations with explicit semantics and audit records. Rename creates a new name reservation while every activated historical name remains reserved and audit foreign keys remain valid.
+3. Add tool-call filters by canonical Operator and Agent. Every query must enforce the authenticated Operator predicate before applying an Agent filter.
+4. Surface “last seen” as observation only; never label inactivity as disconnected.
+5. Document that a client-side removal may be invisible and provide an operator-owned revoke action as the authoritative control.
+6. Later, add per-Agent approval-policy configuration. The policy engine already receives `AgentActor`, so this phase changes policy data and UI rather than authentication or tenant routing.
+
+### Phase 6: consolidate browser relying parties
+
+1. Extract the small Authlib/Starlette OIDC RP helper from the common correct behavior in Haku and Props.
+2. Migrate Study Casino from its custom discovery/state/session protocol and username identity to Authlib plus local UUID and `(issuer, subject)`.
+3. Adopt the helper in Haku and Props only where tests prove equivalent behavior.
+4. Give each application's browser session an explicit TTL, local logout behavior, and optional session-version revocation policy.
+
+### Phase 7: narrow Airlock's credential broker
+
+1. Replace provider HTTP mechanics with Authlib while retaining Airlock-owned policy and Kubernetes publication.
+2. Decide and document whether each provider credential is singleton or per-Operator. If singleton, show that explicitly before replacement.
+3. Retain one-time atomic state consumption, add expiry/bounds/all-terminal-path consumption, and persist initiating-operator/action/expected-generation state if multiple replicas or restart survival are required.
+4. Add disconnect/revoke where providers support it, with local deletion as the authoritative Airlock action.
+5. Audit all logs, status models, and errors for token redaction.
+
+### Phase 8: make Authentik ownership singular
+
+1. Generate the provider/application inventory described above from blueprints and Terraform where possible.
+2. Resolve Kagent's duplicate proxy-vs-OIDC ownership after verifying the deployed consumer.
+3. Assign every shared scope mapping and provider application one controller and delete orphaned definitions.
+4. Update `<../cluster/docs/mcp_oauth_authentik_notes.md>` for the current MCP registration preference order.
+5. Add static duplicate/ownership checks and a live drift audit to the relevant GitOps validation.
+
+### Phase 9: delete compatibility code
+
+If Haku can later use a released public FastMCP hook, delete the private adapter, its internal model imports, the arbitrary factory seam, and obsolete compatibility tests in the same change. This is a future cleanup condition, not a current upstream work item. After all browser RPs use the helper, delete Study Casino's custom session format. After Airlock uses Authlib, delete its replaced protocol helpers rather than keeping a second path.
+
+## Verification and acceptance matrix
+
+The architecture is complete only when these behaviors are tested at the appropriate layer.
+
+| Area                   | Required acceptance cases                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Client registration    | Preregistered, CIMD, and DCR clients each work when enabled; a shared `client_id` can authorize multiple Operators and Agents without collision                                                                                                                                                                                                                |
+| Concurrent enrollment  | Two interactions for the same client software remain isolated; duplicate names re-render in the correct browser; duplicate POST is idempotent; two reconnects activated out of order cannot let the stale binding win                                                                                                                                          |
+| Identity               | Bad signature, wrong audience, missing/changed issuer, expiry, missing `sub`, and unverified decode fail; wrong issuer with matching `sub` is rejected; concurrent first provisioning at two configured issuers converges on one Operator; ID-token nonce is tested if that design is chosen                                                                   |
+| Tenant isolation       | Two Operators with two Agents each: Agents submit/read/poll only their own calls; Operators see/decide all and only owned calls; cross-owner identity/grant construction, browser-session/principal mismatch, sibling-Agent, cross-Operator HTTP, MCP, event, and token paths fail closed                                                                      |
+| Interaction security   | PKCE, redirect/resource, upstream state, expiry, missing/wrong browser binding, copied authorization URL, cross-site form POST, replay, concurrent interactions, deny/back/duplicate POST, and remembered/skipped-consent bypass are covered; the synchronous path shows one Haku consent page, not double consent                                             |
+| Rendering              | Hostile client name/icon/URI/scope and hostile Agent name cannot inject HTML, script, URL, style, or header content                                                                                                                                                                                                                                            |
+| Scopes                 | Downstream MCP, upstream identity, and backend exchange scopes survive initial issue and refresh without broadening or collapse                                                                                                                                                                                                                                |
+| Grant lifecycle        | Interaction `pending` becomes allowed/completed, denied, expired, or failed; grant may be observed `issuing -> issued`, while `issuing/issued -> active` occurs only on first verified use; denial creates no grant; lost token response never activates; abandoned issue cleans draft/name; reconnect uses predecessor CAS; refresh cannot activate/resurrect |
+| Tool authorization     | Every Agent submission records its binding; revoke, disable, or reconnect after submission but before approval/execution prevents that old-binding work from executing; unrelated active bindings remain unaffected                                                                                                                                            |
+| Failure classification | Invalid/expired/random bearer produces `401`; Authentik rejection produces terminal OAuth error; Haku DB, JTI-map, upstream-token-store, DNS/timeout/5xx, Valkey, and Postgres failures produce retryable service errors without changing grant state or falling through to another verifier                                                                   |
+| Revocation             | Haku denial blocks the very next access and refresh use; another grant remains active; token-family cleanup outage does not weaken denial and reconciliation eventually removes the one intended family                                                                                                                                                        |
+| Resource isolation     | A Haku, Airlock, Grocy, or native-server token is rejected at every other resource; audience and RFC 8707 resource-indicator binding survive issue and refresh                                                                                                                                                                                                 |
+| IdP disablement        | Local disable is immediate; Authentik-only disable is bounded by the documented maximum one-hour token-validation/refresh window                                                                                                                                                                                                                               |
+| Static agents          | Static and OAuth bindings resolve into the same canonical Agent domain; bootstrap/rotation leaves one active binding and copies no owner/name fields                                                                                                                                                                                                           |
+| Airlock auth           | Operator, interactive proxy, Claude Code, and OpenClaw credentials validate only exact issuer/audience/scopes and only on intended route surfaces                                                                                                                                                                                                              |
+| Airlock broker         | Anonymous initiation fails; capability state is one-time/expiring and binds initiator/provider/action/generation; stale concurrent completion cannot overwrite newer credentials                                                                                                                                                                               |
+| ASGI composition       | Root metadata/protocol endpoints have their intended public status; mounted `/mcp` enforces its provider with correct `401/403`; parent REST dependencies apply only to parent routes; lifespan/callbacks work; no product route relies on `custom_route` for authentication                                                                                   |
+| Audit/privacy          | Decisions contain canonical IDs and scopes; no token/code/secret or full OAuth form appears in logs, metrics, traces, or test artifacts                                                                                                                                                                                                                        |
+| Migration              | Past tool calls may be dropped; schema migration cannot create null/empty/duplicate Agent names; rename preserves every historical reservation; dormant schema is not populated from unverified tokens; rollback behavior is documented                                                                                                                        |
+
+Run the framework-level matrix against the exact pinned FastMCP version and again before every FastMCP upgrade. Run browser flows with a hermetic OIDC provider and at least one real-client smoke test for Claude.ai or Claude Code before rollout.
+
+## Disposition of Haku naming PR #3122
+
+Do not merge PR [#3122](https://github.com/agentydragon/ducktape/pull/3122) as-is. Leave it unmerged during review of this plan. After approval, use it as source material and supersede it with the phased PRs above rather than stacking the normalized schema and adapter lifecycle onto its current `client_id` model. Close #3122 once the replacement PRs preserve the useful pieces below; this plan PR does not modify or close #3122.
+
+Keep or adapt:
+
+- the separate Haku-owned Jinja template and autoescaping direction;
+- the non-null, non-empty, unique display-name requirement and its tests;
+- the move toward a discriminated caller union;
+- the immutable DCR-client-to-Operator binding, unlinked-client failure, client-namespace separation, and multi-client routing tests;
+- the operator-facing Connected Agents and tool-call-filter TODO; and
+- integration fixtures that exercise a real authorization-code exchange.
+
+Rework before treating it as durable:
+
+- replace `client_id` as Agent primary key and pending-state key;
+- retain the current DCR client only as a transitional credential discriminator, and scope Agent-facing reads by both its Operator and client principal until canonical IDs replace it;
+- separate EnrollmentInteraction, Agent, AgentNameReservation, ClientSoftware, AuthorizationGrant, and CredentialBinding;
+- resolve a verified upstream principal instead of decoding raw `id_token` data;
+- remove `oidc_proxy_factory` and scattered access to FastMCP private stores/methods;
+- perform naming/reconnect while the verified Operator is known and browser errors are recoverable;
+- make tool-call principals carry canonical IDs rather than copied owner/display data; and
+- enforce grant/binding status on every request, including refresh and post-revoke use.
+
+## References
+
+Upstream references used for this plan:
+
+- [MCP authorization specification, 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
+- [MCP Python SDK `OAuthAuthorizationServerProvider`, v1.26.0](https://github.com/modelcontextprotocol/python-sdk/blob/v1.26.0/src/mcp/server/auth/provider.py)
+- [MCP Python SDK authorization routes, v1.26.0](https://github.com/modelcontextprotocol/python-sdk/blob/v1.26.0/src/mcp/server/auth/routes.py)
+- [FastMCP OIDC proxy documentation](https://gofastmcp.com/servers/auth/oidc-proxy)
+- [FastMCP OAuth proxy documentation](https://gofastmcp.com/servers/auth/oauth-proxy)
+- [FastMCP `MultiAuth` documentation](https://gofastmcp.com/servers/auth/multi-auth)
+- [FastMCP remote OAuth documentation](https://gofastmcp.com/servers/auth/remote-oauth)
+- [FastMCP HTTP deployment and custom-route behavior](https://gofastmcp.com/deployment/http)
+- [FastMCP v3.4.4 release](https://github.com/PrefectHQ/fastmcp/releases/tag/v3.4.4)
+- [FastMCP confused-deputy consent fix, PR #3960](https://github.com/PrefectHQ/fastmcp/pull/3960)
+- [FastMCP custom-consent renderer request, issue #4299](https://github.com/PrefectHQ/fastmcp/issues/4299)
+- [FastMCP stable token subject request, issue #4266](https://github.com/PrefectHQ/fastmcp/issues/4266)
+- [FastMCP v3.2.4 consent implementation](https://github.com/PrefectHQ/fastmcp/blob/v3.2.4/src/fastmcp/server/auth/oauth_proxy/consent.py)
+- [FastMCP v3.2.4 built-in consent UI](https://github.com/PrefectHQ/fastmcp/blob/v3.2.4/src/fastmcp/server/auth/oauth_proxy/ui.py)
+- [FastMCP v3.2.4 `OIDCProxy`](https://github.com/PrefectHQ/fastmcp/blob/v3.2.4/src/fastmcp/server/auth/oidc_proxy.py)
+- [FastMCP v3.4.4 consent implementation](https://github.com/PrefectHQ/fastmcp/blob/v3.4.4/fastmcp_slim/fastmcp/server/auth/oauth_proxy/consent.py)
+- [FastMCP v3.4.4 OAuth proxy storage construction](https://github.com/PrefectHQ/fastmcp/blob/v3.4.4/fastmcp_slim/fastmcp/server/auth/oauth_proxy/proxy.py)
+- [FastMCP v3.4.4 `OIDCProxy`](https://github.com/PrefectHQ/fastmcp/blob/v3.4.4/fastmcp_slim/fastmcp/server/auth/oidc_proxy.py)
+- [FastAPI OAuth2/JWT authentication](https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/)
+- [Starlette middleware, including `SessionMiddleware`](https://www.starlette.io/middleware/#sessionmiddleware)
+- [Starlette Jinja templates](https://www.starlette.io/templates/)
+- [Authlib Starlette OAuth client integration](https://docs.authlib.org/en/latest/client/starlette.html)
+- [Authlib authorization-server flow](https://docs.authlib.org/en/latest/flask/2/authorization-server.html)
+- [RFC 7009 OAuth token revocation](https://www.rfc-editor.org/rfc/rfc7009)
+- [RFC 7592 OAuth dynamic client registration management](https://www.rfc-editor.org/rfc/rfc7592)
+- [RFC 8707 resource indicators for OAuth 2.0](https://www.rfc-editor.org/rfc/rfc8707)
+- [Authentik DCR feature request, issue #8751](https://github.com/goauthentik/authentik/issues/8751)
+- [Keycloak supported specifications](https://www.keycloak.org/securing-apps/specifications)
+- [Keycloak client registration service](https://www.keycloak.org/securing-apps/client-registration)
+- [Keycloak MCP authorization-server integration and conformance status](https://www.keycloak.org/securing-apps/mcp-authz-server)
+- [Keycloak server extension development](https://www.keycloak.org/docs/latest/server_development/index.html)
+- [Ory Hydra project and supported OAuth features](https://github.com/ory/hydra)
+- [Ory Hydra custom login and consent flow](https://www.ory.com/docs/oauth2-oidc/custom-login-consent/flow)
+
+The external-provider OAuth flow used by Airlock should also remain distinct from MCP URL elicitation for third-party authorization; see the [MCP elicitation specification](https://modelcontextprotocol.io/specification/draft/client/elicitation).
