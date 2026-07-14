@@ -348,6 +348,50 @@ py_test(
     ],
 )
 
+py_library(
+    name = "mcp_agent_enrollment_spike",
+    testonly = True,
+    srcs = ["mcp_agent_enrollment_spike.py"],
+    data = ["mcp_agent_enrollment_spike.html.j2"],
+    deps = [
+        "//mcp_infra/authentik_auth:fastmcp_proxy",
+        "//mcp_infra/authentik_auth:oidc_principal",
+        "@pypi//fastapi",
+        "@pypi//fastmcp_slim",
+        "@pypi//jinja2",
+        "@pypi//mcp",
+        "@pypi//py_key_value_aio",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_mcp_agent_enrollment_integration",
+    size = "small",
+    srcs = ["test_mcp_agent_enrollment_integration.py"],
+    deps = [
+        ":config",
+        ":mcp_agent_enrollment_spike",
+        ":operator_auth",
+        "//:conftest",
+        "//mcp_infra/authentik_auth:oidc_principal",
+        "//util:net",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
+        "@pypi//authlib",
+        "@pypi//fastapi",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//itsdangerous",
+        "@pypi//mcp",
+        "@pypi//py_key_value_aio",
+        "@pypi//pydantic",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)
+
 py_test(
     name = "test_mcp_token_exchange_integration",
     size = "medium",

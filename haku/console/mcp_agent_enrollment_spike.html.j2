@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Register MCP agent</title>
+  </head>
+  <body>
+    <main>
+      <h1>Register MCP agent</h1>
+      <p><strong>{{ client_name }}</strong> wants to act for {{ operator_username }}.</p>
+      <p>Redirect host: <strong>{{ redirect_host }}</strong></p>
+      <p>Requested scopes: {{ scopes | join(", ") }}</p>
+      <form method="post" action="/agent-enrollment/{{ locator }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}" />
+        <label for="agent-name">Agent name</label>
+        <input id="agent-name" name="agent_name" required />
+        <button type="submit" name="action" value="approve">Register agent</button>
+        <button type="submit" name="action" value="deny">Deny</button>
+      </form>
+    </main>
+  </body>
+</html>
