@@ -13,12 +13,8 @@ from fastmcp.server.auth.oidc_proxy import OIDCConfiguration
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 from joserfc import jwk
 
-from mcp_infra.authentik_auth.auth import (
-    DEFAULT_VALID_SCOPES,
-    AuthentikAuthConfig,
-    DirectJwtTrust,
-    build_authentik_auth,
-)
+from mcp_infra.authentik_auth.config import AuthentikAuthConfig, DirectJwtTrust
+from mcp_infra.authentik_auth.provider import DEFAULT_VALID_SCOPES, build_authentik_auth
 
 JWKS_URI = "https://auth.example.test/application/o/interactive/jwks/"
 MACHINE_A_ISSUER = "https://auth.example.test/application/o/machine-a/"
@@ -105,8 +101,8 @@ async def jwt_contract_harness(
                 http_client=jwks_client,
             )
 
-        monkeypatch.setattr("mcp_infra.authentik_auth.auth.DownstreamClientIdentityOIDCProxy", _RejectingOIDCProxy)
-        monkeypatch.setattr("mcp_infra.authentik_auth.auth.JWTVerifier", build_verifier)
+        monkeypatch.setattr("mcp_infra.authentik_auth.provider.DownstreamClientIdentityOIDCProxy", _RejectingOIDCProxy)
+        monkeypatch.setattr("mcp_infra.authentik_auth.provider.JWTVerifier", build_verifier)
 
         auth = build_authentik_auth(
             AuthentikAuthConfig(

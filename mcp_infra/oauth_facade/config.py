@@ -27,7 +27,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
-from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
+from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import FilePersistence, PersistenceConfig
 from mcp_infra.tool_filter import ToolFilter
 

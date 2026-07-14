@@ -149,7 +149,7 @@ No `token-exchange`. Result: `unsupported_grant_type` at tool-call time.
 The existing Grocy pattern uses a _different_ exchange:
 `grant_type=client_credentials` with `client_assertion_type=jwt-bearer`
 and the user's JWT as `client_assertion`. The request-scoped dependency
-and `AuthentikTokenExchanger` in <../../mcp_infra/authentik_auth/auth.py>
+and `AuthentikTokenExchanger` in <../../mcp_infra/authentik_auth/token_exchange.py>
 implement it. But kubernetes-mcp-server doesn't speak that dialect, and
 writing a FastMCP wrapper around it is a significant rewrite.
 
@@ -274,7 +274,8 @@ provider's `allowed_redirect_uris`. In the Custom Connectors UI, paste:
       switch to DCR and remove the pre-configured client setup (though
       the current setup is arguably fine forever)
 - [ ] Consider a FastMCP wrapper pattern for future MCP servers that
-      want DCR — `mcp_infra/authentik_auth/auth.py` provides
-      `build_authentik_auth` / `AuthentikTokenExchanger`, plus the
+      want DCR — `mcp_infra/authentik_auth/provider.py` provides
+      `build_authentik_auth`, while `mcp_infra/authentik_auth/token_exchange.py` provides
+      `AuthentikTokenExchanger` plus the
       request-scoped dependency that implements DCR in-server and
       Authentik-flavored JWT-bearer token exchange

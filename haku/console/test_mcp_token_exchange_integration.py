@@ -30,7 +30,7 @@ from haku.console.config import OperatorOidcConfig
 from haku.console.conftest import console_settings, write_config
 from haku.console.mcp_config import McpOperatorOAuthConfig, McpServerEntry
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
-from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
+from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import PostgresPersistence
 from util.net import pick_free_port
 from util.testing.asgi import serve_app

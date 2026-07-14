@@ -28,7 +28,7 @@ from airlock.app import create_app
 from airlock.config import Settings
 from airlock.conftest import GateClient, agent_transport, serve_app
 from airlock.oauth.provider import OAuthConfig
-from mcp_infra.authentik_auth.auth import DownstreamClientIdentityOIDCProxy
+from mcp_infra.authentik_auth.fastmcp_proxy import DownstreamClientIdentityOIDCProxy
 from mcp_infra.prefix import MCPMountPrefix
 from util.net import pick_free_port
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair

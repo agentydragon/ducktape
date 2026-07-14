@@ -1,7 +1,7 @@
 """Tests for ServerSettings + AuthentikAuthConfig wiring.
 
 URL-derivation tests live with `AuthentikAuthConfig` itself in
-<../../mcp_infra/authentik_auth/test_auth.py>; here we just pin that the
+<../../mcp_infra/authentik_auth/test_config.py>; here we just pin that the
 nested Pydantic model loads/omits correctly on `ServerSettings`.
 """
 
@@ -14,7 +14,7 @@ import pytest
 import pytest_bazel
 
 from grocy_mcp.mcp_types import ServerSettings
-from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
+from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import ValkeyPersistence
 
 

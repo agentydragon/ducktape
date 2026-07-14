@@ -93,7 +93,7 @@ shared.
 
 ## Fixes (implemented 2026-07-02)
 
-1. **`ResilientOIDCProxy`** (`mcp_infra/authentik_auth/auth.py`, wired via
+1. **`ResilientOIDCProxy`** (now split into `mcp_infra/authentik_auth/fastmcp_proxy.py`, wired via
    `build_authentik_auth` → all facades + grocy MCPs): transient upstream
    failures (httpx transport errors, 5xx) are retried (tenacity,
    3 attempts) and, if persistent, answered with **HTTP 503 + Retry-After**

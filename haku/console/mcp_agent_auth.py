@@ -13,17 +13,14 @@ from starlette.exceptions import HTTPException
 from haku.console.config import Settings
 from haku.console.mcp_config import ResolvedStaticAgent, static_agent_client_id
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
-from mcp_infra.authentik_auth.auth import (
-    DEFAULT_VALID_SCOPES,
-    DownstreamClientIdentityOIDCProxy,
-    compose_authentik_auth,
-)
+from mcp_infra.authentik_auth.fastmcp_proxy import DownstreamClientIdentityOIDCProxy
 from mcp_infra.authentik_auth.oidc_principal import (
     AuthentikOidcPrincipalResolver,
     InvalidOidcPrincipalError,
     OidcPrincipalVerificationUnavailableError,
     VerifiedOidcPrincipal,
 )
+from mcp_infra.authentik_auth.provider import DEFAULT_VALID_SCOPES, compose_authentik_auth
 from mcp_infra.persistence import OAuthClientStorage, build_shared_client_storage
 
 if TYPE_CHECKING:

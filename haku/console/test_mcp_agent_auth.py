@@ -23,12 +23,13 @@ from haku.console.mcp_agent_auth import (
 )
 from haku.console.mcp_config import ResolvedStaticAgent
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
-from mcp_infra.authentik_auth.auth import DEFAULT_VALID_SCOPES, DownstreamClientIdentityOIDCProxy
+from mcp_infra.authentik_auth.fastmcp_proxy import DownstreamClientIdentityOIDCProxy
 from mcp_infra.authentik_auth.oidc_principal import (
     InvalidOidcPrincipalError,
     OidcPrincipalVerificationUnavailableError,
     VerifiedOidcPrincipal,
 )
+from mcp_infra.authentik_auth.provider import DEFAULT_VALID_SCOPES
 from mcp_infra.persistence import PostgresPersistence
 
 

@@ -20,11 +20,8 @@ import uvicorn
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 
-from mcp_infra.authentik_auth.auth import (
-    AuthentikTokenExchanger,
-    build_authentik_auth,
-    build_authentik_backend_token_provider,
-)
+from mcp_infra.authentik_auth.provider import build_authentik_auth
+from mcp_infra.authentik_auth.token_exchange import AuthentikTokenExchanger, build_authentik_backend_token_provider
 from x.authentik_mcp_poc.config import ServerSettings
 
 logger = logging.getLogger(__name__)

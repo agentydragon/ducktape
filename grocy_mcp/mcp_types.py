@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 from grocy_mcp.grocy_types import ReadableEntityType, WriteableEntityType
-from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
+from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import FilePersistence, PersistenceConfig
 
 MAX_BATCH_SIZE = 100

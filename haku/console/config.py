@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
+from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import SharedPersistenceConfig
 
 # Both URLs are built from the routine (trigger) id, so only the id + token are

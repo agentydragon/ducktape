@@ -231,7 +231,7 @@ be "real":
 >    `client_credentials` + JWT-bearer client-assertion path — i.e., you use
 >    it to MINT a new, backend-scoped token at tool-call time. This is what
 >    `AuthentikTokenExchanger`, called by the request-scoped dependency in
->    `mcp_infra/authentik_auth/auth.py`, does.
+>    `mcp_infra/authentik_auth/token_exchange.py`, does.
 >
 > Full forensic write-up, including source-level references in both FastMCP
 > and Authentik, in <NOTES.md> §2-§5.

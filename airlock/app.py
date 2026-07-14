@@ -68,7 +68,8 @@ from airlock.proxy_server import (
     ActionNotFoundError,
     AirlockServer,
 )
-from mcp_infra.authentik_auth.auth import AuthentikAuthConfig, build_authentik_auth
+from mcp_infra.authentik_auth.config import AuthentikAuthConfig
+from mcp_infra.authentik_auth.provider import build_authentik_auth
 
 logger = logging.getLogger(__name__)
 

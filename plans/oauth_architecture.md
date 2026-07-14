@@ -77,22 +77,20 @@ Ducktape does not have one OAuth problem. It currently has at least seven differ
 
 ### MCP authorization server and resource server
 
-`<../mcp_infra/authentik_auth/auth.py>` builds a FastMCP `OIDCProxy` and optional direct JWT verifiers under `MultiAuth`. Consumers include:
+`<../mcp_infra/authentik_auth/provider.py>` builds a FastMCP `OIDCProxy` and optional direct JWT verifiers under `MultiAuth`. Consumers include:
 
 - the generic credentialed facades in `<../mcp_infra/oauth_facade/>`;
 - the identity-preserving Grocy servers in `<../grocy_mcp/>`;
 - Haku Console's agent-facing `/mcp` endpoint in `<../haku/console/mcp_server.py>`; and
 - Airlock's MCP endpoint in `<../airlock/app.py>`.
 
-This is a legitimate shared layer, but the file currently combines:
+This legitimate shared layer is split by responsibility:
 
-- Authentik URL/configuration conventions;
-- synchronous OIDC discovery;
-- FastMCP construction;
-- direct-JWT trust construction;
-- three FastMCP compatibility repairs;
-- metrics and retry policy; and
-- Authentik-specific JWT-bearer delegation to proxy outposts.
+- `<../mcp_infra/authentik_auth/config.py>` owns Authentik URL and configuration conventions;
+- `<../mcp_infra/authentik_auth/fastmcp_proxy.py>` owns the narrow FastMCP refresh and downstream-identity compatibility behavior;
+- `<../mcp_infra/authentik_auth/provider.py>` owns provider construction and composition;
+- `<../mcp_infra/authentik_auth/token_exchange.py>` owns request-scoped backend token exchange; and
+- `<../mcp_infra/authentik_auth/oidc_principal.py>` owns verified upstream-principal resolution.
 
 Those are related, but not one abstraction.
 
@@ -293,7 +291,7 @@ FastMCP issue [#4299](https://github.com/PrefectHQ/fastmcp/issues/4299) requests
 
 ## Why `ResilientOIDCProxy` existed, and how it is split
 
-At the research baseline, `ResilientOIDCProxy` in `<../mcp_infra/authentik_auth/auth.py>` combined three patches in one subclass.
+At the research baseline, `ResilientOIDCProxy` combined three patches in one subclass; its remaining generic compatibility behavior now lives in `<../mcp_infra/authentik_auth/fastmcp_proxy.py>`.
 
 | Current behavior                                                                                                                              | Why it exists                                                                                                           | Long-term disposition                                                                                                                                        |
 | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -1073,7 +1071,7 @@ The later Google/Airlock lane is separate:
 ### Requirement group 1: shared vocabulary and configuration
 
 1. Introduce typed issuer, audience, scope-domain, incoming-auth, and outgoing-credential models under `mcp_infra`.
-2. Split metadata discovery, provider composition, token exchange, and compatibility code out of `<../mcp_infra/authentik_auth/auth.py>`.
+2. Keep metadata discovery, provider composition, token exchange, and compatibility code split across `<../mcp_infra/authentik_auth/{oidc_principal,provider,token_exchange,fastmcp_proxy}.py>`.
 3. Replace optional-field construction with discriminated configuration at consumers atomically; do not add transitional parallel APIs within the monorepo.
 4. Do not carry PR #3122's `oidc_proxy_factory` forward; Haku will explicitly own construction of its adapter.
 5. Preserve the two valid shared service patterns as named constructors: credentialed facade and identity-preserving JWT-bearer delegation.
@@ -1105,7 +1103,7 @@ The later Google/Airlock lane is separate:
 
 ### Requirement group 4: implement Haku enrollment at the chosen seam
 
-1. Keep PR #3122's naming/template concern in Haku, but replace its private-store choreography. Remove the prototype's generic `oidc_proxy_factory` and Haku-specific lifecycle hook from `<../mcp_infra/authentik_auth/auth.py>`. Replace the stale consent-in-SPA and `client_id -> display_name` design in `<../haku/console/TODO.md>` before it guides implementation.
+1. Keep PR #3122's naming/template concern in Haku, but replace its private-store choreography. Do not add the prototype's generic `oidc_proxy_factory` or a Haku-specific lifecycle hook to `<../mcp_infra/authentik_auth/provider.py>`. Replace the stale consent-in-SPA and `client_id -> display_name` design in `<../haku/console/TODO.md>` before it guides implementation.
 2. After client metadata registration, Authentik login, and explicit upstream-token verification, create a one-time `EnrollmentInteraction` and show the Haku-owned “register this Agent” page. Identify the requesting client/scopes, state that the Agent will act as this Operator, require its globally unique name, and provide explicit authorize/deny actions.
 3. Add the Haku-owned Jinja template, autoescape, strict CSP, no-store headers, adapter-owned one-time browser/form binding, CSRF validation, and explicit allow/deny actions.
 4. Key pending interactions by a random interaction ID and immutable verified identity/client/transaction context; never by `client_id`.

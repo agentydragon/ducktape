@@ -18,7 +18,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp
 
-from mcp_infra.authentik_auth.auth import build_authentik_auth
+from mcp_infra.authentik_auth.provider import build_authentik_auth
 from mcp_infra.oauth_facade.config import FacadeSettings
 from mcp_infra.oauth_facade.proxy import build_proxy_server
 from mcp_infra.oauth_facade.upstream_probe import ProbeState, run_probe_loop

@@ -15,7 +15,8 @@ from key_value.aio.stores.memory import MemoryStore
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-from mcp_infra.authentik_auth.auth import AuthentikAuthConfig, build_authentik_auth
+from mcp_infra.authentik_auth.config import AuthentikAuthConfig
+from mcp_infra.authentik_auth.provider import build_authentik_auth
 from util.net import pick_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
