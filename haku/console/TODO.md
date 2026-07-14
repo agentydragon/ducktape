@@ -34,19 +34,25 @@ flat parameter list one field at a time.
 ## Agent-facing MCP server (`/mcp`) — deferred follow-ups
 
 The `/mcp` server (`mcp_server.py`) ships with a single global auto-approval policy and a
-uniform build-time tool surface. Deferred, building on a small `mcp_agents` registry table
-(`agent_id` PK, `display_name`, later `policy`):
+uniform build-time tool surface. The ordered identity, enrollment, and authorization cutover
+is specified in <../../plans/oauth_architecture.md>. Do not extend the legacy DCR-client mapping
+or introduce a standalone `mcp_agents` registry before that cutover establishes canonical
+Operators, Agents, grants, and credential bindings.
 
-- **Consent-in-SPA agent naming** — render the OIDCProxy consent step as a styled React view
-  ("Name this agent" + Allow/Deny) instead of FastMCP's default HTML, persisting
-  `client_id -> display_name`; show the friendly name in the tool-call audit/history (join
-  `caller_principal -> mcp_agents`).
-- **Per-agent policy** — a `policy` column authored as a structured YAML/JSON object (parsed
-  into a typed Pydantic policy, same pattern as `mcp_config.py`), edited in the console UI;
-  the single global policy becomes the degenerate "same for every agent" case.
-- **Per-agent tool surface** — per-request `list_tools` keyed on `get_access_token().client_id`
-  with `tools/list_changed` on policy edits (the list-time-identity keystone; v1's uniform
-  surface avoids it).
+After the cutover:
+
+- **Connected Agents** — add an Operator-scoped API and UI showing each Agent's name, client
+  software, scopes, status, creation and last-seen times, and reconnect history.
+- **Agent-filtered history** — filter past tool calls by Agent only after applying the
+  authenticated Operator predicate. Resolve display names through canonical joins; never copy
+  them into tool-call rows or use them as authority.
+- **Agent lifecycle controls** — expose revoke/disable, rename/history, and tombstone/reconnect
+  operations as vertical API + UI + audit-event slices.
+- **Per-Agent policy** — author a typed structured policy in the console UI. The single global
+  policy remains the degenerate "same for every Agent" case until this ships.
+- **Per-Agent tool surface** — derive request-time `list_tools` from the verified binding and
+  policy, with `tools/list_changed` on policy edits. Do not key authorization directly on an
+  unverified DCR `client_id`.
 - **Per-tool-call deep link** — a `/tool-calls/<id>` SPA route (`routing.ts` +
   `tool_calls_page.tsx`) that opens/highlights the specific call the promise `url` points at
   (today the URL loads the console but not that exact call).
