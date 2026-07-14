@@ -21,7 +21,7 @@ Three components:
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Collection, Mapping
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse, urlunparse
 
@@ -43,7 +43,7 @@ from starlette.exceptions import HTTPException
 from tenacity import AsyncRetrying, before_sleep_log, retry_if_exception, stop_after_attempt, wait_exponential
 
 if TYPE_CHECKING:
-    from mcp.server.auth.provider import AuthorizationCode, RefreshToken
+    from mcp.server.auth.provider import RefreshToken
     from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 logger = logging.getLogger(__name__)
@@ -60,10 +60,6 @@ EXCHANGE_SCOPES = "openid email profile ak_proxy"
 #   can silently renew sessions without re-authenticating.
 DEFAULT_VALID_SCOPES = ["openid", "email", "profile", "offline_access"]
 
-# Invoked during an OAuth client's authorization-code exchange, before the local FastMCP token is
-# issued, with the client's ``client_id`` and raw upstream token response (``id_token`` etc.). The
-# caller validates or links the identity; exceptions prevent local token issuance.
-OnClientAuthorized = Callable[[str, Mapping[str, Any]], Awaitable[None]]
 BackendTokenProvider = Callable[..., Awaitable[str]]
 
 
@@ -269,29 +265,35 @@ class DownstreamClientIdentityOIDCProxy(RetryableRefreshOIDCProxy):
         return validated
 
 
-class ClientAuthorizationHookOIDCProxy(DownstreamClientIdentityOIDCProxy):
-    """Run the configured raw-token hook before FastMCP issues a token.
-
-    This compatibility layer names the current behavior without making it part
-    of the target Haku authorization API. The Haku adapter replacement removes
-    the hook and its callers atomically.
-    """
-
-    def __init__(self, *args: Any, on_client_authorized: OnClientAuthorized, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._on_client_authorized = on_client_authorized
-
-    async def exchange_authorization_code(
-        self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
-    ) -> OAuthToken:
-        code_model = await self._code_store.get(key=authorization_code.code)
-        if code_model is None or not client.client_id:
-            raise RuntimeError("authorized MCP client is missing its stored upstream identity")
-        await self._on_client_authorized(client.client_id, code_model.idp_tokens)
-        return await super().exchange_authorization_code(client, authorization_code)
-
-
 # ── Auth builder ──────────────────────────────────────────────────────────
+
+
+def compose_authentik_auth(
+    *,
+    proxy: DownstreamClientIdentityOIDCProxy,
+    direct_jwt_trusts: Collection[DirectJwtTrust] = (),
+    extra_verifiers: list[TokenVerifier] | None = None,
+) -> AuthProvider:
+    """Layer explicit bearer-token verifiers around an already-built proxy.
+
+    The caller remains the sole owner of proxy construction, storage, scopes,
+    and any protocol checkpoint behavior. This function only composes the
+    requested direct-JWT and extra verifier paths with that proxy.
+    """
+    verifiers: list[TokenVerifier] = []
+    for trust in direct_jwt_trusts:
+        bare_issuer = trust.issuer.rstrip("/")
+        verifiers.append(
+            JWTVerifier(
+                jwks_uri=str(proxy.oidc_config.jwks_uri),
+                issuer=[bare_issuer, bare_issuer + "/"],
+                audience=list(trust.audiences),
+                required_scopes=list(trust.required_scopes) or None,
+            )
+        )
+    if extra_verifiers:
+        verifiers.extend(extra_verifiers)
+    return MultiAuth(server=proxy, verifiers=verifiers)
 
 
 def build_authentik_auth(
@@ -300,7 +302,6 @@ def build_authentik_auth(
     valid_scopes: list[str] | None = None,
     client_storage: Any | None = None,
     extra_verifiers: list[TokenVerifier] | None = None,
-    on_client_authorized: OnClientAuthorized | None = None,
 ) -> AuthProvider:
     """Build OIDCProxy plus explicit direct-JWT trust for an Authentik-backed MCP server.
 
@@ -319,50 +320,21 @@ def build_authentik_auth(
             after configured direct-JWT verifiers — e.g. a ``StaticTokenVerifier`` so a
             machine caller's fixed bearer is accepted on the same endpoint as the
             human OAuth flow. Each is tried in turn; the first to accept wins.
-        on_client_authorized: Optional hook fired during an OAuth client's authorization-code
-            exchange, before the local FastMCP token is issued, with its ``client_id`` and raw
-            upstream token response. Exceptions prevent local token issuance.
     """
     issuer = config.normalized_issuer()
     config_url = f"{issuer}/.well-known/openid-configuration"
-    if on_client_authorized is None:
-        proxy = DownstreamClientIdentityOIDCProxy(
-            config_url=config_url,
-            client_id=config.oidc_client_id,
-            client_secret=config.oidc_client_secret,
-            base_url=config.normalized_public_base_url(),
-            require_authorization_consent=True,
-            client_storage=client_storage,
-        )
-    else:
-        proxy = ClientAuthorizationHookOIDCProxy(
-            config_url=config_url,
-            client_id=config.oidc_client_id,
-            client_secret=config.oidc_client_secret,
-            base_url=config.normalized_public_base_url(),
-            require_authorization_consent=True,
-            client_storage=client_storage,
-            on_client_authorized=on_client_authorized,
-        )
+    proxy = DownstreamClientIdentityOIDCProxy(
+        config_url=config_url,
+        client_id=config.oidc_client_id,
+        client_secret=config.oidc_client_secret,
+        base_url=config.normalized_public_base_url(),
+        require_authorization_consent=True,
+        client_storage=client_storage,
+    )
     proxy.update_default_scopes(valid_scopes or DEFAULT_VALID_SCOPES)
-    # OIDCProxy verifies its own wire tokens. Direct bearer tokens are a separate,
-    # opt-in machine path: each trust gets its own verifier so accepted issuers and
-    # audiences cannot accidentally form a cross-product. Authentik emits issuer
-    # values with a trailing slash, while hand-built fixtures often omit it.
-    verifiers: list[TokenVerifier] = []
-    for trust in config.direct_jwt_trusts:
-        bare_issuer = trust.issuer.rstrip("/")
-        verifiers.append(
-            JWTVerifier(
-                jwks_uri=str(proxy.oidc_config.jwks_uri),
-                issuer=[bare_issuer, bare_issuer + "/"],
-                audience=list(trust.audiences),
-                required_scopes=list(trust.required_scopes) or None,
-            )
-        )
-    if extra_verifiers:
-        verifiers.extend(extra_verifiers)
-    return MultiAuth(server=proxy, verifiers=verifiers)
+    return compose_authentik_auth(
+        proxy=proxy, direct_jwt_trusts=config.direct_jwt_trusts, extra_verifiers=extra_verifiers
+    )
 
 
 # ── Backend token exchange ─────────────────────────────────────────────────

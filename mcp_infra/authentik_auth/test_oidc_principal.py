@@ -24,8 +24,8 @@ from starlette.routing import Route
 
 from mcp_infra.authentik_auth.oidc_principal import (
     AuthentikOidcPrincipalResolver,
-    InvalidOidcPrincipal,
-    OidcPrincipalVerificationUnavailable,
+    InvalidOidcPrincipalError,
+    OidcPrincipalVerificationUnavailableError,
     VerifiedOidcPrincipal,
 )
 from util.net import pick_free_port
@@ -153,7 +153,7 @@ async def test_resolves_only_issuer_and_subject_from_access_token(
 )
 async def test_rejects_invalid_token_response_boundary(jwks_server, token: Any, token_type: Any) -> None:
     state, jwks_uri = jwks_server
-    with pytest.raises(InvalidOidcPrincipal):
+    with pytest.raises(InvalidOidcPrincipalError):
         await _resolver(jwks_uri).resolve(_token_response(token, token_type=token_type))
     assert state.requests == 0
 
@@ -161,10 +161,20 @@ async def test_rejects_invalid_token_response_boundary(jwks_server, token: Any, 
 async def test_requires_both_token_response_fields(jwks_server) -> None:
     state, jwks_uri = jwks_server
     resolver = _resolver(jwks_uri)
-    with pytest.raises(InvalidOidcPrincipal):
+    with pytest.raises(InvalidOidcPrincipalError):
         await resolver.resolve({"token_type": "Bearer"})
-    with pytest.raises(InvalidOidcPrincipal):
+    with pytest.raises(InvalidOidcPrincipalError):
         await resolver.resolve({"access_token": "token"})
+    assert state.requests == 0
+
+
+async def test_deeply_nested_token_header_is_invalid(jwks_server) -> None:
+    state, jwks_uri = jwks_server
+    nested_header = b'{"nested":' + b"[" * 1_200 + b"0" + b"]" * 1_200 + b"}"
+    encoded_header = base64.urlsafe_b64encode(nested_header).rstrip(b"=").decode()
+
+    with pytest.raises(InvalidOidcPrincipalError):
+        await _resolver(jwks_uri).resolve(_token_response(f"{encoded_header}.e30.signature"))
     assert state.requests == 0
 
 
@@ -181,7 +191,7 @@ async def test_requires_nonblank_string_kid_and_no_crit(
         if "kid" in headers and not isinstance(headers["kid"], str)
         else jwt.encode(_claims(), signing_keys[0].private, algorithm="RS256", headers=headers)
     )
-    with pytest.raises(InvalidOidcPrincipal):
+    with pytest.raises(InvalidOidcPrincipalError):
         await _resolver(jwks_uri).resolve(_token_response(token))
     assert state.requests == 0
 
@@ -204,7 +214,7 @@ async def test_rejects_every_non_rs256_algorithm_before_jwks_lookup(
             raise AssertionError("unhandled test algorithm")
     token = jwt.encode(_claims(), key, algorithm=algorithm, headers={"kid": signing_keys[0].kid})
 
-    with pytest.raises(InvalidOidcPrincipal):
+    with pytest.raises(InvalidOidcPrincipalError):
         await _resolver(jwks_uri).resolve(_token_response(token))
     assert state.requests == 0
 
@@ -233,7 +243,7 @@ async def test_rejects_wrong_or_non_strict_claims(
     jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey], claim: str, value: Any
 ) -> None:
     _state, jwks_uri = jwks_server
-    with pytest.raises(InvalidOidcPrincipal):
+    with pytest.raises(InvalidOidcPrincipalError):
         await _resolver(jwks_uri).resolve(_token_response(_token(signing_keys[0], claims=_claims(**{claim: value}))))
 
 
@@ -244,7 +254,7 @@ async def test_rejects_missing_required_identity_and_lifetime_claims(
     _state, jwks_uri = jwks_server
     claims = _claims()
     del claims[missing_claim]
-    with pytest.raises(InvalidOidcPrincipal):
+    with pytest.raises(InvalidOidcPrincipalError):
         await _resolver(jwks_uri).resolve(_token_response(_token(signing_keys[0], claims=claims)))
 
 
@@ -253,10 +263,19 @@ async def test_rejects_nonpositive_token_lifetime(
 ) -> None:
     _state, jwks_uri = jwks_server
     timestamp = int(time.time()) + 10
-    with pytest.raises(InvalidOidcPrincipal):
+    with pytest.raises(InvalidOidcPrincipalError):
         await _resolver(jwks_uri).resolve(
             _token_response(_token(signing_keys[0], claims=_claims(iat=timestamp, exp=timestamp)))
         )
+
+
+@pytest.mark.parametrize(("claim", "value"), [("iat", float("inf")), ("iat", float("-inf")), ("exp", float("inf"))])
+async def test_rejects_time_claims_that_overflow_numeric_date_conversion(
+    jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey], claim: str, value: float
+) -> None:
+    _state, jwks_uri = jwks_server
+    with pytest.raises(InvalidOidcPrincipalError):
+        await _resolver(jwks_uri).resolve(_token_response(_token(signing_keys[0], claims=_claims(**{claim: value}))))
 
 
 @pytest.mark.parametrize(
@@ -277,14 +296,14 @@ async def test_applies_thirty_second_clock_skew(
     if accepted:
         assert await resolution == VerifiedOidcPrincipal(issuer=_ISSUER, subject=_SUBJECT)
     else:
-        with pytest.raises(InvalidOidcPrincipal):
+        with pytest.raises(InvalidOidcPrincipalError):
             await resolution
 
 
 async def test_rejects_bad_signature(jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey]) -> None:
     _state, jwks_uri = jwks_server
     token_with_forged_kid = _token(signing_keys[1], headers={"kid": signing_keys[0].kid})
-    with pytest.raises(InvalidOidcPrincipal):
+    with pytest.raises(InvalidOidcPrincipalError):
         await _resolver(jwks_uri).resolve(_token_response(token_with_forged_kid))
 
 
@@ -345,7 +364,7 @@ async def test_jwk_with_incompatible_algorithm_is_verification_unavailable(
     state, jwks_uri = jwks_server
     state.document = {"keys": [_jwk(signing_keys[0], algorithm="PS256")]}
 
-    with pytest.raises(OidcPrincipalVerificationUnavailable):
+    with pytest.raises(OidcPrincipalVerificationUnavailableError):
         await _resolver(jwks_uri).resolve(_token_response(_token(signing_keys[0])))
 
 
@@ -353,7 +372,7 @@ async def test_unknown_kid_is_invalid_after_successful_refresh(
     jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey]
 ) -> None:
     state, jwks_uri = jwks_server
-    with pytest.raises(InvalidOidcPrincipal):
+    with pytest.raises(InvalidOidcPrincipalError):
         await _resolver(jwks_uri).resolve(_token_response(_token(signing_keys[1])))
     assert state.requests == 2
 
@@ -363,7 +382,7 @@ async def test_jwks_http_failure_is_verification_unavailable(
 ) -> None:
     state, jwks_uri = jwks_server
     state.status_code = 503
-    with pytest.raises(OidcPrincipalVerificationUnavailable):
+    with pytest.raises(OidcPrincipalVerificationUnavailableError):
         await _resolver(jwks_uri).resolve(_token_response(_token(signing_keys[0])))
 
 
@@ -373,7 +392,102 @@ async def test_malformed_jwks_is_verification_unavailable(
 ) -> None:
     state, jwks_uri = jwks_server
     state.raw_body = malformed_document
-    with pytest.raises(OidcPrincipalVerificationUnavailable):
+    with pytest.raises(OidcPrincipalVerificationUnavailableError):
+        await _resolver(jwks_uri).resolve(_token_response(_token(signing_keys[0])))
+
+
+async def test_malformed_jwks_is_not_cached_after_server_repair(
+    jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey]
+) -> None:
+    state, jwks_uri = jwks_server
+    state.raw_body = b"not-json"
+    resolver = _resolver(jwks_uri)
+    response = _token_response(_token(signing_keys[0]))
+
+    with pytest.raises(OidcPrincipalVerificationUnavailableError):
+        await resolver.resolve(response)
+    state.raw_body = None
+
+    assert await resolver.resolve(response) == VerifiedOidcPrincipal(issuer=_ISSUER, subject=_SUBJECT)
+    assert state.requests == 2
+
+
+async def test_deeply_nested_jwks_is_verification_unavailable(
+    jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey]
+) -> None:
+    state, jwks_uri = jwks_server
+    state.raw_body = b"[" * 1_200 + b"0" + b"]" * 1_200
+    with pytest.raises(OidcPrincipalVerificationUnavailableError):
+        await _resolver(jwks_uri).resolve(_token_response(_token(signing_keys[0])))
+
+
+async def test_jwks_transport_failure_is_verification_unavailable(
+    signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(*_args: object, **_kwargs: object) -> httpx.Response:
+        raise httpx.RemoteProtocolError("incomplete response")
+
+    monkeypatch.setattr("mcp_infra.authentik_auth.oidc_principal.httpx.get", fail)
+    with pytest.raises(OidcPrincipalVerificationUnavailableError):
+        await _resolver("https://auth.example.test/jwks").resolve(_token_response(_token(signing_keys[0])))
+
+
+async def test_jwks_key_conversion_overflow_is_verification_unavailable(
+    jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _state, jwks_uri = jwks_server
+
+    def fail(_document: object) -> None:
+        raise OverflowError
+
+    monkeypatch.setattr("mcp_infra.authentik_auth.oidc_principal.PyJWKSet.from_dict", fail)
+    with pytest.raises(OidcPrincipalVerificationUnavailableError):
+        await _resolver(jwks_uri).resolve(_token_response(_token(signing_keys[0])))
+
+
+@pytest.mark.parametrize("target", ["http://non-loopback.example.test/jwks", "ftp://non-loopback.example.test/jwks"])
+async def test_jwks_redirect_target_is_never_requested(
+    signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey], monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    source = "https://auth.example.test/jwks"
+    requests: list[str] = []
+
+    def redirect(url: str, *, timeout: int, follow_redirects: bool) -> httpx.Response:
+        requests.append(url)
+        assert timeout == 10
+        assert follow_redirects is False
+        return httpx.Response(302, headers={"Location": target}, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr("mcp_infra.authentik_auth.oidc_principal.httpx.get", redirect)
+    with pytest.raises(OidcPrincipalVerificationUnavailableError):
+        await _resolver(source).resolve(_token_response(_token(signing_keys[0])))
+
+    assert requests == [source]
+    assert target not in requests
+
+
+@pytest.mark.parametrize(
+    "malformed_key",
+    [None, "not-an-object", {"kty": "RSA", "kid": "key-1", "use": "sig", "alg": "RS256", "n": 1, "e": "AQAB"}],
+)
+async def test_malformed_jwks_key_material_is_verification_unavailable(
+    jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey], malformed_key: Any
+) -> None:
+    state, jwks_uri = jwks_server
+    state.document = {"keys": [malformed_key]}
+    with pytest.raises(OidcPrincipalVerificationUnavailableError):
+        await _resolver(jwks_uri).resolve(_token_response(_token(signing_keys[0])))
+
+
+async def test_private_rsa_jwk_is_verification_unavailable(
+    jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey]
+) -> None:
+    state, jwks_uri = jwks_server
+    private_jwk = cast(dict[str, Any], json.loads(RSAAlgorithm.to_jwk(signing_keys[0].private)))
+    private_jwk.update({"alg": "RS256", "kid": signing_keys[0].kid, "use": "sig"})
+    state.document = {"keys": [private_jwk]}
+
+    with pytest.raises(OidcPrincipalVerificationUnavailableError):
         await _resolver(jwks_uri).resolve(_token_response(_token(signing_keys[0])))
 
 
@@ -383,10 +497,15 @@ async def test_failed_rotation_refresh_is_verification_unavailable(
     state, jwks_uri = jwks_server
     resolver = _resolver(jwks_uri)
     assert await resolver.resolve(_token_response(_token(signing_keys[0])))
+    cached = resolver._cached_signing_keys
+    assert cached is not None
     state.status_code = 503
 
-    with pytest.raises(OidcPrincipalVerificationUnavailable):
+    with pytest.raises(OidcPrincipalVerificationUnavailableError):
         await resolver.resolve(_token_response(_token(signing_keys[1])))
+    assert await resolver.resolve(_token_response(_token(signing_keys[0])))
+    assert resolver._cached_signing_keys is not None
+    assert resolver._cached_signing_keys.expires_at == cached.expires_at
     assert state.requests == 2
 
 
@@ -396,15 +515,16 @@ async def test_public_errors_do_not_expose_token_or_claims(
     state, jwks_uri = jwks_server
     private_subject = "do-not-leak-this-subject"
     invalid_token = _token(signing_keys[0], claims=_claims(sub=private_subject, aud="wrong"))
-    with pytest.raises(InvalidOidcPrincipal) as invalid:
+    with pytest.raises(InvalidOidcPrincipalError) as invalid:
         await _resolver(jwks_uri).resolve(_token_response(invalid_token))
     state.status_code = 503
-    with pytest.raises(OidcPrincipalVerificationUnavailable) as unavailable:
-        await _resolver(jwks_uri).resolve(_token_response(_token(signing_keys[0], claims=_claims(sub=private_subject))))
+    unavailable_token = _token(signing_keys[0], claims=_claims(sub=private_subject))
+    with pytest.raises(OidcPrincipalVerificationUnavailableError) as unavailable:
+        await _resolver(jwks_uri).resolve(_token_response(unavailable_token))
 
-    for error in (invalid.value, unavailable.value):
+    for error, token in ((invalid.value, invalid_token), (unavailable.value, unavailable_token)):
         rendered = f"{error!r} {error}"
-        assert invalid_token not in rendered
+        assert token not in rendered
         assert private_subject not in rendered
 
 
@@ -418,12 +538,25 @@ def test_constructor_rejects_discovery_or_configuration_mismatch() -> None:
     }
     invalid_overrides: list[dict[str, Any]] = [
         {"expected_issuer": ""},
+        {
+            "expected_issuer": "http://auth.example.test/application/o/haku-mcp/",
+            "discovered_issuer": "http://auth.example.test/application/o/haku-mcp/",
+        },
+        {
+            "expected_issuer": "https://user:password@auth.example.test/application/o/haku-mcp/",
+            "discovered_issuer": "https://user:password@auth.example.test/application/o/haku-mcp/",
+        },
+        {"expected_issuer": f"{_ISSUER}?tenant=other", "discovered_issuer": f"{_ISSUER}?tenant=other"},
+        {"expected_issuer": f"{_ISSUER}#fragment", "discovered_issuer": f"{_ISSUER}#fragment"},
         {"discovered_issuer": None},
         {"discovered_issuer": f"{_ISSUER}/"},
         {"jwks_uri": None},
         {"jwks_uri": ""},
         {"jwks_uri": "file:///etc/passwd"},
         {"jwks_uri": "/relative/jwks"},
+        {"jwks_uri": "http://auth.example.test/jwks"},
+        {"jwks_uri": "https://user:password@auth.example.test/jwks"},
+        {"jwks_uri": "https://auth.example.test/jwks#fragment"},
         {"signing_algorithms": None},
         {"signing_algorithms": "RS256"},
         {"signing_algorithms": []},
@@ -435,6 +568,16 @@ def test_constructor_rejects_discovery_or_configuration_mismatch() -> None:
     for override in invalid_overrides:
         with pytest.raises(ValueError, match=r"issuer|jwks|algorithm|client_id|RS256"):
             AuthentikOidcPrincipalResolver(**(base | override))
+
+
+def test_constructor_accepts_loopback_http_for_tests() -> None:
+    AuthentikOidcPrincipalResolver(
+        expected_issuer="http://127.0.0.1:8080/application/o/test/",
+        discovered_issuer="http://127.0.0.1:8080/application/o/test/",
+        jwks_uri="http://localhost:8080/jwks?format=json",
+        signing_algorithms=["RS256"],
+        client_id=_CLIENT_ID,
+    )
 
 
 async def _authorization_and_refresh_tokens(
@@ -488,18 +631,25 @@ async def test_authentik_compatible_mock_access_tokens_match_authentik_audience_
         token_responses = await _authorization_and_refresh_tokens(
             client, authorization_path="/application/o/authorize/", token_path="/application/o/token/"
         )
-
-    for token_response in token_responses:
-        claims = jwt.decode(
-            token_response["access_token"],
-            public_key,
-            algorithms=["RS256"],
-            audience=_CLIENT_ID,
-            issuer=issuer,
-            options={"strict_aud": True},
+        resolver = AuthentikOidcPrincipalResolver(
+            expected_issuer=issuer,
+            discovered_issuer=issuer,
+            jwks_uri=f"{issuer}jwks/",
+            signing_algorithms=["RS256"],
+            client_id=_CLIENT_ID,
         )
-        assert claims["aud"] == _CLIENT_ID
-        assert claims["azp"] == _CLIENT_ID
+        for token_response in token_responses:
+            assert await resolver.resolve(token_response) == VerifiedOidcPrincipal(issuer=issuer, subject="test-user")
+            claims = jwt.decode(
+                token_response["access_token"],
+                public_key,
+                algorithms=["RS256"],
+                audience=_CLIENT_ID,
+                issuer=issuer,
+                options={"strict_aud": True},
+            )
+            assert claims["aud"] == _CLIENT_ID
+            assert claims["azp"] == _CLIENT_ID
 
 
 async def test_default_mock_access_token_audience_behavior_is_unchanged() -> None:

@@ -271,17 +271,29 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
             assert "echo:hi" in str(got.structured_content["call"]["result"])
 
 
+@dataclass(frozen=True)
+class _MockOidc:
+    origin: str
+    issuer: str
+
+
 @contextmanager
-def _serve_mock_oidc() -> Generator[str]:
+def _serve_mock_oidc() -> Generator[_MockOidc]:
     """A signed OIDC provider whose stable subject represents the authorizing operator."""
     private_key, public_key = generate_rsa_keypair()
     oidc_port = pick_free_port()
-    oidc_base = f"http://127.0.0.1:{oidc_port}"
+    oidc_origin = f"http://127.0.0.1:{oidc_port}"
+    issuer = f"{oidc_origin}/application/o/haku-agent/"
     app = build_mock_oidc_app(
-        issuer_url=oidc_base, private_key=private_key, public_key=public_key, subject="operator-42"
+        issuer_url=issuer,
+        private_key=private_key,
+        public_key=public_key,
+        subject="operator-42",
+        extra_id_token_claims={"sub": "wrong-id-token-operator"},
+        authentik_compatible=True,
     )
     with serve_app_sync(app, port=oidc_port) as base:
-        yield base
+        yield _MockOidc(origin=base, issuer=issuer)
 
 
 def _pkce_challenge(code_verifier: str) -> str:
@@ -323,7 +335,7 @@ def test_mcp_oauth_reads_nested_shared_persistence_env(monkeypatch: pytest.Monke
 
 
 async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path: Path) -> None:
-    with _serve_mock_oidc() as oidc_base, _serve_upstream() as upstream_url:
+    with _serve_mock_oidc() as oidc, _serve_upstream() as upstream_url:
         # public_base_url is the console's own URL, so choose its port before building the app.
         console_port = pick_free_port()
         settings = console_settings(
@@ -333,7 +345,7 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
             ui_base_url="https://haku.test",
             public_base_url=f"http://127.0.0.1:{console_port}",
             mcp_oauth=McpOAuthConfig(
-                oidc_issuer=oidc_base,
+                oidc_issuer=oidc.issuer,
                 oidc_client_id="console",
                 oidc_client_secret=SecretStr("secret"),
                 # Match production's shared Postgres-backed DCR/token state, but use this test's
@@ -435,7 +447,7 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
                 )
                 assert approved.status_code == 302, approved.text
                 upstream_authorize = httpx.URL(approved.headers["location"])
-                assert str(upstream_authorize).startswith(f"{oidc_base}/authorize?")
+                assert str(upstream_authorize).startswith(f"{oidc.origin}/application/o/authorize/?")
                 assert upstream_authorize.params["redirect_uri"] == f"{base}/mcp/auth/callback"
 
                 upstream_callback = await anon.get(str(upstream_authorize), follow_redirects=False)

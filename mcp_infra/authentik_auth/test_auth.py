@@ -27,11 +27,11 @@ from mcp_infra.authentik_auth.auth import (
     AuthentikAuthConfig,
     AuthentikTokenExchanger,
     BackendTokenExchangeError,
-    ClientAuthorizationHookOIDCProxy,
     DirectJwtTrust,
     DownstreamClientIdentityOIDCProxy,
     RetryableRefreshOIDCProxy,
     build_authentik_auth,
+    compose_authentik_auth,
 )
 
 # ── AuthentikAuthConfig tests ─────────────────────────────────────────────
@@ -63,7 +63,6 @@ def _direct_trust(
 class _AuthBuildHarness:
     http_get: Mock
     downstream_proxy_cls: Mock
-    authorization_hook_proxy_cls: Mock
     jwt_verifier_cls: Mock
     multi_auth_cls: Mock
 
@@ -73,18 +72,15 @@ def auth_build_harness() -> Generator[_AuthBuildHarness]:
     with (
         patch("mcp_infra.authentik_auth.auth.httpx.get") as http_get,
         patch("mcp_infra.authentik_auth.auth.DownstreamClientIdentityOIDCProxy") as downstream_proxy_cls,
-        patch("mcp_infra.authentik_auth.auth.ClientAuthorizationHookOIDCProxy") as authorization_hook_proxy_cls,
         patch("mcp_infra.authentik_auth.auth.JWTVerifier") as jwt_verifier_cls,
         patch("mcp_infra.authentik_auth.auth.MultiAuth") as multi_auth_cls,
     ):
-        for proxy_cls in (downstream_proxy_cls, authorization_hook_proxy_cls):
-            proxy_cls.return_value.oidc_config = OIDCConfiguration(
-                strict=False, jwks_uri="https://auth.example.com/application/o/test/jwks/"
-            )
+        downstream_proxy_cls.return_value.oidc_config = OIDCConfiguration(
+            strict=False, jwks_uri="https://auth.example.com/application/o/test/jwks/"
+        )
         yield _AuthBuildHarness(
             http_get=http_get,
             downstream_proxy_cls=downstream_proxy_cls,
-            authorization_hook_proxy_cls=authorization_hook_proxy_cls,
             jwt_verifier_cls=jwt_verifier_cls,
             multi_auth_cls=multi_auth_cls,
         )
@@ -228,65 +224,29 @@ def test_build_authentik_auth_appends_extra_verifiers(auth_build_harness: _AuthB
     assert auth_build_harness.multi_auth_cls.call_args.kwargs["verifiers"] == [sentinel]
 
 
-def test_build_authentik_auth_uses_downstream_identity_proxy_without_authorization_hook(
+def test_build_authentik_auth_constructs_the_stock_downstream_identity_proxy(
     auth_build_harness: _AuthBuildHarness,
 ) -> None:
     build_authentik_auth(_config())
 
     auth_build_harness.downstream_proxy_cls.assert_called_once()
-    auth_build_harness.authorization_hook_proxy_cls.assert_not_called()
 
 
-def test_build_authentik_auth_uses_authorization_hook_proxy_when_requested(
+def test_compose_authentik_auth_uses_caller_owned_proxy_without_reconfiguring_it(
     auth_build_harness: _AuthBuildHarness,
 ) -> None:
-    """The opt-in hook sees upstream identity before FastMCP issues its local token."""
+    proxy = auth_build_harness.downstream_proxy_cls.return_value
+    sentinel = cast("TokenVerifier", object())
 
-    async def _cb(client_id: str, idp_tokens: Any) -> None: ...
-
-    build_authentik_auth(_config(), on_client_authorized=_cb)
+    compose_authentik_auth(proxy=proxy, extra_verifiers=[sentinel])
 
     auth_build_harness.downstream_proxy_cls.assert_not_called()
-    auth_build_harness.authorization_hook_proxy_cls.assert_called_once()
-    assert auth_build_harness.authorization_hook_proxy_cls.call_args.kwargs["on_client_authorized"] is _cb
+    proxy.update_default_scopes.assert_not_called()
+    assert auth_build_harness.multi_auth_cls.call_args.kwargs == {"server": proxy, "verifiers": [sentinel]}
 
 
 def test_compatibility_layers_are_independently_named_without_changing_runtime_behavior() -> None:
     assert issubclass(DownstreamClientIdentityOIDCProxy, RetryableRefreshOIDCProxy)
-    assert issubclass(ClientAuthorizationHookOIDCProxy, DownstreamClientIdentityOIDCProxy)
-
-
-async def test_client_authorization_hook_checks_ownership_before_issuing_token() -> None:
-    """The ownership hook sees upstream identity before a local client token is issued."""
-    proxy = ClientAuthorizationHookOIDCProxy.__new__(ClientAuthorizationHookOIDCProxy)
-    proxy._on_client_authorized = AsyncMock()
-    idp_tokens = {"id_token": "jwt-value", "access_token": "at"}
-    proxy._code_store = AsyncMock()
-    proxy._code_store.get = AsyncMock(return_value=SimpleNamespace(idp_tokens=idp_tokens))
-    client = SimpleNamespace(client_id="dcr-xyz")
-    auth_code = SimpleNamespace(code="the-code")
-    issued = object()
-
-    order: list[str] = []
-
-    async def record_ownership(*_: Any) -> None:
-        order.append("ownership")
-
-    async def issue_token(*_: Any) -> object:
-        order.append("token")
-        return issued
-
-    proxy._on_client_authorized.side_effect = record_ownership
-    super_exchange = AsyncMock(side_effect=issue_token)
-    with patch.object(OAuthProxy, "exchange_authorization_code", super_exchange) as super_exch:
-        result = await ClientAuthorizationHookOIDCProxy.exchange_authorization_code(
-            proxy, cast(Any, client), cast(Any, auth_code)
-        )
-
-    assert result is issued
-    super_exch.assert_awaited_once()
-    proxy._on_client_authorized.assert_awaited_once_with("dcr-xyz", idp_tokens)
-    assert order == ["ownership", "token"]
 
 
 async def test_downstream_identity_proxy_restores_dcr_client_id_after_token_swap() -> None:

@@ -22,6 +22,8 @@ py_library(
     srcs = ["oidc_principal.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "@pypi//cryptography",
+        "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pyjwt",
     ],
