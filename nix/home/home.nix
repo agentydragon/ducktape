@@ -383,7 +383,9 @@ in
 
       roboto
 
-      flameshot
+      # CLEANUP: return to pkgs.flameshot once nixos-25.11 ships v14.0.0 or
+      # newer; it fixes GNOME Wayland portal requests with an empty parent.
+      pkgsUnstable.flameshot
       xclip
 
       mplayer
