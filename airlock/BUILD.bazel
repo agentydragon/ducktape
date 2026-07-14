@@ -197,6 +197,7 @@ py_library(
         "//util:oci",
         "//util/testing:asgi",
         "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
         "@pypi//anyio",
         "@pypi//asyncpg",
         "@pypi//fastmcp_slim",

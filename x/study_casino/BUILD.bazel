@@ -175,6 +175,7 @@ py_library(
         "//third_party/containers:rlocations",
         "//util:oci",
         "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",

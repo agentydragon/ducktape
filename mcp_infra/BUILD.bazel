@@ -57,6 +57,7 @@ py_test(
         "//:conftest",
         "//third_party/containers:rlocations",
         "//util:oci",
+        "//util/testing:postgres_fixtures",
         "@pypi//asyncpg",
         "@pypi//py_key_value_aio",
         "@pypi//pytest",

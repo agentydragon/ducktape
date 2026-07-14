@@ -29,9 +29,8 @@ from haku.console.app import create_app
 from haku.console.config import OperatorOidcConfig, Settings
 from haku.console.database_migrate import apply_migrations
 from haku.console.operator_auth import SESSION_USER_KEY
-from third_party.containers.rlocations import POSTGRES_18, RYUK
-from util.oci import load_oci_image
 from util.testing.postgres import force_drop_database_sync
+from util.testing.postgres_fixtures import start_postgres_container
 
 # A default static agent so `create_app`'s require-a-/mcp-credential invariant is satisfied without
 # every test spelling one out — the real deploy always has the `haku` agent. Tests that exercise
@@ -95,15 +94,8 @@ def csrf_token(client: TestClient) -> str:
 
 
 @pytest.fixture(scope="session")
-def _preload_postgres_images() -> None:
-    load_oci_image(RYUK)
-    load_oci_image(POSTGRES_18)
-
-
-@pytest.fixture(scope="session")
-def postgres_container(_preload_postgres_images: None) -> Generator[PostgresContainer]:
-    container = PostgresContainer(image=POSTGRES_18.tag, username="postgres", password="postgres", dbname="postgres")
-    container.start()
+def postgres_container() -> Generator[PostgresContainer]:
+    container = start_postgres_container()
     try:
         yield container
     finally:

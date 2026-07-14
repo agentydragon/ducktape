@@ -33,11 +33,10 @@ from airlock.storage import ActionStorage
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resource_utils import read_text_json_typed
 from mcp_utils.resources import parse_tool_result_as
-from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.net import pick_free_port
-from util.oci import load_oci_image
 from util.testing.asgi import serve_app
 from util.testing.postgres import force_drop_database
+from util.testing.postgres_fixtures import start_postgres_container
 
 
 @asynccontextmanager
@@ -144,18 +143,9 @@ def operator_transport(base_url: str, operator_jwt: str):
 # ── PostgreSQL testcontainer fixtures ─────────────────────────────────────────
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _preload_postgres() -> None:
-    """Pre-load PostgreSQL and Ryuk images into the Docker daemon."""
-    load_oci_image(RYUK)
-    load_oci_image(POSTGRES_18)
-
-
 @pytest.fixture(scope="session")
 def postgres_container() -> Generator[PostgresContainer]:
-    """Session-scoped PostgreSQL container shared across all tests."""
-    container = PostgresContainer(image=POSTGRES_18.tag, username="postgres", password="postgres", dbname="postgres")
-    container.start()
+    container = start_postgres_container()
     try:
         yield container
     finally:

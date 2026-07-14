@@ -455,6 +455,7 @@ py_library(
         "//third_party/containers:rlocations",
         "//util:oci",
         "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
         "@pypi//fastapi",
         "@pypi//httpx",
         # SessionMiddleware (starlette) signs the operator session cookie with itsdangerous;

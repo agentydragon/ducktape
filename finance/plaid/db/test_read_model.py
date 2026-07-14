@@ -16,21 +16,13 @@ from finance.plaid.db.link_profiles import LinkProfile
 from finance.plaid.db.link_store import PlaidLinkStorage
 from finance.plaid.db.read_model import read_current_cash_balances, read_current_holdings
 from finance.plaid.db.schema import async_session_factory
-from third_party.containers.rlocations import POSTGRES_18, RYUK
-from util.oci import load_oci_image
 from util.testing.postgres import force_drop_database
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _preload_postgres_images() -> None:
-    load_oci_image(RYUK)
-    load_oci_image(POSTGRES_18)
+from util.testing.postgres_fixtures import start_postgres_container
 
 
 @pytest.fixture(scope="session")
 def postgres_container() -> Generator[PostgresContainer]:
-    container = PostgresContainer(image=POSTGRES_18.tag, username="postgres", password="postgres", dbname="postgres")
-    container.start()
+    container = start_postgres_container()
     try:
         yield container
     finally:

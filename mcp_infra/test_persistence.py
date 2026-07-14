@@ -18,27 +18,24 @@ from mcp_infra.persistence import (
     build_client_storage,
     build_shared_client_storage,
 )
-from third_party.containers.rlocations import POSTGRES_18, RYUK
-from util.oci import load_oci_image
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _preload_images() -> None:
-    load_oci_image(RYUK)
-    load_oci_image(POSTGRES_18)
+from util.testing.postgres_fixtures import start_postgres_container
 
 
 @pytest.fixture(scope="session")
-def postgres_url() -> Generator[str]:
-    container = PostgresContainer(image=POSTGRES_18.tag, username="postgres", password="postgres", dbname="postgres")
-    container.start()
+def postgres_container() -> Generator[PostgresContainer]:
+    container = start_postgres_container()
     try:
-        host = container.get_container_host_ip()
-        port = int(container.get_exposed_port(5432))
-        # asyncpg DSN — plain postgresql://, NOT the SQLAlchemy postgresql+psycopg:// form.
-        yield f"postgresql://postgres:postgres@{host}:{port}/postgres"
+        yield container
     finally:
         container.stop()
+
+
+@pytest.fixture(scope="session")
+def postgres_url(postgres_container: PostgresContainer) -> str:
+    host = postgres_container.get_container_host_ip()
+    port = int(postgres_container.get_exposed_port(5432))
+    # asyncpg DSN — plain postgresql://, NOT the SQLAlchemy postgresql+psycopg:// form.
+    return f"postgresql://postgres:postgres@{host}:{port}/postgres"
 
 
 def test_build_client_storage_variants() -> None:
