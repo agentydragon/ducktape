@@ -1199,6 +1199,28 @@ def test_binding_generation_predecessor_and_activation_are_compare_and_set(db_ur
 
         now = _now()
 
+        def issue_and_activate(conn: Connection, binding_id: UUID) -> None:
+            conn.execute(
+                text(
+                    """
+                    UPDATE credential_bindings
+                    SET status = 'issued', issued_at = :now, updated_at = :now
+                    WHERE binding_id = :binding_id
+                    """
+                ),
+                {"binding_id": binding_id, "now": now},
+            )
+            conn.execute(
+                text(
+                    """
+                    UPDATE credential_bindings
+                    SET status = 'active', activated_at = :now, updated_at = :now
+                    WHERE binding_id = :binding_id
+                    """
+                ),
+                {"binding_id": binding_id, "now": now},
+            )
+
         def activate_stale_generation() -> None:
             with engine.begin() as conn:
                 conn.execute(
@@ -1212,17 +1234,7 @@ def test_binding_generation_predecessor_and_activation_are_compare_and_set(db_ur
                     ),
                     {"predecessor": static_agent.binding_id, "now": now},
                 )
-                conn.execute(
-                    text(
-                        """
-                        UPDATE credential_bindings
-                        SET status = 'active', issued_at = :now,
-                            activated_at = :now, updated_at = :now
-                        WHERE binding_id = :binding_id
-                        """
-                    ),
-                    {"binding_id": generation_two, "now": now},
-                )
+                issue_and_activate(conn, generation_two)
 
         with pytest.raises(IntegrityError):
             activate_stale_generation()
@@ -1238,16 +1250,7 @@ def test_binding_generation_predecessor_and_activation_are_compare_and_set(db_ur
                 ),
                 {"predecessor": static_agent.binding_id, "now": now},
             )
-            conn.execute(
-                text(
-                    """
-                    UPDATE credential_bindings
-                    SET status = 'active', issued_at = :now, activated_at = :now, updated_at = :now
-                    WHERE binding_id = :binding_id
-                    """
-                ),
-                {"binding_id": generation_three, "now": now},
-            )
+            issue_and_activate(conn, generation_three)
 
         with pytest.raises(IntegrityError), engine.begin() as conn:
             _insert_static_replacement(
