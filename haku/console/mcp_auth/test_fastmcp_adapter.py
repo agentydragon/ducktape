@@ -868,8 +868,8 @@ async def test_missing_or_malformed_tool_call_claims_fail_before_authority_and_d
 def test_fastmcp_344_surface_and_adapter_containment_are_pinned() -> None:
     assert_fastmcp_adapter_compatibility()
     assert issubclass(HakuAgentOAuthProxy, RetryableRefreshOIDCProxy)
-    assert inspect.signature(HakuAgentOAuthProxy.get_token_verifier) == inspect.signature(
-        RetryableRefreshOIDCProxy.get_token_verifier
+    assert inspect.signature(HakuAgentOAuthProxy.get_token_verifier, eval_str=True) == inspect.signature(
+        RetryableRefreshOIDCProxy.get_token_verifier, eval_str=True
     )
     source = inspect.getsource(HakuAgentOAuthProxy)
     assert source.count("self._code_store.") == 2
