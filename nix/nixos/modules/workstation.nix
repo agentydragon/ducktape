@@ -45,9 +45,7 @@
       discord
       element-desktop
 
-      # CLI editor + shell convenience
-      neovim
-      tmux
+      # CLI shell convenience (Neovim and Tmux are managed per user by Home Manager.)
       mosh
       ripgrep
       tree

@@ -84,7 +84,6 @@ in
     ./modules/attic.nix
     ./modules/atuin.nix
     ./modules/buildbuddy.nix
-    ./modules/datetime-format.nix
     ./modules/sops-env.nix
     ./services/activitywatch.nix
     ./opencode
@@ -504,6 +503,9 @@ in
   programs.gnome-shell = lib.mkIf enableGui {
     enable = true;
     extensions = [
+      # Provides StatusNotifier/AppIndicator support for Timekpr and other
+      # tray-based applications on every GNOME host.
+      { package = pkgs.gnomeExtensions.appindicator; }
       { package = pkgs.gnomeExtensions.panel-date-format; }
       { package = pkgs.gnomeExtensions.cronomix; }
       { package = pkgs.gnomeExtensions.pop-shell; }

@@ -170,9 +170,7 @@
     pkgs.tuxguitar
     ducktapePackages.tana-outliner
   ];
-  # NixOS doesn't have Pop!_OS's built-in ubuntu-appindicators, so install it
   programs.gnome-shell.extensions = [
-    { package = pkgs.gnomeExtensions.appindicator; }
     { package = ducktapePackages.aiquota; }
   ];
 
