@@ -822,6 +822,19 @@ def _create_row_invariant_triggers() -> None:
                     OR (OLD.status = 'draft' AND NEW.status = 'abandoned')
                     OR (OLD.status = 'active' AND NEW.status IN ('disabled', 'deleted'))
                     OR (OLD.status = 'disabled' AND NEW.status = 'deleted')
+                    OR (
+                        OLD.status = 'disabled' AND NEW.status = 'active'
+                        AND EXISTS (
+                            SELECT 1 FROM credential_bindings
+                            WHERE agent_id = NEW.agent_id
+                              AND kind = 'static'
+                              AND status = 'active'
+                        )
+                        AND NOT EXISTS (
+                            SELECT 1 FROM credential_bindings
+                            WHERE agent_id = NEW.agent_id AND kind <> 'static'
+                        )
+                    )
                 ) THEN
                     RAISE EXCEPTION 'illegal Agent status transition: % -> %',
                         OLD.status, NEW.status USING ERRCODE = '23514';

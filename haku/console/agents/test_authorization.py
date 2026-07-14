@@ -14,7 +14,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
+from sqlalchemy.exc import IntegrityError, TimeoutError as SQLAlchemyTimeoutError
 
 from haku.console.agents.authorization import (
     PostgresAgentAuthority,
@@ -219,24 +219,21 @@ async def _create_grant(
     return grant
 
 
-async def _wait_until_connection_is_lock_blocked(
-    engine: Engine, *, application_name: str, task: asyncio.Task[None]
-) -> None:
+async def _wait_until_connection_is_lock_blocked(engine: Engine, *, blocker_pid: int, task: asyncio.Task[None]) -> None:
     with engine.connect() as conn:
         for _ in range(200):
             waiting = conn.execute(
                 text(
                     """
-                    SELECT EXISTS (
-                        SELECT 1 FROM pg_stat_activity
-                        WHERE datname = current_database()
-                          AND application_name = :application_name
-                          AND state = 'active'
-                          AND wait_event_type = 'Lock'
-                    )
-                    """
+                        SELECT EXISTS (
+                            SELECT 1 FROM pg_stat_activity
+                            WHERE datname = current_database()
+                              AND state = 'active'
+                              AND :blocker_pid = ANY(pg_blocking_pids(pid))
+                        )
+                        """
                 ),
-                {"application_name": application_name},
+                {"blocker_pid": blocker_pid},
             ).scalar_one()
             if waiting:
                 return
@@ -317,6 +314,11 @@ async def test_create_decision_is_idempotent_and_grant_activates_then_revokes(db
             ),
             {"grant_id": grant.grant_id},
         ).one()
+    with pytest.raises(IntegrityError), engine.begin() as conn:
+        conn.execute(
+            text("UPDATE agents SET status = 'active' WHERE agent_id = :agent_id"),
+            {"agent_id": activated.actor.agent_id},
+        )
     engine.dispose()
     assert row.browser_nonce_digest is None
     assert row.browser_binding_digest is None
@@ -566,17 +568,15 @@ async def test_expiry_sweep_terminates_issued_response_loss(db_url: str) -> None
 async def test_exchange_uses_the_live_correlation_reservation_after_tuple_reuse(db_url: str) -> None:
     harness = _harness(db_url)
     request = _request("correlation-reuse")
+    engine = create_engine(db_url)
+    with engine.connect() as conn:
+        database_now = conn.execute(text("SELECT clock_timestamp()")).scalar_one()
+    harness.clock.now = database_now - datetime.timedelta(hours=3)
     old_url = await harness.authority.reserve_authorization(
         request=request, upstream_authorization_url="https://auth.test/authorize/old"
     )
     old_interaction_id, _old_nonce = _interaction_from_url(old_url)
-    engine = create_engine(db_url)
-    with engine.begin() as conn:
-        conn.execute(
-            text("DELETE FROM enrollment_correlation_reservations WHERE interaction_id = :interaction_id"),
-            {"interaction_id": old_interaction_id},
-        )
-    harness.clock.advance(datetime.timedelta(seconds=1))
+    harness.clock.now = database_now
     new_url = await harness.authority.reserve_authorization(
         request=request, upstream_authorization_url="https://auth.test/authorize/new"
     )
@@ -771,12 +771,8 @@ async def test_static_reconcile_revokes_removed_definition_and_restores_stable_s
 async def test_revoke_waits_for_interaction_before_locking_grant_graph(db_url: str) -> None:
     harness = _harness(db_url)
     grant = await _create_grant(harness, label="lock-order", display_name="Lock Ordered Agent")
-    application_name = f"authority-lock-order-{uuid4()}"
     authority = PostgresAgentAuthority(
-        f"{db_url}?application_name={application_name}",
-        public_base_url="https://haku.test",
-        operator_identity_store=harness.identities,
-        clock=harness.clock,
+        db_url, public_base_url="https://haku.test", operator_identity_store=harness.identities, clock=harness.clock
     )
     engine = create_engine(db_url)
     owner = engine.connect()
@@ -792,6 +788,7 @@ async def test_revoke_waits_for_interaction_before_locking_grant_graph(db_url: s
             ),
             {"grant_id": grant.grant_id},
         ).one()
+        blocker_pid = owner.execute(text("SELECT pg_backend_pid()")).scalar_one()
         owner.execute(
             text(
                 "SELECT interaction_id FROM enrollment_interactions WHERE interaction_id = :interaction_id FOR UPDATE"
@@ -799,7 +796,7 @@ async def test_revoke_waits_for_interaction_before_locking_grant_graph(db_url: s
             {"interaction_id": interaction_id},
         )
         task = asyncio.create_task(authority.revoke_grant(grant_id=grant.grant_id))
-        await _wait_until_connection_is_lock_blocked(engine, application_name=application_name, task=task)
+        await _wait_until_connection_is_lock_blocked(engine, blocker_pid=blocker_pid, task=task)
         owner.execute(
             text("SELECT binding_id FROM credential_bindings WHERE binding_id = :binding_id FOR UPDATE NOWAIT"),
             {"binding_id": binding_id},
