@@ -39,7 +39,16 @@ source-faithful to that evidence.
 - Map upstream failures into useful client-facing errors:
   - Firebase refresh-token exchange failures
   - Tana 401/403 auth failures
-  - Tana 429 quota or credits exhaustion
+  - Tana 429 (out-of-quota / credits exhaustion): currently all `status_code >= 400`
+    responses raise a bare `TanaProxyError` (RuntimeError), which LiteLLM wraps as a
+    500 `APIConnectionError` — observed live as `Tana llmProxyNext failed with HTTP
+429`. This loses the rate-limit status so LiteLLM's 429 retry/backoff never fires
+    and agent clients (Claude Code, OpenCode) can't distinguish quota exhaustion from a
+    dead server. Inspect the status code at the four `>= 400` sites (non-tool, tool,
+    sync stream, async stream in `provider.py`) and raise the matching LiteLLM error
+    class (`litellm.RateLimitError` for 429, `AuthenticationError` for 401/403) so the
+    original status code and retryability propagate. Add a test that a 429 upstream
+    response surfaces to the caller as a retryable rate-limit error, not a 500.
   - Tana 5xx and malformed stream events
 - Make the remaining RE-listed models work or intentionally suppress them with
   a documented reason. `bazel run //tana/litellm_proxy:probe_models --` on

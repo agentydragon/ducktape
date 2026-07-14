@@ -4,12 +4,13 @@ import asyncio
 import base64
 import json
 import subprocess
-from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from typing import Any, Protocol, cast
 from urllib.parse import parse_qs
 
 import httpx
 import litellm
+import pytest
 import pytest_bazel
 from litellm.types.utils import Choices, GenericStreamingChunk, ModelResponse, Usage
 
@@ -39,6 +40,19 @@ class _NoStreamingClient:
     ) -> AsyncIterator[GenericStreamingChunk]:
         raise AssertionError("non-streaming test should not call astream_completion")
         yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
+
+
+@pytest.fixture
+def isolated_litellm_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Snapshot litellm's global provider registries for one test.
+
+    Tests that register the Tana custom provider reassign or extend module-level
+    litellm state; copy it here so monkeypatch restores the originals on teardown.
+    """
+    monkeypatch.setattr(litellm, "custom_provider_map", list(litellm.custom_provider_map))
+    monkeypatch.setattr(litellm, "provider_list", list(litellm.provider_list))
+    monkeypatch.setattr(litellm, "_custom_providers", list(litellm._custom_providers))
+    monkeypatch.setattr(litellm, "model_list_set", set(litellm.model_list_set))
 
 
 def test_client_maps_basic_chat_request() -> None:
@@ -575,7 +589,7 @@ def test_client_streams_zero_arg_tool_call_from_llm_proxy_next() -> None:
     assert chunks[-1]["finish_reason"] == "tool_calls"
 
 
-def test_anthropic_messages_stream_has_single_merged_tool_block() -> None:
+def test_anthropic_messages_stream_has_single_merged_tool_block(isolated_litellm_provider) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "securetoken.googleapis.com":
             return httpx.Response(
@@ -595,11 +609,6 @@ def test_anthropic_messages_stream_has_single_merged_tool_block() -> None:
             ),
         )
 
-    original_custom_provider_map = list(litellm.custom_provider_map)
-    original_provider_list = list(litellm.provider_list)
-    original_custom_providers = list(litellm._custom_providers)
-    original_model_list_set = set(litellm.model_list_set)
-
     async def collect_events() -> list[dict[str, Any]]:
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
             client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
@@ -624,13 +633,7 @@ def test_anthropic_messages_stream_has_single_merged_tool_block() -> None:
             raw_events = [event async for event in cast(AsyncIterator[Any], stream)]
             return [_decode_anthropic_sse_event(event) for event in raw_events]
 
-    try:
-        events = asyncio.run(collect_events())
-    finally:
-        litellm.custom_provider_map = original_custom_provider_map
-        litellm.provider_list = original_provider_list
-        litellm._custom_providers = original_custom_providers
-        litellm.model_list_set = original_model_list_set
+    events = asyncio.run(collect_events())
 
     started_blocks: set[int] = set()
     stopped_blocks: set[int] = set()
@@ -666,7 +669,7 @@ def test_anthropic_messages_stream_has_single_merged_tool_block() -> None:
     assert message_deltas[-1]["delta"]["stop_reason"] == "tool_use"
 
 
-def test_anthropic_messages_stream_finishes_eof_tool_call_without_orphan_delta() -> None:
+def test_anthropic_messages_stream_finishes_eof_tool_call_without_orphan_delta(isolated_litellm_provider) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "securetoken.googleapis.com":
             return httpx.Response(
@@ -684,11 +687,6 @@ def test_anthropic_messages_stream_finishes_eof_tool_call_without_orphan_delta()
             ),
         )
 
-    original_custom_provider_map = list(litellm.custom_provider_map)
-    original_provider_list = list(litellm.provider_list)
-    original_custom_providers = list(litellm._custom_providers)
-    original_model_list_set = set(litellm.model_list_set)
-
     async def collect_events() -> list[dict[str, Any]]:
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
             client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
@@ -713,13 +711,7 @@ def test_anthropic_messages_stream_finishes_eof_tool_call_without_orphan_delta()
             raw_events = [event async for event in cast(AsyncIterator[Any], stream)]
             return [_decode_anthropic_sse_event(event) for event in raw_events]
 
-    try:
-        events = asyncio.run(collect_events())
-    finally:
-        litellm.custom_provider_map = original_custom_provider_map
-        litellm.provider_list = original_provider_list
-        litellm._custom_providers = original_custom_providers
-        litellm.model_list_set = original_model_list_set
+    events = asyncio.run(collect_events())
 
     started_blocks: set[int] = set()
     stopped_blocks: set[int] = set()
@@ -755,7 +747,7 @@ def test_anthropic_messages_stream_finishes_eof_tool_call_without_orphan_delta()
     assert message_deltas[-1]["delta"]["stop_reason"] == "tool_use"
 
 
-def test_anthropic_messages_stream_ignores_empty_chunk_after_tool_finish() -> None:
+def test_anthropic_messages_stream_ignores_empty_chunk_after_tool_finish(isolated_litellm_provider) -> None:
     class FakeClient(_NoStreamingClient):
         async def chat_completion(
             self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
@@ -794,11 +786,6 @@ def test_anthropic_messages_stream_ignores_empty_chunk_after_tool_finish() -> No
                 text="", tool_use=None, is_finished=False, finish_reason="", usage=None, index=0
             )
 
-    original_custom_provider_map = list(litellm.custom_provider_map)
-    original_provider_list = list(litellm.provider_list)
-    original_custom_providers = list(litellm._custom_providers)
-    original_model_list_set = set(litellm.model_list_set)
-
     async def collect_events() -> list[dict[str, Any]]:
         register_litellm_provider(TanaLiteLLM(FakeClient()))
         stream = await litellm.anthropic.messages.acreate(
@@ -821,13 +808,7 @@ def test_anthropic_messages_stream_ignores_empty_chunk_after_tool_finish() -> No
         raw_events = [event async for event in cast(AsyncIterator[Any], stream)]
         return [_decode_anthropic_sse_event(event) for event in raw_events]
 
-    try:
-        events = asyncio.run(collect_events())
-    finally:
-        litellm.custom_provider_map = original_custom_provider_map
-        litellm.provider_list = original_provider_list
-        litellm._custom_providers = original_custom_providers
-        litellm.model_list_set = original_model_list_set
+    events = asyncio.run(collect_events())
 
     started_blocks: set[int] = set()
     stopped_blocks: set[int] = set()
@@ -1133,7 +1114,7 @@ def test_registers_tana_as_litellm_custom_provider() -> None:
     assert "tana" in litellm.model_list_set
 
 
-def test_registered_tana_provider_handles_async_litellm_completion() -> None:
+def test_registered_tana_provider_handles_async_litellm_completion(isolated_litellm_provider) -> None:
     class FakeClient(_NoStreamingClient):
         async def chat_completion(
             self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
@@ -1143,32 +1124,110 @@ def test_registered_tana_provider_handles_async_litellm_completion() -> None:
             assert optional_params == {}
             return TanaChatResult(text="pong")
 
-    original_custom_provider_map = list(litellm.custom_provider_map)
-    original_provider_list = list(litellm.provider_list)
-    original_custom_providers = list(litellm._custom_providers)
-    original_model_list_set = set(litellm.model_list_set)
-    try:
-        litellm.custom_provider_map = []
-        litellm.provider_list = [provider for provider in litellm.provider_list if provider != "tana"]
-        litellm._custom_providers = [provider for provider in litellm._custom_providers if provider != "tana"]
-        litellm.model_list_set.discard("tana")
+    litellm.custom_provider_map = []
+    litellm.provider_list = [provider for provider in litellm.provider_list if provider != "tana"]
+    litellm._custom_providers = [provider for provider in litellm._custom_providers if provider != "tana"]
+    litellm.model_list_set.discard("tana")
 
-        register_litellm_provider(TanaLiteLLM(FakeClient()))
+    register_litellm_provider(TanaLiteLLM(FakeClient()))
 
-        response = asyncio.run(
-            litellm.acompletion(model="tana/claude-test", messages=[{"role": "user", "content": "hi"}])
-        )
+    response = asyncio.run(litellm.acompletion(model="tana/claude-test", messages=[{"role": "user", "content": "hi"}]))
 
-        assert response.choices[0].message.content == "pong"
-    finally:
-        litellm.custom_provider_map = original_custom_provider_map
-        litellm.provider_list = original_provider_list
-        litellm._custom_providers = original_custom_providers
-        litellm.model_list_set = original_model_list_set
+    assert response.choices[0].message.content == "pong"
 
 
 def test_custom_handler_module_exports_litellm_handler() -> None:
     assert isinstance(tana_handler, TanaLiteLLM)
+
+
+def _upstream_error_handler(status: int) -> Callable[[httpx.Request], httpx.Response]:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "securetoken.googleapis.com":
+            return httpx.Response(
+                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
+            )
+        return httpx.Response(status, json={"error": f"upstream returned {status}"})
+
+    return handler
+
+
+_DEMO_FACT_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "lookup_demo_fact",
+        "description": "Look up a demo fact.",
+        "parameters": {"type": "object", "properties": {"topic": {"type": "string"}}, "required": ["topic"]},
+    },
+}
+
+
+def test_chat_completion_raises_rate_limit_error_on_429() -> None:
+    async def run() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(_upstream_error_handler(429))) as http:
+            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+            await client.chat_completion("tana/claude-test", [{"role": "user", "content": "hi"}], {})
+
+    with pytest.raises(litellm.RateLimitError) as exc_info:
+        asyncio.run(run())
+    assert exc_info.value.status_code == 429
+
+
+def test_tool_chat_completion_raises_rate_limit_error_on_429() -> None:
+    async def run() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(_upstream_error_handler(429))) as http:
+            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+            await client.chat_completion(
+                "tana/claude-test", [{"role": "user", "content": "hi"}], {"tools": [_DEMO_FACT_TOOL]}
+            )
+
+    with pytest.raises(litellm.RateLimitError) as exc_info:
+        asyncio.run(run())
+    assert exc_info.value.status_code == 429
+
+
+def test_chat_completion_raises_auth_error_on_401() -> None:
+    async def run() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(_upstream_error_handler(401))) as http:
+            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+            await client.chat_completion("tana/claude-test", [{"role": "user", "content": "hi"}], {})
+
+    with pytest.raises(litellm.AuthenticationError) as exc_info:
+        asyncio.run(run())
+    assert exc_info.value.status_code == 401
+
+
+def test_stream_completion_raises_rate_limit_error_on_429() -> None:
+    with httpx.Client(transport=httpx.MockTransport(_upstream_error_handler(429))) as http:
+        client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), sync_http_client=http)
+        with pytest.raises(litellm.RateLimitError) as exc_info:
+            list(client.stream_completion("tana/claude-test", [{"role": "user", "content": "hi"}], {}))
+    assert exc_info.value.status_code == 429
+
+
+def test_astream_completion_raises_rate_limit_error_on_429() -> None:
+    async def run() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(_upstream_error_handler(429))) as http:
+            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+            async for _ in client.astream_completion("tana/claude-test", [{"role": "user", "content": "hi"}], {}):
+                pytest.fail("expected rate-limit error before any stream chunk")
+
+    with pytest.raises(litellm.RateLimitError) as exc_info:
+        asyncio.run(run())
+    assert exc_info.value.status_code == 429
+
+
+def test_429_surfaces_through_litellm_acompletion_as_rate_limit_error(isolated_litellm_provider) -> None:
+    async def run() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(_upstream_error_handler(429))) as http:
+            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+            register_litellm_provider(TanaLiteLLM(client))
+            await litellm.acompletion(
+                model="tana/claude-test", messages=[{"role": "user", "content": "hi"}], num_retries=0
+            )
+
+    with pytest.raises(litellm.RateLimitError) as exc_info:
+        asyncio.run(run())
+    assert exc_info.value.status_code == 429
 
 
 if __name__ == "__main__":

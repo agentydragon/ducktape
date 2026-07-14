@@ -227,8 +227,7 @@ class TanaProxyClient:
                 "Content-Type": "application/json",
             },
         )
-        if response.status_code >= 400:
-            raise TanaProxyError(f"Tana llmProxy failed with HTTP {response.status_code}: {_body_snippet(response)}")
+        _raise_for_status(response, "llmProxy", model)
         return _parse_tana_response(response)
 
     async def _tool_chat_completion(
@@ -257,10 +256,7 @@ class TanaProxyClient:
                 "Content-Type": "application/json",
             },
         )
-        if response.status_code >= 400:
-            raise TanaProxyError(
-                f"Tana llmProxyNext failed with HTTP {response.status_code}: {_body_snippet(response)}"
-            )
+        _raise_for_status(response, "llmProxyNext", model)
         return _parse_tana_response(response)
 
     async def _id_token_for_request(self, http: httpx.AsyncClient) -> str:
@@ -298,9 +294,7 @@ class TanaProxyClient:
             if response.status_code >= 400:
                 response.read()
                 endpoint = "llmProxyNext" if _has_tools(optional_params) else "llmProxy"
-                raise TanaProxyError(
-                    f"Tana {endpoint} streaming failed with HTTP {response.status_code}: {_body_snippet(response)}"
-                )
+                _raise_for_status(response, f"{endpoint} streaming", model)
             yield from _parse_tana_stream_lines(response.iter_lines())
 
     async def astream_completion(
@@ -334,9 +328,7 @@ class TanaProxyClient:
             if response.status_code >= 400:
                 await response.aread()
                 endpoint = "llmProxyNext" if _has_tools(optional_params) else "llmProxy"
-                raise TanaProxyError(
-                    f"Tana {endpoint} streaming failed with HTTP {response.status_code}: {_body_snippet(response)}"
-                )
+                _raise_for_status(response, f"{endpoint} streaming", model)
             async for chunk in _parse_tana_stream_lines_async(response.aiter_lines()):
                 yield chunk
 
@@ -1268,3 +1260,21 @@ def _body_snippet(response: httpx.Response) -> str:
     if len(body) > 500:
         return f"{body[:500]}..."
     return body
+
+
+def _raise_for_status(response: httpx.Response, endpoint: str, model: str) -> None:
+    """Raise a LiteLLM exception that preserves Tana's upstream HTTP status.
+
+    A bare ``TanaProxyError`` carries no status, so LiteLLM's ``exception_type``
+    maps it to a 500 ``APIConnectionError`` — hiding quota exhaustion (429) and
+    auth failures (401/403) from the client and from LiteLLM's retry/backoff.
+    """
+    status = response.status_code
+    if status < 400:
+        return
+    message = f"Tana {endpoint} failed with HTTP {status}: {_body_snippet(response)}"
+    if status == 429:
+        raise litellm.RateLimitError(message=message, model=model, llm_provider=TANA_PROVIDER)
+    if status in (401, 403):
+        raise litellm.AuthenticationError(message=message, model=model, llm_provider=TANA_PROVIDER)
+    raise TanaProxyError(message)
