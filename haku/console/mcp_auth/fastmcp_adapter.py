@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import inspect
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, SupportsFloat, override
 from uuid import UUID
 
 import fastmcp
@@ -28,10 +28,13 @@ import httpx
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth.auth import AccessToken, AuthProvider, MultiAuth, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware import CallNext, Middleware as FastMCPMiddleware, MiddlewareContext
 from fastmcp.tools import ToolResult
 from fastmcp.utilities.auth import parse_scopes
+from key_value.aio.protocols import AsyncKeyValue
+from key_value.aio.wrappers.base import BaseWrapper
 from mcp import types as mcp_types
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
 from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
@@ -202,7 +205,7 @@ class AgentGrantAuthorityUnavailableError(Exception):
     """Haku cannot currently make an authoritative grant decision."""
 
 
-class OAuthBearerVerificationUnavailableError(AuthenticationError):
+class BearerVerificationUnavailableError(AuthenticationError):
     """A recognized bearer could not be verified for an operational reason.
 
     Haku's auth composite must preserve this marker instead of treating it as a
@@ -215,6 +218,109 @@ class OAuthBearerVerificationUnavailableError(AuthenticationError):
     def __init__(self, detail: str) -> None:
         self.detail = detail
         super().__init__(detail)
+
+
+class BearerFailureObservingKeyValue(BaseWrapper):
+    """Preserve request-local FastMCP state-store failures before it erases them.
+
+    FastMCP owns the prefixed/model wrappers layered over this store.  Wrapping
+    the one public ``client_storage`` input therefore covers its JTI mappings,
+    upstream token sets, refresh metadata, codes, transactions, and clients
+    without reaching into any private store.  Observation is inert outside
+    bearer verification, so endpoint operations keep their native exceptions.
+    """
+
+    def __init__(self, key_value: AsyncKeyValue) -> None:
+        self.key_value = key_value
+
+    @override
+    async def get(self, key: str, *, collection: str | None = None) -> dict[str, Any] | None:
+        try:
+            return await super().get(key, collection=collection)
+        except Exception as error:
+            observe_bearer_operational_failure(error)
+            raise
+
+    @override
+    async def get_many(self, keys: Sequence[str], *, collection: str | None = None) -> list[dict[str, Any] | None]:
+        try:
+            return await super().get_many(keys, collection=collection)
+        except Exception as error:
+            observe_bearer_operational_failure(error)
+            raise
+
+    @override
+    async def ttl(self, key: str, *, collection: str | None = None) -> tuple[dict[str, Any] | None, float | None]:
+        try:
+            return await super().ttl(key, collection=collection)
+        except Exception as error:
+            observe_bearer_operational_failure(error)
+            raise
+
+    @override
+    async def ttl_many(
+        self, keys: Sequence[str], *, collection: str | None = None
+    ) -> list[tuple[dict[str, Any] | None, float | None]]:
+        try:
+            return await super().ttl_many(keys, collection=collection)
+        except Exception as error:
+            observe_bearer_operational_failure(error)
+            raise
+
+    @override
+    async def put(
+        self, key: str, value: Mapping[str, Any], *, collection: str | None = None, ttl: SupportsFloat | None = None
+    ) -> None:
+        try:
+            await super().put(key, value, collection=collection, ttl=ttl)
+        except Exception as error:
+            observe_bearer_operational_failure(error)
+            raise
+
+    @override
+    async def put_many(
+        self,
+        keys: Sequence[str],
+        values: Sequence[Mapping[str, Any]],
+        *,
+        collection: str | None = None,
+        ttl: SupportsFloat | None = None,
+    ) -> None:
+        try:
+            await super().put_many(keys, values, collection=collection, ttl=ttl)
+        except Exception as error:
+            observe_bearer_operational_failure(error)
+            raise
+
+    @override
+    async def delete(self, key: str, *, collection: str | None = None) -> bool:
+        try:
+            return await super().delete(key, collection=collection)
+        except Exception as error:
+            observe_bearer_operational_failure(error)
+            raise
+
+    @override
+    async def delete_many(self, keys: Sequence[str], *, collection: str | None = None) -> int:
+        try:
+            return await super().delete_many(keys, collection=collection)
+        except Exception as error:
+            observe_bearer_operational_failure(error)
+            raise
+
+
+class FailureObservingJWTVerifier(JWTVerifier):
+    """Classify an upstream JWKS fetch failure without weakening JWT checks."""
+
+    @override
+    async def _fetch_jwks(self) -> dict[str, Any]:
+        try:
+            return await super()._fetch_jwks()
+        except Exception as error:
+            # JWTVerifier intentionally converts its fetch/parse failures to a
+            # clean non-match.  Record the operational cause before that catch.
+            observe_bearer_operational_failure(error)
+            raise
 
 
 class AgentGrantActivationUnavailableError(ToolError):
@@ -272,7 +378,7 @@ def observe_bearer_operational_failure(error: BaseException) -> None:
 def _bearer_authentication_error(connection: HTTPConnection, error: AuthenticationError) -> Response:
     """Return an explicit retryable response for a classified bearer outage."""
 
-    if isinstance(error, OAuthBearerVerificationUnavailableError):
+    if isinstance(error, BearerVerificationUnavailableError):
         return JSONResponse(
             {"error": "temporarily_unavailable", "error_description": error.detail},
             status_code=error.status_code,
@@ -298,13 +404,13 @@ class HakuFailurePreservingMultiAuth(MultiAuth):
         self._haku_sources: tuple[AuthProvider, ...] = (server, *verifiers)
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        unavailable: OAuthBearerVerificationUnavailableError | None = None
+        unavailable: BearerVerificationUnavailableError | None = None
         for source in self._haku_sources:
             try:
                 result = await source.verify_token(token)
                 if result is not None:
                     return result
-            except OAuthBearerVerificationUnavailableError as error:
+            except BearerVerificationUnavailableError as error:
                 unavailable = unavailable or error
             except Exception:
                 # Preserve FastMCP's normal independent-source fallthrough for
@@ -405,7 +511,7 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
             client_secret=client_secret,
             base_url=base_url,
             require_authorization_consent="external",
-            client_storage=client_storage,
+            client_storage=BearerFailureObservingKeyValue(client_storage),
         )
         self._principal_resolver: OidcPrincipalResolver = AuthentikOidcPrincipalResolver(
             expected_issuer=expected_issuer,
@@ -415,6 +521,26 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
             client_id=client_id,
         )
         self._grant_authority = grant_authority
+
+    @override
+    def get_token_verifier(
+        self,
+        *,
+        algorithm: str | None = None,
+        audience: str | None = None,
+        required_scopes: list[str] | None = None,
+        timeout_seconds: int | None = None,
+    ) -> TokenVerifier:
+        """Add failure observation without changing FastMCP's verifier policy."""
+
+        _ = timeout_seconds
+        return FailureObservingJWTVerifier(
+            jwks_uri=str(self.oidc_config.jwks_uri),
+            issuer=str(self.oidc_config.issuer),
+            algorithm=algorithm,
+            audience=audience,
+            required_scopes=required_scopes,
+        )
 
     async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
         client_id = _required_client_id(client.client_id)
@@ -568,7 +694,7 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
         except GrantRejectedError:
             return None
         except AgentGrantAuthorityUnavailableError as error:
-            raise OAuthBearerVerificationUnavailableError("Agent authorization is temporarily unavailable") from error
+            raise BearerVerificationUnavailableError("Agent authorization is temporarily unavailable") from error
 
         request_token = _GRANT_REQUEST_CONTEXT.set(
             GrantRequestContext(authorization=authorization, token_scopes=reference.scopes)
@@ -583,7 +709,7 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
 
         if validated is None:
             if observation.failure is not None:
-                raise OAuthBearerVerificationUnavailableError(
+                raise BearerVerificationUnavailableError(
                     "OAuth bearer verification is temporarily unavailable"
                 ) from observation.failure
             return None
@@ -603,7 +729,7 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
         except (GrantRejectedError, KeyError, TypeError, ValueError):
             return None
         except AgentGrantAuthorityUnavailableError as error:
-            raise OAuthBearerVerificationUnavailableError("Agent authorization is temporarily unavailable") from error
+            raise BearerVerificationUnavailableError("Agent authorization is temporarily unavailable") from error
 
         # Preserve the downstream client registration as audited binding
         # metadata only after Haku has resolved and authorized the grant.

@@ -15,6 +15,7 @@ py_library(
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//mcp",
+        "@pypi//py_key_value_aio",
         "@pypi//starlette",
     ],
 )

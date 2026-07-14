@@ -24,16 +24,18 @@ from haku.console.mcp_auth.fastmcp_adapter import (
     AgentGrantAuthorityUnavailableError,
     AuthorizationCorrelation,
     AuthorizationRequest,
+    BearerFailureObservingKeyValue,
+    BearerVerificationUnavailableError,
     ClientSoftwareSnapshot,
     DuplicateAuthorizationError,
     EnrollmentRejectedError,
     ExchangeAlreadyClaimedError,
+    FailureObservingJWTVerifier,
     GrantAuthorization,
     GrantRejectedError,
     HakuAgentGrantMiddleware,
     HakuAgentOAuthProxy,
     HakuFailurePreservingMultiAuth,
-    OAuthBearerVerificationUnavailableError,
     StaticToolCredentialDiscriminator,
     TokenFamilyEvidence,
     assert_fastmcp_adapter_compatibility,
@@ -163,8 +165,12 @@ def test_proxy_builds_principal_resolver_from_fastmcp_discovery() -> None:
         jwks_uri="https://auth.example.test/application/o/haku/jwks/",
         id_token_signing_alg_values_supported=["RS256"],
     )
+    client_storage = object()
+
+    constructor: dict[str, object] = {}
 
     def initialize(proxy: HakuAgentOAuthProxy, **kwargs: object) -> None:
+        constructor.update(kwargs)
         assert kwargs["config_url"] == "https://auth.example.test/application/o/haku/.well-known/openid-configuration"
         cast(Any, proxy).oidc_config = oidc_config
 
@@ -180,7 +186,7 @@ def test_proxy_builds_principal_resolver_from_fastmcp_discovery() -> None:
             client_id="upstream-client",
             client_secret="upstream-secret",
             base_url="https://haku.example.test/",
-            client_storage=cast(Any, object()),
+            client_storage=cast(Any, client_storage),
             expected_issuer="https://auth.example.test/application/o/haku/",
             grant_authority=cast(Any, _authority()),
         )
@@ -192,7 +198,29 @@ def test_proxy_builds_principal_resolver_from_fastmcp_discovery() -> None:
         signing_algorithms=["RS256"],
         client_id="upstream-client",
     )
+    storage = cast(BearerFailureObservingKeyValue, constructor["client_storage"])
+    assert cast(Any, storage).key_value is client_storage
+    assert "token_verifier" not in constructor
     assert cast(Any, proxy)._principal_resolver is resolver
+
+
+def test_proxy_verifier_hook_preserves_fastmcp_configuration() -> None:
+    proxy = object.__new__(HakuAgentOAuthProxy)
+    cast(Any, proxy).oidc_config = SimpleNamespace(
+        issuer="https://auth.example.test/application/o/haku/",
+        jwks_uri="https://auth.example.test/application/o/haku/jwks/",
+    )
+
+    verifier = proxy.get_token_verifier(
+        algorithm="ES256", audience="api-audience", required_scopes=["read"], timeout_seconds=13
+    )
+
+    assert isinstance(verifier, FailureObservingJWTVerifier)
+    assert verifier.jwks_uri == "https://auth.example.test/application/o/haku/jwks/"
+    assert verifier.issuer == "https://auth.example.test/application/o/haku/"
+    assert verifier.algorithm == "ES256"
+    assert verifier.audience == "api-audience"
+    assert verifier.required_scopes == ["read"]
 
 
 async def test_authorize_reserves_only_after_fastmcp_accepts_public_inputs() -> None:
@@ -273,6 +301,28 @@ async def test_code_exchange_creates_grant_context_and_records_family_receipt() 
     authority.record_token_family.assert_awaited_once_with(
         grant_id=GRANT_ID, evidence=TokenFamilyEvidence(access_jti="access-jti", refresh_jti="refresh-jti")
     )
+
+
+async def test_code_exchange_resets_issuance_context_when_fastmcp_raises() -> None:
+    proxy = _bare_proxy()
+    state = cast(Any, proxy)
+    idp_tokens = {"access_token": "upstream", "token_type": "Bearer", "scope": "read"}
+    state._code_store.get.return_value = SimpleNamespace(client_id=CLIENT_ID, idp_tokens=idp_tokens)
+
+    async def fail_during_issuance(self: HakuAgentOAuthProxy, client: object, authorization_code: object) -> OAuthToken:
+        _ = client, authorization_code
+        assert await self._extract_upstream_claims(idp_tokens) == {"grant_id": str(GRANT_ID)}
+        raise RuntimeError("FastMCP issuance failed")
+
+    with (
+        patch.object(RetryableRefreshOIDCProxy, "exchange_authorization_code", new=fail_during_issuance),
+        pytest.raises(RuntimeError, match="issuance failed"),
+    ):
+        await proxy.exchange_authorization_code(cast(Any, _client()), cast(Any, _code()))
+
+    with pytest.raises(TokenError) as exc_info:
+        await proxy._extract_upstream_claims(idp_tokens)
+    assert exc_info.value.error == "invalid_grant"
 
 
 @pytest.mark.parametrize("failure", [InvalidOidcPrincipalError(), EnrollmentRejectedError()])
@@ -465,29 +515,93 @@ async def test_transparent_refresh_transport_failure_survives_fastmcp_blanket_ca
     with (
         patch.object(RetryableRefreshOIDCProxy, "_try_transparent_refresh", new=fastmcp_try),
         patch.object(RetryableRefreshOIDCProxy, "load_access_token", new=fastmcp_load),
-        pytest.raises(OAuthBearerVerificationUnavailableError) as exc_info,
+        pytest.raises(BearerVerificationUnavailableError) as exc_info,
     ):
         await proxy.load_access_token("local-access")
 
     assert exc_info.value.__cause__ is upstream_failure
 
 
-async def test_storage_adapter_can_preserve_classified_failure_through_request_context() -> None:
+async def test_storage_wrapper_preserves_failure_through_fastmcp_blanket_catch() -> None:
     proxy = _bare_proxy()
     _install_token_payloads(proxy, {"local-access": _payload(jti="access-jti")})
     storage_failure = RuntimeError("Postgres temporarily unavailable")
+    backend = SimpleNamespace(get=AsyncMock(side_effect=storage_failure))
+    storage = BearerFailureObservingKeyValue(cast(Any, backend))
 
     async def swallowed(self: object, token: str) -> None:
         _ = self, token
-        observe_bearer_operational_failure(storage_failure)
+        try:
+            await storage.get("access-jti", collection="oauth")
+        except RuntimeError:
+            # FastMCP's state model wrappers convert this failure to a miss.
+            return
+        raise AssertionError("storage access was expected to fail")
 
     with (
         patch.object(RetryableRefreshOIDCProxy, "load_access_token", new=swallowed),
-        pytest.raises(OAuthBearerVerificationUnavailableError) as exc_info,
+        pytest.raises(BearerVerificationUnavailableError) as exc_info,
     ):
         await proxy.load_access_token("local-access")
 
     assert exc_info.value.__cause__ is storage_failure
+    backend.get.assert_awaited_once_with(collection="oauth", key="access-jti")
+
+    # The observation belongs only to that bearer request.
+    with patch.object(RetryableRefreshOIDCProxy, "load_access_token", new=AsyncMock(return_value=None)):
+        assert await proxy.load_access_token("local-access") is None
+
+
+async def test_jwks_verifier_preserves_fetch_failure_through_fastmcp_non_match() -> None:
+    proxy = _bare_proxy()
+    _install_token_payloads(proxy, {"local-access": _payload(jti="access-jti")})
+    jwks_failure = httpx.ConnectError(
+        "JWKS endpoint unavailable", request=httpx.Request("GET", "https://auth.example.test/jwks/")
+    )
+    http_client = AsyncMock(spec=httpx.AsyncClient)
+    http_client.get.side_effect = jwks_failure
+    verifier = FailureObservingJWTVerifier(
+        jwks_uri="https://auth.example.test/jwks/",
+        issuer="https://auth.example.test/",
+        audience=CLIENT_ID,
+        algorithm="RS256",
+        http_client=cast(Any, http_client),
+    )
+
+    async def swallowed(self: object, token: str) -> None:
+        _ = self, token
+        # A valid header reaches JWKS lookup; JWTVerifier then deliberately
+        # converts its operational ValueError into a clean verifier non-match.
+        assert await verifier.verify_token("eyJhbGciOiJSUzI1NiIsImtpZCI6ImtleSJ9.e30.signature") is None
+
+    with (
+        patch.object(RetryableRefreshOIDCProxy, "load_access_token", new=swallowed),
+        pytest.raises(BearerVerificationUnavailableError) as exc_info,
+    ):
+        await proxy.load_access_token("local-access")
+
+    assert exc_info.value.__cause__ is jwks_failure
+
+
+async def test_bearer_request_contexts_reset_when_fastmcp_raises() -> None:
+    proxy = _bare_proxy()
+    _install_token_payloads(proxy, {"local-access": _payload(jti="access-jti")})
+
+    async def fail_during_verification(self: object, token: str) -> None:
+        _ = self, token
+        assert current_grant_request_context() is not None
+        raise RuntimeError("FastMCP verification failed")
+
+    with (
+        patch.object(RetryableRefreshOIDCProxy, "load_access_token", new=fail_during_verification),
+        pytest.raises(RuntimeError, match="verification failed"),
+    ):
+        await proxy.load_access_token("local-access")
+
+    assert current_grant_request_context() is None
+    observe_bearer_operational_failure(RuntimeError("outside any bearer request"))
+    with patch.object(RetryableRefreshOIDCProxy, "load_access_token", new=AsyncMock(return_value=None)):
+        assert await proxy.load_access_token("local-access") is None
 
 
 async def test_successful_fastmcp_recovery_wins_over_observed_transient_attempt() -> None:
@@ -510,7 +624,7 @@ async def test_successful_fastmcp_recovery_wins_over_observed_transient_attempt(
 
 
 async def test_failure_preserving_multi_auth_still_allows_later_static_match() -> None:
-    outage = OAuthBearerVerificationUnavailableError("OAuth state is unavailable")
+    outage = BearerVerificationUnavailableError("OAuth state is unavailable")
     oauth = _TestVerifier(failure=outage)
     static_token = _verified_access_token(claims={"credential_kind": "static"})
     static = _TestVerifier(result=static_token)
@@ -522,13 +636,13 @@ async def test_failure_preserving_multi_auth_still_allows_later_static_match() -
 
 
 async def test_failure_preserving_multi_auth_rethrows_only_classified_outage_after_fallthrough() -> None:
-    outage = OAuthBearerVerificationUnavailableError("OAuth state is unavailable")
+    outage = BearerVerificationUnavailableError("OAuth state is unavailable")
     auth = HakuFailurePreservingMultiAuth(
         server=_TestVerifier(failure=outage),
         verifiers=[_TestVerifier(failure=RuntimeError("unrelated verifier failure")), _TestVerifier()],
     )
 
-    with pytest.raises(OAuthBearerVerificationUnavailableError) as exc_info:
+    with pytest.raises(BearerVerificationUnavailableError) as exc_info:
         await auth.verify_token("credential")
     assert exc_info.value is outage
     assert exc_info.value.status_code == 503
@@ -551,7 +665,7 @@ def test_failure_preserving_multi_auth_delegates_routes_and_renders_retryable_re
 
     authentication = auth.get_middleware()[0]
     on_error = cast(Any, authentication.kwargs["on_error"])
-    response = on_error(cast(Any, object()), OAuthBearerVerificationUnavailableError("retry later"))
+    response = on_error(cast(Any, object()), BearerVerificationUnavailableError("retry later"))
     assert response.status_code == 503
     assert response.headers["retry-after"] == "60"
 
@@ -754,6 +868,9 @@ async def test_missing_or_malformed_tool_call_claims_fail_before_authority_and_d
 def test_fastmcp_344_surface_and_adapter_containment_are_pinned() -> None:
     assert_fastmcp_adapter_compatibility()
     assert issubclass(HakuAgentOAuthProxy, RetryableRefreshOIDCProxy)
+    assert inspect.signature(HakuAgentOAuthProxy.get_token_verifier) == inspect.signature(
+        RetryableRefreshOIDCProxy.get_token_verifier
+    )
     source = inspect.getsource(HakuAgentOAuthProxy)
     assert source.count("self._code_store.") == 2
     for forbidden in (
