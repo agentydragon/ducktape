@@ -17,7 +17,7 @@ from fastmcp.server.auth.auth import AccessToken, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.oidc_proxy import OIDCConfiguration, OIDCProxy
 from glide_shared.exceptions import TimeoutError as GlideTimeoutError
-from mcp.server.auth.provider import RefreshToken, TokenError
+from mcp.server.auth.provider import TokenError
 from prometheus_client import REGISTRY
 from starlette.exceptions import HTTPException
 from tenacity import wait_none
@@ -462,36 +462,6 @@ def _http_error(status: int) -> httpx.HTTPStatusError:
 
 def _failures(outcome: str) -> float:
     return REGISTRY.get_sample_value("mcp_auth_upstream_refresh_failures_total", {"outcome": outcome}) or 0.0
-
-
-async def test_fastmcp_upstream_refresh_preserves_transport_error_cause(proxy: ResilientOIDCProxy) -> None:
-    """Exercise FastMCP's real superclass path that our retry policy depends on."""
-    upstream_url = "https://auth.example.com/application/o/token/"
-    upstream_request = httpx.Request("POST", upstream_url)
-    upstream_failure = httpx.ConnectError("temporary DNS failure", request=upstream_request)
-    state = cast(Any, proxy)
-    state._jwt_issuer = SimpleNamespace(verify_token=Mock(return_value={"jti": "refresh-jti"}))
-    state._jti_mapping_store = AsyncMock()
-    state._jti_mapping_store.get.return_value = SimpleNamespace(upstream_token_id="upstream-token-id")
-    state._upstream_token_store = AsyncMock()
-    state._upstream_token_store.get.return_value = SimpleNamespace(refresh_token="authentik-refresh-token")
-    state._upstream_token_endpoint = upstream_url
-    state._extra_token_params = {}
-    upstream_client = AsyncMock()
-    upstream_client.refresh_token.side_effect = upstream_failure
-    refresh_token = RefreshToken(token="fastmcp-refresh", client_id="client-id", scopes=["openid"])
-
-    with (
-        patch.object(proxy, "_create_upstream_oauth_client", return_value=upstream_client),
-        pytest.raises(TokenError) as exc_info,
-    ):
-        await OIDCProxy.exchange_refresh_token(proxy, AsyncMock(), refresh_token, ["openid"])
-
-    assert exc_info.value.error == "invalid_grant"
-    assert exc_info.value.__cause__ is upstream_failure
-    upstream_client.refresh_token.assert_awaited_once_with(
-        url=upstream_url, refresh_token="authentik-refresh-token", scope="openid"
-    )
 
 
 async def test_resilient_proxy_transient_5xx_becomes_503(proxy: ResilientOIDCProxy) -> None:

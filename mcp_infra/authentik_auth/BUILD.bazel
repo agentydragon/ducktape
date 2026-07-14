@@ -80,3 +80,17 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_fastmcp_compatibility",
+    srcs = ["test_fastmcp_compatibility.py"],
+    deps = [
+        ":conftest",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
