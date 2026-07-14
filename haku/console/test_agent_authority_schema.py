@@ -1,4 +1,8 @@
-"""Postgres acceptance tests for the canonical Agent authority schema."""
+"""Postgres acceptance tests for the canonical Agent authority schema.
+
+Raw SQL is intentional here: this suite exercises migration states, physical PostgreSQL
+schema objects, deferred constraints, triggers, and invalid rows rather than domain setup.
+"""
 
 from __future__ import annotations
 

@@ -669,6 +669,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        ":database_schema",
         ":mcp_approval",
         ":mcp_config",
         ":operator_identity",
@@ -676,10 +677,12 @@ py_test(
         ":tool_call_actor",
         ":tool_call_service",
         "//:conftest",
+        "//haku/console/agents:models",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 

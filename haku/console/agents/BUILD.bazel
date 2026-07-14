@@ -65,6 +65,7 @@ py_test(
         ":enrollment",
         "//:conftest",
         "//haku/console:database_migrate",
+        "//haku/console:database_schema",
         "//haku/console:operator_identity",
         "//haku/console:operator_identity_store",
         "//haku/console/mcp_auth:fastmcp_adapter",

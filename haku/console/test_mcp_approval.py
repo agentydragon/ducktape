@@ -36,7 +36,14 @@ from haku.console.agents.models import (
     EnrollmentPhase,
 )
 from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC, csrf_token, write_config
-from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow, metadata
+from haku.console.database_schema import (
+    McpOperatorOAuthAssociation,
+    McpOperatorOAuthFlow,
+    McpToolCall,
+    McpToolCallPrincipal,
+    Operator,
+    metadata,
+)
 from haku.console.mcp_approval import (
     AliveServerMetadata,
     McpMetadataProvider,
@@ -419,11 +426,11 @@ def _operator_id(db_url: str, external_user_key: str) -> UUID:
 
 
 def _disable_operator(engine: Engine, operator_id: UUID) -> None:
-    with engine.begin() as connection:
-        connection.execute(
-            text("UPDATE operators SET status = 'disabled', updated_at = now() WHERE operator_id = :operator_id"),
-            {"operator_id": operator_id},
-        )
+    with sessionmaker(engine)() as session, session.begin():
+        operator = session.get(Operator, operator_id)
+        assert operator is not None
+        operator.status = OperatorStatus.DISABLED
+        operator.updated_at = datetime.datetime.now(datetime.UTC)
 
 
 def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID]:
@@ -756,30 +763,19 @@ async def test_operator_oauth_refresh_does_not_overwrite_concurrent_reconnect(
 
         async def refresh_after_reconnect(_association: object) -> OAuthToken:
             replacement_expires_at = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1)
-            with engine.begin() as connection:
-                connection.execute(
-                    text(
-                        """
-                        UPDATE mcp_operator_oauth_associations
-                        SET association_id = :association_id,
-                            token_revision = 0,
-                            created_at = now(),
-                            updated_at = now(),
-                            client_id = 'replacement-client',
-                            token_endpoint = 'https://replacement-auth.test/token',
-                            access_token = 'replacement-access-token',
-                            refresh_token = 'replacement-refresh-token',
-                            token_expires_at = :token_expires_at
-                        WHERE server_id = :server_id AND operator_id = :operator_id
-                        """
-                    ),
-                    {
-                        "association_id": replacement_association_id,
-                        "token_expires_at": replacement_expires_at,
-                        "server_id": server.id,
-                        "operator_id": operator_id,
-                    },
-                )
+            with sessionmaker(engine)() as session, session.begin():
+                association = session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
+                assert association is not None
+                replacement_now = datetime.datetime.now(datetime.UTC)
+                association.association_id = replacement_association_id
+                association.token_revision = 0
+                association.created_at = replacement_now
+                association.updated_at = replacement_now
+                association.client_id = "replacement-client"
+                association.token_endpoint = "https://replacement-auth.test/token"
+                association.access_token = "replacement-access-token"
+                association.refresh_token = "replacement-refresh-token"
+                association.token_expires_at = replacement_expires_at
             return OAuthToken(
                 access_token="stale-refresh-result", refresh_token="stale-rotated-refresh-token", expires_in=3600
             )
@@ -1534,23 +1530,18 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
                 .mappings()
                 .all()
             }
-            row = cast(
-                dict[str, Any],
-                conn.execute(
-                    text(
-                        """
-                        SELECT principal.operator_id, call.server_id, call.tool_name, call.status,
-                               call.arguments_json, call.result_json
-                        FROM mcp_tool_calls AS call
-                        JOIN mcp_tool_call_principals AS principal USING (tool_call_id)
-                        WHERE call.tool_call_id = :tool_call_id
-                        """
-                    ),
-                    {"tool_call_id": submitted["tool_call_id"]},
-                )
-                .mappings()
-                .one(),
-            )
+        with sessionmaker(engine)() as session:
+            persisted_call = session.get(McpToolCall, submitted["tool_call_id"])
+            persisted_principal = session.get(McpToolCallPrincipal, submitted["tool_call_id"])
+            assert persisted_call is not None
+            assert persisted_principal is not None
+            assert persisted_principal.operator_id == _operator_id(db_url, "operator-sub")
+            assert persisted_call.server_id == "smoke"
+            assert persisted_call.tool_name == "echo"
+            assert persisted_call.status is ToolCallStatus.OK
+            assert persisted_call.arguments_json == {"text": "world"}
+            assert persisted_call.result_json is not None
+            assert persisted_call.result_json["content"][0]["text"] == "echo:world"
     finally:
         engine.dispose()
 
@@ -1592,12 +1583,6 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
         "approved_at",
     } == columns
     assert principal_columns == {"tool_call_id", "operator_id", "binding_id"}
-    assert row["operator_id"] == _operator_id(db_url, "operator-sub")
-    assert row["server_id"] == "smoke"
-    assert row["tool_name"] == "echo"
-    assert row["status"] == "ok"
-    assert row["arguments_json"] == {"text": "world"}
-    assert row["result_json"]["content"][0]["text"] == "echo:world"
 
 
 def test_0007_deletes_unowned_history_and_is_forward_only(db_url: str) -> None:

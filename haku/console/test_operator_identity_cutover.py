@@ -1,4 +1,8 @@
-"""Acceptance tests for the one-way canonical Operator identity cutover."""
+"""Acceptance tests for the one-way canonical Operator identity cutover.
+
+Raw SQL is intentional in the migration cases below: those tests seed historical schemas
+and inspect physical post-cutover state that the current ORM cannot represent.
+"""
 
 from __future__ import annotations
 
@@ -9,14 +13,16 @@ import pytest
 import pytest_bazel
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, func, select, text
+from sqlalchemy.orm import Session
 
 from haku.console.config import OperatorIdentityConfig
 from haku.console.database_migrate import apply_migrations
-from haku.console.database_schema import metadata
+from haku.console.database_schema import IdentityAnchor, OidcIdentity, Operator, metadata
 from haku.console.operator_identity import (
     InactiveOperatorError,
     OperatorIdentityTrust,
+    OperatorStatus,
     UntrustedOidcIssuerError,
     VerifiedExternalIdentity,
 )
@@ -85,10 +91,10 @@ def test_concurrent_first_contact_creates_one_operator_and_anchor(migrated_db_ur
     assert len({identity_id for _, identity_id in results}) == 2
     engine = create_engine(migrated_db_url)
     try:
-        with engine.connect() as conn:
-            assert conn.execute(text("SELECT count(*) FROM operators")).scalar_one() == 1
-            assert conn.execute(text("SELECT count(*) FROM identity_anchors")).scalar_one() == 1
-            assert conn.execute(text("SELECT count(*) FROM oidc_identities")).scalar_one() == 2
+        with Session(engine) as session:
+            assert session.execute(select(func.count()).select_from(Operator)).scalar_one() == 1
+            assert session.execute(select(func.count()).select_from(IdentityAnchor)).scalar_one() == 1
+            assert session.execute(select(func.count()).select_from(OidcIdentity)).scalar_one() == 2
     finally:
         engine.dispose()
 
@@ -100,11 +106,10 @@ def test_disabled_operator_invalidates_session_static_and_resolution_paths(migra
     )
     engine = create_engine(migrated_db_url)
     try:
-        with engine.begin() as conn:
-            conn.execute(
-                text("UPDATE operators SET status = 'disabled' WHERE operator_id = :operator_id"),
-                {"operator_id": identity.operator_id},
-            )
+        with Session(engine) as session, session.begin():
+            operator = session.get(Operator, identity.operator_id)
+            assert operator is not None
+            operator.status = OperatorStatus.DISABLED
     finally:
         engine.dispose()
 

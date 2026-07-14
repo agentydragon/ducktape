@@ -14,9 +14,12 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
+from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
 from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC, console_settings, write_config
+from haku.console.database_schema import Agent, AgentNameReservation, CredentialBinding, StaticCredential
 from haku.console.mcp_approval import PostgresToolCallLedger
 from haku.console.mcp_config import McpServerEntry, McpServerNotFoundError
 from haku.console.operator_identity import OperatorIdentityTrust
@@ -118,63 +121,54 @@ def _actors(database_url: str) -> dict[str, ToolCallActor]:
         now = datetime.datetime.now(datetime.UTC)
         engine = create_engine(database_url)
         try:
-            with engine.begin() as connection:
-                connection.execute(
-                    text(
-                        """
-                        INSERT INTO agents (
-                            agent_id, owner_operator_id, current_name_reservation_id, status,
-                            created_at, updated_at, activated_at
-                        ) VALUES (
-                            :agent_id, :operator_id, :reservation_id, 'active', :now, :now, :now
-                        )
-                        """
-                    ),
-                    {"agent_id": agent_id, "operator_id": operator_id, "reservation_id": reservation_id, "now": now},
+            with Session(engine) as session, session.begin():
+                # These mutually-referencing rows use deferred foreign keys; flushing the Agent first
+                # mirrors the production lifecycle while keeping the fixture entirely in the ORM.
+                session.add(
+                    Agent(
+                        agent_id=agent_id,
+                        owner_operator_id=operator_id,
+                        current_name_reservation_id=reservation_id,
+                        status=AgentStatus.ACTIVE,
+                        created_at=now,
+                        updated_at=now,
+                        activated_at=now,
+                    )
                 )
-                connection.execute(
-                    text(
-                        """
-                        INSERT INTO agent_name_reservations (
-                            reservation_id, display_name, display_name_key, agent_id,
-                            created_at, activated_at
-                        ) VALUES (
-                            :reservation_id, :name, :name, :agent_id, :now, :now
-                        )
-                        """
-                    ),
-                    {"reservation_id": reservation_id, "name": name, "agent_id": agent_id, "now": now},
-                )
-                connection.execute(
-                    text(
-                        """
-                        INSERT INTO credential_bindings (
-                            binding_id, agent_id, kind, status, generation,
-                            created_at, updated_at, issued_at, activated_at
-                        ) VALUES (
-                            :binding_id, :agent_id, 'static', 'active', 1,
-                            :now, :now, :now, :now
-                        )
-                        """
-                    ),
-                    {"binding_id": binding_id, "agent_id": agent_id, "now": now},
-                )
-                connection.execute(
-                    text(
-                        """
-                        INSERT INTO static_credentials (
-                            binding_id, secret_reference, credential_fingerprint, created_at
-                        ) VALUES (
-                            :binding_id, :secret_reference, :credential_fingerprint, :now
-                        )
-                        """
-                    ),
-                    {
-                        "binding_id": binding_id,
-                        "secret_reference": f"test-tool-call-service/{binding_id}",
-                        "credential_fingerprint": hashlib.sha256(binding_id.bytes).digest(),
-                        "now": now,
-                    },
+                session.flush()
+                session.add_all(
+                    [
+                        AgentNameReservation(
+                            reservation_id=reservation_id,
+                            display_name=name,
+                            display_name_key=name,
+                            originating_interaction_id=None,
+                            pending_interaction_id=None,
+                            agent_id=agent_id,
+                            created_at=now,
+                            activated_at=now,
+                        ),
+                        CredentialBinding(
+                            binding_id=binding_id,
+                            agent_id=agent_id,
+                            kind=CredentialKind.STATIC,
+                            status=CredentialBindingStatus.ACTIVE,
+                            generation=1,
+                            supersedes_binding_id=None,
+                            created_at=now,
+                            updated_at=now,
+                            issued_at=now,
+                            activated_at=now,
+                            ended_at=None,
+                            end_reason=None,
+                        ),
+                        StaticCredential(
+                            binding_id=binding_id,
+                            secret_reference=f"test-tool-call-service/{binding_id}",
+                            credential_fingerprint=hashlib.sha256(binding_id.bytes).digest(),
+                            created_at=now,
+                        ),
+                    ]
                 )
         finally:
             engine.dispose()
@@ -512,17 +506,14 @@ async def test_binding_revoked_after_execution_authorization_does_not_strand_run
     assert ledger.authorize_execution(record.tool_call_id, actor=agent) == agent.operator_id
     engine = create_engine(migrated_db_url)
     try:
-        with engine.begin() as connection:
-            connection.execute(
-                text(
-                    """
-                    UPDATE credential_bindings
-                    SET status = 'revoked', updated_at = now(), ended_at = now(), end_reason = 'test revocation'
-                    WHERE binding_id = :binding_id
-                    """
-                ),
-                {"binding_id": agent.binding_id},
-            )
+        with Session(engine) as session, session.begin():
+            binding = session.get(CredentialBinding, agent.binding_id)
+            assert binding is not None
+            now = datetime.datetime.now(datetime.UTC)
+            binding.status = CredentialBindingStatus.REVOKED
+            binding.updated_at = now
+            binding.ended_at = now
+            binding.end_reason = "test revocation"
     finally:
         engine.dispose()
 

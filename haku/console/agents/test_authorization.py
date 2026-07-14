@@ -6,6 +6,8 @@ import asyncio
 import datetime
 import re
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
@@ -13,8 +15,9 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event, func, select, text
 from sqlalchemy.exc import IntegrityError, TimeoutError as SQLAlchemyTimeoutError
+from sqlalchemy.orm import Session
 
 from haku.console.agents.authorization import (
     PostgresAgentAuthority,
@@ -30,7 +33,17 @@ from haku.console.agents.enrollment import (
     EnrollmentDecisionConflictError,
     ReconnectAgentDecision,
 )
+from haku.console.agents.models import AgentStatus, CredentialBindingStatus, EnrollmentPhase
 from haku.console.database_migrate import apply_migrations
+from haku.console.database_schema import (
+    Agent,
+    AgentNameReservation,
+    AuthorizationGrant,
+    CredentialBinding,
+    EnrollmentInteraction,
+    Operator,
+    StaticCredential,
+)
 from haku.console.mcp_auth.fastmcp_adapter import (
     AgentGrantAuthorityUnavailableError,
     AuthorizationCorrelation,
@@ -41,7 +54,12 @@ from haku.console.mcp_auth.fastmcp_adapter import (
     GrantRejectedError,
     TokenFamilyEvidence,
 )
-from haku.console.operator_identity import OperatorIdentityTrust, ResolvedOperatorIdentity, VerifiedExternalIdentity
+from haku.console.operator_identity import (
+    OperatorIdentityTrust,
+    OperatorStatus,
+    ResolvedOperatorIdentity,
+    VerifiedExternalIdentity,
+)
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
 from util.testing.postgres import force_drop_database_sync
@@ -53,6 +71,57 @@ _BROWSER_ISSUER = "https://auth.test/browser/"
 _MCP_ISSUER = "https://auth.test/mcp/"
 _CLIENT_ID = "claude-test-client"
 _REDIRECT_URI = "https://claude.test/oauth/callback"
+
+
+@contextmanager
+def _orm_session(database_url: str) -> Iterator[Session]:
+    engine = create_engine(database_url)
+    try:
+        with Session(engine) as session:
+            yield session
+    finally:
+        engine.dispose()
+
+
+@dataclass(frozen=True)
+class PersistedGrantState:
+    interaction: EnrollmentInteraction
+    binding: CredentialBinding
+    agent: Agent
+
+
+def _grant_state(session: Session, grant_id: UUID) -> PersistedGrantState:
+    grant = session.get(AuthorizationGrant, grant_id)
+    assert grant is not None
+    interaction = session.get(EnrollmentInteraction, grant.enrollment_interaction_id)
+    binding = session.get(CredentialBinding, grant.binding_id)
+    assert interaction is not None
+    assert binding is not None
+    agent = session.get(Agent, binding.agent_id)
+    assert agent is not None
+    return PersistedGrantState(interaction=interaction, binding=binding, agent=agent)
+
+
+@dataclass(frozen=True)
+class PersistedInteractionState:
+    phase: EnrollmentPhase
+    browser_binding_digest: bytes | None
+    pending_name_count: int
+
+
+def _interaction_state(session: Session, interaction_id: UUID) -> PersistedInteractionState:
+    interaction = session.get(EnrollmentInteraction, interaction_id)
+    assert interaction is not None
+    pending_name_count = session.execute(
+        select(func.count())
+        .select_from(AgentNameReservation)
+        .where(AgentNameReservation.pending_interaction_id == interaction_id)
+    ).scalar_one()
+    return PersistedInteractionState(
+        phase=interaction.phase,
+        browser_binding_digest=interaction.browser_binding_digest,
+        pending_name_count=pending_name_count,
+    )
 
 
 @dataclass
@@ -82,13 +151,11 @@ class DisableAfterPrincipalResolutionIdentityStore(PostgresOperatorIdentityStore
 
     def resolve_verified_identity(self, identity: VerifiedExternalIdentity) -> ResolvedOperatorIdentity:
         resolved = super().resolve_verified_identity(identity)
-        engine = create_engine(self._test_database_url)
-        with engine.begin() as conn:
-            conn.execute(
-                text("UPDATE operators SET status = 'disabled', updated_at = now() WHERE operator_id = :operator_id"),
-                {"operator_id": resolved.operator_id},
-            )
-        engine.dispose()
+        with _orm_session(self._test_database_url) as session, session.begin():
+            operator = session.get(Operator, resolved.operator_id)
+            assert operator is not None
+            operator.status = OperatorStatus.DISABLED
+            operator.updated_at = datetime.datetime.now(datetime.UTC)
         return resolved
 
 
@@ -115,6 +182,7 @@ def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Any:
     db_name = f"{base or 'agent_authority'}_{suffix}"
     admin_engine = create_engine(postgres_admin_url, isolation_level="AUTOCOMMIT")
     with admin_engine.connect() as conn:
+        # PostgreSQL database creation is administrative DDL performed before any mapped schema exists.
         conn.execute(text(f'CREATE DATABASE "{db_name}"'))
     admin_engine.dispose()
     url = postgres_admin_url.rsplit("/", 1)[0] + f"/{db_name}"
@@ -270,37 +338,23 @@ async def test_create_decision_is_idempotent_and_grant_activates_then_revokes(db
             grant_id=grant.grant_id, client_id=_CLIENT_ID, requested_scopes=frozenset({"tools:call"})
         )
 
-    engine = create_engine(db_url)
-    with engine.connect() as conn:
-        row = conn.execute(
-            text(
-                """
-                SELECT interaction.browser_nonce_digest, interaction.browser_binding_digest,
-                       interaction.decision_digest, interaction.phase::TEXT,
-                       binding.status::TEXT AS binding_status,
-                       agent.status::TEXT AS agent_status
-                FROM authorization_grants AS auth_grant
-                JOIN enrollment_interactions AS interaction
-                  ON interaction.interaction_id = auth_grant.enrollment_interaction_id
-                JOIN credential_bindings AS binding ON binding.binding_id = auth_grant.binding_id
-                JOIN agents AS agent ON agent.agent_id = binding.agent_id
-                WHERE auth_grant.grant_id = :grant_id
-                """
-            ),
-            {"grant_id": grant.grant_id},
-        ).one()
-    with pytest.raises(IntegrityError), engine.begin() as conn:
-        conn.execute(
-            text("UPDATE agents SET status = 'active' WHERE agent_id = :agent_id"),
-            {"agent_id": activated.actor.agent_id},
-        )
-    engine.dispose()
-    assert row.browser_nonce_digest is None
-    assert row.browser_binding_digest is None
-    assert row.phase == "completed"
-    assert row.binding_status == "revoked"
-    assert row.agent_status == "disabled"
-    assert row.decision_digest not in {form_token.encode(), b"browser-secret-1", b"browser-secret-2"}
+    with _orm_session(db_url) as session:
+        state = _grant_state(session, grant.grant_id)
+        decision_digest = state.interaction.decision_digest
+        assert state.interaction.browser_nonce_digest is None
+        assert state.interaction.browser_binding_digest is None
+        assert state.interaction.phase is EnrollmentPhase.COMPLETED
+        assert state.binding.status is CredentialBindingStatus.REVOKED
+        assert state.agent.status is AgentStatus.DISABLED
+
+    with _orm_session(db_url) as session:
+        disabled_agent = session.get(Agent, activated.actor.agent_id)
+        assert disabled_agent is not None
+        disabled_agent.status = AgentStatus.ACTIVE
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+    assert decision_digest not in {form_token.encode(), b"browser-secret-1", b"browser-secret-2"}
 
 
 async def test_activation_timeout_abandons_new_agent_but_only_expires_reconnect(db_url: str) -> None:
@@ -315,13 +369,7 @@ async def test_activation_timeout_abandons_new_agent_but_only_expires_reconnect(
     active = await _create_grant(harness, label="active", display_name="Reconnectable", activate=True)
     request = _request("reconnect-timeout")
     interaction_id, form_token = await _open(harness, request)
-    engine = create_engine(db_url)
-    with engine.connect() as conn:
-        agent_id = conn.execute(
-            text("SELECT agent_id FROM credential_bindings WHERE binding_id = :binding_id"),
-            {"binding_id": active.actor.binding_id},
-        ).scalar_one()
-    reconnect_decision = ReconnectAgentDecision(form_token=form_token, agent_id=agent_id)
+    reconnect_decision = ReconnectAgentDecision(form_token=form_token, agent_id=active.actor.agent_id)
     first = await harness.authority.decide(
         interaction_id=interaction_id,
         browser=harness.browser,
@@ -349,42 +397,15 @@ async def test_activation_timeout_abandons_new_agent_but_only_expires_reconnect(
             grant_id=replacement.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
         )
 
-    with engine.connect() as conn:
-        rows = conn.execute(
-            text(
-                """
-                SELECT binding_id, status::TEXT FROM credential_bindings
-                WHERE binding_id IN (:initial, :active, :replacement)
-                ORDER BY binding_id
-                """
-            ),
-            {
-                "initial": initial.actor.binding_id,
-                "active": active.actor.binding_id,
-                "replacement": replacement.actor.binding_id,
-            },
-        ).all()
-        statuses = {row.binding_id: row.status for row in rows}
-        agent_statuses: dict[UUID, str] = {
-            row.binding_id: row.agent_status
-            for row in conn.execute(
-                text(
-                    """
-                    SELECT binding.binding_id, agent.status::TEXT AS agent_status
-                    FROM credential_bindings AS binding
-                    JOIN agents AS agent ON agent.agent_id = binding.agent_id
-                    WHERE binding.binding_id IN (:initial, :active)
-                    """
-                ),
-                {"initial": initial.actor.binding_id, "active": active.actor.binding_id},
-            )
-        }
-    engine.dispose()
-    assert statuses[initial.actor.binding_id] == "expired"
-    assert agent_statuses[initial.actor.binding_id] == "abandoned"
-    assert statuses[active.actor.binding_id] == "active"
-    assert statuses[replacement.actor.binding_id] == "expired"
-    assert agent_statuses[active.actor.binding_id] == "active"
+    with _orm_session(db_url) as session:
+        initial_state = _grant_state(session, initial.grant_id)
+        active_state = _grant_state(session, active.grant_id)
+        replacement_state = _grant_state(session, replacement.grant_id)
+        assert initial_state.binding.status is CredentialBindingStatus.EXPIRED
+        assert initial_state.agent.status is AgentStatus.ABANDONED
+        assert active_state.binding.status is CredentialBindingStatus.ACTIVE
+        assert replacement_state.binding.status is CredentialBindingStatus.EXPIRED
+        assert active_state.agent.status is AgentStatus.ACTIVE
 
 
 async def test_expiry_maintenance_sweeps_allowed_response_loss_and_skips_locked_rows(db_url: str) -> None:
@@ -399,64 +420,34 @@ async def test_expiry_maintenance_sweeps_allowed_response_loss_and_skips_locked_
     harness.clock.advance(datetime.timedelta(minutes=11))
 
     engine = create_engine(db_url)
-    owner = engine.connect()
+    owner = Session(engine)
     transaction = owner.begin()
     try:
         owner.execute(
-            text(
-                "SELECT interaction_id FROM enrollment_interactions WHERE interaction_id = :interaction_id FOR UPDATE"
-            ),
-            {"interaction_id": locked_interaction_id},
-        )
+            select(EnrollmentInteraction)
+            .where(EnrollmentInteraction.interaction_id == locked_interaction_id)
+            .with_for_update()
+        ).scalar_one()
         async with harness.authority.expiry_maintenance(interval=datetime.timedelta(milliseconds=10), batch_size=1):
-            rows = {
-                row.interaction_id: row
-                for row in owner.execute(
-                    text(
-                        """
-                        SELECT interaction.interaction_id, interaction.phase::TEXT,
-                               interaction.browser_binding_digest,
-                               EXISTS (
-                                   SELECT 1 FROM agent_name_reservations AS name
-                                   WHERE name.pending_interaction_id = interaction.interaction_id
-                               ) AS has_pending_name
-                        FROM enrollment_interactions AS interaction
-                        WHERE interaction.interaction_id IN (:locked, :unlocked)
-                        """
-                    ),
-                    {"locked": locked_interaction_id, "unlocked": unlocked_interaction_id},
-                )
-            }
-            assert rows[locked_interaction_id].phase == "allowed"
-            assert rows[locked_interaction_id].has_pending_name is True
-            assert rows[unlocked_interaction_id].phase == "expired"
-            assert rows[unlocked_interaction_id].browser_binding_digest is None
-            assert rows[unlocked_interaction_id].has_pending_name is False
+            locked = _interaction_state(owner, locked_interaction_id)
+            unlocked = _interaction_state(owner, unlocked_interaction_id)
+            assert locked.phase is EnrollmentPhase.ALLOWED
+            assert locked.pending_name_count == 1
+            assert unlocked.phase is EnrollmentPhase.EXPIRED
+            assert unlocked.browser_binding_digest is None
+            assert unlocked.pending_name_count == 0
 
             transaction.commit()
             for _ in range(200):
-                with engine.connect() as observer:
-                    row = observer.execute(
-                        text(
-                            """
-                            SELECT interaction.phase::TEXT, interaction.browser_binding_digest,
-                                   EXISTS (
-                                       SELECT 1 FROM agent_name_reservations AS name
-                                       WHERE name.pending_interaction_id = interaction.interaction_id
-                                   ) AS has_pending_name
-                            FROM enrollment_interactions AS interaction
-                            WHERE interaction.interaction_id = :interaction_id
-                            """
-                        ),
-                        {"interaction_id": locked_interaction_id},
-                    ).one()
-                if row.phase == "expired":
+                with Session(engine) as observer:
+                    state = _interaction_state(observer, locked_interaction_id)
+                if state.phase is EnrollmentPhase.EXPIRED:
                     break
                 await asyncio.sleep(0.01)
             else:
                 pytest.fail("periodic expiry maintenance did not catch the previously locked row")
-            assert row.browser_binding_digest is None
-            assert row.has_pending_name is False
+            assert state.browser_binding_digest is None
+            assert state.pending_name_count == 0
     finally:
         if transaction.is_active:
             transaction.rollback()
@@ -478,32 +469,15 @@ async def test_expiry_sweep_terminates_exchanging_response_loss(db_url: str) -> 
     assert await harness.authority.sweep_expired_state() == 1
     assert await harness.authority.sweep_expired_state() == 0
 
-    engine = create_engine(db_url)
-    with engine.connect() as conn:
-        row = conn.execute(
-            text(
-                """
-                SELECT interaction.phase::TEXT, interaction.browser_binding_digest,
-                       interaction.closure_reason, binding.status::TEXT AS binding_status,
-                       binding.end_reason, agent.status::TEXT AS agent_status
-                FROM authorization_grants AS auth_grant
-                JOIN enrollment_interactions AS interaction
-                  ON interaction.interaction_id = auth_grant.enrollment_interaction_id
-                JOIN credential_bindings AS binding ON binding.binding_id = auth_grant.binding_id
-                JOIN agents AS agent ON agent.agent_id = binding.agent_id
-                WHERE auth_grant.grant_id = :grant_id
-                  AND interaction.interaction_id = :interaction_id
-                """
-            ),
-            {"grant_id": grant.grant_id, "interaction_id": interaction_id},
-        ).one()
-    engine.dispose()
-    assert row.phase == "expired"
-    assert row.browser_binding_digest is None
-    assert row.closure_reason == "expiry_sweep"
-    assert row.binding_status == "failed"
-    assert row.end_reason == "expiry_sweep"
-    assert row.agent_status == "abandoned"
+    with _orm_session(db_url) as session:
+        state = _grant_state(session, grant.grant_id)
+        assert state.interaction.interaction_id == interaction_id
+        assert state.interaction.phase is EnrollmentPhase.EXPIRED
+        assert state.interaction.browser_binding_digest is None
+        assert state.interaction.closure_reason == "expiry_sweep"
+        assert state.binding.status is CredentialBindingStatus.FAILED
+        assert state.binding.end_reason == "expiry_sweep"
+        assert state.agent.status is AgentStatus.ABANDONED
 
 
 async def test_expiry_sweep_terminates_issued_response_loss(db_url: str) -> None:
@@ -514,38 +488,21 @@ async def test_expiry_sweep_terminates_issued_response_loss(db_url: str) -> None
     assert await harness.authority.sweep_expired_state() == 1
     assert await harness.authority.sweep_expired_state() == 0
 
-    engine = create_engine(db_url)
-    with engine.connect() as conn:
-        row = conn.execute(
-            text(
-                """
-                SELECT interaction.phase::TEXT, interaction.browser_binding_digest,
-                       binding.status::TEXT AS binding_status, binding.end_reason,
-                       agent.status::TEXT AS agent_status
-                FROM authorization_grants AS auth_grant
-                JOIN enrollment_interactions AS interaction
-                  ON interaction.interaction_id = auth_grant.enrollment_interaction_id
-                JOIN credential_bindings AS binding ON binding.binding_id = auth_grant.binding_id
-                JOIN agents AS agent ON agent.agent_id = binding.agent_id
-                WHERE auth_grant.grant_id = :grant_id
-                """
-            ),
-            {"grant_id": grant.grant_id},
-        ).one()
-    engine.dispose()
-    assert row.phase == "completed"
-    assert row.browser_binding_digest is None
-    assert row.binding_status == "expired"
-    assert row.end_reason == "activation_timeout"
-    assert row.agent_status == "abandoned"
+    with _orm_session(db_url) as session:
+        state = _grant_state(session, grant.grant_id)
+        assert state.interaction.phase is EnrollmentPhase.COMPLETED
+        assert state.interaction.browser_binding_digest is None
+        assert state.binding.status is CredentialBindingStatus.EXPIRED
+        assert state.binding.end_reason == "activation_timeout"
+        assert state.agent.status is AgentStatus.ABANDONED
 
 
 async def test_exchange_uses_the_live_correlation_reservation_after_tuple_reuse(db_url: str) -> None:
     harness = _harness(db_url)
     request = _request("correlation-reuse")
-    engine = create_engine(db_url)
-    with engine.connect() as conn:
-        database_now = conn.execute(text("SELECT clock_timestamp()")).scalar_one()
+    with _orm_session(db_url) as session:
+        database_now = session.execute(select(func.clock_timestamp())).scalar_one()
+        assert isinstance(database_now, datetime.datetime)
     harness.clock.now = database_now - datetime.timedelta(hours=3)
     old_url = await harness.authority.reserve_authorization(
         request=request, upstream_authorization_url="https://auth.test/authorize/old"
@@ -572,12 +529,10 @@ async def test_exchange_uses_the_live_correlation_reservation_after_tuple_reuse(
         principal=harness.principal,
         granted_scopes=frozenset({"tools:call"}),
     )
-    with engine.connect() as conn:
-        claimed_interaction_id = conn.execute(
-            text("SELECT enrollment_interaction_id FROM authorization_grants WHERE grant_id = :grant_id"),
-            {"grant_id": grant.grant_id},
-        ).scalar_one()
-    engine.dispose()
+    with _orm_session(db_url) as session:
+        persisted_grant = session.get(AuthorizationGrant, grant.grant_id)
+        assert persisted_grant is not None
+        claimed_interaction_id = persisted_grant.enrollment_interaction_id
     assert claimed_interaction_id == new_interaction_id
 
 
@@ -600,31 +555,22 @@ async def test_exchange_rejects_principal_from_different_operator_without_mutati
             granted_scopes=frozenset({"tools:call"}),
         )
 
-    engine = create_engine(db_url)
-    with engine.connect() as conn:
-        state = conn.execute(
-            text(
-                """
-                SELECT interaction.phase::TEXT,
-                       interaction.browser_binding_digest IS NOT NULL AS has_browser_binding,
-                       (
-                           SELECT count(*) FROM agent_name_reservations AS name
-                           WHERE name.pending_interaction_id = interaction.interaction_id
-                       ) AS pending_names,
-                       (
-                           SELECT count(*) FROM authorization_grants AS auth_grant
-                           WHERE auth_grant.enrollment_interaction_id = interaction.interaction_id
-                       ) AS grants,
-                       (SELECT count(*) FROM credential_bindings) AS bindings,
-                       (SELECT count(*) FROM agents) AS agents
-                FROM enrollment_interactions AS interaction
-                WHERE interaction.interaction_id = :interaction_id
-                """
-            ),
-            {"interaction_id": interaction_id},
-        ).one()
-    engine.dispose()
-    assert state == ("allowed", True, 1, 0, 0, 0)
+    with _orm_session(db_url) as session:
+        interaction_state = _interaction_state(session, interaction_id)
+        grant_count = session.execute(
+            select(func.count())
+            .select_from(AuthorizationGrant)
+            .where(AuthorizationGrant.enrollment_interaction_id == interaction_id)
+        ).scalar_one()
+        binding_count = session.execute(select(func.count()).select_from(CredentialBinding)).scalar_one()
+        agent_count = session.execute(select(func.count()).select_from(Agent)).scalar_one()
+
+    assert interaction_state.phase is EnrollmentPhase.ALLOWED
+    assert interaction_state.browser_binding_digest is not None
+    assert interaction_state.pending_name_count == 1
+    assert grant_count == 0
+    assert binding_count == 0
+    assert agent_count == 0
 
 
 async def test_exchange_timeout_and_preissuance_revoke_abandon_new_agents(db_url: str) -> None:
@@ -665,27 +611,17 @@ async def test_exchange_timeout_and_preissuance_revoke_abandon_new_agents(db_url
     )
     await harness.authority.revoke_grant(grant_id=grant_two.grant_id)
 
-    engine = create_engine(db_url)
-    with engine.connect() as conn:
-        rows = conn.execute(
-            text(
-                """
-                SELECT auth_grant.grant_id, interaction.phase::TEXT,
-                       interaction.browser_binding_digest, binding.status::TEXT, agent.status::TEXT
-                FROM authorization_grants AS auth_grant
-                JOIN enrollment_interactions AS interaction
-                  ON interaction.interaction_id = auth_grant.enrollment_interaction_id
-                JOIN credential_bindings AS binding ON binding.binding_id = auth_grant.binding_id
-                JOIN agents AS agent ON agent.agent_id = binding.agent_id
-                WHERE auth_grant.grant_id IN (:expired, :revoked)
-                """
-            ),
-            {"expired": grant.grant_id, "revoked": grant_two.grant_id},
-        ).all()
-    engine.dispose()
-    by_grant = {row.grant_id: row for row in rows}
-    assert by_grant[grant.grant_id][1:] == ("expired", None, "failed", "abandoned")
-    assert by_grant[grant_two.grant_id][1:] == ("failed", None, "failed", "abandoned")
+    with _orm_session(db_url) as session:
+        expired = _grant_state(session, grant.grant_id)
+        revoked = _grant_state(session, grant_two.grant_id)
+        assert expired.interaction.phase is EnrollmentPhase.EXPIRED
+        assert expired.interaction.browser_binding_digest is None
+        assert expired.binding.status is CredentialBindingStatus.FAILED
+        assert expired.agent.status is AgentStatus.ABANDONED
+        assert revoked.interaction.phase is EnrollmentPhase.FAILED
+        assert revoked.interaction.browser_binding_digest is None
+        assert revoked.binding.status is CredentialBindingStatus.FAILED
+        assert revoked.agent.status is AgentStatus.ABANDONED
 
 
 async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: str) -> None:
@@ -721,22 +657,25 @@ async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: st
     with pytest.raises(StaticAgentRejectedError):
         await harness.authority.static_authorization_for_binding(binding_id=initial.binding_id)
 
-    engine = create_engine(db_url)
-    with engine.connect() as conn:
-        rows = conn.execute(
-            text(
-                """
-                SELECT binding_id, generation, supersedes_binding_id, status::TEXT
-                FROM credential_bindings WHERE agent_id = :agent_id ORDER BY generation
-                """
-            ),
-            {"agent_id": definition.agent_id},
-        ).all()
-        stored_fingerprints = (
-            conn.execute(text("SELECT credential_fingerprint FROM static_credentials")).scalars().all()
+    with _orm_session(db_url) as session:
+        bindings = (
+            session.execute(
+                select(CredentialBinding)
+                .where(CredentialBinding.agent_id == definition.agent_id)
+                .order_by(CredentialBinding.generation)
+            )
+            .scalars()
+            .all()
         )
-    engine.dispose()
-    assert rows == [(initial.binding_id, 1, None, "revoked"), (rotated.binding_id, 2, initial.binding_id, "active")]
+        binding_rows = [
+            (binding.binding_id, binding.generation, binding.supersedes_binding_id, binding.status)
+            for binding in bindings
+        ]
+        stored_fingerprints = session.execute(select(StaticCredential.credential_fingerprint)).scalars().all()
+    assert binding_rows == [
+        (initial.binding_id, 1, None, CredentialBindingStatus.REVOKED),
+        (rotated.binding_id, 2, initial.binding_id, CredentialBindingStatus.ACTIVE),
+    ]
     assert b"first-token" not in stored_fingerprints
     assert b"second-token" not in stored_fingerprints
 
@@ -767,26 +706,28 @@ async def test_static_reconcile_revokes_removed_definition_and_restores_stable_s
     )
     restored = (await harness.authority.reconcile_static_agents([restored_definition]))[0]
     assert restored.agent_id == initial.agent_id
-    engine = create_engine(db_url)
-    with engine.connect() as conn:
-        rows = conn.execute(
-            text(
-                """
-                SELECT binding_id, generation, supersedes_binding_id, status::TEXT, end_reason
-                FROM credential_bindings WHERE agent_id = :agent_id ORDER BY generation
-                """
-            ),
-            {"agent_id": definition.agent_id},
-        ).all()
-        agent_status = conn.execute(
-            text("SELECT status::TEXT FROM agents WHERE agent_id = :agent_id"), {"agent_id": definition.agent_id}
-        ).scalar_one()
-    engine.dispose()
-    assert rows == [
-        (initial.binding_id, 1, None, "revoked", "static_configuration_removed"),
-        (restored.binding_id, 2, initial.binding_id, "active", None),
+    with _orm_session(db_url) as session:
+        bindings = (
+            session.execute(
+                select(CredentialBinding)
+                .where(CredentialBinding.agent_id == definition.agent_id)
+                .order_by(CredentialBinding.generation)
+            )
+            .scalars()
+            .all()
+        )
+        agent = session.get(Agent, definition.agent_id)
+        assert agent is not None
+        binding_rows = [
+            (binding.binding_id, binding.generation, binding.supersedes_binding_id, binding.status, binding.end_reason)
+            for binding in bindings
+        ]
+        agent_status = agent.status
+    assert binding_rows == [
+        (initial.binding_id, 1, None, CredentialBindingStatus.REVOKED, "static_configuration_removed"),
+        (restored.binding_id, 2, initial.binding_id, CredentialBindingStatus.ACTIVE, None),
     ]
-    assert agent_status == "active"
+    assert agent_status is AgentStatus.ACTIVE
 
 
 async def test_revoke_waits_for_interaction_before_locking_grant_graph(db_url: str) -> None:
@@ -806,32 +747,25 @@ async def test_revoke_waits_for_interaction_before_locking_grant_graph(db_url: s
 
     event.listen(authority._engine, "before_cursor_execute", observe_interaction_lock)
     engine = create_engine(db_url)
-    owner = engine.connect()
+    owner = Session(engine)
     transaction = owner.begin()
     task: asyncio.Task[None] | None = None
     try:
-        interaction_id, binding_id = owner.execute(
-            text(
-                """
-                SELECT enrollment_interaction_id, binding_id
-                FROM authorization_grants WHERE grant_id = :grant_id
-                """
-            ),
-            {"grant_id": grant.grant_id},
-        ).one()
+        persisted_grant = owner.get(AuthorizationGrant, grant.grant_id)
+        assert persisted_grant is not None
+        interaction_id = persisted_grant.enrollment_interaction_id
+        binding_id = persisted_grant.binding_id
         owner.execute(
-            text(
-                "SELECT interaction_id FROM enrollment_interactions WHERE interaction_id = :interaction_id FOR UPDATE"
-            ),
-            {"interaction_id": interaction_id},
-        )
+            select(EnrollmentInteraction)
+            .where(EnrollmentInteraction.interaction_id == interaction_id)
+            .with_for_update()
+        ).scalar_one()
         task = asyncio.create_task(authority.revoke_grant(grant_id=grant.grant_id))
         assert await asyncio.to_thread(interaction_lock_attempted.wait, 5)
         assert not task.done()
         owner.execute(
-            text("SELECT binding_id FROM credential_bindings WHERE binding_id = :binding_id FOR UPDATE NOWAIT"),
-            {"binding_id": binding_id},
-        )
+            select(CredentialBinding).where(CredentialBinding.binding_id == binding_id).with_for_update(nowait=True)
+        ).scalar_one()
         transaction.commit()
         await task
     finally:
