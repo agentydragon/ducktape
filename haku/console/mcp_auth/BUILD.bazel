@@ -1,0 +1,36 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "fastmcp_adapter",
+    srcs = [
+        "__init__.py",
+        "fastmcp_adapter.py",
+    ],
+    deps = [
+        "//mcp_infra:persistence",
+        "//mcp_infra/authentik_auth:fastmcp_proxy",
+        "//mcp_infra/authentik_auth:oidc_principal",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_fastmcp_adapter",
+    srcs = ["test_fastmcp_adapter.py"],
+    deps = [
+        ":fastmcp_adapter",
+        "//:conftest",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)
