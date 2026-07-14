@@ -65,3 +65,18 @@ py_test(
         "@pypi//starlette",
     ],
 )
+
+py_test(
+    name = "test_jwt_verifier_contract",
+    srcs = ["test_jwt_verifier_contract.py"],
+    deps = [
+        ":auth",
+        ":conftest",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//joserfc",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
