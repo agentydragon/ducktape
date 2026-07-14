@@ -113,15 +113,91 @@ transparent **pass-throughs** (original name/schema, real result); everything el
 returns the real result if approved within the wait, else a **promise** (a pending `tool_call_id` +
 an operator-facing deep-link `url`) the agent resolves via the `get_tool_call` / `list_tool_calls`
 read tools. The promise-semantics preamble lives in each tool's **description** (many MCP clients,
-claude.ai included, never surface a server's `instructions`). Auth is FastMCP `MultiAuth`: an
-Authentik-backed `OIDCProxy` (DCR + PKCE for claude.ai / `claude`, DCR/token state persisted in the
-console's Postgres) composed with the configured `static_agents`' fixed bearers. The `/mcp` surface only submits/reads — there
-is no decision tool — so an OAuth caller cannot self-approve; approval stays in trusted console
-chrome. Approved calls execute against the console's own stored operator credentials, so an incoming
-token's blast radius is "call the console's submit/read tools" and nothing else. OAuth configuration
-includes a required Postgres persistence configuration; Haku never falls back to FastMCP's
-process-local store or Valkey. The console already owns this database, which lets migration 0008
-atomically invalidate every pre-cutover registration and token family.
+claude.ai included, never surface a server's `instructions`). Auth is a Haku-owned
+`HakuAgentOAuthProxy` composed with the configured `static_agents` through
+`HakuFailurePreservingMultiAuth`. FastMCP still owns DCR, PKCE, callback, code, and token-family
+machinery; Haku adds the Operator-authenticated Agent-enrollment ceremony and resolves both OAuth
+and static credentials through the same canonical Agent authority. The `/mcp` surface only
+submits/reads — there is no decision tool — so an OAuth caller cannot self-approve; approval stays
+in trusted console chrome. Approved calls execute against the console's stored Operator credentials,
+so an incoming token's blast radius is "call the console's submit/read tools" and nothing else.
+OAuth state is required to use the console's Postgres; Haku never falls back to FastMCP's
+process-local store or Valkey.
+
+### Canonical Agent authority and enrollment
+
+Migration `0009` is the terminal Agent-authority cutover. It removed the legacy DCR-client mapping
+and old tool-call identity, intentionally dropped past calls, and installed one Postgres graph shared
+by interactive OAuth and configured static Agents:
+
+```text
+Operator -> IdentityAnchor -> OidcIdentity
+Operator -> Agent -> AgentNameReservation
+Agent -> CredentialBinding -> AuthorizationGrant | StaticCredential
+ToolCallPrincipal -> exactly one of operator_id | binding_id
+```
+
+The durable contract is:
+
+- `Operator`, `Agent`, and every authority-bearing relationship use local immutable UUIDs. An exact
+  verified `(issuer, subject)` identifies an OIDC identity; a configured Authentik trust-domain
+  anchor is the only path by which identities at the browser and MCP issuers converge on one
+  Operator. Username is presentation only.
+- OAuth `client_id` describes client software/registration metadata. It is never the Agent,
+  Operator, grant, or credential binding, and unauthenticated DCR does not create an Agent.
+- Every Agent has a required normalized non-empty display name, globally unique by its normalized
+  key. The name is presentation owned by the canonical Agent; it is never a credential or durable
+  identity key.
+- A `CredentialBinding` owns credential kind, generation, predecessor, and lifecycle. An OAuth
+  `AuthorizationGrant` owns client software, authorizing identity, scopes, and token-family
+  evidence. Static rotation and OAuth reconnect create successor bindings instead of mutating
+  Agent identity.
+- An Agent-originated tool call persists only its exact binding provenance. Agent, owning Operator,
+  and display name derive through canonical joins, and approval/execution revalidate that binding
+  so queued work cannot transfer to a replacement credential.
+
+Interactive enrollment proceeds as follows:
+
+1. FastMCP validates client, redirect, resource, scopes, and S256 PKCE through its public
+   `authorize()` path.
+2. Haku reserves the exact public client/redirect/challenge tuple only as a temporal collision key
+   and creates a random `EnrollmentInteraction`.
+3. The browser independently logs into Haku through Authentik. Opening the page binds its verified
+   identity and canonical Operator to the interaction exactly once.
+4. The Operator explicitly denies or allows a required name for a new Agent or reconnects an
+   existing owned Agent. This records intent but issues no grant yet.
+5. FastMCP performs its untouched Authentik callback and creates the downstream code.
+6. At exchange, Haku verifies the MCP-side access-token principal and requires the same active
+   canonical Operator as the browser interaction. One locked transition creates the draft Agent
+   when needed plus its issuing binding and grant.
+7. FastMCP carries only opaque `grant_id` context through the token family. The first successfully
+   verified MCP tool request atomically activates the Agent and binding.
+8. Access load, transparent/explicit refresh, decisions, and execution revalidate the grant,
+   binding, Agent, and Operator. Local revoke remains authoritative even if best-effort upstream or
+   individual-token cleanup fails.
+
+The enrollment cookie is only a short-lived page/CSRF binding: path-scoped, `HttpOnly`,
+`SameSite=Lax`, and `Secure` in production. It contains no name, token, raw claim, or durable
+authority. The Haku-owned Jinja template autoescapes untrusted client metadata and the response is
+no-store with strict CSP, Origin, and referrer controls.
+
+The runtime caller is `OperatorActor | AgentActor`. Only the authority constructs an
+`AgentActor(agent_id, operator_id, binding_id)`. Agents can submit/read only their own calls;
+Operators can read/decide all and only calls they own; Agents never approve themselves. Repository
+operations have no unscoped or `None` actor mode.
+
+Haku supports one exact FastMCP version at a time. The adapter's sole private seam is `_code_store`
+read/delete during code exchange; protected claim, scope-translation, and transparent-refresh hooks
+are version-pinned. It does not replace route construction, registration, transaction storage,
+callback, PKCE, or token issuance. Adapter compatibility and mounted enrollment/token/refresh/
+revocation tests are mandatory before a repin.
+
+Client-side credential deletion is generally invisible to Haku. `last_seen_at` is observation, not
+connection state; an Operator-owned revoke/disable action is the authoritative product control.
+Postgres, Valkey for generic consumers, Kubernetes Secrets, and their backups/admin readers are the
+accepted private credential boundary. Extra application encryption is optional defense-in-depth,
+while tokens, codes, secrets, callback queries, and raw OAuth forms must never enter logs or API
+models.
 
 ### In-process MCP servers — no second deployment
 
@@ -216,8 +292,10 @@ non-asset/API path; `app.py`'s dev fallback mirrors that so deep links work loca
 | `capabilities.py`            | Capability-tier router (`/api/capabilities/*`): CSRF-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer and optional per-run text; `GET /csrf` issues the double-submit token.                                    |
 | `tool_call_service.py`       | Actor-scoped application boundary for policy evaluation, submit/read/poll, decisions, execution orchestration, and event publication.                                                                                                                                  |
 | `mcp_approval.py`            | FastAPI/wire adapter plus the current Postgres tool-call repository, MCP executor, and metadata-reflection adapters. It does not own lifecycle orchestration.                                                                                                          |
-| `mcp_server.py`              | FastMCP transport adapter for proxy and result-read tools; resolves the request dependency to an `AgentActor` through `mcp_agent_auth` and delegates lifecycle operations to the application service.                                                                  |
-| `mcp_agent_auth.py`          | Agent-facing MCP authentication composition and the single MCP `client_id`-to-`AgentActor` resolver.                                                                                                                                                                   |
+| `mcp_server.py`              | FastMCP transport adapter for proxy and result-read tools; resolves its request dependency to a canonical `AgentActor` and delegates lifecycle operations to the application service.                                                                                  |
+| `mcp_agent_auth.py`          | Agent-facing auth composition: one Haku OAuth adapter plus static-bearer verification, both resolving through the shared `PostgresAgentAuthority`.                                                                                                                     |
+| `agents/`                    | Canonical Agent domain: naming, enrollment contracts/routes/template, and the transactional Postgres authority for interactions, grants, bindings, static credentials, activation, revocation, and expiry.                                                             |
+| `mcp_auth/`                  | Haku-owned FastMCP composition adapter and exact-version contract tests; contains the single accepted private `_code_store` seam.                                                                                                                                      |
 | `console_events.py`          | Pydantic console-event shapes plus operator-scoped cross-replica WebSocket fan-out through Postgres LISTEN/NOTIFY.                                                                                                                                                     |
 | `mcp_config.py`              | Connected-MCP-server catalog plus in-process/remote transport and static bearer resolution, shared by the application service, reflection adapter, and operator OAuth linkage.                                                                                         |
 | `in_process_servers.py`      | Canonical builder catalog for the Gmail, Google Calendar, and routine FastMCP servers, shared by the production app and schema exporter.                                                                                                                               |
@@ -255,8 +333,9 @@ keeps build stamping out of the OCI layers, so image contents remain reproducibl
 Service). The operator browser logs in via Authentik OIDC (`HAKU_CONSOLE_OPERATOR_OIDC__*`
 → signed session cookie; router-level dependency guards protect `/api/*`, with the agent bearer
 scoped to the agent-facing submit/read routes only), and agents authenticate to the always-mounted
-`/mcp` via `MultiAuth` (OIDCProxy DCR + the `static_agents`' fixed bearers, `HAKU_CONSOLE_MCP_OAUTH__*`;
-the DCR/token state persists in the console's own Postgres via `HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__*`).
+`/mcp` through `HakuAgentOAuthProxy` plus static-bearer verification; both resolve canonical Agents
+through one failure-preserving authority (`HAKU_CONSOLE_MCP_OAUTH__*`; FastMCP registration/token
+state persists in the console's own Postgres via `HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__*`).
 `HAKU_CONSOLE_PUBLIC_BASE_URL` is the single canonical public origin for both flows: operator login
 uses `<origin>/auth/callback`, while the agent-facing OAuth issuer and callback are derived as
 `<origin>/mcp` and `<origin>/mcp/auth/callback`. Only OAuth discovery is also exposed at the origin's
@@ -268,14 +347,17 @@ Both OAuth2 providers and their client secrets
 (the `haku-console-oidc` Secret) are minted by `tf/gitops/agent-machine-access`; single-user
 access is Authentik's application access policy.
 
-Postgres is **required**: it backs the approval ledger and the operator OAuth token store, and the
+Postgres is **required**: it backs Operator/Agent authority, the approval ledger, FastMCP state, and
+the Operator OAuth token store. The
 console applies its Alembic migrations once at startup (`app.main`, before serving) — never as a
 side effect of constructing a store. Forward-only migration 0008 creates canonical Operators,
 identity anchors, and exact issuer-scoped OIDC identities; cuts every live association, agent link,
 ledger row, and event over to Operator UUID ownership; preserves only exactly seeded downstream
 backend-token associations; and invalidates all FastMCP registrations/token families plus derived
 DCR links so OAuth agents must authorize again, with fresh local registration where applicable,
-under canonical ownership.
+under canonical ownership. Forward-only migration `0009` then installs the canonical Agent/name/
+binding/grant/tool-principal graph, bootstraps static Agents, drops the legacy DCR mapping and past
+tool calls, and activates the Haku-owned enrollment adapter without a second authority.
 
 Non-root, dropped caps, no service-account token. Credentials: the
 `haku-routine-launch-token` secret (the launch capability bearer; `HAKU_CONSOLE_LAUNCH_ROUTINE__TOKEN`),
