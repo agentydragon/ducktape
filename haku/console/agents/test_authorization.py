@@ -38,7 +38,7 @@ from haku.console.mcp_auth.fastmcp_adapter import (
     GrantRejectedError,
     TokenFamilyEvidence,
 )
-from haku.console.operator_identity import OperatorIdentityTrust, VerifiedExternalIdentity
+from haku.console.operator_identity import OperatorIdentityTrust, ResolvedOperatorIdentity, VerifiedExternalIdentity
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
 from util.testing.postgres import force_drop_database_sync
@@ -70,6 +70,23 @@ class SecretSequence:
     def __call__(self) -> str:
         self.sequence += 1
         return f"browser-secret-{self.sequence}"
+
+
+class DisableAfterPrincipalResolutionIdentityStore(PostgresOperatorIdentityStore):
+    def __init__(self, database_url: str, trust: OperatorIdentityTrust) -> None:
+        super().__init__(database_url, trust)
+        self._test_database_url = database_url
+
+    def resolve_verified_identity(self, identity: VerifiedExternalIdentity) -> ResolvedOperatorIdentity:
+        resolved = super().resolve_verified_identity(identity)
+        engine = create_engine(self._test_database_url)
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE operators SET status = 'disabled', updated_at = now() WHERE operator_id = :operator_id"),
+                {"operator_id": resolved.operator_id},
+            )
+        engine.dispose()
+        return resolved
 
 
 @dataclass(frozen=True)
@@ -262,7 +279,7 @@ async def test_create_decision_is_idempotent_and_grant_activates_then_revokes(db
     assert row.browser_binding_digest is None
     assert row.phase == "completed"
     assert row.binding_status == "revoked"
-    assert row.agent_status == "active"
+    assert row.agent_status == "disabled"
     assert row.decision_digest not in {form_token.encode(), b"browser-secret-1", b"browser-secret-2"}
 
 
@@ -475,6 +492,35 @@ async def test_database_outage_maps_to_authority_unavailable() -> None:
     with pytest.raises(AgentGrantAuthorityUnavailableError):
         await authority.reserve_authorization(
             request=_request("outage"), upstream_authorization_url="https://auth.test/authorize"
+        )
+
+
+async def test_exchange_revalidates_operator_after_principal_resolution(db_url: str) -> None:
+    harness = _harness(db_url)
+    request = _request("operator-race")
+    interaction_id, form_token = await _open(harness, request)
+    await harness.authority.decide(
+        interaction_id=interaction_id,
+        browser=harness.browser,
+        interaction_cookie=form_token,
+        decision=CreateAgentDecision(form_token=form_token, display_name="Disabled During Exchange"),
+    )
+    trust = OperatorIdentityTrust(
+        trust_domain="auth.test/authentik-user-id/v1", trusted_issuers=frozenset({_BROWSER_ISSUER, _MCP_ISSUER})
+    )
+    authority = PostgresAgentAuthority(
+        db_url,
+        public_base_url="https://haku.test",
+        operator_identity_store=DisableAfterPrincipalResolutionIdentityStore(db_url, trust),
+        clock=harness.clock,
+    )
+
+    with pytest.raises(EnrollmentRejectedError):
+        await authority.begin_exchange(
+            correlation=request.correlation,
+            client=request.client,
+            principal=harness.principal,
+            granted_scopes=frozenset({"tools:call"}),
         )
 
 

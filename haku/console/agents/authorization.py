@@ -767,6 +767,10 @@ class PostgresAgentAuthority:
             ):
                 failure = EnrollmentRejectedError()
             else:
+                try:
+                    self._operator_identities.require_active_in_transaction(session, resolved.operator_id)
+                except InactiveOperatorError as error:
+                    raise EnrollmentRejectedError from error
                 browser_operator = session.scalar(
                     select(IdentityAnchor.operator_id)
                     .join(OidcIdentity, OidcIdentity.anchor_id == IdentityAnchor.anchor_id)
@@ -1049,9 +1053,10 @@ class PostgresAgentAuthority:
                 CredentialBindingStatus.FAILED,
             }:
                 return
+            previous_status = binding.status
             binding.status = (
                 CredentialBindingStatus.FAILED
-                if binding.status is CredentialBindingStatus.ISSUING
+                if previous_status is CredentialBindingStatus.ISSUING
                 else CredentialBindingStatus.REVOKED
             )
             binding.ended_at = now
@@ -1059,6 +1064,9 @@ class PostgresAgentAuthority:
             binding.updated_at = now
             if binding.supersedes_binding_id is None and agent.status is AgentStatus.DRAFT:
                 agent.status = AgentStatus.ABANDONED
+                agent.updated_at = now
+            elif previous_status is CredentialBindingStatus.ACTIVE and agent.status is AgentStatus.ACTIVE:
+                agent.status = AgentStatus.DISABLED
                 agent.updated_at = now
             if binding.status is CredentialBindingStatus.FAILED:
                 interaction = session.get(EnrollmentInteraction, grant.enrollment_interaction_id, with_for_update=True)
