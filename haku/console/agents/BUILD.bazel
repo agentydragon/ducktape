@@ -16,3 +16,24 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "enrollment_page",
+    srcs = ["enrollment_page.py"],
+    data = ["agent_enrollment.html.j2"],
+    deps = [
+        "@pypi//jinja2",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_enrollment_page",
+    srcs = ["test_enrollment_page.py"],
+    deps = [
+        ":enrollment_page",
+        "@pypi//beautifulsoup4",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
