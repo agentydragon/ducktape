@@ -1,6 +1,6 @@
 # Epistemic State: GLM-5.2 on wyrm2 via Colibri
 
-## Last updated: 2026-07-14T00:35:00-07:00
+## Last updated: 2026-07-14T14:31:05-07:00
 
 ## 1. Objective
 
@@ -170,6 +170,19 @@ storage for the decisive full-model benchmark.
 - Update: the LiteLLM entry can provisionally advertise function calling. Require one
   real-model forced-tool test before treating that capability as end-to-end validated.
 
+### E13: Checkpoint migration and resumed transfer
+
+- Action: stopped the HDD staging transfer, copied the complete Hugging Face
+  local-directory state (including resumable `.cache` files) to `/var/lib/colibri`,
+  and resumed the same 383.8 GB checkpoint directly on the dedicated SSD.
+- Result: the copied state occupied 63.57 GB. The resumed directory has grown to
+  85.75 GB. Ordinary Xet with eight file workers is productive but bursty; an
+  `HF_XET_HIGH_PERFORMANCE=1` trial transferred zero bytes for more than two minutes
+  and was rejected without losing partial data.
+- Update: download completion is now the only gate before `coli plan`, `coli doctor`,
+  and the decisive full-model run. Keep benchmark traffic isolated from the active
+  transfer because the architecture fixture already demonstrated contention.
+
 ## 6. Current Posterior State
 
 - A staged host experiment remains justified: CUDA and the SSD access pattern pass,
@@ -181,8 +194,7 @@ storage for the decisive full-model benchmark.
 
 ## 7. Action Queue
 
-1. Finish copying the partial Hugging Face local-dir state to the dedicated SSD and
-   resume the checkpoint download there.
+1. Finish the resumable checkpoint download on the dedicated SSD.
 2. Run `coli plan` and `coli doctor` against the completed checkpoint.
 3. Run fixed-prompt cold/warm decode
    without concurrent download or other heavy host work.
