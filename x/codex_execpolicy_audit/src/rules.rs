@@ -1,86 +1,69 @@
-//! Parse `prefix_rule(pattern=[...], decision="allow")` entries from a codex
-//! `default.rules` file. The SSOT generator (`nix/home/codex/execpolicy-rules.nix`)
-//! emits only prefix `allow` rules, so a trivial prefix matcher is faithful and
-//! the Starlark engine isn't needed.
+//! Load the codex execpolicy `default.rules` via codex's real Starlark engine
+//! (`codex_execpolicy`) — no reimplementation. The file is a Starlark program
+//! calling `prefix_rule`/`exact_rule`/`host_executable` primitives; the engine
+//! parses and evaluates it into a `Policy`. This is faithful to any hand-written
+//! rules, not just the SSOT-generated prefix-allow lines.
 use anyhow::{Context, Result};
-use regex::Regex;
-use serde_json;
+use codex_execpolicy::{Policy, PolicyParser};
 use std::path::Path;
 
-#[derive(Debug, Clone)]
-pub struct PrefixRule {
-    pub pattern: Vec<String>,
-}
+pub struct Rules(pub Policy);
 
-pub struct PrefixRules {
-    pub rules: Vec<PrefixRule>,
-}
-
-impl PrefixRules {
-    /// True if `argv` begins with any rule's pattern tokens.
-    pub fn matches(&self, argv: &[String]) -> bool {
-        self.rules
-            .iter()
-            .any(|r| argv.len() >= r.pattern.len() && argv[..r.pattern.len()] == r.pattern[..])
-    }
-}
-
-pub fn load(path: &Path) -> Result<PrefixRules> {
+pub fn load(path: &Path) -> Result<Rules> {
     let text = std::fs::read_to_string(path)
         .with_context(|| format!("read rules file {}", path.display()))?;
-    let re = Regex::new(
-        r#"prefix_rule\(\s*pattern\s*=\s*(\[[^\]]*\])\s*,\s*decision\s*=\s*"([a-z]+)""#,
-    )?;
-    let mut rules = Vec::new();
-    for cap in re.captures_iter(&text) {
-        if &cap[2] != "allow" {
-            continue; // SSOT emits only allow; ignore prompt/forbidden if ever present.
-        }
-        let pattern: Vec<String> =
-            serde_json::from_str(&cap[1]).with_context(|| format!("parse pattern {}", &cap[1]))?;
-        rules.push(PrefixRule { pattern });
-    }
-    Ok(PrefixRules { rules })
+    let mut parser = PolicyParser::new();
+    parser
+        .parse(&path.display().to_string(), &text)
+        .with_context(|| format!("parse rules file {}", path.display()))?;
+    Ok(Rules(parser.build()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use codex_execpolicy::{Decision, MatchOptions};
 
-    fn rules(patterns: &[&[&str]]) -> PrefixRules {
-        PrefixRules {
-            rules: patterns
-                .iter()
-                .map(|p| PrefixRule {
-                    pattern: p.iter().map(|s| (*s).to_string()).collect(),
-                })
-                .collect(),
-        }
-    }
-
-    #[test]
-    fn prefix_match_ignores_trailing_args() {
-        let r = rules(&[&["git", "status"]]);
-        assert!(r.matches(&["git".into(), "status".into(), "--short".into()]));
-        assert!(r.matches(&["git".into(), "status".into()]));
-        assert!(!r.matches(&["git".into(), "diff".into()]));
-        assert!(!r.matches(&["git".into()]));
-    }
-
-    #[test]
-    fn parses_prefix_allow_rules_and_skips_non_allow() {
-        let text = r#"
-# comment
-prefix_rule(pattern=["git", "status"], decision="allow")
-prefix_rule(pattern=["rm"], decision="forbidden")
-prefix_rule(pattern=["bbr", "test"], decision="allow")
-"#;
+    fn policy_from(text: &str) -> Policy {
         let tmp = std::env::temp_dir().join("codex_execpolicy_audit_rules_test.txt");
         std::fs::write(&tmp, text).unwrap();
         let r = load(&tmp).unwrap();
         let _ = std::fs::remove_file(&tmp);
-        assert_eq!(r.rules.len(), 2, "only allow rules are kept");
-        assert!(r.matches(&["bbr".into(), "test".into(), "//foo".into()]));
-        assert!(!r.matches(&["rm".into(), "-rf".into(), "/".into()]));
+        r.0
+    }
+
+    fn allows(policy: &Policy, argv: &[&str]) -> bool {
+        let argv: Vec<String> = argv.iter().map(|s| (*s).to_string()).collect();
+        policy
+            .matches_for_command_with_options(
+                &argv,
+                None,
+                &MatchOptions {
+                    resolve_host_executables: false,
+                },
+            )
+            .iter()
+            .any(|m| m.decision() == Decision::Allow)
+    }
+
+    #[test]
+    fn prefix_match_ignores_trailing_args() {
+        let p = policy_from("prefix_rule(pattern=[\"git\", \"status\"], decision=\"allow\")\n");
+        assert!(allows(&p, &["git", "status", "--short"]));
+        assert!(allows(&p, &["git", "status"]));
+        assert!(!allows(&p, &["git", "diff"]));
+        assert!(!allows(&p, &["git"]));
+    }
+
+    #[test]
+    fn parses_allow_rules_and_skips_non_allow() {
+        let text = r#"
+prefix_rule(pattern=["git", "status"], decision="allow")
+prefix_rule(pattern=["rm"], decision="forbidden")
+prefix_rule(pattern=["bbr", "test"], decision="allow")
+"#;
+        let p = policy_from(text);
+        assert!(allows(&p, &["bbr", "test", "//foo"]));
+        assert!(!allows(&p, &["rm", "-rf", "/"]));
     }
 }

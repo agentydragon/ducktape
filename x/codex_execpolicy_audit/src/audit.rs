@@ -17,12 +17,13 @@ use anyhow::Result;
 use serde::Serialize;
 use serde_json;
 
+use codex_execpolicy::{Decision, MatchOptions, Policy};
 use codex_protocol::parse_command::ParsedCommand;
 use codex_shell_command::is_dangerous_command::command_might_be_dangerous;
 use codex_shell_command::is_safe_command::is_known_safe_command;
 use codex_shell_command::parse_command::parse_shell_script;
 
-use crate::rules::PrefixRules;
+use crate::rules::Rules;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -60,8 +61,15 @@ fn class_index(c: Class) -> usize {
     }
 }
 
-fn classify(argv: &[String], rules: &PrefixRules) -> Class {
-    if rules.matches(argv) {
+fn classify(argv: &[String], policy: &Policy) -> Class {
+    let matched = policy.matches_for_command_with_options(
+        argv,
+        None, // rules only; the heuristic/dangerous labels below classify the rest
+        &MatchOptions {
+            resolve_host_executables: false,
+        },
+    );
+    if matched.iter().any(|m| m.decision() == Decision::Allow) {
         Class::RuleAllow
     } else if is_known_safe_command(argv) {
         Class::HeuristicAllow
@@ -90,7 +98,7 @@ pub struct Report {
 }
 
 impl Report {
-    pub fn run(cmds: &[String], rules: &PrefixRules) -> Self {
+    pub fn run(cmds: &[String], rules: &Rules) -> Self {
         let mut rows: HashMap<String, Agg> = HashMap::new();
         let mut total_leaves = 0u64;
         let mut parse_failures = 0u64;
@@ -114,7 +122,7 @@ impl Report {
                 if argv.is_empty() {
                     continue;
                 }
-                let class = classify(&argv, rules);
+                let class = classify(&argv, &rules.0);
                 let key = signature(&argv);
                 let agg = rows.entry(key).or_default();
                 agg.total += 1;

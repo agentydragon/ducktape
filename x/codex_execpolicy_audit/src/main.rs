@@ -45,11 +45,7 @@ fn main() -> Result<()> {
     let cmds = rollout::collect_cmds(&home)?;
     let rules = rules::load(&rules_path)?;
 
-    eprintln!(
-        "loaded {} rules from {}",
-        rules.rules.len(),
-        rules_path.display()
-    );
+    eprintln!("loaded execpolicy rules from {}", rules_path.display());
 
     let report = audit::Report::run(&cmds, &rules);
     report.print_top(cli.top);

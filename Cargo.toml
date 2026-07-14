@@ -105,6 +105,10 @@ which = "8"
 # codex-utils-absolute-path (a dep of codex-shell-command) derives JsonSchema + TS.
 schemars = "0.8.22"
 ts-rs = "11"
+# codex-execpolicy (the real Starlark rule engine) deps.
+multimap = "0.10.0"
+starlark = { version = "0.14.2", default-features = false }
+thiserror = "2.0.17"
 
 [[bin]]
 name = "ducktape_fake"

@@ -1,3 +1,61 @@
+diff --git a/codex-rs/execpolicy/BUILD.bazel b/codex-rs/execpolicy/BUILD.bazel
+index 79c73b7..ee8bd1f 100644
+--- a/codex-rs/execpolicy/BUILD.bazel
++++ b/codex-rs/execpolicy/BUILD.bazel
+@@ -1,6 +1,32 @@
+-load("//:defs.bzl", "codex_rust_crate")
++load("@rules_rust//rust:defs.bzl", "rust_library")
+ 
+-codex_rust_crate(
++package(default_visibility = ["//visibility:public"])
++
++# ducktape overlay — replaces codex's codex_rust_crate macro BUILD. Library only
++# (excludes the codex-execpolicy bin). amend.rs is excluded: it uses the unstable
++# file_lock feature (codex targets nightly; ducktape is stable) and we only read
++# rules, never amend them. Deps wired to ducktape's @crates.
++rust_library(
+     name = "execpolicy",
+     crate_name = "codex_execpolicy",
++    edition = "2024",
++    srcs = glob(
++        ["src/**/*.rs"],
++        exclude = [
++            "src/main.rs",
++            "src/amend.rs",
++        ],
++    ),
++    deps = [
++        "@crates//:anyhow",
++        "@crates//:clap",
++        "@crates//:multimap",
++        "@crates//:serde",
++        "@crates//:serde_json",
++        "@crates//:shlex",
++        "@crates//:starlark",
++        "@crates//:thiserror",
++        "@codex//codex-rs/utils/absolute-path:absolute_path",
++    ],
++    rustc_flags = ["--cap-lints=allow"],
+ )
+diff --git a/codex-rs/execpolicy/src/lib.rs b/codex-rs/execpolicy/src/lib.rs
+index 45d3642..4488b20 100644
+--- a/codex-rs/execpolicy/src/lib.rs
++++ b/codex-rs/execpolicy/src/lib.rs
+@@ -1,4 +1,3 @@
+-pub(crate) mod amend;
+ pub(crate) mod decision;
+ pub(crate) mod error;
+ pub(crate) mod execpolicycheck;
+@@ -7,9 +6,6 @@ pub(crate) mod parser;
+ pub(crate) mod policy;
+ pub mod rule;
+ 
+-pub use amend::AmendError;
+-pub use amend::blocking_append_allow_prefix_rule;
+-pub use amend::blocking_append_network_rule;
+ pub use decision::Decision;
+ pub use error::Error;
+ pub use error::ErrorLocation;
 diff --git a/codex-rs/shell-command/BUILD.bazel b/codex-rs/shell-command/BUILD.bazel
 index 9eaa137..4dcd419 100644
 --- a/codex-rs/shell-command/BUILD.bazel
