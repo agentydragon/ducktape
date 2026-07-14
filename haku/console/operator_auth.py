@@ -20,9 +20,11 @@ from __future__ import annotations
 
 import hmac
 import logging
+import secrets
 import time
 from dataclasses import dataclass
 from typing import Annotated, cast
+from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
@@ -41,7 +43,10 @@ logger = logging.getLogger(__name__)
 
 AUTHENTIK_CLIENT_NAME = "authentik"
 SESSION_USER_KEY = "operator"
+SESSION_RETURN_TO_KEY = "operator_return_to"
 OPERATOR_SESSION_MAX_AGE_SECONDS = 60 * 60
+_AGENT_ENROLLMENT_PATH_PREFIX = "/auth/agent-enrollment/"
+_MAX_RETURN_TO_LENGTH = 2048
 
 router = APIRouter(prefix="/auth", tags=["operator-auth"])
 
@@ -73,6 +78,7 @@ class OperatorSession:
     operator_id: UUID
     identity_id: UUID
     username: str
+    browser_session_id: str
 
 
 def build_oauth(config: OperatorOidcConfig) -> OAuth:
@@ -107,13 +113,21 @@ def operator_session(conn: HTTPConnection) -> OperatorSession | None:
     username = raw.get("username")
     if not isinstance(username, str) or not username:
         return None
+    browser_session_id = raw.get("browser_session_id")
+    if not isinstance(browser_session_id, str) or not browser_session_id:
+        return None
     expires_at = raw.get("expires_at")
     if not isinstance(expires_at, int) or isinstance(expires_at, bool) or expires_at <= int(time.time()):
         return None
     identity = _identity_store(conn).resolve_active_session(operator_id=operator_id, identity_id=identity_id)
     if identity is None:
         return None
-    return OperatorSession(operator_id=identity.operator_id, identity_id=identity.identity_id, username=username)
+    return OperatorSession(
+        operator_id=identity.operator_id,
+        identity_id=identity.identity_id,
+        username=username,
+        browser_session_id=browser_session_id,
+    )
 
 
 def operator_username(request: Request) -> str | None:
@@ -130,8 +144,27 @@ def _redirect_uri(request: Request) -> str:
     return f"{base}/auth/callback"
 
 
+def _validated_enrollment_return_to(value: str) -> str:
+    """Accept only a local enrollment-interaction URL, never a general redirect target."""
+    if len(value) > _MAX_RETURN_TO_LENGTH or any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise HTTPException(status_code=400, detail="invalid operator login continuation")
+    parsed = urlsplit(value)
+    if parsed.scheme or parsed.netloc or parsed.fragment or not parsed.path.startswith(_AGENT_ENROLLMENT_PATH_PREFIX):
+        raise HTTPException(status_code=400, detail="invalid operator login continuation")
+    interaction_id = parsed.path.removeprefix(_AGENT_ENROLLMENT_PATH_PREFIX)
+    try:
+        UUID(interaction_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid operator login continuation") from None
+    return urlunsplit(("", "", parsed.path, parsed.query, ""))
+
+
 @router.get("/login")
-async def login(request: Request) -> RedirectResponse:
+async def login(request: Request, return_to: str | None = None) -> RedirectResponse:
+    if return_to is not None:
+        request.session[SESSION_RETURN_TO_KEY] = _validated_enrollment_return_to(return_to)
+    else:
+        request.session.pop(SESSION_RETURN_TO_KEY, None)
     client = cast(OAuth, request.app.state.operator_oauth).create_client(AUTHENTIK_CLIENT_NAME)
     return cast(RedirectResponse, await client.authorize_redirect(request, _redirect_uri(request)))
 
@@ -170,18 +203,23 @@ async def callback(request: Request) -> RedirectResponse:
         "operator_id": str(identity.operator_id),
         "identity_id": str(identity.identity_id),
         "username": username,
+        # Enrollment interactions bind to this random browser session, not merely to possession of
+        # a server-generated form nonce or to the Operator identity shared across browser devices.
+        "browser_session_id": secrets.token_urlsafe(32),
         # SessionMiddleware refreshes its cookie timestamp whenever it serializes the session. Keep
         # an independently signed absolute deadline so an active browser cannot turn the cookie
         # into a sliding authorization that outlives Authentik reauthentication indefinitely.
         "expires_at": int(time.time()) + OPERATOR_SESSION_MAX_AGE_SECONDS,
     }
     logger.info("operator browser login: %s (operator_id=%s)", username, identity.operator_id)
-    return RedirectResponse(url="/", status_code=303)
+    raw_return_to = request.session.pop(SESSION_RETURN_TO_KEY, None)
+    return_to = _validated_enrollment_return_to(raw_return_to) if isinstance(raw_return_to, str) else "/"
+    return RedirectResponse(url=return_to, status_code=303)
 
 
 @router.get("/logout")
 async def logout(request: Request) -> RedirectResponse:
-    request.session.pop(SESSION_USER_KEY, None)
+    request.session.clear()
     return RedirectResponse(url="/", status_code=303)
 
 

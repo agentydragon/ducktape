@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from uuid import UUID
 
 import httpx
 import pytest
@@ -178,6 +179,35 @@ def test_successful_login_cookie_has_one_hour_max_age(make_client) -> None:
 
     assert response.status_code == 303
     assert "Max-Age=3600" in response.headers["set-cookie"]
+
+
+def test_callback_returns_to_exact_local_agent_enrollment_interaction(make_operator_client) -> None:
+    interaction_id = UUID("d9377996-7f17-4dcb-a746-3f401e0b1413")
+    return_to = f"/auth/agent-enrollment/{interaction_id}?browser_nonce=opaque-value"
+    with make_operator_client(operator_return_to=return_to) as client:
+        client.app.state.operator_oauth = _MatchingIssuerOAuth()
+        response = client.get("/auth/callback", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == return_to
+
+
+@pytest.mark.parametrize(
+    "return_to",
+    [
+        "https://attacker.example/",
+        "//attacker.example/auth/agent-enrollment/d9377996-7f17-4dcb-a746-3f401e0b1413",
+        "/auth/agent-enrollment/not-a-uuid",
+        "/api/config",
+        "/auth/agent-enrollment/d9377996-7f17-4dcb-a746-3f401e0b1413#fragment",
+    ],
+)
+def test_login_rejects_non_enrollment_continuations(make_client, return_to: str) -> None:
+    with make_client() as client:
+        response = client.get("/auth/login", params={"return_to": return_to})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid operator login continuation"
 
 
 @pytest.mark.parametrize("oauth", [_MismatchedIssuerOAuth(), _MissingIssuerOAuth()])

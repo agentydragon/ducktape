@@ -29,7 +29,7 @@ from testcontainers.postgres import PostgresContainer
 from haku.console.app import create_app
 from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig, Settings
 from haku.console.database_migrate import apply_migrations
-from haku.console.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_USER_KEY
+from haku.console.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_RETURN_TO_KEY, SESSION_USER_KEY
 from haku.console.operator_identity import VerifiedExternalIdentity
 from util.testing.postgres import force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
@@ -60,24 +60,32 @@ TEST_OPERATOR_OIDC = OperatorOidcConfig(
 TEST_OPERATOR_IDENTITY = OperatorIdentityConfig(trust_domain="auth.test/authentik-user-id/v1")
 
 
-def operator_session_cookie(*, operator_id: str, identity_id: str, username: str, expires_at: int | None = None) -> str:
+def operator_session_cookie(
+    *,
+    operator_id: str,
+    identity_id: str,
+    username: str,
+    expires_at: int | None = None,
+    browser_session_id: str = "test-browser-session-id",
+    return_to: str | None = None,
+) -> str:
     """A Starlette SessionMiddleware `session` cookie for a logged-in operator, mirroring its own
     sign format (`TimestampSigner` over base64-JSON) so a TestClient can present operator identity
     without walking the live OIDC login."""
-    data = base64.b64encode(
-        json.dumps(
-            {
-                SESSION_USER_KEY: {
-                    "operator_id": operator_id,
-                    "identity_id": identity_id,
-                    "username": username,
-                    "expires_at": (
-                        expires_at if expires_at is not None else int(time.time()) + OPERATOR_SESSION_MAX_AGE_SECONDS
-                    ),
-                }
-            }
-        ).encode()
-    )
+    session = {
+        SESSION_USER_KEY: {
+            "operator_id": operator_id,
+            "identity_id": identity_id,
+            "username": username,
+            "browser_session_id": browser_session_id,
+            "expires_at": (
+                expires_at if expires_at is not None else int(time.time()) + OPERATOR_SESSION_MAX_AGE_SECONDS
+            ),
+        }
+    }
+    if return_to is not None:
+        session[SESSION_RETURN_TO_KEY] = return_to
+    data = base64.b64encode(json.dumps(session).encode())
     return itsdangerous.TimestampSigner(_TEST_SESSION_SECRET).sign(data).decode()
 
 
@@ -160,6 +168,7 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
         operator_external_user_key: str = "operator-sub",
         operator_username: str = "operator@example.com",
         operator_session_expires_at: int | None = None,
+        operator_return_to: str | None = None,
         **settings_overrides: Any,
     ) -> Iterator[TestClient]:
         # Every app uses production-shaped OIDC settings. `operator=True` presents an authenticated
@@ -198,6 +207,7 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
                         identity_id=str(operator_identity.identity_id),
                         username=operator_username,
                         expires_at=operator_session_expires_at,
+                        return_to=operator_return_to,
                     ),
                 )
             yield c
