@@ -15,7 +15,6 @@ import asyncio
 import datetime
 import logging
 import secrets
-from dataclasses import dataclass
 from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -26,7 +25,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from haku.console import operator_auth
 from haku.console.auto_approval import auto_approve_tool_call
 from haku.console.config import Settings
 from haku.console.console_events import ConsoleEventHub, ConsoleEventHubDep
@@ -49,6 +47,8 @@ from haku.console.mcp_operator_oauth import (
     _oauth_store,
     _operator_subject,
 )
+from haku.console.operator_auth import OperatorActorDep, ToolCallActorDep
+from haku.console.tool_call_actor import AgentActor, ToolCallActor
 from haku.console.tool_calls import (
     ApprovalDecisionRequest,
     SubmitToolCallRequest,
@@ -78,14 +78,6 @@ class ToolMetadataBase(BaseModel):
     name: str
     description: str | None = None
     input_schema: dict[str, Any] = Field(default_factory=dict)
-
-
-def _operator_event_subject(request: Request) -> str:
-    """The authenticated OIDC ``sub`` that owns operator-facing rows and events."""
-    subject = operator_auth.operator_subject(request)
-    if subject is not None:
-        return subject
-    raise HTTPException(status_code=401, detail="no authenticated operator subject on the request")
 
 
 class AliveToolMetadata(ToolMetadataBase):
@@ -148,28 +140,6 @@ class ToolCallEventsResponse(BaseModel):
 
 class ApprovalDecisionResponse(BaseModel):
     tool_call: ToolCallRecord
-
-
-@dataclass(frozen=True, slots=True)
-class OperatorActor:
-    """An authenticated operator acting within their own tenant."""
-
-    operator_subject: str
-
-
-@dataclass(frozen=True, slots=True)
-class AgentActor:
-    """An authenticated agent acting for exactly one owning operator."""
-
-    principal: str
-    operator_subject: str
-
-
-type ToolCallActor = OperatorActor | AgentActor
-
-
-def _operator_actor(request: Request) -> OperatorActor:
-    return OperatorActor(operator_subject=_operator_event_subject(request))
 
 
 class PostgresToolCallLedger:
@@ -385,10 +355,6 @@ def _ledger(request: Request) -> PostgresToolCallLedger:
     return cast(PostgresToolCallLedger, request.app.state.tool_call_ledger)
 
 
-def _static_agents(request: Request) -> list[ResolvedStaticAgent]:
-    return cast("list[ResolvedStaticAgent]", request.app.state.static_agents)
-
-
 def _executor(request: Request) -> McpToolExecutor:
     return cast(McpToolExecutor, request.app.state.tool_call_executor)
 
@@ -400,7 +366,6 @@ def _metadata_provider(request: Request) -> McpMetadataProvider:
 LedgerDep = Annotated[PostgresToolCallLedger, Depends(_ledger)]
 ExecutorDep = Annotated[McpToolExecutor, Depends(_executor)]
 MetadataProviderDep = Annotated[McpMetadataProvider, Depends(_metadata_provider)]
-StaticAgentsDep = Annotated[list[ResolvedStaticAgent], Depends(_static_agents)]
 
 
 def _mcp_result_to_json(result: mcp_types.CallToolResult) -> dict[str, Any]:
@@ -424,27 +389,6 @@ def _pending_approval_from_record(record: ToolCallRecord) -> PendingApproval:
         created_at=record.created_at,
         auto_approval_evaluation=record.auto_approval_evaluation,
     )
-
-
-def _tool_call_actor(request: Request, static_agents: StaticAgentsDep) -> ToolCallActor:
-    """Resolve one unambiguous credential into its audit identity and tenant.
-
-    Keeping the actor variant and stable identity keys together prevents display data from becoming
-    authorization data, and prevents a session plus bearer from being split across two independent
-    resolution paths.
-    """
-    agent = operator_auth.authenticated_static_agent(request, static_agents)
-    subject = operator_auth.operator_subject(request)
-    if agent is not None and subject is not None:
-        raise HTTPException(status_code=400, detail="present exactly one operator or static-agent credential")
-    if agent is not None:
-        return AgentActor(principal=agent.agent, operator_subject=agent.operator_subject)
-    if subject is not None:
-        return OperatorActor(operator_subject=subject)
-    raise HTTPException(status_code=401, detail="operator or agent authentication required")
-
-
-ToolCallActorDep = Annotated[ToolCallActor, Depends(_tool_call_actor)]
 
 
 def resolve_mcp_agent(
@@ -592,7 +536,7 @@ async def submit_and_wait(
     and is also the read-authorization scope for the resulting call."""
     server = _server_entry(settings, req.server_id)
     auto_approval_policy_id, auto_approval_evaluation = await auto_approve_tool_call(
-        caller_is_agent=isinstance(actor, AgentActor),
+        actor=actor,
         server_id=server.id,
         tool_name=req.tool_name,
         arguments=req.arguments,
@@ -669,14 +613,16 @@ async def get_tool_call(tool_call_id: str, ledger: LedgerDep, actor: ToolCallAct
 
 
 @router.get("/api/approvals/pending")
-async def pending_approvals(request: Request, ledger: LedgerDep) -> PendingApprovalsResponse:
-    records = ledger.list(actor=_operator_actor(request), statuses=[ToolCallStatus.PENDING_APPROVAL]).tool_calls
+async def pending_approvals(ledger: LedgerDep, actor: OperatorActorDep) -> PendingApprovalsResponse:
+    records = ledger.list(actor=actor, statuses=[ToolCallStatus.PENDING_APPROVAL]).tool_calls
     return PendingApprovalsResponse(approvals=[_pending_approval_from_record(r) for r in records])
 
 
 @router.get("/api/approvals/events")
-async def approval_events(request: Request, ledger: LedgerDep, after_event_id: int = 0) -> ToolCallEventsResponse:
-    return ledger.events_after_id(operator_subject=_operator_event_subject(request), after_event_id=after_event_id)
+async def approval_events(
+    ledger: LedgerDep, actor: OperatorActorDep, after_event_id: int = 0
+) -> ToolCallEventsResponse:
+    return ledger.events_after_id(operator_subject=actor.operator_subject, after_event_id=after_event_id)
 
 
 @router.post("/api/tool-calls/{tool_call_id}/decision")
@@ -690,10 +636,10 @@ async def decide_approval(
     hub: ConsoleEventHubDep,
     executor: ExecutorDep,
     oauth_store: OAuthStoreDep,
+    actor: OperatorActorDep,
 ) -> ApprovalDecisionResponse:
     await csrf_protect.validate_csrf(request)
-    operator_actor = _operator_actor(request)
-    event_operator_subject = operator_actor.operator_subject
+    event_operator_subject = actor.operator_subject
     if body.decision == "deny":
         record, event = ledger.deny(tool_call_id, body.reason, operator_subject=event_operator_subject)
         await hub.broadcast(event_operator_subject, [event])
@@ -705,7 +651,7 @@ async def decide_approval(
             body.reason,
         )
         return ApprovalDecisionResponse(tool_call=record)
-    pending = ledger.get(tool_call_id, actor=operator_actor)
+    pending = ledger.get(tool_call_id, actor=actor)
     server = _server_entry(settings, pending.server_id)
     # Only operator_oauth execution runs as the approving operator; other servers use their configured
     # credential, so an operator subject isn't required to approve a call there.

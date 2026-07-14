@@ -81,6 +81,11 @@ py_library(
 )
 
 py_library(
+    name = "tool_call_actor",
+    srcs = ["tool_call_actor.py"],
+)
+
+py_library(
     name = "database_schema",
     srcs = ["database_schema.py"],
     deps = [
@@ -141,6 +146,7 @@ py_library(
     name = "auto_approval",
     srcs = ["auto_approval.py"],
     deps = [
+        ":tool_call_actor",
         "//haku/console/tools:gmail_client",
         "@pypi//fastmcp_slim",
         "@pypi//jsonschema",
@@ -160,6 +166,7 @@ py_library(
         ":mcp_config",
         ":mcp_operator_oauth",
         ":operator_auth",
+        ":tool_call_actor",
         "//haku/console/tools:gmail_client",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
@@ -176,6 +183,7 @@ py_test(
     srcs = ["test_auto_approval.py"],
     deps = [
         ":auto_approval",
+        ":tool_call_actor",
         "//:conftest",
         "//gmail_api:labels",
         "//haku/console/tools:gmail",
@@ -196,6 +204,7 @@ py_library(
         ":mcp_approval",
         ":mcp_config",
         ":mcp_operator_oauth",
+        ":tool_call_actor",
         "//haku/console/tools:gmail_client",
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
@@ -214,6 +223,7 @@ py_library(
     deps = [
         ":config",
         ":mcp_config",
+        ":tool_call_actor",
         "@pypi//authlib",
         "@pypi//fastapi",
         "@pypi//pydantic",
@@ -497,6 +507,7 @@ py_test(
         ":mcp_config",
         ":mcp_operator_oauth",
         ":mcp_server",
+        ":tool_call_actor",
         "//:conftest",
         "//gmail_api:labels",
         "//haku/console/tools:gmail",

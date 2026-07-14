@@ -9,6 +9,7 @@ from typing import Any
 import jsonschema
 from fastmcp import FastMCP
 
+from haku.console.tool_call_actor import AgentActor, ToolCallActor
 from haku.console.tools.gmail_client import GMAIL_SERVER_ID, GmailToolsClient
 
 logger = logging.getLogger(__name__)
@@ -111,7 +112,7 @@ async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str,
 
 async def auto_approve_tool_call(
     *,
-    caller_is_agent: bool,
+    actor: ToolCallActor,
     server_id: str,
     tool_name: str,
     arguments: dict[str, Any],
@@ -122,12 +123,12 @@ async def auto_approve_tool_call(
     """Return the approving policy ID and an audit-safe evaluation string.
 
     Applies to any authenticated agent (the machine API token or an MCP OAuth client); interactive
-    operator-browser callers pass ``caller_is_agent=False`` and never auto-approve. Unconditionally
+    operator-browser calls never auto-approve. Unconditionally
     allowlisted read-only/safe operations (gmail reads, grocy-sf reads, tana `get_or_create_calendar_node`)
     approve regardless of arguments; gmail label mutations approve only when scoped to ``label_prefix``.
     Any schema, lookup, or policy error is logged and fails closed.
     """
-    if not caller_is_agent:
+    if not isinstance(actor, AgentActor):
         return None, None
     if is_unconditionally_auto_approved(server_id, tool_name):
         # In-process servers (gmail/google_calendar) expose their schema here, so validate; remote

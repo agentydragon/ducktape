@@ -25,17 +25,11 @@ from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig
 from haku.console.conftest import console_settings, operator_session_cookie, write_config
 from haku.console.console_events import ConsoleEventHub
-from haku.console.mcp_approval import (
-    AgentActor,
-    McpMetadataProvider,
-    McpToolExecutor,
-    OperatorActor,
-    PostgresToolCallLedger,
-    resolve_mcp_agent,
-)
+from haku.console.mcp_approval import McpMetadataProvider, McpToolExecutor, PostgresToolCallLedger, resolve_mcp_agent
 from haku.console.mcp_config import ResolvedStaticAgent, static_agent_client_id
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_server import ConsoleMcpContext, build_console_mcp, register_proxy_tools
+from haku.console.tool_call_actor import AgentActor, OperatorActor
 from haku.console.tool_calls import ToolCallStatus
 from haku.console.tools import gmail as gmail_tools
 from util.net import pick_free_port

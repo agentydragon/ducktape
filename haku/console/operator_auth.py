@@ -20,16 +20,17 @@ from __future__ import annotations
 
 import hmac
 import logging
-from typing import cast
+from typing import Annotated, cast
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from starlette.requests import HTTPConnection
 
 from haku.console.config import OperatorOidcConfig, Settings
 from haku.console.mcp_config import ResolvedStaticAgent
+from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +156,34 @@ async def me(request: Request) -> OperatorResponse:
 
 def _static_agents(conn: HTTPConnection) -> list[ResolvedStaticAgent]:
     return cast("list[ResolvedStaticAgent]", conn.app.state.static_agents)
+
+
+StaticAgentsDep = Annotated[list[ResolvedStaticAgent], Depends(_static_agents)]
+
+
+def _operator_actor(conn: HTTPConnection) -> OperatorActor:
+    if (subject := operator_subject(conn)) is None:
+        raise HTTPException(status_code=401, detail="no authenticated operator subject on the request")
+    return OperatorActor(operator_subject=subject)
+
+
+OperatorActorDep = Annotated[OperatorActor, Depends(_operator_actor)]
+
+
+def _tool_call_actor(conn: HTTPConnection, static_agents: StaticAgentsDep) -> ToolCallActor:
+    """Resolve exactly one presented credential into its audit identity and tenant."""
+    agent = authenticated_static_agent(conn, static_agents)
+    subject = operator_subject(conn)
+    if agent is not None and subject is not None:
+        raise HTTPException(status_code=400, detail="present exactly one operator or static-agent credential")
+    if agent is not None:
+        return AgentActor(principal=agent.agent, operator_subject=agent.operator_subject)
+    if subject is not None:
+        return OperatorActor(operator_subject=subject)
+    raise HTTPException(status_code=401, detail="operator or agent authentication required")
+
+
+ToolCallActorDep = Annotated[ToolCallActor, Depends(_tool_call_actor)]
 
 
 def require_operator(conn: HTTPConnection) -> None:

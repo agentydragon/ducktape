@@ -7,13 +7,17 @@ import pytest_bazel
 
 from gmail_api.labels import GmailLabel, LabelType
 from haku.console.auto_approval import UNCONDITIONAL_AUTO_APPROVAL_ID, auto_approve_tool_call
+from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tools.gmail import build_mcp
 
+AGENT_ACTOR = AgentActor(principal="test-agent", operator_subject="test-operator")
+OPERATOR_ACTOR = OperatorActor(operator_subject="test-operator")
 
-async def _decision(tool_name: str, arguments: dict, *, gmail=None, caller_is_agent=True):
+
+async def _decision(tool_name: str, arguments: dict, *, gmail=None, actor: ToolCallActor = AGENT_ACTOR):
     gmail = gmail or Mock()
     return await auto_approve_tool_call(
-        caller_is_agent=caller_is_agent,
+        actor=actor,
         server_id="gmail",
         tool_name=tool_name,
         arguments=arguments,
@@ -110,14 +114,14 @@ async def test_delete_resolves_existing_label_name() -> None:
     assert await _policy_id("labels_delete", {"label_id": "INBOX"}, gmail=gmail) is None
 
 
-async def test_non_agent_caller_is_not_auto_approved() -> None:
-    assert await _decision("labels_list", {}, caller_is_agent=False) == (None, None)
+async def test_operator_actor_is_not_auto_approved() -> None:
+    assert await _decision("labels_list", {}, actor=OPERATOR_ACTOR) == (None, None)
 
 
 async def _remote_decision(server_id: str, tool_name: str, arguments: dict) -> tuple[str | None, str | None]:
     # Remote (operator_oauth) servers have no in-process schema, so `mcp` is None.
     return await auto_approve_tool_call(
-        caller_is_agent=True,
+        actor=AGENT_ACTOR,
         server_id=server_id,
         tool_name=tool_name,
         arguments=arguments,

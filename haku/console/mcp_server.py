@@ -46,7 +46,6 @@ from haku.console.auto_approval import is_unconditionally_auto_approved
 from haku.console.config import Settings
 from haku.console.console_events import ConsoleEventHub
 from haku.console.mcp_approval import (
-    AgentActor,
     DegradedServerMetadata,
     McpMetadataProvider,
     McpToolExecutor,
@@ -66,6 +65,7 @@ from haku.console.mcp_config import (
     static_agent_client_id,
 )
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
+from haku.console.tool_call_actor import AgentActor
 from haku.console.tool_calls import SubmitToolCallRequest, ToolCallRecord, ToolCallStatus
 from haku.console.tools.gmail_client import GmailToolsClient
 from mcp_infra.authentik_auth.auth import OnClientAuthorized, build_authentik_auth
