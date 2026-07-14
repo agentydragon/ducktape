@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import Mock
+from uuid import UUID
 
 import httpx
 import pytest
@@ -24,13 +25,21 @@ from starlette.routing import Mount
 from gmail_api.labels import GmailLabel, LabelsListResponse, LabelType
 from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig
-from haku.console.conftest import console_settings, operator_session_cookie, write_config
+from haku.console.conftest import (
+    TEST_OPERATOR_IDENTITY,
+    TEST_OPERATOR_OIDC,
+    console_settings,
+    operator_session_cookie,
+    write_config,
+)
 from haku.console.console_events import ConsoleEventHub
 from haku.console.mcp_agent_auth import build_auth
 from haku.console.mcp_approval import McpMetadataProvider, McpToolExecutor, PostgresToolCallLedger, resolve_mcp_agent
 from haku.console.mcp_config import ResolvedStaticAgent, static_agent_client_id
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_server import ConsoleMcpContext, build_console_mcp, register_proxy_tools
+from haku.console.operator_identity import OperatorIdentityTrust, VerifiedExternalIdentity
+from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor, OperatorActor
 from haku.console.tool_calls import ToolCallStatus
 from haku.console.tools import gmail as gmail_tools
@@ -58,6 +67,16 @@ def _static_agent_env(monkeypatch: pytest.MonkeyPatch) -> None:
 class _Harness:
     base: str  # base URL of the served console MCP; open `Client(f"{base}/mcp", auth=_AGENT_TOKEN)`
     ledger: PostgresToolCallLedger
+    operator_id: UUID
+
+
+def _identity_store(database_url: str) -> PostgresOperatorIdentityStore:
+    return PostgresOperatorIdentityStore(
+        database_url,
+        OperatorIdentityTrust(
+            trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
+        ),
+    )
 
 
 @pytest.fixture
@@ -69,23 +88,32 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
     config_file = write_config(tmp_path / "console.yaml", {"mcp": {"servers": [{"id": "gmail"}]}})
     settings = console_settings(migrated_db_url, config_file=config_file, ui_base_url="https://haku.test")
     in_process = {gmail_tools.GMAIL_SERVER_ID: gmail_tools.build_mcp(gmail_client)}
+    identity_store = _identity_store(migrated_db_url)
+    operator_id = identity_store.resolve_configured_external_user_key("42")
+    oauth_store = PostgresMcpOperatorOAuthStore(migrated_db_url, operator_identity_store=identity_store)
     context = ConsoleMcpContext(
         settings=settings,
         static_agents=[
-            ResolvedStaticAgent(agent="haku", token=SecretStr(_AGENT_TOKEN), operator_subject="42"),
-            ResolvedStaticAgent(agent="sibling", token=SecretStr(_SIBLING_AGENT_TOKEN), operator_subject="42"),
+            ResolvedStaticAgent(agent="haku", token=SecretStr(_AGENT_TOKEN), operator_id=operator_id),
+            ResolvedStaticAgent(agent="sibling", token=SecretStr(_SIBLING_AGENT_TOKEN), operator_id=operator_id),
         ],
         ledger=PostgresToolCallLedger(migrated_db_url),
-        hub=ConsoleEventHub(migrated_db_url),
+        hub=ConsoleEventHub(migrated_db_url, operator_identity_store=identity_store),
         executor=McpToolExecutor(in_process),
-        oauth_store=PostgresMcpOperatorOAuthStore(migrated_db_url),
+        oauth_store=oauth_store,
+        identity_store=identity_store,
         metadata_provider=McpMetadataProvider(in_process),
         in_process_servers=in_process,
         gmail_client=gmail_client,
     )
     server = build_console_mcp(
         context,
-        auth=build_auth(context.settings, context.static_agents, operator_oauth_store=context.oauth_store).provider,
+        auth=build_auth(
+            context.settings,
+            context.static_agents,
+            operator_oauth_store=context.oauth_store,
+            operator_identity_store=context.identity_store,
+        ).provider,
     )
     await register_proxy_tools(server, context)
     # Serve over HTTP: the in-memory transport can't carry the static bearer, and the proxy tools
@@ -93,7 +121,7 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
     mcp_app = server.http_app(path="/")
     app = Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=mcp_app.lifespan)
     with serve_app_sync(app) as base:
-        yield _Harness(base=base, ledger=context.ledger)
+        yield _Harness(base=base, ledger=context.ledger, operator_id=operator_id)
 
 
 async def test_tool_surface_splits_pass_through_and_request(harness: _Harness) -> None:
@@ -122,7 +150,7 @@ async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harn
 
     assert result.structured_content is not None
     assert result.structured_content["labels"][0]["name"] == "haku/triaged"
-    calls = harness.ledger.list(actor=AgentActor(principal="haku", operator_subject="42")).tool_calls
+    calls = harness.ledger.list(actor=AgentActor(principal="haku", operator_id=harness.operator_id)).tool_calls
     assert len(calls) == 1
     assert calls[0].status == ToolCallStatus.OK
     assert calls[0].tool_name == "labels_list"
@@ -191,7 +219,7 @@ async def test_sibling_mcp_agents_only_read_their_own_calls(harness: _Harness) -
             with pytest.raises(ToolError, match="not found"):
                 await client.call_tool("get_tool_call", {"tool_call_id": sibling_call_id})
 
-    operator_calls = harness.ledger.list(actor=OperatorActor(operator_subject="42")).tool_calls
+    operator_calls = harness.ledger.list(actor=OperatorActor(operator_id=harness.operator_id)).tool_calls
     assert [call.tool_call_id for call in operator_calls] == call_ids
 
 
@@ -229,7 +257,11 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
             ui_base_url="https://haku.test",
             public_base_url=f"http://127.0.0.1:{console_port}",
         )
-        with serve_app_sync(create_app(settings), port=console_port) as base:
+        app = create_app(settings)
+        operator_identity = app.state.operator_identity_store.resolve_verified_identity(
+            VerifiedExternalIdentity(issuer=settings.operator_oidc.issuer, subject="42")
+        )
+        with serve_app_sync(app, port=console_port) as base:
             async with httpx.AsyncClient() as anon:
                 # No bearer -> unauthorized. Hit /mcp/ directly (the mount redirects /mcp -> /mcp/).
                 unauth = await anon.post(
@@ -252,7 +284,14 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
 
             # The operator approves via the CSRF-gated decision endpoint -> the real upstream runs.
             async with httpx.AsyncClient(
-                base_url=base, cookies={"session": operator_session_cookie(subject="42", username="operator")}
+                base_url=base,
+                cookies={
+                    "session": operator_session_cookie(
+                        operator_id=str(operator_identity.operator_id),
+                        identity_id=str(operator_identity.identity_id),
+                        username="operator",
+                    )
+                },
             ) as operator:
                 csrf = (await operator.get("/api/capabilities/csrf")).json()["csrf_token"]
                 decided = await operator.post(
@@ -307,7 +346,7 @@ def _hidden_input(page: str, name: str) -> str:
     return match.group(1)
 
 
-def test_mcp_oauth_requires_shared_persistence() -> None:
+def test_mcp_oauth_requires_postgres_persistence() -> None:
     provider = {
         "oidc_issuer": "https://auth.example.test/application/o/haku-console-mcp/",
         "oidc_client_id": "console",
@@ -317,6 +356,20 @@ def test_mcp_oauth_requires_shared_persistence() -> None:
         McpOAuthConfig.model_validate(provider)
     with pytest.raises(ValidationError, match="persistence"):
         McpOAuthConfig.model_validate({**provider, "persistence": {"kind": "file"}})
+    with pytest.raises(ValidationError, match="persistence"):
+        McpOAuthConfig.model_validate({**provider, "persistence": {"kind": "valkey", "host": "valkey.example.test"}})
+
+
+def test_mcp_oauth_persistence_must_share_the_console_database() -> None:
+    oauth = McpOAuthConfig(
+        oidc_issuer="https://auth.example.test/application/o/haku-console-mcp/",
+        oidc_client_id="console",
+        oidc_client_secret=SecretStr("secret"),
+        persistence=PostgresPersistence(kind="postgres", url="postgresql://app:secret@other-db.example.test:5432/haku"),
+    )
+
+    with pytest.raises(ValidationError, match="same Postgres"):
+        console_settings("postgresql+psycopg://app:secret@db.example.test:5432/haku", mcp_oauth=oauth)
 
 
 def test_mcp_oauth_reads_nested_shared_persistence_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -355,7 +408,8 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
                 ),
             ),
         )
-        with serve_app_sync(create_app(settings), port=console_port) as base:
+        app = create_app(settings)
+        with serve_app_sync(app, port=console_port) as base:
             # The static bearer still authenticates (MultiAuth composes OAuth + static).
             async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
                 assert "standin_echo" in {t.name for t in await client.list_tools()}
@@ -479,9 +533,12 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
                 assert access_token
 
                 # The authorization-code exchange binds the exact downstream DCR identity to the
-                # stable upstream operator subject before FastMCP issues the local bearer.
-                oauth_store = PostgresMcpOperatorOAuthStore(migrated_db_url)
-                assert oauth_store.agent_operator(agent_dcr_client_id=registered["client_id"]) == "operator-42"
+                # canonical Operator before FastMCP issues the local bearer.
+                oauth_store = app.state.mcp_operator_oauth_store
+                expected_operator_id = app.state.operator_identity_store.resolve_configured_external_user_key(
+                    "operator-42"
+                )
+                assert oauth_store.agent_operator(agent_dcr_client_id=registered["client_id"]) == expected_operator_id
 
                 # The returned bearer authenticates to the real mounted MCP server and retains the
                 # DCR identity needed to resolve that operator link.
@@ -495,46 +552,54 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
 
 
 def test_agent_operator_link_round_trips(migrated_db_url: str) -> None:
-    store = PostgresMcpOperatorOAuthStore(migrated_db_url)
+    identity_store = _identity_store(migrated_db_url)
+    operator_42 = identity_store.resolve_configured_external_user_key("42")
+    operator_99 = identity_store.resolve_configured_external_user_key("99")
+    store = PostgresMcpOperatorOAuthStore(migrated_db_url, operator_identity_store=identity_store)
     assert store.agent_operator(agent_dcr_client_id="dcr-1") is None
-    store.bind_agent_operator(agent_dcr_client_id="dcr-1", operator_subject="42")
-    assert store.agent_operator(agent_dcr_client_id="dcr-1") == "42"
+    store.bind_agent_operator(agent_dcr_client_id="dcr-1", operator_id=operator_42)
+    assert store.agent_operator(agent_dcr_client_id="dcr-1") == operator_42
     # Reauthorizing as the same operator is idempotent. A different operator must receive a new DCR
     # client id; moving the old id would transfer every already-issued token to the new tenant.
-    store.bind_agent_operator(agent_dcr_client_id="dcr-1", operator_subject="42")
+    store.bind_agent_operator(agent_dcr_client_id="dcr-1", operator_id=operator_42)
     with pytest.raises(ValueError, match="different operator"):
-        store.bind_agent_operator(agent_dcr_client_id="dcr-1", operator_subject="99")
-    assert store.agent_operator(agent_dcr_client_id="dcr-1") == "42"
+        store.bind_agent_operator(agent_dcr_client_id="dcr-1", operator_id=operator_99)
+    assert store.agent_operator(agent_dcr_client_id="dcr-1") == operator_42
     with pytest.raises(ValueError, match="reserved static-agent namespace"):
-        store.bind_agent_operator(agent_dcr_client_id=static_agent_client_id("haku"), operator_subject="42")
+        store.bind_agent_operator(agent_dcr_client_id=static_agent_client_id("haku"), operator_id=operator_42)
 
 
 def test_operator_resolution_routes_multiple_agents_and_operators(migrated_db_url: str) -> None:
-    """Each caller resolves to its own operator subject with several static agents and OAuth links
+    """Each caller resolves to its own canonical Operator with several static agents and OAuth links
     configured — no crosstalk between them."""
-    store = PostgresMcpOperatorOAuthStore(migrated_db_url)
-    # Two static agents, each bound (by explicit config) to a different operator subject.
+    identity_store = _identity_store(migrated_db_url)
+    operators = {
+        key: identity_store.resolve_configured_external_user_key(key)
+        for key in ("op-haku", "op-ops", "op-claude", "op-cli")
+    }
+    store = PostgresMcpOperatorOAuthStore(migrated_db_url, operator_identity_store=identity_store)
+    # Two static agents, each bound (by explicit config) to a different Operator.
     static_agents = [
-        ResolvedStaticAgent(agent="haku", token=SecretStr("tok-haku"), operator_subject="op-haku"),
-        ResolvedStaticAgent(agent="ops-bot", token=SecretStr("tok-ops"), operator_subject="op-ops"),
+        ResolvedStaticAgent(agent="haku", token=SecretStr("tok-haku"), operator_id=operators["op-haku"]),
+        ResolvedStaticAgent(agent="ops-bot", token=SecretStr("tok-ops"), operator_id=operators["op-ops"]),
     ]
-    # Two OAuth DCR agents, each auto-linked (at connect) to a different operator subject.
-    store.bind_agent_operator(agent_dcr_client_id="dcr-claude", operator_subject="op-claude")
-    store.bind_agent_operator(agent_dcr_client_id="dcr-cli", operator_subject="op-cli")
+    # Two OAuth DCR agents, each auto-linked (at connect) to a different Operator.
+    store.bind_agent_operator(agent_dcr_client_id="dcr-claude", operator_id=operators["op-claude"])
+    store.bind_agent_operator(agent_dcr_client_id="dcr-cli", operator_id=operators["op-cli"])
 
-    def subject(client_id: str) -> str | None:
-        caller = resolve_mcp_agent(client_id, static_agents, store)
-        return caller.operator_subject if caller is not None else None
+    def operator_id(client_id: str) -> UUID | None:
+        caller = resolve_mcp_agent(client_id, static_agents, store, identity_store)
+        return caller.operator_id if caller is not None else None
 
     # Static agents route by their explicitly namespaced config binding; the subjects never cross.
-    assert subject(static_agent_client_id("haku")) == "op-haku"
-    assert subject(static_agent_client_id("ops-bot")) == "op-ops"
+    assert operator_id(static_agent_client_id("haku")) == operators["op-haku"]
+    assert operator_id(static_agent_client_id("ops-bot")) == operators["op-ops"]
     # OAuth agents route by their linked DCR identity.
-    assert subject("dcr-claude") == "op-claude"
-    assert subject("dcr-cli") == "op-cli"
+    assert operator_id("dcr-claude") == operators["op-claude"]
+    assert operator_id("dcr-cli") == operators["op-cli"]
     # Raw static names cannot collide with OAuth ids, and unknown/unlinked callers fail closed.
-    assert subject("haku") is None
-    assert subject("dcr-unlinked") is None
+    assert operator_id("haku") is None
+    assert operator_id("dcr-unlinked") is None
 
 
 def test_duplicate_static_agent_ids_fail_startup(migrated_db_url: str, tmp_path: Path) -> None:

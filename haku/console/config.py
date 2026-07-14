@@ -6,11 +6,13 @@ from pathlib import Path
 from typing import Self
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
-from mcp_infra.persistence import SharedPersistenceConfig
+from mcp_infra.persistence import PostgresPersistence
 
 # Both URLs are built from the routine (trigger) id, so only the id + token are
 # configured. The fire endpoint performs the launch; the claude.ai page is the
@@ -22,6 +24,25 @@ _PAGE_URL = "https://claude.ai/code/routines/{id}"
 # truth; MCP OAuth derives its issuer/callback URLs from this path instead of accepting a second,
 # independently configurable public URL that can drift away from the actual mount.
 MCP_PATH = "/mcp"
+
+
+def _postgres_connection_identity(raw_url: str) -> tuple[object, ...]:
+    """Return the authority-bearing parts of a Postgres URL, independent of its driver."""
+    try:
+        url = make_url(raw_url)
+    except ArgumentError as error:
+        raise ValueError("database URL must be a valid PostgreSQL URL") from error
+    if url.get_backend_name() != "postgresql":
+        raise ValueError("database URL must use PostgreSQL")
+    normalized_query = tuple(sorted((key, tuple(values)) for key, values in url.normalized_query.items()))
+    return (
+        url.username,
+        url.password,
+        url.host.lower() if url.host is not None else None,
+        url.port or 5432,
+        url.database,
+        normalized_query,
+    )
 
 
 class LaunchRoutineConfig(BaseModel):
@@ -67,6 +88,29 @@ class OperatorOidcConfig(BaseModel):
         return f"{self.issuer.rstrip('/')}/.well-known/openid-configuration"
 
 
+class OperatorIdentityConfig(BaseModel):
+    """The stable Authentik user-id namespace shared by Haku's OIDC clients.
+
+    Haku deliberately does not equate bare OIDC ``sub`` values. A subject becomes a stable external
+    user key only when it came from one of the exact configured browser/MCP issuers, both of which
+    are provisioned with Authentik ``sub_mode=user_id``. ``trust_domain`` names that deployment
+    contract; the issuer allowlist itself is derived from the two role-specific OIDC settings so it
+    cannot drift from the clients actually doing verification.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    trust_domain: str
+
+    @field_validator("trust_domain")
+    @classmethod
+    def _nonempty_trust_domain(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("trust_domain must not be empty")
+        return value
+
+
 class McpOAuthConfig(BaseModel):
     """Credentials for Haku's agent-facing OAuth authorization-server proxy.
 
@@ -74,8 +118,10 @@ class McpOAuthConfig(BaseModel):
     ``public_base_url``. The public MCP URL is always ``Settings.public_base_url`` + ``/mcp``, so
     the issuer, DCR endpoints, and callback cannot be configured for a different mount. Operator
     login uses separate credentials and session state; only the canonical origin is shared. OAuth
-    always includes a shared Postgres/Valkey client-state store; process-local file persistence is
-    not a valid Haku deployment or development mode because registrations must survive restarts.
+    always includes a shared Postgres client-state store. Haku already requires Postgres for its
+    domain state, and keeping the OAuth state in that same database lets an authority-changing
+    migration invalidate every old client/token family atomically. Process-local file and Valkey
+    persistence remain valid generic MCP infrastructure choices, but are not Haku deployment modes.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -83,7 +129,7 @@ class McpOAuthConfig(BaseModel):
     oidc_issuer: str
     oidc_client_id: str
     oidc_client_secret: SecretStr
-    persistence: SharedPersistenceConfig
+    persistence: PostgresPersistence
 
     def as_authentik_auth_config(self, *, public_base_url: str) -> AuthentikAuthConfig:
         return AuthentikAuthConfig(
@@ -161,6 +207,9 @@ class Settings(BaseSettings):
     # Operator browser login (Authentik OIDC), replacing the proxy outpost. Required in every
     # runtime, including development; tests use the repo's hermetic OIDC fixture.
     operator_oidc: OperatorOidcConfig
+    # Canonical Operator identity trust contract. Required in every runtime; see
+    # ``OperatorIdentityConfig`` for why this is distinct from either OIDC client.
+    operator_identity: OperatorIdentityConfig
 
     @model_validator(mode="after")
     def _operator_auth_requires_canonical_public_origin(self) -> Self:
@@ -173,4 +222,17 @@ class Settings(BaseSettings):
             or parsed.fragment
         ):
             raise ValueError("public_base_url must be a canonical http(s) origin without a path, query, or fragment")
+        return self
+
+    @model_validator(mode="after")
+    def _mcp_oauth_state_must_share_the_owned_database(self) -> Self:
+        if self.mcp_oauth is None:
+            return self
+        database_identity = _postgres_connection_identity(self.database_url.get_secret_value())
+        oauth_identity = _postgres_connection_identity(self.mcp_oauth.persistence.url)
+        if database_identity != oauth_identity:
+            raise ValueError(
+                "mcp_oauth.persistence must use the same Postgres host, port, database, "
+                "credentials, and options as database_url"
+            )
         return self

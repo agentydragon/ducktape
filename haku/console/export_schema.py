@@ -14,17 +14,19 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from uuid import UUID
 
 import yaml
 from pydantic import SecretStr
 
 from haku.console.app import create_app
-from haku.console.config import OperatorOidcConfig, Settings
+from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig, Settings
+from haku.console.mcp_config import ResolvedStaticAgent
 
 
 def main() -> None:
     # A placeholder static agent so create_app's require-a-/mcp-credential invariant holds; its token
-    # and subject come from env vars named in the config (never inline), so set both to placeholders.
+    # and external user key come from env vars named in the config, so set both to placeholders.
     os.environ.setdefault("HAKU_CONSOLE_SCHEMA_AGENT_TOKEN", "placeholder-token")
     os.environ.setdefault("HAKU_CONSOLE_SCHEMA_AGENT_OPERATOR", "placeholder-operator")
     config_file = Path(tempfile.mkdtemp()) / "console.yaml"
@@ -54,9 +56,24 @@ def main() -> None:
             client_secret=SecretStr("placeholder-client-secret"),
             session_secret=SecretStr("placeholder-session-secret"),
         ),
+        operator_identity=OperatorIdentityConfig(trust_domain="schema.invalid/authentik-user-id/v1"),
         config_file=config_file,
     )
-    print(json.dumps(create_app(settings).openapi(), indent=2))
+    print(
+        json.dumps(
+            create_app(
+                settings,
+                resolved_static_agents=[
+                    ResolvedStaticAgent(
+                        agent="schema",
+                        token=SecretStr("placeholder-token"),
+                        operator_id=UUID("00000000-0000-0000-0000-000000000001"),
+                    )
+                ],
+            ).openapi(),
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

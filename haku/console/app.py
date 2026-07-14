@@ -40,8 +40,10 @@ from haku.console.config import MCP_PATH, Settings
 from haku.console.database_migrate import apply_migrations
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.in_process_servers import InProcessServerDependencies, build_in_process_servers
-from haku.console.mcp_config import resolve_static_agents
+from haku.console.mcp_config import LoadedStaticAgent, ResolvedStaticAgent, load_static_agents, resolve_static_agents
 from haku.console.models import ConfigResponse
+from haku.console.operator_identity import OperatorIdentityTrust
+from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tools import (
     gmail as gmail_tools,
     google_calendar as google_calendar_tools,
@@ -98,19 +100,43 @@ def _cache_control_for_path(path: str, status_code: int) -> str:
     return APP_SHELL_CACHE_CONTROL
 
 
-def create_app(settings: Settings) -> FastAPI:
+def _operator_identity_trust(settings: Settings) -> OperatorIdentityTrust:
+    trusted_issuers = {settings.operator_oidc.issuer}
+    if settings.mcp_oauth is not None:
+        trusted_issuers.add(settings.mcp_oauth.oidc_issuer)
+    return OperatorIdentityTrust(
+        trust_domain=settings.operator_identity.trust_domain, trusted_issuers=frozenset(trusted_issuers)
+    )
+
+
+def create_app(
+    settings: Settings,
+    *,
+    loaded_static_agents: list[LoadedStaticAgent] | None = None,
+    resolved_static_agents: list[ResolvedStaticAgent] | None = None,
+) -> FastAPI:
     # Postgres is required: it backs the approval ledger and the operator OAuth store, both always
     # constructed. Construction is lazy (no connect); migrations run once at startup (app.main /
     # the test fixture), not here. Cross-replica fan-out (Postgres LISTEN/NOTIFY) is started by the
     # lifespan below, since the listen loop needs a running event loop.
     database_url = settings.database_url.get_secret_value()
-    console_event_hub = console_events.ConsoleEventHub(database_url)
+    operator_identity_store = PostgresOperatorIdentityStore(database_url, _operator_identity_trust(settings))
+    console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(database_url)
-    mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(database_url)
-    # The static machine agents (fixed bearer → operator subject) from the config file; resolved once
-    # here (fails loud if a named env var is missing) and reused by the middleware, the /mcp static
-    # verifier, and operator resolution.
-    static_agents = resolve_static_agents(settings)
+    mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
+        database_url, operator_identity_store=operator_identity_store
+    )
+    # Read env-backed static credentials before migrations in ``main`` so the forward-only cutover
+    # can preserve exact legacy owner keys. Tests/new databases may let create_app read them here.
+    if loaded_static_agents is not None and resolved_static_agents is not None:
+        raise ValueError("pass at most one static-agent startup representation")
+    if resolved_static_agents is None:
+        loaded_static_agents = (
+            loaded_static_agents if loaded_static_agents is not None else load_static_agents(settings)
+        )
+        static_agents = resolve_static_agents(loaded_static_agents, operator_identity_store)
+    else:
+        static_agents = resolved_static_agents
     # Google clients back the two in-process MCP servers (gmail, google_calendar) and their
     # approval-render read endpoints (gmail thread previews, calendar-name resolution).
     gmail_client = None
@@ -138,12 +164,18 @@ def create_app(settings: Settings) -> FastAPI:
         hub=console_event_hub,
         executor=tool_call_executor,
         oauth_store=mcp_operator_oauth_store,
+        identity_store=operator_identity_store,
         metadata_provider=tool_call_metadata_provider,
         in_process_servers=in_process_servers,
         gmail_client=gmail_client,
     )
 
-    mcp_auth = mcp_agent_auth.build_auth(settings, static_agents, operator_oauth_store=mcp_operator_oauth_store)
+    mcp_auth = mcp_agent_auth.build_auth(
+        settings,
+        static_agents,
+        operator_oauth_store=mcp_operator_oauth_store,
+        operator_identity_store=operator_identity_store,
+    )
     console_mcp = mcp_server.build_console_mcp(console_mcp_context, auth=mcp_auth.provider)
     mcp_asgi = console_mcp.http_app(path="/")
 
@@ -173,6 +205,7 @@ def create_app(settings: Settings) -> FastAPI:
     # The capability router reads settings off app.state (see haku.console.capabilities).
     app.state.settings = settings
     app.state.static_agents = static_agents
+    app.state.operator_identity_store = operator_identity_store
     app.state.tool_call_ledger = tool_call_ledger
     app.state.mcp_operator_oauth_store = mcp_operator_oauth_store
     app.state.gmail_client = gmail_client
@@ -251,6 +284,7 @@ def create_app(settings: Settings) -> FastAPI:
         secret_key=settings.operator_oidc.session_secret.get_secret_value(),
         https_only=settings.public_base_url.startswith("https://"),
         same_site="lax",
+        max_age=operator_auth.OPERATOR_SESSION_MAX_AGE_SECONDS,
     )
 
     # Agent-facing MCP server (streamable HTTP), mounted after the API routers and before the SPA.
@@ -278,10 +312,20 @@ def create_app(settings: Settings) -> FastAPI:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     settings = Settings()
+    loaded_static_agents = load_static_agents(settings)
     # Apply DB migrations once before serving — the console owns its schema at startup, decoupled from
     # constructing any ledger/store (advisory-locked, so concurrent replicas don't race).
-    apply_migrations(settings.database_url.get_secret_value())
-    app = create_app(settings)
+    apply_migrations(
+        settings.database_url.get_secret_value(),
+        operator_identity_seeds=[
+            (settings.operator_identity.trust_domain, agent.operator_external_user_key)
+            for agent in loaded_static_agents
+        ],
+        fastmcp_oauth_state_table=(
+            settings.mcp_oauth.persistence.table_name if settings.mcp_oauth is not None else None
+        ),
+    )
+    app = create_app(settings, loaded_static_agents=loaded_static_agents)
     # host/port are fixed, not env-driven: under the HAKU_CONSOLE_ prefix a `port`
     # setting would read the kubelet's HAKU_CONSOLE_PORT service-link var (a URL),
     # not an int. The deployment also disables service links (enableServiceLinks: false).

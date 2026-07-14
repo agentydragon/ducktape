@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+from uuid import UUID
 
 import yaml
 from fastapi import HTTPException
@@ -18,6 +19,7 @@ from fastmcp import FastMCP
 from pydantic import BaseModel, Field, SecretStr
 
 from haku.console.config import Settings
+from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 
 STATIC_AGENT_CLIENT_ID_PREFIX = "static-agent:"
 
@@ -66,23 +68,33 @@ class StaticAgentEntry(BaseModel):
     """A static machine agent: a fixed bearer token bound to one operator.
 
     `agent` is the agent's stable identity — the `/mcp` static bearer's `client_id` and the audit
-    `caller_principal`. The bearer and the operator's opaque OIDC subject are named env vars, not
-    literals: the value lives in the deployment Secret, never in this YAML. The token is secret; the
-    subject is the `mcp_operator_oauth_associations` key (Authentik `sub`), fed by Terraform from the
-    Authentik user id. Each entry is one token → one operator; several agents map to several operators.
+    `caller_principal`. The bearer and stable external user key are named env vars, not literals: the
+    value lives in the deployment Secret, never in this YAML. The external key is resolved through
+    the configured identity trust domain at startup and never carried on live request paths.
     """
 
     agent: str
     token_env_var: str
+    # External deploy contract retained for safe image/config rollout: the value is Authentik's
+    # stable OIDC `sub`/user_id seed. It is resolved to an Operator UUID once at startup and is
+    # never live request authority.
     operator_subject_env: str
 
 
-class ResolvedStaticAgent(BaseModel):
-    """A `StaticAgentEntry` with its env-referenced values read in."""
+class LoadedStaticAgent(BaseModel):
+    """A static agent after reading env references, but before canonical Operator resolution."""
 
     agent: str
     token: SecretStr
-    operator_subject: str
+    operator_external_user_key: str
+
+
+class ResolvedStaticAgent(BaseModel):
+    """A static agent whose configured owner has been resolved to a canonical Operator."""
+
+    agent: str
+    token: SecretStr
+    operator_id: UUID
 
 
 class ConsoleConfigFile(BaseModel):
@@ -102,12 +114,12 @@ def _load_servers(settings: Settings) -> list[McpServerEntry]:
     return _load_config(settings).mcp.servers
 
 
-def resolve_static_agents(settings: Settings) -> list[ResolvedStaticAgent]:
-    """The configured static agents with their env-referenced token + operator subject read in.
+def load_static_agents(settings: Settings) -> list[LoadedStaticAgent]:
+    """Read static-agent credentials and controller-fed external user keys from env.
 
     Raises if a named env var is missing — a misconfigured agent fails loud at startup rather than
     silently accepting no callers. Resolve once (create_app) and reuse; do not read per request."""
-    resolved: list[ResolvedStaticAgent] = []
+    loaded: list[LoadedStaticAgent] = []
     seen_agents: set[str] = set()
     seen_tokens: set[str] = set()
     for entry in _load_config(settings).static_agents:
@@ -120,13 +132,29 @@ def resolve_static_agents(settings: Settings) -> list[ResolvedStaticAgent]:
         if token in seen_tokens:
             raise RuntimeError("duplicate static agent bearer tokens")
         seen_tokens.add(token)
-        subject = os.environ.get(entry.operator_subject_env)
-        if not subject:
+        external_user_key = os.environ.get(entry.operator_subject_env)
+        if not external_user_key:
             raise RuntimeError(
-                f"missing operator-subject env var {entry.operator_subject_env} for agent {entry.agent!r}"
+                f"missing operator external-user-key env var {entry.operator_subject_env} for agent {entry.agent!r}"
             )
-        resolved.append(ResolvedStaticAgent(agent=entry.agent, token=SecretStr(token), operator_subject=subject))
-    return resolved
+        loaded.append(
+            LoadedStaticAgent(agent=entry.agent, token=SecretStr(token), operator_external_user_key=external_user_key)
+        )
+    return loaded
+
+
+def resolve_static_agents(
+    loaded_agents: list[LoadedStaticAgent], identity_store: PostgresOperatorIdentityStore
+) -> list[ResolvedStaticAgent]:
+    """Resolve every configured static-agent owner to a canonical active Operator."""
+    return [
+        ResolvedStaticAgent(
+            agent=agent.agent,
+            token=agent.token,
+            operator_id=identity_store.resolve_configured_external_user_key(agent.operator_external_user_key),
+        )
+        for agent in loaded_agents
+    ]
 
 
 def _server_entry(settings: Settings, server_id: str) -> McpServerEntry:

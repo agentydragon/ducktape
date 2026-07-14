@@ -80,7 +80,7 @@ Core endpoints:
 - `POST /api/tool-calls` — submit a call with `server_id`, `tool_name`, exact
   `arguments`, and explicit `wait_for_ms`. The console mints the canonical `tool_call_id`.
 - `GET /api/approvals/pending`, `GET /api/approvals/events?after_event_id=...`, and
-  `WebSocket /api/events/ws` — operator-subject-routed frontend catch-up + notifications. REST remains the source of
+  `WebSocket /api/events/ws` — canonical-Operator-routed frontend catch-up + notifications. REST remains the source of
   truth; the WebSocket only wakes the shell to refresh.
 - `POST /api/tool-calls/{tool_call_id}/decision` — CSRF-gated trusted-frontend approval/denial.
 - `GET /api/tool-calls` / `GET /api/tool-calls/{tool_call_id}` — audit/result reads for Haku's
@@ -88,7 +88,8 @@ Core endpoints:
   datetime `since` filter on `updated_at`.
 
 Backend callers authenticate with a configured **static agent** bearer (`static_agents` in the
-config file — each an agent id bound to one operator subject, both env-referenced). Browser-origin
+config file — each an agent id whose env-referenced Authentik subject seed resolves once at startup
+to a canonical Operator UUID). Browser-origin
 approvals use the operator's Authentik session plus CSRF. The approvals panel renders in trusted
 console chrome, not inside Haku's iframe, and does not block the framed Haku UI. If a server enables
 `operator_oauth`, approval execution
@@ -115,8 +116,9 @@ console's Postgres) composed with the configured `static_agents`' fixed bearers.
 is no decision tool — so an OAuth caller cannot self-approve; approval stays in trusted console
 chrome. Approved calls execute against the console's own stored operator credentials, so an incoming
 token's blast radius is "call the console's submit/read tools" and nothing else. OAuth configuration
-includes a required shared Postgres/Valkey persistence variant; Haku never falls back to FastMCP's
-process-local default store.
+includes a required Postgres persistence configuration; Haku never falls back to FastMCP's
+process-local store or Valkey. The console already owns this database, which lets migration 0008
+atomically invalidate every pre-cutover registration and token family.
 
 ### In-process MCP servers — no second deployment
 
@@ -261,17 +263,22 @@ access is Authentik's application access policy.
 
 Postgres is **required**: it backs the approval ledger and the operator OAuth token store, and the
 console applies its Alembic migrations once at startup (`app.main`, before serving) — never as a
-side effect of constructing a store. Migration 0007 introduces operator ownership, deletes
-pre-ownership ledger rows whose owner cannot be inferred, and is deliberately forward-only:
-removing the tenant key would make new multi-operator rows global to old code.
+side effect of constructing a store. Forward-only migration 0008 creates canonical Operators,
+identity anchors, and exact issuer-scoped OIDC identities; cuts every live association, agent link,
+ledger row, and event over to Operator UUID ownership; preserves only exactly seeded downstream
+backend-token associations; and invalidates all FastMCP registrations/token families plus derived
+DCR links so OAuth agents must authorize again, with fresh local registration where applicable,
+under canonical ownership.
 
 Non-root, dropped caps, no service-account token. Credentials: the
 `haku-routine-launch-token` secret (the launch capability bearer; `HAKU_CONSOLE_LAUNCH_ROUTINE__TOKEN`),
 the OAuth client secrets (`haku-console-oidc`), the config-file/database settings
 (`HAKU_CONSOLE_CONFIG_FILE`, `HAKU_CONSOLE_DATABASE_URL`, `HAKU_CONSOLE_PUBLIC_BASE_URL` — the OAuth
-redirect-URI origin), and each `static_agents` entry's env-referenced bearer + operator subject
-(e.g. `HAKU_CONSOLE_AGENT_HAKU_TOKEN` from `haku-console-agent-api`, `HAKU_CONSOLE_AGENT_HAKU_OPERATOR`
-from the TF-fed `haku-console-oidc` `operator_subject`).
+redirect-URI origin), and each `static_agents` entry's env-referenced bearer + startup identity seed
+(e.g. `HAKU_CONSOLE_AGENT_HAKU_TOKEN` from `haku-console-agent-api`, and the externally stable
+`HAKU_CONSOLE_AGENT_HAKU_OPERATOR` / `operator_subject` label from the TF-fed `haku-console-oidc`
+Secret). That Authentik `sub_mode=user_id` value is used only to create/find an identity anchor and
+is immediately resolved to an Operator UUID; it is never carried as live request authority.
 It no longer holds a haku-state git credential — feedback/trace writes moved into haku-ui.
 As trusted ducktape code in its own namespace it is **not** behind the `haku-egress-proxy`
 fence — it gets ordinary cluster egress (which the capability tier needs to reach the

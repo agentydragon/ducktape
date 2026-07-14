@@ -8,7 +8,7 @@ Two router-level dependency guards enforce the split (applied by `app.py` when i
 router, so a new route on a guarded router is protected by default):
 
 - `require_operator` — the operator-only surface (approvals, decisions, account-linking): a valid
-  operator session (an OIDC subject) is required;
+  DB-revalidated canonical Operator session is required;
 - `require_operator_or_static_agent` — the agent-facing tool-call routes (submit + read/sweep): an
   operator session OR a configured static agent's bearer.
 
@@ -20,7 +20,10 @@ from __future__ import annotations
 
 import hmac
 import logging
+import time
+from dataclasses import dataclass
 from typing import Annotated, cast
+from uuid import UUID
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -30,12 +33,15 @@ from starlette.requests import HTTPConnection
 
 from haku.console.config import OperatorOidcConfig, Settings
 from haku.console.mcp_config import ResolvedStaticAgent
+from haku.console.operator_identity import OperatorIdentityError, VerifiedExternalIdentity
+from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 
 logger = logging.getLogger(__name__)
 
 AUTHENTIK_CLIENT_NAME = "authentik"
 SESSION_USER_KEY = "operator"
+OPERATOR_SESSION_MAX_AGE_SECONDS = 60 * 60
 
 router = APIRouter(prefix="/auth", tags=["operator-auth"])
 
@@ -52,13 +58,20 @@ def authenticated_static_agent(
     """The static agent whose configured bearer this request presents, or None.
 
     The one place a presented agent token maps to its `ResolvedStaticAgent` — which carries both the
-    audit identity (`agent`) and the operator it acts as (`operator_subject`). Both the agent-facing
+    audit identity (`agent`) and the canonical Operator it acts as (`operator_id`). Both the agent-facing
     router guard (`require_operator_or_static_agent`) and the tool-call caller resolution
     (`mcp_approval`) route through it, so there is a single token→agent→operator mapping."""
     return next((a for a in static_agents if presents_agent_bearer(conn, a.token.get_secret_value())), None)
 
 
 class OperatorResponse(BaseModel):
+    username: str
+
+
+@dataclass(frozen=True, slots=True)
+class OperatorSession:
+    operator_id: UUID
+    identity_id: UUID
     username: str
 
 
@@ -75,37 +88,40 @@ def build_oauth(config: OperatorOidcConfig) -> OAuth:
     return oauth
 
 
-def operator_from_session(request: Request) -> str | None:
-    """The signed-cookie operator username, or None. Sessions are client-side signed, so callers
-    that authorize on this must re-check it against the configured operator."""
-    if "session" not in request.scope:
+def _identity_store(conn: HTTPConnection) -> PostgresOperatorIdentityStore:
+    return cast(PostgresOperatorIdentityStore, conn.app.state.operator_identity_store)
+
+
+def operator_session(conn: HTTPConnection) -> OperatorSession | None:
+    """The DB-revalidated browser session, or ``None`` when malformed, stale, or disabled."""
+    if "session" not in conn.scope:
         return None
-    user = request.session.get(SESSION_USER_KEY)
-    return user.get("username") if isinstance(user, dict) else None
-
-
-def operator_subject(conn: HTTPConnection) -> str | None:
-    """The authenticated operator's opaque OIDC subject (Authentik `sub`), or None.
-
-    This is the *key* the `operator_oauth` associations and the agent→operator link use — never the
-    mutable username. Sourced **only** from the app-owned OIDC session: there is no `x-authentik-*`
-    request-header fallback. Those were the retired forward-auth outpost's headers; with the outpost
-    gone and traffic reaching the app directly, any client could forge them, so they are not trusted.
-    Takes `HTTPConnection` (the Request/WebSocket base) so the router guards work on the WebSocket
-    route too."""
-    if "session" in conn.scope:
-        user = conn.session.get(SESSION_USER_KEY)
-        if isinstance(user, dict) and isinstance(subject := user.get("subject"), str):
-            return subject
-    return None
+    raw = conn.session.get(SESSION_USER_KEY)
+    if not isinstance(raw, dict):
+        return None
+    try:
+        operator_id = UUID(raw["operator_id"])
+        identity_id = UUID(raw["identity_id"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    username = raw.get("username")
+    if not isinstance(username, str) or not username:
+        return None
+    expires_at = raw.get("expires_at")
+    if not isinstance(expires_at, int) or isinstance(expires_at, bool) or expires_at <= int(time.time()):
+        return None
+    identity = _identity_store(conn).resolve_active_session(operator_id=operator_id, identity_id=identity_id)
+    if identity is None:
+        return None
+    return OperatorSession(operator_id=identity.operator_id, identity_id=identity.identity_id, username=username)
 
 
 def operator_username(request: Request) -> str | None:
     """The authenticated operator's `preferred_username`, or None — for display/audit, never a key.
 
-    Sourced only from the app-owned OIDC session; no `x-authentik-username` request-header fallback
-    (see `operator_subject` for why the retired outpost's headers are no longer trusted)."""
-    return operator_from_session(request)
+    Sourced only from a DB-revalidated app-owned OIDC session; no request-header fallback."""
+    session = operator_session(request)
+    return session.username if session is not None else None
 
 
 def _redirect_uri(request: Request) -> str:
@@ -127,16 +143,39 @@ async def callback(request: Request) -> RedirectResponse:
         token = await client.authorize_access_token(request)
     except OAuthError as e:
         raise HTTPException(status_code=401, detail=f"OIDC error: {e.error}")
-    # Authorization is Authentik's job (the application access policy gates who reaches here); we only
-    # need a valid token. The opaque `sub` is the identity key (associations / agent→operator link);
-    # the username is kept only as a display label for audit and the settings UI.
+    # Authlib verifies the authorization response and ID-token/userinfo claims against discovered
+    # provider metadata. Pin that verified issuer back to Haku's configured trust input explicitly:
+    # discovery at a configured URL must not be able to substitute a different issuer.
     userinfo = token.get("userinfo") or {}
+    settings = cast(Settings, request.app.state.settings)
+    issuer = userinfo.get("iss")
+    if not isinstance(issuer, str) or issuer != settings.operator_oidc.issuer:
+        raise HTTPException(status_code=401, detail="OIDC token issuer does not match configured issuer")
     subject = userinfo.get("sub")
-    username = userinfo.get("preferred_username") or userinfo.get("nickname") or subject
-    if not subject or not username:
-        raise HTTPException(status_code=401, detail="OIDC token missing sub or username claim")
-    request.session[SESSION_USER_KEY] = {"subject": subject, "username": username}
-    logger.info("operator browser login: %s (sub=%s)", username, subject)
+    if not isinstance(subject, str) or not subject.strip():
+        raise HTTPException(status_code=401, detail="OIDC token missing valid sub claim")
+    display_candidates = (userinfo.get("preferred_username"), userinfo.get("nickname"), subject)
+    username = next(
+        (candidate for candidate in display_candidates if isinstance(candidate, str) and candidate.strip()), None
+    )
+    if username is None:
+        raise HTTPException(status_code=401, detail="OIDC token missing valid username claim")
+    try:
+        identity = _identity_store(request).resolve_verified_identity(
+            VerifiedExternalIdentity(issuer=issuer, subject=subject)
+        )
+    except OperatorIdentityError as error:
+        raise HTTPException(status_code=401, detail="OIDC identity is not authorized") from error
+    request.session[SESSION_USER_KEY] = {
+        "operator_id": str(identity.operator_id),
+        "identity_id": str(identity.identity_id),
+        "username": username,
+        # SessionMiddleware refreshes its cookie timestamp whenever it serializes the session. Keep
+        # an independently signed absolute deadline so an active browser cannot turn the cookie
+        # into a sliding authorization that outlives Authentik reauthentication indefinitely.
+        "expires_at": int(time.time()) + OPERATOR_SESSION_MAX_AGE_SECONDS,
+    }
+    logger.info("operator browser login: %s (operator_id=%s)", username, identity.operator_id)
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -148,10 +187,10 @@ async def logout(request: Request) -> RedirectResponse:
 
 @router.get("/me")
 async def me(request: Request) -> OperatorResponse:
-    username = operator_from_session(request)
-    if not username:
+    session = operator_session(request)
+    if session is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    return OperatorResponse(username=username)
+    return OperatorResponse(username=session.username)
 
 
 def _static_agents(conn: HTTPConnection) -> list[ResolvedStaticAgent]:
@@ -162,9 +201,10 @@ StaticAgentsDep = Annotated[list[ResolvedStaticAgent], Depends(_static_agents)]
 
 
 def _operator_actor(conn: HTTPConnection) -> OperatorActor:
-    if (subject := operator_subject(conn)) is None:
-        raise HTTPException(status_code=401, detail="no authenticated operator subject on the request")
-    return OperatorActor(operator_subject=subject)
+    session = operator_session(conn)
+    if session is None:
+        raise HTTPException(status_code=401, detail="no active authenticated operator on the request")
+    return OperatorActor(operator_id=session.operator_id)
 
 
 OperatorActorDep = Annotated[OperatorActor, Depends(_operator_actor)]
@@ -173,13 +213,15 @@ OperatorActorDep = Annotated[OperatorActor, Depends(_operator_actor)]
 def _tool_call_actor(conn: HTTPConnection, static_agents: StaticAgentsDep) -> ToolCallActor:
     """Resolve exactly one presented credential into its audit identity and tenant."""
     agent = authenticated_static_agent(conn, static_agents)
-    subject = operator_subject(conn)
-    if agent is not None and subject is not None:
+    session = operator_session(conn)
+    if agent is not None and session is not None:
         raise HTTPException(status_code=400, detail="present exactly one operator or static-agent credential")
     if agent is not None:
-        return AgentActor(principal=agent.agent, operator_subject=agent.operator_subject)
-    if subject is not None:
-        return OperatorActor(operator_subject=subject)
+        if not _identity_store(conn).is_active(agent.operator_id):
+            raise HTTPException(status_code=401, detail="static agent's operator is disabled or missing")
+        return AgentActor(principal=agent.agent, operator_id=agent.operator_id)
+    if session is not None:
+        return OperatorActor(operator_id=session.operator_id)
     raise HTTPException(status_code=401, detail="operator or agent authentication required")
 
 
@@ -188,16 +230,18 @@ ToolCallActorDep = Annotated[ToolCallActor, Depends(_tool_call_actor)]
 
 def require_operator(conn: HTTPConnection) -> None:
     """Router-level guard for the operator-only surface: the caller must present an authenticated
-    operator session (an OIDC subject). Applied to the operator routers so a newly added route there
-    is protected by default — no path list to keep in sync. Typed on `HTTPConnection` so it guards
-    the WebSocket route as well as HTTP routes."""
-    if operator_subject(conn) is None:
-        raise HTTPException(status_code=401, detail="operator authentication required")
+    canonical Operator session. Applied to the operator routers so a newly added route there is
+    protected by default — no path list to keep in sync. Typed on `HTTPConnection` so it guards the
+    WebSocket route as well as HTTP routes."""
+    _operator_actor(conn)
 
 
 def require_operator_or_static_agent(conn: HTTPConnection) -> None:
     """Router-level guard for the agent-facing tool-call routes (submit + read/sweep): an operator
     session OR a configured static agent's bearer. The operator-only surfaces (approvals, decisions,
     account linking) are never reachable by an agent bearer because they live under `require_operator`."""
-    if operator_subject(conn) is None and authenticated_static_agent(conn, _static_agents(conn)) is None:
+    if operator_session(conn) is not None:
+        return
+    agent = authenticated_static_agent(conn, _static_agents(conn))
+    if agent is None or not _identity_store(conn).is_active(agent.operator_id):
         raise HTTPException(status_code=401, detail="operator or agent authentication required")

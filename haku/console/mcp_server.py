@@ -63,6 +63,7 @@ from haku.console.mcp_config import (
     _operator_oauth_enabled,
 )
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
+from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor
 from haku.console.tool_calls import SubmitToolCallRequest, ToolCallRecord, ToolCallStatus
 from haku.console.tools.gmail_client import GmailToolsClient
@@ -103,6 +104,7 @@ class ConsoleMcpContext:
     hub: ConsoleEventHub
     executor: McpToolExecutor
     oauth_store: PostgresMcpOperatorOAuthStore
+    identity_store: PostgresOperatorIdentityStore
     metadata_provider: McpMetadataProvider
     in_process_servers: InProcessServers
     gmail_client: GmailToolsClient | None
@@ -278,11 +280,11 @@ async def _reflect_server(context: ConsoleMcpContext, server: McpServerEntry) ->
 
     in-process / static-bearer servers use their configured credential; operator_oauth servers reflect
     as one of the console's static-agent operators (``tools/list`` is operator-independent) — the first
-    whose operator subject has a connected token — and degrade if none is connected.
+    whose canonical Operator has a connected token — and degrade if none is connected.
     """
     if _operator_oauth_enabled(server):
         for agent in context.static_agents:
-            token = await context.oauth_store.access_token_for(server=server, operator_subject=agent.operator_subject)
+            token = await context.oauth_store.access_token_for(server=server, operator_id=agent.operator_id)
             if token:
                 return await context.metadata_provider.metadata(server, token)
         return DegradedServerMetadata(
@@ -355,7 +357,7 @@ def build_console_mcp(context: ConsoleMcpContext, *, auth: AuthProvider) -> Fast
 def _resolve_current_mcp_agent(context: ConsoleMcpContext) -> AgentActor:
     """Resolve the authenticated MCP token into Haku's request actor."""
     client_id = _agent_id()
-    actor = resolve_mcp_agent(client_id, context.static_agents, context.oauth_store)
+    actor = resolve_mcp_agent(client_id, context.static_agents, context.oauth_store, context.identity_store)
     if actor is None:
-        raise ToolError(f"agent {client_id} has no linked operator subject")
+        raise ToolError(f"agent {client_id} has no active linked Operator")
     return actor

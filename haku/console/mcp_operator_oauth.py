@@ -19,6 +19,7 @@ import secrets
 from pathlib import Path
 from typing import Annotated, Literal, cast
 from urllib.parse import quote, urlencode, urljoin
+from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -63,6 +64,9 @@ from haku.console.mcp_config import (
     _operator_oauth_enabled,
     _server_entry,
 )
+from haku.console.operator_auth import OperatorActorDep
+from haku.console.operator_identity import InactiveOperatorError
+from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 
 Csrf = Annotated[CsrfProtect, Depends()]
 
@@ -75,8 +79,8 @@ router = APIRouter(tags=["mcp-operator-oauth"])
 
 class McpOperatorAuthStatusBase(BaseModel):
     server_id: str
-    # The operator's human username (preferred_username), for display. The association is keyed
-    # internally on the opaque subject; the subject is not exposed in the API.
+    # The operator's human username (preferred_username), for display. Durable association
+    # ownership is keyed internally by canonical Operator UUID, which is not exposed in this API.
     username: str
 
 
@@ -125,7 +129,7 @@ class OperatorOAuthFlowState(_OperatorOAuthTokenClient):
     authorization-code → token exchange (which must not hold a DB session open)."""
 
     server_id: str
-    operator_subject: str
+    operator_id: UUID
     expires_at: datetime.datetime
     redirect_uri: str
     code_verifier: str
@@ -141,7 +145,7 @@ class OperatorOAuthFlowState(_OperatorOAuthTokenClient):
             token_endpoint=row.token_endpoint,
             resource=row.resource,
             server_id=row.server_id,
-            operator_subject=row.operator_subject,
+            operator_id=row.operator_id,
             expires_at=row.expires_at,
             redirect_uri=row.redirect_uri,
             code_verifier=row.code_verifier,
@@ -154,17 +158,34 @@ class OperatorOAuthRefreshState(_OperatorOAuthTokenClient):
     """An `McpOperatorOAuthAssociation` row's refresh inputs read out before its session
     closes, carried across the token-refresh network call."""
 
+    association_id: UUID
+    token_revision: int
     refresh_token: str | None = None
 
     @classmethod
     def from_row(cls, row: McpOperatorOAuthAssociation) -> OperatorOAuthRefreshState:
         return cls(
+            association_id=row.association_id,
+            token_revision=row.token_revision,
             client_id=row.client_id,
             client_secret=row.client_secret,
             token_endpoint_auth_method=row.token_endpoint_auth_method,
             token_endpoint=row.token_endpoint,
             resource=row.resource,
             refresh_token=row.refresh_token,
+        )
+
+    def still_matches(self, row: McpOperatorOAuthAssociation) -> bool:
+        """Whether ``row`` is exactly the credential generation this refresh used."""
+        return (
+            row.association_id == self.association_id
+            and row.token_revision == self.token_revision
+            and row.client_id == self.client_id
+            and row.client_secret == self.client_secret
+            and row.token_endpoint_auth_method == self.token_endpoint_auth_method
+            and row.token_endpoint == self.token_endpoint
+            and row.resource == self.resource
+            and row.refresh_token == self.refresh_token
         )
 
 
@@ -183,23 +204,25 @@ class _BuiltOperatorOAuthFlow(BaseModel):
 class PostgresMcpOperatorOAuthStore:
     """Postgres-backed operator OAuth association store for connected MCP servers."""
 
-    def __init__(self, database_url: str) -> None:
+    def __init__(self, database_url: str, *, operator_identity_store: PostgresOperatorIdentityStore) -> None:
         # Migrations are applied once at startup (haku.console.database_migrate.apply_migrations), not
         # here — constructing the store neither connects nor mutates schema.
         self._engine = create_engine(database_url, pool_pre_ping=True)
         self._sessions = sessionmaker(self._engine, expire_on_commit=False)
+        self._operator_identity_store = operator_identity_store
 
     def list_statuses(
-        self, *, servers: list[McpServerEntry], operator_subject: str, username: str
+        self, *, servers: list[McpServerEntry], operator_id: UUID, username: str
     ) -> McpOperatorAuthStatusResponse:
         oauth_servers = [server for server in servers if _operator_oauth_enabled(server)]
-        if not oauth_servers:
-            return McpOperatorAuthStatusResponse()
         server_ids = [server.id for server in oauth_servers]
         with self._sessions.begin() as session:
+            self._operator_identity_store.require_active_in_transaction(session, operator_id)
+            if not oauth_servers:
+                return McpOperatorAuthStatusResponse()
             rows = session.scalars(
                 select(McpOperatorOAuthAssociation)
-                .where(McpOperatorOAuthAssociation.operator_subject == operator_subject)
+                .where(McpOperatorOAuthAssociation.operator_id == operator_id)
                 .where(McpOperatorOAuthAssociation.server_id.in_(server_ids))
             ).all()
         by_server = {row.server_id: row for row in rows}
@@ -210,30 +233,34 @@ class PostgresMcpOperatorOAuthStore:
         )
 
     async def connect_flow(
-        self, *, server: McpServerEntry, operator_subject: str, public_base_url: str
+        self, *, server: McpServerEntry, operator_id: UUID, public_base_url: str
     ) -> McpOperatorAuthConnectResponse:
         if not _operator_oauth_enabled(server):
             raise HTTPException(status_code=404, detail=f"MCP server {server.id} does not use operator OAuth")
         with self._sessions.begin() as session:
-            existing = session.get(McpOperatorOAuthAssociation, (server.id, operator_subject))
+            self._operator_identity_store.require_active_in_transaction(session, operator_id)
+            existing = session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
             if existing is not None:
                 raise HTTPException(
                     status_code=409, detail=f"MCP server {server.id} is already connected; disconnect it first"
                 )
         flow = await _build_operator_oauth_flow(server, public_base_url.rstrip("/"))
         with self._sessions.begin() as session:
+            # Metadata discovery and DCR are external I/O. Revalidate under the Operator row lock
+            # before persisting a flow so a disable committed while they ran wins this race.
+            self._operator_identity_store.require_active_in_transaction(session, operator_id)
             now = datetime.datetime.now(datetime.UTC)
             session.execute(delete(McpOperatorOAuthFlow).where(McpOperatorOAuthFlow.expires_at < now))
             session.execute(
                 delete(McpOperatorOAuthFlow)
                 .where(McpOperatorOAuthFlow.server_id == server.id)
-                .where(McpOperatorOAuthFlow.operator_subject == operator_subject)
+                .where(McpOperatorOAuthFlow.operator_id == operator_id)
             )
             session.add(
                 McpOperatorOAuthFlow(
                     state=flow.state,
                     server_id=server.id,
-                    operator_subject=operator_subject,
+                    operator_id=operator_id,
                     created_at=now,
                     expires_at=flow.expires_at,
                     redirect_uri=flow.redirect_uri,
@@ -252,12 +279,13 @@ class PostgresMcpOperatorOAuthStore:
         )
 
     async def complete_callback(
-        self, *, state: str, code: str, operator_subject: str, username: str
+        self, *, state: str, code: str, operator_id: UUID, username: str
     ) -> McpOperatorAuthStatus:
         with self._sessions.begin() as session:
+            self._operator_identity_store.require_active_in_transaction(session, operator_id)
             if (row := session.get(McpOperatorOAuthFlow, state)) is None:
                 raise HTTPException(status_code=404, detail="OAuth flow not found or already used")
-            if row.operator_subject != operator_subject:
+            if row.operator_id != operator_id:
                 raise HTTPException(status_code=403, detail="OAuth flow belongs to a different operator")
             session.delete(row)
             flow = OperatorOAuthFlowState.from_row(row)
@@ -267,8 +295,11 @@ class PostgresMcpOperatorOAuthStore:
         token = await _exchange_operator_oauth_code(flow, code)
         token_expires_at = _token_expires_at(token, now)
         with self._sessions.begin() as session:
+            # The code exchange is external I/O. Make active status and association persistence one
+            # atomic final step; never store a token if a disable committed while it was in flight.
+            self._operator_identity_store.require_active_in_transaction(session, flow.operator_id)
             existing = session.get(
-                McpOperatorOAuthAssociation, (flow.server_id, flow.operator_subject), with_for_update=True
+                McpOperatorOAuthAssociation, (flow.server_id, flow.operator_id), with_for_update=True
             )
             if existing is not None:
                 raise HTTPException(
@@ -276,7 +307,7 @@ class PostgresMcpOperatorOAuthStore:
                 )
             existing = McpOperatorOAuthAssociation(
                 server_id=flow.server_id,
-                operator_subject=flow.operator_subject,
+                operator_id=flow.operator_id,
                 created_at=now,
                 updated_at=now,
                 client_id=flow.client_id,
@@ -294,21 +325,25 @@ class PostgresMcpOperatorOAuthStore:
             session.add(existing)
             return _oauth_status_from_row(flow.server_id, username, existing)
 
-    def disconnect(self, *, server_id: str, operator_subject: str) -> None:
+    def disconnect(self, *, server_id: str, operator_id: UUID) -> None:
         with self._sessions.begin() as session:
-            row = session.get(McpOperatorOAuthAssociation, (server_id, operator_subject), with_for_update=True)
+            self._operator_identity_store.require_active_in_transaction(session, operator_id)
+            row = session.get(McpOperatorOAuthAssociation, (server_id, operator_id), with_for_update=True)
             if row is not None:
                 session.delete(row)
 
-    async def access_token_for(self, *, server: McpServerEntry, operator_subject: str) -> str | None:
+    async def access_token_for(self, *, server: McpServerEntry, operator_id: UUID) -> str | None:
         if not _operator_oauth_enabled(server):
             return None
         with self._sessions.begin() as session:
-            row = session.get(McpOperatorOAuthAssociation, (server.id, operator_subject), with_for_update=True)
+            # Keep the status check and fresh-token read under one Operator row lock. This avoids
+            # returning a capability after a disable has already committed.
+            self._operator_identity_store.require_active_in_transaction(session, operator_id)
+            row = session.get(McpOperatorOAuthAssociation, (server.id, operator_id), with_for_update=True)
             if row is None:
                 return None
             now = datetime.datetime.now(datetime.UTC)
-            if row.token_expires_at is None or row.token_expires_at > now + MCP_OPERATOR_AUTH_REFRESH_SKEW:
+            if _association_token_is_fresh(row, now):
                 return row.access_token
             if not row.refresh_token:
                 return None
@@ -316,48 +351,64 @@ class PostgresMcpOperatorOAuthStore:
         refreshed = await _refresh_operator_oauth_token(snapshot)
         token_expires_at = _token_expires_at(refreshed, datetime.datetime.now(datetime.UTC))
         with self._sessions.begin() as session:
-            row = session.get(McpOperatorOAuthAssociation, (server.id, operator_subject), with_for_update=True)
+            # Refresh is external I/O. Revalidate in the same transaction as both the token write
+            # and return so a disable committed during refresh cannot produce a usable token.
+            self._operator_identity_store.require_active_in_transaction(session, operator_id)
+            row = session.get(McpOperatorOAuthAssociation, (server.id, operator_id), with_for_update=True)
             if row is None:
                 return None
+            if not snapshot.still_matches(row):
+                # The external call used a credential snapshot after releasing the association
+                # lock. A concurrent refresh or disconnect/reconnect owns the row now; never let
+                # this stale response overwrite it. Its current fresh token is safe to use, while
+                # an already-expired replacement must be retried from a new snapshot.
+                if _association_token_is_fresh(row, datetime.datetime.now(datetime.UTC)):
+                    return row.access_token
+                raise RuntimeError("MCP OAuth association changed during refresh; retry the tool call")
             row.updated_at = datetime.datetime.now(datetime.UTC)
             row.access_token = refreshed.access_token
             row.refresh_token = refreshed.refresh_token or row.refresh_token
             row.token_type = refreshed.token_type
             row.scope = refreshed.scope or row.scope
             row.token_expires_at = token_expires_at
+            row.token_revision += 1
             return row.access_token
 
-    def bind_agent_operator(self, *, agent_dcr_client_id: str, operator_subject: str) -> None:
+    def bind_agent_operator(self, *, agent_dcr_client_id: str, operator_id: UUID) -> None:
         """Immutably bind one OAuth DCR client id to its authorizing operator.
 
         Previously issued client tokens remain keyed by this id, so silently moving it would give an
-        old token access to another operator's ledger. Reauthorizing for the same subject is
-        idempotent; a different subject must register a different client identity.
+        old token access to another operator's ledger. Reauthorizing for the same Operator is
+        idempotent; a different Operator must register a different client identity.
         """
         if agent_dcr_client_id.startswith(STATIC_AGENT_CLIENT_ID_PREFIX):
             raise ValueError("OAuth client_id collides with the reserved static-agent namespace")
         with self._sessions.begin() as session:
+            self._operator_identity_store.require_active_in_transaction(session, operator_id)
             now = datetime.datetime.now(datetime.UTC)
             row = session.get(McpAgentOperator, agent_dcr_client_id, with_for_update=True)
             if row is None:
                 session.add(
                     McpAgentOperator(
-                        agent_dcr_client_id=agent_dcr_client_id,
-                        operator_subject=operator_subject,
-                        created_at=now,
-                        updated_at=now,
+                        agent_dcr_client_id=agent_dcr_client_id, operator_id=operator_id, created_at=now, updated_at=now
                     )
                 )
             else:
-                if row.operator_subject != operator_subject:
+                if row.operator_id != operator_id:
                     raise ValueError("OAuth agent client_id is already bound to a different operator")
                 row.updated_at = now
 
-    def agent_operator(self, agent_dcr_client_id: str) -> str | None:
-        """The operator subject an OAuth agent is linked to, or None if unlinked."""
+    def agent_operator(self, agent_dcr_client_id: str) -> UUID | None:
+        """The active canonical Operator an OAuth agent is linked to, or None if unavailable."""
         with self._sessions.begin() as session:
             row = session.get(McpAgentOperator, agent_dcr_client_id)
-            return row.operator_subject if row is not None else None
+            if row is None:
+                return None
+            try:
+                self._operator_identity_store.require_active_in_transaction(session, row.operator_id)
+            except InactiveOperatorError:
+                return None
+            return row.operator_id
 
 
 def _oauth_store(request: Request) -> PostgresMcpOperatorOAuthStore:
@@ -365,15 +416,6 @@ def _oauth_store(request: Request) -> PostgresMcpOperatorOAuthStore:
 
 
 OAuthStoreDep = Annotated[PostgresMcpOperatorOAuthStore, Depends(_oauth_store)]
-
-
-def _operator_subject(request: Request) -> str:
-    """The current operator's opaque OIDC subject — the key for associations and the agent→operator
-    link. An authenticated operator always has one; its absence is an auth error, not a fallback."""
-    subject = operator_auth.operator_subject(request)
-    if subject is None:
-        raise HTTPException(status_code=401, detail="no authenticated operator subject on the request")
-    return subject
 
 
 def _operator_username(request: Request) -> str:
@@ -404,6 +446,10 @@ def _token_expires_at(token: OAuthToken, now: datetime.datetime) -> datetime.dat
     if token.expires_in is None:
         return None
     return now + datetime.timedelta(seconds=token.expires_in)
+
+
+def _association_token_is_fresh(association: McpOperatorOAuthAssociation, now: datetime.datetime) -> bool:
+    return association.token_expires_at is None or association.token_expires_at > now + MCP_OPERATOR_AUTH_REFRESH_SKEW
 
 
 def _metadata_request_headers() -> dict[str, str]:
@@ -664,36 +710,42 @@ def _oauth_callback_response(ok: bool, message: str, *, status_code: int = 200) 
 
 @router.get("/api/mcp/operator-auth")
 async def mcp_operator_auth_statuses(
-    request: Request, settings: SettingsDep, oauth_store: OAuthStoreDep
+    request: Request, settings: SettingsDep, oauth_store: OAuthStoreDep, actor: OperatorActorDep
 ) -> McpOperatorAuthStatusResponse:
     return oauth_store.list_statuses(
-        servers=_load_servers(settings),
-        operator_subject=_operator_subject(request),
-        username=_operator_username(request),
+        servers=_load_servers(settings), operator_id=actor.operator_id, username=_operator_username(request)
     )
 
 
 @router.post("/api/mcp/operator-auth/{server_id}/connect")
 async def connect_mcp_operator_auth(
-    server_id: str, request: Request, csrf_protect: Csrf, settings: SettingsDep, oauth_store: OAuthStoreDep
+    server_id: str,
+    request: Request,
+    csrf_protect: Csrf,
+    settings: SettingsDep,
+    oauth_store: OAuthStoreDep,
+    actor: OperatorActorDep,
 ) -> McpOperatorAuthConnectResponse:
     await csrf_protect.validate_csrf(request)
     server = _server_entry(settings, server_id)
     return await oauth_store.connect_flow(
-        server=server, operator_subject=_operator_subject(request), public_base_url=_public_base_url(settings)
+        server=server, operator_id=actor.operator_id, public_base_url=_public_base_url(settings)
     )
 
 
 @router.delete("/api/mcp/operator-auth/{server_id}")
 async def disconnect_mcp_operator_auth(
-    server_id: str, request: Request, csrf_protect: Csrf, oauth_store: OAuthStoreDep, event_hub: ConsoleEventHubDep
+    server_id: str,
+    request: Request,
+    csrf_protect: Csrf,
+    oauth_store: OAuthStoreDep,
+    event_hub: ConsoleEventHubDep,
+    actor: OperatorActorDep,
 ) -> McpOperatorAuthUnconnected:
     await csrf_protect.validate_csrf(request)
-    operator_subject = _operator_subject(request)
-    oauth_store.disconnect(server_id=server_id, operator_subject=operator_subject)
-    await event_hub.broadcast(
-        operator_subject, [McpOperatorAuthChangedEvent(server_id=server_id, status="disconnected")]
-    )
+    operator_id = actor.operator_id
+    oauth_store.disconnect(server_id=server_id, operator_id=operator_id)
+    await event_hub.broadcast(operator_id, [McpOperatorAuthChangedEvent(server_id=server_id, status="disconnected")])
     return McpOperatorAuthUnconnected(server_id=server_id, username=_operator_username(request))
 
 
@@ -702,6 +754,7 @@ async def mcp_operator_auth_callback(
     request: Request,
     oauth_store: OAuthStoreDep,
     event_hub: ConsoleEventHubDep,
+    actor: OperatorActorDep,
     state: str | None = None,
     code: str | None = None,
     error: str | None = None,
@@ -710,15 +763,15 @@ async def mcp_operator_auth_callback(
         return _oauth_callback_response(False, f"MCP OAuth authorization failed: {error}", status_code=400)
     if not state or not code:
         return _oauth_callback_response(False, "MCP OAuth callback is missing state or code.", status_code=400)
-    operator_subject = _operator_subject(request)
+    operator_id = actor.operator_id
     try:
         status = await oauth_store.complete_callback(
-            state=state, code=code, operator_subject=operator_subject, username=_operator_username(request)
+            state=state, code=code, operator_id=operator_id, username=_operator_username(request)
         )
     except HTTPException as e:
         detail = e.detail if isinstance(e.detail, str) else "MCP OAuth callback failed."
         return _oauth_callback_response(False, detail, status_code=e.status_code)
     await event_hub.broadcast(
-        operator_subject, [McpOperatorAuthChangedEvent(server_id=status.server_id, status="connected")]
+        operator_id, [McpOperatorAuthChangedEvent(server_id=status.server_id, status="connected")]
     )
     return _oauth_callback_response(True, f"Connected {status.server_id} for {_operator_username(request)}.")

@@ -22,6 +22,7 @@ py_library(
         "//mcp_infra/authentik_auth:config",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -51,6 +52,7 @@ py_library(
     srcs = ["mcp_config.py"],
     deps = [
         ":config",
+        ":operator_identity_store",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
@@ -86,11 +88,27 @@ py_library(
 )
 
 py_library(
+    name = "operator_identity",
+    srcs = ["operator_identity.py"],
+)
+
+py_library(
     name = "database_schema",
     srcs = ["database_schema.py"],
     deps = [
+        ":operator_identity",
         "//util:sqlalchemy_types",
         "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "operator_identity_store",
+    srcs = ["operator_identity_store.py"],
+    deps = [
+        ":database_schema",
+        ":operator_identity",
         "@pypi//sqlalchemy",
     ],
 )
@@ -131,6 +149,8 @@ py_library(
         ":deps",
         ":mcp_config",
         ":operator_auth",
+        ":operator_identity",
+        ":operator_identity_store",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
         "@pypi//httpx",
@@ -148,6 +168,8 @@ py_library(
         ":config",
         ":mcp_config",
         ":mcp_operator_oauth",
+        ":operator_identity",
+        ":operator_identity_store",
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:fastmcp_proxy",
         "//mcp_infra/authentik_auth:oidc_principal",
@@ -182,6 +204,7 @@ py_library(
         ":mcp_config",
         ":mcp_operator_oauth",
         ":operator_auth",
+        ":operator_identity_store",
         ":tool_call_actor",
         "//haku/console/tools:gmail_client",
         "@ducktape_haku//haku/console:tool_calls",
@@ -231,6 +254,7 @@ py_library(
         ":mcp_approval",
         ":mcp_config",
         ":mcp_operator_oauth",
+        ":operator_identity_store",
         ":tool_call_actor",
         "//haku/console/tools:gmail_client",
         "//mcp_infra:naming",
@@ -249,11 +273,37 @@ py_library(
     deps = [
         ":config",
         ":mcp_config",
+        ":operator_identity",
+        ":operator_identity_store",
         ":tool_call_actor",
         "@pypi//authlib",
         "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_operator_identity_cutover",
+    size = "medium",
+    srcs = ["test_operator_identity_cutover.py"],
+    requires_docker = True,
+    deps = [
+        ":config",
+        ":conftest",
+        ":database_migrate",
+        ":database_schema",
+        ":mcp_approval",
+        ":mcp_config",
+        ":operator_identity",
+        ":operator_identity_store",
+        ":tool_call_actor",
+        "//:conftest",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//alembic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -263,6 +313,7 @@ py_library(
     deps = [
         ":config",
         ":operator_auth",
+        ":operator_identity_store",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//psycopg",
@@ -282,6 +333,7 @@ py_test(
     deps = [
         ":conftest",
         ":console_events",
+        ":operator_identity_store",
         "//:conftest",
         "@pypi//fastapi",
         "@pypi//pydantic",
@@ -302,6 +354,7 @@ py_test(
         ":app",
         ":config",
         ":conftest",
+        ":database_schema",
         "//:conftest",
         "//util:net",
         "//util/testing:asgi",
@@ -312,6 +365,7 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@pypi//sqlalchemy",
         # pytest-asyncio auto mode (root conftest) needs the plugin importable at runtime.
         "@pypi//pytest_asyncio",
     ],
@@ -334,11 +388,14 @@ py_test(
         ":mcp_agent_auth",
         ":mcp_config",
         ":mcp_operator_oauth",
+        ":operator_identity",
+        ":operator_identity_store",
         "//:conftest",
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:fastmcp_proxy",
         "//mcp_infra/authentik_auth:oidc_principal",
         "//mcp_infra/authentik_auth:provider",
+        "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -397,6 +454,8 @@ py_library(
         ":mcp_server",
         ":models",
         ":operator_auth",
+        ":operator_identity",
+        ":operator_identity_store",
         "//haku/console/tools:gmail",
         "//haku/console/tools:google_calendar",
         "//haku/console/tools:grocy",
@@ -427,6 +486,7 @@ py_library(
     deps = [
         ":app",
         ":config",
+        ":mcp_config",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -488,6 +548,7 @@ py_library(
         ":config",
         ":database_migrate",
         ":operator_auth",
+        ":operator_identity",
         "//third_party/containers:rlocations",
         "//util:oci",
         "//util/testing:postgres",
@@ -557,6 +618,8 @@ py_test(
         ":mcp_config",
         ":mcp_operator_oauth",
         ":mcp_server",
+        ":operator_identity",
+        ":operator_identity_store",
         ":tool_call_actor",
         "//:conftest",
         "//gmail_api:labels",
@@ -596,6 +659,8 @@ py_test(
         ":mcp_config",
         ":mcp_operator_oauth",
         ":operator_auth",
+        ":operator_identity",
+        ":operator_identity_store",
         "//:conftest",
         "//haku/console/tools:gmail",
         "//third_party/containers:rlocations",

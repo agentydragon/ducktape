@@ -8,6 +8,7 @@ import logging
 from collections.abc import Iterable
 from typing import Annotated, ClassVar, Literal, cast
 from urllib.parse import urlsplit
+from uuid import UUID
 
 import psycopg
 from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
@@ -15,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from haku.console import operator_auth
 from haku.console.config import Settings
+from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_calls import ToolCallEvent
 
 logger = logging.getLogger(__name__)
@@ -41,7 +43,7 @@ type ConsoleEvent = ToolCallEvent | McpOperatorAuthChangedEvent
 class _RoutedConsoleEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    operator_subject: str
+    operator_id: UUID
     event: ConsoleEvent
 
 
@@ -57,10 +59,12 @@ class ConsoleEventHub:
     _CONNECT_TIMEOUT_SECONDS: ClassVar[int] = 5
     _PUBLISH_TIMEOUT_SECONDS: ClassVar[float] = 5
     _SOCKET_TIMEOUT_SECONDS: ClassVar[float] = 2
+    _SESSION_REVALIDATION_SECONDS: ClassVar[float] = 30
 
-    def __init__(self, database_url: str) -> None:
-        self._connections: dict[WebSocket, str] = {}
+    def __init__(self, database_url: str, *, operator_identity_store: PostgresOperatorIdentityStore) -> None:
+        self._connections: dict[WebSocket, UUID] = {}
         self._dsn = _psycopg_dsn(database_url)
+        self._operator_identity_store = operator_identity_store
         self._listen_task: asyncio.Task[None] | None = None
         self._listening = asyncio.Event()
         self._publisher: psycopg.AsyncConnection | None = None
@@ -91,12 +95,12 @@ class ConsoleEventHub:
             self._publisher = None
         await self._close_connections(code=1001, reason="console event hub stopped")
 
-    async def connect(self, websocket: WebSocket, operator_subject: str) -> bool:
+    async def connect(self, websocket: WebSocket, operator_id: UUID) -> bool:
         if not self._listening.is_set():
             await websocket.close(code=1013, reason="console event relay unavailable")
             return False
         await websocket.accept()
-        self._connections[websocket] = operator_subject
+        self._connections[websocket] = operator_id
         return True
 
     def disconnect(self, websocket: WebSocket) -> None:
@@ -112,8 +116,8 @@ class ConsoleEventHub:
 
         await asyncio.gather(*(close(websocket) for websocket in connections))
 
-    async def broadcast(self, operator_subject: str, events: Iterable[ConsoleEvent]) -> None:
-        envelopes = [_RoutedConsoleEvent(operator_subject=operator_subject, event=event) for event in events]
+    async def broadcast(self, operator_id: UUID, events: Iterable[ConsoleEvent]) -> None:
+        envelopes = [_RoutedConsoleEvent(operator_id=operator_id, event=event) for event in events]
         if not envelopes:
             return
         try:
@@ -139,8 +143,27 @@ class ConsoleEventHub:
                 self._publisher = None
             await self._close_connections(code=1012, reason="console event publish failed")
 
-    async def _deliver_locally(self, event_operator_subject: str, event: ConsoleEvent) -> None:
+    async def _deliver_locally(self, event_operator_id: UUID, event: ConsoleEvent) -> None:
         if not self._connections:
+            return
+        if not await asyncio.to_thread(self._operator_identity_store.is_active, event_operator_id):
+            disabled = [
+                websocket
+                for websocket, connected_operator_id in list(self._connections.items())
+                if connected_operator_id == event_operator_id
+            ]
+            for websocket in disabled:
+                self.disconnect(websocket)
+            await asyncio.gather(
+                *(
+                    asyncio.wait_for(
+                        websocket.close(code=1008, reason="operator is disabled or missing"),
+                        timeout=self._SOCKET_TIMEOUT_SECONDS,
+                    )
+                    for websocket in disabled
+                ),
+                return_exceptions=True,
+            )
             return
         message = event.model_dump(mode="json")
 
@@ -153,8 +176,8 @@ class ConsoleEventHub:
 
         recipients = [
             websocket
-            for websocket, connected_operator_subject in list(self._connections.items())
-            if connected_operator_subject == event_operator_subject
+            for websocket, connected_operator_id in list(self._connections.items())
+            if connected_operator_id == event_operator_id
         ]
         dead = [websocket for websocket in await asyncio.gather(*(send(ws) for ws in recipients)) if websocket]
         for websocket in dead:
@@ -185,7 +208,7 @@ class ConsoleEventHub:
                             except ValidationError:
                                 logger.exception("failed to parse console event notification payload")
                                 continue
-                            await self._deliver_locally(envelope.operator_subject, envelope.event)
+                            await self._deliver_locally(envelope.operator_id, envelope.event)
                     finally:
                         self._listening.clear()
                 await self._close_connections(code=1012, reason="console event relay reconnecting")
@@ -219,16 +242,20 @@ async def console_events_ws(websocket: WebSocket) -> None:
     if websocket.headers.get("origin") != expected_origin:
         await websocket.close(code=1008, reason="invalid websocket origin")
         return
-    operator_subject = operator_auth.operator_subject(websocket)
-    if operator_subject is None:
+    operator_session = operator_auth.operator_session(websocket)
+    if operator_session is None:
         await websocket.close(code=1008, reason="operator authentication required")
         return
-    if not await hub.connect(websocket, operator_subject):
+    if not await hub.connect(websocket, operator_session.operator_id):
         return
     try:
         await websocket.send_json(ConsoleHelloEvent().model_dump(mode="json"))
         while True:
-            await websocket.receive_text()
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(websocket.receive_text(), timeout=hub._SESSION_REVALIDATION_SECONDS)
+            if await asyncio.to_thread(operator_auth.operator_session, websocket) is None:
+                await websocket.close(code=1008, reason="operator is disabled or missing")
+                return
     except WebSocketDisconnect:
         pass
     finally:

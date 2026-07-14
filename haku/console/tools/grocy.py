@@ -26,13 +26,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from grocy_mcp.grocy_types import ProductRow
 from haku.console.deps import SettingsDep
 from haku.console.mcp_approval import operator_authenticated_client
 from haku.console.mcp_operator_oauth import OAuthStoreDep
+from haku.console.operator_auth import OperatorActorDep
 
 GROCY_SF_SERVER_ID = "grocy-sf"
 
@@ -84,7 +85,7 @@ def _parse_rows[T: BaseModel](model: type[T], structured_content: dict[str, Any]
 
 @router.get("/reference")
 async def grocy_sf_reference(
-    request: Request, settings: SettingsDep, oauth_store: OAuthStoreDep
+    settings: SettingsDep, oauth_store: OAuthStoreDep, actor: OperatorActorDep
 ) -> GrocyReferenceResponse:
     """Read-only reference lookups for rendering pending grocy-sf tool-call previews whose
     arguments accept either a name or a numeric ID — deliberately narrow: calls only
@@ -96,7 +97,7 @@ async def grocy_sf_reference(
     product names/notes. Uses the requesting operator's own linked token — the same one their
     approvals execute with.
     """
-    async with await operator_authenticated_client(GROCY_SF_SERVER_ID, request, settings, oauth_store) as client:
+    async with await operator_authenticated_client(GROCY_SF_SERVER_ID, actor, settings, oauth_store) as client:
         products = await client.call_tool("products_list", {"detail": "full"})
         locations = await client.call_tool("locations_list", {})
         quantity_units = await client.call_tool("quantity_units_list", {})

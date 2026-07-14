@@ -5,24 +5,28 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
+from uuid import UUID
 
 import pytest
 import pytest_bazel
-from mcp.server.auth.provider import AuthorizationCode, TokenError
+from fastmcp.server.auth.auth import AccessToken
+from mcp.server.auth.provider import AuthorizationCode, RefreshToken, TokenError
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from pydantic import SecretStr
 from starlette.exceptions import HTTPException
 
-from haku.console.config import McpOAuthConfig, OperatorOidcConfig, Settings
+from haku.console.config import McpOAuthConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
 from haku.console.mcp_agent_auth import (
     OAuthMcpAuth,
     StaticMcpAuth,
-    _LinkAgentOperator,
+    _AgentOperatorLinkAuthority,
     _VerifiedPrincipalOIDCProxy,
     build_auth,
 )
 from haku.console.mcp_config import ResolvedStaticAgent
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
+from haku.console.operator_identity import ResolvedOperatorIdentity
+from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from mcp_infra.authentik_auth.fastmcp_proxy import DownstreamClientIdentityOIDCProxy
 from mcp_infra.authentik_auth.oidc_principal import (
     InvalidOidcPrincipalError,
@@ -31,6 +35,9 @@ from mcp_infra.authentik_auth.oidc_principal import (
 )
 from mcp_infra.authentik_auth.provider import DEFAULT_VALID_SCOPES
 from mcp_infra.persistence import PostgresPersistence
+
+_OPERATOR_ID = UUID("00000000-0000-0000-0000-000000000042")
+_IDENTITY_ID = UUID("00000000-0000-0000-0000-000000000043")
 
 
 def _settings(*, mcp_oauth: McpOAuthConfig | None = None) -> Settings:
@@ -44,6 +51,7 @@ def _settings(*, mcp_oauth: McpOAuthConfig | None = None) -> Settings:
             client_secret=SecretStr("secret"),
             session_secret=SecretStr("session-secret"),
         ),
+        operator_identity=OperatorIdentityConfig(trust_domain="auth.test/authentik-user-id/v1"),
         mcp_oauth=mcp_oauth,
     )
 
@@ -52,8 +60,17 @@ def _store() -> PostgresMcpOperatorOAuthStore:
     return cast(PostgresMcpOperatorOAuthStore, Mock(spec=PostgresMcpOperatorOAuthStore))
 
 
+def _identity_store() -> PostgresOperatorIdentityStore:
+    store = cast(PostgresOperatorIdentityStore, Mock(spec=PostgresOperatorIdentityStore))
+    cast(Mock, store.resolve_verified_identity).return_value = ResolvedOperatorIdentity(
+        operator_id=_OPERATOR_ID, identity_id=_IDENTITY_ID
+    )
+    cast(Mock, store.is_active).return_value = True
+    return store
+
+
 def _static_agent() -> ResolvedStaticAgent:
-    return ResolvedStaticAgent(agent="haku", token=SecretStr("agent-token"), operator_subject="operator-42")
+    return ResolvedStaticAgent(agent="haku", token=SecretStr("agent-token"), operator_id=_OPERATOR_ID)
 
 
 def _client(client_id: str = "dcr-claude") -> OAuthClientInformationFull:
@@ -85,13 +102,17 @@ def _exchange_proxy() -> tuple[_VerifiedPrincipalOIDCProxy, AsyncMock, AsyncMock
         delete=AsyncMock(),
     )
     proxy._principal_resolver = cast(Any, SimpleNamespace(resolve=resolver))
-    proxy._on_client_authorized = link
+    proxy._client_link_authority = cast(
+        Any, SimpleNamespace(link_verified_client=link, active_operator_for_client=Mock(return_value=_OPERATOR_ID))
+    )
     proxy._code_store = cast(Any, code_store)
     return proxy, resolver, link, code_store
 
 
 async def test_static_only_auth_maps_bearer_to_namespaced_agent_identity() -> None:
-    auth = build_auth(_settings(), [_static_agent()], operator_oauth_store=_store())
+    auth = build_auth(
+        _settings(), [_static_agent()], operator_oauth_store=_store(), operator_identity_store=_identity_store()
+    )
 
     assert isinstance(auth, StaticMcpAuth)
     access = await auth.provider.verify_token("agent-token")
@@ -99,9 +120,19 @@ async def test_static_only_auth_maps_bearer_to_namespaced_agent_identity() -> No
     assert access.client_id == "static-agent:haku"
 
 
+async def test_static_bearer_is_rejected_when_its_operator_is_disabled() -> None:
+    identity_store = _identity_store()
+    cast(Mock, identity_store.is_active).return_value = False
+    auth = build_auth(
+        _settings(), [_static_agent()], operator_oauth_store=_store(), operator_identity_store=identity_store
+    )
+
+    assert await auth.provider.verify_token("agent-token") is None
+
+
 def test_build_auth_rejects_missing_credentials() -> None:
     with pytest.raises(ValueError, match="no configured credential"):
-        build_auth(_settings(), [], operator_oauth_store=_store())
+        build_auth(_settings(), [], operator_oauth_store=_store(), operator_identity_store=_identity_store())
 
 
 async def test_oauth_auth_composes_haku_owned_proxy_storage_static_bearer_and_operator_link() -> None:
@@ -114,6 +145,7 @@ async def test_oauth_auth_composes_haku_owned_proxy_storage_static_bearer_and_op
         )
     )
     store = _store()
+    identity_store = _identity_store()
     storage = Mock()
     proxy = Mock(spec=_VerifiedPrincipalOIDCProxy)
     provider = Mock()
@@ -122,7 +154,9 @@ async def test_oauth_auth_composes_haku_owned_proxy_storage_static_bearer_and_op
         patch("haku.console.mcp_agent_auth._VerifiedPrincipalOIDCProxy", return_value=proxy) as proxy_cls,
         patch("haku.console.mcp_agent_auth.compose_authentik_auth", return_value=provider) as compose,
     ):
-        auth = build_auth(settings, [_static_agent()], operator_oauth_store=store)
+        auth = build_auth(
+            settings, [_static_agent()], operator_oauth_store=store, operator_identity_store=identity_store
+        )
 
     assert isinstance(auth, OAuthMcpAuth)
     assert auth.provider is provider
@@ -135,7 +169,7 @@ async def test_oauth_auth_composes_haku_owned_proxy_storage_static_bearer_and_op
         "base_url": "https://haku.test/mcp",
         "client_storage": storage,
         "expected_issuer": "https://auth.test/application/o/haku-agent/",
-        "on_client_authorized": kwargs["on_client_authorized"],
+        "client_link_authority": kwargs["client_link_authority"],
     }
     proxy.update_default_scopes.assert_called_once_with(DEFAULT_VALID_SCOPES)
     compose.assert_called_once_with(
@@ -143,11 +177,11 @@ async def test_oauth_auth_composes_haku_owned_proxy_storage_static_bearer_and_op
     )
     assert len(compose.call_args.kwargs["extra_verifiers"]) == 1
 
-    await kwargs["on_client_authorized"](
+    await kwargs["client_link_authority"].link_verified_client(
         "dcr-claude", VerifiedOidcPrincipal(issuer="https://auth.test/application/o/haku-agent/", subject="operator-42")
     )
     cast(Mock, store.bind_agent_operator).assert_called_once_with(
-        agent_dcr_client_id="dcr-claude", operator_subject="operator-42"
+        agent_dcr_client_id="dcr-claude", operator_id=_OPERATOR_ID
     )
 
 
@@ -179,6 +213,109 @@ async def test_verified_principal_proxy_verifies_links_then_issues_token() -> No
     link.assert_awaited_once_with("dcr-claude", principal)
     parent.assert_awaited_once()
     code_store.get.assert_awaited_once_with(key="downstream-code")
+
+
+async def test_verified_principal_proxy_does_not_return_family_when_operator_is_disabled_during_issue() -> None:
+    proxy, resolver, link, code_store = _exchange_proxy()
+    principal = VerifiedOidcPrincipal(issuer="https://auth.test/application/o/haku-agent/", subject="operator-42")
+    resolver.return_value = principal
+    active_operator = cast(Mock, proxy._client_link_authority.active_operator_for_client)
+    active_operator.side_effect = [_OPERATOR_ID, None]
+    issued = OAuthToken(access_token="must-not-be-returned")
+
+    with (
+        patch.object(
+            DownstreamClientIdentityOIDCProxy,
+            "exchange_authorization_code",
+            new_callable=AsyncMock,
+            return_value=issued,
+        ) as parent,
+        pytest.raises(TokenError) as raised,
+    ):
+        await proxy.exchange_authorization_code(_client(), _authorization_code())
+
+    assert raised.value.error == "invalid_grant"
+    link.assert_awaited_once_with("dcr-claude", principal)
+    parent.assert_awaited_once_with(_client(), _authorization_code())
+    assert active_operator.call_count == 2
+    code_store.delete.assert_not_awaited()
+
+
+async def test_verified_principal_proxy_rejects_token_when_operator_binding_is_inactive() -> None:
+    proxy = _VerifiedPrincipalOIDCProxy.__new__(_VerifiedPrincipalOIDCProxy)
+    store = _store()
+    cast(Mock, store.agent_operator).return_value = None
+    proxy._client_link_authority = _AgentOperatorLinkAuthority(store, _identity_store())
+    jwt_issuer = Mock()
+    jwt_issuer.verify_token.return_value = {"client_id": "dcr-claude"}
+    proxy._jwt_issuer = jwt_issuer
+    accepted = AccessToken(token="downstream-access-token", client_id="dcr-claude", scopes=[], expires_at=None)
+
+    with patch.object(
+        DownstreamClientIdentityOIDCProxy, "load_access_token", new_callable=AsyncMock, return_value=accepted
+    ) as parent:
+        assert await proxy.load_access_token("signed-reference-token") is None
+
+    parent.assert_not_awaited()
+    cast(Mock, store.agent_operator).assert_called_once_with("dcr-claude")
+
+
+async def test_verified_principal_proxy_does_not_accept_token_when_link_is_disabled_during_load() -> None:
+    proxy = _VerifiedPrincipalOIDCProxy.__new__(_VerifiedPrincipalOIDCProxy)
+    store = _store()
+    cast(Mock, store.agent_operator).side_effect = [_OPERATOR_ID, None]
+    proxy._client_link_authority = _AgentOperatorLinkAuthority(store, _identity_store())
+    jwt_issuer = Mock()
+    jwt_issuer.verify_token.return_value = {"client_id": "dcr-claude"}
+    proxy._jwt_issuer = jwt_issuer
+    accepted = AccessToken(token="downstream-access-token", client_id="dcr-claude", scopes=[], expires_at=None)
+
+    with patch.object(
+        DownstreamClientIdentityOIDCProxy, "load_access_token", new_callable=AsyncMock, return_value=accepted
+    ) as parent:
+        assert await proxy.load_access_token("signed-reference-token") is None
+
+    parent.assert_awaited_once_with("signed-reference-token")
+    assert cast(Mock, store.agent_operator).call_count == 2
+
+
+async def test_verified_principal_proxy_rejects_refresh_before_rotation_when_link_is_inactive() -> None:
+    proxy = _VerifiedPrincipalOIDCProxy.__new__(_VerifiedPrincipalOIDCProxy)
+    store = _store()
+    cast(Mock, store.agent_operator).return_value = None
+    proxy._client_link_authority = _AgentOperatorLinkAuthority(store, _identity_store())
+    refresh_token = RefreshToken(token="downstream-refresh-token", client_id="dcr-claude", scopes=["openid"])
+
+    with (
+        patch.object(DownstreamClientIdentityOIDCProxy, "exchange_refresh_token", new_callable=AsyncMock) as parent,
+        pytest.raises(TokenError) as raised,
+    ):
+        await proxy.exchange_refresh_token(_client(), refresh_token, ["openid"])
+
+    assert raised.value.error == "invalid_grant"
+    parent.assert_not_awaited()
+    cast(Mock, store.agent_operator).assert_called_once_with("dcr-claude")
+
+
+async def test_verified_principal_proxy_does_not_return_refresh_when_link_is_disabled_during_rotation() -> None:
+    proxy = _VerifiedPrincipalOIDCProxy.__new__(_VerifiedPrincipalOIDCProxy)
+    store = _store()
+    cast(Mock, store.agent_operator).side_effect = [_OPERATOR_ID, None]
+    proxy._client_link_authority = _AgentOperatorLinkAuthority(store, _identity_store())
+    refresh_token = RefreshToken(token="downstream-refresh-token", client_id="dcr-claude", scopes=["openid"])
+    rotated = OAuthToken(access_token="must-not-be-returned")
+
+    with (
+        patch.object(
+            DownstreamClientIdentityOIDCProxy, "exchange_refresh_token", new_callable=AsyncMock, return_value=rotated
+        ) as parent,
+        pytest.raises(TokenError) as raised,
+    ):
+        await proxy.exchange_refresh_token(_client(), refresh_token, ["openid"])
+
+    assert raised.value.error == "invalid_grant"
+    parent.assert_awaited_once_with(_client(), refresh_token, ["openid"])
+    assert cast(Mock, store.agent_operator).call_args_list == [(("dcr-claude",),), (("dcr-claude",),)]
 
 
 async def test_verified_principal_proxy_consumes_code_for_terminal_invalid_principal() -> None:
@@ -240,8 +377,9 @@ async def test_verified_principal_proxy_consumes_code_when_operator_link_is_reje
     principal = VerifiedOidcPrincipal(issuer="https://auth.test/application/o/haku-agent/", subject="new-operator")
     resolver.return_value = principal
     store = _store()
+    identity_store = _identity_store()
     cast(Mock, store.bind_agent_operator).side_effect = ValueError("already bound to a different operator")
-    proxy._on_client_authorized = _LinkAgentOperator(store)
+    proxy._client_link_authority = _AgentOperatorLinkAuthority(store, identity_store)
     with (
         patch.object(
             DownstreamClientIdentityOIDCProxy, "exchange_authorization_code", new_callable=AsyncMock

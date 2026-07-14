@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import time
 from collections.abc import Callable, Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -26,9 +27,10 @@ from sqlalchemy import create_engine, text
 from testcontainers.postgres import PostgresContainer
 
 from haku.console.app import create_app
-from haku.console.config import OperatorOidcConfig, Settings
+from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig, Settings
 from haku.console.database_migrate import apply_migrations
-from haku.console.operator_auth import SESSION_USER_KEY
+from haku.console.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_USER_KEY
+from haku.console.operator_identity import VerifiedExternalIdentity
 from util.testing.postgres import force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
 
@@ -55,13 +57,27 @@ TEST_OPERATOR_OIDC = OperatorOidcConfig(
     client_secret=SecretStr("client-secret"),
     session_secret=SecretStr(_TEST_SESSION_SECRET),
 )
+TEST_OPERATOR_IDENTITY = OperatorIdentityConfig(trust_domain="auth.test/authentik-user-id/v1")
 
 
-def operator_session_cookie(*, subject: str, username: str) -> str:
+def operator_session_cookie(*, operator_id: str, identity_id: str, username: str, expires_at: int | None = None) -> str:
     """A Starlette SessionMiddleware `session` cookie for a logged-in operator, mirroring its own
     sign format (`TimestampSigner` over base64-JSON) so a TestClient can present operator identity
     without walking the live OIDC login."""
-    data = base64.b64encode(json.dumps({SESSION_USER_KEY: {"subject": subject, "username": username}}).encode())
+    data = base64.b64encode(
+        json.dumps(
+            {
+                SESSION_USER_KEY: {
+                    "operator_id": operator_id,
+                    "identity_id": identity_id,
+                    "username": username,
+                    "expires_at": (
+                        expires_at if expires_at is not None else int(time.time()) + OPERATOR_SESSION_MAX_AGE_SECONDS
+                    ),
+                }
+            }
+        ).encode()
+    )
     return itsdangerous.TimestampSigner(_TEST_SESSION_SECRET).sign(data).decode()
 
 
@@ -81,6 +97,7 @@ def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
             "database_url": SecretStr(migrated_db_url),
             "public_base_url": "https://haku.test",
             "operator_oidc": TEST_OPERATOR_OIDC,
+            "operator_identity": TEST_OPERATOR_IDENTITY,
             **overrides,
         }
     )
@@ -140,8 +157,9 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
         in_process_servers: Any | None = None,
         config_file: Path | None = None,
         operator: bool = False,
-        operator_subject: str = "operator-sub",
+        operator_external_user_key: str = "operator-sub",
         operator_username: str = "operator@example.com",
+        operator_session_expires_at: int | None = None,
         **settings_overrides: Any,
     ) -> Iterator[TestClient]:
         # Every app uses production-shaped OIDC settings. `operator=True` presents an authenticated
@@ -155,6 +173,11 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
             **settings_overrides,
         )
         app = create_app(settings)
+        operator_identity = None
+        if operator:
+            operator_identity = app.state.operator_identity_store.resolve_verified_identity(
+                VerifiedExternalIdentity(issuer=settings.operator_oidc.issuer, subject=operator_external_user_key)
+            )
         if tool_call_executor is not None:
             app.state.tool_call_executor = tool_call_executor
         if tool_call_metadata_provider is not None:
@@ -170,7 +193,16 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
         https = settings.public_base_url.startswith("https://")
         with TestClient(app, base_url="https://testserver" if https else "http://testserver") as c:
             if operator:
-                c.cookies.set("session", operator_session_cookie(subject=operator_subject, username=operator_username))
+                assert operator_identity is not None
+                c.cookies.set(
+                    "session",
+                    operator_session_cookie(
+                        operator_id=str(operator_identity.operator_id),
+                        identity_id=str(operator_identity.identity_id),
+                        username=operator_username,
+                        expires_at=operator_session_expires_at,
+                    ),
+                )
             yield c
 
     return _make

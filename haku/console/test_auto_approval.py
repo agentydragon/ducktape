@@ -1,6 +1,7 @@
 """Unit tests for haku-console's reviewed auto-approval decision."""
 
 from unittest.mock import Mock
+from uuid import UUID
 
 import pytest
 import pytest_bazel
@@ -10,8 +11,9 @@ from haku.console.auto_approval import UNCONDITIONAL_AUTO_APPROVAL_ID, auto_appr
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tools.gmail import build_mcp
 
-AGENT_ACTOR = AgentActor(principal="test-agent", operator_subject="test-operator")
-OPERATOR_ACTOR = OperatorActor(operator_subject="test-operator")
+TEST_OPERATOR_ID = UUID("00000000-0000-0000-0000-000000000001")
+AGENT_ACTOR = AgentActor(principal="test-agent", operator_id=TEST_OPERATOR_ID)
+OPERATOR_ACTOR = OperatorActor(operator_id=TEST_OPERATOR_ID)
 
 
 async def _decision(tool_name: str, arguments: dict, *, gmail=None, actor: ToolCallActor = AGENT_ACTOR):

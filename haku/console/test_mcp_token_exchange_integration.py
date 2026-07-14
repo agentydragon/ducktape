@@ -29,7 +29,6 @@ from haku.console.app import create_app
 from haku.console.config import OperatorOidcConfig
 from haku.console.conftest import console_settings, write_config
 from haku.console.mcp_config import McpOperatorOAuthConfig, McpServerEntry
-from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import PostgresPersistence
 from util.net import pick_free_port
@@ -290,8 +289,9 @@ async def token_chain_harness(
             server_url=f"{downstream_url}/mcp",
             operator_oauth=McpOperatorOAuthConfig(client_name="Haku Console"),
         )
-        stored_reference = await PostgresMcpOperatorOAuthStore(migrated_db_url).access_token_for(
-            server=server_entry, operator_subject=_OPERATOR_SUBJECT
+        operator_id = console.state.operator_identity_store.resolve_configured_external_user_key(_OPERATOR_SUBJECT)
+        stored_reference = await console.state.mcp_operator_oauth_store.access_token_for(
+            server=server_entry, operator_id=operator_id
         )
         assert stored_reference is not None
 

@@ -20,18 +20,19 @@ resource "authentik_group" "haku_console_access" {
 }
 
 resource "authentik_provider_oauth2" "haku_console_mcp" {
-  name               = "haku-console-mcp"
-  client_id          = "haku-console-mcp"
-  client_type        = "confidential"
-  authorization_flow = data.authentik_flow.implicit_consent.id
-  invalidation_flow  = data.authentik_flow.invalidation.id
-  signing_key        = data.authentik_certificate_key_pair.self_signed.id
+  name                  = "haku-console-mcp"
+  client_id             = "haku-console-mcp"
+  client_type           = "confidential"
+  authorization_flow    = data.authentik_flow.implicit_consent.id
+  invalidation_flow     = data.authentik_flow.invalidation.id
+  signing_key           = data.authentik_certificate_key_pair.self_signed.id
+  access_token_validity = "hours=1"
 
   issuer_mode                = "per_provider"
   include_claims_in_id_token = true
-  # `sub` = the stable Authentik user id, identical across this and the operator-login provider, so
-  # haku-console can key operator identity (associations + agent→operator link) on the opaque subject
-  # rather than the mutable username, and the two providers' `sub` agree for the same user.
+  # `sub` = the stable Authentik user id, identical across this and the operator-login provider.
+  # Haku verifies the exact issuer, resolves this external identity to a canonical Operator UUID,
+  # and keys live associations/agent links on that UUID rather than the mutable username or bare sub.
   sub_mode = "user_id"
 
   property_mappings = [
@@ -64,17 +65,18 @@ resource "authentik_policy_binding" "haku_console_mcp_access" {
 }
 
 resource "authentik_provider_oauth2" "haku_console_operator" {
-  name               = "haku-console"
-  client_id          = "haku-console"
-  client_type        = "confidential"
-  authorization_flow = data.authentik_flow.implicit_consent.id
-  invalidation_flow  = data.authentik_flow.invalidation.id
-  signing_key        = data.authentik_certificate_key_pair.self_signed.id
+  name                  = "haku-console"
+  client_id             = "haku-console"
+  client_type           = "confidential"
+  authorization_flow    = data.authentik_flow.implicit_consent.id
+  invalidation_flow     = data.authentik_flow.invalidation.id
+  signing_key           = data.authentik_certificate_key_pair.self_signed.id
+  access_token_validity = "hours=1"
 
   issuer_mode                = "per_provider"
   include_claims_in_id_token = true
-  # Match haku_console_mcp: `sub` = the stable Authentik user id, so operator identity keys on the
-  # opaque subject (consistent across both console providers), not the mutable username.
+  # Match haku_console_mcp: `sub` = the stable Authentik user id. Exact issuer + subject resolves to
+  # the same canonical Operator UUID; username remains display-only.
   sub_mode = "user_id"
 
   property_mappings = [
@@ -129,10 +131,11 @@ resource "kubernetes_secret" "haku_console_oidc" {
     operator_client_id      = authentik_provider_oauth2.haku_console_operator.client_id
     operator_client_secret  = authentik_provider_oauth2.haku_console_operator.client_secret
     operator_session_secret = random_password.haku_console_operator_session.result
-    # The operator's opaque OIDC subject (both providers run sub_mode=user_id → the Authentik user
-    # id). haku-console's `haku` static agent executes operator_oauth calls as this operator
-    # (config.yaml static_agents → HAKU_CONSOLE_AGENT_HAKU_OPERATOR); TF feeds the id so no opaque
-    # value is hand-copied.
+    # Controller-fed stable external user key for the shared Authentik user-id trust domain (both
+    # providers run sub_mode=user_id). Haku resolves this to a canonical Operator UUID; the key is
+    # used only during startup/migration and never carried as live request authority.
+    # Externally stable label: this is only a startup seed for canonical Operator resolution,
+    # never a live authorization key.
     operator_subject = tostring(data.authentik_user.agentydragon.pk)
   }
 }

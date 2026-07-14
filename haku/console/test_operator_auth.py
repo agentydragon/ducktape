@@ -11,6 +11,7 @@ operator session. OIDC configuration is mandatory; there is no unauthenticated d
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import httpx
@@ -18,10 +19,13 @@ import pytest
 import pytest_bazel
 import yaml
 from pydantic import SecretStr, ValidationError
+from sqlalchemy import create_engine, func, select
 
+from haku.console import operator_auth
 from haku.console.app import create_app
 from haku.console.config import OperatorOidcConfig
-from haku.console.conftest import console_settings
+from haku.console.conftest import TEST_OPERATOR_OIDC, console_settings
+from haku.console.database_schema import OidcIdentity
 from util.net import pick_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
@@ -31,6 +35,48 @@ _AGENT_TOKEN_ENV = "HAKU_CONSOLE_OPERATOR_AUTH_TEST_TOKEN"
 _AGENT_OPERATOR_ENV = "HAKU_CONSOLE_OPERATOR_AUTH_TEST_OPERATOR"
 _OPERATOR_SUBJECT = "op-subject-1"  # the opaque Authentik `sub` the mock IdP issues
 _OPERATOR_USERNAME = "agentydragon"
+
+
+class _MismatchedIssuerClient:
+    async def authorize_access_token(self, _request: object) -> dict[str, object]:
+        return {
+            "userinfo": {
+                "iss": "https://different-issuer.test/",
+                "sub": _OPERATOR_SUBJECT,
+                "preferred_username": _OPERATOR_USERNAME,
+            }
+        }
+
+
+class _MismatchedIssuerOAuth:
+    def create_client(self, _name: str) -> _MismatchedIssuerClient:
+        return _MismatchedIssuerClient()
+
+
+class _MissingIssuerClient:
+    async def authorize_access_token(self, _request: object) -> dict[str, object]:
+        return {"userinfo": {"sub": _OPERATOR_SUBJECT, "preferred_username": _OPERATOR_USERNAME}}
+
+
+class _MissingIssuerOAuth:
+    def create_client(self, _name: str) -> _MissingIssuerClient:
+        return _MissingIssuerClient()
+
+
+class _MatchingIssuerClient:
+    async def authorize_access_token(self, _request: object) -> dict[str, object]:
+        return {
+            "userinfo": {
+                "iss": TEST_OPERATOR_OIDC.issuer,
+                "sub": _OPERATOR_SUBJECT,
+                "preferred_username": _OPERATOR_USERNAME,
+            }
+        }
+
+
+class _MatchingIssuerOAuth:
+    def create_client(self, _name: str) -> _MatchingIssuerClient:
+        return _MatchingIssuerClient()
 
 
 def _static_agent_config(tmp_path: Path) -> Path:
@@ -103,6 +149,55 @@ def test_guards_reject_anonymous_requests_with_test_oidc(make_client) -> None:
     with make_client() as client:
         assert client.get("/api/tool-calls").status_code == 401  # agent-facing
         assert client.get("/api/config").status_code == 401  # operator-only
+
+
+def test_signed_operator_session_has_an_absolute_reauthentication_deadline(make_operator_client) -> None:
+    with make_operator_client(operator_session_expires_at=int(time.time()) - 1) as client:
+        assert client.get("/auth/me").status_code == 401
+        assert client.get("/api/config").status_code == 401
+
+
+def test_continuous_use_cannot_slide_operator_session_past_absolute_deadline(
+    make_operator_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    deadline = int(time.time()) + 300
+    with make_operator_client(operator_session_expires_at=deadline) as client:
+        before_expiry = client.get("/auth/me")
+        assert before_expiry.status_code == 200
+
+        # Advance less than the middleware max_age but past the independently signed payload
+        # deadline: repeated successful use must not extend the absolute authorization lifetime.
+        monkeypatch.setattr(operator_auth.time, "time", lambda: deadline + 1)
+        assert client.get("/auth/me").status_code == 401
+
+
+def test_successful_login_cookie_has_one_hour_max_age(make_client) -> None:
+    with make_client() as client:
+        client.app.state.operator_oauth = _MatchingIssuerOAuth()
+        response = client.get("/auth/callback", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert "Max-Age=3600" in response.headers["set-cookie"]
+
+
+@pytest.mark.parametrize("oauth", [_MismatchedIssuerOAuth(), _MissingIssuerOAuth()])
+def test_callback_rejects_wrong_or_missing_verified_issuer_claim(
+    oauth: object, make_client, migrated_db_url: str
+) -> None:
+    with make_client() as client:
+        client.app.state.operator_oauth = oauth
+        response = client.get("/auth/callback")
+        me = client.get("/auth/me")
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "OIDC token issuer does not match configured issuer"
+    assert me.status_code == 401
+    engine = create_engine(migrated_db_url)
+    try:
+        with engine.connect() as connection:
+            assert connection.scalar(select(func.count()).select_from(OidcIdentity)) == 0
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.parametrize("path", ["/api/tool-calls", "/api/config", "/api/capabilities/csrf", "/api/mcp/operator-auth"])

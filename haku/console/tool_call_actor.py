@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from uuid import UUID
 
 
 @dataclass(frozen=True, slots=True)
 class OperatorActor:
-    operator_subject: str
+    operator_id: UUID
 
 
 @dataclass(frozen=True, slots=True)
 class AgentActor:
     principal: str
-    operator_subject: str
+    operator_id: UUID
 
 
 type ToolCallActor = OperatorActor | AgentActor

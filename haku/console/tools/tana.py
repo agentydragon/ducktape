@@ -6,7 +6,7 @@ import asyncio
 import re
 from typing import Annotated, Protocol
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query
 from fastmcp.client.client import CallToolResult as FastMCPCallToolResult
 from mcp import types as mcp_types
 from pydantic import BaseModel
@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from haku.console.deps import SettingsDep
 from haku.console.mcp_approval import operator_authenticated_client
 from haku.console.mcp_operator_oauth import OAuthStoreDep
+from haku.console.operator_auth import OperatorActorDep
 
 TANA_RW_SERVER_ID = "tana-rw"
 
@@ -67,10 +68,10 @@ async def _read_node_preview(client: _ToolClient, node_id: str) -> TanaNodePrevi
 
 @router.get("/node-previews")
 async def tana_node_previews(
-    request: Request, settings: SettingsDep, oauth_store: OAuthStoreDep, node_id: Annotated[list[str], Query()]
+    settings: SettingsDep, oauth_store: OAuthStoreDep, actor: OperatorActorDep, node_id: Annotated[list[str], Query()]
 ) -> TanaNodePreviewsResponse:
     """Resolve Tana node IDs for preview display through the approving operator's account."""
     node_ids = list(dict.fromkeys(node_id))
-    async with await operator_authenticated_client(TANA_RW_SERVER_ID, request, settings, oauth_store) as client:
+    async with await operator_authenticated_client(TANA_RW_SERVER_ID, actor, settings, oauth_store) as client:
         previews = await asyncio.gather(*(_read_node_preview(client, id_) for id_ in node_ids))
     return TanaNodePreviewsResponse(nodes=[preview for preview in previews if preview is not None])

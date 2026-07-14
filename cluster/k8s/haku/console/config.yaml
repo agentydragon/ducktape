@@ -1,9 +1,11 @@
 # Non-secret haku-console config. Secret values stay in env/Kubernetes Secrets.
 #
 # Static machine agents: each a fixed bearer (agent id → the audit caller_principal and the /mcp
-# static client_id) bound to one operator. The bearer and the operator's opaque OIDC subject are
+# static client_id) bound to one Operator. The bearer and the controller-fed Authentik user id are
 # named env vars, not literals — values live in the haku-console-agent / haku-console-oidc Secrets.
-# `haku` is Haku's own backend token; its operator subject is TF-fed from the Authentik user id.
+# The externally stable `operator_subject_env` label names a startup-only Authentik `sub`/user_id
+# seed; the app immediately resolves it to a canonical Operator UUID and never uses it as live
+# request authority.
 static_agents:
   - agent: haku
     token_env_var: HAKU_CONSOLE_AGENT_HAKU_TOKEN
