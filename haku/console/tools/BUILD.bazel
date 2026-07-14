@@ -89,6 +89,8 @@ py_library(
         "//haku/console:mcp_approval",
         "//haku/console:mcp_operator_oauth",
         "@pypi//fastapi",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
         "@pypi//pydantic",
     ],
 )
@@ -132,6 +134,8 @@ py_test(
     deps = [
         ":tana",
         "//:conftest",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
         "@pypi//pytest_bazel",
     ],
 )

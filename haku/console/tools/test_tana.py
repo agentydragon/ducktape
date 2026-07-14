@@ -1,7 +1,8 @@
 import asyncio
-from types import SimpleNamespace
 
 import pytest_bazel
+from fastmcp.client.client import CallToolResult as FastMCPCallToolResult
+from mcp import types as mcp_types
 
 from haku.console.tools.tana import _read_node_preview, node_name_from_markdown
 
@@ -19,9 +20,13 @@ def test_read_node_preview_uses_a_depth_zero_read_and_ignores_unresolved_nodes()
     calls: list[tuple[str, dict[str, object]]] = []
 
     class Client:
-        async def call_tool(self, name: str, arguments: dict[str, object]) -> object:
+        async def call_tool(self, name: str, arguments: dict[str, object]) -> FastMCPCallToolResult:
             calls.append((name, arguments))
-            return SimpleNamespace(content=[SimpleNamespace(type="text", text="- Target <!-- node-id: target -->")])
+            return FastMCPCallToolResult(
+                content=[mcp_types.TextContent(type="text", text="- Target <!-- node-id: target -->")],
+                structured_content=None,
+                meta=None,
+            )
 
     preview = asyncio.run(_read_node_preview(Client(), "target"))
     assert preview is not None

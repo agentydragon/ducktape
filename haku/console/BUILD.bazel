@@ -313,6 +313,7 @@ py_test(
         "@pypi//cryptography",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
+        "@pypi//mcp",
         "@pypi//pydantic",
         "@pypi//pyjwt",
         "@pypi//pytest",

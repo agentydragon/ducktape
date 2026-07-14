@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import re
-from typing import Annotated, Any, cast
+from typing import Annotated, Protocol
 
 from fastapi import APIRouter, Query, Request
+from fastmcp.client.client import CallToolResult as FastMCPCallToolResult
+from mcp import types as mcp_types
 from pydantic import BaseModel
 
 from haku.console.deps import SettingsDep
@@ -27,6 +29,10 @@ class TanaNodePreviewsResponse(BaseModel):
     nodes: list[TanaNodePreview]
 
 
+class _ToolClient(Protocol):
+    async def call_tool(self, name: str, arguments: dict[str, object]) -> FastMCPCallToolResult: ...
+
+
 _NODE_MARKER_RE = re.compile(r"^(?P<name>.*?)\s*<!-- node-id: (?P<id>[^ ]+) -->\s*$", re.MULTILINE)
 _BULLET_PREFIX_RE = re.compile(r"^\s*(?:-\s+)?(?:\[[ Xx]\]\s+)?")
 
@@ -40,14 +46,14 @@ def node_name_from_markdown(markdown: str, node_id: str) -> str | None:
     return None
 
 
-def _tool_result_text(result: Any) -> str | None:
-    for content in cast(list[Any], result.content):
-        if getattr(content, "type", None) == "text":
-            return cast(str, content.text)
+def _tool_result_text(result: FastMCPCallToolResult) -> str | None:
+    for content in result.content:
+        if isinstance(content, mcp_types.TextContent):
+            return content.text
     return None
 
 
-async def _read_node_preview(client: Any, node_id: str) -> TanaNodePreview | None:
+async def _read_node_preview(client: _ToolClient, node_id: str) -> TanaNodePreview | None:
     try:
         result = await client.call_tool("read_node", {"nodeId": node_id, "maxDepth": 0})
     except Exception:

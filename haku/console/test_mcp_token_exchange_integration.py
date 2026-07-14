@@ -16,6 +16,7 @@ import pytest
 import pytest_bazel
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
 from fastmcp import Client
+from mcp import types as mcp_types
 from pydantic import SecretStr
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -93,7 +94,9 @@ class _TokenChainHarness:
             async with Client(f"{self.downstream_url}/mcp", auth=self.stored_reference) as downstream_client:
                 direct_result = await downstream_client.call_tool_mcp("get_system_info", {})
             direct_result_is_error = direct_result.isError
-            direct_result_text = "\n".join(str(block.text) for block in direct_result.content if hasattr(block, "text"))
+            direct_result_text = "\n".join(
+                block.text for block in direct_result.content if isinstance(block, mcp_types.TextContent)
+            )
 
         submitted = await self.agent.post(
             "/api/tool-calls",
