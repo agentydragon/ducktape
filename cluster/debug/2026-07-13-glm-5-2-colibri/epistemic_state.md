@@ -1,6 +1,6 @@
 # Epistemic State: GLM-5.2 on wyrm2 via Colibri
 
-## Last updated: 2026-07-14T14:37:28-07:00
+## Last updated: 2026-07-14T16:43:51-07:00
 
 ## 1. Objective
 
@@ -26,18 +26,18 @@ storage for the decisive full-model benchmark.
 | U1  | Colibri builds and its CUDA backend works on `wyrm2`            | Yes                              | CUDA backend correctness passed on both RTX 5090s             | Resolved |
 | U2  | Candidate SSD sustains Colibri-shaped random reads              | Yes for `/games`-class local ZFS | Upstream `iobench` measured 5.95 GB/s                         | Resolved |
 | U3  | Enough SSD capacity is safely available for the converted model | Yes                              | Dedicated 500 GB local-ZFS disk mounted at `/var/lib/colibri` | Resolved |
-| U4  | Warm decode throughput is useful                                | 0.5-1.5 tok/s [VIBE]             | Nearest upstream community systems                            | Open     |
+| U4  | Warm decode throughput is useful                                | No                               | Refined warm run measured 0.28 tok/s                          | Resolved |
 | U5  | Current OpenAI API surface is sufficient for an experiment      | Yes                              | 36 server tests pass, including tool calls and streaming      | Resolved |
 
 ## 4. Hypothesis Space
 
 | ID      | Hypothesis                                                            | Probability | Distinguishing test                                 |
 | ------- | --------------------------------------------------------------------- | ----------- | --------------------------------------------------- |
-| H1      | Host experiment works at roughly interactive-but-slow speed           | 0.55        | Full-model fixed-prompt 32-token decode             |
-| H2      | It works but remains below 0.5 tok/s because storage or CPU dominates | 0.30        | Full-model runtime profile                          |
-| H3      | Upstream model/runtime correctness mismatch blocks coherent output    | 0.08        | Full-model fixed-prompt coherence and repeatability |
-| H4      | Dedicated SSD provisioning blocks or materially delays the experiment | 0.02        | Add a safely owned 450+ GB host disk                |
-| H_other | Other failure                                                         | 0.05        | Staged probes and logs                              |
+| H1      | Host experiment works at roughly interactive-but-slow speed           | 0.01        | Full-model fixed-prompt 32-token decode             |
+| H2      | It works but remains below 0.5 tok/s because storage or CPU dominates | 0.97        | Full-model runtime profile                          |
+| H3      | Upstream model/runtime correctness mismatch blocks coherent output    | 0.00        | Full-model fixed-prompt coherence and repeatability |
+| H4      | Dedicated SSD provisioning blocks or materially delays the experiment | 0.00        | Add a safely owned 450+ GB host disk                |
+| H_other | Other failure                                                         | 0.02        | Staged probes and logs                              |
 
 ## 5. Evidence Log
 
@@ -197,22 +197,59 @@ storage for the decisive full-model benchmark.
   successful exit plus all 150 expected paths and 144 expected safetensors before
   using their final resource report.
 
+### E15: Completed checkpoint and resource plan
+
+- Action: reduced Xet range concurrency from 16 to 8 per file, completed the transfer,
+  and compared the local root paths and sizes with public repository metadata.
+- Result: the tuned transfer completed 150/150 files in 47m27s. The local root exactly
+  matches all 150 paths and 383,760,077,466 bytes, contains 144 safetensors, has the
+  expected three MTP shard sizes, and has no incomplete files. Final `coli plan` and
+  `coli doctor` both see 144 valid shards and usable CUDA devices.
+- Placement: with 64 GB RAM and 52 GB VRAM, 47.0 GB of experts fit warm in RAM,
+  52.0 GB fit hot across the two GPUs, and 273.9 GB remain cold on SSD. Doctor's only
+  warning is that decode speed depends on the cold-miss rate.
+
+### E16: Full-quality cold and profiled decode
+
+- Action: ran the same greedy 32-token prompt with MTP disabled. The first run used
+  dense CUDA and a 64 GB dynamic expert cache to collect routing statistics. Two more
+  runs placed the hottest 52 GB on the GPUs and the next 47 GB in RAM, refining the
+  profile once.
+- Result: all three outputs were coherent. Cold decode was 0.17 tok/s at 48.6% expert
+  hits. The first profiled run reached 0.26 tok/s at 77.5% hits. The refined warm run
+  reached 0.28 tok/s at 83.5% hits; disk service fell to 26.4s, while expert matmul
+  consumed 50.7s and attention 18.3s.
+- Update: U4 resolved negatively. More routing observations no longer materially
+  improve throughput, and full-quality decode remains well below the 0.5 tok/s gate.
+
+### E17: Native MTP drafting
+
+- Action: repeated the refined placement with the int8 MTP head enabled at draft
+  depth three.
+- Result: MTP acceptance was 73% and the engine emitted 3.20 tokens per main forward,
+  but throughput was 0.27 tok/s. Draft verification raised expert loads from 862.5 to
+  1,010.2 per emitted token and lowered the hit rate from 83.5% to 76.5%.
+- Update: drafting works, but its larger expert union cancels the saved forwards on
+  this disk-streamed placement.
+
 ## 6. Current Posterior State
 
-- A staged host experiment remains justified: CUDA and the SSD access pattern pass,
-  raising the probability that it runs coherently to roughly 85%, while useful
-  full-model throughput remains roughly 55% until measured.
+- The host experiment works correctly and produces coherent GLM-5.2 output, but the
+  refined full-quality result is only 0.28 tok/s. H2 is the observed outcome.
 - The dedicated 500 GB host SSD has enough capacity and exceeds the I/O gate. A
   future Kubernetes deployment can separately use the existing SSD-backed OpenEBS
   storage class instead of coupling the pod to this experiment mount.
+- Do not add the model to cluster LiteLLM under the original success criterion. A
+  bounded expert-top-p run may characterize the available speed/quality tradeoff,
+  but it does not change the full-quality verdict.
 
 ## 7. Action Queue
 
-1. Finish the resumable checkpoint download on the dedicated SSD.
-2. Run `coli plan` and `coli doctor` against the completed checkpoint.
-3. Run fixed-prompt cold/warm decode
-   without concurrent download or other heavy host work.
-4. If coherent warm decode is at least 0.5 tok/s, test `coli serve` through LiteLLM.
+1. Measure one explicitly quality-trading `--topp 0.7` run separately from the
+   full-quality result.
+2. Keep the checkpoint and draft PR as a reproducible host experiment.
+3. Do not implement the LiteLLM route unless the user explicitly accepts sub-threshold
+   throughput or a quality tradeoff.
 
 ## 8. Decision Tree
 
@@ -239,5 +276,5 @@ fixture passes
 
 ## 10. Vibes Ledger
 
-- U4 throughput prior is [VIBE]. De-vibe with the upstream fixture, exact I/O
-  benchmark, and a fixed 32-token cold/warm full-model run.
+- U4's 0.5-1.5 tok/s prior was [VIBE] and is now resolved by the fixed cold, warm,
+  refined-warm, and MTP measurements. The best full-quality result is 0.28 tok/s.
