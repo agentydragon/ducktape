@@ -225,6 +225,7 @@ async def _decide(
         EnrollmentDecisionConflictError,
     ) as error:
         _raise_interaction_error(error)
+    response: Response
     match result:
         case EnrollmentAllowed(upstream_authorization_url=url):
             response = RedirectResponse(url=url, status_code=303)

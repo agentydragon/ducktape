@@ -40,6 +40,10 @@ def _session() -> OperatorSession:
     )
 
 
+def _anonymous_session() -> None:
+    return None
+
+
 def _page() -> EnrollmentPage:
     return EnrollmentPage(
         client_software="Claude.ai",
@@ -108,7 +112,7 @@ def _client(
     app.state.agent_enrollment_service = fake
     app.state.settings = SimpleNamespace(public_base_url="https://haku.test")
     app.include_router(router)
-    app.dependency_overrides[_operator_session] = _session if authenticated else lambda: None
+    app.dependency_overrides[_operator_session] = _session if authenticated else _anonymous_session
     return TestClient(app, base_url="https://haku.test"), fake
 
 

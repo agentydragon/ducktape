@@ -59,11 +59,9 @@ def test_enrollment_page_presents_new_reconnect_and_deny_actions() -> None:
         "/auth/agent-enrollment/interaction-123/reconnect",
         "/auth/agent-enrollment/interaction-123/deny",
     ]
-    assert [form.find("input", attrs={"name": "form_token"})["value"] for form in forms] == [
-        "form-token",
-        "form-token",
-        "form-token",
-    ]
+    form_tokens = [form.find("input", attrs={"name": "form_token"}) for form in forms]
+    assert all(token is not None for token in form_tokens)
+    assert [token["value"] for token in form_tokens if token is not None] == ["form-token", "form-token", "form-token"]
 
     create_form = forms[0]
     name_input = create_form.find("input", attrs={"name": "agent_name"})
@@ -136,7 +134,9 @@ def test_enrollment_page_autoescapes_every_untrusted_value_and_locks_down_browse
     assert error.get_text() == hostile
     assert option.get_text() == hostile
     assert option["value"] == hostile
-    assert all(form.find("input", attrs={"name": "form_token"})["value"] == hostile for form in page.find_all("form"))
+    form_tokens = [form.find("input", attrs={"name": "form_token"}) for form in page.find_all("form")]
+    assert all(token is not None for token in form_tokens)
+    assert all(token["value"] == hostile for token in form_tokens if token is not None)
 
 
 def test_enrollment_page_explains_when_reconnect_is_unavailable() -> None:
