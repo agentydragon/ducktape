@@ -70,7 +70,7 @@ shared-schema with rows scoped by `user_id`:
 
 | Table               | Purpose                                                                         |
 | ------------------- | ------------------------------------------------------------------------------- |
-| `balance`           | Singleton row (`id = 1`); credits, tokens. CHECK constraints enforce `≥ 0`.     |
+| `balance`           | One economy row per user; credits, tokens. CHECK constraints enforce `≥ 0`.     |
 | `sessions`          | One row per completed study session. In-progress sessions are client-side only. |
 | `prizes`            | User-editable prize catalog.                                                    |
 | `prize_log`         | Append-only redemption log.                                                     |
