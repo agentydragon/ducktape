@@ -214,20 +214,21 @@ def create_app(
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         await agent_authority.reconcile_static_agents(static_agent_definitions)
-        await console_event_hub.start()
-        try:
-            # Pre-warm the OIDCProxy client-state store so the first OAuth request isn't slowed by a
-            # cold connect (see mcp_infra/oauth_facade/server.py). The OAuth variant always carries
-            # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
-            if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
-                await mcp_auth.storage.setup()
-            # FastMCP's streamable-http session manager runs under mcp_asgi.lifespan; reflect the
-            # connected servers into the tool surface once it is up.
-            async with mcp_asgi.lifespan(app):
-                await mcp_server.register_proxy_tools(console_mcp, console_mcp_context)
-                yield
-        finally:
-            await console_event_hub.aclose()
+        async with agent_authority.expiry_maintenance():
+            await console_event_hub.start()
+            try:
+                # Pre-warm the OIDCProxy client-state store so the first OAuth request isn't slowed by a
+                # cold connect (see mcp_infra/oauth_facade/server.py). The OAuth variant always carries
+                # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
+                if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
+                    await mcp_auth.storage.setup()
+                # FastMCP's streamable-http session manager runs under mcp_asgi.lifespan; reflect the
+                # connected servers into the tool surface once it is up.
+                async with mcp_asgi.lifespan(app):
+                    await mcp_server.register_proxy_tools(console_mcp, console_mcp_context)
+                    yield
+            finally:
+                await console_event_hub.aclose()
 
     # OAuth protected-resource and authorization-server discovery are origin-level RFC routes even
     # though the operational MCP/OAuth handlers remain isolated under /mcp. FastMCP cannot infer an
