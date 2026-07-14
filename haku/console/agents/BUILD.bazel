@@ -50,6 +50,7 @@ py_library(
         "//haku/console:tool_call_actor",
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//mcp_infra/authentik_auth:oidc_principal",
+        "@pypi//psycopg",
         "@pypi//sqlalchemy",
     ],
 )
@@ -71,6 +72,7 @@ py_test(
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
