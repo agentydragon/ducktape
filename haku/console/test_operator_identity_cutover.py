@@ -161,7 +161,7 @@ def test_duplicate_static_agent_owner_seed_creates_one_operator(db_url: str) -> 
         engine.dispose()
 
 
-def test_0008_preserves_only_exact_seeded_durable_rows_and_drops_ephemeral_state(db_url: str) -> None:
+def test_0008_preserves_only_exact_seeded_durable_rows_and_0009_drops_legacy_agent_links(db_url: str) -> None:
     engine = create_engine(db_url)
     exact_key = "  opaque-authentik-id  "
     try:
@@ -267,11 +267,10 @@ def test_0008_preserves_only_exact_seeded_durable_rows_and_drops_ephemeral_state
                     {"collection": collection, "key": f"{collection}-key"},
                 )
 
-        apply_migrations(
-            db_url,
-            operator_identity_seeds=((_TRUST_DOMAIN, exact_key),),
-            fastmcp_oauth_state_table=_FASTMCP_STATE_TABLE,
-        )
+        with engine.begin() as conn:
+            config = _alembic_config(conn, seeds=((_TRUST_DOMAIN, exact_key),))
+            config.attributes["fastmcp_oauth_state_table"] = _FASTMCP_STATE_TABLE
+            alembic_command.upgrade(config, "0008")
 
         with engine.connect() as conn:
             anchors = (
@@ -330,6 +329,11 @@ def test_0008_preserves_only_exact_seeded_durable_rows_and_drops_ephemeral_state
         assert links == []
         assert fastmcp_state_count == 0
         assert counts == {"identities": 0, "flows": 0, "calls": 0, "events": 0}
+
+        with engine.begin() as conn:
+            alembic_command.upgrade(_alembic_config(conn), "head")
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT to_regclass('public.mcp_agent_operator')")).scalar_one() is None
     finally:
         engine.dispose()
 

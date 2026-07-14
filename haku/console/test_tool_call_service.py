@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import hashlib
 from collections.abc import Iterable
 from itertools import pairwise
 from pathlib import Path
@@ -157,6 +158,23 @@ def _actors(database_url: str) -> dict[str, ToolCallActor]:
                         """
                     ),
                     {"binding_id": binding_id, "agent_id": agent_id, "now": now},
+                )
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO static_credentials (
+                            binding_id, secret_reference, credential_fingerprint, created_at
+                        ) VALUES (
+                            :binding_id, :secret_reference, :credential_fingerprint, :now
+                        )
+                        """
+                    ),
+                    {
+                        "binding_id": binding_id,
+                        "secret_reference": f"test-tool-call-service/{binding_id}",
+                        "credential_fingerprint": hashlib.sha256(binding_id.bytes).digest(),
+                        "now": now,
+                    },
                 )
         finally:
             engine.dispose()
