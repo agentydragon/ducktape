@@ -10,13 +10,6 @@ view rendering.
 
 ## Outstanding Work
 
-### P1
-
-1. **PR hyperlinks respect configured repo**
-   File: `wt/client/view_formatter.py`
-   Action: When `config.github_repo` is set, emit `https://github.com/{owner_repo}/pull/{n}`; fall back to `http://go/pull/{n}` otherwise.
-   Acceptance: Integration tests confirm clickable GitHub links; fallback remains when repo unset.
-
 ### P2 — Test Coverage
 
 2. **Unit test for `GitHubInterface.pr_list`**
