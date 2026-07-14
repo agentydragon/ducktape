@@ -527,6 +527,7 @@ py_test(
         "//mcp_infra:persistence",
         "//util:net",
         "//util/testing:asgi",
+        "//util/testing:mock_oidc",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
