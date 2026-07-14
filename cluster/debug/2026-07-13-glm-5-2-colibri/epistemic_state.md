@@ -27,7 +27,7 @@ storage for the decisive full-model benchmark.
 | U2  | Candidate SSD sustains Colibri-shaped random reads              | Yes for `/games`-class local ZFS | Upstream `iobench` measured 5.95 GB/s                         | Resolved |
 | U3  | Enough SSD capacity is safely available for the converted model | Yes                              | Dedicated 500 GB local-ZFS disk mounted at `/var/lib/colibri` | Resolved |
 | U4  | Warm decode throughput is useful                                | 0.5-1.5 tok/s [VIBE]             | Nearest upstream community systems                            | Open     |
-| U5  | Current text-only OpenAI API is sufficient for an experiment    | Yes                              | User accepts an experiment                                    | Resolved |
+| U5  | Current OpenAI API surface is sufficient for an experiment      | Yes                              | 36 server tests pass, including tool calls and streaming      | Resolved |
 
 ## 4. Hypothesis Space
 
@@ -57,7 +57,7 @@ storage for the decisive full-model benchmark.
 - Source: <https://github.com/JustVugg/colibri>, accessed 2026-07-13.
 - Result: approximately 370 GB INT4 checkpoint; approximately 11.4 GB cold expert
   reads per decoded token; Linux CUDA tier supports multiple RTX 5090s without a
-  P2P/NCCL dependency; server implements text-only OpenAI chat completions.
+  P2P/NCCL dependency; server implements OpenAI chat completions.
 - Update: the architecture is compatible in principle, but disk throughput and hot
   expert placement determine usefulness.
 
@@ -158,6 +158,17 @@ storage for the decisive full-model benchmark.
 - Update: the host experiment can be exposed without an overlay proxy or policy change.
   After the model gate passes, use an authenticated Colibri listener plus a
   selectorless Service/EndpointSlice and a generated LiteLLM OpenAI-provider entry.
+
+### E12: OpenAI server contract
+
+- Action: inspected current tool-call handling and ran the upstream OpenAI-server
+  unit suite from the correct `c/` module root.
+- Result: all 36 tests passed, covering authentication, models, chat/completions,
+  streaming, request queuing, and tool-call declaration, parsing, and streaming. The
+  current implementation supports tools even though the README still describes the
+  first server version as text-only.
+- Update: the LiteLLM entry can provisionally advertise function calling. Require one
+  real-model forced-tool test before treating that capability as end-to-end validated.
 
 ## 6. Current Posterior State
 
