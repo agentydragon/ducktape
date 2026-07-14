@@ -146,7 +146,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
   }
 
   # Data disks — all on NVMe (local-zfs) unless noted.
-  # virtio0=/dev/vda, virtio1=/dev/vdb, ..., virtio7=/dev/vdh
+  # virtio0=/dev/vda, virtio1=/dev/vdb, ..., virtio8=/dev/vdi
   disk {
     datastore_id = var.storage
     interface    = "virtio0"
@@ -217,6 +217,16 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     size         = 1024
     file_format  = "raw"
   } # /tmp scratch space (HDD)
+  disk {
+    datastore_id = var.storage
+    interface    = "virtio8"
+    iothread     = true
+    discard      = "on"
+    size         = 500
+    backup       = false
+    replicate    = false
+    file_format  = "raw"
+  } # Colibri disk-streamed model storage (/var/lib/colibri) — SSD
 
   network_device {
     bridge = "vmbr0"
@@ -234,7 +244,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     ignore_changes = [
       # Proxmox CSI hotplugs scsi disks — provider can't distinguish
       # tofu-managed from CSI disks (TypeSet, no stable keys).
-      # Intentional new disks such as virtio7 (/tmp) must be hotplugged manually
+      # Intentional new disks such as virtio8 (/var/lib/colibri) must be hotplugged manually
       # and then kept in this resource as the desired VM shape.
       disk,
     ]

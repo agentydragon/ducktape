@@ -315,7 +315,7 @@ in
   # Separate data disks (Proxmox virtio disks).
   # autoFormat creates ext4 on first boot; autoResize grows to full disk size.
   # virtio0=/dev/vda, virtio1=/dev/vdb, virtio2=/dev/vdc, virtio3=/dev/vdd,
-  # virtio4=/dev/vde, virtio5=/dev/vdf, virtio7=/dev/vdh
+  # virtio4=/dev/vde, virtio5=/dev/vdf, virtio7=/dev/vdh, virtio8=/dev/vdi
   fileSystems."/var/local-path-provisioner" = {
     device = "/dev/vda";
     fsType = "ext4";
@@ -353,6 +353,18 @@ in
   };
   fileSystems."/tmp" = {
     device = "/dev/vdh"; # 1T HDD (tank-hdd) — scratch space
+    fsType = "ext4";
+    autoFormat = true;
+    autoResize = true;
+    options = [
+      "nodev"
+      "nosuid"
+      "nofail"
+      "x-systemd.device-timeout=10s"
+    ];
+  };
+  fileSystems."/var/lib/colibri" = {
+    device = "/dev/vdi"; # 500G SSD (local-zfs) — disk-streamed model storage
     fsType = "ext4";
     autoFormat = true;
     autoResize = true;
@@ -437,6 +449,9 @@ in
     # Steam library mount (/dev/vdb) must be user-writable; the fresh ext4 root
     # is created root:root, so chown it after the mount lands.
     "d /games 0755 agentydragon users -"
+    # The Colibri host experiment runs as agentydragon and stores only
+    # reproducible model artifacts on this dedicated SSD.
+    "d /var/lib/colibri 0755 agentydragon users -"
   ];
 
   # virtiofs shared from Proxmox host (atlas)
