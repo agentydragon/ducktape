@@ -608,6 +608,7 @@ def test_submit_mints_tool_call_id(operator_client: TestClient) -> None:
     first = _submit(operator_client)
     second = _submit(operator_client)
     assert first["tool_call_id"].startswith("tc_")
+    assert first["caller_principal"] == "operator-sub"
     assert first["status"] == "pending_approval"
     assert "approval_id" not in first
     assert second["tool_call_id"] != first["tool_call_id"]

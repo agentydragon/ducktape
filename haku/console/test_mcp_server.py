@@ -26,10 +26,10 @@ from haku.console.config import McpOAuthConfig
 from haku.console.conftest import console_settings, operator_session_cookie, write_config
 from haku.console.console_events import ConsoleEventHub
 from haku.console.mcp_approval import (
-    AgentToolCallScope,
+    AgentActor,
     McpMetadataProvider,
     McpToolExecutor,
-    OperatorToolCallScope,
+    OperatorActor,
     PostgresToolCallLedger,
     resolve_mcp_agent,
 )
@@ -109,6 +109,8 @@ async def test_tool_surface_splits_pass_through_and_request(harness: _Harness) -
     assert set(envelope["properties"]) == {"input", "title", "rationale", "wait_for_approval_ms"}
     # The read tools are present.
     assert {"get_tool_call", "list_tool_calls"} <= tools.keys()
+    assert "actor" not in tools["get_tool_call"].inputSchema.get("properties", {})
+    assert "actor" not in tools["list_tool_calls"].inputSchema.get("properties", {})
     # The promise preamble is in the envelope tool's description.
     assert "operator-approval queue" in tools["gmail_drafts_create"].description
 
@@ -119,7 +121,7 @@ async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harn
 
     assert result.structured_content is not None
     assert result.structured_content["labels"][0]["name"] == "haku/triaged"
-    calls = harness.ledger.list(scope=AgentToolCallScope(operator_subject="42", caller_principal="haku")).tool_calls
+    calls = harness.ledger.list(actor=AgentActor(principal="haku", operator_subject="42")).tool_calls
     assert len(calls) == 1
     assert calls[0].status == ToolCallStatus.OK
     assert calls[0].tool_name == "labels_list"
@@ -188,7 +190,7 @@ async def test_sibling_mcp_agents_only_read_their_own_calls(harness: _Harness) -
             with pytest.raises(ToolError, match="not found"):
                 await client.call_tool("get_tool_call", {"tool_call_id": sibling_call_id})
 
-    operator_calls = harness.ledger.list(scope=OperatorToolCallScope(operator_subject="42")).tool_calls
+    operator_calls = harness.ledger.list(actor=OperatorActor(operator_subject="42")).tool_calls
     assert [call.tool_call_id for call in operator_calls] == call_ids
 
 

@@ -33,6 +33,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth.auth import AuthProvider
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
@@ -45,7 +46,7 @@ from haku.console.auto_approval import is_unconditionally_auto_approved
 from haku.console.config import Settings
 from haku.console.console_events import ConsoleEventHub
 from haku.console.mcp_approval import (
-    AgentToolCallScope,
+    AgentActor,
     DegradedServerMetadata,
     McpMetadataProvider,
     McpToolExecutor,
@@ -237,15 +238,10 @@ class ProxyTool(Tool):
             title=title,
             wait_for_ms=max(0, min(int(wait_ms), MAX_WAIT_MS)),
         )
-        client_id = _agent_id()
-        caller = resolve_mcp_agent(client_id, ctx.static_agents, ctx.oauth_store)
-        if caller is None:
-            raise RuntimeError(f"agent {client_id} has no linked operator subject")
+        actor = _resolve_current_mcp_agent(ctx)
         record = await submit_and_wait(
             req=req,
-            caller_principal=caller.principal,
-            operator_subject=caller.operator_subject,
-            caller_is_agent=True,
+            actor=actor,
             settings=ctx.settings,
             ledger=ctx.ledger,
             hub=ctx.hub,
@@ -378,18 +374,16 @@ def build_console_mcp(context: ConsoleMcpContext, auth: AuthProvider | None = No
         auth = _static_bearer_verifier(context.static_agents)
     mcp.auth = auth
 
-    def current_agent_scope() -> AgentToolCallScope:
-        client_id = _agent_id()
-        caller = resolve_mcp_agent(client_id, context.static_agents, context.oauth_store)
-        if caller is None:
-            raise ToolError(f"agent {client_id} has no linked operator subject")
-        return AgentToolCallScope(operator_subject=caller.operator_subject, caller_principal=caller.principal)
+    def current_agent() -> AgentActor:
+        return _resolve_current_mcp_agent(context)
+
+    current_agent_dependency = Depends(current_agent)
 
     @mcp.tool
-    async def get_tool_call(tool_call_id: str) -> ToolCallView:
+    async def get_tool_call(tool_call_id: str, actor: AgentActor = current_agent_dependency) -> ToolCallView:
         """Read one tool call (resolve a promise): status, result/error, and its approval link."""
         try:
-            record = context.ledger.get(tool_call_id, scope=current_agent_scope())
+            record = context.ledger.get(tool_call_id, actor=actor)
         except HTTPException as e:
             raise ToolError(str(e.detail))
         return ToolCallView(call=record, url=_tool_call_url(context.settings, tool_call_id))
@@ -400,11 +394,21 @@ def build_console_mcp(context: ConsoleMcpContext, auth: AuthProvider | None = No
         since: datetime.datetime | None = None,
         limit: int = 100,
         newest_first: bool = True,
+        actor: AgentActor = current_agent_dependency,
     ) -> list[ToolCallView]:
         """List recent tool calls (newest first by default), optionally filtered by status/since."""
         resp: ToolCallListResponse = context.ledger.list(
-            scope=current_agent_scope(), statuses=status, since=since, limit=limit, newest_first=newest_first
+            actor=actor, statuses=status, since=since, limit=limit, newest_first=newest_first
         )
         return [ToolCallView(call=r, url=_tool_call_url(context.settings, r.tool_call_id)) for r in resp.tool_calls]
 
     return mcp
+
+
+def _resolve_current_mcp_agent(context: ConsoleMcpContext) -> AgentActor:
+    """Resolve the authenticated MCP token into Haku's request actor."""
+    client_id = _agent_id()
+    actor = resolve_mcp_agent(client_id, context.static_agents, context.oauth_store)
+    if actor is None:
+        raise ToolError(f"agent {client_id} has no linked operator subject")
+    return actor
