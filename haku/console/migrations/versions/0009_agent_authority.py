@@ -1,12 +1,10 @@
-"""Replace provisional Agent identity with the canonical Agent authority graph.
+"""Create the canonical Haku console schema.
 
 Revision ID: 0009
-Revises: 0008
+Revises: None
 
-This migration is deliberately destructive at the old Agent/tool-call boundary. The old
-``mcp_agent_operator`` row identified OAuth client software rather than a Haku Agent, and the old
-tool-call rows copied mutable identity strings. Neither can be converted without inventing
-authority, so they are dropped rather than inferred into the new graph.
+Revision ``0009`` was retained when the deployed migration chain was squashed. Databases already
+stamped at 0009 therefore remain at head, while fresh databases create this frozen schema directly.
 """
 
 from __future__ import annotations
@@ -18,10 +16,13 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import ARRAY, ENUM, JSONB, UUID
 
 revision: str = "0009"
-down_revision: str | None = "0008"
+down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+_TOOL_CALL_STATUS_VALUES = ("pending_approval", "running", "ok", "error", "denied")
+_TOOL_CALL_EVENT_TYPE_VALUES = ("tool_call_submitted", "approval_pending", "tool_call_updated")
+_OPERATOR_STATUSES = ("active", "disabled")
 _CLIENT_REGISTRATION_KINDS = ("oauth_proxy_unclassified", "dcr", "cimd", "preregistered")
 _ENROLLMENT_PHASES = (
     "awaiting_browser",
@@ -36,6 +37,18 @@ _ENROLLMENT_PHASES = (
 _AGENT_STATUSES = ("draft", "active", "abandoned", "disabled", "deleted")
 _CREDENTIAL_KINDS = ("oauth", "static")
 _CREDENTIAL_BINDING_STATUSES = ("issuing", "issued", "active", "revoked", "expired", "failed")
+
+
+def _tool_call_status_enum(*, create_type: bool = False) -> ENUM:
+    return ENUM(*_TOOL_CALL_STATUS_VALUES, name="tool_call_status", create_type=create_type)
+
+
+def _tool_call_event_type_enum(*, create_type: bool = False) -> ENUM:
+    return ENUM(*_TOOL_CALL_EVENT_TYPE_VALUES, name="tool_call_event_type", create_type=create_type)
+
+
+def _operator_status_enum(*, create_type: bool = False) -> ENUM:
+    return ENUM(*_OPERATOR_STATUSES, name="operator_status", create_type=create_type)
 
 
 def _client_registration_kind(*, create_type: bool = False) -> ENUM:
@@ -56,6 +69,143 @@ def _credential_kind(*, create_type: bool = False) -> ENUM:
 
 def _credential_binding_status(*, create_type: bool = False) -> ENUM:
     return ENUM(*_CREDENTIAL_BINDING_STATUSES, name="credential_binding_status", create_type=create_type)
+
+
+def _create_core_tables() -> None:
+    op.create_table(
+        "operators",
+        sa.Column("operator_id", UUID(as_uuid=True), primary_key=True),
+        sa.Column("status", _operator_status_enum(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+    )
+    op.create_table(
+        "identity_anchors",
+        sa.Column("anchor_id", UUID(as_uuid=True), primary_key=True),
+        sa.Column(
+            "operator_id",
+            UUID(as_uuid=True),
+            sa.ForeignKey("operators.operator_id", ondelete="RESTRICT"),
+            nullable=False,
+        ),
+        sa.Column("trust_domain", sa.Text(), nullable=False),
+        sa.Column("stable_external_user_key", sa.Text(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("btrim(trust_domain) <> ''", name="ck_identity_anchors_trust_domain_nonempty"),
+        sa.CheckConstraint("btrim(stable_external_user_key) <> ''", name="ck_identity_anchors_external_key_nonempty"),
+        sa.UniqueConstraint(
+            "trust_domain", "stable_external_user_key", name="uq_identity_anchors_trust_domain_external_key"
+        ),
+    )
+    op.create_index("idx_identity_anchors_operator_id", "identity_anchors", ["operator_id"])
+    op.create_table(
+        "oidc_identities",
+        sa.Column("identity_id", UUID(as_uuid=True), primary_key=True),
+        sa.Column(
+            "anchor_id",
+            UUID(as_uuid=True),
+            sa.ForeignKey("identity_anchors.anchor_id", ondelete="RESTRICT"),
+            nullable=False,
+        ),
+        sa.Column("issuer", sa.Text(), nullable=False),
+        sa.Column("subject", sa.Text(), nullable=False),
+        sa.Column("first_seen_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("btrim(issuer) <> ''", name="ck_oidc_identities_issuer_nonempty"),
+        sa.CheckConstraint("btrim(subject) <> ''", name="ck_oidc_identities_subject_nonempty"),
+        sa.UniqueConstraint("issuer", "subject", name="uq_oidc_identities_issuer_subject"),
+    )
+    op.create_index("idx_oidc_identities_anchor_id", "oidc_identities", ["anchor_id"])
+
+    # Column order matches the deployed 0009 catalog after the old chain's additive changes and
+    # cutovers. Keeping it stable makes schema dumps useful for exact baseline verification.
+    op.create_table(
+        "mcp_operator_oauth_associations",
+        sa.Column("server_id", sa.Text(), primary_key=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("client_id", sa.Text(), nullable=False),
+        sa.Column("client_secret", sa.Text(), nullable=True),
+        sa.Column("client_secret_expires_at", sa.BigInteger(), nullable=True),
+        sa.Column("token_endpoint_auth_method", sa.Text(), nullable=True),
+        sa.Column("token_endpoint", sa.Text(), nullable=False),
+        sa.Column("resource", sa.Text(), nullable=True),
+        sa.Column("access_token", sa.Text(), nullable=False),
+        sa.Column("refresh_token", sa.Text(), nullable=True),
+        sa.Column("token_type", sa.Text(), nullable=False),
+        sa.Column("scope", sa.Text(), nullable=True),
+        sa.Column("token_expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("operator_id", UUID(as_uuid=True), nullable=False, primary_key=True),
+        sa.Column("association_id", UUID(as_uuid=True), nullable=False),
+        sa.Column("token_revision", sa.BigInteger(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["operator_id"],
+            ["operators.operator_id"],
+            name="fk_mcp_operator_oauth_associations_operator",
+            ondelete="CASCADE",
+        ),
+        sa.UniqueConstraint("association_id", name="uq_mcp_operator_oauth_associations_association_id"),
+    )
+    op.create_index("idx_mcp_operator_oauth_associations_operator", "mcp_operator_oauth_associations", ["operator_id"])
+    op.create_table(
+        "mcp_operator_oauth_flows",
+        sa.Column("state", sa.Text(), primary_key=True),
+        sa.Column("server_id", sa.Text(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("redirect_uri", sa.Text(), nullable=False),
+        sa.Column("code_verifier", sa.Text(), nullable=False),
+        sa.Column("client_id", sa.Text(), nullable=False),
+        sa.Column("client_secret", sa.Text(), nullable=True),
+        sa.Column("client_secret_expires_at", sa.BigInteger(), nullable=True),
+        sa.Column("token_endpoint_auth_method", sa.Text(), nullable=True),
+        sa.Column("token_endpoint", sa.Text(), nullable=False),
+        sa.Column("resource", sa.Text(), nullable=True),
+        sa.Column("scope", sa.Text(), nullable=True),
+        sa.Column("operator_id", UUID(as_uuid=True), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["operator_id"], ["operators.operator_id"], name="fk_mcp_operator_oauth_flows_operator", ondelete="CASCADE"
+        ),
+    )
+    op.create_index(
+        "idx_mcp_operator_oauth_flows_server_operator", "mcp_operator_oauth_flows", ["server_id", "operator_id"]
+    )
+    op.create_index("idx_mcp_operator_oauth_flows_expires_at", "mcp_operator_oauth_flows", ["expires_at"])
+
+    op.create_table(
+        "mcp_tool_calls",
+        sa.Column("tool_call_id", sa.Text(), primary_key=True),
+        sa.Column("server_id", sa.Text(), nullable=False),
+        sa.Column("tool_name", sa.Text(), nullable=False),
+        sa.Column("status", _tool_call_status_enum(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("arguments_json", JSONB(), nullable=False),
+        sa.Column("rationale", sa.Text(), nullable=False),
+        sa.Column("title", sa.Text(), nullable=True),
+        sa.Column("result_json", JSONB(), nullable=True),
+        sa.Column("error", sa.Text(), nullable=True),
+        sa.Column("denial_reason", sa.Text(), nullable=True),
+        sa.Column("approval_policy_id", sa.Text(), nullable=True),
+        sa.Column("auto_approval_evaluation", sa.Text(), nullable=True),
+        sa.Column("approved_at", sa.DateTime(timezone=True), nullable=True),
+    )
+    op.create_index("idx_mcp_tool_calls_created_at", "mcp_tool_calls", ["created_at"])
+    op.create_table(
+        "mcp_tool_call_events",
+        sa.Column("event_id", sa.BigInteger(), primary_key=True, autoincrement=True),
+        sa.Column("event_type", _tool_call_event_type_enum(), nullable=False),
+        sa.Column("tool_call_id", sa.Text(), nullable=False),
+        sa.Column("status", _tool_call_status_enum(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["tool_call_id"], ["mcp_tool_calls.tool_call_id"], name="fk_mcp_tool_call_events_call", ondelete="CASCADE"
+        ),
+    )
+    op.create_index(
+        "idx_mcp_tool_call_events_tool_call_id_event_id", "mcp_tool_call_events", ["tool_call_id", "event_id"]
+    )
 
 
 def _create_authority_tables() -> None:
@@ -462,30 +612,7 @@ def _create_authority_tables() -> None:
     )
 
 
-def _cut_over_tool_call_authority() -> None:
-    # Existing rows cannot be assigned a binding without inventing history. The product explicitly
-    # permits dropping them at this cutover.
-    op.execute("DELETE FROM mcp_tool_call_events")
-    op.execute("DELETE FROM mcp_tool_calls")
-
-    op.drop_index("idx_mcp_tool_call_events_operator_id_event_id", table_name="mcp_tool_call_events")
-    op.drop_constraint("fk_mcp_tool_call_events_call_owner", "mcp_tool_call_events", type_="foreignkey")
-    op.drop_column("mcp_tool_call_events", "operator_id")
-
-    op.drop_index("idx_mcp_tool_calls_operator_id_created_at", table_name="mcp_tool_calls")
-    op.drop_constraint("uq_mcp_tool_calls_id_operator", "mcp_tool_calls", type_="unique")
-    op.drop_constraint("fk_mcp_tool_calls_operator", "mcp_tool_calls", type_="foreignkey")
-    op.drop_column("mcp_tool_calls", "operator_id")
-    op.drop_column("mcp_tool_calls", "caller_principal")
-
-    op.create_foreign_key(
-        "fk_mcp_tool_call_events_call",
-        "mcp_tool_call_events",
-        "mcp_tool_calls",
-        ["tool_call_id"],
-        ["tool_call_id"],
-        ondelete="CASCADE",
-    )
+def _create_tool_call_principal_table() -> None:
     op.create_table(
         "mcp_tool_call_principals",
         sa.Column(
@@ -513,12 +640,10 @@ def _cut_over_tool_call_authority() -> None:
     op.create_index("idx_mcp_tool_call_principals_operator_id", "mcp_tool_call_principals", ["operator_id"])
     op.create_index("idx_mcp_tool_call_principals_binding_id", "mcp_tool_call_principals", ["binding_id"])
 
-    op.drop_table("mcp_agent_operator")
-
 
 def _create_row_invariant_triggers() -> None:
-    # P3 established canonical IDs. P5 closes the remaining relinking hole: routine UPDATEs may
-    # refresh observation timestamps, but cannot rewrite the Operator or provenance of an identity.
+    # Routine UPDATEs may refresh observation timestamps, but cannot rewrite the Operator or
+    # provenance of an identity.
     op.execute(
         """
         CREATE FUNCTION haku_0009_identity_anchor_immutable() RETURNS trigger
@@ -1825,19 +1950,21 @@ def _create_deferred_graph_invariants() -> None:
 
 def upgrade() -> None:
     bind = op.get_bind()
+    _tool_call_status_enum(create_type=True).create(bind, checkfirst=True)
+    _tool_call_event_type_enum(create_type=True).create(bind, checkfirst=True)
+    _operator_status_enum(create_type=True).create(bind, checkfirst=True)
     _client_registration_kind(create_type=True).create(bind, checkfirst=True)
     _enrollment_phase(create_type=True).create(bind, checkfirst=True)
     _agent_status(create_type=True).create(bind, checkfirst=True)
     _credential_kind(create_type=True).create(bind, checkfirst=True)
     _credential_binding_status(create_type=True).create(bind, checkfirst=True)
 
+    _create_core_tables()
     _create_authority_tables()
-    _cut_over_tool_call_authority()
+    _create_tool_call_principal_table()
     _create_row_invariant_triggers()
     _create_deferred_graph_invariants()
 
 
 def downgrade() -> None:
-    raise RuntimeError(
-        "0009 is forward-only: canonical Agent/grant/binding authority cannot be reconstructed as DCR-client strings"
-    )
+    raise RuntimeError("0009 is the forward-only Haku console baseline")

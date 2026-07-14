@@ -138,8 +138,7 @@ def create_app(
     agent_authority = PostgresAgentAuthority(
         database_url, public_base_url=settings.public_base_url, operator_identity_store=operator_identity_store
     )
-    # Read env-backed static credentials before migrations in ``main`` so the forward-only cutover
-    # can seed exact owner identities. Tests/new databases may let create_app read them here. Schema
+    # Tests/new databases may let create_app read env-backed static credentials here. Schema
     # generation may inject already-canonical definitions because it deliberately has no database;
     # this is the same authority input reconciled at startup, not a request-time identity shortcut.
     if loaded_static_agents is not None and static_agent_definitions is not None:
@@ -353,16 +352,7 @@ def main() -> None:
     loaded_static_agents = load_static_agents(settings)
     # Apply DB migrations once before serving — the console owns its schema at startup, decoupled from
     # constructing any ledger/store (advisory-locked, so concurrent replicas don't race).
-    apply_migrations(
-        settings.database_url.get_secret_value(),
-        operator_identity_seeds=[
-            (settings.operator_identity.trust_domain, agent.operator_external_user_key)
-            for agent in loaded_static_agents
-        ],
-        fastmcp_oauth_state_table=(
-            settings.mcp_oauth.persistence.table_name if settings.mcp_oauth is not None else None
-        ),
-    )
+    apply_migrations(settings.database_url.get_secret_value())
     app = create_app(settings, loaded_static_agents=loaded_static_agents)
     # host/port are fixed, not env-driven: under the HAKU_CONSOLE_ prefix a `port`
     # setting would read the kubelet's HAKU_CONSOLE_PORT service-link var (a URL),

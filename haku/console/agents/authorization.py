@@ -159,7 +159,7 @@ def _database_is_unavailable(error: DBAPIError) -> bool:
 class PostgresAgentAuthority:
     """Own the one transactional Agent/name/binding/grant aggregate.
 
-    Construction is side-effect free; startup owns migration 0009. Synchronous
+    Construction is side-effect free; startup owns the database migration. Synchronous
     SQLAlchemy work runs in a worker thread so FastMCP and FastAPI event loops
     are never blocked on PostgreSQL.
     """

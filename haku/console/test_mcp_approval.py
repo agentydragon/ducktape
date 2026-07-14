@@ -13,14 +13,12 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from alembic import command as alembic_command
-from alembic.config import Config as AlembicConfig
 from fastapi.testclient import TestClient
 from fastmcp import FastMCP
 from mcp import types as mcp_types
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from sqlalchemy import create_engine, event, text
-from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -36,13 +34,13 @@ from haku.console.agents.models import (
     EnrollmentPhase,
 )
 from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC, csrf_token, write_config
+from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
     McpOperatorOAuthAssociation,
     McpOperatorOAuthFlow,
     McpToolCall,
     McpToolCallPrincipal,
     Operator,
-    metadata,
 )
 from haku.console.mcp_approval import (
     AliveServerMetadata,
@@ -293,24 +291,6 @@ def mcp_server_url(monkeypatch: pytest.MonkeyPatch) -> Generator[str]:
     monkeypatch.setenv("HAKU_CONSOLE_MCP_CREDENTIAL_HAKU_CONSOLE_GROCY_SF_TOKEN", "test-token")
     with serve_fastmcp(_test_mcp_server()) as url:
         yield url
-
-
-def _alembic_config(conn: Connection) -> AlembicConfig:
-    cfg = AlembicConfig()
-    cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
-    cfg.attributes["connection"] = conn
-    cfg.attributes["target_metadata"] = metadata
-    return cfg
-
-
-def _upgrade(engine: Engine, revision: str) -> None:
-    with engine.begin() as conn:
-        alembic_command.upgrade(_alembic_config(conn), revision)
-
-
-def _downgrade(engine: Engine, revision: str) -> None:
-    with engine.begin() as conn:
-        alembic_command.downgrade(_alembic_config(conn), revision)
 
 
 def _enum_values(engine: Engine) -> dict[str, tuple[str, ...]]:
@@ -1634,105 +1614,11 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
     assert principal_columns == {"tool_call_id", "operator_id", "binding_id"}
 
 
-def test_0007_deletes_unowned_history_and_is_forward_only(db_url: str) -> None:
+def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
+    apply_migrations(db_url)
     engine = create_engine(db_url)
     try:
-        _upgrade(engine, "0006")
-        with engine.begin() as conn:
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO mcp_tool_calls (
-                        tool_call_id, server_id, tool_name, caller_principal, status,
-                        created_at, updated_at, arguments_json, rationale
-                    ) VALUES (
-                        'tc_legacy', 'smoke', 'echo', 'legacy-user', 'pending_approval',
-                        now(), now(), '{}'::jsonb, 'legacy call with no persisted owner'
-                    )
-                    """
-                )
-            )
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO mcp_tool_call_events (event_type, tool_call_id, status, created_at)
-                    VALUES
-                        ('tool_call_submitted', 'tc_legacy', 'pending_approval', now()),
-                        ('tool_call_submitted', 'tc_orphan', 'pending_approval', now())
-                    """
-                )
-            )
-
-        _upgrade(engine, "0007")
-        with engine.connect() as conn:
-            active_calls = conn.execute(text("SELECT count(*) FROM mcp_tool_calls")).scalar_one()
-            active_events = conn.execute(text("SELECT count(*) FROM mcp_tool_call_events")).scalar_one()
-            legacy_tables = set(
-                conn.execute(
-                    text(
-                        """
-                        SELECT table_name
-                        FROM information_schema.tables
-                        WHERE table_schema = 'public'
-                          AND table_name IN (
-                            'mcp_tool_calls_legacy_unowned',
-                            'mcp_tool_call_events_legacy_unowned'
-                          )
-                        """
-                    )
-                ).scalars()
-            )
-            nullable = {
-                (row["table_name"], row["is_nullable"])
-                for row in conn.execute(
-                    text(
-                        """
-                        SELECT table_name, is_nullable
-                        FROM information_schema.columns
-                        WHERE column_name = 'operator_subject'
-                          AND table_name IN ('mcp_tool_calls', 'mcp_tool_call_events')
-                        """
-                    )
-                ).mappings()
-            }
-            indexes = set(
-                conn.execute(
-                    text(
-                        """
-                        SELECT indexname
-                        FROM pg_indexes
-                        WHERE schemaname = 'public'
-                          AND tablename IN ('mcp_tool_calls', 'mcp_tool_call_events')
-                        """
-                    )
-                ).scalars()
-            )
-
-        assert active_calls == 0
-        assert active_events == 0
-        assert legacy_tables == set()
-        assert nullable == {("mcp_tool_calls", "NO"), ("mcp_tool_call_events", "NO")}
-        assert {
-            "idx_mcp_tool_calls_operator_subject_created_at",
-            "idx_mcp_tool_call_events_operator_subject_event_id",
-        } <= indexes
-        with pytest.raises(RuntimeError, match="forward-only"):
-            _downgrade(engine, "0006")
-    finally:
-        engine.dispose()
-
-
-def test_historical_enum_migration_reaches_current_head(db_url: str) -> None:
-    engine = create_engine(db_url)
-    try:
-        _upgrade(engine, "0001")
-        assert _enum_values(engine) == {
-            "tool_call_event_type": ("tool_call_submitted", "approval_pending", "tool_call_updated"),
-            "tool_call_status": ("pending_approval", "running", "ok", "error", "denied"),
-        }
-
-        _upgrade(engine, "head")
-        upgraded_values = _enum_values(engine)
+        baseline_values = _enum_values(engine)
     finally:
         engine.dispose()
 
@@ -1746,7 +1632,7 @@ def test_historical_enum_migration_reaches_current_head(db_url: str) -> None:
         "tool_call_event_type": tuple(event_type.value for event_type in ToolCallEventType),
         "tool_call_status": tuple(status.value for status in ToolCallStatus),
     }
-    assert upgraded_values == current_values
+    assert baseline_values == current_values
 
 
 # --- In-process MCP servers (McpToolExecutor/McpMetadataProvider in-process registration) ---

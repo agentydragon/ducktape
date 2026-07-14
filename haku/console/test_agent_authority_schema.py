@@ -9,17 +9,14 @@ from __future__ import annotations
 import datetime
 import re
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from alembic import command as alembic_command
 from alembic.autogenerate import compare_metadata
-from alembic.config import Config as AlembicConfig
 from alembic.migration import MigrationContext
-from sqlalchemy import Connection, Engine, create_engine, inspect, text
+from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import IntegrityError
 
 from haku.console.database_migrate import apply_migrations
@@ -83,15 +80,6 @@ def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Any:
 
 def _now() -> datetime.datetime:
     return datetime.datetime.now(_UTC)
-
-
-def _alembic_config(conn: Connection) -> AlembicConfig:
-    config = AlembicConfig()
-    config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
-    config.attributes["connection"] = conn
-    config.attributes["target_metadata"] = metadata
-    config.attributes["operator_identity_seeds"] = ()
-    return config
 
 
 def _seed_identity(conn: Connection, label: str) -> IdentityIds:
@@ -565,13 +553,23 @@ def _create_static_agent(conn: Connection, *, identity: IdentityIds, label: str,
     return StaticAgent(reservation_id=reservation_id, agent_id=agent_id, binding_id=binding_id)
 
 
-def test_0009_is_a_destructive_authority_cutover_without_fastmcp_store_deletion(db_url: str) -> None:
+def test_fresh_baseline_matches_sqlalchemy_metadata(db_url: str) -> None:
+    apply_migrations(db_url)
+    engine = create_engine(db_url)
+    try:
+        with engine.connect() as conn:
+            context = MigrationContext.configure(conn, opts={"compare_type": True})
+            assert compare_metadata(context, metadata) == []
+    finally:
+        engine.dispose()
+
+
+def test_database_already_stamped_0009_is_unchanged(db_url: str) -> None:
+    apply_migrations(db_url)
     engine = create_engine(db_url)
     operator_id = uuid4()
     try:
         with engine.begin() as conn:
-            alembic_command.upgrade(_alembic_config(conn), "0008")
-            now = _now()
             conn.execute(
                 text(
                     """
@@ -579,116 +577,20 @@ def test_0009_is_a_destructive_authority_cutover_without_fastmcp_store_deletion(
                     VALUES (:operator_id, 'active', :now, :now)
                     """
                 ),
-                {"operator_id": operator_id, "now": now},
-            )
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO mcp_agent_operator (
-                        agent_dcr_client_id, operator_id, created_at, updated_at
-                    ) VALUES ('legacy-dcr-client', :operator_id, :now, :now)
-                    """
-                ),
-                {"operator_id": operator_id, "now": now},
-            )
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO mcp_tool_calls (
-                        tool_call_id, operator_id, server_id, tool_name, caller_principal,
-                        status, created_at, updated_at, arguments_json, rationale
-                    ) VALUES (
-                        'legacy-call', :operator_id, 'server', 'tool', 'legacy-agent',
-                        'pending_approval', :now, :now, '{}'::jsonb, 'legacy'
-                    )
-                    """
-                ),
-                {"operator_id": operator_id, "now": now},
-            )
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO mcp_tool_call_events (
-                        event_type, operator_id, tool_call_id, status, created_at
-                    ) VALUES (
-                        'tool_call_submitted', :operator_id, 'legacy-call',
-                        'pending_approval', :now
-                    )
-                    """
-                ),
-                {"operator_id": operator_id, "now": now},
-            )
-            conn.execute(
-                text(
-                    """
-                    CREATE TABLE haku_fastmcp_oauth_state (
-                        collection TEXT NOT NULL,
-                        key TEXT NOT NULL,
-                        value JSONB NOT NULL,
-                        PRIMARY KEY (collection, key)
-                    )
-                    """
-                )
-            )
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO haku_fastmcp_oauth_state (collection, key, value)
-                    VALUES ('mcp-refresh-tokens', 'must-expire-by-ttl', '{}'::jsonb)
-                    """
-                )
+                {"operator_id": operator_id, "now": _now()},
             )
 
-        with engine.begin() as conn:
-            alembic_command.upgrade(_alembic_config(conn), "0009")
-
-        database = inspect(engine)
-        tables = set(database.get_table_names())
-        assert "mcp_agent_operator" not in tables
-        assert {
-            "client_software",
-            "enrollment_interactions",
-            "enrollment_correlation_reservations",
-            "agents",
-            "agent_name_reservations",
-            "credential_bindings",
-            "authorization_grants",
-            "static_credentials",
-            "mcp_tool_call_principals",
-        } <= tables
-        assert {column["name"] for column in database.get_columns("mcp_tool_calls")}.isdisjoint(
-            {"operator_id", "caller_principal"}
-        )
-        assert "operator_id" not in {column["name"] for column in database.get_columns("mcp_tool_call_events")}
+        apply_migrations(db_url)
 
         with engine.connect() as conn:
-            counts = (
-                conn.execute(
-                    text(
-                        """
-                        SELECT
-                            (SELECT count(*) FROM mcp_tool_calls) AS calls,
-                            (SELECT count(*) FROM mcp_tool_call_events) AS events,
-                            (SELECT count(*) FROM haku_fastmcp_oauth_state) AS fastmcp_rows
-                        """
-                    )
-                )
-                .mappings()
-                .one()
-            )
-            assert counts == {"calls": 0, "events": 0, "fastmcp_rows": 1}
             assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0009"
-    finally:
-        engine.dispose()
-
-
-def test_migrated_database_matches_sqlalchemy_metadata(db_url: str) -> None:
-    apply_migrations(db_url)
-    engine = create_engine(db_url)
-    try:
-        with engine.connect() as conn:
-            context = MigrationContext.configure(conn, opts={"compare_type": True})
-            assert compare_metadata(context, metadata) == []
+            assert (
+                conn.execute(
+                    text("SELECT count(*) FROM operators WHERE operator_id = :operator_id"),
+                    {"operator_id": operator_id},
+                ).scalar_one()
+                == 1
+            )
     finally:
         engine.dispose()
 

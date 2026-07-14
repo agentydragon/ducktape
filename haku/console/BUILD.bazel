@@ -290,9 +290,9 @@ py_library(
 )
 
 py_test(
-    name = "test_operator_identity_cutover",
+    name = "test_operator_identity",
     size = "medium",
-    srcs = ["test_operator_identity_cutover.py"],
+    srcs = ["test_operator_identity.py"],
     requires_docker = True,
     deps = [
         ":config",
