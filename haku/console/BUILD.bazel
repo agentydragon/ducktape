@@ -96,6 +96,7 @@ py_library(
     srcs = ["database_schema.py"],
     deps = [
         ":operator_identity",
+        "//haku/console/agents:models",
         "//util:sqlalchemy_types",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//sqlalchemy",
@@ -310,6 +311,26 @@ py_test(
         "//:conftest",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//alembic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_agent_authority_schema",
+    size = "medium",
+    srcs = ["test_agent_authority_schema.py"],
+    requires_docker = True,
+    deps = [
+        ":database_migrate",
+        ":database_schema",
+        "//:conftest",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
+        "@pypi//alembic",
+        "@pypi//psycopg",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
