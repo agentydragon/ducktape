@@ -3,8 +3,6 @@ round-trip and the shared-store builder's non-optional contract."""
 
 from __future__ import annotations
 
-from collections.abc import Generator
-
 import pytest
 import pytest_bazel
 from key_value.aio.stores.postgresql import PostgreSQLStore
@@ -18,20 +16,11 @@ from mcp_infra.persistence import (
     build_client_storage,
     build_shared_client_storage,
 )
-from util.testing.postgres_fixtures import start_postgres_container
+from util.testing.postgres_fixtures import postgres_container  # noqa: F401
 
 
 @pytest.fixture(scope="session")
-def postgres_container() -> Generator[PostgresContainer]:
-    container = start_postgres_container()
-    try:
-        yield container
-    finally:
-        container.stop()
-
-
-@pytest.fixture(scope="session")
-def postgres_url(postgres_container: PostgresContainer) -> str:
+def postgres_url(postgres_container: PostgresContainer) -> str:  # noqa: F811
     host = postgres_container.get_container_host_ip()
     port = int(postgres_container.get_exposed_port(5432))
     # asyncpg DSN — plain postgresql://, NOT the SQLAlchemy postgresql+psycopg:// form.

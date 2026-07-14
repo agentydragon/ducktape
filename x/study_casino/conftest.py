@@ -16,16 +16,7 @@ from sqlalchemy import create_engine, text
 from testcontainers.postgres import PostgresContainer
 
 from util.testing.postgres import force_drop_database_sync
-from util.testing.postgres_fixtures import start_postgres_container
-
-
-@pytest.fixture(scope="session")
-def postgres_container() -> Generator[PostgresContainer]:
-    container = start_postgres_container()
-    try:
-        yield container
-    finally:
-        container.stop()
+from util.testing.postgres_fixtures import postgres_container
 
 
 @pytest.fixture(scope="session")

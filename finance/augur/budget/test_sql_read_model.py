@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator
 from datetime import date
 from typing import Any
 
@@ -45,7 +45,7 @@ from finance.augur.dates import DAYS_PER_MONTH
 from finance.plaid.db.schema import AccountRow, LinkRow, TransactionRow, async_session_factory
 from util.bazel.runfiles import get_required_path
 from util.testing.postgres import force_drop_database
-from util.testing.postgres_fixtures import start_postgres_container
+from util.testing.postgres_fixtures import postgres_container  # noqa: F401
 
 _PLAID_MIGRATIONS_DIR = "_main/finance/plaid/db/migrations"
 
@@ -58,16 +58,7 @@ def _run_alembic_migrations(conn: Any) -> None:
 
 
 @pytest.fixture(scope="session")
-def postgres_container() -> Generator[PostgresContainer]:
-    container = start_postgres_container()
-    try:
-        yield container
-    finally:
-        container.stop()
-
-
-@pytest.fixture(scope="session")
-def postgres_admin_url(postgres_container: PostgresContainer) -> str:
+def postgres_admin_url(postgres_container: PostgresContainer) -> str:  # noqa: F811
     host = postgres_container.get_container_host_ip()
     port = int(postgres_container.get_exposed_port(5432))
     return f"postgresql+asyncpg://postgres:postgres@{host}:{port}/postgres"

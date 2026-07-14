@@ -36,7 +36,7 @@ from mcp_utils.resources import parse_tool_result_as
 from util.net import pick_free_port
 from util.testing.asgi import serve_app
 from util.testing.postgres import force_drop_database
-from util.testing.postgres_fixtures import start_postgres_container
+from util.testing.postgres_fixtures import postgres_container
 
 
 @asynccontextmanager
@@ -141,15 +141,6 @@ def operator_transport(base_url: str, operator_jwt: str):
 
 
 # ── PostgreSQL testcontainer fixtures ─────────────────────────────────────────
-
-
-@pytest.fixture(scope="session")
-def postgres_container() -> Generator[PostgresContainer]:
-    container = start_postgres_container()
-    try:
-        yield container
-    finally:
-        container.stop()
 
 
 @pytest.fixture(scope="session")
