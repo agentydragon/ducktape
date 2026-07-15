@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import html
 import re
 import secrets
 from collections.abc import AsyncGenerator, Generator
@@ -532,8 +533,10 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
                     data={"form_token": _hidden_input(enrollment.text, "form_token"), "agent_name": "OAuth Claude"},
                     follow_redirects=False,
                 )
-                assert approved.status_code == 303, approved.text
-                upstream_authorize = httpx.URL(approved.headers["location"])
+                assert approved.status_code == 200, approved.text
+                continue_link = re.search(r'<a class="continue" href="([^"]+)">', approved.text)
+                assert continue_link is not None
+                upstream_authorize = httpx.URL(html.unescape(continue_link.group(1)))
                 assert str(upstream_authorize).startswith(f"{oidc.origin}/application/o/authorize/?")
                 assert upstream_authorize.params["redirect_uri"] == f"{base}/mcp/auth/callback"
 

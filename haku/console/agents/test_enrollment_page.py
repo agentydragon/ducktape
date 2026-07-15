@@ -10,6 +10,7 @@ from haku.console.agents.enrollment_page import (
     AGENT_NAME_MAX_LENGTH,
     AgentEnrollmentPageView,
     ReconnectAgentView,
+    render_agent_enrollment_continuation,
     render_agent_enrollment_page,
 )
 
@@ -170,6 +171,37 @@ def test_enrollment_page_rejects_an_origin_that_could_inject_csp() -> None:
         render_agent_enrollment_page(
             _view(), csp_nonce=_CSP_NONCE, form_action_url="https://auth.example.test\nscript-src 'unsafe-inline'"
         )
+
+
+def test_continuation_page_commits_feedback_before_resuming_authorization() -> None:
+    response = render_agent_enrollment_continuation(
+        authorization_url="https://auth.example.test/authorize?state=opaque&scope=openid", csp_nonce=_CSP_NONCE
+    )
+    page = BeautifulSoup(response.body, "html.parser")
+    refresh = page.find("meta", attrs={"http-equiv": "refresh"})
+    link = page.find("a", class_="continue")
+    heading = page.find("h1")
+
+    assert response.status_code == 200
+    assert page.title is not None
+    assert page.title.string == "Finishing connection · Haku"
+    assert heading is not None
+    assert heading.get_text(strip=True) == "Agent approved"
+    assert refresh is not None
+    assert refresh["content"] == "1; url=https://auth.example.test/authorize?state=opaque&scope=openid"
+    assert link is not None
+    assert link["href"] == "https://auth.example.test/authorize?state=opaque&scope=openid"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert response.headers["Content-Security-Policy"] == (
+        "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; "
+        f"script-src 'none'; style-src 'nonce-{_CSP_NONCE}'"
+    )
+
+
+def test_continuation_page_rejects_a_non_http_authorization_url() -> None:
+    with pytest.raises(ValueError, match="HTTP"):
+        render_agent_enrollment_continuation(authorization_url="javascript:alert(1)", csp_nonce=_CSP_NONCE)
 
 
 if __name__ == "__main__":

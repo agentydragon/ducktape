@@ -31,6 +31,7 @@ from haku.console.agents.enrollment_page import (
     AgentEnrollmentPageView,
     ReconnectAgentView,
     http_origin,
+    render_agent_enrollment_continuation,
     render_agent_enrollment_page,
 )
 from haku.console.agents.naming import InvalidAgentNameError
@@ -229,7 +230,7 @@ async def _decide(
     response: Response
     match result:
         case EnrollmentAllowed(upstream_authorization_url=url):
-            response = RedirectResponse(url=url, status_code=303)
+            response = render_agent_enrollment_continuation(authorization_url=url, csp_nonce=secrets.token_urlsafe(32))
         case EnrollmentDenied():
             response = PlainTextResponse("Agent enrollment denied. You may close this window.")
     response.delete_cookie(key=_INTERACTION_COOKIE, path=_cookie_path(interaction_id))

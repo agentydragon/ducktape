@@ -174,8 +174,10 @@ def test_create_reconnect_and_deny_are_separate_typed_endpoints() -> None:
         headers={"Origin": "https://haku.test"},
         follow_redirects=False,
     )
-    assert create.status_code == 303
-    assert create.headers["location"] == "https://auth.example.test/authorize?opaque=1"
+    assert create.status_code == 200
+    assert "Agent approved" in create.text
+    assert 'href="https://auth.example.test/authorize?opaque=1"' in create.text
+    assert 'haku_agent_enrollment=""' in create.headers["set-cookie"]
     assert service.decisions[0]["interaction_cookie"] == FORM_TOKEN
     assert service.decisions[0]["decision"] == CreateAgentDecision(form_token=FORM_TOKEN, display_name="Kitchen Claude")
 

@@ -11,11 +11,13 @@ from starlette.responses import HTMLResponse
 AGENT_NAME_MAX_LENGTH = 80
 
 _CSP_NONCE_PATTERN = re.compile(r"[A-Za-z0-9_-]{32,128}")
-_TEMPLATE = Environment(
+_TEMPLATES = Environment(
     loader=FileSystemLoader(Path(__file__).parent),
     autoescape=select_autoescape(enabled_extensions=("html", "j2")),
     undefined=StrictUndefined,
-).get_template("agent_enrollment.html.j2")
+)
+_ENROLLMENT_TEMPLATE = _TEMPLATES.get_template("agent_enrollment.html.j2")
+_CONTINUATION_TEMPLATE = _TEMPLATES.get_template("agent_enrollment_continuation.html.j2")
 
 
 def http_origin(url: str) -> str:
@@ -65,7 +67,9 @@ def render_agent_enrollment_page(
 
     return HTMLResponse(
         status_code=status_code,
-        content=_TEMPLATE.render(view=view, csp_nonce=csp_nonce, agent_name_max_length=AGENT_NAME_MAX_LENGTH),
+        content=_ENROLLMENT_TEMPLATE.render(
+            view=view, csp_nonce=csp_nonce, agent_name_max_length=AGENT_NAME_MAX_LENGTH
+        ),
         headers={
             "Cache-Control": "no-store",
             "Content-Security-Policy": (
@@ -74,6 +78,26 @@ def render_agent_enrollment_page(
                 f"script-src 'none'; style-src 'nonce-{csp_nonce}'"
             ),
             "Referrer-Policy": "strict-origin",
+            "Permissions-Policy": "geolocation=(), display-capture=()",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+def render_agent_enrollment_continuation(*, authorization_url: str, csp_nonce: str) -> HTMLResponse:
+    if _CSP_NONCE_PATTERN.fullmatch(csp_nonce) is None:
+        raise ValueError("CSP nonce must be a 32-128 character URL-safe base64 value")
+    http_origin(authorization_url)
+
+    return HTMLResponse(
+        content=_CONTINUATION_TEMPLATE.render(authorization_url=authorization_url, csp_nonce=csp_nonce),
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Security-Policy": (
+                "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; "
+                f"script-src 'none'; style-src 'nonce-{csp_nonce}'"
+            ),
+            "Referrer-Policy": "no-referrer",
             "Permissions-Policy": "geolocation=(), display-capture=()",
             "X-Content-Type-Options": "nosniff",
         },

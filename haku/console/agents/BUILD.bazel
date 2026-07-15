@@ -25,7 +25,10 @@ py_test(
 py_library(
     name = "enrollment_page",
     srcs = ["enrollment_page.py"],
-    data = ["agent_enrollment.html.j2"],
+    data = [
+        "agent_enrollment.html.j2",
+        "agent_enrollment_continuation.html.j2",
+    ],
     deps = [
         "@pypi//jinja2",
         "@pypi//starlette",
