@@ -9,7 +9,12 @@ edition = "2024"
 [dependencies]
 log = "^0.4.29"
 env_logger = "^0.11.8"
-rust_decimal = "^1.40.0"
+# rust_decimal must use `serde-arbitrary-precision` to match `serde_json`, which
+# is built with `arbitrary_precision` on workspace-wide (feature unification).
+# Any other format (or `serde` alone) deserializes a JSON number as
+# "invalid type: map, expected a Decimal type" — `serde-float` only works when
+# serde_json lacks `arbitrary_precision`, which it does not here.
+rust_decimal = { version = "^1.40.0", features = ["serde-arbitrary-precision"] }
 tokio = { version = "^1.49.0", features = ["macros", "rt-multi-thread", "net", "process", "signal", "time", "fs", "sync", "io-util", "io-std"], default-features=false}
 # native-tls makes trouble
 reqwest = {version="^0.12.28", features=["json", "rustls-tls"], default-features=false}
