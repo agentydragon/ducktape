@@ -261,23 +261,17 @@ console.log(runtimeProcessor);
 export { runtimeProcessor };
 "#,
         vec![
-            (
-                "mod_a".to_string(),
-                json!({
-                    "members": [{
-                        "name": "RuntimeProcessor",
-                        "selector": { "binding": { "name": "runtimeProcessor", "kind": "class_declaration" } },
-                    }],
-                }),
+            logical_module(
+                "mod_a",
+                &[Member::renamed_with_kind(
+                    "RuntimeProcessor",
+                    "runtimeProcessor",
+                    Some("class_declaration"),
+                )],
             ),
-            (
-                "mod_b".to_string(),
-                json!({
-                    "members": [{
-                        "name": "RuntimeProcessorAlias",
-                        "selector": { "binding": { "name": "runtimeProcessor" } },
-                    }],
-                }),
+            logical_module(
+                "mod_b",
+                &[Member::renamed("RuntimeProcessorAlias", "runtimeProcessor")],
             ),
         ],
     );
@@ -304,41 +298,18 @@ console.log(runtimeService, runtimeCache);
 export { runtimeService, runtimeCache };
 "#,
         vec![
-            (
-                "owners/service".to_string(),
-                json!({
-                    "members": [{
-                        "name": "service",
-                        "selector": { "binding": { "name": "runtimeService" } },
-                    }],
-                }),
+            logical_module(
+                "owners/service",
+                &[Member::renamed("service", "runtimeService")],
             ),
-            (
-                "duplicates/service".to_string(),
-                json!({
-                    "members": [{
-                        "name": "serviceAgain",
-                        "selector": { "binding": { "name": "runtimeService" } },
-                    }],
-                }),
+            logical_module(
+                "duplicates/service",
+                &[Member::renamed("serviceAgain", "runtimeService")],
             ),
-            (
-                "owners/cache".to_string(),
-                json!({
-                    "members": [{
-                        "name": "cache",
-                        "selector": { "binding": { "name": "runtimeCache" } },
-                    }],
-                }),
-            ),
-            (
-                "duplicates/cache".to_string(),
-                json!({
-                    "members": [{
-                        "name": "cacheAgain",
-                        "selector": { "binding": { "name": "runtimeCache" } },
-                    }],
-                }),
+            logical_module("owners/cache", &[Member::renamed("cache", "runtimeCache")]),
+            logical_module(
+                "duplicates/cache",
+                &[Member::renamed("cacheAgain", "runtimeCache")],
             ),
         ],
     );
@@ -674,11 +645,9 @@ fn readable_import_without_collision() {
 console.log(aH);
 export { aH };
 "#,
-        vec![(
-            "mod_a".to_string(),
-            json!({
-                "members": [{ "name": "readableA", "selector": { "binding": { "name": "aH" } } }],
-            }),
+        vec![logical_module(
+            "mod_a",
+            &[Member::renamed("readableA", "aH")],
         )],
     );
     let fixture = run_fixture(opts);
@@ -836,16 +805,13 @@ fn import_specifier_member_emits_reimport_in_destination() {
 console.log(a);
 export { a };
 "#,
-        vec![(
-            "mod_x".to_string(),
-            json!({
-                "members": [{
-                    "name": "Readable",
-                    "selector": {
-                        "binding": { "name": "a", "kind": "import_specifier" },
-                    },
-                }],
-            }),
+        vec![logical_module(
+            "mod_x",
+            &[Member::renamed_with_kind(
+                "Readable",
+                "a",
+                Some("import_specifier"),
+            )],
         )],
     );
     opts.extra_files = &[(
@@ -883,23 +849,21 @@ console.log(a());
 export { a };
 "#,
         vec![
-            (
-                "mod_jsx_runtime".to_string(),
-                json!({
-                    "members": [{
-                        "name": "jsxRuntime",
-                        "selector": { "binding": { "name": "a", "kind": "import_specifier" } },
-                    }],
-                }),
+            logical_module(
+                "mod_jsx_runtime",
+                &[Member::renamed_with_kind(
+                    "jsxRuntime",
+                    "a",
+                    Some("import_specifier"),
+                )],
             ),
-            (
-                "mod_dunder_jsx".to_string(),
-                json!({
-                    "members": [{
-                        "name": "__jsx",
-                        "selector": { "binding": { "name": "a", "kind": "import_specifier" } },
-                    }],
-                }),
+            logical_module(
+                "mod_dunder_jsx",
+                &[Member::renamed_with_kind(
+                    "__jsx",
+                    "a",
+                    Some("import_specifier"),
+                )],
             ),
         ],
     );
@@ -931,12 +895,7 @@ function bridge() {
 console.log(bridge()());
 export { bridge };
 "#,
-        vec![(
-            "mod_x".to_string(),
-            json!({
-                "members": [{ "name": "bridge", "selector": { "binding": { "name": "bridge" } } }],
-            }),
-        )],
+        vec![logical_module("mod_x", &[Member::new("bridge")])],
     );
     opts.extra_files = &[(
         "static/vendor.js",
@@ -980,21 +939,15 @@ console.log(bridge());
 export { bridge };
 "#,
         vec![
-            (
-                "mod_a".to_string(),
-                json!({
-                    "members": [{
-                        "name": "Re",
-                        "selector": { "binding": { "name": "a", "kind": "import_specifier" } },
-                    }],
-                }),
+            logical_module(
+                "mod_a",
+                &[Member::renamed_with_kind(
+                    "Re",
+                    "a",
+                    Some("import_specifier"),
+                )],
             ),
-            (
-                "mod_b".to_string(),
-                json!({
-                    "members": [{ "name": "bridge", "selector": { "binding": { "name": "bridge" } } }],
-                }),
-            ),
+            logical_module("mod_b", &[Member::new("bridge")]),
         ],
     );
     opts.extra_files = &[("static/app/vendor.js", "export const x = 42;\n")];
@@ -1125,23 +1078,14 @@ console.log(composed);
 export { composed };
 "#,
         vec![
-            (
-                "mod_x".to_string(),
-                json!({
-                    "members": [{
-                        "name": "Composed",
-                        "selector": { "binding": { "name": "composed" } },
-                    }],
-                }),
-            ),
-            (
-                "mod_dep".to_string(),
-                json!({
-                    "members": [{
-                        "name": "Dep",
-                        "selector": { "binding": { "name": "dep", "kind": "import_specifier" } },
-                    }],
-                }),
+            logical_module("mod_x", &[Member::renamed("Composed", "composed")]),
+            logical_module(
+                "mod_dep",
+                &[Member::renamed_with_kind(
+                    "Dep",
+                    "dep",
+                    Some("import_specifier"),
+                )],
             ),
         ],
     );
@@ -1174,23 +1118,14 @@ console.log(dep);
 export { composed };
 "#,
         vec![
-            (
-                "mod_x".to_string(),
-                json!({
-                    "members": [{
-                        "name": "Composed",
-                        "selector": { "binding": { "name": "composed" } },
-                    }],
-                }),
-            ),
-            (
-                "mod_dep".to_string(),
-                json!({
-                    "members": [{
-                        "name": "Dep",
-                        "selector": { "binding": { "name": "dep", "kind": "import_specifier" } },
-                    }],
-                }),
+            logical_module("mod_x", &[Member::renamed("Composed", "composed")]),
+            logical_module(
+                "mod_dep",
+                &[Member::renamed_with_kind(
+                    "Dep",
+                    "dep",
+                    Some("import_specifier"),
+                )],
             ),
         ],
     );

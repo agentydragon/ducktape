@@ -22,7 +22,6 @@
 //! statement even when other same-source specifiers are present.
 
 use debundle_e2e_support::*;
-use serde_json::json;
 use std::fs;
 use swc_ecma_ast::{ImportSpecifier, ModuleDecl, ModuleExportName, ModuleItem};
 
@@ -116,12 +115,7 @@ function bridge() {
 console.log(bridge());
 export { bridge };
 "#,
-        vec![(
-            "mod_bridge".to_string(),
-            json!({
-                "members": [{ "name": "bridge", "selector": { "binding": { "name": "bridge" } } }],
-            }),
-        )],
+        vec![logical_module("mod_bridge", &[Member::new("bridge")])],
     );
     opts.extra_files = &[(
         "static/app/vendor.js",
@@ -171,12 +165,7 @@ function bridge() {
 console.log(bridge());
 export { bridge };
 "#,
-        vec![(
-            "mod_bridge".to_string(),
-            json!({
-                "members": [{ "name": "bridge", "selector": { "binding": { "name": "bridge" } } }],
-            }),
-        )],
+        vec![logical_module("mod_bridge", &[Member::new("bridge")])],
     );
     opts.extra_files = &[(
         "static/app/vendor.js",
@@ -223,12 +212,7 @@ function bridge() {
 console.log(bridge());
 export { bridge };
 "#,
-        vec![(
-            "mod_bridge".to_string(),
-            json!({
-                "members": [{ "name": "bridge", "selector": { "binding": { "name": "bridge" } } }],
-            }),
-        )],
+        vec![logical_module("mod_bridge", &[Member::new("bridge")])],
     );
     opts.extra_files = &[(
         "static/app/vendor.js",
@@ -272,20 +256,12 @@ fn imported_binding_reexports_from_same_source_consolidate_in_one_statement() {
 console.log(a, b);
 export { a, b };
 "#,
-        vec![(
-            "mod_re".to_string(),
-            json!({
-                "members": [
-                    {
-                        "name": "Re_a",
-                        "selector": { "binding": { "name": "a", "kind": "import_specifier" } },
-                    },
-                    {
-                        "name": "Re_b",
-                        "selector": { "binding": { "name": "b", "kind": "import_specifier" } },
-                    },
-                ],
-            }),
+        vec![logical_module(
+            "mod_re",
+            &[
+                Member::renamed_with_kind("Re_a", "a", Some("import_specifier")),
+                Member::renamed_with_kind("Re_b", "b", Some("import_specifier")),
+            ],
         )],
     );
     opts.extra_files = &[(

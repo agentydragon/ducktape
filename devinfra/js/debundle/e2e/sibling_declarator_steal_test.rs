@@ -9,7 +9,6 @@
 //! no declarations to back the export.
 
 use debundle_e2e_support::*;
-use serde_json::json;
 use std::fs;
 
 #[test]
@@ -24,18 +23,8 @@ console.log(a, b);
 export { a, b, c };
 "#,
         vec![
-            (
-                "mod_x".to_string(),
-                json!({
-                    "members": [{ "name": "readableA", "selector": { "binding": { "name": "a" } } }],
-                }),
-            ),
-            (
-                "mod_y".to_string(),
-                json!({
-                    "members": [{ "name": "readableC", "selector": { "binding": { "name": "c" } } }],
-                }),
-            ),
+            logical_module("mod_x", &[Member::renamed("readableA", "a")]),
+            logical_module("mod_y", &[Member::renamed("readableC", "c")]),
         ],
     );
     let fixture = run_fixture(opts);

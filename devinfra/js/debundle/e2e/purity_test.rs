@@ -444,36 +444,19 @@ console.log(A.handled, B.handled, C.handled);
 export { A, B, C, dispatcher };
 "#,
         vec![
-            (
-                "mod_a".to_string(),
-                json!({
-                    "members": [
-                        { "name": "A", "selector": { "binding": { "name": "A" } } },
-                        { "name": "C", "selector": { "binding": { "name": "C" } } },
-                        {
-                            "name": "dispatcher",
-                            "selector": { "binding": { "name": "dispatcher" } },
-                            // ↓ author asserts: calls to `dispatcher`
-                            //   have no observable side effects. Both
-                            //   call sites in mod_a (A, C) and the
-                            //   one in mod_b (B) drop their `S` edges.
-                        },
-                    ],
-                    "annotations": {
-                        "dispatcher": {
-                            "purity": "pure",
-                        },
-                    },
-                }),
+            logical_module(
+                "mod_a",
+                &[
+                    Member::new("A"),
+                    Member::new("C"),
+                    // Author asserts: calls to `dispatcher` have no
+                    // observable side effects. Both call sites in
+                    // mod_a (A, C) and the one in mod_b (B) drop
+                    // their `S` edges.
+                    Member::new("dispatcher").with_purity(MemberPurity::Pure),
+                ],
             ),
-            (
-                "mod_b".to_string(),
-                json!({
-                    "members": [
-                        { "name": "B", "selector": { "binding": { "name": "B" } } },
-                    ],
-                }),
-            ),
+            logical_module("mod_b", &[Member::new("B")]),
         ],
     ));
     assert_entry_output(&fixture, "alpha beta gamma\n");
@@ -497,34 +480,17 @@ console.log(B.ref, D.ref);
 export { A, B, D, wrap };
 "#,
             vec![
-                (
-                    "mod_a".to_string(),
-                    json!({
-                        "members": [
-                            { "name": "A", "selector": { "binding": { "name": "A" } } },
-                            { "name": "D", "selector": { "binding": { "name": "D" } } },
-                            {
-                                "name": "wrap",
-                                "selector": { "binding": { "name": "wrap" } },
-                                // Author asserts purity — `S` edges
-                                // through `wrap(...)` calls go away.
-                            },
-                        ],
-                        "annotations": {
-                            "wrap": {
-                                "purity": "pure",
-                            },
-                        },
-                    }),
+                logical_module(
+                    "mod_a",
+                    &[
+                        Member::new("A"),
+                        Member::new("D"),
+                        // Author asserts purity — `S` edges through
+                        // `wrap(...)` calls go away.
+                        Member::new("wrap").with_purity(MemberPurity::Pure),
+                    ],
                 ),
-                (
-                    "mod_b".to_string(),
-                    json!({
-                        "members": [
-                            { "name": "B", "selector": { "binding": { "name": "B" } } },
-                        ],
-                    }),
-                ),
+                logical_module("mod_b", &[Member::new("B")]),
             ],
         ),
         // R-edge mod_a → mod_b (D's init reads B); R-edge
@@ -560,38 +526,18 @@ console.log(A.val, B.val, C.val);
 export { A, B, C, pureWrap, impureWrap };
 "#,
         vec![
-            (
-                "mod_a".to_string(),
-                json!({
-                    "members": [
-                        { "name": "A", "selector": { "binding": { "name": "A" } } },
-                        { "name": "C", "selector": { "binding": { "name": "C" } } },
-                        {
-                            "name": "pureWrap",
-                            "selector": { "binding": { "name": "pureWrap" } },
-                        },
-                        {
-                            "name": "impureWrap",
-                            "selector": { "binding": { "name": "impureWrap" } },
-                            // No `purity` annotation — default
-                            // (impure) classification applies.
-                        },
-                    ],
-                    "annotations": {
-                        "pureWrap": {
-                            "purity": "pure",
-                        },
-                    },
-                }),
+            logical_module(
+                "mod_a",
+                &[
+                    Member::new("A"),
+                    Member::new("C"),
+                    Member::new("pureWrap").with_purity(MemberPurity::Pure),
+                    // No `purity` annotation — default (impure)
+                    // classification applies.
+                    Member::new("impureWrap"),
+                ],
             ),
-            (
-                "mod_b".to_string(),
-                json!({
-                    "members": [
-                        { "name": "B", "selector": { "binding": { "name": "B" } } },
-                    ],
-                }),
-            ),
+            logical_module("mod_b", &[Member::new("B")]),
         ],
     ));
     assert_entry_output(&fixture, "a b c\n");
@@ -609,34 +555,19 @@ console.log(A.val, B.val, C.val);
 export { A, B, C, pureWrap, impureWrap };
 "#,
         vec![
-            (
-                "mod_a".to_string(),
-                json!({
-                    "members": [
-                        { "name": "A", "selector": { "binding": { "name": "A" } } },
-                        { "name": "C", "selector": { "binding": { "name": "C" } } },
-                    ],
-                    "source_matches": [
-                        {
-                            "match": "function pureWrap(x) { return { val: x }; }",
-                            "bindings": ["pureWrap"],
-                        },
-                    ],
-                    "annotations": {
-                        "pureWrap": {
-                            "purity": "pure",
-                        },
-                    },
-                }),
+            logical_module(
+                "mod_a",
+                &[
+                    Member::new("A"),
+                    Member::new("C"),
+                    Member::source_alpha(
+                        "pureWrap",
+                        r#"function pureWrap(x) { return { val: x }; }"#,
+                    )
+                    .with_purity(MemberPurity::Pure),
+                ],
             ),
-            (
-                "mod_b".to_string(),
-                json!({
-                    "members": [
-                        { "name": "B", "selector": { "binding": { "name": "B" } } },
-                    ],
-                }),
-            ),
+            logical_module("mod_b", &[Member::new("B")]),
         ],
     ));
     assert_entry_output(&fixture, "a b c\n");
@@ -664,37 +595,17 @@ console.log(A.val, B.val, C.val, globalThis.lastWrap);
 export { A, B, C, pureWrap, impureWrap };
 "#,
             vec![
-                (
-                    "mod_a".to_string(),
-                    json!({
-                        "members": [
-                            { "name": "A", "selector": { "binding": { "name": "A" } } },
-                            { "name": "C", "selector": { "binding": { "name": "C" } } },
-                            {
-                                "name": "pureWrap",
-                                "selector": { "binding": { "name": "pureWrap" } },
-                            },
-                            {
-                                "name": "impureWrap",
-                                "selector": { "binding": { "name": "impureWrap" } },
-                                // Deliberately unannotated.
-                            },
-                        ],
-                        "annotations": {
-                            "pureWrap": {
-                                "purity": "pure",
-                            },
-                        },
-                    }),
+                logical_module(
+                    "mod_a",
+                    &[
+                        Member::new("A"),
+                        Member::new("C"),
+                        Member::new("pureWrap").with_purity(MemberPurity::Pure),
+                        // Deliberately unannotated.
+                        Member::new("impureWrap"),
+                    ],
                 ),
-                (
-                    "mod_b".to_string(),
-                    json!({
-                        "members": [
-                            { "name": "B", "selector": { "binding": { "name": "B" } } },
-                        ],
-                    }),
-                ),
+                logical_module("mod_b", &[Member::new("B")]),
             ],
         ),
         &["cycle", "mod_a", "mod_b", "side-effect"],
@@ -716,32 +627,15 @@ console.log(A.value, B.value, C.value);
 export { A, B, C, PureBox };
 "#,
         vec![
-            (
-                "mod_a".to_string(),
-                json!({
-                    "members": [
-                        { "name": "A", "selector": { "binding": { "name": "A" } } },
-                        { "name": "C", "selector": { "binding": { "name": "C" } } },
-                        {
-                            "name": "PureBox",
-                            "selector": { "binding": { "name": "PureBox" } },
-                        },
-                    ],
-                    "annotations": {
-                        "PureBox": {
-                            "purity": "pure_new",
-                        },
-                    },
-                }),
+            logical_module(
+                "mod_a",
+                &[
+                    Member::new("A"),
+                    Member::new("C"),
+                    Member::new("PureBox").with_purity(MemberPurity::PureNew),
+                ],
             ),
-            (
-                "mod_b".to_string(),
-                json!({
-                    "members": [
-                        { "name": "B", "selector": { "binding": { "name": "B" } } },
-                    ],
-                }),
-            ),
+            logical_module("mod_b", &[Member::new("B")]),
         ],
     ));
     assert_entry_output(&fixture, "a b c\n");
@@ -767,32 +661,15 @@ console.log(A.value, B.value, C.value, globalThis.last);
 export { A, B, C, PureBox };
 "#,
             vec![
-                (
-                    "mod_a".to_string(),
-                    json!({
-                        "members": [
-                            { "name": "A", "selector": { "binding": { "name": "A" } } },
-                            { "name": "C", "selector": { "binding": { "name": "C" } } },
-                            {
-                                "name": "PureBox",
-                                "selector": { "binding": { "name": "PureBox" } },
-                            },
-                        ],
-                        "annotations": {
-                            "PureBox": {
-                                "purity": "pure_new",
-                            },
-                        },
-                    }),
+                logical_module(
+                    "mod_a",
+                    &[
+                        Member::new("A"),
+                        Member::new("C"),
+                        Member::new("PureBox").with_purity(MemberPurity::PureNew),
+                    ],
                 ),
-                (
-                    "mod_b".to_string(),
-                    json!({
-                        "members": [
-                            { "name": "B", "selector": { "binding": { "name": "B" } } },
-                        ],
-                    }),
-                ),
+                logical_module("mod_b", &[Member::new("B")]),
             ],
         ),
         &["cycle", "mod_a", "mod_b", "side-effect"],

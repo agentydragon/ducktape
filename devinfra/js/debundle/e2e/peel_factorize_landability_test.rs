@@ -27,8 +27,7 @@
 use analysis::OwnerGraphReport;
 use debundle_e2e_support::*;
 use peel::factorize::factorize;
-use serde_json::json;
-use spec::ModulePath;
+use spec::{MemberEffect, ModulePath};
 use std::collections::BTreeMap;
 
 /// Empty active-claims map: these fixtures all start from a fully
@@ -45,22 +44,10 @@ fn proposal_has_bindings(proposal: &peel::factorize::FactorizeProposal, bindings
 
 fn annotated_effect_module(
     path: &str,
-    binding: &str,
-    effect: &str,
+    binding: &'static str,
+    effect: MemberEffect,
 ) -> debundle_e2e_support::LogicalModuleEntry {
-    let mut annotations = serde_json::Map::new();
-    annotations.insert(binding.to_string(), json!({ "effect": effect }));
-    (
-        path.to_string(),
-        json!({
-            "members": [
-                {
-                    "selector": { "binding": { "name": binding } },
-                }
-            ],
-            "annotations": annotations,
-        }),
-    )
+    logical_module(path, &[Member::new(binding).with_effect(effect)])
 }
 
 #[test]
@@ -543,7 +530,7 @@ export { anchor, SearchPopoverState };
             annotated_effect_module(
                 "infra/decorators/ts_decorate",
                 "Ro",
-                "typescript_decorate_helper",
+                MemberEffect::TypescriptDecorateHelper,
             ),
             logical_module("infra/decorators/observable", &[Member::new("Z")]),
         ],
@@ -578,7 +565,7 @@ export { anchor, SearchPopoverState };
             annotated_effect_module(
                 "infra/decorators/ts_decorate",
                 "Ro",
-                "typescript_decorate_helper",
+                MemberEffect::TypescriptDecorateHelper,
             ),
             logical_module("infra/decorators/observable", &[Member::new("Z")]),
             logical_module_with_anon(
@@ -610,7 +597,7 @@ export { anchor, SearchPopoverState };
             annotated_effect_module(
                 "infra/decorators/ts_decorate",
                 "Ro",
-                "typescript_decorate_helper",
+                MemberEffect::TypescriptDecorateHelper,
             ),
             logical_module("infra/decorators/observable", &[Member::new("Z")]),
             logical_module(

@@ -17,7 +17,6 @@
 //!   every offender is reported in one pass (not just the first).
 
 use debundle_e2e_support::*;
-use serde_json::json;
 
 #[test]
 fn missing_binding_member_fails_the_build() {
@@ -26,14 +25,9 @@ fn missing_binding_member_fails_the_build() {
 console.log(a());
 export { a };
 "#,
-        vec![(
-            "mod_x".to_string(),
-            json!({
-                "members": [
-                    { "name": "Foo", "selector": { "binding": { "name": "a" } } },
-                    { "name": "Bar", "selector": { "binding": { "name": "b" } } },
-                ],
-            }),
+        vec![logical_module(
+            "mod_x",
+            &[Member::renamed("Foo", "a"), Member::renamed("Bar", "b")],
         )],
     );
     let rejected = run_rejection_fixture(opts);
@@ -61,23 +55,19 @@ console.log(a() + c());
 export { a, c };
 "#,
         vec![
-            (
-                "mod_x".to_string(),
-                json!({
-                    "members": [
-                        { "name": "Foo", "selector": { "binding": { "name": "a" } } },
-                        { "name": "Bar", "selector": { "binding": { "name": "missing_one" } } },
-                    ],
-                }),
+            logical_module(
+                "mod_x",
+                &[
+                    Member::renamed("Foo", "a"),
+                    Member::renamed("Bar", "missing_one"),
+                ],
             ),
-            (
-                "mod_y".to_string(),
-                json!({
-                    "members": [
-                        { "name": "Baz", "selector": { "binding": { "name": "c" } } },
-                        { "name": "Qux", "selector": { "binding": { "name": "missing_two" } } },
-                    ],
-                }),
+            logical_module(
+                "mod_y",
+                &[
+                    Member::renamed("Baz", "c"),
+                    Member::renamed("Qux", "missing_two"),
+                ],
             ),
         ],
     );

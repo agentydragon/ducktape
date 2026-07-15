@@ -14,6 +14,11 @@ use spec::{
     MemberOfModuleSelector, MemberSelector, PassedToCallSelector, ReadsMemberSelector, SourceMatch,
     SourceMatchBinding, SourceMatchBindingDetail, SourceMatchClaim, SourceMatchIdentifierMode,
 };
+
+/// Re-exported so test files can reference the spec enums behind
+/// `Member::with_purity` / `Member::with_effect` without a direct `spec` dep.
+pub use spec::{MemberEffect, MemberPurity};
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -43,6 +48,7 @@ static GENERATED_MODULE_SCRIPT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 pub struct Member {
     pub name: &'static str,
     pub binding: Option<&'static str>,
+    binding_kind: Option<BindingSourceKind>,
     source_match: Option<SourceMatch>,
     cross_ref: Option<CrossRefSelector>,
     reads_member: Option<ReadsMemberSelector>,
@@ -50,6 +56,10 @@ pub struct Member {
     passed_to_call: Option<PassedToCallSelector>,
     makes_decorate_call: Option<MakesDecorateCallSelector>,
     intrinsic_alias: Option<IntrinsicAliasSelector>,
+    purity: Option<MemberPurity>,
+    effect: Option<MemberEffect>,
+    pure_members: Vec<String>,
+    no_sync_callback_members: Vec<String>,
     pub comment: Option<String>,
     pub note: Option<String>,
 }
@@ -141,9 +151,17 @@ impl Member {
 
     /// Extract a binding under its original name.
     pub fn new(name: &'static str) -> Self {
+        Self::new_with_kind(name, None)
+    }
+
+    /// Like [`Self::new`] but narrows the binding selector to a specific
+    /// source-declaration kind (`"import_specifier"`, `"class_declaration"`,
+    /// `"function_declaration"`, `"variable_declarator"`).
+    pub fn new_with_kind(name: &'static str, kind: Option<&'static str>) -> Self {
         Self {
             name,
             binding: None,
+            binding_kind: parse_kind(kind),
             source_match: None,
             cross_ref: None,
             reads_member: None,
@@ -151,6 +169,10 @@ impl Member {
             passed_to_call: None,
             makes_decorate_call: None,
             intrinsic_alias: None,
+            purity: None,
+            effect: None,
+            pure_members: Vec::new(),
+            no_sync_callback_members: Vec::new(),
             comment: None,
             note: None,
         }
@@ -158,9 +180,20 @@ impl Member {
 
     /// Extract `binding` and re-export it as `name`.
     pub fn renamed(name: &'static str, binding: &'static str) -> Self {
+        Self::renamed_with_kind(name, binding, None)
+    }
+
+    /// Like [`Self::renamed`] but narrows the binding selector to a specific
+    /// source-declaration kind.
+    pub fn renamed_with_kind(
+        name: &'static str,
+        binding: &'static str,
+        kind: Option<&'static str>,
+    ) -> Self {
         Self {
             name,
             binding: Some(binding),
+            binding_kind: parse_kind(kind),
             source_match: None,
             cross_ref: None,
             reads_member: None,
@@ -168,6 +201,10 @@ impl Member {
             passed_to_call: None,
             makes_decorate_call: None,
             intrinsic_alias: None,
+            purity: None,
+            effect: None,
+            pure_members: Vec::new(),
+            no_sync_callback_members: Vec::new(),
             comment: None,
             note: None,
         }
@@ -179,6 +216,7 @@ impl Member {
         Self {
             name,
             binding: None,
+            binding_kind: None,
             source_match: Some(SourceMatch {
                 identifiers: SourceMatchIdentifierMode::AlphaAll,
                 target_binding: None,
@@ -190,6 +228,10 @@ impl Member {
             passed_to_call: None,
             makes_decorate_call: None,
             intrinsic_alias: None,
+            purity: None,
+            effect: None,
+            pure_members: Vec::new(),
+            no_sync_callback_members: Vec::new(),
             comment: None,
             note: None,
         }
@@ -205,6 +247,7 @@ impl Member {
         Self {
             name,
             binding: None,
+            binding_kind: None,
             source_match: Some(SourceMatch {
                 identifiers: SourceMatchIdentifierMode::AlphaAll,
                 target_binding: Some(target_binding.into()),
@@ -216,6 +259,10 @@ impl Member {
             passed_to_call: None,
             makes_decorate_call: None,
             intrinsic_alias: None,
+            purity: None,
+            effect: None,
+            pure_members: Vec::new(),
+            no_sync_callback_members: Vec::new(),
             comment: None,
             note: None,
         }
@@ -233,6 +280,7 @@ impl Member {
         Self {
             name,
             binding: None,
+            binding_kind: None,
             source_match: None,
             cross_ref: Some(CrossRefSelector {
                 references: Some(anchor.to_string()),
@@ -244,6 +292,10 @@ impl Member {
             passed_to_call: None,
             makes_decorate_call: None,
             intrinsic_alias: None,
+            purity: None,
+            effect: None,
+            pure_members: Vec::new(),
+            no_sync_callback_members: Vec::new(),
             comment: None,
             note: None,
         }
@@ -255,6 +307,7 @@ impl Member {
         Self {
             name,
             binding: None,
+            binding_kind: None,
             source_match: None,
             cross_ref: Some(CrossRefSelector {
                 references: None,
@@ -266,6 +319,10 @@ impl Member {
             passed_to_call: None,
             makes_decorate_call: None,
             intrinsic_alias: None,
+            purity: None,
+            effect: None,
+            pure_members: Vec::new(),
+            no_sync_callback_members: Vec::new(),
             comment: None,
             note: None,
         }
@@ -286,6 +343,7 @@ impl Member {
         Self {
             name,
             binding: None,
+            binding_kind: None,
             source_match: None,
             cross_ref: None,
             reads_member: Some(ReadsMemberSelector {
@@ -297,6 +355,10 @@ impl Member {
             passed_to_call: None,
             makes_decorate_call: None,
             intrinsic_alias: None,
+            purity: None,
+            effect: None,
+            pure_members: Vec::new(),
+            no_sync_callback_members: Vec::new(),
             comment: None,
             note: None,
         }
@@ -317,6 +379,7 @@ impl Member {
         Self {
             name,
             binding: None,
+            binding_kind: None,
             source_match: None,
             cross_ref: None,
             reads_member: None,
@@ -328,6 +391,10 @@ impl Member {
             passed_to_call: None,
             makes_decorate_call: None,
             intrinsic_alias: None,
+            purity: None,
+            effect: None,
+            pure_members: Vec::new(),
+            no_sync_callback_members: Vec::new(),
             comment: None,
             note: None,
         }
@@ -351,6 +418,7 @@ impl Member {
         Self {
             name,
             binding: None,
+            binding_kind: None,
             source_match: None,
             cross_ref: None,
             reads_member: None,
@@ -363,6 +431,10 @@ impl Member {
             }),
             makes_decorate_call: None,
             intrinsic_alias: None,
+            purity: None,
+            effect: None,
+            pure_members: Vec::new(),
+            no_sync_callback_members: Vec::new(),
             comment: None,
             note: None,
         }
@@ -384,6 +456,7 @@ impl Member {
         Self {
             name,
             binding: None,
+            binding_kind: None,
             source_match: None,
             cross_ref: None,
             reads_member: None,
@@ -395,6 +468,10 @@ impl Member {
                 kind: parse_kind(kind),
             }),
             intrinsic_alias: None,
+            purity: None,
+            effect: None,
+            pure_members: Vec::new(),
+            no_sync_callback_members: Vec::new(),
             comment: None,
             note: None,
         }
@@ -415,6 +492,7 @@ impl Member {
         Self {
             name,
             binding: None,
+            binding_kind: None,
             source_match: None,
             cross_ref: None,
             reads_member: None,
@@ -425,6 +503,10 @@ impl Member {
                 property: property.to_string(),
                 referenced_by: referenced_by.to_string(),
             }),
+            purity: None,
+            effect: None,
+            pure_members: Vec::new(),
+            no_sync_callback_members: Vec::new(),
             comment: None,
             note: None,
         }
@@ -441,6 +523,34 @@ impl Member {
     /// preserved in the spec but never emitted into generated JavaScript.
     pub fn with_note(mut self, note: impl Into<String>) -> Self {
         self.note = Some(note.into());
+        self
+    }
+
+    /// Attach a spec-level purity annotation (`pure` / `pure_new`) to the
+    /// binding. See `spec::BindingAnnotation::purity`.
+    pub fn with_purity(mut self, purity: MemberPurity) -> Self {
+        self.purity = Some(purity);
+        self
+    }
+
+    /// Attach a spec-level local-effect annotation to the binding. See
+    /// `spec::BindingAnnotation::effect`.
+    pub fn with_effect(mut self, effect: MemberEffect) -> Self {
+        self.effect = Some(effect);
+        self
+    }
+
+    /// Attach `pure_members` to the binding's annotation. See
+    /// `spec::BindingAnnotation::pure_members`.
+    pub fn with_pure_members(mut self, pure_members: Vec<String>) -> Self {
+        self.pure_members = pure_members;
+        self
+    }
+
+    /// Attach `no_sync_callback_members` to the binding's annotation. See
+    /// `spec::BindingAnnotation::no_sync_callback_members`.
+    pub fn with_no_sync_callback_members(mut self, members: Vec<String>) -> Self {
+        self.no_sync_callback_members = members;
         self
     }
 }
@@ -571,7 +681,7 @@ fn fixture_members(members: &[Member]) -> Vec<SpecMember> {
                     .or_else(|| (!m.has_selector()).then_some(m.name))
                     .map(|name| BindingSelector {
                         name: name.to_string(),
-                        kind: None,
+                        kind: m.binding_kind,
                     }),
                 cross_ref: m.cross_ref.clone(),
                 reads_member: m.reads_member.clone(),
@@ -655,13 +765,22 @@ fn fixture_annotations(
 ) -> BTreeMap<String, BindingAnnotation> {
     let mut annotations = BTreeMap::new();
     for member in members {
-        if member.comment.is_some() || member.note.is_some() {
+        let has_annotation = member.comment.is_some()
+            || member.note.is_some()
+            || member.purity.is_some()
+            || member.effect.is_some()
+            || !member.pure_members.is_empty()
+            || !member.no_sync_callback_members.is_empty();
+        if has_annotation {
             annotations.insert(
                 member.name.to_string(),
                 BindingAnnotation {
+                    purity: member.purity.unwrap_or_default(),
+                    effect: member.effect.unwrap_or_default(),
+                    pure_members: member.pure_members.clone(),
+                    no_sync_callback_members: member.no_sync_callback_members.clone(),
                     comment: member.comment.clone(),
                     note: member.note.clone(),
-                    ..Default::default()
                 },
             );
         }

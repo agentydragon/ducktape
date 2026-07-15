@@ -23,7 +23,6 @@
 //! emitted tree runs under Node with decoration semantics intact.
 
 use debundle_e2e_support::*;
-use serde_json::json;
 
 /// **The decorate-helper copy, end to end.** A `__decorate`-style helper (here
 /// `d0`) reads the `Object.getOwnPropertyDescriptor` / `Object.defineProperty`
@@ -125,25 +124,12 @@ export { C };
                 )],
                 &["d0([tag], C.prototype, \"greet\", 1);"],
             ),
-            (
-                "decorate_helper".to_string(),
-                json!({
-                    "members": [
-                        {
-                            "name": "applyDecorators",
-                            "selector": {
-                                "makes_decorate_call": {
-                                    "class": "DecoratedClass"
-                                }
-                            }
-                        }
-                    ],
-                    "annotations": {
-                        "applyDecorators": {
-                            "effect": "typescript_decorate_helper"
-                        }
-                    }
-                }),
+            logical_module(
+                "decorate_helper",
+                &[
+                    Member::makes_decorate_call("applyDecorators", "DecoratedClass", None, None)
+                        .with_effect(MemberEffect::TypescriptDecorateHelper),
+                ],
             ),
         ],
     ));
