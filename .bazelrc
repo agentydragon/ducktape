@@ -3,11 +3,9 @@ common --experimental_isolated_extension_usages
 # Disable Aspect telemetry (aspect_tools_telemetry) so builds don't POST to telemetry.aspect.build
 common --repo_env=DO_NOT_TRACK=1
 
-# Suppress -Wdeprecated-declarations from protobuf's own internal usage of its
-# deprecated APIs (FieldOptions::weak(), RepeatedPtrField(Arena*), etc.).
-# All warnings are within external/protobuf+/ — protobuf using APIs that it
-# itself deprecated, not fixable from this repo.
-# Applied to both target and exec (host) configs since protoc runs in exec.
+# Suppress deprecated declarations in protobuf's own compilation units. These
+# are upstream self-deprecations such as FieldOptions::weak(), not repo code.
+# Apply to target and exec configs because protoc also runs in exec config.
 build --per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations
 build --host_per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations
 
@@ -21,8 +19,11 @@ build --host_per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations
 #   pseudo_costs.cc, etc.).
 # -Wcomment: ASCII-art diagrams in comments (ortools/util/fixed_shape_binary_tree.h)
 #   contain backslashes gcc parses as line-continuations.
-build --per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment
-build --host_per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment
+# -Wdeprecated-declarations: OR-Tools instantiates protobuf templates whose
+#   implementation calls protobuf-deprecated APIs. Per-file options match the
+#   OR-Tools compilation unit, not the included protobuf header.
+build --per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment,-Wno-deprecated-declarations
+build --host_per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment,-Wno-deprecated-declarations
 
 # Reduce runfiles disk usage (prevents "No space left on device" on CI runners).
 # Each py_test creates a runfiles tree with ~2,458 symlinks for the Python toolchain;
