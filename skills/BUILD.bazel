@@ -27,7 +27,6 @@ pkg_zip(
         "//devinfra/js/debundle/skills/debundle_plan_work:debundle_plan_work_files",
         "//devinfra/js/debundle/skills/debundle_stabilize:debundle_stabilize_files",
         "//skills/backtrace:backtrace_files",
-        "//skills/branch_splitter:branch_splitter_files",
         "//skills/followups:followups_files",
         "//skills/forensic_surgeon:forensic_surgeon_files",
         "//skills/forgejo:forgejo_files",
