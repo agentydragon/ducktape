@@ -4,7 +4,8 @@
 # thing LiteLLM's /v1/messages bridge and claude-code-router both couldn't do.
 #
 # Auth token is $CLIPROXY_CLIENT_KEY — a SOPS secret (SSOT in
-# secrets/shared/cli-proxy-api-client-key.yaml) surfaced to laptops via ducktape.sopsEnv.
+# cluster/k8s/cli-proxy-api/client-key.sops.yaml) surfaced to Home Manager consumers
+# via ducktape.sopsEnv and reflected into codex-pod.
 # CLIProxyAPI holds + auto-refreshes its OWN Codex OAuth session (separate from LiteLLM's).
 #
 # Gateway model discovery is on, so `/model` lists the codex slugs

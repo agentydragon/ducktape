@@ -440,6 +440,7 @@
           codex-pod-image = import ./x/codex_pod_image {
             inherit
               pkgs
+              pkgsUnstable
               pkgsMaster
               home-manager
               ;

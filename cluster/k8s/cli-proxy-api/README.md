@@ -38,9 +38,10 @@ persists the token across pod restarts; the auto-refresh worker (15m) keeps it v
 
 - `config.sops.yaml` — `cli-proxy-api-config` Secret holding `config.yaml` (port, auth-dir,
   `api-keys` client key). Flux decrypts via `sops-age-cluster-secrets`.
-- `secrets/shared/cli-proxy-api-client-key.yaml` — flat SSOT of the **same** client key,
-  consumed by laptops via `ducktape.sopsEnv` (`CLIPROXY_CLIENT_KEY`). Keep the two values
-  in sync on rotation.
+- `client-key.sops.yaml` — SSOT of the **same** client key, consumed by laptops and
+  `codex@agent-box` via `ducktape.sopsEnv` (`CLIPROXY_CLIENT_KEY`) and reflected into
+  `codex-pod` for its `codex-claude` wrapper. Keep it in sync with `config.sops.yaml`
+  on rotation.
 
 Rotate the client key: generate a new value, update both files (`sops -e -i` each), push.
 

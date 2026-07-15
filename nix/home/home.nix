@@ -111,11 +111,11 @@ in
       sopsFile = ../../tf/gitops/litellm-keys/litellm-zai-clients-key.yaml;
       key = "litellm_zai_key";
     };
-    # CLIProxyAPI client key (SSOT in secrets/shared/cli-proxy-api-client-key.yaml)
+    # CLIProxyAPI client key (SSOT in cluster/k8s/cli-proxy-api/client-key.sops.yaml)
     # powering the `codex-claude` Claude-Code-on-Codex alias below.
     CLIPROXY_CLIENT_KEY = {
-      sopsFile = ../../secrets/shared/cli-proxy-api-client-key.yaml;
-      key = "client_key";
+      sopsFile = ../../cluster/k8s/cli-proxy-api/client-key.sops.yaml;
+      key = "stringData/client-key";
     };
   };
 

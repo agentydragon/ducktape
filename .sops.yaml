@@ -44,6 +44,22 @@ keys:
   # Bootstrap deploys it to the cluster as a k8s Secret.
   - &cluster-secrets age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
 creation_rules:
+  # CLIProxyAPI client key: Flux applies and reflects it to codex-pod, while
+  # workstation and agent-box Codex home-manager configs decrypt the same SSOT.
+  # Must precede the generic cluster/k8s rule below.
+  - path_regex: cluster/k8s/cli-proxy-api/client-key\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+          - *gecko-agentydragon
+          - *agent-box-codex-user
+
   # DriveFS artifacts S3 gateway credentials, now hosted on the consolidated
   # public-s3 gateway. Flux applies the Secret (cluster-secrets), user machines
   # read writer credentials to upload new binaries (user keys), and

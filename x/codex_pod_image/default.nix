@@ -14,16 +14,21 @@
 # Load:   docker load < result
 {
   pkgs,
+  pkgsUnstable,
   pkgsMaster,
   home-manager,
 }:
 let
+  codexClaude = import ../../nix/home/claude_code/codex-claude.nix { inherit pkgs; };
+
   # The codex pod's tool set. Mirrors the agent-box codex user plus the shell
   # utilities a dev pod needs.
   codexEnv = pkgs.buildEnv {
     name = "codex-env";
     paths = [
       pkgsMaster.codex # Codex CLI (master, as home-manager pins it for agent-box)
+      pkgsUnstable.claude-code
+      codexClaude
       pkgs.bashInteractive
       pkgs.coreutils
       pkgs.moreutils

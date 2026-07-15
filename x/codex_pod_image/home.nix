@@ -119,6 +119,17 @@ in
     nix-direnv.enable = true;
   };
 
+  # codex-claude is installed by the image buildEnv. Bake only the minimal
+  # unattended Claude Code settings here; its API credential arrives at runtime.
+  home.file.".claude/settings.json".text = builtins.toJSON {
+    theme = "auto";
+    permissions = {
+      defaultMode = "bypassPermissions";
+      skipDangerousModePermissionPrompt = true;
+    };
+    sandbox.enabled = false;
+  };
+
   # Codex runs fully unattended in this isolated agent pod — never prompt, no
   # sandbox — mirroring agent-box's `ducktape.codex` (nix/home/hosts/agent-box/
   # codex.nix). The upstream programs.codex module writes config.toml from a

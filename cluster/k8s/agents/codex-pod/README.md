@@ -96,6 +96,10 @@ this non-root image pod has not) and no boot-time render script:
   `tf/gitops/litellm-keys` (alias `codex-pod`, scoped to the oai/chatgpt models with
   a budget — deleting it is the kill switch), reflected into `codex-pod` and set on
   the container via `secretKeyRef` (`optional: true`).
+- **CLIProxyAPI (`codex-claude`)** — the image includes Claude Code plus the shared
+  `codex-claude` wrapper. The canonical `cli-proxy-api-client-key` Secret lives in
+  `cluster/k8s/cli-proxy-api`, is reflected only into `codex-pod`, and is exposed as
+  `CLIPROXY_CLIENT_KEY` for both `kubectl exec` and SSH sessions.
 
 ## Follow-ups
 
