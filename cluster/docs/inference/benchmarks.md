@@ -20,12 +20,18 @@ distinct because that flag changes whether warmup OOMs.
 | `c-gpt120`  | Ollama  | `gpt-oss:120b`       | MXFP4-in-GGUF | same as above                                                                    | Running, unmeasured |
 | `c-gemma31` | Ollama  | `gemma4:31b-it-q8_0` | Q8_0 GGUF     | same as above                                                                    | Running, unmeasured |
 
-### Validated on host (wyrm2 systemd-user, see <vllm_history.md>)
+### Validated on host (wyrm2)
 
-| ID             | Backend | Model                                            | Inner format                   | Key flags                                                                                                              |
-| -------------- | ------- | ------------------------------------------------ | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `h-qwen3c-awq` | vLLM    | `cyankiwi/Qwen3-Coder-30B-A3B-Instruct-AWQ-4bit` | AWQ 4-bit (compressed-tensors) | `--tensor-parallel-size 2 --kv-cache-dtype fp8 --max-model-len 262144 --gpu-memory-utilization 0.90 --max-num-seqs 32` |
-| `h-qwen3c-ol`  | Ollama  | `qwen3-coder:30b-a3b-q4_K_M` (custom 131K ctx)   | Q4_K_M GGUF                    | `num_ctx 131072` via Modelfile <../../../x/local_llm/Modelfile.qwen3-coder-long>                                       |
+| ID                       | Backend | Model                                            | Inner format                      | Key flags                                                                                                              |
+| ------------------------ | ------- | ------------------------------------------------ | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `h-qwen3c-awq`           | vLLM    | `cyankiwi/Qwen3-Coder-30B-A3B-Instruct-AWQ-4bit` | AWQ 4-bit (compressed-tensors)    | `--tensor-parallel-size 2 --kv-cache-dtype fp8 --max-model-len 262144 --gpu-memory-utilization 0.90 --max-num-seqs 32` |
+| `h-qwen3c-ol`            | Ollama  | `qwen3-coder:30b-a3b-q4_K_M` (custom 131K ctx)   | Q4_K_M GGUF                       | `num_ctx 131072` via Modelfile <../../../x/local_llm/Modelfile.qwen3-coder-long>                                       |
+| `h-glm52-colibri`        | Colibri | `mateogrgic/GLM-5.2-colibri-int4-with-int8-mtp`  | INT4 experts, full routing        | `--ram 64 --ctx 4096 --gpu 0,1 --auto-tier --vram 52`, MTP off <runs/2026-07-14_glm52_colibri/README.md>               |
+| `h-glm52-colibri-mtp`    | Colibri | same                                             | INT4 experts, INT8 MTP head       | same placement, `DRAFT=3 MTP=1` <runs/2026-07-14_glm52_colibri/README.md>                                              |
+| `h-glm52-colibri-topp07` | Colibri | same                                             | INT4 experts, approximate routing | same placement, `--topp 0.7`, MTP off <runs/2026-07-14_glm52_colibri/README.md>                                        |
+
+The vLLM host service history is in <vllm_history.md>. The Colibri run was a
+bounded experiment rather than a persistent systemd service.
 
 Configured but unverified on host: `h-r1-32b`, `h-r1-70b`, `h-qwen3-32b` —
 see <../../../x/local_llm/start-vllm-deepseek-r1.sh> and siblings.
@@ -34,17 +40,22 @@ see <../../../x/local_llm/start-vllm-deepseek-r1.sh> and siblings.
 
 ### Throughput
 
-| Config         | Input | Prefill TPS p50  | Content decode TPS p50 (single) | t_done p50 (s) | Source                                                               |
-| -------------- | ----- | ---------------- | ------------------------------- | -------------- | -------------------------------------------------------------------- |
-| `c-gpt20`      | 1024  | 3 800            | **174**                         | 1.96           | <runs/2026-04-28_initial/README.md>                                  |
-| `c-gpt20`      | 8192  | 21 300           | **150**                         | 2.31           | <runs/2026-04-28_initial/README.md>                                  |
-| `c-gpt120`     | 1024  | 119              | **1.48** (2)                    | 191.8          | <runs/2026-04-28_initial/README.md>                                  |
-| `c-gpt120`     | 8192  | 1 016            | **1.56** (2)                    | 183.9          | <runs/2026-04-28_initial/README.md>                                  |
-| `c-gemma31`    | 1024  | n/a (1)          | n/a (1)                         | 7.63           | <runs/2026-04-28_initial/README.md>                                  |
-| `c-gemma31`    | 8192  | n/a (1)          | n/a (1)                         | 8.50           | <runs/2026-04-28_initial/README.md>                                  |
-| `h-qwen3c-awq` | 119 K | 91 000 (cached)  | —                               | —              | <qwen3_coder_vram_analysis.md#real-world-awq-performance-2026-01-24> |
-| `h-qwen3c-awq` | 128 K | 28 600 (cold)    | —                               | —              | <qwen3_coder_vram_analysis.md#real-world-awq-performance-2026-01-24> |
-| `h-qwen3c-awq` | 130 K | 100 000 (cached) | —                               | —              | <qwen3_coder_vram_analysis.md#real-world-awq-performance-2026-01-24> |
+| Config                   | Input               | Prefill TPS p50  | Content decode TPS p50 (single) | t_done p50 (s) | Source                                                               |
+| ------------------------ | ------------------- | ---------------- | ------------------------------- | -------------- | -------------------------------------------------------------------- |
+| `c-gpt20`                | 1024                | 3 800            | **174**                         | 1.96           | <runs/2026-04-28_initial/README.md>                                  |
+| `c-gpt20`                | 8192                | 21 300           | **150**                         | 2.31           | <runs/2026-04-28_initial/README.md>                                  |
+| `c-gpt120`               | 1024                | 119              | **1.48** (2)                    | 191.8          | <runs/2026-04-28_initial/README.md>                                  |
+| `c-gpt120`               | 8192                | 1 016            | **1.56** (2)                    | 183.9          | <runs/2026-04-28_initial/README.md>                                  |
+| `c-gemma31`              | 1024                | n/a (1)          | n/a (1)                         | 7.63           | <runs/2026-04-28_initial/README.md>                                  |
+| `c-gemma31`              | 8192                | n/a (1)          | n/a (1)                         | 8.50           | <runs/2026-04-28_initial/README.md>                                  |
+| `h-qwen3c-awq`           | 119 K               | 91 000 (cached)  | —                               | —              | <qwen3_coder_vram_analysis.md#real-world-awq-performance-2026-01-24> |
+| `h-qwen3c-awq`           | 128 K               | 28 600 (cold)    | —                               | —              | <qwen3_coder_vram_analysis.md#real-world-awq-performance-2026-01-24> |
+| `h-qwen3c-awq`           | 130 K               | 100 000 (cached) | —                               | —              | <qwen3_coder_vram_analysis.md#real-world-awq-performance-2026-01-24> |
+| `h-glm52-colibri`        | short, cold         | —                | **0.17**                        | 189.33         | <runs/2026-07-14_glm52_colibri/README.md#results>                    |
+| `h-glm52-colibri`        | short, profiled     | —                | **0.26**                        | 121.79         | <runs/2026-07-14_glm52_colibri/README.md#results>                    |
+| `h-glm52-colibri`        | short, refined warm | —                | **0.28**                        | 113.30         | <runs/2026-07-14_glm52_colibri/README.md#results>                    |
+| `h-glm52-colibri-mtp`    | short, refined warm | —                | **0.27**                        | 118.62         | <runs/2026-07-14_glm52_colibri/README.md#results>                    |
+| `h-glm52-colibri-topp07` | short, refined warm | —                | **0.37** (quality tradeoff)     | 87.08          | <runs/2026-07-14_glm52_colibri/README.md#results>                    |
 
 (1) **gemma4 reasons by default** and uses `delta.reasoning` (not
 `delta.reasoning_content` like gpt-oss), so the initial parser missed

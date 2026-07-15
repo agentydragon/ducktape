@@ -53,7 +53,7 @@ repeatable without clobbering later interactive usage.
 | Runtime placement           | 52 GB VRAM hot tier, 47 GB RAM warm tier, 273.9 GB SSD cold tier |
 
 The NixOS and Proxmox declarations for the dedicated disk live in
-<../../../../nixos/hosts/wyrm2/default.nix> and
+<../../../../../nix/nixos/hosts/wyrm2/default.nix> and
 <../../../../terraform/main/proxmox-vms.tf> respectively.
 
 ## Results

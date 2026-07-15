@@ -22,8 +22,9 @@ and how the inference config holds up under it.
 ## Hub layout
 
 Docs hub for LLM inference on the cluster. Notes that should outlive any
-one deployment go here; runnable scripts live with the workload
-(`cluster/k8s/ollama/`, `x/local_llm/`).
+one deployment go here; reusable service scripts live with the workload
+(`cluster/k8s/ollama/`, `x/local_llm/`), while exact experimental drivers live
+with their dated run records.
 
 ## What's here
 
@@ -37,6 +38,9 @@ one deployment go here; runnable scripts live with the workload
   configuration, caveats that bit us, and an off-the-shelf eval runner
   cheat sheet (simple-evals, lm-eval-harness, evalplus, BFCL, …). Update
   rows when you bring up or rerun a config.
+- <runs/2026-07-14_glm52_colibri/README.md> — reproducible wyrm2 host run of
+  GLM-5.2 through Colibri's disk-streamed MoE runtime, including the pinned
+  flake, checkpoint gate, run scripts, measurements, and experiment verdict.
 - <qwen3_coder_vram_analysis.md> — full VRAM math, debug logs, profiler
   output. Source data for `vllm_history.md`.
 - <vllm_container_plan.md> — home-manager systemd-user service plan that
