@@ -8,6 +8,12 @@ use runfiles::{Runfiles, rlocation};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use spec::{
+    AnonymousStatement, BindingAnnotation, BindingSelector, BindingSourceKind, CrossRefSelector,
+    IntrinsicAliasSelector, LogicalModule, MakesDecorateCallSelector, Member as SpecMember,
+    MemberOfModuleSelector, MemberSelector, PassedToCallSelector, ReadsMemberSelector, SourceMatch,
+    SourceMatchBinding, SourceMatchBindingDetail, SourceMatchClaim, SourceMatchIdentifierMode,
+};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -37,13 +43,13 @@ static GENERATED_MODULE_SCRIPT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 pub struct Member {
     pub name: &'static str,
     pub binding: Option<&'static str>,
-    source_match: Option<MemberSourceMatch>,
-    cross_ref: Option<FixtureCrossRefSelector>,
-    reads_member: Option<FixtureReadsMemberSelector>,
-    member_of_module: Option<FixtureMemberOfModuleSelector>,
-    passed_to_call: Option<FixturePassedToCallSelector>,
-    makes_decorate_call: Option<FixtureMakesDecorateCallSelector>,
-    intrinsic_alias: Option<FixtureIntrinsicAliasSelector>,
+    source_match: Option<SourceMatch>,
+    cross_ref: Option<CrossRefSelector>,
+    reads_member: Option<ReadsMemberSelector>,
+    member_of_module: Option<MemberOfModuleSelector>,
+    passed_to_call: Option<PassedToCallSelector>,
+    makes_decorate_call: Option<MakesDecorateCallSelector>,
+    intrinsic_alias: Option<IntrinsicAliasSelector>,
     pub comment: Option<String>,
     pub note: Option<String>,
 }
@@ -173,7 +179,8 @@ impl Member {
         Self {
             name,
             binding: None,
-            source_match: Some(MemberSourceMatch {
+            source_match: Some(SourceMatch {
+                identifiers: SourceMatchIdentifierMode::AlphaAll,
                 target_binding: None,
                 match_source: match_source.into(),
             }),
@@ -198,7 +205,8 @@ impl Member {
         Self {
             name,
             binding: None,
-            source_match: Some(MemberSourceMatch {
+            source_match: Some(SourceMatch {
+                identifiers: SourceMatchIdentifierMode::AlphaAll,
                 target_binding: Some(target_binding.into()),
                 match_source: match_source.into(),
             }),
@@ -226,10 +234,10 @@ impl Member {
             name,
             binding: None,
             source_match: None,
-            cross_ref: Some(FixtureCrossRefSelector {
-                references: Some(anchor),
+            cross_ref: Some(CrossRefSelector {
+                references: Some(anchor.to_string()),
                 aliases: None,
-                kind,
+                kind: parse_kind(kind),
             }),
             reads_member: None,
             member_of_module: None,
@@ -248,9 +256,9 @@ impl Member {
             name,
             binding: None,
             source_match: None,
-            cross_ref: Some(FixtureCrossRefSelector {
+            cross_ref: Some(CrossRefSelector {
                 references: None,
-                aliases: Some(anchor),
+                aliases: Some(anchor.to_string()),
                 kind: None,
             }),
             reads_member: None,
@@ -280,10 +288,10 @@ impl Member {
             binding: None,
             source_match: None,
             cross_ref: None,
-            reads_member: Some(FixtureReadsMemberSelector {
-                member,
-                object,
-                kind,
+            reads_member: Some(ReadsMemberSelector {
+                member: member.to_string(),
+                object: object.map(str::to_string),
+                kind: parse_kind(kind),
             }),
             member_of_module: None,
             passed_to_call: None,
@@ -312,10 +320,10 @@ impl Member {
             source_match: None,
             cross_ref: None,
             reads_member: None,
-            member_of_module: Some(FixtureMemberOfModuleSelector {
-                module,
-                member,
-                kind,
+            member_of_module: Some(MemberOfModuleSelector {
+                module: module.to_string(),
+                member: member.to_string(),
+                kind: parse_kind(kind),
             }),
             passed_to_call: None,
             makes_decorate_call: None,
@@ -347,11 +355,11 @@ impl Member {
             cross_ref: None,
             reads_member: None,
             member_of_module: None,
-            passed_to_call: Some(FixturePassedToCallSelector {
-                callee_member,
-                object,
+            passed_to_call: Some(PassedToCallSelector {
+                callee_member: callee_member.to_string(),
+                object: object.map(str::to_string),
                 arg_index,
-                kind,
+                kind: parse_kind(kind),
             }),
             makes_decorate_call: None,
             intrinsic_alias: None,
@@ -381,10 +389,10 @@ impl Member {
             reads_member: None,
             member_of_module: None,
             passed_to_call: None,
-            makes_decorate_call: Some(FixtureMakesDecorateCallSelector {
-                class,
-                member,
-                kind,
+            makes_decorate_call: Some(MakesDecorateCallSelector {
+                class: class.to_string(),
+                member: member.map(str::to_string),
+                kind: parse_kind(kind),
             }),
             intrinsic_alias: None,
             comment: None,
@@ -413,9 +421,9 @@ impl Member {
             member_of_module: None,
             passed_to_call: None,
             makes_decorate_call: None,
-            intrinsic_alias: Some(FixtureIntrinsicAliasSelector {
-                property,
-                referenced_by,
+            intrinsic_alias: Some(IntrinsicAliasSelector {
+                property: property.to_string(),
+                referenced_by: referenced_by.to_string(),
             }),
             comment: None,
             note: None,
@@ -437,199 +445,77 @@ impl Member {
     }
 }
 
-#[derive(Serialize)]
-struct FixtureMember {
-    name: &'static str,
-    selector: FixtureMemberSelector,
+/// Translate the harness `&'static str` spelling of a statement kind into the
+/// spec's typed `BindingSourceKind`. The wire spellings match
+/// (`BindingSourceKind` is `#[serde(rename_all = "snake_case")]` and the harness
+/// receives the same snake_case strings from builder callers).
+fn parse_kind(kind: Option<&'static str>) -> Option<BindingSourceKind> {
+    kind.map(|k| {
+        serde_json::from_str(&format!("\"{k}\"")).expect("BindingSourceKind from builder kind")
+    })
 }
 
-#[derive(Serialize)]
-struct FixtureMemberSelector {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    binding: Option<FixtureBindingSelector>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cross_ref: Option<FixtureCrossRefSelector>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    reads_member: Option<FixtureReadsMemberSelector>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    member_of_module: Option<FixtureMemberOfModuleSelector>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    passed_to_call: Option<FixturePassedToCallSelector>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    makes_decorate_call: Option<FixtureMakesDecorateCallSelector>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    intrinsic_alias: Option<FixtureIntrinsicAliasSelector>,
-}
-
-#[derive(Serialize)]
-struct FixtureBindingSelector {
-    name: &'static str,
-}
-
-#[derive(Clone, Serialize)]
-struct FixtureCrossRefSelector {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    references: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    aliases: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    kind: Option<&'static str>,
-}
-
-#[derive(Clone, Serialize)]
-struct FixtureReadsMemberSelector {
-    member: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    object: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    kind: Option<&'static str>,
-}
-
-#[derive(Clone, Serialize)]
-struct FixtureMemberOfModuleSelector {
-    module: &'static str,
-    member: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    kind: Option<&'static str>,
-}
-
-#[derive(Clone, Serialize)]
-struct FixturePassedToCallSelector {
-    callee_member: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    object: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    arg_index: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    kind: Option<&'static str>,
-}
-
-#[derive(Clone, Serialize)]
-struct FixtureMakesDecorateCallSelector {
-    class: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    member: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    kind: Option<&'static str>,
-}
-
-#[derive(Clone, Serialize)]
-struct FixtureIntrinsicAliasSelector {
-    property: &'static str,
-    referenced_by: &'static str,
-}
-
-#[derive(Serialize)]
-struct LogicalModuleBody {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    comment: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    note: Option<String>,
-    members: Vec<FixtureMember>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    source_matches: Vec<FixtureSourceMatchClaim>,
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    annotations: BTreeMap<String, FixtureBindingAnnotation>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    anonymous_statements: Vec<FixtureAnonymousStatement>,
-}
-
-#[derive(Serialize)]
-struct FixtureSourceMatchClaim {
-    #[serde(rename = "match")]
-    match_source: String,
-    bindings: Vec<FixtureSourceMatchBinding>,
-}
-
-#[derive(Serialize)]
-#[serde(untagged)]
-enum FixtureSourceMatchBinding {
-    Local(String),
-    Detailed { local: String, name: String },
-}
-
-impl FixtureSourceMatchBinding {
-    fn new(local: impl Into<String>, name: impl Into<String>) -> Self {
-        let local = local.into();
-        let name = name.into();
-        if local == name {
-            Self::Local(local)
-        } else {
-            Self::Detailed { local, name }
-        }
+/// Construct a `SourceMatchBinding` preserving the harness's
+/// `local == name ⇒ Local` wire-routing: `Local(local)` serializes as a bare
+/// string, `Detailed { local, name }` as `{ local, name }`.
+fn source_match_binding(local: impl Into<String>, name: impl Into<String>) -> SourceMatchBinding {
+    let local = local.into();
+    let name = name.into();
+    if local == name {
+        SourceMatchBinding::Local(local)
+    } else {
+        SourceMatchBinding::Detailed(SourceMatchBindingDetail {
+            local,
+            name: Some(name),
+        })
     }
 }
 
+/// Newtype over `spec::AnonymousStatement` so the harness keeps its
+/// `::exact` / `::alpha_all` / `.with_comment` / `.with_note` builder spelling.
+/// Serialization is delegated to the wrapped spec type.
 #[derive(Clone, Serialize)]
-#[serde(untagged)]
+#[serde(transparent)]
+struct FixtureAnonymousStatement(AnonymousStatement);
+
+/// Internal-only (never serialized) selector for `fixture_grouped_source_matches`
+/// describing which bindings a `BindingGroup` adopts from its matched source.
+#[derive(Clone)]
 enum FixtureAdoptNames {
     All(bool),
     Names(Vec<&'static str>),
 }
 
-#[derive(Serialize)]
-struct FixtureAnonymousStatement {
-    #[serde(rename = "match")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    match_source: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    source_match: Option<FixtureSourceMatch>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    comment: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    note: Option<String>,
-}
-
-#[derive(Clone, Serialize)]
-struct FixtureSourceMatch {
-    #[serde(rename = "match")]
-    match_source: String,
-}
-
-#[derive(Clone, Serialize)]
-struct MemberSourceMatch {
-    #[serde(skip)]
-    target_binding: Option<String>,
-    #[serde(rename = "match")]
-    match_source: String,
-}
-
-#[derive(Default, Serialize)]
-struct FixtureBindingAnnotation {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    comment: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    note: Option<String>,
-}
-
 impl FixtureAnonymousStatement {
     fn exact(match_source: impl Into<String>) -> Self {
-        Self {
+        Self(AnonymousStatement {
             match_source: Some(match_source.into()),
             source_match: None,
             comment: None,
             note: None,
-        }
+        })
     }
 
     fn alpha_all(match_source: impl Into<String>) -> Self {
-        Self {
+        Self(AnonymousStatement {
             match_source: None,
-            source_match: Some(FixtureSourceMatch {
+            source_match: Some(SourceMatch {
+                identifiers: SourceMatchIdentifierMode::AlphaAll,
+                target_binding: None,
                 match_source: match_source.into(),
             }),
             comment: None,
             note: None,
-        }
+        })
     }
 
     fn with_comment(mut self, comment: impl Into<String>) -> Self {
-        self.comment = Some(comment.into());
+        self.0.comment = Some(comment.into());
         self
     }
 
     fn with_note(mut self, note: impl Into<String>) -> Self {
-        self.note = Some(note.into());
+        self.0.note = Some(note.into());
         self
     }
 }
@@ -673,17 +559,20 @@ struct WriteJsTreeFixture<'a> {
     out_dir: &'a Path,
 }
 
-fn fixture_members(members: &[Member]) -> Vec<FixtureMember> {
+fn fixture_members(members: &[Member]) -> Vec<SpecMember> {
     members
         .iter()
         .filter(|m| m.source_match.is_none())
-        .map(|m| FixtureMember {
-            name: m.name,
-            selector: FixtureMemberSelector {
+        .map(|m| SpecMember {
+            name: Some(m.name.to_string()),
+            selector: MemberSelector {
                 binding: m
                     .binding
                     .or_else(|| (!m.has_selector()).then_some(m.name))
-                    .map(|name| FixtureBindingSelector { name }),
+                    .map(|name| BindingSelector {
+                        name: name.to_string(),
+                        kind: None,
+                    }),
                 cross_ref: m.cross_ref.clone(),
                 reads_member: m.reads_member.clone(),
                 member_of_module: m.member_of_module.clone(),
@@ -695,7 +584,7 @@ fn fixture_members(members: &[Member]) -> Vec<FixtureMember> {
         .collect()
 }
 
-fn fixture_member_source_matches(members: &[Member]) -> Vec<FixtureSourceMatchClaim> {
+fn fixture_member_source_matches(members: &[Member]) -> Vec<SourceMatchClaim> {
     members
         .iter()
         .filter_map(|member| {
@@ -711,15 +600,17 @@ fn fixture_member_source_matches(members: &[Member]) -> Vec<FixtureSourceMatchCl
                     }
                 }
             };
-            Some(FixtureSourceMatchClaim {
+            Some(SourceMatchClaim {
+                identifiers: SourceMatchIdentifierMode::default(),
                 match_source: source_match.match_source.clone(),
-                bindings: vec![FixtureSourceMatchBinding::new(local, member.name)],
+                bindings: vec![source_match_binding(local, member.name)],
+                note: None,
             })
         })
         .collect()
 }
 
-fn fixture_grouped_source_matches(binding_groups: &[BindingGroup]) -> Vec<FixtureSourceMatchClaim> {
+fn fixture_grouped_source_matches(binding_groups: &[BindingGroup]) -> Vec<SourceMatchClaim> {
     binding_groups
         .iter()
         .map(|group| {
@@ -737,7 +628,8 @@ fn fixture_grouped_source_matches(binding_groups: &[BindingGroup]) -> Vec<Fixtur
                 }
                 Some(FixtureAdoptNames::All(false)) => Vec::new(),
             };
-            FixtureSourceMatchClaim {
+            SourceMatchClaim {
+                identifiers: SourceMatchIdentifierMode::default(),
                 match_source: group.match_source.clone(),
                 bindings: locals
                     .into_iter()
@@ -748,9 +640,10 @@ fn fixture_grouped_source_matches(binding_groups: &[BindingGroup]) -> Vec<Fixtur
                             .copied()
                             .unwrap_or(local.as_str())
                             .to_string();
-                        FixtureSourceMatchBinding::new(local, public)
+                        source_match_binding(local, public)
                     })
                     .collect(),
+                note: None,
             }
         })
         .collect()
@@ -759,15 +652,16 @@ fn fixture_grouped_source_matches(binding_groups: &[BindingGroup]) -> Vec<Fixtur
 fn fixture_annotations(
     members: &[Member],
     binding_groups: &[BindingGroup],
-) -> BTreeMap<String, FixtureBindingAnnotation> {
+) -> BTreeMap<String, BindingAnnotation> {
     let mut annotations = BTreeMap::new();
     for member in members {
         if member.comment.is_some() || member.note.is_some() {
             annotations.insert(
                 member.name.to_string(),
-                FixtureBindingAnnotation {
+                BindingAnnotation {
                     comment: member.comment.clone(),
                     note: member.note.clone(),
+                    ..Default::default()
                 },
             );
         }
@@ -775,17 +669,12 @@ fn fixture_annotations(
     for group in binding_groups {
         for (local, comment) in &group.comments {
             let public = group.exports.get(local).copied().unwrap_or(local);
-            annotations
-                .entry(public.to_string())
-                .or_insert_with(FixtureBindingAnnotation::default)
-                .comment = Some((*comment).to_string());
+            annotations.entry(public.to_string()).or_default().comment =
+                Some((*comment).to_string());
         }
         for (local, note) in &group.notes {
             let public = group.exports.get(local).copied().unwrap_or(local);
-            annotations
-                .entry(public.to_string())
-                .or_insert_with(FixtureBindingAnnotation::default)
-                .note = Some((*note).to_string());
+            annotations.entry(public.to_string()).or_default().note = Some((*note).to_string());
         }
     }
     annotations
@@ -824,13 +713,16 @@ fn logical_module_entry_with_note(
         let mut source_matches = fixture_member_source_matches(members);
         source_matches.extend(fixture_grouped_source_matches(binding_groups));
         let annotations = fixture_annotations(members, binding_groups);
-        serde_json::to_value(LogicalModuleBody {
-            comment,
-            note,
+        serde_json::to_value(LogicalModule {
             members: fixture_members(members),
             source_matches,
             annotations,
-            anonymous_statements,
+            anonymous_statements: anonymous_statements
+                .into_iter()
+                .map(|FixtureAnonymousStatement(inner)| inner)
+                .collect(),
+            comment,
+            note,
         })
         .expect("logical module fixture must serialize")
     })
