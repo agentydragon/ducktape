@@ -84,6 +84,58 @@ range requests per file collapsed throughput, while `HF_XET_HIGH_PERFORMANCE=1`
 made no progress during a two-minute trial. <download.sh> preserves the productive
 settings.
 
+## Context capacity and numeric precision
+
+The checkpoint config advertises `max_position_embeddings=1048576` with a RoPE
+theta of 8,000,000. That is an architectural limit, not a practical capacity on
+wyrm2. The pinned Colibri runtime stores its residual stream, compressed MLA KV,
+DSA index KV, and attention workspaces as FP32. The INT4 expert weights and INT8
+MTP head do not reduce context memory. Eligible CUDA expert kernels quantize an
+activation row internally for their matrix multiply, then return FP32 output.
+
+For this checkpoint, one sequence slot costs:
+
+- 182,016 bytes/token for 79 layers of compressed MLA KV
+  (`(512 kv_lora + 64 rope) * 4` bytes per layer);
+- another 10,752 bytes/token when the 21 full DSA indexers are active; and
+- a conservative 114,688 bytes/token attention-reconstruction reserve.
+
+That is a 307,456-byte/token context-related safety slope. With the experiment's
+64 GB RAM budget, the C runtime's safety calculation leaves approximately:
+
+| Context | Context-related reserve | RAM expert slots/layer |
+| ------: | ----------------------: | ---------------------: |
+|      4K |                  1.3 GB |                     31 |
+|     32K |                 10.1 GB |                     25 |
+|     64K |                 20.1 GB |                     19 |
+|    128K |                 40.3 GB |                      5 |
+|    152K |                 46.7 GB |                      1 |
+
+Only 4K was executed in this run. A 64K context should fit without eliminating
+the RAM expert tier; 128K is the largest credible next experiment, but its much
+smaller warm tier will likely reduce the expert hit rate and decode speed. Around
+152K exhausts the current 64 GB budget's useful expert cache. An aggressive 80 GB
+process budget moves that edge to roughly 204K but leaves little host headroom.
+The advertised 1M context would require roughly 340 GB of RAM even with only one
+RAM expert slot per layer. Each additional server KV slot adds about 25.3 GB at
+128K because sequence KV state is independent.
+
+The pinned `resource_plan.py` estimate is slightly optimistic at long context: it
+counts MLA KV and the attention workspace but omits DSA index KV, or 10,752 bytes
+per token when the indexer is active. The C runtime's cache-cap calculation does
+include that state; use the values above when sizing this exact revision.
+
+Long context also changes the compute path. DSA begins selecting at most 2,048
+keys after position 2,048, but selected DSA attention disables Colibri's absorbed
+CUDA-attention path for those layers. The CUDA kernel itself rejects contexts over
+4,096 tokens, so all attention beyond 4K uses the CPU path even while expert and
+dense CUDA tiers remain enabled. Long-context prefill and decode were not
+benchmarked here.
+
+There is no FP16 or BF16 KV/activation switch in this revision. Such a change
+could recover about 20 GB of the 128K reservation, but would require an upstream
+storage/kernel implementation and new correctness validation.
+
 ## Results
 
 All rows use the same prompt, greedy token sampling, 4096-token context, and a
