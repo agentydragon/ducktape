@@ -21,7 +21,6 @@ adding it to cluster LiteLLM.
 - **Exact benchmark sequence:** <run_benchmarks.sh>
 - **Disposable upstream fixture-parser compatibility patch:**
   <benchmark_cuda_fixture.patch>
-- **Detailed probes, evidence, and stopping criteria:** <epistemic_state.md>
 
 The bundle snapshots the experimental environment; it does not vendor Colibri or
 the 383.8 GB checkpoint. Run the scripts from this directory on wyrm2. By default,
@@ -56,6 +55,35 @@ The NixOS and Proxmox declarations for the dedicated disk live in
 <../../../../../nix/nixos/hosts/wyrm2/default.nix> and
 <../../../../terraform/main/proxmox-vms.tf> respectively.
 
+## Preflight and checkpoint notes
+
+The 1.25 GB synthetic architecture fixture verified that the intended acceleration
+path worked before committing to the full checkpoint. On GPU 0 it measured 3.39
+tok/s CPU-streamed, 3.93 tok/s with dense CUDA, 17.95 tok/s with CUDA-pinned
+experts, and 65.88 tok/s with pinned experts plus dense CUDA. GPU 1's first passes
+were comparable. Later fixture repetitions slowed by roughly 2x while the
+eight-worker checkpoint transfer was active, so storage-heavy benchmarks should
+not overlap model downloads.
+
+Colibri's cold path can read roughly 11.4 GB of experts per decoded token. The
+dedicated filesystem measured 4.89 GB/s direct write and 7.39 GB/s over 5.1 GB of
+19 MB O_DIRECT random reads (`iobench FILE 19 256 8 1`), equivalent to about 2.7
+ms per block. <setup.sh> builds `c/iobench` alongside the CUDA engine so the gate
+can be repeated against a checkpoint shard or an incompressible fixture.
+
+The pinned checkpoint contains 150 root files totaling 383,760,077,466 bytes:
+141 main shards, three MTP shards, and six metadata/tokenizer files. `coli plan`
+can produce a plausible resource plan from a partial shard set, and `coli doctor`
+validates shards that are present rather than proving repository completeness.
+<verify_checkpoint.sh> therefore checks root file and shard counts, boundary shard
+names, total byte count, MTP sizes, and absence of incomplete files before a run.
+
+For the resumed Hugging Face Xet transfer, eight file workers and
+`HF_XET_NUM_CONCURRENT_RANGE_GETS=8` completed the checkpoint in 47m27s. Sixteen
+range requests per file collapsed throughput, while `HF_XET_HIGH_PERFORMANCE=1`
+made no progress during a two-minute trial. <download.sh> preserves the productive
+settings.
+
 ## Results
 
 All rows use the same prompt, greedy token sampling, 4096-token context, and a
@@ -73,7 +101,9 @@ the learned expert placement in sequence.
 MTP reduced main-model forwards, but verification touched a larger union of
 experts: 1,010.2 expert loads per emitted token rather than 862.5, erasing the
 speculative-decoding benefit in this storage hierarchy. Expert top-p was faster,
-but knowingly discards low-weight routed experts and still missed the gate.
+but knowingly discards low-weight routed experts and still missed the gate. That
+top-p run also exposed a placement imbalance: only 36.2 GB of experts landed in
+VRAM, while RSS rose to 70.5 GB and left about 10 GB of host memory free.
 
 ## Correctness and caveats
 
@@ -86,3 +116,17 @@ but knowingly discards low-weight routed experts and still missed the gate.
   `service / wait` profile line. Its legacy `disk` column records wait time.
 - The observed measurements predate any stable LiteLLM service. No cluster route
   was created because full-quality throughput failed the stated gate.
+
+## Deferred serving checks
+
+At the pinned Colibri revision, all 36 upstream OpenAI-server tests passed from the
+`c/` module root. They cover authentication, model listing, chat completions,
+streaming, request queues, and tool-call declaration, parsing, and streaming. This
+establishes the server contract in isolation; a real-model forced-tool request was
+not run, so function calling is not end-to-end validated.
+
+A temporary listener on wyrm2's Kubernetes node address was reachable from a live
+cluster LiteLLM pod. If this experiment is revisited, run an authenticated Colibri
+listener and expose it through a selectorless Service and EndpointSlice; preserve
+`/run/opengl-driver/lib` in the runtime library path. A Kubernetes version should
+use SSD-backed storage rather than the current HDD-backed Ollama model PVC.

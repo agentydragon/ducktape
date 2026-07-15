@@ -74,6 +74,7 @@ non-GGUF formats.
 | **TabbyAPI + ExLlamaV3**       | experimental in exllamav3, **not yet in TabbyAPI**                                                  | no                                                                                                                                                                                        | no                                             | PR-stage                                                                | EXL3 (best accuracy/bpw curve)                | community images                                 | no                                |
 | **MLC LLM** (TVM)              | yes, less battle-tested                                                                             | no                                                                                                                                                                                        | no                                             | n/a                                                                     | yes                                           | Docker                                           | niche                             |
 | **KTransformers**              | expert offload, not classic TP                                                                      | no                                                                                                                                                                                        | no                                             | basic                                                                   | mixed                                         | Docker                                           | niche; only matters if VRAM short |
+| **Colibri**                    | GPU/RAM hot expert tiers, not classic TP                                                            | no                                                                                                                                                                                        | no                                             | GLM-5.2 native                                                          | custom INT4 experts + INT8 MTP head           | host CLI/server, no Helm                         | purpose-built for GLM-5.2         |
 
 ## Format / quantization compatibility
 
@@ -141,6 +142,14 @@ build step and NVIDIA's tooling. NIM containers give an OpenAI REST surface
 with `reasoning_effort` via `openai_gptoss` parser. Pick if max throughput
 matters more than hackability.
 
+**Colibri** — specialized GLM-5.2 runtime that streams cold MoE experts from
+disk and places hot experts in RAM and across the GPUs without requiring P2P.
+Its OpenAI chat server supports authentication, streaming, queues, and tool calls,
+but not the Responses or Anthropic APIs. The wyrm2 experiment reached 0.28 tok/s
+at full quality and 0.37 tok/s with approximate expert top-p 0.7, so retain it as
+a reproducible experiment rather than a cluster backend. See
+<runs/2026-07-14_glm52_colibri/README.md>.
+
 **LiteLLM as a gateway** — independent of the engine choice, LiteLLM in
 front of vLLM/SGLang would synthesize a real Anthropic `/v1/messages`
 endpoint and paper over Responses-statefulness gaps with its own store.
@@ -159,7 +168,9 @@ based on API surface alone.
 4. **Ollama** — current setup; keep until we cut over. No good reason to
    stay long-term given the no-TP ceiling.
 5. **TensorRT-LLM / NIM** — only if benchmarks justify the operator complexity.
-6. **Aphrodite, LMDeploy, mistral.rs, TabbyAPI, MLC, KTransformers, TGI** — skip.
+6. **Colibri** — retain the reproducible GLM-5.2 experiment, but do not deploy
+   behind LiteLLM at the measured sub-0.5 tok/s throughput.
+7. **Aphrodite, LMDeploy, mistral.rs, TabbyAPI, MLC, KTransformers, TGI** — skip.
 
 ## Open questions
 

@@ -7,7 +7,7 @@ REPO=mateogrgic/GLM-5.2-colibri-int4-with-int8-mtp
 REVISION=3cc8db99b1b13fc79325d987ba3c1c430766b3b8
 
 mkdir -p "$MODEL"
-HF_XET_NUM_CONCURRENT_RANGE_GETS=8 \
+env -u HF_XET_HIGH_PERFORMANCE HF_XET_NUM_CONCURRENT_RANGE_GETS=8 \
   nix develop "$RUN_DIR" --command env -u PYTHONPATH \
   hf download "$REPO" \
   --revision "$REVISION" \

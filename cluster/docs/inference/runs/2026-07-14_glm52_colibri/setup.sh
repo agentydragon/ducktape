@@ -29,6 +29,7 @@ nix develop "$CHECKOUT" --command bash -c '
     CUDA_HOME="$cuda_home" CUDA_ARCH=sm_120
   env -u NIX_ENFORCE_NO_NATIVE make -C c glm \
     CUDA=1 CUDA_HOME="$cuda_home" CUDA_ARCH=sm_120 ARCH=native
+  make -C c iobench
 ' bash "$CHECKOUT"
 
 echo "Colibri $REVISION built at $CHECKOUT/c/glm"
