@@ -3,6 +3,7 @@
 import asyncio
 import importlib
 import os
+import shutil
 import subprocess
 import textwrap
 from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
@@ -10,15 +11,12 @@ from pathlib import Path
 from typing import Any
 
 import litellm
+import pytest_bazel
 from litellm.proxy.proxy_server import ProxyConfig
 from litellm.types.utils import GenericStreamingChunk
 
-from tana.litellm_proxy.provider import TanaChatResult
+from tana.litellm_proxy.provider import TanaChatResult, TanaLiteLLM
 from util.bazel.runfiles import get_required_path
-
-
-def _get_tana_handler() -> Any:
-    return importlib.import_module("tana.litellm_proxy.custom_handler").tana_handler
 
 
 def test_litellm_proxy_server_imports() -> None:
@@ -50,6 +48,9 @@ def test_litellm_proxy_binary_imports_server(tmp_path: Path) -> None:
 
 
 def test_litellm_proxy_config_registers_custom_provider_before_router_build(tmp_path: Path) -> None:
+    handler_path = tmp_path / "tana/litellm_proxy/custom_handler.py"
+    handler_path.parent.mkdir(parents=True)
+    shutil.copy(get_required_path("ducktape/tana/litellm_proxy/custom_handler.py"), handler_path)
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         textwrap.dedent(
@@ -57,7 +58,7 @@ def test_litellm_proxy_config_registers_custom_provider_before_router_build(tmp_
             model_list:
               - model_name: gpt-4o-mini
                 litellm_params:
-                  model: tana/gpt-4o-mini
+                  model: tana/tana/gpt-4o-mini
                   custom_llm_provider: tana
                 model_info:
                   mode: chat
@@ -79,7 +80,7 @@ def test_litellm_proxy_config_registers_custom_provider_before_router_build(tmp_
                 messages: Sequence[Mapping[str, Any]],
                 optional_params: Mapping[str, Any] | None = None,
             ) -> TanaChatResult:
-                assert model == "gpt-4o-mini"
+                assert model == "tana/gpt-4o-mini"
                 assert messages == [{"role": "user", "content": "hi"}]
                 return TanaChatResult(text="pong")
 
@@ -104,6 +105,7 @@ def test_litellm_proxy_config_registers_custom_provider_before_router_build(tmp_
         original_provider_list = list(litellm.provider_list)
         original_custom_providers = list(litellm._custom_providers)
         original_model_list_set = set(litellm.model_list_set)
+        configured_handler: TanaLiteLLM | None = None
         original_client = None
         try:
             litellm.custom_provider_map = []
@@ -115,27 +117,32 @@ def test_litellm_proxy_config_registers_custom_provider_before_router_build(tmp_
 
             assert "tana" in litellm.provider_list
             assert "tana" in litellm.model_list_set
-            assert litellm.get_llm_provider(model="tana/gpt-4o-mini")[1] == "tana"
+            assert litellm.get_llm_provider(model="tana/tana/gpt-4o-mini")[1] == "tana"
             assert router is not None
             deployments = router.get_model_list(model_name="gpt-4o-mini")
             assert deployments is not None
             assert len(deployments) == 1
-            assert deployments[0]["litellm_params"]["model"] == "tana/gpt-4o-mini"
+            assert deployments[0]["litellm_params"]["model"] == "tana/tana/gpt-4o-mini"
             assert deployments[0]["litellm_params"]["custom_llm_provider"] == "tana"
 
-            tana_handler = _get_tana_handler()
-            original_client = tana_handler._client
-            tana_handler._client = FakeClient()
+            handler = next(item["custom_handler"] for item in litellm.custom_provider_map if item["provider"] == "tana")
+            assert isinstance(handler, TanaLiteLLM)
+            configured_handler = handler
+            original_client = configured_handler._client
+            configured_handler._client = FakeClient()
             response = await router.acompletion(model="gpt-4o-mini", messages=[{"role": "user", "content": "hi"}])
 
             assert response.choices[0].message.content == "pong"
         finally:
-            if original_client is not None:
-                tana_handler = _get_tana_handler()
-                tana_handler._client = original_client
+            if configured_handler is not None and original_client is not None:
+                configured_handler._client = original_client
             litellm.custom_provider_map = original_custom_provider_map
             litellm.provider_list = original_provider_list
             litellm._custom_providers = original_custom_providers
             litellm.model_list_set = original_model_list_set
 
     asyncio.run(load_config())
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

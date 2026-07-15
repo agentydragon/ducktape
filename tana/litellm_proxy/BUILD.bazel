@@ -129,6 +129,7 @@ py_test(
         ":provider",
         "//util/bazel:runfiles",
         LITELLM_PROXY_PIP + "litellm",
+        "@pypi//pytest_bazel",
     ] + LITELLM_PROXY_RUNTIME_DEPS,
 )
 

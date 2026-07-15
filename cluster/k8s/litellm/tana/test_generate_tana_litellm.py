@@ -24,6 +24,9 @@ def test_tana_litellm_exposes_every_responding_model_once() -> None:
     expected = [model.model_id for model in TANA_LLM_PROXY_RESPONDING_MODELS]
     assert configured == expected
     assert len(configured) == len(set(configured))
+    assert [entry["litellm_params"]["model"] for entry in config["model_list"]] == [
+        f"tana/tana/{model.model_id}" for model in TANA_LLM_PROXY_RESPONDING_MODELS
+    ]
     assert all(entry["litellm_params"]["custom_llm_provider"] == "tana" for entry in config["model_list"])
 
 

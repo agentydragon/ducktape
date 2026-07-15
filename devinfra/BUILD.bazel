@@ -21,6 +21,15 @@ py_library(
     deps = ["//util/bazel:workspace"],
 )
 
+py_test(
+    name = "test_pytest_main",
+    srcs = ["test_pytest_main.py"],
+    deps = [
+        ":pytest_main",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # === Gazelle (Python BUILD file generator) ===
 
 # Extract import metadata from wheels for Gazelle's Python import resolution

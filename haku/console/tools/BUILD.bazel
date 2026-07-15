@@ -74,7 +74,6 @@ py_test(
     deps = [
         ":grocy",
         "//:conftest",
-        "//haku/console:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)

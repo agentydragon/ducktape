@@ -309,10 +309,8 @@ class BazelWorkspace:
         # approach would be to use `bb execute --input_root . --output stdio`
         # which gives clean separated stdout/stderr, but it uploads the whole
         # repo each time and doesn't benefit from bbr's runner recycling.
-        def _is_label(line: str) -> bool:
-            return line.startswith((_PKG_SEP, _REPO_SIGIL))
-
-        return [BazelLabel.parse(line) for line in result.stdout.splitlines() if _is_label(line)]
+        labels = (BazelLabel.try_parse(line) for line in result.stdout.splitlines())
+        return [label for label in labels if label is not None]
 
     def test(self, targets: list[str], *, check_up_to_date: bool = False, timeout: int | None = None) -> int:
         """Run ``bazel test`` and return the exit code."""

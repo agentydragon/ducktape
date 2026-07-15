@@ -13,6 +13,7 @@ from typing import Any
 from unittest.mock import Mock
 
 import pytest
+import pytest_bazel
 
 from haku.console.tools.grocy import GrocyShoppingListItem, grocy_sf_reference
 
@@ -100,17 +101,17 @@ class _FakeGrocyClient:
 async def test_reference_flattens_shopping_list_items(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _FakeGrocyClient()
 
-    async def _fake_client(_server_id: str, _request: Any, _settings: Any, _oauth_store: Any) -> _FakeGrocyClient:
+    async def _fake_client(_server_id: str, _actor: Any, _settings: Any, _oauth_store: Any) -> _FakeGrocyClient:
         return fake
 
     monkeypatch.setattr("haku.console.tools.grocy.operator_authenticated_client", _fake_client)
 
-    # The endpoint only touches request/settings/oauth_store through `operator_authenticated_client`
+    # The endpoint only touches actor/settings/oauth_store through `operator_authenticated_client`
     # (patched above), so plain Mock stand-ins suffice; typed `Any` to satisfy both mypy and pyright.
-    request: Any = Mock()
+    actor: Any = Mock()
     settings: Any = Mock()
     oauth_store: Any = Mock()
-    response = await grocy_sf_reference(request=request, settings=settings, oauth_store=oauth_store)
+    response = await grocy_sf_reference(actor=actor, settings=settings, oauth_store=oauth_store)
 
     # `shopping_list_get` is called once per list, in shopping_lists_list order.
     get_calls = [args for name, args in fake.calls if name == "shopping_list_get"]
@@ -125,3 +126,7 @@ async def test_reference_flattens_shopping_list_items(monkeypatch: pytest.Monkey
     # The other reference maps still populate.
     assert [sl.name for sl in response.shopping_lists] == ["Weekly", "Costco run"]
     assert [p.name for p in response.products] == ["Milk"]
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

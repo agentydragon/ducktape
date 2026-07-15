@@ -161,9 +161,6 @@ def _run_prepare_commit_msg(argv: list[str]) -> int:
 # commit-msg stage: enforce BAZEL_TEST_INVOCATIONS= tag
 _TEST_TAG_ENV_VAR = "DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG"
 
-# TODO: Re-enable by default once pytest_main_check is faster.
-_PYTEST_MAIN_CHECK_ENV_VAR = "DUCKTAPE_PYTEST_MAIN_CHECK"
-
 
 def _run_commit_msg(argv: list[str]) -> int:
     if os.environ.get(_TEST_TAG_ENV_VAR) not in ("1", "true"):
@@ -187,7 +184,8 @@ def main_pre_commit() -> int:
 
 
 def main_pytest_main_check() -> int:
-    if os.environ.get(_PYTEST_MAIN_CHECK_ENV_VAR) not in ("1", "true"):
+    changed_files = [Path(f) for f in sys.argv[1:]]
+    if changed_files and not any(path.suffix == ".py" for path in changed_files):
         return 0
 
     repo = pygit2.Repository(".")
@@ -197,7 +195,7 @@ def main_pytest_main_check() -> int:
     workspace = BazelWorkspace(root=repo_root, backend=detect_bazel_backend())
     bazel_index = build_bazel_index(workspace)
 
-    files = [Path(f) for f in sys.argv[1:]] if sys.argv[1:] else get_all_files(repo)
+    files = changed_files or get_all_files(repo)
     error = asyncio.run(run_pytest_main_check(files, repo_root, bazel_index))
     if error:
         print(error, file=sys.stderr)

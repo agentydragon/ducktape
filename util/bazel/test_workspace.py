@@ -161,6 +161,7 @@ def test_query_filters_bbr_log_lines(tmp_path: Path) -> None:
         "From https://github.com/agentydragon/ducktape\n"
         " * branch            abc123 -> FETCH_HEAD\n"
         "\x1b[32mLoading: \x1b[m12 packages loaded\n"
+        "//\n"
         "//devinfra/precommit:test_commit_tag.py\n"
         "//util/bazel:test_workspace.py\n"
         "@pypi//pytest:pkg\n"
