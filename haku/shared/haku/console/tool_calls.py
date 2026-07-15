@@ -1,10 +1,9 @@
-"""The haku-console tool-call API contract.
+"""The haku-console tool-call wire contract.
 
-The request/response models for haku-console's MCP tool-call approval endpoints
-(`/api/tool-calls`, `/api/approvals/*`). Single source of truth for both repos: haku-console
-(ducktape) serves these; haku-ui's backend (haku-state) parses them when it proxies operator
-tool calls to the console. haku-ui layers its own `state_request_id`/`ToolRequestDoc` concept on
-top of `SubmitToolCallRequest` — that stays in haku-state, since the console never sees it.
+Single source of truth for the records haku-console exposes to its operator UI and the metadata
+its agent-facing MCP server advertises. Haku-state consumes the MCP metadata to resolve an authored
+``(server_id, tool_name)`` request to the exact reflected MCP tool without duplicating name-mangling
+rules.
 """
 
 from __future__ import annotations
@@ -15,6 +14,19 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+MCP_TOOL_META_KEY = "works.allegedly.haku/tool"
+MCP_TOOL_CALL_META_KEY = "works.allegedly.haku/tool-call"
+
+
+class McpProxyToolMetadata(BaseModel):
+    server_id: str
+    upstream_tool_name: str
+    approval_mode: Literal["passthrough", "approval_required"]
+
+
+class McpToolCallMetadata(BaseModel):
+    tool_call_id: str
 
 
 class ToolCallStatus(StrEnum):

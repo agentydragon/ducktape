@@ -59,7 +59,15 @@ from haku.console.tool_call_service import (
     ToolCallNotFoundError,
     ToolCallStateConflictError,
 )
-from haku.console.tool_calls import SubmitToolCallRequest, ToolCallRecord, ToolCallStatus
+from haku.console.tool_calls import (
+    MCP_TOOL_CALL_META_KEY,
+    MCP_TOOL_META_KEY,
+    McpProxyToolMetadata,
+    McpToolCallMetadata,
+    SubmitToolCallRequest,
+    ToolCallRecord,
+    ToolCallStatus,
+)
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 
@@ -156,19 +164,32 @@ def _envelope_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
 def _record_to_result(record: ToolCallRecord, settings: Settings) -> ToolResult:
     """Map a (possibly non-terminal) tool-call record to an MCP tool result.
 
-    Terminal ok → the upstream result; error/denied → ``ToolError``; still pending/running → a
-    promise (pending id + approval url).
+    Terminal ok → the upstream result; error/denied → an MCP tool error; still pending/running →
+    a promise (pending id + approval url). Every outcome carries the canonical tool-call id in MCP
+    result metadata so non-interactive clients can resolve the audit record without a second
+    admission protocol.
     """
+    result_meta = {
+        MCP_TOOL_CALL_META_KEY: McpToolCallMetadata(tool_call_id=record.tool_call_id).model_dump(mode="json")
+    }
     if record.status == ToolCallStatus.OK:
         upstream = mcp_types.CallToolResult.model_validate(record.result or {"content": []})
         content: list[mcp_types.ContentBlock] = list(upstream.content) or [
             mcp_types.TextContent(type="text", text="(tool returned no content)")
         ]
-        return ToolResult(content=content, structured_content=upstream.structuredContent)
+        return ToolResult(content=content, structured_content=upstream.structuredContent, meta=result_meta)
     if record.status == ToolCallStatus.ERROR:
-        raise ToolError(record.error or "tool call failed")
+        return ToolResult(
+            content=[mcp_types.TextContent(type="text", text=record.error or "tool call failed")],
+            meta=result_meta,
+            is_error=True,
+        )
     if record.status == ToolCallStatus.DENIED:
-        raise ToolError(f"denied: {record.denial_reason or 'no reason given'}")
+        return ToolResult(
+            content=[mcp_types.TextContent(type="text", text=f"denied: {record.denial_reason or 'no reason given'}")],
+            meta=result_meta,
+            is_error=True,
+        )
     url = _tool_call_url(settings, record.tool_call_id)
     approve = f" Open {url} to approve." if url else ""
     promise = ToolCallPromise(
@@ -183,6 +204,7 @@ def _record_to_result(record: ToolCallRecord, settings: Settings) -> ToolResult:
     return ToolResult(
         content=[mcp_types.TextContent(type="text", text=promise.message)],
         structured_content=promise.model_dump(mode="json"),
+        meta=result_meta,
     )
 
 
@@ -250,6 +272,13 @@ def _build_proxy_tool(context: ConsoleMcpContext, server_id: str, tool: Any, *, 
         server_id=server_id,
         upstream_tool_name=tool.name,
         passthrough=passthrough,
+        meta={
+            MCP_TOOL_META_KEY: McpProxyToolMetadata(
+                server_id=server_id,
+                upstream_tool_name=tool.name,
+                approval_mode="passthrough" if passthrough else "approval_required",
+            ).model_dump(mode="json")
+        },
     )
 
 

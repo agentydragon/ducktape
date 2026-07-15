@@ -28,7 +28,13 @@ from haku.console.conftest import console_settings, operator_session_cookie, wri
 from haku.console.operator_identity import VerifiedExternalIdentity
 from haku.console.tool_call_actor import OperatorActor, ToolCallActor
 from haku.console.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
-from haku.console.tool_calls import SubmitToolCallRequest, ToolCallRecord, ToolCallStatus
+from haku.console.tool_calls import (
+    MCP_TOOL_CALL_META_KEY,
+    MCP_TOOL_META_KEY,
+    SubmitToolCallRequest,
+    ToolCallRecord,
+    ToolCallStatus,
+)
 from haku.console.tools import gmail as gmail_tools, google_calendar as calendar_tools
 from haku.console.tools.google_calendar_client import CalendarEvent
 from mcp_infra.persistence import PostgresPersistence
@@ -138,11 +144,21 @@ async def test_tool_surface_splits_pass_through_and_request(harness: _Harness) -
     # Gmail reads are transparent pass-through: server-prefixed name, no envelope nesting.
     assert "gmail_labels_list" in tools
     assert "input" not in tools["gmail_labels_list"].inputSchema.get("properties", {})
+    assert tools["gmail_labels_list"].meta[MCP_TOOL_META_KEY] == {
+        "server_id": "gmail",
+        "upstream_tool_name": "labels_list",
+        "approval_mode": "passthrough",
+    }
     # Gmail writes are approval-request tools with the envelope.
     assert "gmail_drafts_create" in tools
     envelope = tools["gmail_drafts_create"].inputSchema
     assert set(envelope["required"]) == {"input", "rationale"}
     assert set(envelope["properties"]) == {"input", "title", "rationale", "wait_for_approval_ms"}
+    assert tools["gmail_drafts_create"].meta[MCP_TOOL_META_KEY] == {
+        "server_id": "gmail",
+        "upstream_tool_name": "drafts_create",
+        "approval_mode": "approval_required",
+    }
     # The read tools are present.
     assert {"get_tool_call", "list_tool_calls"} <= tools.keys()
     assert "actor" not in tools["get_tool_call"].inputSchema.get("properties", {})
@@ -197,6 +213,7 @@ async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harn
 
     assert result.structured_content is not None
     assert result.structured_content["labels"][0]["name"] == "haku/triaged"
+    assert result.meta is not None
     calls = harness.tool_calls.list_tool_calls(actor=OperatorActor(operator_id=harness.operator_id))
     assert len(calls) == 1
     assert calls[0].status == ToolCallStatus.OK
@@ -204,6 +221,7 @@ async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harn
     # The pass-through call is audited as the static agent that presented the bearer.
     assert calls[0].caller.kind == "agent"
     assert calls[0].caller.display_name == "Haku"
+    assert result.meta[MCP_TOOL_CALL_META_KEY] == {"tool_call_id": calls[0].tool_call_id}
 
 
 async def test_calendar_read_is_transparent_and_audited(harness: _Harness) -> None:
@@ -232,6 +250,8 @@ async def test_request_tool_returns_promise_with_deep_link(harness: _Harness) ->
         assert promise is not None
         assert promise["status"] == ToolCallStatus.PENDING_APPROVAL
         tool_call_id = promise["tool_call_id"]
+        assert result.meta is not None
+        assert result.meta[MCP_TOOL_CALL_META_KEY] == {"tool_call_id": tool_call_id}
         assert tool_call_id.startswith("tc_")
         assert promise["url"] == f"https://haku.test/tool-calls/{tool_call_id}"
 
