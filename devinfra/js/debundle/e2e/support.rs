@@ -1886,7 +1886,15 @@ pub fn write_atomic_unit_fixture(root: &Path) -> (PathBuf, PathBuf) {
 }
 
 pub fn write_yaml_file<T: Serialize + ?Sized>(path: &Path, value: &T) {
-    fs::write(path, format!("{}\n", serde_yaml::to_string(value).unwrap())).unwrap();
+    // `serde_json` is built with `arbitrary_precision` workspace-wide (feature
+    // unification), which makes `serde_yaml` emit a `serde_json::Value::Number`
+    // as a map — so a spec carrying a number (e.g. `passed_to_call.arg_index`)
+    // round-trips as garbage. Serialize to JSON first (serde_json serializes its
+    // own arbitrary-precision numbers correctly), then re-emit as YAML. JSON is a
+    // YAML subset, so the debundler's serde_yaml reader parses it unchanged.
+    let json = serde_json::to_string(value).expect("serialize spec to JSON");
+    let yaml: serde_yaml::Value = serde_yaml::from_str(&json).expect("reparse JSON as YAML");
+    fs::write(path, format!("{}\n", serde_yaml::to_string(&yaml).unwrap())).unwrap();
 }
 
 pub fn read_json<T: DeserializeOwned>(path: &Path) -> T {
