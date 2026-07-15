@@ -24,10 +24,10 @@ Both buckets run through the single ``submit_and_wait`` path.
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import datetime
 import logging
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -38,6 +38,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.auth.auth import AuthProvider
 from fastmcp.server.providers import Provider
 from fastmcp.tools import Tool, ToolResult
+from fastmcp.utilities.versions import VersionSpec
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -45,7 +46,7 @@ from haku.console.auto_approval import is_unconditionally_auto_approved
 from haku.console.config import Settings
 from haku.console.mcp_approval import DegradedServerMetadata, McpMetadataProvider, metadata_for_operator
 from haku.console.mcp_auth.fastmcp_adapter import get_agent_actor
-from haku.console.mcp_config import McpServerNotFoundError, _load_servers
+from haku.console.mcp_config import McpServerEntry, McpServerNotFoundError, _load_servers, server_tool_prefix
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.tool_call_actor import AgentActor
 from haku.console.tool_call_service import (
@@ -64,7 +65,6 @@ from haku.console.tool_calls import (
     ToolCallStatus,
 )
 from mcp_infra.naming import build_mcp_function
-from mcp_infra.prefix import MCPMountPrefix
 
 logger = logging.getLogger(__name__)
 
@@ -130,11 +130,6 @@ class ApprovalRequestEnvelope(BaseModel):
             f"(default {DEFAULT_WAIT_MS}, max {MAX_WAIT_MS})."
         ),
     )
-
-
-def _sanitize_prefix(server_id: str) -> str:
-    """Server id → a tool-name-safe prefix (``kubectl-passthrough-mcp`` → ``kubectl_passthrough_mcp``)."""
-    return re.sub(r"[^a-z0-9]+", "_", server_id.lower()).strip("_")
 
 
 def _tool_call_url(settings: Settings, tool_call_id: str) -> str | None:
@@ -248,7 +243,7 @@ def _build_proxy_tool(context: ConsoleMcpContext, server_id: str, tool: Any, *, 
     schema = tool.input_schema if isinstance(tool.input_schema, dict) and tool.input_schema else {"type": "object"}
     # One uniform name format for both buckets — approval semantics live in the schema and
     # description, never in the name (operator decision 2026-07-13).
-    name = build_mcp_function(MCPMountPrefix(_sanitize_prefix(server_id)), tool.name)
+    name = build_mcp_function(server_tool_prefix(server_id), tool.name)
     if passthrough:
         parameters = schema
         description = tool.description or ""
@@ -286,31 +281,52 @@ class OperatorToolProvider(Provider):
         super().__init__()
         self._context = context
 
+    async def _server_tools(self, server: McpServerEntry, actor: AgentActor) -> list[Tool]:
+        meta = await metadata_for_operator(
+            operator_id=actor.operator_id,
+            server=server,
+            metadata_provider=self._context.metadata_provider,
+            oauth_store=self._context.oauth_store,
+        )
+        if isinstance(meta, DegradedServerMetadata):
+            logger.info(
+                "mcp_server: hiding unavailable server %s from Operator %s: %s",
+                server.id,
+                actor.operator_id,
+                meta.degraded_reason,
+            )
+            return []
+        return [
+            _build_proxy_tool(
+                self._context, server.id, tool, passthrough=is_unconditionally_auto_approved(server.id, tool.name)
+            )
+            for tool in meta.tools
+        ]
+
     async def _list_tools(self) -> Sequence[Tool]:
         actor = get_agent_actor()
-        tools: list[Tool] = []
-        for server in _load_servers(self._context.settings):
-            meta = await metadata_for_operator(
-                operator_id=actor.operator_id,
-                server=server,
-                metadata_provider=self._context.metadata_provider,
-                oauth_store=self._context.oauth_store,
-            )
-            if isinstance(meta, DegradedServerMetadata):
-                logger.info(
-                    "mcp_server: hiding unavailable server %s from Operator %s: %s",
-                    server.id,
-                    actor.operator_id,
-                    meta.degraded_reason,
-                )
-                continue
-            tools.extend(
-                _build_proxy_tool(
-                    self._context, server.id, tool, passthrough=is_unconditionally_auto_approved(server.id, tool.name)
-                )
-                for tool in meta.tools
-            )
-        return tools
+        # gather preserves input order even when servers finish reflection out of order.
+        reflected = await asyncio.gather(
+            *(self._server_tools(server, actor) for server in _load_servers(self._context.settings))
+        )
+        return [tool for server_tools in reflected for tool in server_tools]
+
+    async def _get_tool(self, name: str, version: VersionSpec | None = None) -> Tool | None:
+        actor = get_agent_actor()
+        candidates = [
+            server
+            for server in _load_servers(self._context.settings)
+            if name.startswith(f"{server_tool_prefix(server.id)}_")
+        ]
+        if not candidates:
+            return None
+        # A longer namespace is the more specific match (for example, ``google_calendar``
+        # rather than ``google``). Startup validation guarantees exact namespace uniqueness.
+        server = max(candidates, key=lambda candidate: len(server_tool_prefix(candidate.id)))
+        for tool in await self._server_tools(server, actor):
+            if tool.name == name and (version is None or version.matches(tool.version)):
+                return tool
+        return None
 
     async def get_tasks(self) -> Sequence[Tool]:
         # Proxy tools forbid background tasks, and startup has no request actor.

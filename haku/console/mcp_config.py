@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, SecretStr, field_validator, model_validat
 
 from haku.console.agents.naming import normalize_agent_name
 from haku.console.config import Settings
+from mcp_infra.prefix import MCPMountPrefix
 
 
 class McpServerNotFoundError(LookupError):
@@ -93,7 +94,18 @@ class ConsoleConfigFile(BaseModel):
     static_agents: list[StaticAgentEntry] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _require_unique_static_agent_identity(self) -> ConsoleConfigFile:
+    def _require_unique_identity(self) -> ConsoleConfigFile:
+        server_ids: set[str] = set()
+        server_prefixes: set[MCPMountPrefix] = set()
+        for server in self.mcp.servers:
+            prefix = server_tool_prefix(server.id)
+            if server.id in server_ids:
+                raise ValueError(f"duplicate MCP server id {server.id!r}")
+            if prefix in server_prefixes:
+                raise ValueError(f"duplicate MCP server tool prefix {prefix!r}")
+            server_ids.add(server.id)
+            server_prefixes.add(prefix)
+
         agent_ids: set[UUID] = set()
         name_keys: set[str] = set()
         for agent in self.static_agents:
@@ -105,6 +117,12 @@ class ConsoleConfigFile(BaseModel):
             agent_ids.add(agent.agent_id)
             name_keys.add(name_key)
         return self
+
+
+def server_tool_prefix(server_id: str) -> MCPMountPrefix:
+    """Return the configured server's canonical tool namespace."""
+    sanitized = re.sub(r"[^a-z0-9]+", "_", server_id.lower()).strip("_")
+    return MCPMountPrefix(sanitized)
 
 
 def _load_config(settings: Settings) -> ConsoleConfigFile:

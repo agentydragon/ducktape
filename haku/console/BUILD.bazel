@@ -53,6 +53,7 @@ py_library(
     deps = [
         ":config",
         "//haku/console/agents:naming",
+        "//mcp_infra:prefix",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pyyaml",
@@ -652,6 +653,9 @@ py_test(
         ":app",
         ":config",
         ":conftest",
+        ":mcp_approval",
+        ":mcp_config",
+        ":mcp_server",
         ":operator_identity",
         ":tool_call_service",
         "//:conftest",

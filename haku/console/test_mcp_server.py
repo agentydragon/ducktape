@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import html
@@ -11,6 +12,7 @@ from collections.abc import AsyncGenerator, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock
 from uuid import UUID
 
@@ -22,11 +24,14 @@ from fastmcp.exceptions import ToolError
 from pydantic import SecretStr, ValidationError
 
 from gmail_api.labels import GmailLabel, LabelsListResponse, LabelType
+from haku.console import mcp_server as mcp_server_module
 from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig, OperatorOidcConfig
 from haku.console.conftest import console_settings, operator_session_cookie, write_config
+from haku.console.mcp_approval import AliveServerMetadata, AliveToolMetadata
+from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.operator_identity import VerifiedExternalIdentity
-from haku.console.tool_call_actor import OperatorActor, ToolCallActor
+from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
 from haku.console.tool_calls import (
     MCP_TOOL_CALL_META_KEY,
@@ -461,6 +466,103 @@ async def test_tool_surface_tracks_each_operators_connected_servers(
                 assert "standin_echo" in {tool.name for tool in await client.list_tools()}
 
 
+async def test_tool_discovery_is_concurrent_and_preserves_config_order(
+    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_file = write_config(
+        tmp_path / "concurrent-tools.yaml",
+        {
+            "static_agents": _STATIC_AGENTS,
+            "mcp": {
+                "servers": [
+                    {"id": "beta", "server_url": "https://beta.invalid/mcp"},
+                    {"id": "alpha", "server_url": "https://alpha.invalid/mcp"},
+                ]
+            },
+        },
+    )
+    app = create_app(console_settings(migrated_db_url, config_file=config_file))
+    started: set[str] = set()
+    both_started = asyncio.Event()
+
+    async def metadata_for_operator(**kwargs: Any) -> AliveServerMetadata:
+        server = kwargs["server"]
+        server_id = str(server.id)
+        started.add(server_id)
+        if len(started) == 2:
+            both_started.set()
+        await asyncio.wait_for(both_started.wait(), timeout=1)
+        if server_id == "beta":
+            await asyncio.sleep(0.01)
+        return AliveServerMetadata(
+            server_id=server_id,
+            title=server_id,
+            tools=[AliveToolMetadata(name="echo", input_schema={"type": "object"})],
+        )
+
+    monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
+    with serve_app_sync(app) as base:
+        async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
+            proxy_names = [tool.name for tool in await client.list_tools() if tool.name.endswith("_echo")]
+
+    assert proxy_names == ["beta_echo", "alpha_echo"]
+
+
+async def test_tool_dispatch_reflects_only_target_server(
+    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_file = write_config(
+        tmp_path / "targeted-dispatch.yaml",
+        {
+            "static_agents": _STATIC_AGENTS,
+            "mcp": {
+                "servers": [
+                    {"id": "alpha", "server_url": "https://alpha.invalid/mcp"},
+                    {"id": "beta", "server_url": "https://beta.invalid/mcp"},
+                ]
+            },
+        },
+    )
+    settings = console_settings(migrated_db_url, config_file=config_file)
+    app = create_app(settings)
+    reflected: list[str] = []
+
+    async def metadata_for_operator(**kwargs: Any) -> AliveServerMetadata:
+        server = kwargs["server"]
+        server_id = str(server.id)
+        reflected.append(server_id)
+        return AliveServerMetadata(
+            server_id=server_id,
+            title=server_id,
+            tools=[AliveToolMetadata(name="echo", input_schema={"type": "object"})],
+        )
+
+    monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
+    monkeypatch.setattr(
+        mcp_server_module,
+        "get_agent_actor",
+        lambda: AgentActor(
+            agent_id=UUID("40000000-0000-4000-8000-000000000001"),
+            operator_id=UUID("10000000-0000-4000-8000-000000000001"),
+            binding_id=UUID("50000000-0000-4000-8000-000000000001"),
+        ),
+    )
+    provider = mcp_server_module.OperatorToolProvider(
+        mcp_server_module.ConsoleMcpContext(
+            settings=settings,
+            tool_calls=app.state.tool_call_service,
+            oauth_store=app.state.mcp_operator_oauth_store,
+            metadata_provider=app.state.tool_call_metadata_provider,
+        )
+    )
+
+    tool = await provider._get_tool("beta_echo")
+
+    assert tool is not None
+    assert tool.name == "beta_echo"
+    assert reflected == ["beta"]
+
+
 @dataclass(frozen=True)
 class _MockOidc:
     origin: str
@@ -710,6 +812,16 @@ def test_duplicate_static_agent_ids_fail_startup(migrated_db_url: str, tmp_path:
     )
     with pytest.raises(ValidationError, match="duplicate static Agent id"):
         create_app(console_settings(migrated_db_url, config_file=config_file))
+
+
+def test_duplicate_mcp_server_ids_fail_config_validation() -> None:
+    with pytest.raises(ValidationError, match="duplicate MCP server id 'grocy'"):
+        ConsoleConfigFile.model_validate({"mcp": {"servers": [{"id": "grocy"}, {"id": "grocy"}]}})
+
+
+def test_duplicate_sanitized_mcp_server_prefixes_fail_config_validation() -> None:
+    with pytest.raises(ValidationError, match="duplicate MCP server tool prefix 'grocy_sf'"):
+        ConsoleConfigFile.model_validate({"mcp": {"servers": [{"id": "grocy-sf"}, {"id": "grocy_sf"}]}})
 
 
 def test_duplicate_static_agent_tokens_fail_startup(
