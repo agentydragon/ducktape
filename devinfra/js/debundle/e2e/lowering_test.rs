@@ -4,7 +4,6 @@
 //! emitted file tree.
 
 use debundle_e2e_support::*;
-use serde_json::json;
 
 // --- Behavior preservation -------------------------------------------------
 
@@ -181,24 +180,15 @@ const output = selected("  hi  ");
 console.log(output);
 export { selected, output };
 "#,
-        vec![(
-            "format".to_string(),
-            json!({
-                "source_matches": [
-                    {
-                        "match": "function selected(value) {\n  return value.trim();\n}",
-                        "bindings": [
-                            { "local": "selected", "name": "FormatValue" },
-                        ],
-                    },
-                ],
-                "annotations": {
-                    "FormatValue": {
-                        "comment": "Formats display text.",
-                        "note": "YAML-only migration note.",
-                    },
-                },
-            }),
+        vec![logical_module_with_source_matches(
+            "format",
+            &[],
+            &[BindingGroup::source_alpha(
+                "function selected(value) {\n  return value.trim();\n}",
+                &[("selected", "FormatValue")],
+            )
+            .with_comments(&[("selected", "Formats display text.")])
+            .with_notes(&[("selected", "YAML-only migration note.")])],
         )],
     ));
 

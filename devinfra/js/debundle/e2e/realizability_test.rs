@@ -12,7 +12,6 @@ use std::path::Path;
 
 use analysis::{BindingReport, DepKind, OwnerGraphReport};
 use debundle_e2e_support::*;
-use serde_json::json;
 
 fn binding_names(members: &[BindingReport]) -> Vec<String> {
     members
@@ -258,12 +257,10 @@ export { Leaf, Dep, Existing };
 "#,
         vec![logical_module("existing", &[Member::new("Existing")])],
     );
-    opts.chunk_renames = Some(json!({
-        "members": [
-            { "name": "ReadableLeaf", "selector": { "binding": { "name": "Leaf" } } },
-            { "name": "ReadableDep", "selector": { "binding": { "name": "Dep" } } }
-        ],
-    }));
+    opts.chunk_renames = Some(chunk_renames(&[
+        ChunkRenameEntry::new("ReadableLeaf", "Leaf"),
+        ChunkRenameEntry::new("ReadableDep", "Dep"),
+    ]));
     opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
     assert_entry_output(&fixture, "existing\n");

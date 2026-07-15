@@ -2,7 +2,6 @@
 //! modules produced by `materialize_logical_modules`.
 
 use debundle_e2e_support::*;
-use serde_json::json;
 use std::fs;
 
 // --- Cross-module dependency wiring --------------------------------------
@@ -997,18 +996,10 @@ export { St as B, Ite };
             "feature/consumer",
             &[Member::renamed("runConsumer", "Ite")],
         )],
-        chunk_renames: Some(json!({
-            "members": [
-                {
-                    "name": "vendorHelper",
-                    "selector": { "binding": { "name": "B", "kind": "import_specifier" } },
-                },
-                {
-                    "name": "entryHelper",
-                    "selector": { "binding": { "name": "St" } },
-                },
-            ],
-        })),
+        chunk_renames: Some(chunk_renames(&[
+            ChunkRenameEntry::new("vendorHelper", "B").with_kind("import_specifier"),
+            ChunkRenameEntry::new("entryHelper", "St"),
+        ])),
         chunk_id: "static/app",
         unassigned_mode: unassigned_mode_inline(),
         dataflow_aware_s_chain: false,

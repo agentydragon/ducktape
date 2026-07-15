@@ -12,7 +12,6 @@
 //! disagreeing local aliases for the same upstream binding.
 
 use debundle_e2e_support::*;
-use serde_json::json;
 
 #[test]
 fn chunk_rename_propagates_into_peeled_module_body() {
@@ -41,24 +40,12 @@ console.log(c);
 export { a, b, c };
 "#,
         logical_modules: vec![logical_module("b_module", &[Member::new("b")])],
-        chunk_renames: Some(json!({
-            "members": [
-                {
-                    "name": "getMobxGlobalState",
-                    "selector": {
-                        "binding": {
-                            "name": "cx",
-                            "kind": "import_specifier",
-                        },
-                    },
-                },
-            ],
-            "annotations": {
-                "getMobxGlobalState": {
-                    "purity": "pure",
-                },
-            },
-        })),
+        chunk_renames: Some(chunk_rename_with_purity(
+            "getMobxGlobalState",
+            "cx",
+            Some("import_specifier"),
+            MemberPurity::Pure,
+        )),
         chunk_id: "static/app",
         unassigned_mode: unassigned_mode_catchall_file(None),
         dataflow_aware_s_chain: false,
