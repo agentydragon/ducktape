@@ -80,7 +80,9 @@ class _AuthorityStaticTokenVerifier(TokenVerifier, StaticAgentActorResolver):
             fingerprint = self._credentials.configured_fingerprint(token)
             if fingerprint is None:
                 return None
-            return await self._authority.static_authorization_for_fingerprint(fingerprint=fingerprint)
+            return await self._authority.static_authorization_for_fingerprint(
+                fingerprint=fingerprint, record_seen=not verification
+            )
         except (StaticAgentRejectedError, ValueError):
             return None
         except AgentGrantAuthorityUnavailableError as error:

@@ -668,10 +668,35 @@ async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: st
     assert first == second
     initial = first[0]
     assert await harness.authority.static_authorization_for_binding(binding_id=initial.binding_id) == initial
+
+    with _orm_session(db_url) as session:
+        agent = session.get(Agent, definition.agent_id)
+        assert agent is not None
+        initial_updated_at = agent.updated_at
+        assert agent.last_seen_at is None
+
     assert (
         await harness.authority.static_authorization_for_fingerprint(fingerprint=definition.token_fingerprint)
         == initial
     )
+    with _orm_session(db_url) as session:
+        agent = session.get(Agent, definition.agent_id)
+        assert agent is not None
+        assert agent.updated_at == initial_updated_at
+        assert agent.last_seen_at is None
+
+    harness.clock.advance(datetime.timedelta(seconds=1))
+    assert (
+        await harness.authority.static_authorization_for_fingerprint(
+            fingerprint=definition.token_fingerprint, record_seen=True
+        )
+        == initial
+    )
+    with _orm_session(db_url) as session:
+        agent = session.get(Agent, definition.agent_id)
+        assert agent is not None
+        assert agent.updated_at == harness.clock.now
+        assert agent.last_seen_at == harness.clock.now
 
     rotated_definition = StaticAgentDefinition(
         agent_id=definition.agent_id,

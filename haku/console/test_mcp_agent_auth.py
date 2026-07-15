@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import cast
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, call, patch
 from uuid import UUID
 
 import pytest
@@ -85,9 +85,11 @@ async def test_static_auth_resolves_the_exact_active_binding_actor() -> None:
     assert await auth.static_actor_resolver.resolve_static_actor(access) == AgentActor(
         agent_id=_AGENT_ID, operator_id=_OPERATOR_ID, binding_id=_BINDING_ID
     )
-    assert cast(AsyncMock, authority.static_authorization_for_fingerprint).await_count == 2
-    cast(AsyncMock, authority.static_authorization_for_fingerprint).assert_awaited_with(
-        fingerprint=fingerprint_static_token(_TOKEN)
+    cast(AsyncMock, authority.static_authorization_for_fingerprint).assert_has_awaits(
+        [
+            call(fingerprint=fingerprint_static_token(_TOKEN), record_seen=False),
+            call(fingerprint=fingerprint_static_token(_TOKEN), record_seen=True),
+        ]
     )
 
 

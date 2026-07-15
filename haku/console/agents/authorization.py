@@ -488,12 +488,24 @@ class PostgresAgentAuthority:
     async def static_authorization_for_binding(self, *, binding_id: UUID) -> StaticAgentAuthorization:
         return await self._database_call(lambda: self._static_authorization(binding_id=binding_id, fingerprint=None))
 
-    async def static_authorization_for_fingerprint(self, *, fingerprint: bytes) -> StaticAgentAuthorization:
+    async def static_authorization_for_fingerprint(
+        self, *, fingerprint: bytes, record_seen: bool = False
+    ) -> StaticAgentAuthorization:
+        """Resolve an active static binding, optionally recording successful actor use.
+
+        Bearer verification uses the read-only default. The request actor resolver sets
+        ``record_seen`` so activity is written only after the exact Operator, Agent, and
+        binding have been revalidated under lock.
+        """
         if not fingerprint:
             raise StaticAgentRejectedError
-        return await self._database_call(lambda: self._static_authorization(binding_id=None, fingerprint=fingerprint))
+        return await self._database_call(
+            lambda: self._static_authorization(binding_id=None, fingerprint=fingerprint, record_seen=record_seen)
+        )
 
-    def _static_authorization(self, *, binding_id: UUID | None, fingerprint: bytes | None) -> StaticAgentAuthorization:
+    def _static_authorization(
+        self, *, binding_id: UUID | None, fingerprint: bytes | None, record_seen: bool = False
+    ) -> StaticAgentAuthorization:
         with self._sessions.begin() as session:
             statement = (
                 select(Agent, CredentialBinding, StaticCredential, Operator)
@@ -506,7 +518,9 @@ class PostgresAgentAuthority:
             else:
                 assert fingerprint is not None
                 statement = statement.where(StaticCredential.credential_fingerprint == fingerprint)
-            row = session.execute(statement.with_for_update()).one_or_none()
+            if record_seen:
+                statement = statement.with_for_update()
+            row = session.execute(statement).one_or_none()
             if row is None:
                 raise StaticAgentRejectedError
             agent, binding, _credential, operator = row
@@ -517,6 +531,10 @@ class PostgresAgentAuthority:
                 or operator.status is not OperatorStatus.ACTIVE
             ):
                 raise StaticAgentRejectedError
+            if record_seen:
+                now = self._now()
+                agent.last_seen_at = now
+                agent.updated_at = now
             return StaticAgentAuthorization(agent.agent_id, binding.binding_id, operator.operator_id)
 
     @staticmethod
