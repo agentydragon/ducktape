@@ -230,9 +230,11 @@ manifest:
     homeassistant_api: homeassistant_api
     hpack: hpack
     httpcore: httpcore
+    httpcore2: httpcore2
     httplib2: httplib2
     httptools: httptools
     httpx: httpx
+    httpx2: httpx2
     httpx_sse: httpx_sse
     huggingface_hub: huggingface_hub
     humanize: humanize
@@ -551,7 +553,7 @@ manifest:
     sympy: sympy
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: TakeTheTime
+    takethetime: takethetime
     tenacity: tenacity
     terminado: terminado
     testcontainers.arangodb: testcontainers
@@ -617,6 +619,7 @@ manifest:
     tornado: tornado
     tqdm: tqdm
     traitlets: traitlets
+    truststore: truststore
     typer: typer
     typer_di: typer_di
     typing_extensions: typing_extensions
@@ -660,4 +663,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 04e6478be21d6d1cdc7eb22dda4c3fe9ab33723a2b86c4a427330af88013c4b8
+integrity: e99a29fd9a7cd6157c9220f1d275d983f9135da3c4a118ae0715f7b997abaa47
