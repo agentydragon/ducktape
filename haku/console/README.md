@@ -57,9 +57,10 @@ haku-state git credential or clone at all.
 ## MCP approval queue — authored tool calls, console-approved
 
 The console also owns the privileged MCP-tool escape hatch. `ToolCallApplicationService` in
-`tool_call_service.py` is the actor-scoped lifecycle boundary; the HTTP routes in
-`mcp_approval.py` are an adapter over it. Haku or haku-ui can submit a precise tool call; the
-service mints the canonical `tool_call_id`, records the audit entry, runs the reviewed
+`tool_call_service.py` is the actor-scoped lifecycle boundary. Agent callers, including Haku and
+haku-ui, enter only through the FastMCP adapter in `mcp_server.py`; the HTTP routes in
+`mcp_approval.py` are the operator browser's audit/approval adapter. The service mints the canonical
+`tool_call_id`, records the audit entry, runs the reviewed
 auto-approval decision, asks the trusted console frontend for approval when it does not match,
 executes the MCP tool, and keeps the result. The decision validates arguments
 against the existing FastMCP tool's generated schema; its audit-safe evaluation string is recorded
@@ -99,13 +100,14 @@ execution on an `operator_oauth` server.
 
 `mcp_server.py` mounts a native MCP server at `/mcp` so a connected Claude client (the claude.ai
 custom connector / the `claude` CLI / haku-ui backend) can call the connected-server tools directly
-through `ToolCallApplicationService.submit_and_wait`. This is the only agent admission path. The
-surface is two buckets:
+through `ToolCallApplicationService.submit_and_wait`. This is the only agent admission path.
+Discovery is request-local: an Agent sees only remote servers connected by its canonical Operator,
+plus shared configured/in-process servers. Within that surface, tools are divided into two buckets:
 tools the policy **unconditionally**
 auto-approves (Gmail and Google Calendar reads, read-only grocy-sf, tana
 `get_or_create_calendar_node`) appear as
-transparent **pass-throughs** (original name/schema, real result); everything else appears as
-`request_<server>_<tool>` with an envelope `{input, title?, rationale, wait_for_approval_ms?}` that
+transparent **pass-throughs** (original schema, real result); everything else keeps the same
+`<server>_<tool>` name but uses an envelope `{input, title?, rationale, wait_for_approval_ms?}` that
 returns the real result if approved within the wait, else a **promise** (a pending `tool_call_id` +
 an operator-facing deep-link `url`) the agent resolves via the `get_tool_call` / `list_tool_calls`
 read tools. The promise-semantics preamble lives in each tool's **description** (many MCP clients,
@@ -289,8 +291,8 @@ non-asset/API path; `app.py`'s dev fallback mirrors that so deep links work loca
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `app.py`                     | Composition root for FastAPI, FastMCP, storage, execution, event delivery, and the shared `ToolCallApplicationService`; public app state exposes the service rather than its ledger/executor internals. Also serves config/health and the optional local SPA fallback. |
 | `capabilities.py`            | Capability-tier router (`/api/capabilities/*`): CSRF-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer and optional per-run text; `GET /csrf` issues the double-submit token.                                    |
-| `tool_call_service.py`       | Actor-scoped application boundary for policy evaluation, submit/read/poll, decisions, execution orchestration, and event publication.                                                                                                                                  |
-| `mcp_approval.py`            | FastAPI/wire adapter plus the current Postgres tool-call repository, MCP executor, and metadata-reflection adapters. It does not own lifecycle orchestration.                                                                                                          |
+| `tool_call_service.py`       | Actor-scoped application boundary for policy evaluation, submit/read/wait, decisions, execution orchestration, and event publication.                                                                                                                                  |
+| `mcp_approval.py`            | Operator-browser FastAPI adapter plus the current Postgres tool-call repository, MCP executor, and metadata-reflection adapters. It does not own agent admission or lifecycle orchestration.                                                                           |
 | `mcp_server.py`              | FastMCP transport adapter for proxy and result-read tools; resolves its request dependency to a canonical `AgentActor` and delegates lifecycle operations to the application service.                                                                                  |
 | `mcp_agent_auth.py`          | Agent-facing auth composition: one Haku OAuth adapter plus static-bearer verification, both resolving through the shared `PostgresAgentAuthority`.                                                                                                                     |
 | `agents/`                    | Canonical Agent domain: naming, enrollment contracts/routes/template, and the transactional Postgres authority for interactions, grants, bindings, static credentials, activation, revocation, and expiry.                                                             |

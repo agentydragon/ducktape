@@ -101,10 +101,10 @@ resource "random_password" "haku_console_agent_api" {
   special = false
 }
 
-# Shared token for the haku-ui backend / Haku worker -> haku-console agent API.
+# Shared static-Agent bearer for the haku-ui backend / Haku worker -> haku-console MCP server.
 # It does NOT approve calls; approval stays in trusted console chrome. Haku can see
-# this through haku-ui/Haku-owned pods, which is fine: it lets Haku request and sweep
-# console tool calls but not execute an approval-gated call by itself.
+# this through haku-ui/Haku-owned pods, which is fine: it lets Haku call proxied tools and
+# list/read its own MCP promises but not approve a gated call by itself.
 resource "kubernetes_secret" "haku_console_agent_api" {
   for_each = toset(["haku-sandbox", "haku-console"])
 

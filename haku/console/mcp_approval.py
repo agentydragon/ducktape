@@ -677,7 +677,7 @@ def _raise_tool_call_http_error(
     raise HTTPException(status_code=status_code, detail=str(error)) from error
 
 
-async def _metadata_for_request(
+async def metadata_for_operator(
     *,
     operator_id: UUID,
     server: McpServerEntry,
@@ -707,7 +707,7 @@ async def mcp_servers(
 ) -> ToolCapabilitiesResponse:
     return ToolCapabilitiesResponse(
         servers=[
-            await _metadata_for_request(
+            await metadata_for_operator(
                 operator_id=actor.operator_id,
                 server=server,
                 metadata_provider=metadata_provider,

@@ -5,11 +5,6 @@ actionable checklist. Remove entries once done.
 
 ## Repo-boundary follow-ups (from the 2026-07-07 state_template retirement)
 
-- **Shared haku-console client, if duplication bites:** both repos are bazelized, so
-  haku-state could take a Forgejo-repo dependency on ducktape and consume a generic
-  haku-console python/ts client (request/record models, the submit/sweep calls) instead of
-  keeping its own copies in `ui/backend`/`ui/frontend`. Do it when the hand-rolled client
-  drifts or a third consumer appears — not before.
 - **Source access recipes — decide the long-term home:** today `base/sources/` keeps
   per-channel contracts + generic recipes (multi-agent-reusable ones, e.g. ActivityWatch,
   point at `cluster/docs/`), while Haku's living helpers/runbooks are in haku-state. If

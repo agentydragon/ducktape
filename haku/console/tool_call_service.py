@@ -3,12 +3,13 @@
 FastAPI and FastMCP are transport adapters. They resolve one request actor and delegate here;
 Postgres, backend MCP execution, operator OAuth, and event delivery implement the narrow ports
 below. Keeping orchestration independent of those adapters makes this the one place where actor
-scope is carried through policy, persistence, execution, publication, and polling.
+scope is carried through policy, persistence, execution, publication, and waiting.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime
 import logging
 from collections.abc import Iterable
@@ -86,6 +87,10 @@ class ToolExecutor(Protocol):
 
 class ToolCallEventPublisher(Protocol):
     async def broadcast(self, operator_id: UUID, events: Iterable[ToolCallEvent]) -> None: ...
+
+    def subscribe(
+        self, operator_id: UUID, tool_call_id: str
+    ) -> contextlib.AbstractAsyncContextManager[asyncio.Event]: ...
 
 
 class OperatorOAuthTokenStore(Protocol):
@@ -291,16 +296,31 @@ class ToolCallApplicationService:
             logger.exception("failed to publish tool-call events for operator %s", operator_id)
 
     async def _wait_terminal(self, tool_call_id: str, actor: ToolCallActor, wait_for_ms: int) -> ToolCallRecord:
-        # TODO: replace this bounded poll with a lost-wakeup-safe Postgres invalidation wait. The
-        # repository remains authoritative and every read stays actor-scoped in the meantime.
-        deadline = asyncio.get_running_loop().time() + (wait_for_ms / 1000)
+        record = self._repository.get(tool_call_id, actor=actor)
+        if record.status in TERMINAL_STATUSES or wait_for_ms <= 0:
+            return record
+
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + (wait_for_ms / 1000)
         while True:
-            record = self._repository.get(tool_call_id, actor=actor)
-            if record.status in TERMINAL_STATUSES or wait_for_ms <= 0:
-                return record
-            if asyncio.get_running_loop().time() >= deadline:
-                return record
-            await asyncio.sleep(0.05)
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return self._repository.get(tool_call_id, actor=actor)
+
+            # Subscribe before re-reading the authoritative row. A transition committed between
+            # the first read and subscription is then observed by the second read; a transition
+            # committed after it wakes this subscription through PostgreSQL LISTEN/NOTIFY.
+            async with self._event_publisher.subscribe(actor.operator_id, tool_call_id) as changed:
+                record = self._repository.get(tool_call_id, actor=actor)
+                if record.status in TERMINAL_STATUSES:
+                    return record
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    return record
+                try:
+                    await asyncio.wait_for(changed.wait(), timeout=remaining)
+                except TimeoutError:
+                    return self._repository.get(tool_call_id, actor=actor)
 
     @staticmethod
     def _require_actor(actor: ToolCallActor) -> ToolCallActor:

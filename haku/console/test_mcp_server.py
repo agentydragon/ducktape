@@ -421,6 +421,46 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
             assert "echo:hi" in str(got.structured_content["call"]["result"])
 
 
+async def test_tool_surface_tracks_each_operators_connected_servers(
+    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with _serve_upstream() as upstream_url:
+        config_file = write_config(
+            tmp_path / "operator-tools.yaml",
+            {
+                "static_agents": _STATIC_AGENTS,
+                "mcp": {
+                    "servers": [{"id": "standin", "server_url": upstream_url, "operator_oauth": {"enabled": True}}]
+                },
+            },
+        )
+        app = create_app(console_settings(migrated_db_url, config_file=config_file))
+        operator_id = app.state.operator_identity_store.resolve_configured_external_user_key("42")
+        other_operator_id = app.state.operator_identity_store.resolve_configured_external_user_key("99")
+        connected = {operator_id}
+
+        async def access_token_for(*, server: object, operator_id: UUID) -> str | None:
+            return "connected-token" if operator_id in connected else None
+
+        monkeypatch.setattr(app.state.mcp_operator_oauth_store, "access_token_for", access_token_for)
+
+        with serve_app_sync(app) as base:
+            async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
+                assert "standin_echo" in {tool.name for tool in await client.list_tools()}
+            async with Client(f"{base}/mcp", auth=_OTHER_AGENT_TOKEN) as client:
+                assert "standin_echo" not in {tool.name for tool in await client.list_tools()}
+                with pytest.raises(ToolError, match="Unknown tool"):
+                    await client.call_tool("standin_echo", {"input": {"text": "no"}, "rationale": "test"})
+
+            connected.clear()
+            connected.add(other_operator_id)
+
+            async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
+                assert "standin_echo" not in {tool.name for tool in await client.list_tools()}
+            async with Client(f"{base}/mcp", auth=_OTHER_AGENT_TOKEN) as client:
+                assert "standin_echo" in {tool.name for tool in await client.list_tools()}
+
+
 @dataclass(frozen=True)
 class _MockOidc:
     origin: str

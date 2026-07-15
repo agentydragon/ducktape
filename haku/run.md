@@ -100,10 +100,10 @@ backlogs) you advance a little each run and pick up next time — not a one-pass
     change wherever it applies, not just the commit's examples. (Your UI renders live from
     your state; no page to regenerate.)
   - When an external privileged operation would materially advance the operator's goal, choose the
-    right consent surface: direct haku-console RPC with a short wait if same-run approval would let
-    you continue, a simple `<tool-call>` affordance for one exact async action, or a bespoke haku-ui
-    flow for review/edit tables and staged partial workflows. This is part of acting, not an
-    afterthought.
+    right consent surface: a direct Haku Console MCP call with a short wait if same-run approval
+    would let you continue, a simple `<tool-call>` affordance for one exact async action, or a
+    bespoke haku-ui flow for review/edit tables and staged partial workflows. This is part of
+    acting, not an afterthought.
 - **Decide how much to invest**: weigh each path's value against the operator's
   value-of-time and the rough cost of your effort (manual → _How you reason_, effort
   budgeting). **A quiet run is not over** — deepen unfinished source coverage, research

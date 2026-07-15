@@ -73,8 +73,8 @@ deferred:
 
 The `/mcp` server (`mcp_server.py`) now resolves canonical Operators, Agents, grants, and
 credential bindings through one authority, while retaining a single global auto-approval policy
-and uniform build-time tool surface. The architecture is specified in
-<../../plans/oauth_architecture.md>. The next product slices are:
+and deriving each request's tool surface from that Agent's Operator connections. The architecture
+is specified in <../../plans/oauth_architecture.md>. The next product slices are:
 
 - **Connected Agents** — add an Operator-scoped API and UI showing each Agent's name, client
   software, scopes, status, creation and last-seen times, and reconnect history.
@@ -91,8 +91,3 @@ and uniform build-time tool surface. The architecture is specified in
 - **Per-tool-call deep link** — a `/tool-calls/<id>` SPA route (`routing.ts` +
   `tool_calls_page.tsx`) that opens/highlights the specific call the promise `url` points at
   (today the URL loads the console but not that exact call).
-- **Notification-driven approval waits** — replace `tool_call_service.py`'s
-  `ToolCallApplicationService._wait_terminal` 50 ms database polling with a deadline-bounded,
-  lost-wakeup-safe wakeup carried by PostgreSQL `LISTEN`/`NOTIFY` (building on the existing
-  console event channel), followed by one final actor-scoped repository read. This must work
-  across replicas and preserve the current timeout/promise behavior.

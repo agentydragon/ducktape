@@ -196,7 +196,6 @@ def create_app(
     # `build_auth` fails loud if nothing can authenticate to it (no static agent, no OAuth).
     console_mcp_context = mcp_server.ConsoleMcpContext(
         settings=settings,
-        reflection_operator_ids=tuple(definition.operator_id for definition in static_agent_definitions),
         tool_calls=tool_calls,
         oauth_store=mcp_operator_oauth_store,
         metadata_provider=tool_call_metadata_provider,
@@ -226,10 +225,7 @@ def create_app(
                 # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
                 if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
                     await mcp_auth.storage.setup()
-                # FastMCP's streamable-http session manager runs under mcp_asgi.lifespan; reflect the
-                # connected servers into the tool surface once it is up.
                 async with mcp_asgi.lifespan(app):
-                    await mcp_server.register_proxy_tools(console_mcp, console_mcp_context)
                     yield
             finally:
                 await console_event_hub.aclose()

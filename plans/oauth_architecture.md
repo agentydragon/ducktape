@@ -2,7 +2,7 @@
 
 - **Status:** Haku's canonical Operator/Agent authority and enrollment cutover is complete and
   deployed. This file plans only remaining work.
-- **Updated:** 2026-07-14
+- **Updated:** 2026-07-15
 - **Completed baseline:** PR [#3197](https://github.com/agentydragon/ducktape/pull/3197), with
   follow-up PR [#3200](https://github.com/agentydragon/ducktape/pull/3200)
 - **Implemented contract:**
@@ -48,52 +48,20 @@ does not supply Haku's Agent ceremony or lifecycle.
 
 ## Remaining plan
 
-### M0: squash the completed Haku migration chain
-
-Once every durable Haku Console database is confirmed at Alembic revision `0009`, replace
-`0001`-`0009` with one fresh-install baseline that retains revision ID `0009` and has
-`down_revision = None`. Keeping the head ID means an existing database already stamped `0009`
-remains current without replaying the new baseline; a database below `0009` must be migrated or
-discarded before the squash.
-
-This must be a separate schema-only PR. Generate a static final schema rather than importing live
-ORM metadata into the migration, retain the PostgreSQL functions/triggers/deferrable constraints
-that are not represented by SQLAlchemy metadata, delete intermediate-cutover tests, and keep the
-current final-state invariant tests. Acceptance:
-
-- inventory proves there is no durable Haku database below `0009`;
-- fresh database -> `head` produces the same tables, columns, enums, indexes, foreign keys,
-  checks, functions, and triggers as the currently migrated schema;
-- an existing database stamped `0009` treats the squashed tree as a no-op;
-- application and schema-export tests pass against a fresh baseline database; and
-- the next migration can use `0009` as its ordinary predecessor without knowledge of the retired
-  history.
-
-The repository has one tracked durable Haku Console database, the `haku-console-db` CNPG cluster,
-and it reported revision `0009` on 2026-07-14. Recheck it immediately before merge and confirm that
-no restorable pre-`0009` snapshot is expected to upgrade directly; such a snapshot would first need
-the pre-squash image to reach `0009`.
-
-Do not fold schema simplifications into this rewrite. A live database already stamped `0009` would
-skip them. The baseline must reproduce the deployed schema exactly; later schema improvements get a
-normal successor migration.
-
 ### C0: prune high-confidence accidental complexity
 
 Keep these as small independent PRs; none changes the authority model:
 
-| Order | Cleanup                                                                                                                                                                                                                                                |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| C0a   | Preserve an explicit `wait_for_approval_ms = 0`; only `None` selects the default. This removes a correctness bug and needless five-second waits.                                                                                                       |
-| C0b   | Make tool-call list/get load the durable principal and current display data in the actor-scoped query instead of issuing one principal query per result.                                                                                               |
-| C0c   | Return pending `ToolCallRecord` values directly and remove the subset `PendingApproval` DTO and frontend unions. Confirm no separately deployed Haku UI consumer before changing the wire shape.                                                       |
-| C0d   | Collapse identical access/refresh grant-resolution methods, ceremonial context wrappers, dead exception types, duplicate `MultiAuth` source state, and the duplicate `agent_enrollment_service` app-state alias. Keep the one required context bridge. |
-| C0e   | Remove the impossible tool-level degraded-metadata variant; server-level degradation remains the real boundary.                                                                                                                                        |
+| Order | Cleanup                                                                                                                                                                                                     |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C0c   | Return pending `ToolCallRecord` values directly and remove the subset `PendingApproval` DTO and frontend unions. Confirm no separately deployed Haku UI consumer before changing the wire shape.            |
+| C0d   | Collapse identical access/refresh grant-resolution methods, ceremonial context wrappers, and dead exception types. Keep the required FastMCP context bridge and failure-preserving `MultiAuth` source list. |
+| C0e   | Remove the impossible tool-level degraded-metadata variant; server-level degradation remains the real boundary.                                                                                             |
 
 Then check external consumers and collapse `/api/approvals/events`, its cursor table, and multiple
 per-transition broadcasts into one typed, Operator-routed `tool_calls_changed(tool_call_id)`
-invalidation. REST remains truth. This should land with the notification-driven wait so one lossy
-wakeup path serves both browser refetch and waiting MCP calls.
+invalidation. REST remains truth. Approval waits already use the same lossy PostgreSQL wakeup
+channel and authoritative actor-scoped reads; this remaining cleanup should reuse that path.
 
 Do not remove the Haku OAuth adapter, exact actor/binding provenance, decision/execution
 revalidation, two-phase `ISSUING -> ISSUED -> ACTIVE` boundary, correlation tombstone, or
@@ -166,11 +134,8 @@ These are vertical product PRs, not another identity migration:
 | H4    | Per-Agent approval policy       | Store typed policy by canonical Agent, with the current global policy as inherited/default. Reuse `AgentActor`; do not change OAuth identity or tenant routing.                                                                                                                                      |
 | H5    | Per-Agent tool surface          | Derive `tools/list` from the verified binding and policy, emit `tools/list_changed` after policy edits, and never key authority on unverified `client_id`.                                                                                                                                           |
 
-The notification-driven replacement for `ToolCallApplicationService._wait_terminal` can proceed in
-parallel with H1/H2. It must register the waiter first, repeat the actor-scoped read, wake on a
-matching PostgreSQL invalidation, and perform a final actor-scoped read at the deadline.
-`LISTEN/NOTIFY` is a lossy wakeup channel, not durable truth. The per-tool-call deep link is also an
-independent console improvement; both remain tracked in <../haku/console/TODO.md>.
+The per-tool-call deep link is an independent console improvement tracked in
+<../haku/console/TODO.md>.
 
 ### Haku Google connection and Airlock decoupling
 

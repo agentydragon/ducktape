@@ -31,7 +31,7 @@ from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware import CallNext, Middleware as FastMCPMiddleware, MiddlewareContext
-from fastmcp.tools import ToolResult
+from fastmcp.tools import Tool, ToolResult
 from fastmcp.utilities.auth import parse_scopes
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.wrappers.base import BaseWrapper
@@ -455,13 +455,13 @@ class HakuFailurePreservingMultiAuth(MultiAuth):
 
 
 class HakuAgentGrantMiddleware(FastMCPMiddleware):
-    """Activate and revalidate an OAuth Agent grant at ``tools/call``.
+    """Resolve the canonical Agent actor for Agent-facing MCP requests.
 
     Bearer verification has already established the signed FastMCP token and
-    propagated its exact ``grant_id`` claim before this middleware runs.  The
+    propagated its exact ``grant_id`` claim before this middleware runs. The
     authority owns the atomic ``issued -> active`` transition; an already
-    active grant returns the same binding idempotently.  No tool dispatch can
-    occur while the grant, binding, Agent, or Operator is rejected or unknown.
+    active grant returns the same binding idempotently. Both discovery and
+    dispatch therefore run with the same verified Agent and Operator authority.
     """
 
     def __init__(
@@ -475,19 +475,32 @@ class HakuAgentGrantMiddleware(FastMCPMiddleware):
         context: MiddlewareContext[mcp_types.CallToolRequestParams],
         call_next: CallNext[mcp_types.CallToolRequestParams, ToolResult],
     ) -> ToolResult:
-        token = get_access_token()
-        if token is None:
-            raise ToolError("Agent grant is missing")
-        if "upstream_claims" not in token.claims:
-            actor = await self._resolve_static_actor(token)
-        else:
-            actor = await self._activate_oauth_actor(token)
-
+        actor = await self._resolve_actor()
         actor_token = _AGENT_ACTOR_CONTEXT.set(actor)
         try:
             return await call_next(context)
         finally:
             _AGENT_ACTOR_CONTEXT.reset(actor_token)
+
+    async def on_list_tools(
+        self,
+        context: MiddlewareContext[mcp_types.ListToolsRequest],
+        call_next: CallNext[mcp_types.ListToolsRequest, Sequence[Tool]],
+    ) -> Sequence[Tool]:
+        actor = await self._resolve_actor()
+        actor_token = _AGENT_ACTOR_CONTEXT.set(actor)
+        try:
+            return await call_next(context)
+        finally:
+            _AGENT_ACTOR_CONTEXT.reset(actor_token)
+
+    async def _resolve_actor(self) -> AgentActor:
+        token = get_access_token()
+        if token is None:
+            raise ToolError("Agent grant is missing")
+        if "upstream_claims" not in token.claims:
+            return await self._resolve_static_actor(token)
+        return await self._activate_oauth_actor(token)
 
     async def _resolve_static_actor(self, token: AccessToken) -> AgentActor:
         if self._static_actor_resolver is None:

@@ -20,6 +20,8 @@ export const HOME_PATH = "/";
 
 export type ConsoleView = "embed" | "toolCalls";
 
+// TODO: Recognize `/tool-calls/<id>` as the toolCalls view and pass the id through so
+// tool_calls_page.tsx can focus/highlight the canonical call named by an MCP promise URL.
 export function viewForPathname(pathname: string): ConsoleView {
   if (pathname === TOOL_CALLS_PATH) return "toolCalls";
   return "embed";

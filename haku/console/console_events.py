@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Iterable
 from typing import Annotated, ClassVar, Literal, cast
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -63,6 +63,7 @@ class ConsoleEventHub:
 
     def __init__(self, database_url: str, *, operator_identity_store: PostgresOperatorIdentityStore) -> None:
         self._connections: dict[WebSocket, UUID] = {}
+        self._tool_call_waiters: dict[tuple[UUID, str], set[asyncio.Event]] = {}
         self._dsn = _psycopg_dsn(database_url)
         self._operator_identity_store = operator_identity_store
         self._listen_task: asyncio.Task[None] | None = None
@@ -94,6 +95,27 @@ class ConsoleEventHub:
                 await asyncio.wait_for(self._publisher.close(), timeout=self._SOCKET_TIMEOUT_SECONDS)
             self._publisher = None
         await self._close_connections(code=1001, reason="console event hub stopped")
+        self._wake_all_tool_call_waiters()
+
+    @contextlib.asynccontextmanager
+    async def subscribe(self, operator_id: UUID, tool_call_id: str) -> AsyncIterator[asyncio.Event]:
+        """Subscribe this replica to one actor-scoped tool-call invalidation."""
+        key = (operator_id, tool_call_id)
+        changed = asyncio.Event()
+        self._tool_call_waiters.setdefault(key, set()).add(changed)
+        try:
+            yield changed
+        finally:
+            waiters = self._tool_call_waiters.get(key)
+            if waiters is not None:
+                waiters.discard(changed)
+                if not waiters:
+                    self._tool_call_waiters.pop(key, None)
+
+    def _wake_all_tool_call_waiters(self) -> None:
+        for waiters in self._tool_call_waiters.values():
+            for waiter in waiters:
+                waiter.set()
 
     async def connect(self, websocket: WebSocket, operator_id: UUID) -> bool:
         if not self._listening.is_set():
@@ -141,9 +163,13 @@ class ConsoleEventHub:
                 with contextlib.suppress(Exception):
                     await asyncio.wait_for(self._publisher.close(), timeout=self._SOCKET_TIMEOUT_SECONDS)
                 self._publisher = None
+            self._wake_all_tool_call_waiters()
             await self._close_connections(code=1012, reason="console event publish failed")
 
     async def _deliver_locally(self, event_operator_id: UUID, event: ConsoleEvent) -> None:
+        if isinstance(event, ToolCallEvent):
+            for waiter in self._tool_call_waiters.get((event_operator_id, event.tool_call_id), ()):
+                waiter.set()
         if not self._connections:
             return
         if not await asyncio.to_thread(self._operator_identity_store.is_active, event_operator_id):
@@ -212,6 +238,7 @@ class ConsoleEventHub:
                     finally:
                         self._listening.clear()
                 await self._close_connections(code=1012, reason="console event relay reconnecting")
+                self._wake_all_tool_call_waiters()
                 logger.warning("console event listen stream ended; reconnecting")
                 await asyncio.sleep(1)
             except asyncio.CancelledError:
@@ -222,6 +249,7 @@ class ConsoleEventHub:
                 # An open browser socket would otherwise look healthy while notifications are being
                 # missed. Force reconnect + REST sync; attempts during the outage are rejected above.
                 await self._close_connections(code=1012, reason="console event relay reconnecting")
+                self._wake_all_tool_call_waiters()
                 logger.exception("console event listen loop failed; reconnecting")
                 await asyncio.sleep(1)
 

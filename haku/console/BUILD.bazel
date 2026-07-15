@@ -369,6 +369,7 @@ py_test(
         ":console_events",
         ":operator_identity_store",
         "//:conftest",
+        "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//pytest",

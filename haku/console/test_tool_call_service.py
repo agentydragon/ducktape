@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime
 import hashlib
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Iterable
 from itertools import pairwise
 from pathlib import Path
 from types import SimpleNamespace
@@ -46,9 +47,29 @@ from haku.console.tool_calls import (
 class _RecordingPublisher:
     def __init__(self) -> None:
         self.publications: list[tuple[UUID, list[ToolCallEvent]]] = []
+        self.subscribed = asyncio.Event()
+        self._waiters: dict[tuple[UUID, str], set[asyncio.Event]] = {}
 
     async def broadcast(self, operator_id: UUID, events: Iterable[ToolCallEvent]) -> None:
-        self.publications.append((operator_id, list(events)))
+        published = list(events)
+        self.publications.append((operator_id, published))
+        for event in published:
+            for waiter in self._waiters.get((operator_id, event.tool_call_id), ()):
+                waiter.set()
+
+    @contextlib.asynccontextmanager
+    async def subscribe(self, operator_id: UUID, tool_call_id: str) -> AsyncIterator[asyncio.Event]:
+        key = (operator_id, tool_call_id)
+        changed = asyncio.Event()
+        self._waiters.setdefault(key, set()).add(changed)
+        self.subscribed.set()
+        try:
+            yield changed
+        finally:
+            waiters = self._waiters[key]
+            waiters.remove(changed)
+            if not waiters:
+                self._waiters.pop(key)
 
 
 class _RaisingPublisher(_RecordingPublisher):
@@ -344,6 +365,37 @@ async def test_two_operator_two_agent_authorization_matrix(migrated_db_url: str,
     ]
     assert tokens.lookups == [actors["oa"].operator_id, actors["ob"].operator_id]
     assert [execution[3] for execution in executor.executions] == ["token-a", "token-b"]
+
+
+async def test_pending_wait_uses_actor_scoped_event_invalidation(migrated_db_url: str, tmp_path: Path) -> None:
+    actors = _actors(migrated_db_url)
+    agent = actors["aa1"]
+    operator = actors["oa"]
+    publisher = _RecordingPublisher()
+    service = _service(
+        database_url=migrated_db_url,
+        tmp_path=tmp_path,
+        ledger=PostgresToolCallLedger(migrated_db_url),
+        publisher=publisher,
+        executor=_RecordingExecutor(),
+        tokens=_OperatorTokens({operator.operator_id: "token-a"}),
+    )
+
+    waiting = asyncio.create_task(service.submit_and_wait(req=_request(owner="wait", wait_for_ms=1000), actor=agent))
+    await asyncio.wait_for(publisher.subscribed.wait(), timeout=1)
+    [pending] = service.list_tool_calls(actor=agent)
+    assert pending.status is ToolCallStatus.PENDING_APPROVAL
+
+    decided = await service.decide(
+        tool_call_id=pending.tool_call_id,
+        decision=ApprovalDecisionRequest(decision=ApprovalDecision.APPROVE),
+        actor=operator,
+    )
+    completed = await asyncio.wait_for(waiting, timeout=1)
+
+    assert decided.status is ToolCallStatus.OK
+    assert completed.status is ToolCallStatus.OK
+    assert publisher._waiters == {}
 
 
 async def test_auto_approval_resolves_auth_before_persistence_and_finishes_as_agent(

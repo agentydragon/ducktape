@@ -128,7 +128,7 @@ async def auto_approve_tool_call(
 ) -> tuple[str | None, str | None]:
     """Return the approving policy ID and an audit-safe evaluation string.
 
-    Applies to any authenticated agent (the machine API token or an MCP OAuth client); interactive
+    Applies to any authenticated agent (a static MCP bearer or an MCP OAuth client); interactive
     operator-browser calls never auto-approve. Unconditionally
     allowlisted read-only/safe operations (Gmail/Calendar/Grocy reads, tana `get_or_create_calendar_node`)
     approve regardless of arguments; gmail label mutations approve only when scoped to ``label_prefix``.

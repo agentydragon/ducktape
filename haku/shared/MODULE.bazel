@@ -11,9 +11,9 @@ module(
 # Packages:
 #   - bridge_protocol (@haku/console-bridge): the console↔iframe postMessage bridge — shared wire
 #     types (protocol.ts) + client helpers (client.ts). JS, //bridge_protocol:pkg.
-#   - haku/console (haku.console.tool_calls): the haku-console tool-call API contract — the
-#     tool-call record and MCP metadata models shared by the console and haku-ui's backend
-#     parses. Python, //haku/console:tool_calls.
+#   - haku/console (haku.console.tool_calls): operator audit records plus MCP tool-discovery and
+#     call-correlation metadata shared by the console and haku-ui's backend. Python,
+#     //haku/console:tool_calls.
 #
 # The JS side has zero npm deps: js_library + npm_package only copy files (nothing runs node), so
 # aspect_rules_js alone suffices — no node toolchain, no pnpm/npm lock. The Python side ships the

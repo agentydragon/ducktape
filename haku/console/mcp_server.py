@@ -7,8 +7,8 @@ it auto-approves and runs when the reviewed policy allows, otherwise it returns 
 ``tool_call_id`` plus an operator-facing deep link) that the agent resolves later via
 ``get_tool_call``.
 
-The tool surface has two buckets (v1: uniform across agents, driven by the global auto-approval
-policy):
+Each request exposes only servers connected by that Agent's canonical Operator. Within that
+Operator-specific surface, the global auto-approval policy divides tools into two buckets:
 
 Every proxied tool is named ``<server>_<tool>`` (one uniform format — operator decision
 2026-07-13; bare upstream names hid which server a tool belonged to):
@@ -28,29 +28,24 @@ import copy
 import datetime
 import logging
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
-from uuid import UUID
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth.auth import AuthProvider
+from fastmcp.server.providers import Provider
 from fastmcp.tools import Tool, ToolResult
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.auto_approval import is_unconditionally_auto_approved
 from haku.console.config import Settings
-from haku.console.mcp_approval import DegradedServerMetadata, McpMetadataProvider, ServerMetadata
+from haku.console.mcp_approval import DegradedServerMetadata, McpMetadataProvider, metadata_for_operator
 from haku.console.mcp_auth.fastmcp_adapter import get_agent_actor
-from haku.console.mcp_config import (
-    McpServerEntry,
-    McpServerNotFoundError,
-    _credential_token,
-    _load_servers,
-    _operator_oauth_enabled,
-)
+from haku.console.mcp_config import McpServerNotFoundError, _load_servers
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.tool_call_actor import AgentActor
 from haku.console.tool_call_service import (
@@ -100,9 +95,6 @@ class ConsoleMcpContext:
     """The application service and MCP-specific adapters needed by the FastMCP transport."""
 
     settings: Settings
-    # Presentation-only reflection candidates. Runtime call authority always comes from
-    # ``get_agent_actor`` and never from this list.
-    reflection_operator_ids: tuple[UUID, ...]
     tool_calls: ToolCallApplicationService
     oauth_store: PostgresMcpOperatorOAuthStore
     metadata_provider: McpMetadataProvider
@@ -282,53 +274,59 @@ def _build_proxy_tool(context: ConsoleMcpContext, server_id: str, tool: Any, *, 
     )
 
 
-async def _reflect_server(context: ConsoleMcpContext, server: McpServerEntry) -> ServerMetadata:
-    """Reflect one connected server's tools, mirroring ``mcp_approval._metadata_for_request``.
+class OperatorToolProvider(Provider):
+    """Reflect the connected-server catalog for the current Agent's Operator.
 
-    in-process / static-bearer servers use their configured credential; operator_oauth servers reflect
-    as one of the console's static-agent operators (``tools/list`` is operator-independent) — the first
-    whose canonical Operator has a connected token — and degrade if none is connected.
+    FastMCP providers are consulted for both ``tools/list`` and ``tools/call``.
+    Keeping reflection here makes discovery request-local and also fails closed
+    if a client calls a tool after its Operator disconnects that server.
     """
-    if _operator_oauth_enabled(server):
-        for operator_id in context.reflection_operator_ids:
-            token = await context.oauth_store.access_token_for(server=server, operator_id=operator_id)
-            if token:
-                return await context.metadata_provider.metadata(server, token)
-        return DegradedServerMetadata(
-            server_id=server.id, title=server.id, tools=[], degraded_reason="no connected reflection operator"
-        )
-    try:
-        token = _credential_token(server)
-    except Exception as e:
-        return DegradedServerMetadata(server_id=server.id, title=server.id, tools=[], degraded_reason=str(e))
-    return await context.metadata_provider.metadata(server, token)
 
+    def __init__(self, context: ConsoleMcpContext) -> None:
+        super().__init__()
+        self._context = context
 
-async def register_proxy_tools(mcp: FastMCP, context: ConsoleMcpContext) -> None:
-    """Reflect every connected server and register its tools into the two buckets.
+    async def _list_tools(self) -> Sequence[Tool]:
+        actor = get_agent_actor()
+        tools: list[Tool] = []
+        for server in _load_servers(self._context.settings):
+            meta = await metadata_for_operator(
+                operator_id=actor.operator_id,
+                server=server,
+                metadata_provider=self._context.metadata_provider,
+                oauth_store=self._context.oauth_store,
+            )
+            if isinstance(meta, DegradedServerMetadata):
+                logger.info(
+                    "mcp_server: hiding unavailable server %s from Operator %s: %s",
+                    server.id,
+                    actor.operator_id,
+                    meta.degraded_reason,
+                )
+                continue
+            tools.extend(
+                _build_proxy_tool(
+                    self._context, server.id, tool, passthrough=is_unconditionally_auto_approved(server.id, tool.name)
+                )
+                for tool in meta.tools
+            )
+        return tools
 
-    Uniform (v1) surface: pass-through for unconditionally auto-approved tools, the approval envelope
-    for everything else. Degraded servers are logged and skipped.
-    """
-    for server in _load_servers(context.settings):
-        meta = await _reflect_server(context, server)
-        if isinstance(meta, DegradedServerMetadata):
-            logger.warning("mcp_server: skipping degraded server %s: %s", server.id, meta.degraded_reason)
-            continue
-        for tool in meta.tools:
-            passthrough = is_unconditionally_auto_approved(server.id, tool.name)
-            mcp.add_tool(_build_proxy_tool(context, server.id, tool, passthrough=passthrough))
-        logger.info("mcp_server: registered %d tools from %s", len(meta.tools), server.id)
+    async def get_tasks(self) -> Sequence[Tool]:
+        # Proxy tools forbid background tasks, and startup has no request actor.
+        return []
 
 
 def build_console_mcp(context: ConsoleMcpContext, *, auth: AuthProvider) -> FastMCP:
-    """Build the console MCP server with the read tools + auth.
+    """Build the console MCP server with request-local proxy tools + auth.
 
-    Authentication is composed by :mod:`haku.console.mcp_agent_auth`. Call
-    ``register_proxy_tools`` (async) afterwards to add the connected-server proxy tools.
+    Authentication is composed by :mod:`haku.console.mcp_agent_auth`. The
+    provider reflects connected-server tools for the authenticated Agent's
+    canonical Operator on each discovery and dispatch request.
     """
     mcp: FastMCP = FastMCP(name=SERVER_NAME, instructions=INSTRUCTIONS)
     mcp.auth = auth
+    mcp.add_provider(OperatorToolProvider(context))
 
     current_agent_dependency = Depends(get_agent_actor)
 
