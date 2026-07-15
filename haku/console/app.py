@@ -209,7 +209,11 @@ def create_app(
     console_mcp.add_middleware(
         HakuAgentGrantMiddleware(agent_authority, static_actor_resolver=mcp_auth.static_actor_resolver)
     )
-    mcp_asgi = console_mcp.http_app(path=MCP_PATH)
+    # The console runs multiple interchangeable replicas. FastMCP's default stateful HTTP
+    # transport keeps its session map in-process, so a subsequent request routed to another pod
+    # receives "Session not found". Haku's tools keep durable state in Postgres and do not need
+    # transport-local sessions; give every MCP request a fresh transport instead.
+    mcp_asgi = console_mcp.http_app(path=MCP_PATH, stateless_http=True)
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:

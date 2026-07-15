@@ -140,6 +140,40 @@ async def test_tool_surface_splits_pass_through_and_request(harness: _Harness) -
     assert "operator-approval queue" in tools["gmail_drafts_create"].description
 
 
+async def test_mcp_transport_is_stateless_across_replicas(harness: _Harness) -> None:
+    headers = {
+        "Accept": "application/json, text/event-stream",
+        "Authorization": f"Bearer {_AGENT_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(base_url=harness.base, headers=headers) as client:
+        initialized = await client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "replica-test", "version": "1"},
+                },
+            },
+        )
+        assert initialized.status_code == 200, initialized.text
+        assert "mcp-session-id" not in initialized.headers
+
+        # A stateful, process-local transport rejects this as an unknown session. Stateless HTTP
+        # deliberately ignores the header, so the request works on any replica behind the Service.
+        listed = await client.post(
+            "/mcp",
+            headers={"Mcp-Session-Id": "session-created-by-another-replica"},
+            json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        )
+        assert listed.status_code == 200, listed.text
+        assert "gmail_labels_list" in listed.text
+
+
 async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harness) -> None:
     async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
         result = await client.call_tool("gmail_labels_list", {})
