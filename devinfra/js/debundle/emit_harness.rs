@@ -9,9 +9,10 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use artifact::{
-    ArtifactChunkRecord, ChunkBundle, ChunkDecompositionOutput, ChunkId, OutputMetrics,
-    chunk_id_for_js_path, get_chunk_entry_path, materialize_artifact_scripts,
-    module_path_from_path, normalize_module_path, path_from_module_path, write_json,
+    ArtifactChunkRecord, ChunkBundle, ChunkDecompositionOutput, ChunkId, ChunksReport,
+    OutputMetrics, PackageManifest, chunk_id_for_js_path, get_chunk_entry_path,
+    materialize_artifact_scripts, module_path_from_path, normalize_module_path,
+    path_from_module_path, write_json,
 };
 use identifier_rename_queue::{compute_identifier_rename_queue, write_queue};
 use output_layout::DebundleOutputLayout;
@@ -139,7 +140,7 @@ pub fn emit_browser_harness(
     fs::write(app_root.join("bootstrap.js"), bootstrap)?;
     write_json(
         layout.chunks_report(),
-        &ChunksManifest {
+        &ChunksReport {
             chunks: chunk_records,
         },
     )?;
@@ -183,21 +184,10 @@ pub fn emit_browser_harness(
     write_json(
         app_root.join("package.json"),
         &PackageManifest {
-            package_type: "module",
+            module_type: "module",
         },
     )?;
     Ok(())
-}
-
-#[derive(Serialize)]
-struct ChunksManifest<'a> {
-    chunks: &'a [ArtifactChunkRecord],
-}
-
-#[derive(Serialize)]
-struct PackageManifest {
-    #[serde(rename = "type")]
-    package_type: &'static str,
 }
 
 #[derive(Serialize)]

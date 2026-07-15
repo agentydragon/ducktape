@@ -694,7 +694,7 @@ pub enum WrapperShape {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LogicalModule {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub members: Vec<Member>,
     /// Compact source-backed ownership claims. Each entry describes one source
     /// shape and names the selector-local bindings this module owns from that

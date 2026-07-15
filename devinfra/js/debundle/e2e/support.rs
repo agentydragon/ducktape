@@ -4,15 +4,17 @@
 //! tree by reading files and re-running them under `node`.
 
 use analysis::OwnerGraphReport;
+use artifact::PackageManifest;
 use runfiles::{Runfiles, rlocation};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use spec::{
-    AnonymousStatement, BindingAnnotation, BindingSelector, BindingSourceKind, CrossRefSelector,
-    IntrinsicAliasSelector, LogicalModule, MakesDecorateCallSelector, Member as SpecMember,
-    MemberOfModuleSelector, MemberSelector, PassedToCallSelector, ReadsMemberSelector, SourceMatch,
-    SourceMatchBinding, SourceMatchBindingDetail, SourceMatchClaim, SourceMatchIdentifierMode,
+    AnonymousStatement, BindingAnnotation, BindingSelector, BindingSourceKind, ChunkRenameMember,
+    ChunkRenameSelector, ChunkRenames, CrossRefSelector, IntrinsicAliasSelector, LogicalModule,
+    MakesDecorateCallSelector, Member as SpecMember, MemberOfModuleSelector, MemberSelector,
+    PassedToCallSelector, ReadsMemberSelector, SourceMatch, SourceMatchBinding,
+    SourceMatchBindingDetail, SourceMatchClaim, SourceMatchIdentifierMode,
 };
 
 /// Re-exported so test files can reference the spec enums behind
@@ -628,12 +630,6 @@ impl FixtureAnonymousStatement {
         self.0.note = Some(note.into());
         self
     }
-}
-
-#[derive(Serialize)]
-struct PackageManifest {
-    #[serde(rename = "type")]
-    module_type: &'static str,
 }
 
 #[derive(Serialize)]
@@ -1755,14 +1751,89 @@ pub fn run_synthesize_selectors(modules: &Path, extra: &[&str]) -> std::process:
 /// A single-member chunk-renames spec mapping the binding `from_binding` to the
 /// exported name `rename_to`.
 pub fn chunk_rename(rename_to: &str, from_binding: &str) -> Value {
-    serde_json::json!({
-        "members": [
-            {
-                "name": rename_to,
-                "selector": { "binding": { "name": from_binding } },
+    chunk_renames(&[ChunkRenameEntry::new(rename_to, from_binding)])
+}
+
+/// One entry in a multi-member [`chunk_renames`] body. `rename_to` is the final
+/// readable export name; `from_binding` is the source binding being renamed.
+pub struct ChunkRenameEntry {
+    rename_to: String,
+    from_binding: String,
+    kind: Option<&'static str>,
+}
+
+impl ChunkRenameEntry {
+    pub fn new(rename_to: impl Into<String>, from_binding: impl Into<String>) -> Self {
+        Self {
+            rename_to: rename_to.into(),
+            from_binding: from_binding.into(),
+            kind: None,
+        }
+    }
+
+    /// Narrow the binding selector to a specific source-declaration kind
+    /// (`"import_specifier"`, `"class_declaration"`, …).
+    pub fn with_kind(mut self, kind: &'static str) -> Self {
+        self.kind = Some(kind);
+        self
+    }
+}
+
+/// Build a chunk-renames body from one or more [`ChunkRenameEntry`]s. The wire
+/// shape is `{ members: [{ name, selector: { binding: { name, kind? } } }, …] }`
+/// plus an empty (omitted) `annotations` map.
+pub fn chunk_renames(entries: &[ChunkRenameEntry]) -> Value {
+    let members = entries
+        .iter()
+        .map(|entry| ChunkRenameMember {
+            name: Some(entry.rename_to.clone()),
+            selector: ChunkRenameSelector {
+                binding: BindingSelector {
+                    name: entry.from_binding.clone(),
+                    kind: parse_kind(entry.kind),
+                },
             },
-        ],
+        })
+        .collect();
+    serde_json::to_value(ChunkRenames {
+        members,
+        annotations: BTreeMap::new(),
     })
+    .expect("chunk renames fixture must serialize")
+}
+
+/// Build a single-member chunk-renames body that carries a `purity` annotation
+/// for the renamed binding. Covers the MobX-style `cx -> getMobxGlobalState`
+/// idiom where the rename target must be marked `pure` so the peel doesn't
+/// induce a cycle.
+pub fn chunk_rename_with_purity(
+    rename_to: &str,
+    from_binding: &str,
+    kind: Option<&'static str>,
+    purity: MemberPurity,
+) -> Value {
+    let mut annotations = BTreeMap::new();
+    annotations.insert(
+        rename_to.to_string(),
+        BindingAnnotation {
+            purity,
+            ..Default::default()
+        },
+    );
+    let members = vec![ChunkRenameMember {
+        name: Some(rename_to.to_string()),
+        selector: ChunkRenameSelector {
+            binding: BindingSelector {
+                name: from_binding.to_string(),
+                kind: parse_kind(kind),
+            },
+        },
+    }];
+    serde_json::to_value(ChunkRenames {
+        members,
+        annotations,
+    })
+    .expect("chunk renames fixture must serialize")
 }
 
 /// Owner-graph node id that declares `binding`, panicking (with the node dump)

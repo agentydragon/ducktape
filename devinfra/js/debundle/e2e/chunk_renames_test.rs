@@ -32,7 +32,6 @@
 //! unowned decls share `ResidualEntry` ownership; no cycle.
 
 use debundle_e2e_support::*;
-use serde_json::json;
 
 /// Build a `chunk_renames` spec entry that renames a single residual
 /// binding to a new export name. All tests in this file rename a
@@ -223,17 +222,15 @@ export { alpha, bravo, charlie, delta };
 "#,
         vec![],
     )
-    .with_chunk_renames(json!({
-        "members": [
-            // Invalid JS identifier — should report a "not a valid JS identifier" error.
-            { "name": "1-bad-ident", "selector": { "binding": { "name": "alpha" } } },
-            // Collides with the existing body local `delta`.
-            { "name": "delta",        "selector": { "binding": { "name": "bravo" } } },
-            // Duplicate target — both `charlie` and `delta` would rename to the same name.
-            { "name": "shared_target", "selector": { "binding": { "name": "charlie" } } },
-            { "name": "shared_target", "selector": { "binding": { "name": "delta" } } },
-        ],
-    }))
+    .with_chunk_renames(chunk_renames(&[
+        // Invalid JS identifier — should report a "not a valid JS identifier" error.
+        ChunkRenameEntry::new("1-bad-ident", "alpha"),
+        // Collides with the existing body local `delta`.
+        ChunkRenameEntry::new("delta", "bravo"),
+        // Duplicate target — both `charlie` and `delta` would rename to the same name.
+        ChunkRenameEntry::new("shared_target", "charlie"),
+        ChunkRenameEntry::new("shared_target", "delta"),
+    ]))
     .with_unassigned_mode(unassigned_mode_inline());
 
     expect_rejection_containing_all(

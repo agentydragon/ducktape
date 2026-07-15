@@ -3,12 +3,11 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Result, bail};
-use serde::Serialize;
 
 use artifact::{
     ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, ChunkBundle, ChunkDecompositionOutput,
-    ChunkId, DecompositionMetrics, RootLogicalModulesSummary, SelectedModuleLowering,
-    materialize_artifact_scripts, write_json,
+    ChunkId, ChunksReport, DecompositionMetrics, PackageManifest, RootLogicalModulesSummary,
+    SelectedModuleLowering, materialize_artifact_scripts, write_json,
 };
 use identifier_rename_queue::{compute_identifier_rename_queue, write_queue};
 use output_layout::DebundleOutputLayout;
@@ -84,17 +83,6 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
     )?;
 
     Ok(())
-}
-
-#[derive(Serialize)]
-struct ChunksReport<'a> {
-    chunks: &'a [ArtifactChunkRecord],
-}
-
-#[derive(Serialize)]
-struct PackageManifest {
-    #[serde(rename = "type")]
-    module_type: &'static str,
 }
 
 fn prepare_output_layout(layout: &DebundleOutputLayout) -> Result<()> {

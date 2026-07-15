@@ -28,6 +28,21 @@ pub fn write_json(path: impl AsRef<Path>, data: &impl Serialize) -> Result<()> {
     Ok(())
 }
 
+/// Emission-set chunk records, serialized as `{ "chunks": [...] }` to the
+/// chunks report. Shared by `write_tree` and `emit_harness`.
+#[derive(Serialize)]
+pub struct ChunksReport<'a> {
+    pub chunks: &'a [ArtifactChunkRecord],
+}
+
+/// `package.json` manifest written into the materialized app root to mark it
+/// as an ESM tree. Shared by `write_tree` and `emit_harness`.
+#[derive(Serialize)]
+pub struct PackageManifest {
+    #[serde(rename = "type")]
+    pub module_type: &'static str,
+}
+
 pub struct LoadedJsChunks {
     pub chunks: Vec<JsChunk>,
     pub chunk_table: ChunkTable,
