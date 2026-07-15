@@ -190,7 +190,8 @@ def test_create_reconnect_and_deny_are_separate_typed_endpoints() -> None:
         headers={"Origin": "https://haku.test"},
         follow_redirects=False,
     )
-    assert reconnect.status_code == 303
+    assert reconnect.status_code == 200
+    assert "Agent approved" in reconnect.text
     assert service.decisions[1]["decision"] == ReconnectAgentDecision(form_token=FORM_TOKEN, agent_id=AGENT_ID)
 
     _open(client)
