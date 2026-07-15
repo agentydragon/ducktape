@@ -166,8 +166,9 @@ py_test(
         ":google_calendar",
         ":google_calendar_client",
         "//:conftest",
-        "//haku/console:conftest",
+        "@pypi//fastapi",
         "@pypi//fastmcp_slim",
+        "@pypi//httpx",
         "@pypi//pytest_bazel",
         # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
         # needs the plugin importable at runtime for its entry-point autoload; Gazelle
