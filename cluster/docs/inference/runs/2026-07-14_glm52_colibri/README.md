@@ -136,6 +136,55 @@ There is no FP16 or BF16 KV/activation switch in this revision. Such a change
 could recover about 20 GB of the 128K reservation, but would require an upstream
 storage/kernel implementation and new correctness validation.
 
+## Lower-precision runtime alternatives
+
+No alternative runtime below was executed on wyrm2 during this run. The only
+currently plausible follow-up is `llama.cpp` with an extreme GGUF quantization.
+The [Unsloth GLM-5.2 GGUF repository](https://huggingface.co/unsloth/GLM-5.2-GGUF)
+provides a working `llama.cpp` invocation and lists these smallest variants:
+
+| Quantization | Checkpoint size |
+| ------------ | --------------: |
+| `UD-IQ1_S`   |          217 GB |
+| `UD-IQ1_M`   |          228 GB |
+| `UD-IQ2_M`   |          239 GB |
+| `UD-Q2_K_XL` |          254 GB |
+
+`llama.cpp` exposes CPU MoE placement, memory-mapped model loading, and F16,
+BF16, Q8, and Q4 KV-cache types; see its
+[current CLI parameter reference](https://github.com/ggml-org/llama.cpp/blob/master/tools/cli/README.md).
+This is materially lower precision than Colibri's INT4 experts and persistent
+FP32 KV. `UD-IQ2_M` is the preferred first variant: it costs only 11 GB more than
+`UD-IQ1_M`, while avoiding the most aggressive available quantization.
+
+Even the 217 GB variant exceeds wyrm2's nominal 94 GiB RAM plus 64 GB VRAM, before
+allowing for the OS, KV, and workspaces. It would therefore depend on NVMe-backed
+file paging rather than fitting in aggregate memory. Released `llama.cpp` does not
+yet have Colibri's routing-aware expert cache and prefetch; the upstream
+[two-tier expert-cache issue](https://github.com/ggml-org/llama.cpp/issues/20757)
+tracks that work. A GGUF may consequently start successfully but thrash the page
+cache or run slower than Colibri. Q4 KV compatibility and output quality also need
+validation on GLM-5.2 specifically. The existing 383.8 GB Colibri checkpoint and
+even the smallest 217 GB GGUF cannot coexist on the dedicated 500 GB disk.
+
+The other investigated runtimes do not currently satisfy wyrm2's combined
+precision, residency, and storage-tier requirements:
+
+| Runtime                   | Useful capability                                                    | wyrm2 blocker                                                                                                                       |
+| ------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| SGLang or vLLM            | FP8 KV; SGLang also supports an NVFP4 GLM-5.2 checkpoint             | Official recipes place the model across eight large-memory accelerators; neither provides routed expert streaming from NVMe.        |
+| SGLang with KTransformers | CPU/GPU expert placement and FP8 KV                                  | The documented GLM-5.2 path uses FP8 or BF16 resident weights; GLM-5.2 INT4 plus an NVMe expert tier is not documented.             |
+| MoE-Infinity              | Activation-aware expert prefetch and caching from host memory or SSD | GLM-5.2, DSA, IndexShare, and MTP compatibility is unproven, and the open-source release says distributed inference is unsupported. |
+
+References: [SGLang GLM-5.2 recipe](https://docs.sglang.io/cookbook/autoregressive/GLM/GLM-5.2),
+[KTransformers GLM-5.2 tutorial](https://github.com/kvcache-ai/ktransformers/blob/main/doc/en/kt-kernel/GLM-5.2-Tutorial.md),
+and [MoE-Infinity](https://github.com/EfficientMoE/MoE-Infinity).
+
+The next runtime experiment should therefore be `llama.cpp` with `UD-IQ2_M`,
+starting with a short context and Q8 KV before trying Q4 KV. If preserving the
+observed Colibri output quality matters more than minimizing engineering work,
+adding BF16 or FP16 KV storage to Colibri remains the more direct path.
+
 ## Results
 
 All rows use the same prompt, greedy token sampling, 4096-token context, and a
