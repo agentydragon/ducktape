@@ -15,6 +15,7 @@ use artifact::{
 };
 use identifier_rename_queue::{compute_identifier_rename_queue, write_queue};
 use output_layout::DebundleOutputLayout;
+use spec::EmitBrowserHarnessConfig;
 
 /// Harness-relative module specifier for a chunk's emitted entry file,
 /// resolved from a snapshot `*.js` script path.
@@ -37,12 +38,6 @@ fn runtime_js_href(
         .join(chunk_name.split('/').collect::<PathBuf>())
         .join(entry_file.split('/').collect::<PathBuf>());
     Ok(artifact::relative_module_specifier(out_dir, &entry_path))
-}
-
-pub struct EmitBrowserHarnessOptions {
-    pub asset_summary_path: PathBuf,
-    pub out_dir: PathBuf,
-    pub snapshot_root: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,7 +70,7 @@ struct HtmlEntries {
 /// snapshot manifest never contained.
 pub fn emit_browser_harness(
     artifact: &ChunkBundle,
-    options: &EmitBrowserHarnessOptions,
+    options: &EmitBrowserHarnessConfig,
     chunk_records: &[ArtifactChunkRecord],
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
     excluded_chunk_ids: &BTreeSet<ChunkId>,

@@ -375,6 +375,7 @@ rust_library(
         ":artifact",
         ":identifier_rename_queue",
         ":output_layout",
+        ":spec",
         "@crates//:anyhow",
         "@crates//:lol_html",
         "@crates//:serde",

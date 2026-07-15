@@ -10,7 +10,7 @@ use artifact::IndexedArtifact;
 use artifact::load_js_chunks;
 use artifact::write_json;
 use artifact::{ChunkDecompositionOutput, ChunkId};
-use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
+use emit_harness::emit_browser_harness;
 use lowering::{
     MaterializeLogicalModulesOptions, MaterializeSpecInputs, ReportEmission, UnmatchedSpecClaim,
     materialize_logical_modules,
@@ -406,14 +406,9 @@ pub fn run_transform_cli_with_options(
     if !options.dry_run
         && let Some(cfg) = &spec.emit_browser_harness
     {
-        let opts = EmitBrowserHarnessOptions {
-            asset_summary_path: cfg.asset_summary_path.clone(),
-            out_dir: cfg.out_dir.clone(),
-            snapshot_root: cfg.snapshot_root.clone(),
-        };
         emit_browser_harness(
             &artifact,
-            &opts,
+            cfg,
             &emitted_chunk_records,
             &decomposition_by_chunk,
             &excluded_chunk_ids,
