@@ -1,10 +1,9 @@
 # Benchmarks and known results
 
-Configurations we've actually run, what we measured, what bit us. Each
-row exists to inform either a model choice or an inference-config
-choice — see <README.md#goal>. Update when you bring up a new config or
-rerun an existing one; empty fields mean "not measured yet" — fill them
-in, don't delete the row.
+Historical configurations, measurements, and operational notes from before the
+common harness. Preserve these tables as evidence, but do not append current
+campaign results by hand. <methodology.md> owns the protocol and generated
+`results.md` will own current comparisons.
 
 ## Configurations
 
@@ -178,9 +177,10 @@ for actual model discrimination.
 
 ## Off-the-shelf eval runners
 
-The vast majority of useful evals are already packaged. Each of these takes
-an OpenAI-compatible base URL + model name. Prefer these over hand-rolled
-scripts.
+The vast majority of useful evals are already packaged. This historical survey
+informed the initial campaign, but a runner becomes comparable only when
+<methodology.md> pins its revision, dataset, scorer, scaffold, and sample IDs.
+Prefer packaged evaluators over hand-rolled task implementations.
 
 | Repo                                                                                                                                               | Use for                                                                                  | Why                                                                                             |
 | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
@@ -195,12 +195,12 @@ scripts.
 `vllm bench serve` (ships with vLLM) is the right tool for raw throughput
 measurements, not quality.
 
-## Proposed benchmark suite
+## Legacy proposed benchmark suite
 
-Designed for "reasonable N for good signal in a reasonable time on this GPU."
-Each suite below targets a specific question and runs in <1 hour. **Use the
-off-the-shelf runners above wherever possible** — the commands below are
-illustrative entry points, not bespoke scripts to maintain.
+This predates `inference-bench/v1` and remains design history, not the active
+protocol. <PLAN.md> defines the campaign funnel and <methodology.md> defines
+measurement eligibility. The commands below are illustrative historical entry
+points, not supported repository workflows.
 
 ### Suite 1: Smoke throughput (~10 min/config)
 
@@ -311,25 +311,13 @@ NVMe-vs-HDD-storage-class question.
 - **Quarterly on stable configs**: full Suite 1–6. Catches drift from
   upstream backend updates.
 
-## Where to put results
+## Where new results belong
 
-Append summary numbers to the tables above. For the underlying run that
-produced them:
-
-- **One file per run** at `cluster/docs/inference/runs/YYYY-MM-DD_<config-id>_<suite>.md`.
-  Contents: the exact pod manifest (or `kubectl run` command), the eval
-  command line, the model/server config the eval saw, raw summary output,
-  and a one-line conclusion. This is the "what we actually ran" record so
-  the table numbers stay reproducible.
-- **Larger raw artifacts** (lm-eval JSONs, BFCL run dirs) go alongside the
-  per-run markdown in the same `runs/` directory, or under
-  <../../../debug/> with a link from the run file.
-- **Then** copy the headline numbers into the tables above and link the row
-  back to the run file.
-
-This applies to any one-off pod we use to produce a result we care about,
-not just benchmarks — the rule is "if it produced a number we wrote down,
-the manifest that produced it lives in the repo."
+Follow <PLAN.md#deliverables-and-repository-structure> and <methodology.md>.
+Each accepted run gets an immutable directory with `README.md`, `manifest.json`,
+and `summary.json`; large raw artifacts live in the private artifact store.
+Regenerate `results.md` from validated summaries rather than editing these
+historical tables.
 
 ## See also
 

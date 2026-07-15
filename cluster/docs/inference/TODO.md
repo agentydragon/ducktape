@@ -159,5 +159,7 @@ some operational workflow.
 
 ## How to claim an item
 
-Add a `runs/<date>_<short>/` dir mirroring an existing run, drop the
-findings into <benchmarks.md>, and link the run path here as `done`.
+Follow <PLAN.md> and <methodology.md>. A new accepted run gets an immutable
+`runs/<run-id>/` record with a manifest and normalized summary; current
+comparisons are generated into `results.md`, not appended to <benchmarks.md>.
+Link the run here when the item is complete.
