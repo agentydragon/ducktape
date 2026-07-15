@@ -39,6 +39,7 @@ from haku.console.database_schema import (
     Agent,
     AgentNameReservation,
     AuthorizationGrant,
+    ClientSoftware,
     CredentialBinding,
     EnrollmentInteraction,
     Operator,
@@ -235,9 +236,7 @@ def _request(label: str) -> AuthorizationRequest:
         correlation=AuthorizationCorrelation(
             client_id=_CLIENT_ID, redirect_uri=_REDIRECT_URI, code_challenge=f"challenge-{label}-{uuid4()}"
         ),
-        client=ClientSoftwareSnapshot(
-            client_id=_CLIENT_ID, display_name="Claude Desktop", redirect_uris=(_REDIRECT_URI,)
-        ),
+        client=ClientSoftwareSnapshot(client_id=_CLIENT_ID, display_name="Claude Desktop"),
         requested_scopes=frozenset({"tools:call", "tools:list"}),
     )
 
@@ -290,6 +289,31 @@ async def _create_grant(
             grant_id=grant.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
         )
     return grant
+
+
+async def test_reservation_accumulates_exact_fastmcp_validated_redirects(db_url: str) -> None:
+    harness = _harness(db_url)
+    first = _request("first-redirect")
+    second_redirect = "https://claude.test/oauth/alternate-callback"
+    second = AuthorizationRequest(
+        correlation=AuthorizationCorrelation(
+            client_id=_CLIENT_ID, redirect_uri=second_redirect, code_challenge=f"challenge-second-{uuid4()}"
+        ),
+        client=first.client,
+        requested_scopes=first.requested_scopes,
+    )
+
+    await harness.authority.reserve_authorization(
+        request=first, upstream_authorization_url="https://auth.test/authorize/first"
+    )
+    await harness.authority.reserve_authorization(
+        request=second, upstream_authorization_url="https://auth.test/authorize/second"
+    )
+
+    with _orm_session(db_url) as session:
+        client = session.scalar(select(ClientSoftware).where(ClientSoftware.oauth_client_id == _CLIENT_ID))
+        assert client is not None
+        assert client.validated_redirect_uris == [_REDIRECT_URI, second_redirect]
 
 
 async def test_create_decision_is_idempotent_and_grant_activates_then_revokes(db_url: str) -> None:

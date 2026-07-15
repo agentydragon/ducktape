@@ -604,7 +604,7 @@ class PostgresAgentAuthority:
         presentation = {
             "client_id": request.client.client_id,
             "display_name": request.client.display_name,
-            "redirect_uris": list(request.client.redirect_uris),
+            "redirect_uris": [request.correlation.redirect_uri],
         }
         with self._sessions.begin() as session:
             self._lock_key(session, "agent-client", request.client.client_id)
@@ -623,7 +623,9 @@ class PostgresAgentAuthority:
             )
             if duplicate is not None:
                 raise DuplicateAuthorizationError
-            client = self._upsert_client(session, request.client, now)
+            client = self._upsert_client(
+                session, request.client, validated_redirect_uri=request.correlation.redirect_uri, now=now
+            )
             interaction = EnrollmentInteraction(
                 interaction_id=interaction_id,
                 client_software_id=client.client_software_id,
@@ -1228,27 +1230,26 @@ class PostgresAgentAuthority:
             or not correlation.redirect_uri.strip()
             or not correlation.code_challenge.strip()
             or request.client.client_id != correlation.client_id
-            or correlation.redirect_uri not in request.client.redirect_uris
             or not upstream_url.strip()
         ):
             raise ValueError("FastMCP authorization request is internally inconsistent")
 
     @staticmethod
-    def _metadata_hash(client: ClientSoftwareSnapshot) -> bytes:
+    def _metadata_hash(client: ClientSoftwareSnapshot, validated_redirect_uris: list[str]) -> bytes:
         return hashlib.sha256(
             _canonical_json(
                 {
                     "client_id": client.client_id,
                     "display_name": client.display_name,
-                    "redirect_uris": list(client.redirect_uris),
+                    "redirect_uris": validated_redirect_uris,
                 }
             ).encode()
         ).digest()
 
     def _upsert_client(
-        self, session: Session, snapshot: ClientSoftwareSnapshot, now: datetime.datetime
+        self, session: Session, snapshot: ClientSoftwareSnapshot, *, validated_redirect_uri: str, now: datetime.datetime
     ) -> ClientSoftware:
-        redirects = list(dict.fromkeys(snapshot.redirect_uris))
+        redirects = [validated_redirect_uri]
         row = session.scalar(
             select(ClientSoftware).where(ClientSoftware.oauth_client_id == snapshot.client_id).with_for_update()
         )
@@ -1258,7 +1259,7 @@ class PostgresAgentAuthority:
                 registration_kind=ClientRegistrationKind.OAUTH_PROXY_UNCLASSIFIED,
                 oauth_client_id=snapshot.client_id,
                 validated_redirect_uris=redirects,
-                metadata_hash=self._metadata_hash(snapshot),
+                metadata_hash=self._metadata_hash(snapshot, redirects),
                 observed_name=snapshot.display_name,
                 observed_icon_uri=None,
                 created_at=now,
@@ -1267,8 +1268,9 @@ class PostgresAgentAuthority:
             session.add(row)
             session.flush()
         else:
+            redirects = list(dict.fromkeys([*row.validated_redirect_uris, validated_redirect_uri]))
             row.validated_redirect_uris = redirects
-            row.metadata_hash = self._metadata_hash(snapshot)
+            row.metadata_hash = self._metadata_hash(snapshot, redirects)
             row.observed_name = snapshot.display_name
             row.updated_at = now
         return row

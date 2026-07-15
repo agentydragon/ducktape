@@ -120,7 +120,9 @@ def _bare_proxy(
 
 
 def _client() -> SimpleNamespace:
-    return SimpleNamespace(client_id=CLIENT_ID, client_name="Claude", redirect_uris=[REDIRECT_URI])
+    # FastMCP's synthetic CIMD client deliberately keeps redirect_uris=None
+    # after validating the requested URI against its fetched document.
+    return SimpleNamespace(client_id=CLIENT_ID, client_name="Claude", redirect_uris=None)
 
 
 def _params() -> SimpleNamespace:
@@ -234,7 +236,7 @@ def test_proxy_verifier_hook_preserves_fastmcp_configuration() -> None:
     assert verifier.required_scopes == ["read"]
 
 
-async def test_authorize_reserves_only_after_fastmcp_accepts_public_inputs() -> None:
+async def test_authorize_uses_validated_correlation_when_cimd_client_omits_redirect_list() -> None:
     authority = _authority()
     proxy = _bare_proxy(authority=authority)
     events: list[str] = []
@@ -249,7 +251,7 @@ async def test_authorize_reserves_only_after_fastmcp_accepts_public_inputs() -> 
         request = cast(AuthorizationRequest, kwargs["request"])
         assert request == AuthorizationRequest(
             correlation=AuthorizationCorrelation(CLIENT_ID, REDIRECT_URI, CODE_CHALLENGE),
-            client=ClientSoftwareSnapshot(CLIENT_ID, "Claude", (REDIRECT_URI,)),
+            client=ClientSoftwareSnapshot(CLIENT_ID, "Claude"),
             requested_scopes=SCOPES,
         )
         assert kwargs["upstream_authorization_url"] == "https://auth.example.test/authorize?opaque=1"
@@ -305,7 +307,7 @@ async def test_code_exchange_creates_grant_context_and_records_family_receipt() 
     resolver.resolve.assert_awaited_once_with(idp_tokens)
     authority.begin_exchange.assert_awaited_once_with(
         correlation=AuthorizationCorrelation(CLIENT_ID, REDIRECT_URI, CODE_CHALLENGE),
-        client=ClientSoftwareSnapshot(CLIENT_ID, "Claude", (REDIRECT_URI,)),
+        client=ClientSoftwareSnapshot(CLIENT_ID, "Claude"),
         principal=resolver.resolve.return_value,
         granted_scopes=SCOPES,
     )

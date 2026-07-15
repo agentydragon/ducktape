@@ -90,11 +90,15 @@ class ClientSoftwareSnapshot:
     An HTTPS ``client_id`` is likewise only a CIMD candidate without the
     FastMCP-specific fetched document.  Haku must record that presentation-only
     classification at a boundary which actually knows it, never infer it here.
+
+    The redirect URI is deliberately absent. FastMCP has already validated the
+    exact URI in :class:`AuthorizationCorrelation`, including CIMD wildcard
+    resolution, so duplicating a client-level redirect list here would create a
+    second and sometimes unavailable source of truth.
     """
 
     client_id: str
     display_name: str
-    redirect_uris: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -586,11 +590,7 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
         )
         if not correlation.code_challenge:
             raise AuthorizeError("invalid_request", "An S256 PKCE challenge is required")
-        snapshot = ClientSoftwareSnapshot(
-            client_id=client_id,
-            display_name=client.client_name or client_id,
-            redirect_uris=tuple(str(uri) for uri in client.redirect_uris or []),
-        )
+        snapshot = ClientSoftwareSnapshot(client_id=client_id, display_name=client.client_name or client_id)
 
         # FastMCP validates and stores the transaction before Haku reserves its
         # exact public correlation.  A losing reservation leaves only a bounded
@@ -621,11 +621,7 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
             redirect_uri=str(authorization_code.redirect_uri),
             code_challenge=authorization_code.code_challenge,
         )
-        snapshot = ClientSoftwareSnapshot(
-            client_id=client_id,
-            display_name=client.client_name or client_id,
-            redirect_uris=tuple(str(uri) for uri in client.redirect_uris or []),
-        )
+        snapshot = ClientSoftwareSnapshot(client_id=client_id, display_name=client.client_name or client_id)
         try:
             principal = await self._principal_resolver.resolve(code_model.idp_tokens)
             granted_scopes = self._effective_granted_scopes(code_model.idp_tokens, authorization_code.scopes)
