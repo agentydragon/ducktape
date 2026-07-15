@@ -122,8 +122,9 @@ py_test(
         "//gmail_api:filters",
         "//gmail_api:labels",
         "//gmail_api:messages",
-        "//haku/console:conftest",
+        "@pypi//fastapi",
         "@pypi//fastmcp_slim",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
