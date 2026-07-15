@@ -115,6 +115,7 @@ py_test(
         ":enrollment_routes",
         "//haku/console:operator_auth",
         "@pypi//fastapi",
+        "@pypi//httpx2",
         "@pypi//pytest_bazel",
         "@pypi//python_multipart",
     ],

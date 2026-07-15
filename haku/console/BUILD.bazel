@@ -291,6 +291,7 @@ py_library(
         ":tool_call_actor",
         "@pypi//authlib",
         "@pypi//fastapi",
+        "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//starlette",
     ],

@@ -274,6 +274,7 @@ anyio==4.12.1 \
     #   claude-code-sdk
     #   datalayer-pycrdt
     #   httpx
+    #   httpx2
     #   inspect-ai
     #   jupyter-server
     #   mcp
@@ -2100,6 +2101,7 @@ h11==0.16.0 \
     --hash=sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86
     # via
     #   httpcore
+    #   httpcore2
     #   matrix-nio
     #   mitmproxy
     #   uvicorn
@@ -2157,6 +2159,10 @@ httpcore==1.0.9 \
     --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55 \
     --hash=sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8
     # via httpx
+httpcore2==2.7.0 \
+    --hash=sha256:1452f589fe23f55b44546cd884294c41a29330af902bc0b71a761fd52d18f92b \
+    --hash=sha256:6dc0fedf329a52a990930a5579edfebaea81118ea700ea0dd7de2b5e5be49efc
+    # via httpx2
 httplib2==0.31.2 \
     --hash=sha256:385e0869d7397484f4eab426197a4c020b606edd43372492337c0b4010ae5d24 \
     --hash=sha256:dbf0c2fa3862acf3c55c078ea9c0bc4481d7dc5117cae71be9514912cf9f8349
@@ -2231,6 +2237,10 @@ httpx-sse==0.4.3 \
     --hash=sha256:0ac1c9fe3c0afad2e0ebb25a934a59f4c7823b60792691f779fad2c5568830fc \
     --hash=sha256:9b1ed0127459a66014aec3c56bebd93da3c1bc8bb6618c8082039a44889a755d
     # via mcp
+httpx2==2.7.0 \
+    --hash=sha256:8b30709aed5c8465b0dd3b95c09ce301c8f79e7e7a2d00ab0af551e0d0375b07 \
+    --hash=sha256:ed2a2719c696789e09493bd8e2bec3d8bd925cc6e26b68389ec25ade132f7bf4
+    # via ducktape (pyproject.toml)
 huggingface-hub==1.6.0 \
     --hash=sha256:d931ddad8ba8dfc1e816bf254810eb6f38e5c32f60d4184b5885662a3b167325 \
     --hash=sha256:ef40e2d5cb85e48b2c067020fa5142168342d5108a1b267478ed384ecbf18961
@@ -2249,13 +2259,14 @@ identify==2.6.17 \
     --hash=sha256:be5f8412d5ed4b20f2bd41a65f920990bdccaa6a4a18a08f1eefdcd0bdd885f0 \
     --hash=sha256:f816b0b596b204c9fdf076ded172322f2723cf958d02f9c3587504834c8ff04d
     # via pre-commit
-idna==3.11 \
-    --hash=sha256:771a87f49d9defaf64091e6e6fe9c18d4833f140bd19464795bc32d966ca37ea \
-    --hash=sha256:795dafcc9c04ed0c1fb032c2aa73654d8e8c5023a7df64a53f39190ada629902
+idna==3.18 \
+    --hash=sha256:7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2 \
+    --hash=sha256:ffb385a7e039654cef1ab9ef32c6fafe283c0c0467bba1d9029738ce4a14a848
     # via
     #   anyio
     #   email-validator
     #   httpx
+    #   httpx2
     #   jsonschema
     #   requests
     #   url-normalize
@@ -7006,6 +7017,12 @@ traitlets==5.14.3 \
     #   nbclient
     #   nbconvert
     #   nbformat
+truststore==0.10.4 \
+    --hash=sha256:9d91bd436463ad5e4ee4aba766628dd6cd7010cf3e2461756b3303710eebc301 \
+    --hash=sha256:adaeaecf1cbb5f4de3b1959b42d41f6fab57b2b1666adb59e89cb0b53361d981
+    # via
+    #   httpcore2
+    #   httpx2
 typer==0.24.1 \
     --hash=sha256:112c1f0ce578bfb4cab9ffdabc68f031416ebcc216536611ba21f04e9aa84c9e \
     --hash=sha256:e39b4732d65fbdcde189ae76cf7cd48aeae72919dea1fdfc16593be016256b45
