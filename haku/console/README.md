@@ -79,20 +79,15 @@ Core endpoints:
   YAML/ConfigMap; Postgres stores only short-lived DCR/PKCE flow state and per-operator token
   associations.
   Connecting is available only while unconnected; disconnect first to replace an account link.
-- `POST /api/tool-calls` — submit a call with `server_id`, `tool_name`, exact
-  `arguments`, and explicit `wait_for_ms`. The console mints the canonical `tool_call_id`.
 - `GET /api/approvals/pending`, `GET /api/approvals/events?after_event_id=...`, and
   `WebSocket /api/events/ws` — canonical-Operator-routed frontend catch-up + notifications. REST remains the source of
   truth; the WebSocket only wakes the shell to refresh.
 - `POST /api/tool-calls/{tool_call_id}/decision` — CSRF-gated trusted-frontend approval/denial.
-- `GET /api/tool-calls` / `GET /api/tool-calls/{tool_call_id}` — audit/result reads for Haku's
-  normal sweep or operator debugging. The list endpoint accepts repeated `status` filters and a
-  datetime `since` filter on `updated_at`.
+- `GET /api/tool-calls` / `GET /api/tool-calls/{tool_call_id}` — operator-only audit/result reads.
+  The list endpoint accepts repeated `status` filters and a datetime `since` filter on `updated_at`.
 
-Backend callers authenticate with a configured **static agent** bearer (`static_agents` in the
-config file — each an agent id whose env-referenced Authentik subject seed resolves once at startup
-to a canonical Operator UUID). Browser-origin
-approvals use the operator's Authentik session plus CSRF. The approvals panel renders in trusted
+Agents authenticate only to `/mcp`; the browser REST API requires the operator's Authentik session,
+and decisions additionally require CSRF. The approvals panel renders in trusted
 console chrome, not inside Haku's iframe, and does not block the framed Haku UI. If a server enables
 `operator_oauth`, approval execution
 uses the approving operator's linked OAuth token and refuses to move the call out of
@@ -103,9 +98,9 @@ execution on an `operator_oauth` server.
 ### Agent-facing MCP server (`/mcp`)
 
 `mcp_server.py` mounts a native MCP server at `/mcp` so a connected Claude client (the claude.ai
-custom connector / the `claude` CLI) can call the connected-server tools directly — the same
-submit → auto-approve → execute → wait path as `POST /api/tool-calls`
-(`ToolCallApplicationService.submit_and_wait`), never a divergent one. The surface is two buckets:
+custom connector / the `claude` CLI / haku-ui backend) can call the connected-server tools directly
+through `ToolCallApplicationService.submit_and_wait`. This is the only agent admission path. The
+surface is two buckets:
 tools the policy **unconditionally**
 auto-approves (Gmail and Google Calendar reads, read-only grocy-sf, tana
 `get_or_create_calendar_node`) appear as
@@ -335,8 +330,7 @@ keeps build stamping out of the OCI layers, so image contents remain reproducibl
 **Auth is app-owned** (the Authentik forward-auth proxy outpost that used to gate
 `haku.allegedly.works` is retired; the HTTPRoute now points straight at the console
 Service). The operator browser logs in via Authentik OIDC (`HAKU_CONSOLE_OPERATOR_OIDC__*`
-→ signed session cookie; router-level dependency guards protect `/api/*`, with the agent bearer
-scoped to the agent-facing submit/read routes only), and agents authenticate to the always-mounted
+→ signed session cookie; router-level dependency guards protect `/api/*`), and agents authenticate to the always-mounted
 `/mcp` through `HakuAgentOAuthProxy` plus static-bearer verification; both resolve canonical Agents
 through one failure-preserving authority (`HAKU_CONSOLE_MCP_OAUTH__*`; FastMCP registration/token
 state persists in the console's own Postgres via `HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__*`).

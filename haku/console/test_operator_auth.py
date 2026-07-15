@@ -4,9 +4,8 @@ authorization-code login against a hermetic mock OIDC provider (``util.testing.m
 app, no hand-minted session: the operator credential is obtained by actually walking
 ``/auth/login`` → provider → ``/auth/callback``.
 
-Two guards enforce the split (`operator_auth`): the agent-facing tool-call routes accept an operator
-session OR a static agent's bearer; the operator-only surfaces (approvals, account linking) require an
-operator session. OIDC configuration is mandatory; there is no unauthenticated development mode.
+The browser API requires an operator session. Static Agent bearers authenticate only to `/mcp`.
+OIDC configuration is mandatory; there is no unauthenticated development mode.
 """
 
 from __future__ import annotations
@@ -103,8 +102,7 @@ def _static_agent_config(tmp_path: Path) -> Path:
 async def test_credential_matrix_through_real_app(
     migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """No credential is rejected on `/api/*`; a static agent's bearer reaches only the agent-facing
-    routes; a real operator login reaches everything — all through the real routers and guards."""
+    """The browser API requires an Operator session; a static Agent bearer is MCP-only."""
     monkeypatch.setenv(_AGENT_TOKEN_ENV, AGENT_TOKEN)
     monkeypatch.setenv(_AGENT_OPERATOR_ENV, _OPERATOR_SUBJECT)
 
@@ -132,14 +130,15 @@ async def test_credential_matrix_through_real_app(
     async with serve_app(idp, port=idp_port), serve_app(app, port=console_port):
         # No credential: every `/api/*` route rejects; the health probe stays open.
         async with httpx.AsyncClient(base_url=console_url) as anon:
-            assert (await anon.get("/api/tool-calls")).status_code == 401  # agent-facing read
-            assert (await anon.get("/api/mcp/operator-auth")).status_code == 401  # operator-only
+            assert (await anon.get("/api/tool-calls")).status_code == 401
+            assert (await anon.get("/api/mcp/operator-auth")).status_code == 401
             assert (await anon.get("/healthz")).status_code == 200
 
-        # A static agent's bearer reaches the agent-facing tool-call routes only.
+        # A static Agent bearer grants no browser API access. The retired submission route is absent.
         async with httpx.AsyncClient(base_url=console_url, headers={"Authorization": f"Bearer {AGENT_TOKEN}"}) as agent:
-            assert (await agent.get("/api/tool-calls")).status_code == 200
-            assert (await agent.get("/api/mcp/operator-auth")).status_code == 401  # operator-only, forbidden
+            assert (await agent.get("/api/tool-calls")).status_code == 401
+            assert (await agent.post("/api/tool-calls", json={})).status_code == 405
+            assert (await agent.get("/api/mcp/operator-auth")).status_code == 401
 
         # A real operator login (authorization-code flow through the mock IdP) reaches everything.
         async with httpx.AsyncClient(base_url=console_url, follow_redirects=True) as operator:
@@ -147,14 +146,15 @@ async def test_credential_matrix_through_real_app(
             me = await operator.get("/auth/me")
             assert me.status_code == 200, me.text
             assert me.json()["username"] == _OPERATOR_USERNAME
-            assert (await operator.get("/api/tool-calls")).status_code == 200  # agent-facing
-            assert (await operator.get("/api/mcp/operator-auth")).status_code == 200  # operator-only
+            assert (await operator.get("/api/tool-calls")).status_code == 200
+            assert (await operator.post("/api/tool-calls", json={})).status_code == 405
+            assert (await operator.get("/api/mcp/operator-auth")).status_code == 200
 
 
 def test_guards_reject_anonymous_requests_with_test_oidc(make_client) -> None:
     with make_client() as client:
-        assert client.get("/api/tool-calls").status_code == 401  # agent-facing
-        assert client.get("/api/config").status_code == 401  # operator-only
+        assert client.get("/api/tool-calls").status_code == 401
+        assert client.get("/api/config").status_code == 401
 
 
 def test_signed_operator_session_has_an_absolute_reauthentication_deadline(make_operator_client) -> None:

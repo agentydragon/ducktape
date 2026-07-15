@@ -11,19 +11,7 @@ Status: open follow-ups only. Implemented behavior belongs in:
 
 ## Open follow-ups
 
-1. Live haku-state rollout and smoke test.
-   After the template PR lands, sync the live haku-state repo/template wiring, roll out haku-ui,
-   and prove the real path: authored request -> haku-ui backend -> haku-console approval -> MCP
-   execution -> console audit read. Use a harmless call first; only add Grocy writes when the
-   exact arguments are known.
-
-2. Audit sweep in Haku's normal pass.
-   Treat haku-console's `GET /api/tool-calls` audit log as another bookmark/evidence source Haku
-   sweeps. Terminal records can update ordinary state files when useful, but haku-console remains
-   the source of truth for tool-call authorization, execution, audit, and results. Do not add a
-   `tool_results/` git mirror.
-
-3. Additional server onboarding.
+1. Additional server onboarding.
    Add more connected MCP servers as concrete use cases arrive, such as a kubectl MCP server for
    "restart stuck rollout." Server config should name reachable servers; tool schemas still come
    from live MCP reflection, not duplicated config.

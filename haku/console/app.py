@@ -242,9 +242,7 @@ def create_app(
     app.router.routes.extend(mcp_auth.provider.get_well_known_routes(mcp_path=MCP_PATH))
     # The capability router reads settings off app.state (see haku.console.capabilities).
     app.state.settings = settings
-    app.state.agent_authority = agent_authority
     app.state.agent_enrollment_service = agent_authority
-    app.state.static_agent_credentials = static_credential_registry
     app.state.operator_identity_store = operator_identity_store
     app.state.tool_call_service = tool_calls
     app.state.mcp_operator_oauth_store = mcp_operator_oauth_store
@@ -288,13 +286,9 @@ def create_app(
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
-    # Two router-level guards enforce the /api/* auth split. Operator-only routers require an
-    # operator session; the agent-facing tool-call router (submit + read/sweep) also accepts a static
-    # agent's bearer. A route added to a guarded router is protected by default — no path list.
+    # The browser API is operator-only. Agents use the separately authenticated /mcp surface; static
+    # bearer support remains there and does not grant access to any /api/* route.
     operator_only = [Depends(operator_auth.require_operator)]
-    app.include_router(
-        mcp_approval.agent_router, dependencies=[Depends(operator_auth.require_operator_or_static_agent)]
-    )
     app.include_router(capabilities.router, dependencies=operator_only)
     app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(mcp_approval.router, dependencies=operator_only)

@@ -43,20 +43,16 @@ rationale:
   routine-runs listing API for Claude Code routines. The panel should render active/past
   routine state from an official listing and migrate launch calls to the `anthropic`
   Python SDK rather than extending bespoke `httpx` code.
-- **Shared console contracts — finish haku-state adoption.** ducktape owns a single shared
+- **Shared console contracts.** ducktape owns a single shared
   Bazel module `ducktape_haku` at `haku/shared/` (consumed by haku-state via
   `bazel_dep(name = "ducktape_haku")` + `git_override` with `strip_prefix = "haku/shared"`
   against the Forgejo ducktape mirror). It carries two packages, one per language:
   - **Bridge protocol** (`bridge_protocol/`, JS, `@haku/console-bridge`): the console↔iframe
     postMessage wire types + client helpers. The console shell imports these instead of its own
-    copies. Remaining: haku-ui links the package and drops its hand-maintained
-    `ui/frontend/src/bridge.ts` duplicate (its current pin predates the `haku/js`→`haku/shared`
-    move, so the next bump updates `strip_prefix` too).
-  - **Tool-call API contract** (`haku/console/tool_calls.py`, Python, `haku.console.tool_calls`):
-    the request/response Pydantic models the console serves at `/api/tool-calls`. The console
-    imports these instead of a private `mcp_models.py`. Remaining: haku-ui's backend imports the
-    same models (layering its own `state_request_id`/`ToolRequestDoc` on top) instead of
-    hand-redeclaring them in `ui/backend/models.py`.
+    copies; haku-ui links the same package.
+  - **Tool-call contract** (`haku/console/tool_calls.py`, Python, `haku.console.tool_calls`): the
+    audit records and MCP discovery/correlation metadata shared by the console and haku-ui. Agent
+    admission itself is MCP-only; the REST history surface is operator-only.
 - **Alternative runtimes.** Keep the self-hosted/in-cluster scanner and Managed
   Agents worker as experiments at varying completeness. They are not the primary
   runtime unless their docs explicitly say they have replaced the Claude Code web

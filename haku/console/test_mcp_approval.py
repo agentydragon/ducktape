@@ -13,19 +13,21 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastmcp import FastMCP
 from mcp import types as mcp_types
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event, select, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.websockets import WebSocketDisconnect
 
+from haku.console.agents.authorization import fingerprint_static_token
 from haku.console.agents.models import (
     AgentStatus,
     ClientRegistrationKind,
@@ -36,11 +38,14 @@ from haku.console.agents.models import (
 from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC, csrf_token, write_config
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
+    Agent,
+    CredentialBinding,
     McpOperatorOAuthAssociation,
     McpOperatorOAuthFlow,
     McpToolCall,
     McpToolCallPrincipal,
     Operator,
+    StaticCredential,
 )
 from haku.console.mcp_approval import (
     AliveServerMetadata,
@@ -54,9 +59,15 @@ from haku.console.mcp_config import McpServerEntry
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore, _BuiltOperatorOAuthFlow
 from haku.console.operator_identity import InactiveOperatorError, OperatorIdentityTrust, OperatorStatus
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.tool_call_actor import OperatorActor
+from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import backend_auth_for_operator
-from haku.console.tool_calls import AgentToolCallCaller, OperatorToolCallCaller, ToolCallEventType, ToolCallStatus
+from haku.console.tool_calls import (
+    AgentToolCallCaller,
+    OperatorToolCallCaller,
+    SubmitToolCallRequest,
+    ToolCallEventType,
+    ToolCallStatus,
+)
 from haku.console.tools.gmail import build_mcp as build_gmail_mcp
 from util.net import pick_free_port
 from util.testing.asgi import serve_app_sync, serve_fastmcp
@@ -314,8 +325,7 @@ def _enum_values(engine: Engine) -> dict[str, tuple[str, ...]]:
 def _config(servers: list[dict[str, Any]]) -> dict[str, Any]:
     """A console config dict for the given MCP servers, always carrying the `haku` static agent — a
     console with no /mcp credential doesn't run (create_app raises), and the deploy always has it. So
-    an `/api/tool-calls` caller presenting its bearer authenticates as the agent; absent a
-    bearer/operator the endpoint 401s (under app-owned auth) rather than silently assuming operator."""
+    the test app exercises the same required static MCP credential as the deployment."""
     return {"mcp": {"servers": servers}, "static_agents": _STATIC_AGENTS}
 
 
@@ -366,21 +376,56 @@ def preregistered_operator_oauth_config_file(tmp_path: Path, preregistered_remot
 
 
 def _submit(client: TestClient, *, amount: int = 1) -> dict[str, Any]:
-    # An operator-originated submit; the client must carry an operator session (the `operator_client`
-    # fixture or `make_operator_client`).
-    resp = client.post(
-        "/api/tool-calls",
-        json={
-            "server_id": "grocy-sf",
-            "tool_name": "stock_add",
-            "title": "Add Thrive box items to Grocy",
-            "rationale": "box is physically present",
-            "arguments": {"items": [{"product_id": 123, "amount": amount}]},
-            "wait_for_ms": 0,
-        },
-    )
-    assert resp.status_code == 200, resp.text
-    return cast(dict[str, Any], resp.json())
+    """Submit directly at the application boundary; agent admission is tested through `/mcp`."""
+    app = cast(FastAPI, client.app)
+
+    async def submit() -> Any:
+        return await app.state.tool_call_service.submit_and_wait(
+            req=SubmitToolCallRequest(
+                server_id="grocy-sf",
+                tool_name="stock_add",
+                title="Add Thrive box items to Grocy",
+                rationale="box is physically present",
+                arguments={"items": [{"product_id": 123, "amount": amount}]},
+                wait_for_ms=0,
+            ),
+            actor=app.state.test_operator_actor,
+        )
+
+    assert client.portal is not None
+    record = client.portal.call(submit)
+    return cast(dict[str, Any], record.model_dump(mode="json"))
+
+
+def _submit_request(
+    client: TestClient, request: SubmitToolCallRequest, *, actor: ToolCallActor | None = None
+) -> dict[str, Any]:
+    app = cast(FastAPI, client.app)
+
+    async def submit() -> Any:
+        return await app.state.tool_call_service.submit_and_wait(
+            req=request, actor=actor if actor is not None else app.state.test_operator_actor
+        )
+
+    assert client.portal is not None
+    record = client.portal.call(submit)
+    return cast(dict[str, Any], record.model_dump(mode="json"))
+
+
+def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
+    app = cast(FastAPI, client.app)
+    engine = create_engine(app.state.settings.database_url.get_secret_value())
+    try:
+        with Session(engine) as session:
+            binding_id, agent_id, operator_id = session.execute(
+                select(CredentialBinding.binding_id, CredentialBinding.agent_id, Agent.owner_operator_id)
+                .join(StaticCredential, StaticCredential.binding_id == CredentialBinding.binding_id)
+                .join(Agent, Agent.agent_id == CredentialBinding.agent_id)
+                .where(StaticCredential.credential_fingerprint == fingerprint_static_token(bearer))
+            ).one()
+        return AgentActor(agent_id=agent_id, operator_id=operator_id, binding_id=binding_id)
+    finally:
+        engine.dispose()
 
 
 class RecordingExecutor:
@@ -868,14 +913,13 @@ def test_submit_mints_tool_call_id(operator_client: TestClient, migrated_db_url:
     assert second["tool_call_id"] != first["tool_call_id"]
 
 
-def test_tool_call_rejects_ambiguous_operator_and_agent_credentials(operator_client: TestClient) -> None:
+def test_rest_submission_route_is_retired(operator_client: TestClient) -> None:
     response = operator_client.post(
         "/api/tool-calls",
         headers={"Authorization": "Bearer tool-token"},
         json={"server_id": "smoke", "tool_name": "echo", "arguments": {}, "wait_for_ms": 0},
     )
-    assert response.status_code == 400
-    assert "exactly one" in response.json()["detail"]
+    assert response.status_code == 405
 
 
 def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
@@ -890,15 +934,13 @@ def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
         ) as client,
         make_operator_client(config_file=gmail_config_file, operator_external_user_key="op-haku") as operator,
     ):
-        response = client.post(
-            "/api/tool-calls",
-            headers={"Authorization": "Bearer tool-token"},
-            json={"server_id": "gmail", "tool_name": "labels_list", "arguments": {}, "wait_for_ms": 0},
+        record = _submit_request(
+            client,
+            SubmitToolCallRequest(server_id="gmail", tool_name="labels_list", arguments={}, wait_for_ms=0),
+            actor=_static_agent_actor(client, "tool-token"),
         )
         pending = operator.get("/api/approvals/pending").json()
 
-    assert response.status_code == 200, response.text
-    record = response.json()
     assert record["status"] == "ok"
     assert record["approval_policy_id"] == "unconditional_v1"
     assert record["auto_approval_evaluation"] == "approved: gmail/labels_list is allowlisted read-only/safe"
@@ -917,15 +959,13 @@ def test_operator_gmail_labels_list_stays_pending(
         # Matching a configured agent id must not turn an operator into an auto-approved agent.
         operator_username="haku",
     ) as client:
-        response = client.post(
-            "/api/tool-calls",
-            json={"server_id": "gmail", "tool_name": "labels_list", "arguments": {}, "wait_for_ms": 0},
+        record = _submit_request(
+            client, SubmitToolCallRequest(server_id="gmail", tool_name="labels_list", arguments={}, wait_for_ms=0)
         )
 
-    assert response.status_code == 200, response.text
-    assert response.json()["status"] == "pending_approval"
-    assert response.json()["approval_policy_id"] is None
-    assert response.json()["auto_approval_evaluation"] is None
+    assert record["status"] == "pending_approval"
+    assert record["approval_policy_id"] is None
+    assert record["auto_approval_evaluation"] is None
 
 
 def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(
@@ -939,23 +979,22 @@ def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(
         ) as client,
         make_operator_client(config_file=gmail_config_file, operator_external_user_key="op-haku") as operator,
     ):
-        response = client.post(
-            "/api/tool-calls",
-            headers={"Authorization": "Bearer tool-token"},
-            json={
-                "server_id": "gmail",
-                "tool_name": "threads_modify_labels",
-                "arguments": {"thread_ids": ["t1"], "add": ["INBOX"]},
-                "wait_for_ms": 0,
-            },
+        record = _submit_request(
+            client,
+            SubmitToolCallRequest(
+                server_id="gmail",
+                tool_name="threads_modify_labels",
+                arguments={"thread_ids": ["t1"], "add": ["INBOX"]},
+                wait_for_ms=0,
+            ),
+            actor=_static_agent_actor(client, "tool-token"),
         )
         pending = operator.get("/api/approvals/pending").json()["approvals"]
 
-    assert response.status_code == 200, response.text
-    assert response.json()["status"] == "pending_approval"
-    assert response.json()["approval_policy_id"] is None
-    assert response.json()["auto_approval_evaluation"] == "manual: at least one label name is outside 'haku/'"
-    assert pending[0]["auto_approval_evaluation"] == response.json()["auto_approval_evaluation"]
+    assert record["status"] == "pending_approval"
+    assert record["approval_policy_id"] is None
+    assert record["auto_approval_evaluation"] == "manual: at least one label name is outside 'haku/'"
+    assert pending[0]["auto_approval_evaluation"] == record["auto_approval_evaluation"]
 
 
 def test_approval_executes_tool_and_records_terminal_result(operator_client: TestClient) -> None:
@@ -1129,18 +1168,19 @@ def test_routing_executes_each_agent_as_its_own_operator(
         # products_list is an unconditionally auto-approved grocy read, so each call runs immediately.
         call_ids: list[str] = []
         for bearer in ("tool-token", "ops-token"):
-            resp = client.post(
-                "/api/tool-calls",
-                headers={"Authorization": f"Bearer {bearer}"},
-                json={"server_id": "grocy-sf", "tool_name": "products_list", "arguments": {}, "wait_for_ms": 0},
+            record = _submit_request(
+                client,
+                SubmitToolCallRequest(server_id="grocy-sf", tool_name="products_list", arguments={}, wait_for_ms=0),
+                actor=_static_agent_actor(client, bearer),
             )
-            assert resp.status_code == 200, resp.text
-            assert resp.json()["status"] == "ok", resp.json()
-            call_ids.append(resp.json()["tool_call_id"])
+            assert record["status"] == "ok", record
+            call_ids.append(record["tool_call_id"])
 
         for bearer, expected_call_id in zip(("tool-token", "ops-token"), call_ids, strict=True):
-            listed = client.get("/api/tool-calls", headers={"Authorization": f"Bearer {bearer}"}).json()["tool_calls"]
-            assert [call["tool_call_id"] for call in listed] == [expected_call_id]
+            actor = _static_agent_actor(client, bearer)
+            listed = client.app.state.tool_call_service.list_tool_calls(actor=actor)
+            assert [call.tool_call_id for call in listed] == [expected_call_id]
+            assert client.get("/api/tool-calls", headers={"Authorization": f"Bearer {bearer}"}).status_code == 401
 
     # haku's call executed with op-haku's token; ops-bot's with op-ops's — each routed to its operator.
     assert recording_executor.auth_tokens == ["grocy-token-haku", "grocy-token-ops"]
@@ -1195,35 +1235,30 @@ def test_two_operator_two_agent_http_authorization_matrix(
     ):
         call_ids: dict[str, str] = {}
         for amount, (name, bearer, _, _, _) in enumerate(agent_specs, start=1):
-            response = agents.post(
-                "/api/tool-calls",
-                headers={"Authorization": f"Bearer {bearer}"},
-                json={
-                    "server_id": "grocy-sf",
-                    "tool_name": "stock_add",
-                    "arguments": {"items": [{"product_id": 123, "amount": amount}]},
-                    "wait_for_ms": 0,
-                },
+            record = _submit_request(
+                agents,
+                SubmitToolCallRequest(
+                    server_id="grocy-sf",
+                    tool_name="stock_add",
+                    arguments={"items": [{"product_id": 123, "amount": amount}]},
+                    wait_for_ms=0,
+                ),
+                actor=_static_agent_actor(agents, bearer),
             )
-            assert response.status_code == 200, response.text
-            call_ids[name] = response.json()["tool_call_id"]
+            call_ids[name] = record["tool_call_id"]
 
         call_ids["operator-a"] = _submit(operator_a, amount=5)["tool_call_id"]
         call_ids["operator-b"] = _submit(operator_b, amount=6)["tool_call_id"]
 
         for name, bearer, _, _, _ in agent_specs:
-            own_call_id = call_ids[name]
             headers = {"Authorization": f"Bearer {bearer}"}
-            listed = agents.get("/api/tool-calls", headers=headers).json()["tool_calls"]
-            assert [call["tool_call_id"] for call in listed] == [own_call_id]
-            assert agents.get(f"/api/tool-calls/{own_call_id}", headers=headers).status_code == 200
-            for foreign_call_id in set(call_ids.values()) - {own_call_id}:
-                assert agents.get(f"/api/tool-calls/{foreign_call_id}", headers=headers).status_code == 404
+            assert agents.get("/api/tool-calls", headers=headers).status_code == 401
+            assert agents.get(f"/api/tool-calls/{call_ids[name]}", headers=headers).status_code == 401
             assert agents.get("/api/approvals/pending", headers=headers).status_code == 401
             assert agents.get("/api/approvals/events", headers=headers).status_code == 401
             assert (
                 agents.post(
-                    f"/api/tool-calls/{own_call_id}/decision", headers=headers, json={"decision": "deny"}
+                    f"/api/tool-calls/{call_ids[name]}/decision", headers=headers, json={"decision": "deny"}
                 ).status_code
                 == 401
             )
@@ -1283,16 +1318,14 @@ def test_approval_denial_is_terminal_and_does_not_execute(operator_client: TestC
 
 
 def test_all_v1_tool_calls_require_console_approval(operator_client: TestClient) -> None:
-    resp = operator_client.post(
-        "/api/tool-calls",
-        json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "world"}, "wait_for_ms": 1000},
+    body = _submit_request(
+        operator_client,
+        SubmitToolCallRequest(server_id="smoke", tool_name="echo", arguments={"text": "world"}, wait_for_ms=1000),
     )
     pending = operator_client.get("/api/approvals/pending").json()
     listed = operator_client.get(
         "/api/tool-calls", params={"status": "pending_approval", "since": "1970-01-01T00:00:00+00:00"}
     ).json()
-    assert resp.status_code == 200
-    body = resp.json()
     assert body["status"] == "pending_approval"
     assert body["result"] is None
     assert pending["approvals"][0]["tool_call_id"] == body["tool_call_id"]
@@ -1300,17 +1333,13 @@ def test_all_v1_tool_calls_require_console_approval(operator_client: TestClient)
     assert listed["tool_calls"][0]["tool_call_id"] == body["tool_call_id"]
 
 
-def test_unknown_server_maps_to_http_not_found(operator_client: TestClient) -> None:
-    submitted = operator_client.post(
-        "/api/tool-calls", json={"server_id": "missing", "tool_name": "echo", "arguments": {}, "wait_for_ms": 0}
-    )
+def test_unknown_oauth_server_maps_to_http_not_found(operator_client: TestClient) -> None:
     connected = operator_client.post(
         "/api/mcp/operator-auth/missing/connect", headers={"X-CSRF-Token": csrf_token(operator_client)}
     )
 
-    for response in (submitted, connected):
-        assert response.status_code == 404
-        assert response.json()["detail"] == "unknown MCP server: missing"
+    assert connected.status_code == 404
+    assert connected.json()["detail"] == "unknown MCP server: missing"
 
 
 def test_operator_tenants_cannot_read_or_decide_each_others_calls(make_operator_client, console_config: Path) -> None:
@@ -1370,13 +1399,12 @@ def test_ledger_get_and_list_load_principal_projection_in_one_query(
         make_client(config_file=console_config) as agent,
         make_operator_client(config_file=console_config, operator_external_user_key="op-haku") as operator,
     ):
-        agent_response = agent.post(
-            "/api/tool-calls",
-            headers={"Authorization": "Bearer tool-token"},
-            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "agent"}, "wait_for_ms": 0},
+        agent_record = _submit_request(
+            agent,
+            SubmitToolCallRequest(server_id="smoke", tool_name="echo", arguments={"text": "agent"}, wait_for_ms=0),
+            actor=_static_agent_actor(agent, "tool-token"),
         )
-        assert agent_response.status_code == 200, agent_response.text
-        agent_call_id = cast(str, agent_response.json()["tool_call_id"])
+        agent_call_id = cast(str, agent_record["tool_call_id"])
         operator_call_id = cast(str, _submit(operator)["tool_call_id"])
 
     ledger = PostgresToolCallLedger(migrated_db_url)
@@ -1478,15 +1506,15 @@ def test_audit_log_is_tenant_scoped_and_redacts_secrets(
         make_operator_client(config_file=console_config, operator_external_user_key="operator-sub") as operator,
         make_operator_client(config_file=console_config, operator_external_user_key="op-haku") as haku_operator,
     ):
-        operator_call = operator.post(
-            "/api/tool-calls",
-            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "one"}, "wait_for_ms": 0},
-        ).json()
-        haku_call = agent.post(
-            "/api/tool-calls",
-            headers={"Authorization": "Bearer tool-token"},
-            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "two"}, "wait_for_ms": 0},
-        ).json()
+        operator_call = _submit_request(
+            operator,
+            SubmitToolCallRequest(server_id="smoke", tool_name="echo", arguments={"text": "one"}, wait_for_ms=0),
+        )
+        haku_call = _submit_request(
+            agent,
+            SubmitToolCallRequest(server_id="smoke", tool_name="echo", arguments={"text": "two"}, wait_for_ms=0),
+            actor=_static_agent_actor(agent, "tool-token"),
+        )
         operator_body = operator.get("/api/tool-calls").json()
         haku_body = haku_operator.get("/api/tool-calls").json()
         future = operator.get("/api/tool-calls", params={"since": "2999-01-01T00:00:00+00:00"}).json()
@@ -1500,10 +1528,10 @@ def test_audit_log_is_tenant_scoped_and_redacts_secrets(
 
 
 def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: TestClient, db_url: str) -> None:
-    submitted = operator_client.post(
-        "/api/tool-calls",
-        json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "world"}, "wait_for_ms": 0},
-    ).json()
+    submitted = _submit_request(
+        operator_client,
+        SubmitToolCallRequest(server_id="smoke", tool_name="echo", arguments={"text": "world"}, wait_for_ms=0),
+    )
     approved = operator_client.post(
         f"/api/tool-calls/{submitted['tool_call_id']}/decision",
         headers={"X-CSRF-Token": csrf_token(operator_client)},

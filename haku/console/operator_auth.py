@@ -1,16 +1,11 @@
 """Operator **browser** authentication for haku-console (Authentik OIDC).
 
 The console authenticates the operator's browser itself via the Authentik authorization-code flow,
-storing the identity in a signed session cookie. Agent access to `/mcp` uses its own MultiAuth
-(OIDCProxy DCR + static bearer) and is unaffected.
+storing the identity in a signed session cookie. Agent access is exclusively through `/mcp`, whose
+MultiAuth supports OIDCProxy DCR and static bearers independently of the browser API.
 
-Two router-level dependency guards enforce the split (applied by `app.py` when it includes each
-router, so a new route on a guarded router is protected by default):
-
-- `require_operator` — the operator-only surface (approvals, decisions, account-linking): a valid
-  DB-revalidated canonical Operator session is required;
-- `require_operator_or_static_agent` — the agent-facing tool-call routes (submit + read/sweep): an
-  operator session OR a configured static agent's bearer.
+`require_operator` guards the entire browser API (approvals, decisions, audit history, and account
+linking) with a DB-revalidated canonical Operator session.
 
 The static SPA (served by nginx) stays public; on a 401 the frontend redirects to `/auth/login`.
 `/mcp` (its own MultiAuth), `/healthz`, and `/auth/*` are not under `/api/` and carry their own auth.
@@ -32,13 +27,10 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from starlette.requests import HTTPConnection
 
-from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentRejectedError
 from haku.console.config import OperatorOidcConfig, Settings
-from haku.console.mcp_agent_auth import StaticAgentCredentialRegistry
-from haku.console.mcp_auth.fastmcp_adapter import AgentGrantAuthorityUnavailableError
 from haku.console.operator_identity import OperatorIdentityError, VerifiedExternalIdentity
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
+from haku.console.tool_call_actor import OperatorActor
 
 logger = logging.getLogger(__name__)
 
@@ -50,13 +42,6 @@ _AGENT_ENROLLMENT_PATH_PREFIX = "/auth/agent-enrollment/"
 _MAX_RETURN_TO_LENGTH = 2048
 
 router = APIRouter(prefix="/auth", tags=["operator-auth"])
-
-
-def _presented_bearer(conn: HTTPConnection) -> str | None:
-    scheme, separator, credential = conn.headers.get("authorization", "").partition(" ")
-    if not separator or scheme.lower() != "bearer" or not credential:
-        return None
-    return credential
 
 
 class OperatorResponse(BaseModel):
@@ -221,14 +206,6 @@ async def me(request: Request) -> OperatorResponse:
     return OperatorResponse(username=session.username)
 
 
-def _agent_authority(conn: HTTPConnection) -> PostgresAgentAuthority:
-    return cast(PostgresAgentAuthority, conn.app.state.agent_authority)
-
-
-def _static_credentials(conn: HTTPConnection) -> StaticAgentCredentialRegistry:
-    return cast(StaticAgentCredentialRegistry, conn.app.state.static_agent_credentials)
-
-
 def _operator_actor(conn: HTTPConnection) -> OperatorActor:
     session = operator_session(conn)
     if session is None:
@@ -239,44 +216,8 @@ def _operator_actor(conn: HTTPConnection) -> OperatorActor:
 OperatorActorDep = Annotated[OperatorActor, Depends(_operator_actor)]
 
 
-async def _tool_call_actor(conn: HTTPConnection) -> ToolCallActor:
-    """Resolve exactly one presented credential into its audit identity and tenant."""
-    bearer = _presented_bearer(conn)
-    session = operator_session(conn)
-    if bearer is not None and session is not None:
-        raise HTTPException(status_code=400, detail="present exactly one operator or static-agent credential")
-    if bearer is not None:
-        fingerprint = _static_credentials(conn).configured_fingerprint(bearer)
-        if fingerprint is None:
-            raise HTTPException(status_code=401, detail="static Agent credential is not configured")
-        try:
-            authorization = await _agent_authority(conn).static_authorization_for_fingerprint(fingerprint=fingerprint)
-        except StaticAgentRejectedError:
-            raise HTTPException(status_code=401, detail="static Agent credential is not active") from None
-        except AgentGrantAuthorityUnavailableError:
-            raise HTTPException(
-                status_code=503, detail="Agent authorization is temporarily unavailable", headers={"Retry-After": "60"}
-            ) from None
-        return AgentActor(
-            agent_id=authorization.agent_id, operator_id=authorization.operator_id, binding_id=authorization.binding_id
-        )
-    if session is not None:
-        return OperatorActor(operator_id=session.operator_id)
-    raise HTTPException(status_code=401, detail="operator or agent authentication required")
-
-
-ToolCallActorDep = Annotated[ToolCallActor, Depends(_tool_call_actor)]
-
-
 def require_operator(actor: OperatorActorDep) -> None:
     """Router-level guard for the operator-only surface: the caller must present an authenticated
     canonical Operator session. Applied to the operator routers so a newly added route there is
     protected by default — no path list to keep in sync. FastAPI caches the same actor dependency
     for the guard and route handler, so identity is resolved exactly once per request."""
-
-
-def require_operator_or_static_agent(actor: ToolCallActorDep) -> None:
-    """Router-level guard for the agent-facing tool-call routes (submit + read/sweep): an operator
-    session OR a configured static agent's bearer. The operator-only surfaces (approvals, decisions,
-    account linking) are never reachable by an agent bearer because they live under `require_operator`.
-    The actor dependency is shared with the route through FastAPI's per-request dependency cache."""

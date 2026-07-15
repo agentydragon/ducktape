@@ -48,7 +48,7 @@ from haku.console.mcp_config import (
     _transport,
 )
 from haku.console.mcp_operator_oauth import OAuthStoreDep, PostgresMcpOperatorOAuthStore
-from haku.console.operator_auth import OperatorActorDep, ToolCallActorDep
+from haku.console.operator_auth import OperatorActorDep
 from haku.console.operator_identity import OperatorStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
@@ -70,13 +70,9 @@ from haku.console.tool_calls import (
     ToolCallStatus,
 )
 
-# Operator-only routes (reflection, approvals, decisions). app.py guards this router with
+# Operator-only routes (reflection, approvals, decisions, and audit history). app.py guards this router with
 # `require_operator`.
 router = APIRouter(tags=["mcp-approval"])
-# The agent-facing tool-call routes (submit + read/sweep results). app.py guards this router with
-# `require_operator_or_static_agent`, so a static agent's bearer — not just an operator session —
-# reaches them, and nothing else.
-agent_router = APIRouter(tags=["mcp-approval"])
 Csrf = Annotated[CsrfProtect, Depends()]
 
 
@@ -722,22 +718,10 @@ async def mcp_servers(
     )
 
 
-@agent_router.post("/api/tool-calls")
-async def submit_tool_call(
-    body: SubmitToolCallRequest, service: ToolCallServiceDep, actor: ToolCallActorDep
-) -> ToolCallRecord:
-    try:
-        return await service.submit_and_wait(req=body, actor=actor)
-    except BackendAccountNotConnectedError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
-    except (McpServerNotFoundError, ToolCallNotFoundError, ToolCallStateConflictError) as error:
-        _raise_tool_call_http_error(error)
-
-
-@agent_router.get("/api/tool-calls")
+@router.get("/api/tool-calls")
 async def list_tool_calls(
     service: ToolCallServiceDep,
-    actor: ToolCallActorDep,
+    actor: OperatorActorDep,
     status: Annotated[list[ToolCallStatus] | None, Query()] = None,
     since: datetime.datetime | None = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
@@ -750,8 +734,8 @@ async def list_tool_calls(
     )
 
 
-@agent_router.get("/api/tool-calls/{tool_call_id}")
-async def get_tool_call(tool_call_id: str, service: ToolCallServiceDep, actor: ToolCallActorDep) -> ToolCallRecord:
+@router.get("/api/tool-calls/{tool_call_id}")
+async def get_tool_call(tool_call_id: str, service: ToolCallServiceDep, actor: OperatorActorDep) -> ToolCallRecord:
     try:
         return service.get(tool_call_id, actor=actor)
     except (ToolCallNotFoundError, ToolCallStateConflictError) as error:

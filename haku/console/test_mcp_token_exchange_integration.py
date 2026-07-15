@@ -25,10 +25,14 @@ from starlette.routing import Route
 
 from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.server import build_server
+from haku.console.agents.authorization import fingerprint_static_token
 from haku.console.app import create_app
 from haku.console.config import OperatorOidcConfig
 from haku.console.conftest import console_settings, write_config
 from haku.console.mcp_config import McpOperatorOAuthConfig, McpServerEntry
+from haku.console.tool_call_actor import AgentActor
+from haku.console.tool_call_service import ToolCallApplicationService
+from haku.console.tool_calls import SubmitToolCallRequest
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import PostgresPersistence
 from util.net import pick_free_port
@@ -72,7 +76,8 @@ class _ExchangeGate:
 @dataclass
 class _TokenChainHarness:
     operator: httpx.AsyncClient
-    agent: httpx.AsyncClient
+    tool_calls: ToolCallApplicationService
+    agent_actor: AgentActor
     downstream_url: str
     csrf: str
     stored_reference: str
@@ -97,21 +102,20 @@ class _TokenChainHarness:
                 block.text for block in direct_result.content if isinstance(block, mcp_types.TextContent)
             )
 
-        submitted = await self.agent.post(
-            "/api/tool-calls",
-            json={
-                "server_id": "grocy-test",
-                "tool_name": "get_system_info",
-                "arguments": {},
-                "rationale": "verify Grocy connectivity",
-                "wait_for_ms": 0,
-            },
+        submitted = await self.tool_calls.submit_and_wait(
+            req=SubmitToolCallRequest(
+                server_id="grocy-test",
+                tool_name="get_system_info",
+                arguments={},
+                rationale="verify Grocy connectivity",
+                wait_for_ms=0,
+            ),
+            actor=self.agent_actor,
         )
-        assert submitted.status_code == 200, submitted.text
-        assert submitted.json()["status"] == "pending_approval"
+        assert submitted.status == "pending_approval"
 
         decided = await self.operator.post(
-            f"/api/tool-calls/{submitted.json()['tool_call_id']}/decision",
+            f"/api/tool-calls/{submitted.tool_call_id}/decision",
             headers={"X-CSRF-Token": self.csrf},
             json={"decision": "approve"},
         )
@@ -273,10 +277,6 @@ async def token_chain_harness(
         await stack.enter_async_context(serve_app(downstream_app, port=downstream_port))
         await stack.enter_async_context(serve_app(console, port=console_port))
         operator = await stack.enter_async_context(httpx.AsyncClient(base_url=console_url, follow_redirects=True))
-        agent = await stack.enter_async_context(
-            httpx.AsyncClient(base_url=console_url, headers={"Authorization": f"Bearer {_AGENT_TOKEN}"})
-        )
-
         await operator.get("/auth/login")
         me = await operator.get("/auth/me")
         assert me.status_code == 200, me.text
@@ -299,10 +299,18 @@ async def token_chain_harness(
             server=server_entry, operator_id=operator_id
         )
         assert stored_reference is not None
+        authorization = await console.state.agent_enrollment_service.static_authorization_for_fingerprint(
+            fingerprint=fingerprint_static_token(_AGENT_TOKEN)
+        )
 
         yield _TokenChainHarness(
             operator=operator,
-            agent=agent,
+            tool_calls=console.state.tool_call_service,
+            agent_actor=AgentActor(
+                agent_id=authorization.agent_id,
+                operator_id=authorization.operator_id,
+                binding_id=authorization.binding_id,
+            ),
             downstream_url=downstream_url,
             csrf=csrf,
             stored_reference=stored_reference,

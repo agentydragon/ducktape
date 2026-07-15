@@ -31,6 +31,7 @@ from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig, Sett
 from haku.console.database_migrate import apply_migrations
 from haku.console.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_RETURN_TO_KEY, SESSION_USER_KEY
 from haku.console.operator_identity import VerifiedExternalIdentity
+from haku.console.tool_call_actor import OperatorActor
 from util.testing.postgres import force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
 
@@ -196,6 +197,7 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
             operator_identity = app.state.operator_identity_store.resolve_verified_identity(
                 VerifiedExternalIdentity(issuer=settings.operator_oidc.issuer, subject=operator_external_user_key)
             )
+            app.state.test_operator_actor = OperatorActor(operator_id=operator_identity.operator_id)
         # When the session cookie is Secure (https public_base_url → https_only), drive the client
         # over https so the middleware's re-signed cookie is retained and resent across requests.
         https = settings.public_base_url.startswith("https://")

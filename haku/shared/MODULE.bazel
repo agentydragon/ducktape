@@ -12,7 +12,7 @@ module(
 #   - bridge_protocol (@haku/console-bridge): the console↔iframe postMessage bridge — shared wire
 #     types (protocol.ts) + client helpers (client.ts). JS, //bridge_protocol:pkg.
 #   - haku/console (haku.console.tool_calls): the haku-console tool-call API contract — the
-#     request/response Pydantic models the console serves at /api/tool-calls and haku-ui's backend
+#     tool-call record and MCP metadata models shared by the console and haku-ui's backend
 #     parses. Python, //haku/console:tool_calls.
 #
 # The JS side has zero npm deps: js_library + npm_package only copy files (nothing runs node), so

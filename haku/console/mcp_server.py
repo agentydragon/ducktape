@@ -19,7 +19,7 @@ Every proxied tool is named ``<server>_<tool>`` (one uniform format — operator
   ``title``/``wait_for_approval_ms``) and a promise-semantics preamble in the description;
   returns the real result *or* a promise.
 
-Both buckets, and ``POST /api/tool-calls``, run through the single ``submit_and_wait`` path.
+Both buckets run through the single ``submit_and_wait`` path.
 """
 
 from __future__ import annotations
