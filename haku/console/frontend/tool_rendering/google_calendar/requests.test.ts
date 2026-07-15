@@ -1,14 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { renderPreview } from "../entry.tsx";
-import { formatEventDateTimeRange, googleCalendarPreviews } from "./requests.tsx";
+import { describeAction, renderPreview } from "../entry.tsx";
+import { formatEventDateTimeRange, googleCalendarPreviews, humanizeRRule } from "./requests.tsx";
 
 describe("googleCalendarPreviews", () => {
-  it("renders create_calendar_event for a valid all-day event, in both variants", () => {
+  it("renders create_event for a valid recurring all-day event, in both variants", () => {
     for (const variant of ["compact", "detailed"] as const) {
       const node = renderPreview(
-        googleCalendarPreviews.create_calendar_event,
-        { summary: "Standup", start: { date: "2026-09-15" }, end: { date: "2026-09-16" } },
+        googleCalendarPreviews.create_event,
+        {
+          summary: "Standup",
+          start: { date: "2026-09-15" },
+          end: { date: "2026-09-16" },
+          recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU,TH;COUNT=12"],
+        },
         variant
       );
       expect(node).not.toBeNull();
@@ -16,21 +21,20 @@ describe("googleCalendarPreviews", () => {
   });
 
   it("returns null when args are missing required fields", () => {
-    expect(
-      renderPreview(googleCalendarPreviews.create_calendar_event, { summary: "no start/end" }, "detailed")
-    ).toBeNull();
+    expect(renderPreview(googleCalendarPreviews.create_event, { summary: "no start/end" }, "detailed")).toBeNull();
   });
 
   it("keeps the custom preview when nullable FastMCP arguments are explicitly null", () => {
     expect(
       renderPreview(
-        googleCalendarPreviews.create_calendar_event,
+        googleCalendarPreviews.create_event,
         {
           summary: "Standup",
           start: { date: "2026-09-15" },
           end: { date: "2026-09-16" },
           reminders: null,
           attendees: null,
+          recurrence: null,
         },
         "detailed"
       )
@@ -40,7 +44,7 @@ describe("googleCalendarPreviews", () => {
   it("rejects unknown arguments instead of rendering a custom preview", () => {
     expect(
       renderPreview(
-        googleCalendarPreviews.create_calendar_event,
+        googleCalendarPreviews.create_event,
         {
           summary: "Standup",
           start: { date: "2026-09-15" },
@@ -50,6 +54,25 @@ describe("googleCalendarPreviews", () => {
         "compact"
       )
     ).toBeNull();
+  });
+
+  it("describes recurring creation distinctly and uses the standard RRULE humanizer", () => {
+    const args = {
+      summary: "Standup",
+      start: { date: "2026-09-15" },
+      end: { date: "2026-09-16" },
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU,TH;COUNT=12"],
+    };
+    expect(describeAction(googleCalendarPreviews.create_event, args)?.text).toContain("recurring");
+    expect(humanizeRRule(args.recurrence[0])).toContain("Tuesday");
+  });
+
+  it("renders every Calendar read tool", () => {
+    expect(renderPreview(googleCalendarPreviews.get_event, { event_id: "evt1" }, "compact")).not.toBeNull();
+    expect(renderPreview(googleCalendarPreviews.list_events, { expand_recurring: true }, "detailed")).not.toBeNull();
+    expect(
+      renderPreview(googleCalendarPreviews.list_event_instances, { recurring_event_id: "series1" }, "compact")
+    ).not.toBeNull();
   });
 });
 

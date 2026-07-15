@@ -19,6 +19,11 @@ declare module "@tabler/icons-react/dist/esm/icons/IconBell.mjs" {
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
+declare module "@tabler/icons-react/dist/esm/icons/IconRepeat.mjs" {
+  import type { FC, SVGProps } from "react";
+  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
+  export default Icon;
+}
 declare module "@tabler/icons-react/dist/esm/icons/IconUsers.mjs" {
   import type { FC, SVGProps } from "react";
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;

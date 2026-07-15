@@ -38,11 +38,14 @@ write the same policy twice.
 
 The console's two in-process MCP servers — `gmail` (`haku/console/tools/gmail.py` — Gmail
 reads mirroring the REST API, draft creation, thread-label changes, label CRUD) and
-`google_calendar` (`haku/console/tools/google_calendar.py` — calendar event creation), both behind the
-ordinary operator-approval queue — are both built from the single `haku_console_google` Airlock
+`google_calendar` (`haku/console/tools/google_calendar.py` — recurrence-aware event reads and
+creation), both behind the ordinary operator-approval queue — are both built from the single `haku_console_google` Airlock
 token and need a one-time browser consent for its provider before they're functional. The
 console pod itself starts fine either way (the token volume is `optional: true`); until consent
 happens, those servers' tools error on invocation instead of running.
+
+Authenticated-agent Calendar reads (`get_event`, `list_events`, `list_event_instances`) are
+reviewed transparent auto-approved tools; `create_event` always remains operator-approved.
 
 0. No Google console change needed: `haku_console_google` reuses the `google` provider's
    already-registered redirect URI (`…/oauth/callback/google`) on the same OAuth client —

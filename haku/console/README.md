@@ -107,7 +107,8 @@ custom connector / the `claude` CLI) can call the connected-server tools directl
 submit → auto-approve → execute → wait path as `POST /api/tool-calls`
 (`ToolCallApplicationService.submit_and_wait`), never a divergent one. The surface is two buckets:
 tools the policy **unconditionally**
-auto-approves (gmail reads, read-only grocy-sf, tana `get_or_create_calendar_node`) appear as
+auto-approves (Gmail and Google Calendar reads, read-only grocy-sf, tana
+`get_or_create_calendar_node`) appear as
 transparent **pass-throughs** (original name/schema, real result); everything else appears as
 `request_<server>_<tool>` with an envelope `{input, title?, rationale, wait_for_approval_ms?}` that
 returns the real result if approved within the wait, else a **promise** (a pending `tool_call_id` +
@@ -226,8 +227,12 @@ HTTP:
   resolve the submitted label ID before deciding. Gmail affordances not
   yet exposed (send, trash/delete, message-level modify, drafts list/send, attachments,
   history, settings/filters) are tracked in `haku/console/TODO.md`.
-- **`google_calendar`** (`haku.console.tools.google_calendar`): `create_calendar_event`, plus a
-  `GET /api/google-calendar/calendar-summary` rendering read (below).
+- **`google_calendar`** (`haku.console.tools.google_calendar`). `create_event` creates a single
+  event or an RRULE-backed series and stays operator-approved. `get_event`, `list_events`, and
+  `list_event_instances` return focused recurrence-aware event models and auto-approve for
+  authenticated Agents as transparent read tools. The server also owns the
+  `GET /api/google-calendar/calendar-summary` rendering read (below). Deferred Calendar API
+  affordances are inventoried in `TODO.md`.
 - **`haku_routine`** (`haku.console.tools.routine`): `launch_routine` fires the Haku
   claude-code-web routine (optionally with per-run instruction `text`), so a launch is an
   ordinary approval-gated tool call rather than a bespoke capability. It uses the
@@ -243,7 +248,7 @@ Two plain HTTP endpoints alongside the MCP tools render approvals whose tool cal
 opaque ids: `GET /api/gmail/thread-previews` (subject/snippet/current-labels for a pending
 `threads_modify_labels`) and `GET /api/google-calendar/calendar-summary` (a non-primary
 `calendar_id` → the calendar's display name + a Google Calendar link, for a pending
-`create_calendar_event`). Both stay outside `build_mcp`'s tool surface since they're reads for
+`create_event`). Both stay outside `build_mcp`'s tool surface since they're reads for
 rendering, not something Haku calls.
 
 ## Free-form UI — Haku's own UI, embedded

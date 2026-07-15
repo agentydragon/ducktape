@@ -9,7 +9,10 @@ describe("generated MCP tool argument schemas", () => {
     expect(new Set(keys).size).toBe(keys.length);
     expect(keys).toContain("gmail.drafts_create");
     expect(keys).toContain("gmail.threads_modify_labels");
-    expect(keys).toContain("google_calendar.create_calendar_event");
+    expect(keys).toContain("google_calendar.create_event");
+    expect(keys).toContain("google_calendar.get_event");
+    expect(keys).toContain("google_calendar.list_events");
+    expect(keys).toContain("google_calendar.list_event_instances");
   });
 
   it("keeps defaulted FastMCP parameters optional in the generated type and validator", () => {
@@ -27,16 +30,17 @@ describe("generated MCP tool argument schemas", () => {
       add: ["Follow up"],
       remove: null,
     };
-    const calendarArgs: McpToolArgumentsFor<"google_calendar", "create_calendar_event"> = {
+    const calendarArgs: McpToolArgumentsFor<"google_calendar", "create_event"> = {
       summary: "Standup",
       start: { date: "2026-09-15", date_time: null, time_zone: null },
       end: { date: "2026-09-16", date_time: null, time_zone: null },
       reminders: null,
       attendees: null,
+      recurrence: null,
     };
 
     expect(mcpToolSchema("gmail", "threads_modify_labels").safeParse(gmailArgs).success).toBe(true);
-    expect(mcpToolSchema("google_calendar", "create_calendar_event").safeParse(calendarArgs).success).toBe(true);
+    expect(mcpToolSchema("google_calendar", "create_event").safeParse(calendarArgs).success).toBe(true);
   });
 
   it("rejects unknown top-level arguments like FastMCP", () => {

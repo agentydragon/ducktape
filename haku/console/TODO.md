@@ -31,6 +31,44 @@ If a workflow needs more than the flat fields, accept a richer message represent
 client (e.g. an `html_body`, an attachments list, or a raw passthrough) rather than growing the
 flat parameter list one field at a time.
 
+## `google_calendar` MCP server — Calendar API affordances not yet exposed
+
+Audited against the Google Calendar API v3 reference on 2026-07-14:
+<https://developers.google.com/workspace/calendar/api/v3/reference>. The current server exposes
+`create_event`, `get_event`, `list_events`, and `list_event_instances`; authenticated-agent reads
+auto-approve, while creation stays operator-approved. The remaining public API is intentionally
+deferred:
+
+- **Event recurrence and mutation** — accept Google-supported `RDATE`, `EXDATE`, and `EXRULE`
+  content lines; update or delete a whole series or one instance; and implement "this and
+  following" as the documented trim-old-series + insert-new-series operation. Before exposing
+  these, specify exception preservation, optimistic concurrency, attendee notifications, and
+  partial-failure recovery.
+- **Remaining Events methods** — `events.delete`, `import`, `move`, `patch`/`update`, `quickAdd`,
+  and `watch`. Deletes/moves/updates need explicit approval scope and etag behavior; import and
+  quick-add need clear reasons to coexist with typed creation; watch needs durable callback and
+  renewal infrastructure.
+- **Remaining Events list/sync controls** — incremental `syncToken`/`nextSyncToken`, `updatedMin`,
+  `showDeleted`, `showHiddenInvitations`, `iCalUID`, `eventTypes`, private/shared extended-property
+  filters, `maxAttendees`, `orderBy`, and response `timeZone`. Add these as real workflows emerge,
+  preserving Google's incompatible-parameter rules in the MCP schema.
+- **Remaining Event fields** — attachments, Meet `conferenceData`, attendee `sendUpdates`, custom
+  event ids, colors/event labels, visibility/transparency, guest permissions, source, extended
+  properties, reminders using calendar defaults, and specialized birthday/focus-time/
+  out-of-office/working-location event types. Each addition needs typed arguments, an approval
+  preview, and tests against that event type's Google restrictions.
+- **Calendar discovery and availability** — `calendarList.get/list/insert/patch/update/delete/watch`,
+  `calendars.get`, `colors.get`, `freebusy.query`, and `settings.get/list/watch`. Read-only discovery,
+  colors, free/busy, and settings may be candidates for standing read approval; calendar-list
+  mutations remain manual. Watch methods share the push-infrastructure prerequisite below.
+- **Calendar administration and sharing** — `calendars.insert/patch/update/delete/clear`,
+  and every `acl.get/list/insert/patch/update/delete/watch` method. These need separate
+  administrative intent, destructive confirmation, and any additional Google or Workspace-admin
+  scopes; `clear` and ACL writes must never auto-approve.
+- **Push channels** — resource watches plus `channels.stop`. Do not expose until haku-console owns
+  authenticated webhook delivery, durable channel metadata, expiration renewal, deduplication,
+  replay/catch-up, and cleanup on disconnect.
+
 ## Agent-facing MCP server (`/mcp`) — deferred follow-ups
 
 The `/mcp` server (`mcp_server.py`) now resolves canonical Operators, Agents, grants, and
@@ -58,13 +96,3 @@ and uniform build-time tool surface. The architecture is specified in
   lost-wakeup-safe wakeup carried by PostgreSQL `LISTEN`/`NOTIFY` (building on the existing
   console event channel), followed by one final actor-scoped repository read. This must work
   across replicas and preserve the current timeout/promise behavior.
-
-## Generate result validators from `tools/list` output schemas
-
-`export_mcp_tool_schemas.py` exports only each tool's _input_ schema. Extend it to also emit
-the `outputSchema` FastMCP advertises in `tools/list` reflection and generate result
-validators from it (mirroring the input-schema pipeline), so the in-process servers'
-hand-written result zod schemas in
-`frontend/tool_rendering/{google_calendar,gmail}/responses.tsx` (calendar event, Gmail
-`Draft`) disappear. The remote `grocy-sf` result schemas stay hand-authored until its facade
-exposes output schemas.

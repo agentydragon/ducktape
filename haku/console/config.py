@@ -185,7 +185,7 @@ class Settings(BaseSettings):
     # secret. Backs the two in-process MCP servers built from this one grant: `gmail`
     # (haku.console.tools.gmail — search/read threads+messages+labels, draft creation,
     # thread-label changes, label CRUD) and `google_calendar` (haku.console.tools.google_calendar —
-    # calendar event creation). Unset disables both servers (their capability entries
+    # recurrence-aware calendar event reads/creation). Unset disables both servers (their capability entries
     # report `degraded`) and the Gmail thread-preview endpoint.
     google_token_dir: Path | None = None
     # Namespace whose Gmail label mutations Haku may auto-approve. labels_list is

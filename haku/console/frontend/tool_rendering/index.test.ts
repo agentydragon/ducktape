@@ -13,7 +13,7 @@ describe("toolPreview registry", () => {
       expect(
         toolPreview(
           "google_calendar",
-          "create_calendar_event",
+          "create_event",
           { summary: "Standup", start: { date: "2026-09-15" }, end: { date: "2026-09-16" } },
           variant
         )
@@ -38,7 +38,7 @@ describe("toolResultPreview registry", () => {
       expect(
         toolResultPreview(
           "google_calendar",
-          "create_calendar_event",
+          "create_event",
           { event_id: "evt1", html_link: "https://www.google.com/calendar/event?eid=evt1" },
           variant
         )

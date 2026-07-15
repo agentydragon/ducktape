@@ -251,6 +251,7 @@ py_test(
         "//:conftest",
         "//gmail_api:labels",
         "//haku/console/tools:gmail",
+        "//haku/console/tools:google_calendar",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         # Pytest async auto mode is configured by the root conftest hooks.
@@ -652,6 +653,8 @@ py_test(
         "//:conftest",
         "//gmail_api:labels",
         "//haku/console/tools:gmail",
+        "//haku/console/tools:google_calendar",
+        "//haku/console/tools:google_calendar_client",
         "//mcp_infra:persistence",
         "//util:net",
         "//util/testing:asgi",

@@ -16,7 +16,10 @@ py_library(
 py_library(
     name = "google_calendar_client",
     srcs = ["google_calendar_client.py"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//python_dateutil",
+    ],
 )
 
 py_library(

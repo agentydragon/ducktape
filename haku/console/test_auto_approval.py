@@ -10,6 +10,7 @@ from gmail_api.labels import GmailLabel, LabelType
 from haku.console.auto_approval import UNCONDITIONAL_AUTO_APPROVAL_ID, auto_approve_tool_call
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tools.gmail import build_mcp
+from haku.console.tools.google_calendar import build_mcp as build_calendar_mcp
 
 TEST_OPERATOR_ID = UUID("00000000-0000-0000-0000-000000000001")
 AGENT_ACTOR = AgentActor(
@@ -36,6 +37,19 @@ async def _decision(tool_name: str, arguments: dict, *, gmail=None, actor: ToolC
 async def _policy_id(tool_name: str, arguments: dict, **kwargs):
     policy_id, _evaluation = await _decision(tool_name, arguments, **kwargs)
     return policy_id
+
+
+async def _calendar_decision(tool_name: str, arguments: dict) -> tuple[str | None, str | None]:
+    calendar = Mock()
+    return await auto_approve_tool_call(
+        actor=AGENT_ACTOR,
+        server_id="google_calendar",
+        tool_name=tool_name,
+        arguments=arguments,
+        label_prefix="haku/",
+        gmail=None,
+        mcp=build_calendar_mcp(calendar),
+    )
 
 
 @pytest.mark.parametrize(
@@ -71,6 +85,35 @@ async def test_all_gmail_reads_are_auto_approved(tool_name: str, arguments: dict
 async def test_gmail_writes_stay_manual(tool_name: str, arguments: dict) -> None:
     policy_id, _evaluation = await _decision(tool_name, arguments)
     assert policy_id is None
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [
+        ("get_event", {"event_id": "evt1"}),
+        ("list_events", {"expand_recurring": True, "max_results": 50}),
+        ("list_event_instances", {"recurring_event_id": "series1"}),
+    ],
+)
+async def test_calendar_reads_are_auto_approved(tool_name: str, arguments: dict) -> None:
+    policy_id, evaluation = await _calendar_decision(tool_name, arguments)
+    assert policy_id == UNCONDITIONAL_AUTO_APPROVAL_ID
+    assert evaluation is not None
+    assert "allowlisted" in evaluation
+
+
+async def test_calendar_create_stays_manual() -> None:
+    policy_id, evaluation = await _calendar_decision(
+        "create_event", {"summary": "Standup", "start": {"date": "2026-09-15"}, "end": {"date": "2026-09-16"}}
+    )
+    assert policy_id is None
+    assert evaluation == "manual: google_calendar/create_event is not auto-approved"
+
+
+async def test_calendar_read_rejects_invalid_arguments() -> None:
+    policy_id, evaluation = await _calendar_decision("list_events", {"max_results": 251})
+    assert policy_id is None
+    assert evaluation == "manual: arguments failed the registered tool schema"
 
 
 async def test_read_requires_valid_registered_tool_arguments() -> None:

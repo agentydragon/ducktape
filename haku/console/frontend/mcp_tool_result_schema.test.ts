@@ -8,7 +8,10 @@ describe("generated MCP tool result schemas", () => {
     const keys = mcpToolResultSchemas.map(({ serverId, toolName }) => `${serverId}.${toolName}`);
     expect(new Set(keys).size).toBe(keys.length);
     expect(keys).toContain("gmail.drafts_create");
-    expect(keys).toContain("google_calendar.create_calendar_event");
+    expect(keys).toContain("google_calendar.create_event");
+    expect(keys).toContain("google_calendar.get_event");
+    expect(keys).toContain("google_calendar.list_events");
+    expect(keys).toContain("google_calendar.list_event_instances");
     // A `-> None` return has no structured result, so it has no entry.
     expect(keys).not.toContain("gmail.labels_delete");
     // grocy-sf's batch-tool result schemas are now reflected (the allowlisted preview tools).
@@ -29,10 +32,12 @@ describe("generated MCP tool result schemas", () => {
   });
 
   it("parses a created calendar event", () => {
-    const result: McpToolResultFor<"google_calendar", "create_calendar_event"> = {
+    const result: McpToolResultFor<"google_calendar", "create_event"> = {
       event_id: "evt-1",
       html_link: "https://calendar.google.com/evt-1",
     };
-    expect(mcpToolResultSchema("google_calendar", "create_calendar_event").safeParse(result).success).toBe(true);
+    expect(mcpToolResultSchema("google_calendar", "create_event").safeParse(result).success).toBe(true);
+    expect(mcpToolResultSchema("google_calendar", "get_event").safeParse(result).success).toBe(true);
+    expect(mcpToolResultSchema("google_calendar", "list_events").safeParse({ events: [result] }).success).toBe(true);
   });
 });

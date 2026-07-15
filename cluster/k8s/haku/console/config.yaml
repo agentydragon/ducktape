@@ -56,7 +56,7 @@ mcp:
     # drafts_create, threads_modify_labels, and label CRUD (labels_create, labels_patch,
     # labels_delete).
     - id: gmail
-    # `google_calendar`: create_calendar_event.
+    # `google_calendar`: recurrence-aware get/list/instances reads + approval-gated create_event.
     - id: google_calendar
     # `haku_routine` (haku/console/tools/routine.py): launch_routine fires the Haku claude-code-web
     # routine via the haku-routine-launch-token secret (HAKU_CONSOLE_LAUNCH_ROUTINE__*), not the

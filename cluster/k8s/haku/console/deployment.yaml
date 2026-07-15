@@ -140,7 +140,8 @@ spec:
                   key: secret
             # Two in-process MCP servers built from this one token: `gmail` (Gmail reads
             # mirroring the REST API, draft creation, thread-label changes, label CRUD — see
-            # haku/console/tools/gmail.py) and `google_calendar` (event creation — google_calendar.py).
+            # haku/console/tools/gmail.py) and `google_calendar` (recurrence-aware event reads +
+            # approval-gated creation — google_calendar.py).
             # haku-console-google-access-token (access_token + expires_at) is written
             # by Airlock's haku_console_google provider into the airlock namespace and
             # mirrored here by ESO; re-read via google-auth's refresh_handler, no

@@ -29,7 +29,8 @@ from haku.console.operator_identity import VerifiedExternalIdentity
 from haku.console.tool_call_actor import OperatorActor, ToolCallActor
 from haku.console.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
 from haku.console.tool_calls import SubmitToolCallRequest, ToolCallRecord, ToolCallStatus
-from haku.console.tools import gmail as gmail_tools
+from haku.console.tools import gmail as gmail_tools, google_calendar as calendar_tools
+from haku.console.tools.google_calendar_client import CalendarEvent
 from mcp_infra.persistence import PostgresPersistence
 from util.net import pick_free_port
 from util.testing.asgi import serve_app_sync, serve_fastmcp
@@ -103,12 +104,22 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
     gmail_client.labels_list.return_value = LabelsListResponse(
         labels=[GmailLabel(id="Label_1", name="haku/triaged", type=LabelType.USER)]
     )
+    calendar_client = Mock()
+    calendar_client.get_event.return_value = CalendarEvent(
+        event_id="series1", summary="Standup", recurrence=["RRULE:FREQ=WEEKLY"]
+    )
     config_file = write_config(
-        tmp_path / "console.yaml", {"static_agents": _STATIC_AGENTS, "mcp": {"servers": [{"id": "gmail"}]}}
+        tmp_path / "console.yaml",
+        {"static_agents": _STATIC_AGENTS, "mcp": {"servers": [{"id": "gmail"}, {"id": "google_calendar"}]}},
     )
     settings = console_settings(migrated_db_url, config_file=config_file, ui_base_url="https://haku.test")
-    in_process = {gmail_tools.GMAIL_SERVER_ID: gmail_tools.build_mcp(gmail_client)}
-    app = create_app(settings, gmail_client=gmail_client, in_process_servers=in_process)
+    in_process = {
+        gmail_tools.GMAIL_SERVER_ID: gmail_tools.build_mcp(gmail_client),
+        calendar_tools.GOOGLE_CALENDAR_SERVER_ID: calendar_tools.build_mcp(calendar_client),
+    }
+    app = create_app(
+        settings, gmail_client=gmail_client, calendar_client=calendar_client, in_process_servers=in_process
+    )
     operator_id = app.state.operator_identity_store.resolve_configured_external_user_key("42")
     other_operator_id = app.state.operator_identity_store.resolve_configured_external_user_key("99")
     with serve_app_sync(app) as base:
@@ -138,6 +149,12 @@ async def test_tool_surface_splits_pass_through_and_request(harness: _Harness) -
     assert "actor" not in tools["list_tool_calls"].inputSchema.get("properties", {})
     # The promise preamble is in the envelope tool's description.
     assert "operator-approval queue" in tools["gmail_drafts_create"].description
+    # Calendar reads are transparent; creation is the approval-gated request tool. The server
+    # prefix supplies "calendar", so no tool repeats it in the local name.
+    assert "google_calendar_get_event" in tools
+    assert "input" not in tools["google_calendar_get_event"].inputSchema.get("properties", {})
+    assert "google_calendar_create_event" in tools
+    assert "google_calendar_create_calendar_event" not in tools
 
 
 async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harness) -> None:
@@ -153,6 +170,18 @@ async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harn
     # The pass-through call is audited as the static agent that presented the bearer.
     assert calls[0].caller.kind == "agent"
     assert calls[0].caller.display_name == "Haku"
+
+
+async def test_calendar_read_is_transparent_and_audited(harness: _Harness) -> None:
+    async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
+        result = await client.call_tool("google_calendar_get_event", {"event_id": "series1"})
+
+    assert result.structured_content is not None
+    assert result.structured_content["event_id"] == "series1"
+    calls = harness.tool_calls.list_tool_calls(actor=OperatorActor(operator_id=harness.operator_id))
+    assert len(calls) == 1
+    assert calls[0].server_id == "google_calendar"
+    assert calls[0].tool_name == "get_event"
 
 
 async def test_request_tool_returns_promise_with_deep_link(harness: _Harness) -> None:

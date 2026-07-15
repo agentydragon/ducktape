@@ -3,34 +3,47 @@ import { describe, expect, it } from "vitest";
 import { renderResultPreview } from "../result_entry.tsx";
 import { googleCalendarResultPreviews } from "./responses.tsx";
 
+const recurringEvent = {
+  event_id: "evt1",
+  status: "confirmed",
+  summary: "Standup",
+  start: { date_time: "2026-09-15T09:00:00-07:00", time_zone: "America/Los_Angeles" },
+  end: { date_time: "2026-09-15T09:30:00-07:00", time_zone: "America/Los_Angeles" },
+  recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU,TH;COUNT=12"],
+  html_link: "https://www.google.com/calendar/event?eid=evt1",
+};
+
 describe("googleCalendarResultPreviews", () => {
-  it("renders create_calendar_event for the wire shape, passing unknown extra keys through", () => {
+  it("renders the focused event shape for create and get", () => {
     for (const variant of ["compact", "detailed"] as const) {
-      expect(
-        renderResultPreview(
-          googleCalendarResultPreviews.create_calendar_event,
-          { event_id: "evt1", html_link: "https://www.google.com/calendar/event?eid=evt1", status: "confirmed" },
-          variant
-        )
-      ).not.toBeNull();
+      expect(renderResultPreview(googleCalendarResultPreviews.create_event, recurringEvent, variant)).not.toBeNull();
+      expect(renderResultPreview(googleCalendarResultPreviews.get_event, recurringEvent, variant)).not.toBeNull();
     }
   });
 
-  it("rejects the Calendar API's own id/htmlLink spelling — the wire is the Python field names", () => {
-    // CreateCalendarEventResult's aliases are validation-only, so a camelCase payload here
-    // would mean the backend contract changed; fall back to raw JSON rather than guess.
+  it("renders event pages for list and instances", () => {
+    const page = { events: [recurringEvent], next_page_token: "next-page" };
+    expect(renderResultPreview(googleCalendarResultPreviews.list_events, page, "compact")).not.toBeNull();
+    expect(renderResultPreview(googleCalendarResultPreviews.list_event_instances, page, "detailed")).not.toBeNull();
+  });
+
+  it("accepts a minimal cancelled instance", () => {
     expect(
       renderResultPreview(
-        googleCalendarResultPreviews.create_calendar_event,
+        googleCalendarResultPreviews.get_event,
+        { event_id: "cancelled1", status: "cancelled", recurring_event_id: "series1" },
+        "detailed"
+      )
+    ).not.toBeNull();
+  });
+
+  it("rejects the Calendar API's camelCase resource shape", () => {
+    expect(
+      renderResultPreview(
+        googleCalendarResultPreviews.create_event,
         { id: "evt1", htmlLink: "https://www.google.com/calendar/event?eid=evt1" },
         "detailed"
       )
-    ).toBeNull();
-  });
-
-  it("returns null when no event link came back (→ raw JSON fallback)", () => {
-    expect(
-      renderResultPreview(googleCalendarResultPreviews.create_calendar_event, { event_id: "evt1" }, "compact")
     ).toBeNull();
   });
 });

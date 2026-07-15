@@ -6,20 +6,27 @@
 
 import { Anchor, Loader, Stack } from "@mantine/core";
 import { useEffect, useState } from "react";
+import { rrulestr } from "rrule";
 import type { z } from "zod";
 
 import { fetchCalendarSummary, type CalendarSummary } from "../../calendar_client.ts";
 import { Field } from "../../field.tsx";
-import { BellIcon, CalendarIcon, ClockIcon, MapPinIcon, UsersIcon } from "../../icons.tsx";
+import { BellIcon, CalendarIcon, ClockIcon, MapPinIcon, RepeatIcon, UsersIcon } from "../../icons.tsx";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
 import { PreviewText, PreviewTitle, type PreviewProps } from "../vocabulary.tsx";
 
 export const GOOGLE_CALENDAR_SERVER_ID = "google_calendar";
 
-const zCreateCalendarEventArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "create_calendar_event");
+const zCreateCalendarEventArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "create_event");
+const zGetCalendarEventArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "get_event");
+const zListCalendarEventsArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "list_events");
+const zListCalendarEventInstancesArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "list_event_instances");
 
 type CreateCalendarEventArgs = z.infer<typeof zCreateCalendarEventArgs>;
+type GetCalendarEventArgs = z.infer<typeof zGetCalendarEventArgs>;
+type ListCalendarEventsArgs = z.infer<typeof zListCalendarEventsArgs>;
+type ListCalendarEventInstancesArgs = z.infer<typeof zListCalendarEventInstancesArgs>;
 type EventDateTime = CreateCalendarEventArgs["start"];
 type CalendarReminder = NonNullable<CreateCalendarEventArgs["reminders"]>[number];
 
@@ -131,6 +138,34 @@ function formatReminder(reminder: CalendarReminder): string {
   return `${mins ? `${h}h ${mins}m` : `${h}h`} before`;
 }
 
+export function humanizeRRule(line: string): string {
+  try {
+    const parsed = rrulestr(line);
+    if (!("toText" in parsed) || typeof parsed.toText !== "function") return line;
+    const text = parsed.toText();
+    return text ? `${text[0].toUpperCase()}${text.slice(1)}` : line;
+  } catch {
+    // The backend is authoritative. A frontend/library version mismatch must remain visible,
+    // never hide a backend-accepted rule or prevent the operator from reviewing the call.
+    return line;
+  }
+}
+
+export function RecurrenceField({ recurrence, variant }: { recurrence: string[]; variant: "compact" | "detailed" }) {
+  return (
+    <Stack gap={2}>
+      <Field icon={<RepeatIcon size={15} />} label="Repeats">
+        {recurrence.map(humanizeRRule).join(" · ")}
+      </Field>
+      {variant === "detailed" && (
+        <Field label="RRULE" mono>
+          {recurrence.join("\n")}
+        </Field>
+      )}
+    </Stack>
+  );
+}
+
 // A non-primary calendar's id is opaque; resolve its display name (linked into Google Calendar)
 // via the console read endpoint. On failure the raw id still renders — the operator sees the
 // target either way. Only shown for non-primary calendars (see the caller).
@@ -180,6 +215,9 @@ function CreateCalendarEventPreview({ args, variant }: PreviewProps<CreateCalend
       <Field icon={<ClockIcon size={15} />} label="When">
         <span title={when.title}>{when.text}</span>
       </Field>
+      {args.recurrence && args.recurrence.length > 0 && (
+        <RecurrenceField recurrence={args.recurrence} variant={variant} />
+      )}
       {variant === "detailed" && (
         <>
           {args.location && (
@@ -205,9 +243,60 @@ function CreateCalendarEventPreview({ args, variant }: PreviewProps<CreateCalend
   );
 }
 
+function GetCalendarEventPreview({ args }: PreviewProps<GetCalendarEventArgs>) {
+  return (
+    <Stack gap="xs">
+      <PreviewTitle>{args.event_id}</PreviewTitle>
+      {args.calendar_id && args.calendar_id !== "primary" && <CalendarField calendarId={args.calendar_id} />}
+    </Stack>
+  );
+}
+
+function ListCalendarEventsPreview({ args, variant }: PreviewProps<ListCalendarEventsArgs>) {
+  return (
+    <Stack gap="xs">
+      <PreviewTitle>{args.expand_recurring ? "Expanded event instances" : "Events and series"}</PreviewTitle>
+      {(args.time_min || args.time_max) && (
+        <Field icon={<ClockIcon size={15} />} label="Window">
+          {args.time_min ?? "any time"} – {args.time_max ?? "any time"}
+        </Field>
+      )}
+      {args.query && <PreviewText>Search: {args.query}</PreviewText>}
+      {variant === "detailed" && args.calendar_id && args.calendar_id !== "primary" && (
+        <CalendarField calendarId={args.calendar_id} />
+      )}
+    </Stack>
+  );
+}
+
+function ListCalendarEventInstancesPreview({ args, variant }: PreviewProps<ListCalendarEventInstancesArgs>) {
+  return (
+    <Stack gap="xs">
+      <PreviewTitle>{args.recurring_event_id}</PreviewTitle>
+      {(args.time_min || args.time_max) && (
+        <Field icon={<ClockIcon size={15} />} label="Window">
+          {args.time_min ?? "any time"} – {args.time_max ?? "any time"}
+        </Field>
+      )}
+      {variant === "detailed" && args.calendar_id && args.calendar_id !== "primary" && (
+        <CalendarField calendarId={args.calendar_id} />
+      )}
+    </Stack>
+  );
+}
+
 /** Per-tool preview widgets for the `google_calendar` server. */
 export const googleCalendarPreviews = {
-  create_calendar_event: definePreview(zCreateCalendarEventArgs, CreateCalendarEventPreview, () => ({
-    text: "Google Calendar: Create event",
+  create_event: definePreview(zCreateCalendarEventArgs, CreateCalendarEventPreview, (args) => ({
+    text: args.recurrence?.length ? "Google Calendar: Create recurring event" : "Google Calendar: Create event",
+  })),
+  get_event: definePreview(zGetCalendarEventArgs, GetCalendarEventPreview, () => ({
+    text: "Google Calendar: Get event",
+  })),
+  list_events: definePreview(zListCalendarEventsArgs, ListCalendarEventsPreview, () => ({
+    text: "Google Calendar: List events",
+  })),
+  list_event_instances: definePreview(zListCalendarEventInstancesArgs, ListCalendarEventInstancesPreview, () => ({
+    text: "Google Calendar: List event instances",
   })),
 } satisfies Record<string, ToolPreview>;

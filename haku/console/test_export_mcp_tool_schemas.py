@@ -43,7 +43,12 @@ async def test_exports_every_server_and_tool() -> None:
         "threads_list",
         "threads_modify_labels",
     ]
-    assert list(schema["properties"]["google_calendar"]["properties"]) == ["create_calendar_event"]
+    assert list(schema["properties"]["google_calendar"]["properties"]) == [
+        "create_event",
+        "get_event",
+        "list_event_instances",
+        "list_events",
+    ]
     assert list(schema["properties"]["haku_routine"]["properties"]) == ["launch_routine"]
     # grocy-sf is reflected only for the batch tools the console renders previews for.
     assert list(schema["properties"]["grocy-sf"]["properties"]) == [
@@ -103,7 +108,7 @@ async def test_export_is_stable_json() -> None:
 async def test_nullable_fastmcp_arguments_remain_nullable() -> None:
     schema = await build_mcp_tool_arguments_schema()
     gmail = schema["properties"]["gmail"]["properties"]
-    calendar = schema["properties"]["google_calendar"]["properties"]["create_calendar_event"]
+    calendar = schema["properties"]["google_calendar"]["properties"]["create_event"]
 
     Draft202012Validator(gmail["threads_modify_labels"]).validate(
         {"thread_ids": ["thread-1"], "add": ["Follow up"], "remove": None}
@@ -118,7 +123,11 @@ async def test_nullable_fastmcp_arguments_remain_nullable() -> None:
             "end": {"date": "2026-07-12"},
             "reminders": None,
             "attendees": None,
+            "recurrence": ["RRULE:FREQ=WEEKLY;BYDAY=TU,TH;COUNT=12"],
         }
+    )
+    Draft202012Validator(schema["properties"]["google_calendar"]["properties"]["get_event"]).validate(
+        {"event_id": "series1"}
     )
 
 
@@ -142,7 +151,12 @@ async def test_exports_result_catalog() -> None:
     assert "threads_modify_labels" in gmail
     # `id` is the one required field of a Draft resource.
     assert gmail["drafts_create"].get("required") == ["id"]
-    assert list(schema["properties"]["google_calendar"]["properties"]) == ["create_calendar_event"]
+    assert list(schema["properties"]["google_calendar"]["properties"]) == [
+        "create_event",
+        "get_event",
+        "list_event_instances",
+        "list_events",
+    ]
     assert list(schema["properties"]["haku_routine"]["properties"]) == ["launch_routine"]
     assert list(schema["properties"]["grocy-sf"]["properties"]) == [
         "products_create",
@@ -208,7 +222,7 @@ async def test_result_schemas_validate_and_terminate_recursion() -> None:
     infinite `$ref` — no surviving references reach the frontend."""
     schema = await build_mcp_tool_results_schema()
     gmail = schema["properties"]["gmail"]["properties"]
-    calendar = schema["properties"]["google_calendar"]["properties"]["create_calendar_event"]
+    calendar = schema["properties"]["google_calendar"]["properties"]
 
     serialized = json.dumps(schema)
     assert "$defs" not in serialized
@@ -223,9 +237,17 @@ async def test_result_schemas_validate_and_terminate_recursion() -> None:
     parts_items = message["payload"]["anyOf"][0]["properties"]["parts"]["anyOf"][0]["items"]
     assert parts_items == {"type": "object"}
 
-    # CreateCalendarEventResult's `id`/`htmlLink` are input-only aliases, so the wire shape is the
-    # Python field names exactly.
-    Draft202012Validator(calendar).validate({"event_id": "evt-1", "html_link": "https://cal/evt-1"})
+    # Calendar API aliases are validation-only, so the focused MCP wire uses Python field names.
+    event = {
+        "event_id": "evt-1",
+        "summary": "Standup",
+        "recurrence": ["RRULE:FREQ=WEEKLY"],
+        "html_link": "https://cal/evt-1",
+    }
+    Draft202012Validator(calendar["create_event"]).validate(event)
+    Draft202012Validator(calendar["get_event"]).validate(event)
+    Draft202012Validator(calendar["list_events"]).validate({"events": [event], "next_page_token": "next"})
+    Draft202012Validator(calendar["list_event_instances"]).validate({"events": [event]})
 
 
 async def test_results_catalog_is_stable_json() -> None:

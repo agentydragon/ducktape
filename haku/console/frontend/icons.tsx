@@ -13,6 +13,7 @@ import IconList from "@tabler/icons-react/dist/esm/icons/IconList.mjs";
 import IconListDetails from "@tabler/icons-react/dist/esm/icons/IconListDetails.mjs";
 import IconMail from "@tabler/icons-react/dist/esm/icons/IconMail.mjs";
 import IconMapPin from "@tabler/icons-react/dist/esm/icons/IconMapPin.mjs";
+import IconRepeat from "@tabler/icons-react/dist/esm/icons/IconRepeat.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
 import IconUsers from "@tabler/icons-react/dist/esm/icons/IconUsers.mjs";
 import IconWifiOff from "@tabler/icons-react/dist/esm/icons/IconWifiOff.mjs";
@@ -68,6 +69,11 @@ export function UsersIcon(props: TablerIconProps) {
 /** Calendar — a non-primary target calendar. */
 export function CalendarIcon(props: TablerIconProps) {
   return <IconCalendarEvent size={20} {...props} />;
+}
+
+/** Repeat arrows — a calendar event's recurrence rule. */
+export function RepeatIcon(props: TablerIconProps) {
+  return <IconRepeat size={20} {...props} />;
 }
 
 /** Envelope — a Gmail draft's recipients / a thread list. */

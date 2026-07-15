@@ -22,6 +22,7 @@ UNCONDITIONAL_AUTO_APPROVAL_ID = "unconditional_v1"
 # `haku.console.tools.{grocy,tana}`) to avoid an import cycle through `mcp_approval`.
 GROCY_SF_SERVER_ID = "grocy-sf"
 TANA_RW_SERVER_ID = "tana-rw"
+GOOGLE_CALENDAR_SERVER_ID = "google_calendar"
 
 # Gmail read tools auto-approved for any authenticated agent regardless of arguments.
 GMAIL_READ_TOOLS = frozenset(
@@ -39,6 +40,10 @@ GMAIL_READ_TOOLS = frozenset(
 )
 # Gmail mutations that may auto-approve depending on arguments (haku/-prefixed labels).
 GMAIL_CONDITIONAL_TOOLS = frozenset({"threads_modify_labels", "labels_patch", "labels_delete"})
+
+# Calendar reads expose operator-owned event data but cannot modify it; authenticated agents receive
+# the same standing read authority as the existing Gmail and Grocy read tools.
+GOOGLE_CALENDAR_READ_TOOLS = frozenset({"get_event", "list_events", "list_event_instances"})
 
 # The reviewed read-only subset of grocy-sf's tools (get/list only — every create/edit/delete/
 # add/consume/set/transfer/undo/merge/clear/upload stays approval-gated).
@@ -75,6 +80,7 @@ TANA_AUTO_APPROVE_TOOLS = frozenset({"get_or_create_calendar_node"})
 # envelope and auto-approve per call.
 UNCONDITIONAL_AUTO_APPROVE: dict[str, frozenset[str]] = {
     GMAIL_SERVER_ID: GMAIL_READ_TOOLS,
+    GOOGLE_CALENDAR_SERVER_ID: GOOGLE_CALENDAR_READ_TOOLS,
     GROCY_SF_SERVER_ID: GROCY_READ_TOOLS,
     TANA_RW_SERVER_ID: TANA_AUTO_APPROVE_TOOLS,
 }
@@ -124,7 +130,7 @@ async def auto_approve_tool_call(
 
     Applies to any authenticated agent (the machine API token or an MCP OAuth client); interactive
     operator-browser calls never auto-approve. Unconditionally
-    allowlisted read-only/safe operations (gmail reads, grocy-sf reads, tana `get_or_create_calendar_node`)
+    allowlisted read-only/safe operations (Gmail/Calendar/Grocy reads, tana `get_or_create_calendar_node`)
     approve regardless of arguments; gmail label mutations approve only when scoped to ``label_prefix``.
     Any schema, lookup, or policy error is logged and fails closed.
     """

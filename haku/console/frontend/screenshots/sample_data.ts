@@ -23,11 +23,12 @@ const STOCK_ADD_HISTORY_FIXTURE = {
 
 const CALENDAR_HISTORY_FIXTURE = {
   serverId: "google_calendar",
-  toolName: "create_calendar_event",
+  toolName: "create_event",
   args: {
     summary: "Dentist",
     start: { date_time: "2026-07-12T09:00:00", time_zone: "America/Los_Angeles" },
     end: { date_time: "2026-07-12T10:00:00", time_zone: "America/Los_Angeles" },
+    recurrence: ["RRULE:FREQ=MONTHLY;COUNT=3"],
   },
 } satisfies RegisteredToolPreviewFixture;
 
