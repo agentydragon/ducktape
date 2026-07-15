@@ -7,7 +7,7 @@ metadata:
   name: haku-sandbox-admin
   namespace: haku-sandbox
   annotations:
-    description: "Full CRUD within the haku-sandbox compute sandbox (mirrors claude-sandbox-admin): pods/log/exec/attach, services, configmaps, secrets, PVCs, events, plus apps and batch workloads. The namespace is network-isolated behind its own mitmproxy; secrets here are still expected to hold only read-only credentials Haku may fully use. Security model: haku/docs/security.md."
+    description: "Full CRUD within the haku-sandbox compute sandbox (mirrors claude-sandbox-admin): pods/log/exec/attach/portforward, services, configmaps, secrets, PVCs, events, plus apps and batch workloads. portforward (like exec/attach) is for in-namespace debugging — e.g. curling a haku-ui pod's HTTP directly to reproduce a routing bug; it opens no public door. The namespace is network-isolated behind its own mitmproxy; secrets here are still expected to hold only read-only credentials Haku may fully use. Security model: haku/docs/security.md."
 rules:
   - apiGroups: [""]
     resources:
@@ -15,6 +15,7 @@ rules:
       - pods/log
       - pods/exec
       - pods/attach
+      - pods/portforward
       - services
       - configmaps
       - secrets
