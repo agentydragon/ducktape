@@ -227,6 +227,9 @@ class ConsoleEventHub:
                 ) as conn:
                     await conn.execute(f"LISTEN {self._CHANNEL}")
                     self._listening.set()
+                    # Notifications committed while this replica was reconnecting are gone. Wake
+                    # every waiter after each successful LISTEN so it re-reads the durable ledger.
+                    self._wake_all_tool_call_waiters()
                     try:
                         async for note in conn.notifies():
                             try:

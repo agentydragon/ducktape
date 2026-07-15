@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+from collections.abc import AsyncIterator
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
 from uuid import UUID
@@ -52,6 +53,28 @@ class HangingPublisher:
 
     async def close(self) -> None:
         self.closed = True
+
+
+class ListenConnection:
+    def __init__(self, *, end_notifications: bool) -> None:
+        self.end_notifications = end_notifications
+        self.listened = asyncio.Event()
+
+    async def __aenter__(self) -> ListenConnection:
+        return self
+
+    async def __aexit__(self, *_: Any) -> None:
+        pass
+
+    async def execute(self, query: str) -> None:
+        assert query == "LISTEN haku_console_events"
+        self.listened.set()
+
+    async def notifies(self) -> AsyncIterator[Any]:
+        if self.end_notifications:
+            return
+        await asyncio.Event().wait()
+        yield
 
 
 def _identity_store(*, active: bool = True) -> PostgresOperatorIdentityStore:
@@ -132,6 +155,36 @@ async def test_tool_call_subscription_routes_across_replicas(migrated_db_url: st
             await asyncio.wait_for(changed.wait(), timeout=5)
     finally:
         await asyncio.gather(publishing_hub.aclose(), waiting_hub.aclose())
+
+
+async def test_successful_relisten_wakes_waiter_registered_during_reconnect_gap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = ListenConnection(end_notifications=True)
+    second = ListenConnection(end_notifications=False)
+    connect = AsyncMock(side_effect=[first, second])
+    reconnect_gap = asyncio.Event()
+    resume_reconnect = asyncio.Event()
+
+    async def pause_in_reconnect_gap(_: float) -> None:
+        reconnect_gap.set()
+        await resume_reconnect.wait()
+
+    monkeypatch.setattr(console_events.psycopg.AsyncConnection, "connect", connect)
+    monkeypatch.setattr(console_events.asyncio, "sleep", pause_in_reconnect_gap)
+    hub = ConsoleEventHub("postgresql+psycopg://unused.invalid/db", operator_identity_store=_identity_store())
+    listen_task = asyncio.create_task(hub._listen_loop())
+    try:
+        await asyncio.wait_for(reconnect_gap.wait(), timeout=1)
+        async with hub.subscribe(OPERATOR_A, "tc_reconnect_gap") as changed:
+            assert not changed.is_set()
+            resume_reconnect.set()
+            await asyncio.wait_for(second.listened.wait(), timeout=1)
+            await asyncio.wait_for(changed.wait(), timeout=1)
+    finally:
+        listen_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await listen_task
 
 
 async def test_event_hub_start_fails_bounded_when_postgres_is_unreachable(monkeypatch: pytest.MonkeyPatch) -> None:
