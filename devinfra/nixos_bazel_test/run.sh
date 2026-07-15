@@ -82,9 +82,12 @@ run_container() {
     --cgroupns=host
     -v "$TEST_WORKSPACE:/source:ro"
     -v "$RBE_BAZELRC:/rbe.bazelrc:ro"
-    # systemd needs tmpfs on /run and /tmp, cgroup access
+    # systemd needs tmpfs on /run and /tmp, plus cgroup access. Docker's
+    # --tmpfs default is noexec, unlike /tmp on the NixOS hosts this image
+    # models. Bazel loads zstd-jni from java.io.tmpdir while downloading
+    # remote test results, so preserve the host's executable /tmp contract.
     --tmpfs /run
-    --tmpfs /tmp
+    --tmpfs /tmp:exec
     -v /sys/fs/cgroup:/sys/fs/cgroup:rw
   )
 

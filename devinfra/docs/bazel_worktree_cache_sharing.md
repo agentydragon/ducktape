@@ -20,9 +20,6 @@ expensive content cache underneath separate output bases:
   all Bazel state under one mount, but each worktree still receives a separate
   hashed output base.
 - `--repository_cache`: downloaded external repository archives.
-- `--repo_contents_cache`: extracted/fetched repository contents. In the current
-  Bazel available through `bazelisk help`, this defaults to empty, so set it
-  explicitly if we want sharing.
 - `--disk_cache`: local action cache/CAS. This is less important when `--config=rbe`
   uses remote execution and remote cache, but it helps local builds, no-RBE
   debugging, and actions that are not downloaded from the remote cache.
@@ -30,6 +27,14 @@ expensive content cache underneath separate output bases:
 
 Remote execution/cache already shares action work across machines. It does not
 share local analysis state between worktrees.
+
+Do not enable `--repo_contents_cache`. Unlike the archive-only repository
+cache, it snapshots complete fetched trees. Repository rules can put absolute
+symlinks in those trees: rules_python's hermetic `python` link and Gazelle's
+helper repositories have both pointed back into the output base that produced
+the cache entry. Reusing that entry makes every consumer depend on the
+producer's output base; deleting the producer then yields dangling links and
+repository-fetch failures. Bazel `8.6.0` does not relocate those links.
 
 ## Output-base Lifecycle
 
@@ -65,10 +70,11 @@ A failed removal leaves its `.bazel-output-base-gc-*` quarantine visible as
 `REVIEW` on the next run. Resolve the reported mount or permission problem,
 confirm no process uses it, then remove that quarantine manually.
 
-Shared `cache/repos`, `cache/repo-contents`, and `cache/disk` directories and the
-`install` base are outside the eligible naming scheme and remain untouched.
-Only one output-user-root is scanned. Pass `--output-user-root PATH` for an
-explicit non-default root; session and temporary roots are not auto-discovered.
+Shared `cache/repos` and `cache/disk` directories, any legacy
+`cache/repo-contents` directory, and the `install` base are outside the eligible
+naming scheme and remain untouched. Only one output-user-root is scanned. Pass
+`--output-user-root PATH` for an explicit non-default root; session and
+temporary roots are not auto-discovered.
 
 ## Recommended Layout
 
@@ -80,7 +86,6 @@ Use one cache root per user:
     <hashed output bases per worktree>
     cache/
       repos/
-      repo-contents/
       disk/
 ~/.cache/bazelisk/
 ```
@@ -96,22 +101,22 @@ same filesystem.
 
 Lives in the shared `nix/home/modules/bazel-cache.nix` module (option
 `ducktape.bazelCache`), enabled by both `rugged` and `wyrm2`. Bazel already
-defaults `--output_user_root`, per-worktree `--output_base`, and
-`--repository_cache` into the shared `~/.cache/bazel/_bazel_$USER` tree, so the
-module only enables caches that are not already on by default. The one per-host
-knob is `diskCacheGcMaxSize` — `wyrm2` lowers it from the `200G` default because
-its `cache/disk` shares a 150G SSD with the per-worktree output bases.
+defaults `--output_user_root`, per-worktree `--output_base`, and the archive
+`--repository_cache` into the shared `~/.cache/bazel/_bazel_$USER` tree. The
+module enables only the action `--disk_cache`; it explicitly disables the
+extracted repository-contents cache. The one per-host knob is
+`diskCacheGcMaxSize` — `wyrm2` lowers it from the `200G` default because its
+`cache/disk` shares a 150G SSD with the per-worktree output bases.
 
 ```nix
 let
   bazelCacheRoot = "${config.xdg.cacheHome}/bazel";
   bazelOutputUserRoot = "${bazelCacheRoot}/_bazel_${config.home.username}";
-  bazelRepoContentsCache = "${bazelOutputUserRoot}/cache/repo-contents";
   bazelDiskCache = "${bazelOutputUserRoot}/cache/disk";
 in
 {
   home.file.".bazelrc".text = lib.mkAfter ''
-    common --repo_contents_cache=${bazelRepoContentsCache}
+    common --repo_contents_cache=
 
     build --disk_cache=${bazelDiskCache}
     build --experimental_disk_cache_gc_max_size=200G
@@ -134,7 +139,7 @@ Create the cache directories declaratively:
 
 ```nix
 home.activation.ruggedBazelCacheDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-  mkdir -p '${bazelRepoContentsCache}' '${bazelDiskCache}'
+  mkdir -p '${bazelDiskCache}'
 '';
 ```
 

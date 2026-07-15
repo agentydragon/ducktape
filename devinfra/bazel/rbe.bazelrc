@@ -2,6 +2,21 @@
 # BuildBuddy bazelrc contributes only the credential, scoped to this config.
 build --config=rbe
 
+# Fetched repository trees can contain absolute symlinks back into the output
+# base that created them. Sharing those trees makes another output base depend
+# on the producer's lifetime, so retain the archive cache but disable this one.
+# Home rc files are read after the workspace rc, but command-specific options
+# take precedence over `common` regardless of file order. Cover every command
+# that can load or fetch external repositories.
+build --repo_contents_cache=
+query --repo_contents_cache=
+cquery --repo_contents_cache=
+aquery --repo_contents_cache=
+fetch --repo_contents_cache=
+sync --repo_contents_cache=
+mod --repo_contents_cache=
+vendor --repo_contents_cache=
+
 # Strict action env prevents NixOS store paths from leaking to RBE workers.
 build:rbe --incompatible_strict_action_env
 
@@ -13,6 +28,13 @@ build:rbe --extra_execution_platforms=//:rbe_linux_x64
 # failures must be visible, and the RBE shell path is not valid on NixOS.
 build:rbe --spawn_strategy=remote
 build:rbe --remote_local_fallback=false
+# A local live-test tag is allowed to constrain only its TestRunner. Bazel also
+# copies that constraint to target and aspect actions; remove it there so
+# PyWriteBuildData, Ruff, mypy, and every other build action stay on RBE.
+build:rbe --modify_execution_info=^(?!TestRunner$).*=-no-remote-exec
+# Prefer RBE for every test. A TestRunner explicitly marked no-remote-exec may
+# select local; an RBE execution failure still cannot fall back locally.
+test:rbe --strategy=TestRunner=remote,local
 build:rbe --shell_executable=/bin/bash
 build:rbe --jobs=50
 build:rbe --remote_download_minimal

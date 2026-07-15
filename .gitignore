@@ -66,6 +66,7 @@ cluster/charts/*/charts/
 **/nixos-cloud-image
 /result
 nix/**/result
+devinfra/nixos_bazel_test/result
 
 # Web and build artifacts
 **/.sass-cache/

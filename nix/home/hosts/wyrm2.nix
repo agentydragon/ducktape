@@ -25,10 +25,10 @@
     sopsFile = ../../../secrets/home/wyrm2/attic.yaml;
   };
 
-  # Shared Bazel disk + repo-contents cache across local worktrees
+  # Shared Bazel disk cache across local worktrees
   # (see ../modules/bazel-cache.nix). The 150G SSD holds both the cache/disk and
   # the per-worktree output bases, so cap the disk cache well below the default
-  # 200G; repo-contents sharing is the bigger win here regardless.
+  # 200G.
   ducktape.bazelCache = {
     enable = true;
     diskCacheGcMaxSize = "80G";

@@ -111,7 +111,8 @@ surface:
 - stale directories that are not registered Git worktrees;
 - `REVIEW` output bases and failed GC quarantines;
 - nondefault output-base layouts and additional output-user-roots; and
-- Bazel's shared repository, repo-contents, disk, and install caches.
+- Bazel's shared repository, disk, and install caches, plus any legacy
+  `repo-contents` cache.
 
 Finish with a concise ledger: worktrees removed and retained, branch actions,
 output bases deleted, space reclaimed, roots scanned, and every item still

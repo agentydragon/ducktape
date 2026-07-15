@@ -13,6 +13,7 @@ let
       bazelisk
       coreutils
       gnugrep
+      jq
     ];
     text = builtins.readFile ../../../../devinfra/nixos_bazel_test/smoke_test.sh;
   };

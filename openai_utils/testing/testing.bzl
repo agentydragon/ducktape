@@ -4,11 +4,12 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 _DEFAULT_LIVE_ENV = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"]
 
-def _live_tags(base_tags):
+def _live_tags(base_tags, requires_docker):
     """Append live-only tags to base tags."""
-    return base_tags + ["live_openai_api", "no-remote-exec"]
+    live_tags = base_tags + ["live_openai_api"]
+    return live_tags if requires_docker else live_tags + ["no-remote-exec"]
 
-def live_openai_py_test(name, srcs, deps, tags = None, **kwargs):
+def live_openai_py_test(name, srcs, deps, tags = None, requires_docker = False, **kwargs):
     """py_test that generates .mock and .live targets from one declaration.
 
     Tests in the source file use @pytest.mark.live_openai_api to mark live
@@ -21,11 +22,13 @@ def live_openai_py_test(name, srcs, deps, tags = None, **kwargs):
         deps: Dependencies (owned by the hidden _lib target).
         tags: Base tags applied to both targets. The .live target
             additionally gets "live_openai_api".
-        **kwargs: Passed through to py_test (size, requires_docker,
-            exec_properties, data, env, timeout, etc).
+        requires_docker: Whether both variants require Docker. Docker tests run
+            entirely on RBE; other live variants run only TestRunner locally.
+        **kwargs: Passed through to py_test (size, exec_properties, data, env,
+            timeout, etc).
     """
     base_tags = tags or []
-    ltags = _live_tags(base_tags)
+    ltags = _live_tags(base_tags, requires_docker)
 
     # Hidden library owns the source — compiled once, no .pyc collision.
     py_library(
@@ -39,6 +42,7 @@ def live_openai_py_test(name, srcs, deps, tags = None, **kwargs):
     common_kwargs = {
         "main_module": "pytest_bazel",
         "deps": [":" + name + "_lib", "@pypi//pytest_bazel"],
+        "requires_docker": requires_docker,
     }
     common_kwargs.update(kwargs)
 

@@ -1,1 +1,1 @@
-print("ducktape-nixos-rbe-smoke-ok")
+print("ducktape-rbe-run-smoke-ok")

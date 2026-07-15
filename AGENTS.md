@@ -261,6 +261,12 @@ async def test_mock(mock_client): ...
 async def test_live(live_openai): ...
 ```
 
+For non-Docker `.live` targets, build, lint, and typecheck actions stay on RBE
+while only `TestRunner` executes on the Bazel client. Run those targets with
+direct `bazelisk test` when they need credentials or services from the actual
+host; `bbr` makes its FHS outer runner the Bazel client. Live tests declared
+with `requires_docker = True` execute entirely on RBE like every Docker test.
+
 ## JavaScript / TypeScript
 
 Uses `@aspect_rules_js`. **Do NOT run raw `pnpm install`** -- Bazel manages pnpm (pinned in `MODULE.bazel`).

@@ -1,4 +1,4 @@
-name: NixOS Bazel RBE
+name: Bazel execution contract
 
 on:
   pull_request:
@@ -8,6 +8,8 @@ on:
       - "flake.nix"
       - "devinfra/bazel/**"
       - "devinfra/nixos_bazel_test/**"
+      - "openai_utils/testing/testing.bzl"
+      - "nix/home/modules/bazel-cache.nix"
       - "nix/nixos/modules/bazel/**"
       - "nix/nixos/hosts/bazel-test/**"
       - ".github/workflows/nixos-bazel-rbe.yml"
@@ -19,6 +21,8 @@ on:
       - "flake.nix"
       - "devinfra/bazel/**"
       - "devinfra/nixos_bazel_test/**"
+      - "openai_utils/testing/testing.bzl"
+      - "nix/home/modules/bazel-cache.nix"
       - "nix/nixos/modules/bazel/**"
       - "nix/nixos/hosts/bazel-test/**"
       - ".github/workflows/nixos-bazel-rbe.yml"
@@ -29,7 +33,7 @@ permissions:
 
 jobs:
   smoke:
-    name: NixOS to BuildBuddy build and run
+    name: FHS and NixOS clients to BuildBuddy
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -54,12 +58,25 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
+      - uses: ./.github/actions/setup-bazel
+        with:
+          buildbuddy_api_key: ${{ env.BUILDBUDDY_API_KEY }}
+
       - name: Configure Nix cache authentication
         run: |
           mkdir -p /home/runner/.config/nix
           umask 077
           printf 'machine cache.allegedly.works password %s\n' "$ATTIC_TOKEN" \
             >/home/runner/.config/nix/netrc
+
+      - name: Run FHS Bazel execution-contract test
+        env:
+          CLIENT_NAME: FHS
+          SOURCE_WORKSPACE: ${{ github.workspace }}/devinfra/nixos_bazel_test/testdata/workspace
+          RBE_BAZELRC: ${{ github.workspace }}/devinfra/bazel/rbe.bazelrc
+          WORKSPACE: ${{ runner.temp }}/bazel-execution-contract
+          EXECUTION_LOG_DIR: ${{ runner.temp }}
+        run: bash devinfra/nixos_bazel_test/smoke_test.sh
 
       - name: Run NixOS Bazel RBE integration test
         run: devinfra/nixos_bazel_test/run.sh test

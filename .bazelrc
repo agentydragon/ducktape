@@ -99,10 +99,7 @@ common:quiet --show_progress_rate_limit=30
 # CI and AI agent modes both use quiet output.
 common:ci --config=quiet
 common:ci --announce_rc
-# Exclude live tests from top-level build analysis. Test filtering prevents
-# execution but still lets repo-wide lint aspects analyze no-remote-exec live
-# tests, which cannot run under CI's remote-only spawn strategy. Keep manual
-# targets buildable because artifact workflows request some of them explicitly.
-build:ci --build_tag_filters=-live_openai_api
+# Live targets remain part of CI builds so their remote lint/typecheck actions
+# stay covered. Only their credentialed test processes are excluded.
 test:ci --test_tag_filters=-live_openai_api,-manual
 common:ai_agent --config=quiet

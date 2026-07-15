@@ -24,7 +24,7 @@
     sopsFile = ../../../secrets/home/rugged/attic.yaml;
   };
 
-  # Shared Bazel disk + repo-contents cache across local worktrees
+  # Shared Bazel disk cache across local worktrees
   # (see ../modules/bazel-cache.nix). 200G is the module default.
   ducktape.bazelCache.enable = true;
 
