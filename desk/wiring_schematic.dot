@@ -10,7 +10,7 @@ digraph desk_wiring {
 
     atlas [label="{ atlas — Proxmox tower · 2× RTX 5090 | <tb_top> mobo TB4 · top [TB domain 0 / card1-DP-1] | <tb_mid> mobo TB4 · middle | <usba_front> front USB-A bus 3 port 12 }"];
 
-    wyrm2 [label="{ wyrm2 VM — seat-game | <dp_out> RTX 5090 01:00.0 DP-OUT [card0-DP-1] | <gpu1> RTX 5090 02:00.0 [card2, headless] }"];
+    wyrm2 [label="{ wyrm2 VM — seatphysical | <dp_out> RTX 5090 01:00.0 DP-OUT [card0-DP-1] | <gpu1> RTX 5090 02:00.0 [card2, headless] }"];
 
     laptop [label="Laptop slot"];
 

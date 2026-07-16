@@ -90,7 +90,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
   # port (bus 3 port 12), passed by PORT PATH through the hub (QEMU can't pass
   # hubs themselves): grabbed only while the monitor's KVM routes its hub to
   # USB-B; on the USB-C/KVM side the path is empty and atlas keeps the
-  # keyboard. Feeds logind seat-game (direct-display gaming) — see
+  # keyboard. Feeds logind seatphysical (direct-display gaming) — see
   # debug/atlas/direct_display_bringup.md. Update the path if the cable moves
   # to a rear port.
   usb {
@@ -98,7 +98,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     usb3 = true
   }
   # Spare TEX Shura (second unit, identical 04d9:0532) on atlas front port
-  # 3-1, permanently passed to wyrm2 as the seat-game debug/test keyboard —
+  # 3-1, permanently passed to wyrm2 as the seatphysical debug/test keyboard —
   # lets the direct-display iteration run without KVM-flipping the main
   # Shura away from atlas.
   usb {

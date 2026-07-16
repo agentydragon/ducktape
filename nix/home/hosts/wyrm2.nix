@@ -89,7 +89,7 @@
     fi
   '';
 
-  # Sway config for the game seat (seat-game / 5090). The wrapped sway (with
+  # Sway config for the game seat (seatphysical / 5090). The wrapped sway (with
   # --unsupported-gpu for NVIDIA) and its greeter session come from the NixOS
   # programs.sway module; package = null means "config only, reuse that sway".
   # foot/wofi are installed system-wide via programs.sway.extraPackages.

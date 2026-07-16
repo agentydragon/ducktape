@@ -744,3 +744,97 @@ regardless. Revert = uncomment the GDM lines + rebuild.
 - Is the spare USB A→B cable actually good? (First-port "cable is bad"
   errors vs. port flakiness — untested since the mux never engaged.)
 - Does the FV43U KVM binding survive monitor power cycles?
+
+## 2026-07-16: SDDM live diagnosis — seatphysical greeter dead + seat0 GNOME lock dead
+
+Picked this up on wyrm2 with SDDM live (up since 2026-07-14 02:10). Two problems,
+both traced to root cause from source. **Renamed the seat `seat-game` → `seatphysical`
+this session** (see below); entries above this line predate the rename and refer to
+the old `seat-game` name.
+
+### Symptom recap
+
+- **seatphysical (physical NVIDIA monitor): black, no session.** `loginctl list-seats`
+  shows `seatphysical` with `CanGraphical=yes` but `Sessions=` empty. The SDDM greeter
+  never comes up there. seat0 (SPICE GNOME) logs in fine.
+- **seat0 GNOME screen lock: unavailable.** Apps (`gnome-session`, `gsd-usb-protection`)
+  report `org.gnome.Shell.ScreenShield was not provided by any .service files`;
+  `loginctl lock-session 17` returns 0 but `LockedHint=no` and nothing locks. Started
+  with the GDM→SDDM swap.
+
+### Root cause 1 — seatphysical greeter: systemd-258 varlink `CreateSession` rejects it
+
+`sddm-unwrapped-0.21.0` + `systemd 258` (logind `CreateSession` is now varlink).
+Current-boot journal, seatphysical greeter attempt:
+
+```text
+QDBusObjectPath: invalid path "/org/freedesktop/DisplayManager/Seat-game"
+QDBusConnection: Could not emit signal ...SeatAdded: Marshalling failed
+pam_systemd(sddm-greeter:session): CreateSession() varlink call: org.varlink.service.InvalidParameter
+sddm-helper-start-wayland: weston: fatal: environment variable XDG_RUNTIME_DIR is not set
+```
+
+Chain: `CreateSession` is rejected → no logind session → no `XDG_RUNTIME_DIR` → the
+greeter's `weston` aborts → no greeter renders → monitor stays black.
+
+Two distinct defects:
+
+1. **D-Bus hyphen (secondary).** `DisplayManager::seatPath` (SDDM
+   `src/daemon/DisplayManager.cpp:45`) builds `"/org/freedesktop/DisplayManager/Seat"
+   - seatName.mid(4)`, so `seat-game`→`Seat-game`, an invalid object-path element
+(hyphen). This only breaks the `SeatAdded`**signal**, not session creation — but
+it is trivially avoidable.`seatphysical`→`Seatgame`(valid; also passes logind's`seat_name_is_valid`, pure alnum). **Fixed by the rename.**
+2. **varlink `CreateSession` `InvalidParameter` (primary blocker).** systemd 258
+   `src/login/logind-varlink.c:187-229` validates `Seat`/`TTY`/`VTNr` and returns
+   `InvalidParameter` naming the offending field. SDDM's Wayland greeter on a
+   non-seat0 seat never sets `PAM_TTY` (it only sets it for X11 or when `XDG_VTNR`
+   is present, and `XDG_VTNR` is gated to seat0 in `Greeter.cpp:214`). By static
+   reading the params _should_ pass (seat exists, no VT, vtnr 0) — so the exact
+   rejected field is not yet proven. **Added `SYSTEMD_LOG_LEVEL=debug` on
+   `systemd-logind`** so the next boot logs which field logind refuses. This is the
+   make-or-break datum: if it is a fixable PAM/tty detail or an SDDM version bug we
+   fix in place; if SDDM 0.21's non-seat0 greeter path is fundamentally incompatible
+   with systemd-258 varlink logind, fall back to GDM + a `_findConflictingSession`
+   patch (proven to render a greeter on this NVIDIA seat; see 2026-07-11 entries).
+
+### Root cause 2 — seat0 GNOME lock: `ScreenShield` never claims its D-Bus name
+
+gnome-shell 49.4 is the live compositor (owns `wayland-0`) but does **not** own
+`org.gnome.Shell.ScreenShield`, so every lock path fails. Mechanism (source:
+`/code/github.com/GNOME/gnome-shell` tag 49.4):
+
+- `screenShield.js:145 _getLoginSession()` awaits
+  `loginManager.getCurrentSessionProxy()` then `connectSignal('Lock', …)`. If the
+  proxy is null it throws and the shield never wires Lock/Unlock.
+- `loginManager.js:127` reads `XDG_SESSION_ID`; gnome-shell's env has **none**
+  (it runs as the `org.gnome.Shell@wayland.service` systemd --user unit, in
+  `user@1001.service` — the seatless manager scope, not `session-17.scope`). It
+  falls back to `/org/freedesktop/login1/session/auto`.
+- Live checks: `loginctl show-user agentydragon` has `Display=17`, and `session/auto`
+  resolves to `17` from a normal caller — so resolution _looks_ fine, yet
+  `ScreenShield` is still unowned. Why the shield init fails despite that is **not
+  yet proven** and needs a live attach to gnome-shell (dump whether
+  `getCurrentSessionProxy()` returned null and any JS rejection). Under GDM the lock
+  worked, so this is SDDM-session-registration-specific (missing `XDG_SESSION_ID`
+  into the systemd --user env is the leading suspect).
+
+### Done this session (config, no reboot yet)
+
+- Renamed `seat-game` → `seatphysical` in live config + current-state docs
+  (`nix/nixos/hosts/wyrm2/default.nix` udev rules `72-seatphysical.rules` +
+  `ENV{ID_SEAT}=seatphysical`, `nix/home/hosts/wyrm2.nix`, `cluster/terraform/main/
+proxmox-vms.tf`, `desk/`). Historical log entries above keep the old name.
+- Added `systemd.services.systemd-logind.environment.SYSTEMD_LOG_LEVEL = "debug"`
+  (marked `DEBUG(added 2026-07-16)`, remove once the greeter is solved).
+
+### Next steps at reboot
+
+Coordinate first — a rebuild restarts display-manager and drops the seat0 SPICE
+session.
+
+1. `nixos-rebuild switch`, then reboot (udev seat TAGs persist in the db; only a
+   reboot fully re-homes the card to `seatphysical`).
+2. Read the logind debug log for the seatphysical greeter's `CreateSession` — capture the
+   exact refused field. Fix in place if tractable, else GDM+patch fallback.
+3. Live-attach gnome-shell on seat0 to prove why `ScreenShield` won't own its name;
+   likely needs `XDG_SESSION_ID` propagated into the GNOME systemd --user session.

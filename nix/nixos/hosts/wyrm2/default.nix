@@ -142,7 +142,7 @@ in
   # Display manager: SDDM, not GDM. GDM refuses to start a second graphical
   # session for a user already logged in elsewhere (its gnome-shell greeter's
   # _findConflictingSession check, machine-wide, no per-seat exclude) — which
-  # blocked same-user multi-seat login on seat-game while the seat0 SPICE
+  # blocked same-user multi-seat login on seatphysical while the seat0 SPICE
   # session was active. SDDM follows logind seats (per-seat greeter), sets
   # XDG_SEAT per seat, and has no same-user veto. See
   # debug/atlas/greeter_multiseat_research.md and direct_display_bringup.md.
@@ -157,10 +157,20 @@ in
     wayland.enable = true;
   };
 
+  # DEBUG(added 2026-07-16): verbose logind logging to capture the exact varlink
+  # CreateSession parameter that systemd 258 rejects for the seatphysical greeter.
+  # Symptom: `pam_systemd(sddm-greeter): CreateSession() varlink call:
+  # org.varlink.service.InvalidParameter` → no session → weston aborts
+  # ("XDG_RUNTIME_DIR is not set") → greeter never renders on seatphysical. logind
+  # names the refused field (Seat/TTY/VTNr) in logind-varlink.c at debug level.
+  # Remove once the seatphysical greeter creates its session (or we abandon the SDDM
+  # greeter). See debug/atlas/direct_display_bringup.md.
+  systemd.services.systemd-logind.environment.SYSTEMD_LOG_LEVEL = "debug";
+
   # GDM greeter dconf tweaks removed with the GDM→SDDM swap:
   # - idle-delay=0 kept the DP output awake so the FV43U KVM would not revert to
-  #   USB-C before the seat-game keyboard could wake it. TODO: re-establish the
-  #   no-blank guarantee for the SDDM seat-game greeter (weston idle) if the KVM
+  #   USB-C before the seatphysical keyboard could wake it. TODO: re-establish the
+  #   no-blank guarantee for the SDDM seatphysical greeter (weston idle) if the KVM
   #   reverts again — see debug/atlas/direct_display_bringup.md.
   # - enable-animations=false was a wrong theory for the "frozen greeter": the
   #   real cause was the conflicting-session dialog, now gone with GDM.
@@ -169,14 +179,14 @@ in
   #   services.displayManager.gdm.wayland = true;
   #   services.displayManager.gdm.debug = true;
 
-  # Sway session for the game seat (seat-game, on the display 5090). A real WM to
+  # Sway session for the game seat (seatphysical, on the display 5090). A real WM to
   # game + debug from, run as agentydragon — non-GNOME, so it doesn't clash with
   # the seat0 SPICE GNOME session on the shared user bus (GNOME's fixed D-Bus
   # names are the reason a second GNOME can't run for one user; sway has none).
   # Games run directly in this session (the display GPU is also the render GPU —
   # see the programs.steam note below); no gamescope.
   # NVIDIA: --unsupported-gpu is mandatory; hardware cursors off (wlroots can't
-  # do them on this NVIDIA path). On seat-game logind hands sway only the display
+  # do them on this NVIDIA path). On seatphysical logind hands sway only the display
   # 5090, so no manual WLR_DRM_DEVICES pinning is needed.
   programs.sway = {
     enable = true;
@@ -193,15 +203,15 @@ in
     ];
   };
   # NVIDIA: wlroots can't do hardware cursors on this path. GPU selection is left
-  # to the seat assignment — seat-game owns only the display 5090 (01:00.0), so
+  # to the seat assignment — seatphysical owns only the display 5090 (01:00.0), so
   # libseat hands sway the right device. (Don't set WLR_DRM_DEVICES to the
   # by-path node: it's a colon-separated list, and the PCI address's colons make
   # wlroots split it into garbage — "Found 0 GPUs".)
   environment.sessionVariables.WLR_NO_HARDWARE_CURSORS = "1";
 
-  # Steam — games run on the RTX 5090s (direct display via seat-game, or
+  # Steam — games run on the RTX 5090s (direct display via seatphysical, or
   # streamed to atlas via Sunshine/Moonlight).
-  # Games run directly in the sway session on seat-game (the display GPU is
+  # Games run directly in the sway session on seatphysical (the display GPU is
   # 01:00.0 = the same GPU DXVK renders on, so no gamescope GPU-pinning is
   # needed — see debug/atlas/direct_display_bringup.md). No gamescope kiosk
   # session: on this 2-identical-5090 box gamescope can't disambiguate the
@@ -258,9 +268,9 @@ in
   # Rules 2+3: multiseat for the direct-display gaming plan — see
   # debug/atlas/direct_display_bringup.md.
   # - The display 5090 (guest 01:00.0 = hostpci0; DP cable to the FV43U)
-  #   belongs to logind seat "seat-game": GDM spawns a separate greeter
+  #   belongs to logind seat "seatphysical": GDM spawns a separate greeter
   #   there, independent of the seat0 SPICE desktop. Do NOT
-  #   mutter-device-ignore this card — the seat-game greeter must use it.
+  #   mutter-device-ignore this card — the seatphysical greeter must use it.
   #   Why 01:00.0 and not 02:00.0: DXVK/Vulkan renders on the first-PCI GPU
   #   (01:00.0) by default, and the two 5090s are identical (same
   #   vendor:device 10de:2b85) so no selector can pin the game to a specific
@@ -276,24 +286,24 @@ in
     KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess"
     SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:02:00.0", TAG+="mutter-device-ignore"
   '';
-  # seat-game device assignments must run at priority 72 — BEFORE systemd's
+  # seatphysical device assignments must run at priority 72 — BEFORE systemd's
   # 73-seat-late.rules finalizes seat bookkeeping (extraRules lands in
   # 99-local.rules, which is too late: libinput saw ID_SEAT there but logind
-  # denied TakeDevice to the seat-game greeter). Same slot loginctl-attach
+  # denied TakeDevice to the seatphysical greeter). Same slot loginctl-attach
   # uses. Devices: the display 5090 (guest 01:00.0), and the TEX Shura
   # (04d9:0532), which arrives via QEMU port-path passthrough ONLY when the
   # monitor's KVM routes its hub to USB-B — in this guest it is unambiguously
-  # the seat-game keyboard. See debug/atlas/direct_display_bringup.md.
+  # the seatphysical keyboard. See debug/atlas/direct_display_bringup.md.
   services.udev.packages = [
     (pkgs.writeTextFile {
-      name = "seat-game-udev-rules";
-      destination = "/lib/udev/rules.d/72-seat-game.rules";
+      name = "seatphysical-udev-rules";
+      destination = "/lib/udev/rules.d/72-seatphysical.rules";
       text = ''
-        SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:01:00.0", ENV{ID_SEAT}="seat-game"
+        SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:01:00.0", ENV{ID_SEAT}="seatphysical"
         # No KERNEL=="event*" filter: logind resolves an evdev node's seat via
         # its PARENT input-class device, so inputNN needs ID_SEAT too (event-
         # only assignment = libinput claims it but logind denies TakeDevice).
-        SUBSYSTEM=="input", ATTRS{idVendor}=="04d9", ATTRS{idProduct}=="0532", TAG+="seat", ENV{ID_SEAT}="seat-game"
+        SUBSYSTEM=="input", ATTRS{idVendor}=="04d9", ATTRS{idProduct}=="0532", TAG+="seat", ENV{ID_SEAT}="seatphysical"
       '';
     })
   ];
