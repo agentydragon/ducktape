@@ -34,8 +34,14 @@ async def _decision(tool_name: str, arguments: dict, *, gmail=None, actor: ToolC
     )
 
 
+def _approval(decision: tuple[str | None, str | None] | SchemaDenial) -> tuple[str | None, str | None]:
+    """Unwrap a decision the test expects NOT to be a terminal schema denial."""
+    assert not isinstance(decision, SchemaDenial), decision
+    return decision
+
+
 async def _policy_id(tool_name: str, arguments: dict, **kwargs):
-    policy_id, _evaluation = await _decision(tool_name, arguments, **kwargs)
+    policy_id, _evaluation = _approval(await _decision(tool_name, arguments, **kwargs))
     return policy_id
 
 
@@ -96,15 +102,17 @@ async def test_gmail_writes_stay_manual(tool_name: str, arguments: dict) -> None
     ],
 )
 async def test_calendar_reads_are_auto_approved(tool_name: str, arguments: dict) -> None:
-    policy_id, evaluation = await _calendar_decision(tool_name, arguments)
+    policy_id, evaluation = _approval(await _calendar_decision(tool_name, arguments))
     assert policy_id == UNCONDITIONAL_AUTO_APPROVAL_ID
     assert evaluation is not None
     assert "allowlisted" in evaluation
 
 
 async def test_calendar_create_stays_manual() -> None:
-    policy_id, evaluation = await _calendar_decision(
-        "create_event", {"summary": "Standup", "start": {"date": "2026-09-15"}, "end": {"date": "2026-09-16"}}
+    policy_id, evaluation = _approval(
+        await _calendar_decision(
+            "create_event", {"summary": "Standup", "start": {"date": "2026-09-15"}, "end": {"date": "2026-09-16"}}
+        )
     )
     assert policy_id is None
     assert evaluation == "manual: google_calendar/create_event is not auto-approved"
@@ -130,10 +138,11 @@ async def test_modifies_only_namespaced_labels(field: str) -> None:
 
 
 async def test_modify_rejects_unknown_arguments() -> None:
-    assert (
-        await _policy_id("threads_modify_labels", {"thread_ids": ["t1"], "add": ["haku/triaged"], "unexpected": True})
-        is None
+    denial = await _decision(
+        "threads_modify_labels", {"thread_ids": ["t1"], "add": ["haku/triaged"], "unexpected": True}
     )
+    assert isinstance(denial, SchemaDenial)
+    assert "unexpected" in denial.reason
 
 
 async def test_patch_requires_old_and_new_names_in_namespace() -> None:
@@ -170,14 +179,16 @@ async def test_operator_actor_is_not_auto_approved() -> None:
 
 async def _remote_decision(server_id: str, tool_name: str, arguments: dict) -> tuple[str | None, str | None]:
     # Remote (operator_oauth) servers have no in-process schema, so `mcp` is None.
-    return await auto_approve_tool_call(
-        actor=AGENT_ACTOR,
-        server_id=server_id,
-        tool_name=tool_name,
-        arguments=arguments,
-        label_prefix="haku/",
-        gmail=None,
-        mcp=None,
+    return _approval(
+        await auto_approve_tool_call(
+            actor=AGENT_ACTOR,
+            server_id=server_id,
+            tool_name=tool_name,
+            arguments=arguments,
+            label_prefix="haku/",
+            gmail=None,
+            mcp=None,
+        )
     )
 
 
