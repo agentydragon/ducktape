@@ -31,6 +31,10 @@ const BASE_STATE = {
     streak_bonus_percent: 7,
     rest_days_available: 0,
     daily_bonus_claimed_today: true,
+    today_study_seconds: 3600,
+    daily_bonus_threshold_seconds: 300,
+    daily_bonus_credits: 30,
+    pending_bonus_percent: 7,
   },
   changelog_unacked: [],
   sessions: [
@@ -93,21 +97,54 @@ function Standalone({ children }) {
   );
 }
 
+// Unclaimed-bonus credit_state shared by the pre-crossing scenarios.
+const UNCLAIMED_STATE = {
+  streak_days: 16,
+  streak_bonus_percent: 16,
+  rest_days_available: 1,
+  daily_bonus_claimed_today: false,
+  today_study_seconds: 0,
+  daily_bonus_threshold_seconds: 300,
+  daily_bonus_credits: 30,
+  pending_bonus_percent: 17,
+};
+
+// Seed an in-progress session in localStorage (where the production timer
+// lives) so full-app scenarios render the active-session view. The harness
+// clock is frozen at FROZEN_NOW_MS, so `minutesAgo` fixes the elapsed time.
+function seedActiveSession(minutesAgo) {
+  window.localStorage.setItem(
+    "casino:active_session",
+    JSON.stringify({
+      subject: "Biochemistry",
+      startTime: FROZEN_NOW_MS - minutesAgo * 60 * 1000,
+      paused: false,
+      pausedDuration: 0,
+      pauseStartedAt: null,
+    })
+  );
+}
+
 const page = new URLSearchParams(window.location.search).get("page") || "main_page";
 
 let element;
 switch (page) {
   case "streak_rest":
     // Long streak with a banked rest day and today's bonus still unclaimed.
-    casinoSync.state.set({
-      ...BASE_STATE,
-      credit_state: {
-        streak_days: 16,
-        streak_bonus_percent: 16,
-        rest_days_available: 1,
-        daily_bonus_claimed_today: false,
-      },
-    });
+    casinoSync.state.set({ ...BASE_STATE, credit_state: UNCLAIMED_STATE });
+    element = <StudyCasino />;
+    break;
+  case "active_bonus_countdown":
+    // 3 minutes into a session, 2:00 from the daily-bonus threshold.
+    seedActiveSession(3);
+    casinoSync.state.set({ ...BASE_STATE, credit_state: UNCLAIMED_STATE });
+    element = <StudyCasino />;
+    break;
+  case "active_bonus_unlocked":
+    // 6 minutes in — past the threshold: strip flips to "unlocked", live
+    // estimate includes the +30 at the post-qualification multiplier.
+    seedActiveSession(6);
+    casinoSync.state.set({ ...BASE_STATE, credit_state: UNCLAIMED_STATE });
     element = <StudyCasino />;
     break;
   case "session_award":

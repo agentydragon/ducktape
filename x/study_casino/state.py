@@ -39,6 +39,13 @@ class CreditStateRead(BaseModel):
     daily_bonus_claimed_today: bool = Field(
         description="Whether the daily first-5-minutes bonus fired today (Pacific)."
     )
+    today_study_seconds: int = Field(description="Seconds of completed sessions today (Pacific).")
+    daily_bonus_threshold_seconds: int = Field(description="Study seconds per day that unlock the daily bonus.")
+    daily_bonus_credits: int = Field(description="Whole-credit daily bonus amount (streak-multiplied at award).")
+    pending_bonus_percent: int = Field(
+        description="Streak bonus percent a qualifying session completed today would be awarded at — "
+        "lets the frontend project an in-progress session without replicating streak rules."
+    )
 
 
 class SessionRead(BaseModel):

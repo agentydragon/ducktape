@@ -29,12 +29,15 @@ from sqlalchemy.orm import Session, sessionmaker
 from x.study_casino.actions import ActionResult, ImportData
 from x.study_casino.changelog import entries_after, get_or_create_ack
 from x.study_casino.credit_award import (
+    day_study_seconds,
     get_or_create_credit_state,
     millis_from_credits,
     pacific_date,
+    pending_streak_days,
     rest_days_available,
     streak_bonus_percent,
 )
+from x.study_casino.credit_constants import DAILY_FIRST_BONUS, DAILY_STREAK_STUDY_THRESHOLD_SECONDS
 from x.study_casino.events import (
     BlackjackOutcome,
     GameEventMutation,
@@ -431,7 +434,8 @@ class SqlStore:
         balance = self._balance(s, username)
         credit_state = get_or_create_credit_state(s, username)
         changelog_ack = get_or_create_ack(s, username)
-        today_iso = pacific_date(int(time.time() * 1000)).isoformat()
+        today = pacific_date(int(time.time() * 1000))
+        today_iso = today.isoformat()
         sessions = s.scalars(
             select(SessionRow).where(SessionRow.user_id == username).order_by(SessionRow.ended_at_ms.desc())
         ).all()
@@ -446,6 +450,10 @@ class SqlStore:
                 streak_bonus_percent=streak_bonus_percent(credit_state.streak_days),
                 rest_days_available=rest_days_available(credit_state.streak_days, credit_state.rest_days_used),
                 daily_bonus_claimed_today=credit_state.last_first_bonus_date == today_iso,
+                today_study_seconds=day_study_seconds(s, username, today),
+                daily_bonus_threshold_seconds=DAILY_STREAK_STUDY_THRESHOLD_SECONDS,
+                daily_bonus_credits=int(DAILY_FIRST_BONUS),
+                pending_bonus_percent=streak_bonus_percent(pending_streak_days(credit_state, today)),
             ),
             changelog_unacked=entries_after(changelog_ack.last_acked_id),
             sessions=[

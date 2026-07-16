@@ -4,7 +4,8 @@ import { SyncIcon } from "./SyncIcon.jsx";
 import { ChangelogModal } from "./ChangelogModal.jsx";
 import { useCasino } from "./use_casino.js";
 import { useUrlState } from "./use_url_state.js";
-import { COLORS, fmtClock, fmtCredits, getElapsedSec } from "./shared.jsx";
+import { COLORS, fmtClock, fmtCredits, getElapsedSec, projectSessionCredits } from "./shared.jsx";
+import { StreakStrip } from "./StreakStrip.jsx";
 import { StudyView } from "./StudyView.jsx";
 import { PrizesView } from "./PrizesView.jsx";
 import { StatsView } from "./StatsView.jsx";
@@ -241,6 +242,7 @@ export default function StudyCasino() {
   }, [activeSession?.startTime, activeSession?.paused]);
 
   const activeElapsed = activeSession ? getElapsedSec(activeSession) : 0;
+  const sessionProjection = projectSessionCredits(creditState, activeSession, activeElapsed);
 
   const todayTotal = useMemo(() => {
     const start = new Date();
@@ -354,6 +356,8 @@ export default function StudyCasino() {
         </div>
       )}
 
+      <StreakStrip creditState={creditState} activeSession={activeSession} activeElapsed={activeElapsed} />
+
       {activeSession && (
         <div
           style={{
@@ -399,7 +403,8 @@ export default function StudyCasino() {
             <span style={{ fontSize: 11, color: COLORS.creamDim, letterSpacing: "0.15em", textTransform: "uppercase" }}>
               {activeSession.paused
                 ? "Paused"
-                : `≈ +${fmtCredits((activeElapsed / 60) * (1 + creditState.streak_bonus_percent / 100))} cr earned`}
+                : `≈ +${fmtCredits(sessionProjection.estimate)} cr earned` +
+                  (sessionProjection.includesBonus ? ` · incl. +${creditState.daily_bonus_credits} bonus` : "")}
             </span>
           </div>
           <div style={{ display: "flex", gap: 6 }}>

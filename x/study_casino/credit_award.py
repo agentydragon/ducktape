@@ -81,6 +81,30 @@ def get_or_create_credit_state(s: Session, username: str) -> CreditStateRow:
     return row
 
 
+@dataclass(frozen=True)
+class StreakAdvance:
+    """Streak state a qualification on some day would produce.
+    `None` from `_streak_advance` means the day can't advance anything
+    (same day already qualified, or backdated — append-only)."""
+
+    streak_days: int
+    rest_days_used: int
+    rest_day_consumed: bool
+
+
+def _streak_advance(state: CreditStateRow, day: datetime.date) -> StreakAdvance | None:
+    last = datetime.date.fromisoformat(state.last_qualifying_date) if state.last_qualifying_date else None
+    if last is not None and day <= last:
+        return None
+    gap = (day - last).days if last is not None else None
+    if gap == 1:
+        return StreakAdvance(state.streak_days + 1, state.rest_days_used, rest_day_consumed=False)
+    if gap == 2 and rest_days_available(state.streak_days, state.rest_days_used) > 0:
+        # One rest day covers exactly one missed day; larger gaps reset.
+        return StreakAdvance(state.streak_days + 1, state.rest_days_used + 1, rest_day_consumed=True)
+    return StreakAdvance(1, 0, rest_day_consumed=False)
+
+
 def qualify_streak_day(state: CreditStateRow, day: datetime.date) -> bool:
     """Advance streak state for the newly-qualified Pacific day `day`.
 
@@ -88,23 +112,21 @@ def qualify_streak_day(state: CreditStateRow, day: datetime.date) -> bool:
     backdated day earlier than the last qualifying day leaves state alone
     (append-only — no retroactive recalculation).
     """
-    last = datetime.date.fromisoformat(state.last_qualifying_date) if state.last_qualifying_date else None
-    if last is not None and day <= last:
+    advance = _streak_advance(state, day)
+    if advance is None:
         return False
-    consumed = False
-    gap = (day - last).days if last is not None else None
-    if gap == 1:
-        state.streak_days += 1
-    elif gap == 2 and rest_days_available(state.streak_days, state.rest_days_used) > 0:
-        # One rest day covers exactly one missed day; larger gaps reset.
-        state.rest_days_used += 1
-        state.streak_days += 1
-        consumed = True
-    else:
-        state.streak_days = 1
-        state.rest_days_used = 0
+    state.streak_days = advance.streak_days
+    state.rest_days_used = advance.rest_days_used
     state.last_qualifying_date = day.isoformat()
-    return consumed
+    return advance.rest_day_consumed
+
+
+def pending_streak_days(state: CreditStateRow, day: datetime.date) -> int:
+    """Streak length a qualifying live session completed on `day` would produce
+    (unchanged if `day` already qualified). Lets the frontend project the
+    multiplier of an in-progress session without replicating streak rules."""
+    advance = _streak_advance(state, day)
+    return state.streak_days if advance is None else advance.streak_days
 
 
 def day_study_seconds(s: Session, username: str, day: datetime.date) -> int:

@@ -12,6 +12,7 @@ from x.study_casino.credit_award import (
     millis_from_credits,
     pacific_date,
     pacific_day_bounds_ms,
+    pending_streak_days,
     qualify_streak_day,
     rest_days_available,
     streak_bonus_percent,
@@ -118,6 +119,18 @@ def test_reset_restores_rest_day_budget() -> None:
     qualify_streak_day(state, _day("2026-07-10"))
     assert state.streak_days == 1
     assert rest_days_available(state.streak_days, state.rest_days_used) == 0
+
+
+def test_pending_streak_days_mirrors_qualification_without_mutating() -> None:
+    assert pending_streak_days(_state(), _day("2026-07-01")) == 1  # first ever day
+    assert pending_streak_days(_state(streak_days=6, last="2026-07-01"), _day("2026-07-01")) == 6  # already qualified
+    assert pending_streak_days(_state(streak_days=6, last="2026-07-01"), _day("2026-07-02")) == 7  # consecutive
+    assert pending_streak_days(_state(streak_days=15, last="2026-07-01"), _day("2026-07-03")) == 16  # rest day covers
+    assert pending_streak_days(_state(streak_days=5, last="2026-07-01"), _day("2026-07-03")) == 1  # gap resets
+
+    state = _state(streak_days=6, last="2026-07-01")
+    pending_streak_days(state, _day("2026-07-02"))
+    assert state.streak_days == 6  # projection never mutates
 
 
 # ── Pacific day handling ─────────────────────────────────────────────────────

@@ -157,6 +157,15 @@ js_library(
 )
 
 js_library(
+    name = "streak_strip",
+    srcs = ["StreakStrip.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":shared",
+    ],
+)
+
+js_library(
     name = "study_casino",
     srcs = ["study_casino.jsx"],
     deps = [
@@ -170,6 +179,7 @@ js_library(
         ":shared",
         ":slots",
         ":stats_view",
+        ":streak_strip",
         ":study_view",
         ":sync_icon",
         ":use_casino",
@@ -302,5 +312,7 @@ filegroup(
         "streak_rest",
         "session_award",
         "changelog",
+        "active_bonus_countdown",
+        "active_bonus_unlocked",
     ]
 ]

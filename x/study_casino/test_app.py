@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -131,6 +132,10 @@ def test_state_returns_seed_shape(client: TestClient) -> None:
         "streak_bonus_percent": 0,
         "rest_days_available": 0,
         "daily_bonus_claimed_today": False,
+        "today_study_seconds": 0,
+        "daily_bonus_threshold_seconds": 300,
+        "daily_bonus_credits": 30,
+        "pending_bonus_percent": 1,
     }
     assert state["sessions"] == []
     assert state["prize_log"] == []
@@ -308,6 +313,18 @@ def test_sub_threshold_session_earns_fractional_credits_without_streak(client: T
     assert result["daily_bonus_millis"] == 0
     assert result["credits_earned_millis"] == 4000
     assert client.get("/state").json()["credit_state"]["streak_days"] == 0
+
+
+def test_state_reflects_todays_live_session(client: TestClient) -> None:
+    """A session completed 'now' shows up in today's credit_state: bonus
+    claimed, today's seconds counted, and pending == current percent."""
+    _complete_session(client, "today-live", int(time.time() * 1000))
+    cs = client.get("/state").json()["credit_state"]
+    assert cs["daily_bonus_claimed_today"] is True
+    assert cs["today_study_seconds"] == 10 * 60
+    assert cs["streak_days"] == 1
+    assert cs["streak_bonus_percent"] == 1
+    assert cs["pending_bonus_percent"] == 1  # today already qualified — nothing further pending
 
 
 def test_add_past_session_earns_credits_without_streak_effects(client: TestClient) -> None:

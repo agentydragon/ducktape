@@ -52,6 +52,33 @@ export function fmtCredits(credits) {
   return (credits ?? 0).toFixed(1);
 }
 
+// Project the daily-bonus state of the current moment. All rules and amounts
+// are server-derived (`credit_state`); the only client-side math is comparing
+// the local active-session timer against the server-provided threshold.
+// `bonusPercent` is the streak bonus a session saved right now would earn —
+// the post-qualification percent once today's threshold is crossed.
+export function projectDailyBonus(creditState, activeSession, activeElapsedSec) {
+  const elapsed = activeSession ? activeElapsedSec : 0;
+  const remainingSec = Math.max(
+    0,
+    creditState.daily_bonus_threshold_seconds - creditState.today_study_seconds - elapsed
+  );
+  const unlocked = !creditState.daily_bonus_claimed_today && remainingSec <= 0;
+  return {
+    remainingSec,
+    unlocked,
+    bonusPercent: unlocked ? creditState.pending_bonus_percent : creditState.streak_bonus_percent,
+  };
+}
+
+// Estimated credits a session saved right now would earn (base + unlocked
+// daily bonus, at the projected multiplier). Server settles the real award.
+export function projectSessionCredits(creditState, activeSession, activeElapsedSec) {
+  const { unlocked, bonusPercent } = projectDailyBonus(creditState, activeSession, activeElapsedSec);
+  const bonus = unlocked ? creditState.daily_bonus_credits : 0;
+  return { estimate: (activeElapsedSec / 60 + bonus) * (1 + bonusPercent / 100), includesBonus: unlocked };
+}
+
 export function getElapsedSec(session, now = Date.now()) {
   if (!session) return 0;
   let ms = now - session.startTime - (session.pausedDuration || 0);

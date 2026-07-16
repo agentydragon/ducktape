@@ -1,6 +1,15 @@
 import React from "react";
 
-import { COLORS, fmtClock, fmtCredits, fmtHoursMin, StatCard, SUBJECTS, SectionTitle } from "./shared.jsx";
+import {
+  COLORS,
+  fmtClock,
+  fmtCredits,
+  fmtHoursMin,
+  projectSessionCredits,
+  StatCard,
+  SUBJECTS,
+  SectionTitle,
+} from "./shared.jsx";
 
 // Server-computed award breakdown of the just-completed session
 // (SessionCompleteResult) — every number comes from the backend.
@@ -71,37 +80,10 @@ export function StudyView({
   stop,
   cancel,
 }) {
+  const projection = projectSessionCredits(creditState, activeSession, activeElapsed);
   return (
     <div>
       {lastAward && !activeSession && <SessionAwardToast award={lastAward} onDismiss={dismissAward} />}
-      {/* Streak strip — retention core of credit system v2 */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "baseline",
-          gap: 18,
-          marginBottom: 24,
-          fontSize: 13,
-          color: COLORS.creamDim,
-          letterSpacing: "0.08em",
-        }}
-      >
-        <span>
-          <span style={{ color: COLORS.goldBright, fontWeight: 700 }}>🔥 {creditState.streak_days}-day streak</span>
-        </span>
-        <span>
-          ×{(1 + creditState.streak_bonus_percent / 100).toFixed(2)} <span style={{ opacity: 0.7 }}>credit bonus</span>
-        </span>
-        {creditState.rest_days_available > 0 && (
-          <span>
-            {creditState.rest_days_available} rest day{creditState.rest_days_available > 1 ? "s" : ""} banked
-          </span>
-        )}
-        <span style={{ color: creditState.daily_bonus_claimed_today ? COLORS.gold : COLORS.creamDim }}>
-          {creditState.daily_bonus_claimed_today ? "daily bonus claimed ✓" : "daily bonus: +30 at 5 min"}
-        </span>
-      </div>
       {!activeSession ? (
         <div>
           <div
@@ -208,7 +190,8 @@ export function StudyView({
             >
               {activeSession.paused
                 ? "Paused"
-                : `≈ +${fmtCredits((activeElapsed / 60) * (1 + creditState.streak_bonus_percent / 100))} credits earned`}
+                : `≈ +${fmtCredits(projection.estimate)} credits earned` +
+                  (projection.includesBonus ? ` · incl. +${creditState.daily_bonus_credits} daily bonus` : "")}
             </div>
           </div>
 
