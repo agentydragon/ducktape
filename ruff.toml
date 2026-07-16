@@ -158,7 +158,6 @@ known-first-party = [
     "sysrw",
     "tana",
     "tests",  # test packages (until colocated under main packages)
-    "ws",
     "wt",
     # This list must stay COMPLETE: the lint aspect runs ruff from the bazel exec
     # root, where ruff cannot auto-detect first-party packages (it only sees

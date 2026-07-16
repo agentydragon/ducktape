@@ -52,20 +52,21 @@ def claim_manifest(name: str, ttl: str, now: datetime) -> dict:
 
 
 def _claims() -> list[dict]:
-    return json.loads(_kubectl("get", "sandboxclaims", "-o", "json"))["items"]
+    items: list[dict] = json.loads(_kubectl("get", "sandboxclaims", "-o", "json"))["items"]
+    return items
 
 
 def _pods_by_name() -> dict[str, dict]:
-    pods = json.loads(_kubectl("get", "pods", "-o", "json"))["items"]
+    pods: list[dict] = json.loads(_kubectl("get", "pods", "-o", "json"))["items"]
     return {p["metadata"]["name"]: p for p in pods}
 
 
 def _bound_sandbox(claim_name: str) -> str:
     deadline = time.monotonic() + _ADOPTION_TIMEOUT_S
     while time.monotonic() < deadline:
-        claim = json.loads(_kubectl("get", "sandboxclaim", claim_name, "-o", "json"))
+        claim: dict = json.loads(_kubectl("get", "sandboxclaim", claim_name, "-o", "json"))
         if sandbox := claim.get("status", {}).get("sandbox", {}).get("name"):
-            return sandbox
+            return str(sandbox)
         time.sleep(2)
     typer.echo(f"claim {claim_name!r} not bound after {_ADOPTION_TIMEOUT_S}s", err=True)
     raise typer.Exit(1)

@@ -9,7 +9,7 @@ py_library(
 
 py_binary(
     name = "ws",
-    main_module = "ws.cli",
+    main_module = "devinfra.ws.cli",
     deps = [":cli"],
 )
 

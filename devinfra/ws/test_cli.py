@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import pytest
 import typer
 
-from ws.cli import claim_manifest, parse_ttl, shutdown_time
+from devinfra.ws.cli import claim_manifest, parse_ttl, shutdown_time
 
 NOW = datetime(2026, 7, 16, 12, 0, 0, tzinfo=UTC)
 

@@ -1,6 +1,6 @@
 # `ws` — disposable agent workspaces
 
-CLI for the agent workspaces in <../cluster/k8s/agents/agent-sandbox/>: claim a
+CLI for the agent workspaces in <../../cluster/k8s/agents/agent-sandbox/>: claim a
 pre-warmed sandbox, shell in, extend, dispose. Thin wrapper over `kubectl`
 against `SandboxClaim`s in `agent-workspaces` — auth is whatever kubeconfig
 `kubectl` resolves (the namespace is operator-only).
@@ -15,8 +15,8 @@ ws rm fix          # dispose (claim deletion cascades sandbox + PVC)
 ws rm --all
 ```
 
-Run via Bazel (`bb run //ws -- ls`) or alias it:
-`alias ws='bazel run --ui_event_filters=-info --noshow_progress //ws --'`.
+Run via Bazel (`bb run //devinfra/ws -- ls`) or alias it:
+`alias ws='bazel run --ui_event_filters=-info --noshow_progress //devinfra/ws --'`.
 
 Shells are persistent: `sh` attaches to (or creates) the pod's `main` tmux
 session, so dropped connections and repeated `ws sh` land in the same shell.
