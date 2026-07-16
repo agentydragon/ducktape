@@ -6,9 +6,10 @@ truth is the set of `*rolebinding-*.yaml` files under:
 - `cluster/k8s/agents/shared-rbac/`
 
 Use `roleRef.name` in those files to determine which permission class is bound:
-`namespace-diagnostics-reader`, `logs-configmaps-reader`, or a service-specific
-reader Role/ClusterRole such as `ollama-reader`, `langfuse-log-reader`, or
-`claude-props-reader`.
+`namespace-diagnostics-reader`, `logs-configmaps-reader`, `secrets-reader`
+(explicit per-service opt-in, kubectl-sandbox-users only — never Haku), or a
+service-specific reader Role/ClusterRole such as `ollama-reader`,
+`langfuse-log-reader`, or `claude-props-reader`.
 
 Augur is reconciled from `gaffer-private`, so its agent RBAC lives cross-repo at
 `gaffer-private/k8s/augur/agent-rbac/`. That directory also defines an

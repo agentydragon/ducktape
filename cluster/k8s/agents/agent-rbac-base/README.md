@@ -25,8 +25,8 @@ Contains:
 - `claude-sandbox` namespace, ResourceQuota, LimitRange
 - Sandbox-internal Role + RoleBinding (`role-sandbox.yaml`, `rolebinding-sandbox.yaml`)
 - Sandbox-internal `rolebinding-ollama-consumer.yaml` (binds ClusterRole in claude-sandbox ns)
-- Three ClusterRoles: `cluster-diagnostics-reader`, `logs-configmaps-reader`,
-  `namespace-diagnostics-reader`
+- Four ClusterRoles: `cluster-diagnostics-reader`, `logs-configmaps-reader`,
+  `namespace-diagnostics-reader`, `secrets-reader`
 
 ### 2. `shared-rbac` — cluster-scoped bindings
 
@@ -63,6 +63,11 @@ ClusterRole YAML is the resource-list source of truth.
 
 Namespaced RoleBindings live in per-service `agent-rbac/` directories. Each is an independent
 Flux kustomization that depends only on the target namespace + the agent RBAC base.
+
+The `secrets-reader` ClusterRole (get/list/watch `secrets`) is bound **only** where a
+service explicitly opts in (currently `study-casino`), and only for
+`oidc-ksbx-groups:kubectl-sandbox-users` — never co-subjected to Haku, whose reader
+grants stay deliberately secret-free.
 
 ### 4. Haku background agent — diagnostics subset
 
