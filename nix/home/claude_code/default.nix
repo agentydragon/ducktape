@@ -554,15 +554,6 @@ in
       #  url = "http://localhost:8262/mcp";
       # };
 
-      airlock = {
-        type = "http";
-        url = "https://airlock.allegedly.works/mcp";
-        oauth = {
-          clientId = "claude-code-airlock";
-          authServerMetadataUrl = "https://auth.allegedly.works/application/o/claude-code-airlock/.well-known/openid-configuration";
-        };
-      };
-
       # Gmail integration via MCP
       # Setup: See nix/packages/gmail-mcp.nix for full instructions
       # Quick start: gmail-mcp-auth (after configuring Google Cloud OAuth)

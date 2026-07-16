@@ -13,8 +13,8 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 | `mcp_infra/`       | MCP compositor and utilities                  |
 | `grocy_mcp/`       | Auth-aware remote MCP server for Grocy        |
 | `x/editor_agent/`  | Experimental editor agent and package helpers |
-| `airlock/`         | Human-in-the-loop MCP approval proxy          |
-| `haku/`            | Personal background agent                     |
+| `airlock/`         | OAuth credential broker                       |
+| `haku/`            | Background agent and tool approval console    |
 | `props/`           | LLM critic eval system                        |
 | `devinfra/`        | Repo build, CI, lint infrastructure           |
 | `ansible/`         | System configuration (playbooks)              |

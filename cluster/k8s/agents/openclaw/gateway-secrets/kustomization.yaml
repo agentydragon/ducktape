@@ -3,5 +3,4 @@ kind: Kustomization
 resources:
   - openai-api-key.sops.yaml
   - anthropic-api-key.sops.yaml
-  - sandbox-sa-token-eso.yaml
   - telegram-bot-token.sops.yaml

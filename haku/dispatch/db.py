@@ -2,7 +2,7 @@
 
 Schema is created with create_all at startup — this service owns its database
 exclusively, and the schema is additive-only for now; first breaking change
-brings Alembic (the airlock pattern).
+brings Alembic.
 
 Haku reads these tables directly with the read-only `haku_reader` CNPG managed
 role (member of pg_read_all_data) — no read API and no grant management here.

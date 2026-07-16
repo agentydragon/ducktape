@@ -258,7 +258,7 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       During the 2026-06-02 OVH node renames (see
       `debug/2026-06-02-tofu-apply-hangs-from-rugged-mtu.md`) we deleted
       hostname-pinned replica PVCs after node drains. Mixed observations:
-      `airlock-db` self-recovered to 2/2 in ~70min; `atuin-db`, `plaid-mcp-db`,
+      the now-retired `airlock-db` self-recovered to 2/2 in ~70min; `atuin-db`, `plaid-mcp-db`,
       `props-db`, `forgejo-db` got stuck for 2+ hours in
       `instances=2 ready=1, STATUS=Waiting for the instances to become active`
       with replacement pods Pending and PVC never recreated, until manually
@@ -468,17 +468,10 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       <docs/plans/offline_node_daemonset_health.md>.
 - [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `scanner`,
       `proxmox-proxy`, `props`/`props-registry`)
-- [ ] OpenClaw: obfuscation detection forces approval despite `security: full`
-      (upstream `0e28e50b4`, PR #24287)
 - [ ] OpenClaw: fix Ollama model discovery timeout on startup (Nebula not ready)
 - [ ] OpenClaw: eliminate custom image (`ghcr.io/agentydragon/openclaw-matrix`).
-      Three steps: (1) publish the airlock plugin as an npm package and install via
-      `spec.plugins`, (2) move the `airlock-auth-proxy` sidecar to a standalone
-      Deployment+Service in `openclaw-gateway` namespace (CNP-gated to openclaw pod
-      only — preserves OAuth2 identity, no security loss), (3) point the plugin config
-      at the new service URL instead of `127.0.0.1:8767`. This decouples the proxy
-      lifecycle from the StatefulSet (no OpenClaw restart for proxy image updates) and
-      lets the instance use the stock upstream image.
+      The remaining customization is the bundled Matrix plugin dependency install;
+      the retired Airlock tool plugin is no longer part of this image.
 - [ ] OpenClaw: StatefulSet RollingUpdate won't replace crash-looping pods. The K8s
       StatefulSet controller counts a crash-looping pod as unavailable, and with default
       `maxUnavailable: 1` the budget is already spent, so it refuses to delete the pod
@@ -540,7 +533,7 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
 - [ ] Wire `cluster/scripts/check_authentik_login.py` into bootstrap/CI
 - [ ] Gatus: Harbor robot token for authenticated `/v2/` probe
 - [ ] Proxy outpost HA: shared session storage (1 replica limit, sessions in `/dev/shm`)
-- [ ] Airlock OAuth: upgrade Google scopes (needs approval flow) — `calendar`, `gmail.send`,
+- [ ] Airlock OAuth: upgrade Google scopes (requires new operator consent) — `calendar`, `gmail.send`,
       `gmail.compose`, `drive`, `spreadsheets`
 - [ ] Airlock OAuth: add readonly scopes — Photos, Tasks, Slides, Forms
 - [ ] Airlock OAuth: reflect only access tokens (not refresh tokens) to consumer namespaces

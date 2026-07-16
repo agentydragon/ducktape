@@ -1,8 +1,8 @@
 # SSO OAuth2 providers managed by Terraform.
 #
-# Replaces blueprint+Vault+ESO chain for Grafana, Headlamp, and
-# OpenClaw-Agent. TF creates the Authentik provider (which owns the
-# client_secret), then writes K8s secrets into the authentik namespace.
+# Replaces blueprint+Vault+ESO chains for SSO applications. TF creates each
+# Authentik provider (which owns the client_secret), then writes K8s secrets
+# into the authentik namespace.
 # Reflector mirrors them to consumer namespaces.
 
 terraform {
@@ -131,13 +131,4 @@ data "authentik_property_mapping_provider_scope" "email" {
 
 data "authentik_property_mapping_provider_scope" "profile" {
   managed = "goauthentik.io/providers/oauth2/scope-profile"
-}
-
-# Custom airlock scope mappings (defined in airlock-scope-mappings.yaml blueprint)
-data "authentik_property_mapping_provider_scope" "propose" {
-  scope_name = "propose"
-}
-
-data "authentik_property_mapping_provider_scope" "read" {
-  scope_name = "read"
 }

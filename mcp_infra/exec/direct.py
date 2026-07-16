@@ -61,8 +61,8 @@ def main() -> None:
     """Standalone entry point for DirectExecServer over streamable-http.
 
     Standalone privileged exec backend. Run in a container with the required
-    secrets/credentials mounted. Any MCP proxy (e.g. airlock) can connect to
-    this server over HTTP and forward approved tool calls.
+    secrets/credentials mounted, behind an authorization boundary appropriate
+    for its caller.
 
     Environment variables:
       TOKEN        — if set, require this bearer token on incoming requests

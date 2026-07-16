@@ -1,17 +1,7 @@
-backends:
-  kubeapi_admin:
-    url: http://kubeapi-admin-exec-mcp.airlock.svc.cluster.local:8766/mcp
-  google_workspace_mcp:
-    url: http://google-workspace-mcp.google-workspace-mcp.svc.cluster.local:8000/mcp
-
 public_base_url: "https://airlock.allegedly.works"
 oidc_issuer: "https://auth.allegedly.works/application/o/airlock/"
 oidc_client_id: "airlock-operator"
-predicate_path: "/etc/airlock/predicate.py"
 port: 8765
-default_wait_mode:
-  mode: yield_after_ms
-  timeout_ms: 30000
 
 oauth:
   target_namespace: airlock
@@ -68,10 +58,11 @@ oauth:
       extra_auth_params:
         access_type: offline
         prompt: consent
-    # Separate Google grant for haku-console's in-process `gmail` + `google_calendar` MCP
+    # Separate OAuth grant for haku-console's in-process `gmail` + `google_calendar` MCP
     # servers (haku/console/tools/gmail.py, google_calendar.py): calendar event creation,
     # Gmail reads, thread label changes, draft creation, label CRUD — behind haku-console's
-    # operator-approval queue. Kept distinct from `google` (read-only, Haku's) so no
+    # operator-approval queue. Airlock only brokers this credential; Haku owns tool
+    # policy, approval, execution, and audit. Kept distinct from `google` (read-only) so no
     # other consumer's token is ever upgraded to this scope set. Its access token
     # (haku-console-google-access-token) is delivered ONLY to the haku-console
     # namespace. Carries the same read-only scopes as `google` too (not just the

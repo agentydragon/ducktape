@@ -42,7 +42,7 @@ resource "authentik_provider_oauth2" "haku_console_mcp" {
     data.authentik_property_mapping_provider_scope.offline_access.id,
   ]
 
-  # FastMCP's OIDCProxy callback under the /mcp mount (matches airlock's /mcp/auth/callback).
+  # FastMCP's OIDCProxy callback under the /mcp mount.
   allowed_redirect_uris = [
     {
       matching_mode = "strict"

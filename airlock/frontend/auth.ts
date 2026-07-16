@@ -1,5 +1,5 @@
 /**
- * OIDC authentication for the Airlock operator SPA.
+ * OIDC authentication for the Airlock credential-broker SPA.
  *
  * Uses Authorization Code + PKCE flow via oidc-client-ts.
  * OIDC configuration (authority, client_id) is fetched from the backend's
@@ -25,7 +25,7 @@ async function getUserManager(): Promise<UserManager> {
     client_id: config.client_id,
     redirect_uri: config.redirect_uri,
     response_type: "code",
-    scope: "openid decide read",
+    scope: "openid profile email",
     userStore: new WebStorageStateStore({ store: sessionStorage }),
     automaticSilentRenew: false,
   });

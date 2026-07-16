@@ -6,7 +6,7 @@ tf_providers_versions(
         "authentik": "goauthentik/authentik:~>2026.2",
         "kubernetes": "hashicorp/kubernetes:~>2.35",
     },
-    tf_version = "1.9.8",
+    tf_version = ">= 1.0",
 )
 
 tf_module(

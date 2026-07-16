@@ -5,6 +5,4 @@ resources:
   - openclawinstance.yaml
   - rolebinding-ollama-consumer.yaml
   - networkpolicy-authentik.yaml
-  - networkpolicy-node-ingress.yaml
-  - cnp-kube-api-egress.yaml
   - role-openclaw-reader.yaml

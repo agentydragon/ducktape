@@ -34,7 +34,6 @@ trilium
 third_party/activitywatch
 haku/shared
 third_party/manifold_mcp_server
-third_party/mcporter
 devinfra/claude/web_env/re/environment_manager/src
 # Website is a nested module so the root workspace doesn't need
 # rules_haskell / GHC bindist just to expand //... Build via

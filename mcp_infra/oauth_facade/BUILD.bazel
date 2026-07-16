@@ -74,11 +74,13 @@ py_test(
     deps = [
         ":config",
         ":proxy",
-        "//airlock:conftest",
+        "//:conftest",
         "//mcp_infra:tool_filter",
         "//mcp_infra/authentik_auth:config",
+        "//mcp_infra/testing:remote_server",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -102,9 +104,11 @@ py_test(
     deps = [
         ":config",
         ":upstream_probe",
-        "//airlock:conftest",
+        "//:conftest",
         "//mcp_infra/authentik_auth:config",
+        "//mcp_infra/testing:remote_server",
         "@pypi//fastmcp_slim",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

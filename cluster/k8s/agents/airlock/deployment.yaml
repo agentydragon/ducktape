@@ -36,11 +36,6 @@ spec:
               value: devel-20260715071034-2ac2ae8 # {"$imagepolicy": "flux-system:airlock:tag"}
             - name: CONFIG_PATH
               value: "/etc/airlock/config.yaml"
-            - name: EXEC_BACKEND_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: exec-backend-token
-                  key: password
             - name: OURA_CLIENT_ID
               valueFrom:
                 secretKeyRef:
@@ -84,28 +79,7 @@ spec:
                 secretKeyRef:
                   name: bsc-client-credentials
                   key: client_secret
-            - name: OIDC_PROXY_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: airlock-oidc-proxy-credentials
-                  key: client_id
-            - name: OIDC_PROXY_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: airlock-oidc-proxy-credentials
-                  key: client_secret
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: airlock-db-app
-                  key: uri
-            - name: FASTMCP_HOME
-              # OIDC token cache for the OIDCProxy sidecar. Tokens are lost on pod
-              # restart (users must re-authenticate via PKCE), which is acceptable.
-              value: "/data/fastmcp"
           volumeMounts:
-            - name: data
-              mountPath: /data
             - name: config
               mountPath: /etc/airlock
               readOnly: true
@@ -129,8 +103,6 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
       volumes:
-        - name: data
-          emptyDir: {}
         - name: config
           configMap:
             name: airlock-config

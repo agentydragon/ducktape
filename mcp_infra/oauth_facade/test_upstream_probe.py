@@ -3,10 +3,10 @@ from __future__ import annotations
 import pytest_bazel
 from fastmcp import FastMCP
 
-from airlock.conftest import as_remote_server
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.oauth_facade.config import FacadeSettings, HttpUpstream
 from mcp_infra.oauth_facade.upstream_probe import ProbeState, _probe_once
+from mcp_infra.testing.remote_server import as_remote_server
 
 
 def _settings(downstream_url: str) -> FacadeSettings:

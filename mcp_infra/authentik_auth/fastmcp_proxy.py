@@ -134,7 +134,7 @@ class DownstreamClientIdentityOIDCProxy(RetryableRefreshOIDCProxy):
 
         ``OAuthProxy.load_access_token`` returns the upstream verifier's result,
         whose ``client_id`` is the proxy's upstream client. The FastMCP reference
-        JWT retains the downstream DCR ``client_id`` needed by Haku and Airlock.
+        JWT retains the downstream DCR ``client_id`` needed by Haku.
         """
         upstream_validated = await super().load_access_token(token)
         if upstream_validated is None:

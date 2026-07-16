@@ -18,6 +18,3 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: openclaw-gateway-namespace
-    - name: openclaw-sandbox
-    - name: external-secrets-config
-    - name: reflector

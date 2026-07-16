@@ -26,7 +26,6 @@ bazel_dep(name = "package_metadata", version = "0.0.6")  # Required by image_pin
 bazel_dep(name = "ducktape_activitywatch", version = "0.1.0")
 bazel_dep(name = "ducktape_haku", version = "0.1.0")
 bazel_dep(name = "ducktape_manifold_mcp_server", version = "0.1.0")
-bazel_dep(name = "ducktape_mcporter", version = "0.1.0")
 bazel_dep(name = "ducktape_claude_web_env_environment_manager", version = "0.1.0")
 bazel_dep(name = "rules_mypy", version = "0.40.0")
 bazel_dep(name = "rules_conda", version = "0.3.2")
@@ -113,11 +112,6 @@ local_path_override(
 local_path_override(
     module_name = "ducktape_manifold_mcp_server",
     path = "third_party/manifold_mcp_server",
-)
-
-local_path_override(
-    module_name = "ducktape_mcporter",
-    path = "third_party/mcporter",
 )
 
 local_path_override(
@@ -462,7 +456,6 @@ npm.npm_translate_lock(
     # Track package.json and workspace files for auto-update
     data = [
         "//:airlock/frontend/package.json",
-        "//:airlock/openclaw/package.json",
         "//:package.json",
         "//:pnpm-workspace.yaml",
         "//:props/frontend/package.json",
@@ -782,7 +775,7 @@ exports_files([
     urls = ["https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.6%2B7/OpenJDK21U-jdk_x64_linux_hotspot_21.0.6_7.tar.gz"],
 )
 
-# kubectl v1.32.3 — for openclaw-exec sidecar (sandbox namespace access).
+# kubectl v1.32.3 — packaged into cluster maintenance images.
 http_file(
     name = "kubectl_linux_amd64",
     downloaded_file_path = "kubectl",
@@ -847,8 +840,8 @@ http_archive(
     urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.12.1/firecracker-v1.12.1-x86_64.tgz"],
 )
 
-# Node.js v22.11.0 LTS linux-x64 — provides the 'node' binary for the
-# openclaw-exec sidecar (mcporter CLI is bundled using this runtime).
+# Node.js v22.11.0 LTS linux-x64 — provides the hermetic Node runtime used by
+# development tooling and JavaScript tests.
 http_archive(
     name = "nodejs_linux_amd64",
     build_file_content = 'exports_files(["bin/node"], visibility = ["//visibility:public"])\n',

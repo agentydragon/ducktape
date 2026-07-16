@@ -6,8 +6,6 @@ load(":defs.bzl", "visual_test_matrix")
 
 npm_link_all_packages(name = "node_modules")
 
-# ── Per-file source libraries ──────────────────────────────────────────────────
-
 js_library(
     name = "auth",
     srcs = ["auth.ts"],
@@ -31,35 +29,10 @@ js_json_schema(
 )
 
 js_library(
-    name = "ActionList",
-    srcs = ["ActionList.svelte"],
-    deps = [":types"],
-)
-
-js_library(
-    name = "ActionDetail",
-    srcs = ["ActionDetail.svelte"],
-    deps = [
-        ":api",
-        ":types",
-    ],
-)
-
-js_library(
-    name = "BackendStatus",
-    srcs = ["BackendStatus.svelte"],
-    deps = [
-        ":api",
-        ":types",
-    ],
-)
-
-js_library(
     name = "OAuthProviders",
     srcs = ["OAuthProviders.svelte"],
     deps = [
         ":api",
-        ":auth",
         ":types",
     ],
 )
@@ -68,9 +41,6 @@ js_library(
     name = "App",
     srcs = ["App.svelte"],
     deps = [
-        ":ActionDetail",
-        ":ActionList",
-        ":BackendStatus",
         ":OAuthProviders",
         ":api",
         ":types",
@@ -90,9 +60,6 @@ js_library(
     ],
 )
 
-# ── Production bundle ──────────────────────────────────────────────────────────
-
-# Svelte + Tailwind plugins for the native esbuild() rule (see spa_bundle).
 js_library(
     name = "esbuild_config",
     srcs = ["esbuild_config.mjs"],
@@ -111,8 +78,6 @@ spa_bundle(
     visibility = ["//airlock:__pkg__"],
     deps = [":app"],
 )
-
-# ── Visual test harness ────────────────────────────────────────────────────────
 
 js_library(
     name = "harness_lib",
@@ -160,13 +125,4 @@ filegroup(
     srcs = ["tests/harness/index.html"],
 )
 
-# ── Visual tests (page x viewport x theme matrix) ────────────────────────────
-
-visual_test_matrix(
-    pages = [
-        "ListPage",
-        "DetailPage",
-        "BackendsPage",
-        "OAuthPage",
-    ],
-)
+visual_test_matrix(pages = ["OAuthPage"])

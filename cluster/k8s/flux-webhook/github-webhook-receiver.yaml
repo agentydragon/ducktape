@@ -39,9 +39,6 @@ spec:
       name: airlock
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: auth-proxy
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
       name: authentik-jwt-rotation
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
@@ -73,9 +70,6 @@ spec:
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
       name: openclaw-matrix
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: openclaw-exec
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
       name: props-backend

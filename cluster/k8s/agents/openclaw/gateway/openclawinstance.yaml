@@ -236,20 +236,10 @@ spec:
                 contextWindow: 200000
                 maxTokens: 64000
       tools:
-        # Built-in exec is disabled. The Airlock plugin registers an exec
-        # tool that calls the DirectExecServer sidecar with OPENCLAW_SESSION_ID
-        # injection, replacing the node-host exec path entirely.
+        # OpenClaw does not expose command execution. Risky-tool mediation is
+        # owned by Haku, not by an OpenClaw-to-Airlock bridge.
         exec:
           security: deny
-      plugins:
-        entries:
-          airlock:
-            config:
-              airlock:
-                # Via local auth-proxy sidecar (injects OAuth2 Bearer token upstream)
-                url: "http://127.0.0.1:8767/mcp/"
-              execServer:
-                url: "http://127.0.0.1:8766/mcp"
       gateway:
         trustedProxies:
           - "10.244.0.0/16"
@@ -313,68 +303,6 @@ spec:
       limits:
         cpu: "1000m"
         memory: "2Gi"
-  sidecars:
-    - name: airlock-auth-proxy
-      image: ghcr.io/agentydragon/auth-proxy:devel-20260715071002-2ac2ae8 # {"$imagepolicy": "flux-system:auth-proxy"}
-      env:
-        - name: UPSTREAM_URL
-          value: "http://airlock.airlock.svc.cluster.local:8765"
-        - name: TOKEN_URL
-          value: "http://authentik-server.authentik.svc.cluster.local/application/o/openclaw-agent/token/"
-        - name: CLIENT_ID
-          valueFrom:
-            secretKeyRef:
-              name: airlock-secrets
-              key: client-id
-        - name: CLIENT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: airlock-secrets
-              key: client-secret
-        - name: SCOPE
-          value: "openid propose read"
-        - name: PORT
-          value: "8767"
-      resources:
-        requests:
-          cpu: 50m
-          memory: 64Mi
-        limits:
-          cpu: 200m
-          memory: 128Mi
-    - name: exec-server
-      image: ghcr.io/agentydragon/openclaw-exec:devel-20260715071313-2ac2ae8 # {"$imagepolicy": "flux-system:openclaw-exec"}
-      # DirectExecServer entrypoint is baked into the base image.
-      # Listen on 127.0.0.1 only — the gateway plugin connects pod-locally.
-      args: ["--host", "127.0.0.1", "--port", "8766"]
-      env: []
-      # SA token provides kubectl access to openclaw-sandbox namespace.
-      # Workspace PVC is shared with the gateway so file tools and exec
-      # see the same filesystem.
-      volumeMounts:
-        - name: sandbox-sa-token
-          mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-          readOnly: true
-        - name: data
-          mountPath: /home/openclaw/.openclaw
-      resources:
-        requests:
-          cpu: 100m
-          memory: 128Mi
-        limits:
-          cpu: 500m
-          memory: 512Mi
-  sidecarVolumes:
-    - name: sandbox-sa-token
-      secret:
-        secretName: sandbox-sa-token
-        items:
-          - key: token
-            path: token
-          - key: ca.crt
-            path: ca.crt
-          - key: namespace
-            path: namespace
   security:
     networkPolicy:
       additionalEgress:
@@ -401,22 +329,6 @@ spec:
                   kubernetes.io/metadata.name: agents-mitmproxy
           ports:
             - port: 8080
-              protocol: TCP
-        # Allow egress to airlock MCP endpoint (unified port 8765).
-        - to:
-            - namespaceSelector:
-                matchLabels:
-                  kubernetes.io/metadata.name: airlock
-          ports:
-            - port: 8765
-              protocol: TCP
-        # Allow egress to Authentik for OAuth2 token exchange (auth proxy sidecar).
-        - to:
-            - namespaceSelector:
-                matchLabels:
-                  kubernetes.io/metadata.name: authentik
-          ports:
-            - port: 80
               protocol: TCP
   availability:
     nodeSelector:

@@ -2,7 +2,6 @@ packages:
   - "x/agent_server/web"
   - "x/study_casino/frontend"
   - "airlock/frontend"
-  - "airlock/openclaw"
   - "x/rspcache/admin_ui"
   - "props/frontend"
   - "util/testing/frontend_visual"

@@ -2,6 +2,11 @@
 
 **Date**: 2026-02-24
 
+> Historical note: this architecture was retired on 2026-07-15. OpenClaw now
+> sets `tools.exec.security: deny`; the node/direct-exec bridge and Airlock
+> approval integration no longer exist. See
+> <../openclaw_command_execution.md> for the current contract.
+
 ## Three Exec Host Modes
 
 OpenClaw has three `tools.exec.host` modes for running agent shell commands:

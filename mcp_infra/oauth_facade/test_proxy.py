@@ -8,10 +8,10 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 
-from airlock.conftest import as_remote_server
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.oauth_facade.config import FacadeSettings, HttpUpstream
 from mcp_infra.oauth_facade.proxy import build_proxy_server
+from mcp_infra.testing.remote_server import as_remote_server
 from mcp_infra.tool_filter import ToolFilter, ToolFilterMiddleware
 
 

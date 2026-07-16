@@ -23,8 +23,8 @@ Keep these ownership boundaries:
 | FastMCP           | MCP discovery, client metadata/registration, transactions, redirect/PKCE validation, callback, codes, local token families, bearer verification | Haku's Operator-authenticated product interaction             |
 | FastAPI/Starlette | Route composition, application dependencies, browser sessions, CSRF, Jinja rendering                                                            | MCP authorization-server protocol state                       |
 | Haku              | Canonical Operator/Agent domain, enrollment, grants/bindings, lifecycle, downstream hub, policy, UI, and audit                                  | Generic Authentik/FastMCP infrastructure                      |
-| `mcp_infra`       | Narrow typed protocol composition, direct JWT verification, credentialed facades, identity-preserving exchange                                  | Haku or Airlock business policy                               |
-| Airlock           | Its remaining live hub/provider consumers while they exist                                                                                      | Target-state Haku Agent identity or policy                    |
+| `mcp_infra`       | Narrow typed protocol composition, direct JWT verification, credentialed facades, identity-preserving exchange                                  | Haku product policy                                           |
+| Airlock           | OAuth provider connections, refresh-token custody, and access-token publication                                                                 | MCP ingress, tool execution, approval, or Haku Agent identity |
 
 The remaining work must preserve these distinctions:
 
@@ -129,22 +129,22 @@ This is later than the common Agent lifecycle:
 2. **G2:** after live proof, remove only `haku_console_google`, its Secret publication/External
    Secrets mirror, and the console token mount.
 
-Do not couple G1/G2 to Airlock's unrelated Oura, BSC, OpenClaw, or remaining hub consumers.
+Do not couple G1/G2 to Airlock's unrelated Oura, BSC, or remaining credential consumers.
 
 ### Independent security and consolidation lanes
 
 These do not block H1-H3:
 
-| Lane                             | Work                                                                                                                                                                                                                                                                                                                                                                                    |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A1: minimum Airlock hardening    | Separate exact interactive-proxy, browser-Operator, Claude Code, and OpenClaw issuer/audience/scope contracts. Require an authenticated broker-management POST to initiate provider connection. Make callback state bounded, expiring, one-time, initiator/action/provider/generation-bound, and consumed on every terminal path. Do not first rewrite Airlock into a permanent broker. |
-| S1: typed auth configuration     | Replace optional-heavy incoming/outgoing auth config with role-specific discriminated models and typed scope domains, atomically at each consumer. Keep credentialed-facade and identity-delegation constructors separate.                                                                                                                                                              |
-| S2: browser OIDC helper          | Extract only genuinely shared Authlib/Starlette relying-party behavior from Haku and Props; migrate Study Casino from username authority to local UUID plus exact `(issuer, subject)`.                                                                                                                                                                                                  |
-| I1: singular Authentik ownership | Inventory provider/application/controller ownership, resolve the Kagent proxy-vs-OIDC duplicate, assign shared mappings one owner, update `<../cluster/docs/mcp_oauth_authentik_notes.md>` for preregistration/CIMD/DCR preference, and add drift checks.                                                                                                                               |
-| D1: public-client abuse controls | Add Haku-side enrollment/registration rate limits and transaction quotas if public DCR remains enabled. FastMCP retains redirect/CIMD mechanics and protocol TTLs; Haku retains interaction/activation expiry.                                                                                                                                                                          |
+| Lane                             | Work                                                                                                                                                                                                                                                      |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S1: typed auth configuration     | Replace optional-heavy incoming/outgoing auth config with role-specific discriminated models and typed scope domains, atomically at each consumer. Keep credentialed-facade and identity-delegation constructors separate.                                |
+| S2: browser OIDC helper          | Extract only genuinely shared Authlib/Starlette relying-party behavior from Haku and Props; migrate Study Casino from username authority to local UUID plus exact `(issuer, subject)`.                                                                    |
+| I1: singular Authentik ownership | Inventory provider/application/controller ownership, resolve the Kagent proxy-vs-OIDC duplicate, assign shared mappings one owner, update `<../cluster/docs/mcp_oauth_authentik_notes.md>` for preregistration/CIMD/DCR preference, and add drift checks. |
+| D1: public-client abuse controls | Add Haku-side enrollment/registration rate limits and transaction quotas if public DCR remains enabled. FastMCP retains redirect/CIMD mechanics and protocol TTLs; Haku retains interaction/activation expiry.                                            |
 
-Broader Airlock retirement is a separate program. `<../x/agent_server/>` remains design archaeology,
-not an implementation base or cleanup prerequisite.
+Retiring Airlock's remaining OAuth grants is a separate credential-migration program. Its removed
+MCP proxy and approval queue must not be revived as part of that migration. `<../x/agent_server/>`
+remains design archaeology, not an implementation base or cleanup prerequisite.
 
 ## Future-change guardrails
 

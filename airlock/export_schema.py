@@ -1,9 +1,4 @@
-"""Export airlock Pydantic models as a unified JSON Schema to stdout.
-
-Used by the js_json_schema Bazel macro to generate TypeScript type definitions
-at build time. The generated types are consumed by both the operator frontend
-and the openclaw airlock plugin.
-"""
+"""Export Airlock API models as a unified JSON Schema to stdout."""
 
 from __future__ import annotations
 
@@ -14,34 +9,18 @@ from typing import Any
 from pydantic import TypeAdapter
 
 from airlock.models import (
-    Action,
-    ActionKey,
-    ActionStatus,
-    BackendConnectedStatus,
-    BackendDegradedStatus,
-    BackendStatus,
     ConnectedOAuthStatus,
     DeploymentInfo,
     DisconnectedOAuthStatus,
     ExpiredOAuthStatus,
-    LogEntry,
-    LogEventKind,
     OAuthProviderStatus,
 )
 
 _MODELS_TO_EXPORT: list[type[Any]] = [
-    Action,
-    ActionKey,
-    ActionStatus,
-    BackendConnectedStatus,
-    BackendDegradedStatus,
-    BackendStatus,
     ConnectedOAuthStatus,
     DeploymentInfo,
     DisconnectedOAuthStatus,
     ExpiredOAuthStatus,
-    LogEntry,
-    LogEventKind,
     OAuthProviderStatus,
 ]
 

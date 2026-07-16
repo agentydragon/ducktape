@@ -78,11 +78,11 @@
               <dt class="section-heading font-semibold">Status</dt>
               <dd class="m-0">
                 {#if provider.status.state === "connected"}
-                  <span class="status-pill status-pill-done">Connected</span>
+                  <span class="status-pill status-pill-connected">Connected</span>
                 {:else if provider.status.state === "expired"}
-                  <span class="status-pill status-pill-rejected">Token expired — refresh failing</span>
+                  <span class="status-pill status-pill-expired">Token expired — refresh failing</span>
                 {:else}
-                  <span class="status-pill status-pill-pending">Not connected</span>
+                  <span class="status-pill status-pill-disconnected">Not connected</span>
                 {/if}
               </dd>
               <dt class="section-heading font-semibold">Scopes</dt>
@@ -157,7 +157,7 @@
           </div>
           <a
             href="/oauth/authorize/{provider.name}"
-            class="btn-approve font-semibold px-5 py-2.5 rounded-lg border-0 cursor-pointer transition-colors text-sm no-underline"
+            class="btn-primary font-semibold px-5 py-2.5 rounded-lg border-0 cursor-pointer transition-colors text-sm no-underline"
           >
             {provider.status.state === "connected" ? "Reconnect" : "Connect"}
           </a>

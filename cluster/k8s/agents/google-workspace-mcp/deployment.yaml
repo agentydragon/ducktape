@@ -1,6 +1,6 @@
 # google_workspace_mcp — Google Workspace MCP server (Gmail, Calendar, Drive, Docs, etc.)
 # Tokens stored in PVC; Google OAuth credentials shared from airlock via Reflector.
-# Access: Authentik proxy outpost (browser OAuth setup) + Airlock (agent MCP calls).
+# Access: Authentik proxy outpost for browser OAuth setup.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

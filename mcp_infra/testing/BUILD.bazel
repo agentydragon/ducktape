@@ -63,6 +63,19 @@ py_library(
 )
 
 py_library(
+    name = "remote_server",
+    testonly = True,
+    srcs = ["remote_server.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//util:net",
+        "//util/testing:asgi",
+        "@pypi//fastmcp_slim",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
     name = "simple_servers",
     srcs = ["simple_servers.py"],
     visibility = ["//:__subpackages__"],

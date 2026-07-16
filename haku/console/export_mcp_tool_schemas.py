@@ -16,7 +16,8 @@ their argument schemas are generated from ``grocy_mcp``'s Pydantic models rather
 hand-authored in the frontend. Only the tools the console previews are emitted for it
 (``_SERVER_TOOL_ALLOWLIST``); nested-model ``$ref``s are inlined first (``_dereference``).
 The same allowlist contributes both argument and result schemas; the frontend validates the
-Operator-session MCP responses before a renderer consumes them.
+Operator-session MCP responses before a renderer consumes them. ``grocy-sf``'s OpenAPI tools
+remain outside the reflected catalog, so their result widgets stay hand-authored.
 """
 
 from __future__ import annotations

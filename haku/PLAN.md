@@ -99,11 +99,11 @@ Sketch to design out later (a real mechanism-design + security effort, not built
   token/RBAC model, how "less-restricted browsing" stays contained, and where the line
   sits between "draft for review" and "act."
 
-## A richer haku-console airlock (later)
+## Haku Console risky-tool broker
 
-haku-console may grow into an MCP/HTTP airlock proxy: calls that pass auto-allow policy execute
-immediately, while all others become approval requests or async haku-ui continuations. The invariant
-stays the same: exact call reviewed, trusted console approval, console-owned audit/result state,
+Haku Console is the MCP/HTTP policy and approval boundary: calls that pass reviewed auto-approval
+policy execute immediately, while all others become operator approval requests. The invariant stays
+the same: exact call reviewed, trusted console approval, console-owned audit/result state, and
 credentials scoped or proxied rather than trusted to Haku's restraint.
 
 ## Open questions

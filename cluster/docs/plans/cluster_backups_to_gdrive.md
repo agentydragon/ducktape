@@ -248,7 +248,7 @@ already exist (google-workspace-mcp uses them).
    `/oauth/callback/google_drive_backup`.
 2. **Authorize once in a browser as the personal Gmail account**: visit airlock's
    authorize endpoint for the new provider (the same flow used for oura/google/bsc;
-   `airlock_oauth_status` / the airlock UI surfaces the link). Approve the
+   the Airlock UI surfaces the link). Approve the
    `drive.file` scope. Airlock writes `google-drive-backup-tokens` and
    `google-drive-backup-access-token` into the `airlock` namespace and refreshes
    them thereafter.

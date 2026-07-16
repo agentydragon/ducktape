@@ -59,7 +59,7 @@ slices over the deployed schema, not another identity migration:
 
 ## Google connection ownership and Airlock
 
-The current Airlock-backed `gmail` and `google_calendar` tool surfaces are intentionally global to
+The current Airlock-credential-backed `gmail` and `google_calendar` tool surfaces are intentionally global to
 authenticated Haku Agents during this transitional state. Do not add a temporary per-Operator
 owner mapping around the singleton token. Introduce Operator scoping when Haku owns the downstream
 Google connection itself:
@@ -70,8 +70,8 @@ Google connection itself:
   separate from Agent enrollment and Agent credentials.
 - **Retire only Haku's Airlock dependency after live proof.** Remove the
   `haku_console_google` provider, its access-token publication/External Secrets mirror, and the
-  haku-console token mount. Do not couple this to Airlock's unrelated Oura, BSC, OpenClaw, or other
-  remaining consumers, and do not treat broader Airlock retirement as a prerequisite.
+  haku-console token mount. Do not couple this to Airlock's unrelated Oura, BSC, or other
+  credential consumers, and do not treat retirement of the OAuth broker as a prerequisite.
 - **Decide `haku_routine` ownership independently.** The Google singleton decision does not define
   whether every Operator should share one routine launcher. Specify whether the launcher is a
   global Haku capability or an Operator-owned downstream resource before relying on it in a
@@ -79,10 +79,9 @@ Google connection itself:
 
 ## Cross-cutting OAuth/Auth infrastructure
 
-- **Minimum Airlock hardening while it remains:** separate interactive proxy, browser Operator,
-  Claude Code, and OpenClaw issuer/audience/scope contracts; require authenticated management POST
-  to initiate provider connection; make callback state bounded, expiring, one-time,
-  initiator/action/provider/generation-bound, and consumed on every terminal path.
+- **Keep Airlock credential-only while it remains:** it may own provider consent, refresh-token
+  custody, and access-token publication. Do not add MCP ingress, tool execution, agent policy, or
+  an operator-approval queue back to it; those are Haku Console responsibilities.
 - **Typed auth configuration:** replace optional-heavy incoming/outgoing auth configurations with
   role-specific discriminated models and typed scope domains, atomically per consumer. Keep
   credentialed-facade and identity-delegation constructors separate.

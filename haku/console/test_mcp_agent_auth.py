@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import cast
 from unittest.mock import AsyncMock, Mock, call, patch
 from uuid import UUID
@@ -35,6 +36,7 @@ _BINDING_ID = UUID("20000000-0000-4000-8000-000000000002")
 _OPERATOR_ID = UUID("30000000-0000-4000-8000-000000000003")
 _DATABASE_URL = "postgresql+psycopg://db.test/haku"
 _TOKEN = "agent-token"
+_TOKEN_FINGERPRINT = fingerprint_static_token(_TOKEN)
 
 
 def _settings(*, mcp_oauth: McpOAuthConfig | None = None) -> Settings:
@@ -78,16 +80,57 @@ def _oauth_proxy() -> Mock:
     return proxy
 
 
-async def test_static_auth_resolves_the_exact_active_binding_actor() -> None:
-    authority = _authority()
+def _static_auth(authority: PostgresAgentAuthority | None = None) -> StaticMcpAuth:
     auth = build_auth(
         _settings(),
-        agent_authority=authority,
+        agent_authority=authority or _authority(),
         static_credentials=_credentials(_TOKEN),
         operator_identity_store=_identity_store(),
     )
-
     assert isinstance(auth, StaticMcpAuth)
+    return auth
+
+
+def _mcp_oauth_config() -> McpOAuthConfig:
+    return McpOAuthConfig(
+        oidc_issuer="https://auth.test/application/o/haku-agent/",
+        oidc_client_id="haku-agent",
+        oidc_client_secret=SecretStr("oauth-secret"),
+        persistence=PostgresPersistence(kind="postgres", url=_DATABASE_URL),
+    )
+
+
+@dataclass(frozen=True)
+class _OAuthAuthHarness:
+    auth: OAuthMcpAuth
+    authority: PostgresAgentAuthority
+    storage: Mock
+    proxy: Mock
+    proxy_class: Mock
+
+
+def _oauth_auth(*static_tokens: str) -> _OAuthAuthHarness:
+    authority = _authority()
+    storage = Mock()
+    proxy = _oauth_proxy()
+    with (
+        patch("haku.console.mcp_agent_auth.build_shared_client_storage", return_value=storage),
+        patch("haku.console.mcp_agent_auth.HakuAgentOAuthProxy", return_value=proxy) as proxy_class,
+    ):
+        auth = build_auth(
+            _settings(mcp_oauth=_mcp_oauth_config()),
+            agent_authority=authority,
+            static_credentials=_credentials(*static_tokens),
+            operator_identity_store=_identity_store(),
+        )
+    assert isinstance(auth, OAuthMcpAuth)
+    return _OAuthAuthHarness(auth=auth, authority=authority, storage=storage, proxy=proxy, proxy_class=proxy_class)
+
+
+async def test_static_auth_resolves_the_exact_active_binding_actor() -> None:
+    authority = _authority()
+    auth = _static_auth(authority)
+
     assert isinstance(auth.provider, HakuFailurePreservingMultiAuth)
     access = await auth.provider.verify_token(_TOKEN)
     assert access is not None
@@ -97,20 +140,15 @@ async def test_static_auth_resolves_the_exact_active_binding_actor() -> None:
     )
     cast(AsyncMock, authority.static_authorization_for_fingerprint).assert_has_awaits(
         [
-            call(fingerprint=fingerprint_static_token(_TOKEN), record_seen=False),
-            call(fingerprint=fingerprint_static_token(_TOKEN), record_seen=True),
+            call(fingerprint=_TOKEN_FINGERPRINT, record_seen=False),
+            call(fingerprint=_TOKEN_FINGERPRINT, record_seen=True),
         ]
     )
 
 
 async def test_static_auth_rejects_unconfigured_and_inactive_credentials() -> None:
     authority = _authority()
-    auth = build_auth(
-        _settings(),
-        agent_authority=authority,
-        static_credentials=_credentials(_TOKEN),
-        operator_identity_store=_identity_store(),
-    )
+    auth = _static_auth(authority)
 
     assert await auth.provider.verify_token("not-configured") is None
     cast(AsyncMock, authority.static_authorization_for_fingerprint).assert_not_awaited()
@@ -120,13 +158,7 @@ async def test_static_auth_rejects_unconfigured_and_inactive_credentials() -> No
 
 
 async def test_static_actor_resolution_rejects_forged_binding_evidence() -> None:
-    auth = build_auth(
-        _settings(),
-        agent_authority=_authority(),
-        static_credentials=_credentials(_TOKEN),
-        operator_identity_store=_identity_store(),
-    )
-    assert isinstance(auth, StaticMcpAuth)
+    auth = _static_auth()
 
     forged = AccessToken(
         token=_TOKEN,
@@ -141,12 +173,7 @@ async def test_static_actor_resolution_rejects_forged_binding_evidence() -> None
 async def test_static_verification_preserves_authority_outages() -> None:
     authority = _authority()
     cast(AsyncMock, authority.static_authorization_for_fingerprint).side_effect = AgentGrantAuthorityUnavailableError()
-    auth = build_auth(
-        _settings(),
-        agent_authority=authority,
-        static_credentials=_credentials(_TOKEN),
-        operator_identity_store=_identity_store(),
-    )
+    auth = _static_auth(authority)
 
     with pytest.raises(BearerVerificationUnavailableError, match="temporarily unavailable"):
         await auth.provider.verify_token(_TOKEN)
@@ -163,41 +190,23 @@ def test_build_auth_rejects_missing_credentials() -> None:
 
 
 async def test_oauth_auth_composes_one_authority_storage_and_optional_static_verifier() -> None:
-    oauth = McpOAuthConfig(
-        oidc_issuer="https://auth.test/application/o/haku-agent/",
-        oidc_client_id="haku-agent",
-        oidc_client_secret=SecretStr("oauth-secret"),
-        persistence=PostgresPersistence(kind="postgres", url=_DATABASE_URL),
-    )
-    authority = _authority()
-    storage = Mock()
-    proxy = _oauth_proxy()
-    with (
-        patch("haku.console.mcp_agent_auth.build_shared_client_storage", return_value=storage),
-        patch("haku.console.mcp_agent_auth.HakuAgentOAuthProxy", return_value=proxy) as proxy_class,
-    ):
-        auth = build_auth(
-            _settings(mcp_oauth=oauth),
-            agent_authority=authority,
-            static_credentials=_credentials(_TOKEN),
-            operator_identity_store=_identity_store(),
-        )
+    harness = _oauth_auth(_TOKEN)
+    auth = harness.auth
 
-    assert isinstance(auth, OAuthMcpAuth)
     assert isinstance(auth.provider, HakuFailurePreservingMultiAuth)
-    assert auth.storage is storage
+    assert auth.storage is harness.storage
     assert auth.static_actor_resolver is not None
-    proxy_class.assert_called_once_with(
+    harness.proxy_class.assert_called_once_with(
         config_url="https://auth.test/application/o/haku-agent/.well-known/openid-configuration",
         client_id="haku-agent",
         client_secret="oauth-secret",
         base_url="https://haku.test/mcp",
         resource_base_url="https://haku.test",
-        client_storage=storage,
+        client_storage=harness.storage,
         expected_issuer="https://auth.test/application/o/haku-agent/",
-        grant_authority=authority,
+        grant_authority=harness.authority,
     )
-    proxy.update_default_scopes.assert_called_once_with(DEFAULT_VALID_SCOPES)
+    harness.proxy.update_default_scopes.assert_called_once_with(DEFAULT_VALID_SCOPES)
 
     access = await auth.provider.verify_token(_TOKEN)
     assert access is not None
@@ -205,24 +214,8 @@ async def test_oauth_auth_composes_one_authority_storage_and_optional_static_ver
 
 
 def test_oauth_auth_does_not_invent_a_static_resolver_without_static_credentials() -> None:
-    oauth = McpOAuthConfig(
-        oidc_issuer="https://auth.test/application/o/haku-agent/",
-        oidc_client_id="haku-agent",
-        oidc_client_secret=SecretStr("oauth-secret"),
-        persistence=PostgresPersistence(kind="postgres", url=_DATABASE_URL),
-    )
-    with (
-        patch("haku.console.mcp_agent_auth.build_shared_client_storage", return_value=Mock()),
-        patch("haku.console.mcp_agent_auth.HakuAgentOAuthProxy", return_value=_oauth_proxy()),
-    ):
-        auth = build_auth(
-            _settings(mcp_oauth=oauth),
-            agent_authority=_authority(),
-            static_credentials=_credentials(),
-            operator_identity_store=_identity_store(),
-        )
+    auth = _oauth_auth().auth
 
-    assert isinstance(auth, OAuthMcpAuth)
     assert auth.static_actor_resolver is None
 
 

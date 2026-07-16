@@ -7,7 +7,6 @@ on:
     branches: [main, devel]
     paths:
       - "openclaw/**"
-      - "airlock/openclaw/**"
       - ".github/workflows/openclaw-image.yml"
   workflow_dispatch:
 
@@ -26,12 +25,6 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
-
-      - name: Build airlock plugin tar
-        run: bazel build //airlock/openclaw:plugin_tar
-
-      - name: Stage plugin tar for Docker
-        run: cp bazel-bin/airlock/openclaw/plugin_tar.tar openclaw/airlock-plugin.tar
 
       - uses: ./.github/actions/ghcr-build-push
         with:

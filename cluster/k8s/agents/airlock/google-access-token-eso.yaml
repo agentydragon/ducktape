@@ -6,7 +6,6 @@ metadata:
   name: google-access-token
 spec:
   namespaces:
-    - openclaw-sandbox
     - claude-sandbox
     - haku-sandbox
   externalSecretSpec:

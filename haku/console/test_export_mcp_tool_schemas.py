@@ -14,16 +14,8 @@ from haku.console.export_mcp_tool_schemas import (
     export_mcp_tool_schemas_json,
 )
 
-
-async def test_exports_every_server_and_tool() -> None:
-    schema = await build_mcp_tool_arguments_schema()
-
-    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
-    assert schema["title"] == "McpToolArguments"
-    assert schema["additionalProperties"] is False
-    assert list(schema["properties"]) == ["gmail", "google_calendar", "grocy-sf", "haku_routine"]
-    assert schema["required"] == ["gmail", "google_calendar", "grocy-sf", "haku_routine"]
-    assert list(schema["properties"]["gmail"]["properties"]) == [
+_EXPECTED_TOOLS = {
+    "gmail": (
         "drafts_create",
         "drafts_delete",
         "drafts_get",
@@ -42,16 +34,10 @@ async def test_exports_every_server_and_tool() -> None:
         "threads_get",
         "threads_list",
         "threads_modify_labels",
-    ]
-    assert list(schema["properties"]["google_calendar"]["properties"]) == [
-        "create_event",
-        "get_event",
-        "list_event_instances",
-        "list_events",
-    ]
-    assert list(schema["properties"]["haku_routine"]["properties"]) == ["launch_routine"]
+    ),
+    "google_calendar": ("create_event", "get_event", "list_event_instances", "list_events"),
     # grocy-sf is reflected only for the batch tools the console renders previews for.
-    assert list(schema["properties"]["grocy-sf"]["properties"]) == [
+    "grocy-sf": (
         "locations_list",
         "product_groups_list",
         "products_create",
@@ -67,9 +53,32 @@ async def test_exports_every_server_and_tool() -> None:
         "stock_consume",
         "stock_entry_edit",
         "stock_get",
-    ]
-    for server in schema["properties"].values():
+    ),
+    "haku_routine": ("launch_routine",),
+}
+_SERVER_IDS = list(_EXPECTED_TOOLS)
+_RESULT_TOOLS_MATCH_ARGUMENTS = ("google_calendar", "grocy-sf", "haku_routine")
+
+
+def _assert_catalog_shape(schema: dict[str, object], title: str) -> None:
+    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    assert schema["title"] == title
+    assert schema["additionalProperties"] is False
+    properties = schema["properties"]
+    assert isinstance(properties, dict)
+    assert list(properties) == _SERVER_IDS
+    assert schema["required"] == _SERVER_IDS
+    for server in properties.values():
         assert server["additionalProperties"] is False
+
+
+async def test_exports_every_server_and_tool() -> None:
+    schema = await build_mcp_tool_arguments_schema()
+
+    _assert_catalog_shape(schema, "McpToolArguments")
+    for server_id, expected_tools in _EXPECTED_TOOLS.items():
+        assert list(schema["properties"][server_id]["properties"]) == list(expected_tools)
+    for server in schema["properties"].values():
         for tool_schema in server["properties"].values():
             assert tool_schema["additionalProperties"] is False
 
@@ -137,14 +146,12 @@ async def test_nullable_fastmcp_arguments_remain_nullable() -> None:
 async def test_exports_result_catalog() -> None:
     schema = await build_mcp_tool_results_schema()
 
-    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
-    assert schema["title"] == "McpToolResults"
-    assert schema["additionalProperties"] is False
+    _assert_catalog_shape(schema, "McpToolResults")
     # grocy-sf's batch tools are reflected (typed ducktape result models), limited to the same
     # preview allowlist as its argument schemas. get_system_info is an OpenAPI tool with no batch
     # counterpart, so it is absent and its widget stays hand-authored.
-    assert list(schema["properties"]) == ["gmail", "google_calendar", "grocy-sf", "haku_routine"]
-    assert schema["required"] == ["gmail", "google_calendar", "grocy-sf", "haku_routine"]
+    for server_id in _RESULT_TOOLS_MATCH_ARGUMENTS:
+        assert list(schema["properties"][server_id]["properties"]) == list(_EXPECTED_TOOLS[server_id])
 
     gmail = schema["properties"]["gmail"]["properties"]
     # A `-> None` return (gmail.labels_delete) has only a null wrapped result, so it is omitted —
@@ -155,33 +162,6 @@ async def test_exports_result_catalog() -> None:
     assert "threads_modify_labels" in gmail
     # `id` is the one required field of a Draft resource.
     assert gmail["drafts_create"].get("required") == ["id"]
-    assert list(schema["properties"]["google_calendar"]["properties"]) == [
-        "create_event",
-        "get_event",
-        "list_event_instances",
-        "list_events",
-    ]
-    assert list(schema["properties"]["haku_routine"]["properties"]) == ["launch_routine"]
-    assert list(schema["properties"]["grocy-sf"]["properties"]) == [
-        "locations_list",
-        "product_groups_list",
-        "products_create",
-        "products_edit",
-        "products_list",
-        "quantity_units_list",
-        "shopping_list_get",
-        "shopping_list_item_edit",
-        "shopping_list_items_add",
-        "shopping_list_items_remove",
-        "shopping_lists_list",
-        "stock_add",
-        "stock_consume",
-        "stock_entry_edit",
-        "stock_get",
-    ]
-    assert "get_system_info" not in schema["properties"]["grocy-sf"]["properties"]
-    for server in schema["properties"].values():
-        assert server["additionalProperties"] is False
 
     Draft202012Validator.check_schema(schema)
 

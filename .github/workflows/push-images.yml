@@ -64,7 +64,6 @@ jobs:
         include:
           # Test-gated images: push only if their tests pass.
           - { image: "//airlock:image", image_name: airlock, test_target: "//airlock/..." }
-          - { image: "//airlock/auth_proxy:image", image_name: auth-proxy, test_target: "//airlock/auth_proxy/..." }
           - { image: "//finance/augur/api:image", image_name: augur, test_target: "//finance/augur/api/..." }
           - {
               image: "//finance/augur/frontend:image",
@@ -173,7 +172,6 @@ jobs:
           - { image: "//devinfra/firecracker/manager:image", image_name: firecracker-manager, test_target: "" }
           - { image: "//devinfra/firecracker/vm_pod:image", image_name: fc-vm-pod, test_target: "" }
           - { image: "//inventree_utils/rai_plugin:image", image_name: inventree, test_target: "" }
-          - { image: "//openclaw/exec:image", image_name: openclaw-exec, test_target: "" }
           - { image: "@ducktape_activitywatch//:image", image_name: aw-server, test_target: "" }
           - { image: "//cluster/k8s/haku/mailbox/image:image", image_name: stalwart, test_target: "" }
           - { image: "//cpap:image", image_name: cpap-sync, test_target: "" }

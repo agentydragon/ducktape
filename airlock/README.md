@@ -1,43 +1,34 @@
 # airlock
 
-Generic MCP approval proxy. Wraps one or more backend MCP servers and adds a human-in-the-loop
-approval layer to every tool call. Agents queue actions; operators approve/reject via
-a Svelte UI; notifications flow back via MCP `ResourceUpdated` events.
+OAuth credential broker for services that need a human to complete an upstream
+authorization flow. The Svelte UI shows provider status and starts connect or
+reconnect flows; the server stores refresh and access tokens in Kubernetes
+Secrets and refreshes access tokens in the background.
 
-Each backend is mounted under a namespace prefix — tools are exposed as `{namespace}_{tool}`
-(e.g., backend `exec` with tool `run_command` becomes `exec_run_command`).
+Airlock has no MCP endpoint, tool proxy, action queue, or operator tool-approval
+API. Haku Console owns the live risky-MCP-tool policy, approval, audit, and result
+flow; see <../haku/console/README.md>.
 
 ## Architecture
 
-```
-Backend MCP servers (streamable-http or stdio)
-  exec ──┐
-  files ─┤  mounted under namespace prefixes
-  ...  ──┘
-         ▼
-AirlockServer (FastMCP proxy)        port 8765
-  ├── /mcp          — unified MCP endpoint (Authorization: Bearer <JWT>)
-  ├── /auth/config  — OIDC config for SPA (authority, client_id, redirect_uri)
-  └── /             — operator Svelte SPA (OAuth2 PKCE flow)
-         ▲
-         │  MCP over HTTP (JWT-authenticated)
-         │
-auth-proxy sidecar (openclaw-gateway pod) port 8767
-  ├── accepts unauthenticated MCP from OpenClaw plugin
-  ├── injects OAuth2 Bearer token (client_credentials grant from Authentik)
-  └── forwards authenticated MCP to upstream airlock
-         ▲
-         │  MCP over HTTP (unauthenticated, localhost only)
-         │
-OpenClaw plugin (airlock entry in plugins.entries)
-  └── connects to airlock via auth-proxy sidecar (localhost:8767)
+```text
+Operator browser
+  │  Authentik login (Authorization Code + PKCE)
+  ▼
+Airlock FastAPI + Svelte UI             port 8765
+  ├── /auth/config                      SPA OIDC configuration
+  ├── /api/oauth/providers              provider/token status
+  ├── /oauth/authorize/<provider>       upstream authorization redirect
+  └── /oauth/callback[/<legacy-name>]   upstream OAuth callback
+             │
+             ▼
+Kubernetes Secrets
+  ├── refresh-token Secret              retained only in the airlock namespace
+  └── access-token Secret               mirrored to explicit consumers by ESO
 ```
 
-JWTs are verified against the JWKS endpoint from the OIDC issuer's
-`.well-known/openid-configuration` (Authentik). Operator tokens use
-Authorization Code + PKCE; agent tokens use `client_credentials` via the
-auth-proxy sidecar. JWT scopes: `propose` (agent), `decide` (operator),
-`read` (both).
+Browser API requests carry an Authentik JWT. Airlock verifies it against the
+issuer's JWKS before returning provider or deployment status.
 
 ## Running
 
@@ -45,77 +36,54 @@ auth-proxy sidecar. JWT scopes: `propose` (agent), `decide` (operator),
 bazel run //airlock:server
 ```
 
-`CONFIG_PATH` must point to a YAML config file (see below).
+`CONFIG_PATH` must point to a YAML config file (see below). Provider client IDs
+and secrets are supplied as `<PROVIDER_NAME>_CLIENT_ID` and
+`<PROVIDER_NAME>_CLIENT_SECRET` environment variables.
 
 ## Key modules
 
-| Module              | Purpose                                                                |
-| ------------------- | ---------------------------------------------------------------------- |
-| `models.py`         | Discriminated union types (`Action`, `ActionState`, `ToolCallOutcome`) |
-| `storage.py`        | aiosqlite CRUD; indexed `status` column                                |
-| `predicates.py`     | Three-way predicate: `Approved \| Denied \| NeedsHumanDecision`        |
-| `config.py`         | `Settings` (Pydantic); backend spec + auth config from YAML            |
-| `proxy_server.py`   | `AirlockServer` — core MCP proxy, tool wrapping, scope constants       |
-| `app.py`            | Starlette app factory (`create_app()`) + uvicorn entry point           |
-| `instructions.mako` | Mako template for MCP `initialize` instructions                        |
-| `auth_proxy/`       | OAuth2 sidecar: FastMCP proxy with client_credentials token injection  |
-| `frontend/`         | Svelte 5 operator SPA (action list + detail, approve/reject workflow)  |
+| Module                | Purpose                                                         |
+| --------------------- | --------------------------------------------------------------- |
+| `models.py`           | OAuth provider status and deployment metadata models            |
+| `config.py`           | Server and upstream OAuth-provider configuration                |
+| `app.py`              | FastAPI app factory, authenticated status API, and uvicorn main |
+| `oauth/provider.py`   | Provider configuration plus authorize/token/refresh operations  |
+| `oauth/routes.py`     | Browser authorization and callback routes                       |
+| `oauth/k8s_client.py` | Kubernetes Secret token storage                                 |
+| `oauth/refresh.py`    | Background refresh and orphaned-secret cleanup                  |
+| `frontend/`           | Svelte provider-status and connect/reconnect UI                 |
 
 ## Configuration
 
-### Backend specs (YAML config file)
-
 Set `CONFIG_PATH` to a YAML file (default: `/etc/airlock/config.yaml`).
-Each backend is keyed by its namespace prefix (lowercase alphanumeric + underscore).
 
 ```yaml
-backends:
-  kubeapi_admin:
-    url: http://kubeapi-admin-exec-mcp:8766/mcp
-  files:
-    command: /usr/bin/file-server
-    args:
-      - --mcp
-```
-
-Each backend supports the full `MCPServerTypes` config (URL + headers for
-streamable-http, or command + args + env for stdio).
-
-### Default wait mode
-
-Server-wide default for how long tool calls wait for resolution. Agents can
-override per-call via the `wait_mode` tool parameter. When omitted, calls return
-immediately (typically `pending`).
-
-```yaml
-# Wait up to 30s for resolution
-default_wait_mode:
-  mode: yield_after_ms
-  timeout_ms: 30000
-
-# Or wait indefinitely
-default_wait_mode:
-  mode: blocking
+public_base_url: https://airlock.example.com
+oidc_issuer: https://auth.example.com/application/o/airlock/
+oidc_client_id: airlock-operator
+port: 8765
+oauth:
+  target_namespace: airlock
+  managed_by: airlock
+  providers:
+    - name: example
+      provider_type: oauth2
+      display_name: Example
+      authorize_url: https://provider.example.com/oauth/authorize
+      token_url: https://provider.example.com/oauth/token
+      scopes: [read]
+      refresh_secret:
+        name: example-refresh-token
+      access_secret:
+        name: example-access-token
 ```
 
 ### Environment variables
 
-| Variable      | Required | Description                                                   |
-| ------------- | -------- | ------------------------------------------------------------- |
-| `CONFIG_PATH` | no       | Path to YAML config file (default `/etc/airlock/config.yaml`) |
+| Variable                        | Required | Description                                                   |
+| ------------------------------- | -------- | ------------------------------------------------------------- |
+| `CONFIG_PATH`                   | no       | Path to YAML config file (default `/etc/airlock/config.yaml`) |
+| `<PROVIDER_NAME>_CLIENT_ID`     | yes      | Client ID for each configured provider                        |
+| `<PROVIDER_NAME>_CLIENT_SECRET` | yes      | Client secret for each configured provider                    |
 
-All other settings (`public_base_url`, `oidc_issuer`, `oidc_client_id`, `backends`,
-`db_path`, `predicate_path`, `host`, `port`) live in the YAML config file.
-
-## Predicate file format
-
-```python
-from airlock.predicates import Approved, Denied, NeedsHumanDecision
-
-def decide(server_namespace: str, tool_name: str, arguments: dict) -> Approved | Denied | NeedsHumanDecision:
-    if server_namespace == "exec" and tool_name == "run_command":
-        return Approved()
-    return NeedsHumanDecision()  # default: always queue for operator
-```
-
-Fail-safe: exceptions during predicate evaluation default to `NeedsHumanDecision`.
+All other settings live in the YAML config file.

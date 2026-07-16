@@ -1,54 +1,31 @@
-"""Airlock FastAPI application.
+"""Airlock OAuth credential-broker application.
 
-/healthz          — liveness probe (no auth)
-/auth/config      — OIDC configuration for the SPA (no auth; needed pre-login)
-/mcp              — MCP endpoint (JWTVerifier handles auth via JWKS)
-/api/actions      — REST API for action management (read: list/get; decide: approve/reject)
-/api/events       — SSE stream for real-time updates (read scope)
-/api/oauth/*      — OAuth provider status (read scope)
-/static/frontend  — bundled Svelte SPA assets
-/                 — SPA shell
-
-Every /api/* route is guarded by the same ``AuthProvider`` (JWKS-backed
-JWTVerifier) that protects the /mcp mount: GETs require the ``read`` scope,
-approve/reject require ``decide`` — matching the MCP tool scopes. The SPA
-already sends ``Authorization: Bearer <JWT>`` on every /api call (including the
-fetch-based SSE stream), so this is a server-side enforcement change only.
+The service exposes a browser UI and authenticated REST status endpoints for
+upstream OAuth providers. It deliberately has no MCP or tool-approval surface.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 import sys
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import httpx
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastmcp.server.auth.auth import AccessToken, AuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.utilities.lifespan import combine_lifespans
-from pydantic import BaseModel
-from starlette.responses import HTMLResponse, StreamingResponse
+from starlette.responses import HTMLResponse
 
 from airlock.config import Settings, build_oauth_providers
 from airlock.deployment import build_deployment_info
-from airlock.kv_store import PostgresKeyValueStore
 from airlock.models import (
-    Action,
-    ActionKey,
-    ActionStatus,
-    ApproveDecision,
-    BackendStatus,
     ConnectedOAuthStatus,
-    DenyDecision,
     DeploymentInfo,
     DisconnectedOAuthStatus,
     ExpiredOAuthStatus,
@@ -59,45 +36,22 @@ from airlock.oauth.k8s_client import K8sTokenStore
 from airlock.oauth.provider import GenericOAuth2Provider
 from airlock.oauth.refresh import token_refresh_loop
 from airlock.oauth.routes import create_oauth_router
-from airlock.predicates import load_predicate
-from airlock.proxy_server import (
-    DECIDE_SCOPE,
-    PROPOSE_SCOPE,
-    READ_SCOPE,
-    ActionNotDecidableError,
-    ActionNotFoundError,
-    AirlockServer,
-)
-from mcp_infra.authentik_auth.config import AuthentikAuthConfig
-from mcp_infra.authentik_auth.provider import build_authentik_auth
 
 logger = logging.getLogger(__name__)
 
 _FRONTEND_DIST_DIR = Path(__file__).parent / "frontend" / "dist"
-
 _NS_PATH = Path("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 
 
-class RejectBody(BaseModel):
-    reason: str | None = None
-
-
 def _detect_namespace() -> str:
-    """Read the in-cluster namespace, falling back to 'airlock'."""
+    """Read the in-cluster namespace, falling back to ``airlock``."""
     if _NS_PATH.exists():
         return _NS_PATH.read_text().strip()
     return "airlock"
 
 
-def _require_scope(auth: AuthProvider, scope: str) -> Callable[[Request], Awaitable[AccessToken]]:
-    """Build a FastAPI dependency requiring a valid Bearer JWT carrying ``scope``.
-
-    Verifies the token with the same ``AuthProvider`` (JWKS-backed JWTVerifier)
-    that guards the /mcp mount, so the operator REST API and the MCP surface
-    enforce identical token validation and scopes. Without this, the /api/*
-    routes were reachable unauthenticated even though the SPA already sends the
-    bearer token.
-    """
+def _require_authenticated(auth: AuthProvider) -> Callable[[Request], Awaitable[AccessToken]]:
+    """Build a FastAPI dependency requiring a valid Bearer JWT."""
 
     async def dependency(request: Request) -> AccessToken:
         scheme, _, token = request.headers.get("Authorization", "").partition(" ")
@@ -108,27 +62,17 @@ def _require_scope(auth: AuthProvider, scope: str) -> Callable[[Request], Awaita
             raise HTTPException(
                 status_code=401, detail="Invalid or expired token", headers={"WWW-Authenticate": "Bearer"}
             )
-        if scope not in access.scopes:
-            raise HTTPException(status_code=403, detail=f"Requires {scope!r} scope")
         return access
 
     return dependency
 
 
 def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool = True) -> FastAPI:
-    """Build the FastAPI app serving UI, REST API, and MCP on a single port."""
-    predicate = load_predicate(settings.predicate_path)
-    server = AirlockServer(settings, predicate=predicate, auth=auth)
-    mcp_app = server.http_app(path="/")
-
-    # /api/* guards: same AuthProvider as the /mcp mount. GETs need `read`;
-    # approve/reject need `decide` — mirroring the MCP tool scopes.
-    require_read = Depends(_require_scope(auth, READ_SCOPE))
-    require_decide = Depends(_require_scope(auth, DECIDE_SCOPE))
-
+    """Build the FastAPI app serving the OAuth broker UI and API."""
+    require_authenticated = Depends(_require_authenticated(auth))
     oauth_providers: dict[str, GenericOAuth2Provider] = {}
     oauth_k8s_store: K8sTokenStore | None = None
-    oauth_target_ns: str = ""
+    oauth_target_ns = ""
     oauth_refresh_errors: dict[str, str] = {}
 
     @contextlib.asynccontextmanager
@@ -140,16 +84,14 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
 
         app.include_router(create_oauth_router(oauth_providers, oauth_k8s_store, oauth_target_ns))
 
-        # SPA catch-all is registered here, AFTER the OAuth router, so that
-        # /oauth/* routes are matched first. Registering at module-eval time
-        # shadows the lifespan-added OAuth routes.
         if include_static:
-            _html = (_FRONTEND_DIST_DIR / "index.html").read_text()
+            html = (_FRONTEND_DIST_DIR / "index.html").read_text()
             app.mount("/static/frontend", StaticFiles(directory=str(_FRONTEND_DIST_DIR)))
 
-            @app.get("/{rest:path}")
-            async def index(rest: str) -> HTMLResponse:
-                return HTMLResponse(_html)
+            @app.get("/")
+            @app.get("/auth/callback")
+            async def index() -> HTMLResponse:
+                return HTMLResponse(html)
 
         task = asyncio.create_task(
             token_refresh_loop(oauth_providers, oauth_k8s_store, oauth_target_ns, refresh_errors=oauth_refresh_errors)
@@ -161,16 +103,7 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
-    # combine_lifespans runs both in order: app_lifespan first (OAuth setup),
-    # then mcp_app.lifespan (gate storage + backends). This ensures the gate
-    # is fully initialized before the outer app serves REST requests.
-    app = FastAPI(
-        title="Airlock", docs_url=None, redoc_url=None, lifespan=combine_lifespans(app_lifespan, mcp_app.lifespan)
-    )
-
-    app.mount("/mcp", mcp_app)
-
-    # ── Routes ───────────────────────────────────────────────────────────────
+    app = FastAPI(title="Airlock OAuth", docs_url=None, redoc_url=None, lifespan=app_lifespan)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, bool]:
@@ -184,68 +117,13 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
             "redirect_uri": f"{settings.public_base_url}/auth/callback",
         }
 
-    @app.get("/api/actions", dependencies=[require_read])
-    async def list_actions(status: str | None = None, limit: int = 100, offset: int = 0) -> list[Action]:
-        status_enum = ActionStatus(status) if status else None
-        return await server._req_storage.list_actions(status_enum, limit=limit, offset=offset)
-
-    @app.get("/api/actions/{session_key}/{action_seq}", dependencies=[require_read])
-    async def get_action(session_key: str, action_seq: int) -> Action:
-        key = ActionKey(session_key=session_key, action_seq=action_seq)
-        action = await server._req_storage.get_action(key)
-        if action is None:
-            raise HTTPException(status_code=404, detail="Action not found")
-        return action
-
-    async def _apply_decision(key: ActionKey, decision: ApproveDecision | DenyDecision) -> Response:
-        """Inject a decision, translating domain errors to HTTP client errors.
-
-        ``server.decide`` raises for bad input; without this the REST endpoint
-        would 500 on an unknown/already-decided action instead of a 404/409.
-        """
-        try:
-            await server.decide(key, decision)
-        except ActionNotFoundError as e:
-            raise HTTPException(status_code=404, detail=str(e)) from e
-        except ActionNotDecidableError as e:
-            raise HTTPException(status_code=409, detail=str(e)) from e
-        return Response(status_code=204)
-
-    @app.post("/api/actions/{session_key}/{action_seq}/approve", status_code=204, dependencies=[require_decide])
-    async def approve_action(session_key: str, action_seq: int) -> Response:
-        return await _apply_decision(ActionKey(session_key=session_key, action_seq=action_seq), ApproveDecision())
-
-    @app.post("/api/actions/{session_key}/{action_seq}/reject", status_code=204, dependencies=[require_decide])
-    async def reject_action(session_key: str, action_seq: int, body: RejectBody | None = None) -> Response:
-        key = ActionKey(session_key=session_key, action_seq=action_seq)
-        return await _apply_decision(key, DenyDecision(reason=body.reason if body else None))
-
-    @app.get("/api/events", dependencies=[require_read])
-    async def events() -> StreamingResponse:
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=100)
-        server.add_sse_listener(queue)
-
-        async def generate():
-            try:
-                while True:
-                    event = await queue.get()
-                    yield f"data: {json.dumps(event)}\n\n"
-            finally:
-                server.remove_sse_listener(queue)
-
-        return StreamingResponse(generate(), media_type="text/event-stream")
-
-    @app.get("/api/backends", dependencies=[require_read])
-    async def list_backends() -> list[BackendStatus]:
-        return server.get_backend_statuses()
-
     deployment_info = build_deployment_info()
 
-    @app.get("/api/info", dependencies=[require_read])
+    @app.get("/api/info", dependencies=[require_authenticated])
     async def get_info() -> DeploymentInfo:
         return deployment_info
 
-    @app.get("/api/oauth/providers", dependencies=[require_read])
+    @app.get("/api/oauth/providers", dependencies=[require_authenticated])
     async def list_oauth_providers() -> list[OAuthProviderStatus]:
         assert oauth_k8s_store is not None
         result: list[OAuthProviderStatus] = []
@@ -274,20 +152,8 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
     return app
 
 
-def _build_auth(settings: Settings, *, kv_store: PostgresKeyValueStore | None = None) -> AuthProvider:
-    """Build the auth provider: OIDCProxy + JWTVerifier when configured, plain JWTVerifier otherwise."""
-    if settings.oidc_proxy_client_id and settings.oidc_proxy_client_secret:
-        config = AuthentikAuthConfig(
-            oidc_issuer=settings.oidc_issuer,
-            oidc_client_id=settings.oidc_proxy_client_id,
-            oidc_client_secret=settings.oidc_proxy_client_secret,
-            # Airlock is mounted under FastAPI at /mcp, so base_url includes the prefix.
-            public_base_url=f"{settings.public_base_url}/mcp",
-        )
-        return build_authentik_auth(
-            config, valid_scopes=[PROPOSE_SCOPE, DECIDE_SCOPE, READ_SCOPE, "openid"], client_storage=kv_store
-        )
-    # Fallback: discover JWKS from OIDC issuer synchronously at startup.
+def _build_auth(settings: Settings) -> AuthProvider:
+    """Discover the Authentik JWKS endpoint and build a JWT verifier."""
     discovery_url = f"{settings.oidc_issuer.rstrip('/')}/.well-known/openid-configuration"
     discovery = httpx.get(discovery_url, timeout=10.0).raise_for_status().json()
     return JWTVerifier(jwks_uri=discovery["jwks_uri"])
@@ -295,15 +161,10 @@ def _build_auth(settings: Settings, *, kv_store: PostgresKeyValueStore | None = 
 
 async def _serve() -> None:
     settings = Settings.load()
-    kv_store = PostgresKeyValueStore.from_url(settings.db_url)
-    auth = _build_auth(settings, kv_store=kv_store)
-    app = create_app(settings, auth=auth)
+    app = create_app(settings, auth=_build_auth(settings))
     logger.info("serving on %s:%d", settings.host, settings.port)
     server = uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port, log_level="info"))
-    try:
-        await server.serve()
-    finally:
-        await kv_store.close()
+    await server.serve()
 
 
 def main() -> None:

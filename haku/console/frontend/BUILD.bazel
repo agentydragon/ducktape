@@ -28,7 +28,8 @@ js_json_schema(
 # The exact output (result) schemas advertised by the in-process MCP servers, emitted by the
 # same exporter with `--results`. :mcp_tool_result_schema mirrors :mcp_tool_schema for results,
 # so per-tool result widgets validate against FastMCP's advertised output contract rather than
-# restating it. The reflected grocy-sf read tools use the same generated catalog.
+# restating it. grocy-sf contributes its reflected batch and read tools; its OpenAPI tool widgets
+# stay hand-authored.
 js_json_schema(
     name = "mcp_tool_results",
     out = "api/mcp_tool_results.d.ts",
