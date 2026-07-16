@@ -7,8 +7,11 @@ unlike LiteLLM's `/v1/messages` bridge (BerriAI/litellm#25429) and claude-code-r
 **translates tool calls correctly** (`function_call` → `tool_use`). It goes direct to
 `chatgpt.com/backend-api/codex`, holding its own Codex OAuth session.
 
-The `codex-claude` laptop wrapper (<../../../../nix/home/claude_code/codex-claude.nix>)
-points Claude Code at `https://cli-proxy-api.allegedly.works`.
+The `codex-claude` wrapper points Claude Code at the main LiteLLM proxy
+(`litellm.allegedly.works`), which fronts CLIProxyAPI as its `codex-*` upstream
+(see `cluster/k8s/litellm/app/generate_litellm.py`). The laptop/agent-box/codex-pod
+consumers authenticate to LiteLLM with a scoped `codex-clients` virtual key; the client
+key below is now consumed only by the main LiteLLM pod (ESO-mirrored into `litellm`).
 
 ## Models
 
@@ -38,10 +41,11 @@ persists the token across pod restarts; the auto-refresh worker (15m) keeps it v
 
 - `config.sops.yaml` — `cli-proxy-api-config` Secret holding `config.yaml` (port, auth-dir,
   `api-keys` client key). Flux decrypts via `sops-age-cluster-secrets`.
-- `client-key.sops.yaml` — SSOT of the **same** client key, consumed by laptops and
-  `codex@agent-box` via `ducktape.sopsEnv` (`CLIPROXY_CLIENT_KEY`) and reflected into
-  `codex-pod` for its `codex-claude` wrapper. Keep it in sync with `config.sops.yaml`
-  on rotation.
+- `client-key.sops.yaml` — SSOT of the **same** client key, now consumed only by the main
+  LiteLLM pod (ESO-mirrored into `litellm` as `CLIPROXY_CLIENT_KEY` via
+  `cluster/k8s/litellm/secrets/cliproxy-client-key-eso.yaml`) for the `codex-*` upstream.
+  Laptops/agent-box/codex-pod use a scoped `codex-clients` LiteLLM virtual key instead.
+  Keep it in sync with `config.sops.yaml` on rotation.
 
 Rotate the client key: generate a new value, update both files (`sops -e -i` each), push.
 

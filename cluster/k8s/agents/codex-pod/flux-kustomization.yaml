@@ -22,8 +22,10 @@ spec:
     # Forgejo registry credential must be reflected into codex-pod (imagePullSecret)
     # and flux-system (image scan) before the pod can pull.
     - name: forgejo-images
-    # Supplies the reflected client key consumed by codex-claude.
-    - name: cli-proxy-api
+    # Mints + reflects the codex-claude virtual key (litellm-codex-clients-key) consumed
+    # by codex-claude as CODEX_LITELLM_KEY. The key itself is optional (pre-reflection
+    # window) but this orders it.
+    - name: litellm-keys-tf
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment

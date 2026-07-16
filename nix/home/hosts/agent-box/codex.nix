@@ -30,11 +30,12 @@ in
     sandboxMode = "danger-full-access";
   };
 
-  # Same CLIProxyAPI client-key SSOT used by workstations and reflected into
-  # codex-pod. The agent-box codex identity is an explicit SOPS recipient.
-  ducktape.sopsEnv.CLIPROXY_CLIENT_KEY = {
-    sopsFile = ../../../../cluster/k8s/cli-proxy-api/client-key.sops.yaml;
-    key = "stringData/client-key";
+  # Codex-claude LiteLLM virtual key (codex-* models via LiteLLM → CLIProxyAPI). Same SSOT
+  # as workstations and codex-pod (reflected kubernetes_secret); the agent-box codex
+  # identity is an explicit SOPS recipient of the pinned-key file.
+  ducktape.sopsEnv.CODEX_LITELLM_KEY = {
+    sopsFile = ../../../../tf/gitops/litellm-keys/litellm-codex-clients-key.yaml;
+    key = "litellm_codex_key";
   };
 
   # Minimal Claude Code config for this unattended agent identity. Do not import

@@ -1,29 +1,18 @@
-# `codex-claude`: Claude Code on ChatGPT/Codex subscription models (GPT-5.6-sol etc.) via
-# the in-cluster CLIProxyAPI gateway. CLIProxyAPI speaks Anthropic /v1/messages out and the
-# ChatGPT Codex backend in, translating tool calls (function_call -> tool_use) — the one
-# thing LiteLLM's /v1/messages bridge and claude-code-router both couldn't do.
-#
-# Auth token is $CLIPROXY_CLIENT_KEY — a SOPS secret (SSOT in
-# cluster/k8s/cli-proxy-api/client-key.sops.yaml) surfaced to Home Manager consumers
-# via ducktape.sopsEnv and reflected into codex-pod.
-# CLIProxyAPI holds + auto-refreshes its OWN Codex OAuth session (separate from LiteLLM's).
-#
-# Auth is Bearer-only (ANTHROPIC_AUTH_TOKEN). CLIProxyAPI accepts both Authorization and
-# x-api-key, but setting both makes Claude Code warn "auth may not work as expected", so
-# `-u ANTHROPIC_API_KEY` strips any inherited key (e.g. wyrm2's real Anthropic key).
-#
-# Gateway model discovery is on, so `/model` lists the codex slugs
-# (gpt-5.4/5.5/5.6-sol/terra/luna/...). Reasoning effort is driven by Claude Code's
-# `effortLevel` setting; CLIProxyAPI forwards it to Codex reasoning.effort.
+# `codex-claude`: Claude Code on ChatGPT/Codex (gpt-5.6-sol etc.) via the cluster LiteLLM
+# proxy (→ CLIProxyAPI), reading $CODEX_LITELLM_KEY — a codex-scoped virtual key (SSOT in
+# tf/gitops/litellm-keys). LiteLLM fronts CLIProxyAPI with the `anthropic/` provider (no
+# shape translation), so CLIProxyAPI still does the Codex tool-call translation
+# (function_call -> tool_use) that LiteLLM's own Responses bridge couldn't. Reasoning effort
+# is driven by Claude Code's `effortLevel`. Also baked into the codex-pod image. See
+# ./gateway.nix for the shared wrapper pattern.
 { pkgs }:
-pkgs.writeShellScriptBin "codex-claude" ''
-  exec env \
-    -u ANTHROPIC_API_KEY \
-    IS_DEMO=1 \
-    ANTHROPIC_BASE_URL=https://cli-proxy-api.allegedly.works \
-    ANTHROPIC_AUTH_TOKEN="$CLIPROXY_CLIENT_KEY" \
-    ANTHROPIC_MODEL=gpt-5.6-sol \
-    ANTHROPIC_DEFAULT_HAIKU_MODEL=gpt-5.6-luna \
-    CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1 \
-    claude "$@"
-''
+let
+  inherit (pkgs) lib;
+in
+import ./gateway.nix { inherit pkgs lib; } "codex-claude" {
+  baseUrl = "https://litellm.allegedly.works";
+  authTokenEnvVar = "CODEX_LITELLM_KEY";
+  model = "codex-gpt-5.6-sol";
+  haikuModel = "codex-gpt-5.6-luna";
+  gatewayDiscovery = true;
+}

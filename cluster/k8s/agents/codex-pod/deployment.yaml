@@ -57,7 +57,7 @@ spec:
               # ~/.ssh/environment (sshd_config: PermitUserEnvironment yes). kubectl
               # exec already inherits the container env, so this is ssh-only.
               install -m600 /dev/null "$HOME/.ssh/environment"
-              for v in LITELLM_API_KEY BUILDBUDDY_API_KEY CLIPROXY_CLIENT_KEY; do
+              for v in LITELLM_API_KEY BUILDBUDDY_API_KEY CODEX_LITELLM_KEY; do
                 [ -n "${!v:-}" ] && printf '%s=%s\n' "$v" "${!v}" >>"$HOME/.ssh/environment"
               done
               # sshd re-execs itself for privsep, so it refuses a PATH-resolved
@@ -84,13 +84,13 @@ spec:
                   name: litellm-key-codex-pod
                   key: api-key
                   optional: true
-            # CLIProxyAPI client key from the canonical Secret in the
-            # cli-proxy-api namespace, reflected only into codex-pod.
-            - name: CLIPROXY_CLIENT_KEY
+            # Codex-claude LiteLLM virtual key (codex-* models via LiteLLM → CLIProxyAPI),
+            # minted by tf/gitops/litellm-keys and reflected into this namespace.
+            - name: CODEX_LITELLM_KEY
               valueFrom:
                 secretKeyRef:
-                  name: cli-proxy-api-client-key
-                  key: client-key
+                  name: litellm-codex-clients-key
+                  key: CODEX_LITELLM_KEY
                   optional: true
           securityContext:
             allowPrivilegeEscalation: false

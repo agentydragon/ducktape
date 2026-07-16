@@ -66,6 +66,17 @@ locals {
   # Real Anthropic models (ANTHROPIC_MODELS in generate_litellm.py) — the
   # dispatcher's classifier gate.
   classifier_models = ["claude-sonnet-5", "claude-haiku-4-5"]
+  # Tana-UI models fronted through tana-litellm (_tana_entries in generate_litellm.py).
+  tana_client_models = ["tana-claude-sonnet-4-6", "tana-claude-opus-4-6", "tana-claude-haiku-4-5"]
+  # Codex-subscription models fronted through CLIProxyAPI (_cliproxy_entries).
+  codex_client_models = [
+    "codex-gpt-5.4",
+    "codex-gpt-5.5",
+    "codex-gpt-5.6-sol",
+    "codex-gpt-5.6-terra",
+    "codex-gpt-5.6-luna",
+    "codex-gpt-5.3-codex-spark",
+  ]
 }
 
 # One static key per worker lane, held by that lane's llm-proxy (never by workers —
@@ -305,5 +316,94 @@ resource "litellm_key" "zai_clients" {
   team_id   = litellm_team.zai_clients.id
   metadata = {
     consumer = "laptop-z-claude, agent-box-zai"
+  }
+}
+
+# ============================================================================
+# tana-clients — scoped key for laptop tana-claude (Tana-UI models via tana-litellm)
+# ============================================================================
+# Pattern-B pinned key (like zai-clients): value in a git SOPS file in this module dir,
+# decrypted with the reused litellm-zai-clients narrow age key (the existing tf-runner
+# SOPS_AGE_KEY). The laptop tana-claude wrapper reads it via ducktape.sopsEnv
+# (TANA_LITELLM_KEY). The tana-* upstream reaches tana-litellm with the in-cluster master
+# key, so this scoped key never carries it.
+
+data "sops_file" "tana_clients_key" {
+  source_file = "${path.module}/litellm-tana-clients-key.yaml"
+}
+
+resource "litellm_team" "tana_clients" {
+  team_alias = "tana-clients"
+  router_settings = {
+    # Claude Code background claude-* slugs fall back to the cheap tana haiku tier.
+    fallbacks = [
+      {
+        model           = "*"
+        fallback_models = ["tana-claude-haiku-4-5"]
+      }
+    ]
+  }
+}
+
+resource "litellm_key" "tana_clients" {
+  key_alias = "tana-clients"
+  key       = data.sops_file.tana_clients_key.data["litellm_tana_key"]
+  models    = concat(["claude-*"], local.tana_client_models)
+  team_id   = litellm_team.tana_clients.id
+  metadata = {
+    consumer = "laptop-tana-claude"
+  }
+}
+
+# ============================================================================
+# codex-clients — scoped key for laptop + agent-box + codex-pod codex-claude
+# ============================================================================
+# Same Pattern-B pinned key. The codex-* upstream reaches CLIProxyAPI with the in-cluster
+# cli-proxy client key (ESO-mirrored into litellm), so this key never carries it. codex-pod
+# receives the value via the reflected kubernetes_secret below (CODEX_LITELLM_KEY), NOT
+# sops — the image has no sops-nix.
+
+data "sops_file" "codex_clients_key" {
+  source_file = "${path.module}/litellm-codex-clients-key.yaml"
+}
+
+resource "litellm_team" "codex_clients" {
+  team_alias = "codex-clients"
+  router_settings = {
+    fallbacks = [
+      {
+        model           = "*"
+        fallback_models = ["codex-gpt-5.6-luna"]
+      }
+    ]
+  }
+}
+
+resource "litellm_key" "codex_clients" {
+  key_alias = "codex-clients"
+  key       = data.sops_file.codex_clients_key.data["litellm_codex_key"]
+  models    = concat(["claude-*"], local.codex_client_models)
+  team_id   = litellm_team.codex_clients.id
+  metadata = {
+    consumer = "laptop-codex-claude, agent-box-codex, codex-pod"
+  }
+}
+
+# Reflected into codex-pod so the baked codex-claude wrapper reads CODEX_LITELLM_KEY.
+resource "kubernetes_secret" "codex_clients_key" {
+  metadata {
+    name      = "litellm-codex-clients-key"
+    namespace = "litellm"
+    annotations = {
+      description                                                     = "LiteLLM virtual key for codex-claude consumers (codex-* models only); reflected into codex-pod as CODEX_LITELLM_KEY"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "codex-pod"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "codex-pod"
+    }
+  }
+
+  data = {
+    CODEX_LITELLM_KEY = litellm_key.codex_clients.key
   }
 }

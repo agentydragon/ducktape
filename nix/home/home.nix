@@ -37,14 +37,7 @@ let
     bbapi
     ;
 
-  tanaClaude = pkgs.writeShellApplication {
-    name = "tana-claude";
-    runtimeInputs = [
-      pkgs.coreutils
-      pkgs.kubectl
-    ];
-    text = builtins.readFile ./scripts/tana-claude.sh;
-  };
+  tanaClaude = import ./claude_code/tana-claude.nix { inherit pkgs; };
 
   mkHomeGtkBookmark =
     { path, title }:
@@ -111,11 +104,16 @@ in
       sopsFile = ../../tf/gitops/litellm-keys/litellm-zai-clients-key.yaml;
       key = "litellm_zai_key";
     };
-    # CLIProxyAPI client key (SSOT in cluster/k8s/cli-proxy-api/client-key.sops.yaml)
-    # powering the `codex-claude` Claude-Code-on-Codex alias below.
-    CLIPROXY_CLIENT_KEY = {
-      sopsFile = ../../cluster/k8s/cli-proxy-api/client-key.sops.yaml;
-      key = "stringData/client-key";
+    # Tana-scoped LiteLLM virtual key powering the `tana-claude` alias below.
+    TANA_LITELLM_KEY = {
+      sopsFile = ../../tf/gitops/litellm-keys/litellm-tana-clients-key.yaml;
+      key = "litellm_tana_key";
+    };
+    # Codex-scoped LiteLLM virtual key powering the `codex-claude` alias below
+    # (LiteLLM → CLIProxyAPI). The cli-proxy client key itself stays in-cluster only.
+    CODEX_LITELLM_KEY = {
+      sopsFile = ../../tf/gitops/litellm-keys/litellm-codex-clients-key.yaml;
+      key = "litellm_codex_key";
     };
   };
 
