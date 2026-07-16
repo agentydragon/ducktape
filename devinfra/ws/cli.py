@@ -17,7 +17,6 @@ import typer
 NAMESPACE = "agent-workspaces"
 # Templates are LLM lanes (cluster/k8s/agents/agent-sandbox/): each has a
 # same-named SandboxTemplate + SandboxWarmPool. `ws templates` lists them.
-DEFAULT_TEMPLATE = "zai"
 CONTAINER = "workspace"
 _ADOPTION_TIMEOUT_S = 120
 
@@ -41,7 +40,7 @@ def shutdown_time(ttl: str, now: datetime) -> str:
     return (now + parse_ttl(ttl)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def claim_manifest(name: str, ttl: str, now: datetime, template: str = DEFAULT_TEMPLATE) -> dict:
+def claim_manifest(name: str, ttl: str, now: datetime, template: str) -> dict:
     return {
         "apiVersion": "extensions.agents.x-k8s.io/v1beta1",
         "kind": "SandboxClaim",
@@ -108,11 +107,9 @@ def _exec_shell(sandbox: str) -> None:
 
 @app.command()
 def new(
+    template: Annotated[str, typer.Option("--template", "-t", help="LLM-lane template (see `ws templates`)")],
     name: Annotated[str | None, typer.Argument(help="claim name (default: ws-<HHMMSS>)")] = None,
     ttl: Annotated[str, typer.Option(help="lifetime before auto-delete, e.g. 90m/8h/3d")] = "8h",
-    template: Annotated[
-        str, typer.Option("--template", "-t", help="LLM-lane template (see `ws templates`)")
-    ] = DEFAULT_TEMPLATE,
     shell: Annotated[bool, typer.Option(help="exec into the workspace once bound")] = True,
 ) -> None:
     """Claim a warm workspace (ready in seconds) and drop into it."""
