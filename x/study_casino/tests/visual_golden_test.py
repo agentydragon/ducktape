@@ -53,6 +53,7 @@ from util.testing.png_diff import assert_png_matches_golden
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import retain_review_asset
 from x.study_casino.app import create_app
+from x.study_casino.changelog import LATEST_CHANGELOG_ID
 from x.study_casino.config import Settings
 
 pytest_plugins = ("util.playwright",)
@@ -220,7 +221,12 @@ def _seed_fixture_state(origin: str) -> None:
             "ended_at_ms": FROZEN_NOW_MS - 2 * 3600 * 1000,
         },
     )
-    _post(origin, "/actions/convert", {"client_action_id": "visual-seed-convert", "amount": 50})
+    _post(origin, "/actions/convert", {"client_action_id": "visual-seed-convert", "amount": 100})
+    # Ack the changelog so the "what's new" modal doesn't cover every view;
+    # the modal has its own harness-based visual test (frontend:visual_changelog).
+    _post(
+        origin, "/actions/changelog/ack", {"client_action_id": "visual-seed-changelog", "last_id": LATEST_CHANGELOG_ID}
+    )
 
 
 def _post(origin: str, path: str, payload: dict) -> None:

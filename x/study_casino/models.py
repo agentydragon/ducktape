@@ -60,6 +60,16 @@ class CreditStateRow(Base):
     last_first_bonus_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
 
+class ChangelogAckRow(Base):
+    """Per-user changelog read cursor: entries with `id > last_acked_id`
+    are surfaced via `GET /state` until acknowledged."""
+
+    __tablename__ = "changelog_acks"
+
+    user_id: Mapped[str] = mapped_column(_USER_ID, primary_key=True)
+    last_acked_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
 class SessionRow(Base):
     """One completed study session for a user.
 

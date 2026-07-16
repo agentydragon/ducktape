@@ -17,6 +17,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from x.study_casino.changelog import ChangelogEntry
+
 
 class BalanceRead(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -72,6 +74,9 @@ class StateDump(BaseModel):
 
     balance: BalanceRead
     credit_state: CreditStateRead
+    changelog_unacked: list[ChangelogEntry] = Field(
+        description="Changelog entries newer than the caller's ack, oldest first. Ack via /actions/changelog/ack."
+    )
     sessions: list[SessionRead]
     prizes: list[PrizeRead]
     prize_log: list[PrizeLogRead]

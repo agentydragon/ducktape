@@ -25,6 +25,7 @@ import uvicorn
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from x.study_casino.app import create_app
+from x.study_casino.changelog import LATEST_CHANGELOG_ID
 from x.study_casino.config import Settings
 
 if TYPE_CHECKING:
@@ -114,6 +115,12 @@ def _seed_credits(base_url: str, credits: int) -> None:
             "client_action_id": f"test.import:{time.time_ns()}",
             "data": {"credits": credits, "tokens": 0, "sessions": [], "prizes": [], "prizeLog": []},
         },
+    )
+    # Ack the changelog so the "what's new" modal doesn't intercept clicks.
+    _post_json(
+        base_url,
+        "/actions/changelog/ack",
+        {"client_action_id": f"test.changelog:{time.time_ns()}", "last_id": LATEST_CHANGELOG_ID},
     )
 
 

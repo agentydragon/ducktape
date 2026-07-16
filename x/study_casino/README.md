@@ -102,6 +102,7 @@ POST /actions/session/delete         — drop a completed session
 POST /actions/convert                — credits → tokens
 POST /actions/prize/{create,delete}  — manage the prize catalog
 POST /actions/prize/redeem           — spend tokens on a prize
+POST /actions/changelog/ack          — advance the caller's changelog read cursor
 POST /actions/import / /actions/reset — bulk replace / wipe state (snapshot saved)
 POST /casino/slots/spin              — server-resolved slots
 POST /casino/roulette/spin           — server-resolved roulette

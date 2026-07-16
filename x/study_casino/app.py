@@ -11,6 +11,7 @@ Wire surface:
   POST /actions/prize/create            — add to user prize catalog (admin-only)
   POST /actions/prize/delete            — remove from user prize catalog (admin-only)
   POST /actions/prize/redeem            — spend tokens to redeem a prize (caller redeems own)
+  POST /actions/changelog/ack           — advance the caller's changelog read cursor
   POST /actions/import / reset          — bulk replace / wipe state (snapshot saved)
   POST /casino/slots/spin               — server-resolved slots
   POST /casino/roulette/spin            — server-resolved roulette
@@ -64,6 +65,8 @@ from x.study_casino.actions import (
     BlackjackDealRequest,
     BlackjackHandRequest,
     BlackjackHandStateResult,
+    ChangelogAckRequest,
+    ChangelogAckResult,
     ConvertRequest,
     ConvertResult,
     DeleteSessionRequest,
@@ -88,6 +91,7 @@ from x.study_casino.actions import (
     SlotsSpinRequest,
 )
 from x.study_casino.auth import create_oidc_router, decode_session_token, make_current_user_dep
+from x.study_casino.changelog import LATEST_CHANGELOG_ID, get_or_create_ack
 from x.study_casino.config import Settings
 from x.study_casino.credit_award import (
     MILLIS_PER_CREDIT,
@@ -653,6 +657,20 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             )
 
         return await commit_action(username=username, body=body, action_type="prize.redeem", mutator=mutate)
+
+    @app.post("/actions/changelog/ack")
+    async def ack_changelog(
+        body: ChangelogAckRequest, username: Annotated[str, Depends(current_user_dep)]
+    ) -> ActionResponse:
+        def mutate(s: Session, _now_ms: int) -> ActionMutation:
+            if body.last_id > LATEST_CHANGELOG_ID:
+                raise ActionRejectedError("changelog", f"unknown changelog id {body.last_id}")
+            ack = get_or_create_ack(s, username)
+            # Acks only move forward — a stale tab acking an older id is a no-op.
+            ack.last_acked_id = max(ack.last_acked_id, body.last_id)
+            return ActionMutation(result=ChangelogAckResult(acked_through=ack.last_acked_id))
+
+        return await commit_action(username=username, body=body, action_type="changelog.ack", mutator=mutate)
 
     @app.post("/actions/import")
     async def import_data(body: ImportRequest, username: Annotated[str, Depends(current_user_dep)]) -> ActionResponse:

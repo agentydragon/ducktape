@@ -93,6 +93,12 @@ class PrizeRedeemResult(BaseModel):
     cost: int
 
 
+class ChangelogAckResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    acked_through: int
+
+
 class ImportResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -163,6 +169,7 @@ ActionResult = (
     | PrizeCreateResult
     | PrizeDeleteResult
     | PrizeRedeemResult
+    | ChangelogAckResult
     | ImportResult
     | ResetResult
     | SlotsActionResult
@@ -246,6 +253,10 @@ class PrizeDeleteRequest(ActionRequest):
 
 class PrizeRedeemRequest(ActionRequest):
     prize_id: str = Field(min_length=1, max_length=128)
+
+
+class ChangelogAckRequest(ActionRequest):
+    last_id: int = Field(ge=1, description="Highest changelog entry id the user has seen.")
 
 
 class ImportSession(BaseModel):

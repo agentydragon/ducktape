@@ -27,6 +27,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from x.study_casino.actions import ActionResult, ImportData
+from x.study_casino.changelog import entries_after, get_or_create_ack
 from x.study_casino.credit_award import (
     get_or_create_credit_state,
     millis_from_credits,
@@ -134,14 +135,15 @@ ServerActionMutator = Callable[[Session, int], ActionMutation]
 
 
 # Default prize catalog seeded for a user on first contact. Kept in store.py
-# (not in a migration) since it is per-user, not per-database.
+# (not in a migration) since it is per-user, not per-database. Costs are
+# calibrated to the v2 credit economy (see migration 0003's rebalance).
 _DEFAULT_PRIZES: list[tuple[str, str, int]] = [
-    ("p1", "Anime episode break", 30),
-    ("p2", "Nice coffee shop trip", 60),
-    ("p3", "Takeout night", 120),
-    ("p4", "Nice dinner out with Rai", 240),
-    ("p5", "Buy a new game", 600),
-    ("p6", "Weekend getaway", 1800),
+    ("p1", "Anime episode break", 60),
+    ("p2", "Nice coffee shop trip", 120),
+    ("p3", "Takeout night", 240),
+    ("p4", "Nice dinner out with Rai", 480),
+    ("p5", "Buy a new game", 1200),
+    ("p6", "Weekend getaway", 3600),
 ]
 
 
@@ -428,6 +430,7 @@ class SqlStore:
     def _state_dump(self, s: Session, username: str) -> StateDump:
         balance = self._balance(s, username)
         credit_state = get_or_create_credit_state(s, username)
+        changelog_ack = get_or_create_ack(s, username)
         today_iso = pacific_date(int(time.time() * 1000)).isoformat()
         sessions = s.scalars(
             select(SessionRow).where(SessionRow.user_id == username).order_by(SessionRow.ended_at_ms.desc())
@@ -444,6 +447,7 @@ class SqlStore:
                 rest_days_available=rest_days_available(credit_state.streak_days, credit_state.rest_days_used),
                 daily_bonus_claimed_today=credit_state.last_first_bonus_date == today_iso,
             ),
+            changelog_unacked=entries_after(changelog_ack.last_acked_id),
             sessions=[
                 SessionRead(id=row.id, subject=row.subject, seconds=row.seconds, ended_at_ms=row.ended_at_ms)
                 for row in sessions

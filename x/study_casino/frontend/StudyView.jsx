@@ -2,15 +2,69 @@ import React from "react";
 
 import { COLORS, fmtClock, fmtCredits, fmtHoursMin, StatCard, SUBJECTS, SectionTitle } from "./shared.jsx";
 
+// Server-computed award breakdown of the just-completed session
+// (SessionCompleteResult) — every number comes from the backend.
+export function SessionAwardToast({ award, onDismiss }) {
+  const minutes = Math.round(award.seconds / 60);
+  const multiplier = (1 + award.streak_bonus_percent / 100).toFixed(2);
+  return (
+    <div
+      className="deco-corners"
+      style={{
+        maxWidth: 560,
+        margin: "0 auto 28px",
+        padding: "18px 24px",
+        background: "rgba(212,165,72,0.12)",
+        border: `1px solid ${COLORS.gold}`,
+        textAlign: "center",
+        position: "relative",
+      }}
+    >
+      <button
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        style={{
+          position: "absolute",
+          top: 6,
+          right: 10,
+          background: "transparent",
+          border: "none",
+          color: COLORS.creamDim,
+          cursor: "pointer",
+          fontSize: 16,
+          lineHeight: 1,
+        }}
+      >
+        ×
+      </button>
+      <div className="display-font" style={{ fontSize: 24, color: COLORS.goldBright, fontWeight: 700 }}>
+        +{fmtCredits(award.credits_earned_millis / 1000)} credits
+      </div>
+      <div style={{ marginTop: 6, fontSize: 13, color: COLORS.cream, letterSpacing: "0.05em" }}>
+        {minutes}m studied · {award.streak_days}-day streak ×{multiplier}
+        {award.daily_bonus_millis > 0 && (
+          <>
+            {" "}
+            · includes{" "}
+            <strong style={{ color: COLORS.goldBright }}>+{fmtCredits(award.daily_bonus_millis / 1000)}</strong> daily
+            bonus
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function StudyView({
   offline,
   activeSession,
   activeElapsed,
-  activeMinutes,
   todayTotal,
   sessions,
   credits,
   creditState,
+  lastAward,
+  dismissAward,
   start,
   pause,
   resume,
@@ -19,6 +73,7 @@ export function StudyView({
 }) {
   return (
     <div>
+      {lastAward && !activeSession && <SessionAwardToast award={lastAward} onDismiss={dismissAward} />}
       {/* Streak strip — retention core of credit system v2 */}
       <div
         style={{
@@ -151,7 +206,9 @@ export function StudyView({
                 textTransform: "uppercase",
               }}
             >
-              {activeSession.paused ? "Paused" : `+${activeMinutes} credits earned`}
+              {activeSession.paused
+                ? "Paused"
+                : `≈ +${fmtCredits((activeElapsed / 60) * (1 + creditState.streak_bonus_percent / 100))} credits earned`}
             </div>
           </div>
 

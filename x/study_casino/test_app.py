@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from x.study_casino.app import create_app
+from x.study_casino.changelog import CHANGELOG
 from x.study_casino.config import Settings
 from x.study_casino.games import RNG_VERSION, draw_cards, make_shoe, spin_roulette
 from x.study_casino.models import BlackjackHandRow, RngActionAuditRow, RngCallAuditRow
@@ -134,6 +135,27 @@ def test_state_returns_seed_shape(client: TestClient) -> None:
     assert state["sessions"] == []
     assert state["prize_log"] == []
     assert len(state["prizes"]) == 6
+    # A fresh user has every changelog entry unacked.
+    assert [entry["id"] for entry in state["changelog_unacked"]] == [entry.id for entry in CHANGELOG]
+
+
+def test_changelog_ack_advances_cursor(client: TestClient) -> None:
+    latest = client.get("/state").json()["changelog_unacked"][-1]["id"]
+    r = client.post("/actions/changelog/ack", json={"client_action_id": "clog-1", "last_id": latest})
+    assert r.status_code == 200, r.text
+    assert r.json()["result"]["acked_through"] == latest
+    assert client.get("/state").json()["changelog_unacked"] == []
+
+    # Acking an already-acked (older) id never rewinds the cursor.
+    r = client.post("/actions/changelog/ack", json={"client_action_id": "clog-2", "last_id": latest})
+    assert r.json()["result"]["acked_through"] == latest
+    assert client.get("/state").json()["changelog_unacked"] == []
+
+
+def test_changelog_ack_unknown_id_returns_409(client: TestClient) -> None:
+    r = client.post("/actions/changelog/ack", json={"client_action_id": "clog-bad", "last_id": 999})
+    assert r.status_code == 409
+    assert r.json()["detail"]["rule"] == "changelog"
 
 
 def test_session_complete_inserts_row_and_grants_credits(client: TestClient) -> None:
@@ -337,7 +359,7 @@ def test_prize_redeem_writes_log_and_subtracts_tokens(client: TestClient) -> Non
     assert r.status_code == 200, r.text
 
     state = client.get("/state").json()
-    assert state["balance"]["tokens"] == 70  # p1 cost is 30
+    assert state["balance"]["tokens"] == 40  # p1 cost is 60
     assert len(state["prize_log"]) == 1
     assert state["prize_log"][0]["name"] == "Anime episode break"
 
@@ -571,7 +593,7 @@ def test_non_admin_cannot_delete_prize(non_admin_client: TestClient) -> None:
 
 def test_non_admin_can_still_redeem_prize(non_admin_client: TestClient) -> None:
     """Auragon can still redeem prizes Rai created."""
-    _grant_tokens(non_admin_client, 50)
+    _grant_tokens(non_admin_client, 100)
     r = non_admin_client.post("/actions/prize/redeem", json={"client_action_id": "noadm-r", "prize_id": "p1"})
     assert r.status_code == 200, r.text
 

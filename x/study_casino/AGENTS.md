@@ -1,5 +1,14 @@
 @README.md
 
+## In-app changelog
+
+`changelog.py` is the user-facing changelog. When a change alters
+user-visible behavior — economy rules, game mechanics, balance migrations —
+append a `ChangelogEntry` with the next sequential `id`, the ship date, and
+a brief description of the change. Cosmetic/refactor changes get no entry.
+Users see unacked entries on their next visit (`/state.changelog_unacked`,
+acknowledged via `/actions/changelog/ack`).
+
 ## Wire surface is typed end-to-end
 
 Every endpoint the frontend consumes has a Pydantic `response_model`, and

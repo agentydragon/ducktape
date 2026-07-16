@@ -24,10 +24,10 @@ from sqlalchemy.orm import Session
 
 from x.study_casino.credit_constants import (
     DAILY_FIRST_BONUS,
-    DAILY_STREAK_INCREMENT,
     DAILY_STREAK_STUDY_THRESHOLD_SECONDS,
     REST_DAY_STREAK_INTERVAL,
-    STREAK_MULTIPLIER_CAP,
+    STREAK_BONUS_CAP,
+    STREAK_BONUS_PER_DAY,
 )
 from x.study_casino.models import CreditStateRow, SessionRow
 
@@ -48,7 +48,7 @@ def base_session_credits(seconds: int) -> Decimal:
 
 def streak_multiplier(streak_days: int) -> Decimal:
     """Total multiplier applied to credit awards (1.0 = no bonus)."""
-    return 1 + min(streak_days * DAILY_STREAK_INCREMENT, STREAK_MULTIPLIER_CAP)
+    return 1 + min(streak_days * STREAK_BONUS_PER_DAY, STREAK_BONUS_CAP)
 
 
 def streak_bonus_percent(streak_days: int) -> int:
