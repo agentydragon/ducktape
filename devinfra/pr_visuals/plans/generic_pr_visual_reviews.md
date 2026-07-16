@@ -14,10 +14,15 @@ commit's visual output is addressable by SHA. Baseline identity is
 
 The baseline/diff path ships exact-pixel comparison: the publisher resolves each
 candidate asset's baseline from the PR's base commit (passed by CI as
-`--base-sha`), classifies it `unchanged` / `modified` / `new` / `removed`,
-renders baseline↔candidate + diff, and reports counts with up to two diff
-previews in the PR comment. The remaining comparison work is the optional
-tolerance/noise-model path on top of that exact default.
+`--base-sha`), falling back per target to the mutable devel-latest pointer
+`baselines/<slug>.json` when the base commit's bundle lacks the target (devel
+pushes only publish cache-missed targets, so base bundles routinely have gaps).
+It classifies each asset `unchanged` / `modified` / `new` / `removed`, renders
+baseline↔candidate + diff, reports counts with up to two diff previews in the
+PR comment, and emits a `PR visual diffs` check-run (neutral when anything was
+modified or removed — a review pointer, not a merge gate). The remaining
+comparison work is the optional tolerance/noise-model path on top of that
+exact default.
 
 ## 1. Exercise the generic path live
 
@@ -141,8 +146,11 @@ image, not merely a successful upload command.
 
 ## Open decisions
 
-1. Retention policy for superseded baseline commit bundles and PR-referenced
-   pages.
+1. ~~Retention policy for superseded baseline commit bundles and PR-referenced
+   pages.~~ Decided: keep everything for now — commit bundles are immutable,
+   `baselines/<slug>.json` pointers are the only mutable objects and only ever
+   advance. Garbage-collecting bundles that no pointer or open PR references
+   remains future work.
 2. Diff visualization style and whether a later schema needs per-asset masks.
 3. Whether unchanged-only runs always maintain a short sticky comment or only
    update an existing comment.

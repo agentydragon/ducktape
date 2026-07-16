@@ -8,17 +8,20 @@ from PIL import Image
 
 from devinfra.pr_visuals.publisher import (
     COMMENT_BUDGET,
+    BaselinePointer,
     ClassificationCounts,
     DownloadedVisualTest,
     ReviewAsset,
     ReviewTest,
     build_bundle,
+    diff_check,
     download_visual_tests,
     error_comment_body,
     find_test_invocations,
     success_comment_body,
     target_slug,
     upload_bundle,
+    write_baseline_pointers,
 )
 from util.visual_diff import compare_pngs
 from util.visual_review import VisualReviewAsset, VisualReviewManifest
@@ -321,6 +324,112 @@ def test_build_bundle_classifies_against_baseline(tmp_path: Path) -> None:
     for candidate in ("same.png", "changed.png", "added.png"):
         assert (test_dir / candidate).exists()
     assert not (test_dir / "gone.png").exists()
+
+
+def _single_asset_test(directory: Path, label: str = "//ex:visuals") -> DownloadedVisualTest:
+    directory.mkdir(parents=True, exist_ok=True)
+    _png(directory / "screen.png", (10, 20, 30, 255))
+    manifest = VisualReviewManifest.model_validate(
+        {"schema": "ducktape.visual-review.v1", "title": "Ex", "assets": [{"path": "screen.png", "label": "screen"}]}
+    )
+    return DownloadedVisualTest(label, target_slug(label), manifest, directory)
+
+
+def test_build_bundle_falls_back_to_devel_pointer(tmp_path: Path) -> None:
+    test = _single_asset_test(tmp_path / "candidate")
+    base_sha = "fedcba9876543210fedcba9876543210fedcba98"
+    pointer_sha = "aaaabbbbccccddddeeeeffff0000111122223333"
+
+    # The base commit's bundle lacks this target; only the pointer's commit has it.
+    objects: dict[str, bytes] = {
+        f"baselines/{test.slug}.json": BaselinePointer(commit_sha=pointer_sha).model_dump_json().encode(),
+        f"commits/{pointer_sha}/tests/{test.slug}/metadata.json": json.dumps(
+            {"assets": [{"path": "screen.png", "label": "screen"}]}
+        ).encode(),
+        f"commits/{pointer_sha}/tests/{test.slug}/screen.png": _png(
+            tmp_path / "baseline.png", (99, 99, 99, 255)
+        ).read_bytes(),
+    }
+
+    bundle = build_bundle(
+        [test],
+        tmp_path / "site",
+        commit_sha="0123456789abcdef0123456789abcdef01234567",
+        repository="r",
+        base_sha=base_sha,
+        baseline_source=FakeBaselineSource(objects),
+    )
+
+    metadata = json.loads((bundle / "tests" / test.slug / "metadata.json").read_text())
+    assert metadata["base_sha"] == pointer_sha
+    assert metadata["baseline_fallback"] is True
+    assert metadata["assets"][0]["classification"] == "modified"
+
+
+def test_build_bundle_all_new_when_no_baseline_anywhere(tmp_path: Path) -> None:
+    test = _single_asset_test(tmp_path / "candidate")
+    base_sha = "fedcba9876543210fedcba9876543210fedcba98"
+
+    bundle = build_bundle(
+        [test],
+        tmp_path / "site",
+        commit_sha="0123456789abcdef0123456789abcdef01234567",
+        repository="r",
+        base_sha=base_sha,
+        baseline_source=FakeBaselineSource({}),
+    )
+
+    metadata = json.loads((bundle / "tests" / test.slug / "metadata.json").read_text())
+    assert metadata["base_sha"] == base_sha
+    assert "baseline_fallback" not in metadata
+    assert metadata["assets"][0]["classification"] == "new"
+    assert metadata["summary"] == {"modified": 0, "new": 1, "removed": 0, "unchanged": 0}
+
+
+def test_write_baseline_pointers_puts_mutable_json() -> None:
+    class FakeS3:
+        def __init__(self) -> None:
+            self.puts: list[dict[str, object]] = []
+
+        def put_object(self, **kwargs: object) -> None:
+            self.puts.append(kwargs)
+
+    client = FakeS3()
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    write_baseline_pointers(["slug-a", "slug-b"], commit_sha=sha, bucket="visuals", client=client)
+
+    assert [put["Key"] for put in client.puts] == ["baselines/slug-a.json", "baselines/slug-b.json"]
+    for put in client.puts:
+        assert put["Bucket"] == "visuals"
+        assert put["CacheControl"] == "no-cache"
+        assert put["ContentType"] == "application/json"
+        body = put["Body"]
+        assert isinstance(body, bytes)
+        assert BaselinePointer.model_validate_json(body).commit_sha == sha
+
+
+def test_diff_check_conclusions() -> None:
+    def review_test(summary: ClassificationCounts | None, *, fallback: bool = False) -> ReviewTest:
+        return ReviewTest(
+            target_label="//t:a", slug="s", title="T", assets=[], summary=summary, baseline_fallback=fallback or None
+        )
+
+    assert diff_check([review_test(None)]) is None
+
+    clean = diff_check([review_test(ClassificationCounts(new=1, unchanged=3))])
+    assert clean is not None
+    assert clean[0] == "success"
+    assert "1 new" in clean[1]
+
+    changed = diff_check([review_test(ClassificationCounts(modified=2), fallback=True)])
+    assert changed is not None
+    assert changed[0] == "neutral"
+    assert "2 modified" in changed[1]
+    assert "devel-latest fallback baseline" in changed[1]
+
+    removed_only = diff_check([review_test(ClassificationCounts(removed=1))])
+    assert removed_only is not None
+    assert removed_only[0] == "neutral"
 
 
 def test_success_comment_body_reports_counts_and_previews() -> None:

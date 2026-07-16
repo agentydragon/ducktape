@@ -98,6 +98,49 @@ def _baseline_key(base_sha: str, slug: str, *parts: str) -> str:
     return "/".join(("commits", base_sha, "tests", slug, *parts))
 
 
+def _baseline_pointer_key(slug: str) -> str:
+    """Mutable per-target pointer to the last devel commit that published it.
+
+    Devel-push publishes only contain targets Bazel actually re-executed
+    (cache hits re-expose nothing), so a PR's base commit bundle routinely
+    lacks untouched targets. The pointer bridges those gaps: it names the
+    newest devel commit whose immutable ``commits/<sha>/…`` bundle carries
+    the target, and PR runs fall back to it when the base bundle misses.
+    """
+    return f"baselines/{slug}.json"
+
+
+class BaselinePointer(BaseModel):
+    commit_sha: str
+
+
+@dataclass(frozen=True)
+class ResolvedBaseline:
+    """Baseline bundle a candidate target is compared against."""
+
+    commit_sha: str
+    metadata: dict[str, Any]
+    # True when the PR's base commit bundle lacked this target and the
+    # devel-latest pointer supplied the baseline instead.
+    fallback: bool
+
+
+def _resolve_baseline(slug: str, base_sha: str | None, source: BaselineSource) -> ResolvedBaseline | None:
+    def metadata_at(sha: str) -> dict[str, Any] | None:
+        body = source.fetch(_baseline_key(sha, slug, "metadata.json"))
+        return None if body is None else cast(dict[str, Any], json.loads(body))
+
+    if base_sha is not None and (metadata := metadata_at(base_sha)) is not None:
+        return ResolvedBaseline(commit_sha=base_sha, metadata=metadata, fallback=False)
+    pointer_body = source.fetch(_baseline_pointer_key(slug))
+    if pointer_body is None:
+        return None
+    pointer = BaselinePointer.model_validate_json(pointer_body)
+    if (metadata := metadata_at(pointer.commit_sha)) is None:
+        return None
+    return ResolvedBaseline(commit_sha=pointer.commit_sha, metadata=metadata, fallback=True)
+
+
 class ClassificationCounts(BaseModel):
     modified: int = 0
     new: int = 0
@@ -119,13 +162,19 @@ class ReviewAsset(BaseModel):
 
 
 class ReviewTest(BaseModel):
-    """A test target's review data, serialized to per-test and commit metadata."""
+    """A test target's review data, serialized to per-test and commit metadata.
+
+    `base_sha` is the commit whose bundle the comparison actually used —
+    the PR's base commit, or (with `baseline_fallback=True`) the devel-latest
+    pointer's commit when the base bundle lacked this target.
+    """
 
     target_label: str
     slug: str
     title: str
     assets: list[ReviewAsset]
     base_sha: str | None = None
+    baseline_fallback: bool | None = None
     summary: ClassificationCounts | None = None
     preview: ReviewAsset | None = None
 
@@ -244,26 +293,22 @@ def _asset_summary(assets: list[ReviewAsset]) -> ClassificationCounts:
 
 
 def _classify_test_assets(
-    test: DownloadedVisualTest,
-    base_sha: str,
-    baseline_metadata: dict[str, Any] | None,
-    baseline_source: BaselineSource,
-    target_dir: Path,
+    test: DownloadedVisualTest, baseline: ResolvedBaseline, baseline_source: BaselineSource, target_dir: Path
 ) -> list[ReviewAsset]:
-    """Classify a test's candidate assets against its baseline commit.
+    """Classify a test's candidate assets against its resolved baseline.
 
     Writes ``baseline/<path>`` (modified + removed) and ``diff/<path>``
     (modified) PNGs into ``target_dir``. Candidate assets absent from the
     baseline are ``new``; baseline assets absent from the candidate are
     ``removed``; the rest are compared by :func:`compare_pngs`.
     """
-    baseline_by_path = {asset["path"]: asset for asset in baseline_metadata["assets"]} if baseline_metadata else {}
+    baseline_by_path = {asset["path"]: asset for asset in baseline.metadata["assets"]}
     baseline_dir = target_dir / "baseline"
     diff_dir = target_dir / "diff"
     enriched: list[ReviewAsset] = []
 
     def materialize_baseline(path: str) -> Path | None:
-        body = baseline_source.fetch(_baseline_key(base_sha, test.slug, path))
+        body = baseline_source.fetch(_baseline_key(baseline.commit_sha, test.slug, path))
         if body is None:
             return None
         baseline_dir.mkdir(parents=True, exist_ok=True)
@@ -330,10 +375,17 @@ def build_bundle(
         target_dir.mkdir(parents=True, exist_ok=True)
         for asset in test.manifest.assets:
             shutil.copyfile(test.directory / asset.path, target_dir / asset.path)
+        baseline: ResolvedBaseline | None = None
         if base_sha and baseline_source is not None:
-            metadata_bytes = baseline_source.fetch(_baseline_key(base_sha, test.slug, "metadata.json"))
-            baseline_metadata = json.loads(metadata_bytes) if metadata_bytes is not None else None
-            assets = _classify_test_assets(test, base_sha, baseline_metadata, baseline_source, target_dir)
+            baseline = _resolve_baseline(test.slug, base_sha, baseline_source)
+            if baseline is None:
+                # No bundle carries this target yet — everything is new.
+                assets = [
+                    ReviewAsset(path=asset.path, label=asset.label, classification="new")
+                    for asset in test.manifest.assets
+                ]
+            else:
+                assets = _classify_test_assets(test, baseline, baseline_source, target_dir)
         else:
             assets = [ReviewAsset(path=asset.path, label=asset.label) for asset in test.manifest.assets]
         review_test = ReviewTest(
@@ -341,7 +393,8 @@ def build_bundle(
             slug=test.slug,
             title=test.manifest.title,
             assets=assets,
-            base_sha=base_sha,
+            base_sha=baseline.commit_sha if baseline is not None else base_sha,
+            baseline_fallback=baseline.fallback if baseline is not None else None,
             summary=_asset_summary(assets) if base_sha else None,
             preview=next((asset for asset in assets if asset.classification == "modified"), None) if base_sha else None,
         )
@@ -380,6 +433,24 @@ def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client:
         relative = path.relative_to(bundle).as_posix()
         s3.upload_file(
             path, bucket, f"{prefix}/{relative}", ExtraArgs={"CacheControl": cache_control, "ContentType": content_type}
+        )
+
+
+def write_baseline_pointers(slugs: list[str], *, commit_sha: str, bucket: str, client: Any) -> None:
+    """Point ``baselines/<slug>.json`` at this commit for every published target.
+
+    Runs on devel pushes after the immutable bundle upload succeeds, so PR runs
+    can fall back to the newest devel bundle carrying each target (see
+    :func:`_baseline_pointer_key`). Pointers are the bucket's only mutable
+    objects — the commit bundles they reference stay immutable.
+    """
+    for slug in slugs:
+        client.put_object(
+            Bucket=bucket,
+            Key=_baseline_pointer_key(slug),
+            Body=BaselinePointer(commit_sha=commit_sha).model_dump_json().encode(),
+            CacheControl="no-cache",
+            ContentType="application/json",
         )
 
 
@@ -494,6 +565,25 @@ def upsert_pull_request_comment(*, repository: str, pull_request: int, body: str
             existing.edit(body)
 
 
+def diff_check(review_tests: list[ReviewTest]) -> tuple[Literal["success", "neutral"], str] | None:
+    """Conclusion and summary for the `PR visual diffs` check-run.
+
+    ``None`` when no target was compared against a baseline (devel pushes, or
+    a run without ``--base-sha``) — the check-run is simply absent then.
+    Visual changes conclude ``neutral``, never ``failure``: the check is a
+    review pointer, not a merge gate.
+    """
+    compared = [test for test in review_tests if test.summary is not None]
+    if not compared:
+        return None
+    totals = _totals(review_tests)
+    summary = f"{totals.modified} modified, {totals.new} new, {totals.removed} removed, {totals.unchanged} unchanged."
+    if fallbacks := sum(1 for test in compared if test.baseline_fallback):
+        plural = "s" if fallbacks != 1 else ""
+        summary += f" {fallbacks} target{plural} compared against the devel-latest fallback baseline."
+    return ("neutral" if totals.modified + totals.removed else "success", summary)
+
+
 def publish_check_run(
     *,
     repository: str,
@@ -502,17 +592,18 @@ def publish_check_run(
     summary: str,
     details_url: str | None,
     token: str,
+    name: str = "PR visual review",
 ) -> None:
     with Github(auth=Auth.Token(token)) as github:
         repo = github.get_repo(repository)
-        output: dict[str, str | list[dict[str, str | int]]] = {"title": "PR visual review", "summary": summary[:65000]}
+        output: dict[str, str | list[dict[str, str | int]]] = {"title": name, "summary": summary[:65000]}
         if details_url is None:
             repo.create_check_run(
-                name="PR visual review", head_sha=commit_sha, status="completed", conclusion=conclusion, output=output
+                name=name, head_sha=commit_sha, status="completed", conclusion=conclusion, output=output
             )
         else:
             repo.create_check_run(
-                name="PR visual review",
+                name=name,
                 head_sha=commit_sha,
                 status="completed",
                 conclusion=conclusion,
@@ -565,14 +656,13 @@ def main() -> None:
             print(f"{summary} Skipping publication.")
             return
 
+        s3 = boto3.client("s3", endpoint_url=args.endpoint)
         base_sha = args.base_sha or None
         baseline_source: BaselineSource | None = None
         if base_sha:
             if not FULL_SHA.fullmatch(base_sha):
                 raise ValueError("--base-sha must be the full 40-character lowercase SHA-1")
-            baseline_source = S3BaselineSource(
-                client=boto3.client("s3", endpoint_url=args.endpoint), bucket=args.bucket
-            )
+            baseline_source = S3BaselineSource(client=s3, bucket=args.bucket)
         bundle = build_bundle(
             tests,
             args.work_dir / "site",
@@ -581,7 +671,11 @@ def main() -> None:
             base_sha=base_sha,
             baseline_source=baseline_source,
         )
-        upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"commits/{args.sha}")
+        upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"commits/{args.sha}", client=s3)
+        if not base_sha:
+            # Devel push: advance the mutable per-target fallback pointers now
+            # that this commit's immutable bundle is fully uploaded.
+            write_baseline_pointers([test.slug for test in tests], commit_sha=args.sha, bucket=args.bucket, client=s3)
         public_url = f"{args.public_base_url.rstrip('/')}/commits/{args.sha}/"
         review_tests = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests
         if base_sha:
@@ -600,6 +694,17 @@ def main() -> None:
             base_sha=base_sha,
         )
         conclusion, details_url = "success", f"{public_url}index.html"
+        if (diff := diff_check(review_tests)) is not None:
+            diff_conclusion, diff_summary = diff
+            publish_check_run(
+                repository=args.repository,
+                commit_sha=args.sha,
+                conclusion=diff_conclusion,
+                summary=diff_summary,
+                details_url=details_url,
+                token=github_token,
+                name="PR visual diffs",
+            )
     except Exception as error:
         comment_body = error_comment_body(repository=args.repository, commit_sha=args.sha, error=error)
         summary, conclusion = str(error), "failure"
