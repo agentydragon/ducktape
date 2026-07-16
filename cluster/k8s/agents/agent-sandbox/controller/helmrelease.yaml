@@ -8,7 +8,11 @@ spec:
   chart:
     spec:
       chart: ./helm
-      reconcileStrategy: Revision
+      # Deliberately NOT reconcileStrategy: Revision — it repackages the chart
+      # as 0.1.0+<git-sha> and the chart stamps .Chart.Version into helm.sh/chart
+      # labels, where '+' is invalid (every object then fails SSA; observed live
+      # 2026-07-16). ChartVersion is correct anyway: the source is a pinned tag,
+      # so chart contents only change when the tag bumps.
       sourceRef:
         kind: GitRepository
         name: agent-sandbox
