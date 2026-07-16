@@ -1,4 +1,5 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_distroless//distroless:defs.bzl", "cacerts")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
@@ -61,14 +62,26 @@ py_image_layer(
     binary = ":sync_bin",
 )
 
+# rules_distroless unpacks the ca-certificates deb but never runs
+# update-ca-certificates, so /etc/ssl/certs/ca-certificates.crt is missing and the C
+# git binary can't verify the Forgejo TLS cert. Generate the bundle at build time.
+cacerts(
+    name = "cacerts",
+    package = "@ca_certificates_deb//:data.tar.xz",
+)
+
 oci_image(
     name = "image",
     base = "@debian_slim_linux_amd64",
     entrypoint = py_image_entrypoint("sync_bin"),
-    env = py_image_env(binary_name = "sync_bin"),
+    env = py_image_env(
+        binary_name = "sync_bin",
+        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
+    ),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [
         "@bookworm_cpap_sync//:flat",
+        ":cacerts",
         ":layers",
     ],
 )

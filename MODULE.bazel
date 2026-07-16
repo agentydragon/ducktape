@@ -648,6 +648,17 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
+# ca-certificates deb consumed by //cpap:cacerts to generate the CA bundle that the
+# rules_distroless apt :flat layer can't (it never runs update-ca-certificates). Same
+# URL + sha as the ca-certificates entry in cpap/bookworm_cpap_sync.lock.json.
+http_archive(
+    name = "ca_certificates_deb",
+    build_file_content = 'exports_files(["data.tar.xz"])',
+    sha256 = "0d5f444f594e48c1e16a41d8fc628a09b24c658916a1274025c2330f2a802bed",
+    type = "deb",
+    urls = ["https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/c/ca-certificates/ca-certificates_20230311+deb12u1_all.deb"],
+)
+
 # tiktoken o200k_base encoding (used by gpt-4o) — bundled for offline/RBE testing.
 # Cache key = sha1("https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken")
 http_file(
