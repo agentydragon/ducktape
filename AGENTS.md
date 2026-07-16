@@ -155,10 +155,14 @@ keep it local to the investigation and remove it before review.
 
 ## Before Hand-off
 
-```bash
-bbr build //...
-bbr test //...
-```
+Run focused Bazel build and test targets that cover the change. If the change
+will land through a pull request, the repository's required CI checks are
+sufficient for repository-wide validation; do not duplicate them locally with
+`bbr build //...` or `bbr test //...` unless investigating a failure or the user
+explicitly asks for a full-tree run.
+
+For changes that will not pass through the required PR checks, run the relevant
+repository-wide validation before hand-off.
 
 Lint (ruff + mypy) runs by default. Use `--config=nolint` to skip.
 If you touched `ansible/`, also follow <ansible/AGENTS.md>.
