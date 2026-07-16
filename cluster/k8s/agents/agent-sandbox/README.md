@@ -44,9 +44,11 @@ to, creds already wired, Claude CLI installed) minus the persistence.
 ## Operating a workspace
 
 One object drives everything: a `SandboxClaim` named after your task. The claim
-adopts a pre-warmed `Sandbox` from the pool; claim name == sandbox name == pod
-name, so every `kubectl` command below uses the same handle. All commands
-assume `-n agent-workspaces`. The namespace is operator-only by design: no
+adopts a pre-warmed `Sandbox` from the pool — **the sandbox keeps its
+pool-generated name** (`workspace-xxxxx`), which is also the pod name; the
+claim's `status.sandbox.name` tells you which one you got (verified live —
+upstream's "claim name becomes the pod name" example does not hold for
+warm-pool adoption). All commands assume `-n agent-workspaces`. The namespace is operator-only by design: no
 agent group has any RBAC in it, so stamping and disposing workspaces takes
 your admin kubeconfig or Headlamp, and the workspace pods themselves mount no
 ServiceAccount token at all.
@@ -71,18 +73,24 @@ EOF
 Always set `shutdownTime` — the default policy is `Retain`, and an unclaimed
 deadline means the workspace lives until the 7-day janitor gets it.
 
+Then resolve the adopted sandbox once and reuse it as the handle:
+
+```bash
+WS=$(kubectl -n agent-workspaces get sandboxclaim ws-mytask -o jsonpath='{.status.sandbox.name}')
+```
+
 ### Inspect
 
 ```bash
 kubectl -n agent-workspaces get sandboxclaims,sandboxes,pods   # what exists
-kubectl -n agent-workspaces get sandbox ws-mytask -o yaml      # conditions (Ready/Suspended/Finished), nodeName, podIPs
+kubectl -n agent-workspaces get sandbox "$WS" -o yaml          # conditions (Ready/Suspended/Finished), nodeName, podIPs
 kubectl -n agent-workspaces describe sandboxwarmpool workspace # pool readiness (readyReplicas)
 ```
 
 ### Work in it
 
 ```bash
-kubectl -n agent-workspaces exec -it ws-mytask -c workspace -- bash
+kubectl -n agent-workspaces exec -it "$WS" -c workspace -- bash
 ```
 
 Inside: `/workspace` is the PVC (survives pod restarts and suspend/resume),
@@ -92,9 +100,9 @@ LiteLLM with a workspace virtual key, so `git clone ... && claude` just works.
 Moving files and reaching ports:
 
 ```bash
-kubectl -n agent-workspaces cp ./notes.md ws-mytask:/workspace/ -c workspace
-kubectl -n agent-workspaces cp ws-mytask:/workspace/out.tar.gz ./out.tar.gz -c workspace
-kubectl -n agent-workspaces port-forward pod/ws-mytask 8888:8888   # dev server in the workspace
+kubectl -n agent-workspaces cp ./notes.md "$WS":/workspace/ -c workspace
+kubectl -n agent-workspaces cp "$WS":/workspace/out.tar.gz ./out.tar.gz -c workspace
+kubectl -n agent-workspaces port-forward "pod/$WS" 8888:8888   # dev server in the workspace
 ```
 
 ### Extend / pause / resume
@@ -104,11 +112,11 @@ kubectl -n agent-workspaces port-forward pod/ws-mytask 8888:8888   # dev server 
 # verify it propagated to the Sandbox)
 kubectl -n agent-workspaces patch sandboxclaim ws-mytask --type=merge \
   -p '{"spec":{"lifecycle":{"shutdownTime":"'"$(date -u -d '+24 hours' +%Y-%m-%dT%H:%M:%SZ)"'"}}}'
-kubectl -n agent-workspaces get sandbox ws-mytask -o jsonpath='{.spec.shutdownTime}'
+kubectl -n agent-workspaces get sandbox "$WS" -o jsonpath='{.spec.shutdownTime}'
 
 # pause: pod goes away, /workspace PVC stays; resume brings it back
-kubectl -n agent-workspaces patch sandbox ws-mytask --type=merge -p '{"spec":{"operatingMode":"Suspended"}}'
-kubectl -n agent-workspaces patch sandbox ws-mytask --type=merge -p '{"spec":{"operatingMode":"Running"}}'
+kubectl -n agent-workspaces patch sandbox "$WS" --type=merge -p '{"spec":{"operatingMode":"Suspended"}}'
+kubectl -n agent-workspaces patch sandbox "$WS" --type=merge -p '{"spec":{"operatingMode":"Running"}}'
 ```
 
 ### Dispose

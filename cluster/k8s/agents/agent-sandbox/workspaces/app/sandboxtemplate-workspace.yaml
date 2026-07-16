@@ -10,6 +10,13 @@ metadata:
   name: workspace
   namespace: agent-workspaces
 spec:
+  # The controller's default (Managed) stamps a NetworkPolicy that allows only
+  # public-internet egress and blocks all RFC1918 — which severs the in-cluster
+  # LiteLLM path (observed live 2026-07-16: `claude` connection refused).
+  # Unmanaged = namespace policy applies (none today: trusted personal use,
+  # open egress). Revisit with a Managed allowlist (litellm + DNS + internet)
+  # if workspaces ever run untrusted work.
+  networkPolicyManagement: Unmanaged
   podTemplate:
     metadata:
       labels:
