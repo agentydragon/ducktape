@@ -47,7 +47,7 @@ export function fmtHoursMin(sec) {
   return `${h}h ${m}m`;
 }
 
-// Credits are decimal (cents-backed server-side); always show 1 decimal place.
+// Credits are decimal (integer millicredits server-side); always show 1 decimal place.
 export function fmtCredits(credits) {
   return (credits ?? 0).toFixed(1);
 }

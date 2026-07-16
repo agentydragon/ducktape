@@ -1,4 +1,4 @@
-"""Pure-logic tests for credit_award: cents rounding, multiplier, streak state."""
+"""Pure-logic tests for credit_award: milli rounding, multiplier, streak state."""
 
 from __future__ import annotations
 
