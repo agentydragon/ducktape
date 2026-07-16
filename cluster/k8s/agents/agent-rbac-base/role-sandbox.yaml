@@ -38,14 +38,3 @@ rules:
       - publications
       - subscriptions
     verbs: ["*"]
-
-  # Disposable agent workspaces (agents/agent-sandbox/): agents stamp and
-  # dispose their own Sandboxes/claims; templates and warm pools stay
-  # GitOps-owned but are readable/patchable like the rest of the namespace.
-  - apiGroups: ["agents.x-k8s.io", "extensions.agents.x-k8s.io"]
-    resources:
-      - sandboxes
-      - sandboxtemplates
-      - sandboxclaims
-      - sandboxwarmpools
-    verbs: ["*"]

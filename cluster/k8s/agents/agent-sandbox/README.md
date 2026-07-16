@@ -31,7 +31,11 @@ to, creds already wired, Claude CLI installed) minus the persistence.
 One object drives everything: a `SandboxClaim` named after your task. The claim
 adopts a pre-warmed `Sandbox` from the pool; claim name == sandbox name == pod
 name, so every `kubectl` command below uses the same handle. All commands
-assume `-n claude-sandbox` (the sandbox kubeconfig's RBAC covers all of it).
+assume `-n claude-sandbox`. The sandbox CRs are operator-only by design: the
+agent group's `role-sandbox` deliberately has no grant on them, so stamping and
+disposing workspaces takes your admin kubeconfig or Headlamp — agents operate
+on the resulting pod (exec/logs) like any other, and the workspace pods
+themselves mount no ServiceAccount token at all.
 
 ### Create
 
