@@ -35,6 +35,12 @@ spec:
       profiles:
         - name: default
           pluginConfig:
+            # Without nodeFit, evicted pods that fit nowhere else reschedule
+            # onto the same node and get evicted again next run — a 15-minute
+            # churn loop whenever other nodes are down or unschedulable.
+            - name: DefaultEvictor
+              args:
+                nodeFit: true
             - name: LowNodeUtilization
               args:
                 metricsUtilization:
