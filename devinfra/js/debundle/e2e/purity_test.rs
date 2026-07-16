@@ -77,7 +77,6 @@
 //! about how to find it.
 
 use debundle_e2e_support::*;
-use serde_json::json;
 
 // ---------------------------------------------------------------------------
 // Inferred purity — `classify_expr_purity` recognizes shapes statically.
@@ -1203,10 +1202,9 @@ export { A, B, C };
             "static/vendorlib",
             "const reactish = { make(f) { return { impl: f }; } };\nexport { reactish };\n",
         )])
-        .with_chunk_export_purity(&[(
-            "static/vendorlib",
-            json!({ "pure_members": { "reactish": ["make"] } }),
-        )]),
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/vendorlib")
+            .with_pure_members("reactish", &["make"])
+            .build()]),
     );
     assert!(fixture.entry_path.exists());
 }
@@ -1264,7 +1262,9 @@ fn asserted_fluent_export_chains_emit_no_s_cycle() {
             ],
         )
         .with_extra_chunks(&[("static/vendorlib", FLUENT_VENDORLIB)])
-        .with_chunk_export_purity(&[("static/vendorlib", json!({ "fluent_exports": ["e4"] }))]),
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/vendorlib")
+            .with_fluent_exports(&["e4"])
+            .build()]),
     );
     assert!(fixture.entry_path.exists());
 }
