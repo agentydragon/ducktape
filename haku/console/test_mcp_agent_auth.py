@@ -1,4 +1,4 @@
-"""Tests for Haku's Agent-facing MCP authentication composition."""
+"""Tests for Haku's MCP authentication composition."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ from haku.console.mcp_auth.fastmcp_adapter import (
     HakuAgentOAuthProxy,
     HakuFailurePreservingMultiAuth,
 )
+from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor
 from mcp_infra.authentik_auth.provider import DEFAULT_VALID_SCOPES
 from mcp_infra.persistence import PostgresPersistence
@@ -64,6 +65,10 @@ def _credentials(*tokens: str) -> StaticAgentCredentialRegistry:
     return StaticAgentCredentialRegistry(fingerprints=tuple(fingerprint_static_token(token) for token in tokens))
 
 
+def _identity_store() -> PostgresOperatorIdentityStore:
+    return cast(PostgresOperatorIdentityStore, Mock(spec=PostgresOperatorIdentityStore))
+
+
 def _oauth_proxy() -> Mock:
     proxy = Mock(spec=HakuAgentOAuthProxy)
     proxy.base_url = None
@@ -75,7 +80,12 @@ def _oauth_proxy() -> Mock:
 
 async def test_static_auth_resolves_the_exact_active_binding_actor() -> None:
     authority = _authority()
-    auth = build_auth(_settings(), agent_authority=authority, static_credentials=_credentials(_TOKEN))
+    auth = build_auth(
+        _settings(),
+        agent_authority=authority,
+        static_credentials=_credentials(_TOKEN),
+        operator_identity_store=_identity_store(),
+    )
 
     assert isinstance(auth, StaticMcpAuth)
     assert isinstance(auth.provider, HakuFailurePreservingMultiAuth)
@@ -95,7 +105,12 @@ async def test_static_auth_resolves_the_exact_active_binding_actor() -> None:
 
 async def test_static_auth_rejects_unconfigured_and_inactive_credentials() -> None:
     authority = _authority()
-    auth = build_auth(_settings(), agent_authority=authority, static_credentials=_credentials(_TOKEN))
+    auth = build_auth(
+        _settings(),
+        agent_authority=authority,
+        static_credentials=_credentials(_TOKEN),
+        operator_identity_store=_identity_store(),
+    )
 
     assert await auth.provider.verify_token("not-configured") is None
     cast(AsyncMock, authority.static_authorization_for_fingerprint).assert_not_awaited()
@@ -105,7 +120,12 @@ async def test_static_auth_rejects_unconfigured_and_inactive_credentials() -> No
 
 
 async def test_static_actor_resolution_rejects_forged_binding_evidence() -> None:
-    auth = build_auth(_settings(), agent_authority=_authority(), static_credentials=_credentials(_TOKEN))
+    auth = build_auth(
+        _settings(),
+        agent_authority=_authority(),
+        static_credentials=_credentials(_TOKEN),
+        operator_identity_store=_identity_store(),
+    )
     assert isinstance(auth, StaticMcpAuth)
 
     forged = AccessToken(
@@ -121,7 +141,12 @@ async def test_static_actor_resolution_rejects_forged_binding_evidence() -> None
 async def test_static_verification_preserves_authority_outages() -> None:
     authority = _authority()
     cast(AsyncMock, authority.static_authorization_for_fingerprint).side_effect = AgentGrantAuthorityUnavailableError()
-    auth = build_auth(_settings(), agent_authority=authority, static_credentials=_credentials(_TOKEN))
+    auth = build_auth(
+        _settings(),
+        agent_authority=authority,
+        static_credentials=_credentials(_TOKEN),
+        operator_identity_store=_identity_store(),
+    )
 
     with pytest.raises(BearerVerificationUnavailableError, match="temporarily unavailable"):
         await auth.provider.verify_token(_TOKEN)
@@ -129,7 +154,12 @@ async def test_static_verification_preserves_authority_outages() -> None:
 
 def test_build_auth_rejects_missing_credentials() -> None:
     with pytest.raises(ValueError, match="no configured credential"):
-        build_auth(_settings(), agent_authority=_authority(), static_credentials=_credentials())
+        build_auth(
+            _settings(),
+            agent_authority=_authority(),
+            static_credentials=_credentials(),
+            operator_identity_store=_identity_store(),
+        )
 
 
 async def test_oauth_auth_composes_one_authority_storage_and_optional_static_verifier() -> None:
@@ -147,7 +177,10 @@ async def test_oauth_auth_composes_one_authority_storage_and_optional_static_ver
         patch("haku.console.mcp_agent_auth.HakuAgentOAuthProxy", return_value=proxy) as proxy_class,
     ):
         auth = build_auth(
-            _settings(mcp_oauth=oauth), agent_authority=authority, static_credentials=_credentials(_TOKEN)
+            _settings(mcp_oauth=oauth),
+            agent_authority=authority,
+            static_credentials=_credentials(_TOKEN),
+            operator_identity_store=_identity_store(),
         )
 
     assert isinstance(auth, OAuthMcpAuth)
@@ -182,7 +215,12 @@ def test_oauth_auth_does_not_invent_a_static_resolver_without_static_credentials
         patch("haku.console.mcp_agent_auth.build_shared_client_storage", return_value=Mock()),
         patch("haku.console.mcp_agent_auth.HakuAgentOAuthProxy", return_value=_oauth_proxy()),
     ):
-        auth = build_auth(_settings(mcp_oauth=oauth), agent_authority=_authority(), static_credentials=_credentials())
+        auth = build_auth(
+            _settings(mcp_oauth=oauth),
+            agent_authority=_authority(),
+            static_credentials=_credentials(),
+            operator_identity_store=_identity_store(),
+        )
 
     assert isinstance(auth, OAuthMcpAuth)
     assert auth.static_actor_resolver is None

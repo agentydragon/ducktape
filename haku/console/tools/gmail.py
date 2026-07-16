@@ -18,9 +18,8 @@ Gmail API affordances not yet exposed.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, cast
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastmcp import FastMCP
 from googleapiclient.discovery import build
 from pydantic import Field
@@ -114,6 +113,11 @@ def build_mcp(gmail: GmailToolsClient) -> FastMCP:
     ) -> Thread:
         """Fetch a Gmail thread and its messages (mirrors users.threads.get). `format` sets the detail level."""
         return gmail.threads_get(thread_id, format)
+
+    @mcp.tool
+    async def thread_previews(thread_ids: _ThreadIdsAnn) -> GmailThreadPreviewsResponse:
+        """Resolve thread ids to live subject, snippet, current labels, and Gmail links in one batch."""
+        return GmailThreadPreviewsResponse(threads=preview_gmail_threads(gmail.service, thread_ids))
 
     @mcp.tool
     async def messages_get(
@@ -264,26 +268,3 @@ def build_gmail_client(token_dir: Path) -> GmailToolsClient:
     creds = credentials_from_token_dir(token_dir, GMAIL_SCOPES)
     service = build("gmail", "v1", credentials=creds, cache_discovery=False, static_discovery=True)
     return GmailToolsClient(service)
-
-
-def _gmail_client(request: Request) -> GmailToolsClient:
-    client = request.app.state.gmail_client
-    if client is None:
-        raise HTTPException(status_code=503, detail="Gmail tools are not configured (google_token_dir unset)")
-    return cast(GmailToolsClient, client)
-
-
-GmailClientDep = Annotated[GmailToolsClient, Depends(_gmail_client)]
-
-router = APIRouter(prefix="/api/gmail", tags=["gmail"])
-
-
-@router.get("/thread-previews")
-async def gmail_thread_previews(
-    gmail: GmailClientDep, thread_id: Annotated[list[str], Query()]
-) -> GmailThreadPreviewsResponse:
-    """Live subject/snippet/current-labels lookup, for rendering a pending or past
-    `threads_modify_labels` approval — the tool call itself only carries thread IDs, so the
-    approval UI resolves display text here rather than trusting caller-supplied text it can't
-    verify. A plain HTTP read, not an MCP tool — outside `build_mcp`'s surface."""
-    return GmailThreadPreviewsResponse(threads=preview_gmail_threads(gmail.service, thread_id))

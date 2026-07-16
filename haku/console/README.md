@@ -87,8 +87,10 @@ Core endpoints:
 - `GET /api/tool-calls` / `GET /api/tool-calls/{tool_call_id}` — operator-only audit/result reads.
   The list endpoint accepts repeated `status` filters and a datetime `since` filter on `updated_at`.
 
-Agents authenticate only to `/mcp`; the browser REST API requires the operator's Authentik session,
-and decisions additionally require CSRF. The approvals panel renders in trusted
+The browser REST API requires the operator's Authentik session, and decisions additionally require
+CSRF. `/mcp` accepts either an Agent bearer or that same DB-revalidated Operator session; browser
+MCP requests additionally require the console's exact `Origin` and the CSRF header/cookie pair. The
+approvals panel renders in trusted
 console chrome, not inside Haku's iframe, and does not block the framed Haku UI. If a server enables
 `operator_oauth`, approval execution
 uses the approving operator's linked OAuth token and refuses to move the call out of
@@ -96,13 +98,21 @@ uses the approving operator's linked OAuth token and refuses to move the call ou
 for reflection or fallback wiring, but they are not silently substituted for operator-approved
 execution on an `operator_oauth` server.
 
-### Agent-facing MCP server (`/mcp`)
+### MCP server (`/mcp`)
 
-`mcp_server.py` mounts a native MCP server at `/mcp` so a connected Claude client (the claude.ai
-custom connector / the `claude` CLI / haku-ui backend) can call the connected-server tools directly
-through `ToolCallApplicationService.submit_and_wait`. This is the only agent admission path.
-Discovery is request-local: an Agent sees only remote servers connected by its canonical Operator,
-plus shared configured/in-process servers. Within that surface, tools are divided into two buckets:
+`mcp_server.py` mounts one native MCP server at `/mcp` for both authenticated principals. A connected
+Claude client (the claude.ai custom connector / the `claude` CLI / haku-ui backend) enters as an
+Agent and calls connected-server tools through `ToolCallApplicationService.submit_and_wait`. The
+trusted console frontend enters as its current Operator and calls the same tools through
+`execute_direct`, resolving downstream authentication in that Operator's context (an
+operator-linked OAuth token where configured, otherwise the server's configured credential).
+Direct Operator calls do not create tool-call rows, approval events, or promises; they exist so
+trusted renderers can resolve reference data through the real MCP surface instead of bespoke HTTP
+fetchers.
+
+Discovery is request-local: either principal sees remote servers connected by its canonical
+Operator, plus shared configured/in-process servers. For Agents, that surface is divided into two
+buckets:
 tools the policy **unconditionally**
 auto-approves (Gmail and Google Calendar reads, read-only grocy-sf, tana
 `get_or_create_calendar_node`) appear as
@@ -113,7 +123,9 @@ an operator-facing deep-link `url`) the agent resolves via the `get_tool_call` /
 read tools. The promise-semantics preamble lives in each tool's **description** (many MCP clients,
 claude.ai included, never surface a server's `instructions`). Auth is a Haku-owned
 `HakuAgentOAuthProxy` composed with the configured `static_agents` through
-`HakuFailurePreservingMultiAuth`. FastMCP still owns DCR, PKCE, callback, code, and token-family
+`HakuFailurePreservingMultiAuth`. An explicit `Authorization` header always selects Agent admission;
+an invalid bearer never falls back to an ambient browser cookie. FastMCP still owns DCR, PKCE,
+callback, code, and token-family
 machinery; Haku adds the Operator-authenticated Agent-enrollment ceremony and resolves both OAuth
 and static credentials through the same canonical Agent authority. The `/mcp` surface only
 submits/reads — there is no decision tool — so an OAuth caller cannot self-approve; approval stays
@@ -227,8 +239,8 @@ HTTP:
 - **`google_calendar`** (`haku.console.tools.google_calendar`). `create_event` creates a single
   event or an RRULE-backed series and stays operator-approved. `get_event`, `list_events`, and
   `list_event_instances` return focused recurrence-aware event models and auto-approve for
-  authenticated Agents as transparent read tools. The server also owns the
-  `GET /api/google-calendar/calendar-summary` rendering read (below). Deferred Calendar API
+  authenticated Agents as transparent read tools. `calendar_summary` resolves a calendar id for
+  trusted console rendering through the same MCP server. Deferred Calendar API
   affordances are inventoried in `TODO.md`.
 - **`haku_routine`** (`haku.console.tools.routine`): `launch_routine` fires the Haku
   claude-code-web routine (optionally with per-run instruction `text`), so a launch is an
@@ -241,12 +253,11 @@ The `gmail` and `google_calendar` servers are built from **one** Airlock-issued 
 scopes), mounted from `haku-console-google-access-token` (`HAKU_CONSOLE_GOOGLE_TOKEN_DIR`) —
 kept separate from every other Google-scoped credential in the cluster and delivered only to this namespace.
 One-time operator OAuth bootstrap and the scope list: `cluster/k8s/haku/console/README.md`.
-Two plain HTTP endpoints alongside the MCP tools render approvals whose tool call carries only
-opaque ids: `GET /api/gmail/thread-previews` (subject/snippet/current-labels for a pending
-`threads_modify_labels`) and `GET /api/google-calendar/calendar-summary` (a non-primary
-`calendar_id` → the calendar's display name + a Google Calendar link, for a pending
-`create_event`). Both stay outside `build_mcp`'s tool surface since they're reads for
-rendering, not something Haku calls.
+The trusted frontend resolves opaque ids by calling MCP tools with its Operator session:
+`gmail_thread_previews` supplies subject/snippet/current-labels for a pending
+`threads_modify_labels`, and `google_calendar_calendar_summary` maps a non-primary `calendar_id` to
+its display name and Google Calendar link for a pending `create_event`. Grocy and Tana previews use
+their servers' ordinary read tools the same way; there are no parallel preview-only HTTP routes.
 
 ## Free-form UI — Haku's own UI, embedded
 

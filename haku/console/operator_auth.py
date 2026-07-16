@@ -1,14 +1,14 @@
 """Operator **browser** authentication for haku-console (Authentik OIDC).
 
 The console authenticates the operator's browser itself via the Authentik authorization-code flow,
-storing the identity in a signed session cookie. Agent access is exclusively through `/mcp`, whose
-MultiAuth supports OIDCProxy DCR and static bearers independently of the browser API.
+storing the identity in a signed session cookie. `/mcp` accepts either that session (with exact
+Origin + CSRF checks) or an Agent credential through MultiAuth's OIDCProxy/static-bearer path.
 
 `require_operator` guards the entire browser API (approvals, decisions, audit history, and account
 linking) with a DB-revalidated canonical Operator session.
 
 The static SPA (served by nginx) stays public; on a 401 the frontend redirects to `/auth/login`.
-`/mcp` (its own MultiAuth), `/healthz`, and `/auth/*` are not under `/api/` and carry their own auth.
+`/mcp`, `/healthz`, and `/auth/*` are not under `/api/` and carry their own admission rules.
 """
 
 from __future__ import annotations
@@ -73,7 +73,9 @@ def _identity_store(conn: HTTPConnection) -> PostgresOperatorIdentityStore:
     return cast(PostgresOperatorIdentityStore, conn.app.state.operator_identity_store)
 
 
-def operator_session(conn: HTTPConnection) -> OperatorSession | None:
+def operator_session(
+    conn: HTTPConnection, *, identity_store: PostgresOperatorIdentityStore | None = None
+) -> OperatorSession | None:
     """The DB-revalidated browser session, or ``None`` when malformed, stale, or disabled."""
     if "session" not in conn.scope:
         return None
@@ -94,7 +96,8 @@ def operator_session(conn: HTTPConnection) -> OperatorSession | None:
     expires_at = raw.get("expires_at")
     if not isinstance(expires_at, int) or isinstance(expires_at, bool) or expires_at <= int(time.time()):
         return None
-    identity = _identity_store(conn).resolve_active_session(operator_id=operator_id, identity_id=identity_id)
+    store = identity_store if identity_store is not None else _identity_store(conn)
+    identity = store.resolve_active_session(operator_id=operator_id, identity_id=identity_id)
     if identity is None:
         return None
     return OperatorSession(

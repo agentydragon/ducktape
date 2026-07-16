@@ -1,14 +1,13 @@
 """haku-console's own MCP server: the connected-server tools, re-exposed to a Claude agent.
 
-An interactive MCP client (the claude.ai custom connector or the ``claude`` CLI) connects here
-and calls the console's connected-server tools directly. Every call is **submitted through the
-shared application service rather than executed inline** (`ToolCallApplicationService.submit_and_wait`):
-it auto-approves and runs when the reviewed policy allows, otherwise it returns a **promise** (a pending
-``tool_call_id`` plus an operator-facing deep link) that the agent resolves later via
-``get_tool_call``.
+An interactive Agent MCP client (the claude.ai custom connector or the ``claude`` CLI) connects here
+and calls the console's connected-server tools through the approval lifecycle. The trusted console
+frontend uses this same endpoint with its Operator browser session; those calls execute directly and
+do not create tool-call rows, approval events, or promises.
 
-Each request exposes only servers connected by that Agent's canonical Operator. Within that
-Operator-specific surface, the global auto-approval policy divides tools into two buckets:
+Each request exposes only servers connected by that principal's canonical Operator. Within that
+Operator-specific surface, the global auto-approval policy divides Agent-visible tools into two
+buckets:
 
 Every proxied tool is named ``<server>_<tool>`` (one uniform format — operator decision
 2026-07-13; bare upstream names hid which server a tool belonged to):
@@ -19,7 +18,8 @@ Every proxied tool is named ``<server>_<tool>`` (one uniform format — operator
   ``title``/``wait_for_approval_ms``) and a promise-semantics preamble in the description;
   returns the real result *or* a promise.
 
-Both buckets run through the single ``submit_and_wait`` path.
+For Agents both buckets run through ``submit_and_wait``. Operators bypass that lifecycle only after
+the transport has established a DB-revalidated, same-origin, CSRF-gated browser principal.
 """
 
 from __future__ import annotations
@@ -45,10 +45,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from haku.console.auto_approval import is_unconditionally_auto_approved
 from haku.console.config import Settings
 from haku.console.mcp_approval import DegradedServerMetadata, McpMetadataProvider, metadata_for_operator
-from haku.console.mcp_auth.fastmcp_adapter import get_agent_actor
+from haku.console.mcp_auth.fastmcp_adapter import get_tool_call_actor
 from haku.console.mcp_config import McpServerEntry, McpServerNotFoundError, _load_servers, server_tool_prefix
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
-from haku.console.tool_call_actor import AgentActor
+from haku.console.tool_call_actor import OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
     BackendAccountNotConnectedError,
     ToolCallApplicationService,
@@ -75,18 +75,19 @@ MAX_WAIT_MS = 60_000
 
 INSTRUCTIONS = (
     "haku-console tool proxy. Every proxied tool is named `<server>_<tool>`. Tools whose schema "
-    "wraps the real arguments in an `input` + `rationale` envelope submit a request to the "
-    "operator's approval queue rather than running immediately: they return the tool's result if "
-    "it is approved within a few seconds, otherwise a promise (a pending `tool_call_id` and a "
-    "link the operator can approve at). Poll `get_tool_call(tool_call_id)` to resolve a promise. "
-    "Tools with the upstream tool's own schema auto-approve and return their result directly."
+    "wraps the real arguments in an `input` + `rationale` envelope submit Agent calls to the "
+    "operator's approval queue: they return the result if approved within a few seconds, otherwise "
+    "a promise (a pending `tool_call_id` and approval link). Poll `get_tool_call(tool_call_id)` to "
+    "resolve a promise. Tools with the upstream schema auto-approve Agent calls. Calls authenticated "
+    "by the console Operator's browser session execute directly and create no approval record."
 )
 
 _REQUEST_PREAMBLE = (
-    "Submits a request to run `{tool}` on `{server}` through haku-console's operator-approval "
-    "queue — it does NOT run it directly. Put the real tool arguments under `input`. Returns the "
-    "result if approved within `wait_for_approval_ms`, otherwise a promise (a pending "
-    "`tool_call_id` plus an approval `url`) — poll `get_tool_call(tool_call_id)` to resolve it."
+    "For Agent callers, submits `{tool}` on `{server}` through haku-console's operator-approval "
+    "queue. Put the real tool arguments under `input`. Returns the result if approved within "
+    "`wait_for_approval_ms`, otherwise a promise (a pending `tool_call_id` plus approval `url`) — "
+    "poll `get_tool_call(tool_call_id)` to resolve it. An authenticated console Operator call "
+    "executes directly and creates no approval record."
 )
 
 
@@ -195,12 +196,24 @@ def _record_to_result(record: ToolCallRecord, settings: Settings) -> ToolResult:
     )
 
 
+def _direct_to_result(result: dict[str, Any]) -> ToolResult:
+    """Preserve the upstream MCP result without adding Haku tool-call metadata."""
+
+    upstream = mcp_types.CallToolResult.model_validate(result)
+    return ToolResult(
+        content=list(upstream.content),
+        structured_content=upstream.structuredContent,
+        meta=upstream.meta,
+        is_error=upstream.isError,
+    )
+
+
 class ProxyTool(Tool):
     """A connected-server tool re-exposed through the shared application service.
 
     ``passthrough`` tools advertise the upstream schema and take the raw args; envelope tools
-    advertise the envelope and read the call args from ``input``. Both route through
-    ``submit_and_wait``.
+    advertise the envelope and read the call args from ``input``. Agent calls route through
+    ``submit_and_wait``; authenticated Operator calls execute directly.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -226,8 +239,10 @@ class ProxyTool(Tool):
             title=title,
             wait_for_ms=max(0, min(int(wait_ms), MAX_WAIT_MS)),
         )
-        actor = get_agent_actor()
+        actor = get_tool_call_actor()
         try:
+            if isinstance(actor, OperatorActor):
+                return _direct_to_result(await ctx.tool_calls.execute_direct(req=req, actor=actor))
             record = await ctx.tool_calls.submit_and_wait(req=req, actor=actor)
         except (
             BackendAccountNotConnectedError,
@@ -270,7 +285,7 @@ def _build_proxy_tool(context: ConsoleMcpContext, server_id: str, tool: Any, *, 
 
 
 class OperatorToolProvider(Provider):
-    """Reflect the connected-server catalog for the current Agent's Operator.
+    """Reflect the connected-server catalog for the current principal's Operator.
 
     FastMCP providers are consulted for both ``tools/list`` and ``tools/call``.
     Keeping reflection here makes discovery request-local and also fails closed
@@ -281,7 +296,7 @@ class OperatorToolProvider(Provider):
         super().__init__()
         self._context = context
 
-    async def _server_tools(self, server: McpServerEntry, actor: AgentActor) -> list[Tool]:
+    async def _server_tools(self, server: McpServerEntry, actor: ToolCallActor) -> list[Tool]:
         meta = await metadata_for_operator(
             operator_id=actor.operator_id,
             server=server,
@@ -304,7 +319,7 @@ class OperatorToolProvider(Provider):
         ]
 
     async def _list_tools(self) -> Sequence[Tool]:
-        actor = get_agent_actor()
+        actor = get_tool_call_actor()
         # gather preserves input order even when servers finish reflection out of order.
         reflected = await asyncio.gather(
             *(self._server_tools(server, actor) for server in _load_servers(self._context.settings))
@@ -312,7 +327,7 @@ class OperatorToolProvider(Provider):
         return [tool for server_tools in reflected for tool in server_tools]
 
     async def _get_tool(self, name: str, version: VersionSpec | None = None) -> Tool | None:
-        actor = get_agent_actor()
+        actor = get_tool_call_actor()
         candidates = [
             server
             for server in _load_servers(self._context.settings)
@@ -337,17 +352,17 @@ def build_console_mcp(context: ConsoleMcpContext, *, auth: AuthProvider) -> Fast
     """Build the console MCP server with request-local proxy tools + auth.
 
     Authentication is composed by :mod:`haku.console.mcp_agent_auth`. The
-    provider reflects connected-server tools for the authenticated Agent's
+    provider reflects connected-server tools for the authenticated principal's
     canonical Operator on each discovery and dispatch request.
     """
     mcp: FastMCP = FastMCP(name=SERVER_NAME, instructions=INSTRUCTIONS)
     mcp.auth = auth
     mcp.add_provider(OperatorToolProvider(context))
 
-    current_agent_dependency = Depends(get_agent_actor)
+    current_actor_dependency = Depends(get_tool_call_actor)
 
     @mcp.tool
-    async def get_tool_call(tool_call_id: str, actor: AgentActor = current_agent_dependency) -> ToolCallView:
+    async def get_tool_call(tool_call_id: str, actor: ToolCallActor = current_actor_dependency) -> ToolCallView:
         """Read one tool call (resolve a promise): status, result/error, and its approval link."""
         try:
             record = context.tool_calls.get(tool_call_id, actor=actor)
@@ -361,7 +376,7 @@ def build_console_mcp(context: ConsoleMcpContext, *, auth: AuthProvider) -> Fast
         since: datetime.datetime | None = None,
         limit: int = 100,
         newest_first: bool = True,
-        actor: AgentActor = current_agent_dependency,
+        actor: ToolCallActor = current_actor_dependency,
     ) -> list[ToolCallView]:
         """List recent tool calls (newest first by default), optionally filtered by status/since."""
         records = context.tool_calls.list_tool_calls(

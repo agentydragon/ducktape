@@ -30,6 +30,7 @@ js_library(
         ":variant",
         "//:node_modules/react",
         "//:node_modules/zod",
+        "//haku/console/frontend:mcp_result",
     ],
 )
 

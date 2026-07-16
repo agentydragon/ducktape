@@ -1,19 +1,8 @@
 // Deterministic sample data for the screenshot scenes (harness.tsx) and the API stub
 // (mock_api.ts). Kept separate so both share one source of truth.
-//
-// The per-tool preview fixtures and their mock payloads live co-located with the widgets now
-// (tool_rendering/<server>/preview_fixtures.ts); the preview mock payloads are shared from
-// tool_rendering/screenshot/mock_data.ts and re-exported here so mock_api serves them for the
-// history scene's data-fetching rows too.
 import { makeRecentToolCall, type RecentToolCall } from "../approval_state.ts";
 import type { DeploymentInfo, McpOperatorAuthStatus, PendingApproval, ToolCallRecord } from "../client.ts";
 import type { RegisteredToolPreviewFixture } from "../tool_rendering/index.tsx";
-
-export {
-  SAMPLE_CALENDAR_SUMMARY,
-  SAMPLE_GMAIL_THREADS,
-  SAMPLE_GROCY_REFERENCE,
-} from "../tool_rendering/screenshot/mock_data.ts";
 
 const STOCK_ADD_HISTORY_FIXTURE = {
   serverId: "grocy-sf",

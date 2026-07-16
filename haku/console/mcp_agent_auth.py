@@ -1,11 +1,15 @@
-"""Authentication composition for Haku's Agent-facing MCP server."""
+"""Compose Agent bearer and Operator browser-session authentication for Haku's MCP server."""
 
 from __future__ import annotations
 
 import hmac
 from dataclasses import dataclass
 
+from fastapi_csrf_protect import CsrfProtect
+from fastapi_csrf_protect.exceptions import CsrfProtectError
 from fastmcp.server.auth.auth import AccessToken, AuthProvider, TokenVerifier
+from starlette.concurrency import run_in_threadpool
+from starlette.requests import HTTPConnection, Request
 
 from haku.console.agents.authorization import (
     PostgresAgentAuthority,
@@ -13,16 +17,19 @@ from haku.console.agents.authorization import (
     StaticAgentRejectedError,
     fingerprint_static_token,
 )
-from haku.console.config import Settings
+from haku.console.config import MCP_PATH, Settings
 from haku.console.mcp_auth.fastmcp_adapter import (
     AgentGrantAuthorityUnavailableError,
     BearerVerificationUnavailableError,
     HakuAgentOAuthProxy,
     HakuFailurePreservingMultiAuth,
+    OperatorSessionAuthenticationError,
     StaticAgentActorResolver,
     assert_fastmcp_adapter_compatibility,
 )
-from haku.console.tool_call_actor import AgentActor
+from haku.console.operator_auth import operator_session
+from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.tool_call_actor import AgentActor, OperatorActor
 from mcp_infra.authentik_auth.provider import DEFAULT_VALID_SCOPES
 from mcp_infra.persistence import OAuthClientStorage, build_shared_client_storage
 
@@ -107,8 +114,35 @@ class OAuthMcpAuth:
 type McpAuth = StaticMcpAuth | OAuthMcpAuth
 
 
+class _OperatorMcpSessionAuthenticator:
+    """Turn the console's DB-revalidated browser session into an MCP Operator principal."""
+
+    def __init__(self, settings: Settings, identity_store: PostgresOperatorIdentityStore) -> None:
+        self._mcp_path = MCP_PATH
+        self._public_origin = settings.public_base_url.rstrip("/")
+        self._identity_store = identity_store
+
+    async def __call__(self, conn: HTTPConnection) -> OperatorActor | None:
+        if conn.url.path != self._mcp_path:
+            return None
+        session = await run_in_threadpool(operator_session, conn, identity_store=self._identity_store)
+        if session is None:
+            return None
+        if conn.headers.get("origin") != self._public_origin:
+            raise OperatorSessionAuthenticationError("operator MCP requests require the console's exact Origin")
+        try:
+            await CsrfProtect().validate_csrf(Request(conn.scope))
+        except CsrfProtectError as error:
+            raise OperatorSessionAuthenticationError(error.message, status_code=error.status_code) from error
+        return OperatorActor(operator_id=session.operator_id)
+
+
 def build_auth(
-    settings: Settings, *, agent_authority: PostgresAgentAuthority, static_credentials: StaticAgentCredentialRegistry
+    settings: Settings,
+    *,
+    agent_authority: PostgresAgentAuthority,
+    static_credentials: StaticAgentCredentialRegistry,
+    operator_identity_store: PostgresOperatorIdentityStore,
 ) -> McpAuth:
     """Compose FastMCP protocol auth with Haku's canonical Agent authority.
 
@@ -120,6 +154,7 @@ def build_auth(
     static = (
         _AuthorityStaticTokenVerifier(agent_authority, static_credentials) if static_credentials.fingerprints else None
     )
+    operator_session_authenticator = _OperatorMcpSessionAuthenticator(settings, operator_identity_store)
     if settings.mcp_oauth is not None:
         storage = build_shared_client_storage(settings.mcp_oauth.persistence)
         config = settings.mcp_oauth.as_authentik_auth_config(public_base_url=settings.public_base_url)
@@ -135,7 +170,11 @@ def build_auth(
         )
         proxy.update_default_scopes(DEFAULT_VALID_SCOPES)
         return OAuthMcpAuth(
-            provider=HakuFailurePreservingMultiAuth(server=proxy, verifiers=[static] if static is not None else []),
+            provider=HakuFailurePreservingMultiAuth(
+                server=proxy,
+                verifiers=[static] if static is not None else [],
+                operator_session_authenticator=operator_session_authenticator,
+            ),
             storage=storage,
             static_actor_resolver=static,
         )
@@ -145,5 +184,8 @@ def build_auth(
             "(config_file `static_agents`) or `mcp_oauth`"
         )
     return StaticMcpAuth(
-        provider=HakuFailurePreservingMultiAuth(server=static, verifiers=[]), static_actor_resolver=static
+        provider=HakuFailurePreservingMultiAuth(
+            server=static, verifiers=[], operator_session_authenticator=operator_session_authenticator
+        ),
+        static_actor_resolver=static,
     )

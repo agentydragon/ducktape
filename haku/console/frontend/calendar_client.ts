@@ -1,14 +1,12 @@
-import { api, errorDetail } from "./client.ts";
-import type { components } from "./api/schema";
+import { callOperatorMcpTool } from "./mcp_client.ts";
+import { mcpToolResultSchema, type McpToolResultFor } from "./mcp_tool_result_schema.ts";
 
-export type CalendarSummary = components["schemas"]["CalendarSummary"];
+export type CalendarSummary = McpToolResultFor<"google_calendar", "calendar_summary">;
 
-// Live display-name + Google Calendar link for a calendar id, for rendering a pending
-// create_event approval — the tool call's own arguments only carry the id.
+const zCalendarSummary = mcpToolResultSchema("google_calendar", "calendar_summary");
+
+// Resolve a calendar id through the same MCP tool and operator credential used by the console.
 export async function fetchCalendarSummary(calendarId: string): Promise<CalendarSummary> {
-  const { data, error } = await api.GET("/api/google-calendar/calendar-summary", {
-    params: { query: { calendar_id: calendarId } },
-  });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to load calendar name"));
-  return data;
+  const payload = await callOperatorMcpTool("google_calendar_calendar_summary", { calendar_id: calendarId });
+  return zCalendarSummary.parse(payload);
 }

@@ -89,6 +89,21 @@ _STATIC_AGENTS = [
 ]
 
 
+def test_direct_result_preserves_upstream_error_and_metadata() -> None:
+    result = mcp_server_module._direct_to_result(
+        {
+            "content": [{"type": "text", "text": "upstream rejected the request"}],
+            "structuredContent": {"reason": "rejected"},
+            "isError": True,
+            "_meta": {"upstream": "kept"},
+        }
+    )
+
+    assert result.is_error is True
+    assert result.structured_content == {"reason": "rejected"}
+    assert result.meta == {"upstream": "kept"}
+
+
 @pytest.fixture(autouse=True)
 def _static_agent_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(_AGENT_TOKEN_ENV, _AGENT_TOKEN)
@@ -410,6 +425,63 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
                 },
             ) as operator:
                 csrf = (await operator.get("/api/capabilities/csrf")).json()["csrf_token"]
+                direct_request = {
+                    "jsonrpc": "2.0",
+                    "id": 10,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "standin_echo",
+                        "arguments": {"input": {"text": "operator"}, "rationale": "render an operator preview"},
+                    },
+                }
+                mcp_headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+
+                initialized = await operator.post(
+                    "/mcp",
+                    headers={**mcp_headers, "Origin": base, "X-CSRF-Token": csrf},
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 9,
+                        "method": "initialize",
+                        "params": {
+                            "protocolVersion": "2025-06-18",
+                            "capabilities": {},
+                            "clientInfo": {"name": "operator-test", "version": "1"},
+                        },
+                    },
+                )
+                assert initialized.status_code == 200, (initialized.text, dict(initialized.headers))
+
+                direct = await operator.post(
+                    "/mcp", headers={**mcp_headers, "Origin": base, "X-CSRF-Token": csrf}, json=direct_request
+                )
+                assert direct.status_code == 200, (direct.text, dict(direct.headers))
+                assert "echo:operator" in direct.text
+
+                calls = app.state.tool_call_service.list_tool_calls(
+                    actor=OperatorActor(operator_id=operator_identity.operator_id)
+                )
+                assert [call.tool_call_id for call in calls] == [tool_call_id]
+
+                missing_origin = await operator.post(
+                    "/mcp", headers={**mcp_headers, "X-CSRF-Token": csrf}, json=direct_request
+                )
+                assert missing_origin.status_code == 403
+                assert missing_origin.json()["error"] == "operator_session_rejected"
+
+                missing_csrf = await operator.post("/mcp", headers={**mcp_headers, "Origin": base}, json=direct_request)
+                assert missing_csrf.status_code == 422
+                assert missing_csrf.json()["error"] == "operator_session_rejected"
+
+                # An explicit bearer always owns admission. A rejected bearer cannot fall back to
+                # the otherwise valid browser session and become an Operator call.
+                invalid_bearer = await operator.post(
+                    "/mcp",
+                    headers={**mcp_headers, "Authorization": "Bearer rejected", "Origin": base, "X-CSRF-Token": csrf},
+                    json=direct_request,
+                )
+                assert invalid_bearer.status_code == 401
+
                 decided = await operator.post(
                     f"/api/tool-calls/{tool_call_id}/decision",
                     headers={"X-CSRF-Token": csrf},
@@ -540,7 +612,7 @@ async def test_tool_dispatch_reflects_only_target_server(
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
     monkeypatch.setattr(
         mcp_server_module,
-        "get_agent_actor",
+        "get_tool_call_actor",
         lambda: AgentActor(
             agent_id=UUID("40000000-0000-4000-8000-000000000001"),
             operator_id=UUID("10000000-0000-4000-8000-000000000001"),

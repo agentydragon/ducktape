@@ -1,6 +1,5 @@
 // `haku_routine` preview screenshot entry — esbuild bundles this into the `:previews` IIFE.
-// Holds the fixtures plus the mount call; `mount` is imported FIRST so its fetch stub (mock.ts)
-// is installed before the registry/widget graph reaches client.ts. `satisfies
+// Holds the fixtures plus the shared mount call. `satisfies
 // RegisteredToolPreviewFixture` ties each (serverId, toolName, args) to the registry's real Zod
 // schemas, so a stale id or argument is a type error.
 import { mountPreviewCards } from "../screenshot/mount.tsx";

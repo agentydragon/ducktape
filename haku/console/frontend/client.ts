@@ -57,10 +57,36 @@ export async function fetchDeploymentInfo(): Promise<DeploymentInfo> {
   return data;
 }
 
-async function fetchCsrfToken(): Promise<string> {
+// fastapi-csrf-protect signs these for one hour. Reuse one token/cookie pair across concurrent
+// console and MCP requests, but refresh with margin so a long-open tab never relies on an expired
+// token. mcp_client reads this cache for every transport request, so a refresh cannot strand it
+// with an older header than the browser's newly rotated HttpOnly cookie.
+const CSRF_TOKEN_CACHE_MS = 50 * 60 * 1000;
+let csrfToken: Promise<string> | null = null;
+let csrfTokenExpiresAt = 0;
+
+async function requestCsrfToken(): Promise<string> {
   const { data: csrf, error: csrfError } = await api.GET("/api/capabilities/csrf");
   if (csrfError || !csrf) throw new Error(errorDetail(csrfError, "Failed to get CSRF token"));
   return csrf.csrf_token;
+}
+
+export async function fetchCsrfToken(): Promise<string> {
+  if (csrfToken === null || Date.now() >= csrfTokenExpiresAt) {
+    csrfTokenExpiresAt = Date.now() + CSRF_TOKEN_CACHE_MS;
+    csrfToken = requestCsrfToken().catch((error: unknown) => {
+      csrfToken = null;
+      csrfTokenExpiresAt = 0;
+      throw error;
+    });
+  }
+  return csrfToken;
+}
+
+export async function refreshCsrfToken(): Promise<string> {
+  csrfToken = null;
+  csrfTokenExpiresAt = 0;
+  return fetchCsrfToken();
 }
 
 // Capability tier. Fetch a CSRF token (which also sets the signed double-submit

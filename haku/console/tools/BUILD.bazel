@@ -32,7 +32,6 @@ py_library(
         "//gmail_api:labels",
         "//gmail_api:messages",
         "//gmail_api:service",
-        "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//google_api_python_client",
         "@pypi//pydantic",
@@ -46,55 +45,8 @@ py_library(
     deps = [
         ":google_calendar_client",
         "//gmail_api:service",
-        "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//google_api_python_client",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "grocy",
-    srcs = ["grocy.py"],
-    visibility = ["//haku/console:__subpackages__"],
-    deps = [
-        "//grocy_mcp:grocy_types",
-        "//haku/console:deps",
-        "//haku/console:mcp_approval",
-        "//haku/console:mcp_operator_oauth",
-        "//haku/console:operator_auth",
-        "@pypi//fastapi",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_grocy",
-    srcs = ["test_grocy.py"],
-    deps = [
-        ":grocy",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
-        # needs the plugin importable at runtime for its entry-point autoload; Gazelle
-        # can't see that and will try to drop this dep on regen.
-        "@pypi//pytest_asyncio",
-    ],
-)
-
-py_library(
-    name = "tana",
-    srcs = ["tana.py"],
-    visibility = ["//haku/console:__subpackages__"],
-    deps = [
-        "//haku/console:deps",
-        "//haku/console:mcp_approval",
-        "//haku/console:mcp_operator_oauth",
-        "//haku/console:operator_auth",
-        "@pypi//fastapi",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
         "@pypi//pydantic",
     ],
 )
@@ -121,27 +73,13 @@ py_test(
         "//gmail_api:filters",
         "//gmail_api:labels",
         "//gmail_api:messages",
-        "@pypi//fastapi",
         "@pypi//fastmcp_slim",
-        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
         # needs the plugin importable at runtime for its entry-point autoload; Gazelle
         # can't see that and will try to drop this dep on regen.
         "@pypi//pytest_asyncio",
-    ],
-)
-
-py_test(
-    name = "test_tana",
-    srcs = ["test_tana.py"],
-    deps = [
-        ":tana",
-        "//:conftest",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -166,9 +104,7 @@ py_test(
         ":google_calendar",
         ":google_calendar_client",
         "//:conftest",
-        "@pypi//fastapi",
         "@pypi//fastmcp_slim",
-        "@pypi//httpx",
         "@pypi//pytest_bazel",
         # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
         # needs the plugin importable at runtime for its entry-point autoload; Gazelle

@@ -6,6 +6,7 @@
 import type { ReactNode } from "react";
 import { z } from "zod";
 
+import { unwrapMcpToolResult } from "../mcp_result.ts";
 import type { PreviewVariant } from "./vocabulary.tsx";
 
 export type ToolResultPreview<S extends z.ZodTypeAny = z.ZodTypeAny> = {
@@ -46,43 +47,11 @@ export function renderResultPreview(
   return parsed.success ? preview.render(parsed.data as never, variant) : null;
 }
 
-// A stored tool result is the executed call's CallToolResult JSON (mcp_approval.py's
-// `_mcp_result_to_json`). Only the envelope fields the unwrap reads are typed; everything
-// else passes through untouched.
-const zStoredCallToolResult = z.looseObject({
-  content: z.array(z.looseObject({ type: z.string(), text: z.string().optional() })).optional(),
-  isError: z.boolean().optional(),
-  structuredContent: z.record(z.string(), z.unknown()).nullish(),
-  _meta: z.looseObject({ fastmcp: z.looseObject({ wrap_result: z.boolean().optional() }).optional() }).nullish(),
-});
-
 /** The tool's own return value, dug out of a stored CallToolResult envelope: prefer
  * `structuredContent` (un-wrapping FastMCP's `{"result": …}` envelope for non-dict returns,
  * flagged by `_meta.fastmcp.wrap_result`), else parse a single JSON text block. `null` when
  * there is no structured payload to dispatch on — including error results, whose message
  * already renders through the card's error line. */
 export function unwrapToolResult(resultJson: unknown): unknown {
-  const parsed = zStoredCallToolResult.safeParse(resultJson);
-  if (!parsed.success || parsed.data.isError) return null;
-  const structured = parsed.data.structuredContent;
-  if (structured != null) {
-    // Un-wrap only FastMCP's exact wrap shape (flag set, `result` the sole key) so a tool that
-    // genuinely returns a `result` field isn't mangled.
-    const wrapped =
-      parsed.data._meta?.fastmcp?.wrap_result === true &&
-      "result" in structured &&
-      Object.keys(structured).length === 1;
-    return wrapped ? structured.result : structured;
-  }
-  const blocks = parsed.data.content ?? [];
-  if (blocks.length === 1 && blocks[0].type === "text" && blocks[0].text !== undefined) {
-    try {
-      return JSON.parse(blocks[0].text);
-    } catch {
-      // A prose text result is a foreseeable state, not a failure — the raw-JSON fallback
-      // still shows it in full, so there is nothing to log.
-      return null;
-    }
-  }
-  return null;
+  return unwrapMcpToolResult(resultJson);
 }

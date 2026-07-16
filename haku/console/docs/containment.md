@@ -47,8 +47,9 @@ Haku could author hostile UI). Safety comes from the perimeter, not from trustin
 
 1. **Cross-origin isolation from the shell.** `haku-ui` is a different origin than `haku`,
    so the iframe cannot read the shell's DOM, cookies, or `localStorage`, and cannot call the
-   shell's capability API with the operator's credentials — the launch bearer is unreachable
-   from any browser context. The subdomain is **same-site** (`*.allegedly.works`): isolated
+   shell's capability API or Operator-authenticated `/mcp` path. Both reject the iframe's Origin
+   and require the shell origin's inaccessible CSRF token; the launch bearer is unreachable from
+   any browser context. The subdomain is **same-site** (`*.allegedly.works`): isolated
    from the shell, yet the Authentik SSO cookie isn't a blocked third-party cookie. Pinned by
    `sandbox="allow-scripts allow-same-origin allow-forms"` (**no `allow-popups`**, no
    `allow="fullscreen"`) and the shell CSP's `frame-src` for `haku-ui.allegedly.works` +

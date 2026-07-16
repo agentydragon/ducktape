@@ -2,9 +2,8 @@
 // this and passes its fixtures; render.mjs (in this dir) drives one page load per fixture ×
 // variant × color scheme and screenshots the card.
 //
-// `./mock.ts` is imported FIRST so its `fetch` stub is installed before the widget graph (via
-// card.tsx → ToolCallCard → … → client.ts) captures `globalThis.fetch`.
-import "./mock.ts";
+// Each server harness imports its own `preview_mock.ts` before this module, so the widget graph
+// sees only that server's canned MCP responses.
 
 import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";

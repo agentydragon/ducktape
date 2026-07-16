@@ -12,8 +12,8 @@
 //
 // `product` / `location` / `qu` / `product_group` / `parent_product` / `shopping_list`
 // arguments accept either a name or a numeric ID (grocy_mcp's `GrocyClient` resolves either at
-// execution time); an ID alone renders poorly, so `useGrocyReference` fetches `{id, name}` lookups
-// once per widget via GET /api/grocy-sf/reference and every row resolves through it.
+// execution time); an ID alone renders poorly, so `useGrocyReference` composes the server's MCP
+// read tools once per page and every row resolves through their results.
 //
 // `products_edit` renders an old→new diff, so the reference carries each product's *current*
 // field values (its `products` entries are full records, not just `{id, name}`); the widget looks

@@ -2,9 +2,10 @@
 // by the in-process FastMCP servers — the result-side mirror of mcp_tool_schema.ts. A tool that
 // returns None, or whose result the frontend renders as raw JSON, has no entry; the catalog only
 // carries tools with a structured output schema (so it is a subset of the argument catalog).
-// grocy-sf is absent: its result schemas stay hand-authored in tool_rendering/grocy/responses.tsx.
-// The JSON catalog and .d.ts module are two outputs of the same generator; like the argument
-// side, this is the only boundary where the experimental z.fromJSONSchema API is used.
+// grocy-sf's typed batch-tool results are present too. Renderer-specific projections may still
+// narrow permissive `extra="allow"` Grocy rows further at their consumption boundary. The JSON
+// catalog and .d.ts module are two outputs of the same generator; like the argument side, this is
+// the only boundary where the experimental z.fromJSONSchema API is used.
 
 import { z } from "zod";
 

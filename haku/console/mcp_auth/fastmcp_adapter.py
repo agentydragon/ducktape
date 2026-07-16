@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import inspect
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, SupportsFloat, cast, override
@@ -27,6 +27,7 @@ import fastmcp
 import httpx
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth.auth import AccessToken, AuthProvider, MultiAuth, TokenVerifier
+from fastmcp.server.auth.middleware import RequireAuthMiddleware
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
@@ -37,16 +38,18 @@ from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.wrappers.base import BaseWrapper
 from mcp import types as mcp_types
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
-from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
+from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser, BearerAuthBackend
 from mcp.server.auth.provider import AccessToken as McpAccessToken, AuthorizeError, RefreshToken, TokenError
-from starlette.authentication import AuthenticationError
+from starlette.authentication import AuthCredentials, AuthenticationBackend, AuthenticationError
 from starlette.exceptions import HTTPException
 from starlette.middleware import Middleware as StarletteMiddleware
 from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse, Response
+from starlette.routing import Route
+from starlette.types import ASGIApp, Receive, Scope, Send
 
-from haku.console.tool_call_actor import AgentActor
+from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from mcp_infra.authentik_auth.fastmcp_proxy import RetryableRefreshOIDCProxy
 from mcp_infra.authentik_auth.oidc_principal import (
     AuthentikOidcPrincipalResolver,
@@ -365,7 +368,8 @@ _GRANT_REQUEST_CONTEXT: ContextVar[GrantRequestContext | None] = ContextVar(
 _BEARER_FAILURE_OBSERVATION: ContextVar[_BearerFailureObservation | None] = ContextVar(
     "haku_bearer_failure_observation", default=None
 )
-_AGENT_ACTOR_CONTEXT: ContextVar[AgentActor | None] = ContextVar("haku_agent_actor", default=None)
+_TOOL_CALL_ACTOR_CONTEXT: ContextVar[ToolCallActor | None] = ContextVar("haku_tool_call_actor", default=None)
+_OPERATOR_ACTOR_CLAIM = "haku.operator_actor"
 
 
 def current_grant_request_context() -> GrantRequestContext | None:
@@ -374,12 +378,12 @@ def current_grant_request_context() -> GrantRequestContext | None:
     return _GRANT_REQUEST_CONTEXT.get()
 
 
-def get_agent_actor() -> AgentActor:
-    """FastMCP dependency accessor for the current authenticated Agent."""
+def get_tool_call_actor() -> ToolCallActor:
+    """FastMCP dependency accessor for the current authenticated Agent or Operator."""
 
-    actor = _AGENT_ACTOR_CONTEXT.get()
+    actor = _TOOL_CALL_ACTOR_CONTEXT.get()
     if actor is None:
-        raise ToolError("Agent actor is unavailable outside an authenticated tool call")
+        raise ToolError("Tool-call actor is unavailable outside an authenticated tool call")
     return actor
 
 
@@ -396,14 +400,107 @@ def observe_bearer_operational_failure(error: BaseException) -> None:
         observation.failure = error
 
 
-def _bearer_authentication_error(connection: HTTPConnection, error: AuthenticationError) -> Response:
-    """Return an explicit retryable response for a classified bearer outage."""
+class OperatorSessionAuthenticationError(AuthenticationError):
+    """A browser session was present but failed the operator-only MCP request checks."""
+
+    def __init__(self, detail: str, *, status_code: int = 403) -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.status_code = status_code
+
+
+type OperatorSessionAuthenticator = Callable[[HTTPConnection], Awaitable[OperatorActor | None]]
+
+
+class _HakuMcpAuthenticationBackend(AuthenticationBackend):
+    """Prefer explicit bearer authentication, then consider an operator browser session."""
+
+    def __init__(
+        self, provider: AuthProvider, operator_session_authenticator: OperatorSessionAuthenticator | None
+    ) -> None:
+        self._bearer = BearerAuthBackend(provider)
+        self._operator_session_authenticator = operator_session_authenticator
+
+    async def authenticate(self, conn: HTTPConnection) -> tuple[AuthCredentials, AuthenticatedUser] | None:
+        # Presence, not validity, selects the bearer admission path. A malformed or rejected bearer
+        # must never fall back to an ambient browser cookie and acquire Operator authority.
+        if "authorization" in conn.headers:
+            return cast(tuple[AuthCredentials, AuthenticatedUser] | None, await self._bearer.authenticate(conn))
+        if self._operator_session_authenticator is None:
+            return None
+        actor = await self._operator_session_authenticator(conn)
+        if actor is None:
+            return None
+        access_token = AccessToken(
+            # FastMCP's authenticated-user container requires this field, but the browser path
+            # neither receives nor compares a bearer value. Authority is the object claim below.
+            token="",
+            client_id="haku-console-browser",
+            scopes=[],
+            expires_at=None,
+            # This in-memory object is the unforgeable discriminator. Bearer claims deserialize
+            # from JSON and therefore cannot manufacture an OperatorActor instance here.
+            claims={_OPERATOR_ACTOR_CLAIM: actor},
+        )
+        return AuthCredentials([]), AuthenticatedUser(access_token)
+
+
+class _HakuMcpRouteGuard:
+    """Let a validated Operator principal through FastMCP's bearer-only route guard.
+
+    FastMCP 3.4.4 authenticates at the ASGI-app layer, then applies a second route-local
+    ``RequireAuthMiddleware`` which rejects requests based on the absence of an Authorization
+    header before consulting ``scope['user']``. Haku's browser credential is intentionally an
+    HttpOnly session cookie, so the application-level backend above has already done all credential,
+    Origin, CSRF, and database checks by the time this guard runs.
+
+    Only the in-memory ``OperatorActor`` claim can bypass the bearer-only guard. Agent requests and
+    every unauthenticated request retain FastMCP's original guard and response behavior unchanged.
+    """
+
+    def __init__(self, bearer_guard: RequireAuthMiddleware) -> None:
+        self._bearer_guard = bearer_guard
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        user = scope.get("user")
+        if isinstance(user, AuthenticatedUser):
+            actor = getattr(user.access_token, "claims", {}).get(_OPERATOR_ACTOR_CLAIM)
+            if isinstance(actor, OperatorActor):
+                await self._bearer_guard.app(scope, receive, send)
+                return
+        await self._bearer_guard(scope, receive, send)
+
+
+def install_operator_session_route_guard(app: ASGIApp, *, path: str) -> None:
+    """Install Haku's principal-aware guard on one FastMCP streamable-HTTP route."""
+
+    routes = getattr(app, "routes", None)
+    if not isinstance(routes, list):
+        raise AssertionError("FastMCP HTTP app no longer exposes a mutable route list")
+    matches = [
+        route
+        for route in routes
+        if isinstance(route, Route) and route.path == path and isinstance(route.app, RequireAuthMiddleware)
+    ]
+    if len(matches) != 1:
+        raise AssertionError(f"expected exactly one FastMCP protected route at {path!r}, found {len(matches)}")
+    matches[0].app = cast(ASGIApp, _HakuMcpRouteGuard(cast(RequireAuthMiddleware, matches[0].app)))
+
+
+def _mcp_authentication_error(connection: HTTPConnection, error: AuthenticationError) -> Response:
+    """Return explicit responses for classified bearer outages and rejected browser sessions."""
 
     if isinstance(error, BearerVerificationUnavailableError):
         return JSONResponse(
             {"error": "temporarily_unavailable", "error_description": error.detail},
             status_code=error.status_code,
             headers={"Cache-Control": "no-store", "Retry-After": str(_RETRY_AFTER_SECONDS)},
+        )
+    if isinstance(error, OperatorSessionAuthenticationError):
+        return JSONResponse(
+            {"error": "operator_session_rejected", "error_description": error.detail},
+            status_code=error.status_code,
+            headers={"Cache-Control": "no-store"},
         )
     return AuthenticationMiddleware.default_on_error(connection, error)
 
@@ -418,11 +515,18 @@ class HakuFailurePreservingMultiAuth(MultiAuth):
     than a connector-deauthorizing 401.
     """
 
-    def __init__(self, *, server: AuthProvider, verifiers: list[TokenVerifier]) -> None:
+    def __init__(
+        self,
+        *,
+        server: AuthProvider,
+        verifiers: list[TokenVerifier],
+        operator_session_authenticator: OperatorSessionAuthenticator | None = None,
+    ) -> None:
         super().__init__(server=server, verifiers=verifiers)
         # Do not depend on MultiAuth._sources: it is private and precisely the
         # blanket-catching implementation this adapter contains.
         self._haku_sources: tuple[AuthProvider, ...] = (server, *verifiers)
+        self._operator_session_authenticator = operator_session_authenticator
 
     async def verify_token(self, token: str) -> AccessToken | None:
         unavailable: BearerVerificationUnavailableError | None = None
@@ -448,20 +552,22 @@ class HakuFailurePreservingMultiAuth(MultiAuth):
 
         return [
             StarletteMiddleware(
-                AuthenticationMiddleware, backend=BearerAuthBackend(self), on_error=_bearer_authentication_error
+                AuthenticationMiddleware,
+                backend=_HakuMcpAuthenticationBackend(self, self._operator_session_authenticator),
+                on_error=_mcp_authentication_error,
             ),
             StarletteMiddleware(AuthContextMiddleware),
         ]
 
 
-class HakuAgentGrantMiddleware(FastMCPMiddleware):
-    """Resolve the canonical Agent actor for Agent-facing MCP requests.
+class HakuMcpActorMiddleware(FastMCPMiddleware):
+    """Resolve the authenticated MCP principal for discovery and dispatch.
 
-    Bearer verification has already established the signed FastMCP token and
-    propagated its exact ``grant_id`` claim before this middleware runs. The
-    authority owns the atomic ``issued -> active`` transition; an already
-    active grant returns the same binding idempotently. Both discovery and
-    dispatch therefore run with the same verified Agent and Operator authority.
+    A browser-session token already contains the DB-revalidated OperatorActor. Bearer verification
+    has already established the signed FastMCP token and propagated its exact ``grant_id`` claim
+    before this middleware runs. The authority owns the atomic ``issued -> active`` transition; an
+    already active grant returns the same binding idempotently. Both discovery and dispatch
+    therefore run with the same verified principal and Operator authority.
     """
 
     def __init__(
@@ -476,11 +582,11 @@ class HakuAgentGrantMiddleware(FastMCPMiddleware):
         call_next: CallNext[mcp_types.CallToolRequestParams, ToolResult],
     ) -> ToolResult:
         actor = await self._resolve_actor()
-        actor_token = _AGENT_ACTOR_CONTEXT.set(actor)
+        actor_token = _TOOL_CALL_ACTOR_CONTEXT.set(actor)
         try:
             return await call_next(context)
         finally:
-            _AGENT_ACTOR_CONTEXT.reset(actor_token)
+            _TOOL_CALL_ACTOR_CONTEXT.reset(actor_token)
 
     async def on_list_tools(
         self,
@@ -488,16 +594,19 @@ class HakuAgentGrantMiddleware(FastMCPMiddleware):
         call_next: CallNext[mcp_types.ListToolsRequest, Sequence[Tool]],
     ) -> Sequence[Tool]:
         actor = await self._resolve_actor()
-        actor_token = _AGENT_ACTOR_CONTEXT.set(actor)
+        actor_token = _TOOL_CALL_ACTOR_CONTEXT.set(actor)
         try:
             return await call_next(context)
         finally:
-            _AGENT_ACTOR_CONTEXT.reset(actor_token)
+            _TOOL_CALL_ACTOR_CONTEXT.reset(actor_token)
 
-    async def _resolve_actor(self) -> AgentActor:
+    async def _resolve_actor(self) -> ToolCallActor:
         token = get_access_token()
         if token is None:
             raise ToolError("Agent grant is missing")
+        operator_actor = token.claims.get(_OPERATOR_ACTOR_CLAIM)
+        if isinstance(operator_actor, OperatorActor):
+            return operator_actor
         if "upstream_claims" not in token.claims:
             return await self._resolve_static_actor(token)
         return await self._activate_oauth_actor(token)

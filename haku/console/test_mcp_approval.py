@@ -823,55 +823,6 @@ async def test_operator_oauth_refresh_does_not_overwrite_concurrent_reconnect(
         engine.dispose()
 
 
-def test_grocy_sf_reference_resolves_ids_to_names(
-    make_operator_client, console_config: Path, migrated_db_url: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    resolved_operator_ids = _record_execution_operator_ids(monkeypatch)
-    with make_operator_client(
-        config_file=console_config, operator_external_user_key="configured-credential-sub"
-    ) as client:
-        resp = client.get("/api/grocy-sf/reference")
-    assert resp.status_code == 200, resp.text
-    assert resolved_operator_ids == [_operator_id(migrated_db_url, "configured-credential-sub")]
-    assert resp.json() == {
-        "products": [
-            {
-                "id": 1,
-                "name": "Milk",
-                "location_id": 2,
-                "qu_id_stock": 3,
-                "qu_id_purchase": 3,
-                "qu_id_consume": 3,
-                "min_stock_amount": 1.0,
-                "default_best_before_days": 7,
-                "due_type": 1,
-                # "0" is Grocy's "unset FK" encoding — parsed to None, not group 0.
-                "parent_product_id": None,
-                "product_group_id": 4,
-                "description": "Whole milk",
-                "calories": None,
-            }
-        ],
-        "locations": [{"id": 2, "name": "Fridge"}],
-        "quantity_units": [{"id": 3, "name": "Liter"}],
-        "product_groups": [{"id": 4, "name": "Dairy"}],
-        "shopping_lists": [{"id": 5, "name": "Weekly"}],
-        # Flattened from the per-list `shopping_list_get` call; `product_id` is dropped by
-        # `GrocyShoppingListItem`, which keeps only the fields the edit/remove previews render.
-        "shopping_list_items": [
-            {"item_id": 11, "product_name": "Milk", "note": None, "amount": 2.0, "qu_name": "Liter", "done": False},
-            {
-                "item_id": 12,
-                "product_name": None,
-                "note": "paper towels?",
-                "amount": 1.0,
-                "qu_name": None,
-                "done": False,
-            },
-        ],
-    }
-
-
 def test_reflection_marks_unreachable_servers_degraded(
     make_operator_client, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

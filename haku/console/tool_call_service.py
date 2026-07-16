@@ -194,6 +194,19 @@ class ToolCallApplicationService:
             await self._publish(actor.operator_id, events)
         return await self._wait_terminal(record.tool_call_id, actor, req.wait_for_ms)
 
+    async def execute_direct(self, *, req: SubmitToolCallRequest, actor: ToolCallActor) -> dict[str, Any]:
+        """Execute as the authenticated Operator without policy, ledger, events, or promises."""
+
+        operator = self._require_operator(actor)
+        server = _server_entry(self._settings, req.server_id)
+        auth_token = await backend_auth_for_operator(
+            server=server, operator_id=operator.operator_id, oauth_store=self._oauth_store
+        )
+        logger.info(
+            "operator direct MCP call server=%s tool=%s operator_id=%s", server.id, req.tool_name, operator.operator_id
+        )
+        return await self._executor.execute(server, req.tool_name, req.arguments, auth_token)
+
     def get(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallRecord:
         return self._repository.get(tool_call_id, actor=self._require_actor(actor))
 

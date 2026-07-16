@@ -20,7 +20,7 @@ from mcp_infra.persistence import PostgresPersistence
 _FIRE_URL = "https://api.anthropic.com/v1/claude_code/routines/{id}/fire"
 _PAGE_URL = "https://claude.ai/code/routines/{id}"
 
-# Public path of the agent-facing MCP resource. The outer console origin is the shared source of
+# Public path of the MCP resource. The outer console origin is the shared source of
 # truth; MCP OAuth derives its issuer/callback URLs from this path instead of accepting a second,
 # independently configurable public URL that can drift away from the actual mount.
 MCP_PATH = "/mcp"
@@ -197,7 +197,7 @@ class Settings(BaseSettings):
     # Unset → no link is included.
     ui_base_url: str | None = None
 
-    # OAuth for the agent-facing MCP server: an Authentik-backed OIDCProxy handling the MCP OAuth
+    # OAuth for Agent admission to the MCP server: an Authentik-backed OIDCProxy handling MCP OAuth
     # dance (DCR + PKCE) for claude.ai / the `claude` CLI, composed with the static agent bearer via
     # MultiAuth. Reads HAKU_CONSOLE_MCP_OAUTH__{OIDC_ISSUER,OIDC_CLIENT_ID,OIDC_CLIENT_SECRET} plus
     # HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__*; its public URL is derived from top-level

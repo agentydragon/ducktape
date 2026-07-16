@@ -272,6 +272,37 @@ async def _always_approve(**_: Any) -> tuple[str, str]:
     return "policy:test", "approved by test policy"
 
 
+async def test_operator_direct_execution_has_no_ledger_or_event_side_effects(
+    migrated_db_url: str, tmp_path: Path
+) -> None:
+    actors = _actors(migrated_db_url)
+    operator = actors["oa"]
+    assert isinstance(operator, OperatorActor)
+    publisher = _RecordingPublisher()
+    executor = _RecordingExecutor()
+    ledger = PostgresToolCallLedger(migrated_db_url)
+    tokens = _OperatorTokens({operator.operator_id: "operator-token"})
+    service = _service(
+        database_url=migrated_db_url,
+        tmp_path=tmp_path,
+        ledger=ledger,
+        publisher=publisher,
+        executor=executor,
+        tokens=tokens,
+    )
+
+    result = await service.execute_direct(req=_request(owner="browser"), actor=operator)
+
+    assert result["content"][0]["text"] == "operator-backend:mutate"
+    assert executor.executions == [("operator-backend", "mutate", {"owner": "browser"}, "operator-token")]
+    assert tokens.lookups == [operator.operator_id]
+    assert service.list_tool_calls(actor=operator) == []
+    assert publisher.publications == []
+
+    with pytest.raises(OperatorActorRequiredError, match="operator actor required"):
+        await service.execute_direct(req=_request(owner="agent"), actor=actors["aa1"])
+
+
 async def test_two_operator_two_agent_authorization_matrix(migrated_db_url: str, tmp_path: Path) -> None:
     """Every service read, event cursor, and transition is scoped from the authenticated actor."""
     actors = _actors(migrated_db_url)

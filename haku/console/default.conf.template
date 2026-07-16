@@ -76,7 +76,7 @@ server {
     proxy_pass http://127.0.0.1:8080;
   }
 
-  # Agent-facing MCP server (streamable HTTP / SSE), plus the OIDCProxy OAuth routes FastMCP serves
+  # Agent-and-Operator MCP server (streamable HTTP / SSE), plus OIDCProxy OAuth routes FastMCP serves
   # under the /mcp mount. Disable proxy buffering so the event stream flushes, and allow a long read
   # timeout for idle streams and the OAuth dance.
   location /mcp {

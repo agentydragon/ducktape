@@ -15,8 +15,8 @@ batch-tools-only FastMCP registers them without an OpenAPI spec or a Grocy conne
 their argument schemas are generated from ``grocy_mcp``'s Pydantic models rather than
 hand-authored in the frontend. Only the tools the console previews are emitted for it
 (``_SERVER_TOOL_ALLOWLIST``); nested-model ``$ref``s are inlined first (``_dereference``).
-``grocy-sf`` contributes argument schemas only — its result schemas stay hand-authored in
-the frontend, so it is excluded from the results catalog.
+The same allowlist contributes both argument and result schemas; the frontend validates the
+Operator-session MCP responses before a renderer consumes them.
 """
 
 from __future__ import annotations
@@ -46,11 +46,14 @@ _SERVER_TOOL_ALLOWLIST: dict[str, frozenset[str]] = {
             "stock_consume",
             "stock_entry_edit",
             "stock_get",
+            "locations_list",
             "products_create",
             "products_list",
+            "product_groups_list",
             "quantity_units_list",
             "products_edit",
             "shopping_list_get",
+            "shopping_lists_list",
             "shopping_list_items_add",
             "shopping_list_items_remove",
             "shopping_list_item_edit",

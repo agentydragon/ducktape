@@ -1,7 +1,6 @@
 // Focused previews for the remote, operator-authenticated `tana-rw` MCP server. The
-// desktop-backed server only receives opaque node ids, so the console's narrow
-// node-previews endpoint resolves names through the same operator credential that executes an
-// approved call. It deliberately does not parse Tana Paste or expose a generic MCP proxy.
+// desktop-backed server only receives opaque node ids, so the browser resolves names by calling
+// read_node through the console's same-origin Operator MCP session.
 
 import { Anchor, Group, Stack } from "@mantine/core";
 import { useEffect, useState } from "react";

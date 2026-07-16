@@ -50,8 +50,24 @@ js_library(
     name = "preview_harness",
     srcs = ["preview_harness.tsx"],
     deps = [
+        ":preview_mock",
         "//haku/console/frontend/tool_rendering",
         "//haku/console/frontend/tool_rendering/screenshot:mount",
+    ],
+)
+
+js_library(
+    name = "fixtures",
+    srcs = ["fixtures.ts"],
+    deps = ["//haku/console/frontend:mcp_tool_result_schema"],
+)
+
+js_library(
+    name = "preview_mock",
+    srcs = ["preview_mock.ts"],
+    deps = [
+        ":fixtures",
+        "//haku/console/frontend/tool_rendering/screenshot:mcp_mock",
     ],
 )
 

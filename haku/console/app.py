@@ -44,18 +44,12 @@ from haku.console.config import MCP_PATH, Settings
 from haku.console.database_migrate import apply_migrations
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.in_process_servers import InProcessServerDependencies, build_in_process_servers
-from haku.console.mcp_auth.fastmcp_adapter import HakuAgentGrantMiddleware
+from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorMiddleware, install_operator_session_route_guard
 from haku.console.mcp_config import InProcessServers, LoadedStaticAgent, load_static_agents
 from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.tools import (
-    gmail as gmail_tools,
-    google_calendar as google_calendar_tools,
-    grocy as grocy_tools,
-    routine as routine_tools,
-    tana as tana_tools,
-)
+from haku.console.tools import gmail as gmail_tools, google_calendar as google_calendar_tools, routine as routine_tools
 
 APP_SHELL_CACHE_CONTROL = "no-store"
 IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
@@ -163,8 +157,7 @@ def create_app(
     static_credential_registry = mcp_agent_auth.StaticAgentCredentialRegistry(
         fingerprints=tuple(definition.token_fingerprint for definition in static_agent_definitions)
     )
-    # Google clients back the two in-process MCP servers (gmail, google_calendar) and their
-    # approval-render read endpoints (gmail thread previews, calendar-name resolution).
+    # Google clients back the two in-process MCP servers (gmail and google_calendar).
     if gmail_client is None and settings.google_token_dir is not None:
         gmail_client = gmail_tools.build_gmail_client(settings.google_token_dir)
     if calendar_client is None and settings.google_token_dir is not None:
@@ -191,7 +184,7 @@ def create_app(
         gmail_client=gmail_client,
     )
 
-    # The console's own agent-facing MCP server, mounted at /mcp — the console's whole reason to run.
+    # The console's own Agent-and-Operator MCP server, mounted at /mcp — its reason to run.
     # Its tools re-expose the connected servers through the same application service. Always built;
     # `build_auth` fails loud if nothing can authenticate to it (no static agent, no OAuth).
     console_mcp_context = mcp_server.ConsoleMcpContext(
@@ -202,17 +195,21 @@ def create_app(
     )
 
     mcp_auth = mcp_agent_auth.build_auth(
-        settings, agent_authority=agent_authority, static_credentials=static_credential_registry
+        settings,
+        agent_authority=agent_authority,
+        static_credentials=static_credential_registry,
+        operator_identity_store=operator_identity_store,
     )
     console_mcp = mcp_server.build_console_mcp(console_mcp_context, auth=mcp_auth.provider)
     console_mcp.add_middleware(
-        HakuAgentGrantMiddleware(agent_authority, static_actor_resolver=mcp_auth.static_actor_resolver)
+        HakuMcpActorMiddleware(agent_authority, static_actor_resolver=mcp_auth.static_actor_resolver)
     )
     # The console runs multiple interchangeable replicas. FastMCP's default stateful HTTP
     # transport keeps its session map in-process, so a subsequent request routed to another pod
     # receives "Session not found". Haku's tools keep durable state in Postgres and do not need
     # transport-local sessions; give every MCP request a fresh transport instead.
     mcp_asgi = console_mcp.http_app(path=MCP_PATH, stateless_http=True)
+    install_operator_session_route_guard(mcp_asgi, path=MCP_PATH)
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -242,8 +239,6 @@ def create_app(
     app.state.operator_identity_store = operator_identity_store
     app.state.tool_call_service = tool_calls
     app.state.mcp_operator_oauth_store = mcp_operator_oauth_store
-    app.state.gmail_client = gmail_client
-    app.state.calendar_client = calendar_client
     app.state.console_event_hub = console_event_hub
     app.state.in_process_servers = in_process_servers
     app.state.tool_call_metadata_provider = tool_call_metadata_provider
@@ -282,18 +277,14 @@ def create_app(
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
-    # The browser API is operator-only. Agents use the separately authenticated /mcp surface; static
-    # bearer support remains there and does not grant access to any /api/* route.
+    # The browser API is operator-only. Agents use /mcp; static bearer support there does not grant
+    # access to any /api/* route. The same endpoint separately recognizes the Operator session.
     operator_only = [Depends(operator_auth.require_operator)]
     app.include_router(capabilities.router, dependencies=operator_only)
     app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(mcp_approval.router, dependencies=operator_only)
     app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
     app.include_router(enrollment_routes.router)
-    app.include_router(gmail_tools.router, dependencies=operator_only)
-    app.include_router(google_calendar_tools.router, dependencies=operator_only)
-    app.include_router(grocy_tools.router, dependencies=operator_only)
-    app.include_router(tana_tools.router, dependencies=operator_only)
 
     deployment_info = build_deployment_info()
 
@@ -319,7 +310,7 @@ def create_app(
         max_age=operator_auth.OPERATOR_SESSION_MAX_AGE_SECONDS,
     )
 
-    # Agent-facing MCP server (streamable HTTP), mounted after the API routers and before the SPA.
+    # MCP server (streamable HTTP), mounted after the API routers and before the SPA.
     mcp_mount.mount_mcp_app(app, path=MCP_PATH, mcp_app=mcp_asgi)
 
     # Optional direct local/dev fallback. Production serves the SPA from the

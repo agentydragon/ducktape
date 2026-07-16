@@ -39,11 +39,13 @@ async def test_exports_every_server_and_tool() -> None:
         "labels_list",
         "labels_patch",
         "messages_get",
+        "thread_previews",
         "threads_get",
         "threads_list",
         "threads_modify_labels",
     ]
     assert list(schema["properties"]["google_calendar"]["properties"]) == [
+        "calendar_summary",
         "create_event",
         "get_event",
         "list_event_instances",
@@ -52,6 +54,8 @@ async def test_exports_every_server_and_tool() -> None:
     assert list(schema["properties"]["haku_routine"]["properties"]) == ["launch_routine"]
     # grocy-sf is reflected only for the batch tools the console renders previews for.
     assert list(schema["properties"]["grocy-sf"]["properties"]) == [
+        "locations_list",
+        "product_groups_list",
         "products_create",
         "products_edit",
         "products_list",
@@ -60,6 +64,7 @@ async def test_exports_every_server_and_tool() -> None:
         "shopping_list_item_edit",
         "shopping_list_items_add",
         "shopping_list_items_remove",
+        "shopping_lists_list",
         "stock_add",
         "stock_consume",
         "stock_entry_edit",
@@ -152,6 +157,7 @@ async def test_exports_result_catalog() -> None:
     # `id` is the one required field of a Draft resource.
     assert gmail["drafts_create"].get("required") == ["id"]
     assert list(schema["properties"]["google_calendar"]["properties"]) == [
+        "calendar_summary",
         "create_event",
         "get_event",
         "list_event_instances",
@@ -159,6 +165,8 @@ async def test_exports_result_catalog() -> None:
     ]
     assert list(schema["properties"]["haku_routine"]["properties"]) == ["launch_routine"]
     assert list(schema["properties"]["grocy-sf"]["properties"]) == [
+        "locations_list",
+        "product_groups_list",
         "products_create",
         "products_edit",
         "products_list",
@@ -167,6 +175,7 @@ async def test_exports_result_catalog() -> None:
         "shopping_list_item_edit",
         "shopping_list_items_add",
         "shopping_list_items_remove",
+        "shopping_lists_list",
         "stock_add",
         "stock_consume",
         "stock_entry_edit",

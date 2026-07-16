@@ -18,6 +18,7 @@ from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from mcp.server.auth.provider import AuthorizeError, RefreshToken, TokenError
 from mcp.shared.auth import OAuthToken
 from starlette.exceptions import HTTPException
+from starlette.requests import HTTPConnection
 
 from haku.console.mcp_auth.fastmcp_adapter import (
     AgentActorAuthorityUnavailableError,
@@ -34,17 +35,17 @@ from haku.console.mcp_auth.fastmcp_adapter import (
     FailureObservingJWTVerifier,
     GrantAuthorization,
     GrantRejectedError,
-    HakuAgentGrantMiddleware,
     HakuAgentOAuthProxy,
     HakuFailurePreservingMultiAuth,
+    HakuMcpActorMiddleware,
     StaticAgentActorResolver,
     TokenFamilyEvidence,
     assert_fastmcp_adapter_compatibility,
     current_grant_request_context,
-    get_agent_actor,
+    get_tool_call_actor,
     observe_bearer_operational_failure,
 )
-from haku.console.tool_call_actor import AgentActor
+from haku.console.tool_call_actor import AgentActor, OperatorActor
 from mcp_infra.authentik_auth.fastmcp_proxy import RetryableRefreshOIDCProxy
 from mcp_infra.authentik_auth.oidc_principal import (
     AuthentikOidcPrincipalResolver,
@@ -683,6 +684,43 @@ def test_failure_preserving_multi_auth_delegates_routes_and_renders_retryable_re
     assert response.headers["retry-after"] == "60"
 
 
+async def test_operator_authentication_does_not_rewrite_the_request() -> None:
+    operator = OperatorActor(operator_id=OPERATOR_ID)
+    authenticate_operator = AsyncMock(return_value=operator)
+    auth = HakuFailurePreservingMultiAuth(
+        server=_TestVerifier(), verifiers=[], operator_session_authenticator=authenticate_operator
+    )
+    backend = cast(Any, auth.get_middleware()[0].kwargs["backend"])
+    scope: dict[str, Any] = {"type": "http", "path": "/mcp", "headers": []}
+
+    credentials, user = await backend.authenticate(HTTPConnection(scope))
+
+    assert credentials.scopes == []
+    assert user.access_token.token == ""
+    assert user.access_token.claims == {"haku.operator_actor": operator}
+    assert scope["headers"] == []
+
+
+async def test_explicit_authorization_never_falls_back_to_operator_session() -> None:
+    verifier = _TestVerifier()
+    authenticate_operator = AsyncMock(return_value=OperatorActor(operator_id=OPERATOR_ID))
+    auth = HakuFailurePreservingMultiAuth(
+        server=verifier, verifiers=[], operator_session_authenticator=authenticate_operator
+    )
+    backend = cast(Any, auth.get_middleware()[0].kwargs["backend"])
+    # A caller can guess any browser-looking bearer value it likes; the header's presence keeps
+    # the request exclusively on Agent verification and never consults the valid session path.
+    scope: dict[str, Any] = {
+        "type": "http",
+        "path": "/mcp",
+        "headers": [(b"authorization", b"Bearer haku-console-operator-session")],
+    }
+
+    assert await backend.authenticate(HTTPConnection(scope)) is None
+    assert verifier.calls == ["haku-console-operator-session"]
+    authenticate_operator.assert_not_awaited()
+
+
 async def test_revoke_marks_haku_grant_before_fastmcp_best_effort_cleanup() -> None:
     authority = _authority()
     events: list[str] = []
@@ -719,13 +757,13 @@ def _verified_access_token(*, claims: dict[str, Any] | None = None) -> AccessTok
 
 async def test_first_tool_call_activates_once_and_later_calls_are_idempotent() -> None:
     authority = _authority()
-    middleware = HakuAgentGrantMiddleware(cast(Any, authority))
+    middleware = HakuMcpActorMiddleware(cast(Any, authority))
     actor = _authorization().actor
     dispatched: list[str] = []
 
     async def dispatch(context: object) -> Any:
         _ = context
-        assert get_agent_actor() == actor
+        assert get_tool_call_actor() == actor
         dispatched.append("dispatch")
         return cast(Any, object())
 
@@ -741,15 +779,15 @@ async def test_first_tool_call_activates_once_and_later_calls_are_idempotent() -
     }
     assert dispatched == ["dispatch", "dispatch"]
     with pytest.raises(ToolError, match="outside"):
-        get_agent_actor()
+        get_tool_call_actor()
 
 
 async def test_agent_actor_context_resets_when_tool_dispatch_raises() -> None:
-    middleware = HakuAgentGrantMiddleware(cast(Any, _authority()))
+    middleware = HakuMcpActorMiddleware(cast(Any, _authority()))
 
     async def fail(context: object) -> Any:
         _ = context
-        assert get_agent_actor() == _authorization().actor
+        assert get_tool_call_actor() == _authorization().actor
         raise RuntimeError("tool dispatch failed")
 
     with (
@@ -759,13 +797,54 @@ async def test_agent_actor_context_resets_when_tool_dispatch_raises() -> None:
         await middleware.on_call_tool(cast(Any, SimpleNamespace()), cast(Any, fail))
 
     with pytest.raises(ToolError, match="outside"):
-        get_agent_actor()
+        get_tool_call_actor()
+
+
+async def test_json_shaped_operator_claim_remains_on_the_agent_path() -> None:
+    authority = _authority()
+    middleware = HakuMcpActorMiddleware(cast(Any, authority))
+    agent = _authorization().actor
+    token = _verified_access_token(
+        claims={
+            "upstream_claims": {"grant_id": str(GRANT_ID)},
+            "haku.operator_actor": {"operator_id": str(OPERATOR_ID)},
+        }
+    )
+
+    async def dispatch(context: object) -> Any:
+        _ = context
+        assert get_tool_call_actor() == agent
+        return cast(Any, object())
+
+    with patch("haku.console.mcp_auth.fastmcp_adapter.get_access_token", return_value=token):
+        await middleware.on_call_tool(cast(Any, SimpleNamespace()), cast(Any, dispatch))
+
+    authority.activate_for_tool_call.assert_awaited_once()
+
+
+async def test_operator_actor_context_covers_tool_discovery_without_agent_authority() -> None:
+    authority = _authority()
+    middleware = HakuMcpActorMiddleware(cast(Any, authority))
+    operator = OperatorActor(operator_id=OPERATOR_ID)
+    token = _verified_access_token(claims={"haku.operator_actor": operator})
+
+    async def discover(context: object) -> Any:
+        _ = context
+        assert get_tool_call_actor() == operator
+        return []
+
+    with patch("haku.console.mcp_auth.fastmcp_adapter.get_access_token", return_value=token):
+        assert await middleware.on_list_tools(cast(Any, SimpleNamespace()), cast(Any, discover)) == []
+
+    authority.activate_for_tool_call.assert_not_awaited()
+    with pytest.raises(ToolError, match="outside"):
+        get_tool_call_actor()
 
 
 async def test_rejected_tool_call_grant_never_dispatches() -> None:
     authority = _authority()
     authority.activate_for_tool_call.side_effect = GrantRejectedError()
-    middleware = HakuAgentGrantMiddleware(cast(Any, authority))
+    middleware = HakuMcpActorMiddleware(cast(Any, authority))
     dispatch = AsyncMock()
 
     with (
@@ -780,7 +859,7 @@ async def test_rejected_tool_call_grant_never_dispatches() -> None:
 async def test_tool_call_authority_outage_is_typed_and_retryable_without_dispatch() -> None:
     authority = _authority()
     authority.activate_for_tool_call.side_effect = AgentGrantAuthorityUnavailableError()
-    middleware = HakuAgentGrantMiddleware(cast(Any, authority))
+    middleware = HakuMcpActorMiddleware(cast(Any, authority))
     dispatch = AsyncMock()
 
     with (
@@ -807,7 +886,7 @@ async def test_tool_call_rejects_inconsistent_authority_resolution_before_dispat
 ) -> None:
     authority = _authority()
     authority.activate_for_tool_call.return_value = authorization
-    middleware = HakuAgentGrantMiddleware(cast(Any, authority))
+    middleware = HakuMcpActorMiddleware(cast(Any, authority))
     dispatch = AsyncMock()
 
     with (
@@ -823,14 +902,14 @@ async def test_static_credential_resolves_canonical_actor_for_dependency() -> No
     authority = _authority()
     actor = _authorization().actor
     static_actor_resolver = SimpleNamespace(resolve_static_actor=AsyncMock(return_value=actor))
-    middleware = HakuAgentGrantMiddleware(
+    middleware = HakuMcpActorMiddleware(
         cast(Any, authority), static_actor_resolver=cast(StaticAgentActorResolver, static_actor_resolver)
     )
     token = _verified_access_token(claims={"credential_kind": "static"})
 
     async def dispatch(context: object) -> Any:
         _ = context
-        assert get_agent_actor() == actor
+        assert get_tool_call_actor() == actor
         return cast(Any, object())
 
     with patch("haku.console.mcp_auth.fastmcp_adapter.get_access_token", return_value=token):
@@ -839,13 +918,13 @@ async def test_static_credential_resolves_canonical_actor_for_dependency() -> No
     static_actor_resolver.resolve_static_actor.assert_awaited_once_with(token)
     authority.activate_for_tool_call.assert_not_awaited()
     with pytest.raises(ToolError, match="outside"):
-        get_agent_actor()
+        get_tool_call_actor()
 
 
 async def test_unrecognized_static_tool_credential_fails_before_dispatch() -> None:
     authority = _authority()
     static_actor_resolver = SimpleNamespace(resolve_static_actor=AsyncMock(return_value=None))
-    middleware = HakuAgentGrantMiddleware(
+    middleware = HakuMcpActorMiddleware(
         cast(Any, authority), static_actor_resolver=cast(StaticAgentActorResolver, static_actor_resolver)
     )
     dispatch = AsyncMock()
@@ -867,7 +946,7 @@ async def test_static_actor_authority_outage_is_typed_and_retryable() -> None:
     static_actor_resolver = SimpleNamespace(
         resolve_static_actor=AsyncMock(side_effect=AgentActorAuthorityUnavailableError())
     )
-    middleware = HakuAgentGrantMiddleware(
+    middleware = HakuMcpActorMiddleware(
         cast(Any, authority), static_actor_resolver=cast(StaticAgentActorResolver, static_actor_resolver)
     )
     dispatch = AsyncMock()
@@ -885,7 +964,7 @@ async def test_static_actor_authority_outage_is_typed_and_retryable() -> None:
 async def test_static_resolver_cannot_bypass_malformed_oauth_grant() -> None:
     authority = _authority()
     static_actor_resolver = SimpleNamespace(resolve_static_actor=AsyncMock(return_value=_authorization().actor))
-    middleware = HakuAgentGrantMiddleware(
+    middleware = HakuMcpActorMiddleware(
         cast(Any, authority), static_actor_resolver=cast(StaticAgentActorResolver, static_actor_resolver)
     )
     dispatch = AsyncMock()
@@ -915,7 +994,7 @@ async def test_missing_or_malformed_tool_call_claims_fail_before_authority_and_d
     token: AccessToken | None,
 ) -> None:
     authority = _authority()
-    middleware = HakuAgentGrantMiddleware(cast(Any, authority))
+    middleware = HakuMcpActorMiddleware(cast(Any, authority))
     dispatch = AsyncMock()
 
     with (

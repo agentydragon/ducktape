@@ -26,7 +26,6 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.sql import Select
 
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus
-from haku.console.config import Settings
 from haku.console.database_schema import (
     Agent,
     AgentNameReservation,
@@ -44,7 +43,6 @@ from haku.console.mcp_config import (
     _credential_token,
     _load_servers,
     _operator_oauth_enabled,
-    _server_entry,
     _transport,
 )
 from haku.console.mcp_operator_oauth import OAuthStoreDep, PostgresMcpOperatorOAuthStore
@@ -642,25 +640,6 @@ async def _execution_auth(
         return await backend_auth_for_operator(server=server, operator_id=operator_id, oauth_store=oauth_store)
     except BackendAccountNotConnectedError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
-
-
-async def operator_authenticated_client(
-    server_id: str, actor: OperatorActor, settings: Settings, oauth_store: PostgresMcpOperatorOAuthStore
-) -> Client:
-    """Open a `fastmcp` client for `server_id`, authenticated exactly as an approved tool call
-    for that server would be (the requesting operator's own `operator_oauth` token, or the
-    server's configured bearer). The one public seam other `haku.console.tools.*` modules use
-    to reach a remote MCP server's own read tools for preview/reference-data lookups (see
-    `haku.console.tools.grocy`) — narrow and read-only by construction of what callers do with
-    the returned client; it grants no more than a real approval already would, and is not a
-    way to bypass the approval queue for mutating calls.
-    """
-    try:
-        server = _server_entry(settings, server_id)
-    except McpServerNotFoundError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    auth_token = await _execution_auth(server, actor.operator_id, oauth_store)
-    return Client(_transport(server, {}), auth=auth_token)
 
 
 def _tool_call_service(request: Request) -> ToolCallApplicationService:

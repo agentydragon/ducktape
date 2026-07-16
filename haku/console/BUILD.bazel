@@ -167,12 +167,16 @@ py_library(
     srcs = ["mcp_agent_auth.py"],
     deps = [
         ":config",
+        ":operator_auth",
+        ":operator_identity_store",
         ":tool_call_actor",
         "//haku/console/agents:authorization",
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:provider",
+        "@pypi//fastapi_csrf_protect",
         "@pypi//fastmcp_slim",
+        "@pypi//starlette",
     ],
 )
 
@@ -498,9 +502,7 @@ py_library(
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//haku/console/tools:gmail",
         "//haku/console/tools:google_calendar",
-        "//haku/console/tools:grocy",
         "//haku/console/tools:routine",
-        "//haku/console/tools:tana",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
         "@pypi//fastmcp_slim",

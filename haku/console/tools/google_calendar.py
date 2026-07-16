@@ -12,9 +12,8 @@ Registered as MCP server id `google_calendar` in `cluster/k8s/haku/console/confi
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, cast
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastmcp import FastMCP
 from googleapiclient.discovery import build
 from pydantic import Field
@@ -109,6 +108,15 @@ def build_mcp(calendar: CalendarToolsClient) -> FastMCP:
         return calendar.get_event(calendar_id, event_id)
 
     @mcp.tool
+    async def calendar_summary(
+        calendar_id: Annotated[
+            str, Field(description="Calendar id to resolve; 'primary' is the operator's main calendar.")
+        ] = "primary",
+    ) -> CalendarSummary:
+        """Resolve a calendar id to its live display name and Google Calendar link."""
+        return resolve_calendar_summary(calendar.service, calendar_id)
+
+    @mcp.tool
     async def list_events(
         calendar_id: Annotated[
             str, Field(description="Source calendar; 'primary' is the operator's main calendar.")
@@ -177,23 +185,3 @@ def build_calendar_client(token_dir: Path) -> CalendarToolsClient:
     creds = credentials_from_token_dir(token_dir, CALENDAR_SCOPES)
     service = build("calendar", "v3", credentials=creds, cache_discovery=False, static_discovery=True)
     return CalendarToolsClient(service)
-
-
-def _calendar_client(request: Request) -> CalendarToolsClient:
-    client = request.app.state.calendar_client
-    if client is None:
-        raise HTTPException(status_code=503, detail="Calendar tools are not configured (google_token_dir unset)")
-    return cast(CalendarToolsClient, client)
-
-
-CalendarClientDep = Annotated[CalendarToolsClient, Depends(_calendar_client)]
-
-router = APIRouter(prefix="/api/google-calendar", tags=["google_calendar"])
-
-
-@router.get("/calendar-summary")
-async def calendar_summary(calendar: CalendarClientDep, calendar_id: Annotated[str, Query()]) -> CalendarSummary:
-    """Live display-name + Google Calendar link for a calendar id, for rendering a pending
-    `create_event` approval — the tool call only carries the id, so the approval UI
-    resolves the human-readable name here. A plain HTTP read, not an MCP tool."""
-    return resolve_calendar_summary(calendar.service, calendar_id)

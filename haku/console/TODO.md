@@ -69,7 +69,7 @@ deferred:
   authenticated webhook delivery, durable channel metadata, expiration renewal, deduplication,
   replay/catch-up, and cleanup on disconnect.
 
-## Agent-facing MCP server (`/mcp`) — deferred follow-ups
+## MCP server (`/mcp`) — deferred follow-ups
 
 The `/mcp` server (`mcp_server.py`) now resolves canonical Operators, Agents, grants, and
 credential bindings through one authority, while retaining a single global auto-approval policy

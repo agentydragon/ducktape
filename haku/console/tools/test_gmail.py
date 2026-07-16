@@ -1,4 +1,4 @@
-"""Tests for the in-process `gmail` MCP server (build_mcp) and its thread-previews endpoint.
+"""Tests for the in-process `gmail` MCP server (build_mcp), including thread previews.
 
 The GmailToolsClient (the network-facing seam) is a Mock; every value it returns is a real
 `gmail_api` resource model, so the tool layer is exercised against genuine resources.
@@ -8,8 +8,6 @@ from unittest.mock import Mock, patch
 
 import pytest
 import pytest_bazel
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from fastmcp import Client
 
 from gmail_api.filters import FilterAction, FilterCriteria, GmailFilter
@@ -23,7 +21,7 @@ from gmail_api.messages import (
     ThreadFormat,
     ThreadsListResponse,
 )
-from haku.console.tools.gmail import GMAIL_SERVER_ID, build_mcp, router
+from haku.console.tools.gmail import GMAIL_SERVER_ID, build_mcp
 from haku.console.tools.gmail_client import GmailThreadPreview, ModifyGmailThreadLabelsResult
 
 
@@ -40,18 +38,12 @@ async def client(gmail: Mock):
         yield mcp_client
 
 
-def _http_client(gmail=None) -> TestClient:
-    app = FastAPI()
-    app.state.gmail_client = gmail
-    app.include_router(router)
-    return TestClient(app)
-
-
 async def test_tool_surface(client):
     tools = {tool.name for tool in await client.list_tools()}
     assert tools == {
         "threads_list",
         "threads_get",
+        "thread_previews",
         "messages_get",
         "labels_list",
         "labels_get",
@@ -226,24 +218,14 @@ async def test_drafts_update_dispatches_with_draft_id(gmail: Mock, client):
     assert args.to == ["a@x"]
 
 
-def test_thread_previews_endpoint_503s_when_unconfigured() -> None:
-    with _http_client() as http_client:
-        resp = http_client.get("/api/gmail/thread-previews", params={"thread_id": ["t1"]})
-        assert resp.status_code == 503
-
-
-def test_thread_previews_endpoint_composes_preview_over_the_client_service() -> None:
+async def test_thread_previews_tool_composes_preview_over_the_client_service(gmail: Mock, client) -> None:
     previews = {
         "t1": GmailThreadPreview(subject="Test", snippet="hi", current_label_names=["haku/x"], gmail_url="https://x/t1")
     }
-    gmail = Mock()  # non-None so the endpoint doesn't 503; its .service is handed to the reader
-    with (
-        patch("haku.console.tools.gmail.preview_gmail_threads", return_value=previews) as preview_mock,
-        _http_client(gmail) as http_client,
-    ):
-        resp = http_client.get("/api/gmail/thread-previews", params={"thread_id": ["t1"]})
-    assert resp.status_code == 200
-    assert resp.json()["threads"]["t1"]["subject"] == "Test"
+    with patch("haku.console.tools.gmail.preview_gmail_threads", return_value=previews) as preview_mock:
+        result = await client.call_tool("thread_previews", {"thread_ids": ["t1"]})
+    assert not result.is_error
+    assert result.structured_content["threads"]["t1"]["subject"] == "Test"
     preview_mock.assert_called_once_with(gmail.service, ["t1"])
 
 
