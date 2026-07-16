@@ -77,7 +77,7 @@ def _newest_claim_name() -> str:
     if not claims:
         typer.echo("no claims — `ws new` first", err=True)
         raise typer.Exit(1)
-    return claims[-1]["metadata"]["name"]
+    return str(claims[-1]["metadata"]["name"])
 
 
 def _exec_shell(sandbox: str) -> None:
