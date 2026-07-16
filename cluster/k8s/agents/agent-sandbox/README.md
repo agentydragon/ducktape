@@ -23,12 +23,11 @@ to, creds already wired, Claude CLI installed) minus the persistence.
     after v0.5.1 ships a sandbox-with-extensions.yaml asset for GitOps engines);
     drop the GitRepository + HelmRelease then. -->
 
-- `workspaces/{namespace,secrets,app}/` — the dedicated `agent-workspaces`
-  namespace (own ResourceQuota/LimitRange), the ESO-mirrored z.ai key, and the
-  `workspace` `SandboxTemplate` + warm pool + janitor `CleanupPolicy`.
-  Deliberately **not** `claude-sandbox` — that namespace is Claude's own
-  disposable in-cluster scratch space, and hosting workspaces there would mix
-  tenants and quotas.
+- `workspaces/{namespace,app}/` — the dedicated `agent-workspaces` namespace
+  (own ResourceQuota/LimitRange) and the `workspace` `SandboxTemplate` + warm
+  pool + janitor `CleanupPolicy`. Deliberately **not** `claude-sandbox` — that
+  namespace is Claude's own disposable in-cluster scratch space, and hosting
+  workspaces there would mix tenants and quotas.
 
 ## Operating a workspace
 
@@ -75,9 +74,10 @@ kubectl -n agent-workspaces exec -it ws-mytask -c workspace -- bash
 ```
 
 Inside: `/workspace` is the PVC (survives pod restarts and suspend/resume),
-`claude` and `codex` are on `PATH`, and `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`
-are already set (z.ai GLM), so `git clone ... && claude` just works. Moving
-files and reaching ports:
+`claude` and `codex` are on `PATH`, and the Anthropic-wire env
+(`ANTHROPIC_BASE_URL`/`AUTH_TOKEN`/`MODEL`) is already pointed at the cluster
+LiteLLM with a workspace virtual key, so `git clone ... && claude` just works.
+Moving files and reaching ports:
 
 ```bash
 kubectl -n agent-workspaces cp ./notes.md ws-mytask:/workspace/ -c workspace
@@ -134,13 +134,20 @@ Standalone `Sandbox` objects (own `podTemplate`, no warm pool) also work — see
 
 ## Credentials
 
-Same delivery as the haku zones and codex-pod: Kubernetes Secret → env var in
-the pod spec. The template wires `ANTHROPIC_AUTH_TOKEN` from the `zai-api-key`
-Secret (ESO-mirrored into `agent-workspaces` by `workspaces/secrets/`, same
-source as `../claude-zai-key/`) and points `ANTHROPIC_BASE_URL` at z.ai's
-Anthropic endpoint, so Claude Code CLI works out of the box. Additional
-credential classes follow the same pattern: mirror the Secret into
-`agent-workspaces` (ESO or sops) and reference it from the template.
+**LLM traffic goes through the cluster LiteLLM, never direct to a provider.**
+The template points `ANTHROPIC_BASE_URL` at
+`litellm.litellm.svc.cluster.local:4000` and reads `ANTHROPIC_AUTH_TOKEN` from
+`litellm-key-agent-workspaces` — a virtual key minted by
+<../../../../tf/gitops/litellm-keys/> (alias `agent-workspaces`, GLM-model
+allowlist shared with the haku zai lane, $25/30d budget) and
+reflector-mirrored into this namespace. That buys budget capping, model
+allowlisting, and usage observability per workspace lane; deleting the
+`litellm_key.agent_workspaces` TF resource is the LLM kill switch.
+`ANTHROPIC_MODEL`/`ANTHROPIC_SMALL_FAST_MODEL` default to allowlisted GLM
+models so Claude Code doesn't request `claude-*` names the key rejects.
+
+Other credential classes follow the zones/codex-pod pattern: mirror a Secret
+into `agent-workspaces` (reflector or ESO) and reference it from the template.
 
 ## Isolation
 

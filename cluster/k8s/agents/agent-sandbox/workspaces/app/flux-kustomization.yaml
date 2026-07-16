@@ -17,5 +17,6 @@ spec:
     name: flux-system
   dependsOn:
     - name: agent-sandbox-controller # CRDs + controller
-    - name: agent-workspaces-secrets # zai-api-key the template's env references
+    - name: agent-workspaces-namespace
+    - name: litellm-keys-tf # mints + reflects litellm-key-agent-workspaces
     - name: kyverno-policies # cleanup-controller ClusterRole the janitor needs

@@ -35,15 +35,24 @@ spec:
             capabilities:
               drop: ["ALL"]
           env:
-            # Claude Code CLI → z.ai GLM, same wire shape as the zai zone but
-            # direct (no LiteLLM budget path in trusted personal workspaces).
+            # All LLM traffic goes through the cluster LiteLLM (budget, model
+            # allowlist, observability) — never direct to the provider. The
+            # virtual key is minted by tf/gitops/litellm-keys (alias
+            # agent-workspaces, GLM models, $25/30d) and reflected into this
+            # namespace; deleting that TF resource is the kill switch.
             - name: ANTHROPIC_BASE_URL
-              value: https://api.z.ai/api/anthropic
+              value: http://litellm.litellm.svc.cluster.local:4000
             - name: ANTHROPIC_AUTH_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: zai-api-key # mirrored by ../secrets/
-                  key: ZAI_API_KEY
+                  name: litellm-key-agent-workspaces
+                  key: api-key
+            # Defaults matching the key's allowlist — Claude Code would
+            # otherwise request claude-* models LiteLLM rejects for this key.
+            - name: ANTHROPIC_MODEL
+              value: glm-5.2-anthropic
+            - name: ANTHROPIC_SMALL_FAST_MODEL
+              value: glm-4.5-air-anthropic
           resources:
             requests:
               cpu: 500m

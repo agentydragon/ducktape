@@ -407,3 +407,36 @@ resource "kubernetes_secret" "codex_clients_key" {
     CODEX_LITELLM_KEY = litellm_key.codex_clients.key
   }
 }
+
+# Disposable agent workspaces (cluster/k8s/agents/agent-sandbox/): operator-
+# trusted personal dev sandboxes. GLM lane only for now — same allowlist as the
+# zai worker lane; deleting this resource is the workspaces' LLM kill switch.
+resource "litellm_key" "agent_workspaces" {
+  key_alias       = "agent-workspaces"
+  models          = local.zai_lane_models
+  max_budget      = 25
+  budget_duration = "30d"
+  metadata = {
+    consumer = "agent-workspaces sandboxes"
+  }
+}
+
+# Reflected into agent-workspaces, where the workspace SandboxTemplate reads it
+# as ANTHROPIC_AUTH_TOKEN (base URL points at this LiteLLM).
+resource "kubernetes_secret" "agent_workspaces_key" {
+  metadata {
+    name      = "litellm-key-agent-workspaces"
+    namespace = "litellm"
+    annotations = {
+      description                                                     = "LiteLLM virtual key for disposable agent workspaces (GLM models only); reflected into agent-workspaces for the workspace SandboxTemplate"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "agent-workspaces"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "agent-workspaces"
+    }
+  }
+
+  data = {
+    api-key = litellm_key.agent_workspaces.key
+  }
+}

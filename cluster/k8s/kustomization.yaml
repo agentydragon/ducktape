@@ -63,7 +63,6 @@ resources:
   - agents/agent-rbac-base/flux-kustomization.yaml
   - agents/agent-sandbox/controller/flux-kustomization.yaml
   - agents/agent-sandbox/workspaces/namespace/flux-kustomization.yaml
-  - agents/agent-sandbox/workspaces/secrets/flux-kustomization.yaml
   - agents/agent-sandbox/workspaces/app/flux-kustomization.yaml
   - agents/airlock/agent-rbac/flux-kustomization.yaml
   - agents/tana-mcp/agent-rbac/flux-kustomization.yaml
