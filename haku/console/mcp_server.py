@@ -321,7 +321,7 @@ class OperatorToolProvider(Provider):
                 self._context,
                 server.id,
                 tool,
-                passthrough=is_unconditionally_auto_approved(server.id, tool.name),
+                passthrough=isinstance(actor, OperatorActor) or is_unconditionally_auto_approved(server.id, tool.name),
                 actor=actor,
             )
             for tool in meta.tools

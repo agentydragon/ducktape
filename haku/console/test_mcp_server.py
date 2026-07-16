@@ -6,6 +6,7 @@ import asyncio
 import base64
 import hashlib
 import html
+import json
 import re
 import secrets
 from collections.abc import AsyncGenerator, Generator
@@ -429,10 +430,7 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
                     "jsonrpc": "2.0",
                     "id": 10,
                     "method": "tools/call",
-                    "params": {
-                        "name": "standin_echo",
-                        "arguments": {"input": {"text": "operator"}, "rationale": "render an operator preview"},
-                    },
+                    "params": {"name": "standin_echo", "arguments": {"text": "operator"}},
                 }
                 mcp_headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
 
@@ -451,6 +449,21 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
                     },
                 )
                 assert initialized.status_code == 200, (initialized.text, dict(initialized.headers))
+
+                listed = await operator.post(
+                    "/mcp",
+                    headers={**mcp_headers, "Origin": base, "X-CSRF-Token": csrf},
+                    json={"jsonrpc": "2.0", "id": 11, "method": "tools/list", "params": {}},
+                )
+                assert listed.status_code == 200, (listed.text, dict(listed.headers))
+                listed_payload = json.loads(
+                    next(line.removeprefix("data: ") for line in listed.text.splitlines() if line.startswith("data: "))
+                )
+                standin_schema = next(
+                    tool["inputSchema"] for tool in listed_payload["result"]["tools"] if tool["name"] == "standin_echo"
+                )
+                assert standin_schema["required"] == ["text"]
+                assert "rationale" not in standin_schema["properties"]
 
                 direct = await operator.post(
                     "/mcp", headers={**mcp_headers, "Origin": base, "X-CSRF-Token": csrf}, json=direct_request
