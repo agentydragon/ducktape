@@ -15,12 +15,12 @@ Bazel-internal repository/analysis work stays in that client process.
 
 The configuration layers have separate owners:
 
-| Layer      | Owner                                                 | Contents                                                                                       |
-| ---------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| System     | `nix/nixos/modules/bazel/system.bazelrc`              | NixOS local shell, host/test PATH, and nix-ld environment                                      |
-| User       | Home Manager's `~/.bazelrc`                           | UI preferences, local disk/archive caches, and the BuildBuddy credential import                |
-| Credential | `nix/home/modules/buildbuddy.nix` or session/CI setup | Only `common:rbe --remote_header=...`                                                          |
-| Workspace  | `devinfra/bazel/rbe.bazelrc`, imported by `.bazelrc`  | RBE selection/endpoints, action placement, worker shell, and extracted-repository-cache safety |
+| Layer      | Owner                                                 | Contents                                                                        |
+| ---------- | ----------------------------------------------------- | ------------------------------------------------------------------------------- |
+| System     | `nix/nixos/modules/bazel/system.bazelrc`              | NixOS local shell, host/test PATH, and nix-ld environment                       |
+| User       | Home Manager's `~/.bazelrc`                           | UI preferences, local disk/archive caches, and the BuildBuddy credential import |
+| Credential | `nix/home/modules/buildbuddy.nix` or session/CI setup | Only `common:rbe --remote_header=...`                                           |
+| Workspace  | `devinfra/bazel/rbe.bazelrc`, imported by `.bazelrc`  | RBE selection/endpoints, action placement, and worker shell                     |
 
 Credentials do not select RBE and are not sent unless a repository enables the
 `rbe` config. Conversely, Ducktape selects RBE even when no credential is
@@ -89,12 +89,9 @@ non-Docker live target that needs credentials or services from the actual host.
 `bazelisk run` and `bb run` build through RBE but execute the requested binary
 on the caller.
 
-The workspace disables `--repo_contents_cache` even if a user rc enables it.
-Fetched trees in the current dependency graph contain absolute symlinks back to
-their producing output base, so sharing those trees makes later output bases
-break when the producer is cleaned. The safe downloaded-archive repository
-cache and action caches remain enabled; see
-<bazel_worktree_cache_sharing.md>.
+Local cache layout — including why the shared host cache deliberately does not
+share `--repo_contents_cache` across output bases — is owned by the User layer;
+see <bazel_worktree_cache_sharing.md>.
 
 ## Verification
 

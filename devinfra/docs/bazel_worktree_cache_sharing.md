@@ -103,8 +103,8 @@ Lives in the shared `nix/home/modules/bazel-cache.nix` module (option
 `ducktape.bazelCache`), enabled by both `rugged` and `wyrm2`. Bazel already
 defaults `--output_user_root`, per-worktree `--output_base`, and the archive
 `--repository_cache` into the shared `~/.cache/bazel/_bazel_$USER` tree. The
-module enables only the action `--disk_cache`; it explicitly disables the
-extracted repository-contents cache. The one per-host knob is
+module enables only the action `--disk_cache`; it never sets
+`--repo_contents_cache`, which Bazel leaves disabled by default. The one per-host knob is
 `diskCacheGcMaxSize` — `wyrm2` lowers it from the `200G` default because its
 `cache/disk` shares a 150G SSD with the per-worktree output bases.
 
@@ -116,8 +116,6 @@ let
 in
 {
   home.file.".bazelrc".text = lib.mkAfter ''
-    common --repo_contents_cache=
-
     build --disk_cache=${bazelDiskCache}
     build --experimental_disk_cache_gc_max_size=200G
     build --experimental_disk_cache_gc_max_age=14d

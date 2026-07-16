@@ -2,21 +2,6 @@
 # BuildBuddy bazelrc contributes only the credential, scoped to this config.
 build --config=rbe
 
-# Fetched repository trees can contain absolute symlinks back into the output
-# base that created them. Sharing those trees makes another output base depend
-# on the producer's lifetime, so retain the archive cache but disable this one.
-# Home rc files are read after the workspace rc, but command-specific options
-# take precedence over `common` regardless of file order. Cover every command
-# that can load or fetch external repositories.
-build --repo_contents_cache=
-query --repo_contents_cache=
-cquery --repo_contents_cache=
-aquery --repo_contents_cache=
-fetch --repo_contents_cache=
-sync --repo_contents_cache=
-mod --repo_contents_cache=
-vendor --repo_contents_cache=
-
 # Strict action env prevents NixOS store paths from leaking to RBE workers.
 build:rbe --incompatible_strict_action_env
 

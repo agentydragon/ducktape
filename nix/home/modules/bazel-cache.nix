@@ -5,8 +5,12 @@
 # downloaded-archive repository_cache into ~/.cache/bazel/_bazel_$USER. This
 # module adds the local action cache/CAS for local and no-RBE debugging builds.
 #
-# Do not enable repo_contents_cache: fetched trees can contain absolute symlinks
-# into their producing output base. See devinfra/docs/bazel_worktree_cache_sharing.md.
+# Deliberately does not share repo_contents_cache across output bases: fetched
+# trees can contain absolute symlinks into their producing output base, so a
+# shared entry breaks every consumer once that base is GC'd. Bazel 8.6 leaves
+# repo_contents_cache empty (disabled) by default, so no flag is needed to keep
+# it off — this module simply never enables it. See
+# devinfra/docs/bazel_worktree_cache_sharing.md.
 # This also sets BAZELISK_HOME and the Claude sandbox write entry for it.
 {
   config,
@@ -39,8 +43,6 @@ in
     # Appends to the base ~/.bazelrc from home.nix (mkAfter keeps the try-import of
     # buildbuddy.bazelrc and common flags first).
     home.file.".bazelrc".text = lib.mkAfter ''
-      common --repo_contents_cache=
-
       build --disk_cache=${bazelDiskCache}
       build --experimental_disk_cache_gc_max_size=${cfg.diskCacheGcMaxSize}
       build --experimental_disk_cache_gc_max_age=14d
