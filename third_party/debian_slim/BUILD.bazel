@@ -1,3 +1,4 @@
+load("@rules_distroless//distroless:defs.bzl", "cacerts")
 load("@rules_oci//oci:defs.bzl", "oci_load")
 
 # Load debian-slim base image into local Docker daemon.
@@ -6,5 +7,24 @@ oci_load(
     name = "load",
     image = "@debian_slim_linux_amd64",
     repo_tags = ["debian-slim:test"],
+    visibility = ["//visibility:public"],
+)
+
+# Single repo-level source of a generated /etc/ssl/certs/ca-certificates.crt bundle for
+# distroless images. rules_distroless apt unpacks the ca-certificates deb but never runs
+# update-ca-certificates, so its :flat layer ships only loose certs under
+# /usr/share/ca-certificates and no bundle a system-trust client (C git/curl, libgit2)
+# can read. Add the matching layer to an oci_image's `tars` and set
+# SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt.
+# Usage guidance: STYLE.md § "System CA certificates in distroless images".
+cacerts(
+    name = "cacerts_bookworm",
+    package = "@ca_certificates_deb_bookworm//:data.tar.xz",
+    visibility = ["//visibility:public"],
+)
+
+cacerts(
+    name = "cacerts_trixie",
+    package = "@ca_certificates_deb_trixie//:data.tar.xz",
     visibility = ["//visibility:public"],
 )

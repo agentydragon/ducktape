@@ -35,11 +35,10 @@ py_binary(
 )
 
 # ── OCI image: augur-evidence (git-scrape CronJob) ──────────────────────
-# ca-certificates apt layer (@trixie_ca_certificates): pygit2's Settings()
-# eagerly loads libgit2's OpenSSL cert locations from the system trust store at
-# *import* time, so `import pygit2` raises GitError on the bare slim base before
-# the scraper does anything. The upstream HTTPS GETs still use certifi via httpx
-# (see http_fetch).
+# CA bundle (//third_party/debian_slim:cacerts_trixie): pygit2's Settings() eagerly
+# loads libgit2's OpenSSL cert locations at *import* time, so `import pygit2` raises
+# GitError on the bare slim base before the scraper does anything. The upstream HTTPS
+# GETs still use certifi via httpx (see http_fetch).
 aspect_py_binary(
     name = "evidence_image_bin",
     main = "scrape.py",
@@ -64,7 +63,7 @@ oci_image(
     },
     tars = [
         ":layers",
-        "@trixie_ca_certificates//:flat",
+        "//third_party/debian_slim:cacerts_trixie",
     ],
     user = "1000:1000",
 )

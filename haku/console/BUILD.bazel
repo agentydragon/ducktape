@@ -758,9 +758,9 @@ py_test(
 )
 
 # ── OCI image (the haku-console service) ──────────────────────────────────────
-# ca-certificates apt layer (@trixie_ca_certificates): the capability tier makes an
-# outbound HTTPS call to the Anthropic fire URL (api.anthropic.com), and httpx needs
-# the system trust store to verify that TLS connection — absent on a bare slim base.
+# CA bundle (//third_party/debian_slim:cacerts_trixie): system trust store on the bare
+# slim base for the capability tier's outbound HTTPS call to the Anthropic fire URL
+# (api.anthropic.com).
 
 aspect_py_binary(
     name = "server_bin",
@@ -809,7 +809,7 @@ oci_image(
     },
     tars = [
         ":server_layers",
-        "@trixie_ca_certificates//:flat",
+        "//third_party/debian_slim:cacerts_trixie",
     ],
     user = "1000:1000",
     visibility = ["//visibility:public"],

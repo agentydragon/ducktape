@@ -412,16 +412,10 @@ def commit_and_push(config: Config, rotated: list[RotatedToken]) -> bool:
 def main(
     config_path: Annotated[Path, typer.Option("--config", exists=True, dir_okay=False, help="tokens.yaml")],
     github_pat_file: Annotated[Path, typer.Option("--github-pat-file")] = Path("/var/run/secrets/github-pat/token"),
-    ca_bundle: Annotated[Path, typer.Option(help="CA bundle assembled for git + httpx")] = Path("/tmp/ca-bundle.crt"),
 ) -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     config = Config.model_validate(yaml.safe_load(config_path.read_text()))
     github_pat = github_pat_file.read_text().strip()
-
-    ca_bundle.write_text(
-        "".join(p.read_text() for p in sorted(Path("/usr/share/ca-certificates/mozilla").glob("*.crt")))
-    )
-    os.environ["GIT_SSL_CAINFO"] = str(ca_bundle)
 
     repo_dir = Path("/tmp/repo")
     repo_dir.mkdir()
@@ -430,7 +424,7 @@ def main(
 
     rotated: list[RotatedToken] = []
     failed: list[str] = []
-    with httpx.Client(verify=str(ca_bundle), timeout=30) as client:
+    with httpx.Client(timeout=30) as client:
         for rotation in config.rotations:
             try:
                 result = rotate_one(client, rotation)

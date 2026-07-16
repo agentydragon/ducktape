@@ -52,12 +52,18 @@ oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
     entrypoint = py_image_entrypoint("rotate_bin"),
-    env = py_image_env(binary_name = "rotate_bin"),
+    # cacerts_trixie gives the C git binary a usable CA bundle for the HTTPS push;
+    # httpx uses its own certifi bundle. See //third_party/debian_slim:cacerts_trixie.
+    env = py_image_env(
+        binary_name = "rotate_bin",
+        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
+    ),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    # @trixie_authentik_rotation provides git + ca-certificates (HTTPS push);
-    # sops_layer the sops binary; layers the Python app + interpreter.
+    # @trixie_authentik_rotation provides git (HTTPS push); cacerts_trixie the CA
+    # bundle; sops_layer the sops binary; layers the Python app + interpreter.
     tars = [
         "@trixie_authentik_rotation//:flat",
+        "//third_party/debian_slim:cacerts_trixie",
         ":sops_layer",
         "//devinfra:node_bin_layer",
         "//devinfra:prettier_cli_layer",

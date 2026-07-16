@@ -379,14 +379,6 @@ apt.install(
     manifest = "//finance/beancount_export:trixie_budget_exporter.yaml",
 )
 
-# Shared ca-certificates layer for debian:trixie-slim images that import
-# pygit2; pygit2 initializes libgit2's OpenSSL cert locations at import time.
-apt.install(
-    name = "trixie_ca_certificates",
-    lock = "//third_party/debian_slim:trixie_ca_certificates.lock.json",
-    manifest = "//third_party/debian_slim:trixie_ca_certificates.yaml",
-)
-
 # loom/gym forecasting-eval driver: ca-certificates on debian:bookworm-slim so
 # `import pygit2` (via finance.evidence.checkout) can initialize libgit2's
 # OpenSSL cert locations — it fails the whole process at import without a system
@@ -405,7 +397,7 @@ apt.install(
     lock = "//loom/wayback/cache:trixie_wayback_cache.lock.json",
     manifest = "//loom/wayback/cache:trixie_wayback_cache.yaml",
 )
-use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "bookworm_loom_gym_eval", "gnome_shell_test", "trixie_attic_rotation", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_ca_certificates", "trixie_e2e", "trixie_wayback_cache")
+use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "bookworm_loom_gym_eval", "gnome_shell_test", "trixie_attic_rotation", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_e2e", "trixie_wayback_cache")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
@@ -648,15 +640,25 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
-# ca-certificates deb consumed by //cpap:cacerts to generate the CA bundle that the
-# rules_distroless apt :flat layer can't (it never runs update-ca-certificates). Same
-# URL + sha as the ca-certificates entry in cpap/bookworm_cpap_sync.lock.json.
+# ca-certificates debs feeding //third_party/debian_slim:cacerts_{bookworm,trixie} —
+# the single repo-level source of a generated /etc/ssl/certs/ca-certificates.crt bundle
+# for distroless images (rules_distroless apt unpacks the deb but never runs
+# update-ca-certificates, so its :flat layer has no usable bundle). See that BUILD file
+# and STYLE.md § "System CA certificates in distroless images".
 http_archive(
-    name = "ca_certificates_deb",
+    name = "ca_certificates_deb_bookworm",
     build_file_content = 'exports_files(["data.tar.xz"])',
     sha256 = "0d5f444f594e48c1e16a41d8fc628a09b24c658916a1274025c2330f2a802bed",
     type = "deb",
     urls = ["https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/c/ca-certificates/ca-certificates_20230311+deb12u1_all.deb"],
+)
+
+http_archive(
+    name = "ca_certificates_deb_trixie",
+    build_file_content = 'exports_files(["data.tar.xz"])',
+    sha256 = "ef590f89563aa4b46c8260d49d1cea0fc1b181d19e8df3782694706adf05c184",
+    type = "deb",
+    urls = ["https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/c/ca-certificates/ca-certificates_20250419_all.deb"],
 )
 
 # tiktoken o200k_base encoding (used by gpt-4o) — bundled for offline/RBE testing.

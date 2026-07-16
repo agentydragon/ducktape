@@ -245,7 +245,7 @@ def commit_and_push(repo: pygit2.Repository, config: Config, rotated: list[str],
 
 
 def _configure_ca_trust(ca_bundle: Path) -> None:
-    """Point libgit2 at the assembled CA bundle.
+    """Point libgit2 at the CA bundle.
 
     libgit2 ignores GIT_SSL_CAINFO/SSL_CERT_FILE, so set_ssl_cert_locations is the
     supported knob. The dir arg must be None (NULL), not "" -- an empty string makes
@@ -258,20 +258,15 @@ def _configure_ca_trust(ca_bundle: Path) -> None:
 def rotate_cmd(
     config_path: Annotated[Path, typer.Option("--config", exists=True, dir_okay=False, help="rotators.yaml")],
     token: Annotated[str, typer.Option("--token", envvar="GIT_TOKEN", help="Git HTTPS token (or set GIT_TOKEN)")],
-    ca_bundle: Annotated[Path, typer.Option(help="CA bundle assembled for git")] = Path("/tmp/ca-bundle.crt"),
 ) -> None:
     """Rotate every token in the rotators.yaml config; commit + push what rotated."""
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     config = Config.model_validate(yaml.safe_load(config_path.read_text()))
 
-    # rules_distroless doesn't run update-ca-certificates, so /etc/ssl/certs is
-    # empty. Assemble a bundle from the raw mozilla certs and point libgit2 at it
-    # (libgit2 ignores GIT_SSL_CAINFO/SSL_CERT_FILE; set_ssl_cert_locations is the
-    # supported knob).
-    ca_bundle.write_text(
-        "".join(p.read_text() for p in sorted(Path("/usr/share/ca-certificates/mozilla").glob("*.crt")))
-    )
-    _configure_ca_trust(ca_bundle)
+    # The image bakes /etc/ssl/certs/ca-certificates.crt via
+    # //third_party/debian_slim:cacerts_trixie; point libgit2 at it (it ignores
+    # GIT_SSL_CAINFO/SSL_CERT_FILE).
+    _configure_ca_trust(Path("/etc/ssl/certs/ca-certificates.crt"))
 
     repo_dir = Path("/tmp/repo")
     repo_dir.mkdir()
