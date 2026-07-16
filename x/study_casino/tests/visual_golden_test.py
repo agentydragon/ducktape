@@ -3,6 +3,11 @@
 Run produces a PNG per (view, viewport) case and compares against the checked-in
 baseline under `x/study_casino/frontend/__screenshots__/`.
 
+Every run also retains the rendered PNGs plus a `visual-review.json` manifest in
+undeclared outputs, so trusted CI (`devinfra/ci/pr_visuals.py` via the
+"Publish PR visuals" workflow) publishes the views as a browsable bundle and
+comments the link on the PR.
+
 Update flow for intentional frontend changes:
 
     bbr test --test_env=UPDATE_GOLDEN=1 --nocache_test_results \\
@@ -46,6 +51,8 @@ from util.net import pick_free_port
 from util.oci import load_oci_image
 from util.testing.png_diff import assert_png_matches_golden
 from util.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.visual_review import write_visual_review_manifest
+from util.visual_review import VisualReviewAsset
 from x.study_casino.app import create_app
 from x.study_casino.config import Settings
 
@@ -294,6 +301,17 @@ def _render_case(browser: Browser, origin: str, case: Case, out_dir: Path, suffi
         context.close()
 
 
+def _write_manifest(undeclared_dir: Path) -> None:
+    write_visual_review_manifest(
+        undeclared_dir,
+        title="Study Casino views",
+        assets=[
+            VisualReviewAsset(path=f"{case.name}.png", label=case.name.replace("_", " ").replace(".", " · "))
+            for case in CASES
+        ],
+    )
+
+
 @pytest.mark.parametrize("case", CASES, ids=[case.name for case in CASES])
 def test_casino_visual_golden(browser: Browser, casino_server: str, tmp_path: Path, case: Case) -> None:
     undeclared_dir = undeclared_outputs_dir()
@@ -307,15 +325,19 @@ def test_casino_visual_golden(browser: Browser, casino_server: str, tmp_path: Pa
             f"inspect {case.name}.first.png and {case.name}.second.png in {undeclared_dir}"
         )
 
+    # Always retain the candidate render and the visual-review manifest — the
+    # PR-visuals publisher consumes them from the passing CI run (it references
+    # all cases, which is safe: a failed case fails CI and skips publication).
     out_name = f"{case.name}.png"
+    shutil.copy(first_path, undeclared_dir / out_name)
+    _write_manifest(undeclared_dir)
+
     if os.environ.get("UPDATE_GOLDEN") == "1":
-        shutil.copy(first_path, undeclared_dir / out_name)
         return
 
     try:
         expected_path = get_required_path(f"_main/x/study_casino/frontend/__screenshots__/{out_name}")
     except RuntimeError:
-        shutil.copy(first_path, undeclared_dir / out_name)
         raise AssertionError(
             f"No casino visual golden checked in for {out_name}. Re-run with UPDATE_GOLDEN=1 "
             f"and copy the produced PNG from undeclared outputs into "
