@@ -8,16 +8,6 @@ component checklist rather than being copied here: haku-console's tool/API backl
 
 ## Immediate correctness and security
 
-- **Scope every non-Operator-OAuth MCP server to an explicit canonical Operator.** The
-  request-local provider currently scopes `operator_oauth` servers through each Operator's
-  downstream association, but in-process and static-credential servers have no equivalent
-  owner check. Today that means another authenticated Operator could discover and invoke the
-  singleton Airlock-backed `gmail`/`google_calendar` servers and `haku_routine`. Add an explicit
-  owner external-key env reference for every non-`operator_oauth` server, resolve it once to an
-  `Operator.operator_id`, and enforce the resulting typed access variant in discovery, direct
-  dispatch, HTTP admission, previews, approval, and execution-time revalidation. Unauthorized
-  servers should look absent. Cover sibling Agents and a second Operator end to end; do not add an
-  implicit global-access default.
 - **Make the deployed haku-console release tuple atomic.** Promote server image, static image, and
   live config revision/schema as one CI-tested unit. The 2026-07-14 authority cutover applied new
   config before its compatible server image and crash-looped until image automation caught up;
@@ -77,6 +67,11 @@ Keep these as small mechanical PRs unless a wire-contract check finds an externa
 
 ## Google connection ownership and Airlock
 
+The current Airlock-backed `gmail` and `google_calendar` tool surfaces are intentionally global to
+authenticated Haku Agents during this transitional state. Do not add a temporary per-Operator
+owner mapping around the singleton token. Introduce Operator scoping when Haku owns the downstream
+Google connection itself:
+
 - **Give Haku per-Operator Google connections.** Replace the singleton Airlock-issued
   `haku_console_google` token with Haku-owned connect/status/reconnect/revoke, private refresh-token
   storage, and execution-time Operator selection. This is a downstream-provider relationship,
@@ -85,6 +80,10 @@ Keep these as small mechanical PRs unless a wire-contract check finds an externa
   `haku_console_google` provider, its access-token publication/External Secrets mirror, and the
   haku-console token mount. Do not couple this to Airlock's unrelated Oura, BSC, OpenClaw, or other
   remaining consumers, and do not treat broader Airlock retirement as a prerequisite.
+- **Decide `haku_routine` ownership independently.** The Google singleton decision does not define
+  whether every Operator should share one routine launcher. Specify whether the launcher is a
+  global Haku capability or an Operator-owned downstream resource before relying on it in a
+  multi-Operator console.
 
 ## Cross-cutting OAuth/Auth infrastructure
 
