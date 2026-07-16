@@ -57,9 +57,12 @@ fi
 
 export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-$base_url}"
 export ANTHROPIC_AUTH_TOKEN="${ANTHROPIC_AUTH_TOKEN:-$TANA_LITELLM_API_KEY}"
-export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-$TANA_LITELLM_API_KEY}"
 export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-$model}"
 export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY="${CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY:-1}"
+# Authenticate to the proxy via Bearer only. Claude Code warns when both
+# ANTHROPIC_AUTH_TOKEN and ANTHROPIC_API_KEY are set, so strip any inherited key
+# (e.g. the real Anthropic key exported on wyrm2) to keep auth unambiguous.
+unset ANTHROPIC_API_KEY
 
 echo "Starting Claude Code via $ANTHROPIC_BASE_URL with model $ANTHROPIC_MODEL" >&2
 exec "$claude_bin" "$@"

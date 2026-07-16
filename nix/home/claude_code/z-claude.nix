@@ -19,9 +19,13 @@
 #
 # Shared as-is by the laptop `z-claude` alias (nix/home/home.nix) and the agent-box
 # `zai` user (nix/home/hosts/agent-box/zai.nix) — same executable name everywhere.
+#
+# Auth is Bearer-only (ANTHROPIC_AUTH_TOKEN); `-u ANTHROPIC_API_KEY` strips any inherited
+# key (e.g. wyrm2's real Anthropic key) so Claude Code doesn't see both set at once.
 { pkgs }:
 pkgs.writeShellScriptBin "z-claude" ''
   exec env \
+    -u ANTHROPIC_API_KEY \
     IS_DEMO=1 \
     ANTHROPIC_BASE_URL=https://litellm.allegedly.works \
     ANTHROPIC_AUTH_TOKEN="$LITELLM_ZAI_KEY" \
