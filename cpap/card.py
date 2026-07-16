@@ -171,18 +171,6 @@ class EZShareClient:
                 f.write(chunk)
         tmp.rename(dest)
 
-    @staticmethod
-    def local_path(output_dir: Path, download_url: str) -> Path:
-        """Map a download URL to a local path under output_dir.
-
-        Download URLs look like: /download?file=DATALOG%5C20260418%5C202604~1.EDF
-        Uses 8.3 short filenames as returned by the card.
-        """
-        qs = urllib.parse.urlparse(download_url).query
-        file_param = urllib.parse.parse_qs(qs).get("file", [""])[0]
-        rel = file_param.replace("\\", "/").lstrip("/")
-        return output_dir / rel
-
     # Card config (unverified on this firmware)
     def get_config(self) -> CardConfig:
         root = self._parse_xml(self._get_bytes("/pdclient.cgi?command=gconfig"))
@@ -202,3 +190,14 @@ class EZShareClient:
     def login(self, password: str) -> bool:
         data = self._get_bytes(f"/pdclient.cgi?command=Login&password={urllib.parse.quote(password)}")
         return b"<clientLogin>1</clientLogin>" in data
+
+
+def download_relpath(download_url: str) -> str:
+    """Repo-relative POSIX path a download URL maps to.
+
+    Download URLs look like `/download?file=DATALOG%5C20260418%5C202604~1.EDF` —
+    a URL-encoded Windows path in 8.3 short-name form. Returns it forward-slashed
+    and relative (no leading slash); the caller decides the local root.
+    """
+    file_param = urllib.parse.parse_qs(urllib.parse.urlparse(download_url).query).get("file", [""])[0]
+    return file_param.replace("\\", "/").lstrip("/")

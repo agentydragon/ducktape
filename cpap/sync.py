@@ -26,7 +26,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, Field
 
-from cpap.card import EZShareClient, FileEntry
+from cpap.card import EZShareClient, FileEntry, download_relpath
 from cpap.gitstore import GitStore
 
 DEFAULT_BASE = "http://192.168.4.1"
@@ -64,18 +64,34 @@ def load_manifest(store: GitStore) -> SyncManifest:
 def download_changed(client: CardClient, workdir: Path, manifest: SyncManifest) -> list[str]:
     """Download card files that are new or differ from their manifest entry.
 
-    Updates `manifest` in place and returns the repo-relative paths downloaded.
+    Enumerates the whole card first (cheap XML listings, no file bodies) so
+    progress can be logged as a fraction of a known total — the first re-seed
+    fetches thousands of files and bare per-file lines give no sense of how far
+    along it is. Updates `manifest` in place and returns the downloaded
+    repo-relative paths.
     """
-    changed: list[str] = []
+    seen = 0
+    pending: list[tuple[FileEntry, Path, str]] = []
     for entry in client.walk():
-        dest = EZShareClient.local_path(workdir, entry.img_url)
-        rel = dest.relative_to(workdir).as_posix()
+        seen += 1
+        rel = download_relpath(entry.img_url)
+        dest = workdir / rel
         if (meta := manifest.files.get(rel)) and meta.size == entry.size and meta.create_time == entry.create_time:
-            logger.info("skip  %s", rel)
             continue
-        logger.info("get   %s", rel)
+        pending.append((entry, dest, rel))
+
+    total = len(pending)
+    total_mib = sum(entry.size for entry, _, _ in pending) / 1024 / 1024
+    logger.info("card: %d file(s), %d new/changed to fetch (%.1f MiB)", seen, total, total_mib)
+
+    changed: list[str] = []
+    done_mib = 0.0
+    for i, (entry, dest, rel) in enumerate(pending, start=1):
+        logger.info("[%d/%d %.0f%%, %.0f/%.0f MiB] get %s", i, total, 100 * i / total, done_mib, total_mib, rel)
         client.download(entry.img_url, dest)
-        manifest.files[rel] = FileMeta(size=dest.stat().st_size, create_time=entry.create_time)
+        stored = dest.stat().st_size
+        done_mib += stored / 1024 / 1024
+        manifest.files[rel] = FileMeta(size=stored, create_time=entry.create_time)
         changed.append(rel)
     return changed
 
