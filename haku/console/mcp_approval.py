@@ -76,22 +76,10 @@ router = APIRouter(tags=["mcp-approval"])
 Csrf = Annotated[CsrfProtect, Depends()]
 
 
-class ToolMetadataBase(BaseModel):
+class ToolMetadata(BaseModel):
     name: str
     description: str | None = None
     input_schema: dict[str, Any] = Field(default_factory=dict)
-
-
-class AliveToolMetadata(ToolMetadataBase):
-    status: Literal["alive"] = "alive"
-
-
-class DegradedToolMetadata(ToolMetadataBase):
-    status: Literal["degraded"] = "degraded"
-    degraded_reason: str
-
-
-type ToolMetadata = Annotated[AliveToolMetadata | DegradedToolMetadata, Field(discriminator="status")]
 
 
 class ServerMetadataBase(BaseModel):
@@ -601,7 +589,7 @@ class McpMetadataProvider:
             schema = tool.inputSchema
             if not isinstance(schema, dict):
                 schema = {}
-            reflected.append(AliveToolMetadata(name=tool.name, description=tool.description, input_schema=schema))
+            reflected.append(ToolMetadata(name=tool.name, description=tool.description, input_schema=schema))
         return AliveServerMetadata(server_id=server.id, title=server.id, tools=reflected)
 
 

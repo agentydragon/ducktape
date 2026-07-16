@@ -532,9 +532,9 @@ def test_reflection_lists_connected_servers_without_leaking_credentials(
         "shopping_lists_list",
         "shopping_list_get",
     }
-    assert tools["stock_add"]["status"] == "alive"
+    assert "status" not in tools["stock_add"]
     assert tools["stock_add"]["input_schema"]["type"] == "object"
-    assert tools["echo"]["status"] == "alive"
+    assert "status" not in tools["echo"]
     assert tools["echo"]["input_schema"]["type"] == "object"
     assert "bearer_token_secret" not in str(body)
 
