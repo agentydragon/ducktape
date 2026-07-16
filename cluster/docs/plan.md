@@ -289,9 +289,14 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       and compare to expected recipients per rule.
 - [ ] **Restore SDR kustomization** — unsuspend `cluster/k8s/sdr/flux-kustomization.yaml`
       (remove `suspend: true`) once the radio hardware is set up at the new place.
-- [ ] **Delete orphaned PVC-era `cpap-data` PV** — the CronJob is unsuspended and has
-      re-seeded the Forgejo repo (git-based store, no PVC). Confirm the leftover
-      PVC-era `cpap-data` PersistentVolume is gone now that wyrm2's CSI plugin is back.
+- [ ] **Reclaim 4 orphaned OpenEBS LVs on wyrm2** — leftovers the LVM CSI never GC'd
+      while wyrm2 was offline (no PV/PVC/attachment/snapshot references them; verified
+      2026-07-16). ~82 GiB in `openebs-proxmox-hdd`: `pvc-4985ef4a…` (docker, 50G),
+      `pvc-c6436c0f…` (docker, 30G), `pvc-48daa5b2…` (redis `dump.rdb`, 1G),
+      `pvc-6353b651…` (logs, 1G). Reclaim by deleting the LVMVolume CR — the openebs-lvm
+      controller removes the LV: `kubectl -n openebs delete lvmvolume <uid>` (do one
+      first to confirm the LV frees). The old PVC-era `cpap-data` LV is already gone —
+      none of these is it (the git-based sync uses no PVC).
 - [ ] **Set up offsite tofu-state backup** — the Proxmox-pinned `pg_dump` CronJob
       (`cluster/k8s/tofu-state/backup/`) was deleted 2026-06-02: it couldn't run with
       wyrm2/Proxmox down and only wrote to a `local-path-proxmox` PVC (same failure
