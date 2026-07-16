@@ -1,0 +1,25 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//typer"],
+)
+
+py_binary(
+    name = "ws",
+    main_module = "ws.cli",
+    deps = [":cli"],
+)
+
+py_test(
+    name = "test_cli",
+    srcs = ["test_cli.py"],
+    deps = [
+        ":cli",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//typer",
+    ],
+)

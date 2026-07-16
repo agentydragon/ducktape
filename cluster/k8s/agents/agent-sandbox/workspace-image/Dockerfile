@@ -11,7 +11,7 @@ FROM node:22.14.0-bookworm-slim
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-    git ca-certificates python3 curl jq ripgrep less procps openssh-client \
+    git ca-certificates python3 curl jq ripgrep less procps openssh-client tmux \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g @anthropic-ai/claude-code@2.1.198 @openai/codex@0.144.1 \
