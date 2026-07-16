@@ -12,7 +12,7 @@
 //
 // `product` / `location` / `qu` / `product_group` / `parent_product` / `shopping_list`
 // arguments accept either a name or a numeric ID (grocy_mcp's `GrocyClient` resolves either at
-// execution time); an ID alone renders poorly, so `useGrocyReference` composes the server's MCP
+// execution time); an ID alone renders poorly, so `useGrocyReferenceData` composes the server's MCP
 // read tools once per page and every row resolves through their results.
 //
 // `products_edit` renders an old→new diff, so the reference carries each product's *current*
@@ -25,7 +25,7 @@ import { Fragment, type ReactNode, useEffect, useState } from "react";
 import { z } from "zod";
 
 import { Field } from "../../field.tsx";
-import { fetchGrocyReference, type GrocyReferenceResponse } from "../../grocy_client.ts";
+import { fetchGrocyReferenceData, type GrocyReferenceData } from "../../grocy_client.ts";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
 import {
@@ -83,17 +83,17 @@ type ShoppingItem = ShoppingListItemsAddArgs["items"][number];
 type EditProductField = NonNullable<EditProductItem["clear_fields"]>[number];
 
 // One product's current field values, as the reference carries them (see grocy_client.ts).
-type GrocyProduct = GrocyReferenceResponse["products"][number];
+type GrocyProduct = GrocyReferenceData["products"][number];
 
 // Fetched once per rendered preview; while loading (or on fetch failure) `resolveName`
 // falls back to `id=N` for numeric references — a name argument always renders as-is.
-function useGrocyReference(): { reference: GrocyReferenceResponse | null; error: string | null } {
-  const [reference, setReference] = useState<GrocyReferenceResponse | null>(null);
+function useGrocyReferenceData(): { reference: GrocyReferenceData | null; error: string | null } {
+  const [reference, setReference] = useState<GrocyReferenceData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
-    fetchGrocyReference()
+    fetchGrocyReferenceData()
       .then((result) => {
         if (alive) setReference(result);
       })
@@ -122,7 +122,7 @@ function resolveProduct(products: GrocyProduct[] | undefined, value: string | nu
 // A shopping-list item's current record, carried by the reference so `shopping_list_item_edit`
 // (and `shopping_list_items_remove`) can resolve a bare `item_id` to a product/note and show the
 // item's current amount/note/done for an old→new diff.
-type ShoppingListRefItem = GrocyReferenceResponse["shopping_list_items"][number];
+type ShoppingListRefItem = GrocyReferenceData["shopping_list_items"][number];
 
 function resolveShoppingItem(
   items: ShoppingListRefItem[] | undefined,
@@ -161,9 +161,9 @@ function GrocyItemsPreview<T>({
   items: T[];
   variant: PreviewVariant;
   gap: number;
-  renderRow: (item: T, reference: GrocyReferenceResponse | null, variant: PreviewVariant) => ReactNode;
+  renderRow: (item: T, reference: GrocyReferenceData | null, variant: PreviewVariant) => ReactNode;
 }) {
-  const { reference, error } = useGrocyReference();
+  const { reference, error } = useGrocyReferenceData();
   const shown = variant === "compact" ? items.slice(0, COMPACT_ITEM_LIMIT) : items;
   return (
     <Stack gap="xs">
@@ -194,7 +194,7 @@ function ProductAmount({ product, amount, qu }: { product: string; amount: numbe
   );
 }
 
-function StockAddRow({ item, reference }: { item: AddItem; reference: GrocyReferenceResponse | null }) {
+function StockAddRow({ item, reference }: { item: AddItem; reference: GrocyReferenceData | null }) {
   return (
     <Group gap={6}>
       <ProductAmount
@@ -221,7 +221,7 @@ function StockAddPreview({ args, variant }: PreviewProps<StockAddArgs>) {
   );
 }
 
-function StockConsumeRow({ item, reference }: { item: ConsumeItem; reference: GrocyReferenceResponse | null }) {
+function StockConsumeRow({ item, reference }: { item: ConsumeItem; reference: GrocyReferenceData | null }) {
   return (
     <Group gap={6}>
       <ProductAmount
@@ -271,7 +271,7 @@ function ProductsCreateRow({
   variant,
 }: {
   item: CreateProductItem;
-  reference: GrocyReferenceResponse | null;
+  reference: GrocyReferenceData | null;
   variant: PreviewVariant;
 }) {
   const stockQuName = resolveName(reference?.quantity_units, item.stock_qu);
@@ -366,7 +366,7 @@ function StockEntryEditRow({
   variant,
 }: {
   item: StockEntryEditItem;
-  reference: GrocyReferenceResponse | null;
+  reference: GrocyReferenceData | null;
   variant: PreviewVariant;
 }) {
   const changes: FieldChange[] = [];
@@ -414,7 +414,7 @@ function StockEntryEditPreview({ args, variant }: PreviewProps<StockEntryEditArg
 }
 
 function StockGetPreview({ args }: PreviewProps<StockGetArgs>) {
-  const { reference, error } = useGrocyReference();
+  const { reference, error } = useGrocyReferenceData();
   const products = (args.products ?? []).map((value) => resolveName(reference?.products, value));
   const locations = (args.locations ?? []).map((value) => resolveName(reference?.locations, value));
   return (
@@ -447,13 +447,7 @@ function GetSystemInfoPreview(_: PreviewProps<GetSystemInfoArgs>) {
   return <PreviewText>Grocy server version and system details</PreviewText>;
 }
 
-function ShoppingListItemsRemoveRow({
-  itemId,
-  reference,
-}: {
-  itemId: number;
-  reference: GrocyReferenceResponse | null;
-}) {
+function ShoppingListItemsRemoveRow({ itemId, reference }: { itemId: number; reference: GrocyReferenceData | null }) {
   const item = resolveShoppingItem(reference?.shopping_list_items, itemId);
   return (
     <Group gap={6}>
@@ -510,7 +504,7 @@ function refChange(
 function clearChange(
   field: EditProductField,
   current: GrocyProduct | undefined,
-  reference: GrocyReferenceResponse | null
+  reference: GrocyReferenceData | null
 ): FieldChange {
   const base = { key: `clear_${field}`, next: CLEARED };
   switch (field) {
@@ -540,7 +534,7 @@ function clearChange(
 function productEditChanges(
   item: EditProductItem,
   current: GrocyProduct | undefined,
-  reference: GrocyReferenceResponse | null,
+  reference: GrocyReferenceData | null,
   variant: PreviewVariant
 ): FieldChange[] {
   const qu = reference?.quantity_units;
@@ -603,7 +597,7 @@ function ProductsEditRow({
   variant,
 }: {
   item: EditProductItem;
-  reference: GrocyReferenceResponse | null;
+  reference: GrocyReferenceData | null;
   variant: PreviewVariant;
 }) {
   const current = resolveProduct(reference?.products, item.product);
@@ -636,7 +630,7 @@ function ProductsEditPreview({ args, variant }: PreviewProps<ProductsEditArgs>) 
 // ── Shopping-list tools ──────────────────────────────────────────────────────
 
 function ShoppingListGetPreview({ args }: PreviewProps<ShoppingListGetArgs>) {
-  const { reference, error } = useGrocyReference();
+  const { reference, error } = useGrocyReferenceData();
   return (
     <Stack gap="xs">
       <PreviewText>
@@ -652,7 +646,7 @@ function ShoppingListGetPreview({ args }: PreviewProps<ShoppingListGetArgs>) {
   );
 }
 
-function ShoppingListAddRow({ item, reference }: { item: ShoppingItem; reference: GrocyReferenceResponse | null }) {
+function ShoppingListAddRow({ item, reference }: { item: ShoppingItem; reference: GrocyReferenceData | null }) {
   return (
     <Group gap={6}>
       {item.product != null ? (
@@ -736,7 +730,7 @@ function shoppingItemEditChanges(
 }
 
 function ShoppingListItemEditPreview({ args, variant }: PreviewProps<ShoppingListItemEditArgs>) {
-  const { reference, error } = useGrocyReference();
+  const { reference, error } = useGrocyReferenceData();
   const current = resolveShoppingItem(reference?.shopping_list_items, args.item_id);
   const changes = shoppingItemEditChanges(args, current);
   const shown = variant === "compact" ? changes.slice(0, 2) : changes;

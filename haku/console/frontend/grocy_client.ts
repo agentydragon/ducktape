@@ -40,18 +40,22 @@ const zShoppingListItem = z.object({
 });
 const zShoppingList = z.object({ items: z.array(zShoppingListItem) });
 
-export type GrocyReferenceResponse = {
-  products: z.infer<typeof zProduct>[];
-  locations: z.infer<typeof zReferenceItem>[];
-  quantity_units: z.infer<typeof zReferenceItem>[];
-  product_groups: z.infer<typeof zReferenceItem>[];
-  shopping_lists: z.infer<typeof zReferenceItem>[];
-  shopping_list_items: z.infer<typeof zShoppingListItem>[];
-};
+// Frontend-owned projection of the ordinary Grocy read results needed to resolve IDs and render
+// old-to-new diffs. No MCP tool returns this aggregate; loadGrocyReferenceData composes it locally.
+const zGrocyReferenceData = z.object({
+  products: z.array(zProduct),
+  locations: z.array(zReferenceItem),
+  quantity_units: z.array(zReferenceItem),
+  product_groups: z.array(zReferenceItem),
+  shopping_lists: z.array(zReferenceItem),
+  shopping_list_items: z.array(zShoppingListItem),
+});
 
-let cachedReference: Promise<GrocyReferenceResponse> | null = null;
+export type GrocyReferenceData = z.infer<typeof zGrocyReferenceData>;
 
-async function loadGrocyReference(): Promise<GrocyReferenceResponse> {
+let cachedReferenceData: Promise<GrocyReferenceData> | null = null;
+
+async function loadGrocyReferenceData(): Promise<GrocyReferenceData> {
   const [productsPayload, locationsPayload, unitsPayload, groupsPayload, listsPayload] = await Promise.all([
     callOperatorMcpTool("grocy_sf_products_list", { detail: "full" }),
     callOperatorMcpTool("grocy_sf_locations_list", {}),
@@ -63,23 +67,23 @@ async function loadGrocyReference(): Promise<GrocyReferenceResponse> {
   const listPayloads = await Promise.all(
     shoppingLists.map((list) => callOperatorMcpTool("grocy_sf_shopping_list_get", { shopping_list: list.id }))
   );
-  return {
-    products: z.array(zProduct).parse(productsPayload),
-    locations: z.array(zReferenceItem).parse(locationsPayload),
-    quantity_units: z.array(zReferenceItem).parse(unitsPayload),
-    product_groups: z.array(zReferenceItem).parse(groupsPayload),
+  return zGrocyReferenceData.parse({
+    products: productsPayload,
+    locations: locationsPayload,
+    quantity_units: unitsPayload,
+    product_groups: groupsPayload,
     shopping_lists: shoppingLists,
     shopping_list_items: listPayloads.flatMap((payload) => zShoppingList.parse(payload).items),
-  };
+  });
 }
 
 // Compose the remote server's own read tools in the browser. All calls use the linked Operator
 // credential through `/mcp`; the shared promise prevents each rendered widget from refetching the
 // same reference tables.
-export async function fetchGrocyReference(): Promise<GrocyReferenceResponse> {
-  cachedReference ??= loadGrocyReference().catch((error: unknown) => {
-    cachedReference = null;
+export async function fetchGrocyReferenceData(): Promise<GrocyReferenceData> {
+  cachedReferenceData ??= loadGrocyReferenceData().catch((error: unknown) => {
+    cachedReferenceData = null;
     throw error;
   });
-  return cachedReference;
+  return cachedReferenceData;
 }

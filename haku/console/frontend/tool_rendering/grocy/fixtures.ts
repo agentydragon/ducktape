@@ -1,7 +1,7 @@
-import type { GrocyReferenceResponse } from "../../grocy_client.ts";
+import type { GrocyReferenceData } from "../../grocy_client.ts";
 
 // Grocy reference rows used by this server's id-to-name and old-to-new preview fixtures.
-export const SAMPLE_GROCY_REFERENCE: GrocyReferenceResponse = {
+export const GROCY_REFERENCE_FIXTURE: GrocyReferenceData = {
   products: [
     {
       id: 1,
@@ -65,15 +65,15 @@ export const SAMPLE_GROCY_REFERENCE: GrocyReferenceResponse = {
 };
 
 export const GROCY_MCP_FIXTURES = {
-  grocy_sf_products_list: () => SAMPLE_GROCY_REFERENCE.products,
-  grocy_sf_locations_list: () => SAMPLE_GROCY_REFERENCE.locations,
-  grocy_sf_quantity_units_list: () => SAMPLE_GROCY_REFERENCE.quantity_units,
-  grocy_sf_product_groups_list: () => SAMPLE_GROCY_REFERENCE.product_groups,
-  grocy_sf_shopping_lists_list: () => SAMPLE_GROCY_REFERENCE.shopping_lists,
+  grocy_sf_products_list: () => GROCY_REFERENCE_FIXTURE.products,
+  grocy_sf_locations_list: () => GROCY_REFERENCE_FIXTURE.locations,
+  grocy_sf_quantity_units_list: () => GROCY_REFERENCE_FIXTURE.quantity_units,
+  grocy_sf_product_groups_list: () => GROCY_REFERENCE_FIXTURE.product_groups,
+  grocy_sf_shopping_lists_list: () => GROCY_REFERENCE_FIXTURE.shopping_lists,
   grocy_sf_shopping_list_get: (args: Record<string, unknown>) => ({
     items:
-      args.shopping_list === SAMPLE_GROCY_REFERENCE.shopping_lists[0]?.id
-        ? SAMPLE_GROCY_REFERENCE.shopping_list_items
+      args.shopping_list === GROCY_REFERENCE_FIXTURE.shopping_lists[0]?.id
+        ? GROCY_REFERENCE_FIXTURE.shopping_list_items
         : [],
   }),
 };
