@@ -26,17 +26,21 @@ to, creds already wired, Claude CLI installed) minus the persistence.
 - `workspaces/` — the `workspace` `SandboxTemplate` + warm pool in
   `claude-sandbox`, plus a janitor `CleanupPolicy` for leaked sandboxes.
 
-## Usage
+## Operating a workspace
 
-Create a workspace (adopts a pre-warmed sandbox, so it's ready in seconds):
+One object drives everything: a `SandboxClaim` named after your task. The claim
+adopts a pre-warmed `Sandbox` from the pool; claim name == sandbox name == pod
+name, so every `kubectl` command below uses the same handle. All commands
+assume `-n claude-sandbox` (the sandbox kubeconfig's RBAC covers all of it).
+
+### Create
 
 ```bash
-kubectl apply -f - <<EOF
+kubectl -n claude-sandbox apply -f - <<EOF
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxClaim
 metadata:
   name: ws-mytask
-  namespace: claude-sandbox
 spec:
   warmPoolRef:
     name: workspace
@@ -46,17 +50,66 @@ spec:
 EOF
 ```
 
-Go to it (the claim name is the sandbox/pod name):
+Always set `shutdownTime` — the default policy is `Retain`, and an unclaimed
+deadline means the workspace lives until the 7-day janitor gets it.
+
+### Inspect
+
+```bash
+kubectl -n claude-sandbox get sandboxclaims,sandboxes,pods   # what exists
+kubectl -n claude-sandbox get sandbox ws-mytask -o yaml      # conditions (Ready/Suspended/Finished), nodeName, podIPs
+kubectl -n claude-sandbox describe sandboxwarmpool workspace # pool readiness (readyReplicas)
+```
+
+### Work in it
 
 ```bash
 kubectl -n claude-sandbox exec -it ws-mytask -c workspace -- bash
-# then inside: claude  (ANTHROPIC_BASE_URL/AUTH_TOKEN already wired to z.ai GLM)
 ```
 
-Dispose early with `kubectl -n claude-sandbox delete sandboxclaim ws-mytask`;
-otherwise `shutdownTime` garbage-collects it. The `workspace-janitor`
+Inside: `/workspace` is the PVC (survives pod restarts and suspend/resume),
+`claude` and `codex` are on `PATH`, and `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`
+are already set (z.ai GLM), so `git clone ... && claude` just works. Moving
+files and reaching ports:
+
+```bash
+kubectl -n claude-sandbox cp ./notes.md ws-mytask:/workspace/ -c workspace
+kubectl -n claude-sandbox cp ws-mytask:/workspace/out.tar.gz ./out.tar.gz -c workspace
+kubectl -n claude-sandbox port-forward pod/ws-mytask 8888:8888   # dev server in the workspace
+```
+
+### Extend / pause / resume
+
+```bash
+# more time: push the deadline out (claim's lifecycle is authoritative;
+# verify it propagated to the Sandbox)
+kubectl -n claude-sandbox patch sandboxclaim ws-mytask --type=merge \
+  -p '{"spec":{"lifecycle":{"shutdownTime":"'"$(date -u -d '+24 hours' +%Y-%m-%dT%H:%M:%SZ)"'"}}}'
+kubectl -n claude-sandbox get sandbox ws-mytask -o jsonpath='{.spec.shutdownTime}'
+
+# pause: pod goes away, /workspace PVC stays; resume brings it back
+kubectl -n claude-sandbox patch sandbox ws-mytask --type=merge -p '{"spec":{"operatingMode":"Suspended"}}'
+kubectl -n claude-sandbox patch sandbox ws-mytask --type=merge -p '{"spec":{"operatingMode":"Running"}}'
+```
+
+### Dispose
+
+```bash
+kubectl -n claude-sandbox delete sandboxclaim ws-mytask
+```
+
+Or do nothing: `shutdownTime` garbage-collects it, and the `workspace-janitor`
 CleanupPolicy reaps anything older than 7 days as a backstop (same contract as
 the rest of `claude-sandbox`).
+
+### Troubleshooting
+
+- **Claim stuck unclaimed**: pool exhausted or template broken —
+  `describe sandboxwarmpool workspace`, then `kubectl -n claude-sandbox get events`.
+- **Pod `Pending`**: usually the namespace ResourceQuota (8 CPU / 16Gi / 20
+  pods, shared with everything else in `claude-sandbox`) or PVC binding —
+  `describe pod ws-mytask`.
+- **Controller-side questions**: `kubectl -n agent-sandbox-system logs deploy/agent-sandbox-controller`.
 
 Standalone `Sandbox` objects (own `podTemplate`, no warm pool) also work — see
 [the lifecycle docs](https://agent-sandbox.sigs.k8s.io/docs/sandbox/lifecycle/).
