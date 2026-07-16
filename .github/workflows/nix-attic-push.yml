@@ -60,8 +60,10 @@ jobs:
             # healing the cache.
             fallback = true
 
-      - name: Install Attic client
-        run: nix profile install nixpkgs#attic-client
+      - name: Install Attic client + nix-fast-build
+        # nix-fast-build (+ nix-eval-jobs) drives the parallel eval/build/push in
+        # devinfra/ci/nix_attic_build_and_push.sh.
+        run: nix profile install nixpkgs#attic-client nixpkgs#nix-fast-build nixpkgs#nix-eval-jobs
 
       - uses: ./.github/actions/setup-ci-secrets
         with:

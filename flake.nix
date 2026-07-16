@@ -363,6 +363,18 @@
       devToolPackagesRust = devToolPackages;
     in
     {
+      # CI push targets for nix-attic-push, split by destination cache. Under
+      # legacyPackages so `nix flake {show,check}` skip them (they force-eval all
+      # host closures). drivefs isolation for `main` lives in the imported file.
+      legacyPackages.${system} =
+        let
+          atticTargets = import ./devinfra/ci/nix_attic_targets.nix { inherit self lib system; };
+        in
+        {
+          ci-attic-main = atticTargets.main;
+          ci-attic-public = atticTargets.public;
+        };
+
       # Development shell — enter via `nix develop` or direnv (`use flake`).
       devShells.${system}.default = pkgs.mkShell {
         packages = devToolPackages ++ localOnlyPackages ++ systemLibs.packages;

@@ -9,16 +9,24 @@
   terminalFont,
   nixGLPackages,
   ...
-}:
+}@args:
 let
+  # nixGL wraps GUI apps for OpenGL on non-NixOS hosts (NixOS manages GPU drivers
+  # directly). The nix-attic CI cache build passes nixGLEnabled = false via
+  # specialArgs, because nixGL's `builtins.currentTime` driver-sniffing needs
+  # impure eval, which nix-fast-build can't do (see devinfra/ci/nix_attic_targets.nix);
+  # the thin wrappers rebuild at atlas's real `home-manager switch --impure`. Read
+  # via args (not a declared formal) so the default holds when unset — the module
+  # system won't honor a lambda-arg default for a declared formal.
+  nixGLEnabled = args.nixGLEnabled or (!isNixOS);
+
   lightScheme = solarizedLight;
   darkScheme = solarizedDark;
   fontFamily = terminalFont.family;
   fontSizeValue = terminalFont.size;
   fontSizeStr = builtins.toString fontSizeValue;
 
-  # nixGL wrapping is only needed on non-NixOS systems (NixOS manages GPU drivers directly)
-  wrapPkg = pkg: if isNixOS then pkg else config.lib.nixGL.wrap pkg;
+  wrapPkg = pkg: if nixGLEnabled then config.lib.nixGL.wrap pkg else pkg;
   kittyPkg = wrapPkg pkgs.kitty;
   weztermPkg = wrapPkg pkgs.wezterm;
   ghosttyPkg = wrapPkg pkgs.ghostty;
@@ -209,7 +217,7 @@ let
 in
 {
   config = lib.mkIf enableGui {
-    targets.genericLinux.nixGL.packages = lib.mkIf (!isNixOS) nixGLPackages;
+    targets.genericLinux.nixGL.packages = lib.mkIf nixGLEnabled nixGLPackages;
 
     programs.wezterm = {
       enable = true;
@@ -277,7 +285,7 @@ in
     home.packages = [
       ghosttyPkg
     ]
-    ++ lib.optionals (!isNixOS) [
+    ++ lib.optionals nixGLEnabled [
       nixGLPackages.nixGLDefault
     ];
   };

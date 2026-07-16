@@ -1,54 +1,33 @@
 #!/usr/bin/env bash
-# Build all Nix flake outputs and push closures to Attic binary cache.
+# Build every Nix flake output and push its closure to the Attic binary cache.
 #
-# `attic watch-store` runs in the background and uploads paths as they
-# land in the local nix store, so partial progress is preserved even if
-# a later build fails or the runner dies. The explicit `attic push` at
-# the end is a safety net: attic dedupes by NAR hash, so paths the
-# watcher already uploaded are a cheap no-op, and anything the watcher
-# missed (e.g. paths from the final build that didn't drain in time)
-# gets caught.
+# nix-fast-build evaluates the ci-attic-* flake outputs in parallel
+# (nix-eval-jobs), builds/substitutes each derivation, and uploads it to Attic as
+# it finishes — so partial progress survives a mid-run failure. --skip-cached
+# queries the substituters and skips paths already in the cache, so a commit that
+# changes nothing in a closure neither rebuilds nor re-downloads it.
 #
-# TODO: drop the safety-net push once we know `attic watch-store` drains
-# cleanly on SIGTERM. Today the CLI has no `--drain`/`--once` mode, so
-# we don't trust the watcher alone.
+# --option pure-eval false: the flake needs impure eval (NixOS hosts read
+# /etc/nixos via builtins.pathExists). nix-fast-build has no --impure flag, but
+# pure-eval=false covers path access. The one impurity it does NOT expose is
+# nixGL's builtins.currentTime driver-sniffing — forced off in the ci-attic-*
+# outputs (see devinfra/ci/nix_attic_targets.nix), which also bakes in the drivefs
+# isolation (google-drive off for wyrm2/rugged) so the private gaffer closure
+# never enters `main`. See cluster/docs/nix_cache.md "Private-binary isolation".
 set -euo pipefail
 
-attic watch-store ducktape:main &
-watcher_pid=$!
-trap 'kill -TERM "$watcher_pid" 2>/dev/null || true; wait "$watcher_pid" 2>/dev/null || true' EXIT
+flake=".#legacyPackages.x86_64-linux"
 
-# Single flake evaluation: build one linkFarm aggregating every target (all
-# NixOS toplevels + home activationPackages + bootstrap packages). Nix
-# realises/substitutes them in parallel, and watch-store uploads each as it
-# lands, so partial progress survives a mid-run failure. drivefs isolation for
-# the `main` cache lives in the .nix expression. Previously this was a per-host
-# bash loop that cold-evaluated the flake dozens of times (attrNames + per-HM-
-# user google-drive probes + a build each).
-linkfarm=$(nix build --impure \
-  --expr "import ./devinfra/ci/nix_attic_targets.nix { flakePath = \"path:$(pwd)\"; }" \
-  --no-link --print-out-paths)
+# Every target → the broadly readable `main` cache; skip paths already present.
+nix-fast-build --no-nom --option pure-eval false --skip-cached \
+  --flake "${flake}.ci-attic-main" --attic-cache ducktape:main
 
-# Recover per-target store paths from the linkFarm's named symlinks — no second
-# eval. bootstrap-* entries are the subset that also goes to the public cache.
-out_paths=$(mktemp)
-web_bootstrap_paths=$(mktemp)
-for link in "$linkfarm"/*; do
-  target=$(readlink "$link")
-  echo "$target" >>"$out_paths"
-  case "${link##*/}" in
-    bootstrap-*) echo "$target" >>"$web_bootstrap_paths" ;;
-  esac
-done
-
-echo "Final sweep: pushing $(wc -l <"$out_paths") paths to Attic (most already uploaded by watch-store)..."
-xargs attic push ducktape:main <"$out_paths"
-
-# The web/Haku bootstrap closures also go to the anonymous-readable `public`
-# cache: a fresh Claude Code web session's first `nix profile install` runs
-# before any session credential exists, so it can only substitute from a cache
-# that needs no auth (see devinfra/claude/web_setup.sh, cluster/docs/nix_cache.md
-# "Public bootstrap cache"). Same content as already pushed to `main` above —
-# attic dedupes by NAR hash, so this is a cheap no-op for anything unchanged.
-echo "Pushing $(wc -l <"$web_bootstrap_paths") web-bootstrap paths to the public Attic cache..."
-xargs attic push ducktape:public <"$web_bootstrap_paths"
+# The bootstrap subset also goes to the anonymous-readable `public` cache: a fresh
+# Claude Code web session's first `nix profile install` runs before any
+# credential exists, so it can only substitute from a no-auth cache (see
+# devinfra/claude/web_setup.sh, cluster/docs/nix_cache.md "Public bootstrap
+# cache"). No --skip-cached here: its substituter query can't see `public`, so it
+# would wrongly skip paths present in `main` but missing from `public`. attic
+# dedupes by NAR hash server-side, so re-pushing costs only the presence check.
+nix-fast-build --no-nom --option pure-eval false \
+  --flake "${flake}.ci-attic-public" --attic-cache ducktape:public
