@@ -15,6 +15,10 @@ spec:
       labels:
         app.kubernetes.io/name: agent-workspace
     spec:
+      # Private Forgejo package — ducktape-ci pull credential provisioned into
+      # this namespace by tf/gitops/forgejo-images.
+      imagePullSecrets:
+        - name: forgejo-images-creds
       # Always-on OVH capacity; keeps workspaces off the roaming GPU/laptop nodes.
       nodeSelector:
         topology.kubernetes.io/region: hil

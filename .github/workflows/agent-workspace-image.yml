@@ -1,6 +1,9 @@
 # Build and push the agent workspace image (Claude Code CLI + Codex CLI +
-# dev basics) to GHCR. Consumed by the workspace SandboxTemplate in
-# cluster/k8s/agents/agent-sandbox/workspaces/.
+# dev basics) to the Forgejo OCI registry
+# (git.allegedly.works/ducktape-ci/agent-workspace) — not GHCR, so the pull
+# credential is provisioned in code (tf/gitops/forgejo-images) rather than a
+# manual "make public" GHCR click. Consumed by the workspace SandboxTemplate
+# in cluster/k8s/agents/agent-sandbox/workspaces/.
 name: Agent Workspace Image
 
 on:
@@ -17,19 +20,29 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   build-and-push:
     name: Build and Push
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      IMAGE: git.allegedly.works/ducktape-ci/agent-workspace
     steps:
       - uses: actions/checkout@v6
 
-      - uses: ./.github/actions/ghcr-build-push
+      # Decrypts secrets/ci/* → exports FORGEJO_IMAGES_{USERNAME,PASSWORD}.
+      - uses: ./.github/actions/setup-ci-secrets
         with:
-          image: ghcr.io/${{ github.repository_owner }}/agent-workspace
-          context: cluster/k8s/agents/agent-sandbox/workspace-image
-          cache_from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/agent-workspace:buildcache
-          cache_to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/agent-workspace:buildcache,mode=max
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Login to Forgejo registry
+        run: echo "$FORGEJO_IMAGES_PASSWORD" | docker login git.allegedly.works -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
+
+      - name: Build and push
+        run: |
+          TS=$(date -u +%Y%m%d%H%M%S)
+          REF="$IMAGE:${GITHUB_REF_NAME}-${TS}-${GITHUB_SHA:0:7}"
+          docker build -t "$REF" cluster/k8s/agents/agent-sandbox/workspace-image
+          docker push "$REF"
+          echo "pushed \`$REF\`" >> "$GITHUB_STEP_SUMMARY"

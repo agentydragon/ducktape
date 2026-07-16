@@ -13,8 +13,6 @@ resources:
   - openclaw-image-policy.yaml
   - activitywatch-image-repository.yaml
   - activitywatch-image-policy.yaml
-  - agent-workspace-image-repository.yaml
-  - agent-workspace-image-policy.yaml
   - cpap-sync-image-repository.yaml
   - cpap-sync-image-policy.yaml
   - airlock-image-repository.yaml

@@ -23,16 +23,17 @@ to, creds already wired, Claude CLI installed) minus the persistence.
     after v0.5.1 ships a sandbox-with-extensions.yaml asset for GitOps engines);
     drop the GitRepository + HelmRelease then. -->
 
-- `workspace-image/` — the dedicated `ghcr.io/agentydragon/agent-workspace`
-  image (Claude Code + Codex CLIs, dev basics, no baked credentials, no haku
-  coupling). WebFetch/WebSearch are denied in baked Claude settings — GLM's
-  tool-call shape differs from Anthropic's, matching
-  `nix/home/claude_code/z-claude.nix`. Built by
-  `.github/workflows/agent-workspace-image.yml` on `devel` pushes; Flux image
-  automation rolls the template's tag. **Bootstrap gotcha**: until the first
-  post-merge build lands AND the GHCR package is flipped public once by hand,
-  the warm pod sits in `ImagePullBackOff` — it self-heals when the image
-  appears.
+- `workspace-image/` — the dedicated
+  `git.allegedly.works/ducktape-ci/agent-workspace` image (Claude Code + Codex
+  CLIs, dev basics, no baked credentials, no haku coupling). WebFetch/WebSearch
+  are denied in baked Claude settings — GLM's tool-call shape differs from
+  Anthropic's, matching `nix/home/claude_code/z-claude.nix`. Built by
+  `.github/workflows/agent-workspace-image.yml` on `devel` pushes into the
+  Forgejo registry (pull credential provisioned in code by
+  `tf/gitops/forgejo-images` — no GHCR visibility clicking); Flux image
+  automation rolls the template's tag. Until the first post-merge build lands
+  the warm pod sits in `ImagePullBackOff` and self-heals when the image
+  appears. Tradeoff (same as codex-pod): a Forgejo outage blocks image pulls.
 
 - `workspaces/{namespace,app}/` — the dedicated `agent-workspaces` namespace
   (own ResourceQuota/LimitRange) and the `workspace` `SandboxTemplate` + warm

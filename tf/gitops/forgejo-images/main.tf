@@ -35,3 +35,23 @@ resource "forgejo_user" "images" {
   must_change_password = false
   visibility           = "private"
 }
+
+# Kubelet pull secret for the agent-workspaces namespace (workspace
+# SandboxTemplate pulls git.allegedly.works/ducktape-ci/agent-workspace).
+# Written by this module — which already holds the credential — instead of
+# extending the source Secret's reflector allowlist, which lives inside the
+# sops-encrypted registry-creds.sops.yaml and would need a manual re-encrypt
+# for every new consumer namespace.
+resource "kubernetes_secret" "agent_workspaces_pull" {
+  metadata {
+    name      = "forgejo-images-creds"
+    namespace = "agent-workspaces"
+    annotations = {
+      description = "ducktape-ci Forgejo registry pull credential for workspace pods; provisioned by tf/gitops/forgejo-images"
+    }
+  }
+  type = "kubernetes.io/dockerconfigjson"
+  data = {
+    ".dockerconfigjson" = data.kubernetes_secret.images_creds.data[".dockerconfigjson"]
+  }
+}
